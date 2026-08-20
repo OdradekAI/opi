@@ -10,6 +10,15 @@ use crate::tool::ToolDiagnostic;
 /// Callback type for emitting agent events to subscribers.
 pub type AgentEventSink = Box<dyn Fn(AgentEvent) + Send + Sync>;
 
+/// Wrap a low-level event sink in the public redaction boundary.
+///
+/// The public [`crate::agent_loop`] entry point uses this once around its raw
+/// producer sink. Stateful [`crate::Agent`] runs instead route raw loop events
+/// into the Agent-owned subscriber fan-out, which applies the same transform.
+pub(crate) fn redacting_event_sink(sink: AgentEventSink) -> AgentEventSink {
+    Box::new(move |event| sink(event.redacted_for_public()))
+}
+
 /// Events emitted during the agent loop lifecycle.
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,8 +70,8 @@ pub enum AgentEvent {
         is_error: bool,
         #[serde(default)]
         truncated: bool,
-        /// Tool-owned structured failure context lifted from `ToolResult::diagnostics`
-        /// (Phase 11.8). Public event emission redacts this context together
+        /// Tool-owned structured failure context lifted from
+        /// `ToolResult::diagnostics`. Public event emission redacts this context together
         /// with `details`; it is NOT carried on the provider-facing
         /// `ToolResultMessage`. Empty for success/no-diagnostics results and
         /// omitted from the wire when empty (`skip_serializing_if`).
@@ -202,17 +211,53 @@ impl AgentEvent {
                 error_message,
             } => AgentEvent::CompactionEnd {
                 reason: *reason,
-                result: result.clone(),
+                result: result.as_ref().map(redact_compaction_result),
                 aborted: *aborted,
                 error_message: error_message
                     .as_ref()
-                    .map(|message| redact_text(message, RedactionMode::Summary)),
+                    .map(|message| classify_compaction_error(message).into_public()),
             },
-            AgentEvent::SessionPersistError { message } => AgentEvent::SessionPersistError {
-                message: redact_text(message, RedactionMode::Summary),
+            AgentEvent::SessionPersistError { .. } => AgentEvent::SessionPersistError {
+                message: ClassifiedPublicText::Untrusted.into_public(),
             },
             other => other.clone(),
         }
+    }
+}
+
+/// Dynamic model/tool-derived text is not safe merely because it is called a
+/// summary. Only exact core-owned closed messages may cross unchanged.
+enum ClassifiedPublicText {
+    SafeClosed(&'static str),
+    Untrusted,
+}
+
+impl ClassifiedPublicText {
+    fn into_public(self) -> String {
+        match self {
+            ClassifiedPublicText::SafeClosed(message) => message.to_owned(),
+            ClassifiedPublicText::Untrusted => "[REDACTED]".to_owned(),
+        }
+    }
+}
+
+fn classify_compaction_error(message: &str) -> ClassifiedPublicText {
+    match message {
+        "compaction produced no output" => {
+            ClassifiedPublicText::SafeClosed("compaction produced no output")
+        }
+        _ => ClassifiedPublicText::Untrusted,
+    }
+}
+
+fn redact_compaction_result(result: &CompactionResult) -> CompactionResult {
+    CompactionResult {
+        // Core summaries contain prompt/tool text and hook summaries are
+        // extension-controlled. Both are untrusted at the public boundary.
+        summary: ClassifiedPublicText::Untrusted.into_public(),
+        first_kept_entry_id: redact_text(&result.first_kept_entry_id, RedactionMode::Summary),
+        tokens_before: result.tokens_before,
+        tokens_after: result.tokens_after,
     }
 }
 

@@ -1,13 +1,12 @@
-//! Session JSONL storage — format version 1, additive entry model (S9.3,
-//! Phase 13.1).
+//! Session JSONL storage — format version 1 with an additive entry model.
 //!
 //! Append-only, versioned JSONL format for session persistence. The first line
 //! is a header; subsequent lines are tree entries forming a conversation tree.
 //!
-//! # Phase 13.1 entry model and compatibility contract
+//! # Entry model and compatibility contract
 //!
-//! Phase 13 keeps **header version 1** with **additive** entry variants. The
-//! JSONL structure is unchanged; Phase 13 only adds new `type` tags
+//! The format keeps **header version 1** with **additive** entry variants. The
+//! JSONL structure supports the following `type` tags:
 //! (`session_info`, `model_change`, `thinking_level_change`, `label`,
 //! `branch_summary`). A version bump is reserved for a future breaking
 //! structural change; v1 files written by older opi builds remain readable
@@ -27,15 +26,15 @@
 //! and `label` are metadata/context attachments: they are parented to the
 //! current content tip but do **not** advance it, and they do not enter the
 //! branch graph in [`crate::session_branch::SessionTree`]. `branch_summary`
-//! context reconstruction and provider conversion are owned by the Phase 13
-//! context/product paths, not by this entry model.
+//! context reconstruction and provider conversion are owned by context/product
+//! paths, not by this entry model.
 //!
-//! `custom_message` is **deferred**: Phase 13 does not add a dedicated
-//! `custom_message` durable entry variant. Extension-provided messages persist
+//! There is no dedicated `custom_message` durable entry variant.
+//! Extension-provided messages persist
 //! via the existing `extension_state` entry and the `include_in_llm_context`
 //! flag on the in-memory `AgentMessage::Custom` variant. Provider-context
-//! injection for custom messages is owned by the context builder (13.2) and
-//! product paths (13.4), not by the entry model.
+//! injection for custom messages is owned by the context builder and product
+//! paths, not by the entry model.
 //!
 //! opi sessions are **not** pi-session-v3 compatible. opi learns from pi's
 //! append-only tree/context shape but does not promise to read or write
@@ -48,13 +47,13 @@ use serde::{Deserialize, Serialize};
 
 /// Current session format version.
 ///
-/// Phase 13 keeps version 1 with additive entries. See the module docs for the
-/// full compatibility policy.
+/// Version 1 supports additive entries. See the module docs for the full
+/// compatibility policy.
 pub const FORMAT_VERSION: u32 = 1;
 
 /// Human-readable session format/compatibility policy. Asserted by tests so the
-/// pi-compatibility disclaimer cannot drift silently. Phase 13 keeps this in
-/// sync with the module-level documentation above.
+/// pi-compatibility disclaimer cannot drift silently from the module-level
+/// documentation above.
 pub const SESSION_FORMAT_POLICY: &str = "opi session format: version 1 (additive entries). \
  opi sessions are not pi-session-v3 compatible; opi learns from pi's append-only \
  tree/context shape but does not read or write arbitrary pi session files. Unknown \
@@ -127,7 +126,7 @@ pub struct ExtensionStateEntry {
     pub state: serde_json::Value,
 }
 
-/// User-visible session name (Phase 13 `session_info` entry).
+/// User-visible session name (`session_info` entry).
 ///
 /// Append-only: each entry records a rename; readers take the latest value on
 /// the active branch. Parented to the content tip but does not advance it and
@@ -140,14 +139,14 @@ pub struct SessionInfoEntry {
     pub name: String,
 }
 
-/// Recorded provider/model change on the active branch (Phase 13
-/// `model_change` entry). `model` uses the canonical `provider:model` spec
-/// format; `input_source` records whether that canonical form was supplied
-/// directly or produced by normalizing a bare model input (Phase 17.5).
+/// Recorded provider/model change on the active branch (`model_change` entry).
+/// `model` uses the canonical `provider:model` spec format; `input_source`
+/// records whether that canonical form was supplied directly or produced by
+/// normalizing a bare model input.
 ///
 /// `input_source` is `#[serde(default)]` `Option` so legacy on-disk entries
 /// that predate the field deserialize as `None` rather than corrupting the
-/// session; the read-side legacy-normalization job is owned by Phase 17.8.
+/// session; the read side performs legacy normalization.
 /// Normalization today is a non-lossy provider-prefix prepend, so the bare
 /// original remains recoverable from the canonical form plus `BareNormalized`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,7 +161,7 @@ pub struct ModelChangeEntry {
     pub input_source: Option<ModelInputSource>,
 }
 
-/// How a `ModelChangeEntry.model` canonical spec was produced (Phase 17.5).
+/// How a `ModelChangeEntry.model` canonical spec was produced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelInputSource {
@@ -173,8 +172,7 @@ pub enum ModelInputSource {
     BareNormalized,
 }
 
-/// Recorded thinking/reasoning level change (Phase 13
-/// `thinking_level_change` entry).
+/// Recorded thinking/reasoning level change (`thinking_level_change` entry).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThinkingLevelChangeEntry {
     pub id: String,
@@ -183,7 +181,7 @@ pub struct ThinkingLevelChangeEntry {
     pub level: crate::session_event::ThinkingLevel,
 }
 
-/// Bookmark or label attached to an entry (Phase 13 `label` entry). UI-visible;
+/// Bookmark or label attached to an entry (`label` entry). UI-visible;
 /// does not enter LLM context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LabelEntry {
@@ -203,7 +201,7 @@ pub enum LabelAction {
 }
 
 /// Branch summary preserving context when leaving or forking a branch
-/// (Phase 13 `branch_summary` entry). Context reconstruction and provider
+/// (`branch_summary` entry). Context reconstruction and provider
 /// conversion decide how the stored summary enters later turns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BranchSummaryEntry {
@@ -213,7 +211,7 @@ pub struct BranchSummaryEntry {
     pub summary: String,
 }
 
-/// All tree entry types (S9.3 + Phase 13.1 additive entries).
+/// All tree entry types in the additive format.
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -222,7 +220,7 @@ pub enum SessionEntry {
     Compaction(CompactionEntry),
     Leaf(LeafEntry),
     ExtensionState(ExtensionStateEntry),
-    /// Phase 13.1 additive metadata/context entries.
+    /// Additive metadata/context entries.
     SessionInfo(SessionInfoEntry),
     ModelChange(ModelChangeEntry),
     ThinkingLevelChange(ThinkingLevelChangeEntry),
@@ -267,8 +265,8 @@ impl SessionEntry {
 
 /// Crash recovery status returned by [`SessionReader`].
 ///
-/// Phase 13.1 splits the historical single enum into three independent
-/// observations so that **unknown future entry types** (forward-compatible
+/// Three independent observations keep **unknown future entry types**
+/// (forward-compatible
 /// additive entries a newer opi might write) are no longer bucketed as
 /// corruption. A clean load has all three fields zero/false.
 ///
@@ -418,6 +416,22 @@ impl SessionWriter {
         writeln!(self.file, "{json}")?;
         self.file.sync_all()
     }
+
+    /// Record the current durable append boundary for a multi-entry write.
+    pub fn checkpoint(&mut self) -> std::io::Result<u64> {
+        use std::io::{Seek, SeekFrom};
+
+        self.file.seek(SeekFrom::End(0))
+    }
+
+    /// Restore a previously recorded append boundary after a failed batch.
+    pub fn rollback_to(&mut self, checkpoint: u64) -> std::io::Result<()> {
+        use std::io::{Seek, SeekFrom};
+
+        self.file.set_len(checkpoint)?;
+        self.file.seek(SeekFrom::Start(checkpoint))?;
+        self.file.sync_all()
+    }
 }
 
 /// JSONL reader with crash recovery.
@@ -494,8 +508,7 @@ impl SessionReader {
                 continue;
             }
             // Parse to a `Value` first so an unrecognized `type` tag can be
-            // distinguished from genuine corruption. This is the Phase 13.1
-            // forward-compatibility path: an additive entry written by a newer
+            // distinguished from genuine corruption. An additive entry written by a newer
             // opi build is skipped and reported via `unknown_count`, never
             // fatal. A JSON object without a `type` field, or a known type tag
             // with a malformed payload, stays corrupt; only a present but

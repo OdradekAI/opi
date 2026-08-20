@@ -280,7 +280,6 @@ fn registry_resolves_all_builtin_providers() {
     use opi_ai::anthropic::AnthropicProvider;
     use opi_ai::azure_openai::AzureOpenAIProvider;
     use opi_ai::bedrock::BedrockProvider;
-    use opi_ai::bedrock::sigv4::AwsCredentials;
     use opi_ai::gemini::GeminiProvider;
     use opi_ai::http::HttpClient;
     use opi_ai::mistral::mistral_provider;
@@ -289,12 +288,6 @@ fn registry_resolves_all_builtin_providers() {
     use opi_ai::openrouter::openrouter_provider;
     use opi_ai::vertex::VertexProvider;
 
-    let bedrock_creds = AwsCredentials {
-        access_key_id: "AKIATEST".into(),
-        secret_access_key: "secret".into(),
-        session_token: None,
-        region: "us-east-1".into(),
-    };
     let azure = AzureOpenAIProvider::from_config(
         Some("https://example.openai.azure.com".into()),
         vec!["gpt-4o".into()],
@@ -316,7 +309,6 @@ fn registry_resolves_all_builtin_providers() {
     reg.register_provider(Box::new(GeminiProvider::new(None)))
         .unwrap();
     reg.register_provider(Box::new(BedrockProvider::new(
-        bedrock_creds,
         None,
         Arc::new(HttpClient::new()),
     )))

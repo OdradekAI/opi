@@ -1,5 +1,5 @@
-//! Interactive CLI harness (S8.4) and coding-agent product wrapper over the
-//! generic opi-agent runtime seams (Phase 10, Workstream 10.2).
+//! Interactive CLI harness and coding-agent product wrapper over the generic
+//! opi-agent runtime seams.
 //!
 //! `CodingHarness` is the coding-agent product wrapper. It composes
 //! coding-agent product inputs over the generic opi-agent runtime and owns the
@@ -23,6 +23,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use opi_agent::agent::ArmedAgentRun;
 use opi_agent::diagnostic::code::{
     CODE_SESSION_RESUME_MODEL_INCOMPATIBLE, CODE_SESSION_RESUME_ROUTE_AMBIGUOUS,
     CODE_SESSION_RESUME_ROUTE_MISSING, CODE_SESSION_RESUME_THINKING_INCOMPATIBLE,
@@ -79,7 +80,43 @@ use crate::prompt::SystemPromptBuilder;
 use crate::resource::{
     DiscoveryLayerKind, ExplicitResourcePaths, ResourceDiscoveryLayers, standard_discovery_layers,
 };
-use crate::session_coordinator::{SessionCoordinator, to_wire_result};
+
+/// Product auth-remediation view over both legacy product errors and the
+/// Agent Core's retained typed provider failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProviderAuthFailure<'a> {
+    CredentialNeeded(&'a str),
+    CredentialRevoked(&'a str),
+    AccountIdMissing(&'a str),
+}
+
+pub(crate) fn provider_auth_failure(error: &AgentError) -> Option<ProviderAuthFailure<'_>> {
+    match error {
+        AgentError::CredentialNeeded { provider_id } => {
+            Some(ProviderAuthFailure::CredentialNeeded(provider_id))
+        }
+        AgentError::CredentialRevoked { provider_id } => {
+            Some(ProviderAuthFailure::CredentialRevoked(provider_id))
+        }
+        AgentError::AccountIdMissing { provider_id } => {
+            Some(ProviderAuthFailure::AccountIdMissing(provider_id))
+        }
+        AgentError::Provider(failure) => match failure.provider_error() {
+            opi_ai::provider::ProviderError::CredentialNeeded { provider_id } => {
+                Some(ProviderAuthFailure::CredentialNeeded(provider_id))
+            }
+            opi_ai::provider::ProviderError::CredentialRevoked { provider_id } => {
+                Some(ProviderAuthFailure::CredentialRevoked(provider_id))
+            }
+            opi_ai::provider::ProviderError::AccountIdMissing { provider_id } => {
+                Some(ProviderAuthFailure::AccountIdMissing(provider_id))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+use crate::session_coordinator::{SessionBatchRollbackError, SessionCoordinator, to_wire_result};
 use crate::tool::{
     BashOperations, BashTool, EditTool, FileOperations, FindTool, GlobTool, GrepTool,
     LocalBashOperations, LocalFileOperations, LsTool, ReadTool, WriteTool, default_bash_schema,
@@ -87,21 +124,27 @@ use crate::tool::{
 };
 use tokio::sync::mpsc;
 
-/// Map a loop result's terminal outcome to the evidence manifest outcome
-/// (Phase 17.7). Success / cancellation / failure stay distinct.
-fn evidence_outcome<T>(result: &Result<T, AgentError>) -> opi_agent::evidence::TerminalOutcome {
-    match result {
-        Ok(_) => opi_agent::evidence::TerminalOutcome::Success,
-        Err(AgentError::Cancelled) => opi_agent::evidence::TerminalOutcome::Cancelled,
-        Err(_) => opi_agent::evidence::TerminalOutcome::Failed,
-    }
-}
-
 fn compaction_reason_name(reason: opi_agent::session_event::CompactionReason) -> &'static str {
     match reason {
         opi_agent::session_event::CompactionReason::Manual => "manual",
         opi_agent::session_event::CompactionReason::Threshold => "threshold",
         opi_agent::session_event::CompactionReason::Overflow => "overflow",
+    }
+}
+
+fn compaction_trigger(
+    reason: opi_agent::session_event::CompactionReason,
+) -> opi_agent::evidence::CompactionTrigger {
+    match reason {
+        opi_agent::session_event::CompactionReason::Manual => {
+            opi_agent::evidence::CompactionTrigger::Manual
+        }
+        opi_agent::session_event::CompactionReason::Threshold => {
+            opi_agent::evidence::CompactionTrigger::Threshold
+        }
+        opi_agent::session_event::CompactionReason::Overflow => {
+            opi_agent::evidence::CompactionTrigger::Overflow
+        }
     }
 }
 
@@ -139,6 +182,14 @@ fn permission_decision_name(decision: PermissionDecision) -> &'static str {
         PermissionDecision::Deny => "deny",
         PermissionDecision::Ask => "ask",
         PermissionDecision::Allow => "allow",
+    }
+}
+
+fn canonical_model_spec(provider_id: &str, input: &str) -> String {
+    if input.contains(':') {
+        input.to_owned()
+    } else {
+        format!("{provider_id}:{input}")
     }
 }
 
@@ -263,11 +314,6 @@ fn rebind_evidence_capture(
         &material_inputs,
         system_digest,
         tool_schema_digests,
-        opi_agent::evidence::RouteSelection {
-            provider_id: state.model_selection.provider_id,
-            model_id: state.model_selection.model_id,
-            wire: model.wire_api,
-        },
         opi_agent::evidence::Measurement::Known {
             value: u64::from(config.defaults.max_iterations),
             origin: opi_agent::evidence::MeasurementOrigin::Quota,
@@ -275,7 +321,7 @@ fn rebind_evidence_capture(
     );
 }
 
-/// Phase 16.9: resolved routed-execution inputs threaded into
+/// Resolved routed-execution inputs threaded into
 /// [`ExecutionRuntime::build`]. Production constructs this only after the early
 /// Minimal-Runtime/headless-refusal classifier. Tests may inject fixed-local
 /// fixtures to drive [`CodingHarness::build_tools`] at the runtime seam.
@@ -300,7 +346,7 @@ pub struct ExecutionWiring {
     /// Interactive `ask`-prompt broker. `None` is the fail-closed default: an
     /// interactive `ask` surfaces `permission_required` rather than dispatching
     /// or falling back to `local`. Headless modes install no broker; the
-    /// interactive startup path installs the TUI-backed broker (Phase 16.10).
+    /// interactive startup path installs the TUI-backed broker.
     pub broker: Option<Arc<dyn InteractivePermissionBroker>>,
 }
 
@@ -370,7 +416,7 @@ fn execution_wiring(
         host_opi_version,
         // Fresh per-harness manager (memory-only grants). The broker defaults to
         // None (fail-closed); the interactive startup path installs the
-        // TUI-backed broker (Phase 16.10 interactive wiring).
+        // TUI-backed broker.
         manager: new_permission_manager(),
         broker: None,
     })
@@ -578,12 +624,12 @@ pub struct ResumeInfo {
     pub original_cwd: PathBuf,
     /// Structured diagnostics observed while reading the resumed session.
     pub diagnostics: Vec<Diagnostic>,
-    /// Latest `model_change` recorded on the active branch (Phase 13.3), if
+    /// Latest `model_change` recorded on the active branch, if
     /// any. The harness re-applies it when compatible with the CLI/config
     /// provider, mirroring `CodingHarness::resume_session_id`.
     pub recorded_model: Option<String>,
-    /// Latest `thinking_level_change` recorded on the active branch (Phase
-    /// 13.3), if any. Re-applied when compatible with the active model.
+    /// Latest `thinking_level_change` recorded on the active branch, if any.
+    /// Re-applied when compatible with the active model.
     pub recorded_thinking: Option<ThinkingLevel>,
 }
 
@@ -596,15 +642,19 @@ pub struct ResumeInfo {
 /// storage, [`opi_ai::ProviderCollection`], and compaction.
 pub struct CodingHarness {
     agent: Agent,
+    /// Cancellation generation armed for the next public run. Product modes
+    /// clone its control surface before moving the harness into an async task;
+    /// the run consumes this exact generation before awaited preflight.
+    armed_run: Option<ArmedAgentRun>,
     config: OpiConfig,
     system_prompt: String,
     resources: HarnessResources,
-    /// The single dispatch + model-lookup collection (Phase 17.5). Serves
+    /// The single dispatch and model-lookup collection. Serves
     /// `model_info`, `model_picker_items`, and thinking-validation in addition
     /// to the Agent's dispatch path; the active provider is a real dispatchable
     /// route in it (no metadata proxy).
     model_registry: Arc<opi_ai::ProviderCollection>,
-    /// The dispatchable provider ids in [`Self::model_registry`] (Phase 17.8):
+    /// The dispatchable provider ids in [`Self::model_registry`]:
     /// the active route plus every extra route registered with an auth resolver.
     /// Lookup-only extension providers are excluded. Used by read-side legacy
     /// route normalization to prove exactly one dispatchable route for a bare
@@ -626,9 +676,9 @@ pub struct CodingHarness {
     /// Optional recording sink that captures runtime diagnostics (retry,
     /// cancellation, provider/tool failures) emitted during a run, so a run
     /// summary can report severity counts. `None` (the default) leaves the
-    /// diagnostic sink unset, preserving pre-7.5 behavior.
+    /// diagnostic sink unset.
     diagnostics: Option<Arc<RecordingSink>>,
-    /// Phase 17.7 evidence capture: the recorder + per-run binding facts used
+    /// Evidence capture: the recorder plus per-run binding facts used
     /// to assemble the finalized manifest. `None` is the capture-
     /// disabled no-op (Minimal Runtime); the Agent's evidence sink stays unset.
     evidence: Option<EvidenceCapture>,
@@ -639,13 +689,13 @@ pub struct CodingHarness {
     pub oauth_registry: Option<OAuthProviderRegistry>,
     pub(crate) oauth_endpoints: OAuthEndpointConfig,
     pub(crate) oauth_http_client: reqwest::Client,
-    /// In-memory capability-permission grants (Phase 16.10). Present only for
+    /// In-memory capability-permission grants. Present only for
     /// routed execution, shared with the routed bash backend, and reset on
     /// in-process session switches so an `allow-for-session` choice does not
     /// survive resume/fork/branch. Minimal and startup-refused execution use
     /// `None` and construct no permission state.
     pub(crate) permission_manager: Option<Arc<PermissionManager>>,
-    /// The interactive permission-prompt channel receiver (Phase 16.10).
+    /// The interactive permission-prompt channel receiver.
     /// `Some` only for interactive routed execution (the TUI broker is
     /// installed); taken by `run_interactive_tui` to drain prompt requests.
     /// Minimal Runtime and headless modes use `None`.
@@ -657,8 +707,8 @@ pub struct CodingHarness {
     session_dir_override: Option<PathBuf>,
 }
 
-/// Typed read-side remediation when a recorded route cannot be normalized
-/// against the dispatchable collection (Phase 17.8 / P17-MIG-002). Surfaced as
+/// Typed read-side failure when a recorded route cannot be normalized against
+/// the dispatchable collection. Surfaced as
 /// distinct diagnostic codes so callers can distinguish ambiguity from absence
 /// without parsing strings; resolution never dispatches a provider.
 enum RouteRemediation {
@@ -681,7 +731,7 @@ struct PendingThinkingChange {
     state: RuntimeThinkingState,
 }
 
-/// Aggregated live session metadata (Phase 13.4) surfaced by `/session info`
+/// Aggregated live session metadata surfaced by `/session info`
 /// and RPC `session_info`. Name and labels are UI-visible metadata that never
 /// enter provider context; `active_branch`, `model`, and `thinking` mirror the
 /// current runtime state.
@@ -868,16 +918,16 @@ pub struct CodingHarnessBuilder {
     installed_packages: Option<Vec<PackageResource>>,
     startup_diagnostics: Vec<Diagnostic>,
     record_diagnostics: bool,
-    /// Phase 17.7: opt-in evidence capture (recorder + direct-assembly source).
+    /// Opt-in evidence capture (recorder plus direct-assembly source).
     /// `None` is the capture-disabled no-op Minimal Runtime.
     evidence: Option<EvidenceBuilderConfig>,
     trust_decision: TrustDecision,
     execution_mode: ExecutionRunMode,
-    /// Phase 17.2: collection-owned auth resolver for the active dispatch route
+    /// Collection-owned auth resolver for the active dispatch route
     /// (production passes the `ProviderBundle` resolver; `None` defaults to a
     /// dummy static resolver so mock-provider tests dispatch via `prepare_call`).
     auth_resolver: Option<Arc<dyn opi_ai::auth::AuthResolver>>,
-    /// Phase 17.5: additional dispatchable routes (adapter + lazy auth resolver)
+    /// Additional dispatchable routes (adapter plus lazy auth resolver)
     /// constructed eagerly at startup. Registered alongside the active route so
     /// a cross-provider model switch resolves through the same collection.
     extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
@@ -982,25 +1032,25 @@ impl CodingHarnessBuilder {
     }
 
     /// Record runtime diagnostics during runs so a run summary can report
-    /// severity counts (Phase 7 task 7.5). Off by default; enabling installs a
+    /// severity counts. Off by default; enabling installs a
     /// [`RecordingSink`] on the agent with no other behavior change.
     pub fn record_diagnostics(mut self, enabled: bool) -> Self {
         self.record_diagnostics = enabled;
         self
     }
 
-    /// Enable evidence capture (Phase 17.7). When set, each prompt run binds the
+    /// Enable evidence capture. When set, each prompt run binds the
     /// recorder as the Agent's [`opi_agent::evidence::EvidenceSink`], calls
     /// `setup` before the run (fail-closed), and finalizes one strict
     /// `DirectRuntimeInput`-bound manifest after the run. `source` labels the
     /// direct-assembly origin (CLI / SDK / RPC). Absent capture is the no-op
-    /// Minimal Runtime (P17-EVD-006).
+    /// Minimal Runtime.
     pub fn evidence(mut self, config: EvidenceBuilderConfig) -> Self {
         self.evidence = Some(config);
         self
     }
 
-    /// Set the resolved project-trust decision (task 15.7). When
+    /// Set the resolved project-trust decision. When
     /// [`TrustDecision::Untrusted`], `discover_resources` skips the project
     /// resource layer and context-file discovery skips project `AGENTS.md`/
     /// `CLAUDE.md`. Only [`TrustDecision::Trusted`] loads project resources;
@@ -1010,7 +1060,7 @@ impl CodingHarnessBuilder {
         self
     }
 
-    /// Phase 16.9: set the execution run mode threaded into
+    /// Set the execution run mode threaded into
     /// `ExecutionRuntime::build`. Defaults to [`ExecutionRunMode::Interactive`];
     /// headless startup paths set this to `NonInteractive` (runner/text/NDJSON)
     /// or `Rpc` (RPC). It cannot be derived from `tool_config.run_mode`, which
@@ -1020,7 +1070,7 @@ impl CodingHarnessBuilder {
         self
     }
 
-    /// Phase 17.2: set the collection-owned auth resolver for the active
+    /// Set the collection-owned auth resolver for the active
     /// dispatch route. Production startup passes the `ProviderBundle` resolver
     /// (a `CredentialResolver`). When unset, the harness installs a dummy static
     /// resolver so mock-provider tests dispatch through `prepare_call` without
@@ -1030,7 +1080,7 @@ impl CodingHarnessBuilder {
         self
     }
 
-    /// Phase 17.5: attach additional dispatchable routes (adapter + lazy auth
+    /// Attach additional dispatchable routes (adapter plus lazy auth
     /// resolver) constructed eagerly at startup. Registered alongside the active
     /// route so a cross-provider model switch resolves without reconstructing
     /// the Agent.
@@ -1092,20 +1142,20 @@ struct HarnessBuildOptions {
     startup_diagnostics: Vec<Diagnostic>,
     tool_selection: ToolSelection,
     record_diagnostics: bool,
-    /// Phase 17.7: opt-in evidence capture (recorder + direct-assembly source).
+    /// Opt-in evidence capture (recorder plus direct-assembly source).
     evidence: Option<EvidenceBuilderConfig>,
     trust_decision: TrustDecision,
-    /// Phase 16.9: the run mode threaded into `ExecutionRuntime::build`.
+    /// The run mode threaded into `ExecutionRuntime::build`.
     /// Legacy constructors derive interactive/non-interactive from tool config;
     /// RPC remains available only through startup paths that set it explicitly.
     execution_mode: ExecutionRunMode,
-    /// Phase 17.2: the collection-owned auth resolver for the active dispatch
+    /// The collection-owned auth resolver for the active dispatch
     /// route. Production startup passes the `ProviderBundle` resolver (a
     /// `CredentialResolver`); when `None`, the harness installs a dummy static
     /// resolver so mock-provider tests dispatch through `prepare_call` without
     /// supplying credentials (the mock ignores the resolved auth).
     auth_resolver: Option<Arc<dyn opi_ai::auth::AuthResolver>>,
-    /// Phase 17.5: additional dispatchable routes (adapter + lazy auth resolver).
+    /// Additional dispatchable routes (adapter plus lazy auth resolver).
     extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     #[cfg(test)]
     session_dir_override: Option<PathBuf>,
@@ -1401,7 +1451,7 @@ impl CodingHarness {
             .as_ref()
             .map(|info| info.diagnostics.clone())
             .unwrap_or_default();
-        // Phase 17.5: gather extension providers + model overrides up front, and
+        // Gather extension providers plus model overrides up front, and
         // materialize the active provider's overrides onto the provider itself
         // while it is still mutable (before it becomes a dispatch route). The
         // registry override layer (built later by `build_harness_collection`)
@@ -1518,14 +1568,15 @@ impl CodingHarness {
                 )
             }
         };
-        // Phase 17.4: register the built-in Reference Product tools as trusted
-        // registrations with their fixed capabilities. Extension registrations
-        // retain their registry-owned origin before the product's exact-
-        // permission filter excludes them (Phase 17 adds no implicit extension
-        // permission). They are never combined with the product-owned built-in
-        // vector, so an extension named read/write/bash cannot acquire Builtin
-        // origin. The system-prompt projection uses only the permitted trusted
-        // registrations (AUT-008).
+        // Register the built-in Reference Product tools as trusted
+        // registrations with their fixed capabilities. Extension tools retain
+        // their registry-owned origin, but the product excludes them before
+        // registration because the product defines no implicit extension
+        // permission.
+        // They are never combined with the product-owned built-in vector, so an
+        // extension named read/write/bash cannot acquire Builtin origin. The
+        // system-prompt projection uses only the permitted trusted registrations
+        // (AUT-008).
         let registrations = crate::tool_authority::register_product_tools(tools, extension_tools);
         let tool_defs: Vec<_> = registrations.iter().map(|r| r.definition.clone()).collect();
 
@@ -1545,15 +1596,15 @@ impl CodingHarness {
             active_tool_names,
             mutating_allowed,
             command_execute_permission,
-            // P17-EVD-006/009: complete evidence is required iff capture is
+            // Complete evidence is required iff capture is
             // configured (CLI --trace / SDK embedder / RPC recording). The
             // closed mapping adds no config key; absent capture is the no-op
             // Minimal Runtime (complete_evidence_required = false).
             build_options.evidence.is_some(),
             crate::tool_authority::digest_of(&format!("{:?}", build_options.trust_decision)),
             crate::tool_authority::digest_of(&format!("{:?}", build_options.installed_packages)),
-            // Path/operation-scope fact: the workspace boundary anchor. A finer
-            // protected-path/workspace-scope digest can refine this in a later task.
+            // Path/operation-scope fact: the workspace boundary anchor. This
+            // policy does not encode a finer protected-path scope.
             workspace_scope_digest,
         ));
         // Capture the policy digest before it moves into the authorizer; the
@@ -1615,13 +1666,9 @@ impl CodingHarness {
         }
         let system_prompt = builder.build();
 
-        let model_for_capability_lookup = if model.contains(':') {
-            model.clone()
-        } else {
-            format!("{}:{model}", provider.id())
-        };
+        let model_for_capability_lookup = canonical_model_spec(provider.id(), &model);
 
-        // Phase 17.5: assemble the single dispatch + model-lookup collection.
+        // Assemble the single dispatch plus model-lookup collection.
         // The Agent routes every model call through this one collection via
         // `prepare_call` (route + auth resolved once per turn); the same
         // collection also serves model listing/picker/resolution, so a
@@ -1639,7 +1686,7 @@ impl CodingHarness {
         let mut routes = Vec::with_capacity(build_options.extra_routes.len() + 1);
         routes.push((provider, auth_resolver));
         routes.extend(build_options.extra_routes);
-        // Phase 17.8: the dispatchable provider ids are exactly the routes that
+        // The dispatchable provider ids are exactly the routes that
         // carry an auth resolver (active + extra); lookup-only extension
         // providers are not dispatchable. Captured before the collection build
         // consumes `routes`, so read-side legacy normalization can prove exactly
@@ -1710,7 +1757,7 @@ impl CodingHarness {
 
         // Capture recorded model/thinking up front so `resume` can still move
         // into SessionCoordinator::open_existing below. Applied after the
-        // harness is assembled (Phase 13.3).
+        // harness is assembled.
         let recorded_model = resume.as_ref().and_then(|info| info.recorded_model.clone());
         let recorded_thinking = resume.as_ref().and_then(|info| info.recorded_thinking);
 
@@ -1757,10 +1804,10 @@ impl CodingHarness {
             None
         };
 
-        // Phase 17.7: assemble the evidence capture (recorder + per-run binding
+        // Assemble the evidence capture (recorder plus per-run binding
         // facts) and bind the recorder as the Agent's
         // EvidenceSink so the loop emits through it. Absent capture leaves the
-        // sink unset (Minimal Runtime no-op, P17-EVD-006).
+        // sink unset (Minimal Runtime no-op).
         let evidence = build_options.evidence.map(|cfg| {
             let placeholder_digest = opi_agent::evidence::ContentDigest::from_hex(
                 crate::tool_authority::digest_of("pending per-run evidence binding"),
@@ -1795,6 +1842,7 @@ impl CodingHarness {
 
         let mut harness = Self {
             agent,
+            armed_run: None,
             config,
             system_prompt,
             resources,
@@ -1818,7 +1866,7 @@ impl CodingHarness {
             session_dir_override,
         };
 
-        // Phase 13.3: re-apply recorded model/thinking on the CLI --resume path
+        // Re-apply recorded model/thinking on the CLI --resume path
         // (and any other builder-driven resume), mirroring resume_session_id.
         // The diagnostic sink is already wired above so incompat warnings flow
         // through the same channel as the interactive path.
@@ -1857,11 +1905,7 @@ impl CodingHarness {
     }
 
     fn apply_agent_model(&mut self, model: &str) -> Result<(), String> {
-        let spec = if model.contains(':') {
-            model.to_owned()
-        } else {
-            format!("{}:{model}", self.agent.provider_id())
-        };
+        let spec = canonical_model_spec(self.agent.provider_id(), model);
         let selection = opi_agent::loop_types::ModelSelection::parse_spec(&spec)
             .ok_or_else(|| format!("invalid provider:model selection '{spec}'"))?;
         let mut candidate = self.agent.state_snapshot();
@@ -1879,23 +1923,71 @@ impl CodingHarness {
             .map_err(|error| error.to_string())
     }
 
-    fn rewind_agent_context(&mut self, len: usize) -> Result<(), String> {
+    fn rewind_agent_context(&mut self, len: usize) -> Result<(), AgentError> {
         let mut candidate = self.agent.state_snapshot();
         candidate.context.truncate(len);
-        self.agent
-            .replace_state(candidate)
-            .map_err(|error| error.to_string())
+        self.agent.replace_state(candidate)
+    }
+
+    fn committed_prefix_is_preserved(
+        run_messages: &[AgentMessage],
+        pre_run_state: &opi_agent::loop_types::NextTurnState,
+        offset: usize,
+    ) -> bool {
+        let Some(run_prefix) = run_messages.get(..offset) else {
+            return false;
+        };
+        let Some(committed_prefix) = pre_run_state.context.get(..offset) else {
+            return false;
+        };
+        match (
+            serde_json::to_value(run_prefix),
+            serde_json::to_value(committed_prefix),
+        ) {
+            (Ok(run_prefix), Ok(committed_prefix)) => run_prefix == committed_prefix,
+            _ => false,
+        }
+    }
+
+    fn reject_uncommitted_run(
+        &mut self,
+        result: &mut opi_agent::AgentRunResult,
+        pre_run_state: opi_agent::loop_types::NextTurnState,
+        offset: usize,
+        failure: AgentError,
+        evidence_detail: &str,
+    ) -> AgentError {
+        self.record_harness_diagnostic(Diagnostic::from(&failure));
+        if let Err(reconciliation_error) = self.agent.replace_state(pre_run_state) {
+            self.record_harness_diagnostic(Diagnostic::from(&reconciliation_error));
+        }
+        self.turn_offset = offset;
+        if self.evidence.is_some() {
+            let evidence_error = opi_agent::evidence::EvidenceError::Finalization {
+                detail: evidence_detail.to_owned(),
+            };
+            let cleanup = result.abandon_evidence(&evidence_error);
+            self.record_harness_diagnostic(Self::evidence_error_diagnostic(&evidence_error));
+            if let Err(cleanup) = cleanup {
+                self.record_harness_diagnostic(Diagnostic::from(
+                    &AgentError::EvidenceFinalization(format!(
+                        "evidence cleanup failed after session failure: {cleanup}"
+                    )),
+                ));
+            }
+        }
+        failure
     }
 
     /// Validate and change the model used by subsequent prompts.
     ///
     /// On success the change is also persisted as a `model_change` entry on the
-    /// active session branch (Phase 13.3), parented to the current content tip
+    /// active session branch, parented to the current content tip
     /// without advancing it. A later resume observes the recorded model and
     /// re-applies it when compatible with the CLI/config provider.
     pub fn set_model_validated(&mut self, model: String) -> Result<String, String> {
         self.try_configure_model(&model)?;
-        // Phase 17.5: normalize a bare model input to the canonical
+        // Normalize a bare model input to the canonical
         // `provider:model` spec before persisting, so the durable entry carries
         // BOTH the canonical selection and the distinct bare-source fact (a
         // bare input resumed under a different active provider would otherwise
@@ -1904,7 +1996,7 @@ impl CodingHarness {
             (model.clone(), ModelInputSource::Canonical)
         } else {
             (
-                format!("{}:{model}", self.agent.provider_id()),
+                canonical_model_spec(self.agent.provider_id(), &model),
                 ModelInputSource::BareNormalized,
             )
         };
@@ -1923,7 +2015,7 @@ impl CodingHarness {
     /// Used by [`Self::set_model_validated`] (persists) and by resume (applies a
     /// recorded model without re-persisting the entry).
     ///
-    /// Phase 17.5: a cross-provider model spec is accepted as long as it
+    /// A cross-provider model spec is accepted as long as it
     /// resolves to a registered route; dispatch resolves the route at the next
     /// `prepare_call`.
     fn try_configure_model(&mut self, model: &str) -> Result<(), String> {
@@ -1932,7 +2024,7 @@ impl CodingHarness {
         let model_spec = if model.contains(':') {
             model
         } else {
-            normalized = format!("{current_provider}:{model}");
+            normalized = canonical_model_spec(current_provider, model);
             if self.model_info(&normalized).is_some() {
                 &normalized
             } else {
@@ -1956,7 +2048,7 @@ impl CodingHarness {
     /// Change the thinking level used by subsequent provider requests.
     ///
     /// On success the change is also persisted as a `thinking_level_change`
-    /// entry on the active session branch (Phase 13.3), parented to the current
+    /// entry on the active session branch, parented to the current
     /// content tip without advancing it. A later resume observes the recorded
     /// level and re-applies it when compatible with the active model.
     pub fn set_thinking_level(&mut self, level: &str) -> Result<RuntimeThinkingState, String> {
@@ -2049,7 +2141,7 @@ impl CodingHarness {
             .map_err(|e| format!("thinking level write failed: {e}"))
     }
 
-    /// Set the session name (Phase 13.4 `/name <name>`). Persists a
+    /// Set the session name (`/name <name>`). Persists a
     /// `session_info` entry parented to the current content tip without
     /// advancing it. Best-effort: a failed metadata write does not roll back
     /// the in-memory name. Returns `Err` if no session is active.
@@ -2063,7 +2155,7 @@ impl CodingHarness {
             .map_err(|e| format!("session name write failed: {e}"))
     }
 
-    /// Add a label to the active branch (Phase 13.4 `/label <label>`). Persists
+    /// Add a label to the active branch (`/label <label>`). Persists
     /// a `label` entry with `Add` action parented to the current content tip
     /// without advancing it. Best-effort: a failed metadata write does not roll
     /// back the in-memory label set. Returns `Err` if no session is active.
@@ -2077,7 +2169,7 @@ impl CodingHarness {
             .map_err(|e| format!("label write failed: {e}"))
     }
 
-    /// Remove a label from the active branch (Phase 13.4 `/unlabel <label>`).
+    /// Remove a label from the active branch (`/unlabel <label>`).
     /// Persists a `label` entry with `Remove` action parented to the current
     /// content tip without advancing it. Returns `Err` if no session is active.
     pub fn remove_label(&mut self, label: String) -> Result<(), String> {
@@ -2090,7 +2182,7 @@ impl CodingHarness {
             .map_err(|e| format!("label write failed: {e}"))
     }
 
-    /// Aggregate the live session metadata (Phase 13.4 read path) surfaced by
+    /// Aggregate the live session metadata surfaced by
     /// `/session info` and RPC `session_info`: name, labels, active branch,
     /// model, and thinking config. Returns `None` when no session is active.
     pub fn session_metadata(&self) -> Option<SessionMetadata> {
@@ -2140,15 +2232,15 @@ impl CodingHarness {
 
     /// Resume an existing session by ID into this harness.
     ///
-    /// Reconstructs the active-branch context through the opi-agent context
-    /// API (Phase 13.2/13.3): messages drive the agent buffer; the latest
+    /// Reconstructs the active-branch context through the opi-agent context API:
+    /// messages drive the agent buffer; the latest
     /// recorded `model_change` and `thinking_level_change` on the active chain
     /// are re-applied when compatible with the CLI/config provider selection,
-    /// and a Phase 7 diagnostic is emitted (without aborting the resume) when
+    /// and a diagnostic is emitted (without aborting the resume) when
     /// they are not. Missing-parent warnings from the context builder are
     /// surfaced alongside the load-time recovery diagnostics.
     pub fn resume_session_id(&mut self, session_id: &str) -> Result<usize, String> {
-        // Phase 16.10: an allow-for-session grant must not survive a session
+        // An allow-for-session grant must not survive a session
         // switch. Reset on the boundary (re-prompt is the safe failure mode).
         if let Some(manager) = &self.permission_manager {
             manager.reset_grants();
@@ -2163,7 +2255,7 @@ impl CodingHarness {
         let session =
             crate::session_cli::resume_session(&dir, session_id).map_err(|e| e.to_string())?;
 
-        // Phase 13.3: build the agent buffer and metadata view through the
+        // Build the agent buffer and metadata view through the
         // reusable opi-agent context API instead of the product-only walker.
         let recovery = session.recovery.clone();
         let ctx = reconstruct_context(&session.entries, &recovery);
@@ -2173,7 +2265,7 @@ impl CodingHarness {
 
         // Apply recorded model/thinking metadata (latest-wins on the active
         // chain). Each branch keeps the CLI/config selection when the recorded
-        // value is incompatible and emits a Phase 7 diagnostic instead.
+        // value is incompatible and emits a diagnostic instead.
         self.apply_recorded_model(ctx.model.as_deref());
         self.apply_recorded_thinking(ctx.thinking_level);
 
@@ -2209,11 +2301,11 @@ impl CodingHarness {
 
     /// Re-apply a recorded `model_change` model spec on resume. Configures the
     /// agent in place without persisting a new entry (the entry is already in
-    /// the source session). Emits a Phase 7 diagnostic and keeps the CLI/config
+    /// the source session). Emits a diagnostic and keeps the CLI/config
     /// model when the recorded spec is incompatible.
     ///
-    /// Phase 17.8: a recorded spec is first normalized against the dispatchable
-    /// collection (P17-MIG-002). An exact `provider:model` route is accepted; a
+    /// A recorded spec is first normalized against the dispatchable collection.
+    /// An exact `provider:model` route is accepted; a
     /// legacy bare model normalizes to a canonical route only when exactly one
     /// dispatchable provider serves it. Ambiguity or absence returns typed
     /// remediation (distinct codes, no provider dispatch) and keeps the
@@ -2277,8 +2369,8 @@ impl CodingHarness {
             .expect("recorded model was validated before application");
     }
 
-    /// Normalize a recorded model spec against the dispatchable collection
-    /// (Phase 17.8 read-side migration, P17-MIG-002). An exact `provider:model`
+    /// Normalize a recorded model spec against the dispatchable collection. An
+    /// exact `provider:model`
     /// spec is accepted unchanged; a legacy bare model normalizes to a canonical
     /// route ONLY when exactly one dispatchable provider serves it. Ambiguity or
     /// absence returns typed remediation rather than guessing the active
@@ -2303,7 +2395,7 @@ impl CodingHarness {
     }
 
     /// Re-apply a recorded `thinking_level_change` on resume. Configures the
-    /// agent in place without persisting a new entry. Emits a Phase 7
+    /// agent in place without persisting a new entry. Emits a
     /// diagnostic and keeps the CLI/config thinking level when the recorded
     /// level is incompatible with the active model.
     fn apply_recorded_thinking(&mut self, recorded: Option<ThinkingLevel>) {
@@ -2337,7 +2429,7 @@ impl CodingHarness {
 
     /// Fork the active session into a new parented session and switch to it.
     pub fn fork_current_session(&mut self) -> Result<(String, usize), String> {
-        // Phase 16.10: grants do not survive a fork boundary.
+        // Grants do not survive a fork boundary.
         if let Some(manager) = &self.permission_manager {
             manager.reset_grants();
         }
@@ -2360,7 +2452,7 @@ impl CodingHarness {
         let message_count = ctx.messages.len();
         self.replace_agent_context(ctx.messages)?;
         self.defer_extension_state_from_entries(&forked.entries);
-        // Phase 17.8: re-apply the forked chain's recorded route (canonical
+        // Re-apply the forked chain's recorded route (canonical
         // accepted; legacy bare normalized against the dispatchable collection
         // or kept fail-closed with typed remediation), mirroring resume.
         self.apply_recorded_model(ctx.model.as_deref());
@@ -2441,7 +2533,7 @@ impl CodingHarness {
 
     /// Switch the current session to the branch ending at `tip_id`.
     pub fn resume_session_branch_tip(&mut self, tip_id: &str) -> Result<usize, String> {
-        // Phase 16.10: grants do not survive a branch switch.
+        // Grants do not survive a branch switch.
         if let Some(manager) = &self.permission_manager {
             manager.reset_grants();
         }
@@ -2471,7 +2563,7 @@ impl CodingHarness {
         let message_count = ctx.messages.len();
         self.replace_agent_context(ctx.messages)?;
         self.defer_extension_state_from_entries(&entries);
-        // Phase 17.8: re-apply the selected branch's recorded route (canonical
+        // Re-apply the selected branch's recorded route (canonical
         // accepted; legacy bare normalized against the dispatchable collection
         // or kept fail-closed with typed remediation), mirroring resume.
         self.apply_recorded_model(ctx.model.as_deref());
@@ -2503,35 +2595,26 @@ impl CodingHarness {
 
     /// Send a user prompt and run the agent loop.
     pub async fn prompt(&mut self, text: &str) -> Result<Vec<AgentMessage>, AgentError> {
+        let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
         self.restore_pending_extension_state().await;
-        self.setup_evidence_run()?;
         // C5: discard any unpersisted failed-turn user message before starting
         // a fresh turn so it is not absorbed into this turn's persistence slice.
         // (retry_last_prompt intentionally does NOT rewind — it reuses the
         // failed-turn user message after an interactive login.)
-        self.rewind_agent_context(self.turn_offset)
-            .map_err(AgentError::InvalidNextTurnCandidate)?;
+        self.rewind_agent_context(self.turn_offset)?;
+        self.setup_evidence_run()?;
         let offset = self.turn_offset;
-        let result = self.agent.prompt(text).await;
-        let outcome = evidence_outcome(&result);
-        let messages = match result {
-            Ok(m) => m,
-            Err(e) => {
-                if let Err(finalization) = self.finalize_evidence_run(outcome, &[], text) {
-                    return Err(AgentError::EvidenceFinalization(format!(
-                        "{finalization}; original run error: {e}"
-                    )));
-                }
-                return Err(e);
-            }
-        };
-        let new = &messages[offset..];
-        self.persist_turn(new, offset).await;
-        self.finalize_evidence_run(outcome, new, text)?;
-        let final_messages = self.current_messages();
-        self.turn_offset = final_messages.len();
-        Ok(final_messages)
+        let pre_run_state = self.agent.state_snapshot();
+        let result = self.agent.prompt_armed(text, run).await;
+        self.complete_agent_run(
+            result,
+            opi_agent::evidence::ExecutionTrigger::Invocation,
+            text,
+            offset,
+            pre_run_state,
+        )
+        .await
     }
 
     /// Send a user message with arbitrary content (text + images) and run the
@@ -2540,34 +2623,25 @@ impl CodingHarness {
         &mut self,
         content: Vec<opi_ai::message::InputContent>,
     ) -> Result<Vec<AgentMessage>, AgentError> {
+        let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
         self.restore_pending_extension_state().await;
-        self.setup_evidence_run()?;
         // C5: discard any unpersisted failed-turn user message before starting a
         // fresh turn (see `prompt`).
-        self.rewind_agent_context(self.turn_offset)
-            .map_err(AgentError::InvalidNextTurnCandidate)?;
+        self.rewind_agent_context(self.turn_offset)?;
+        self.setup_evidence_run()?;
         let offset = self.turn_offset;
+        let pre_run_state = self.agent.state_snapshot();
         let prompt_text = Self::render_input_content(&content);
-        let result = self.agent.prompt_with_content(content).await;
-        let outcome = evidence_outcome(&result);
-        let messages = match result {
-            Ok(m) => m,
-            Err(e) => {
-                if let Err(finalization) = self.finalize_evidence_run(outcome, &[], &prompt_text) {
-                    return Err(AgentError::EvidenceFinalization(format!(
-                        "{finalization}; original run error: {e}"
-                    )));
-                }
-                return Err(e);
-            }
-        };
-        let new = &messages[offset..];
-        self.persist_turn(new, offset).await;
-        self.finalize_evidence_run(outcome, new, &prompt_text)?;
-        let final_messages = self.current_messages();
-        self.turn_offset = final_messages.len();
-        Ok(final_messages)
+        let result = self.agent.prompt_with_content_armed(content, run).await;
+        self.complete_agent_run(
+            result,
+            opi_agent::evidence::ExecutionTrigger::Invocation,
+            &prompt_text,
+            offset,
+            pre_run_state,
+        )
+        .await
     }
 
     /// Retry the agent loop with the current messages (no new user message),
@@ -2575,57 +2649,119 @@ impl CodingHarness {
     /// The user message from the original `prompt`/`continue_` call is already
     /// in the agent's message list, so re-prompting would duplicate it.
     pub async fn retry_last_prompt(&mut self) -> Result<Vec<AgentMessage>, AgentError> {
+        let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
         self.restore_pending_extension_state().await;
         self.setup_evidence_run()?;
         let offset = self.turn_offset;
+        let pre_run_state = self.agent.state_snapshot();
         let prompt_text = Self::last_user_prompt_text(&self.agent.messages_snapshot());
-        let result = self.agent.retry_last_turn().await;
-        let outcome = evidence_outcome(&result);
-        let messages = match result {
-            Ok(m) => m,
-            Err(e) => {
-                if let Err(finalization) = self.finalize_evidence_run(outcome, &[], &prompt_text) {
-                    return Err(AgentError::EvidenceFinalization(format!(
-                        "{finalization}; original run error: {e}"
-                    )));
-                }
-                return Err(e);
-            }
-        };
-        let new = &messages[offset..];
-        self.persist_turn(new, offset).await;
-        self.finalize_evidence_run(outcome, new, &prompt_text)?;
-        let final_messages = self.current_messages();
-        self.turn_offset = final_messages.len();
-        Ok(final_messages)
+        let result = self.agent.retry_last_turn_armed(run).await;
+        self.complete_agent_run(
+            result,
+            opi_agent::evidence::ExecutionTrigger::Retry,
+            &prompt_text,
+            offset,
+            pre_run_state,
+        )
+        .await
     }
 
     /// Continue the conversation with an additional message.
     pub async fn continue_(&mut self, text: &str) -> Result<Vec<AgentMessage>, AgentError> {
+        let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
         self.restore_pending_extension_state().await;
+        // A continuation is also a fresh entry. Discard any unpersisted failed
+        // prompt/retry before appending its new user message.
+        self.rewind_agent_context(self.turn_offset)?;
         self.setup_evidence_run()?;
         let offset = self.turn_offset;
-        let result = self.agent.continue_(text).await;
-        let outcome = evidence_outcome(&result);
-        let messages = match result {
-            Ok(m) => m,
-            Err(e) => {
-                if let Err(finalization) = self.finalize_evidence_run(outcome, &[], text) {
-                    return Err(AgentError::EvidenceFinalization(format!(
-                        "{finalization}; original run error: {e}"
-                    )));
-                }
-                return Err(e);
+        let pre_run_state = self.agent.state_snapshot();
+        let result = self.agent.continue_armed(text, run).await;
+        self.complete_agent_run(
+            result,
+            opi_agent::evidence::ExecutionTrigger::Continuation,
+            text,
+            offset,
+            pre_run_state,
+        )
+        .await
+    }
+
+    /// Complete one prompt/retry/continuation as an ordered run transaction.
+    /// A successful execution persists and commits the live boundary before
+    /// evidence publication. Lifecycle failures remain secondary to an owning
+    /// execution error and are recorded separately by `finalize_evidence_run`.
+    async fn complete_agent_run(
+        &mut self,
+        mut result: opi_agent::AgentRunResult,
+        trigger: opi_agent::evidence::ExecutionTrigger,
+        prompt_text: &str,
+        offset: usize,
+        pre_run_state: opi_agent::loop_types::NextTurnState,
+    ) -> Result<Vec<AgentMessage>, AgentError> {
+        let run_messages = result.messages().to_vec();
+        let committed_prefix_preserved =
+            Self::committed_prefix_is_preserved(&run_messages, &pre_run_state, offset);
+        if self.session.is_some() && !committed_prefix_preserved {
+            let failure = AgentError::SessionPersist(
+                "prepared next-turn context did not preserve the committed session prefix"
+                    .to_owned(),
+            );
+            let execution_failed = result.error().is_some();
+            let failure = self.reject_uncommitted_run(
+                &mut result,
+                pre_run_state,
+                offset,
+                failure,
+                "session prefix validation failed before the run boundary committed",
+            );
+            if execution_failed {
+                return match result.into_execution_result() {
+                    Err(error) => Err(error),
+                    Ok(_) => Err(failure),
+                };
             }
+            return Err(failure);
+        }
+        let new_messages = if committed_prefix_preserved {
+            &run_messages[offset..]
+        } else {
+            &run_messages
         };
-        let new = &messages[offset..];
-        self.persist_turn(new, offset).await;
-        self.finalize_evidence_run(outcome, new, text)?;
-        let final_messages = self.current_messages();
-        self.turn_offset = final_messages.len();
-        Ok(final_messages)
+        let execution_succeeded = result.error().is_none();
+        let committed_messages = if execution_succeeded {
+            if let Err(persistence_error) =
+                self.persist_turn(&mut result, new_messages, offset).await
+            {
+                return Err(self.reject_uncommitted_run(
+                    &mut result,
+                    pre_run_state,
+                    offset,
+                    persistence_error,
+                    "session persistence failed before the run boundary committed",
+                ));
+            }
+            let committed = self.current_messages();
+            // Commit the live/persisted projection before evidence finalization
+            // so a publication failure cannot rewind durable turn bytes later.
+            self.turn_offset = committed.len();
+            Some(committed)
+        } else {
+            None
+        };
+
+        let evidence_result =
+            self.finalize_evidence_run(&mut result, trigger, new_messages, prompt_text);
+        let execution_result = result.into_execution_result();
+        match execution_result {
+            Err(error) => Err(error),
+            Ok(_) => {
+                evidence_result?;
+                Ok(committed_messages.expect("successful execution committed its live boundary"))
+            }
+        }
     }
 
     /// Sum usage across every assistant message produced during a turn.
@@ -2687,9 +2823,16 @@ impl CodingHarness {
     ///
     /// If compaction was triggered during persistence, this also rewrites
     /// the Agent's message buffer to `[summary, ...kept]` so subsequent
-    /// provider calls no longer carry the compacted history. Emits
-    /// `CompactionStart`/`CompactionEnd` events for subscribers.
-    async fn persist_turn(&mut self, messages: &[AgentMessage], turn_start_agent_index: usize) {
+    /// provider calls no longer carry the compacted history. The run's typed
+    /// compaction start must complete before that mutation; its matching
+    /// terminal records the actual result. Public `CompactionStart`/
+    /// `CompactionEnd` events mirror, but do not replace, that lifecycle.
+    async fn persist_turn(
+        &mut self,
+        run: &mut opi_agent::AgentRunResult,
+        messages: &[AgentMessage],
+        turn_start_agent_index: usize,
+    ) -> Result<(), AgentError> {
         if let Some(session) = &mut self.session {
             let usage = Self::aggregate_turn_usage(messages);
             let compaction_reason =
@@ -2699,61 +2842,106 @@ impl CodingHarness {
                         self.agent.emit_event(AgentEvent::SessionPersistError {
                             message: format!("session write failed: {e}"),
                         });
-                        return;
+                        return Err(AgentError::SessionPersist(e.to_string()));
                     }
                 };
 
             if let Some(reason) = compaction_reason {
-                self.agent
-                    .emit_event(AgentEvent::CompactionStart { reason });
-                // Emit a correlated Compaction evidence record in the run's
-                // graph (P17-EVD-002: compaction retains run/turn/call
-                // correlation and kind).
-                let _ = self
-                    .agent
-                    .emit_compaction_evidence(compaction_reason_name(reason));
-                match session.execute_compaction(reason) {
-                    Ok(Some(out)) => {
-                        let wire = to_wire_result(&out);
-                        self.record_harness_diagnostic(out.diagnostic.clone());
-                        let mut candidate = self.agent.state_snapshot();
-                        candidate.context = out.new_agent_messages;
+                match run.begin_compaction(compaction_trigger(reason)) {
+                    Ok(pending) => {
                         self.agent
-                            .replace_state(candidate)
-                            .expect("compaction must preserve the dispatchable route");
-                        self.agent.emit_event(AgentEvent::CompactionEnd {
-                            reason,
-                            result: Some(wire),
-                            aborted: false,
-                            error_message: None,
-                        });
+                            .emit_event(AgentEvent::CompactionStart { reason });
+                        let (outcome, event, session_error) = match session
+                            .execute_compaction(reason)
+                        {
+                            Ok(Some(out)) => {
+                                let wire = to_wire_result(&out);
+                                self.record_harness_diagnostic(out.diagnostic.clone());
+                                let mut candidate = self.agent.state_snapshot();
+                                candidate.context = out.new_agent_messages;
+                                self.agent
+                                    .replace_state(candidate)
+                                    .expect("compaction must preserve the dispatchable route");
+                                (
+                                    opi_agent::evidence::CompactionOutcome::Succeeded,
+                                    AgentEvent::CompactionEnd {
+                                        reason,
+                                        result: Some(wire),
+                                        aborted: false,
+                                        error_message: None,
+                                    },
+                                    None,
+                                )
+                            }
+                            Ok(None) => (
+                                opi_agent::evidence::CompactionOutcome::Aborted,
+                                AgentEvent::CompactionEnd {
+                                    reason,
+                                    result: None,
+                                    aborted: true,
+                                    error_message: Some("compaction produced no output".to_owned()),
+                                },
+                                None,
+                            ),
+                            Err(error) => {
+                                let outcome = if error
+                                    .get_ref()
+                                    .and_then(|source| {
+                                        source.downcast_ref::<SessionBatchRollbackError>()
+                                    })
+                                    .is_some()
+                                {
+                                    opi_agent::evidence::CompactionOutcome::CleanupUnknown
+                                } else {
+                                    opi_agent::evidence::CompactionOutcome::Failed
+                                };
+                                let message = format!("compaction write failed: {error}");
+                                (
+                                    outcome,
+                                    AgentEvent::CompactionEnd {
+                                        reason,
+                                        result: None,
+                                        aborted: true,
+                                        error_message: Some(format!(
+                                            "compaction persist failed: {error}"
+                                        )),
+                                    },
+                                    Some(AgentEvent::SessionPersistError { message }),
+                                )
+                            }
+                        };
+                        let terminal_emission_failed = if let Err(error) =
+                            run.finish_compaction(&pending, outcome)
+                        {
+                            self.record_harness_diagnostic(Self::evidence_error_diagnostic(&error));
+                            true
+                        } else {
+                            false
+                        };
+                        self.agent.emit_event(event);
+                        if let Some(session_error) = session_error {
+                            self.agent.emit_event(session_error);
+                        }
+                        if terminal_emission_failed {
+                            // The actual compaction result is already retained.
+                            // Stop before any unrelated post-compaction session
+                            // mutation; finalization owns the one abandonment.
+                            return Ok(());
+                        }
                     }
-                    Ok(None) => {
-                        self.agent.emit_event(AgentEvent::CompactionEnd {
-                            reason,
-                            result: None,
-                            aborted: true,
-                            error_message: Some("compaction produced no output".into()),
-                        });
-                    }
-                    Err(e) => {
-                        // Compaction marker failed to persist - leave in-memory
-                        // state un-compacted (SessionCoordinator already skipped
-                        // the mutation) and surface the error to subscribers.
-                        self.agent.emit_event(AgentEvent::CompactionEnd {
-                            reason,
-                            result: None,
-                            aborted: true,
-                            error_message: Some(format!("compaction persist failed: {e}")),
-                        });
-                        self.agent.emit_event(AgentEvent::SessionPersistError {
-                            message: format!("compaction write failed: {e}"),
-                        });
+                    Err(error) => {
+                        // No token means the typed start did not complete, so
+                        // no later session/context mutation or public lifecycle
+                        // is emitted. Finalization performs the single explicit
+                        // abandonment before the caller observes the failure.
+                        self.record_harness_diagnostic(Self::evidence_error_diagnostic(&error));
+                        return Ok(());
                     }
                 }
             }
         }
         self.persist_extension_state().await;
+        Ok(())
     }
 
     async fn persist_extension_state(&mut self) {
@@ -2813,8 +3001,8 @@ impl CodingHarness {
 
     /// Prepare the evidence sink before the run (fail-closed). A setup failure
     /// aborts the run as `AgentError::EvidenceSetup` before its first
-    /// provider/tool call so the run never starts with unprepared capture
-    /// (P17-EVD-007). No-op when capture is not configured.
+    /// provider/tool call so the run never starts with unprepared capture.
+    /// No-op when capture is not configured.
     fn setup_evidence_run(&mut self) -> Result<(), AgentError> {
         self.clear_run_diagnostics();
         if let Some(capture) = &mut self.evidence {
@@ -2837,12 +3025,15 @@ impl CodingHarness {
     /// manifest from the recorder's ordered records (call-graph correlation +
     /// route) plus the run's terminal `outcome` and finalizes it through the
     /// sink. If any lifecycle phase failed, or no provider call emitted
-    /// evidence, the manifest is withheld (P17-EVD-008); the actual execution
-    /// outcome is retained in the failure detail. `prompt_text` addresses the
-    /// prompt digest.
+    /// evidence, the manifest is withheld and provisional sink state is
+    /// explicitly abandoned, except that a typed cancellation record can
+    /// truthfully finalize a run cancelled before any provider call. The actual
+    /// execution outcome is retained in the failure detail. `prompt_text`
+    /// addresses the prompt digest.
     fn finalize_evidence_run(
         &mut self,
-        outcome: opi_agent::evidence::TerminalOutcome,
+        run: &mut opi_agent::AgentRunResult,
+        trigger: opi_agent::evidence::ExecutionTrigger,
         messages: &[AgentMessage],
         prompt_text: &str,
     ) -> Result<(), AgentError> {
@@ -2850,74 +3041,153 @@ impl CodingHarness {
             return Ok(());
         };
         let recorder = capture.recorder.clone();
-        // A failed setup/emission phase withholds the manifest (P17-EVD-008).
-        if recorder.has_failure() {
-            return Err(AgentError::EvidenceFinalization(
-                "evidence recorder became incomplete before finalization".to_owned(),
-            ));
-        }
-        let records = recorder.records();
-        if records.is_empty() {
-            // No provider call emitted evidence: there is no graph to finalize.
-            return Err(AgentError::EvidenceFinalization(
-                "evidence recorder produced no records".to_owned(),
-            ));
-        }
-        let (input_tokens, output_tokens) = Self::reported_token_usage(messages);
-        let usage = usage_facts(input_tokens, output_tokens);
-        let session_branch = self
-            .session
-            .as_ref()
-            .and_then(SessionCoordinator::active_branch_id)
-            .map(|tip| opi_agent::evidence::SessionBranchRef::new(tip.to_owned()));
-        let prompt_digest = opi_agent::evidence::ContentDigest::from_hex(
-            crate::tool_authority::digest_of(prompt_text),
-        )
-        .expect("digest_of returns canonical SHA-256 hex");
-        let dynamic = RunDynamicFacts {
-            outcome,
-            usage,
-            session_branch,
-            prompt_digest,
-            actual_route: Self::actual_route_from_messages(messages, &capture.configured_route),
+        let manifest = (|| -> Result<_, opi_agent::evidence::EvidenceError> {
+            // A failed setup/emission phase withholds the manifest and requires
+            // explicit sink abandonment.
+            if recorder.has_failure() {
+                return Err(opi_agent::evidence::EvidenceError::Finalization {
+                    detail: "evidence recorder became incomplete before finalization".to_owned(),
+                });
+            }
+            let records = recorder.records();
+            if records.is_empty() {
+                // No provider call emitted evidence: there is no graph to
+                // finalize, but setup still created provisional sink state.
+                return Err(opi_agent::evidence::EvidenceError::Finalization {
+                    detail: "evidence recorder produced no records".to_owned(),
+                });
+            }
+            let (input_tokens, output_tokens) = Self::reported_token_usage(messages);
+            let usage = usage_facts(input_tokens, output_tokens);
+            let session = match self
+                .session
+                .as_ref()
+                .and_then(SessionCoordinator::active_branch_id)
+            {
+                Some(tip) => opi_agent::evidence::SessionBinding::branch(tip.to_owned()).map_err(
+                    |error| opi_agent::evidence::EvidenceError::Finalization {
+                        detail: error.to_string(),
+                    },
+                )?,
+                None => opi_agent::evidence::SessionBinding::NoSession,
+            };
+            let prompt_digest = opi_agent::evidence::ContentDigest::from_hex(
+                crate::tool_authority::digest_of(prompt_text),
+            )
+            .expect("digest_of returns canonical SHA-256 hex");
+            let dynamic = RunDynamicFacts {
+                outcome: run.terminal_outcome().clone(),
+                usage,
+                session,
+                prompt_digest,
+                trigger,
+            };
+            build_finalized_manifest(capture, &records, dynamic)
+        })();
+
+        let manifest = match manifest {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                let cleanup = run.abandon_evidence(&error);
+                let owning = AgentError::EvidenceFinalization(error.to_string());
+                self.record_harness_diagnostic(Diagnostic::from(&owning));
+                if let Err(cleanup) = cleanup {
+                    self.record_harness_diagnostic(Diagnostic::from(
+                        &AgentError::EvidenceFinalization(format!(
+                            "evidence cleanup failed after finalization failure: {cleanup}"
+                        )),
+                    ));
+                }
+                return Err(owning);
+            }
         };
-        let manifest = build_finalized_manifest(capture, &records, dynamic);
-        // The strict completeness gate withholds an incomplete manifest rather
-        // than finalizing one with a missing/wrong binding (P17-EVD-003).
-        manifest
-            .require_complete()
-            .map_err(|error| AgentError::EvidenceFinalization(error.to_string()))?;
         // A finalization failure marks the run incomplete (manifest withheld);
-        // the run's actual outcome is already preserved (P17-EVD-008).
-        recorder
-            .finalize_run(&manifest)
-            .map_err(|error| AgentError::EvidenceFinalization(error.to_string()))
+        // the run's actual outcome is already preserved.
+        run.finalize_evidence(&manifest).map_err(|error| {
+            let owning = AgentError::EvidenceFinalization(error.to_string());
+            self.record_harness_diagnostic(Diagnostic::from(&owning));
+            if let Some(cleanup) = run.evidence_cleanup_error() {
+                self.record_harness_diagnostic(Diagnostic::from(
+                    &AgentError::EvidenceFinalization(format!(
+                        "evidence cleanup failed after finalization failure: {cleanup}"
+                    )),
+                ));
+            }
+            owning
+        })
     }
 
-    fn actual_route_from_messages(
-        messages: &[AgentMessage],
-        configured: &opi_agent::evidence::RouteSelection,
-    ) -> Option<opi_agent::evidence::RouteSelection> {
-        messages.iter().rev().find_map(|message| {
-            let AgentMessage::Llm(Message::Assistant(assistant)) = message else {
-                return None;
+    fn finalize_standalone_compaction_evidence(
+        &self,
+        outcome: opi_agent::evidence::TerminalOutcome,
+        reason: opi_agent::session_event::CompactionReason,
+        prompt_text: &str,
+    ) -> Result<(), opi_agent::evidence::EvidenceError> {
+        let Some(capture) = self.evidence.as_ref() else {
+            return Ok(());
+        };
+        let records = capture.recorder.records();
+        let session =
+            match self
+                .session
+                .as_ref()
+                .and_then(SessionCoordinator::active_branch_id)
+            {
+                Some(tip) => opi_agent::evidence::SessionBinding::branch(tip.to_owned()).map_err(
+                    |error| opi_agent::evidence::EvidenceError::Finalization {
+                        detail: error.to_string(),
+                    },
+                )?,
+                None => opi_agent::evidence::SessionBinding::NoSession,
             };
-            let provider_id = assistant.provider.trim();
-            let model_id = assistant
-                .response_model
-                .as_deref()
-                .filter(|model| !model.trim().is_empty())
-                .unwrap_or(&assistant.model)
-                .trim();
-            if provider_id.is_empty() || model_id.is_empty() {
-                return None;
-            }
-            Some(opi_agent::evidence::RouteSelection {
-                provider_id: provider_id.to_owned(),
-                model_id: model_id.to_owned(),
-                wire: configured.wire,
-            })
-        })
+        let dynamic = RunDynamicFacts {
+            outcome,
+            usage: usage_facts(None, None),
+            session,
+            prompt_digest: opi_agent::evidence::ContentDigest::from_hex(
+                crate::tool_authority::digest_of(prompt_text),
+            )
+            .expect("digest_of returns canonical SHA-256 hex"),
+            trigger: opi_agent::evidence::ExecutionTrigger::Compaction {
+                reason: compaction_trigger(reason),
+            },
+        };
+        let manifest = build_finalized_manifest(capture, &records, dynamic)?;
+        capture.recorder.finalize_run(&manifest)
+    }
+
+    fn complete_standalone_compaction_evidence(
+        &mut self,
+        reason: opi_agent::session_event::CompactionReason,
+        compaction_outcome: opi_agent::evidence::CompactionOutcome,
+        terminal_outcome: opi_agent::evidence::TerminalOutcome,
+        prompt_text: &str,
+    ) -> Result<(), opi_agent::evidence::EvidenceError> {
+        let result = self
+            .emit_manual_compaction_evidence(reason, compaction_outcome)
+            .and_then(|()| {
+                self.finalize_standalone_compaction_evidence(
+                    terminal_outcome.clone(),
+                    reason,
+                    prompt_text,
+                )
+            });
+        let Err(owning) = result else {
+            return Ok(());
+        };
+
+        let recorder = self
+            .evidence
+            .as_ref()
+            .map(|capture| capture.recorder.clone());
+        if let Some(recorder) = recorder
+            && let Err(cleanup) = recorder.abandon_run(&terminal_outcome)
+        {
+            self.record_harness_diagnostic(Diagnostic::from(&AgentError::EvidenceFinalization(
+                format!("evidence cleanup failed after standalone compaction failure: {cleanup}"),
+            )));
+        }
+        Err(owning)
     }
 
     /// Render user input content to a stable prompt-identity string (text parts
@@ -2954,8 +3224,7 @@ impl CodingHarness {
 
     /// Aggregate provider-reported token usage across a turn's assistant
     /// messages. Returns `None` for input/output when no message reported usage,
-    /// so an unknown measurement stays distinct from a measured zero
-    /// (P17-EVD-004).
+    /// so an unknown measurement stays distinct from a measured zero.
     fn reported_token_usage(messages: &[AgentMessage]) -> (Option<u64>, Option<u64>) {
         let mut input: u64 = 0;
         let mut output: u64 = 0;
@@ -3009,22 +3278,22 @@ impl CodingHarness {
         self.agent.model()
     }
 
-    /// Return the canonical `provider:model` spec for the active selection
-    /// (Phase 17.5). Use this for any persisted or reported surface (session
+    /// Return the canonical `provider:model` spec for the active selection. Use
+    /// this for any persisted or reported surface (session
     /// summary, RPC responses, session metadata); [`CodingHarness::model`]
     /// returns only the bare model-id half and mirrors [`Agent::model`].
     pub fn model_spec(&self) -> String {
         self.agent.model_spec()
     }
 
-    /// Return the current thinking configuration (Phase 13.3 read-side accessor
-    /// used to verify that a resumed `thinking_level_change` was applied).
+    /// Return the current thinking configuration, including a resumed
+    /// `thinking_level_change` when one was applied.
     pub fn thinking_config(&self) -> ThinkingConfig {
         self.agent.thinking_config()
     }
 
     /// Return the diagnostics recorded during the run, when diagnostic
-    /// recording is enabled. Includes resume-emitted Phase 7 warnings such as
+    /// recording is enabled. Includes resume-emitted warnings such as
     /// incompatible recorded `model_change`/`thinking_level_change`.
     pub fn recorded_diagnostics(&self) -> Vec<Diagnostic> {
         self.diagnostics
@@ -3127,19 +3396,39 @@ impl CodingHarness {
         self.agent.abort();
     }
 
-    /// Return a clonable cancellation token for external cancellation.
-    pub fn cancel_token(&self) -> tokio_util::sync::CancellationToken {
-        self.agent.cancel_token()
+    /// Arm the next run and return its cancellation token.
+    pub fn cancel_token(&mut self) -> tokio_util::sync::CancellationToken {
+        self.ensure_run_armed();
+        self.armed_run
+            .as_ref()
+            .expect("run was armed")
+            .cancel_token()
     }
 
-    /// Return a clonable control handle for an active agent turn.
-    pub fn control_handle(&self) -> opi_agent::agent::AgentControl {
-        self.agent.control_handle()
+    /// Arm the next run and return a control handle targeting that generation.
+    pub fn control_handle(&mut self) -> opi_agent::agent::AgentControl {
+        self.ensure_run_armed();
+        self.agent
+            .control_handle_for_run(self.armed_run.as_ref().expect("run was armed"))
+            .expect("harness run was armed by this Agent and remains latest")
     }
 
     /// Reset cancellation state before cloning a control handle for a new turn.
     pub fn reset_cancel_if_cancelled(&mut self) {
+        self.armed_run = None;
         self.agent.reset_cancel_if_cancelled();
+    }
+
+    fn ensure_run_armed(&mut self) {
+        if self.armed_run.is_none() {
+            self.armed_run = Some(self.agent.arm_run());
+        }
+    }
+
+    fn take_or_arm_run(&mut self) -> ArmedAgentRun {
+        self.armed_run
+            .take()
+            .unwrap_or_else(|| self.agent.arm_run())
     }
 
     /// Return the session coordinator, if active.
@@ -3183,14 +3472,14 @@ impl CodingHarness {
             Ok(result) => result,
             Err(error) => {
                 let original = format!("compaction failed: {error}");
-                self.emit_manual_compaction_evidence(reason, false)
-                    .map_err(|evidence| format!("{original}; {evidence}"))?;
-                self.finalize_evidence_run(
+                if let Err(evidence) = self.complete_standalone_compaction_evidence(
+                    reason,
+                    opi_agent::evidence::CompactionOutcome::Failed,
                     opi_agent::evidence::TerminalOutcome::Failed,
-                    &[],
                     &format!("manual-compaction:{}", compaction_reason_name(reason)),
-                )
-                .map_err(|evidence| format!("{original}; {evidence}"))?;
+                ) {
+                    self.record_harness_diagnostic(Self::evidence_error_diagnostic(&evidence));
+                }
                 return Err(original);
             }
         };
@@ -3200,11 +3489,10 @@ impl CodingHarness {
                 let diagnostic = out.diagnostic.clone();
                 self.record_harness_diagnostic(diagnostic.clone());
                 self.replace_agent_context(out.new_agent_messages)?;
-                self.emit_manual_compaction_evidence(reason, true)
-                    .map_err(|error| error.to_string())?;
-                self.finalize_evidence_run(
+                self.complete_standalone_compaction_evidence(
+                    reason,
+                    opi_agent::evidence::CompactionOutcome::Succeeded,
                     opi_agent::evidence::TerminalOutcome::Success,
-                    &[],
                     &format!("manual-compaction:{}", compaction_reason_name(reason)),
                 )
                 .map_err(|error| error.to_string())?;
@@ -3214,11 +3502,10 @@ impl CodingHarness {
                 let error = opi_agent::compaction::CompactionError::NothingToCompact;
                 let diagnostic = Diagnostic::from(&error);
                 self.record_harness_diagnostic(diagnostic.clone());
-                self.emit_manual_compaction_evidence(reason, false)
-                    .map_err(|error| error.to_string())?;
-                self.finalize_evidence_run(
+                self.complete_standalone_compaction_evidence(
+                    reason,
+                    opi_agent::evidence::CompactionOutcome::Aborted,
                     opi_agent::evidence::TerminalOutcome::Success,
-                    &[],
                     &format!("manual-compaction:{}", compaction_reason_name(reason)),
                 )
                 .map_err(|error| error.to_string())?;
@@ -3230,33 +3517,57 @@ impl CodingHarness {
     fn emit_manual_compaction_evidence(
         &self,
         reason: opi_agent::session_event::CompactionReason,
-        produced_output: bool,
-    ) -> Result<(), AgentError> {
+        outcome: opi_agent::evidence::CompactionOutcome,
+    ) -> Result<(), opi_agent::evidence::EvidenceError> {
         let Some(capture) = self.evidence.as_ref() else {
             return Ok(());
         };
         let mut identities = opi_agent::evidence::IdentityAllocator::new();
-        let record = opi_agent::evidence::EvidenceRecord {
+        let call = identities.next_call();
+        let trigger = compaction_trigger(reason);
+        let started = opi_agent::evidence::EvidenceRecord {
             run: identities.run_id(),
             turn: None,
-            call: identities.next_call(),
+            call,
             parent: None,
             sequence: identities.next_sequence(),
             kind: opi_agent::evidence::CallKind::Compaction,
-            payload: opi_agent::evidence::EvidencePayload::Structured(
-                opi_agent::evidence::RedactedValue::redacted(
-                    serde_json::json!({
-                        "reason": compaction_reason_name(reason),
-                        "produced_output": produced_output,
-                    }),
-                    RedactionMode::Summary,
-                ),
+            payload: opi_agent::evidence::EvidencePayload::Compaction(
+                opi_agent::evidence::CompactionEvidenceFacts::started(trigger),
             ),
         };
-        capture
-            .recorder
-            .emit(&record)
-            .map_err(|error| AgentError::EvidenceFinalization(error.to_string()))
+        capture.recorder.emit(&started)?;
+        let terminal = opi_agent::evidence::EvidenceRecord {
+            run: identities.run_id(),
+            turn: None,
+            call,
+            parent: None,
+            sequence: identities.next_sequence(),
+            kind: opi_agent::evidence::CallKind::Compaction,
+            payload: opi_agent::evidence::EvidencePayload::Compaction(
+                opi_agent::evidence::CompactionEvidenceFacts::terminal(trigger, outcome),
+            ),
+        };
+        capture.recorder.emit(&terminal)
+    }
+
+    fn evidence_error_diagnostic(error: &opi_agent::evidence::EvidenceError) -> Diagnostic {
+        match error {
+            opi_agent::evidence::EvidenceError::Setup { .. } => {
+                Diagnostic::from(&AgentError::EvidenceSetup(error.to_string()))
+            }
+            opi_agent::evidence::EvidenceError::Emission { .. } => Diagnostic::new(
+                Severity::Error,
+                opi_agent::diagnostic::code::CODE_EVIDENCE_EMISSION_FAILED,
+                opi_agent::diagnostic::SOURCE_AGENT,
+                "evidence emission failed",
+            )
+            .details(serde_json::json!({ "evidence_error": error.to_string() }))
+            .action("check evidence capture completeness and destination durability"),
+            opi_agent::evidence::EvidenceError::Finalization { .. } => {
+                Diagnostic::from(&AgentError::EvidenceFinalization(error.to_string()))
+            }
+        }
     }
 
     /// Execute manual compaction on the session, if one is active.
@@ -3272,14 +3583,14 @@ impl CodingHarness {
 
     /// Construct the eight built-in tools, filtered to the active selection.
     ///
-    /// Phase 15 T5 + 16.9: `build_tools` constructs the local Operations defaults
+    /// `build_tools` constructs the local Operations defaults
     /// (`LocalFileOperations` / `LocalBashOperations`), threads the resolved
     /// execution context through [`ExecutionRuntime::build`], and injects the
     /// selected [`BashOperations`] plus the dynamic bash schema into the
     /// production `BashTool`. The four navigation tools (`grep`/`find`/`ls`/
     /// `glob`) keep their local-walk constructors unchanged — their `ignore`-
     /// crate walker cannot be cleanly redirected to a backend. Returns any
-    /// execution-startup diagnostics (Phase 16.9) so they surface in
+    /// execution-startup diagnostics so they surface in
     /// interactive, non-interactive, and RPC modes.
     pub fn build_tools(
         workspace_root: &Path,
@@ -3450,10 +3761,10 @@ impl CodingHarness {
         let mut layers = resource_layers.unwrap_or_else(|| {
             standard_discovery_layers(workspace_root, user_config_dir, explicit)
         });
-        // T6 gate (task 15.7): an untrusted project skips its project layer
+        // An untrusted project skips its project layer
         // (skills/fragments/themes/extensions/packages) so project-local
         // resources cannot resolve. User-global and explicit layers remain; this
-        // same seam is the Phase 16 `/skill:`/`/fragment:` filter point.
+        // is also the `/skill:`/`/fragment:` filter point.
         if !matches!(trust_decision, TrustDecision::Trusted) {
             for kind_layers in [
                 &mut layers.extensions,
@@ -3796,8 +4107,668 @@ impl AgentHooks for InteractiveCodingHooks {
 }
 
 #[cfg(test)]
+mod route_normalization_tests {
+    use super::canonical_model_spec;
+
+    #[test]
+    fn canonical_model_spec_preserves_caller_owned_identity_semantics() {
+        assert_eq!(canonical_model_spec("alpha", "model"), "alpha:model");
+        assert_eq!(canonical_model_spec("alpha", "beta:model"), "beta:model");
+        assert_eq!(canonical_model_spec("alpha", "beta:"), "beta:");
+    }
+}
+
+#[cfg(test)]
 mod permission_boundary_tests {
     use super::*;
+
+    const PRESERVE_PREFIX: usize = 0;
+    const REPLACE_WITH_SHORTER_CONTEXT: usize = 1;
+    const REWRITE_COMMITTED_PREFIX: usize = 2;
+    const REWRITE_COMMITTED_PREFIX_AND_CONTINUE: usize = 3;
+
+    struct ReplaceCommittedPrefixHooks {
+        replacement: Arc<std::sync::atomic::AtomicUsize>,
+        stop_after_replacement: std::sync::atomic::AtomicBool,
+    }
+
+    impl AgentHooks for ReplaceCommittedPrefixHooks {
+        fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+            Ok(agent_messages_to_llm(messages))
+        }
+
+        fn should_stop_after_turn(
+            &self,
+            _ctx: opi_agent::hooks::ShouldStopAfterTurnContext,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>> {
+            let stop = self
+                .stop_after_replacement
+                .swap(false, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async move { stop })
+        }
+
+        fn prepare_next_turn(
+            &self,
+            ctx: opi_agent::hooks::PrepareNextTurnContext,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<Option<opi_agent::loop_types::NextTurnState>, AgentError>,
+                    > + Send,
+            >,
+        > {
+            let replacement = self
+                .replacement
+                .swap(PRESERVE_PREFIX, std::sync::atomic::Ordering::SeqCst);
+            if matches!(
+                replacement,
+                REPLACE_WITH_SHORTER_CONTEXT | REWRITE_COMMITTED_PREFIX
+            ) {
+                self.stop_after_replacement
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            Box::pin(async move {
+                let mut candidate = ctx.state;
+                match replacement {
+                    PRESERVE_PREFIX => return Ok(None),
+                    REPLACE_WITH_SHORTER_CONTEXT => candidate.context.truncate(1),
+                    REWRITE_COMMITTED_PREFIX | REWRITE_COMMITTED_PREFIX_AND_CONTINUE => {
+                        candidate.context[0] =
+                            AgentMessage::Llm(Message::User(opi_ai::message::UserMessage {
+                                content: vec![opi_ai::message::InputContent::Text {
+                                    text: "rewritten committed prefix".to_owned(),
+                                }],
+                                timestamp_ms: 0,
+                            }));
+                    }
+                    other => panic!("unknown test replacement mode {other}"),
+                }
+                candidate.inference.max_tokens = Some(17);
+                candidate.inference.temperature = Some(0.25);
+                Ok(Some(candidate))
+            })
+        }
+    }
+
+    async fn assert_committed_prefix_replacement_is_rejected(replacement: usize) {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![
+                opi_ai::test_support::text_response("baseline response"),
+                opi_ai::test_support::text_response("rejected response"),
+                opi_ai::test_support::text_response("recovered response"),
+            ],
+        );
+        let replacement_mode = Arc::new(std::sync::atomic::AtomicUsize::new(PRESERVE_PREFIX));
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".to_owned(),
+            OpiConfig::default(),
+            workspace.path().to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .hooks(Box::new(ReplaceCommittedPrefixHooks {
+            replacement: replacement_mode.clone(),
+            stop_after_replacement: std::sync::atomic::AtomicBool::new(false),
+        }))
+        .build();
+        harness.prompt("baseline prompt").await.unwrap();
+
+        let session_path = harness.session().unwrap().session_path().to_path_buf();
+        let session_before = std::fs::read(&session_path).unwrap();
+        let state_before = harness.agent.state_snapshot();
+        let offset_before = harness.turn_offset;
+        replacement_mode.store(replacement, std::sync::atomic::Ordering::SeqCst);
+
+        let error = harness
+            .prompt("rejected prompt")
+            .await
+            .expect_err("a session-backed run cannot replace its committed prefix");
+        assert!(matches!(error, AgentError::SessionPersist(_)));
+        assert_eq!(std::fs::read(&session_path).unwrap(), session_before);
+        let state_after = harness.agent.state_snapshot();
+        assert_eq!(
+            serde_json::to_value(&state_after.context).unwrap(),
+            serde_json::to_value(&state_before.context).unwrap()
+        );
+        assert_eq!(state_after.model_selection, state_before.model_selection);
+        assert_eq!(
+            state_after.inference.max_tokens,
+            state_before.inference.max_tokens
+        );
+        assert_eq!(
+            state_after.inference.temperature,
+            state_before.inference.temperature
+        );
+        assert_eq!(
+            state_after.inference.thinking.enabled,
+            state_before.inference.thinking.enabled
+        );
+        assert_eq!(
+            state_after.inference.thinking.budget_tokens,
+            state_before.inference.thinking.budget_tokens
+        );
+        assert_eq!(
+            state_after.inference.thinking.level,
+            state_before.inference.thinking.level
+        );
+        assert_eq!(harness.turn_offset, offset_before);
+
+        harness.prompt("recovered prompt").await.unwrap();
+        let recovered = String::from_utf8(std::fs::read(&session_path).unwrap()).unwrap();
+        assert!(!recovered.contains("rejected prompt"));
+        assert!(recovered.contains("recovered prompt"));
+    }
+
+    #[tokio::test]
+    async fn shorter_prepared_context_cannot_replace_committed_session_prefix() {
+        assert_committed_prefix_replacement_is_rejected(REPLACE_WITH_SHORTER_CONTEXT).await;
+    }
+
+    #[tokio::test]
+    async fn rewritten_prepared_context_cannot_replace_committed_session_prefix() {
+        assert_committed_prefix_replacement_is_rejected(REWRITE_COMMITTED_PREFIX).await;
+    }
+
+    #[tokio::test]
+    async fn credential_failure_owns_prefix_violation_and_restores_committed_state() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let evidence = tempfile::tempdir().unwrap();
+        let provider = opi_ai::test_support::MockProvider::new_with_errors(
+            "mock",
+            vec![
+                opi_ai::test_support::MockResponse::Events(opi_ai::test_support::text_response(
+                    "baseline response",
+                )),
+                opi_ai::test_support::MockResponse::Events(opi_ai::test_support::text_response(
+                    "rewrite response",
+                )),
+                opi_ai::test_support::MockResponse::Error(
+                    opi_ai::provider::ProviderError::CredentialNeeded {
+                        provider_id: "mock".to_owned(),
+                    },
+                ),
+                opi_ai::test_support::MockResponse::Events(opi_ai::test_support::text_response(
+                    "recovered response",
+                )),
+            ],
+        );
+        let sink = Arc::new(crate::evidence::FileEvidenceSink::new(evidence.path()));
+        let recorder: Arc<dyn opi_agent::evidence::EvidenceRecorder> = sink.clone();
+        let replacement_mode = Arc::new(std::sync::atomic::AtomicUsize::new(PRESERVE_PREFIX));
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".to_owned(),
+            OpiConfig::default(),
+            workspace.path().to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .record_diagnostics(true)
+        .evidence(EvidenceBuilderConfig {
+            recorder,
+            source: crate::evidence::CLI_ASSEMBLY.clone(),
+        })
+        .hooks(Box::new(ReplaceCommittedPrefixHooks {
+            replacement: replacement_mode.clone(),
+            stop_after_replacement: std::sync::atomic::AtomicBool::new(false),
+        }))
+        .build();
+        harness.prompt("baseline prompt").await.unwrap();
+
+        let session_path = harness.session().unwrap().session_path().to_path_buf();
+        let session_before = std::fs::read(&session_path).unwrap();
+        let state_before = harness.agent.state_snapshot();
+        let offset_before = harness.turn_offset;
+        let completed_before = sink.completed_run_dirs().len();
+        replacement_mode.store(
+            REWRITE_COMMITTED_PREFIX_AND_CONTINUE,
+            std::sync::atomic::Ordering::SeqCst,
+        );
+
+        let error = harness.prompt("rejected prompt").await.unwrap_err();
+
+        assert!(
+            matches!(
+                &error,
+                AgentError::Provider(failure)
+                    if matches!(
+                        failure.provider_error(),
+                        opi_ai::provider::ProviderError::CredentialNeeded { provider_id }
+                            if provider_id == "mock"
+                    )
+            ),
+            "expected CredentialNeeded to remain owning, got {error:?}"
+        );
+        assert_eq!(std::fs::read(&session_path).unwrap(), session_before);
+        let state_after = harness.agent.state_snapshot();
+        assert_eq!(
+            serde_json::to_value(&state_after.context).unwrap(),
+            serde_json::to_value(&state_before.context).unwrap()
+        );
+        assert_eq!(state_after.model_selection, state_before.model_selection);
+        assert_eq!(
+            state_after.inference.max_tokens,
+            state_before.inference.max_tokens
+        );
+        assert_eq!(
+            state_after.inference.temperature,
+            state_before.inference.temperature
+        );
+        assert_eq!(harness.turn_offset, offset_before);
+        assert_eq!(sink.completed_run_dirs().len(), completed_before);
+        assert_eq!(
+            std::fs::read_dir(evidence.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().join("manifest.json").is_file())
+                .count(),
+            completed_before,
+            "the rejected run is abandoned without a manifest"
+        );
+        let diagnostics = harness.recorded_diagnostics();
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|diagnostic| {
+                    diagnostic.code == opi_agent::diagnostic::code::CODE_SESSION_PERSIST_FAILED
+                })
+                .count(),
+            1,
+            "the prefix violation remains a secondary session diagnostic"
+        );
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|diagnostic| {
+                    diagnostic.code
+                        == opi_agent::diagnostic::code::CODE_EVIDENCE_FINALIZATION_FAILED
+                })
+                .count(),
+            1,
+            "the evidence abandonment remains separately observable"
+        );
+
+        harness.prompt("recovered prompt").await.unwrap();
+        let recovered = String::from_utf8(std::fs::read(&session_path).unwrap()).unwrap();
+        assert!(!recovered.contains("rejected prompt"));
+        assert!(recovered.contains("recovered prompt"));
+        assert_eq!(sink.completed_run_dirs().len(), completed_before + 1);
+    }
+
+    #[tokio::test]
+    async fn no_session_allows_complete_prepared_context_replacement() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let session_parent = tempfile::tempdir().unwrap();
+        let unavailable_session_dir = session_parent.path().join("not-a-directory");
+        std::fs::write(&unavailable_session_dir, b"block directory creation").unwrap();
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![
+                opi_ai::test_support::text_response("baseline response"),
+                opi_ai::test_support::text_response("replacement response"),
+                opi_ai::test_support::text_response("continued response"),
+            ],
+        );
+        let replacement_mode = Arc::new(std::sync::atomic::AtomicUsize::new(PRESERVE_PREFIX));
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".to_owned(),
+            OpiConfig::default(),
+            workspace.path().to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(unavailable_session_dir)
+        .hooks(Box::new(ReplaceCommittedPrefixHooks {
+            replacement: replacement_mode.clone(),
+            stop_after_replacement: std::sync::atomic::AtomicBool::new(false),
+        }))
+        .build();
+        assert!(harness.session().is_none());
+        harness.prompt("baseline prompt").await.unwrap();
+        replacement_mode.store(
+            REPLACE_WITH_SHORTER_CONTEXT,
+            std::sync::atomic::Ordering::SeqCst,
+        );
+
+        harness.prompt("replacement prompt").await.unwrap();
+
+        let state = harness.agent.state_snapshot();
+        assert_eq!(state.context.len(), 1);
+        assert_eq!(state.inference.max_tokens, Some(17));
+        assert_eq!(state.inference.temperature, Some(0.25));
+
+        harness.prompt("continued prompt").await.unwrap();
+        assert_eq!(harness.agent.messages_snapshot().len(), 3);
+    }
+
+    fn build_persistence_failure_harness(
+        workspace: &Path,
+        global: &Path,
+        session_dir: &Path,
+        evidence_dir: &Path,
+    ) -> (CodingHarness, Arc<crate::evidence::FileEvidenceSink>) {
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![
+                opi_ai::test_support::text_response("uncommitted response"),
+                opi_ai::test_support::text_response("committed response"),
+            ],
+        );
+        let sink = Arc::new(crate::evidence::FileEvidenceSink::new(evidence_dir));
+        let recorder: Arc<dyn opi_agent::evidence::EvidenceRecorder> = sink.clone();
+        let harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".to_owned(),
+            OpiConfig::default(),
+            workspace.to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.to_path_buf())
+        .session_dir_for_test(session_dir.to_path_buf())
+        .evidence(EvidenceBuilderConfig {
+            recorder,
+            source: crate::evidence::CLI_ASSEMBLY.clone(),
+        })
+        .build();
+        (harness, sink)
+    }
+
+    #[tokio::test]
+    async fn failed_turn_append_keeps_boundary_and_recovers_next_prompt() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let evidence = tempfile::tempdir().unwrap();
+        let (mut harness, sink) = build_persistence_failure_harness(
+            workspace.path(),
+            global.path(),
+            sessions.path(),
+            evidence.path(),
+        );
+        let session_path = harness.session().unwrap().session_path().to_path_buf();
+        let bytes_before = std::fs::read(&session_path).unwrap();
+        let offset_before = harness.turn_offset;
+        harness
+            .session
+            .as_mut()
+            .unwrap()
+            .inject_append_failure_after_for_test(0);
+
+        assert!(matches!(
+            harness.prompt("failed append prompt").await,
+            Err(AgentError::SessionPersist(_))
+        ));
+        assert_eq!(std::fs::read(&session_path).unwrap(), bytes_before);
+        assert_eq!(harness.turn_offset, offset_before);
+        assert_eq!(harness.agent.messages_snapshot().len(), offset_before);
+        assert!(sink.completed_run_dirs().is_empty());
+        assert!(
+            std::fs::read_dir(evidence.path())
+                .unwrap()
+                .all(|entry| !entry.unwrap().path().join("manifest.json").exists())
+        );
+
+        harness.prompt("recovered prompt").await.unwrap();
+        let recovered = std::fs::read(&session_path).unwrap();
+        assert!(recovered.starts_with(&bytes_before));
+        let recovered = String::from_utf8(recovered).unwrap();
+        assert!(!recovered.contains("failed append prompt"));
+        assert!(recovered.contains("recovered prompt"));
+        assert_eq!(sink.completed_run_dirs().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn partial_turn_append_rolls_back_bytes_and_recovers_next_prompt() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let evidence = tempfile::tempdir().unwrap();
+        let (mut harness, sink) = build_persistence_failure_harness(
+            workspace.path(),
+            global.path(),
+            sessions.path(),
+            evidence.path(),
+        );
+        let session_path = harness.session().unwrap().session_path().to_path_buf();
+        let bytes_before = std::fs::read(&session_path).unwrap();
+        let offset_before = harness.turn_offset;
+        harness
+            .session
+            .as_mut()
+            .unwrap()
+            .inject_append_failure_after_for_test(1);
+
+        assert!(matches!(
+            harness.prompt("partial append prompt").await,
+            Err(AgentError::SessionPersist(_))
+        ));
+        assert_eq!(
+            std::fs::read(&session_path).unwrap(),
+            bytes_before,
+            "the durable prefix is restored after a mid-turn append failure"
+        );
+        assert_eq!(harness.turn_offset, offset_before);
+        assert_eq!(harness.agent.messages_snapshot().len(), offset_before);
+        assert!(sink.completed_run_dirs().is_empty());
+        assert!(
+            std::fs::read_dir(evidence.path())
+                .unwrap()
+                .all(|entry| !entry.unwrap().path().join("manifest.json").exists())
+        );
+
+        harness.prompt("recovered prompt").await.unwrap();
+        let recovered = std::fs::read(&session_path).unwrap();
+        assert!(recovered.starts_with(&bytes_before));
+        let recovered = String::from_utf8(recovered).unwrap();
+        assert!(!recovered.contains("partial append prompt"));
+        assert!(recovered.contains("recovered prompt"));
+        assert_eq!(sink.completed_run_dirs().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn capture_disabled_persistence_failure_has_no_evidence_lifecycle_diagnostic() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![opi_ai::test_support::text_response("uncommitted response")],
+        );
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".to_owned(),
+            OpiConfig::default(),
+            workspace.path().to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .record_diagnostics(true)
+        .build();
+        harness
+            .session
+            .as_mut()
+            .unwrap()
+            .inject_append_failure_after_for_test(0);
+
+        assert!(matches!(
+            harness.prompt("failed without capture").await,
+            Err(AgentError::SessionPersist(_))
+        ));
+        let diagnostics = harness.recorded_diagnostics();
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == opi_agent::diagnostic::code::CODE_SESSION_PERSIST_FAILED
+        }));
+        assert!(
+            diagnostics.iter().all(|diagnostic| !matches!(
+                diagnostic.code,
+                opi_agent::diagnostic::code::CODE_EVIDENCE_SETUP_FAILED
+                    | opi_agent::diagnostic::code::CODE_EVIDENCE_EMISSION_FAILED
+                    | opi_agent::diagnostic::code::CODE_EVIDENCE_FINALIZATION_FAILED
+            )),
+            "capture-disabled persistence cannot fabricate an evidence lifecycle: {diagnostics:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn automatic_compaction_marker_failure_emits_failed_terminal_on_the_run_identity() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let sink = Arc::new(opi_agent::evidence::InMemoryEvidenceSink::new());
+        let recorder: Arc<dyn opi_agent::evidence::EvidenceRecorder> = sink.clone();
+        let mut config = OpiConfig::default();
+        config.compaction.threshold_tokens = 0;
+        let mut harness = CodingHarness::builder(
+            Box::new(opi_ai::test_support::MockProvider::new(
+                "mock",
+                vec![opi_ai::test_support::text_response("response")],
+            )),
+            "mock:mock-model".to_owned(),
+            config,
+            workspace.path().to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .evidence(EvidenceBuilderConfig {
+            recorder,
+            source: crate::evidence::CLI_ASSEMBLY.clone(),
+        })
+        .build();
+        // The turn writes user + assistant + Leaf. Fail the next append, which
+        // is the compaction marker, and let the checkpoint rollback succeed.
+        harness
+            .session
+            .as_mut()
+            .unwrap()
+            .inject_append_failure_after_for_test(3);
+
+        harness
+            .prompt("prompt")
+            .await
+            .expect("turn remains committed");
+
+        let compaction = sink
+            .records()
+            .into_iter()
+            .filter(|record| record.kind == opi_agent::evidence::CallKind::Compaction)
+            .collect::<Vec<_>>();
+        assert_eq!(compaction.len(), 2);
+        assert_eq!(compaction[0].run, compaction[1].run);
+        assert_eq!(compaction[0].call, compaction[1].call);
+        assert!(matches!(
+            &compaction[0].payload,
+            opi_agent::evidence::EvidencePayload::Compaction(facts)
+                if facts.outcome().is_none()
+                    && facts.trigger() == opi_agent::evidence::CompactionTrigger::Threshold
+        ));
+        assert!(matches!(
+            &compaction[1].payload,
+            opi_agent::evidence::EvidencePayload::Compaction(facts)
+                if facts.outcome() == Some(opi_agent::evidence::CompactionOutcome::Failed)
+        ));
+        assert!(matches!(
+            sink.completed_manifest().unwrap().outcome,
+            opi_agent::evidence::TerminalOutcome::Failed
+        ));
+        let (_, entries) =
+            opi_agent::session::SessionReader::read_all(harness.session().unwrap().session_path())
+                .unwrap();
+        assert!(
+            entries
+                .iter()
+                .all(|entry| !matches!(entry, opi_agent::session::SessionEntry::Compaction(_)))
+        );
+    }
+
+    #[tokio::test]
+    async fn automatic_compaction_rollback_failure_emits_cleanup_unknown_terminal() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let sink = Arc::new(opi_agent::evidence::InMemoryEvidenceSink::new());
+        let recorder: Arc<dyn opi_agent::evidence::EvidenceRecorder> = sink.clone();
+        let mut config = OpiConfig::default();
+        config.compaction.threshold_tokens = 0;
+        let mut harness = CodingHarness::builder(
+            Box::new(opi_ai::test_support::MockProvider::new(
+                "mock",
+                vec![opi_ai::test_support::text_response("response")],
+            )),
+            "mock:mock-model".to_owned(),
+            config,
+            workspace.path().to_path_buf(),
+            crate::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .evidence(EvidenceBuilderConfig {
+            recorder,
+            source: crate::evidence::CLI_ASSEMBLY.clone(),
+        })
+        .build();
+        // The turn writes user + assistant + Leaf, then the compaction marker.
+        // Fail its Leaf and the real checkpoint rollback, leaving cleanup truth
+        // unknown and the writer poisoned.
+        harness
+            .session
+            .as_mut()
+            .unwrap()
+            .inject_append_failure_after_for_test(4);
+        harness
+            .session
+            .as_mut()
+            .unwrap()
+            .inject_rollback_failure_for_test();
+
+        harness
+            .prompt("prompt")
+            .await
+            .expect("turn remains committed");
+
+        let compaction = sink
+            .records()
+            .into_iter()
+            .filter(|record| record.kind == opi_agent::evidence::CallKind::Compaction)
+            .collect::<Vec<_>>();
+        assert_eq!(compaction.len(), 2);
+        assert_eq!(compaction[0].run, compaction[1].run);
+        assert_eq!(compaction[0].call, compaction[1].call);
+        assert!(matches!(
+            &compaction[1].payload,
+            opi_agent::evidence::EvidencePayload::Compaction(facts)
+                if facts.outcome() == Some(opi_agent::evidence::CompactionOutcome::CleanupUnknown)
+        ));
+        assert!(matches!(
+            sink.completed_manifest().unwrap().outcome,
+            opi_agent::evidence::TerminalOutcome::CleanupUnknown
+        ));
+        assert!(
+            harness
+                .session()
+                .unwrap()
+                .compaction_entries()
+                .iter()
+                .all(|entry| !matches!(&entry.message, AgentMessage::CompactionSummary(_)))
+        );
+        let raw = std::fs::read_to_string(harness.session().unwrap().session_path()).unwrap();
+        assert!(
+            raw.contains("\"type\":\"compaction\""),
+            "the failed rollback leaves a real durable partial marker"
+        );
+    }
 
     fn build_interactive_harness(
         workspace: &Path,

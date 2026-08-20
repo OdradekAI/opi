@@ -1,4 +1,4 @@
-//! Shared diagnostic model and redaction core (Phase 7).
+//! Shared diagnostic model and redaction core.
 //!
 //! This module defines the workspace-wide diagnostic vocabulary: a structured
 //! [`Diagnostic`] record with a stable severity, snake_case code, subsystem
@@ -255,12 +255,12 @@ pub mod code {
     pub const CODE_TOOL_UNKNOWN: &str = "tool_unknown";
     pub const CODE_TOOL_VALIDATION_FAILED: &str = "tool_validation_failed";
     pub const CODE_TOOL_EXECUTION_FAILED: &str = "tool_execution_failed";
-    // Trusted authorization-boundary codes (Phase 17.4). A denied, stale, or
+    // Trusted authorization-boundary codes. A denied, stale, or
     // forged-authorization tool call yields zero executions; the stable code
     // distinguishes an authorizer denial from an unavailable/failed authorizer.
     pub const CODE_TOOL_AUTHORIZATION_DENIED: &str = "tool_authorization_denied";
     pub const CODE_TOOL_AUTHORIZATION_UNAVAILABLE: &str = "tool_authorization_unavailable";
-    // Filesystem/tool-error taxonomy codes (Phase 11.2). Each maps to a distinct
+    // Filesystem/tool-error taxonomy codes. Each maps to a distinct
     // `FsToolError` variant, replacing the single `CODE_TOOL_EXECUTION_FAILED`
     // collapse for tool-reported path/filesystem causes.
     pub const CODE_TOOL_PATH_NOT_FOUND: &str = "tool_path_not_found";
@@ -280,35 +280,37 @@ pub mod code {
     /// Context reconstruction encountered an entry whose `parent_id` does not
     /// resolve to any known entry. The orphan entry is included in the
     /// reconstructed chain up to the break; the diagnostic explains where the
-    /// chain could not be extended further. Phase 13.2.
+    /// chain could not be extended further.
     pub const CODE_SESSION_CONTEXT_MISSING_PARENT: &str = "session_context_missing_parent";
     /// Context reconstruction found a `Leaf` pointer whose target is not a
     /// content entry in the branch graph, so active-tip resolution fell back to
-    /// the trunk tip. Phase 13.2.
+    /// the trunk tip.
     pub const CODE_SESSION_LEAF_TIP_MISSING: &str = "session_leaf_tip_missing";
     /// Resume could not apply a recorded `model_change` because the recorded
     /// provider/model is incompatible with the active CLI/config provider
     /// selection. The CLI/config model is kept; the recorded entry is preserved
-    /// in the session file. Phase 13.3.
+    /// in the session file.
     pub const CODE_SESSION_RESUME_MODEL_INCOMPATIBLE: &str = "session_resume_model_incompatible";
     /// Resume could not normalize a recorded legacy bare model because it
     /// matches more than one dispatchable route in the collection. The
     /// CLI/config model is kept (fail-closed); the recorded entry is preserved
-    /// unchanged in the session file. Phase 17.8.
+    /// unchanged in the session file.
     pub const CODE_SESSION_RESUME_ROUTE_AMBIGUOUS: &str = "session_resume_route_ambiguous";
     /// Resume could not normalize a recorded legacy bare model because no
     /// dispatchable route in the collection serves it. The CLI/config model is
     /// kept (fail-closed); the recorded entry is preserved unchanged in the
-    /// session file. Phase 17.8.
+    /// session file.
     pub const CODE_SESSION_RESUME_ROUTE_MISSING: &str = "session_resume_route_missing";
     /// Resume could not apply a recorded `thinking_level_change` because the
     /// level is incompatible with the active model's thinking budget/support.
     /// The CLI/config thinking level is kept; the recorded entry is preserved
-    /// in the session file. Phase 13.3.
+    /// in the session file.
     pub const CODE_SESSION_RESUME_THINKING_INCOMPATIBLE: &str =
         "session_resume_thinking_incompatible";
     /// A requested session could not be reopened for append.
     pub const CODE_SESSION_RESUME_FAILED: &str = "session_resume_failed";
+    /// A completed turn could not be durably appended to its active session.
+    pub const CODE_SESSION_PERSIST_FAILED: &str = "session_persist_failed";
     // opi-coding-agent bridges (package/config). Package diagnostics carry a
     // dynamic granular code in `details.package_code`; the shared code is stable.
     pub const CODE_PACKAGE_DIAGNOSTIC: &str = "package_diagnostic";
@@ -321,20 +323,22 @@ pub mod code {
     pub const CODE_ADAPTER_STARTUP_FAILED: &str = "adapter_startup_failed";
     pub const CODE_ADAPTER_REGISTRATION_FAILED: &str = "adapter_registration_failed";
     pub const CODE_ADAPTER_HOST_DIAGNOSTIC: &str = "adapter_host_diagnostic";
-    /// Evidence capture setup failed before the run (fail-closed, Phase 17.7).
+    /// Evidence capture setup failed before the run; capture is fail-closed.
     pub const CODE_EVIDENCE_SETUP_FAILED: &str = "evidence_setup_failed";
+    /// Evidence record emission failed during an active capture lifecycle.
+    pub const CODE_EVIDENCE_EMISSION_FAILED: &str = "evidence_emission_failed";
     /// Explicit evidence capture could not be durably finalized.
     pub const CODE_EVIDENCE_FINALIZATION_FAILED: &str = "evidence_finalization_failed";
 }
 
-/// Shared filesystem/tool-error taxonomy (Phase 11.2).
+/// Shared filesystem/tool-error taxonomy.
 ///
 /// Each variant maps to a distinct [`code::CODE_TOOL_*`](code) identifier so
 /// tool-reported path/filesystem causes are no longer collapsed into
 /// [`code::CODE_TOOL_EXECUTION_FAILED`]. Tools construct the relevant variant
 /// and call [`FsToolError::to_diagnostic`] to attach a
 /// [`crate::tool::ToolDiagnostic`] to the failing [`crate::tool::ToolResult`];
-/// the agent loop lifts those into Phase 7 diagnostics/traces in a later task.
+/// the agent loop lifts those into [`Diagnostic`] values at its boundary.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FsToolError {
     /// A path that should exist was not found.
@@ -348,8 +352,8 @@ pub enum FsToolError {
     NotADirectory { path: PathBuf },
     /// The process lacks permission to access the path.
     PermissionDenied { path: PathBuf },
-    /// The path points at binary content. Substrate variant; content detection
-    /// is owned by the read-hardening task, not the taxonomy itself.
+    /// The path points at binary content. This taxonomy does not perform content
+    /// detection itself.
     BinaryFile { path: PathBuf },
     /// One or more filesystem entry names could not be converted to valid UTF-8.
     /// Carries the count of omitted entries so the diagnostic never has to embed
@@ -501,8 +505,8 @@ const CONTENT_SENSITIVE_KEYS: &[&str] = &[
     "package_error",
     "package_message",
     "adapter_error",
-    // Filesystem/tool taxonomy context (Phase 11.2): per-cause path fields are
-    // scrubbed in Summary mode so the 11.8 diagnostic lift is safe regardless of
+    // Filesystem/tool taxonomy context: per-cause path fields are scrubbed in
+    // Summary mode so the agent-loop diagnostic lift is safe regardless of
     // the absolute-path regex heuristic.
     "path",
     "resolved_path",
@@ -609,8 +613,8 @@ fn is_content_sensitive_key(key: &str) -> bool {
 /// [`crate::tool::ToolDiagnostic`]) to its stable `&'static str` identifier,
 /// defaulting to [`code::CODE_TOOL_EXECUTION_FAILED`] for unrecognized codes.
 ///
-/// Phase 11.8 lifts each tool-owned `ToolDiagnostic` into a Phase 7
-/// [`Diagnostic`] at the agent-loop boundary. `Diagnostic::code` is `&'static
+/// Each tool-owned `ToolDiagnostic` is lifted into a [`Diagnostic`] at the
+/// agent-loop boundary. `Diagnostic::code` is `&'static
 /// str` by design (a stable identifier constructed from known literals); this
 /// bridge lets the lift preserve the per-cause code without relaxing that
 /// invariant to an owned string.
@@ -809,13 +813,7 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
     fn from(error: &crate::loop_types::AgentError) -> Self {
         use crate::loop_types::AgentError;
         match error {
-            AgentError::Provider(message) => Diagnostic::new(
-                Severity::Error,
-                code::CODE_PROVIDER_ERROR,
-                SOURCE_PROVIDER,
-                "provider error",
-            )
-            .details(serde_json::json!({ "provider_error": message })),
+            AgentError::Provider(failure) => Diagnostic::from(failure.provider_error()),
             AgentError::AuthFailed(message) => Diagnostic::new(
                 Severity::Error,
                 code::CODE_PROVIDER_AUTH_FAILED,
@@ -863,6 +861,21 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
                 SOURCE_AGENT,
                 "agent run cancelled",
             ),
+            AgentError::Tool(error) => Diagnostic::new(
+                Severity::Error,
+                code::CODE_TOOL_FAILED,
+                SOURCE_TOOL,
+                match error {
+                    crate::tool::ToolError::ExecutionFailed(_) => "tool execution failed",
+                    crate::tool::ToolError::Cancelled => "tool execution was cancelled",
+                    crate::tool::ToolError::PartialSideEffect(_) => {
+                        "tool execution ended with a partial side effect"
+                    }
+                    crate::tool::ToolError::CleanupUnknown(_) => {
+                        "tool execution cleanup could not be confirmed"
+                    }
+                },
+            ),
             AgentError::MaxTurnsExceeded(max_turns) => Diagnostic::new(
                 Severity::Warning,
                 code::CODE_AGENT_MAX_TURNS_EXCEEDED,
@@ -895,6 +908,14 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
             )
             .details(serde_json::json!({ "session_error": message }))
             .action("verify the requested session still exists and is writable"),
+            AgentError::SessionPersist(message) => Diagnostic::new(
+                Severity::Error,
+                code::CODE_SESSION_PERSIST_FAILED,
+                SOURCE_SESSION,
+                "session persistence failed",
+            )
+            .details(serde_json::json!({ "session_error": message }))
+            .action("verify the active session is writable and retry the turn"),
             AgentError::InvalidModelSpec { spec } => Diagnostic::new(
                 Severity::Error,
                 code::CODE_PROVIDER_CONFIG,
@@ -922,13 +943,29 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
             )
             .details(serde_json::json!({ "provider": provider }))
             .action("check provider configuration and credentials"),
-            AgentError::AuthNotConfigured { provider, detail } => Diagnostic::new(
+            AgentError::RequestRouteMismatch {
+                request_model,
+                route_provider,
+                route_model,
+            } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_REQUEST_FAILED,
+                SOURCE_PROVIDER,
+                "provider request model does not match the resolved route",
+            )
+            .details(serde_json::json!({
+                "request_model": request_model,
+                "route_provider": route_provider,
+                "route_model": route_model,
+            })),
+            AgentError::CredentialTerminated { provider } => Diagnostic::new(
                 Severity::Error,
                 code::CODE_PROVIDER_AUTH_FAILED,
                 SOURCE_PROVIDER,
-                format!("authentication is not configured for '{provider}'"),
+                "credential failure terminated the prepared provider call",
             )
-            .details(serde_json::json!({ "provider": provider, "detail": detail })),
+            .details(serde_json::json!({ "provider": provider }))
+            .action("obtain a current credential before starting another call"),
             AgentError::AttemptAlreadyActive => Diagnostic::new(
                 Severity::Error,
                 code::CODE_PROVIDER_REQUEST_FAILED,
@@ -942,13 +979,19 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
                 "provider stream violated the terminal-event contract",
             )
             .details(serde_json::json!({ "detail": detail })),
-            AgentError::InvalidNextTurnCandidate(message) => Diagnostic::new(
+            AgentError::InvalidNextTurnCandidate(reason) => Diagnostic::new(
                 Severity::Error,
                 code::CODE_HOOK_FAILED,
                 SOURCE_AGENT,
                 "invalid next-turn candidate state",
             )
-            .details(serde_json::json!({ "candidate_error": message })),
+            .details(serde_json::json!({ "candidate_error": reason.to_string() })),
+            AgentError::InvalidArmedRun => Diagnostic::new(
+                Severity::Error,
+                code::CODE_HOOK_FAILED,
+                SOURCE_AGENT,
+                "armed run does not match this Agent's latest generation",
+            ),
             AgentError::InvalidToolRegistration(message) => Diagnostic::new(
                 Severity::Error,
                 code::CODE_TOOL_FAILED,

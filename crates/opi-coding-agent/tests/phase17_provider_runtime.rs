@@ -376,7 +376,7 @@ async fn phase17_coding_harness_cross_provider_switch_dispatches_both_providers(
 
     let mut harness = CodingHarness::builder(
         Box::new(alpha_provider),
-        "alpha:a1".into(),
+        "a1".into(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
         TrustDecision::Trusted,
@@ -400,7 +400,45 @@ async fn phase17_coding_harness_cross_provider_switch_dispatches_both_providers(
         harness.set_model_validated("alpha:a1".into()).unwrap(),
         "alpha:a1"
     );
+    assert_eq!(
+        harness.set_model_validated("a1".into()).unwrap(),
+        "alpha:a1",
+        "a bare interactive selection normalizes against the caller-owned active provider"
+    );
+    let unknown = harness
+        .set_model_validated("missing".into())
+        .expect_err("an unknown bare selection remains a parser-owned typed failure");
+    assert_eq!(
+        unknown,
+        "invalid model spec: spec must be 'provider:model', got: \"missing\""
+    );
+    assert_eq!(
+        harness.model_spec(),
+        "alpha:a1",
+        "a rejected bare selection keeps the active route"
+    );
     harness.prompt("hi from alpha").await.unwrap();
+
+    let (_, entries) = opi_agent::session::SessionReader::read_all(
+        harness
+            .session()
+            .expect("session remains active")
+            .session_path(),
+    )
+    .unwrap();
+    assert!(matches!(
+        entries
+            .iter()
+            .filter_map(|entry| match entry {
+                opi_agent::session::SessionEntry::ModelChange(change) => Some(change),
+                _ => None,
+            })
+            .next_back(),
+        Some(change)
+            if change.model == "alpha:a1"
+                && change.input_source
+                    == Some(opi_agent::session::ModelInputSource::BareNormalized)
+    ));
 
     assert_eq!(
         alpha_calls.lock().unwrap().len(),

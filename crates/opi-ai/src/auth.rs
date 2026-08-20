@@ -1,10 +1,11 @@
-//! Per-request auth-resolution contracts (Phase 14.2).
+//! Per-request auth-resolution contracts.
 //!
 //! IO-free types owned by [`crate`]. The concrete resolvers (`AuthSource`,
 //! `OAuthProviderRegistry`, `TuiLoginPresenter`) live in `opi-coding-agent`;
 //! `opi-ai` defines only the object-safe contracts so `ProviderCollection`
-//! can resolve authentication once before an attempt without depending on a
-//! concrete backend or making providers generic over the resolver.
+//! can resolve authentication once per prepared logical call and reuse it for
+//! sequential retries without depending on a concrete backend or making
+//! providers generic over the resolver.
 //!
 //! All async trait methods return [`BoxAuthFuture`] boxed futures, so
 //! `AuthResolver`, `OAuthProvider`, and `LoginPresenter` are usable behind
@@ -19,19 +20,79 @@ use secrecy::SecretString;
 use time::OffsetDateTime;
 
 use crate::credential::{BoxAuthFuture, Credential};
-use crate::provider::ProviderError;
+use crate::provider::{ProviderError, ProviderErrorSummary};
 
 // ---------------------------------------------------------------------------
 // Resolved auth + resolver
 // ---------------------------------------------------------------------------
 
-/// How a concrete provider attaches the secret at its HTTP boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Secret-bearing AWS credentials prepared for one SigV4 logical call.
+///
+/// All credential members use [`SecretString`] so clones remain zeroizing and
+/// diagnostics cannot reveal access keys, secret keys, or session tokens.
+#[derive(Clone)]
+pub struct AwsSigV4Credentials {
+    /// AWS access key identifier. Treated as credential material and redacted.
+    pub access_key_id: SecretString,
+    /// AWS secret access key. Redacted in all diagnostics.
+    pub secret_access_key: SecretString,
+    /// Optional temporary-credential session token. Redacted in diagnostics.
+    pub session_token: Option<SecretString>,
+    /// Non-secret AWS region used in the SigV4 credential scope.
+    pub region: String,
+}
+
+impl std::fmt::Debug for AwsSigV4Credentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AwsSigV4Credentials")
+            .field("access_key_id", &"<redacted>")
+            .field("secret_access_key", &"<redacted>")
+            .field(
+                "session_token",
+                &self.session_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field("region", &self.region)
+            .finish()
+    }
+}
+
+/// How a concrete provider attaches prepared authentication at its HTTP boundary.
+///
+/// Equality is attachment-scheme identity only. In particular, two
+/// [`AuthScheme::AwsSigV4`] values compare equal without comparing credential
+/// members; secret equality is deliberately not part of this diagnostic and
+/// configuration-facing type's contract.
+#[derive(Clone)]
 pub enum AuthScheme {
     /// API-key auth (e.g. Anthropic `x-api-key`).
     ApiKey,
     /// Bearer auth (`Authorization: Bearer <token>`).
     Bearer,
+    /// AWS Signature Version 4 using the complete prepared credential bundle.
+    AwsSigV4(AwsSigV4Credentials),
+}
+
+impl PartialEq for AuthScheme {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::ApiKey, Self::ApiKey)
+                | (Self::Bearer, Self::Bearer)
+                | (Self::AwsSigV4(_), Self::AwsSigV4(_))
+        )
+    }
+}
+
+impl Eq for AuthScheme {}
+
+impl std::fmt::Debug for AuthScheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ApiKey => f.write_str("ApiKey"),
+            Self::Bearer => f.write_str("Bearer"),
+            Self::AwsSigV4(credentials) => f.debug_tuple("AwsSigV4").field(credentials).finish(),
+        }
+    }
 }
 
 /// Route-level handling for provider 401/403 responses.
@@ -54,7 +115,9 @@ impl AuthInvalidPolicy {
             Self::CredentialManaged => ProviderError::CredentialRevoked {
                 provider_id: provider_id.to_owned(),
             },
-            Self::Static => ProviderError::AuthFailed("authentication failed".into()),
+            Self::Static => {
+                ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected())
+            }
         }
     }
 }
@@ -65,8 +128,9 @@ impl AuthInvalidPolicy {
 /// [`SecretString`] exposed only via [`secrecy::ExposeSecret`] at the provider
 /// boundary. [`Debug`](std::fmt::Debug) redacts the secret. The non-secret
 /// [`AuthProvenance`] is carried beside the secret so callers and evidence can
-/// distinguish auth sources without seeing the secret; it is attached by the
-/// collection after resolution (resolvers supply [`AuthProvenance::default`]).
+/// distinguish auth sources without seeing the secret. Resolvers that select
+/// among real sources attach their decision directly; the collection fills in
+/// the registered route source only when a resolver returns the default.
 #[derive(Clone)]
 pub struct ResolvedAuth {
     /// How the provider attaches the secret to the HTTP request.
@@ -77,10 +141,27 @@ pub struct ResolvedAuth {
     pub base_url: Option<String>,
     /// Provider account identity, when required by a concrete wire.
     pub account_id: Option<String>,
-    /// Non-secret source classification plus fallback decision. Attached by
-    /// [`crate::ProviderCollection`] after resolution from the route's
-    /// registered source; resolvers supply the default.
+    /// Non-secret source classification plus fallback decision. Resolver-owned
+    /// source selection is retained; [`crate::ProviderCollection`] supplies the
+    /// registered route source only for the default value.
     pub provenance: AuthProvenance,
+}
+
+impl ResolvedAuth {
+    /// Build one prepared AWS SigV4 authentication result.
+    ///
+    /// SigV4 carries its complete credential bundle in the closed
+    /// [`AuthScheme::AwsSigV4`] variant. The single-secret slot is empty and is
+    /// consumed only by API-key and Bearer variants.
+    pub fn aws_sigv4(credentials: AwsSigV4Credentials, provenance: AuthProvenance) -> Self {
+        Self {
+            scheme: AuthScheme::AwsSigV4(credentials),
+            secret: SecretString::from(""),
+            base_url: None,
+            account_id: None,
+            provenance,
+        }
+    }
 }
 
 impl std::fmt::Debug for ResolvedAuth {
@@ -99,7 +180,7 @@ impl std::fmt::Debug for ResolvedAuth {
 }
 
 // ---------------------------------------------------------------------------
-// AuthProvenance — non-secret source classification (Phase 17)
+// AuthProvenance — non-secret source classification
 // ---------------------------------------------------------------------------
 
 /// Non-secret classification of where a resolved credential originated.
@@ -133,6 +214,35 @@ pub enum AuthProvenanceSource {
         /// Non-secret OAuth provider label.
         kind: String,
     },
+    /// AWS SigV4 credential-chain source selected for the prepared call.
+    AwsSigV4 {
+        /// Typed non-secret source reported by the Bedrock resolver.
+        source: AwsCredentialSource,
+    },
+}
+
+/// Non-secret source selected by the local AWS credential resolver.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AwsCredentialSource {
+    /// The resolver input supplied the complete credential pair directly.
+    ExplicitConfig,
+    /// A configured access-key ID was paired with secrets loaded from named
+    /// environment variables. The names are non-secret; no resolved value is
+    /// retained in provenance.
+    ConfiguredEnvironment {
+        /// Environment-variable name configured for the secret access key.
+        secret_access_key_env: String,
+        /// Optional environment-variable name configured for a session token.
+        session_token_env: Option<String>,
+    },
+    /// Standard AWS environment variables supplied the credential pair.
+    Environment,
+    /// Static credentials came from an AWS shared credentials profile.
+    ProfileFile,
+    /// Static credentials came from an AWS shared config profile.
+    ConfigFile,
+    /// An AWS shared config profile's `credential_process` supplied credentials.
+    CredentialProcess,
 }
 
 /// Whether auth preparation used an explicitly allowed fallback.
@@ -170,15 +280,17 @@ pub struct AuthProvenance {
     pub fallback: AuthFallback,
 }
 
-/// Object-safe per-request auth resolver.
+/// Object-safe per-logical-call auth resolver.
 ///
 /// [`crate::ProviderCollection::prepare_call`] invokes the selected route's
-/// resolver before opening an attempt, then passes opaque [`ResolvedAuth`] to
-/// [`crate::Provider::stream_prepared`]. The resolver may read the keychain,
-/// perform a locked refresh, or return a baked key; providers remain unaware of
-/// the source mechanism.
+/// resolver once and freezes the resulting [`ResolvedAuth`] for that prepared
+/// logical call. Each permitted sequential retry receives the same prepared
+/// auth through [`crate::Provider::stream_prepared`] without invoking the
+/// resolver again. The resolver may read the keychain, perform a locked
+/// refresh, or return a baked key; providers remain unaware of the source
+/// mechanism.
 pub trait AuthResolver: Send + Sync {
-    /// Resolve the auth for the next request. Returning
+    /// Resolve auth for one prepared logical call. Returning
     /// [`ProviderError::CredentialNeeded`] signals that no credential is
     /// available and the caller must obtain one (interactive login or a typed
     /// non-interactive diagnostic).
@@ -205,7 +317,7 @@ impl StaticAuthResolver {
 
 impl AuthResolver for StaticAuthResolver {
     fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
-        let scheme = self.scheme;
+        let scheme = self.scheme.clone();
         let secret = self.secret.clone();
         Box::pin(async move {
             Ok(ResolvedAuth {
@@ -338,8 +450,10 @@ pub trait LoginPresenter: Send + Sync {
             if methods.contains(&default) {
                 Ok(default)
             } else {
-                Err(ProviderError::Config(format!(
-                    "OAuth provider '{provider_id}' supplied an invalid default login method"
+                Err(ProviderError::Config(ProviderErrorSummary::sanitized(
+                    format!(
+                        "OAuth provider '{provider_id}' supplied an invalid default login method"
+                    ),
                 )))
             }
         })

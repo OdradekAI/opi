@@ -10,7 +10,7 @@ use opi_agent::diagnostic::{
     Diagnostic, RedactionMode, SOURCE_ADAPTER, SOURCE_CONFIG, SOURCE_PROVIDER, SOURCE_RPC,
     SOURCE_SESSION, SOURCE_TOOL, SOURCE_TUI, Severity, redact,
 };
-use opi_ai::provider::ProviderError;
+use opi_ai::provider::{ProviderError, ProviderErrorSummary};
 use serde_json::{Value, json};
 
 // ---------------------------------------------------------------------------
@@ -437,50 +437,50 @@ fn diagnostic_display_is_stable_one_line() {
 
 #[test]
 fn provider_error_bridge_classifies_network_variant() {
-    let diag: Diagnostic = (&ProviderError::Network("dns lookup failed".into())).into();
+    let diag: Diagnostic = (&ProviderError::Network(ProviderErrorSummary::redacted())).into();
     assert_eq!(diag.source, SOURCE_PROVIDER);
     assert_eq!(diag.severity, Severity::Warning);
     assert_eq!(diag.code, "provider_network_error");
     assert_eq!(
         diag.details.as_ref().unwrap()["provider_error"],
-        "dns lookup failed"
+        "[REDACTED]"
     );
 }
 
 #[test]
 fn provider_error_bridge_classifies_config_variant() {
-    let diag: Diagnostic = (&ProviderError::Config("invalid endpoint".into())).into();
+    let diag: Diagnostic = (&ProviderError::Config(ProviderErrorSummary::redacted())).into();
     assert_eq!(diag.source, SOURCE_PROVIDER);
     assert_eq!(diag.severity, Severity::Error);
     assert_eq!(diag.code, "provider_config_error");
     assert_eq!(
         diag.details.as_ref().unwrap()["provider_error"],
-        "invalid endpoint"
+        "[REDACTED]"
     );
 }
 
 #[test]
 fn provider_error_bridge_classifies_provider_side_variant() {
-    let diag: Diagnostic = (&ProviderError::ProviderSide("HTTP 500: boom".into())).into();
+    let diag: Diagnostic = (&ProviderError::ProviderSide(ProviderErrorSummary::redacted())).into();
     assert_eq!(diag.source, SOURCE_PROVIDER);
     assert_eq!(diag.severity, Severity::Error);
     assert_eq!(diag.code, "provider_side_error");
     assert_eq!(
         diag.details.as_ref().unwrap()["provider_error"],
-        "HTTP 500: boom"
+        "[REDACTED]"
     );
 }
 
 #[test]
 fn provider_error_bridge_classifies_unsupported_capability_variant() {
     let diag: Diagnostic =
-        (&ProviderError::UnsupportedCapability("no image support".into())).into();
+        (&ProviderError::UnsupportedCapability(ProviderErrorSummary::redacted())).into();
     assert_eq!(diag.source, SOURCE_PROVIDER);
     assert_eq!(diag.severity, Severity::Error);
     assert_eq!(diag.code, "provider_capability_invalid");
     assert_eq!(
         diag.details.as_ref().unwrap()["provider_error"],
-        "no image support"
+        "[REDACTED]"
     );
 }
 
@@ -500,17 +500,18 @@ fn provider_error_bridge_classifies_cancelled_variant() {
 fn provider_error_bridge_gives_each_class_a_distinct_code() {
     // One-to-one category -> diagnostic code coverage for the nine classes.
     let codes: std::collections::HashSet<&str> = [
-        (&ProviderError::AuthFailed("x".into()) as &ProviderError),
-        &ProviderError::Config("x".into()),
-        &ProviderError::RequestFailed("x".into()),
+        (&ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected())
+            as &ProviderError),
+        &ProviderError::Config(ProviderErrorSummary::redacted()),
+        &ProviderError::RequestFailed(ProviderErrorSummary::redacted()),
         &ProviderError::Timeout,
-        &ProviderError::Network("x".into()),
+        &ProviderError::Network(ProviderErrorSummary::redacted()),
         &ProviderError::RateLimited {
             retry_after_ms: None,
         },
-        &ProviderError::ProviderSide("x".into()),
-        &ProviderError::StreamError("x".into()),
-        &ProviderError::UnsupportedCapability("x".into()),
+        &ProviderError::ProviderSide(ProviderErrorSummary::redacted()),
+        &ProviderError::StreamError(ProviderErrorSummary::redacted()),
+        &ProviderError::UnsupportedCapability(ProviderErrorSummary::redacted()),
         &ProviderError::Cancelled,
     ]
     .iter()

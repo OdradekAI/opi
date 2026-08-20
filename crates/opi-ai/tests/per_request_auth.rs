@@ -83,6 +83,7 @@ async fn drain(stream: &mut opi_ai::provider::EventStream) {
 
 // --- CredentialNeeded surfaces from prepare_call before any HTTP request ---
 
+// opi-phase17-acceptance
 #[tokio::test]
 async fn prepare_call_yields_credential_needed_when_route_resolver_has_no_credential() {
     // Phase 17.5: auth resolution is the collection's job. Registering a route
@@ -91,7 +92,7 @@ async fn prepare_call_yields_credential_needed_when_route_resolver_has_no_creden
     // to stream. (This behavior is provider-agnostic: it is the route resolver
     // and the collection that decide it, so one representative route covers the
     // contract the per-provider `stream`-level tests used to assert.)
-    let provider = AnthropicProvider::new(None);
+    let provider = AnthropicProvider::new(Some("http://127.0.0.1:1".into()));
     let mut collection = opi_ai::ProviderCollection::new();
     collection
         .register_route(

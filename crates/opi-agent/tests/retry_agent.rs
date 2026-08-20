@@ -20,7 +20,7 @@ use opi_agent::loop_types::{
 use opi_agent::message::AgentMessage;
 use opi_agent::{DiagnosticSink, RecordingSink};
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::ProviderError;
+use opi_ai::provider::{ProviderError, ProviderErrorCategory, ProviderErrorSummary};
 use opi_ai::retry::RetryConfig;
 use opi_ai::test_support::{self, MockProvider, MockResponse, single_route_collection};
 
@@ -137,7 +137,8 @@ async fn retry_on_rate_limited_then_succeed() {
         sink,
         tokio_util::sync::CancellationToken::new(),
     )
-    .await;
+    .await
+    .into_execution_result();
 
     assert!(
         result.is_ok(),
@@ -164,7 +165,7 @@ async fn no_retry_on_auth_error() {
     let provider = MockProvider::new_with_errors(
         "mock",
         vec![MockResponse::Error(ProviderError::AuthFailed(
-            "bad key".into(),
+            ProviderErrorSummary::authentication_rejected(),
         ))],
     );
 
@@ -176,11 +177,17 @@ async fn no_retry_on_auth_error() {
         sink,
         tokio_util::sync::CancellationToken::new(),
     )
-    .await;
+    .await
+    .into_execution_result();
 
     assert!(result.is_err());
     match result.unwrap_err() {
-        AgentError::AuthFailed(msg) => assert!(msg.contains("bad key")),
+        AgentError::Provider(failure) => match failure.provider_error() {
+            ProviderError::AuthFailed(summary) => {
+                assert_eq!(summary.as_str(), "provider rejected credentials")
+            }
+            other => panic!("expected retained AuthFailed provider error, got {other:?}"),
+        },
         other => panic!("expected AuthFailed, got {other:?}"),
     }
 
@@ -231,12 +238,20 @@ async fn retry_exhausted_returns_error() {
         sink,
         tokio_util::sync::CancellationToken::new(),
     )
-    .await;
+    .await
+    .into_execution_result();
 
     assert!(result.is_err());
     match result.unwrap_err() {
-        AgentError::Provider(msg) => {
-            assert!(msg.contains("rate limited"), "got: {msg}");
+        AgentError::Provider(failure) => {
+            assert_eq!(failure.category(), ProviderErrorCategory::RateLimit);
+            assert!(failure.summary().is_none());
+            assert!(matches!(
+                failure.provider_error(),
+                ProviderError::RateLimited {
+                    retry_after_ms: Some(40)
+                }
+            ));
         }
         other => panic!("expected Provider error, got {other:?}"),
     }
@@ -273,7 +288,8 @@ async fn retry_on_timeout_then_succeed() {
         sink,
         tokio_util::sync::CancellationToken::new(),
     )
-    .await;
+    .await
+    .into_execution_result();
 
     assert!(result.is_ok());
     let events = log.lock().unwrap().clone();
@@ -294,7 +310,7 @@ async fn retry_on_network_error_then_succeed() {
     let provider = MockProvider::new_with_errors(
         "mock",
         vec![
-            MockResponse::Error(ProviderError::Network("connection reset".into())),
+            MockResponse::Error(ProviderError::Network(ProviderErrorSummary::redacted())),
             MockResponse::Events(test_support::text_response("success after network retry")),
         ],
     );
@@ -307,7 +323,8 @@ async fn retry_on_network_error_then_succeed() {
         sink,
         tokio_util::sync::CancellationToken::new(),
     )
-    .await;
+    .await
+    .into_execution_result();
 
     assert!(
         result.is_ok(),
@@ -345,7 +362,8 @@ async fn no_retry_when_config_is_none() {
         sink,
         tokio_util::sync::CancellationToken::new(),
     )
-    .await;
+    .await
+    .into_execution_result();
 
     assert!(result.is_err());
     let events = log.lock().unwrap().clone();
@@ -376,7 +394,8 @@ async fn retry_auto_retry_start_fields() {
         sink,
         tokio_util::sync::CancellationToken::new(),
     )
-    .await;
+    .await
+    .into_execution_result();
 
     assert!(result.is_ok());
     let events = log.lock().unwrap().clone();
@@ -440,7 +459,8 @@ async fn no_retry_after_partial_streamed_content() {
         sink,
         tokio_util::sync::CancellationToken::new(),
     )
-    .await;
+    .await
+    .into_execution_result();
 
     // The partial-output error must surface as a failure, not recover.
     assert!(
@@ -448,9 +468,15 @@ async fn no_retry_after_partial_streamed_content() {
         "partial-output stream error should surface, not retry"
     );
     match result.unwrap_err() {
-        AgentError::Provider(msg) => assert!(
-            msg.contains("rate limited"),
-            "expected the mid-stream rate-limit error to surface, got: {msg}"
+        AgentError::Provider(failure) => assert!(
+            failure.category() == ProviderErrorCategory::RateLimit
+                && matches!(
+                    failure.provider_error(),
+                    ProviderError::RateLimited {
+                        retry_after_ms: Some(10)
+                    }
+                ),
+            "expected the mid-stream rate-limit error to surface, got: {failure}"
         ),
         other => panic!("expected AgentError::Provider from partial-output stream, got {other:?}"),
     }
@@ -498,7 +524,8 @@ async fn retry_after_prior_attempt_then_partial_stream_error_is_not_exhausted() 
         Box::new(|_: AgentEvent| {}),
         tokio_util::sync::CancellationToken::new(),
     )
-    .await;
+    .await
+    .into_execution_result();
 
     assert!(
         result.is_err(),
@@ -552,6 +579,7 @@ async fn cancellation_during_retry_backoff_aborts() {
             cancel_for_task,
         )
         .await
+        .into_execution_result()
     });
 
     // Wait until the retry has actually started (AutoRetryStart emitted) so the
@@ -592,7 +620,7 @@ async fn cancellation_during_retry_backoff_aborts() {
 }
 
 #[tokio::test]
-async fn provider_cancelled_routes_to_agent_cancelled() {
+async fn provider_cancelled_remains_a_typed_provider_failure() {
     let provider =
         MockProvider::new_with_errors("mock", vec![MockResponse::Error(ProviderError::Cancelled)]);
 
@@ -604,11 +632,16 @@ async fn provider_cancelled_routes_to_agent_cancelled() {
         sink,
         tokio_util::sync::CancellationToken::new(),
     )
-    .await;
+    .await
+    .into_execution_result();
 
     assert!(
-        matches!(result, Err(AgentError::Cancelled)),
-        "provider cancellation should surface as AgentError::Cancelled, got {result:?}"
+        matches!(
+            result,
+            Err(AgentError::Provider(ref failure))
+                if matches!(failure.provider_error(), ProviderError::Cancelled)
+        ),
+        "provider cancellation should retain ProviderError::Cancelled, got {result:?}"
     );
 
     let events = log.lock().unwrap().clone();

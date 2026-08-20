@@ -109,10 +109,17 @@ async fn image_input_to_text_only_model_fails_before_provider_call() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap_err();
 
     assert!(
-        matches!(err, AgentError::Provider(ref message) if message.contains("does not support image input")),
+        matches!(
+            err,
+            AgentError::Provider(ref failure)
+                if failure
+                    .summary()
+                    .is_some_and(|summary| summary.contains("does not support image input"))
+        ),
         "unexpected error: {err}"
     );
     assert_eq!(calls.load(Ordering::SeqCst), 0);

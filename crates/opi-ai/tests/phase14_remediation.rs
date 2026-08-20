@@ -380,9 +380,13 @@ impl Provider for LoggedRefreshProvider {
     fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
         self.log.lock().unwrap().push(self.id.into());
         let result = self.result.clone();
-        Box::pin(
-            async move { result.map_err(|message| ProviderError::ProviderSide(message.into())) },
-        )
+        Box::pin(async move {
+            result.map_err(|message| {
+                ProviderError::ProviderSide(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+                    message,
+                ))
+            })
+        })
     }
 }
 
@@ -425,7 +429,7 @@ async fn refresh_collects_every_provider_after_the_first_error() {
 
     let error = collection.refresh().await.expect_err("batch must fail");
 
-    assert!(error.to_string().contains("first"));
+    assert_eq!(error.to_string(), "provider error: [REDACTED]");
     assert_eq!(
         *log.lock().unwrap(),
         ["a-error", "b-success", "c-error"],

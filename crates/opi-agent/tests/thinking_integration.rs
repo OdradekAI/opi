@@ -116,7 +116,9 @@ async fn thinking_config_passed_to_provider() {
         ..Default::default()
     };
     let cancel = tokio_util::sync::CancellationToken::new();
-    let _ = agent_loop(context, config, &NoopHooks, noop_sink(), cancel).await;
+    let _ = agent_loop(context, config, &NoopHooks, noop_sink(), cancel)
+        .await
+        .into_execution_result();
     let reqs = captured.lock().unwrap();
     assert_eq!(reqs.len(), 1);
     assert!(reqs[0].thinking.enabled);
@@ -157,7 +159,9 @@ async fn thinking_disabled_by_default() {
         ..Default::default()
     };
     let cancel = tokio_util::sync::CancellationToken::new();
-    let _ = agent_loop(context, config, &NoopHooks, noop_sink(), cancel).await;
+    let _ = agent_loop(context, config, &NoopHooks, noop_sink(), cancel)
+        .await
+        .into_execution_result();
     let reqs = captured.lock().unwrap();
     assert_eq!(reqs.len(), 1);
     assert!(!reqs[0].thinking.enabled);

@@ -3,15 +3,14 @@
 //! Loads and resolves opi configuration with precedence:
 //! CLI > env > project config > user config > built-in defaults.
 //!
-//! Phase 1 fields: model, max_iterations, tool_timeout_ms, theme,
-//! thinking, providers.anthropic.api_key_env.
-//!
-//! Phase 2 fields: providers.{openai,openrouter,mistral,openai_responses,gemini}
-//! config with api_key_env, base_url, and OpenRouter-specific referer.
+//! Supported fields include model, iteration/tool limits, theme, thinking,
+//! built-in and compatible provider profiles, execution routing, extensions,
+//! packages, retry, and compaction settings.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
 use crate::project_trust::ProjectTrustDefault;
@@ -43,12 +42,12 @@ pub struct DefaultsConfig {
     pub max_image_bytes: u64,
     pub theme: String,
     pub allow_mutating_tools: bool,
-    /// Phase 14 opt-in: when `Some(Keychain)`, API-key built-in providers are
+    /// When `Some(Keychain)`, API-key built-in providers are
     /// described as [`opi_ai::AuthDescriptor::StoreCredential`] and doctor /
     /// `--list-models` probe the OS keychain (keychain-first, env fallback).
-    /// Defaults to `None` (env), preserving pre-Phase-14 behavior.
+    /// Defaults to `None` (environment variables).
     pub credential_backend: Option<CredentialBackendSource>,
-    /// Phase 15.8.1 `[defaults] default_project_trust` policy (`ask` default).
+    /// `[defaults] default_project_trust` policy (`ask` default).
     /// Read from the **pre-trust** (global) config so a project cannot
     /// self-authorize via its own `[defaults]` block.
     pub default_project_trust: ProjectTrustDefault,
@@ -61,7 +60,7 @@ pub struct DefaultsConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CredentialBackendSource {
-    /// Environment variable (pre-Phase-14 default).
+    /// Environment variable (default).
     #[default]
     Env,
     /// OS keychain via the credential store.
@@ -83,7 +82,7 @@ impl Default for DefaultsConfig {
     }
 }
 
-/// Run mode matched by deterministic execution rules (Phase 16). This is a
+/// Run mode matched by deterministic execution rules. This is a
 /// distinct three-variant enum from `policy::RunMode` (which has no `Rpc`
 /// variant): the router and rule set reason about all three invocation kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize)]
@@ -104,7 +103,7 @@ impl std::fmt::Display for ExecutionRunMode {
     }
 }
 
-/// `command.execute` routing strategy (Phase 16). Default [`ExecutionStrategy::Fixed`].
+/// `command.execute` routing strategy. Defaults to [`ExecutionStrategy::Fixed`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum ExecutionStrategy {
@@ -124,7 +123,7 @@ impl std::fmt::Display for ExecutionStrategy {
     }
 }
 
-/// One capability-permission decision for an adapter id (Phase 16).
+/// One capability-permission decision for an adapter id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PermissionDecision {
@@ -145,7 +144,7 @@ pub struct ExecutionRule {
     pub backend: String,
 }
 
-/// `[execution]` section (Phase 16). Layered TOML resolves `strategy`, `backend`,
+/// `[execution]` section. Layered TOML resolves `strategy`, `backend`,
 /// and `rules` in precedence order; `permissions` is resolved from user-authorized
 /// layers only (project `[execution.permissions]` is rejected even when trusted).
 /// `rules` and `permissions` use REPLACE-if-present overlay semantics across
@@ -316,10 +315,10 @@ pub struct OpenRouterProviderConfig {
 }
 
 /// `[providers.bedrock]` section.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Clone, Default)]
 pub struct BedrockProviderConfig {
     /// Explicit access key ID (overrides env var).
-    pub access_key_id: Option<String>,
+    pub access_key_id: Option<SecretString>,
     /// Env var name for secret access key (default: AWS_SECRET_ACCESS_KEY).
     pub secret_access_key_env: Option<String>,
     /// Env var name for session token (default: AWS_SESSION_TOKEN).
@@ -332,6 +331,39 @@ pub struct BedrockProviderConfig {
     pub base_url: Option<String>,
     /// Proxy configuration.
     pub proxy: Option<ProviderProxyConfig>,
+}
+
+impl PartialEq for BedrockProviderConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.access_key_id.as_ref().map(ExposeSecret::expose_secret)
+            == other
+                .access_key_id
+                .as_ref()
+                .map(ExposeSecret::expose_secret)
+            && self.secret_access_key_env == other.secret_access_key_env
+            && self.session_token_env == other.session_token_env
+            && self.region == other.region
+            && self.profile == other.profile
+            && self.base_url == other.base_url
+            && self.proxy == other.proxy
+    }
+}
+
+impl std::fmt::Debug for BedrockProviderConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BedrockProviderConfig")
+            .field(
+                "access_key_id",
+                &self.access_key_id.as_ref().map(|_| "<redacted>"),
+            )
+            .field("secret_access_key_env", &self.secret_access_key_env)
+            .field("session_token_env", &self.session_token_env)
+            .field("region", &self.region)
+            .field("profile", &self.profile)
+            .field("base_url", &self.base_url)
+            .field("proxy", &self.proxy)
+            .finish()
+    }
 }
 
 /// `[providers.azure]` section.
@@ -385,12 +417,12 @@ pub struct OpenAiCompatibleProviderConfig {
     pub tool_result_name_field: bool,
     /// Whether usage can appear throughout the stream.
     pub usage_in_stream: bool,
-    /// Emit `"strict": true` on function tool definitions (Phase 12.3).
+    /// Emit `"strict": true` on function tool definitions.
     pub strict_tool_schema: bool,
     /// Legacy compatibility metadata for reasoning profiles. Request thinking
     /// and the selected model's thinking map are authoritative for wire output.
     pub reasoning_effort: Option<String>,
-    /// Emit `prompt_cache_key` for OpenAI prompt-cache affinity (Phase 12.3).
+    /// Emit `prompt_cache_key` for OpenAI prompt-cache affinity.
     pub cache_key: Option<String>,
     /// Extra request headers (session-affinity) applied to every request.
     pub extra_headers: Vec<(String, String)>,
@@ -413,10 +445,10 @@ pub struct ConfiguredModelConfig {
     pub supports_streaming: bool,
     pub supports_thinking: bool,
     /// Model-level override of the profile `system_role_override` (wins when
-    /// present). Phase 12.3 provider/model override precedence.
+    /// present).
     pub system_role_override: Option<String>,
     /// Model-level override of the profile `max_tokens_field` (wins when
-    /// present). Phase 12.3 provider/model override precedence.
+    /// present).
     pub max_tokens_field: Option<String>,
 }
 
@@ -614,7 +646,7 @@ struct TomlAnthropic {
     proxy: Option<TomlProxy>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Clone, Deserialize, Default)]
 #[serde(default)]
 struct TomlBedrockProvider {
     access_key_id: Option<String>,
@@ -624,6 +656,23 @@ struct TomlBedrockProvider {
     profile: Option<String>,
     base_url: Option<String>,
     proxy: Option<TomlProxy>,
+}
+
+impl std::fmt::Debug for TomlBedrockProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TomlBedrockProvider")
+            .field(
+                "access_key_id",
+                &self.access_key_id.as_ref().map(|_| "<redacted>"),
+            )
+            .field("secret_access_key_env", &self.secret_access_key_env)
+            .field("session_token_env", &self.session_token_env)
+            .field("region", &self.region)
+            .field("profile", &self.profile)
+            .field("base_url", &self.base_url)
+            .field("proxy", &self.proxy)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -848,7 +897,7 @@ impl TomlConfig {
             });
         }
         if let Some(v) = self.providers.bedrock.access_key_id {
-            config.providers.bedrock.access_key_id = Some(v);
+            config.providers.bedrock.access_key_id = Some(v.into());
         }
         if let Some(v) = self.providers.bedrock.secret_access_key_env {
             config.providers.bedrock.secret_access_key_env = Some(v);
@@ -1906,7 +1955,7 @@ pub fn resolve_config(source: ConfigSource) -> Result<OpiConfig, ConfigError> {
     stage_config(source)?.finalize_with_project(true)
 }
 
-/// Stage 1 of two-stage trust-gated resolution (task 15.7): resolve every layer
+/// Stage 1 of two-stage trust-gated resolution: resolve every layer
 /// except the project `.opi/config.toml`. This is the config used to obtain
 /// trust inputs and the config applied when the project is untrusted.
 pub fn resolve_pre_trust_config(source: ConfigSource) -> Result<OpiConfig, ConfigError> {

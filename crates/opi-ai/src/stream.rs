@@ -1,6 +1,14 @@
 //! Streaming response events (S7.3).
 
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+use futures_core::Stream;
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::{CancellationToken, WaitForCancellationFutureOwned};
+
+use crate::provider::ProviderError;
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -385,5 +393,152 @@ pub enum AssistantStreamEvent {
 impl AssistantStreamEvent {
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Done { .. } | Self::Error { .. })
+    }
+}
+
+/// Crate-private provider stream wrapper that gives request cancellation
+/// priority over already-buffered transport events.
+pub(crate) struct CancelAwareReceiverStream {
+    rx: Option<tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>>,
+    cancelled: Pin<Box<WaitForCancellationFutureOwned>>,
+    yielded_cancelled: bool,
+}
+
+impl CancelAwareReceiverStream {
+    pub(crate) fn new(
+        rx: tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>,
+        cancel: CancellationToken,
+    ) -> Self {
+        Self {
+            rx: Some(rx),
+            cancelled: Box::pin(cancel.cancelled_owned()),
+            yielded_cancelled: false,
+        }
+    }
+}
+
+impl Stream for CancelAwareReceiverStream {
+    type Item = Result<AssistantStreamEvent, ProviderError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if !this.yielded_cancelled && this.cancelled.as_mut().poll(cx).is_ready() {
+            this.rx.take();
+            this.yielded_cancelled = true;
+            return Poll::Ready(Some(Err(ProviderError::Cancelled)));
+        }
+
+        match this.rx.as_mut() {
+            Some(rx) => rx.poll_recv(cx),
+            None => Poll::Ready(None),
+        }
+    }
+}
+
+pub(crate) async fn send_or_cancel(
+    cancel: &CancellationToken,
+    tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
+    item: Result<AssistantStreamEvent, ProviderError>,
+) -> Result<bool, ProviderError> {
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Err(ProviderError::Cancelled),
+        sent = tx.send(item) => Ok(sent.is_ok()),
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use std::future::Future as _;
+
+    use futures_util::StreamExt;
+    use tokio_util::sync::CancellationToken;
+
+    use super::{CancelAwareReceiverStream, send_or_cancel};
+    use crate::provider::{ProviderError, ProviderErrorSummary};
+
+    #[tokio::test]
+    async fn backpressured_producer_cancels_and_buffered_events_are_discarded() {
+        let cancel = CancellationToken::new();
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        tx.send(Err(ProviderError::StreamError(
+            ProviderErrorSummary::redacted(),
+        )))
+        .await
+        .expect("prefill event channel");
+        let mut stream = CancelAwareReceiverStream::new(rx, cancel.clone());
+        let producer_cancel = cancel.clone();
+        let producer_tx = tx.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let producer = tokio::spawn(async move {
+            let mut started_tx = Some(started_tx);
+            let mut blocked_send = Box::pin(send_or_cancel(
+                &producer_cancel,
+                &producer_tx,
+                Err(ProviderError::StreamError(ProviderErrorSummary::redacted())),
+            ));
+            std::future::poll_fn(move |cx| {
+                let result = blocked_send.as_mut().poll(cx);
+                if result.is_pending()
+                    && let Some(started_tx) = started_tx.take()
+                {
+                    started_tx.send(()).expect("signal producer backpressure");
+                }
+                result
+            })
+            .await
+        });
+
+        started_rx.await.expect("producer reached backpressure");
+        cancel.cancel();
+
+        let producer_result = tokio::time::timeout(std::time::Duration::from_secs(1), producer)
+            .await
+            .expect("backpressured producer must terminate promptly")
+            .expect("producer task did not panic");
+        assert!(matches!(producer_result, Err(ProviderError::Cancelled)));
+        assert!(matches!(
+            stream.next().await,
+            Some(Err(ProviderError::Cancelled))
+        ));
+        assert!(
+            stream.next().await.is_none(),
+            "buffered pre-cancel events must be discarded"
+        );
+    }
+
+    #[tokio::test]
+    async fn idle_live_sender_does_not_hide_cancellation_from_pending_consumer() {
+        let cancel = CancellationToken::new();
+        let (_idle_tx, rx) = tokio::sync::mpsc::channel(1);
+        let mut stream = CancelAwareReceiverStream::new(rx, cancel.clone());
+        let (pending_tx, pending_rx) = tokio::sync::oneshot::channel();
+        let consumer = tokio::spawn(async move {
+            let mut pending_tx = Some(pending_tx);
+            let first = {
+                let mut next = Box::pin(stream.next());
+                std::future::poll_fn(move |cx| {
+                    let result = next.as_mut().poll(cx);
+                    if result.is_pending()
+                        && let Some(pending_tx) = pending_tx.take()
+                    {
+                        pending_tx.send(()).expect("signal pending consumer");
+                    }
+                    result
+                })
+                .await
+            };
+            (first, stream.next().await)
+        });
+
+        pending_rx.await.expect("consumer reached Pending");
+        cancel.cancel();
+
+        let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(1), consumer)
+            .await
+            .expect("pending consumer must wake promptly on cancellation")
+            .expect("consumer task did not panic");
+        assert!(matches!(first, Some(Err(ProviderError::Cancelled))));
+        assert!(second.is_none());
     }
 }

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use opi_ai::auth::{LoginPresenter, OAuthLoginMethod};
 use opi_ai::credential::{BoxAuthFuture, Credential, CredentialStore};
-use opi_ai::provider::ProviderError;
+use opi_ai::provider::{ProviderError, ProviderErrorSummary};
 use opi_ai::test_support::MockProvider;
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{
@@ -135,7 +135,9 @@ impl LoginPresenter for ConcretePresenter {
         let fail = self.fail_auth_url;
         Box::pin(async move {
             if fail {
-                Err(ProviderError::Config(SECRET_CANARY.to_owned()))
+                Err(ProviderError::Config(ProviderErrorSummary::from_untrusted(
+                    SECRET_CANARY,
+                )))
             } else {
                 Ok(())
             }
@@ -1131,7 +1133,7 @@ async fn dispatcher_store_and_lock_failures_are_typed_redacted_and_unsuccessful(
         let AuthCommandOutcome::Failed { message } = outcome else {
             panic!("store/lock failure reported success: {outcome:?}");
         };
-        assert_eq!(message, "credential store operation failed");
+        assert_eq!(message, "authentication configuration failed");
         assert!(!message.contains(SECRET_CANARY));
         assert_eq!(presenter.success_count.load(Ordering::SeqCst), 0);
         assert!(store.read("anthropic").await.is_err() || lock_held);

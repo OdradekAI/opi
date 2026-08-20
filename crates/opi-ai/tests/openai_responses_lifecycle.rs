@@ -201,7 +201,7 @@ async fn stream_auth_error() {
     match result {
         Err(ProviderError::AuthFailed(msg)) => {
             assert!(
-                msg.contains("authentication failed"),
+                msg.contains("provider rejected credentials"),
                 "should mention auth failure: {msg}"
             );
         }

@@ -481,6 +481,7 @@ async fn unterminated_provider_stream_is_a_protocol_failure() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .expect_err("EOF without a terminal event must fail");
 
     assert!(matches!(error, AgentError::ProviderProtocol { .. }));
@@ -528,6 +529,7 @@ async fn h3_parallel_tools_both_execute() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     let entries = log.lock().unwrap();
@@ -579,6 +581,7 @@ async fn h3_sequential_tool_forces_serial_execution() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     let entries = log.lock().unwrap();
@@ -643,6 +646,7 @@ async fn phase8_tool_scheduling_contract() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
     {
         let entries = log.lock().unwrap();
@@ -694,6 +698,7 @@ async fn phase8_tool_scheduling_contract() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
     {
         let entries = log2.lock().unwrap();
@@ -752,6 +757,7 @@ async fn h4_all_terminate_stops_early() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     assert_eq!(
@@ -804,6 +810,7 @@ async fn h4_partial_terminate_continues() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     assert_eq!(
@@ -834,6 +841,7 @@ async fn h5_prepare_next_turn_injects_and_continues() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     assert_eq!(
@@ -877,6 +885,7 @@ async fn m1_tool_results_scoped_to_current_turn() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     let contexts = stop_contexts.lock().unwrap();
@@ -1037,6 +1046,7 @@ async fn phase8_event_order_no_tool_run() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     let seq = events.lock().unwrap();
@@ -1095,6 +1105,7 @@ async fn phase8_event_order_one_tool_run() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     let seq = events.lock().unwrap();
@@ -1183,6 +1194,7 @@ async fn phase8_event_order_prepare_next_turn_injection() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     assert_eq!(
@@ -1231,6 +1243,7 @@ async fn phase8_event_order_terminal_stop_runs_prepare_then_stops() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     let seq = events.lock().unwrap();
@@ -1324,6 +1337,7 @@ async fn phase8_tool_scheduling_parallel_batch_executes_all() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     let entries = log.lock().unwrap();
@@ -1376,6 +1390,7 @@ async fn phase8_tool_scheduling_sequential_batch_runs_serially() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     let entries = log.lock().unwrap();
@@ -1433,6 +1448,7 @@ async fn phase8_tool_scheduling_mixed_batch_forces_sequential() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     let entries = log.lock().unwrap();
@@ -1496,6 +1512,7 @@ async fn phase8_tool_scheduling_persisted_results_in_source_order() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     // Sanity: completion order genuinely diverged (tool_b finished first).
@@ -1566,6 +1583,7 @@ async fn phase8_tool_scheduling_completion_events_one_per_tool() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     let ids = end_ids.lock().unwrap();
@@ -1623,6 +1641,7 @@ async fn phase8_tool_scheduling_all_terminate_stops_early() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     assert_eq!(
@@ -1678,6 +1697,7 @@ async fn phase8_tool_scheduling_partial_terminate_continues() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .unwrap();
 
     assert_eq!(
@@ -1704,6 +1724,7 @@ async fn phase8_tool_scheduling_partial_terminate_continues() {
 /// arrives, so nothing is pushed to the message buffer.
 struct HangingStreamProvider {
     call_count: Arc<Mutex<usize>>,
+    stream_started: Arc<tokio::sync::Notify>,
 }
 
 impl Provider for HangingStreamProvider {
@@ -1726,6 +1747,7 @@ impl Provider for HangingStreamProvider {
     }
     fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         *self.call_count.lock().unwrap() += 1;
+        self.stream_started.notify_one();
         let mut partial = base_msg();
         partial.content.push(AssistantContent::Text {
             text: "partial".into(),
@@ -1763,12 +1785,40 @@ fn agent_end_sink(
     })
 }
 
+async fn wait_for_readiness(
+    readiness: &tokio::sync::Notify,
+    timeout: Duration,
+    label: &str,
+) -> Result<(), String> {
+    tokio::time::timeout(timeout, readiness.notified())
+        .await
+        .map_err(|_| format!("timed out waiting for {label}"))
+}
+
+// opi-phase17-acceptance
+#[tokio::test]
+async fn bounded_readiness_guard_reports_timeout_instead_of_hanging() {
+    let readiness = tokio::sync::Notify::new();
+    let error = wait_for_readiness(
+        &readiness,
+        Duration::from_millis(10),
+        "agent stream readiness",
+    )
+    .await
+    .expect_err("an unreported readiness event must time out");
+    assert!(
+        error.contains("agent stream readiness"),
+        "timeout identifies the stalled readiness boundary: {error}"
+    );
+}
+
 // DoD: a run cancelled before its first turn never calls the provider, emits a
 // terminal AgentEnd, and returns Err(AgentError::Cancelled).
 #[tokio::test]
 async fn phase8_cancellation_contract_before_turn_emits_agent_end_and_returns_cancelled() {
     let provider = HangingStreamProvider {
         call_count: Arc::new(Mutex::new(0)),
+        stream_started: Arc::new(tokio::sync::Notify::new()),
     };
     let call_count = provider.call_count.clone();
 
@@ -1785,7 +1835,7 @@ async fn phase8_cancellation_contract_before_turn_emits_agent_end_and_returns_ca
     let result =
         opi_agent::agent_loop(context, AgentLoopConfig::default(), &hooks, sink, cancel).await;
     assert!(
-        matches!(result, Err(AgentError::Cancelled)),
+        matches!(result.error(), Some(AgentError::Cancelled)),
         "cancelled-before-turn run returns Err(Cancelled): {result:?}"
     );
     assert_eq!(
@@ -1819,8 +1869,10 @@ async fn phase8_cancellation_contract_before_turn_emits_agent_end_and_returns_ca
 // assistant content.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase8_cancellation_contract_during_stream_discards_partial_and_emits_agent_end() {
+    let stream_started = Arc::new(tokio::sync::Notify::new());
     let provider = HangingStreamProvider {
         call_count: Arc::new(Mutex::new(0)),
+        stream_started: stream_started.clone(),
     };
     let call_count = provider.call_count.clone();
 
@@ -1845,13 +1897,21 @@ async fn phase8_cancellation_contract_during_stream_discards_partial_and_emits_a
         .await
     });
 
-    // Let the provider emit Start + the partial TextDelta and enter its hang.
-    tokio::time::sleep(Duration::from_millis(120)).await;
+    wait_for_readiness(
+        &stream_started,
+        Duration::from_secs(2),
+        "provider stream dispatch before cancellation",
+    )
+    .await
+    .expect("provider stream must start before cancellation");
     cancel.cancel();
 
-    let result = handle.await.expect("agent_loop task panicked");
+    let result = tokio::time::timeout(Duration::from_secs(2), handle)
+        .await
+        .expect("agent_loop must terminate after cancellation")
+        .expect("agent_loop task panicked");
     assert!(
-        matches!(result, Err(AgentError::Cancelled)),
+        matches!(result.error(), Some(AgentError::Cancelled)),
         "mid-stream cancel returns Err(Cancelled): {result:?}"
     );
     assert_eq!(

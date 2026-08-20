@@ -1,4 +1,4 @@
-//! AWS Bedrock provider (task 3.1).
+//! AWS Bedrock provider.
 //!
 //! Implements the Bedrock Converse API with SigV4 signing, event-stream
 //! parsing, and credential resolution. No live AWS calls.
@@ -10,59 +10,43 @@ pub mod sigv4;
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
+use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
-use crate::bedrock::credentials::BedrockCredentials;
 use crate::bedrock::sigv4::{AwsCredentials, sign_request};
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::model_info::WireApi;
-use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{
+    EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
+};
+use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
-use crate::stream::{AssistantStreamEvent, StopReason, Usage};
+use crate::stream::{
+    AssistantStreamEvent, CancelAwareReceiverStream, StopReason, Usage, send_or_cancel,
+};
 
 /// Model families supported by this provider.
 const SUPPORTED_FAMILIES: &[&str] = &["anthropic", "meta", "mistral", "amazon", "cohere"];
 
 /// Concrete AWS Bedrock provider using the Converse API.
 pub struct BedrockProvider {
-    credentials: AwsCredentials,
     base_url: Option<String>,
     models: Vec<ModelInfo>,
     client: Arc<HttpClient>,
 }
 
 impl BedrockProvider {
-    pub fn new(
-        credentials: AwsCredentials,
-        base_url: Option<String>,
-        client: Arc<HttpClient>,
-    ) -> Self {
+    /// Construct a credential-free Bedrock wire adapter.
+    ///
+    /// AWS credentials arrive only through per-call prepared authentication.
+    pub fn new(base_url: Option<String>, client: Arc<HttpClient>) -> Self {
         let models = model_catalog();
         Self {
-            credentials,
             base_url,
             models,
             client,
         }
-    }
-
-    /// Create from resolved BedrockCredentials (credential resolution layer).
-    pub fn from_credentials(
-        creds: BedrockCredentials,
-        base_url: Option<String>,
-        client: Arc<HttpClient>,
-    ) -> Self {
-        Self::new(
-            AwsCredentials {
-                access_key_id: creds.access_key_id,
-                secret_access_key: creds.secret_access_key,
-                session_token: creds.session_token,
-                region: creds.region,
-            },
-            base_url,
-            client,
-        )
     }
 
     /// Replace the HTTP client with a shared one (for proxy configuration
@@ -87,9 +71,11 @@ impl BedrockProvider {
         if SUPPORTED_FAMILIES.contains(&family) {
             Ok(())
         } else {
-            Err(ProviderError::Config(format!(
-                "unsupported Bedrock model family '{family}' in model ID '{model_id}'; supported families: {}",
-                SUPPORTED_FAMILIES.join(", ")
+            Err(ProviderError::Config(ProviderErrorSummary::sanitized(
+                format!(
+                    "unsupported Bedrock model family '{family}' in model ID '{model_id}'; supported families: {}",
+                    SUPPORTED_FAMILIES.join(", ")
+                ),
             )))
         }
     }
@@ -173,13 +159,10 @@ impl BedrockProvider {
     }
 
     /// Get the base URL for Bedrock runtime API.
-    fn runtime_url(&self) -> String {
-        self.base_url.clone().unwrap_or_else(|| {
-            format!(
-                "https://bedrock-runtime.{}.amazonaws.com",
-                self.credentials.region
-            )
-        })
+    fn runtime_url(&self, region: &str) -> String {
+        self.base_url
+            .clone()
+            .unwrap_or_else(|| format!("https://bedrock-runtime.{region}.amazonaws.com"))
     }
 }
 
@@ -192,21 +175,7 @@ impl Provider for BedrockProvider {
         &self.models
     }
 
-    /// Compound-credential exemption.
-    ///
-    /// This provider holds a multi-field AWS SigV4 credential
-    /// (`access_key_id` + `secret_access_key` + `session_token` + `region`) as
-    /// construction-time state in [`AwsCredentials`]. The supplied
-    /// [`ResolvedAuth`](crate::auth::ResolvedAuth) carries only a single secret
-    /// slot, which cannot carry SigV4's four-field credential shape, so the
-    /// resolved secret is ignored (`_auth`) and the request is signed and
-    /// dispatched directly with `self.credentials` via [`sign_request`]. This
-    /// provider holds no [`AuthResolver`](crate::auth::AuthResolver); credential
-    /// resolution runs before construction, so the frozen construction-time
-    /// credential is the sole auth source on every prepared call.
-    fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
-        let credentials = self.credentials.clone();
-        let base_url = self.runtime_url();
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
         let body = self.build_converse_body(&request);
         let cancel = request.cancel.clone();
         let model_id = request
@@ -231,36 +200,57 @@ impl Provider for BedrockProvider {
                     {
                         return Box::pin(stream::iter(vec![Err(
                             ProviderError::UnsupportedCapability(
-                                "URL-sourced images are not supported by Bedrock. Use base64 or bytes."
-                                    .into(),
-                            )
+                                ProviderErrorSummary::attested_static(
+                                    "URL-sourced images are not supported by Bedrock. Use base64 or bytes.",
+                                ),
+                            ),
                         )]));
                     }
                 }
             }
         }
 
+        let credentials = match auth.scheme {
+            crate::auth::AuthScheme::AwsSigV4(credentials) => credentials,
+            _ => {
+                return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                    ProviderErrorSummary::attested_static(
+                        "Bedrock requires prepared AWS SigV4 authentication",
+                    ),
+                ))]));
+            }
+        };
+        let base_url = self.runtime_url(&credentials.region);
+        let timeout = request.timeout;
+        let extra_headers = request.extra_headers;
+
         let http_client = self.client.client().clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
+        let producer_cancel = cancel.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = Self::stream_http(
+            let result = Self::stream_http(
                 http_client,
                 credentials,
                 base_url,
                 &model_id,
                 &body,
-                cancel,
+                producer_cancel.clone(),
+                timeout,
+                extra_headers,
                 &tx,
             )
-            .await
-            {
-                let _ = tx.send(Err(e)).await;
+            .await;
+            match result {
+                Ok(()) | Err(ProviderError::Cancelled) => {}
+                Err(error) => {
+                    let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                }
             }
         });
 
-        Box::pin(ReceiverStream { rx })
+        Box::pin(CancelAwareReceiverStream::new(rx, cancel))
     }
 }
 
@@ -269,6 +259,7 @@ impl Provider for BedrockProvider {
 // ---------------------------------------------------------------------------
 
 impl BedrockProvider {
+    #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         client: reqwest::Client,
         credentials: AwsCredentials,
@@ -276,6 +267,8 @@ impl BedrockProvider {
         model_id: &str,
         body: &serde_json::Value,
         cancel: CancellationToken,
+        timeout: Option<std::time::Duration>,
+        extra_headers: Vec<(String, String)>,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let path = format!("/model/{model_id}/converse-stream");
@@ -294,46 +287,83 @@ impl BedrockProvider {
         let date_time = chrono_format(secs);
         let date_stamp = date_string(secs);
 
+        if let Some((name, _)) = extra_headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("x-amz-security-token"))
+        {
+            return Err(ProviderError::RequestFailed(
+                ProviderErrorSummary::sanitized(format!(
+                    "request header '{name}' is reserved for Bedrock SigV4 authentication"
+                )),
+            ));
+        }
+
+        let mut route_headers = vec![
+            ("host".to_owned(), host),
+            ("content-type".to_owned(), "application/json".to_owned()),
+            ("x-amz-date".to_owned(), date_time.clone()),
+            (
+                "x-amz-content-sha256".to_owned(),
+                sigv4::sha256_hex(&payload),
+            ),
+        ];
+        if let Some(token) = &credentials.session_token {
+            route_headers.push((
+                "x-amz-security-token".to_owned(),
+                token.expose_secret().to_owned(),
+            ));
+        }
+        let mut headers =
+            ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+        let signing_headers: Vec<_> = headers
+            .iter()
+            .filter(|(name, _)| !name.eq_ignore_ascii_case("x-amz-security-token"))
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect();
         let signed = sign_request(
             "POST",
             &path,
             "",
-            &[
-                ("host", &host),
-                ("content-type", "application/json"),
-                ("x-amz-content-sha256", &sigv4::sha256_hex(&payload)),
-                ("x-amz-date", &date_time),
-            ],
+            &signing_headers,
             &payload,
             &credentials,
             "bedrock",
             &date_stamp,
             &date_time,
         );
-
+        headers.push((
+            "authorization".to_owned(),
+            signed.authorization.expose_secret().to_owned(),
+        ));
         let url = format!("{base_url}{path}");
-        let mut req = client
-            .post(&url)
-            .header("content-type", "application/json")
-            .header("x-amz-date", &signed.x_amz_date)
-            .header("x-amz-content-sha256", &signed.x_amz_content_sha256)
-            .header("authorization", &signed.authorization)
-            .body(payload);
-
-        if let Some(token) = &signed.x_amz_security_token {
-            req = req.header("x-amz-security-token", token);
+        let mut req = client.post(&url);
+        for (name, value) in headers {
+            req = req.header(name, value);
         }
+        if let Some(timeout) = timeout {
+            req = req.timeout(timeout);
+        }
+        let req = req.body(payload);
 
-        let response = req
-            .send()
-            .await
-            .map_err(|e| ProviderError::Network(format!("Bedrock request failed: {e}")))?;
+        let response = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
+            response = req.send() => response,
+        }
+        .map_err(|error| {
+            if error.is_timeout() {
+                ProviderError::Timeout
+            } else {
+                ProviderError::Network(ProviderErrorSummary::sanitized(format!(
+                    "Bedrock request failed: {error}"
+                )))
+            }
+        })?;
 
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
-            let error_body = response.text().await.unwrap_or_default();
-            return Err(map_bedrock_status(status, &error_body, &headers));
+            return Err(map_bedrock_status(status, &headers));
         }
 
         let mut byte_stream = response.bytes_stream();
@@ -342,15 +372,21 @@ impl BedrockProvider {
 
         loop {
             let chunk = tokio::select! {
-                _ = cancel.cancelled() => return Ok(()),
+                biased;
+                _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
                 chunk = byte_stream.next() => match chunk {
                     Some(c) => c,
                     None => break,
                 },
             };
 
-            let chunk =
-                chunk.map_err(|e: reqwest::Error| ProviderError::StreamError(e.to_string()))?;
+            let chunk = chunk.map_err(|error: reqwest::Error| {
+                if error.is_timeout() {
+                    ProviderError::Timeout
+                } else {
+                    ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
+                }
+            })?;
             buffer.extend_from_slice(&chunk);
 
             let frames = event_stream::parse_frames(&mut buffer);
@@ -360,13 +396,13 @@ impl BedrockProvider {
                     match event {
                         Ok(bedrock_event) => {
                             for stream_event in mapper.process(bedrock_event) {
-                                if tx.send(Ok(stream_event)).await.is_err() {
+                                if !send_or_cancel(&cancel, tx, Ok(stream_event)).await? {
                                     return Ok(());
                                 }
                             }
                         }
                         Err(e) => {
-                            if tx.send(Err(e)).await.is_err() {
+                            if !send_or_cancel(&cancel, tx, Err(e)).await? {
                                 return Ok(());
                             }
                         }
@@ -376,15 +412,20 @@ impl BedrockProvider {
         }
 
         if let Some(pending) = mapper.flush_pending() {
-            let _ = tx.send(Ok(pending)).await;
+            let _ = send_or_cancel(&cancel, tx, Ok(pending)).await?;
         }
 
         if !mapper.saw_done {
-            let _ = tx
-                .send(Err(ProviderError::StreamError(
-                    "Bedrock stream ended without terminal event".into(),
-                )))
-                .await;
+            let _ = send_or_cancel(
+                &cancel,
+                tx,
+                Err(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static(
+                        "Bedrock stream ended without terminal event",
+                    ),
+                )),
+            )
+            .await?;
         }
 
         Ok(())
@@ -453,25 +494,6 @@ fn is_leap(y: u64) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// ReceiverStream adapter
-// ---------------------------------------------------------------------------
-
-struct ReceiverStream {
-    rx: tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>,
-}
-
-impl futures_core::Stream for ReceiverStream {
-    type Item = Result<AssistantStreamEvent, ProviderError>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        self.rx.poll_recv(cx)
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Bedrock event parsing
 // ---------------------------------------------------------------------------
 
@@ -526,9 +548,9 @@ fn parse_bedrock_event(
             let parsed: serde_json::Value = match serde_json::from_str(payload) {
                 Ok(v) => v,
                 Err(e) => {
-                    return vec![Err(ProviderError::StreamError(format!(
-                        "invalid contentBlockStart: {e}"
-                    )))];
+                    return vec![Err(ProviderError::StreamError(
+                        ProviderErrorSummary::sanitized(format!("invalid contentBlockStart: {e}")),
+                    ))];
                 }
             };
             let index = parsed
@@ -566,9 +588,9 @@ fn parse_bedrock_event(
             let parsed: serde_json::Value = match serde_json::from_str(payload) {
                 Ok(v) => v,
                 Err(e) => {
-                    return vec![Err(ProviderError::StreamError(format!(
-                        "invalid contentBlockDelta: {e}"
-                    )))];
+                    return vec![Err(ProviderError::StreamError(
+                        ProviderErrorSummary::sanitized(format!("invalid contentBlockDelta: {e}")),
+                    ))];
                 }
             };
             let index = parsed
@@ -981,25 +1003,20 @@ fn serialize_converse_messages(messages: &[crate::message::Message]) -> serde_js
 // Error mapping
 // ---------------------------------------------------------------------------
 
-/// Map an HTTP status code + body + headers to a `ProviderError`.
+/// Map an HTTP status code + headers to a bodyless, credential-safe error.
 pub fn map_bedrock_status(
     status: reqwest::StatusCode,
-    body: &str,
     headers: &reqwest::header::HeaderMap,
 ) -> ProviderError {
     match status.as_u16() {
-        401 | 403 => ProviderError::AuthFailed(format!(
-            "Bedrock access denied: {}",
-            crate::http::safe_excerpt(body)
-        )),
+        401 | 403 => ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected()),
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
         408 | 504 => ProviderError::Timeout,
-        code => ProviderError::ProviderSide(format!(
-            "Bedrock HTTP {code}: {}",
-            crate::http::safe_excerpt(body)
-        )),
+        code => ProviderError::ProviderSide(ProviderErrorSummary::sanitized(format!(
+            "Bedrock HTTP {code}"
+        ))),
     }
 }
 
@@ -1008,12 +1025,8 @@ pub fn map_bedrock_status(
 // ---------------------------------------------------------------------------
 
 /// Redact AWS credentials for safe display.
-pub fn redact_credentials(access_key_id: &str, _secret_key: &str) -> String {
-    if access_key_id.len() > 4 {
-        format!("{}***", &access_key_id[..4])
-    } else {
-        "***".to_string()
-    }
+pub fn redact_credentials(_access_key_id: &str, _secret_key: &str) -> String {
+    "***".to_string()
 }
 
 // ---------------------------------------------------------------------------

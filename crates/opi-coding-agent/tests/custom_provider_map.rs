@@ -3,6 +3,50 @@ use opi_coding_agent::config::{ConfigError, ConfigSource, load_config_file, reso
 
 static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+    ENV_MUTEX
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+struct EnvVarGuard {
+    key: String,
+    original: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &str, value: &str) -> Self {
+        let guard = Self {
+            key: key.to_owned(),
+            original: std::env::var_os(key),
+        };
+        // SAFETY: callers hold ENV_MUTEX for this guard's entire lifetime.
+        unsafe { std::env::set_var(key, value) };
+        guard
+    }
+
+    fn remove(key: &str) -> Self {
+        let guard = Self {
+            key: key.to_owned(),
+            original: std::env::var_os(key),
+        };
+        // SAFETY: callers hold ENV_MUTEX for this guard's entire lifetime.
+        unsafe { std::env::remove_var(key) };
+        guard
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match &self.original {
+            // SAFETY: the guard is dropped before its caller releases ENV_MUTEX.
+            Some(value) => unsafe { std::env::set_var(&self.key, value) },
+            // SAFETY: the guard is dropped before its caller releases ENV_MUTEX.
+            None => unsafe { std::env::remove_var(&self.key) },
+        }
+    }
+}
+
 fn write_config(root: &std::path::Path, relative: &str, contents: &str) -> std::path::PathBuf {
     let path = root.join(relative);
     if let Some(parent) = path.parent() {
@@ -453,7 +497,7 @@ async fn custom_mapped_provider_routes_three_wires_with_lazy_shared_env_auth() {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    let _env_guard = ENV_MUTEX.lock().expect("env lock");
+    let _env_lock = lock_env();
     let server = MockServer::start().await;
     for (route, body) in [
         (
@@ -485,9 +529,7 @@ async fn custom_mapped_provider_routes_three_wires_with_lazy_shared_env_auth() {
     }
 
     let env_name = "OPI_TEST_CUSTOM_MAPPED_SHARED_AUTH_1416";
-    let original = std::env::var_os(env_name);
-    // SAFETY: this test uses a task-unique environment variable and restores it.
-    unsafe { std::env::remove_var(env_name) };
+    let _env = EnvVarGuard::remove(env_name);
     let root = tempfile::tempdir().unwrap();
     let path = write_config(
         root.path(),
@@ -551,7 +593,7 @@ max_output_tokens = 8192
         .expect("register acme route");
 
     for (index, model) in ["claude", "chat", "responses"].into_iter().enumerate() {
-        // SAFETY: this test uses a task-unique environment variable and restores it.
+        // SAFETY: serialized by ENV_MUTEX and restored by EnvVarGuard.
         unsafe { std::env::set_var(env_name, format!("token-{index}")) };
         let request = Request {
             model: format!("acme:{model}"),
@@ -613,17 +655,6 @@ max_output_tokens = 8192
         requests[0].headers.get("anthropic-beta").is_none(),
         "custom Anthropic Bearer must not inherit direct Anthropic OAuth headers"
     );
-
-    match original {
-        Some(value) => {
-            // SAFETY: restoring the task-unique environment variable.
-            unsafe { std::env::set_var(env_name, value) };
-        }
-        None => {
-            // SAFETY: restoring the task-unique environment variable.
-            unsafe { std::env::remove_var(env_name) };
-        }
-    }
 }
 
 #[tokio::test]
@@ -642,7 +673,7 @@ async fn production_custom_provider_reloads_store_then_env_auth_for_each_stream(
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    let _env_guard = ENV_MUTEX.lock().expect("env lock");
+    let _env_lock = lock_env();
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
@@ -660,9 +691,7 @@ async fn production_custom_provider_reloads_store_then_env_auth_for_each_stream(
         .await;
 
     let env_name = "OPI_TEST_CUSTOM_ROTATING_SOURCE_1416";
-    let original = std::env::var_os(env_name);
-    // SAFETY: this test serializes and restores its task-unique environment variable.
-    unsafe { std::env::set_var(env_name, "env-token-after-rotation") };
+    let _env = EnvVarGuard::set(env_name, "env-token-after-rotation");
 
     let backend = FakeKeyringBackend::new();
     backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "acme", "api_key");
@@ -771,24 +800,15 @@ max_output_tokens = 8192
             .and_then(|value| value.to_str().ok()),
         Some("Bearer env-token-after-rotation")
     );
-
-    match original {
-        Some(value) => {
-            // SAFETY: restoring the task-unique environment variable.
-            unsafe { std::env::set_var(env_name, value) };
-        }
-        None => {
-            // SAFETY: restoring the task-unique environment variable.
-            unsafe { std::env::remove_var(env_name) };
-        }
-    }
 }
 
 #[tokio::test]
 #[allow(clippy::await_holding_lock)] // Serializes process-env mutation; awaited local HTTP work never re-acquires this lock.
 async fn production_custom_provider_redacts_401_and_403_for_all_three_wires() {
     use futures_util::StreamExt;
-    use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
+    use opi_ai::provider::{
+        CacheRetention, ProviderError, ProviderErrorSummary, Request, ThinkingConfig,
+    };
     use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
     use opi_coding_agent::credential_store::FakeKeyringBackend;
     use opi_coding_agent::provider_factory::build_provider_bundle;
@@ -796,11 +816,9 @@ async fn production_custom_provider_redacts_401_and_403_for_all_three_wires() {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    let _env_guard = ENV_MUTEX.lock().expect("env lock");
+    let _env_lock = lock_env();
     let env_name = "OPI_TEST_CUSTOM_AUTH_FAILURE_1416";
-    let original = std::env::var_os(env_name);
-    // SAFETY: this test serializes and restores its task-unique environment variable.
-    unsafe { std::env::set_var(env_name, "factory-auth-token-DO-NOT-LEAK") };
+    let _env = EnvVarGuard::set(env_name, "factory-auth-token-DO-NOT-LEAK");
 
     for status in [401, 403] {
         for (api, model, route) in [
@@ -894,8 +912,9 @@ max_output_tokens = 8192
                 .expect_err("401/403 must fail");
             assert!(
                 matches!(
-                    error,
-                    ProviderError::AuthFailed(ref reason) if reason == "authentication failed"
+                    &error,
+                    ProviderError::AuthFailed(reason)
+                        if reason == &ProviderErrorSummary::authentication_rejected()
                 ),
                 "{api} {status} must be a bodyless static-auth failure: {error:?}"
             );
@@ -914,17 +933,6 @@ max_output_tokens = 8192
             );
         }
     }
-
-    match original {
-        Some(value) => {
-            // SAFETY: restoring the task-unique environment variable.
-            unsafe { std::env::set_var(env_name, value) };
-        }
-        None => {
-            // SAFETY: restoring the task-unique environment variable.
-            unsafe { std::env::remove_var(env_name) };
-        }
-    }
 }
 
 #[tokio::test]
@@ -939,7 +947,7 @@ async fn custom_responses_affinity_requires_explicit_true_compat() {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    let _env_guard = ENV_MUTEX.lock().expect("env lock");
+    let _env_lock = lock_env();
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/responses"))
@@ -956,9 +964,7 @@ async fn custom_responses_affinity_requires_explicit_true_compat() {
         .await;
 
     let env_name = "OPI_TEST_CUSTOM_RESPONSES_AFFINITY_1416";
-    let original = std::env::var_os(env_name);
-    // SAFETY: this test serializes and restores its task-unique environment variable.
-    unsafe { std::env::set_var(env_name, "custom-responses-token") };
+    let _env = EnvVarGuard::set(env_name, "custom-responses-token");
     let root = tempfile::tempdir().unwrap();
     let path = write_config(
         root.path(),
@@ -1072,15 +1078,4 @@ send_session_id_header = true
         .and_then(|value| value.to_str().ok())
         .expect("explicit opt-in request id");
     assert_ne!(request_id, "session-custom-enabled");
-
-    match original {
-        Some(value) => {
-            // SAFETY: restoring the task-unique environment variable.
-            unsafe { std::env::set_var(env_name, value) };
-        }
-        None => {
-            // SAFETY: restoring the task-unique environment variable.
-            unsafe { std::env::remove_var(env_name) };
-        }
-    }
 }

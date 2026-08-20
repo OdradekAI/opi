@@ -347,9 +347,7 @@ fn phase17_legacy_session_fixture_byte_identical_after_resume_normalize_fork() {
 
 #[test]
 fn phase17_legacy_trace_file_blocks_evidence_setup_and_stays_byte_identical() {
-    use opi_agent::evidence::{
-        AssemblySource, ContentDigest, EvidenceError, EvidenceSink, RuntimeInputBinding,
-    };
+    use opi_agent::evidence::{ContentDigest, EvidenceError, EvidenceSink, RuntimeInputBinding};
     use opi_coding_agent::evidence::FileEvidenceSink;
 
     let dir = tempfile::tempdir().unwrap();
@@ -360,7 +358,7 @@ fn phase17_legacy_trace_file_blocks_evidence_setup_and_stays_byte_identical() {
 
     let binding = RuntimeInputBinding::direct(
         ContentDigest::from_hex("a".repeat(64)).expect("valid sha256 hex"),
-        AssemblySource::Cli,
+        opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     );
     let sink = FileEvidenceSink::new(trace_path.clone());
     let result = sink.setup(&binding);
@@ -396,7 +394,7 @@ fn artifact_dir() -> std::path::PathBuf {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in the awaited dispatch.
 async fn phase17_legacy_sessions_and_opaque_traces_are_byte_preserved() {
-    use opi_agent::evidence::{AssemblySource, EvidenceRecorder};
+    use opi_agent::evidence::EvidenceRecorder;
     use opi_coding_agent::config::ExecutionRunMode;
     use opi_coding_agent::evidence::{EvidenceBuilderConfig, FileEvidenceSink};
     use sha2::{Digest, Sha256};
@@ -446,7 +444,7 @@ async fn phase17_legacy_sessions_and_opaque_traces_are_byte_preserved() {
     .extra_routes(vec![(Box::new(beta), static_resolver())])
     .evidence(EvidenceBuilderConfig {
         recorder,
-        source: AssemblySource::Cli,
+        source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
 

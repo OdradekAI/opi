@@ -23,6 +23,8 @@
 //! opi-coding-agent's `AuthSource`); the factory + `AuthSource` + fake-store
 //! coverage lives in opi-coding-agent/tests.
 
+// opi-phase17-acceptance
+
 use std::sync::Arc;
 
 use futures_util::StreamExt;
@@ -577,7 +579,7 @@ async fn static_route_auth_errors_are_bodyless_for_all_profiles_and_schemes() {
                 .expect_err("401/403 must fail");
 
             assert!(
-                matches!(&error, ProviderError::AuthFailed(message) if message == "authentication failed"),
+                matches!(&error, ProviderError::AuthFailed(message) if message == "provider rejected credentials"),
                 "{route:?} HTTP {status}: {error:?}"
             );
             let rendered = format!("{error:?} {error}");

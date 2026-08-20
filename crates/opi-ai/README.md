@@ -66,8 +66,10 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `WireApi` / `ModelInfo` / `ModelCapabilities` | Exact request-wire identity plus model capability, thinking, compatibility, and pricing metadata. |
 | `ApiMappedProvider` | One public provider identity/catalog dispatched through a validated `WireApi -> Provider` route map. |
 | `ProviderError` / `ProviderErrorCategory` | Provider failure taxonomy: auth, config, request, network, rate_limit, provider, stream, capability, and cancelled (timeouts classify as network). |
+| `ProviderErrorSummary` | Closed redaction-safe provider-error text. Public construction is limited to `redacted()`, `authentication_rejected()`, and `from_untrusted(...)`; arbitrary provider payloads are not retained. |
 | `ProviderRegistry` | Resolves `provider:model`, registers custom providers, and layers model overrides. |
 | `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | Unstable-0.x models/auth seam above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. |
+| `PreparedProviderCall` / `PreparedRoute` | Opaque logical-call state returned by `ProviderCollection::prepare_call`, plus its public redacted route facts. `route`, `auth_provenance`, and `start_attempt` are the prepared-call lifecycle APIs. |
 | `CredentialStore` / `Credential` / `CredentialSource` | IO-free, object-safe credential persistence and redacted three-state probe contracts. |
 | `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | Flow-independent boxed-future OAuth contracts; concrete flows live in `opi-coding-agent`. |
 | `AuthResolver` / `ResolvedAuth` | Collection-owned per-call auth resolution contract; one prepared result is frozen before an attempt starts. |
@@ -98,8 +100,13 @@ GitHub Copilot routes one static catalog through Anthropic Messages, OpenAI
 Completions/Chat, and OpenAI Responses; OpenAI Codex uses its dedicated
 Responses provider rather than standard Responses compatibility flags. The
 collection resolves `AuthResolver` once in `prepare_call`, before any attempt,
-and every `start_attempt` reuses that frozen authentication. Missing and revoked
-credentials surface as explicit, non-retryable
+and returns `PreparedProviderCall`. Its `route()` exposes only `PreparedRoute`,
+`auth_provenance()` exposes non-secret provenance, and every `start_attempt()`
+reuses the frozen route, request, authentication, and cancellation token.
+Attempts are sequential: an overlapping stream returns
+`CollectionError::AttemptAlreadyActive`, cancellation returns `CallCancelled`,
+and a prior credential-needed/revoked attempt closes the prepared call with
+`CredentialTerminated`. Missing and revoked credentials surface as explicit, non-retryable
 `ProviderError::CredentialNeeded` and `ProviderError::CredentialRevoked`
 variants. Per-call credentials remain out of scope: `extra_headers` rejects
 provider-managed auth headers.

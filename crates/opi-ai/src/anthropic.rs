@@ -12,7 +12,7 @@ use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::model_info::{AnthropicMessagesCompat, WireApi, WireCompat};
 use crate::provider::{
-    CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request,
+    CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
     github_copilot_initiator, github_copilot_route_headers,
 };
 use crate::provider_headers::ProviderHeaders;
@@ -179,9 +179,11 @@ impl RawUsage {
         let cache_write = self.cache_creation_input_tokens.unwrap_or(0);
         let cache_write_1h = self.cache_creation_input_tokens_1h;
         if cache_write_1h.is_some_and(|tokens| tokens > u64::from(cache_write)) {
-            return Err(ProviderError::StreamError(format!(
-                "cache_creation_input_tokens_1h ({}) exceeds cache_creation_input_tokens ({cache_write})",
-                cache_write_1h.unwrap_or(0)
+            return Err(ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                format!(
+                    "cache_creation_input_tokens_1h ({}) exceeds cache_creation_input_tokens ({cache_write})",
+                    cache_write_1h.unwrap_or(0)
+                ),
             )));
         }
         if self.input_tokens.is_some()
@@ -910,9 +912,11 @@ impl AnthropicProvider {
                     break;
                 }
                 ParsedEvent::Malformed { event_type, .. } => {
-                    stream_events.push(Err(ProviderError::StreamError(format!(
-                        "malformed Anthropic SSE event '{event_type}'"
-                    ))));
+                    stream_events.push(Err(ProviderError::StreamError(
+                        ProviderErrorSummary::sanitized(format!(
+                            "malformed Anthropic SSE event '{event_type}'"
+                        )),
+                    )));
                 }
             }
         }
@@ -958,22 +962,27 @@ impl AnthropicProvider {
                 .header("authorization", format!("Bearer {secret}"))
                 .header("anthropic-beta", ANTHROPIC_OAUTH_BETA_HEADER),
             AuthScheme::Bearer => request.header("authorization", format!("Bearer {secret}")),
+            AuthScheme::AwsSigV4(_) => {
+                return Err(ProviderError::Config(
+                    ProviderErrorSummary::attested_static(
+                        "Anthropic does not accept AWS SigV4 authentication",
+                    ),
+                ));
+            }
         };
         let response = request.send().await.map_err(|e| {
             if e.is_timeout() {
                 ProviderError::Timeout
             } else {
-                ProviderError::Network(e.to_string())
+                ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
             }
         })?;
 
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
-            let error_body = response.text().await.unwrap_or_default();
             return Err(map_http_status(
                 status,
-                &error_body,
                 &headers,
                 auth_invalid_policy,
                 &provider_id,
@@ -1001,9 +1010,9 @@ impl AnthropicProvider {
                 if e.is_timeout() {
                     ProviderError::Timeout
                 } else if e.is_connect() {
-                    ProviderError::Network(e.to_string())
+                    ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
                 } else {
-                    ProviderError::StreamError(e.to_string())
+                    ProviderError::StreamError(ProviderErrorSummary::sanitized(e.to_string()))
                 }
             })?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
@@ -1019,8 +1028,8 @@ impl AnthropicProvider {
                     }
                     ParsedEvent::UsageError(error) => return Err(error),
                     ParsedEvent::Malformed { event_type, .. } => {
-                        let err = ProviderError::StreamError(format!(
-                            "malformed Anthropic SSE event '{event_type}'"
+                        let err = ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                            format!("malformed Anthropic SSE event '{event_type}'"),
                         ));
                         if tx.send(Err(err)).await.is_err() {
                             return Ok(());
@@ -1032,9 +1041,9 @@ impl AnthropicProvider {
 
         // Stream ended without a terminal event  - surface as provider protocol error
         if !mapper.saw_done {
-            let err = ProviderError::StreamError(
-                "stream ended without a terminal event (message_stop or error)".into(),
-            );
+            let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                "stream ended without a terminal event (message_stop or error)",
+            ));
             let _ = tx.send(Err(err)).await;
         }
 
@@ -1080,14 +1089,13 @@ fn drain_sse_events(buffer: &mut String) -> Vec<ParsedEvent> {
     events
 }
 
-/// Map an HTTP status code + body + headers to a `ProviderError`.
+/// Map an HTTP status code and headers to a `ProviderError`.
 ///
 /// `policy` is route construction policy rather than HTTP auth syntax. Both
 /// auth-invalid outcomes drop the response body because a proxy may echo the
 /// submitted credential.
 fn map_http_status(
     status: reqwest::StatusCode,
-    body: &str,
     headers: &reqwest::header::HeaderMap,
     policy: AuthInvalidPolicy,
     provider_id: &str,
@@ -1098,9 +1106,7 @@ fn map_http_status(
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
         408 | 504 => ProviderError::Timeout,
-        code => {
-            ProviderError::ProviderSide(format!("HTTP {code}: {}", crate::http::safe_excerpt(body)))
-        }
+        code => ProviderError::ProviderSide(ProviderErrorSummary::from_http_response(code)),
     }
 }
 
@@ -1207,10 +1213,10 @@ fn serialize_messages(
                     "tool_use_id": t.tool_call_id,
                     "content": text,
                 });
-                // Phase 11.9: the Anthropic Messages API documents `is_error` on
-                // the tool_result content block as the failure signal. Emit it
-                // only on failure so the is_error:false body stays byte-identical
-                // to the pre-fix shape.
+                // The Anthropic Messages API documents `is_error` on the
+                // tool_result content block as the failure signal. Emit it only
+                // on failure so successful results keep their established wire
+                // shape.
                 if t.is_error {
                     block["is_error"] = serde_json::Value::Bool(true);
                 }

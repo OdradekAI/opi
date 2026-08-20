@@ -1,12 +1,12 @@
-//! Phase 17.4 Reference Product trusted-tool authorization.
+//! Reference Product trusted-tool authorization.
 //!
 //! Owns the immutable digest-addressed [`EffectiveUserPolicy`], the fixed
 //! built-in capability map, and the [`ProductToolAuthorizer`] that reuses the
 //! existing `command.execute` permission policy. Built-in Reference Product
 //! tools enter the Agent as [`RegisteredTool`]s with their fixed capability;
 //! extension/embedder tools without an exact existing capability permission are
-//! **excluded** (fail-closed — Phase 17.4 creates no implicit allow rule and no
-//! new permission language).
+//! **excluded**: the product creates no implicit allow rule or new permission
+//! language.
 //!
 //! Boundary: the [`ProductToolAuthorizer`] decision derives ONLY from the
 //! immutable policy + the capability + the current evidence-health snapshot
@@ -22,10 +22,12 @@ use std::sync::Arc;
 
 use opi_agent::Tool;
 use opi_agent::authority::{
-    AuthorizationDecision, AuthorizationError, Capability, RegisteredTool, RegistrationId,
+    AuthorizationDecision, AuthorizationError, CapabilityIdentity, RegisteredTool, RegistrationId,
     ToolAuthorizationRequest, ToolAuthorizer, ToolOrigin,
 };
-use opi_agent::evidence::CapabilityClass;
+use opi_agent::evidence::{
+    PermissionReference, PermissionScope, PolicyReference, ScopedGrantReference,
+};
 use opi_agent::extension::CollectedExtensionTool;
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
@@ -37,15 +39,29 @@ use crate::execution::permission::{
 use crate::execution::router::{CandidateDecision, Eligibility, resolve_candidate};
 use opi_tui::{PermissionChoice, PermissionSummary};
 
+/// Product-owned workspace-read capability.
+pub static WORKSPACE_READ_CAPABILITY: std::sync::LazyLock<CapabilityIdentity> =
+    std::sync::LazyLock::new(|| {
+        CapabilityIdentity::new("opi.workspace.read").expect("valid product capability")
+    });
+/// Product-owned workspace-write capability.
+pub static WORKSPACE_WRITE_CAPABILITY: std::sync::LazyLock<CapabilityIdentity> =
+    std::sync::LazyLock::new(|| {
+        CapabilityIdentity::new("opi.workspace.write").expect("valid product capability")
+    });
+/// Product-owned command-execution capability.
+pub static COMMAND_EXECUTE_CAPABILITY: std::sync::LazyLock<CapabilityIdentity> =
+    std::sync::LazyLock::new(|| {
+        CapabilityIdentity::new("opi.command.execute").expect("valid product capability")
+    });
+
 /// The fixed built-in capability map (spec lines 419-423). Returns `None` for
 /// names that are not built-in Reference Product tools.
-pub fn builtin_capability(name: &str) -> Option<Capability> {
+pub fn builtin_capability(name: &str) -> Option<CapabilityIdentity> {
     match name {
-        "read" | "grep" | "find" | "ls" | "glob" => {
-            Some(Capability::Builtin(CapabilityClass::WorkspaceRead))
-        }
-        "write" | "edit" => Some(Capability::Builtin(CapabilityClass::WorkspaceWrite)),
-        "bash" => Some(Capability::Builtin(CapabilityClass::CommandExecute)),
+        "read" | "grep" | "find" | "ls" | "glob" => Some(WORKSPACE_READ_CAPABILITY.clone()),
+        "write" | "edit" => Some(WORKSPACE_WRITE_CAPABILITY.clone()),
+        "bash" => Some(COMMAND_EXECUTE_CAPABILITY.clone()),
         _ => None,
     }
 }
@@ -53,7 +69,7 @@ pub fn builtin_capability(name: &str) -> Option<Capability> {
 /// Register the built-in Reference Product tools as trusted registrations with
 /// their fixed capability and a `Builtin` origin. Non-built-in tools (extension
 /// or embedder tools without an exact existing capability permission) are
-/// dropped: Phase 17.4 excludes them rather than implicitly allowing them.
+/// dropped rather than implicitly allowed.
 pub fn register_builtin_tools(tools: Vec<Box<dyn Tool>>) -> Vec<RegisteredTool> {
     tools
         .into_iter()
@@ -75,8 +91,8 @@ pub fn register_builtin_tools(tools: Vec<Box<dyn Tool>>) -> Vec<RegisteredTool> 
 /// Convert extension-owned tool contributions into immutable registrations
 /// without inferring trust from their provider-visible names. Reference
 /// Product assembly may then apply its exact extension-capability permission
-/// filter; Phase 17 defines no implicit permission, so the default product
-/// projection excludes these registrations.
+/// filter; there is no implicit permission, so the default product projection
+/// excludes these registrations.
 pub fn register_extension_tools(tools: Vec<CollectedExtensionTool>) -> Vec<RegisteredTool> {
     tools
         .into_iter()
@@ -90,7 +106,8 @@ pub fn register_extension_tools(tools: Vec<CollectedExtensionTool>) -> Vec<Regis
                 ToolOrigin::Extension {
                     extension_id: extension_id.clone(),
                 },
-                Capability::Extension { extension_id, name },
+                CapabilityIdentity::new(format!("opi.extension.{extension_id}.{name}"))
+                    .expect("trusted extension identity is non-empty"),
                 definition,
                 Arc::from(tool),
             )
@@ -99,23 +116,15 @@ pub fn register_extension_tools(tools: Vec<CollectedExtensionTool>) -> Vec<Regis
 }
 
 /// Assemble the Reference Product's trusted registrations without laundering
-/// extension names through the built-in capability table. Phase 17 defines no
-/// product permission language for extension capabilities, so every extension
-/// registration is intentionally excluded after its registry-owned origin has
-/// been established.
+/// extension names through the built-in capability table. The product defines
+/// no permission language for extension capabilities, so every extension
+/// tool is intentionally excluded without materializing a registration that
+/// the product would immediately discard.
 pub fn register_product_tools(
     builtin_tools: Vec<Box<dyn Tool>>,
-    extension_tools: Vec<CollectedExtensionTool>,
+    _extension_tools: Vec<CollectedExtensionTool>,
 ) -> Vec<RegisteredTool> {
-    let builtin_registrations = register_builtin_tools(builtin_tools);
-    let extension_registrations = register_extension_tools(extension_tools);
-    debug_assert!(
-        extension_registrations
-            .iter()
-            .all(|registration| matches!(registration.origin, ToolOrigin::Extension { .. }))
-    );
-    drop(extension_registrations);
-    builtin_registrations
+    register_builtin_tools(builtin_tools)
 }
 
 fn decision_str(decision: PermissionDecision) -> &'static str {
@@ -144,11 +153,11 @@ pub fn digest_of(input: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct EffectiveUserPolicy {
     mutating_allowed: bool,
-    /// Phase 17.7: whether complete evidence is required. Closed mapping: absent
+    /// Whether complete evidence is required. Closed mapping: absent
     /// capture is `false` (no-op Minimal Runtime); explicit capture (CLI
     /// `--trace`, SDK embedder, RPC recording) is `true`. Under
     /// required-complete-evidence, an incomplete health generation fails closed
-    /// at authorization (P17-EVD-009).
+    /// at authorization.
     complete_evidence_required: bool,
     path_scope_digest: String,
     digest: String,
@@ -206,9 +215,8 @@ impl EffectiveUserPolicy {
         // The digest-only facts (active-tool selection, project trust, package
         // activation) are folded into `digest` above and not stored separately.
         // `complete_evidence_required` is also folded into the digest but IS
-        // stored, because the authorization fail-closed rule (P17-EVD-009) reads
+        // stored, because the authorization fail-closed rule reads
         // it at decision time.
-        let _ = active_tool_names;
         Self {
             mutating_allowed,
             complete_evidence_required,
@@ -222,7 +230,7 @@ impl EffectiveUserPolicy {
         &self.digest
     }
 
-    /// Whether complete evidence is required for the run (Phase 17.7).
+    /// Whether complete evidence is required for the run.
     pub fn complete_evidence_required(&self) -> bool {
         self.complete_evidence_required
     }
@@ -383,16 +391,25 @@ impl CommandAuthorizationContext {
         let scope =
             CommandPermissionScope::new(adapter_id.clone(), self.workspace_scope_digest.clone());
         CommandAuthorization::Allow {
-            permission_ref: format!("command.execute:adapter:{adapter_id}:{source}"),
-            permission_scope: scope.render(),
+            permission_ref: PermissionReference::new(format!(
+                "command.execute:adapter:{adapter_id}:{source}"
+            ))
+            .expect("product permission reference is valid"),
+            permission_scope: PermissionScope::new(scope.render())
+                .expect("serialized product scope is valid"),
+            scoped_grant_ref: (source == "session").then(|| {
+                ScopedGrantReference::new(format!("command.execute:adapter:{adapter_id}:session"))
+                    .expect("product scoped grant reference is valid")
+            }),
         }
     }
 }
 
 enum CommandAuthorization {
     Allow {
-        permission_ref: String,
-        permission_scope: String,
+        permission_ref: PermissionReference,
+        permission_scope: PermissionScope,
+        scoped_grant_ref: Option<ScopedGrantReference>,
     },
     Deny {
         stable_code: String,
@@ -437,7 +454,7 @@ impl ToolAuthorizer for ProductToolAuthorizer {
         let policy = self.policy.clone();
         let command = self.command.clone();
         Box::pin(async move {
-            // P17-EVD-009: under required-complete-evidence, an incomplete health
+            // Under required-complete-evidence, an incomplete health
             // generation fails closed. Unlaunched side effects are denied here;
             // in-flight effects already crossed the launch boundary and retain
             // their actual outcome (the loop's parallel launch boundary).
@@ -451,55 +468,57 @@ impl ToolAuthorizer for ProductToolAuthorizer {
             // AUT-003/004: the decision derives only from the immutable policy +
             // the capability + the current health snapshot. The validated
             // `request.arguments` are intentionally NOT consulted for permission.
-            let permission = match &request.capability {
-                Capability::Builtin(CapabilityClass::WorkspaceRead) => Some((
-                    request.capability.as_identity(),
-                    request.capability.as_identity(),
-                )),
-                Capability::Builtin(CapabilityClass::WorkspaceWrite) if policy.mutating_allowed => {
-                    Some((
-                        request.capability.as_identity(),
-                        format!(
-                            "workspace.write:workspace:{}:operation:mutate",
-                            policy.path_scope_digest
-                        ),
+            let permission = if request.capability == *WORKSPACE_READ_CAPABILITY {
+                Some((
+                    PermissionReference::new("opi.workspace.read")
+                        .expect("valid product permission"),
+                    PermissionScope::new("workspace:read").expect("valid product scope"),
+                    None,
+                ))
+            } else if request.capability == *WORKSPACE_WRITE_CAPABILITY && policy.mutating_allowed {
+                Some((
+                    PermissionReference::new("opi.workspace.write")
+                        .expect("valid product permission"),
+                    PermissionScope::new(format!(
+                        "workspace.write:workspace:{}:operation:mutate",
+                        policy.path_scope_digest
                     ))
-                }
-                Capability::Builtin(CapabilityClass::CommandExecute) => {
-                    let Some(command) = command else {
+                    .expect("valid product scope"),
+                    None,
+                ))
+            } else if request.capability == *COMMAND_EXECUTE_CAPABILITY {
+                let Some(command) = command else {
+                    return Ok(AuthorizationDecision::Deny {
+                        stable_code: "permission_unavailable".to_owned(),
+                        redacted_reason: "command authorization context is unavailable".to_owned(),
+                    });
+                };
+                match command.authorize(&request.arguments, _cancel).await? {
+                    CommandAuthorization::Allow {
+                        permission_ref,
+                        permission_scope,
+                        scoped_grant_ref,
+                    } => Some((permission_ref, permission_scope, scoped_grant_ref)),
+                    CommandAuthorization::Deny {
+                        stable_code,
+                        redacted_reason,
+                    } => {
                         return Ok(AuthorizationDecision::Deny {
-                            stable_code: "permission_unavailable".to_owned(),
-                            redacted_reason: "command authorization context is unavailable"
-                                .to_owned(),
-                        });
-                    };
-                    match command.authorize(&request.arguments, _cancel).await? {
-                        CommandAuthorization::Allow {
-                            permission_ref,
-                            permission_scope,
-                        } => Some((permission_ref, permission_scope)),
-                        CommandAuthorization::Deny {
                             stable_code,
                             redacted_reason,
-                        } => {
-                            return Ok(AuthorizationDecision::Deny {
-                                stable_code,
-                                redacted_reason,
-                            });
-                        }
+                        });
                     }
                 }
-                Capability::Builtin(CapabilityClass::WorkspaceWrite)
-                | Capability::Extension { .. } => None,
-                // Capability is non_exhaustive; a future capability class is
-                // not permitted by the current product policy (fail-closed).
-                _ => None,
+            } else {
+                None
             };
-            if let Some((permission_ref, permission_scope)) = permission {
+            if let Some((permission_ref, permission_scope, scoped_grant_ref)) = permission {
                 Ok(AuthorizationDecision::Allow {
-                    policy_ref: policy.digest().to_owned(),
+                    policy_ref: PolicyReference::new(policy.digest())
+                        .expect("policy digest is a valid opaque reference"),
                     permission_ref,
                     permission_scope,
+                    scoped_grant_ref,
                     registration_id: request.registration_id.clone(),
                     capability: request.capability.clone(),
                     evidence_health_generation: request.evidence_health.generation(),

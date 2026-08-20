@@ -15,7 +15,7 @@ mod common;
 use opi_agent::diagnostic::code::*;
 use opi_agent::diagnostic::{Diagnostic, SOURCE_AGENT, SOURCE_PROVIDER, Severity};
 use opi_agent::loop_types::AgentError;
-use opi_ai::provider::ProviderError;
+use opi_ai::provider::{ProviderError, ProviderErrorSummary};
 
 // ===========================================================================
 // From<&ProviderError>: each category maps to a stable (severity, code, source)
@@ -57,33 +57,34 @@ fn timeout_classifies_as_warning_timeout_diagnostic() {
 
 #[test]
 fn request_failed_classifies_as_error_diagnostic() {
-    let diag: Diagnostic = (&ProviderError::RequestFailed("internal error".into())).into();
+    let diag: Diagnostic = (&ProviderError::RequestFailed(ProviderErrorSummary::redacted())).into();
     assert_eq!(diag.severity, Severity::Error);
     assert_eq!(diag.code, CODE_PROVIDER_REQUEST_FAILED);
     assert_eq!(diag.source, SOURCE_PROVIDER);
     assert_eq!(diag.message, "provider request failed");
     assert_eq!(
         diag.details.as_ref().unwrap()["provider_error"],
-        "internal error"
+        "[REDACTED]"
     );
 }
 
 #[test]
 fn stream_error_classifies_as_error_diagnostic() {
-    let diag: Diagnostic = (&ProviderError::StreamError("connection reset".into())).into();
+    let diag: Diagnostic = (&ProviderError::StreamError(ProviderErrorSummary::redacted())).into();
     assert_eq!(diag.severity, Severity::Error);
     assert_eq!(diag.code, CODE_PROVIDER_STREAM_ERROR);
     assert_eq!(diag.source, SOURCE_PROVIDER);
     assert_eq!(diag.message, "provider stream failed");
     assert_eq!(
         diag.details.as_ref().unwrap()["provider_error"],
-        "connection reset"
+        "[REDACTED]"
     );
 }
 
 #[test]
 fn auth_failed_classifies_as_error_with_action() {
-    let diag: Diagnostic = (&ProviderError::AuthFailed("invalid api key".into())).into();
+    let diag: Diagnostic =
+        (&ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected())).into();
     assert_eq!(diag.severity, Severity::Error);
     assert_eq!(diag.code, CODE_PROVIDER_AUTH_FAILED);
     assert_eq!(diag.source, SOURCE_PROVIDER);
@@ -99,9 +100,8 @@ fn auth_failed_classifies_as_error_with_action() {
 
 #[test]
 fn provider_error_diagnostic_uses_static_message_and_redacted_body_details() {
-    let err = ProviderError::RequestFailed(
-        "HTTP 500: body carried sk-proj-1234567890abcdefghijklmnopqrstuv".into(),
-    );
+    const CANARY: &str = "opaque-provider-body-canary-Q7vN4m2L";
+    let err = ProviderError::RequestFailed(ProviderErrorSummary::from_untrusted(CANARY));
     let diag = Diagnostic::from(&err);
 
     assert_eq!(diag.message, "provider request failed");
@@ -109,7 +109,7 @@ fn provider_error_diagnostic_uses_static_message_and_redacted_body_details() {
         diag.details.as_ref().unwrap()["provider_error"]
             .as_str()
             .unwrap(),
-        "HTTP 500: body carried sk-proj-1234567890abcdefghijklmnopqrstuv"
+        "[REDACTED]"
     );
 
     let payload = diag.redacted_payload(opi_agent::diagnostic::RedactionMode::Summary);
@@ -118,6 +118,7 @@ fn provider_error_diagnostic_uses_static_message_and_redacted_body_details() {
         payload.details.as_ref().unwrap()["provider_error"],
         "[REDACTED]"
     );
+    assert!(!serde_json::to_string(&diag).unwrap().contains(CANARY));
 }
 
 #[test]
@@ -135,15 +136,17 @@ fn rate_limited_carries_a_remediation_action() {
 
 #[test]
 fn agent_provider_error_classifies_as_provider_error() {
-    let diag: Diagnostic = (&AgentError::Provider("upstream blew up".into())).into();
+    let error = AgentError::from(ProviderError::ProviderSide(ProviderErrorSummary::redacted()));
+    let diag: Diagnostic = (&error).into();
     assert_eq!(diag.severity, Severity::Error);
-    assert_eq!(diag.code, CODE_PROVIDER_ERROR);
+    assert_eq!(diag.code, CODE_PROVIDER_SIDE);
     assert_eq!(diag.source, SOURCE_PROVIDER);
 }
 
 #[test]
 fn agent_auth_failed_classifies_as_provider_auth() {
-    let diag: Diagnostic = (&AgentError::AuthFailed("expired token".into())).into();
+    let diag: Diagnostic =
+        (&AgentError::AuthFailed(ProviderErrorSummary::authentication_rejected())).into();
     assert_eq!(diag.severity, Severity::Error);
     assert_eq!(diag.code, CODE_PROVIDER_AUTH_FAILED);
     assert_eq!(diag.source, SOURCE_PROVIDER);
@@ -213,12 +216,14 @@ fn source_agent_is_stable_literal() {
 #[test]
 fn diagnostic_details_round_trip_through_redaction() {
     use opi_agent::diagnostic::RedactionMode;
-    let diag =
-        Diagnostic::from(&ProviderError::RequestFailed("boom".into())).details(serde_json::json!({
-            "retry_after_ms": 2000,
-            "prompt": "hidden system prompt",
-            "api_key": "sk-ant-1234567890abcdefghijklmnopqrstuv"
-        }));
+    let diag = Diagnostic::from(&ProviderError::RequestFailed(
+        ProviderErrorSummary::redacted(),
+    ))
+    .details(serde_json::json!({
+        "retry_after_ms": 2000,
+        "prompt": "hidden system prompt",
+        "api_key": "sk-ant-1234567890abcdefghijklmnopqrstuv"
+    }));
     let redacted = diag.redacted_details(RedactionMode::Summary).unwrap();
     assert_eq!(redacted["retry_after_ms"], 2000);
     assert_eq!(redacted["prompt"], "[REDACTED]");
@@ -595,7 +600,7 @@ mod runtime_emission {
     use opi_agent::message::AgentMessage;
     use opi_agent::{DiagnosticSink, RecordingSink};
     use opi_ai::message::{InputContent, Message, UserMessage};
-    use opi_ai::provider::ProviderError;
+    use opi_ai::provider::{ProviderError, ProviderErrorSummary};
     use opi_ai::retry::RetryConfig;
     use opi_ai::test_support::{self, MockProvider, MockResponse, single_route_collection};
 
@@ -682,7 +687,8 @@ mod runtime_emission {
             null_event_sink(),
             tokio_util::sync::CancellationToken::new(),
         )
-        .await;
+        .await
+        .into_execution_result();
         assert!(result.is_ok(), "{:?}", result.err());
 
         let codes = codes_of(&sink);
@@ -736,7 +742,8 @@ mod runtime_emission {
             null_event_sink(),
             tokio_util::sync::CancellationToken::new(),
         )
-        .await;
+        .await
+        .into_execution_result();
         assert!(result.is_err());
 
         let snap = sink.snapshot();
@@ -775,7 +782,8 @@ mod runtime_emission {
             null_event_sink(),
             tokio_util::sync::CancellationToken::new(),
         )
-        .await;
+        .await
+        .into_execution_result();
         assert!(
             result.is_err(),
             "partial stream error after retry should fail"
@@ -799,7 +807,7 @@ mod runtime_emission {
         let provider = MockProvider::new_with_errors(
             "mock",
             vec![MockResponse::Error(ProviderError::AuthFailed(
-                "bad key".into(),
+                ProviderErrorSummary::authentication_rejected(),
             ))],
         );
         let sink = Arc::new(RecordingSink::new());
@@ -810,7 +818,8 @@ mod runtime_emission {
             null_event_sink(),
             tokio_util::sync::CancellationToken::new(),
         )
-        .await;
+        .await
+        .into_execution_result();
         assert!(result.is_err());
 
         let snap = sink.snapshot();
@@ -838,7 +847,8 @@ mod runtime_emission {
             null_event_sink(),
             cancel,
         )
-        .await;
+        .await
+        .into_execution_result();
         assert!(matches!(result, Err(AgentError::Cancelled)));
 
         let snap = sink.snapshot();
@@ -868,7 +878,8 @@ mod runtime_emission {
             null_event_sink(),
             tokio_util::sync::CancellationToken::new(),
         )
-        .await;
+        .await
+        .into_execution_result();
         assert!(result.is_ok(), "{:?}", result.err());
 
         let snap = sink.snapshot();
@@ -957,7 +968,8 @@ mod runtime_emission {
             null_event_sink(),
             tokio_util::sync::CancellationToken::new(),
         )
-        .await;
+        .await
+        .into_execution_result();
 
         // Returns MaxTurnsExceeded(2), not Ok.
         let err = result.expect_err("max-turns exhaustion must return an error, not Ok");

@@ -1,21 +1,125 @@
-//! Types for the agent loop (S6.1, S8.2, Phase 17.2).
+//! Types for the agent loop.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use opi_ai::ProviderCollection;
-use opi_ai::provider::ThinkingConfig;
+use opi_ai::provider::{
+    ProviderError, ProviderErrorCategory, ProviderErrorSummary, ThinkingConfig,
+};
+use opi_ai::{CollectionError, ProviderCollection, RegistryError};
 
 use crate::authority::{ToolAuthorizer, ToolRegistry};
 use crate::diagnostic_sink::DiagnosticSink;
 use crate::evidence::{EvidenceHealth, EvidenceSink};
 use crate::message::AgentMessage;
 
+/// A provider failure after it crosses the Agent boundary.
+///
+/// The complete typed [`ProviderError`] is retained so variant-specific stable
+/// codes and safe metadata survive unchanged. Any public text remains limited
+/// to the closed or redacted summaries constructed by `opi-ai`.
+#[derive(Debug)]
+pub struct AgentProviderFailure {
+    error: ProviderError,
+}
+
+/// Intrinsic reason a complete durable next-turn state cannot be stored.
+///
+/// This boundary intentionally excludes transformed request content, headers,
+/// authentication, and provider I/O. Those remain validated by the provider
+/// collection after request transforms have run.
+#[derive(Debug, thiserror::Error)]
+pub enum InvalidNextTurnReason {
+    /// The selected canonical route is unknown or is not dispatchable.
+    #[error(transparent)]
+    Route(#[from] CollectionError),
+    /// The raw selected identity differs from the canonical resolved route.
+    #[error(
+        "selected route '{selected_provider}:{selected_model}' is not canonical for resolved route '{resolved_provider}:{resolved_model}'"
+    )]
+    NonCanonicalModelSelection {
+        selected_provider: String,
+        selected_model: String,
+        resolved_provider: String,
+        resolved_model: String,
+    },
+    /// The resolved model metadata violates its intrinsic constraints.
+    #[error("model '{model}' for provider '{provider}' has invalid constraints: {source}")]
+    InvalidModelConstraints {
+        provider: String,
+        model: String,
+        #[source]
+        source: opi_ai::model_info::ModelInfoError,
+    },
+    /// The selected model cannot represent the requested thinking level.
+    #[error(
+        "model '{model}' for provider '{provider}' does not support thinking level '{level:?}'"
+    )]
+    UnsupportedThinking {
+        provider: String,
+        model: String,
+        level: opi_ai::ThinkingLevel,
+    },
+    /// A floating-point inference scalar cannot be represented in JSON.
+    #[error("temperature is not representable as a JSON number")]
+    NonFiniteTemperature,
+}
+
+impl AgentProviderFailure {
+    pub(crate) fn new(error: ProviderError) -> Self {
+        Self { error }
+    }
+
+    /// Stable provider error category, independent of display text.
+    pub fn category(&self) -> ProviderErrorCategory {
+        self.error.category()
+    }
+
+    /// Exact stable diagnostic code for the retained provider variant.
+    pub fn code(&self) -> &'static str {
+        crate::diagnostic::Diagnostic::from(&self.error).code
+    }
+
+    /// Redaction-safe public summary carried by variants that own one.
+    pub fn summary(&self) -> Option<&ProviderErrorSummary> {
+        match &self.error {
+            ProviderError::RequestFailed(summary)
+            | ProviderError::StreamError(summary)
+            | ProviderError::AuthFailed(summary)
+            | ProviderError::Network(summary)
+            | ProviderError::Config(summary)
+            | ProviderError::ProviderSide(summary)
+            | ProviderError::UnsupportedCapability(summary) => Some(summary),
+            ProviderError::RateLimited { .. }
+            | ProviderError::Timeout
+            | ProviderError::CredentialNeeded { .. }
+            | ProviderError::CredentialRevoked { .. }
+            | ProviderError::AccountIdMissing { .. }
+            | ProviderError::LoginCancelled { .. }
+            | ProviderError::UnknownModel { .. }
+            | ProviderError::MissingWireRoute { .. }
+            | ProviderError::WireCompatMismatch { .. }
+            | ProviderError::Cancelled => None,
+        }
+    }
+
+    /// Retained provider failure with its safe typed metadata intact.
+    pub fn provider_error(&self) -> &ProviderError {
+        &self.error
+    }
+}
+
+impl std::fmt::Display for AgentProviderFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(formatter)
+    }
+}
+
 /// Errors that can occur during the agent loop.
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
     #[error("provider error: {0}")]
-    Provider(String),
+    Provider(AgentProviderFailure),
     #[error("invalid model spec: {spec}")]
     InvalidModelSpec { spec: String },
     #[error("unknown provider: {provider}")]
@@ -23,7 +127,7 @@ pub enum AgentError {
     #[error("unknown model '{model}' for provider '{provider}'")]
     UnknownModel { provider: String, model: String },
     #[error("authentication failed: {0}")]
-    AuthFailed(String),
+    AuthFailed(ProviderErrorSummary),
     #[error("credential needed for '{provider_id}': run /login {provider_id}")]
     CredentialNeeded { provider_id: String },
     #[error("credential revoked for '{provider_id}': login required")]
@@ -39,12 +143,21 @@ pub enum AgentError {
     Hook(String),
     #[error("cancelled")]
     Cancelled,
+    /// An opaque armed-run capability belongs to another Agent or is no
+    /// longer the latest generation armed by this Agent.
+    #[error("armed run does not match this Agent's latest generation")]
+    InvalidArmedRun,
+    /// A tool reported a typed execution-boundary failure. Partial side effect
+    /// and cleanup uncertainty remain distinguishable through the wrapped
+    /// [`crate::tool::ToolError`] variant.
+    #[error("tool error: {0}")]
+    Tool(#[from] crate::tool::ToolError),
     #[error("max turns exceeded ({0})")]
     MaxTurnsExceeded(u32),
-    /// Evidence capture setup failed before the run (fail-closed, Phase 17.7):
+    /// Evidence capture setup failed before the run (fail-closed):
     /// the configured evidence sink could not be prepared. The run is aborted
     /// before its first provider/tool call so it never runs with incomplete
-    /// evidence when capture was explicitly requested (P17-EVD-007).
+    /// evidence when capture was explicitly requested.
     #[error("evidence setup failed: {0}")]
     EvidenceSetup(String),
     /// Evidence capture could not be finalized after the run. Explicit capture
@@ -57,33 +170,90 @@ pub enum AgentError {
     /// replacing the requested resume with a fresh sessionless run.
     #[error("session resume failed: {0}")]
     SessionResume(String),
+    /// A completed turn could not be durably appended to its active session.
+    #[error("session persistence failed: {0}")]
+    SessionPersist(String),
     /// A provider route could not be prepared for a model call: the selection
     /// was unknown, ambiguous, undispatchable, or its authentication could not
-    /// be resolved. Phase 17.2 surfaces collection-owned preparation failures
-    /// at this typed boundary rather than as a generic provider string.
+    /// be resolved. Collection-owned preparation failures surface at this typed
+    /// boundary rather than as a generic provider string.
     #[error("provider route not dispatchable for '{provider}'")]
     RouteNotDispatchable { provider: String },
-    #[error("authentication is not configured for '{provider}': {detail}")]
-    AuthNotConfigured { provider: String, detail: String },
+    /// The request's canonical model identity disagreed with the route selected
+    /// for the logical call, so dispatch was rejected before provider I/O.
+    #[error(
+        "request model '{request_model}' does not match resolved route '{route_provider}:{route_model}'"
+    )]
+    RequestRouteMismatch {
+        request_model: String,
+        route_provider: String,
+        route_model: String,
+    },
+    /// A prior attempt made the prepared call's frozen credential terminal.
+    #[error("credential failure terminated the prepared call for provider '{provider}'")]
+    CredentialTerminated { provider: String },
     #[error("a prepared provider attempt is already active")]
     AttemptAlreadyActive,
     #[error("provider protocol failure: {detail}")]
-    ProviderProtocol { detail: String },
-    /// A `prepare_next_turn` candidate was rejected because it was not a valid
-    /// complete state (e.g. its model selection does not resolve to a route in
-    /// the provider collection). The prior state is preserved unchanged.
+    ProviderProtocol { detail: ProviderErrorSummary },
+    /// A complete initial, idle replacement, or hook-produced state was
+    /// rejected at the shared intrinsic validation boundary. The prior state,
+    /// when present, is preserved unchanged.
     #[error("invalid next-turn candidate state: {0}")]
-    InvalidNextTurnCandidate(String),
+    InvalidNextTurnCandidate(InvalidNextTurnReason),
     /// A trusted tool registration was rejected (e.g. two registrations share a
-    /// provider-visible name). Phase 17.4.
+    /// provider-visible name).
     #[error("invalid tool registration: {0}")]
     InvalidToolRegistration(String),
 }
 
+impl From<ProviderError> for AgentError {
+    fn from(error: ProviderError) -> Self {
+        AgentError::Provider(AgentProviderFailure::new(error))
+    }
+}
+
+impl From<CollectionError> for AgentError {
+    fn from(error: CollectionError) -> Self {
+        match error {
+            CollectionError::Registry(RegistryError::InvalidSpec(spec)) => {
+                AgentError::InvalidModelSpec { spec }
+            }
+            CollectionError::Registry(RegistryError::UnknownProvider(provider)) => {
+                AgentError::UnknownProvider { provider }
+            }
+            CollectionError::Registry(RegistryError::UnknownModel { provider, model }) => {
+                AgentError::UnknownModel { provider, model }
+            }
+            CollectionError::Registry(_) => AgentError::Provider(AgentProviderFailure::new(
+                ProviderError::Config(ProviderErrorSummary::redacted()),
+            )),
+            CollectionError::RouteNotDispatchable { provider } => {
+                AgentError::RouteNotDispatchable { provider }
+            }
+            CollectionError::RequestRouteMismatch {
+                request_model,
+                route_provider,
+                route_model,
+            } => AgentError::RequestRouteMismatch {
+                request_model,
+                route_provider,
+                route_model,
+            },
+            CollectionError::AttemptAlreadyActive => AgentError::AttemptAlreadyActive,
+            CollectionError::CallCancelled => AgentError::Cancelled,
+            CollectionError::CredentialTerminated { provider } => {
+                AgentError::CredentialTerminated { provider }
+            }
+            CollectionError::Provider(error) => AgentError::from(error),
+        }
+    }
+}
+
 /// Canonical provider:model selection for one logical model call.
 ///
-/// Phase 17 does not add an alias registry; the selection is always the
-/// canonical `provider_id:model_id` pair resolved by the provider collection.
+/// The selection is always the canonical `provider_id:model_id` pair resolved
+/// by the provider collection; Agent Core has no alias registry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelSelection {
     /// Provider identifier owning the route.
@@ -103,7 +273,7 @@ impl ModelSelection {
 
     /// Parse a canonical `provider:model` spec. Returns `None` for a bare model
     /// or missing provider; bare-input normalization is owned by the Reference
-    /// Product (Phase 17.5), not by Agent Core state.
+    /// Product, not by Agent Core state.
     pub fn parse_spec(spec: &str) -> Option<Self> {
         let (provider_id, model_id) = opi_ai::registry::parse_model_spec(spec).ok()?;
         Some(Self {
@@ -133,8 +303,8 @@ pub struct InferenceConfig {
     pub temperature: Option<f64>,
 }
 
-/// The complete mutable next-request state owned durably by the Agent (Phase
-/// 17.2). A loop run returns its final complete state to the Agent, which
+/// The complete mutable next-request state owned durably by the Agent. A loop
+/// run returns its final complete state to the Agent, which
 /// stores it before the public operation settles. Replacement is always a
 /// complete validated value, never a patch, merge, or append.
 #[derive(Debug, Clone)]
@@ -162,14 +332,84 @@ impl NextTurnState {
     }
 }
 
+/// Validate one complete next-turn candidate without performing authentication
+/// or provider I/O.
+///
+/// Construction, public idle replacement, and in-loop hook application cross
+/// this same boundary before storing the state. Only intrinsic durable-state
+/// facts are checked here; transformed request content and headers are checked
+/// later by the provider collection before authentication and dispatch.
+pub(crate) fn validate_next_turn_candidate(
+    collection: &ProviderCollection,
+    candidate: &NextTurnState,
+) -> Result<(), AgentError> {
+    let model_spec = candidate.model_selection.to_spec();
+
+    collection
+        .validate_dispatchable_route(&model_spec)
+        .map_err(InvalidNextTurnReason::Route)
+        .map_err(AgentError::InvalidNextTurnCandidate)?;
+
+    let (provider, model) = collection
+        .resolve(&model_spec)
+        .map_err(CollectionError::Registry)
+        .map_err(InvalidNextTurnReason::Route)
+        .map_err(AgentError::InvalidNextTurnCandidate)?;
+    if provider.id() != candidate.model_selection.provider_id
+        || model.id != candidate.model_selection.model_id
+    {
+        return Err(AgentError::InvalidNextTurnCandidate(
+            InvalidNextTurnReason::NonCanonicalModelSelection {
+                selected_provider: candidate.model_selection.provider_id.clone(),
+                selected_model: candidate.model_selection.model_id.clone(),
+                resolved_provider: provider.id().to_owned(),
+                resolved_model: model.id.clone(),
+            },
+        ));
+    }
+    model.validate().map_err(|source| {
+        AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::InvalidModelConstraints {
+            provider: provider.id().to_owned(),
+            model: model.id.clone(),
+            source,
+        })
+    })?;
+    if candidate.inference.thinking.enabled
+        && (!model.capabilities.supports_thinking
+            || model
+                .thinking_level_map
+                .resolve(candidate.inference.thinking.level)
+                .is_err())
+    {
+        return Err(AgentError::InvalidNextTurnCandidate(
+            InvalidNextTurnReason::UnsupportedThinking {
+                provider: provider.id().to_owned(),
+                model: model.id.clone(),
+                level: candidate.inference.thinking.level,
+            },
+        ));
+    }
+
+    if candidate
+        .inference
+        .temperature
+        .is_some_and(|temperature| !temperature.is_finite())
+    {
+        return Err(AgentError::InvalidNextTurnCandidate(
+            InvalidNextTurnReason::NonFiniteTemperature,
+        ));
+    }
+    Ok(())
+}
+
 /// Input context for the agent loop.
 pub struct AgentLoopContext {
     /// The dispatchable provider collection that owns route lookup, per-call
-    /// auth preparation, and attempt dispatch (Phase 17.2). The loop prepares
+    /// auth preparation, and attempt dispatch. The loop prepares
     /// one call per turn and opens every retry attempt from that same prepared
     /// call.
     pub collection: Arc<ProviderCollection>,
-    /// Immutable trusted-tool registry (Phase 17.4). The loop resolves every
+    /// Immutable trusted-tool registry. The loop resolves every
     /// model-proposed tool name against this registry, projects provider-facing
     /// definitions from it, and executes only implementations reachable through
     /// a current authorization `Allow`.
@@ -182,8 +422,8 @@ pub struct AgentLoopContext {
     /// local value after sink failure, injects the current generation into each
     /// authorization request, and reauthorizes a stale `Allow` before launch.
     pub evidence_health: EvidenceHealth,
-    /// Optional evidence sink binding the run's call-graph lifecycle (Phase
-    /// 17.6). `None` is the capture-disabled default: typed identities still
+    /// Optional evidence sink binding the run's call-graph lifecycle. `None` is
+    /// the capture-disabled default: typed identities still
     /// correlate authorization, but no evidence records are emitted. When
     /// `Some`, those identities also address correlated sink records.
     pub evidence_sink: Option<Arc<dyn EvidenceSink>>,

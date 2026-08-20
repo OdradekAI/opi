@@ -6,7 +6,8 @@ mod common;
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Barrier, Mutex};
 
 use futures_util::stream;
 use opi_agent::agent::Agent;
@@ -16,13 +17,14 @@ use opi_agent::hooks::{
     BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
 };
 use opi_agent::loop_types::{
-    AgentError, AgentLoopConfig, InferenceConfig, ModelSelection, NextTurnState,
+    AgentError, AgentLoopConfig, InferenceConfig, InvalidNextTurnReason, ModelSelection,
+    NextTurnState,
 };
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{
-    AssistantContent, AssistantMessage, InputContent, Message, OutputContent, ToolCall, ToolDef,
-    UserMessage,
+    AssistantContent, AssistantMessage, ImageSource, InputContent, MediaType, Message,
+    OutputContent, ToolCall, ToolDef, UserMessage,
 };
 use opi_ai::provider::{EventStream, Provider, ProviderError, Request, ThinkingConfig};
 use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
@@ -34,10 +36,38 @@ use tokio_util::sync::CancellationToken;
 // Recording mock provider
 // ---------------------------------------------------------------------------
 
+struct ValidationGate {
+    block_next_lookup: AtomicBool,
+    entered: Barrier,
+    release: Barrier,
+}
+
+impl ValidationGate {
+    fn new() -> Self {
+        Self {
+            block_next_lookup: AtomicBool::new(false),
+            entered: Barrier::new(2),
+            release: Barrier::new(2),
+        }
+    }
+
+    fn block_next_lookup(&self) {
+        self.block_next_lookup.store(true, Ordering::SeqCst);
+    }
+
+    fn maybe_block(&self) {
+        if self.block_next_lookup.swap(false, Ordering::SeqCst) {
+            self.entered.wait();
+            self.release.wait();
+        }
+    }
+}
+
 struct RecordingProvider {
     responses: Arc<Mutex<Vec<Vec<AssistantStreamEvent>>>>,
     received_messages: Arc<Mutex<Vec<Vec<Message>>>>,
     models: Vec<ModelInfo>,
+    validation_gate: Option<Arc<ValidationGate>>,
 }
 
 impl RecordingProvider {
@@ -56,10 +86,20 @@ impl RecordingProvider {
                     "alt-model",
                     "Alternate Model",
                     WireApi::OpenAiCompletions,
-                    ModelCapabilities::new(100_000, 4_096),
+                    ModelCapabilities::new(100_000, 4_096).with_thinking(true),
                 ),
             ],
+            validation_gate: None,
         }
+    }
+
+    fn with_validation_gate(
+        responses: Vec<Vec<AssistantStreamEvent>>,
+        validation_gate: Arc<ValidationGate>,
+    ) -> Self {
+        let mut provider = Self::new(responses);
+        provider.validation_gate = Some(validation_gate);
+        provider
     }
 }
 
@@ -69,6 +109,9 @@ impl Provider for RecordingProvider {
     }
 
     fn models(&self) -> &[opi_ai::provider::ModelInfo] {
+        if let Some(gate) = &self.validation_gate {
+            gate.maybe_block();
+        }
         &self.models
     }
 
@@ -356,6 +399,36 @@ fn user_text_in_messages(messages: &[Message], text: &str) -> bool {
     })
 }
 
+fn assert_prior_state_plus_prompt(actual: &NextTurnState, prior: &NextTurnState, prompt: &str) {
+    assert_eq!(actual.model_selection, prior.model_selection);
+    assert_eq!(actual.inference.max_tokens, prior.inference.max_tokens);
+    assert_eq!(actual.inference.temperature, prior.inference.temperature);
+    assert_eq!(
+        actual.inference.thinking.enabled,
+        prior.inference.thinking.enabled
+    );
+    assert_eq!(
+        actual.inference.thinking.budget_tokens,
+        prior.inference.thinking.budget_tokens
+    );
+    assert_eq!(
+        actual.inference.thinking.level,
+        prior.inference.thinking.level
+    );
+    assert_eq!(actual.context.len(), prior.context.len() + 1);
+    assert_eq!(
+        serde_json::to_value(&actual.context[..prior.context.len()]).unwrap(),
+        serde_json::to_value(&prior.context).unwrap(),
+        "every prior context field, including assistant stop reason, must be preserved"
+    );
+    assert!(matches!(
+        actual.context.last(),
+        Some(AgentMessage::Llm(Message::User(user)))
+            if user.content.len() == 1
+                && matches!(&user.content[0], InputContent::Text { text } if text == prompt)
+    ));
+}
+
 // ---------------------------------------------------------------------------
 // Test 1: after_tool_call receives AfterToolCallContext
 // ---------------------------------------------------------------------------
@@ -371,7 +444,7 @@ async fn after_tool_call_receives_context() {
     let after_calls = hooks.after_calls.clone();
 
     let mut agent = make_agent(provider, vec![Box::new(EchoTool)], Box::new(hooks));
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     let calls = after_calls.lock().unwrap();
     assert_eq!(calls.len(), 1, "after_tool_call should be called once");
@@ -392,7 +465,7 @@ async fn after_tool_call_replace_result() {
     ]);
 
     let mut agent = make_agent(provider, vec![Box::new(EchoTool)], Box::new(ReplacingHooks));
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
 
     let tool_result = result
         .iter()
@@ -420,7 +493,7 @@ async fn should_stop_receives_context() {
     let stop_calls = hooks.stop_calls.clone();
 
     let mut agent = make_agent(provider, vec![], Box::new(hooks));
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     let calls = stop_calls.lock().unwrap();
     assert!(!calls.is_empty(), "should_stop_after_turn should be called");
@@ -446,7 +519,7 @@ async fn steering_queue_delivered_before_next_request() {
 
     let mut agent = make_agent(provider, vec![Box::new(EchoTool)], Box::new(hooks));
     agent.steer("focus on quality".into());
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     let msgs = received.lock().unwrap();
     assert_eq!(msgs.len(), 2, "provider should be called twice");
@@ -469,7 +542,7 @@ async fn follow_up_queue_delivered_when_would_stop() {
 
     let mut agent = make_agent(provider, vec![], Box::new(hooks));
     agent.follow_up("tell me more".into());
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     let msgs = received.lock().unwrap();
     assert_eq!(msgs.len(), 2, "provider should be called twice");
@@ -496,7 +569,7 @@ async fn should_stop_prevents_queue_polling() {
 
     let mut agent = make_agent(provider, vec![Box::new(EchoTool)], Box::new(hooks));
     agent.steer("should not be delivered".into());
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     let msgs = received.lock().unwrap();
     assert_eq!(msgs.len(), 1, "provider should only be called once");
@@ -532,7 +605,7 @@ async fn queue_update_event_emitted() {
                 .push((steering.clone(), follow_up.clone()));
         }
     }));
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     let updates = queue_events.lock().unwrap();
     assert!(!updates.is_empty(), "should emit QueueUpdate event");
@@ -566,7 +639,7 @@ async fn phase8_queue_polling_order_steering_before_follow_up() {
     let mut agent = make_agent(provider, vec![], Box::new(hooks));
     agent.steer("steer-msg".into());
     agent.follow_up("follow-msg".into());
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     let msgs = received.lock().unwrap();
     assert_eq!(
@@ -615,7 +688,7 @@ async fn phase8_queue_polling_order_compaction_stop_before_next_turn() {
 
     let mut agent = make_agent(provider, vec![], Box::new(hooks));
     agent.follow_up("must-not-deliver".into());
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     let msgs = received.lock().unwrap();
     assert_eq!(
@@ -874,7 +947,7 @@ async fn phase8_hook_contract_order() {
     });
 
     let mut agent = make_agent(provider, vec![Box::new(EchoTool)], hooks);
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     let recorded = log.lock().unwrap().clone();
     assert!(
@@ -920,7 +993,7 @@ async fn phase8_hook_runs_before_schema_validation() {
         calls: execs.clone(),
     };
     let mut agent = make_agent(provider, vec![Box::new(tool)], hooks);
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
 
     assert_eq!(
         before_calls.lock().unwrap().len(),
@@ -961,7 +1034,7 @@ async fn phase8_hook_runs_before_schema_validation() {
         calls: execs.clone(),
     };
     let mut agent = make_agent(provider, vec![Box::new(tool2)], hooks2);
-    let result2 = agent.prompt("test").await.unwrap();
+    let result2 = agent.prompt("test").await.into_execution_result().unwrap();
 
     assert_eq!(
         before_calls2.lock().unwrap().as_slice(),
@@ -1007,7 +1080,7 @@ async fn phase8_hook_contract_after_replace_before_events() {
             end_results_clone.lock().unwrap().push(result.clone());
         }
     }));
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     let results = end_results.lock().unwrap();
     assert_eq!(results.len(), 1, "one tool execution end event expected");
@@ -1034,7 +1107,7 @@ async fn phase8_hook_contract_prepare_injection() {
     });
 
     let mut agent = make_agent(provider, vec![Box::new(EchoTool)], hooks);
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     assert!(*injected.lock().unwrap(), "prepare_next_turn must have run");
     let msgs = received.lock().unwrap();
@@ -1056,7 +1129,7 @@ async fn phase8_hook_contract_terminal_stop_terminates_run() {
     let prepare_calls = hooks.prepare_calls.clone();
 
     let mut agent = make_agent(provider, vec![], Box::new(hooks));
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     // Phase 17.2: prepare_next_turn runs before stop (applies candidate), then
     // the terminal stop ends the run.
@@ -1080,6 +1153,143 @@ fn llm_only(messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
             _ => None,
         })
         .collect())
+}
+
+struct RemoveImagesDuringTransformHooks;
+
+impl AgentHooks for RemoveImagesDuringTransformHooks {
+    fn transform_context(
+        &self,
+        mut messages: Vec<AgentMessage>,
+        _signal: CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<AgentMessage>, AgentError>> + Send>> {
+        messages.retain_mut(|message| {
+            if let AgentMessage::Llm(Message::User(user)) = message {
+                user.content
+                    .retain(|content| !matches!(content, InputContent::Image { .. }));
+                !user.content.is_empty()
+            } else {
+                true
+            }
+        });
+        Box::pin(async move { Ok(messages) })
+    }
+
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        llm_only(messages)
+    }
+}
+
+struct InjectImageDuringTransformHooks;
+
+impl AgentHooks for InjectImageDuringTransformHooks {
+    fn transform_context(
+        &self,
+        mut messages: Vec<AgentMessage>,
+        _signal: CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<AgentMessage>, AgentError>> + Send>> {
+        messages.push(AgentMessage::Llm(Message::User(UserMessage {
+            content: vec![InputContent::Image {
+                source: ImageSource::Bytes {
+                    data: vec![1, 2, 3],
+                },
+                media_type: MediaType::Png,
+            }],
+            timestamp_ms: 0,
+        })));
+        Box::pin(async move { Ok(messages) })
+    }
+
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        llm_only(messages)
+    }
+}
+
+#[tokio::test]
+async fn raw_image_removed_by_transform_is_not_rejected_before_transform() {
+    let provider = RecordingProvider::new(vec![text_response("accepted transformed request")]);
+    let received = provider.received_messages.clone();
+    let mut agent = make_agent(provider, vec![], Box::new(RemoveImagesDuringTransformHooks));
+    let mut candidate = agent.state_snapshot();
+    candidate
+        .context
+        .push(AgentMessage::Llm(Message::User(UserMessage {
+            content: vec![InputContent::Image {
+                source: ImageSource::Bytes {
+                    data: vec![1, 2, 3],
+                },
+                media_type: MediaType::Png,
+            }],
+            timestamp_ms: 0,
+        })));
+
+    agent
+        .replace_state(candidate)
+        .expect("raw context must not be request-validated before transform");
+    agent
+        .prompt("visible text")
+        .await
+        .into_execution_result()
+        .unwrap();
+
+    let requests = received.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(user_text_in_messages(&requests[0], "visible text"));
+    assert!(requests[0].iter().all(|message| {
+        match message {
+            Message::User(user) => user
+                .content
+                .iter()
+                .all(|content| !matches!(content, InputContent::Image { .. })),
+            _ => true,
+        }
+    }));
+}
+
+#[tokio::test]
+async fn image_injected_by_transform_fails_request_validation_before_auth_or_dispatch() {
+    use opi_ai::auth::AuthResolver;
+    use opi_ai::test_support::CountingAuthResolver;
+    use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
+
+    let provider = RecordingProvider::new(vec![]);
+    let received = provider.received_messages.clone();
+    let auth_count = Arc::new(AtomicU32::new(0));
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            Box::new(provider),
+            Arc::new(CountingAuthResolver::new(auth_count.clone())) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+            CompatMetadata::default(),
+        )
+        .unwrap();
+    let mut agent = Agent::new(
+        Arc::new(collection),
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
+        "recording:mock-model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(InjectImageDuringTransformHooks),
+    )
+    .unwrap();
+
+    let run = agent.prompt("inject an image").await;
+    let error = run
+        .error()
+        .expect("transformed request must be checked before auth and dispatch");
+    assert!(matches!(
+        error,
+        AgentError::Provider(failure)
+            if matches!(
+                failure.provider_error(),
+                ProviderError::UnsupportedCapability(_)
+            )
+    ));
+    assert_eq!(auth_count.load(Ordering::SeqCst), 0);
+    assert!(received.lock().unwrap().is_empty());
 }
 
 struct ObserveAppliedStateHooks {
@@ -1166,7 +1376,7 @@ async fn phase17_stop_observes_complete_next_turn_state() {
             observed_model: observed_model.clone(),
         }),
     );
-    agent.prompt("test").await.unwrap();
+    agent.prompt("test").await.into_execution_result().unwrap();
 
     // should_stop ran AFTER prepare_next_turn applied the candidate, so it
     // observes ALL FIVE prepared fields together — the complete replacement,
@@ -1253,7 +1463,10 @@ async fn phase17_failed_prepare_preserves_state_and_skips_later_boundaries() {
     );
     let result = agent.prompt("test").await;
 
-    assert!(result.is_err(), "a failed prepare must surface an error");
+    assert!(
+        result.error().is_some(),
+        "a failed prepare must surface an error"
+    );
     // should_stop was NOT called: prepare failed before the stop gate.
     assert_eq!(
         *stop_calls.lock().unwrap(),
@@ -1335,7 +1548,12 @@ async fn phase17_invalid_prepare_candidate_preserves_state_with_typed_error() {
     let result = agent.prompt("test").await;
 
     assert!(
-        matches!(result, Err(AgentError::InvalidNextTurnCandidate { .. })),
+        matches!(
+            result.error(),
+            Some(AgentError::InvalidNextTurnCandidate(
+                InvalidNextTurnReason::Route(_)
+            ))
+        ),
         "an unresolvable prepare candidate fails with the typed validation error: {result:?}"
     );
     assert_eq!(
@@ -1353,6 +1571,475 @@ async fn phase17_invalid_prepare_candidate_preserves_state_with_typed_error() {
         1,
         "no further turns after an invalid candidate (no queue polling)"
     );
+}
+
+struct EnabledNoneThinkingCandidateHooks {
+    prepare_calls: AtomicU32,
+    stop_calls: Arc<Mutex<u32>>,
+}
+
+impl AgentHooks for EnabledNoneThinkingCandidateHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        llm_only(messages)
+    }
+
+    fn prepare_next_turn(
+        &self,
+        ctx: PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        let first = self.prepare_calls.fetch_add(1, Ordering::SeqCst) == 0;
+        Box::pin(async move {
+            if !first {
+                return Ok(None);
+            }
+            let mut candidate = ctx.state;
+            candidate.inference.max_tokens = Some(7777);
+            candidate.inference.temperature = Some(0.75);
+            candidate.inference.thinking = ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(2048),
+                level: opi_ai::ThinkingLevel::None,
+            };
+            candidate
+                .context
+                .push(AgentMessage::Llm(Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "unsupported thinking candidate marker".into(),
+                    }],
+                    timestamp_ms: 0,
+                })));
+            Ok(Some(candidate))
+        })
+    }
+
+    fn should_stop_after_turn(
+        &self,
+        _ctx: ShouldStopAfterTurnContext,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        let stop_calls = self.stop_calls.clone();
+        Box::pin(async move {
+            *stop_calls.lock().unwrap() += 1;
+            false
+        })
+    }
+}
+
+#[tokio::test]
+async fn enabled_none_thinking_hook_candidate_rolls_back_before_stop_and_queue_polling() {
+    let provider = RecordingProvider::new(vec![
+        text_response("failed transition turn"),
+        text_response("retry turn"),
+        text_response("steering turn"),
+        text_response("follow-up turn"),
+    ]);
+    let received = provider.received_messages.clone();
+    let stop_calls = Arc::new(Mutex::new(0u32));
+    let mut agent = make_agent(
+        provider,
+        vec![],
+        Box::new(EnabledNoneThinkingCandidateHooks {
+            prepare_calls: AtomicU32::new(0),
+            stop_calls: stop_calls.clone(),
+        }),
+    );
+    let mut baseline = agent.state_snapshot();
+    baseline
+        .context
+        .push(AgentMessage::Llm(Message::Assistant(base_assistant())));
+    baseline.inference.max_tokens = Some(1111);
+    baseline.inference.temperature = Some(0.25);
+    agent.replace_state(baseline.clone()).unwrap();
+    agent.steer("queued steering".into());
+    agent.follow_up("queued follow-up".into());
+    let queue_updates = Arc::new(AtomicU32::new(0));
+    let observed_queue_updates = queue_updates.clone();
+    agent.subscribe(Box::new(move |event| {
+        if matches!(event, AgentEvent::QueueUpdate { .. }) {
+            observed_queue_updates.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+
+    let result = agent.prompt("first attempt").await;
+
+    assert!(matches!(
+        result.error(),
+        Some(AgentError::InvalidNextTurnCandidate(
+            InvalidNextTurnReason::UnsupportedThinking { .. }
+        ))
+    ));
+    assert_eq!(*stop_calls.lock().unwrap(), 0);
+    assert_prior_state_plus_prompt(&agent.state_snapshot(), &baseline, "first attempt");
+    assert_eq!(queue_updates.load(Ordering::SeqCst), 0);
+    assert_eq!(received.lock().unwrap().len(), 1);
+
+    agent
+        .prompt("retry after rejection")
+        .await
+        .into_execution_result()
+        .unwrap();
+    let requests = received.lock().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert!(user_text_in_messages(&requests[2], "queued steering"));
+    assert!(user_text_in_messages(&requests[3], "queued follow-up"));
+}
+
+struct NonFiniteCandidateHooks {
+    prepare_calls: AtomicU32,
+    stop_calls: Arc<Mutex<u32>>,
+}
+
+impl AgentHooks for NonFiniteCandidateHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        llm_only(messages)
+    }
+
+    fn prepare_next_turn(
+        &self,
+        ctx: PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        let first = self.prepare_calls.fetch_add(1, Ordering::SeqCst) == 0;
+        Box::pin(async move {
+            if !first {
+                return Ok(None);
+            }
+            let mut candidate = ctx.state;
+            candidate.model_selection = ModelSelection::new("recording", "alt-model");
+            candidate.inference.max_tokens = Some(7777);
+            candidate.inference.temperature = Some(f64::NAN);
+            candidate.inference.thinking = ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(2048),
+                level: opi_ai::ThinkingLevel::High,
+            };
+            candidate
+                .context
+                .push(AgentMessage::Llm(Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "invalid candidate marker".into(),
+                    }],
+                    timestamp_ms: 0,
+                })));
+            Ok(Some(candidate))
+        })
+    }
+
+    fn should_stop_after_turn(
+        &self,
+        _ctx: ShouldStopAfterTurnContext,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        let stop_calls = self.stop_calls.clone();
+        Box::pin(async move {
+            *stop_calls.lock().unwrap() += 1;
+            false
+        })
+    }
+
+    fn before_tool_call(
+        &self,
+        _ctx: BeforeToolCallContext,
+    ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
+        Box::pin(async { BeforeToolCallResult::Continue })
+    }
+}
+
+#[tokio::test]
+async fn non_finite_hook_candidate_rolls_back_state_and_leaves_stop_and_queues_untouched() {
+    let provider = RecordingProvider::new(vec![
+        text_response("failed transition turn"),
+        text_response("retry turn"),
+        text_response("steering turn"),
+        text_response("follow-up turn"),
+    ]);
+    let received = provider.received_messages.clone();
+    let stop_calls = Arc::new(Mutex::new(0u32));
+    let mut agent = make_agent(
+        provider,
+        vec![],
+        Box::new(NonFiniteCandidateHooks {
+            prepare_calls: AtomicU32::new(0),
+            stop_calls: stop_calls.clone(),
+        }),
+    );
+    let mut baseline = agent.state_snapshot();
+    baseline.inference.max_tokens = Some(1111);
+    baseline.inference.temperature = Some(0.25);
+    agent.replace_state(baseline.clone()).unwrap();
+    agent.steer("queued steering".into());
+    agent.follow_up("queued follow-up".into());
+    let result = agent.prompt("first attempt").await;
+
+    assert!(
+        matches!(
+            result.error(),
+            Some(AgentError::InvalidNextTurnCandidate(
+                InvalidNextTurnReason::NonFiniteTemperature
+            ))
+        ),
+        "a non-finite inference scalar must reject the hook candidate: {result:?}"
+    );
+    assert_eq!(
+        *stop_calls.lock().unwrap(),
+        0,
+        "stop must not observe an invalid candidate"
+    );
+    let after = agent.state_snapshot();
+    assert_eq!(after.model_selection, baseline.model_selection);
+    assert_eq!(after.inference.max_tokens, baseline.inference.max_tokens);
+    assert_eq!(after.inference.temperature, baseline.inference.temperature);
+    assert!(!after.inference.thinking.enabled);
+    assert_eq!(after.context.len(), baseline.context.len() + 1);
+    assert!(
+        !serde_json::to_string(&after.context)
+            .unwrap()
+            .contains("invalid candidate marker"),
+        "no candidate context field may be partially applied"
+    );
+
+    agent
+        .prompt("retry after rejection")
+        .await
+        .into_execution_result()
+        .unwrap();
+    let requests = received.lock().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert!(
+        user_text_in_messages(&requests[2], "queued steering"),
+        "steering must remain queued after candidate rejection"
+    );
+    assert!(
+        user_text_in_messages(&requests[3], "queued follow-up"),
+        "follow-up must remain queued after candidate rejection"
+    );
+}
+
+struct CancelDuringValidationHooks {
+    prepare_calls: AtomicU32,
+    stop_calls: Arc<Mutex<u32>>,
+    validation_gate: Arc<ValidationGate>,
+}
+
+impl AgentHooks for CancelDuringValidationHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        llm_only(messages)
+    }
+
+    fn prepare_next_turn(
+        &self,
+        ctx: PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        let first = self.prepare_calls.fetch_add(1, Ordering::SeqCst) == 0;
+        let validation_gate = self.validation_gate.clone();
+        Box::pin(async move {
+            if !first {
+                return Ok(None);
+            }
+            let mut candidate = ctx.state;
+            candidate.inference.max_tokens = Some(7777);
+            candidate.inference.temperature = Some(0.75);
+            validation_gate.block_next_lookup();
+            Ok(Some(candidate))
+        })
+    }
+
+    fn should_stop_after_turn(
+        &self,
+        _ctx: ShouldStopAfterTurnContext,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        let stop_calls = self.stop_calls.clone();
+        Box::pin(async move {
+            *stop_calls.lock().unwrap() += 1;
+            false
+        })
+    }
+}
+
+#[tokio::test]
+async fn cancellation_during_candidate_validation_prevents_apply_stop_and_queue_polling() {
+    let validation_gate = Arc::new(ValidationGate::new());
+    let provider = RecordingProvider::with_validation_gate(
+        vec![
+            text_response("cancelled transition"),
+            text_response("retry turn"),
+            text_response("steering turn"),
+            text_response("follow-up turn"),
+        ],
+        validation_gate.clone(),
+    );
+    let received = provider.received_messages.clone();
+    let stop_calls = Arc::new(Mutex::new(0u32));
+    let mut agent = make_agent(
+        provider,
+        vec![],
+        Box::new(CancelDuringValidationHooks {
+            prepare_calls: AtomicU32::new(0),
+            stop_calls: stop_calls.clone(),
+            validation_gate: validation_gate.clone(),
+        }),
+    );
+    let mut baseline = agent.state_snapshot();
+    baseline
+        .context
+        .push(AgentMessage::Llm(Message::Assistant(base_assistant())));
+    baseline.inference.max_tokens = Some(1111);
+    baseline.inference.temperature = Some(0.25);
+    agent.replace_state(baseline.clone()).unwrap();
+    agent.steer("queued steering".into());
+    agent.follow_up("queued follow-up".into());
+    let queue_updates = Arc::new(AtomicU32::new(0));
+    let observed_queue_updates = queue_updates.clone();
+    agent.subscribe(Box::new(move |event| {
+        if matches!(event, AgentEvent::QueueUpdate { .. }) {
+            observed_queue_updates.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+    let control = agent.control_handle();
+    let cancellation_gate = validation_gate.clone();
+    let cancel_thread = std::thread::spawn(move || {
+        cancellation_gate.entered.wait();
+        control.abort();
+        cancellation_gate.release.wait();
+    });
+
+    let result = agent.prompt("first attempt").await;
+    cancel_thread.join().unwrap();
+
+    assert!(matches!(result.error(), Some(AgentError::Cancelled)));
+    assert_eq!(
+        *stop_calls.lock().unwrap(),
+        0,
+        "stop must not observe a candidate cancelled during validation"
+    );
+    let after = agent.state_snapshot();
+    assert_prior_state_plus_prompt(&after, &baseline, "first attempt");
+    assert_eq!(
+        queue_updates.load(Ordering::SeqCst),
+        0,
+        "cancellation at validation must not poll either queue"
+    );
+    assert_eq!(received.lock().unwrap().len(), 1);
+
+    agent
+        .prompt("retry after cancellation")
+        .await
+        .into_execution_result()
+        .unwrap();
+    let requests = received.lock().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert!(user_text_in_messages(&requests[2], "queued steering"));
+    assert!(user_text_in_messages(&requests[3], "queued follow-up"));
+}
+
+struct PendingStopCancellationHooks {
+    prepare_calls: AtomicU32,
+    stop_calls: AtomicU32,
+    stop_entered: Arc<tokio::sync::Notify>,
+    release_stop: Arc<tokio::sync::Notify>,
+}
+
+impl AgentHooks for PendingStopCancellationHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        llm_only(messages)
+    }
+
+    fn prepare_next_turn(
+        &self,
+        ctx: PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        let first = self.prepare_calls.fetch_add(1, Ordering::SeqCst) == 0;
+        Box::pin(async move {
+            if !first {
+                return Ok(None);
+            }
+            let mut candidate = ctx.state;
+            candidate.inference.max_tokens = Some(7777);
+            candidate.inference.temperature = Some(0.75);
+            Ok(Some(candidate))
+        })
+    }
+
+    fn should_stop_after_turn(
+        &self,
+        _ctx: ShouldStopAfterTurnContext,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        let first = self.stop_calls.fetch_add(1, Ordering::SeqCst) == 0;
+        let stop_entered = self.stop_entered.clone();
+        let release_stop = self.release_stop.clone();
+        Box::pin(async move {
+            if first {
+                stop_entered.notify_one();
+                release_stop.notified().await;
+            }
+            false
+        })
+    }
+}
+
+#[tokio::test]
+async fn cancellation_while_stop_is_pending_restores_state_and_leaves_queues_untouched() {
+    let provider = RecordingProvider::new(vec![
+        text_response("cancelled transition"),
+        text_response("retry turn"),
+        text_response("steering turn"),
+        text_response("follow-up turn"),
+    ]);
+    let received = provider.received_messages.clone();
+    let stop_entered = Arc::new(tokio::sync::Notify::new());
+    let release_stop = Arc::new(tokio::sync::Notify::new());
+    let mut agent = make_agent(
+        provider,
+        vec![],
+        Box::new(PendingStopCancellationHooks {
+            prepare_calls: AtomicU32::new(0),
+            stop_calls: AtomicU32::new(0),
+            stop_entered: stop_entered.clone(),
+            release_stop: release_stop.clone(),
+        }),
+    );
+    let mut baseline = agent.state_snapshot();
+    baseline
+        .context
+        .push(AgentMessage::Llm(Message::Assistant(base_assistant())));
+    baseline.inference.max_tokens = Some(1111);
+    baseline.inference.temperature = Some(0.25);
+    agent.replace_state(baseline.clone()).unwrap();
+    agent.steer("queued steering".into());
+    agent.follow_up("queued follow-up".into());
+    let queue_updates = Arc::new(AtomicU32::new(0));
+    let observed_queue_updates = queue_updates.clone();
+    agent.subscribe(Box::new(move |event| {
+        if matches!(event, AgentEvent::QueueUpdate { .. }) {
+            observed_queue_updates.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+    let control = agent.control_handle();
+
+    let prompt = agent.prompt("first attempt");
+    let cancel = async move {
+        stop_entered.notified().await;
+        control.abort();
+        release_stop.notify_one();
+    };
+    let (result, ()) = tokio::join!(prompt, cancel);
+
+    assert!(matches!(result.error(), Some(AgentError::Cancelled)));
+    let after = agent.state_snapshot();
+    assert_prior_state_plus_prompt(&after, &baseline, "first attempt");
+    assert_eq!(
+        queue_updates.load(Ordering::SeqCst),
+        0,
+        "cancellation while stop is pending must not poll either queue"
+    );
+    assert_eq!(received.lock().unwrap().len(), 1);
+
+    agent
+        .prompt("retry after cancellation")
+        .await
+        .into_execution_result()
+        .unwrap();
+    let requests = received.lock().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert!(user_text_in_messages(&requests[2], "queued steering"));
+    assert!(user_text_in_messages(&requests[3], "queued follow-up"));
 }
 
 struct BlockingPrepareHooks {
@@ -1414,7 +2101,7 @@ async fn cancellation_during_prepare_preserves_the_complete_prior_state() {
         control.abort();
     };
     let (result, ()) = tokio::join!(prompt, cancel);
-    assert!(matches!(result, Err(AgentError::Cancelled)));
+    assert!(matches!(result.error(), Some(AgentError::Cancelled)));
 
     let before = captured.lock().unwrap().clone().expect("captured state");
     let after = agent.state_snapshot();

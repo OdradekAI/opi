@@ -7,11 +7,81 @@
 
 use std::time::Duration;
 
+use tokio_util::sync::CancellationToken;
+
+use crate::provider::{ProviderError, ProviderErrorSummary};
+
 /// Default maximum idle connections per host in the connection pool.
 const DEFAULT_POOL_MAX_IDLE_PER_HOST: usize = 10;
 
 /// Default idle timeout for pooled connections.
 const DEFAULT_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+
+const ERROR_BODY_CLASSIFICATION_MAX_BYTES: usize = 8 * 1024;
+const ERROR_BODY_CLASSIFICATION_DEADLINE: Duration = Duration::from_secs(1);
+
+/// Read the bounded response prefix needed for provider-specific error
+/// classification.
+///
+/// Only Gemini-compatible HTTP 400 bodies use this path. The read retains at
+/// most 8 KiB, completes within one second when the request has no timeout,
+/// respects a stricter request timeout, and remains cancellation-aware. Errors
+/// never include provider-controlled response text. A declared or observed
+/// overflow returns `Ok(None)`, so callers skip embedded-code classification.
+pub(crate) async fn read_bounded_error_body(
+    mut response: reqwest::Response,
+    cancel: &CancellationToken,
+    request_timeout: Option<Duration>,
+) -> Result<Option<Vec<u8>>, ProviderError> {
+    let deadline = request_timeout
+        .map(|timeout| timeout.min(ERROR_BODY_CLASSIFICATION_DEADLINE))
+        .unwrap_or(ERROR_BODY_CLASSIFICATION_DEADLINE);
+    let read = async {
+        let content_length = response.content_length();
+        if content_length.is_some_and(|length| {
+            length > u64::try_from(ERROR_BODY_CLASSIFICATION_MAX_BYTES).unwrap_or(u64::MAX)
+        }) {
+            return Ok(None);
+        }
+        let mut body = Vec::with_capacity(ERROR_BODY_CLASSIFICATION_MAX_BYTES);
+        while body.len() < ERROR_BODY_CLASSIFICATION_MAX_BYTES {
+            let chunk = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
+                chunk = response.chunk() => chunk,
+            }
+            .map_err(|error| {
+                if error.is_timeout() {
+                    ProviderError::Timeout
+                } else {
+                    ProviderError::Network(ProviderErrorSummary::attested_static(
+                        "provider error response could not be read",
+                    ))
+                }
+            })?;
+            let Some(chunk) = chunk else {
+                break;
+            };
+            let remaining = ERROR_BODY_CLASSIFICATION_MAX_BYTES - body.len();
+            if chunk.len() > remaining {
+                return Ok(None);
+            }
+            body.extend_from_slice(&chunk);
+        }
+        if body.len() == ERROR_BODY_CLASSIFICATION_MAX_BYTES
+            && content_length != Some(ERROR_BODY_CLASSIFICATION_MAX_BYTES as u64)
+        {
+            return Ok(None);
+        }
+        Ok(Some(body))
+    };
+
+    match tokio::time::timeout(deadline, read).await {
+        Ok(result) => result,
+        Err(_) if cancel.is_cancelled() => Err(ProviderError::Cancelled),
+        Err(_) => Err(ProviderError::Timeout),
+    }
+}
 
 /// Proxy configuration for an [`HttpClient`].
 ///
@@ -239,7 +309,7 @@ pub fn redact_proxy_credentials(url: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Safe provider error body excerpts (Phase 12 task 12.2)
+// Safe provider error body excerpts
 // ---------------------------------------------------------------------------
 
 /// Maximum number of characters retained in a provider error body excerpt.
@@ -275,19 +345,19 @@ fn credentialed_url_re() -> &'static regex::Regex {
 fn query_secret_re() -> &'static regex::Regex {
     QUERY_SECRET_RE.get_or_init(|| {
         regex::Regex::new(
-            r"(?i)([?&](?:api_key|apikey|key|token|access_token|refresh_token|secret|password)=)[^&#\s]+",
+            r"(?i)([?&](?:api[_-]?key|key|token|access[_-]?token|refresh[_-]?token|session[_-]?token|access[_-]?key[_-]?id|secret[_-]?access[_-]?key|secret|password|authorization|proxy[_-]?authorization)=)[^&#\s]+",
         )
         .expect("valid query-secret regex")
     })
 }
 
-/// Produce a safe, length-capped excerpt of a provider response body.
+/// Produce a redacted, length-capped excerpt of diagnostic text.
 ///
-/// Provider error bodies are interpolated into [`crate::provider::ProviderError`]
-/// message strings that may be logged or surfaced before the diagnostic-layer
-/// redaction runs. This adapter-layer defense strips known credential patterns
-/// (API keys, bearer tokens, GitHub PATs, JWTs, and credentialed URL userinfo)
-/// and caps the excerpt length, so a body echoing a secret cannot leak.
+/// The constructor-enforced [`crate::provider::ProviderErrorSummary`] is the
+/// producer boundary for public provider errors. This helper is a secondary
+/// defense for locally-produced context and transport errors: it strips known
+/// credential patterns (including credential-bearing URL query keys) and caps
+/// the excerpt length.
 pub fn safe_excerpt(body: &str) -> String {
     let scrubbed = secret_key_re().replace_all(body, "[REDACTED]").into_owned();
     let scrubbed = bearer_re()

@@ -21,10 +21,9 @@ use super::{LocalBashOperations, MAX_BASH_OUTPUT_BYTES};
 /// Maximum per-call command timeout accepted by the public bash tool.
 pub const MAX_BASH_TIMEOUT_SECS: u64 = 86_400;
 
-/// The schema source for the `bash` tool input. This is the byte-stable
-/// pre-extension contract: `schemars::schema_for!(BashArgs)` produces the
-/// default schema, which Phase 16.9 keeps identical whether or not model routing
-/// is configured. The model-routing `backend` enum is added to a COPY of this
+/// The schema source for the `bash` tool input.
+/// `schemars::schema_for!(BashArgs)` produces the byte-stable default schema.
+/// The model-routing `backend` enum is added to a copy of this
 /// schema by the harness when `strategy = "model"` — never by altering this
 /// type — so `fixed`/`rules`/default schemas never carry the field.
 ///
@@ -42,7 +41,7 @@ pub struct BashArgs {
 }
 
 /// The deserialization target for a `bash` invocation. Carries the optional
-/// model-supplied `backend` (Phase 16.9) that `BashArgs` intentionally omits
+/// model-supplied `backend` that `BashArgs` intentionally omits
 /// so the default schema stays byte-stable. `backend` reaches the router only
 /// under `strategy = "model"`; `fixed`/`rules` ignore it.
 #[derive(Debug, Deserialize)]
@@ -67,13 +66,12 @@ where
     }
 }
 
-/// Bash tool. A thin caller over the injected [`BashOperations`] backend
-/// (Phase 15 T5 Operations seam). Command construction, spawn, bounded stream
+/// Bash tool. A thin caller over the injected [`BashOperations`] backend.
+/// Command construction, spawn, bounded stream
 /// capture, the timeout/cancel/`wait` race, and exit/signal extraction live in
 /// `LocalBashOperations::exec`; this tool maps the returned
 /// [`BashResult`](crate::tool::BashResult) into
-/// the agent `ToolResult`, rebuilding the exact pre-15.2 details/diagnostic
-/// shape so existing behavior is preserved byte-for-byte.
+/// the agent `ToolResult` with the stable details/diagnostic shape.
 pub struct BashTool {
     workspace_root: PathBuf,
     ops: Arc<dyn BashOperations>,
@@ -94,7 +92,7 @@ impl BashTool {
         Self::new_with_ops_and_schema(workspace_root, ops, default_bash_schema())
     }
 
-    /// Phase 16.9: inject an explicit backend AND a precomputed input schema.
+    /// Inject an explicit backend and a precomputed input schema.
     /// Production (`CodingHarness::build_tools`) passes the resolved dynamic
     /// schema (the default, or the default plus the model-routing `backend`
     /// enum under `strategy = "model"`); tests pass [`default_bash_schema`].
@@ -122,7 +120,7 @@ pub fn default_bash_schema() -> serde_json::Value {
 }
 
 /// Add the required bounded `backend` field to a copy of the default bash schema
-/// for `strategy = "model"` (Phase 16.9). Each candidate is a `oneOf` variant
+/// for `strategy = "model"`. Each candidate is a `oneOf` variant
 /// `{const, title, description}` so it carries its own approval hint: an `ask`
 /// candidate is visible with a description that it requires interactive
 /// approval, and a `deny` candidate is absent (filtered upstream). `oneOf` (not a
@@ -200,15 +198,16 @@ impl Tool for BashTool {
     ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
         let workspace_scope_digest =
             crate::tool_authority::digest_of(&self.workspace_root.to_string_lossy());
-        let Some(scope) =
-            crate::tool_authority::CommandPermissionScope::parse(&authorization.permission_scope)
-        else {
+        let Some(scope) = crate::tool_authority::CommandPermissionScope::parse(
+            authorization.permission_scope.as_str(),
+        ) else {
             return denied_authorization_result();
         };
         let expected_ref_prefix = format!("command.execute:adapter:{}:", scope.adapter_id());
-        if authorization.policy_ref.is_empty()
+        if authorization.policy_ref.as_str().is_empty()
             || !authorization
                 .permission_ref
+                .as_str()
                 .starts_with(&expected_ref_prefix)
             || !scope.covers_workspace(&workspace_scope_digest)
         {
@@ -445,13 +444,13 @@ fn backend_error_result(
 }
 
 /// Assemble a bash tool result from the shared success builder, then override
-/// `is_error` (nonzero exit) and `truncated` (output cap). Mirrors the Phase
-/// 11.1 bash pattern: nonzero-exit keeps the success-shape result with details
-/// present (the stable operation-metadata contract); only `is_error` flips.
+/// `is_error` (nonzero exit) and `truncated` (output cap). A nonzero exit keeps
+/// the success-shape result with details present; only `is_error` flips.
 ///
-/// On an error result a [`ToolDiagnostic`] carrying the operation context
-/// (exit_code/signal/cancelled/timed_out/truncated) is pushed so the agent loop (Phase
-/// 11.8 / S1) lifts it into a Phase 7 Diagnostic + trace.
+/// On an error result, a [`ToolDiagnostic`] carrying the operation context
+/// (exit_code/signal/cancelled/timed_out/truncated) is pushed so the agent loop
+/// records it through the diagnostic sink. Tool authorization and outcome are
+/// recorded independently by the evidence lifecycle.
 #[allow(clippy::too_many_arguments)] // threads the failure discriminators alongside the result builder inputs
 fn bash_result(
     content: Vec<OutputContent>,
@@ -507,11 +506,10 @@ fn wait_failed_result(workspace_root: &Path, command: &str, cwd: &Path, shell: &
 }
 
 /// Build the bash operation-failure [`ToolDiagnostic`] carrying the stable
-/// operation context the agent loop lifts into a Phase 7 Diagnostic +
-/// DiagnosticLinked trace (Phase 11.8 / S1). Bash failures have no 11.2
-/// filesystem cause, so the code is the generic [`CODE_TOOL_EXECUTION_FAILED`];
-/// the per-cause detail lives in `context`. Raw command text is intentionally
-/// excluded because commands can contain secrets.
+/// operation context that the agent loop records through its diagnostic sink.
+/// Bash failures have no filesystem cause, so the code is the generic
+/// [`CODE_TOOL_EXECUTION_FAILED`]; the per-cause detail lives in `context`. Raw
+/// command text is intentionally excluded because commands can contain secrets.
 fn bash_operation_diagnostic(
     exit_code: Option<i32>,
     signal: Option<i32>,

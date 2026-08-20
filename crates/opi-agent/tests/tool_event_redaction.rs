@@ -1,8 +1,13 @@
 mod common;
 
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use opi_agent::Agent;
+use opi_agent::compaction::{
+    CompactionConfig, CompactionEngine, CompactionHooks, DefaultCompactionHooks, Entry,
+};
 use opi_agent::diagnostic::code::CODE_TOOL_EXECUTION_FAILED;
 use opi_agent::event::{AgentEvent, AgentEventSink};
 use opi_agent::hooks::{
@@ -12,6 +17,7 @@ use opi_agent::loop_types::{
     AgentError, AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
 };
 use opi_agent::message::AgentMessage;
+use opi_agent::session_event::{CompactionReason, CompactionResult};
 use opi_agent::tool::{ExecutionMode, Tool, ToolDiagnostic, ToolError, ToolResult, result};
 use opi_ai::message::{
     AssistantContent, InputContent, Message, OutputContent, ToolCall, UserMessage,
@@ -99,6 +105,284 @@ impl AgentHooks for AllowHooks {
     }
 }
 
+struct CanaryCompactionHook;
+
+impl CompactionHooks for CanaryCompactionHook {
+    fn generate_summary(&self, _messages: &[AgentMessage]) -> Option<String> {
+        Some("hook copied OPI_HOOK_PROMPT_CANARY and OPI_HOOK_TOOL_CANARY from context".into())
+    }
+}
+
+fn agent_with_provider_and_tools(provider: MockProvider, tools: Vec<Box<dyn Tool>>) -> Agent {
+    Agent::new(
+        Arc::new(test_support::single_route_collection(Box::new(provider))),
+        common::registrations_from(tools),
+        Some(common::permissive_authorizer()),
+        "mock:mock-model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig {
+            max_turns: 3,
+            ..Default::default()
+        },
+        Box::new(AllowHooks),
+    )
+    .expect("valid test agent")
+}
+
+fn subscribe_as_json(agent: &mut Agent) -> Arc<Mutex<Vec<String>>> {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let seen_clone = seen.clone();
+    agent.subscribe(Box::new(move |event| {
+        seen_clone
+            .lock()
+            .unwrap()
+            .push(serde_json::to_string(event).unwrap());
+    }));
+    seen
+}
+
+#[test]
+fn loop_tool_event_producers_do_not_redact_before_the_public_boundary() {
+    let source = include_str!("../src/agent_loop.rs");
+    assert!(
+        !source.contains("redact_public_value"),
+        "tool-event producers must emit raw arguments into the sole public boundary"
+    );
+}
+
+#[test]
+fn subscriber_panic_does_not_poison_future_fanout() {
+    let provider = MockProvider::new("mock", vec![]);
+    let mut agent = agent_with_provider_and_tools(provider, vec![]);
+    let should_panic = Arc::new(AtomicBool::new(true));
+    agent.subscribe(Box::new({
+        let should_panic = should_panic.clone();
+        move |_| {
+            if should_panic.swap(false, Ordering::SeqCst) {
+                panic!("subscriber panic canary");
+            }
+        }
+    }));
+    let delivered = Arc::new(AtomicUsize::new(0));
+    agent.subscribe(Box::new({
+        let delivered = delivered.clone();
+        move |_| {
+            delivered.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+
+    let first = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        agent.emit_event(AgentEvent::AgentStart);
+    }));
+    assert!(
+        first.is_err(),
+        "subscriber panic remains visible to its caller"
+    );
+
+    agent.emit_event(AgentEvent::TurnStart);
+    assert_eq!(
+        delivered.load(Ordering::SeqCst),
+        1,
+        "a callback panic must not poison later fan-out"
+    );
+}
+
+#[test]
+fn compaction_entry_identity_is_redacted_only_when_untrusted() {
+    let provider = MockProvider::new("mock", vec![]);
+    let mut agent = agent_with_provider_and_tools(provider, vec![]);
+    let seen = subscribe_as_json(&mut agent);
+
+    for first_kept_entry_id in [
+        "C:\\Users\\private\\entry-42",
+        "sk-proj-secret1234567890",
+        "entry-42",
+    ] {
+        agent.emit_event(AgentEvent::CompactionEnd {
+            reason: CompactionReason::Threshold,
+            result: Some(CompactionResult {
+                summary: "untrusted summary".into(),
+                first_kept_entry_id: first_kept_entry_id.into(),
+                tokens_before: 2,
+                tokens_after: 1,
+            }),
+            aborted: false,
+            error_message: None,
+        });
+    }
+
+    let seen = seen.lock().unwrap();
+    let untrusted: serde_json::Value = serde_json::from_str(&seen[0]).unwrap();
+    assert_eq!(untrusted["result"]["first_kept_entry_id"], "[REDACTED]");
+    let credential: serde_json::Value = serde_json::from_str(&seen[1]).unwrap();
+    assert_eq!(credential["result"]["first_kept_entry_id"], "[REDACTED]");
+    let ordinary: serde_json::Value = serde_json::from_str(&seen[2]).unwrap();
+    assert_eq!(ordinary["result"]["first_kept_entry_id"], "entry-42");
+}
+
+#[test]
+fn harness_events_cross_one_redacting_subscriber_fanout() {
+    let provider = MockProvider::new("mock", vec![]);
+    let mut agent = agent_with_provider_and_tools(provider, vec![]);
+    let seen = subscribe_as_json(&mut agent);
+
+    let entries = vec![
+        Entry {
+            id: "compacted".into(),
+            message: AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "OPI_PROMPT_CANARY".into(),
+                }],
+                timestamp_ms: 0,
+            })),
+        },
+        Entry {
+            id: "tool-output".into(),
+            message: AgentMessage::Llm(Message::ToolResult(opi_ai::message::ToolResultMessage {
+                tool_call_id: "tc-compaction".into(),
+                tool_name: "bash".into(),
+                content: vec![OutputContent::Text {
+                    text: "OPI_TOOL_RESULT_CANARY".into(),
+                }],
+                details: None,
+                is_error: false,
+                truncated: false,
+                timestamp_ms: 0,
+            })),
+        },
+        Entry {
+            id: "kept".into(),
+            message: AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "safe tail".into(),
+                }],
+                timestamp_ms: 0,
+            })),
+        },
+    ];
+    let engine = CompactionEngine::new(CompactionConfig::default());
+    let hook_output = engine
+        .compact(&entries, CompactionReason::Threshold, &CanaryCompactionHook)
+        .expect("custom compaction summary");
+    let core_output = engine
+        .compact(
+            &entries,
+            CompactionReason::Threshold,
+            &DefaultCompactionHooks,
+        )
+        .expect("core compaction summary");
+
+    agent.emit_event(AgentEvent::CompactionStart {
+        reason: CompactionReason::Threshold,
+    });
+    agent.emit_event(AgentEvent::CompactionEnd {
+        reason: hook_output.reason,
+        result: Some(CompactionResult {
+            summary: hook_output.summary_text,
+            first_kept_entry_id: hook_output.first_kept_entry_id,
+            tokens_before: hook_output.tokens_before,
+            tokens_after: hook_output.tokens_after,
+        }),
+        aborted: false,
+        error_message: Some(
+            "compaction failed at C:\\Users\\private\\opi with sk-proj-secret1234567890".into(),
+        ),
+    });
+    agent.emit_event(AgentEvent::CompactionEnd {
+        reason: core_output.reason,
+        result: Some(CompactionResult {
+            summary: core_output.summary_text,
+            first_kept_entry_id: core_output.first_kept_entry_id,
+            tokens_before: core_output.tokens_before,
+            tokens_after: core_output.tokens_after,
+        }),
+        aborted: false,
+        error_message: None,
+    });
+    agent.emit_event(AgentEvent::CompactionEnd {
+        reason: CompactionReason::Threshold,
+        result: None,
+        aborted: true,
+        error_message: Some("compaction produced no output".into()),
+    });
+    agent.emit_event(AgentEvent::SessionPersistError {
+        message: "OPI_PERSIST_CANARY".into(),
+    });
+
+    let seen = seen.lock().unwrap();
+    assert_eq!(
+        seen.len(),
+        5,
+        "each producer event must fan out exactly once"
+    );
+    let hook_compaction: serde_json::Value = serde_json::from_str(&seen[1]).unwrap();
+    assert_eq!(hook_compaction["result"]["summary"], "[REDACTED]");
+    assert_eq!(hook_compaction["error_message"], "[REDACTED]");
+    let core_compaction: serde_json::Value = serde_json::from_str(&seen[2]).unwrap();
+    assert_eq!(core_compaction["result"]["summary"], "[REDACTED]");
+    let closed_compaction: serde_json::Value = serde_json::from_str(&seen[3]).unwrap();
+    assert_eq!(
+        closed_compaction["error_message"],
+        "compaction produced no output"
+    );
+    let persist_error: serde_json::Value = serde_json::from_str(&seen[4]).unwrap();
+    assert_eq!(persist_error["message"], "[REDACTED]");
+    let rendered = seen.join("\n");
+    for canary in [
+        "OPI_PROMPT_CANARY",
+        "OPI_TOOL_RESULT_CANARY",
+        "OPI_HOOK_PROMPT_CANARY",
+        "OPI_HOOK_TOOL_CANARY",
+        "OPI_PERSIST_CANARY",
+        "C:\\\\Users",
+        "sk-proj-secret1234567890",
+    ] {
+        assert!(!rendered.contains(canary), "leaked {canary}: {rendered}");
+    }
+    assert!(
+        rendered.contains("\"first_kept_entry_id\":\"kept\""),
+        "structured compaction identity must survive redaction: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn loop_events_cross_the_same_subscriber_fanout_exactly_once() {
+    let first = test_support::tool_call_response(
+        "tc1",
+        "bash",
+        r#"{"command":"echo OPI_SUBSCRIBER_TOOL_CANARY"}"#,
+    );
+    let second = test_support::text_response("done");
+    let provider = MockProvider::new("mock", vec![first, second]);
+    let mut agent = agent_with_provider_and_tools(provider, vec![Box::new(SecretTool)]);
+    let seen = subscribe_as_json(&mut agent);
+
+    let result = agent.prompt("OPI_SUBSCRIBER_PROMPT_CANARY").await;
+    assert!(result.error().is_none(), "agent run failed: {result:?}");
+
+    let seen = seen.lock().unwrap();
+    assert_eq!(
+        seen.iter()
+            .filter(|event| event.contains("\"type\":\"AgentStart\""))
+            .count(),
+        1,
+        "loop producer must not bypass or duplicate subscriber fan-out: {seen:?}"
+    );
+    assert_eq!(
+        seen.iter()
+            .filter(|event| event.contains("\"type\":\"ToolExecutionStart\""))
+            .count(),
+        1,
+        "tool start must fan out exactly once: {seen:?}"
+    );
+    let rendered = seen.join("\n");
+    assert!(
+        !rendered.contains("OPI_SUBSCRIBER_TOOL_CANARY"),
+        "{rendered}"
+    );
+}
+
 #[tokio::test]
 async fn tool_events_redact_command_context_and_provider_content_stays_unchanged() {
     let first = test_support::tool_call_response(
@@ -149,6 +433,7 @@ async fn tool_events_redact_command_context_and_provider_content_stays_unchanged
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .expect("agent loop should finish");
 
     let rendered_events = serde_json::to_string(&*seen.lock().unwrap()).unwrap();

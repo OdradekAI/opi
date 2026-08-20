@@ -26,8 +26,8 @@ pub mod validation;
 
 mod agent_loop;
 
-pub use agent::Agent;
-pub use agent_loop::agent_loop;
+pub use agent::{Agent, AgentRunLifecyclePhase, AgentRunResult, PendingCompaction};
+pub use agent_loop::{AgentLoopResult, agent_loop};
 pub use diagnostic::{Diagnostic, DiagnosticPayload, RedactionMode, Severity, redact, redact_text};
 pub use diagnostic_sink::{DiagnosticSink, NullSink, RecordingSink};
 pub use event::{AgentEvent, AgentEventSink};

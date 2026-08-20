@@ -254,6 +254,21 @@ CLI、TUI、RPC、doctor、模型列表和启动路径都不会调用它。
 失败 details 在公共边界会被界定和脱敏。Provider 请求接收 LLM 可见内容和失败状态，
 不会接收原始命令或路径敏感诊断上下文。
 
+## 可信产品装配
+
+产品策略保留在本 crate，而不进入 Agent Core。Reference Product 根据已解析的 run mode、
+active tools、mutating opt-in、`command.execute` permission policy、complete-evidence 要求、
+project trust、package activation 与 path scope 组装 `EffectiveUserPolicy`；Agent Core
+只看到由此得到的不透明 policy reference 与 authorization decision。
+
+产品还拥有通过 core 不透明类型传递的具体已校验 identity。
+`evidence::{CLI_ASSEMBLY, SDK_ASSEMBLY, RPC_ASSEMBLY}` 是对应入口路径的固定
+`AssemblyIdentity`，而 `tool_authority::{WORKSPACE_READ_CAPABILITY,
+WORKSPACE_WRITE_CAPABILITY, COMMAND_EXECUTE_CAPABILITY}` 是内置
+`CapabilityIdentity` 常量。Session identity 是动态值，不是全局常量：产品 manifest
+装配通过 `SessionBinding::branch` 映射当前 branch tip，或发出
+`SessionBinding::NoSession`。Agent Core 只校验和传递这些值；它不分配 Opi 产品名称或策略。
+
 ## 工具策略
 
 八个内置工具分为只读和修改性两组。修改性工具仅在解析后的工具选择策略允许时运行。
@@ -483,8 +498,13 @@ package 权限声明只是元数据，不是强制执行的 sandbox 策略。
 metadata 和启动诊断。
 
 常用方法包括 `prompt`、`prompt_with_content`、`queue_images`、`subscribe`、
-`cancel`、`set_model`、`model_picker_items`、`branch_picker_items`、
+`cancel`、`cancel_token`、`set_model`、`model_picker_items`、`branch_picker_items`、
 `resource_metadata`、`resolve_theme` 和 `session`。
+
+`CodingHarness::cancel` 以活跃操作为目标；`cancel_token(&mut self)` 则为下一次 run
+generation 预先 arm，使 awaited preflight 期间观察到的取消继续绑定到该 run。
+`NonInteractiveRunner` 以 `cancel_token(&mut self)` 暴露这种 armed 形式；调用 `run*`
+之前先 clone token，因为 `run*` 会在整个生命周期完成前可变借用 runner。
 
 ## 边界
 

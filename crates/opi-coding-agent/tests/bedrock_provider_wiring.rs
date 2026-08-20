@@ -48,7 +48,12 @@ region = "ap-southeast-1"
     );
     let config = load_config_file(&path).unwrap();
     assert_eq!(
-        config.providers.bedrock.access_key_id.as_deref(),
+        config
+            .providers
+            .bedrock
+            .access_key_id
+            .as_ref()
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("AKIAEXAMPLE")
     );
     assert_eq!(

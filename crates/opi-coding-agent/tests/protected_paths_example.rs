@@ -479,7 +479,7 @@ async fn allow_all_permits_read_and_write() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("ok"),
@@ -534,7 +534,7 @@ async fn allow_paths_permits_listed_paths() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("ok"),
@@ -589,7 +589,7 @@ async fn deny_paths_blocks_matching_write() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("protected-paths") && tool_text.contains("denied"),
@@ -645,7 +645,7 @@ async fn deny_paths_allows_non_matching_path() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("ok"),
@@ -700,7 +700,7 @@ async fn deny_paths_blocks_edit_on_protected_file() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("protected-paths"),
@@ -748,7 +748,7 @@ async fn deny_paths_blocks_bash_when_workspace_root_is_denied() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("protected-paths"),
@@ -803,7 +803,7 @@ async fn parent_traversal_normalizes_to_workspace_root() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("protected-paths"),
@@ -852,7 +852,7 @@ async fn dot_dot_in_path_is_resolved() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("protected-paths"),
@@ -902,7 +902,7 @@ async fn absolute_path_outside_workspace_blocked() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("protected-paths"),
@@ -962,7 +962,7 @@ async fn symlink_traversal_to_protected_path_blocked() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("protected-paths"),
@@ -1010,7 +1010,7 @@ async fn non_file_tools_pass_through_unaffected() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("ok"),
@@ -1078,7 +1078,7 @@ async fn audit_log_records_allow_and_deny_across_turns() {
     )
     .expect("agent");
 
-    let _ = agent.prompt("test").await.unwrap();
+    let _ = agent.prompt("test").await.into_execution_result().unwrap();
 
     let log = audit.lock().unwrap();
     assert!(log.len() >= 2, "should have at least 2 audit entries");

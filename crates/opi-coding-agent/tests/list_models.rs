@@ -5,9 +5,9 @@
 //! These integration tests cover registry and asynchronous listing behavior
 //! without spawning `opi` or touching the user keychain.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use opi_ai::credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
@@ -29,41 +29,98 @@ const BEDROCK_ENV_NAMES: [&str; 5] = [
     "OPI_TEST_BEDROCK_SECRET",
 ];
 
-struct ScopedBedrockEnv {
-    original: Vec<(&'static str, Option<OsString>)>,
+struct ScopedEnv {
+    original: Vec<(String, Option<OsString>)>,
+    lock: Option<MutexGuard<'static, ()>>,
 }
 
-impl ScopedBedrockEnv {
-    fn new(values: &[(&str, &str)]) -> Self {
-        let original = BEDROCK_ENV_NAMES
-            .into_iter()
-            .map(|name| (name, std::env::var_os(name)))
-            .collect();
+impl ScopedEnv {
+    fn new(names: &[&str]) -> Self {
+        let lock = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut original = Vec::with_capacity(names.len());
+        for name in names {
+            assert!(
+                !original
+                    .iter()
+                    .any(|(tracked, _): &(String, Option<OsString>)| tracked == name),
+                "duplicate env var {name}"
+            );
+            original.push(((*name).to_owned(), std::env::var_os(name)));
+        }
+        Self {
+            original,
+            lock: Some(lock),
+        }
+    }
 
-        // SAFETY: callers hold ENV_LOCK for this guard's entire lifetime.
-        for name in BEDROCK_ENV_NAMES {
-            unsafe { std::env::remove_var(name) };
+    fn cleared_with_values(names: &[&str], values: &[(&str, &str)]) -> Self {
+        let env = Self::new(names);
+        for name in names {
+            env.remove(name);
         }
         for (name, value) in values {
-            assert!(BEDROCK_ENV_NAMES.contains(name), "untracked env var {name}");
-            // SAFETY: callers hold ENV_LOCK for this guard's entire lifetime.
-            unsafe { std::env::set_var(name, value) };
+            env.set(name, value);
         }
+        env
+    }
 
-        Self { original }
+    fn set(&self, name: &str, value: impl AsRef<OsStr>) {
+        self.assert_tracked(name);
+        // SAFETY: this guard holds ENV_LOCK and restores the original value on drop.
+        unsafe { std::env::set_var(name, value) };
+    }
+
+    fn remove(&self, name: &str) {
+        self.assert_tracked(name);
+        // SAFETY: this guard holds ENV_LOCK and restores the original value on drop.
+        unsafe { std::env::remove_var(name) };
+    }
+
+    fn assert_tracked(&self, name: &str) {
+        assert!(
+            self.original.iter().any(|(tracked, _)| tracked == name),
+            "untracked env var {name}"
+        );
     }
 }
 
-impl Drop for ScopedBedrockEnv {
+impl Drop for ScopedEnv {
     fn drop(&mut self) {
-        // SAFETY: callers hold ENV_LOCK for this guard's entire lifetime.
         for (name, value) in &self.original {
             match value {
+                // SAFETY: this guard still holds ENV_LOCK and is restoring the exact value.
                 Some(value) => unsafe { std::env::set_var(name, value) },
+                // SAFETY: this guard still holds ENV_LOCK and is restoring absence.
                 None => unsafe { std::env::remove_var(name) },
             }
         }
+        drop(self.lock.take());
     }
+}
+
+#[test]
+fn process_env_guard_restores_on_unwind_and_recovers_poisoned_lock() {
+    const ENV_NAME: &str = "OPI_TEST_LIST_MODELS_ENV_GUARD";
+    let original = std::env::var_os(ENV_NAME);
+
+    let unwind = std::panic::catch_unwind(|| {
+        let env = ScopedEnv::new(&[ENV_NAME]);
+        env.set(ENV_NAME, "panic-canary");
+        assert_eq!(std::env::var(ENV_NAME).as_deref(), Ok("panic-canary"));
+        panic!("exercise unwind restoration");
+    });
+    assert!(unwind.is_err());
+    assert_eq!(std::env::var_os(ENV_NAME), original);
+
+    {
+        let env = ScopedEnv::new(&[ENV_NAME]);
+        env.set(ENV_NAME, "poison-recovery-canary");
+        assert_eq!(
+            std::env::var(ENV_NAME).as_deref(),
+            Ok("poison-recovery-canary")
+        );
+    }
+    assert_eq!(std::env::var_os(ENV_NAME), original);
 }
 
 struct ListingPresenceBackend {
@@ -297,11 +354,9 @@ fn stored_credential_metadata_is_redacted() {
     use opi_coding_agent::config::CredentialBackendSource;
     use opi_coding_agent::provider_factory::build_collection_for_listing;
 
-    let _guard = ENV_LOCK.lock().unwrap();
+    let env = ScopedEnv::new(&["ANTHROPIC_API_KEY"]);
     let secret = "sk-listmodels-DO-NOT-LEAK";
-    let original = std::env::var_os("ANTHROPIC_API_KEY");
-    // SAFETY: serialized by ENV_LOCK; restored below.
-    unsafe { std::env::set_var("ANTHROPIC_API_KEY", secret) };
+    env.set("ANTHROPIC_API_KEY", secret);
 
     let outcome = build_collection_for_listing(
         &{
@@ -321,12 +376,6 @@ fn stored_credential_metadata_is_redacted() {
             probe_map
         },
     );
-
-    // Restore env regardless of outcome.
-    match original {
-        Some(v) => unsafe { std::env::set_var("ANTHROPIC_API_KEY", v) },
-        None => unsafe { std::env::remove_var("ANTHROPIC_API_KEY") },
-    }
 
     let collection = outcome.expect("listing collection builds with env key");
     // Redacted probe carried, no secret.
@@ -361,29 +410,15 @@ fn anthropic_oauth_env_alone_enables_secret_free_listing() {
 
     use opi_coding_agent::provider_factory::build_collection_for_listing;
 
-    let _guard = ENV_LOCK.lock().unwrap();
+    let env = ScopedEnv::new(&["ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN"]);
     let oauth_canary = "oauth-listing-canary-DO-NOT-LEAK";
-    let original_api = std::env::var_os("ANTHROPIC_API_KEY");
-    let original_oauth = std::env::var_os("ANTHROPIC_OAUTH_TOKEN");
-    // SAFETY: serialized by ENV_LOCK; both variables are restored below.
-    unsafe {
-        std::env::remove_var("ANTHROPIC_API_KEY");
-        std::env::set_var("ANTHROPIC_OAUTH_TOKEN", oauth_canary);
-    }
+    env.remove("ANTHROPIC_API_KEY");
+    env.set("ANTHROPIC_OAUTH_TOKEN", oauth_canary);
 
     let outcome = build_collection_for_listing(
         &opi_coding_agent::config::OpiConfig::default(),
         &HashMap::new(),
     );
-
-    match original_api {
-        Some(value) => unsafe { std::env::set_var("ANTHROPIC_API_KEY", value) },
-        None => unsafe { std::env::remove_var("ANTHROPIC_API_KEY") },
-    }
-    match original_oauth {
-        Some(value) => unsafe { std::env::set_var("ANTHROPIC_OAUTH_TOKEN", value) },
-        None => unsafe { std::env::remove_var("ANTHROPIC_OAUTH_TOKEN") },
-    }
 
     let collection = outcome.expect("OAuth-env-only Anthropic listing");
     let entries = model_entries_from_registry(collection.registry());
@@ -418,22 +453,16 @@ async fn listing_uses_selected_credential_kind_and_source_label() {
         SecretString::new(value.to_owned().into_boxed_str())
     }
 
-    let _guard = ENV_LOCK.lock().unwrap();
-    let original_api = std::env::var_os("ANTHROPIC_API_KEY");
-    let original_oauth = std::env::var_os("ANTHROPIC_OAUTH_TOKEN");
-    let original_custom = std::env::var_os("ACME_API_KEY");
-    // SAFETY: serialized by ENV_LOCK; all variables are restored below.
-    unsafe {
-        std::env::remove_var("ANTHROPIC_API_KEY");
-        std::env::set_var(
-            "ANTHROPIC_OAUTH_TOKEN",
-            "oauth-listing-precedence-canary-DO-NOT-LEAK",
-        );
-        std::env::set_var(
-            "ACME_API_KEY",
-            "custom-listing-wrong-kind-canary-DO-NOT-LEAK",
-        );
-    }
+    let env = ScopedEnv::new(&["ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN", "ACME_API_KEY"]);
+    env.remove("ANTHROPIC_API_KEY");
+    env.set(
+        "ANTHROPIC_OAUTH_TOKEN",
+        "oauth-listing-precedence-canary-DO-NOT-LEAK",
+    );
+    env.set(
+        "ACME_API_KEY",
+        "custom-listing-wrong-kind-canary-DO-NOT-LEAK",
+    );
 
     let dir = tempfile::tempdir().unwrap();
     let store = KeychainCredentialStore::new(
@@ -473,19 +502,6 @@ async fn listing_uses_selected_credential_kind_and_source_label() {
         },
     );
     let outcome = build_collection_for_listing_with_store(&config, &store).await;
-
-    match original_api {
-        Some(value) => unsafe { std::env::set_var("ANTHROPIC_API_KEY", value) },
-        None => unsafe { std::env::remove_var("ANTHROPIC_API_KEY") },
-    }
-    match original_oauth {
-        Some(value) => unsafe { std::env::set_var("ANTHROPIC_OAUTH_TOKEN", value) },
-        None => unsafe { std::env::remove_var("ANTHROPIC_OAUTH_TOKEN") },
-    }
-    match original_custom {
-        Some(value) => unsafe { std::env::set_var("ACME_API_KEY", value) },
-        None => unsafe { std::env::remove_var("ACME_API_KEY") },
-    }
 
     let collection = outcome.expect("kind-aware listing");
     assert!(
@@ -688,10 +704,8 @@ async fn stored_only_credential_lists_models_through_async_orchestration() {
     use opi_coding_agent::provider_factory::build_collection_for_listing_with_store;
     use secrecy::SecretString;
 
-    let _env_guard = ENV_LOCK.lock().expect("env lock");
-    let original = std::env::var_os("ANTHROPIC_API_KEY");
-    // SAFETY: this test serializes its process-env mutation and restores it below.
-    unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
+    let env = ScopedEnv::new(&["ANTHROPIC_API_KEY"]);
+    env.remove("ANTHROPIC_API_KEY");
 
     let canary = "sk-stored-only-listing-DO-NOT-LEAK";
     let store = ProbeOnlyCredentialStore::default();
@@ -707,11 +721,6 @@ async fn stored_only_credential_lists_models_through_async_orchestration() {
     config.defaults.model = "anthropic:claude-stored-only".into();
     config.defaults.credential_backend = Some(CredentialBackendSource::Keychain);
     let outcome = build_collection_for_listing_with_store(&config, &store).await;
-
-    match original {
-        Some(value) => unsafe { std::env::set_var("ANTHROPIC_API_KEY", value) },
-        None => unsafe { std::env::remove_var("ANTHROPIC_API_KEY") },
-    }
 
     let collection = outcome.expect("stored-only metadata collection");
     assert_eq!(store.read_calls.load(Ordering::SeqCst), 0);
@@ -759,7 +768,13 @@ async fn stored_only_credential_lists_models_through_async_orchestration() {
         .await
         .expect("metadata provider returns one error")
         .expect_err("metadata provider cannot dispatch");
-    assert!(error.to_string().contains("metadata-only provider"));
+    assert!(
+        matches!(
+            error,
+            ProviderError::StreamError(ref summary) if summary.as_str() == "[REDACTED]"
+        ),
+        "unexpected redacted metadata-provider error: {error}"
+    );
 }
 
 #[tokio::test]
@@ -837,15 +852,10 @@ async fn listing_fails_closed_on_operational_and_corrupt_store_probes_with_env_p
     };
     use opi_coding_agent::provider_factory::build_collection_for_listing_with_store;
 
-    let _env_guard = ENV_LOCK.lock().expect("env lock");
+    let env = ScopedEnv::new(&["ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN"]);
     let env_canary = "listing-fail-closed-env-canary-DO-NOT-LEAK";
-    let original_api = std::env::var_os("ANTHROPIC_API_KEY");
-    let original_oauth = std::env::var_os("ANTHROPIC_OAUTH_TOKEN");
-    // SAFETY: serialized by ENV_LOCK; both variables are restored before assertions.
-    unsafe {
-        std::env::set_var("ANTHROPIC_API_KEY", env_canary);
-        std::env::remove_var("ANTHROPIC_OAUTH_TOKEN");
-    }
+    env.set("ANTHROPIC_API_KEY", env_canary);
+    env.remove("ANTHROPIC_OAUTH_TOKEN");
 
     let corrupt = FakeKeyringBackend::new();
     corrupt.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "corrupt-marker");
@@ -867,15 +877,6 @@ async fn listing_fails_closed_on_operational_and_corrupt_store_probes_with_env_p
         ));
     }
 
-    match original_api {
-        Some(value) => unsafe { std::env::set_var("ANTHROPIC_API_KEY", value) },
-        None => unsafe { std::env::remove_var("ANTHROPIC_API_KEY") },
-    }
-    match original_oauth {
-        Some(value) => unsafe { std::env::set_var("ANTHROPIC_OAUTH_TOKEN", value) },
-        None => unsafe { std::env::remove_var("ANTHROPIC_OAUTH_TOKEN") },
-    }
-
     for (name, outcome) in outcomes {
         let collection = outcome.unwrap_or_else(|error| panic!("{name}: {error}"));
         assert!(
@@ -894,6 +895,7 @@ async fn listing_fails_closed_on_operational_and_corrupt_store_probes_with_env_p
 #[tokio::test]
 #[allow(clippy::await_holding_lock)] // Serializes process-env mutation; the awaited listing core never re-acquires this lock.
 async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
+    use opi_ai::{AuthDescriptor, AuthStatus};
     use opi_coding_agent::credential_store::FakeKeyringBackend;
     use opi_coding_agent::provider_factory::build_collection_for_listing_command;
 
@@ -932,12 +934,6 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
         ("AWS_SECRET_ACCESS_KEY", ENV_SECRET),
         ("AWS_SESSION_TOKEN", SESSION_TOKEN),
     ];
-    const CONFIGURED_CUSTOM_AND_DEFAULT_PAIR: &[(&str, &str)] = &[
-        ("OPI_TEST_BEDROCK_SECRET", CONFIG_SECRET),
-        ("AWS_ACCESS_KEY_ID", ENV_ACCESS),
-        ("AWS_SECRET_ACCESS_KEY", ENV_SECRET),
-    ];
-
     let cases = [
         Case {
             name: "configured access and explicitly configured secret env",
@@ -1009,12 +1005,12 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
             expected_present: true,
         },
         Case {
-            name: "custom secret env does not replace fixed default pair",
-            access_key_id: None,
+            name: "missing configured secret fails closed before fixed default pair",
+            access_key_id: Some(CONFIG_ACCESS),
             secret_access_key_env: Some("OPI_TEST_BEDROCK_SECRET"),
             profile: None,
-            env: CONFIGURED_CUSTOM_AND_DEFAULT_PAIR,
-            expected_present: true,
+            env: DEFAULT_PAIR,
+            expected_present: false,
         },
         Case {
             name: "configured access does not combine with unconfigured default secret",
@@ -1026,11 +1022,11 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
         },
     ];
 
-    let _env_guard = ENV_LOCK.lock().expect("env lock");
     for case in cases {
-        let _env = ScopedBedrockEnv::new(case.env);
+        let _env = ScopedEnv::cleared_with_values(&BEDROCK_ENV_NAMES, case.env);
         let mut config = opi_coding_agent::config::OpiConfig::default();
-        config.providers.bedrock.access_key_id = case.access_key_id.map(str::to_owned);
+        config.providers.bedrock.access_key_id =
+            case.access_key_id.map(secrecy::SecretString::from);
         config.providers.bedrock.secret_access_key_env =
             case.secret_access_key_env.map(str::to_owned);
         config.providers.bedrock.profile = case.profile.map(str::to_owned);
@@ -1048,6 +1044,39 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
         assert_eq!(
             bedrock_present, case.expected_present,
             "{}: unexpected Bedrock listing presence",
+            case.name
+        );
+        if case.expected_present {
+            assert!(
+                matches!(
+                    collection.auth_descriptor("bedrock"),
+                    Some(AuthDescriptor::Resolved { source }) if source == "aws credential chain"
+                ),
+                "{}: unexpected safe Bedrock auth source: {:?}",
+                case.name,
+                collection.auth_descriptor("bedrock")
+            );
+            assert_eq!(
+                collection.auth_status("bedrock"),
+                Some(AuthStatus::Configured),
+                "{}: unexpected Bedrock auth status",
+                case.name
+            );
+        } else {
+            assert!(
+                collection.auth_descriptor("bedrock").is_none(),
+                "{}: unavailable Bedrock provider retained auth metadata",
+                case.name
+            );
+            assert!(
+                collection.auth_status("bedrock").is_none(),
+                "{}: unavailable Bedrock provider retained auth status",
+                case.name
+            );
+        }
+        assert!(
+            collection.probe("bedrock").is_none(),
+            "{}: Bedrock must not expose store probe metadata",
             case.name
         );
 
@@ -1082,11 +1111,9 @@ fn custom_mapped_provider_lists_one_identity() {
     use opi_coding_agent::config::load_config_file;
     use opi_coding_agent::provider_factory::build_collection_for_listing;
 
-    let _env_guard = ENV_LOCK.lock().expect("env lock");
     let env_name = "OPI_TEST_CUSTOM_LIST_ONE_IDENTITY_1416";
-    let original = std::env::var_os(env_name);
-    // SAFETY: the test uses a task-unique variable and restores it below.
-    unsafe { std::env::set_var(env_name, "test-key") };
+    let env = ScopedEnv::new(&[env_name]);
+    env.set(env_name, "test-key");
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("config.toml");
     std::fs::write(
@@ -1144,15 +1171,4 @@ max_output_tokens = 8192
         }),
         "hidden route ids leaked into listing"
     );
-
-    match original {
-        Some(value) => {
-            // SAFETY: restoring the task-unique variable.
-            unsafe { std::env::set_var(env_name, value) };
-        }
-        None => {
-            // SAFETY: restoring the task-unique variable.
-            unsafe { std::env::remove_var(env_name) };
-        }
-    }
 }

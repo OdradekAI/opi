@@ -211,9 +211,11 @@ impl LoginPresenter for MockLoginPresenter {
         Box::pin(async move {
             let rx = slot.lock().unwrap().take();
             match rx {
-                Some(rx) => rx
-                    .await
-                    .map_err(|_| ProviderError::Config("login cancellation sender dropped".into())),
+                Some(rx) => rx.await.map_err(|_| {
+                    ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+                        "login cancellation sender dropped",
+                    ))
+                }),
                 None => std::future::pending::<Result<(), ProviderError>>().await,
             }
         })
@@ -228,9 +230,11 @@ impl LoginPresenter for MockLoginPresenter {
             // awaiting, so the future is `Send` (no MutexGuard held across await).
             let rx = slot.lock().unwrap().take();
             match rx {
-                Some(rx) => rx
-                    .await
-                    .map_err(|_| ProviderError::Config("manual code sender dropped".into())),
+                Some(rx) => rx.await.map_err(|_| {
+                    ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+                        "manual code sender dropped",
+                    ))
+                }),
                 None => std::future::pending::<Result<String, ProviderError>>().await,
             }
         })
@@ -330,10 +334,10 @@ use std::future::Future;
 use std::pin::Pin;
 
 use opi_agent::authority::{
-    AuthorizationDecision, AuthorizationError, Capability, RegisteredTool, RegistrationId,
+    AuthorizationDecision, AuthorizationError, CapabilityIdentity, RegisteredTool, RegistrationId,
     ToolAuthorizationRequest, ToolAuthorizer, ToolOrigin,
 };
-use opi_agent::evidence::CapabilityClass;
+use opi_agent::evidence::{PermissionReference, PermissionScope, PolicyReference};
 use tokio_util::sync::CancellationToken;
 
 /// Convert raw tools into trusted registrations with a default `Builtin` origin
@@ -347,7 +351,7 @@ pub fn registrations_from(tools: Vec<Box<dyn opi_agent::Tool>>) -> Vec<Registere
                 RegistrationId::new(format!("test-{name}")),
                 name,
                 ToolOrigin::Builtin,
-                Capability::Builtin(CapabilityClass::WorkspaceRead),
+                CapabilityIdentity::new("opi.test.workspace.read").unwrap(),
                 t.definition(),
                 Arc::from(t),
             )
@@ -369,9 +373,10 @@ impl ToolAuthorizer for PermissiveAuthorizer {
     {
         Box::pin(async move {
             Ok(AuthorizationDecision::Allow {
-                policy_ref: "test-policy".to_owned(),
-                permission_ref: "test-permission".to_owned(),
-                permission_scope: "test-scope".to_owned(),
+                policy_ref: PolicyReference::new("test-policy").unwrap(),
+                permission_ref: PermissionReference::new("test-permission").unwrap(),
+                permission_scope: PermissionScope::new("test-scope").unwrap(),
+                scoped_grant_ref: None,
                 registration_id: request.registration_id.clone(),
                 capability: request.capability.clone(),
                 evidence_health_generation: request.evidence_health.generation(),

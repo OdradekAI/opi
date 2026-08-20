@@ -184,7 +184,7 @@ async fn extension_tool_executes_through_agent_loop() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
 
     // Verify extension tool was executed: user + assistant(tool_call) + tool_result + assistant(text)
     assert!(result.len() >= 3);
@@ -286,7 +286,7 @@ async fn extension_hooks_observe_builtin_tool_calls() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     assert!(result.len() >= 3);
 
     // Extension should have observed the "dummy" tool call.
@@ -376,7 +376,7 @@ async fn extension_can_block_tool_in_agent_loop() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
 
     // The tool result should contain the block reason (not "executed").
     let tool_text: String = result

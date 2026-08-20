@@ -16,7 +16,7 @@ use opi_agent::event::AgentEvent;
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{Tool, ToolError, ToolResult};
 use opi_ai::message::{InputContent, Message};
-use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
+use opi_ai::provider::{EventStream, Provider, ProviderError, ProviderErrorSummary, Request};
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::test_support::{self, MockProvider, MockResponse};
 use opi_coding_agent::config::OpiConfig;
@@ -226,7 +226,11 @@ async fn harness_tool_call_with_mock() {
     )
     .unwrap();
 
-    let result = agent.prompt("Use the record tool").await.unwrap();
+    let result = agent
+        .prompt("Use the record tool")
+        .await
+        .into_execution_result()
+        .unwrap();
 
     // Tool should have been called
     let log = tool_call_log.lock().unwrap();
@@ -352,7 +356,10 @@ async fn harness_respects_max_iterations_config() {
     )
     .unwrap();
 
-    let result = agent.prompt("Keep using the record tool").await;
+    let result = agent
+        .prompt("Keep using the record tool")
+        .await
+        .into_execution_result();
 
     assert!(
         matches!(
@@ -725,7 +732,9 @@ async fn phase17_provider_error_canary_is_redacted_from_diagnostic_details() {
     let provider = MockProvider::new_with_errors(
         "mock",
         vec![MockResponse::Error(
-            opi_ai::provider::ProviderError::RequestFailed(format!("secret {canary} leaked")),
+            opi_ai::provider::ProviderError::RequestFailed(ProviderErrorSummary::from_untrusted(
+                format!("secret {canary} leaked"),
+            )),
         )],
     );
     let mut harness = CodingHarness::builder(

@@ -66,7 +66,8 @@ mapping consumes it.
 
 | Item | Purpose |
 |------|---------|
-| `Agent` | Stateful wrapper around the loop with prompt, continue, abort, subscribe, steering, follow-up, and atomic complete-state replacement. Trusted `RegisteredTool`s and a `ToolAuthorizer` are supplied at construction. |
+| `Agent` | Stateful wrapper around the loop with prompt, continue, abort, subscribe, steering, follow-up, and atomic complete-state replacement. Trusted `RegisteredTool`s and a `ToolAuthorizer` are supplied at construction; public run operations return `AgentRunResult`. |
+| `AgentRunResult` / `AgentLoopResult` | Must-use typed results that retain actual state/messages, the owning error (if any), terminal outcome, and evidence health instead of discarding lifecycle truth on failure. |
 | `Tool` | JSON Schema based tool contract with cancellable execution and optional progress updates. |
 | `RegisteredTool` / `ToolRegistry` / `ToolAuthorizer` | Immutable trusted tool registration and mandatory per-invocation authority boundary. |
 | `ExecutionMode` | Controls whether a tool can run in a parallel batch or forces sequential execution. |
@@ -88,8 +89,9 @@ agent_start                              # once, before turn 0
     turn_start
     transform_context                     # AgentHooks::transform_context
     convert_to_llm                        # AgentHooks::convert_to_llm
-    validate request capabilities         # failure -> AgentEnd, AgentError::Provider
     ProviderCollection::prepare_call(Request)
+      validate route/request model schema and capabilities
+                                         # hook transformations have already run
       PreparedProviderCall::start_attempt
       message_start                       # assistant stream Start
       message_update                      # per text/thinking delta
@@ -102,14 +104,15 @@ agent_start                              # once, before turn 0
         after_tool_call                   # AgentHooks::after_tool_call (may replace result)
         tool_execution_end                # per tool call
         turn_end                          # assistant message + tool_results
-        if every result terminates -> AgentEnd, return Ok
-        should_stop_after_turn            # true -> AgentEnd, return Ok (compaction stop)
       else:
         turn_end                          # assistant message, no tool_results
-        should_stop_after_turn            # true -> AgentEnd, return Ok
-    prepare_next_turn                     # AgentHooks::prepare_next_turn; SKIPPED after a
-                                         # terminal should_stop_after_turn; may inject messages
+    prepare_next_turn                     # hook may return a complete candidate state
+    validate candidate as one unit
+    apply candidate atomically            # before the stop decision
+    should_stop_after_turn                # observes applied state; terminate forces true
+                                         # true -> AgentEnd, successful AgentLoopResult
     drain steering queue                  # non-empty -> QueueUpdate, append, next turn
+    if a candidate was applied -> next turn
     if no tools are pending:
       pop follow-up queue                 # non-empty -> QueueUpdate, append, next turn
       else -> stop
@@ -118,13 +121,17 @@ agent_end                                 # once, on termination
 
 Boundaries:
 
-- `should_stop_after_turn` runs after `turn_end` and before `prepare_next_turn`
-  and any queue polling. A compaction coordinator returns `true` here to stop
-  before the next turn; `prepare_next_turn` and steering/follow-up polling do
-  not run after a terminal stop.
-- `prepare_next_turn` runs only when `should_stop_after_turn` permits
-  continuation, and before steering/follow-up polling. Injected messages are
-  included in the next provider request.
+- `transform_context` and `convert_to_llm` finish before
+  `ProviderCollection::prepare_call` validates the resulting request against
+  the resolved model schema, wire, and capabilities.
+- `prepare_next_turn` builds a complete candidate away from live state. The
+  loop validates and atomically applies that candidate before
+  `should_stop_after_turn`; cancellation or validation failure retains (or
+  restores) the prior state.
+- `should_stop_after_turn` observes the applied state after `turn_end` and
+  before any queue polling. A terminal stop prevents steering/follow-up
+  polling; an applied prepared candidate otherwise receives its next provider
+  turn before follow-up is popped.
 - Steering is drained before follow-up. Follow-up is popped only when no tools
   are pending and the steering queue is empty.
 - `CompactionEngine` is a context-size primitive; the higher-level coordinator
@@ -146,8 +153,8 @@ these effects:
 | `convert_to_llm` | Converts app messages to provider messages and filters session-only state. |
 | `before_tool_call` | Runs after JSON Schema argument validation and before `tool.execute`; may `Deny` to block execution (the deny reason becomes the tool error). |
 | `after_tool_call` | Runs after execution and before the final `ToolExecutionEnd` event; may `Replace` the result so the replacement is what is emitted and persisted. |
-| `should_stop_after_turn` | Runs after `turn_end` and before steering/follow-up polling; returning `true` stops before the next turn and skips `prepare_next_turn`. |
-| `prepare_next_turn` | Runs only when `should_stop_after_turn` permits continuation, and before steering/follow-up polling; may inject messages into the next provider request. |
+| `prepare_next_turn` | Runs after `turn_end`; may return a complete candidate state, which is validated and atomically applied before the stop decision. |
+| `should_stop_after_turn` | Runs after candidate preparation/application and before steering/follow-up polling; returning `true` stops before the next turn. |
 
 Extension composition: `ExtensionRegistry::wrap_hooks` runs the base
 `AgentHooks` method first, then each extension in registration order. A
@@ -156,9 +163,7 @@ block; later extensions are not consulted. Extension `on_after_tool_call`
 observers cannot modify the result; only the base hook can `Replace`.
 
 When an adapter or extension implements only a subset of hooks, the remaining
-hook methods default to no-op. (The legacy per-run `TraceCollector` /
-`Extension::set_trace_collector` hook-skip recording was removed with the trace
-contract in Phase 17.7.)
+hook methods default to no-op.
 
 ## Tool Scheduling
 
@@ -220,7 +225,8 @@ turn — before the turn starts, during provider streaming, and during retry
 backoff. When cancellation is observed the loop records an informational
 `agent cancelled` diagnostic (tagged with the lifecycle phase), emits the
 terminal `AgentEnd` event carrying the finalized message buffer, and returns
-`Err(AgentError::Cancelled)`. Partial streaming content accumulated for an
+an `AgentLoopResult` whose error is `Some(AgentError::Cancelled)`. Partial
+streaming content accumulated for an
 in-flight assistant message is discarded: it is only pushed to the message
 buffer when the stream's `Done` event arrives, so a cancel mid-stream writes
 no partial assistant message.
@@ -230,9 +236,12 @@ and provider-stream cancellation may emit `TurnStarted` without a matching
 `TurnEnded`; the terminal boundary for those paths is `AgentEnd` plus the
 linked diagnostic.
 
-`Agent::abort` (and the harness `cancel` / `cancel_token` helpers) cancel the
-active run's token; the token is reset before the next turn, so a cancelled
-runtime returns to idle and accepts a new prompt. A tool that observes its
+`Agent::abort` cancels the active run's token; the token is reset before the
+next operation, so a cancelled runtime returns to idle and accepts a new
+prompt. Callers that await product preflight may use the public but doc-hidden
+`Agent::arm_run`/`ArmedAgentRun` and matching `*_armed` operation: the opaque
+value binds cancellation to exactly one Agent and its latest generation, and a
+foreign or stale value produces typed `AgentError::InvalidArmedRun`. A tool that observes its
 `CancellationToken` returns promptly — the process adapter tool returns
 `ToolError::Cancelled` after a best-effort `cancel` message is dispatched to
 the adapter child — and the result becomes a finalized error tool result, not
@@ -241,9 +250,17 @@ token primitive, so the observable contract is uniform across embedder
 boundaries.
 
 Session persistence is append-only per finalized `AgentMessage::Llm` entry, and
-a turn whose run returns `Err(AgentError::Cancelled)` is not persisted at all,
+a turn whose typed run result carries `AgentError::Cancelled` is not persisted at all,
 so storage can never contain a partial assistant message or a half-applied
 tool result.
+
+Public `Agent` run operations return a must-use `AgentRunResult`, while the
+low-level `agent_loop` returns `AgentLoopResult`. Both expose the retained
+state/messages, owning error, `TerminalOutcome`, and final `EvidenceHealth`;
+`into_execution_result` is the explicit compatibility conversion. An
+`AgentRunResult` additionally owns the post-loop lifecycle: it reports
+`AgentRunLifecyclePhase`, pairs `begin_compaction` with `finish_compaction`,
+and completes evidence through `finalize_evidence` or `abandon_evidence`.
 
 ## Sessions and Compaction
 
@@ -340,6 +357,17 @@ Command-state contract (the runtime guard, not the parse layer):
   `BufRead`/`Write` transports, emits a `proxy_ready` header, buffers events,
   supports cancellation, and redacts common secret patterns by default.
 
+The evidence lifecycle is explicit: `EvidenceSink::setup` precedes ordered
+`emit` calls, artifacts pass through `finalize_artifact`, and only a validated
+immutable `FinalizedManifest` reaches `finalize_run`. An unpublishable run is
+closed through `abandon_run`; `AgentRunResult` invokes that path fail-closed for
+an unfinalized lifecycle. Evidence and manifest facts are typed (including
+route/auth provenance, tool authorization/outcome, session binding,
+measurements, and terminal outcome), while product/embedder identities such as
+`AssemblyIdentity` and `CapabilityIdentity` remain validated opaque strings.
+`RunId` is an opaque UUIDv7 and serializes/parses as its canonical hyphenated
+string; run-local turn/call/sequence identities do not expose constructors.
+
 All SDK/RPC/proxy surfaces are unstable 0.x APIs. Clients should check schema
 versions and pin exact crate versions when needed.
 
@@ -357,10 +385,11 @@ versions and pin exact crate versions when needed.
 |---|---|---|
 | `Agent` | supported 0.x | Stateful loop wrapper; contract-tested. |
 | `agent_loop` | supported 0.x | Core async entry point; runtime event-order contract tested. |
+| `AgentRunResult`, `AgentLoopResult`, `AgentRunLifecyclePhase`, `PendingCompaction` | supported 0.x | Must-use typed execution/lifecycle results; callers inspect actual outcome and evidence health before explicit conversion or finalization. |
 | `AgentHooks` | supported 0.x | Six lifecycle hooks; hook-order and failure contract tested. |
 | `AgentLoopConfig`, `AgentLoopContext`, `AgentError`, `AgentMessage` | supported 0.x | Required by the supported low-level `agent_loop` entry point. |
 | `Tool`, `ToolDef`, `ToolResult`, `ToolError`, `ExecutionMode` | supported 0.x | JSON-Schema tool contract plus result/error/scheduling types used by embedders. |
-| `RegisteredTool`, `ToolRegistry`, `ToolAuthorizer`, `EffectiveUserPolicy` | supported 0.x | Trusted registration, provider-visible projection, and fail-closed per-invocation authorization. |
+| `RegisteredTool`, `ToolRegistry`, `ToolAuthorizer`, `CapabilityIdentity` | supported 0.x | Product-neutral trusted registration, validated opaque capability identity, provider-visible projection, and fail-closed per-invocation authorization. Product policy and built-in capability constants are supplied by the product/embedder, not Agent Core. |
 | `AgentEvent`, `AgentEventSink` | supported 0.x | In-process runtime event stream; `AgentEvent` is `#[non_exhaustive]` because new variants may arrive across 0.x. |
 | `AgentSessionEvent` | unstable internal | `opi --json` wire protocol (`NDJSON_SCHEMA_VERSION = 2`, owned by `opi-coding-agent`); `#[non_exhaustive]`. Check the schema version. |
 | `SessionEntry` | unstable internal | Session JSONL storage layout; lives at `session::SessionEntry`, not re-exported at the crate root; `#[non_exhaustive]`. |
@@ -368,24 +397,26 @@ versions and pin exact crate versions when needed.
 | `SdkCommand`, `SdkResponse`, `SDK_SCHEMA_VERSION` | unstable internal | RPC/SDK command model (`SDK_SCHEMA_VERSION = 3`); the `sdk` module marks it unstable 0.x. |
 | `StreamingProxy`, `ProxyConfig`, `ProxyEvent`, `ProxyHandler`, `SecretRedactor`, `StreamingProxyError` | unstable internal | Streaming-proxy primitives; the `streaming_proxy` module marks them unstable 0.x. |
 | `Diagnostic`, `DiagnosticPayload`, `RedactionMode`, `Severity`, `redact`, `redact_text`, `DiagnosticSink`, `NullSink`, `RecordingSink` | unstable internal | Diagnostic payload and sink plumbing used by runtime surfaces; current contract is redaction/schema-version behavior, not a stable API shape. |
-| `EvidenceSink`, `EvidenceRecorder`, `InMemoryEvidenceSink`, `NoopEvidenceSink`, `EvidenceRecord`, `FinalizedManifest`, `RuntimeInputBinding`, `EvidenceHealth`, `IdentityAllocator` | unstable internal | Product-neutral evidence contract (Phase 17.3/17.6/17.7): storage-neutral sink lifecycle and resolved-execution manifest value types. The `evidence` module is unstable 0.x. |
+| `EvidenceSink`, `EvidenceRecorder`, `InMemoryEvidenceSink`, `NoopEvidenceSink`, `EvidenceRecord`, `ManifestCandidate`, `FinalizedManifest`, `RuntimeInputBinding`, `EvidenceHealth`, `IdentityAllocator`, `RunId` | unstable internal | Product-neutral typed evidence contract: storage-neutral finalize/abandon lifecycle, validated resolved-execution facts, opaque identities, and canonical UUIDv7 run identity. The `evidence` module is unstable 0.x. |
+| `agent::ArmedAgentRun` and doc-hidden `Agent::{arm_run,control_handle_for_run,*_armed}` | unstable internal | One-operation cancellation generation used by product preflight; stale/foreign generations return `AgentError::InvalidArmedRun`. |
 | `HarnessError`, `HarnessResult`, `SavePoint`, `PendingWriteQueue`, `PendingWrite`, `PendingWriteKind`, `SessionRepo`, `SessionFacade`, `JsonlSessionRepo` | unstable internal | Generic session-facade/repo orchestration seam; the `harness` module is unstable 0.x. |
 
-This review found no candidate-removal crate-root re-exports. Every crate-root
-`pub use` in `src/lib.rs` is named in the table above. Public modules may expose
-additional items through module paths; unless those items are named as supported
-0.x surfaces here, they are unstable internal 0.x APIs.
+The table above names every supported crate-root `pub use` from `src/lib.rs`.
+Public modules may expose additional items through module paths; unless those
+items are named as supported 0.x surfaces here, they are unstable internal 0.x
+APIs.
 
 There is no stable 1.0 API promise. Stability is enforced today by
 `#[non_exhaustive]` on `AgentEvent`, `AgentSessionEvent`, `SessionEntry`, and
 the evidence/hook result enums, and by module-level `# Unstable` / `unstable 0.x`
-prose on `sdk`, `streaming_proxy`, `extension`, and `evidence`. There is no
-`#[doc(hidden)]` or `#[unstable]` feature gate, so embedders should pin exact
-crate versions. The evidence sink lifecycle is the capture seam (Phase 17.7).
+prose on `sdk`, `streaming_proxy`, `extension`, and `evidence`. The preflight and
+armed-run methods listed above are intentionally `#[doc(hidden)]` internal
+surfaces; this controls documentation visibility, not API stability. There is no
+compiler-enforced `#[unstable]` gate, so embedders should rely only on the
+supported 0.x classification above and pin exact crate versions. The evidence
+sink lifecycle is the capture seam.
 
-Phase 17 intentionally removed the piecemeal `Agent` model/inference/message
-setters, `Agent::add_tool`, the generic state bag, and the unused phase/snapshot
-harness owners. Embedders replace one validated `NextTurnState` atomically and
+Agent state is replaced atomically as one validated `NextTurnState`. Embedders
 provide immutable `RegisteredTool`s plus a `ToolAuthorizer` at construction.
 
 ## Non-Goals

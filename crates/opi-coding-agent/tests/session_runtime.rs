@@ -2897,13 +2897,19 @@ fn phase8_session_recovery_diagnostics_reach_in_process_sink() {
 /// assistant message is finalized).
 struct CompleteThenHangProvider {
     calls: Arc<Mutex<usize>>,
+    second_stream_pending: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 }
 
 impl CompleteThenHangProvider {
-    fn new() -> Self {
-        Self {
-            calls: Arc::new(Mutex::new(0)),
-        }
+    fn new() -> (Self, tokio::sync::oneshot::Receiver<()>) {
+        let (second_stream_pending, second_stream_ready) = tokio::sync::oneshot::channel();
+        (
+            Self {
+                calls: Arc::new(Mutex::new(0)),
+                second_stream_pending: Mutex::new(Some(second_stream_pending)),
+            },
+            second_stream_ready,
+        )
     }
 }
 
@@ -2934,6 +2940,7 @@ impl Provider for CompleteThenHangProvider {
         } else {
             // Emit Start + a partial TextDelta, then hang. The Done event that
             // would finalize the assistant message never arrives.
+            let pending = self.second_stream_pending.lock().unwrap().take();
             let mut partial = test_support::base_assistant();
             partial.content.push(AssistantContent::Text {
                 text: "partial".into(),
@@ -2949,7 +2956,12 @@ impl Provider for CompleteThenHangProvider {
                         partial,
                     }),
                 ])
-                .chain(stream::pending::<Result<AssistantStreamEvent, ProviderError>>()),
+                .chain(stream::once(async move {
+                    if let Some(pending) = pending {
+                        let _ = pending.send(());
+                    }
+                    std::future::pending::<Result<AssistantStreamEvent, ProviderError>>().await
+                })),
             )
         }
     }
@@ -2966,7 +2978,7 @@ async fn phase8_cancel_persists_only_finalized_state() {
     let dir = tempfile::tempdir().expect("tempdir");
     set_sessions_dir(dir.path());
 
-    let provider = CompleteThenHangProvider::new();
+    let (provider, second_stream_pending) = CompleteThenHangProvider::new();
     let mut harness = CodingHarness::new(
         Box::new(provider),
         "mock-model".into(),
@@ -2974,8 +2986,6 @@ async fn phase8_cancel_persists_only_finalized_state() {
         std::env::current_dir().unwrap(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
-    let token = harness.cancel_token();
-
     // Turn 1 completes; the harness persists the finalized user + assistant
     // messages (and a leaf) to the session JSONL.
     let result1 = harness.prompt("first").await.unwrap();
@@ -2988,10 +2998,27 @@ async fn phase8_cancel_persists_only_finalized_state() {
 
     // Turn 2 hangs mid-stream; cancel it. The harness returns Err(Cancelled)
     // and skips persistence for the cancelled turn.
-    let handle = tokio::spawn(async move { harness.continue_("second").await });
-    tokio::time::sleep(Duration::from_millis(150)).await;
+    let token = harness.cancel_token();
+    let mut handle = tokio::spawn(async move { harness.continue_("second").await });
+    match tokio::time::timeout(Duration::from_secs(2), second_stream_pending).await {
+        Ok(Ok(())) => {}
+        result => {
+            handle.abort();
+            let _ = handle.await;
+            clear_sessions_dir();
+            panic!("second provider stream did not reach its pending tail: {result:?}");
+        }
+    }
     token.cancel();
-    let result2 = handle.await.expect("continue task panicked");
+    let result2 = match tokio::time::timeout(Duration::from_secs(2), &mut handle).await {
+        Ok(result) => result.expect("continue task panicked"),
+        Err(_) => {
+            handle.abort();
+            let _ = handle.await;
+            clear_sessions_dir();
+            panic!("cancelled turn did not finish within timeout");
+        }
+    };
     assert!(
         matches!(result2, Err(opi_agent::loop_types::AgentError::Cancelled)),
         "cancelled turn returns Err(Cancelled)"

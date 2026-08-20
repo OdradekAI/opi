@@ -71,6 +71,26 @@ fn text_mock_repeated(id: &str, text: &str, count: usize) -> Box<dyn Provider> {
 
 const SECRET_VALUE: &str = "sk-super-secret-value-DO-NOT-LEAK";
 
+fn collection_error_kind(error: &CollectionError) -> &'static str {
+    match error {
+        CollectionError::Registry(_) => "registry",
+        CollectionError::RouteNotDispatchable { .. } => "route-not-dispatchable",
+        CollectionError::RequestRouteMismatch { .. } => "request-route-mismatch",
+        CollectionError::AttemptAlreadyActive => "attempt-already-active",
+        CollectionError::CallCancelled => "call-cancelled",
+        CollectionError::CredentialTerminated { .. } => "credential-terminated",
+        CollectionError::Provider(_) => "provider",
+    }
+}
+
+#[test]
+fn collection_error_match_is_exhaustive_for_current_public_surface() {
+    let error = CollectionError::RouteNotDispatchable {
+        provider: "metadata-only".to_owned(),
+    };
+    assert_eq!(collection_error_kind(&error), "route-not-dispatchable");
+}
+
 struct StreamProvider {
     id: &'static str,
     events:
@@ -317,6 +337,37 @@ async fn provider_collection_dispatches_with_redacted_auth() {
 }
 
 #[tokio::test]
+async fn enabled_none_thinking_on_non_thinking_model_is_rejected_before_auth() {
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            text_mock("no-thinking", "must not stream"),
+            Arc::new(MissingAuthResolver {
+                provider_id: "no-thinking".to_owned(),
+            }) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+            CompatMetadata::default(),
+        )
+        .unwrap();
+    let mut request = minimal_request("no-thinking:mock-model");
+    request.thinking = ThinkingConfig {
+        enabled: true,
+        budget_tokens: Some(2048),
+        level: opi_ai::ThinkingLevel::None,
+    };
+
+    let error = collection
+        .prepare_call("no-thinking:mock-model", request)
+        .await
+        .expect_err("unsupported thinking must fail before auth resolution");
+
+    assert!(matches!(
+        error,
+        CollectionError::Provider(ProviderError::UnsupportedCapability(_))
+    ));
+}
+
+#[tokio::test]
 async fn provider_collection_dispatch_rejects_missing_auth_with_redacted_diagnostic() {
     let mut collection = ProviderCollection::new();
     collection
@@ -401,7 +452,7 @@ async fn dispatch_complete_propagates_mid_stream_provider_error() {
             Box::new(StreamProvider::new(
                 "mock",
                 vec![Err(opi_ai::provider::ProviderError::StreamError(
-                    "mid-stream failure".into(),
+                    opi_ai::provider::ProviderErrorSummary::redacted(),
                 ))],
             )),
             Arc::new(StaticAuthResolver::new(
@@ -420,7 +471,7 @@ async fn dispatch_complete_propagates_mid_stream_provider_error() {
     let stream = prepared.start_attempt().unwrap();
     let err = drain_to_completion(stream).await.unwrap_err();
     assert!(matches!(err, ProviderError::StreamError(_)));
-    assert!(err.to_string().contains("mid-stream failure"));
+    assert_eq!(err.to_string(), "stream error: [REDACTED]");
 }
 
 #[tokio::test]
@@ -962,8 +1013,12 @@ impl Provider for ErrorRefreshProvider {
         '_,
         Result<Option<Vec<ModelInfo>>, opi_ai::provider::ProviderError>,
     > {
-        let msg = self.error_msg.to_owned();
-        Box::pin(async move { Err(opi_ai::provider::ProviderError::ProviderSide(msg)) })
+        let msg = self.error_msg;
+        Box::pin(async move {
+            Err(opi_ai::provider::ProviderError::ProviderSide(
+                opi_ai::provider::ProviderErrorSummary::from_untrusted(msg),
+            ))
+        })
     }
 }
 
@@ -1109,6 +1164,7 @@ async fn refresh_models_is_atomic_substrate() {
 
 #[tokio::test]
 async fn refresh_models_atomic_rollback_on_error() {
+    const STATIC_PROVIDER_CANARY: &str = "static-refresh-provider-canary";
     let mut collection = ProviderCollection::new();
 
     // Dynamic provider that succeeds on refresh.
@@ -1129,7 +1185,7 @@ async fn refresh_models_atomic_rollback_on_error() {
         .register(
             Box::new(ErrorRefreshProvider {
                 id: "bad",
-                error_msg: "failed to refresh models",
+                error_msg: STATIC_PROVIDER_CANARY,
             }),
             AuthDescriptor::StaticApiKey {
                 value: SecretKey::new("key"),
@@ -1143,10 +1199,8 @@ async fn refresh_models_atomic_rollback_on_error() {
 
     // Refresh fails because "bad" returns an error.
     let err = collection.refresh().await.unwrap_err();
-    assert!(
-        err.to_string().contains("failed to refresh models"),
-        "expected error message, got: {err}"
-    );
+    assert_eq!(err.to_string(), "provider error: [REDACTED]");
+    assert!(!format!("{err:?}").contains(STATIC_PROVIDER_CANARY));
 
     // Atomic rollback: good's catalog must NOT be installed.
     assert!(
@@ -1303,6 +1357,7 @@ mod phase17 {
     use opi_ai::auth::{
         AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth,
     };
+    use opi_ai::azure_openai::AzureOpenAIProvider;
     use opi_ai::credential::BoxAuthFuture;
     use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
     use opi_ai::provider_collection::CompatMetadata;
@@ -1367,6 +1422,26 @@ mod phase17 {
         cancellations: Arc<AtomicUsize>,
     }
 
+    struct CountingAzureProvider {
+        inner: AzureOpenAIProvider,
+        dispatches: Arc<AtomicUsize>,
+    }
+
+    impl Provider for CountingAzureProvider {
+        fn id(&self) -> &str {
+            self.inner.id()
+        }
+
+        fn models(&self) -> &[ModelInfo] {
+            self.inner.models()
+        }
+
+        fn stream_prepared(&self, request: Request, auth: ResolvedAuth) -> EventStream {
+            self.dispatches.fetch_add(1, Ordering::SeqCst);
+            self.inner.stream_prepared(request, auth)
+        }
+    }
+
     impl Provider for CancelAwareProvider {
         fn id(&self) -> &str {
             "cancel-aware"
@@ -1412,16 +1487,40 @@ mod phase17 {
 
     struct PendingResolver {
         count: Arc<AtomicUsize>,
+        entered: Arc<tokio::sync::Notify>,
     }
 
     impl AuthResolver for PendingResolver {
         fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
             let count = self.count.clone();
+            let entered = self.entered.clone();
             Box::pin(async move {
                 count.fetch_add(1, Ordering::SeqCst);
+                entered.notify_one();
                 std::future::pending().await
             })
         }
+    }
+
+    async fn wait_for_resolver_readiness(
+        readiness: &tokio::sync::Notify,
+        timeout: Duration,
+    ) -> Result<(), String> {
+        tokio::time::timeout(timeout, readiness.notified())
+            .await
+            .map_err(|_| "timed out waiting for auth resolver readiness".to_owned())
+    }
+
+    #[tokio::test]
+    async fn bounded_resolver_readiness_guard_reports_timeout_instead_of_hanging() {
+        let readiness = tokio::sync::Notify::new();
+        let error = wait_for_resolver_readiness(&readiness, Duration::from_millis(10))
+            .await
+            .expect_err("an unentered resolver must time out");
+        assert!(
+            error.contains("auth resolver readiness"),
+            "timeout identifies the stalled resolver boundary: {error}"
+        );
     }
 
     struct ProvenanceResolver;
@@ -1731,6 +1830,7 @@ mod phase17 {
     #[tokio::test]
     async fn cancelling_during_auth_resolution_stops_preparation() {
         let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let resolver_entered = Arc::new(tokio::sync::Notify::new());
         let mut collection = ProviderCollection::new();
         collection
             .register_route(
@@ -1742,6 +1842,7 @@ mod phase17 {
                 )),
                 Arc::new(PendingResolver {
                     count: resolve_hits.clone(),
+                    entered: resolver_entered.clone(),
                 }),
                 AuthProvenanceSource::Static,
                 CompatMetadata::default(),
@@ -1755,9 +1856,10 @@ mod phase17 {
             async move { collection.prepare_call("alpha:model-a", request).await }
         });
 
-        while resolve_hits.load(Ordering::SeqCst) == 0 {
-            tokio::task::yield_now().await;
-        }
+        wait_for_resolver_readiness(&resolver_entered, Duration::from_secs(1))
+            .await
+            .expect("resolver must be entered before cancellation");
+        assert_eq!(resolve_hits.load(Ordering::SeqCst), 1);
         cancel.cancel();
         let error = tokio::time::timeout(Duration::from_secs(1), task)
             .await
@@ -1867,7 +1969,6 @@ mod phase17 {
             .expect("prepare call");
         let mut stream = prepared.start_attempt().expect("start active attempt");
         let task = tokio::spawn(async move { stream.next().await });
-        tokio::task::yield_now().await;
         token.cancel();
 
         let terminal = tokio::time::timeout(Duration::from_secs(1), task)
@@ -1885,6 +1986,81 @@ mod phase17 {
         assert_eq!(dispatches.load(Ordering::SeqCst), 1, "no retry dispatch");
     }
 
+    #[tokio::test]
+    async fn drain_retains_wire_cancellation_and_forbids_redispatch() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind stalled collection server");
+        let addr = listener
+            .local_addr()
+            .expect("stalled collection server addr");
+        let request_received = Arc::new(tokio::sync::Notify::new());
+        let server_request_received = request_received.clone();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept Azure request");
+            let mut request = Vec::new();
+            let mut buf = [0_u8; 1024];
+            loop {
+                let read = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                    .await
+                    .expect("read Azure request");
+                if read == 0 {
+                    return;
+                }
+                request.extend_from_slice(&buf[..read]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            server_request_received.notify_one();
+            std::future::pending::<()>().await;
+        });
+
+        let dispatches = Arc::new(AtomicUsize::new(0));
+        let base_url = format!("http://127.0.0.1:{}", addr.port());
+        let provider =
+            AzureOpenAIProvider::new(Some(base_url), "my-gpt4o".into(), Some("2024-06-01".into()))
+                .expect("construct Azure provider");
+        let mut collection = ProviderCollection::new();
+        collection
+            .register_route(
+                Box::new(CountingAzureProvider {
+                    inner: provider,
+                    dispatches: dispatches.clone(),
+                }),
+                Arc::new(StaticAuthResolver::new(
+                    AuthScheme::ApiKey,
+                    SecretString::from("sk-collection-cancel"),
+                )),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .expect("register Azure route");
+
+        let request = minimal_request("azure:my-gpt4o");
+        let token = request.cancel.clone();
+        let prepared = collection
+            .prepare_call("azure:my-gpt4o", request)
+            .await
+            .expect("prepare Azure call");
+        let attempt = prepared.start_attempt().expect("start Azure attempt");
+        tokio::time::timeout(Duration::from_secs(1), request_received.notified())
+            .await
+            .expect("Azure request must reach the stalled server");
+        token.cancel();
+
+        let error = tokio::time::timeout(Duration::from_secs(1), drain_to_completion(attempt))
+            .await
+            .expect("attempt drain must not wait for HTTP after cancellation")
+            .expect_err("cancelled attempt must retain the typed provider error");
+        assert!(matches!(error, ProviderError::Cancelled), "got {error:?}");
+        assert!(matches!(
+            prepared.start_attempt(),
+            Err(CollectionError::CallCancelled)
+        ));
+        assert_eq!(dispatches.load(Ordering::SeqCst), 1, "no redispatch");
+    }
+
     /// A resolver that always fails preparation with a typed credential error.
     struct FailingResolver {
         kind: FailKind,
@@ -1895,6 +2071,39 @@ mod phase17 {
     enum FailKind {
         Revoked,
         Needed,
+    }
+
+    struct CredentialRejectingProvider {
+        kind: FailKind,
+        models: Vec<ModelInfo>,
+        dispatches: Arc<AtomicUsize>,
+    }
+
+    impl Provider for CredentialRejectingProvider {
+        fn id(&self) -> &str {
+            "alpha"
+        }
+
+        fn models(&self) -> &[ModelInfo] {
+            &self.models
+        }
+
+        fn stream_prepared(&self, _request: Request, _auth: ResolvedAuth) -> EventStream {
+            self.dispatches.fetch_add(1, Ordering::SeqCst);
+            let first = text_response("started")
+                .into_iter()
+                .next()
+                .expect("text response starts with a non-terminal event");
+            let error = match self.kind {
+                FailKind::Revoked => ProviderError::CredentialRevoked {
+                    provider_id: "alpha".to_owned(),
+                },
+                FailKind::Needed => ProviderError::CredentialNeeded {
+                    provider_id: "alpha".to_owned(),
+                },
+            };
+            Box::pin(futures_util::stream::iter([Ok(first), Err(error)]))
+        }
     }
 
     impl AuthResolver for FailingResolver {
@@ -1953,6 +2162,65 @@ mod phase17 {
                 0,
                 "provider dispatched despite credential failure ({kind:?})"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_time_credential_failure_forbids_redispatch() {
+        for kind in [FailKind::Revoked, FailKind::Needed] {
+            let dispatches = Arc::new(AtomicUsize::new(0));
+            let mut collection = ProviderCollection::new();
+            collection
+                .register_route(
+                    Box::new(CredentialRejectingProvider {
+                        kind,
+                        models: vec![ModelInfo::new(
+                            "model-a",
+                            "model-a",
+                            WireApi::OpenAiCompletions,
+                            ModelCapabilities::new(100_000, 4_096),
+                        )],
+                        dispatches: dispatches.clone(),
+                    }),
+                    Arc::new(CountingResolver {
+                        count: Arc::new(AtomicUsize::new(0)),
+                        secret: SecretString::from("sk-rejected"),
+                    }),
+                    AuthProvenanceSource::Static,
+                    CompatMetadata::default(),
+                )
+                .expect("register route");
+            let prepared = collection
+                .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
+                .await
+                .expect("prepare call");
+
+            let mut attempt = prepared.start_attempt().expect("start attempt");
+            let first = attempt
+                .next()
+                .await
+                .expect("stream starts")
+                .expect("first event succeeds");
+            assert!(!first.is_terminal());
+            assert!(matches!(
+                attempt.next().await,
+                Some(Err(ProviderError::CredentialRevoked { .. }
+                    | ProviderError::CredentialNeeded { .. }))
+            ));
+
+            let error = match prepared.start_attempt() {
+                Err(error) => error,
+                Ok(_) => panic!("credential-terminal call must reject redispatch"),
+            };
+            assert!(
+                matches!(
+                    &error,
+                    CollectionError::CredentialTerminated { provider }
+                        if provider.as_str() == "alpha"
+                ),
+                "got {error:?}"
+            );
+            assert_eq!(dispatches.load(Ordering::SeqCst), 1, "no redispatch");
         }
     }
 
@@ -2048,6 +2316,65 @@ mod phase17 {
             ),
             "got {err:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn request_route_mismatch_and_noncanonical_identity_fail_before_auth_or_dispatch() {
+        let alpha_dispatches = Arc::new(AtomicUsize::new(0));
+        let alpha_resolutions = Arc::new(AtomicUsize::new(0));
+        let beta_dispatches = Arc::new(AtomicUsize::new(0));
+        let beta_resolutions = Arc::new(AtomicUsize::new(0));
+        let mut collection = ProviderCollection::new();
+        for (provider, dispatches, resolutions) in [
+            ("alpha", alpha_dispatches.clone(), alpha_resolutions.clone()),
+            ("beta", beta_dispatches.clone(), beta_resolutions.clone()),
+        ] {
+            collection
+                .register_route(
+                    Box::new(ProbeProvider::new(
+                        provider,
+                        "model-a",
+                        dispatches,
+                        Arc::new(AtomicUsize::new(0)),
+                    )),
+                    Arc::new(CountingResolver {
+                        count: resolutions,
+                        secret: SecretString::from("sk-canary"),
+                    }),
+                    AuthProvenanceSource::Static,
+                    CompatMetadata::default(),
+                )
+                .expect("register route");
+        }
+
+        for request_model in [
+            "beta:model-a",
+            "alpha:model-a ",
+            " alpha:model-a",
+            "alpha: model-a",
+        ] {
+            let error = collection
+                .prepare_call("alpha:model-a", minimal_request(request_model))
+                .await
+                .expect_err("mismatched or noncanonical request identity must fail");
+            assert!(
+                matches!(
+                    &error,
+                    CollectionError::RequestRouteMismatch {
+                        request_model: actual_request_model,
+                        route_provider,
+                        route_model,
+                    } if actual_request_model == request_model
+                        && route_provider.as_str() == "alpha"
+                        && route_model.as_str() == "model-a"
+                ),
+                "got {error:?} for {request_model:?}"
+            );
+        }
+        assert_eq!(alpha_resolutions.load(Ordering::SeqCst), 0);
+        assert_eq!(beta_resolutions.load(Ordering::SeqCst), 0);
+        assert_eq!(alpha_dispatches.load(Ordering::SeqCst), 0);
+        assert_eq!(beta_dispatches.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

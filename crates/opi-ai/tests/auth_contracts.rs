@@ -196,9 +196,12 @@ async fn oauth_provider_and_login_presenter_are_object_safe_and_callable() {
 // tests/provider_collection.rs (`prepare_call_surfaces_each_registered_auth_source_on_the_route`).
 // ---------------------------------------------------------------------------
 
+// opi-phase17-acceptance
 #[test]
 fn auth_provenance_debug_carries_no_secret() {
     use opi_ai::auth::{AuthFallback, AuthProvenance, AuthProvenanceSource};
+
+    const SECRET_CANARY: &str = "sk-auth-provenance-secret-canary";
 
     // Environment provenance carries the variable NAME, never a resolved value.
     let provenance = AuthProvenance {
@@ -207,12 +210,19 @@ fn auth_provenance_debug_carries_no_secret() {
         },
         fallback: AuthFallback::NotAttempted,
     };
-    let dbg = format!("{provenance:?}");
+    let resolved = ResolvedAuth {
+        scheme: AuthScheme::ApiKey,
+        secret: SecretString::from(SECRET_CANARY),
+        base_url: None,
+        account_id: None,
+        provenance: provenance.clone(),
+    };
+    let dbg = format!("{resolved:?}");
     assert!(
         dbg.contains("ANTHROPIC_API_KEY"),
         "env var name should be visible: {dbg}"
     );
-    assert!(!dbg.contains("sk-super-secret"), "secret leaked: {dbg}");
+    assert!(!dbg.contains(SECRET_CANARY), "secret leaked: {dbg}");
 
     // The fallback reason is a stable non-secret diagnostic, not a credential.
     let used = AuthProvenance {
@@ -230,10 +240,6 @@ fn auth_provenance_debug_carries_no_secret() {
         },
     };
     let dbg_used = format!("{used:?}");
-    assert!(
-        !dbg_used.contains("sk-super-secret"),
-        "secret leaked: {dbg_used}"
-    );
     assert!(
         dbg_used.contains("credential store unavailable"),
         "fallback reason should be visible: {dbg_used}"

@@ -40,7 +40,7 @@ use opi_tui::{PermissionChoice, PermissionPrompt, PermissionSummary};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::execution::InteractivePermissionBroker;
-use crate::harness::{CodingHarness, SessionMetadata};
+use crate::harness::{CodingHarness, ProviderAuthFailure, SessionMetadata, provider_auth_failure};
 use crate::interactive_auth::auth_command_requires_presenter;
 use crate::interactive_auth::{
     AuthCommandOutcome, AuthCommandServices, LoginTerminalControl, dispatch_auth_command,
@@ -52,10 +52,10 @@ use crate::project_trust::{
 };
 
 // ---------------------------------------------------------------------------
-// Phase 15 task 15.8.2: interactive project-trust prompt + decision resolution
+// Interactive project-trust prompt and decision resolution
 // ---------------------------------------------------------------------------
 
-/// Source of an interactive project-trust prompt (Phase 15 task 15.8.2).
+/// Source of an interactive project-trust prompt.
 ///
 /// The production implementation drives the real TUI (see [`run_trust_prompt`]);
 /// tests inject a canned/recording implementation. [`Self::ask`] renders the
@@ -70,7 +70,7 @@ pub trait InteractiveTrustPrompt: Send {
     ) -> Pin<Box<dyn Future<Output = Option<TrustChoice>> + Send + '_>>;
 }
 
-/// Resolve the interactive trust decision from a startup plan (task 15.8.2).
+/// Resolve the interactive trust decision from a startup plan.
 ///
 /// A pre-decided plan (CLI override, embedder resolver vote, stored entry, or
 /// global default) **bypasses** the prompt entirely. An undecided plan with
@@ -79,7 +79,7 @@ pub trait InteractiveTrustPrompt: Send {
 /// (`None`) resolves to [`TrustDecision::Untrusted`] so no project resources
 /// load. Persistence and store reload failures are returned so startup cannot
 /// silently treat a durable choice as session-only. The returned decision feeds
-/// the 15.7 two-stage config + resource gate and
+/// the two-stage config/resource gate and
 /// `CodingHarnessBuilder::trust_decision`, and provably precedes provider
 /// construction, installed-package/adapter startup, and harness build.
 pub async fn resolve_interactive_trust_decision(
@@ -104,13 +104,13 @@ pub async fn resolve_interactive_trust_decision(
     }
 }
 
-/// Render the five-way trust prompt on the real terminal and await one choice
-/// (Phase 15 task 15.8.2). Returns `None` if the user cancels (Esc) or the
+/// Render the five-way trust prompt on the real terminal and await one choice.
+/// Returns `None` if the user cancels (Esc) or the
 /// terminal closes before a choice. `Err` only on terminal I/O.
 ///
 /// The blocking crossterm loop runs in `spawn_blocking` and sends the choice
-/// through a oneshot; awaiting the receiver is the DoD's "exactly one oneshot
-/// response" contract, and a dropped sender (Esc/cancel) yields `None`.
+/// through a oneshot; awaiting the receiver yields exactly one response, and a
+/// dropped sender (Esc/cancel) yields `None`.
 pub async fn run_trust_prompt(project_path: &Path) -> io::Result<Option<TrustChoice>> {
     let (response_tx, response_rx) = tokio::sync::oneshot::channel::<TrustChoice>();
     let path = project_path.to_path_buf();
@@ -315,7 +315,7 @@ impl InteractiveTrustPrompt for TuiTrustPrompt {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 16 task 16.10: interactive capability-permission broker + prompt link
+// Interactive capability-permission broker and prompt link
 // ---------------------------------------------------------------------------
 
 /// One prompt request flowing from the routed bash backend (agent task) to the
@@ -343,7 +343,7 @@ struct PendingPermission {
 /// `TuiState::pending_permission`, renders the [`PermissionPrompt`] widget, and
 /// relays the user's choice through the responder.
 ///
-/// Cancellation/drop safety (Phase 16 redaction + no-hang contract): a closed
+/// Cancellation/drop safety: a closed
 /// loop (terminal close) drops the receiver so `send` fails →
 /// [`PermissionChoice::Deny`]; a dropped responder likewise resolves the await
 /// to `Deny` via `unwrap_or`. The tool call therefore always surfaces a stable
@@ -396,7 +396,7 @@ struct TuiState {
     cost_usd: Option<f64>,
     graphics_protocol: TerminalGraphicsProtocol,
     picker: Option<PickerOverlay>,
-    /// A pending mid-execution capability-permission prompt (Phase 16.10). When
+    /// A pending mid-execution capability-permission prompt. When
     /// `Some`, the event loop renders the [`PermissionPrompt`] overlay and
     /// captures the user's choice; `None` otherwise.
     pending_permission: Option<PendingPermission>,
@@ -514,6 +514,7 @@ struct InteractiveTuiTestDriver {
     inputs: Vec<String>,
     capture: Arc<Mutex<InteractiveTuiTestCapture>>,
     auth: Option<InteractiveTuiTestAuthServices>,
+    abort_readiness: Option<Arc<tokio::sync::Semaphore>>,
 }
 
 static INTERACTIVE_TUI_TEST_DRIVER: OnceLock<Mutex<Option<InteractiveTuiTestDriver>>> =
@@ -554,6 +555,10 @@ impl Drop for InteractiveTuiTestDriverGuard {
 }
 
 /// Install one RAII-scoped, race-safe headless script for `run_interactive_tui`.
+/// The reserved input `"<escape>"` emits an Escape key without a trailing
+/// Enter, allowing permission-denial and modal-cancellation paths to be driven.
+/// `"<abort>"` emits the configured default Escape abort after the next real
+/// provider turn starts, including while ordinary prompt input is disabled.
 #[doc(hidden)]
 pub fn install_interactive_tui_test_driver<I, S>(
     inputs: I,
@@ -562,7 +567,21 @@ where
     I: IntoIterator<Item = S>,
     S: Into<String>,
 {
-    install_interactive_tui_test_driver_inner(inputs, None)
+    install_interactive_tui_test_driver_inner(inputs, None, None)
+}
+
+/// Install a scripted outer-TUI driver whose `"<abort>"` inputs wait for
+/// fixture-owned provider readiness instead of the earlier `TurnStart` event.
+#[doc(hidden)]
+pub fn install_interactive_tui_test_driver_with_abort_readiness<I, S>(
+    inputs: I,
+    abort_readiness: Arc<tokio::sync::Semaphore>,
+) -> io::Result<InteractiveTuiTestDriverGuard>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    install_interactive_tui_test_driver_inner(inputs, None, Some(abort_readiness))
 }
 
 /// Install a scripted outer-TUI driver with injected login dependencies.
@@ -575,12 +594,13 @@ where
     I: IntoIterator<Item = S>,
     S: Into<String>,
 {
-    install_interactive_tui_test_driver_inner(inputs, Some(auth))
+    install_interactive_tui_test_driver_inner(inputs, Some(auth), None)
 }
 
 fn install_interactive_tui_test_driver_inner<I, S>(
     inputs: I,
     auth: Option<InteractiveTuiTestAuthServices>,
+    abort_readiness: Option<Arc<tokio::sync::Semaphore>>,
 ) -> io::Result<InteractiveTuiTestDriverGuard>
 where
     I: IntoIterator<Item = S>,
@@ -593,6 +613,7 @@ where
         inputs: inputs.into_iter().map(Into::into).collect(),
         capture: capture.clone(),
         auth,
+        abort_readiness,
     };
     let mut slot = interactive_tui_test_driver_slot()
         .lock()
@@ -742,27 +763,21 @@ impl PromptAuthStateMachine {
         let completion = match result {
             Ok(Ok(_)) => PromptCompletion::Success,
             Ok(Err(AgentError::Cancelled)) => PromptCompletion::Cancelled,
-            Ok(Err(
-                AgentError::CredentialNeeded { provider_id }
-                | AgentError::AccountIdMissing { provider_id },
-            )) if pending.may_arm_retry && !output_began => {
-                self.pending_auth_provider = Some(provider_id.clone());
-                PromptCompletion::CredentialNeeded { provider_id }
-            }
-            Ok(Err(
-                error @ (AgentError::CredentialNeeded { .. } | AgentError::AccountIdMissing { .. }),
-            )) => {
-                self.pending_auth_provider = None;
-                PromptCompletion::Error(error.to_string())
-            }
-            Ok(Err(error @ AgentError::CredentialRevoked { .. })) => {
-                self.pending_auth_provider = None;
-                PromptCompletion::Error(error.to_string())
-            }
-            Ok(Err(error)) => {
-                self.pending_auth_provider = None;
-                PromptCompletion::Error(error.to_string())
-            }
+            Ok(Err(error)) => match provider_auth_failure(&error) {
+                Some(
+                    ProviderAuthFailure::CredentialNeeded(provider_id)
+                    | ProviderAuthFailure::AccountIdMissing(provider_id),
+                ) if pending.may_arm_retry && !output_began => {
+                    self.pending_auth_provider = Some(provider_id.to_owned());
+                    PromptCompletion::CredentialNeeded {
+                        provider_id: provider_id.to_owned(),
+                    }
+                }
+                Some(_) | None => {
+                    self.pending_auth_provider = None;
+                    PromptCompletion::Error(error.to_string())
+                }
+            },
             Err(error) => {
                 self.pending_auth_provider = None;
                 PromptCompletion::Error(error.to_string())
@@ -832,7 +847,7 @@ impl TuiTerminal for Terminal<CrosstermBackend<io::Stdout>> {
 
 fn render_tui_state(frame: &mut Frame<'_>, state: &TuiState) {
     frame.render_widget(build_shell(state), frame.area());
-    // Phase 16.10: render the modal permission prompt as a centered overlay on
+    // Render the modal permission prompt as a centered overlay on
     // top of the shell when a prompt is pending.
     if let Some(pending) = &state.pending_permission {
         let area = centered_rect(70, 50, frame.area());
@@ -1144,7 +1159,7 @@ pub async fn run_interactive_tui(
         client: harness.oauth_http_client.clone(),
     };
 
-    // Phase 16.10: take the permission-prompt channel receiver out of the
+    // Take the permission-prompt channel receiver out of the
     // harness before it is shared, so the event loop can drain it each frame.
     let mut permission_prompt_rx = harness.permission_prompt_rx.take();
 
@@ -1228,7 +1243,7 @@ async fn tui_event_loop<T: TuiTerminal, E: TuiEventSource>(
     let mut cancel_token = harness.lock().await.cancel_token();
 
     loop {
-        // Phase 16.10: drain any pending capability-permission prompt from the
+        // Drain any pending capability-permission prompt from the
         // routed bash backend (agent task) into the TUI state. At most one is
         // pending at a time (BashTool is Sequential), so the last request wins.
         if let Some(rx) = permission_prompt_rx.as_mut() {
@@ -1262,8 +1277,8 @@ async fn tui_event_loop<T: TuiTerminal, E: TuiEventSource>(
                 }
             }
 
-            // Refresh cancel token — Agent::maybe_reset_cancel() creates a new one
-            // after cancellation, so the old token would be stale.
+            // Arm the next run's cancellation generation after completion; the
+            // next prompt consumes this exact token before awaited preflight.
             cancel_token = harness.lock().await.cancel_token();
         }
 
@@ -1352,7 +1367,7 @@ async fn tui_event_loop<T: TuiTerminal, E: TuiEventSource>(
                 continue;
             }
 
-            // Phase 16.10: a pending capability-permission prompt is modal — it
+            // A pending capability-permission prompt is modal — it
             // captures all keys (arrows/enter/esc resolve it; others are
             // ignored) and never falls through to submit/abort/text input. Esc
             // resolves to Deny (NOT the run-abort path).
@@ -1415,7 +1430,7 @@ async fn tui_event_loop<T: TuiTerminal, E: TuiEventSource>(
                     continue;
                 }
 
-                // Phase 13.4: /name, /label, /unlabel, /session info dispatch
+                // Dispatch /name, /label, /unlabel, and /session info
                 // through the typed session-metadata path. The parser returns
                 // None for bare `/session` so the resume-picker block below
                 // continues to handle it (non-regression).
@@ -1747,26 +1762,67 @@ impl LoginTerminalControl for HeadlessTuiTerminal {
     }
 }
 
+struct ScriptedTuiEvent {
+    event: Event,
+    required_provider_calls: Option<usize>,
+}
+
 struct ScriptedTuiEventSource {
-    events: VecDeque<Event>,
+    events: VecDeque<ScriptedTuiEvent>,
+    observer: Arc<InteractiveTuiTestObserver>,
+    abort_readiness: Option<Arc<tokio::sync::Semaphore>>,
 }
 
 impl ScriptedTuiEventSource {
-    fn new(inputs: Vec<String>) -> Self {
+    fn new(
+        inputs: Vec<String>,
+        observer: Arc<InteractiveTuiTestObserver>,
+        abort_readiness: Option<Arc<tokio::sync::Semaphore>>,
+    ) -> Self {
         let mut events = VecDeque::new();
+        let mut abort_count = 0;
         for input in inputs {
-            events.extend(input.chars().map(|character| {
-                Event::Key(crossterm::event::KeyEvent::new(
+            if input == "<escape>" {
+                events.push_back(ScriptedTuiEvent {
+                    event: Event::Key(crossterm::event::KeyEvent::new(
+                        KeyCode::Esc,
+                        KeyModifiers::NONE,
+                    )),
+                    required_provider_calls: None,
+                });
+                continue;
+            }
+            if input == "<abort>" {
+                abort_count += 1;
+                events.push_back(ScriptedTuiEvent {
+                    event: Event::Key(crossterm::event::KeyEvent::new(
+                        KeyCode::Esc,
+                        KeyModifiers::NONE,
+                    )),
+                    required_provider_calls: Some(abort_count),
+                });
+                continue;
+            }
+            events.extend(input.chars().map(|character| ScriptedTuiEvent {
+                event: Event::Key(crossterm::event::KeyEvent::new(
                     KeyCode::Char(character),
                     KeyModifiers::NONE,
-                ))
+                )),
+                required_provider_calls: None,
             }));
-            events.push_back(Event::Key(crossterm::event::KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            )));
+            events.push_back(ScriptedTuiEvent {
+                event: Event::Key(crossterm::event::KeyEvent::new(
+                    KeyCode::Enter,
+                    KeyModifiers::NONE,
+                )),
+                required_provider_calls: None,
+            });
         }
-        Self { events }
+        Self {
+            events,
+            observer,
+            abort_readiness,
+        }
     }
 }
 
@@ -1776,13 +1832,24 @@ impl TuiEventSource for ScriptedTuiEventSource {
         _timeout: std::time::Duration,
         input_enabled: bool,
     ) -> io::Result<TuiEventPoll> {
-        if !input_enabled {
+        let Some(next) = self.events.front() else {
+            return Ok(TuiEventPoll::Exhausted);
+        };
+        let provider_gate_open = next.required_provider_calls.is_some_and(|required| {
+            self.abort_readiness.as_ref().map_or_else(
+                || self.observer.provider_calls.load(Ordering::SeqCst) >= required as u64,
+                |readiness| readiness.available_permits() >= required,
+            )
+        });
+        if !input_enabled && !provider_gate_open {
             return Ok(TuiEventPoll::Pending);
         }
         Ok(self
             .events
             .pop_front()
-            .map_or(TuiEventPoll::Exhausted, TuiEventPoll::Event))
+            .map_or(TuiEventPoll::Exhausted, |scripted| {
+                TuiEventPoll::Event(scripted.event)
+            }))
     }
 }
 
@@ -1801,6 +1868,7 @@ async fn run_headless_interactive_tui_driver(
         inputs,
         capture,
         auth,
+        abort_readiness,
         ..
     } = driver;
     let mut terminal = HeadlessTuiTerminal {
@@ -1812,7 +1880,7 @@ async fn run_headless_interactive_tui_driver(
                 auth.terminal_failure
             }),
     };
-    let mut events = ScriptedTuiEventSource::new(inputs);
+    let mut events = ScriptedTuiEventSource::new(inputs, test_observer.clone(), abort_readiness);
     let result = tui_event_loop(
         &mut terminal,
         &mut events,
@@ -1891,7 +1959,7 @@ fn branch_picker_command(input: &str) -> Option<BranchPickerCommand> {
     }
 }
 
-/// A parsed Phase 13.4 session-metadata slash command (Phase 13.4). Returned
+/// A parsed session-metadata slash command. Returned
 /// by [`parse_session_metadata_command`]. Bare `/session` (resume picker) and
 /// every other input return `None` so existing dispatch paths are unchanged.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1903,7 +1971,7 @@ pub enum SessionMetadataCommand {
     Usage(String),
 }
 
-/// Parse a Phase 13.4 session-metadata slash command from raw TUI input.
+/// Parse a session-metadata slash command from raw TUI input.
 ///
 /// Returns `Some` only for:
 /// - `/name <name>` (non-empty) or a local usage hint for empty args
@@ -1960,7 +2028,7 @@ pub fn parse_session_metadata_command(input: &str) -> Option<SessionMetadataComm
     None
 }
 
-/// Apply a parsed session-metadata command against the harness (Phase 13.4)
+/// Apply a parsed session-metadata command against the harness
 /// and return the human-readable status line the TUI should display. This is
 /// the shared dispatch path for `/name`, `/label`, `/unlabel`, and
 /// `/session info`, extracted so tests can exercise command → harness →
@@ -2068,8 +2136,8 @@ fn handle_picker_key(s: &mut TuiState, code: KeyCode) -> Option<PickerAction> {
     }
 }
 
-/// Resolve a pending capability-permission prompt from a key press (Phase
-/// 16.10). The prompt is modal: `Esc` denies, `Enter` confirms the highlighted
+/// Resolve a pending capability-permission prompt from a key press. The prompt
+/// is modal: `Esc` denies, `Enter` confirms the highlighted
 /// choice, `Up`/`Down` move the cursor; any other key is ignored. On `Esc`/
 /// `Enter` the user's [`PermissionChoice`] is sent through the responder and
 /// the prompt is cleared; the broker then resumes the waiting tool call (allow
@@ -2546,7 +2614,11 @@ mod tests {
         // Scripted keys: "" -> a single Enter event. While the prompt is pending
         // the modal guard captures it (confirming AllowOnce) rather than letting
         // it submit an empty prompt; then "exit" terminates the loop.
-        let mut events = ScriptedTuiEventSource::new(vec![String::new(), "exit".to_string()]);
+        let mut events = ScriptedTuiEventSource::new(
+            vec![String::new(), "exit".to_string()],
+            Arc::new(InteractiveTuiTestObserver::default()),
+            None,
+        );
         let state = Arc::new(Mutex::new(TuiState {
             messages: Vec::new(),
             input_text: String::new(),

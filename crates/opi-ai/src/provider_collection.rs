@@ -11,10 +11,10 @@
 //!
 //! [`AuthDescriptor`] carries redaction-safe collection metadata and supports
 //! non-live dispatch gates. Concrete routes use [`crate::AuthResolver`] to
-//! resolve live credentials for each stream, while [`crate::CredentialStore`]
-//! owns persisted credential IO and redacted availability probes. OAuth flows
-//! populate or refresh stored credentials outside this collection; the
-//! collection does not perform login.
+//! resolve live credentials once per prepared logical call, while
+//! [`crate::CredentialStore`] owns persisted credential IO and redacted
+//! availability probes. OAuth flows populate or refresh stored credentials
+//! outside this collection; the collection does not perform login.
 //!
 //! # Complete-dispatch decision
 //!
@@ -40,7 +40,9 @@ use futures_util::{Stream, StreamExt};
 use crate::auth::{AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, ResolvedAuth};
 use crate::credential::CredentialSource;
 use crate::message::AssistantMessage;
-use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{
+    EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
+};
 use crate::registry::{ModelCapabilities, ProviderRegistry, RegistrationError, RegistryError};
 use crate::stream::{AssistantStreamEvent, StopReason};
 
@@ -240,16 +242,6 @@ pub enum CollectionError {
     /// A registry lookup failed.
     #[error(transparent)]
     Registry(#[from] RegistryError),
-    /// Dispatch was rejected because auth is not configured for the provider.
-    ///
-    /// `source` is redacted and never carries a credential value.
-    #[error("auth not configured for provider '{provider}': {detail}")]
-    AuthNotConfigured {
-        /// Provider id whose auth is missing.
-        provider: String,
-        /// Redacted description of the missing auth source.
-        detail: String,
-    },
     /// The resolved provider has no dispatchable route: it was registered
     /// without a live [`AuthResolver`], so
     /// [`ProviderCollection::prepare_call`] cannot prepare authentication for it.
@@ -257,6 +249,19 @@ pub enum CollectionError {
     RouteNotDispatchable {
         /// Provider id whose route is not dispatchable.
         provider: String,
+    },
+    /// The request identifies a different provider/model than the resolved
+    /// route, so dispatch would make the frozen route facts untruthful.
+    #[error(
+        "request model '{request_model}' does not match resolved route '{route_provider}:{route_model}'"
+    )]
+    RequestRouteMismatch {
+        /// Model identity supplied by the request.
+        request_model: String,
+        /// Provider id resolved from the route specification.
+        route_provider: String,
+        /// Model id resolved from the route specification.
+        route_model: String,
     },
     /// [`start_attempt`](PreparedProviderCall::start_attempt) was called while a
     /// previous attempt stream is still active. At most one attempt may be
@@ -268,6 +273,13 @@ pub enum CollectionError {
     /// terminates the logical call and forbids any further attempt.
     #[error("the prepared call was cancelled")]
     CallCancelled,
+    /// A prior attempt reported that the frozen credential is unavailable or
+    /// revoked, so the prepared call cannot safely dispatch it again.
+    #[error("credential failure terminated the prepared call for provider '{provider}'")]
+    CredentialTerminated {
+        /// Provider whose frozen credential entered the terminal state.
+        provider: String,
+    },
     /// A provider stream failed while draining to completion.
     #[error(transparent)]
     Provider(#[from] ProviderError),
@@ -291,7 +303,7 @@ pub struct ProviderCollection {
     /// outer command path probes the store and injects the result here;
     /// [`ProviderCollection::probe`] exposes it for listing/auth-status display.
     probed: HashMap<String, CredentialSource>,
-    /// Per-route live auth resolvers for dispatchable (Phase 17) routes. A route
+    /// Per-route live auth resolvers. A route
     /// is dispatchable via [`prepare_call`](Self::prepare_call) only when it has
     /// a resolver here; legacy metadata-only registration leaves this absent.
     resolvers: HashMap<String, Arc<dyn AuthResolver>>,
@@ -358,7 +370,7 @@ impl ProviderCollection {
     }
 
     /// Register a dispatchable route: a concrete provider plus its per-request
-    /// [`AuthResolver`] and non-secret source classification (Phase 17).
+    /// [`AuthResolver`] and non-secret source classification.
     ///
     /// The provider is registered in the underlying registry; the resolver and
     /// source classification are retained so
@@ -387,7 +399,7 @@ impl ProviderCollection {
 
     /// Resolve one canonical `provider:model` route, validate the request,
     /// resolve authentication once, and freeze an opaque
-    /// [`PreparedProviderCall`] (Phase 17).
+    /// [`PreparedProviderCall`].
     ///
     /// Sequential attempts from the prepared call reuse the same frozen route,
     /// request, and authentication without repeating preparation. Route lookup,
@@ -404,6 +416,14 @@ impl ProviderCollection {
         let provider_id = provider_ref.id().to_owned();
         let model_id = model.id.clone();
         let wire_api = model.wire_api;
+        let canonical_request_model = format!("{provider_id}:{model_id}");
+        if request.model != canonical_request_model {
+            return Err(CollectionError::RequestRouteMismatch {
+                request_model: request.model.clone(),
+                route_provider: provider_id,
+                route_model: model_id,
+            });
+        }
         crate::provider::validate_request_for_model(&provider_id, Some(model), &request)?;
 
         let resolver = self
@@ -454,6 +474,7 @@ impl ProviderCollection {
             auth,
             route,
             active: Arc::new(AtomicBool::new(false)),
+            credential_terminal: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -558,21 +579,27 @@ impl ProviderCollection {
                     let mut seen = std::collections::HashSet::new();
                     let validation = models.iter().try_for_each(|model| {
                         if model.id.is_empty() {
-                            return Err(CollectionError::Provider(ProviderError::Config(format!(
-                                "dynamic catalog for provider '{id}' contains a model with an empty id"
-                            ))));
+                            return Err(CollectionError::Provider(ProviderError::Config(
+                                ProviderErrorSummary::sanitized(format!(
+                                    "dynamic catalog for provider '{id}' contains a model with an empty id"
+                                )),
+                            )));
                         }
                         if !seen.insert(model.id.as_str()) {
-                            return Err(CollectionError::Provider(ProviderError::Config(format!(
-                                "dynamic catalog for provider '{id}' has duplicate model id '{}'",
-                                model.id
-                            ))));
+                            return Err(CollectionError::Provider(ProviderError::Config(
+                                ProviderErrorSummary::sanitized(format!(
+                                    "dynamic catalog for provider '{id}' has duplicate model id '{}'",
+                                    model.id
+                                )),
+                            )));
                         }
                         if let Err(source) = model.validate() {
-                            return Err(CollectionError::Provider(ProviderError::Config(format!(
-                                "dynamic catalog for provider '{id}' has invalid model '{}': {source}",
-                                model.id
-                            ))));
+                            return Err(CollectionError::Provider(ProviderError::Config(
+                                ProviderErrorSummary::sanitized(format!(
+                                    "dynamic catalog for provider '{id}' has invalid model '{}': {source}",
+                                    model.id
+                                )),
+                            )));
                         }
                         Ok(())
                     });
@@ -632,12 +659,12 @@ pub async fn drain_to_completion(
         }
     }
     Err(ProviderError::StreamError(
-        "stream ended without a terminal event".to_owned(),
+        ProviderErrorSummary::attested_static("stream ended without a terminal event"),
     ))
 }
 
 // ---------------------------------------------------------------------------
-// Prepared call (Phase 17)
+// Prepared call
 // ---------------------------------------------------------------------------
 
 /// Immutable, redacted facts about a resolved provider route.
@@ -654,13 +681,14 @@ pub struct PreparedRoute {
     pub wire_api: crate::model_info::WireApi,
 }
 
-/// An opaque prepared provider call (Phase 17).
+/// An opaque prepared provider call.
 ///
 /// Privately freezes the resolved provider, the request, and the secret-bearing
 /// resolved authentication. [`start_attempt`](Self::start_attempt) reuses the
-/// frozen route, request, and authentication for each sequential retry without
-/// repeating route/auth preparation. The secret never enters [`PreparedRoute`],
-/// Agent-visible state, evidence, diagnostics, or model-visible state.
+/// frozen route, request, and authentication for each permitted sequential
+/// retry without repeating route/auth preparation. The secret never enters
+/// [`PreparedRoute`], Agent-visible state, evidence, diagnostics, or
+/// model-visible state.
 pub struct PreparedProviderCall {
     provider: Arc<dyn Provider>,
     request: Request,
@@ -669,11 +697,15 @@ pub struct PreparedProviderCall {
     /// At-most-one-active-attempt guard, cleared when an attempt stream reaches
     /// a terminal event or error.
     active: Arc<AtomicBool>,
+    /// Set when an attempt reports that the frozen credential is unavailable
+    /// or revoked; later attempts fail closed instead of redispatching it.
+    credential_terminal: Arc<AtomicBool>,
 }
 
 struct AttemptStream {
     inner: EventStream,
     active: Arc<AtomicBool>,
+    credential_terminal: Arc<AtomicBool>,
     released: bool,
 }
 
@@ -692,6 +724,14 @@ impl Stream for AttemptStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         let item = this.inner.as_mut().poll_next(cx);
+        if matches!(
+            &item,
+            Poll::Ready(Some(Err(
+                ProviderError::CredentialNeeded { .. } | ProviderError::CredentialRevoked { .. }
+            )))
+        ) {
+            this.credential_terminal.store(true, Ordering::Release);
+        }
         let terminal = match &item {
             Poll::Ready(None) => true,
             Poll::Ready(Some(Err(_))) => true,
@@ -728,7 +768,7 @@ impl PreparedProviderCall {
     }
 
     /// The non-secret auth source classification plus fallback decision for the
-    /// resolved authentication (Phase 17).
+    /// resolved authentication.
     ///
     /// Provenance is carried beside the secret on the private
     /// [`ResolvedAuth`]; this redacted accessor is the only public read path,
@@ -745,20 +785,36 @@ impl PreparedProviderCall {
     /// terminates the logical call and forbids any further attempt. At most one
     /// attempt stream may be active at a time; a sequential retry must wait until
     /// the prior attempt's stream reaches a terminal event or error, which
-    /// releases the active slot.
+    /// releases the active slot. A credential-needed or credential-revoked
+    /// stream error additionally terminates the prepared call and forbids retry.
     ///
     /// # Errors
     ///
     /// - [`CollectionError::CallCancelled`] if the shared cancellation token has
     ///   been cancelled.
+    /// - [`CollectionError::CredentialTerminated`] if a prior attempt rejected
+    ///   the frozen credential.
     /// - [`CollectionError::AttemptAlreadyActive`] if a prior attempt stream is
     ///   still active.
     pub fn start_attempt(&self) -> Result<EventStream, CollectionError> {
         if self.request.cancel.is_cancelled() {
             return Err(CollectionError::CallCancelled);
         }
+        if self.credential_terminal.load(Ordering::Acquire) {
+            return Err(CollectionError::CredentialTerminated {
+                provider: self.route.provider_id.clone(),
+            });
+        }
         if self.active.swap(true, Ordering::AcqRel) {
             return Err(CollectionError::AttemptAlreadyActive);
+        }
+        // Recheck after acquiring the slot so a concurrent terminal stream
+        // cannot release it between the first check and this attempt.
+        if self.credential_terminal.load(Ordering::Acquire) {
+            self.active.store(false, Ordering::Release);
+            return Err(CollectionError::CredentialTerminated {
+                provider: self.route.provider_id.clone(),
+            });
         }
         let stream = self
             .provider
@@ -766,6 +822,7 @@ impl PreparedProviderCall {
         Ok(Box::pin(AttemptStream {
             inner: stream,
             active: self.active.clone(),
+            credential_terminal: self.credential_terminal.clone(),
             released: false,
         }))
     }

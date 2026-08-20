@@ -634,6 +634,7 @@ async fn phase8_tool_validation_failure_contract() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .expect("validation failure is a normal runtime outcome, not a loop error");
 
     assert_eq!(
@@ -743,6 +744,7 @@ async fn phase8_malformed_tool_arguments_do_not_execute_permissive_tool() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .expect("malformed tool arguments are a normal runtime outcome");
 
     assert_eq!(*call_count.lock().unwrap(), 2);
@@ -839,6 +841,7 @@ async fn malformed_tool_arguments_result_is_structured_error_not_panic() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .expect("malformed arguments are a normal runtime outcome, not a panic");
 
     assert!(!*executed.lock().unwrap(), "Tool::execute must not run");
@@ -938,6 +941,7 @@ async fn phase8_malformed_tool_arguments_do_not_execute_parallel_permissive_tool
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .expect("malformed tool arguments are a normal runtime outcome");
 
     assert_eq!(*call_count.lock().unwrap(), 2);

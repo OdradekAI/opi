@@ -284,12 +284,6 @@ fn gemini_model_catalog_matches_constructor() {
 #[test]
 fn bedrock_model_catalog_matches_constructor() {
     let provider = opi_ai::bedrock::BedrockProvider::new(
-        opi_ai::bedrock::sigv4::AwsCredentials {
-            access_key_id: "test".into(),
-            secret_access_key: "test".into(),
-            session_token: None,
-            region: "us-east-1".into(),
-        },
         None,
         std::sync::Arc::new(opi_ai::http::HttpClient::new()),
     );
@@ -1570,15 +1564,33 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
         model.validate().unwrap();
         let model_id = model.id.clone();
 
-        let mut stream = provider.stream_prepared(
-            minimal_request(&format!("{}:{model_id}", case.provider_id)),
+        let auth = if case.provider_id == "bedrock" {
+            opi_ai::ResolvedAuth::aws_sigv4(
+                opi_ai::AwsSigV4Credentials {
+                    access_key_id: "test-access-key".into(),
+                    secret_access_key: "test-secret".into(),
+                    session_token: None,
+                    region: "us-east-1".into(),
+                },
+                opi_ai::AuthProvenance {
+                    source: opi_ai::AuthProvenanceSource::AwsSigV4 {
+                        source: opi_ai::AwsCredentialSource::Environment,
+                    },
+                    fallback: opi_ai::AuthFallback::NotAttempted,
+                },
+            )
+        } else {
             opi_ai::auth::ResolvedAuth {
                 scheme: opi_ai::AuthScheme::ApiKey,
                 secret: secrecy::SecretString::from("test-secret"),
                 base_url: None,
                 account_id: None,
                 provenance: Default::default(),
-            },
+            }
+        };
+        let mut stream = provider.stream_prepared(
+            minimal_request(&format!("{}:{model_id}", case.provider_id)),
+            auth,
         );
         tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
             .await
@@ -1757,16 +1769,13 @@ fn azure_config_constructor_rejects_empty_deployment_catalog() {
     ));
 }
 
-/// Phase 17.5 credential contract: single-credential providers are constructed
-/// LAZILY — the credential is resolved by the route's per-call auth resolver at
-/// `prepare_call`, so a missing API key is no longer a build failure. Bedrock is
-/// the compound-credential exception and still resolves its AWS credential chain
-/// at construction, surfacing an `Auth` diagnostic with remediation on
-/// exhaustion. This pins both shapes through the `build_provider` boundary.
+/// Credentials are resolved by each route's per-call auth resolver at
+/// `prepare_call`, so missing credentials never prevent adapter construction,
+/// including Bedrock's AWS credential chain.
 #[test]
-fn build_provider_builds_single_credential_lazily_and_bedrock_requires_credentials() {
+fn build_provider_builds_all_credentials_lazily_including_bedrock() {
     use opi_coding_agent::config::OpiConfig;
-    use opi_coding_agent::provider_factory::{ProviderBuildError, build_provider};
+    use opi_coding_agent::provider_factory::build_provider;
 
     // Lazy construction: removing the single env var must NOT fail provider
     // construction for single-credential providers (the credential is resolved
@@ -1795,10 +1804,9 @@ fn build_provider_builds_single_credential_lazily_and_bedrock_requires_credentia
         });
     }
 
-    // Bedrock credential-chain exhaustion: clear all AWS env sources and
-    // redirect the shared credential/config file paths to nonexistent temp
-    // paths so NO real ~/.aws is read. resolve_credentials returns None and
-    // the factory surfaces the Auth remediation.
+    // Bedrock credential-chain exhaustion is lazy too. Redirect the shared
+    // files so no real ~/.aws is read; the credential-free adapter still
+    // constructs and the route resolver reports absence during preparation.
     let dir = tempfile::tempdir().unwrap();
     let ghost_credentials = dir.path().join("no-credentials-file");
     let ghost_config = dir.path().join("no-config-file");
@@ -1820,20 +1828,9 @@ fn build_provider_builds_single_credential_lazily_and_bedrock_requires_credentia
         || {
             let mut config = OpiConfig::default();
             config.defaults.model = "bedrock:test-model".into();
-            match build_provider(&config) {
-                Err(ProviderBuildError::Auth(msg)) => {
-                    assert!(
-                        msg.contains("no AWS credentials found"),
-                        "bedrock Auth diagnostic should describe exhaustion, got: {msg:?}"
-                    );
-                    assert!(
-                        msg.contains("AWS_ACCESS_KEY_ID"),
-                        "bedrock Auth diagnostic should remediate with the env var, got: {msg:?}"
-                    );
-                }
-                Err(e) => panic!("bedrock missing-cred should be Auth, got {e:?}"),
-                Ok(_) => panic!("bedrock missing-cred should be Auth, got Ok provider"),
-            }
+            let provider = build_provider(&config)
+                .unwrap_or_else(|error| panic!("Bedrock must build lazily, got {error:?}"));
+            assert_eq!(provider.id(), "bedrock");
         },
     );
 }

@@ -1,4 +1,4 @@
-//! Shared test utilities for mock-provider testing (task 1.17).
+//! Shared test utilities for mock-provider testing.
 //!
 //! Provides `MockProvider` for deterministic, fixture-based provider simulation
 //! across all workspace crates. No live API calls.
@@ -46,10 +46,9 @@ impl AuthResolver for CountingAuthResolver {
 }
 
 /// Build a non-secret [`ResolvedAuth`] for tests that drive `stream_prepared`
-/// directly (Phase 17.5: the legacy direct stream entry is gone; every dispatch goes through
-/// `stream_prepared(request, auth)`). The secret is a fixed placeholder and the
-/// provenance defaults; tests that need a specific secret or base_url construct
-/// their own `ResolvedAuth`.
+/// directly. The secret is a fixed placeholder and the provenance defaults;
+/// tests that need a specific secret or base URL construct their own
+/// `ResolvedAuth`.
 #[doc(hidden)]
 pub fn resolved_auth() -> ResolvedAuth {
     ResolvedAuth {
@@ -63,8 +62,8 @@ pub fn resolved_auth() -> ResolvedAuth {
 
 /// Build a [`ProviderCollection`] with one dispatchable route for `provider`,
 /// using a dummy static resolver. Mock providers ignore the resolved auth, so
-/// this lets tests dispatch through the Phase 17.2 `prepare_call` path without
-/// supplying real credentials.
+/// this lets tests dispatch through `prepare_call` without supplying real
+/// credentials.
 #[doc(hidden)]
 pub fn single_route_collection(provider: Box<dyn Provider>) -> ProviderCollection {
     let mut collection = ProviderCollection::new();
@@ -82,7 +81,7 @@ pub fn single_route_collection(provider: Box<dyn Provider>) -> ProviderCollectio
     collection
 }
 
-/// A response that a mock provider can return per `stream()` call.
+/// A response that a mock provider can return for one prepared attempt.
 #[doc(hidden)]
 pub enum MockResponse {
     /// Successful stream of assistant events.
@@ -103,7 +102,7 @@ pub enum MockResponse {
 
 /// A mock provider that returns pre-programmed response sequences.
 ///
-/// Each call to `stream()` pops the next response from the queue.
+/// Each `stream_prepared` attempt pops the next response from the queue.
 /// Tracks call history for assertions.
 #[doc(hidden)]
 pub struct MockProvider {
@@ -117,7 +116,7 @@ impl MockProvider {
     /// Create a new mock provider with the given response sequences.
     ///
     /// Each element of `responses` is a complete batch of stream events
-    /// returned by one `stream()` call. Batches are consumed in order.
+    /// returned by one prepared attempt. Batches are consumed in order.
     pub fn new(id: &str, responses: Vec<Vec<AssistantStreamEvent>>) -> Self {
         Self::new_with_errors(
             id,
@@ -158,14 +157,14 @@ impl MockProvider {
         }
     }
 
-    /// Number of times `stream()` has been called.
+    /// Number of prepared attempts made through `stream_prepared`.
     pub fn stream_call_count(&self) -> usize {
         self.call_log.lock().unwrap().len()
     }
 
-    /// Snapshot the `messages` field of every `Request` passed to `stream()`
-    /// so far. Useful for asserting which messages the provider observed
-    /// during a test run.
+    /// Snapshot the `messages` field of every `Request` passed to
+    /// `stream_prepared` so far. Useful for asserting which messages the
+    /// provider observed during a test run.
     pub fn recorded_messages(&self) -> Vec<Vec<crate::message::Message>> {
         self.call_log
             .lock()
@@ -278,8 +277,8 @@ impl Provider for MockProvider {
         &self.models
     }
 
-    /// Prepared dispatch path (Phase 17.2): ignore the supplied resolved auth —
-    /// the mock does not authenticate. This lets the Agent's
+    /// Ignore the supplied resolved auth because the mock does not authenticate.
+    /// This lets the Agent's
     /// `ProviderCollection::prepare_call` path drive the mock in tests;
     /// `stream_call_count` then records one entry per attempt, so a counting
     /// resolver can prove auth is resolved once across retries.
@@ -288,7 +287,7 @@ impl Provider for MockProvider {
         let mut responses = self.responses.lock().unwrap();
         assert!(
             !responses.is_empty(),
-            "MockProvider: stream() called more times than responses were configured"
+            "MockProvider: stream_prepared() called more times than responses were configured"
         );
         let response = responses.remove(0);
         match response {

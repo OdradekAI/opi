@@ -11,7 +11,9 @@ use futures_util::stream;
 
 use crate::credential::BoxAuthFuture;
 use crate::model_info::{ModelInfoError, WireApi};
-use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{
+    EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
+};
 
 /// A provider that exposes one provider identity/catalog while delegating to
 /// one route per wire API used by its catalog.
@@ -200,26 +202,29 @@ impl Provider for ApiMappedProvider {
 
     fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
         if models.is_empty() {
-            return Err(ProviderError::Config(format!(
-                "mapped provider '{}' requires at least one model",
-                self.id
+            return Err(ProviderError::Config(ProviderErrorSummary::sanitized(
+                format!("mapped provider '{}' requires at least one model", self.id),
             )));
         }
         let mut ids = BTreeSet::new();
         for model in &models {
             if model.id.trim().is_empty() || !ids.insert(model.id.as_str()) {
-                return Err(ProviderError::Config(format!(
-                    "mapped provider '{}' has an invalid or duplicate model id",
-                    self.id
+                return Err(ProviderError::Config(ProviderErrorSummary::sanitized(
+                    format!(
+                        "mapped provider '{}' has an invalid or duplicate model id",
+                        self.id
+                    ),
                 )));
             }
-            model
-                .validate()
-                .map_err(|error| ProviderError::Config(error.to_string()))?;
+            model.validate().map_err(|error| {
+                ProviderError::Config(ProviderErrorSummary::sanitized(error.to_string()))
+            })?;
             if !self.routes.contains_key(&model.wire_api) {
-                return Err(ProviderError::Config(format!(
-                    "mapped provider '{}' has no route for {}",
-                    self.id, model.wire_api
+                return Err(ProviderError::Config(ProviderErrorSummary::sanitized(
+                    format!(
+                        "mapped provider '{}' has no route for {}",
+                        self.id, model.wire_api
+                    ),
                 )));
             }
         }
@@ -231,9 +236,11 @@ impl Provider for ApiMappedProvider {
                 .cloned()
                 .collect::<Vec<_>>();
             if subset.is_empty() {
-                return Err(ProviderError::Config(format!(
-                    "mapped provider '{}' would leave route {wire} empty",
-                    self.id
+                return Err(ProviderError::Config(ProviderErrorSummary::sanitized(
+                    format!(
+                        "mapped provider '{}' would leave route {wire} empty",
+                        self.id
+                    ),
                 )));
             }
             replacements.push((*wire, subset, route.models().to_vec()));
@@ -260,9 +267,11 @@ impl Provider for ApiMappedProvider {
                     }
                 }
                 if let Some(rollback_failure) = rollback_failure {
-                    return Err(ProviderError::Config(format!(
-                        "mapped provider '{}' catalog replacement failed ({error}); {rollback_failure}",
-                        self.id
+                    return Err(ProviderError::Config(ProviderErrorSummary::sanitized(
+                        format!(
+                            "mapped provider '{}' catalog replacement failed ({error}); {rollback_failure}",
+                            self.id
+                        ),
                     )));
                 }
                 return Err(error);

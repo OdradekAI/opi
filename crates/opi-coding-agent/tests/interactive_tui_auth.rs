@@ -5,7 +5,7 @@ use std::time::Duration;
 use opi_ai::auth::{LoginPresenter, OAuthLoginMethod};
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::message::Message;
-use opi_ai::provider::ProviderError;
+use opi_ai::provider::{ProviderError, ProviderErrorSummary};
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::test_support::{self, MockProvider, MockResponse};
 use opi_coding_agent::config::OpiConfig;
@@ -112,7 +112,9 @@ impl LoginPresenter for TestPresenter {
         let fail = self.fail_present;
         Box::pin(async move {
             if fail {
-                Err(ProviderError::Config("presenter failed".to_owned()))
+                Err(ProviderError::Config(ProviderErrorSummary::from_untrusted(
+                    "presenter failed",
+                )))
             } else {
                 Ok(())
             }
@@ -550,7 +552,7 @@ async fn outer_tui_store_failure_does_not_retry() {
     assert_negative(&result);
     assert_last_system_message(
         &result,
-        "[authentication command failed: credential store operation failed]",
+        "[authentication command failed: authentication configuration failed]",
     );
     assert_eq!(presenter_counts(&evidence), (0, 1, 1, 0, 1));
     assert_eq!(result.capture.terminal_transitions, ["suspend", "resume"]);

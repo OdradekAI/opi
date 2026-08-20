@@ -1,4 +1,4 @@
-//! Streaming proxy for forwarding command/event JSONL streams (task 4.10).
+//! Streaming proxy for forwarding command/event JSONL streams.
 //!
 //! **Unstable 0.x API** — this module may change between minor versions without
 //! notice. Consumers MUST pin an exact version and test against upgrades.
@@ -316,8 +316,10 @@ impl<R: BufRead, W: Write, H: ProxyHandler> ProxyEngine<R, W, H> {
 /// - GitHub tokens in values: `gh[pousr]_*`, `github_pat_*`
 /// - Google API keys in values: `AIza*`
 /// - Credentialed URL userinfo in values: `scheme://user:password@host`
-/// - Credential-bearing URL query parameters in values: `api_key`, `token`,
-///   `access_token`, `refresh_token`, `authorization`
+/// - Credential-bearing URL query parameters in values: API keys, tokens,
+///   AWS access/secret keys, passwords, and authorization values. Bare `key=`
+///   is conservatively treated as credential-bearing, so non-secret query keys
+///   with that exact name are also redacted.
 /// - JWT/Bearer tokens in values: `eyJ*`
 /// - Sensitive JSON field names: `password`, `secret`, `token`, `api_key`,
 ///   `apikey`, `private_key`, `access_token`, `refresh_token`,
@@ -340,9 +342,7 @@ impl Default for SecretRedactor {
             // Anthropic API keys
             r"sk-ant-[a-zA-Z0-9-]{20,}".to_owned(),
             // GitHub tokens (classic PATs, OAuth, app/server, refresh, and
-            // fine-grained PATs). Phase 7 task 7.6 closes the doctor
-            // package_source credentialed-URL leak deferred by the 7.4
-            // evaluator.
+            // fine-grained PATs), including credentialed package-source URLs.
             r"gh[pousr]_[A-Za-z0-9]{36,}".to_owned(),
             r"github_pat_[A-Za-z0-9_]{82,}".to_owned(),
             // Google API keys
@@ -353,8 +353,10 @@ impl Default for SecretRedactor {
             r"[a-zA-Z][a-zA-Z0-9+.-]*://[^/\s@]+:[^/\s@]+@".to_owned(),
             // Credential-bearing URL query parameters. This is intentionally
             // value based (not field-name based) because provider and session
-            // errors often arrive as plain strings.
-            r"(?i)[?&](?:api[_-]?key|token|access[_-]?token|refresh[_-]?token|authorization)=[^&#\s]+"
+            // errors often arrive as plain strings. Bare `key=` deliberately
+            // accepts false positives to align with the provider boundary and
+            // fail closed when the key's semantics are unknown.
+            r"(?i)[?&](?:api[_-]?key|key|token|access[_-]?token|refresh[_-]?token|session[_-]?token|access[_-]?key[_-]?id|secret[_-]?access[_-]?key|secret|password|authorization|proxy[_-]?authorization)=[^&#\s]+"
                 .to_owned(),
             // OpenAI-style API keys
             r"sk-[a-zA-Z0-9-]{20,}".to_owned(),

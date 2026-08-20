@@ -37,8 +37,8 @@ pub mod vertex;
 pub use api_mapped::{ApiMapError, ApiMappedProvider};
 pub use auth::{
     AuthFallback, AuthInvalidPolicy, AuthProvenance, AuthProvenanceSource, AuthResolver,
-    AuthScheme, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider, ResolvedAuth,
-    StaticAuthResolver,
+    AuthScheme, AwsCredentialSource, AwsSigV4Credentials, LoginPresenter, OAuthCredential,
+    OAuthLoginMethod, OAuthProvider, ResolvedAuth, StaticAuthResolver,
 };
 pub use config::{Config, Error};
 pub use credential::{

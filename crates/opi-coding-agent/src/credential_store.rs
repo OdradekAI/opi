@@ -1,4 +1,4 @@
-//! Concrete credential store, resolver, and cross-process lock (Phase 14.1).
+//! Concrete credential store, resolver, and cross-process lock.
 //!
 //! This module owns all IO and env access for persisted credentials. The
 //! abstract [`opi_ai::CredentialStore`] trait lives in `opi-ai`; here we
@@ -886,7 +886,7 @@ impl KeychainCredentialStore {
             .map_err(|error| self.backend_err(provider_id, error))
     }
 
-    /// Acquire the mutation lock (Phase 14.2 OAuth refresh). Holds the exclusive
+    /// Acquire the OAuth-refresh mutation lock. Holds the exclusive
     /// `fs4` lock across the refresh-HTTP + write so refresh-token rotation
     /// cannot race a concurrent refresh. Drop the returned guard to release.
     pub(crate) async fn acquire_lock(&self) -> Result<LockGuard, CredentialStoreError> {
@@ -1207,9 +1207,11 @@ impl CredentialResolver {
         }
         let refresh = match tokio::time::timeout(self.refresh_timeout, oauth.refresh(&cred)).await {
             Ok(refresh) => refresh,
-            Err(_) => Err(ProviderError::AuthFailed(format!(
-                "OAuth refresh timed out for provider '{provider_id}'"
-            ))),
+            Err(_) => Err(ProviderError::AuthFailed(
+                opi_ai::provider::ProviderErrorSummary::from_untrusted(format!(
+                    "OAuth refresh timed out for provider '{provider_id}'"
+                )),
+            )),
         };
         match refresh {
             Ok(refreshed) => {
@@ -1330,11 +1332,13 @@ fn oauth_provenance(provider_id: &str) -> AuthProvenance {
 }
 
 fn store_err_to_provider(error: CredentialStoreError) -> ProviderError {
-    ProviderError::Config(format!("credential store error: {error}"))
+    ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+        format!("credential store error: {error}"),
+    ))
 }
 
 // ---------------------------------------------------------------------------
-// AuthSource — how opi-coding-agent sources auth for a provider (Phase 14.2)
+// AuthSource — how opi-coding-agent sources auth for a provider
 // ---------------------------------------------------------------------------
 
 /// How `opi-coding-agent` sources auth for a provider. Implements

@@ -21,8 +21,8 @@ use opi_ai::auth::{
 use opi_ai::credential::{BoxAuthFuture, Credential, CredentialStore};
 use opi_ai::http::HttpClient;
 use opi_ai::provider::{
-    CacheRetention, EventStream, ModelInfo, Provider, ProviderError as AiProviderError, Request,
-    ThinkingConfig,
+    CacheRetention, EventStream, ModelInfo, Provider, ProviderError as AiProviderError,
+    ProviderErrorSummary, Request, ThinkingConfig,
 };
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
@@ -649,7 +649,7 @@ impl OAuthProvider for MockOAuthProvider {
     ) -> BoxAuthFuture<'a, Result<OAuthCredential, AiProviderError>> {
         Box::pin(async {
             Err(AiProviderError::Config(
-                "login not implemented in mock".into(),
+                ProviderErrorSummary::from_untrusted("login not implemented in mock"),
             ))
         })
     }
@@ -669,7 +669,9 @@ impl OAuthProvider for MockOAuthProvider {
                 backend.seed_credential(KEYCHAIN_SERVICE, PROVIDER, &fresh);
             }
             if fail {
-                return Err(AiProviderError::Network("refresh HTTP failed".into()));
+                return Err(AiProviderError::Network(
+                    ProviderErrorSummary::from_untrusted("refresh HTTP failed"),
+                ));
             }
             Ok(OAuthCredential {
                 access: secret(REFRESHED_ACCESS),
@@ -1111,23 +1113,8 @@ async fn pkce_manual_redirect_rejections_prevent_token_exchange_for_both_provide
             let (result, ()) = tokio::join!(login, paste_redirect);
 
             let error = result.unwrap_err();
-            let expected = match case {
-                "missing state" => "oauth redirect missing state",
-                "state mismatch" => "oauth state mismatch",
-                "missing code" => "oauth redirect missing code",
-                "malformed escape" => "oauth redirect query escape malformed",
-                "invalid UTF-8" => "oauth redirect query is not valid UTF-8",
-                "malformed URL" => "oauth redirect URL malformed",
-                "duplicate code before state" | "duplicate code after state" => {
-                    "oauth redirect has duplicate code"
-                }
-                "duplicate state before code" | "duplicate state after code" => {
-                    "oauth redirect has duplicate state"
-                }
-                _ => unreachable!(),
-            };
             match &error {
-                AiProviderError::Config(message) => assert_eq!(message, expected),
+                AiProviderError::Config(message) => assert_eq!(message.as_str(), "[REDACTED]"),
                 other => panic!("{provider_kind:?} {case}: expected Config, got {other:?}"),
             }
             assert_eq!(
@@ -1178,7 +1165,7 @@ async fn pkce_empty_manual_code_is_rejected_before_token_exchange_for_both_provi
 
             match &error {
                 AiProviderError::Config(message) => {
-                    assert_eq!(message, "oauth redirect missing code");
+                    assert_eq!(message.as_str(), "[REDACTED]");
                 }
                 other => panic!("{provider_kind:?} expected Config, got {other:?}"),
             }
@@ -1366,24 +1353,14 @@ async fn pkce_loopback_callback_rejections_are_fixed_and_redacted_for_both_provi
             );
 
             let error = result.expect_err("invalid callback must fail");
-            let (expected_error, expected_notification) = match case {
-                "missing code" => ("oauth redirect missing code", "callback parse error"),
-                "missing state" => ("oauth redirect missing state", "callback parse error"),
-                "state mismatch" => ("oauth state mismatch", "state mismatch"),
-                "malformed escape" => (
-                    "oauth redirect query escape malformed",
-                    "callback parse error",
-                ),
-                "invalid UTF-8" => (
-                    "oauth redirect query is not valid UTF-8",
-                    "callback parse error",
-                ),
-                "duplicate code" => ("oauth redirect has duplicate code", "callback parse error"),
-                "duplicate state" => ("oauth redirect has duplicate state", "callback parse error"),
+            let expected_notification = match case {
+                "missing code" | "missing state" | "malformed escape" | "invalid UTF-8"
+                | "duplicate code" | "duplicate state" => "callback parse error",
+                "state mismatch" => "state mismatch",
                 _ => unreachable!(),
             };
             match &error {
-                AiProviderError::Config(message) => assert_eq!(message, expected_error),
+                AiProviderError::Config(message) => assert_eq!(message.as_str(), "[REDACTED]"),
                 other => panic!("{provider_kind:?} {case}: expected Config, got {other:?}"),
             }
             assert_eq!(
@@ -1442,7 +1419,7 @@ async fn oauth_flow_budget_rejects_unrepresentable_duration_without_panicking() 
         matches!(
             result,
             Err(AiProviderError::Config(ref message))
-                if message == "OAuth login timeout is too large"
+                if message.as_str() == "[REDACTED]"
         ),
         "{result:?}"
     );
@@ -1655,10 +1632,7 @@ async fn anthropic_oauth_login_token_endpoint_non_2xx_returns_auth_error_without
         AiProviderError::AuthFailed(m) => m,
         other => panic!("expected AuthFailed, got {other:?}"),
     };
-    assert_eq!(
-        msg, "token endpoint: 400 Bad Request invalid_grant",
-        "known protocol error must map to its fixed class"
-    );
+    assert_eq!(msg.as_str(), "[REDACTED]");
     assert_oauth_error_surfaces_are_redacted(&err, Some(&presenter), &["AUTHCODE-LEAK-CANARY"]);
     let reasons = presenter.notify_failure_reasons.lock().unwrap().clone();
     assert!(
@@ -1925,10 +1899,7 @@ async fn pkce_token_endpoint_unknown_error_code_is_closed_and_redacted() {
     let error = provider.login(&presenter).await.expect_err("token error");
 
     match &error {
-        AiProviderError::AuthFailed(message) => assert_eq!(
-            message,
-            "token endpoint: 400 Bad Request unknown_oauth_error"
-        ),
+        AiProviderError::AuthFailed(message) => assert_eq!(message.as_str(), "[REDACTED]"),
         other => panic!("expected AuthFailed, got {other:?}"),
     }
     assert_oauth_error_surfaces_are_redacted(
@@ -1964,10 +1935,7 @@ async fn refresh_token_endpoint_unknown_error_code_is_closed_and_redacted() {
         .expect_err("refresh error");
 
     match &error {
-        AiProviderError::AuthFailed(message) => assert_eq!(
-            message,
-            "token endpoint: 400 Bad Request unknown_oauth_error"
-        ),
+        AiProviderError::AuthFailed(message) => assert_eq!(message.as_str(), "[REDACTED]"),
         other => panic!("expected AuthFailed, got {other:?}"),
     }
     assert_oauth_error_surfaces_are_redacted(&error, None, &[REFRESH_TOKEN]);
@@ -4157,7 +4125,7 @@ async fn copilot_poll_unknown_error_code_is_closed_and_redacted() {
 
     match &error {
         AiProviderError::Config(message) => {
-            assert_eq!(message, "device authorization error: unknown_oauth_error");
+            assert_eq!(message.as_str(), "[REDACTED]");
         }
         other => panic!("expected Config, got {other:?}"),
     }
@@ -4198,10 +4166,7 @@ async fn copilot_exchange_unknown_error_code_is_closed_and_redacted() {
         .expect_err("exchange error");
 
     match &error {
-        AiProviderError::AuthFailed(message) => assert_eq!(
-            message,
-            "token endpoint: 400 Bad Request unknown_oauth_error"
-        ),
+        AiProviderError::AuthFailed(message) => assert_eq!(message.as_str(), "[REDACTED]"),
         other => panic!("expected AuthFailed, got {other:?}"),
     }
     assert_oauth_error_surfaces_are_redacted(&error, Some(&presenter), &[GITHUB_TOKEN]);
@@ -4884,9 +4849,10 @@ async fn login_oauth_unknown_provider_errors() {
         .expect_err("unknown provider errors");
     let message = err.to_string();
     assert!(
-        message.contains("nonexistent"),
-        "error mentions provider id: {message}"
+        !message.contains("nonexistent"),
+        "provider id leaked: {message}"
     );
+    assert!(message.contains("[REDACTED]"));
 }
 
 #[tokio::test]
@@ -5422,7 +5388,11 @@ impl OAuthProvider for HangingRefreshProvider {
         &'a self,
         _presenter: &'a dyn LoginPresenter,
     ) -> BoxAuthFuture<'a, Result<OAuthCredential, AiProviderError>> {
-        Box::pin(async { Err(AiProviderError::Config("unused login".into())) })
+        Box::pin(async {
+            Err(AiProviderError::Config(
+                ProviderErrorSummary::from_untrusted("unused login"),
+            ))
+        })
     }
 
     fn refresh<'a>(
@@ -5461,7 +5431,7 @@ async fn refresh_timeout_releases_lock_and_preserves_prior_credential() {
         .expect_err("hung refresh must be bounded");
     assert!(matches!(error, AiProviderError::AuthFailed(_)), "{error:?}");
     assert!(!error.is_retryable());
-    assert!(error.to_string().contains(PROVIDER));
+    assert!(error.to_string().contains("[REDACTED]"));
     assert!(
         dropped.load(Ordering::SeqCst),
         "refresh future was not dropped"
@@ -5538,10 +5508,13 @@ async fn factory_built_approved_profiles_map_revocation_without_retry() {
             .unwrap_or_else(|_| panic!("{provider_id} revocation blocked"))
             .expect_err("auth-invalid response must fail the agent turn");
         match &error {
-            AgentError::CredentialRevoked {
-                provider_id: actual,
-            } => assert_eq!(actual, provider_id),
-            other => panic!("{provider_id} expected CredentialRevoked, got {other:?}"),
+            AgentError::Provider(failure) => match failure.provider_error() {
+                AiProviderError::CredentialRevoked {
+                    provider_id: actual,
+                } => assert_eq!(actual, provider_id),
+                other => panic!("{provider_id} expected CredentialRevoked, got {other:?}"),
+            },
+            other => panic!("{provider_id} expected provider failure, got {other:?}"),
         }
         assert!(
             !error.to_string().contains("revoked-secret-canary"),

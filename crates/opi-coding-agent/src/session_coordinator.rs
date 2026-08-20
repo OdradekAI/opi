@@ -36,6 +36,25 @@ pub struct CompactionResultOutput {
     pub diagnostic: opi_agent::Diagnostic,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("session batch append failed and rollback cleanup failed")]
+pub(crate) struct SessionBatchRollbackError {
+    #[source]
+    append_error: std::io::Error,
+    rollback_error: std::io::Error,
+}
+
+#[cfg(test)]
+impl SessionBatchRollbackError {
+    fn append_error(&self) -> &std::io::Error {
+        &self.append_error
+    }
+
+    fn rollback_error(&self) -> &std::io::Error {
+        &self.rollback_error
+    }
+}
+
 pub struct SessionCoordinator {
     writer: SessionWriter,
     compaction: CompactionEngine,
@@ -60,15 +79,24 @@ pub struct SessionCoordinator {
     compaction_watermark_tokens: u64,
     /// Last persisted Message/Compaction entry on the active branch.
     active_tip_entry_id: Option<String>,
-    /// Latest `session_info` name on the active branch (Phase 13.4). UI-visible
+    /// Latest `session_info` name on the active branch. UI-visible
     /// metadata; never enters provider context. Seeded by `open_existing` and
     /// updated by `append_session_info`.
     name: Option<String>,
-    /// Active label set on the active branch (Phase 13.4): `Add`/`Remove`
+    /// Active label set on the active branch: `Add`/`Remove`
     /// applied in append order, deduplicated, preserving first-`Add` order.
     /// UI-visible metadata; never enters provider context. Seeded by
     /// `open_existing` and updated by `append_label`.
     labels: Vec<String>,
+    /// A failed rollback leaves the durable tail indeterminate. Reject every
+    /// later write until the session is reopened and reconstructed from disk.
+    writer_poisoned: bool,
+    #[cfg(test)]
+    append_failure_after: Option<usize>,
+    #[cfg(test)]
+    post_write_sync_failure_after: Option<usize>,
+    #[cfg(test)]
+    rollback_failure: bool,
 }
 
 impl SessionCoordinator {
@@ -99,6 +127,13 @@ impl SessionCoordinator {
             active_tip_entry_id: None,
             name: None,
             labels: Vec::new(),
+            writer_poisoned: false,
+            #[cfg(test)]
+            append_failure_after: None,
+            #[cfg(test)]
+            post_write_sync_failure_after: None,
+            #[cfg(test)]
+            rollback_failure: false,
         })
     }
 
@@ -253,7 +288,7 @@ impl SessionCoordinator {
         );
         let watermark = usage.as_usage().total_tokens();
 
-        // Phase 13.4: seed the live name/labels view from the persisted
+        // Seed the live name/labels view from the persisted
         // active-chain metadata so `/session info` and RPC `session_info`
         // reflect prior writes without a full reconstruct pass. `ordered`
         // is used for the compaction buffer, so we scan the raw entries
@@ -278,6 +313,13 @@ impl SessionCoordinator {
             active_tip_entry_id,
             name,
             labels,
+            writer_poisoned: false,
+            #[cfg(test)]
+            append_failure_after: None,
+            #[cfg(test)]
+            post_write_sync_failure_after: None,
+            #[cfg(test)]
+            rollback_failure: false,
         })
     }
 
@@ -299,11 +341,11 @@ impl SessionCoordinator {
         turn_start_agent_index: usize,
     ) -> Result<Option<CompactionReason>, std::io::Error> {
         self.ensure_session_path_available()?;
-        self.usage.accumulate(usage);
+        let checkpoint = self.writer.checkpoint()?;
 
         let mut agent_idx = turn_start_agent_index;
         let mut parent_id = self.active_tip_entry_id.clone();
-        let mut last_persisted_entry_id = None;
+        let mut prepared = Vec::new();
         for msg in new_messages {
             if let AgentMessage::Llm(m) = msg {
                 let persisted_message = message_for_session(m);
@@ -314,21 +356,48 @@ impl SessionCoordinator {
                     timestamp: now_iso(),
                     message: persisted_message,
                 });
-                self.append_entry(&entry)?;
-                self.entries.push(Entry {
-                    id: entry_id.clone(),
-                    message: msg.clone(),
-                });
-                self.agent_message_indices.push(agent_idx);
                 parent_id = Some(entry_id.clone());
-                last_persisted_entry_id = Some(entry_id);
+                prepared.push((
+                    entry,
+                    Entry {
+                        id: entry_id,
+                        message: msg.clone(),
+                    },
+                    agent_idx,
+                ));
             }
             agent_idx += 1;
         }
+        let last_persisted_entry_id = prepared.last().map(|(_, entry, _)| entry.id.clone());
+        let leaf = last_persisted_entry_id.as_ref().map(|tip| {
+            SessionEntry::Leaf(LeafEntry {
+                id: format!("leaf-{}", ENTRY_SEQ.fetch_add(1, Ordering::Relaxed)),
+                parent_id: Some(tip.clone()),
+                timestamp: now_iso(),
+                entry_id: tip.clone(),
+            })
+        });
+        let append_result: Result<(), std::io::Error> = (|| {
+            for (entry, _, _) in &prepared {
+                self.append_entry(entry)?;
+            }
+            if let Some(leaf) = &leaf {
+                self.append_entry(leaf)?;
+            }
+            Ok(())
+        })();
+        if let Err(append_error) = append_result {
+            return Err(self.rollback_or_poison(checkpoint, append_error));
+        }
+
+        self.usage.accumulate(usage);
+        for (_, entry, index) in prepared {
+            self.entries.push(entry);
+            self.agent_message_indices.push(index);
+        }
         self.agent_message_count = agent_idx;
         if let Some(tip) = last_persisted_entry_id {
-            self.active_tip_entry_id = Some(tip.clone());
-            self.append_leaf_for_tip(&tip)?;
+            self.active_tip_entry_id = Some(tip);
         }
 
         // Check threshold-based compaction after each turn.
@@ -350,10 +419,10 @@ impl SessionCoordinator {
     /// The caller should emit `CompactionStart` before calling this and
     /// `CompactionEnd` afterwards.
     ///
-    /// Returns `Err` if the compaction marker could not be persisted — in this
-    /// case the in-memory state is left unchanged (no buffer replacement, no
-    /// watermark advance) so the session file stays consistent with the
-    /// runtime.
+    /// Returns `Err` if the compaction marker and its Leaf could not both be
+    /// persisted. In that case the in-memory state is left unchanged (no
+    /// buffer replacement, no watermark advance) and the durable pair is
+    /// rolled back so the session file stays consistent with the runtime.
     pub fn execute_compaction(
         &mut self,
         reason: CompactionReason,
@@ -416,11 +485,18 @@ impl SessionCoordinator {
                     tokens_after: output.tokens_after,
                 });
 
-                // Persist the compaction marker BEFORE mutating in-memory state.
-                // If this fails, the runtime context remains un-compacted so
-                // the session file and memory stay consistent.
-                self.append_entry(&compaction_entry)?;
-                self.append_leaf_for_tip(&compaction_id)?;
+                // Persist the compaction marker and its Leaf before mutating
+                // in-memory state. Either both entries remain durable or both
+                // are rolled back so the file and memory stay consistent.
+                self.ensure_session_path_available()?;
+                let checkpoint = self.writer.checkpoint()?;
+                let append_result: Result<(), std::io::Error> = (|| {
+                    self.append_entry(&compaction_entry)?;
+                    self.append_leaf_for_tip(&compaction_id)
+                })();
+                if let Err(append_error) = append_result {
+                    return Err(self.rollback_or_poison(checkpoint, append_error));
+                }
 
                 // Reset internal entries to [summary, ...kept]. The summary
                 // must be included so that a subsequent compaction can see the
@@ -485,8 +561,13 @@ impl SessionCoordinator {
 
     /// Append a Leaf pointer marking the selected active branch tip.
     pub fn append_leaf(&mut self, entry_id: &str) -> Result<(), std::io::Error> {
+        self.ensure_session_path_available()?;
+        let checkpoint = self.writer.checkpoint()?;
+        if let Err(append_error) = self.append_leaf_for_tip(entry_id) {
+            return Err(self.rollback_or_poison(checkpoint, append_error));
+        }
         self.active_tip_entry_id = Some(entry_id.to_owned());
-        self.append_leaf_for_tip(entry_id)
+        Ok(())
     }
 
     pub fn append_extension_state(
@@ -499,11 +580,11 @@ impl SessionCoordinator {
             timestamp: now_iso(),
             state,
         });
-        self.append_entry(&entry)
+        self.append_single_entry(&entry)
     }
 
     /// Record a `model_change` entry parented to the current content tip
-    /// **without** advancing it (Phase 13.3). Idle `set_model_validated` calls
+    /// **without** advancing it. Idle `set_model_validated` calls
     /// go through here so a later resume can observe the recorded model on the
     /// active branch. No `Leaf` is appended and `active_tip_entry_id` is
     /// unchanged: model changes are metadata attachments, not new
@@ -511,7 +592,7 @@ impl SessionCoordinator {
     ///
     /// `model` is the canonical `provider:model` spec; `input_source` records
     /// whether that canonical form was supplied directly or produced by
-    /// normalizing a bare model input (Phase 17.5). The caller (the harness)
+    /// normalizing a bare model input. The caller (the harness)
     /// owns bare-input normalization; the coordinator records the truthful
     /// source it is handed.
     pub fn append_model_change(
@@ -526,11 +607,11 @@ impl SessionCoordinator {
             model,
             input_source: Some(input_source),
         });
-        self.append_entry(&entry)
+        self.append_single_entry(&entry)
     }
 
     /// Record a `thinking_level_change` entry parented to the current content
-    /// tip **without** advancing it (Phase 13.3). Idle `set_thinking_level`
+    /// tip **without** advancing it. Idle `set_thinking_level`
     /// calls go through here so a later resume can observe the recorded
     /// thinking level on the active branch. No `Leaf` is appended and
     /// `active_tip_entry_id` is unchanged.
@@ -544,11 +625,11 @@ impl SessionCoordinator {
             timestamp: now_iso(),
             level,
         });
-        self.append_entry(&entry)
+        self.append_single_entry(&entry)
     }
 
     /// Record a `session_info` entry (session name) parented to the current
-    /// content tip **without** advancing it (Phase 13.4). Idle `/name <name>`
+    /// content tip **without** advancing it. Idle `/name <name>`
     /// goes through here so a later resume observes the latest name on the
     /// active branch. No `Leaf` is appended and `active_tip_entry_id` is
     /// unchanged: session names are UI-visible metadata, not conversational
@@ -560,13 +641,13 @@ impl SessionCoordinator {
             timestamp: now_iso(),
             name: name.clone(),
         });
-        self.append_entry(&entry)?;
+        self.append_single_entry(&entry)?;
         self.name = Some(name);
         Ok(())
     }
 
     /// Record a `label` entry (add or remove) parented to the current content
-    /// tip **without** advancing it (Phase 13.4). Idle `/label <label>` and
+    /// tip **without** advancing it. Idle `/label <label>` and
     /// `/unlabel <label>` go through here so a later resume observes the
     /// active label set on the active branch. The in-memory label set applies
     /// `Add`/`Remove` in append order with first-`Add` deduplication; the
@@ -585,23 +666,23 @@ impl SessionCoordinator {
             label: label.clone(),
             action,
         });
-        self.append_entry(&entry)?;
+        self.append_single_entry(&entry)?;
         apply_label(&mut self.labels, &label, action);
         Ok(())
     }
 
-    /// Latest session name on the active branch, if any (Phase 13.4 read path).
+    /// Latest session name on the active branch, if any.
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
 
-    /// Active label set on the active branch (Phase 13.4 read path):
+    /// Active label set on the active branch:
     /// `Add`/`Remove` applied in append order, deduplicated, first-`Add` order.
     pub fn labels(&self) -> &[String] {
         &self.labels
     }
 
-    /// Entry id at the tip of the active branch (Phase 13.4 read path). The
+    /// Entry id at the tip of the active branch. The
     /// last persisted Message/Compaction entry on the active branch.
     pub fn active_branch_id(&self) -> Option<&str> {
         self.active_tip_entry_id.as_deref()
@@ -637,10 +718,89 @@ impl SessionCoordinator {
 
     fn append_entry(&mut self, entry: &SessionEntry) -> Result<(), std::io::Error> {
         self.ensure_session_path_available()?;
-        self.writer.append(entry)
+        #[cfg(test)]
+        if let Some(remaining) = self.append_failure_after.take() {
+            if remaining == 0 {
+                return Err(std::io::Error::other("injected session append failure"));
+            }
+            self.append_failure_after = Some(remaining - 1);
+        }
+        self.writer.append(entry)?;
+        #[cfg(test)]
+        if let Some(remaining) = self.post_write_sync_failure_after.take() {
+            if remaining == 0 {
+                return Err(std::io::Error::other(
+                    "injected session sync failure after append write",
+                ));
+            }
+            self.post_write_sync_failure_after = Some(remaining - 1);
+        }
+        Ok(())
+    }
+
+    fn append_single_entry(&mut self, entry: &SessionEntry) -> Result<(), std::io::Error> {
+        self.ensure_session_path_available()?;
+        let checkpoint = self.writer.checkpoint()?;
+        if let Err(append_error) = self.append_entry(entry) {
+            return Err(self.rollback_or_poison(checkpoint, append_error));
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_append_failure_after_for_test(&mut self, successful_appends: usize) {
+        self.append_failure_after = Some(successful_appends);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_post_write_sync_failure_after_for_test(
+        &mut self,
+        successful_appends: usize,
+    ) {
+        self.post_write_sync_failure_after = Some(successful_appends);
+    }
+
+    fn rollback_to_checkpoint(&mut self, checkpoint: u64) -> Result<(), std::io::Error> {
+        #[cfg(test)]
+        if self.rollback_failure {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "injected session rollback failure",
+            ));
+        }
+        self.writer.rollback_to(checkpoint)
+    }
+
+    fn rollback_or_poison(
+        &mut self,
+        checkpoint: u64,
+        append_error: std::io::Error,
+    ) -> std::io::Error {
+        let Err(rollback_error) = self.rollback_to_checkpoint(checkpoint) else {
+            return append_error;
+        };
+        let append_kind = append_error.kind();
+        self.writer_poisoned = true;
+        std::io::Error::new(
+            append_kind,
+            SessionBatchRollbackError {
+                append_error,
+                rollback_error,
+            },
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_rollback_failure_for_test(&mut self) {
+        self.rollback_failure = true;
     }
 
     fn ensure_session_path_available(&self) -> Result<(), std::io::Error> {
+        if self.writer_poisoned {
+            return Err(std::io::Error::other(
+                "session writer is unavailable after rollback failure",
+            ));
+        }
         if self.session_path.is_file() {
             return Ok(());
         }
@@ -858,6 +1018,407 @@ fn is_leap(y: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use opi_ai::stream::{Pricing, Usage};
+
+    fn user_message(text: &str) -> opi_agent::message::AgentMessage {
+        opi_agent::message::AgentMessage::Llm(opi_ai::message::Message::User(
+            opi_ai::message::UserMessage {
+                content: vec![opi_ai::message::InputContent::Text {
+                    text: text.to_owned(),
+                }],
+                timestamp_ms: 0,
+            },
+        ))
+    }
+
+    #[test]
+    fn failed_leaf_append_keeps_active_tip_for_the_next_message_parent() {
+        let dir = tempfile::tempdir().expect("session dir");
+        let mut coordinator = super::SessionCoordinator::new(
+            dir.path(),
+            ".",
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("coordinator");
+        coordinator
+            .on_turn_end(&[user_message("first")], &Usage::default(), 0)
+            .unwrap();
+        let first_tip = coordinator.active_branch_id().unwrap().to_owned();
+        coordinator
+            .on_turn_end(&[user_message("second")], &Usage::default(), 1)
+            .unwrap();
+        let committed_tip = coordinator.active_branch_id().unwrap().to_owned();
+        assert_ne!(first_tip, committed_tip);
+
+        coordinator.inject_append_failure_after_for_test(0);
+        assert!(coordinator.append_leaf(&first_tip).is_err());
+        assert_eq!(coordinator.active_branch_id(), Some(committed_tip.as_str()));
+
+        coordinator
+            .on_turn_end(&[user_message("third")], &Usage::default(), 2)
+            .unwrap();
+        let (_, entries) =
+            opi_agent::session::SessionReader::read_all(coordinator.session_path()).unwrap();
+        let third = entries
+            .iter()
+            .find_map(|entry| match entry {
+                opi_agent::session::SessionEntry::Message(message)
+                    if matches!(
+                        &message.message,
+                        opi_ai::message::Message::User(user)
+                            if matches!(
+                                user.content.first(),
+                                Some(opi_ai::message::InputContent::Text { text })
+                                    if text == "third"
+                            )
+                    ) =>
+                {
+                    Some(message)
+                }
+                _ => None,
+            })
+            .expect("third message persisted");
+        assert_eq!(third.parent_id.as_deref(), Some(committed_tip.as_str()));
+    }
+
+    #[test]
+    fn post_write_leaf_failure_rolls_back_bytes_and_reopens_on_committed_tip() {
+        let dir = tempfile::tempdir().expect("session dir");
+        let mut coordinator = super::SessionCoordinator::new(
+            dir.path(),
+            ".",
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("coordinator");
+        coordinator
+            .on_turn_end(&[user_message("first")], &Usage::default(), 0)
+            .unwrap();
+        let first_tip = coordinator.active_branch_id().unwrap().to_owned();
+        coordinator
+            .on_turn_end(&[user_message("second")], &Usage::default(), 1)
+            .unwrap();
+        let committed_tip = coordinator.active_branch_id().unwrap().to_owned();
+        let session_path = coordinator.session_path().to_owned();
+        let session_id = coordinator.session_id().to_owned();
+        let bytes_before = std::fs::read(&session_path).unwrap();
+        coordinator.inject_post_write_sync_failure_after_for_test(0);
+
+        let error = coordinator.append_leaf(&first_tip).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "injected session sync failure after append write"
+        );
+        assert_eq!(std::fs::read(&session_path).unwrap(), bytes_before);
+        assert_eq!(coordinator.active_branch_id(), Some(committed_tip.as_str()));
+        drop(coordinator);
+
+        let (_, entries) = opi_agent::session::SessionReader::read_all(&session_path).unwrap();
+        let mut reopened = super::SessionCoordinator::open_existing(
+            session_path.clone(),
+            session_id,
+            &entries,
+            2,
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("reopen rolled-back session");
+        assert_eq!(reopened.active_branch_id(), Some(committed_tip.as_str()));
+        reopened
+            .on_turn_end(&[user_message("third")], &Usage::default(), 2)
+            .unwrap();
+        let third_tip = reopened.active_branch_id().unwrap().to_owned();
+        let (_, entries) = opi_agent::session::SessionReader::read_all(&session_path).unwrap();
+        let third = entries
+            .iter()
+            .find_map(|entry| match entry {
+                opi_agent::session::SessionEntry::Message(message) if message.id == third_tip => {
+                    Some(message)
+                }
+                _ => None,
+            })
+            .expect("third message persisted");
+        assert_eq!(third.parent_id.as_deref(), Some(committed_tip.as_str()));
+    }
+
+    #[test]
+    fn failed_leaf_rollback_preserves_both_errors_and_poisons_until_reopen() {
+        let dir = tempfile::tempdir().expect("session dir");
+        let mut coordinator = super::SessionCoordinator::new(
+            dir.path(),
+            ".",
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("coordinator");
+        coordinator
+            .on_turn_end(&[user_message("first")], &Usage::default(), 0)
+            .unwrap();
+        let first_tip = coordinator.active_branch_id().unwrap().to_owned();
+        coordinator
+            .on_turn_end(&[user_message("second")], &Usage::default(), 1)
+            .unwrap();
+        let committed_tip = coordinator.active_branch_id().unwrap().to_owned();
+        let session_path = coordinator.session_path().to_owned();
+        let session_id = coordinator.session_id().to_owned();
+        coordinator.inject_post_write_sync_failure_after_for_test(0);
+        coordinator.inject_rollback_failure_for_test();
+
+        let error = coordinator.append_leaf(&first_tip).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "session batch append failed and rollback cleanup failed"
+        );
+        let failure = error
+            .get_ref()
+            .and_then(|source| source.downcast_ref::<super::SessionBatchRollbackError>())
+            .expect("append and rollback failures stay structurally observable");
+        assert_eq!(error.kind(), failure.append_error().kind());
+        assert_eq!(
+            failure.append_error().to_string(),
+            "injected session sync failure after append write"
+        );
+        assert_eq!(
+            failure.rollback_error().to_string(),
+            "injected session rollback failure"
+        );
+        assert_eq!(coordinator.active_branch_id(), Some(committed_tip.as_str()));
+        let poisoned = coordinator
+            .append_session_info("must not persist".to_owned())
+            .unwrap_err();
+        assert_eq!(
+            poisoned.to_string(),
+            "session writer is unavailable after rollback failure"
+        );
+
+        drop(coordinator);
+        let (_, entries) = opi_agent::session::SessionReader::read_all(&session_path).unwrap();
+        let mut reopened = super::SessionCoordinator::open_existing(
+            session_path.clone(),
+            session_id,
+            &entries,
+            1,
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("reopen reconstructs the uncertain durable leaf");
+        assert_eq!(reopened.active_branch_id(), Some(first_tip.as_str()));
+        reopened
+            .on_turn_end(&[user_message("after reopen")], &Usage::default(), 1)
+            .unwrap();
+        let reopened_tip = reopened.active_branch_id().unwrap().to_owned();
+        let (_, entries) = opi_agent::session::SessionReader::read_all(&session_path).unwrap();
+        let message = entries
+            .iter()
+            .find_map(|entry| match entry {
+                opi_agent::session::SessionEntry::Message(message)
+                    if message.id == reopened_tip =>
+                {
+                    Some(message)
+                }
+                _ => None,
+            })
+            .expect("post-reopen message persisted");
+        assert_eq!(message.parent_id.as_deref(), Some(first_tip.as_str()));
+    }
+
+    #[test]
+    fn post_write_metadata_failure_rolls_back_before_live_or_reopened_state_changes() {
+        let dir = tempfile::tempdir().expect("session dir");
+        let mut coordinator = super::SessionCoordinator::new(
+            dir.path(),
+            ".",
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("coordinator");
+        coordinator
+            .on_turn_end(&[user_message("first")], &Usage::default(), 0)
+            .unwrap();
+        let session_path = coordinator.session_path().to_owned();
+        let session_id = coordinator.session_id().to_owned();
+        let bytes_before = std::fs::read(&session_path).unwrap();
+        coordinator.inject_post_write_sync_failure_after_for_test(0);
+
+        let error = coordinator
+            .append_session_info("uncommitted name".to_owned())
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "injected session sync failure after append write"
+        );
+        assert_eq!(std::fs::read(&session_path).unwrap(), bytes_before);
+        assert_eq!(coordinator.name(), None);
+        drop(coordinator);
+
+        let (_, entries) = opi_agent::session::SessionReader::read_all(&session_path).unwrap();
+        let reopened = super::SessionCoordinator::open_existing(
+            session_path,
+            session_id,
+            &entries,
+            1,
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("reopen rolled-back metadata session");
+        assert_eq!(reopened.name(), None);
+    }
+
+    #[test]
+    fn post_write_compaction_leaf_failure_rolls_back_the_whole_compaction() {
+        let dir = tempfile::tempdir().expect("session dir");
+        let mut coordinator = super::SessionCoordinator::new(
+            dir.path(),
+            ".",
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("coordinator");
+        coordinator
+            .on_turn_end(
+                &[
+                    user_message("first"),
+                    user_message("second"),
+                    user_message("third"),
+                    user_message("fourth"),
+                ],
+                &Usage::default(),
+                0,
+            )
+            .unwrap();
+        let committed_tip = coordinator.active_branch_id().unwrap().to_owned();
+        let tracked_ids = coordinator
+            .compaction_entries()
+            .iter()
+            .map(|entry| entry.id.clone())
+            .collect::<Vec<_>>();
+        let session_path = coordinator.session_path().to_owned();
+        let session_id = coordinator.session_id().to_owned();
+        let bytes_before = std::fs::read(&session_path).unwrap();
+        coordinator.inject_post_write_sync_failure_after_for_test(1);
+
+        let error = match coordinator
+            .execute_compaction(opi_agent::session_event::CompactionReason::Manual)
+        {
+            Err(error) => error,
+            Ok(_) => panic!("compaction leaf append must report the injected failure"),
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "injected session sync failure after append write"
+        );
+        assert_eq!(std::fs::read(&session_path).unwrap(), bytes_before);
+        assert_eq!(coordinator.active_branch_id(), Some(committed_tip.as_str()));
+        assert_eq!(
+            coordinator
+                .compaction_entries()
+                .iter()
+                .map(|entry| entry.id.clone())
+                .collect::<Vec<_>>(),
+            tracked_ids
+        );
+        drop(coordinator);
+
+        let (_, entries) = opi_agent::session::SessionReader::read_all(&session_path).unwrap();
+        let reopened = super::SessionCoordinator::open_existing(
+            session_path,
+            session_id,
+            &entries,
+            4,
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("reopen rolled-back compaction session");
+        assert_eq!(reopened.active_branch_id(), Some(committed_tip.as_str()));
+    }
+
+    #[test]
+    fn failed_batch_rollback_preserves_append_error_and_poisons_coordinator() {
+        let dir = tempfile::tempdir().expect("session dir");
+        let mut coordinator = super::SessionCoordinator::new(
+            dir.path(),
+            ".",
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("coordinator");
+        let session_path = coordinator.session_path().to_owned();
+        let session_id = coordinator.session_id().to_owned();
+        coordinator.inject_append_failure_after_for_test(1);
+        coordinator.inject_rollback_failure_for_test();
+
+        let error = coordinator
+            .on_turn_end(
+                &[user_message("persisted"), user_message("rejected")],
+                &Usage::default(),
+                0,
+            )
+            .expect_err("batch and rollback must fail");
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+        assert_eq!(
+            error.to_string(),
+            "session batch append failed and rollback cleanup failed"
+        );
+        let failure = error
+            .get_ref()
+            .and_then(|source| source.downcast_ref::<super::SessionBatchRollbackError>())
+            .expect("append and rollback failures stay structurally observable");
+        assert_eq!(
+            failure.append_error().to_string(),
+            "injected session append failure"
+        );
+        assert_eq!(
+            failure.rollback_error().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+        assert_eq!(
+            failure.rollback_error().to_string(),
+            "injected session rollback failure"
+        );
+
+        let metadata_poisoned = coordinator
+            .append_session_info("must not persist".to_owned())
+            .expect_err("metadata writes must also reject a poisoned writer");
+        assert_eq!(
+            metadata_poisoned.to_string(),
+            "session writer is unavailable after rollback failure"
+        );
+        let poisoned = coordinator
+            .on_turn_end(&[user_message("must not persist")], &Usage::default(), 0)
+            .expect_err("coordinator must reject writes after an incomplete rollback");
+        assert_eq!(poisoned.kind(), std::io::ErrorKind::Other);
+        assert_eq!(
+            poisoned.to_string(),
+            "session writer is unavailable after rollback failure"
+        );
+
+        drop(coordinator);
+        let (_, entries) = opi_agent::session::SessionReader::read_all(&session_path).unwrap();
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| matches!(entry, opi_agent::session::SessionEntry::Message(_)))
+                .count(),
+            1,
+            "the first append remained durable when rollback failed"
+        );
+        let mut reopened = super::SessionCoordinator::open_existing(
+            session_path,
+            session_id,
+            &entries,
+            1,
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .expect("reopen poisoned session from its durable state");
+        reopened
+            .on_turn_end(&[user_message("recovered")], &Usage::default(), 1)
+            .expect("reopening creates a fresh writable coordinator");
+    }
 
     #[test]
     fn cost_summary_uses_exact_cumulative_totals_above_u32_max() {

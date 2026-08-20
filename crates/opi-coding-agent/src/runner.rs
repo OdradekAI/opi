@@ -21,7 +21,7 @@ use opi_ai::provider::Provider;
 use opi_ai::stream::AssistantStreamEvent;
 
 use crate::config::OpiConfig;
-use crate::harness::{CodingHarness, ResumeInfo};
+use crate::harness::{CodingHarness, ProviderAuthFailure, ResumeInfo, provider_auth_failure};
 use crate::policy::{RunMode, ToolPolicyError, ToolRuntimeConfig, ToolSelection, is_mutating_tool};
 use crate::project_trust::TrustDecision;
 use crate::runtime_packages::RuntimePackageStartup;
@@ -171,9 +171,8 @@ impl NonInteractiveRunner {
     /// Create a non-interactive runner with installed package adapters already
     /// started by runtime startup. The startup's trust decision is the single
     /// source of truth for both package and harness resource loading.
-    /// `trace_path`, when set, activates evidence capture for the run
-    /// (evidence.jsonl + manifest.json), replacing the removed trace envelope
-    /// (Phase 17.7).
+    /// `trace_path`, when set, activates evidence capture for the run and writes
+    /// `evidence.jsonl` plus `manifest.json`.
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_resume_and_runtime_packages(
         provider: Box<dyn Provider>,
@@ -275,11 +274,10 @@ impl NonInteractiveRunner {
                 .tool_selection(tool_selection)
                 .tool_config(tool_config)
                 .extra_routes(extra_routes)
-                // Phase 16.9: non-interactive run mode threaded into
-                // ExecutionRuntime::build.
+                // Thread the non-interactive run mode into ExecutionRuntime::build.
                 .execution_mode(crate::config::ExecutionRunMode::NonInteractive)
                 // Record runtime diagnostics so the JSON run summary can carry
-                // structured severity counts (Phase 7 task 7.5).
+                // structured severity counts.
                 .record_diagnostics(true);
         if let Some(auth_resolver) = auth_resolver {
             builder = builder.auth_resolver(auth_resolver);
@@ -297,12 +295,12 @@ impl NonInteractiveRunner {
                 .startup_diagnostics(runtime_startup.diagnostics);
         }
         if let Some(path) = trace_path {
-            // Phase 17.7: `--trace` activates the Reference Product evidence
-            // file adapter (writes evidence.jsonl + manifest.json) rather than
-            // the removed trace envelope. Complete evidence is required.
+            // `--trace` activates the Reference Product evidence file adapter
+            // (writes evidence.jsonl + manifest.json). Complete evidence is
+            // required.
             builder = builder.evidence(crate::evidence::EvidenceBuilderConfig {
                 recorder: Arc::new(crate::evidence::FileEvidenceSink::new(path)),
-                source: opi_agent::evidence::AssemblySource::Cli,
+                source: crate::evidence::CLI_ASSEMBLY.clone(),
             });
         }
         let harness = builder.build();
@@ -335,7 +333,7 @@ impl NonInteractiveRunner {
             out.push('\n');
         }
 
-        // Phase 7 task 7.5: surface startup diagnostics BEFORE accepted prompt
+        // Surface startup diagnostics BEFORE accepted prompt
         // output (the first agent event is AgentStart). Additive NDJSON line.
         {
             let startup = AgentSessionEvent::StartupDiagnostics {
@@ -586,7 +584,7 @@ impl NonInteractiveRunner {
             out.push('\n');
         }
 
-        // Phase 7 task 7.5: surface startup diagnostics BEFORE accepted prompt
+        // Surface startup diagnostics BEFORE accepted prompt
         // output (the first agent event is AgentStart). Additive NDJSON line.
         {
             let startup = AgentSessionEvent::StartupDiagnostics {
@@ -726,9 +724,12 @@ impl NonInteractiveRunner {
         }
     }
 
-    /// Cancel the running operation.
-    pub fn cancel(&self) {
-        self.harness.cancel();
+    /// Arm the next run and return its clonable cancellation token.
+    ///
+    /// Clone this before calling a `run*` method, which mutably borrows the
+    /// runner until the harness lifecycle has completed.
+    pub fn cancel_token(&mut self) -> tokio_util::sync::CancellationToken {
+        self.harness.cancel_token()
     }
 
     /// Return the session coordinator, if active.
@@ -877,34 +878,38 @@ fn find_error_message(messages: &[AgentMessage]) -> Option<String> {
 }
 
 fn provider_error_stderr(error: &str) -> String {
-    let error = AgentError::Provider(error.to_owned());
+    let error = AgentError::from(opi_ai::provider::ProviderError::ProviderSide(
+        opi_ai::provider::ProviderErrorSummary::from_untrusted(error),
+    ));
     Diagnostic::from(&error)
         .redacted_payload(RedactionMode::Summary)
         .message
 }
 
 fn append_credential_remediation(output: &Arc<Mutex<String>>, error: &AgentError) {
-    let event = match error {
-        AgentError::CredentialNeeded { provider_id } => AgentSessionEvent::CredentialNeeded {
-            provider_id: provider_id.clone(),
-            remediation: format!("/login {provider_id}"),
-            diagnostic: Diagnostic::from(error).redacted_payload(RedactionMode::Summary),
-        },
-        AgentError::CredentialRevoked { provider_id } => AgentSessionEvent::CredentialRevoked {
-            provider_id: provider_id.clone(),
-            remediation: format!("/login {provider_id}"),
-            diagnostic: Diagnostic::from(error).redacted_payload(RedactionMode::Summary),
-        },
-        // AccountIdMissing is an auth-category failure resolved by re-login.
-        // Surface it as a CredentialNeeded remediation event (carrying the
-        // AccountIdMissing diagnostic) so JSON/text embedders drive the same
-        // /login <provider> re-auth path. Kept distinct from CredentialRevoked.
-        AgentError::AccountIdMissing { provider_id } => AgentSessionEvent::CredentialNeeded {
-            provider_id: provider_id.clone(),
-            remediation: format!("/login {provider_id}"),
-            diagnostic: Diagnostic::from(error).redacted_payload(RedactionMode::Summary),
-        },
-        _ => return,
+    let event = match provider_auth_failure(error) {
+        Some(ProviderAuthFailure::CredentialNeeded(provider_id)) => {
+            AgentSessionEvent::CredentialNeeded {
+                provider_id: provider_id.to_owned(),
+                remediation: format!("/login {provider_id}"),
+                diagnostic: Diagnostic::from(error).redacted_payload(RedactionMode::Summary),
+            }
+        }
+        Some(ProviderAuthFailure::CredentialRevoked(provider_id)) => {
+            AgentSessionEvent::CredentialRevoked {
+                provider_id: provider_id.to_owned(),
+                remediation: format!("/login {provider_id}"),
+                diagnostic: Diagnostic::from(error).redacted_payload(RedactionMode::Summary),
+            }
+        }
+        Some(ProviderAuthFailure::AccountIdMissing(provider_id)) => {
+            AgentSessionEvent::CredentialNeeded {
+                provider_id: provider_id.to_owned(),
+                remediation: format!("/login {provider_id}"),
+                diagnostic: Diagnostic::from(error).redacted_payload(RedactionMode::Summary),
+            }
+        }
+        None => return,
     };
     if let Ok(json) = serde_json::to_string(&event)
         && let Ok(mut guard) = output.lock()
@@ -915,40 +920,58 @@ fn append_credential_remediation(output: &Arc<Mutex<String>>, error: &AgentError
 }
 
 fn stderr_for_agent_error(error: &AgentError, suffix: &str) -> String {
-    let mut stderr = match error {
-        AgentError::Cancelled => "cancelled".to_owned(),
-        _ => {
-            Diagnostic::from(error)
-                .redacted_payload(RedactionMode::Summary)
-                .message
+    let mut stderr = match provider_auth_failure(error) {
+        Some(ProviderAuthFailure::CredentialNeeded(provider_id)) => {
+            format!("credential needed for '{provider_id}': run /login {provider_id}")
         }
+        Some(ProviderAuthFailure::CredentialRevoked(provider_id)) => {
+            format!("credential revoked for '{provider_id}': run /login {provider_id}")
+        }
+        Some(ProviderAuthFailure::AccountIdMissing(provider_id)) => {
+            format!("account id missing for '{provider_id}': run /login {provider_id}")
+        }
+        None => match error {
+            AgentError::Cancelled => "cancelled".to_owned(),
+            _ => {
+                Diagnostic::from(error)
+                    .redacted_payload(RedactionMode::Summary)
+                    .message
+            }
+        },
     };
     stderr.push_str(suffix);
     stderr
 }
 
 fn exit_code_for_agent_error(error: &AgentError) -> i32 {
+    if provider_auth_failure(error).is_some() {
+        return ExitCode::AuthFailure as i32;
+    }
     match error {
         AgentError::Cancelled => ExitCode::Interrupted as i32,
         AgentError::AuthFailed(_)
         | AgentError::CredentialNeeded { .. }
         | AgentError::CredentialRevoked { .. }
         | AgentError::AccountIdMissing { .. }
-        | AgentError::AuthNotConfigured { .. } => ExitCode::AuthFailure as i32,
+        | AgentError::CredentialTerminated { .. } => ExitCode::AuthFailure as i32,
         AgentError::Provider(_)
         | AgentError::InvalidModelSpec { .. }
         | AgentError::UnknownProvider { .. }
         | AgentError::UnknownModel { .. }
         | AgentError::RouteNotDispatchable { .. }
+        | AgentError::RequestRouteMismatch { .. }
         | AgentError::AttemptAlreadyActive
         | AgentError::ProviderProtocol { .. } => ExitCode::ProviderFailure as i32,
         AgentError::Hook(_)
+        | AgentError::InvalidArmedRun
         | AgentError::MaxTurnsExceeded(_)
         | AgentError::EvidenceSetup(_)
         | AgentError::EvidenceFinalization(_)
         | AgentError::SessionResume(_)
+        | AgentError::SessionPersist(_)
         | AgentError::InvalidNextTurnCandidate(_)
-        | AgentError::InvalidToolRegistration(_) => ExitCode::RuntimeFailure as i32,
+        | AgentError::InvalidToolRegistration(_)
+        | AgentError::Tool(_) => ExitCode::RuntimeFailure as i32,
     }
 }
 

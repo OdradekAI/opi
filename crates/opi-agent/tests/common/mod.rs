@@ -18,16 +18,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use opi_agent::Tool;
 use opi_agent::authority::{
-    AuthorizationDecision, AuthorizationError, Capability, RegisteredTool, RegistrationId,
+    AuthorizationDecision, AuthorizationError, CapabilityIdentity, RegisteredTool, RegistrationId,
     ToolAuthorizationRequest, ToolAuthorizer, ToolOrigin,
 };
-use opi_agent::evidence::{CapabilityClass, EvidenceGeneration};
+use opi_agent::evidence::{
+    EvidenceGeneration, PermissionReference, PermissionScope, PolicyReference,
+};
 use opi_agent::tool::{ExecutionMode, ToolError, ToolResult};
 use tokio_util::sync::CancellationToken;
 
-/// Convert raw tools into trusted registrations with a default `Builtin` origin
-/// and `WorkspaceRead` capability. Tests that need a specific capability or
-/// origin construct their [`RegisteredTool`] explicitly.
+/// Convert raw tools into trusted registrations with a default test origin and
+/// opaque `opi.workspace.read` capability identity. Tests that need a specific
+/// capability or origin construct their [`RegisteredTool`] explicitly.
 pub fn registrations_from(tools: Vec<Box<dyn Tool>>) -> Vec<RegisteredTool> {
     tools
         .into_iter()
@@ -37,7 +39,7 @@ pub fn registrations_from(tools: Vec<Box<dyn Tool>>) -> Vec<RegisteredTool> {
                 RegistrationId::new(format!("test-{name}")),
                 name,
                 ToolOrigin::Builtin,
-                Capability::Builtin(CapabilityClass::WorkspaceRead),
+                CapabilityIdentity::new("opi.workspace.read").unwrap(),
                 t.definition(),
                 Arc::from(t),
             )
@@ -69,9 +71,10 @@ impl ToolAuthorizer for PermissiveAuthorizer {
     {
         Box::pin(async move {
             Ok(AuthorizationDecision::Allow {
-                policy_ref: "test-policy".to_owned(),
-                permission_ref: "test-permission".to_owned(),
-                permission_scope: "test-scope".to_owned(),
+                policy_ref: PolicyReference::new("test-policy").unwrap(),
+                permission_ref: PermissionReference::new("test-permission").unwrap(),
+                permission_scope: PermissionScope::new("test-scope").unwrap(),
+                scoped_grant_ref: None,
                 registration_id: request.registration_id.clone(),
                 capability: request.capability.clone(),
                 evidence_health_generation: request.evidence_health.generation(),
@@ -135,9 +138,10 @@ impl ToolAuthorizer for StaleGenerationAuthorizer {
         let fixed_generation = self.fixed_generation;
         Box::pin(async move {
             Ok(AuthorizationDecision::Allow {
-                policy_ref: "test-policy".to_owned(),
-                permission_ref: "test-permission".to_owned(),
-                permission_scope: "test-scope".to_owned(),
+                policy_ref: PolicyReference::new("test-policy").unwrap(),
+                permission_ref: PermissionReference::new("test-permission").unwrap(),
+                permission_scope: PermissionScope::new("test-scope").unwrap(),
+                scoped_grant_ref: None,
                 registration_id: request.registration_id.clone(),
                 capability: request.capability.clone(),
                 evidence_health_generation: fixed_generation,

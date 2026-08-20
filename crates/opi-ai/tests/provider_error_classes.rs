@@ -1,5 +1,4 @@
-//! Phase 12 task 12.2 — every-family provider-side error classification +
-//! safe excerpt redaction.
+//! Every-family provider-side error classification with bodyless summaries.
 //!
 //! DoD: "HTTP/status/body parsing in every existing provider adapter classifies
 //! auth, config, request, network, rate_limit, provider, and stream errors with
@@ -8,8 +7,8 @@
 //!
 //! Each HTTP family below drives its production `Provider::stream_prepared` path against
 //! a mock 5xx response whose body echoes a credential, and asserts the result
-//! (a) classifies as the shared `provider` class and (b) carries only a
-//! redacted excerpt (the secret must not survive `safe_excerpt`). The auth
+//! (a) classifies as the shared `provider` class and (b) does not consume or
+//! retain the body. The auth
 //! (401), rate-limit (429), network (408/504) and stream arms are exercised per
 //! family in the `*_lifecycle.rs` suites and the per-family fixture files;
 //! bedrock's `provider`-class mapping is covered by its `map_bedrock_status`
@@ -62,9 +61,8 @@ async fn mount_500_echoing_secret(server: &MockServer) {
         .await;
 }
 
-/// Drive the stream to its first event and assert a provider-side error with a
-/// redacted excerpt (the echoed credential must not survive `safe_excerpt`).
-async fn assert_provider_side_redacted(provider: Box<dyn Provider>, model: &str) {
+/// Drive the stream to its first event and assert a bodyless provider-side error.
+async fn assert_provider_side_bodyless(provider: Box<dyn Provider>, model: &str) {
     let mut stream =
         provider.stream_prepared(text_request(model), opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {
@@ -76,8 +74,9 @@ async fn assert_provider_side_redacted(provider: Box<dyn Provider>, model: &str)
             );
             assert!(
                 !error.to_string().contains(SECRET),
-                "provider error excerpt must redact the echoed credential: {error}"
+                "provider error must discard the echoed credential: {error}"
             );
+            assert_eq!(error.to_string(), "provider error: HTTP 500: [REDACTED]");
             return;
         }
     }
@@ -85,60 +84,60 @@ async fn assert_provider_side_redacted(provider: Box<dyn Provider>, model: &str)
 }
 
 #[tokio::test]
-async fn anthropic_500_classifies_as_provider_with_redacted_excerpt() {
+async fn anthropic_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> = Box::new(opi_ai::anthropic::AnthropicProvider::new(Some(
         server.uri(),
     )));
-    assert_provider_side_redacted(provider, "anthropic:claude-sonnet-4-5-20250514").await;
+    assert_provider_side_bodyless(provider, "anthropic:claude-sonnet-4-5-20250514").await;
 }
 
 #[tokio::test]
-async fn openai_chat_500_classifies_as_provider_with_redacted_excerpt() {
+async fn openai_chat_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> = Box::new(OpenAiChatProvider::new(Some(server.uri())));
-    assert_provider_side_redacted(provider, "openai:gpt-4o").await;
+    assert_provider_side_bodyless(provider, "openai:gpt-4o").await;
 }
 
 #[tokio::test]
-async fn openai_responses_500_classifies_as_provider_with_redacted_excerpt() {
+async fn openai_responses_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> = Box::new(OpenAiResponsesProvider::new(Some(server.uri())));
-    assert_provider_side_redacted(provider, "openai-responses:gpt-4o").await;
+    assert_provider_side_bodyless(provider, "openai-responses:gpt-4o").await;
 }
 
 #[tokio::test]
-async fn openrouter_500_classifies_as_provider_with_redacted_excerpt() {
+async fn openrouter_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> =
         Box::new(opi_ai::openrouter::openrouter_provider(Some(server.uri())));
-    assert_provider_side_redacted(provider, "openrouter:openai/gpt-4o").await;
+    assert_provider_side_bodyless(provider, "openrouter:openai/gpt-4o").await;
 }
 
 #[tokio::test]
-async fn mistral_500_classifies_as_provider_with_redacted_excerpt() {
+async fn mistral_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> =
         Box::new(opi_ai::mistral::mistral_provider(Some(server.uri())));
-    assert_provider_side_redacted(provider, "mistral:mistral-small-latest").await;
+    assert_provider_side_bodyless(provider, "mistral:mistral-small-latest").await;
 }
 
 #[tokio::test]
-async fn gemini_500_classifies_as_provider_with_redacted_excerpt() {
+async fn gemini_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> =
         Box::new(opi_ai::gemini::GeminiProvider::new(Some(server.uri())));
-    assert_provider_side_redacted(provider, "gemini:gemini-2.5-flash").await;
+    assert_provider_side_bodyless(provider, "gemini:gemini-2.5-flash").await;
 }
 
 #[tokio::test]
-async fn azure_500_classifies_as_provider_with_redacted_excerpt() {
+async fn azure_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider = AzureOpenAIProvider::new(
@@ -148,11 +147,11 @@ async fn azure_500_classifies_as_provider_with_redacted_excerpt() {
     )
     .unwrap();
     let provider: Box<dyn Provider> = Box::new(provider);
-    assert_provider_side_redacted(provider, "azure:my-gpt4o").await;
+    assert_provider_side_bodyless(provider, "azure:my-gpt4o").await;
 }
 
 #[tokio::test]
-async fn vertex_500_classifies_as_provider_with_redacted_excerpt() {
+async fn vertex_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> = Box::new(VertexProvider::new(
@@ -160,44 +159,5 @@ async fn vertex_500_classifies_as_provider_with_redacted_excerpt() {
         "us-central1".into(),
         Some(server.uri()),
     ));
-    assert_provider_side_redacted(provider, "vertex:gemini-2.5-flash").await;
-}
-
-#[tokio::test]
-async fn provider_side_excerpt_redacts_query_secret_values() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(500).set_body_string(
-            "https://example.test/path?api_key=opaque-secret-token&token=another-secret",
-        ))
-        .mount(&server)
-        .await;
-
-    let provider: Box<dyn Provider> = Box::new(OpenAiChatProvider::new(Some(server.uri())));
-    let mut stream = provider.stream_prepared(
-        text_request("openai:gpt-4o"),
-        opi_ai::test_support::resolved_auth(),
-    );
-
-    while let Some(result) = stream.next().await {
-        if let Err(error) = result {
-            assert_eq!(error.category(), ProviderErrorCategory::Provider);
-            let text = error.to_string();
-            assert!(
-                text.contains("[REDACTED]"),
-                "provider-side excerpt should show explicit redaction markers: {text}"
-            );
-            assert!(
-                !text.contains("opaque-secret-token"),
-                "provider-side excerpt leaked api_key query value: {text}"
-            );
-            assert!(
-                !text.contains("another-secret"),
-                "provider-side excerpt leaked token query value: {text}"
-            );
-            return;
-        }
-    }
-
-    panic!("stream produced no error event before completion");
+    assert_provider_side_bodyless(provider, "vertex:gemini-2.5-flash").await;
 }

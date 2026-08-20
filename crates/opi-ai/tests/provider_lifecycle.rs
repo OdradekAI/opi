@@ -1,4 +1,5 @@
-//! Contract tests for AnthropicProvider::stream() — real HTTP-level verification.
+//! Contract tests for Anthropic prepared attempts through `stream_prepared` —
+//! real HTTP-level verification.
 //!
 //! Covers C1/H2: POST endpoint, SSE streaming, HTTP error mapping,
 //! no-terminal-event detection, and cancellation.
@@ -245,7 +246,7 @@ async fn stream_http_401_maps_to_auth_failed() {
     match result {
         Err(ProviderError::AuthFailed(msg)) => {
             assert!(
-                msg.contains("authentication failed"),
+                msg.contains("provider rejected credentials"),
                 "should mention auth failure: {msg}"
             );
         }

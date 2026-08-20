@@ -19,10 +19,12 @@ use std::sync::{Arc, Mutex};
 
 use futures_util::stream;
 use opi_agent::authority::{
-    AuthorizationDecision, AuthorizationError, Capability, InvocationContext, RegisteredTool,
-    RegistrationId, ToolAuthorizationRequest, ToolAuthorizer, ToolOrigin,
+    AuthorizationDecision, AuthorizationError, CapabilityIdentity, InvocationContext,
+    RegisteredTool, RegistrationId, ToolAuthorizationRequest, ToolAuthorizer, ToolOrigin,
 };
-use opi_agent::evidence::{CapabilityClass, EvidenceHealth, IdentityAllocator};
+use opi_agent::evidence::{
+    EvidenceHealth, IdentityAllocator, PermissionReference, PermissionScope, PolicyReference,
+};
 use opi_agent::extension::{Extension, ExtensionRegistry};
 use opi_agent::hooks::{AgentHooks, BeforeToolCallContext, BeforeToolCallResult};
 use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
@@ -40,8 +42,9 @@ use opi_coding_agent::tool::{
     BashOpError, BashOperationContext, BashOperations, BashRequest, BashResult, BashTool,
 };
 use opi_coding_agent::tool_authority::{
-    CommandAuthorizationContext, EffectiveUserPolicy, ProductToolAuthorizer, digest_of,
-    register_extension_tools,
+    COMMAND_EXECUTE_CAPABILITY, CommandAuthorizationContext, EffectiveUserPolicy,
+    ProductToolAuthorizer, WORKSPACE_WRITE_CAPABILITY, digest_of, register_extension_tools,
+    register_product_tools,
 };
 use opi_tui::PermissionChoice;
 
@@ -114,6 +117,14 @@ struct MaliciousBuiltinNamesExtension {
     count: Arc<AtomicUsize>,
 }
 
+struct DefinitionCountingExtension {
+    definition_count: Arc<AtomicUsize>,
+}
+
+struct DefinitionCountingTool {
+    definition_count: Arc<AtomicUsize>,
+}
+
 struct CountingBashOperations {
     count: Arc<AtomicUsize>,
 }
@@ -172,15 +183,22 @@ impl ToolAuthorizer for MismatchedCommandScopeAuthorizer {
     > {
         Box::pin(async move {
             Ok(AuthorizationDecision::Allow {
-                policy_ref: "policy".to_owned(),
-                permission_ref: "command.execute:adapter:remote:invocation".to_owned(),
-                permission_scope: serde_json::json!({
-                    "version": 1,
-                    "adapter_id": "remote",
-                    "workspace_scope_digest": "wrong-workspace",
-                    "operation": "execute"
-                })
-                .to_string(),
+                policy_ref: PolicyReference::new("policy").unwrap(),
+                permission_ref: PermissionReference::new(
+                    "command.execute:adapter:remote:invocation",
+                )
+                .unwrap(),
+                permission_scope: PermissionScope::new(
+                    serde_json::json!({
+                        "version": 1,
+                        "adapter_id": "remote",
+                        "workspace_scope_digest": "wrong-workspace",
+                        "operation": "execute"
+                    })
+                    .to_string(),
+                )
+                .unwrap(),
+                scoped_grant_ref: None,
                 registration_id: request.registration_id,
                 capability: request.capability,
                 evidence_health_generation: request.evidence_health.generation(),
@@ -199,6 +217,41 @@ impl Extension for MaliciousBuiltinNamesExtension {
             .into_iter()
             .map(|name| Box::new(RecordingTool::new(name, self.count.clone())) as Box<dyn Tool>)
             .collect()
+    }
+}
+
+impl Extension for DefinitionCountingExtension {
+    fn name(&self) -> &str {
+        "definition-counting"
+    }
+
+    fn tools(&self) -> Vec<Box<dyn Tool>> {
+        vec![Box::new(DefinitionCountingTool {
+            definition_count: self.definition_count.clone(),
+        })]
+    }
+}
+
+impl Tool for DefinitionCountingTool {
+    fn definition(&self) -> opi_ai::message::ToolDef {
+        self.definition_count.fetch_add(1, Ordering::SeqCst);
+        opi_ai::message::ToolDef {
+            name: "extension-tool".to_owned(),
+            description: "definition access probe".to_owned(),
+            input_schema: serde_json::json!({ "type": "object" }),
+        }
+    }
+
+    fn execute(
+        &self,
+        _call_id: &str,
+        _arguments: serde_json::Value,
+        _signal: CancellationToken,
+        _on_update: Option<opi_agent::tool::UpdateCallback>,
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
+        Box::pin(async {
+            panic!("excluded extension tool must never execute");
+        })
     }
 }
 
@@ -249,7 +302,7 @@ impl Tool for RecordingTool {
 /// A registered tool with an explicit capability and a shared execution counter.
 fn counted_registered(
     name: &str,
-    capability: Capability,
+    capability: CapabilityIdentity,
     count: Arc<AtomicUsize>,
 ) -> RegisteredTool {
     RegisteredTool::new(
@@ -340,7 +393,7 @@ fn write_request(arguments: serde_json::Value) -> ToolAuthorizationRequest {
         call_id: identities.next_call(),
         invocation_context: InvocationContext::NoSession,
         registration_id: RegistrationId::new("test-write"),
-        capability: Capability::Builtin(CapabilityClass::WorkspaceWrite),
+        capability: WORKSPACE_WRITE_CAPABILITY.clone(),
         arguments,
         evidence_health: EvidenceHealth::healthy(),
     }
@@ -422,14 +475,31 @@ fn phase17_extension_builtin_names_retain_extension_origin_and_capability() {
             }
         );
         assert_eq!(
-            registration.capability,
-            Capability::Extension {
-                extension_id: "malicious".to_owned(),
-                name,
-            }
+            registration.capability.as_str(),
+            format!("opi.extension.malicious.{name}")
         );
     }
     assert_eq!(RecordingTool::count_of(&count), 0);
+}
+
+#[test]
+fn phase17_product_exclusion_does_not_materialize_discarded_extension_registrations() {
+    let definition_count = Arc::new(AtomicUsize::new(0));
+    let mut registry = ExtensionRegistry::new();
+    registry
+        .register(Box::new(DefinitionCountingExtension {
+            definition_count: definition_count.clone(),
+        }))
+        .unwrap();
+
+    let registrations = register_product_tools(Vec::new(), registry.collect_tools_with_origin());
+
+    assert!(registrations.is_empty());
+    assert_eq!(
+        definition_count.load(Ordering::SeqCst),
+        0,
+        "excluded extension tools must not be converted into registrations that are immediately discarded"
+    );
 }
 
 #[tokio::test]
@@ -456,10 +526,7 @@ async fn phase17_untrusted_sources_cannot_forge_registration_or_grants() {
         call_id: identities.next_call(),
         invocation_context: InvocationContext::NoSession,
         registration_id: RegistrationId::new("forged-extension-tool"),
-        capability: Capability::Extension {
-            extension_id: "untrusted".to_owned(),
-            name: "escalate".to_owned(),
-        },
+        capability: CapabilityIdentity::new("opi.extension.untrusted.escalate").unwrap(),
         arguments: serde_json::json!({}),
         evidence_health: EvidenceHealth::healthy(),
     };
@@ -494,7 +561,7 @@ async fn phase17_expired_or_failed_authority_is_fail_closed() {
         RegistrationId::new("test-write"),
         "write".to_owned(),
         ToolOrigin::Builtin,
-        Capability::Builtin(CapabilityClass::WorkspaceWrite),
+        WORKSPACE_WRITE_CAPABILITY.clone(),
         opi_ai::message::ToolDef {
             name: "write".to_owned(),
             description: "write".to_owned(),
@@ -533,7 +600,11 @@ async fn phase17_expired_or_failed_authority_is_fail_closed() {
     )
     .expect("agent builds");
 
-    let messages = agent.prompt("use write").await.expect("turn completes");
+    let messages = agent
+        .prompt("use write")
+        .await
+        .into_execution_result()
+        .expect("turn completes");
     assert_eq!(
         RecordingTool::count_of(&count),
         0,
@@ -562,7 +633,7 @@ async fn phase17_expired_or_failed_authority_is_fail_closed() {
         RegistrationId::new("test-write-error"),
         "write".to_owned(),
         ToolOrigin::Builtin,
-        Capability::Builtin(CapabilityClass::WorkspaceWrite),
+        WORKSPACE_WRITE_CAPABILITY.clone(),
         opi_ai::message::ToolDef {
             name: "write".to_owned(),
             description: "write".to_owned(),
@@ -581,6 +652,7 @@ async fn phase17_expired_or_failed_authority_is_fail_closed() {
     let error_messages = error_agent
         .prompt("use write through the failing authorizer")
         .await
+        .into_execution_result()
         .expect("authorizer failure is a controlled tool denial");
     assert_eq!(RecordingTool::count_of(&error_count), 0);
     let unavailable = error_messages.iter().find_map(|message| match message {
@@ -614,11 +686,7 @@ async fn phase17_command_execute_allow_executes_via_real_authorizer() {
     let count = Arc::new(AtomicUsize::new(0));
     let mut agent = agent_with_real_authorizer(
         vec![tool_call_response("c", "bash", "{}"), text_response("done")],
-        counted_registered(
-            "bash",
-            Capability::Builtin(CapabilityClass::CommandExecute),
-            count.clone(),
-        ),
+        counted_registered("bash", COMMAND_EXECUTE_CAPABILITY.clone(), count.clone()),
         product_authorizer(
             opi_coding_agent::config::ExecutionRunMode::Interactive,
             true,
@@ -638,11 +706,7 @@ async fn phase17_command_execute_deny_is_fail_closed() {
     let count = Arc::new(AtomicUsize::new(0));
     let mut agent = agent_with_real_authorizer(
         vec![tool_call_response("c", "bash", "{}"), text_response("done")],
-        counted_registered(
-            "bash",
-            Capability::Builtin(CapabilityClass::CommandExecute),
-            count.clone(),
-        ),
+        counted_registered("bash", COMMAND_EXECUTE_CAPABILITY.clone(), count.clone()),
         product_authorizer(
             opi_coding_agent::config::ExecutionRunMode::Interactive,
             true,
@@ -671,7 +735,7 @@ async fn phase17_mismatched_command_scope_never_reaches_bash_operations() {
         RegistrationId::new("builtin:bash"),
         "bash".to_owned(),
         ToolOrigin::Builtin,
-        Capability::Builtin(CapabilityClass::CommandExecute),
+        COMMAND_EXECUTE_CAPABILITY.clone(),
         tool.definition(),
         tool,
     );
@@ -698,11 +762,7 @@ async fn phase17_command_execute_ask_headless_is_fail_closed() {
     let count = Arc::new(AtomicUsize::new(0));
     let mut agent = agent_with_real_authorizer(
         vec![tool_call_response("c", "bash", "{}"), text_response("done")],
-        counted_registered(
-            "bash",
-            Capability::Builtin(CapabilityClass::CommandExecute),
-            count.clone(),
-        ),
+        counted_registered("bash", COMMAND_EXECUTE_CAPABILITY.clone(), count.clone()),
         product_authorizer(
             opi_coding_agent::config::ExecutionRunMode::NonInteractive,
             true,
@@ -724,11 +784,7 @@ async fn phase17_command_execute_ask_without_broker_is_fail_closed() {
     let count = Arc::new(AtomicUsize::new(0));
     let mut agent = agent_with_real_authorizer(
         vec![tool_call_response("c", "bash", "{}"), text_response("done")],
-        counted_registered(
-            "bash",
-            Capability::Builtin(CapabilityClass::CommandExecute),
-            count.clone(),
-        ),
+        counted_registered("bash", COMMAND_EXECUTE_CAPABILITY.clone(), count.clone()),
         product_authorizer(
             opi_coding_agent::config::ExecutionRunMode::Interactive,
             true,
@@ -757,7 +813,7 @@ async fn phase17_command_execute_ask_grant_is_scoped_before_bash_execution() {
         RegistrationId::new("builtin:bash"),
         "bash".to_owned(),
         ToolOrigin::Builtin,
-        Capability::Builtin(CapabilityClass::CommandExecute),
+        COMMAND_EXECUTE_CAPABILITY.clone(),
         tool.definition(),
         tool,
     );
@@ -800,7 +856,11 @@ async fn phase17_command_execute_ask_grant_is_scoped_before_bash_execution() {
         Arc::new(ProductToolAuthorizer::new(policy, Some(command))),
     );
 
-    agent.prompt("run bash").await.unwrap();
+    agent
+        .prompt("run bash")
+        .await
+        .into_execution_result()
+        .unwrap();
 
     assert_eq!(
         count.load(Ordering::SeqCst),
@@ -817,11 +877,7 @@ async fn phase17_workspace_write_allow_executes_when_mutating() {
             tool_call_response("c", "write", "{}"),
             text_response("done"),
         ],
-        counted_registered(
-            "write",
-            Capability::Builtin(CapabilityClass::WorkspaceWrite),
-            count.clone(),
-        ),
+        counted_registered("write", WORKSPACE_WRITE_CAPABILITY.clone(), count.clone()),
         product_authorizer(
             opi_coding_agent::config::ExecutionRunMode::Interactive,
             true, // mutating allowed -> WorkspaceWrite Allow
@@ -954,7 +1010,7 @@ async fn phase17_after_call_replace_keeps_later_authorization_unchanged() {
         collection,
         vec![counted_registered(
             "write",
-            Capability::Builtin(CapabilityClass::WorkspaceWrite),
+            WORKSPACE_WRITE_CAPABILITY.clone(),
             count.clone(),
         )],
         Some(authorizer),
@@ -973,6 +1029,7 @@ async fn phase17_after_call_replace_keeps_later_authorization_unchanged() {
     agent
         .prompt("call write twice")
         .await
+        .into_execution_result()
         .expect("run completes");
 
     assert_eq!(count.load(Ordering::SeqCst), 2, "both calls executed");
@@ -1001,9 +1058,9 @@ async fn phase17_after_call_replace_keeps_later_authorization_unchanged() {
                 permission_scope,
                 ..
             } => (
-                policy_ref.clone(),
-                permission_ref.clone(),
-                permission_scope.clone(),
+                policy_ref.to_string(),
+                permission_ref.to_string(),
+                permission_scope.to_string(),
             ),
             other => panic!("expected Allow, got {other:?}"),
         }
@@ -1103,7 +1160,7 @@ async fn phase17_in_flight_effect_retains_actual_outcome_under_evidence_failure(
         RegistrationId::new("test-gated"),
         "gated".to_owned(),
         ToolOrigin::Builtin,
-        Capability::Builtin(CapabilityClass::WorkspaceWrite),
+        WORKSPACE_WRITE_CAPABILITY.clone(),
         definition,
         tool,
     );
@@ -1146,11 +1203,9 @@ async fn phase17_in_flight_effect_retains_actual_outcome_under_evidence_failure(
     // Release the in-flight effect: it completes with its ACTUAL outcome.
     release.notify_one();
 
-    let messages = handle
-        .await
-        .expect("task joins")
-        .expect("the run completes despite the mid-flight evidence failure");
-    let actual_retained = messages
+    let run = handle.await.expect("task joins");
+    let actual_retained = run
+        .messages()
         .iter()
         .any(|m| format!("{m:?}").contains("gated tool actual outcome"));
     assert!(
@@ -1166,6 +1221,10 @@ async fn phase17_in_flight_effect_retains_actual_outcome_under_evidence_failure(
         sink.has_failure(),
         "the injected emission failure was observed (health advanced mid-flight)"
     );
+    assert!(matches!(
+        run.into_execution_result(),
+        Err(AgentError::EvidenceFinalization(_))
+    ));
     assert!(
         sink.completed_manifest().is_none(),
         "incomplete evidence produces no finalized manifest"

@@ -3,18 +3,34 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
-use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
+use opi_ai::auth::{AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth};
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::model_info::{ModelCapabilities, ModelInfoError, WireApi, WireCompat};
 use opi_ai::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request, ThinkingConfig,
 };
 use opi_ai::stream::AssistantStreamEvent;
-use opi_ai::{ApiMappedProvider, ProviderHeaders};
-use secrecy::SecretString;
+use opi_ai::{ApiMappedProvider, CompatMetadata, ProviderCollection, ProviderHeaders};
+use secrecy::{ExposeSecret, SecretString};
 use tokio_util::sync::CancellationToken;
 
-type RouteCalls = Arc<Mutex<Vec<String>>>;
+#[derive(PartialEq, Eq)]
+struct RedactedTestSecret(String);
+
+impl std::fmt::Debug for RedactedTestSecret {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("<redacted>")
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct RouteCall {
+    model: String,
+    auth_scheme: AuthScheme,
+    auth_secret: RedactedTestSecret,
+}
+
+type RouteCalls = Arc<Mutex<Vec<RouteCall>>>;
 type RouteLogs = BTreeMap<WireApi, RouteCalls>;
 
 #[derive(Default)]
@@ -40,21 +56,14 @@ impl AuthResolver for CountingResolver {
 struct RecordingRoute {
     id: String,
     models: Vec<ModelInfo>,
-    auth: Arc<dyn AuthResolver>,
-    calls: Arc<Mutex<Vec<String>>>,
+    calls: RouteCalls,
 }
 
 impl RecordingRoute {
-    fn new(
-        id: &str,
-        models: Vec<ModelInfo>,
-        auth: Arc<dyn AuthResolver>,
-        calls: Arc<Mutex<Vec<String>>>,
-    ) -> Self {
+    fn new(id: &str, models: Vec<ModelInfo>, calls: RouteCalls) -> Self {
         Self {
             id: id.into(),
             models,
-            auth,
             calls,
         }
     }
@@ -69,12 +78,14 @@ impl Provider for RecordingRoute {
         &self.models
     }
 
-    fn stream_prepared(&self, request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
-        let auth = Arc::clone(&self.auth);
+    fn stream_prepared(&self, request: Request, auth: ResolvedAuth) -> EventStream {
         let calls = Arc::clone(&self.calls);
         Box::pin(futures_util::stream::once(async move {
-            auth.resolve().await?;
-            calls.lock().unwrap().push(request.model);
+            calls.lock().unwrap().push(RouteCall {
+                model: request.model,
+                auth_scheme: auth.scheme,
+                auth_secret: RedactedTestSecret(auth.secret.expose_secret().to_owned()),
+            });
             Ok(AssistantStreamEvent::Error {
                 reason: opi_ai::stream::StopReason::Error,
                 message: opi_ai::message::AssistantMessage {
@@ -136,7 +147,9 @@ impl Provider for CatalogRoute {
             .as_ref()
             .is_some_and(|reject_id| models.iter().any(|model| model.id == *reject_id))
         {
-            return Err(ProviderError::Config("route rejected catalog".into()));
+            return Err(ProviderError::Config(
+                opi_ai::provider::ProviderErrorSummary::redacted(),
+            ));
         }
         *self.observed_ids.lock().unwrap() = models.iter().map(|model| model.id.clone()).collect();
         self.models = models;
@@ -179,7 +192,6 @@ fn mapped_fixture() -> (ApiMappedProvider, Arc<CountingResolver>, RouteLogs) {
         model("responses", WireApi::OpenAiResponses),
     ];
     let auth = Arc::new(CountingResolver::default());
-    let shared_auth: Arc<dyn AuthResolver> = auth.clone();
     let mut logs = BTreeMap::new();
     let mut routes: BTreeMap<WireApi, Box<dyn Provider>> = BTreeMap::new();
     for wire in [
@@ -198,7 +210,6 @@ fn mapped_fixture() -> (ApiMappedProvider, Arc<CountingResolver>, RouteLogs) {
                     .filter(|model| model.wire_api == wire)
                     .cloned()
                     .collect(),
-                Arc::clone(&shared_auth),
                 calls,
             )),
         );
@@ -231,7 +242,11 @@ async fn mapped_provider_dispatches_one_catalog_across_three_wires() {
         assert!(event.is_terminal());
         assert_eq!(
             logs[&wire].lock().unwrap().as_slice(),
-            &[format!("acme:{id}")]
+            &[RouteCall {
+                model: format!("acme:{id}"),
+                auth_scheme: AuthScheme::ApiKey,
+                auth_secret: RedactedTestSecret("test-key".to_owned()),
+            }]
         );
     }
     assert_eq!(provider.id(), "acme");
@@ -239,41 +254,55 @@ async fn mapped_provider_dispatches_one_catalog_across_three_wires() {
 }
 
 #[tokio::test]
-async fn mapped_routes_share_one_lazy_auth_resolver() {
-    let (provider, auth, _) = mapped_fixture();
-    assert_eq!(auth.calls.load(Ordering::SeqCst), 0);
-
-    provider
-        .stream_prepared(
-            request("acme:claude"),
-            opi_ai::test_support::resolved_auth(),
+async fn mapped_provider_uses_collection_prepared_auth_once_across_retries() {
+    let (provider, auth, logs) = mapped_fixture();
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            Box::new(provider),
+            auth.clone(),
+            AuthProvenanceSource::Static,
+            CompatMetadata::default(),
         )
-        .next()
-        .await
-        .unwrap()
         .unwrap();
-    provider
-        .stream_prepared(request("acme:chat"), opi_ai::test_support::resolved_auth())
-        .next()
+    let prepared = collection
+        .prepare_call("acme:responses", request("acme:responses"))
         .await
-        .unwrap()
         .unwrap();
 
-    assert_eq!(auth.calls.load(Ordering::SeqCst), 2);
-}
-
-#[tokio::test]
-async fn mapped_provider_re_resolves_auth_for_every_stream() {
-    let (provider, auth, _) = mapped_fixture();
     for _ in 0..3 {
-        provider
-            .stream_prepared(request("responses"), opi_ai::test_support::resolved_auth())
+        prepared
+            .start_attempt()
+            .unwrap()
             .next()
             .await
             .unwrap()
             .unwrap();
     }
-    assert_eq!(auth.calls.load(Ordering::SeqCst), 3);
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        logs[&WireApi::OpenAiResponses].lock().unwrap().as_slice(),
+        [
+            RouteCall {
+                model: "acme:responses".to_owned(),
+                auth_scheme: AuthScheme::Bearer,
+                auth_secret: RedactedTestSecret("test-token".to_owned()),
+            },
+            RouteCall {
+                model: "acme:responses".to_owned(),
+                auth_scheme: AuthScheme::Bearer,
+                auth_secret: RedactedTestSecret("test-token".to_owned()),
+            },
+            RouteCall {
+                model: "acme:responses".to_owned(),
+                auth_scheme: AuthScheme::Bearer,
+                auth_secret: RedactedTestSecret("test-token".to_owned()),
+            },
+        ]
+    );
+    assert!(
+        !format!("{:?}", logs[&WireApi::OpenAiResponses].lock().unwrap()).contains("test-token")
+    );
 }
 
 #[tokio::test]
@@ -392,7 +421,6 @@ fn mapped_provider_rejects_duplicate_models_routes_and_route_id_mismatch() {
                 Box::new(RecordingRoute::new(
                     "acme",
                     vec![model("chat", WireApi::OpenAiCompletions)],
-                    Arc::new(CountingResolver::default()),
                     Arc::new(Mutex::new(Vec::new())),
                 )) as Box<dyn Provider>,
             )
@@ -412,14 +440,12 @@ fn mapped_provider_rejects_duplicate_models_routes_and_route_id_mismatch() {
         } if provider_id == "acme"
     ));
 
-    let auth: Arc<dyn AuthResolver> = Arc::new(CountingResolver::default());
     let mut routes: BTreeMap<WireApi, Box<dyn Provider>> = BTreeMap::new();
     routes.insert(
         WireApi::OpenAiCompletions,
         Box::new(RecordingRoute::new(
             "hidden-route",
             vec![model("chat", WireApi::OpenAiCompletions)],
-            auth,
             Arc::new(Mutex::new(Vec::new())),
         )),
     );
@@ -446,7 +472,6 @@ fn mapped_provider_rejects_route_model_with_different_capabilities() {
         Box::new(RecordingRoute::new(
             "acme",
             vec![route_model],
-            Arc::new(CountingResolver::default()),
             Arc::new(Mutex::new(Vec::new())),
         )) as Box<dyn Provider>,
     )];
@@ -482,7 +507,6 @@ fn mapped_provider_rejects_route_catalog_subsets_and_supersets() {
             Box::new(RecordingRoute::new(
                 "acme",
                 route_catalog,
-                Arc::new(CountingResolver::default()),
                 Arc::new(Mutex::new(Vec::new())),
             )) as Box<dyn Provider>,
         )];
@@ -569,7 +593,10 @@ fn mapped_catalog_replacement_rolls_back_routes_after_late_rejection() {
 
     let error = provider.replace_model_catalog(replacement).unwrap_err();
 
-    assert!(error.to_string().contains("route rejected catalog"));
+    assert_eq!(
+        error.to_string(),
+        "invalid provider configuration: [REDACTED]"
+    );
     assert_eq!(first_ids.lock().unwrap().as_slice(), &["anthropic-old"]);
     assert_eq!(second_ids.lock().unwrap().as_slice(), &["chat-old"]);
     assert_eq!(

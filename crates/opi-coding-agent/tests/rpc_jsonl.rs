@@ -27,7 +27,9 @@ use std::time::Duration;
 use futures_util::stream;
 use opi_agent::diagnostic::{Diagnostic, SOURCE_PACKAGE, Severity, code};
 use opi_agent::extension::{Extension, ExtensionCommand, ExtensionError, ExtensionRegistry};
-use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use opi_ai::provider::{
+    EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
+};
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use opi_ai::test_support::{MockProvider, MockResponse, base_assistant, text_response};
@@ -415,7 +417,7 @@ async fn rpc_set_model_updates_subsequent_provider_request() {
     {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].model, "next-model");
+        assert_eq!(calls[0].model, "mock:next-model");
     }
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -463,7 +465,7 @@ async fn rpc_set_model_rejects_while_running_without_mutating_model() {
     {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].model, "mock-model");
+        assert_eq!(calls[0].model, "mock:mock-model");
     }
 
     release.notify_one();
@@ -486,7 +488,7 @@ async fn rpc_set_model_rejects_while_running_without_mutating_model() {
     {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls[1].model, "mock-model");
+        assert_eq!(calls[1].model, "mock:mock-model");
     }
 
     release.notify_one();
@@ -550,7 +552,7 @@ async fn rpc_set_model_revalidates_existing_thinking_before_switching() {
     {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].model, "large-model");
+        assert_eq!(calls[0].model, "mock:large-model");
         assert_eq!(calls[0].thinking.budget_tokens, Some(20_000));
         assert_eq!(calls[0].max_tokens, Some(20_001));
     }
@@ -613,7 +615,7 @@ async fn rpc_set_model_rejects_switch_to_non_thinking_model_with_active_thinking
     {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].model, "thinking-model");
+        assert_eq!(calls[0].model, "mock:thinking-model");
         assert!(calls[0].thinking.enabled);
         assert_eq!(calls[0].thinking.budget_tokens, Some(2048));
         assert_eq!(calls[0].max_tokens, Some(2049));
@@ -2530,9 +2532,9 @@ async fn write_tool_result_carries_write_audit_details() {
 async fn provider_error_events_are_redacted() {
     let secret = "sk-proj-1234567890abcdefghijklmnopqrstuv";
     let make_err = || {
-        MockResponse::Error(ProviderError::Network(format!(
-            "conn reset; echoed key {secret}"
-        )))
+        MockResponse::Error(ProviderError::Network(
+            ProviderErrorSummary::from_untrusted(format!("conn reset; echoed key {secret}")),
+        ))
     };
     let provider = MockProvider::new_with_errors(
         "mock",

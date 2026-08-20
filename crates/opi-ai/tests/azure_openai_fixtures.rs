@@ -164,16 +164,21 @@ async fn collect_events(stream: opi_ai::provider::EventStream) -> Vec<AssistantS
     events
 }
 
-async fn write_chunk(socket: &mut tokio::net::TcpStream, body: &str) -> std::io::Result<()> {
-    let chunk = format!("{:X}\r\n{}\r\n", body.len(), body);
-    tokio::io::AsyncWriteExt::write_all(socket, chunk.as_bytes()).await
+#[derive(Clone, Copy)]
+enum AzureStallPoint {
+    BeforeHeaders,
+    ResponseBody,
 }
 
-async fn spawn_stalled_azure_server() -> String {
+async fn spawn_stalled_azure_server(
+    stall_point: AzureStallPoint,
+) -> (String, std::sync::Arc<tokio::sync::Notify>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind stalled Azure server");
     let addr = listener.local_addr().expect("stalled server addr");
+    let stalled = std::sync::Arc::new(tokio::sync::Notify::new());
+    let server_stalled = stalled.clone();
 
     tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.expect("accept stalled stream");
@@ -201,33 +206,69 @@ async fn spawn_stalled_azure_server() -> String {
             "unexpected request line: {request_text}"
         );
 
-        tokio::io::AsyncWriteExt::write_all(
-            &mut socket,
-            b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
-        )
-        .await
-        .expect("write response headers");
-        write_chunk(&mut socket, stalled_azure_start_chunk())
+        if !matches!(stall_point, AzureStallPoint::BeforeHeaders) {
+            tokio::io::AsyncWriteExt::write_all(
+                &mut socket,
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n",
+            )
             .await
-            .expect("write initial SSE chunk");
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        let _ = write_chunk(&mut socket, stalled_azure_terminal_chunk()).await;
-        let _ = tokio::io::AsyncWriteExt::write_all(&mut socket, b"0\r\n\r\n").await;
+            .expect("write response headers");
+            tokio::io::AsyncWriteExt::flush(&mut socket)
+                .await
+                .expect("flush response headers");
+        }
+        server_stalled.notify_one();
+        std::future::pending::<()>().await;
     });
 
-    format!("http://{addr}")
+    (format!("http://{addr}"), stalled)
 }
 
-fn stalled_azure_start_chunk() -> &'static str {
-    "data: {\"id\":\"chatcmpl-slow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n"
-}
+async fn spawn_stalled_azure_error_body_server(
+    status: u16,
+) -> (String, std::sync::Arc<tokio::sync::Notify>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind stalled Azure error server");
+    let addr = listener.local_addr().expect("stalled error server addr");
+    let headers_flushed = std::sync::Arc::new(tokio::sync::Notify::new());
+    let server_headers_flushed = headers_flushed.clone();
 
-fn stalled_azure_terminal_chunk() -> &'static str {
-    concat!(
-        "data: {\"id\":\"chatcmpl-slow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"late\"},\"finish_reason\":null}]}\n\n",
-        "data: {\"id\":\"chatcmpl-slow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\n",
-        "data: [DONE]\n\n",
-    )
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept Azure request");
+        let mut request = Vec::new();
+        let mut buf = [0_u8; 1024];
+        loop {
+            let read = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                .await
+                .expect("read Azure request");
+            if read == 0 {
+                return;
+            }
+            request.extend_from_slice(&buf[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+        let reason = match status {
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            _ => "Error",
+        };
+        let headers = format!(
+            "HTTP/1.1 {status} {reason}\r\nContent-Length: 32\r\nConnection: close\r\n\r\n"
+        );
+        tokio::io::AsyncWriteExt::write_all(&mut socket, headers.as_bytes())
+            .await
+            .expect("write Azure error headers");
+        tokio::io::AsyncWriteExt::flush(&mut socket)
+            .await
+            .expect("flush Azure error headers");
+        server_headers_flushed.notify_one();
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    });
+
+    (format!("http://{addr}"), headers_flushed)
 }
 
 // ---------------------------------------------------------------------------
@@ -513,13 +554,63 @@ async fn stream_drains_text_lifecycle_through_http() {
 }
 
 #[tokio::test]
-async fn stream_http_error_maps_to_auth_failed() {
+async fn auth_error_bodies_are_absent_from_public_errors() {
+    let canaries = [
+        "azure-access-canary-with-no-known-token-shape",
+        "azure-secret-canary-with-no-known-token-shape",
+        "azure-session-canary-with-no-known-token-shape",
+        "azure-token-canary-with-no-known-token-shape",
+    ];
+    let body = canaries.join(" ");
+
+    for status in [401, 403] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/openai/deployments/my-gpt4o/chat/completions"))
+            .respond_with(ResponseTemplate::new(status).set_body_string(body.clone()))
+            .mount(&server)
+            .await;
+
+        let provider = AzureOpenAIProvider::new(
+            Some(server.uri()),
+            "my-gpt4o".into(),
+            Some("2024-06-01".into()),
+        )
+        .unwrap();
+
+        let mut stream =
+            provider.stream_prepared(text_request(), opi_ai::test_support::resolved_auth());
+        let error = stream
+            .next()
+            .await
+            .expect("auth failure should produce an event")
+            .expect_err("auth failure should produce ProviderError");
+        assert!(matches!(
+            error,
+            opi_ai::provider::ProviderError::AuthFailed(_)
+        ));
+        let rendered = format!("{error} {error:?}");
+        for canary in canaries {
+            assert!(
+                !rendered.contains(canary),
+                "Azure HTTP {status} body leaked through ProviderError: {rendered}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn request_enrichment_reaches_azure_http_boundary() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/openai/deployments/my-gpt4o/chat/completions"))
+        .and(header("api-key", "test-api-key-12345"))
+        .and(header("content-type", "application/json"))
+        .and(header("x-opi-request", "azure"))
         .respond_with(
-            ResponseTemplate::new(401)
-                .set_body_string(r#"{"error":{"message":"invalid api key"}}"#),
+            ResponseTemplate::new(200)
+                .set_body_string(text_sse_fixture())
+                .insert_header("content-type", "text/event-stream"),
         )
         .mount(&server)
         .await;
@@ -530,23 +621,113 @@ async fn stream_http_error_maps_to_auth_failed() {
         Some("2024-06-01".into()),
     )
     .unwrap();
+    let auth = opi_ai::auth::ResolvedAuth {
+        scheme: opi_ai::auth::AuthScheme::ApiKey,
+        secret: secrecy::SecretString::from("test-api-key-12345"),
+        base_url: None,
+        account_id: None,
+        provenance: opi_ai::AuthProvenance::default(),
+    };
+    let mut request = text_request();
+    request.extra_headers = vec![("X-Opi-Request".into(), "azure".into())];
 
-    let stream = provider.stream_prepared(text_request(), opi_ai::test_support::resolved_auth());
-    let first = stream
-        .collect::<Vec<_>>()
+    let events = collect_events(provider.stream_prepared(request, auth)).await;
+
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AssistantStreamEvent::Done { .. }))
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn request_timeout_maps_to_typed_timeout_at_azure_boundary() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_millis(200)))
+        .mount(&server)
+        .await;
+    let provider = AzureOpenAIProvider::new(
+        Some(server.uri()),
+        "my-gpt4o".into(),
+        Some("2024-06-01".into()),
+    )
+    .unwrap();
+    let mut request = text_request();
+    request.timeout = Some(std::time::Duration::from_millis(20));
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
         .await
-        .into_iter()
-        .next()
-        .expect("should produce an event");
-    match first {
-        Err(opi_ai::provider::ProviderError::AuthFailed(msg)) => {
-            assert!(
-                msg.contains("authentication failed"),
-                "auth error should mention failure: {msg}"
-            );
-        }
-        other => panic!("expected AuthFailed from HTTP 401, got {other:?}"),
+        .expect("Azure request timeout must resolve promptly")
+        .expect("Azure timeout must produce a stream item");
+
+    assert!(matches!(
+        result,
+        Err(opi_ai::provider::ProviderError::Timeout)
+    ));
+}
+
+#[tokio::test]
+async fn direct_auth_statuses_do_not_wait_for_stalled_bodies() {
+    for status in [401, 403] {
+        let (server, headers_flushed) = spawn_stalled_azure_error_body_server(status).await;
+        let provider =
+            AzureOpenAIProvider::new(Some(server), "my-gpt4o".into(), Some("2024-06-01".into()))
+                .unwrap();
+        let mut stream =
+            provider.stream_prepared(text_request(), opi_ai::test_support::resolved_auth());
+
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            headers_flushed.notified(),
+        )
+        .await
+        .expect("Azure auth-error headers must be flushed before the body stalls");
+
+        let result = tokio::time::timeout(std::time::Duration::from_millis(500), stream.next())
+            .await
+            .expect("Azure direct auth status must not wait for its body")
+            .expect("Azure direct auth status must produce a stream item");
+
+        let error = result.expect_err("Azure direct auth status must fail");
+        assert!(matches!(
+            error,
+            opi_ai::provider::ProviderError::AuthFailed(_)
+        ));
+        assert_eq!(
+            error.to_string(),
+            "authentication failed: provider rejected credentials"
+        );
     }
+}
+
+#[tokio::test]
+async fn request_header_cannot_override_azure_auth_routing() {
+    let server = MockServer::start().await;
+    let provider = AzureOpenAIProvider::new(
+        Some(server.uri()),
+        "my-gpt4o".into(),
+        Some("2024-06-01".into()),
+    )
+    .unwrap();
+    let mut request = text_request();
+    request.extra_headers = vec![("api-key".into(), "override".into())];
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+
+    assert!(matches!(
+        stream.next().await,
+        Some(Err(opi_ai::provider::ProviderError::RequestFailed(_)))
+    ));
+    assert!(
+        server
+            .received_requests()
+            .await
+            .expect("recorded requests")
+            .is_empty(),
+        "reserved Azure request headers must fail before dispatch"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -586,15 +767,8 @@ fn azure_inherits_shared_compat_flags_via_with_compat() {
 // Provider stream cancellation (Phase 12 task 12.7 DoD clause 6)
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
-async fn stream_cancellation_aborts_before_completion() {
-    // The CancellationToken is threaded into the Azure OpenAI adapter's HTTP
-    // body-stream loop (azure_openai.rs `cancel.cancelled()` select arm).
-    // Cancelling while the stream is open must terminate it before the delayed
-    // terminal chunk arrives, proving the shared OpenAI-compatible adapter path
-    // observes cancellation under Azure's deployment URL shape.
-    let server = spawn_stalled_azure_server().await;
-
+async fn assert_azure_cancelled(stall_point: AzureStallPoint) {
+    let (server, stalled) = spawn_stalled_azure_server(stall_point).await;
     let cancel = CancellationToken::new();
     let provider =
         AzureOpenAIProvider::new(Some(server), "my-gpt4o".into(), Some("2024-06-01".into()))
@@ -603,19 +777,35 @@ async fn stream_cancellation_aborts_before_completion() {
     request.cancel = cancel.clone();
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
-    let first = stream
-        .next()
+    tokio::time::timeout(std::time::Duration::from_secs(1), stalled.notified())
         .await
-        .expect("stream should produce at least one event")
-        .expect("first event should be valid");
-    assert!(matches!(first, AssistantStreamEvent::Start { .. }));
+        .expect("Azure server must reach the selected stall point");
     cancel.cancel();
 
-    let next = tokio::time::timeout(std::time::Duration::from_millis(200), stream.next())
-        .await
-        .expect("stream must close before the delayed terminal fixture completes");
+    let remaining = tokio::time::timeout(std::time::Duration::from_secs(1), async move {
+        let mut remaining = Vec::new();
+        while let Some(item) = stream.next().await {
+            remaining.push(item);
+        }
+        remaining
+    })
+    .await
+    .expect("Azure cancellation must terminate without waiting for HTTP");
     assert!(
-        next.is_none(),
-        "stream should end on cancellation before the terminal SSE chunk arrives"
+        matches!(
+            remaining.as_slice(),
+            [Err(opi_ai::provider::ProviderError::Cancelled)]
+        ),
+        "Azure cancellation must yield exactly one typed error, got {remaining:?}"
     );
+}
+
+#[tokio::test]
+async fn cancellation_before_response_headers_is_typed_and_prompt() {
+    assert_azure_cancelled(AzureStallPoint::BeforeHeaders).await;
+}
+
+#[tokio::test]
+async fn cancellation_during_response_body_is_typed_and_prompt() {
+    assert_azure_cancelled(AzureStallPoint::ResponseBody).await;
 }

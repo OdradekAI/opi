@@ -149,7 +149,11 @@ async fn e2e_text_prompt_returns_assistant_message() {
         ev.lock().unwrap().push(event_name(event).to_owned());
     }));
 
-    let result = agent.prompt("Hi there").await.unwrap();
+    let result = agent
+        .prompt("Hi there")
+        .await
+        .into_execution_result()
+        .unwrap();
 
     // Should have at least user message + assistant response
     assert!(
@@ -217,7 +221,11 @@ async fn e2e_tool_call_prompt_executes_tool() {
         ev.lock().unwrap().push(event_name(event).to_owned());
     }));
 
-    let result = agent.prompt("Use the greet tool").await.unwrap();
+    let result = agent
+        .prompt("Use the greet tool")
+        .await
+        .into_execution_result()
+        .unwrap();
 
     // Tool should have been called
     let log = tool_call_log.lock().unwrap();
@@ -266,10 +274,14 @@ async fn e2e_multi_turn_conversation_accumulates_state() {
     )
     .expect("agent");
 
-    let result1 = agent.prompt("Hello").await.unwrap();
+    let result1 = agent.prompt("Hello").await.into_execution_result().unwrap();
     assert!(result1.len() >= 2);
 
-    let result2 = agent.continue_("Tell me more").await.unwrap();
+    let result2 = agent
+        .continue_("Tell me more")
+        .await
+        .into_execution_result()
+        .unwrap();
 
     // After two turns: user1 + asst1 + user2 + asst2
     assert!(
@@ -300,7 +312,7 @@ async fn e2e_error_response_from_provider() {
     )
     .expect("agent");
 
-    let result = agent.prompt("Hello").await.unwrap();
+    let result = agent.prompt("Hello").await.into_execution_result().unwrap();
 
     // Should still have messages (user + error assistant)
     assert!(result.len() >= 2);

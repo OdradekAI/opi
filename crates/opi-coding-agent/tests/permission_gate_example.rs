@@ -338,7 +338,7 @@ async fn allow_all_policy_permits_tool_call() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     assert!(result.len() >= 3);
 
     // Tool should have executed successfully (not blocked).
@@ -390,7 +390,7 @@ async fn allow_list_policy_permits_listed_tool() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(tool_text.contains("ok"), "listed tool should execute");
 
@@ -434,7 +434,7 @@ async fn deny_all_policy_blocks_tool_call() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
 
     // Tool should NOT have executed — result should contain the block reason.
     let tool_text = extract_tool_result_text(&result);
@@ -487,7 +487,7 @@ async fn deny_list_policy_blocks_specific_tools() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("permission gate denied"),
@@ -535,7 +535,7 @@ async fn deny_list_policy_allows_non_listed_tools() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     let tool_text = extract_tool_result_text(&result);
     assert!(
         tool_text.contains("ok"),
@@ -589,7 +589,7 @@ async fn audit_log_records_allow_and_deny_across_turns() {
     )
     .expect("agent");
 
-    let _ = agent.prompt("test").await.unwrap();
+    let _ = agent.prompt("test").await.into_execution_result().unwrap();
 
     let log = audit.lock().unwrap();
     assert!(log.len() >= 2, "should have at least 2 audit entries");
@@ -707,7 +707,7 @@ async fn non_interactive_auto_approves_with_allow_all() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
     assert!(result.len() >= 3);
 
     // Both tools should execute without any prompt.
@@ -749,7 +749,7 @@ async fn non_interactive_auto_denies_with_deny_all() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
 
     // Tool should be blocked — no TUI prompt occurred.
     let tool_text = extract_tool_result_text(&result);
@@ -795,7 +795,7 @@ async fn non_interactive_auto_denies_with_allow_list_for_unlisted() {
     )
     .expect("agent");
 
-    let result = agent.prompt("test").await.unwrap();
+    let result = agent.prompt("test").await.into_execution_result().unwrap();
 
     let tool_text = extract_tool_result_text(&result);
     assert!(

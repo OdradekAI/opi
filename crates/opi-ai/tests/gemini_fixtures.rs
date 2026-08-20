@@ -24,6 +24,103 @@ async fn collect_stream(stream: EventStream) -> Vec<AssistantStreamEvent> {
     stream.filter_map(|r| async move { r.ok() }).collect().await
 }
 
+#[tokio::test]
+async fn auth_error_bodies_are_absent_from_public_errors() {
+    let canaries = [
+        "gemini-access-canary-with-no-known-token-shape",
+        "gemini-secret-canary-with-no-known-token-shape",
+        "gemini-session-canary-with-no-known-token-shape",
+        "gemini-token-canary-with-no-known-token-shape",
+    ];
+    let body = canaries.join(" ");
+
+    for status in [401, 403] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(status).set_body_string(body.clone()))
+            .mount(&server)
+            .await;
+        let provider = GeminiProvider::new(Some(server.uri()));
+        let mut stream =
+            provider.stream_prepared(gemini_http_request(), opi_ai::test_support::resolved_auth());
+        let error = stream
+            .next()
+            .await
+            .expect("auth failure should produce an event")
+            .expect_err("auth failure should produce ProviderError");
+        assert!(matches!(
+            error,
+            opi_ai::provider::ProviderError::AuthFailed(_)
+        ));
+        let rendered = format!("{error} {error:?}");
+        for canary in canaries {
+            assert!(
+                !rendered.contains(canary),
+                "Gemini HTTP {status} body leaked through ProviderError: {rendered}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn direct_auth_statuses_do_not_wait_for_stalled_bodies() {
+    for status in [401, 403] {
+        let (server, headers_flushed) = spawn_stalled_gemini_error_body_server(status).await;
+        let provider = GeminiProvider::new(Some(server));
+        let mut stream =
+            provider.stream_prepared(gemini_http_request(), opi_ai::test_support::resolved_auth());
+
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            headers_flushed.notified(),
+        )
+        .await
+        .expect("Gemini auth-error headers must be flushed before the body stalls");
+
+        let result = tokio::time::timeout(std::time::Duration::from_millis(500), stream.next())
+            .await
+            .expect("Gemini direct auth status must not wait for its body")
+            .expect("Gemini direct auth status must produce a stream item");
+
+        let error = result.expect_err("Gemini direct auth status must fail");
+        assert!(matches!(
+            error,
+            opi_ai::provider::ProviderError::AuthFailed(_)
+        ));
+        assert_eq!(
+            error.to_string(),
+            "authentication failed: provider rejected credentials"
+        );
+    }
+}
+
+#[tokio::test]
+async fn oversized_embedded_auth_body_is_not_read_past_the_classification_cap() {
+    let server = MockServer::start().await;
+    let body = format!(
+        r#"{{"error":{{"code":401}},"padding":"{}"}}"#,
+        "x".repeat(64 * 1024)
+    );
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(400).set_body_string(body))
+        .mount(&server)
+        .await;
+    let provider = GeminiProvider::new(Some(server.uri()));
+    let mut stream =
+        provider.stream_prepared(gemini_http_request(), opi_ai::test_support::resolved_auth());
+
+    let error = stream
+        .next()
+        .await
+        .expect("oversized Gemini error body must produce a stream item")
+        .expect_err("oversized Gemini error body must fail");
+
+    assert!(matches!(
+        error,
+        opi_ai::provider::ProviderError::ProviderSide(_)
+    ));
+}
+
 // ---------------------------------------------------------------------------
 // Provider identity
 // ---------------------------------------------------------------------------
@@ -560,21 +657,14 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
     server.verify().await;
 }
 
-// ---------------------------------------------------------------------------
-// Provider stream cancellation (Phase 12 task 12.7 DoD clause 6)
-// ---------------------------------------------------------------------------
-
 #[tokio::test]
-async fn stream_cancellation_drains_without_hang_after_cancel() {
-    // The CancellationToken is threaded into the Gemini adapter's HTTP
-    // body-stream loop (gemini.rs `cancel.cancelled()` select arm). Cancelling
-    // while the stream is open must drain promptly without hanging. This
-    // wiremock fixture is fully buffered, so it does not prove cancellation
-    // wins a race against delayed terminal SSE data.
-    let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hi\"}]},\"index\":0}]}\n\n\
-               data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"\"}]},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":5,\"candidatesTokenCount\":2,\"totalTokenCount\":7}}\n\n";
+async fn request_enrichment_reaches_gemini_http_boundary() {
+    let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hi\"}]},\"finishReason\":\"STOP\",\"index\":0}]}\n\n";
     let server = MockServer::start().await;
     Mock::given(method("POST"))
+        .and(header("x-goog-api-key", "test-key"))
+        .and(header("content-type", "application/json"))
+        .and(header("x-opi-request", "gemini"))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_string(sse)
@@ -582,10 +672,94 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         )
         .mount(&server)
         .await;
-
-    let cancel = CancellationToken::new();
     let provider = GeminiProvider::new(Some(server.uri()));
-    let request = Request {
+    let mut request = gemini_http_request();
+    request.extra_headers = vec![("X-Opi-Request".into(), "gemini".into())];
+
+    let events =
+        collect_stream(provider.stream_prepared(request, opi_ai::test_support::resolved_auth()))
+            .await;
+
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AssistantStreamEvent::Done { .. }))
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn request_timeout_maps_to_typed_timeout_at_gemini_boundary() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_millis(200)))
+        .mount(&server)
+        .await;
+    let provider = GeminiProvider::new(Some(server.uri()));
+    let mut request = gemini_http_request();
+    request.timeout = Some(std::time::Duration::from_millis(20));
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
+        .await
+        .expect("Gemini request timeout must resolve promptly")
+        .expect("Gemini timeout must produce a stream item");
+
+    assert!(matches!(
+        result,
+        Err(opi_ai::provider::ProviderError::Timeout)
+    ));
+}
+
+#[tokio::test]
+async fn stalled_embedded_auth_body_uses_a_fixed_default_deadline() {
+    let (server, headers_flushed) = spawn_stalled_gemini_error_body_server(400).await;
+    let provider = GeminiProvider::new(Some(server));
+    let mut stream =
+        provider.stream_prepared(gemini_http_request(), opi_ai::test_support::resolved_auth());
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        headers_flushed.notified(),
+    )
+    .await
+    .expect("Gemini error headers must be flushed before the body stalls");
+
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
+        .await
+        .expect("Gemini error-body timeout must resolve promptly")
+        .expect("Gemini error-body timeout must produce a stream item");
+
+    assert!(matches!(
+        result,
+        Err(opi_ai::provider::ProviderError::Timeout)
+    ));
+}
+
+#[tokio::test]
+async fn request_header_cannot_override_gemini_auth_routing() {
+    let server = MockServer::start().await;
+    let provider = GeminiProvider::new(Some(server.uri()));
+    let mut request = gemini_http_request();
+    request.extra_headers = vec![("x-goog-api-key".into(), "override".into())];
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+
+    assert!(matches!(
+        stream.next().await,
+        Some(Err(opi_ai::provider::ProviderError::RequestFailed(_)))
+    ));
+    assert!(
+        server
+            .received_requests()
+            .await
+            .expect("recorded requests")
+            .is_empty(),
+        "reserved Gemini request headers must fail before dispatch"
+    );
+}
+
+fn gemini_http_request() -> Request {
+    Request {
         model: "gemini:gemini-2.5-flash".into(),
         system: None,
         messages: vec![Message::User(UserMessage {
@@ -600,30 +774,168 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,
-        cancel: cancel.clone(),
+        cancel: CancellationToken::new(),
         timeout: None,
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
-    };
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    }
+}
 
-    let _ = stream
-        .next()
+async fn spawn_stalled_gemini_error_body_server(
+    status: u16,
+) -> (String, std::sync::Arc<tokio::sync::Notify>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
-        .expect("stream should produce at least one event");
-    cancel.cancel();
+        .expect("bind stalled Gemini error server");
+    let addr = listener.local_addr().expect("stalled error server addr");
+    let headers_flushed = std::sync::Arc::new(tokio::sync::Notify::new());
+    let server_headers_flushed = headers_flushed.clone();
 
-    let drain = async {
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(event) if event.is_terminal() => break,
-                Err(_) => break,
-                _ => {}
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept Gemini request");
+        let mut request = Vec::new();
+        let mut buf = [0_u8; 1024];
+        loop {
+            let read = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                .await
+                .expect("read Gemini request");
+            if read == 0 {
+                return;
+            }
+            request.extend_from_slice(&buf[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
             }
         }
-    };
-    tokio::time::timeout(std::time::Duration::from_secs(2), drain)
+        let reason = match status {
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            _ => "Error",
+        };
+        let headers = format!(
+            "HTTP/1.1 {status} {reason}\r\nContent-Length: 32\r\nConnection: close\r\n\r\n"
+        );
+        tokio::io::AsyncWriteExt::write_all(&mut socket, headers.as_bytes())
+            .await
+            .expect("write Gemini error headers");
+        tokio::io::AsyncWriteExt::flush(&mut socket)
+            .await
+            .expect("flush Gemini error headers");
+        server_headers_flushed.notify_one();
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    });
+
+    (format!("http://{addr}"), headers_flushed)
+}
+
+#[derive(Clone, Copy)]
+enum GeminiStallPoint {
+    BeforeHeaders,
+    ResponseBody,
+    ErrorBody,
+}
+
+async fn spawn_stalled_gemini_server(
+    stall_point: GeminiStallPoint,
+) -> (String, std::sync::Arc<tokio::sync::Notify>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
-        .expect("stream must drain promptly after cancellation (no hang/panic)");
+        .expect("bind stalled Gemini server");
+    let addr = listener.local_addr().expect("stalled Gemini server addr");
+    let stalled = std::sync::Arc::new(tokio::sync::Notify::new());
+    let server_stalled = stalled.clone();
+
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept Gemini request");
+        let mut request = Vec::new();
+        let mut buf = [0_u8; 1024];
+        loop {
+            let read = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                .await
+                .expect("read Gemini request");
+            if read == 0 {
+                return;
+            }
+            request.extend_from_slice(&buf[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+
+        if !matches!(stall_point, GeminiStallPoint::BeforeHeaders) {
+            let status = if matches!(stall_point, GeminiStallPoint::ErrorBody) {
+                "400 Bad Request"
+            } else {
+                "200 OK"
+            };
+            tokio::io::AsyncWriteExt::write_all(
+                &mut socket,
+                format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: text/event-stream\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .await
+            .expect("write Gemini response headers");
+            tokio::io::AsyncWriteExt::flush(&mut socket)
+                .await
+                .expect("flush Gemini response headers");
+        }
+        server_stalled.notify_one();
+        std::future::pending::<()>().await;
+    });
+
+    (format!("http://{addr}"), stalled)
+}
+
+// ---------------------------------------------------------------------------
+// Provider stream cancellation (Phase 12 task 12.7 DoD clause 6)
+// ---------------------------------------------------------------------------
+
+async fn assert_gemini_cancelled(stall_point: GeminiStallPoint) {
+    let (server, stalled) = spawn_stalled_gemini_server(stall_point).await;
+    let cancel = CancellationToken::new();
+    let provider = GeminiProvider::new(Some(server));
+    let mut request = gemini_http_request();
+    request.cancel = cancel.clone();
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+
+    tokio::time::timeout(std::time::Duration::from_secs(1), stalled.notified())
+        .await
+        .expect("Gemini server must reach the selected stall point");
+    cancel.cancel();
+
+    let remaining = tokio::time::timeout(std::time::Duration::from_secs(1), async move {
+        let mut remaining = Vec::new();
+        while let Some(item) = stream.next().await {
+            remaining.push(item);
+        }
+        remaining
+    })
+    .await
+    .expect("Gemini cancellation must terminate without waiting for HTTP");
+    assert!(
+        matches!(
+            remaining.as_slice(),
+            [Err(opi_ai::provider::ProviderError::Cancelled)]
+        ),
+        "Gemini cancellation must yield exactly one typed error, got {remaining:?}"
+    );
+}
+
+#[tokio::test]
+async fn cancellation_before_response_headers_is_typed_and_prompt() {
+    assert_gemini_cancelled(GeminiStallPoint::BeforeHeaders).await;
+}
+
+#[tokio::test]
+async fn cancellation_during_response_body_is_typed_and_prompt() {
+    assert_gemini_cancelled(GeminiStallPoint::ResponseBody).await;
+}
+
+#[tokio::test]
+async fn cancellation_during_error_body_is_typed_and_prompt() {
+    assert_gemini_cancelled(GeminiStallPoint::ErrorBody).await;
 }

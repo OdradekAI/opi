@@ -8,8 +8,8 @@ use opi_ai::{ThinkingLevel, WireApi};
 use opi_ai::{
     message::{AssistantContent, AssistantMessage, Message, ToolDef},
     provider::{
-        CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderKind, Request,
-        ThinkingConfig,
+        CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary,
+        ProviderKind, Request, ThinkingConfig,
     },
     stream::{AssistantStreamEvent, StopReason, Usage},
 };
@@ -51,23 +51,23 @@ fn provider_error_has_timeout_variant() {
 
 #[test]
 fn provider_error_has_request_failed_variant() {
-    let err = ProviderError::RequestFailed("connection reset".into());
+    let err = ProviderError::RequestFailed(ProviderErrorSummary::redacted());
     let msg = err.to_string();
-    assert!(msg.contains("connection reset"), "got: {msg}");
+    assert_eq!(msg, "request failed: [REDACTED]");
 }
 
 #[test]
 fn provider_error_has_stream_error_variant() {
-    let err = ProviderError::StreamError("unexpected EOF".into());
+    let err = ProviderError::StreamError(ProviderErrorSummary::redacted());
     let msg = err.to_string();
-    assert!(msg.contains("unexpected EOF"), "got: {msg}");
+    assert_eq!(msg, "stream error: [REDACTED]");
 }
 
 #[test]
 fn provider_error_has_auth_failed_variant() {
-    let err = ProviderError::AuthFailed("invalid API key".into());
+    let err = ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected());
     let msg = err.to_string();
-    assert!(msg.contains("invalid API key"), "got: {msg}");
+    assert_eq!(msg, "authentication failed: provider rejected credentials");
 }
 
 // --- ThinkingConfig tests ---
@@ -188,6 +188,93 @@ impl Provider for DummyProvider {
     fn models(&self) -> &[ModelInfo] {
         &[]
     }
+}
+
+struct CanaryErrorProvider {
+    upstream: String,
+}
+
+impl Provider for CanaryErrorProvider {
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
+        let summary = ProviderErrorSummary::from_untrusted(&self.upstream);
+        let errors = vec![
+            ProviderError::RequestFailed(summary.clone()),
+            ProviderError::StreamError(summary.clone()),
+            ProviderError::AuthFailed(summary.clone()),
+            ProviderError::Network(summary.clone()),
+            ProviderError::Config(summary.clone()),
+            ProviderError::ProviderSide(summary.clone()),
+            ProviderError::UnsupportedCapability(summary),
+        ];
+        Box::pin(stream::iter(errors.into_iter().map(Err)))
+    }
+
+    fn id(&self) -> &str {
+        "canary-errors"
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        &[]
+    }
+}
+
+#[tokio::test]
+async fn custom_provider_untrusted_constructor_discards_error_payloads() {
+    const STATIC_PROVIDER_CANARY: &str = "custom-static-canary-with-no-known-token-shape";
+    let canaries = [
+        STATIC_PROVIDER_CANARY,
+        "custom-access-canary-with-no-known-token-shape",
+        "custom-secret-canary-with-no-known-token-shape",
+        "custom-session-canary-with-no-known-token-shape",
+        "custom-token-canary-with-no-known-token-shape",
+    ];
+    let provider = CanaryErrorProvider {
+        upstream: canaries.join(" "),
+    };
+    let mut stream = provider.stream_prepared(
+        Request {
+            model: "canary-errors:model".into(),
+            system: None,
+            messages: vec![],
+            tools: vec![],
+            max_tokens: None,
+            temperature: None,
+            thinking: ThinkingConfig::default(),
+            stop_sequences: vec![],
+            metadata: None,
+            cancel: CancellationToken::new(),
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention: CacheRetention::None,
+            session_id: None,
+        },
+        opi_ai::test_support::resolved_auth(),
+    );
+
+    let mut count = 0;
+    while let Some(Err(error)) = stream.next().await {
+        count += 1;
+        let rendered = format!("{error} {error:?}");
+        for canary in canaries {
+            assert!(
+                !rendered.contains(canary),
+                "custom provider leaked untrusted payload: {rendered}"
+            );
+        }
+    }
+    assert_eq!(
+        count, 7,
+        "every free-form error class must use the safe type"
+    );
+}
+
+#[test]
+fn closed_provider_error_summaries_accept_no_external_text() {
+    assert_eq!(ProviderErrorSummary::redacted(), "[REDACTED]");
+    assert_eq!(
+        ProviderErrorSummary::authentication_rejected(),
+        "provider rejected credentials"
+    );
 }
 
 #[tokio::test]

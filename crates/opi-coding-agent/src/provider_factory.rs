@@ -1,4 +1,4 @@
-//! Centralized provider/model/auth construction (Workstream 10.1, task 10.2).
+//! Centralized provider/model/auth construction.
 //!
 //! This module is the single place in `opi-coding-agent` that turns CLI config,
 //! env vars, and package/extension provider inputs into [`opi_ai::Provider`]
@@ -36,6 +36,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::config::{
+    BedrockProviderConfig, CustomProviderConfig, OpenAiCompatibleProviderConfig, OpiConfig,
+    build_http_client,
+};
+use crate::credential_store::{ApiKeySource, AuthSource, CredentialResolver};
+use crate::diagnostic_bridge::diagnostic_for_model_registry_error;
+use crate::oauth::OAuthProviderRegistry;
 use opi_agent::diagnostic::{Diagnostic, SOURCE_PROVIDER, Severity};
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use opi_ai::registry::ModelCapabilities;
@@ -43,14 +50,7 @@ use opi_ai::{
     AuthDescriptor, AuthInvalidPolicy, CompatMetadata, ProviderCollection, ProviderRegistry,
     WireApi,
 };
-use secrecy::SecretString;
-
-use crate::config::{
-    CustomProviderConfig, OpenAiCompatibleProviderConfig, OpiConfig, build_http_client,
-};
-use crate::credential_store::{ApiKeySource, AuthSource, CredentialResolver};
-use crate::diagnostic_bridge::diagnostic_for_model_registry_error;
-use crate::oauth::OAuthProviderRegistry;
+use secrecy::ExposeSecret;
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -90,12 +90,12 @@ pub enum ListModelsError {
 pub struct ProviderBundle {
     /// The active runtime provider.
     pub provider: Box<dyn Provider>,
-    /// The per-call auth resolver for the active provider's dispatch route
-    /// (Phase 17.5). The harness registers this alongside `provider` so
+    /// The per-call auth resolver for the active provider's dispatch route. The
+    /// harness registers this alongside `provider` so
     /// `ProviderCollection::prepare_call` resolves auth once per turn.
     pub auth_resolver: Arc<dyn opi_ai::AuthResolver>,
-    /// Additional dispatchable routes constructed eagerly at startup (Phase
-    /// 17.5). Every provider that can dispatch is built here with a LAZY auth
+    /// Additional dispatchable routes constructed eagerly at startup. Every
+    /// provider that can dispatch is built here with a lazy auth
     /// resolver; credential IO happens inside the resolver at `prepare_call`,
     /// not at construction, so a missing credential is not a build failure.
     /// The active provider is NOT in this list (it is `provider`/
@@ -134,12 +134,12 @@ impl ProviderBuildOutcome {
 
 /// A constructed runtime provider paired with its per-call auth resolver.
 ///
-/// Phase 17.5 moves authentication out of the provider object and onto the
-/// collection route, so every runtime construction returns both halves.
+/// Authentication belongs to the collection route rather than the provider
+/// object, so every runtime construction returns both halves.
 pub type ProviderAuthPair = (Box<dyn Provider>, Arc<dyn opi_ai::AuthResolver>);
 
-/// Assemble the single harness [`ProviderCollection`] serving dispatch AND
-/// model lookup/picker/listing (Phase 17.5). Every supplied route is registered
+/// Assemble the single harness [`ProviderCollection`] serving dispatch and
+/// model lookup/picker/listing. Every supplied route is registered
 /// with its per-call `AuthResolver` so `ProviderCollection::prepare_call`
 /// resolves auth once per turn for whichever provider:model the Agent selects,
 /// including a cross-provider switch. Lookup-only extension providers and
@@ -196,7 +196,7 @@ pub fn build_harness_collection(
 }
 
 /// Materialize the active provider's extension model overrides onto its
-/// effective catalog (Phase 17.5).
+/// effective catalog.
 ///
 /// The caller runs this while the active provider is still mutable (before it
 /// becomes a dispatch route) so the active provider's effective catalog
@@ -290,9 +290,11 @@ fn resolve_bedrock_env_credentials() -> (
     Option<String>,
     Option<String>,
 ) {
-    let akid = non_empty_env_var("AWS_ACCESS_KEY_ID");
-    let sak = non_empty_env_var("AWS_SECRET_ACCESS_KEY");
-    let token = non_empty_env_var("AWS_SESSION_TOKEN");
+    // Preserve present-but-blank credential values so the resolver can reject
+    // an attempted incomplete source instead of treating it as absent.
+    let akid = std::env::var("AWS_ACCESS_KEY_ID").ok();
+    let sak = std::env::var("AWS_SECRET_ACCESS_KEY").ok();
+    let token = std::env::var("AWS_SESSION_TOKEN").ok();
     let region =
         non_empty_env_var("AWS_REGION").or_else(|| non_empty_env_var("AWS_DEFAULT_REGION"));
     (akid, sak, token, region)
@@ -345,12 +347,16 @@ impl opi_ai::AuthResolver for CredentialAuthResolver {
                 .resolver
                 .resolve_api_key(&self.provider_id, &self.env_name)
                 .await
-                .map_err(|error| ProviderError::Config(format!("credential store error: {error}")))?
+                .map_err(|error| {
+                    ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+                        format!("credential store error: {error}"),
+                    ))
+                })?
                 .ok_or_else(|| ProviderError::CredentialNeeded {
                     provider_id: self.provider_id.clone(),
                 })?;
             Ok(opi_ai::ResolvedAuth {
-                scheme: self.scheme,
+                scheme: self.scheme.clone(),
                 provenance: resolved.provenance(),
                 secret: resolved.value,
                 base_url: None,
@@ -410,9 +416,11 @@ impl Provider for ListingMetadataProvider {
     fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let id = self.id.clone();
         Box::pin(futures_util::stream::once(async move {
-            Err(ProviderError::StreamError(format!(
-                "metadata-only provider '{id}' in the listing collection cannot dispatch"
-            )))
+            Err(ProviderError::StreamError(
+                opi_ai::provider::ProviderErrorSummary::from_untrusted(format!(
+                    "metadata-only provider '{id}' in the listing collection cannot dispatch"
+                )),
+            ))
         }))
     }
 }
@@ -858,27 +866,47 @@ pub(crate) fn bedrock_auth_presence(
     env_var: &dyn Fn(&str) -> Option<String>,
 ) -> BedrockAuthPresence {
     let bedrock = &config.providers.bedrock;
+    let configured_attempted = bedrock.access_key_id.is_some()
+        || bedrock.secret_access_key_env.is_some()
+        || bedrock.session_token_env.is_some();
     let config_access_present = bedrock
         .access_key_id
-        .as_deref()
+        .as_ref()
+        .map(ExposeSecret::expose_secret)
         .is_some_and(|value| !value.trim().is_empty());
     let configured_secret_env = bedrock
         .secret_access_key_env
         .as_deref()
         .filter(|name| !name.trim().is_empty());
 
-    if config_access_present
-        && let Some(secret_env) =
-            configured_secret_env.filter(|name| env_value_present(env_var, name))
-    {
-        return BedrockAuthPresence::ConfigPair {
-            secret_env: secret_env.to_owned(),
+    if configured_attempted {
+        if config_access_present
+            && let Some(secret_env) =
+                configured_secret_env.filter(|name| env_value_present(env_var, name))
+        {
+            return BedrockAuthPresence::ConfigPair {
+                secret_env: secret_env.to_owned(),
+            };
+        }
+        return BedrockAuthPresence::MissingConfigPair {
+            secret_env: configured_secret_env.map(str::to_owned),
         };
     }
-    if env_value_present(env_var, "AWS_ACCESS_KEY_ID")
-        && env_value_present(env_var, "AWS_SECRET_ACCESS_KEY")
-    {
-        return BedrockAuthPresence::DefaultEnvPair;
+
+    let environment_access_key = env_var("AWS_ACCESS_KEY_ID");
+    let environment_secret_key = env_var("AWS_SECRET_ACCESS_KEY");
+    let environment_session_token = env_var("AWS_SESSION_TOKEN");
+    let environment_attempted = environment_access_key.is_some()
+        || environment_secret_key.is_some()
+        || environment_session_token.is_some();
+    if environment_attempted {
+        if complete_bedrock_credential_pair(
+            environment_access_key.as_deref(),
+            environment_secret_key.as_deref(),
+        ) {
+            return BedrockAuthPresence::DefaultEnvPair;
+        }
+        return BedrockAuthPresence::MissingDefaultEnvPair;
     }
     if let Some(profile) = bedrock
         .profile
@@ -892,14 +920,7 @@ pub(crate) fn bedrock_auth_presence(
     if let Some(profile) = env_var("AWS_PROFILE").filter(|profile| !profile.trim().is_empty()) {
         return BedrockAuthPresence::EnvProfile { profile };
     }
-
-    if config_access_present {
-        BedrockAuthPresence::MissingConfigPair {
-            secret_env: configured_secret_env.map(str::to_owned),
-        }
-    } else {
-        BedrockAuthPresence::MissingDefaultEnvPair
-    }
+    BedrockAuthPresence::MissingDefaultEnvPair
 }
 
 fn select_bedrock_profile<'a>(
@@ -1198,8 +1219,8 @@ pub fn build_provider(config: &OpiConfig) -> Result<Box<dyn Provider>, ProviderB
 }
 
 /// Build the active provider, resolving its API key via `resolver`
-/// (keychain-first with env fallback). This is the Phase 14 production path;
-/// it composes [`crate::credential_store::CredentialResolver`] with provider
+/// (keychain-first with env fallback). This composes
+/// [`crate::credential_store::CredentialResolver`] with provider
 /// construction. Bedrock and other non-API-key providers ignore the resolver
 /// and use their existing credential chain.
 pub async fn build_provider_with_resolver(
@@ -1222,7 +1243,7 @@ async fn build_provider_with_resolver_outcome(
         ))
     })?;
     let mut diagnostics = Vec::new();
-    // Phase 17.5: credential IO is LAZY. The route's auth resolver performs
+    // Credential IO is lazy. The route's auth resolver performs
     // the real keychain/env read at prepare_call, so construction does not fail
     // when a credential is missing. A diagnostic-only probe (mirroring the
     // anthropic live-auth path) surfaces a warning when the keychain backend is
@@ -1246,7 +1267,7 @@ async fn build_provider_with_resolver_outcome(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 14.2 OAuth provider construction
+// OAuth provider construction
 // ---------------------------------------------------------------------------
 
 /// Build Anthropic with per-stream credential-source precedence: stored OAuth,
@@ -1282,7 +1303,9 @@ async fn build_anthropic_live_auth(
             }) => {}
             Err(error) => {
                 return Err(ProviderBuildError::Provider(ProviderError::Config(
-                    format!("credential store error: {error}"),
+                    opi_ai::provider::ProviderErrorSummary::from_untrusted(format!(
+                        "credential store error: {error}"
+                    )),
                 )));
             }
         }
@@ -1430,8 +1453,8 @@ async fn build_codex_oauth(
 
 /// Build the active provider, routing Anthropic/Copilot/Codex to providers that
 /// resolve their approved credential sources from each stream, and falling
-/// through to the API-key resolver path for everything else. This is the Phase
-/// 14 production routing entry point; [`build_provider_production`] constructs
+/// through to the API-key resolver path for everything else. This is the
+/// production routing entry point; [`build_provider_production`] constructs
 /// the resolver + registry and delegates here.
 ///
 /// Routing:
@@ -1504,14 +1527,13 @@ pub async fn build_provider_bundle(
     })
 }
 
-/// Build every OTHER dispatchable route (every provider that can dispatch
-/// except the active one) with lazy credential IO (Phase 17.5). Each route is
+/// Build every other dispatchable route (every provider that can dispatch
+/// except the active one) with lazy credential IO. Each route is
 /// constructed eagerly (concrete adapter + lazy auth resolver); credential IO
 /// happens inside the resolver at `prepare_call`, so a missing credential is
 /// not a construction failure and the route is still registered. A provider
 /// with invalid non-secret CONFIG (bad proxy, malformed profile) is skipped
-/// silently. Bedrock is the compound-credential exception: it registers only
-/// when its AWS credential chain resolves at construction.
+/// silently.
 ///
 async fn build_extra_dispatch_routes(
     config: &OpiConfig,
@@ -1614,9 +1636,8 @@ fn api_key_env_name(config: &OpiConfig, provider_id: &str) -> Option<String> {
 }
 
 /// Resolve the api-key env-var name + auth scheme for a dispatchable provider
-/// that sources a single credential (Phase 17.5). Returns `None` for bedrock
-/// (compound AWS credential chain, embedded by [`build_bedrock`]) and for
-/// unknown ids.
+/// that sources a single credential. Returns `None` for Bedrock's typed AWS
+/// SigV4 credential chain and for unknown ids.
 fn route_credentials(
     config: &OpiConfig,
     provider_id: &str,
@@ -1667,7 +1688,7 @@ fn route_credentials(
             .providers
             .custom
             .get(provider_id)
-            .map(|profile| (profile.api_key_env.clone(), profile.auth_scheme))
+            .map(|profile| (profile.api_key_env.clone(), profile.auth_scheme.clone()))
             .or_else(|| {
                 config
                     .providers
@@ -1684,11 +1705,10 @@ fn route_credentials(
     }
 }
 
-/// Build a LAZY per-call auth resolver for a dispatchable route (Phase 17.5).
+/// Build a lazy per-call auth resolver for a dispatchable route.
 /// Credential IO happens inside the [`CredentialAuthResolver`] at
 /// `prepare_call`, not here, so a missing credential is not a construction
-/// failure. Never called for bedrock (its compound credential is embedded by
-/// [`build_bedrock`]).
+/// failure. Bedrock uses its own typed [`BedrockAuthResolver`] instead.
 fn route_auth_resolver(
     config: &OpiConfig,
     provider_id: &str,
@@ -1704,14 +1724,13 @@ fn route_auth_resolver(
     })
 }
 
-/// Build the concrete provider adapter for `provider_id` WITHOUT resolving any
-/// secret (Phase 17.5). The adapter consumes already-resolved auth at its wire
+/// Build the concrete provider adapter for `provider_id` without resolving any
+/// secret. The adapter consumes already-resolved auth at its wire
 /// boundary; the secret is supplied per-call by the route's auth resolver at
 /// `prepare_call`. Non-secret CONFIG errors (bad proxy, missing endpoint
 /// config, unparseable profile, unknown provider) fail here; a MISSING
-/// CREDENTIAL does not — the provider is still dispatchable. Bedrock is the
-/// compound-credential exception: [`build_bedrock`] resolves its AWS chain
-/// here and fails when no chain resolves.
+/// CREDENTIAL does not — the provider is still dispatchable, including
+/// Bedrock's AWS credential chain.
 fn build_runtime_adapter(
     config: &OpiConfig,
     provider_id: &str,
@@ -1901,18 +1920,14 @@ fn build_runtime_adapter(
     validate_single_wire_provider(provider, wire_api)
 }
 
-/// Build a dispatchable route (adapter + LAZY auth resolver) for `provider_id`
-/// (Phase 17.5). Credential IO is deferred to the resolver at `prepare_call`.
-/// Bedrock embeds its compound AWS credential via [`build_bedrock`] (the one
-/// compound-credential exception).
+/// Build a dispatchable route (adapter + lazy auth resolver) for `provider_id`.
+/// Credential IO is deferred to the resolver at `prepare_call`.
 fn build_runtime_route(
     config: &OpiConfig,
     provider_id: &str,
     resolver: &CredentialResolver,
 ) -> Result<ProviderAuthPair, ProviderBuildError> {
     if provider_id == "bedrock" {
-        // Bedrock has no single api-key resolver; build_bedrock embeds the
-        // compound credential and returns a placeholder resolver.
         return build_bedrock(config);
     }
     let provider = build_runtime_adapter(config, provider_id)?;
@@ -1920,27 +1935,65 @@ fn build_runtime_route(
     Ok((provider, auth_resolver))
 }
 
-fn build_bedrock(config: &OpiConfig) -> Result<ProviderAuthPair, ProviderBuildError> {
-    let bedrock_config = &config.providers.bedrock;
+struct BedrockAuthResolver {
+    config: Arc<BedrockProviderConfig>,
+}
 
-    // Resolve credentials: config > env > profile
+impl opi_ai::AuthResolver for BedrockAuthResolver {
+    fn resolve<'a>(
+        &'a self,
+    ) -> opi_ai::BoxAuthFuture<'a, Result<opi_ai::ResolvedAuth, ProviderError>> {
+        Box::pin(async move { resolve_bedrock_auth(&self.config).await })
+    }
+}
+
+async fn resolve_bedrock_auth(
+    bedrock_config: &BedrockProviderConfig,
+) -> Result<opi_ai::ResolvedAuth, ProviderError> {
     let (akid, sak, token, env_region) = resolve_bedrock_env_credentials();
     let env_profile = std::env::var("AWS_PROFILE").ok();
     let profile_name =
-        select_bedrock_profile(bedrock_config.profile.as_deref(), env_profile.as_deref());
+        select_bedrock_profile(bedrock_config.profile.as_deref(), env_profile.as_deref())
+            .map(str::to_owned);
     let credentials_file = aws_credentials_path();
     let config_file = aws_config_path();
     let secret_key = bedrock_config
         .secret_access_key_env
         .as_deref()
-        .and_then(non_empty_env_var);
+        .and_then(|name| std::env::var(name).ok());
     let session_token = bedrock_config
         .session_token_env
         .as_deref()
-        .and_then(non_empty_env_var);
-
+        .and_then(|name| std::env::var(name).ok());
+    let configured_attempted = bedrock_config.access_key_id.is_some()
+        || bedrock_config.secret_access_key_env.is_some()
+        || bedrock_config.session_token_env.is_some();
+    let configured_access_key = bedrock_config
+        .access_key_id
+        .as_ref()
+        .map(ExposeSecret::expose_secret);
+    if configured_attempted
+        && !complete_bedrock_credential_pair(configured_access_key, secret_key.as_deref())
+    {
+        return Err(map_bedrock_resolution_error(
+            opi_ai::bedrock::credentials::CredentialResolutionError::IncompleteSource {
+                credential_source: opi_ai::bedrock::credentials::CredentialSource::ExplicitConfig,
+            },
+        ));
+    }
+    let environment_attempted = akid.is_some() || sak.is_some() || token.is_some();
+    if !configured_attempted
+        && environment_attempted
+        && !complete_bedrock_credential_pair(akid.as_deref(), sak.as_deref())
+    {
+        return Err(map_bedrock_resolution_error(
+            opi_ai::bedrock::credentials::CredentialResolutionError::IncompleteSource {
+                credential_source: opi_ai::bedrock::credentials::CredentialSource::Environment,
+            },
+        ));
+    }
     let input = opi_ai::bedrock::credentials::CredentialResolutionInput {
-        config_access_key_id: bedrock_config.access_key_id.as_deref(),
+        config_access_key_id: configured_access_key,
         config_secret_access_key: secret_key.as_deref(),
         config_session_token: session_token.as_deref(),
         config_region: bedrock_config.region.as_deref(),
@@ -1948,30 +2001,63 @@ fn build_bedrock(config: &OpiConfig) -> Result<ProviderAuthPair, ProviderBuildEr
         env_secret_access_key: sak.as_deref(),
         env_session_token: token.as_deref(),
         env_region: env_region.as_deref(),
-        profile_name,
+        profile_name: profile_name.as_deref(),
         credentials_file_path: credentials_file.as_deref(),
         config_file_path: config_file.as_deref(),
     };
-    let resolved = opi_ai::bedrock::credentials::resolve_credentials(&input);
-    let (bedrock_creds, _source) = resolved.ok_or_else(|| {
-        ProviderBuildError::Auth(
-            "no AWS credentials found: set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY env vars, configure [providers.bedrock], or set up AWS shared credentials/config profiles".into(),
-        )
-    })?;
+    let mut auth = opi_ai::bedrock::credentials::resolve_auth(&input)
+        .await
+        .map_err(map_bedrock_resolution_error)?;
+    if configured_attempted {
+        let secret_access_key_env = bedrock_config
+            .secret_access_key_env
+            .clone()
+            .filter(|name| !name.trim().is_empty())
+            .ok_or_else(|| {
+                ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+                    "configured Bedrock credential source is incomplete",
+                ))
+            })?;
+        auth.provenance.source = opi_ai::AuthProvenanceSource::AwsSigV4 {
+            source: opi_ai::AwsCredentialSource::ConfiguredEnvironment {
+                secret_access_key_env,
+                session_token_env: session_token
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                    .and(bedrock_config.session_token_env.as_deref())
+                    .filter(|name| !name.trim().is_empty())
+                    .map(str::to_owned),
+            },
+        };
+    }
+    Ok(auth)
+}
 
+fn map_bedrock_resolution_error(
+    error: opi_ai::bedrock::credentials::CredentialResolutionError,
+) -> ProviderError {
+    match error {
+        opi_ai::bedrock::credentials::CredentialResolutionError::Exhausted => {
+            ProviderError::CredentialNeeded {
+                provider_id: "bedrock".into(),
+            }
+        }
+        other => ProviderError::Config(other.into_safe_provider_summary()),
+    }
+}
+
+fn complete_bedrock_credential_pair(access_key_id: Option<&str>, secret_key: Option<&str>) -> bool {
+    access_key_id.is_some_and(|value| !value.trim().is_empty())
+        && secret_key.is_some_and(|value| !value.trim().is_empty())
+}
+
+fn build_bedrock(config: &OpiConfig) -> Result<ProviderAuthPair, ProviderBuildError> {
+    let bedrock_config = &config.providers.bedrock;
     let client = build_proxied_client(bedrock_config.proxy.as_ref())?;
-    let provider = opi_ai::bedrock::BedrockProvider::from_credentials(
-        bedrock_creds,
-        bedrock_config.base_url.clone(),
-        client,
-    );
-    // Bedrock holds compound AwsCredentials and ignores `resolved.secret` in
-    // stream_prepared; supply a placeholder resolver so the dispatch route
-    // registers (its stream_prepared never reads the secret).
-    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(opi_ai::StaticAuthResolver::new(
-        opi_ai::AuthScheme::ApiKey,
-        SecretString::from("bedrock-compound-credential"),
-    ));
+    let provider = opi_ai::bedrock::BedrockProvider::new(bedrock_config.base_url.clone(), client);
+    let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(BedrockAuthResolver {
+        config: Arc::new(bedrock_config.clone()),
+    });
     Ok((Box::new(provider), auth))
 }
 
@@ -2005,7 +2091,9 @@ pub fn validate_single_wire_models(
                 wire_api,
                 compat_wire,
             },
-            other => ProviderError::Config(other.to_string()),
+            other => ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+                other.to_string(),
+            )),
         })?;
         if model.wire_api != expected_wire {
             return Err(ProviderError::MissingWireRoute {
@@ -2050,7 +2138,7 @@ pub fn auth_descriptor_for(config: &OpiConfig, provider_id: &str) -> Option<Auth
         "bedrock" => "AWS_ACCESS_KEY_ID".to_string(),
         _ => return None,
     };
-    // Phase 14 opt-in: API-key providers (everything except Bedrock's AWS
+    // API-key providers (everything except Bedrock's AWS
     // credential chain) describe their credential as keychain-sourced when the
     // user selects the keychain backend. The descriptor is secret-free; the
     // redacted probe state is injected separately by the caller.
@@ -2248,13 +2336,13 @@ mod tests {
     use std::ffi::OsString;
     use std::sync::Mutex;
 
-    use super::{build_bedrock, build_collection_for_listing_command};
-    use crate::config::OpiConfig;
+    use super::{build_bedrock, build_collection_for_listing_command, resolve_bedrock_auth};
+    use crate::config::{BedrockProviderConfig, OpiConfig};
     use crate::credential_store::FakeKeyringBackend;
     use crate::doctor::{DoctorContext, DoctorScope, run_doctor};
 
     static BEDROCK_ENV_LOCK: Mutex<()> = Mutex::new(());
-    const BEDROCK_ENV_NAMES: [&str; 9] = [
+    const BEDROCK_ENV_NAMES: [&str; 10] = [
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
@@ -2264,6 +2352,7 @@ mod tests {
         "AWS_SHARED_CREDENTIALS_FILE",
         "AWS_CONFIG_FILE",
         "OPI_TEST_BEDROCK_SECRET",
+        "OPI_TEST_BEDROCK_SESSION",
     ];
 
     struct ScopedBedrockEnv(Vec<(&'static str, Option<OsString>)>);
@@ -2338,7 +2427,257 @@ mod tests {
 
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn bedrock_whitespace_presence_matches_listing_doctor_and_runtime() {
+    async fn configured_bedrock_environment_provenance_is_truthful_and_non_secret() {
+        let _env_lock = BEDROCK_ENV_LOCK.lock().expect("Bedrock env lock");
+        let root = tempfile::tempdir().expect("temp root");
+        let credentials_file = root.path().join("credentials");
+        let config_file = root.path().join("config");
+        std::fs::write(&credentials_file, "").expect("credentials fixture");
+        std::fs::write(&config_file, "").expect("config fixture");
+        let access = "AKIA_CONFIGURED_MIXED_CANARY";
+        let secret = "configured-mixed-secret-canary";
+        let session = "configured-mixed-session-canary";
+        let _env = ScopedBedrockEnv::new(
+            &[
+                ("OPI_TEST_BEDROCK_SECRET", secret),
+                ("OPI_TEST_BEDROCK_SESSION", session),
+            ],
+            &credentials_file,
+            &config_file,
+        );
+        let config = BedrockProviderConfig {
+            access_key_id: Some(access.into()),
+            secret_access_key_env: Some("OPI_TEST_BEDROCK_SECRET".into()),
+            session_token_env: Some("OPI_TEST_BEDROCK_SESSION".into()),
+            region: Some("us-east-1".into()),
+            ..Default::default()
+        };
+
+        let auth = resolve_bedrock_auth(&config)
+            .await
+            .expect("configured source resolves");
+        match &auth.provenance.source {
+            opi_ai::AuthProvenanceSource::AwsSigV4 {
+                source:
+                    opi_ai::AwsCredentialSource::ConfiguredEnvironment {
+                        secret_access_key_env,
+                        session_token_env,
+                    },
+            } => {
+                assert_eq!(secret_access_key_env, "OPI_TEST_BEDROCK_SECRET");
+                assert_eq!(
+                    session_token_env.as_deref(),
+                    Some("OPI_TEST_BEDROCK_SESSION")
+                );
+            }
+            other => panic!("unexpected provenance: {other:?}"),
+        }
+        let debug = format!("{auth:?} {config:?}");
+        for canary in [access, secret, session] {
+            assert!(
+                !debug.contains(canary),
+                "credential leaked through Debug: {debug}"
+            );
+        }
+
+        drop(_env);
+        let _blank_session_env = ScopedBedrockEnv::new(
+            &[
+                ("OPI_TEST_BEDROCK_SECRET", secret),
+                ("OPI_TEST_BEDROCK_SESSION", " \t"),
+            ],
+            &credentials_file,
+            &config_file,
+        );
+        let auth = resolve_bedrock_auth(&config)
+            .await
+            .expect("configured pair resolves without a blank optional token");
+        assert!(matches!(
+            auth.provenance.source,
+            opi_ai::AuthProvenanceSource::AwsSigV4 {
+                source: opi_ai::AwsCredentialSource::ConfiguredEnvironment {
+                    session_token_env: None,
+                    ..
+                }
+            }
+        ));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn bedrock_factory_resolves_environment_and_profile_sources_per_call() {
+        let _env_lock = BEDROCK_ENV_LOCK.lock().expect("Bedrock env lock");
+        let root = tempfile::tempdir().expect("temp root");
+        let credentials_file = root.path().join("credentials");
+        let config_file = root.path().join("config");
+        std::fs::write(&credentials_file, "").expect("credentials fixture");
+        std::fs::write(&config_file, "").expect("config fixture");
+        let _env = ScopedBedrockEnv::new(
+            &[
+                ("AWS_ACCESS_KEY_ID", "ENV_ACCESS"),
+                ("AWS_SECRET_ACCESS_KEY", "ENV_SECRET"),
+            ],
+            &credentials_file,
+            &config_file,
+        );
+        let mut config = OpiConfig::default();
+        config.providers.bedrock.profile = Some("fixture".into());
+        let (_provider, resolver) = build_bedrock(&config).expect("lazy Bedrock factory");
+
+        let environment = resolver.resolve().await.expect("environment source");
+        assert!(matches!(
+            environment.provenance.source,
+            opi_ai::AuthProvenanceSource::AwsSigV4 {
+                source: opi_ai::AwsCredentialSource::Environment
+            }
+        ));
+
+        // SAFETY: this test module serializes and restores these variables.
+        unsafe {
+            std::env::remove_var("AWS_ACCESS_KEY_ID");
+            std::env::remove_var("AWS_SECRET_ACCESS_KEY");
+        }
+        std::fs::write(
+            &credentials_file,
+            "[fixture]\naws_access_key_id=PROFILE_ACCESS\naws_secret_access_key=PROFILE_SECRET\n",
+        )
+        .expect("profile credentials fixture");
+        let profile = resolver
+            .resolve()
+            .await
+            .expect("credentials profile source");
+        assert!(matches!(
+            profile.provenance.source,
+            opi_ai::AuthProvenanceSource::AwsSigV4 {
+                source: opi_ai::AwsCredentialSource::ProfileFile
+            }
+        ));
+
+        std::fs::write(&credentials_file, "").expect("empty credentials fixture");
+        std::fs::write(
+            &config_file,
+            "[profile fixture]\naws_access_key_id=CONFIG_ACCESS\naws_secret_access_key=CONFIG_SECRET\n",
+        )
+        .expect("config credentials fixture");
+        let shared_config = resolver.resolve().await.expect("config profile source");
+        assert!(matches!(
+            shared_config.provenance.source,
+            opi_ai::AuthProvenanceSource::AwsSigV4 {
+                source: opi_ai::AwsCredentialSource::ConfigFile
+            }
+        ));
+    }
+
+    #[test]
+    fn bedrock_resolution_failures_retain_distinct_closed_safe_reasons() {
+        use opi_ai::bedrock::credentials::{CredentialResolutionError, CredentialSource};
+
+        let incomplete =
+            super::map_bedrock_resolution_error(CredentialResolutionError::IncompleteSource {
+                credential_source: CredentialSource::Environment,
+            });
+        let timeout = super::map_bedrock_resolution_error(
+            CredentialResolutionError::CredentialProcessTimeout,
+        );
+        let summary = |error: opi_ai::provider::ProviderError| match error {
+            opi_ai::provider::ProviderError::Config(summary) => summary,
+            other => panic!("expected config failure, got {other:?}"),
+        };
+        let incomplete = summary(incomplete);
+        let timeout = summary(timeout);
+
+        assert_ne!(incomplete.as_str(), "[REDACTED]");
+        assert_ne!(timeout.as_str(), "[REDACTED]");
+        assert_ne!(incomplete, timeout);
+        assert!(incomplete.as_str().contains("incomplete"));
+        assert!(timeout.as_str().contains("timed out"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn partial_bedrock_sources_fail_closed_before_lower_precedence_sources() {
+        let _env_lock = BEDROCK_ENV_LOCK.lock().expect("Bedrock env lock");
+        let root = tempfile::tempdir().expect("temp root");
+        let credentials_file = root.path().join("credentials");
+        let config_file = root.path().join("config");
+        std::fs::write(
+            &credentials_file,
+            "[default]\naws_access_key_id=PROFILE_ACCESS\naws_secret_access_key=PROFILE_SECRET\n",
+        )
+        .expect("credentials fixture");
+        std::fs::write(&config_file, "").expect("config fixture");
+
+        {
+            let _env = ScopedBedrockEnv::new(
+                &[
+                    ("AWS_ACCESS_KEY_ID", "ENV_ACCESS"),
+                    ("AWS_SECRET_ACCESS_KEY", "ENV_SECRET"),
+                ],
+                &credentials_file,
+                &config_file,
+            );
+            let config = BedrockProviderConfig {
+                access_key_id: Some("CONFIG_ACCESS".into()),
+                secret_access_key_env: Some("OPI_TEST_BEDROCK_SECRET".into()),
+                ..Default::default()
+            };
+            let mut listing_config = OpiConfig::default();
+            listing_config.providers.bedrock = config.clone();
+            let env_values = HashMap::from([
+                ("AWS_ACCESS_KEY_ID", "ENV_ACCESS"),
+                ("AWS_SECRET_ACCESS_KEY", "ENV_SECRET"),
+            ]);
+            let env_var = |name: &str| env_values.get(name).map(|value| (*value).to_owned());
+            assert_eq!(
+                super::bedrock_auth_presence(&listing_config, &env_var),
+                super::BedrockAuthPresence::MissingConfigPair {
+                    secret_env: Some("OPI_TEST_BEDROCK_SECRET".into()),
+                }
+            );
+            let listing = build_collection_for_listing_command(
+                &listing_config,
+                root.path().to_path_buf(),
+                Box::new(|| Box::new(FakeKeyringBackend::new())),
+            )
+            .await
+            .expect("listing collection");
+            assert!(listing.registry().get_provider("bedrock").is_none());
+            assert!(matches!(
+                resolve_bedrock_auth(&config).await,
+                Err(opi_ai::provider::ProviderError::Config(_))
+            ));
+
+            let token_only_config = BedrockProviderConfig {
+                session_token_env: Some("OPI_TEST_BEDROCK_SESSION".into()),
+                ..Default::default()
+            };
+            listing_config.providers.bedrock = token_only_config.clone();
+            assert_eq!(
+                super::bedrock_auth_presence(&listing_config, &env_var),
+                super::BedrockAuthPresence::MissingConfigPair { secret_env: None }
+            );
+            assert!(matches!(
+                resolve_bedrock_auth(&token_only_config).await,
+                Err(opi_ai::provider::ProviderError::Config(_))
+            ));
+        }
+
+        {
+            let _env = ScopedBedrockEnv::new(
+                &[("AWS_ACCESS_KEY_ID", "ENV_ACCESS")],
+                &credentials_file,
+                &config_file,
+            );
+            assert!(matches!(
+                resolve_bedrock_auth(&BedrockProviderConfig::default()).await,
+                Err(opi_ai::provider::ProviderError::Config(_))
+            ));
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn bedrock_whitespace_presence_matches_listing_and_doctor_while_runtime_stays_lazy() {
         struct Case {
             name: &'static str,
             access_key_id: Option<&'static str>,
@@ -2434,7 +2773,8 @@ mod tests {
             let _env = ScopedBedrockEnv::new(case.env, &credentials_file, &config_file);
             let mut config = OpiConfig::default();
             config.defaults.model = "bedrock:anthropic.claude-test".into();
-            config.providers.bedrock.access_key_id = case.access_key_id.map(str::to_owned);
+            config.providers.bedrock.access_key_id =
+                case.access_key_id.map(secrecy::SecretString::from);
             config.providers.bedrock.secret_access_key_env =
                 case.secret_access_key_env.map(str::to_owned);
             config.providers.bedrock.profile = case.configured.map(str::to_owned);
@@ -2483,10 +2823,9 @@ mod tests {
                 "{}: listing",
                 case.name
             );
-            assert_eq!(
+            assert!(
                 build_bedrock(&config).is_ok(),
-                case.expected_present,
-                "{}: runtime build",
+                "{}: runtime construction defers credential resolution",
                 case.name
             );
         }

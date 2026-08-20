@@ -14,11 +14,14 @@ use opi_agent::agent::Agent;
 use opi_agent::hooks::{
     AgentHooks, BeforeToolCallContext, BeforeToolCallResult, ShouldStopAfterTurnContext,
 };
-use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
+use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig, InvalidNextTurnReason};
 use opi_agent::message::AgentMessage;
 use opi_ai::provider::ProviderError;
 use opi_ai::test_support::{CountingAuthResolver, MockProvider, MockResponse, text_response};
-use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection, ProviderRegistry};
+use opi_ai::{
+    AuthProvenanceSource, CollectionError, CompatMetadata, ProviderCollection, ProviderRegistry,
+    RegistryError,
+};
 
 struct StopImmediatelyHooks;
 impl AgentHooks for StopImmediatelyHooks {
@@ -98,9 +101,9 @@ async fn prepare_call_resolves_auth_once_across_retries() {
 
     let result = agent.prompt("hi").await;
     assert!(
-        result.is_ok(),
+        result.error().is_none(),
         "prompt should succeed after retry: {:?}",
-        result.err()
+        result.error()
     );
 
     // Auth resolved exactly once across the two attempts (P17-PRV-003).
@@ -148,11 +151,15 @@ fn construction_preserves_registry_and_dispatch_failure_classes() {
     ));
     assert!(matches!(
         agent_construction_error(route(), "missing:mock-model"),
-        AgentError::UnknownProvider { .. }
+        AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::Route(
+            CollectionError::Registry(RegistryError::UnknownProvider(_))
+        ))
     ));
     assert!(matches!(
         agent_construction_error(route(), "mock:missing"),
-        AgentError::UnknownModel { .. }
+        AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::Route(
+            CollectionError::Registry(RegistryError::UnknownModel { .. })
+        ))
     ));
 
     let mut registry = ProviderRegistry::new();
@@ -167,6 +174,8 @@ fn construction_preserves_registry_and_dispatch_failure_classes() {
             ProviderCollection::from_registry(registry),
             "mock:mock-model"
         ),
-        AgentError::RouteNotDispatchable { .. }
+        AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::Route(
+            CollectionError::RouteNotDispatchable { .. }
+        ))
     ));
 }

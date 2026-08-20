@@ -12,20 +12,74 @@ use std::path::Path;
 use std::sync::Arc;
 
 use opi_agent::evidence::{
-    AssemblySource, AuthProvenanceSource, CallKind, EvidenceError, EvidenceRecorder, EvidenceSink,
-    InMemoryEvidenceSink,
+    AssemblyIdentity, CallKind, EvidenceError, EvidenceRecorder, EvidenceSink,
+    InMemoryEvidenceSink, ProviderInvocationFacts,
 };
 use opi_ai::test_support::{MockProvider, MockResponse, text_response};
 use opi_coding_agent::config::{ExecutionRunMode, OpiConfig};
 use opi_coding_agent::evidence::{EvidenceBuilderConfig, FileEvidenceSink};
-use opi_coding_agent::harness::CodingHarness;
+use opi_coding_agent::harness::{CodingHarness, ResumeInfo};
+use opi_coding_agent::policy::ToolSelection;
 use opi_coding_agent::project_trust::TrustDecision;
 
-/// Serialize `OPI_SESSIONS_DIR` mutation across this test binary. ONE lock is
-/// shared by every test that redirects the process-global sessions dir —
-/// per-function statics of the same name are distinct mutexes and would not
-/// serialize against each other.
-static SESSION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+struct RelabelProviderSink {
+    inner: Arc<InMemoryEvidenceSink>,
+}
+
+impl EvidenceSink for RelabelProviderSink {
+    fn setup(
+        &self,
+        binding: &opi_agent::evidence::RuntimeInputBinding,
+    ) -> Result<(), EvidenceError> {
+        self.inner.setup(binding)
+    }
+
+    fn emit(&self, record: &opi_agent::evidence::EvidenceRecord) -> Result<(), EvidenceError> {
+        let mut record = record.clone();
+        if matches!(
+            record.payload,
+            opi_agent::evidence::EvidencePayload::Provider(_)
+        ) {
+            record.kind = CallKind::Tool;
+        }
+        self.inner.emit(&record)
+    }
+
+    fn finalize_artifact(
+        &self,
+        artifact: &opi_agent::evidence::ArtifactReference,
+    ) -> Result<(), EvidenceError> {
+        self.inner.finalize_artifact(artifact)
+    }
+
+    fn finalize_run(
+        &self,
+        manifest: &opi_agent::evidence::FinalizedManifest,
+    ) -> Result<(), EvidenceError> {
+        self.inner.finalize_run(manifest)
+    }
+
+    fn abandon_run(
+        &self,
+        outcome: &opi_agent::evidence::TerminalOutcome,
+    ) -> Result<(), EvidenceError> {
+        self.inner.abandon_run(outcome)
+    }
+}
+
+impl EvidenceRecorder for RelabelProviderSink {
+    fn records(&self) -> Vec<opi_agent::evidence::EvidenceRecord> {
+        self.inner.records()
+    }
+
+    fn has_failure(&self) -> bool {
+        self.inner.has_failure()
+    }
+
+    fn completed_manifest(&self) -> Option<opi_agent::evidence::FinalizedManifest> {
+        self.inner.completed_manifest()
+    }
+}
 
 fn static_resolver() -> Arc<dyn opi_ai::auth::AuthResolver> {
     Arc::new(opi_ai::auth::StaticAuthResolver::new(
@@ -43,6 +97,46 @@ fn model_info(id: &str) -> opi_ai::provider::ModelInfo {
     )
 }
 
+struct RouteReportingProvider {
+    models: Vec<opi_ai::provider::ModelInfo>,
+    response_model: Option<String>,
+}
+
+impl RouteReportingProvider {
+    fn new(response_model: Option<&str>) -> Self {
+        Self {
+            models: vec![model_info("resolved-model")],
+            response_model: response_model.map(str::to_owned),
+        }
+    }
+}
+
+impl opi_ai::provider::Provider for RouteReportingProvider {
+    fn id(&self) -> &str {
+        "route-reporting"
+    }
+
+    fn models(&self) -> &[opi_ai::provider::ModelInfo] {
+        &self.models
+    }
+
+    fn stream_prepared(
+        &self,
+        _request: opi_ai::provider::Request,
+        _auth: opi_ai::auth::ResolvedAuth,
+    ) -> opi_ai::provider::EventStream {
+        let mut events = text_response("done");
+        for event in &mut events {
+            if let opi_ai::stream::AssistantStreamEvent::Done { message, .. } = event {
+                message.provider = self.id().to_owned();
+                message.model = "resolved-model".to_owned();
+                message.response_model = self.response_model.clone();
+            }
+        }
+        Box::pin(futures_util::stream::iter(events.into_iter().map(Ok)))
+    }
+}
+
 /// Build a `CodingHarness` over a mock provider whose evidence capture is bound
 /// to `recorder`. The caller keeps the `Arc<InMemoryEvidenceSink>` so it can
 /// inspect records and the finalized manifest after the run.
@@ -51,7 +145,7 @@ fn build_harness_with_evidence(
     user: &Path,
     responses: Vec<MockResponse>,
     recorder: Arc<InMemoryEvidenceSink>,
-    source: AssemblySource,
+    source: AssemblyIdentity,
 ) -> CodingHarness {
     let provider = MockProvider::new_with_errors("mock", responses);
     let recorder_dyn: Arc<dyn EvidenceRecorder> = recorder;
@@ -71,6 +165,196 @@ fn build_harness_with_evidence(
     .build()
 }
 
+fn empty_resume_info(workspace: &Path, sessions: &Path, session_id: &str) -> ResumeInfo {
+    let path = sessions.join(format!("{session_id}.jsonl"));
+    opi_agent::session::SessionWriter::create(
+        &path,
+        opi_agent::session::SessionHeader::new(
+            session_id.to_owned(),
+            "2026-08-20T00:00:00Z".to_owned(),
+            workspace.display().to_string(),
+            None,
+        ),
+    )
+    .unwrap();
+    ResumeInfo {
+        path,
+        session_id: session_id.to_owned(),
+        entries: Vec::new(),
+        original_cwd: workspace.to_path_buf(),
+        diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
+    }
+}
+
+fn resume_snapshot_from_path(path: &Path) -> (ResumeInfo, Vec<AgentMessage>) {
+    let (header, entries) = opi_agent::session::SessionReader::read_all(path).unwrap();
+    let reconstructed = opi_agent::session_context::reconstruct_context(
+        &entries,
+        &opi_agent::session::CrashRecovery::default(),
+    );
+    (
+        ResumeInfo {
+            path: path.to_path_buf(),
+            session_id: header.id,
+            entries,
+            original_cwd: Path::new(&header.cwd).to_path_buf(),
+            diagnostics: Vec::new(),
+            recorded_model: None,
+            recorded_thinking: None,
+        },
+        reconstructed.messages,
+    )
+}
+
+fn assert_sentinel_message_order(messages: &[Message], tool_sentinel: &str, assistant: &str) {
+    let tool_index = messages
+        .iter()
+        .position(|message| {
+            matches!(message, Message::ToolResult(_))
+                && serde_json::to_string(message)
+                    .unwrap()
+                    .contains(tool_sentinel)
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "typed tool-result message retains {tool_sentinel}: {}",
+                serde_json::to_string(messages).unwrap()
+            )
+        });
+    let assistant_index = messages
+        .iter()
+        .position(|message| {
+            matches!(message, Message::Assistant(_))
+                && serde_json::to_string(message).unwrap().contains(assistant)
+        })
+        .expect("typed terminal assistant message retains its unique sentinel");
+    assert!(
+        tool_index < assistant_index,
+        "the tool result precedes the terminal assistant outcome"
+    );
+}
+
+async fn assert_a11_failure_preserves_live_persisted_and_reopened_outcome(
+    failure: EvidenceError,
+    case: &str,
+) {
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    let tool_sentinel = format!("a11-{case}-tool-result-sentinel");
+    let assistant_sentinel = format!("a11-{case}-assistant-sentinel");
+    let tool_content_control = format!("a11-{case}-tool-content-control");
+    let fixture_name = format!("a11-{case}.txt");
+    std::fs::write(workspace.path().join(&fixture_name), tool_content_control).unwrap();
+    let sink = Arc::new(InMemoryEvidenceSink::new());
+    sink.inject_failure(failure);
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Events(opi_ai::test_support::tool_call_response(
+                &tool_sentinel,
+                "read",
+                &serde_json::json!({ "path": fixture_name }).to_string(),
+            )),
+            MockResponse::Events(text_response(&assistant_sentinel)),
+        ],
+    );
+    let resume = empty_resume_info(workspace.path(), sessions.path(), &format!("a11-{case}"));
+    let session_path = resume.path.clone();
+    let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".to_owned(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .global_config_dir(user.path().to_path_buf())
+    .tool_selection(ToolSelection::Allowlist(vec!["read".to_owned()]))
+    .resume(resume)
+    .evidence(EvidenceBuilderConfig {
+        recorder,
+        source: opi_coding_agent::evidence::SDK_ASSEMBLY.clone(),
+    })
+    .build();
+    let live_events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured_events = live_events.clone();
+    harness.subscribe(Box::new(move |event| {
+        captured_events.lock().unwrap().push(event.clone());
+    }));
+
+    let prompt = format!("a11-{case}-prompt");
+    assert!(matches!(
+        harness.prompt(&prompt).await,
+        Err(opi_agent::loop_types::AgentError::EvidenceFinalization(_))
+    ));
+    assert!(sink.has_failure());
+    assert!(sink.completed_manifest().is_none());
+    let live_messages = live_events
+        .lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .find_map(|event| match event {
+            opi_agent::event::AgentEvent::AgentEnd { messages } => Some(
+                messages
+                    .iter()
+                    .filter_map(|message| match message {
+                        AgentMessage::Llm(message) => Some(message.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .expect("the public live subscriber observes the terminal AgentEnd");
+    assert_sentinel_message_order(&live_messages, &tool_sentinel, &assistant_sentinel);
+
+    let session_bytes = std::fs::read(&session_path).unwrap();
+    assert!(!session_bytes.is_empty());
+    let session_text = String::from_utf8(session_bytes.clone()).unwrap();
+    assert!(session_text.contains(&tool_sentinel));
+    assert!(session_text.contains(&assistant_sentinel));
+    let (_, entries) = opi_agent::session::SessionReader::read_all(&session_path).unwrap();
+    let persisted_messages = entries
+        .iter()
+        .filter_map(|entry| match entry {
+            opi_agent::session::SessionEntry::Message(entry) => Some(entry.message.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_sentinel_message_order(&persisted_messages, &tool_sentinel, &assistant_sentinel);
+    drop(harness);
+
+    let recovery_provider = MockProvider::new("mock", vec![text_response("a11-recovery-control")]);
+    let recovery_calls = recovery_provider.call_log_handle();
+    let (resume, initial_messages) = resume_snapshot_from_path(&session_path);
+    let mut reloader = CodingHarness::builder(
+        Box::new(recovery_provider),
+        "mock:mock-model".to_owned(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .global_config_dir(user.path().to_path_buf())
+    .initial_messages(initial_messages)
+    .resume(resume)
+    .build();
+    let reopen_prompt = format!("a11-{case}-reopen-prompt");
+    reloader.prompt(&reopen_prompt).await.unwrap();
+    let calls = recovery_calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_sentinel_message_order(&calls[0].messages, &tool_sentinel, &assistant_sentinel);
+    assert!(
+        std::fs::read(&session_path)
+            .unwrap()
+            .starts_with(&session_bytes)
+    );
+    assert!(sink.completed_manifest().is_none());
+}
+
 // ===========================================================================
 // P17-EVD-003 / P17-EVD-007 / P17-EVD-008 — setup → emit → finalize lifecycle
 // ===========================================================================
@@ -85,7 +369,7 @@ async fn evidence_capture_finalizes_direct_runtime_input_manifest() {
         user.path(),
         vec![MockResponse::Events(text_response("done"))],
         sink.clone(),
-        AssemblySource::Cli,
+        opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     );
     let messages = harness.prompt("hello").await.expect("run completes");
     assert!(!messages.is_empty(), "the run produced assistant output");
@@ -113,10 +397,21 @@ async fn evidence_capture_finalizes_direct_runtime_input_manifest() {
         manifest.binding.is_direct(),
         "direct CLI run binds DirectRuntimeInput"
     );
-    // The strict manifest passes its own completeness gate.
-    manifest
-        .require_complete()
-        .expect("finalized manifest passes the strict completeness gate");
+    assert!(matches!(
+        &manifest.binding,
+        opi_agent::evidence::RuntimeInputBinding::DirectRuntimeInput {
+            assembly_source,
+            ..
+        } if assembly_source == &*opi_coding_agent::evidence::CLI_ASSEMBLY
+    ));
+    assert!(matches!(
+        manifest.session,
+        opi_agent::evidence::SessionBinding::Branch { .. }
+    ));
+    assert!(matches!(
+        manifest.environment.trigger,
+        opi_agent::evidence::ExecutionTrigger::Invocation
+    ));
     assert!(
         manifest.input_identity.system_digest.is_some(),
         "the exact resolved system instruction is addressed"
@@ -135,9 +430,163 @@ async fn evidence_capture_finalizes_direct_runtime_input_manifest() {
         ),
         "the configured run budget is distinguished from unknown"
     );
-    assert_eq!(manifest.route.actual.provider_id, "mock");
-    assert_eq!(manifest.route.actual.model_id, "mock-model");
-    assert_eq!(manifest.route.actual_reason, None);
+    let route = manifest
+        .provider
+        .route()
+        .expect("provider-backed run retains route facts");
+    assert!(matches!(
+        route.actual(),
+        opi_agent::evidence::ActualRoute::WireUnknown { route, reason }
+            if route.provider_id() == "mock"
+                && route.model_id() == "mock-model"
+                && *reason == opi_agent::evidence::UnknownReason::NotReported
+    ));
+}
+
+#[tokio::test]
+async fn product_route_evidence_distinguishes_unreported_and_reported_actual_models() {
+    let sessions = tempfile::tempdir().unwrap();
+
+    for (index, (reported, expected_actual)) in [
+        (None, "resolved-model"),
+        (Some("provider-reported-model"), "provider-reported-model"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let workspace = tempfile::tempdir().unwrap();
+        let user = tempfile::tempdir().unwrap();
+        let sink = Arc::new(InMemoryEvidenceSink::new());
+        let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
+        let mut harness = CodingHarness::builder(
+            Box::new(RouteReportingProvider::new(reported)),
+            "route-reporting:resolved-model".to_owned(),
+            OpiConfig::default(),
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(user.path().to_path_buf())
+        .execution_mode(ExecutionRunMode::Interactive)
+        .resume(empty_resume_info(
+            workspace.path(),
+            sessions.path(),
+            &format!("route-evidence-{index}"),
+        ))
+        .evidence(EvidenceBuilderConfig {
+            recorder,
+            source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
+        })
+        .build();
+
+        harness.prompt("hello").await.unwrap();
+
+        let manifest = sink.completed_manifest().expect("manifest finalizes");
+        let route = manifest.provider.route().expect("provider route applies");
+        assert_eq!(route.requested().model_id(), "resolved-model");
+        assert_eq!(route.resolved().model_id(), "resolved-model");
+        assert!(matches!(
+            route.actual(),
+            opi_agent::evidence::ActualRoute::WireUnknown { route, reason }
+                if route.provider_id() == "route-reporting"
+                    && route.model_id() == expected_actual
+                    && *reason == opi_agent::evidence::UnknownReason::NotReported
+        ));
+        if reported.is_some() {
+            assert_ne!(
+                route.actual(),
+                &opi_agent::evidence::ActualRoute::wire_unknown(
+                    "route-reporting",
+                    route.resolved().model_id(),
+                    opi_agent::evidence::UnknownReason::NotReported,
+                )
+                .unwrap(),
+                "a reported actual model is not rewritten to the resolved model"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn consecutive_product_turns_reproject_the_current_tool_authority() {
+    let sessions = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    std::fs::write(
+        workspace.path().join("projection.txt"),
+        "projection-control",
+    )
+    .unwrap();
+    let args = serde_json::json!({ "path": "projection.txt" }).to_string();
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Events(opi_ai::test_support::tool_call_response(
+                "projection-read-1",
+                "read",
+                &args,
+            )),
+            MockResponse::Events(opi_ai::test_support::tool_call_response(
+                "projection-read-2",
+                "read",
+                &args,
+            )),
+            MockResponse::Events(text_response("projection complete")),
+        ],
+    );
+    let calls = provider.call_log_handle();
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".to_owned(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .global_config_dir(user.path().to_path_buf())
+    .resume(empty_resume_info(
+        workspace.path(),
+        sessions.path(),
+        "consecutive-tool-projection",
+    ))
+    .tool_selection(opi_coding_agent::policy::ToolSelection::Allowlist(vec![
+        "read".to_owned(),
+    ]))
+    .build();
+
+    harness
+        .prompt("read the control twice")
+        .await
+        .expect("both real product tool turns complete");
+
+    let requests = calls.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    for (index, request) in requests.iter().enumerate() {
+        let names = request
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            ["read"],
+            "provider request {index} must reproject the current trusted allowlist"
+        );
+    }
+    assert_eq!(
+        requests[1]
+            .messages
+            .iter()
+            .filter(|message| matches!(message, opi_ai::message::Message::ToolResult(_)))
+            .count(),
+        1
+    );
+    assert_eq!(
+        requests[2]
+            .messages
+            .iter()
+            .filter(|message| matches!(message, opi_ai::message::Message::ToolResult(_)))
+            .count(),
+        2
+    );
 }
 
 // ===========================================================================
@@ -147,34 +596,13 @@ async fn evidence_capture_finalizes_direct_runtime_input_manifest() {
 
 #[tokio::test]
 async fn evidence_emission_failure_withholds_manifest_and_preserves_outcome() {
-    let workspace = tempfile::tempdir().unwrap();
-    let user = tempfile::tempdir().unwrap();
-    let sink = Arc::new(InMemoryEvidenceSink::new());
-    // The first emit (the provider record) fails, advancing health to
-    // incomplete. The run's actual execution outcome is still preserved.
-    sink.inject_failure(EvidenceError::Emission {
-        detail: "product emission failure".to_owned(),
-    });
-    let mut harness = build_harness_with_evidence(
-        workspace.path(),
-        user.path(),
-        vec![MockResponse::Events(text_response("done"))],
-        sink.clone(),
-        AssemblySource::Sdk,
-    );
-    // Provider execution still occurs, but explicit capture is fail-visible at
-    // the public operation boundary.
-    let result = harness.prompt("hello").await;
-    assert!(matches!(
-        result,
-        Err(opi_agent::loop_types::AgentError::EvidenceFinalization(_))
-    ));
-
-    assert!(sink.has_failure(), "the emission failure advanced health");
-    assert!(
-        sink.completed_manifest().is_none(),
-        "an incomplete run produces no finalized manifest"
-    );
+    assert_a11_failure_preserves_live_persisted_and_reopened_outcome(
+        EvidenceError::Emission {
+            detail: "product emission failure".to_owned(),
+        },
+        "emission",
+    )
+    .await;
 }
 
 // ===========================================================================
@@ -203,7 +631,7 @@ async fn setup_failure_aborts_before_provider_call() {
     .global_config_dir(user.path().to_path_buf())
     .evidence(EvidenceBuilderConfig {
         recorder,
-        source: AssemblySource::Cli,
+        source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
 
@@ -229,39 +657,13 @@ async fn setup_failure_aborts_before_provider_call() {
 
 #[tokio::test]
 async fn finalization_failure_withholds_manifest_through_harness() {
-    let workspace = tempfile::tempdir().unwrap();
-    let user = tempfile::tempdir().unwrap();
-    let sink = Arc::new(InMemoryEvidenceSink::new());
-    sink.inject_failure(EvidenceError::Finalization {
-        detail: "capture finalization failure".to_owned(),
-    });
-    let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
-    let mut harness = CodingHarness::builder(
-        Box::new(MockProvider::new("mock", vec![text_response("done")])),
-        "mock:mock-model".to_owned(),
-        OpiConfig::default(),
-        workspace.path().to_path_buf(),
-        TrustDecision::Trusted,
+    assert_a11_failure_preserves_live_persisted_and_reopened_outcome(
+        EvidenceError::Finalization {
+            detail: "capture finalization failure".to_owned(),
+        },
+        "finalization",
     )
-    .global_config_dir(user.path().to_path_buf())
-    .evidence(EvidenceBuilderConfig {
-        recorder,
-        source: AssemblySource::Cli,
-    })
-    .build();
-
-    // The model work completes, but explicit capture failure is observable at
-    // the public operation boundary and the manifest is withheld.
-    let result = harness.prompt("hello").await;
-    assert!(matches!(
-        result,
-        Err(opi_agent::loop_types::AgentError::EvidenceFinalization(_))
-    ));
-    assert!(sink.has_failure(), "finalization failure is recorded");
-    assert!(
-        sink.completed_manifest().is_none(),
-        "the finalized manifest is withheld"
-    );
+    .await;
 }
 
 // ===========================================================================
@@ -269,13 +671,415 @@ async fn finalization_failure_withholds_manifest_through_harness() {
 // contract and writes durable evidence.jsonl + manifest.json
 // ===========================================================================
 
+struct EvidenceLifecycleFixture {
+    binding: opi_agent::evidence::RuntimeInputBinding,
+    record: opi_agent::evidence::EvidenceRecord,
+    artifact: opi_agent::evidence::ArtifactReference,
+    manifest: opi_agent::evidence::FinalizedManifest,
+}
+
+fn evidence_lifecycle_fixture() -> EvidenceLifecycleFixture {
+    use opi_agent::evidence::{
+        ActualRoute, ArtifactLocation, ArtifactReference, ArtifactRole, ConfigIdentity,
+        ContentDigest, EnvironmentFacts, EvidenceCompleteness, EvidencePayload, EvidenceRecord,
+        EvidenceRunObservation, ExecutionTrigger, FinalizationState, IdentityAllocator,
+        InputIdentity, ManifestCandidate, ManifestCorrelation, Measurement, MediaType,
+        PlatformIdentity, ProvenanceFacts, ProviderEvidenceFacts, ProviderInvocationFacts,
+        RequestedRoute, RouteFacts, RouteSelection, RuntimeInputBinding, SensitivityClassification,
+        SessionBinding, TerminalOutcome, UnknownReason, UsageFacts, UserPolicyFacts,
+    };
+
+    let digest = |nibble: char| {
+        ContentDigest::from_hex(nibble.to_string().repeat(64)).expect("valid sha256 hex")
+    };
+    let binding = RuntimeInputBinding::direct(
+        digest('1'),
+        opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
+    );
+    let provenance = ProvenanceFacts::from_auth(&opi_ai::auth::AuthProvenance {
+        source: opi_ai::auth::AuthProvenanceSource::Static,
+        fallback: opi_ai::auth::AuthFallback::NotAttempted,
+    })
+    .unwrap();
+    let route = RouteFacts::new(
+        RequestedRoute::new("contract", "requested").unwrap(),
+        RouteSelection::new("contract", "resolved", opi_ai::WireApi::OpenAiCompletions).unwrap(),
+        ActualRoute::unknown(UnknownReason::NotReported),
+    );
+    let mut identities = IdentityAllocator::new();
+    let record = EvidenceRecord {
+        run: identities.run_id(),
+        turn: Some(identities.next_turn()),
+        call: identities.next_call(),
+        parent: None,
+        sequence: identities.next_sequence(),
+        kind: CallKind::Provider,
+        payload: EvidencePayload::Provider(ProviderEvidenceFacts {
+            route: route.clone(),
+            provenance: provenance.clone(),
+        }),
+    };
+    let artifact = ArtifactReference {
+        role: ArtifactRole::ProviderBody,
+        media_type: MediaType::new("application/json"),
+        content_digest: digest('2'),
+        location: ArtifactLocation::new("artifact://phase17/finalized-control"),
+        sensitivity: SensitivityClassification::Public,
+        finalization: FinalizationState::Finalized,
+    };
+    let candidate = ManifestCandidate {
+        correlation: ManifestCorrelation {
+            run: record.run,
+            turn: record.turn,
+            call: Some(record.call),
+            parent: record.parent,
+            sequence: record.sequence,
+        },
+        outcome: TerminalOutcome::Success,
+        session: SessionBinding::NoSession,
+        binding: binding.clone(),
+        config: ConfigIdentity {
+            harness_digest: digest('3'),
+            runtime_digest: digest('4'),
+            adapter_digest: digest('5'),
+            material_digest: digest('6'),
+        },
+        provider: ProviderInvocationFacts::applicable(route, provenance),
+        policy: UserPolicyFacts {
+            policy_digest: digest('7'),
+            capability: None,
+            permission_ref: None,
+            permission_scope: None,
+            scoped_grant_ref: None,
+        },
+        input_identity: InputIdentity {
+            prompt_digest: digest('8'),
+            system_digest: Some(digest('9')),
+            tool_schema_digests: vec![digest('a')],
+        },
+        environment: EnvironmentFacts {
+            budget: Measurement::provider_reported(1),
+            trigger: ExecutionTrigger::Invocation,
+            time: Measurement::Unknown {
+                reason: UnknownReason::NotReported,
+            },
+            platform: PlatformIdentity::new("test-platform"),
+        },
+        usage: UsageFacts {
+            input_tokens: Measurement::provider_reported(1),
+            output_tokens: Measurement::provider_reported(1),
+        },
+        artifacts: vec![artifact.clone()],
+        completeness: EvidenceCompleteness::Complete,
+    };
+    let manifest = candidate
+        .validate(EvidenceRunObservation::new(
+            &binding,
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&artifact),
+        ))
+        .unwrap();
+    EvidenceLifecycleFixture {
+        binding,
+        record,
+        artifact,
+        manifest,
+    }
+}
+
+fn assert_complete_recorder_lifecycle(recorder: &dyn EvidenceRecorder) {
+    let fixture = evidence_lifecycle_fixture();
+    recorder.setup(&fixture.binding).unwrap();
+    recorder.emit(&fixture.record).unwrap();
+    recorder.finalize_artifact(&fixture.artifact).unwrap();
+    recorder.finalize_run(&fixture.manifest).unwrap();
+    assert_eq!(recorder.records().len(), 1);
+    assert!(!recorder.has_failure());
+    assert_eq!(recorder.completed_manifest(), Some(fixture.manifest));
+}
+
+#[test]
+fn file_and_in_memory_recorders_share_complete_artifact_lifecycle() {
+    let file_root = tempfile::tempdir().unwrap();
+    let file = FileEvidenceSink::new(file_root.path());
+    let memory = InMemoryEvidenceSink::new();
+
+    assert_complete_recorder_lifecycle(&file);
+    assert_complete_recorder_lifecycle(&memory);
+
+    let run_dir = file.completed_run_dirs().into_iter().next().unwrap();
+    let evidence_bytes = std::fs::read(run_dir.join("evidence.jsonl")).unwrap();
+    let manifest_bytes = std::fs::read(run_dir.join("manifest.json")).unwrap();
+    assert!(!evidence_bytes.is_empty());
+    assert!(!manifest_bytes.is_empty());
+    let manifest_json: serde_json::Value = serde_json::from_slice(&manifest_bytes).unwrap();
+    assert_eq!(
+        manifest_json["artifacts"][0]["location"],
+        "artifact://phase17/finalized-control"
+    );
+    assert_eq!(memory.artifacts(), [evidence_lifecycle_fixture().artifact]);
+}
+
+#[test]
+fn file_evidence_setup_failure_poisons_recorder_health() {
+    use opi_agent::evidence::{ContentDigest, RuntimeInputBinding};
+
+    let blocked_root = tempfile::NamedTempFile::new().unwrap();
+    let sink = FileEvidenceSink::new(blocked_root.path());
+    let binding = RuntimeInputBinding::direct(
+        ContentDigest::from_hex("d".repeat(64)).unwrap(),
+        opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
+    );
+
+    assert!(matches!(
+        sink.setup(&binding),
+        Err(EvidenceError::Setup { .. })
+    ));
+    assert!(
+        sink.has_failure(),
+        "a real file-adapter setup failure makes the lifecycle incomplete"
+    );
+    assert!(sink.completed_manifest().is_none());
+}
+
+#[test]
+fn file_evidence_artifact_failure_poisons_health_and_abandon_recovers() {
+    let root = tempfile::tempdir().unwrap();
+    let sink = FileEvidenceSink::new(root.path());
+    let fixture = evidence_lifecycle_fixture();
+
+    sink.setup(&fixture.binding).unwrap();
+    sink.abandon_run(&opi_agent::evidence::TerminalOutcome::Failed)
+        .unwrap();
+    assert!(matches!(
+        sink.finalize_artifact(&fixture.artifact),
+        Err(EvidenceError::Finalization { .. })
+    ));
+    assert!(sink.has_failure());
+    assert!(sink.completed_manifest().is_none());
+
+    assert_complete_recorder_lifecycle(&sink);
+    assert_eq!(sink.completed_run_dirs().len(), 1);
+}
+
+#[test]
+fn file_evidence_abandon_failure_poisons_health_and_next_setup_recovers() {
+    let root = tempfile::tempdir().unwrap();
+    let sink = FileEvidenceSink::new(root.path());
+    let fixture = evidence_lifecycle_fixture();
+
+    sink.setup(&fixture.binding).unwrap();
+    sink.abandon_run(&opi_agent::evidence::TerminalOutcome::Failed)
+        .unwrap();
+    assert!(matches!(
+        sink.abandon_run(&opi_agent::evidence::TerminalOutcome::Failed),
+        Err(EvidenceError::Finalization { .. })
+    ));
+    assert!(sink.has_failure());
+    assert!(sink.completed_manifest().is_none());
+
+    assert_complete_recorder_lifecycle(&sink);
+    assert_eq!(sink.completed_run_dirs().len(), 1);
+}
+
+fn assert_artifact_observation_mismatch_is_incomplete(recorder: &dyn EvidenceRecorder) {
+    let fixture = evidence_lifecycle_fixture();
+    recorder.setup(&fixture.binding).unwrap();
+    recorder.emit(&fixture.record).unwrap();
+    assert!(matches!(
+        recorder.finalize_run(&fixture.manifest),
+        Err(EvidenceError::Finalization { .. })
+    ));
+    assert!(recorder.has_failure());
+    assert!(recorder.completed_manifest().is_none());
+    recorder
+        .abandon_run(&opi_agent::evidence::TerminalOutcome::Failed)
+        .unwrap();
+    assert_complete_recorder_lifecycle(recorder);
+}
+
+#[test]
+fn file_and_in_memory_recorders_reject_artifact_observation_mismatch_and_recover() {
+    let file_root = tempfile::tempdir().unwrap();
+    let file = FileEvidenceSink::new(file_root.path());
+    let memory = InMemoryEvidenceSink::new();
+
+    assert_artifact_observation_mismatch_is_incomplete(&file);
+    assert_artifact_observation_mismatch_is_incomplete(&memory);
+    assert_eq!(file.completed_run_dirs().len(), 1);
+}
+
+#[test]
+fn poisoned_file_lifecycle_cannot_publish_a_later_matching_manifest() {
+    let root = tempfile::tempdir().unwrap();
+    let sink = FileEvidenceSink::new(root.path());
+    let fixture = evidence_lifecycle_fixture();
+
+    sink.setup(&fixture.binding).unwrap();
+    let mut malformed = fixture.record.clone();
+    malformed.kind = CallKind::Tool;
+    assert!(matches!(
+        sink.emit(&malformed),
+        Err(EvidenceError::Emission { .. })
+    ));
+    assert!(sink.has_failure());
+    sink.emit(&fixture.record).unwrap();
+    sink.finalize_artifact(&fixture.artifact).unwrap();
+
+    assert!(matches!(
+        sink.finalize_run(&fixture.manifest),
+        Err(EvidenceError::Finalization { .. })
+    ));
+    assert!(sink.has_failure());
+    assert!(sink.completed_manifest().is_none());
+    assert!(sink.completed_run_dirs().is_empty());
+    assert!(
+        std::fs::read_dir(root.path()).unwrap().all(|entry| !entry
+            .unwrap()
+            .path()
+            .join("manifest.json")
+            .exists())
+    );
+
+    sink.abandon_run(&opi_agent::evidence::TerminalOutcome::Failed)
+        .unwrap();
+    assert_complete_recorder_lifecycle(&sink);
+    assert_eq!(sink.completed_run_dirs().len(), 1);
+}
+
+#[test]
+fn file_publish_failure_requires_abandon_and_cleans_temporary_manifest() {
+    let root = tempfile::tempdir().unwrap();
+    let sink = FileEvidenceSink::new(root.path());
+    let fixture = evidence_lifecycle_fixture();
+
+    sink.setup(&fixture.binding).unwrap();
+    sink.emit(&fixture.record).unwrap();
+    sink.finalize_artifact(&fixture.artifact).unwrap();
+    let run_dir = std::fs::read_dir(root.path())
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let manifest_path = run_dir.join("manifest.json");
+    let temporary_path = run_dir.join(".manifest.json.tmp");
+    std::fs::create_dir(&manifest_path).unwrap();
+
+    assert!(matches!(
+        sink.finalize_run(&fixture.manifest),
+        Err(EvidenceError::Finalization { .. })
+    ));
+    assert!(sink.has_failure());
+    assert!(sink.completed_manifest().is_none());
+    assert!(sink.completed_run_dirs().is_empty());
+    assert!(temporary_path.is_file());
+    assert!(manifest_path.is_dir());
+    assert!(matches!(
+        sink.setup(&fixture.binding),
+        Err(EvidenceError::Setup { .. })
+    ));
+    assert!(temporary_path.is_file());
+
+    sink.abandon_run(&opi_agent::evidence::TerminalOutcome::Failed)
+        .unwrap();
+    assert!(!temporary_path.exists());
+    assert_complete_recorder_lifecycle(&sink);
+    assert_eq!(sink.completed_run_dirs().len(), 1);
+}
+
+#[test]
+fn completed_file_lifecycle_rejects_artifacts_without_poisoning_published_result() {
+    let root = tempfile::tempdir().unwrap();
+    let sink = FileEvidenceSink::new(root.path());
+    let fixture = evidence_lifecycle_fixture();
+
+    assert_complete_recorder_lifecycle(&sink);
+    let published_manifest = sink.completed_manifest().unwrap();
+    let run_dir = sink.completed_run_dirs().into_iter().next().unwrap();
+    let manifest_path = run_dir.join("manifest.json");
+    let manifest_bytes = std::fs::read(&manifest_path).unwrap();
+
+    assert!(matches!(
+        sink.finalize_artifact(&fixture.artifact),
+        Err(EvidenceError::Finalization { .. })
+    ));
+    assert!(!sink.has_failure());
+    assert_eq!(sink.completed_manifest(), Some(published_manifest));
+    assert_eq!(sink.completed_run_dirs(), [run_dir]);
+    assert_eq!(std::fs::read(manifest_path).unwrap(), manifest_bytes);
+}
+
+#[test]
+fn concurrent_artifact_and_run_finalization_leave_one_coherent_file_state() {
+    let root = tempfile::tempdir().unwrap();
+    let sink = Arc::new(FileEvidenceSink::new(root.path()));
+
+    for _ in 0..16 {
+        let fixture = evidence_lifecycle_fixture();
+        sink.setup(&fixture.binding).unwrap();
+        sink.emit(&fixture.record).unwrap();
+        let completed_before = sink.completed_run_dirs().len();
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+
+        let artifact_sink = sink.clone();
+        let artifact = fixture.artifact.clone();
+        let artifact_barrier = barrier.clone();
+        let artifact_task = std::thread::spawn(move || {
+            artifact_barrier.wait();
+            artifact_sink.finalize_artifact(&artifact)
+        });
+        let manifest_sink = sink.clone();
+        let manifest = fixture.manifest.clone();
+        let manifest_barrier = barrier.clone();
+        let manifest_task = std::thread::spawn(move || {
+            manifest_barrier.wait();
+            manifest_sink.finalize_run(&manifest)
+        });
+        barrier.wait();
+
+        let artifact_result = artifact_task.join().unwrap();
+        let manifest_result = manifest_task.join().unwrap();
+        if manifest_result.is_ok() {
+            assert!(artifact_result.is_ok());
+            assert!(!sink.has_failure());
+            assert!(sink.completed_manifest().is_some());
+            assert_eq!(sink.completed_run_dirs().len(), completed_before + 1);
+        } else {
+            assert!(sink.has_failure());
+            assert!(sink.completed_manifest().is_none());
+            assert_eq!(sink.completed_run_dirs().len(), completed_before);
+            sink.abandon_run(&opi_agent::evidence::TerminalOutcome::Failed)
+                .unwrap();
+        }
+        let completed_dirs = sink.completed_run_dirs();
+        let disk_dirs = std::fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            disk_dirs
+                .iter()
+                .filter(|dir| dir.join("manifest.json").is_file())
+                .count(),
+            completed_dirs.len()
+        );
+        assert!(
+            disk_dirs
+                .iter()
+                .all(|dir| !dir.join(".manifest.json.tmp").exists())
+        );
+    }
+}
+
 #[test]
 fn file_evidence_sink_writes_records_and_manifest() {
-    use opi_agent::diagnostic::RedactionMode;
     use opi_agent::evidence::{
-        ConfigIdentity, ContentDigest, EvidencePayload, EvidenceRecord, EvidenceRecorder,
-        IdentityAllocator, Measurement, MeasurementOrigin, RedactedValue, RuntimeInputBinding,
-        TerminalOutcome, UnknownReason, UsageFacts,
+        ActualRoute, AuthFallbackFacts, AuthSourceFacts, ConfigIdentity, ContentDigest,
+        EvidencePayload, EvidenceRecord, EvidenceRecorder, ExecutionTrigger, IdentityAllocator,
+        Measurement, MeasurementOrigin, ProvenanceFacts, ProviderEvidenceFacts, RequestedRoute,
+        RouteFacts, RouteSelection, RuntimeInputBinding, SessionBinding, TerminalOutcome,
+        UnknownReason, UsageFacts,
     };
     use opi_coding_agent::evidence::{EvidenceCapture, RunDynamicFacts, build_finalized_manifest};
 
@@ -285,13 +1089,34 @@ fn file_evidence_sink_writes_records_and_manifest() {
 
     let dir = tempfile::tempdir().unwrap();
     let sink = Arc::new(FileEvidenceSink::new(dir.path()));
-    let binding = RuntimeInputBinding::direct(digest('d'), AssemblySource::Cli);
+    let binding = RuntimeInputBinding::direct(
+        digest('d'),
+        opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
+    );
     sink.setup(&binding)
         .expect("setup creates the capture file");
 
     // Emit one provider record (route facts payload, as the loop does).
     let mut ids = IdentityAllocator::new();
     let run = ids.run_id();
+    let provenance = ProvenanceFacts::from_auth(&opi_ai::auth::AuthProvenance {
+        source: opi_ai::auth::AuthProvenanceSource::Environment {
+            name: "MOCK_API_KEY".to_owned(),
+        },
+        fallback: opi_ai::auth::AuthFallback::Used {
+            from: opi_ai::auth::AuthProvenanceSource::Static,
+            to: opi_ai::auth::AuthProvenanceSource::Environment {
+                name: "MOCK_API_KEY".to_owned(),
+            },
+            reason: "configured source unavailable".to_owned(),
+        },
+    })
+    .unwrap();
+    let route = RouteFacts::new(
+        RequestedRoute::new("mock", "requested-model").unwrap(),
+        RouteSelection::new("mock", "resolved-model", opi_ai::WireApi::OpenAiCompletions).unwrap(),
+        ActualRoute::wire_unknown("mock", "actual-model", UnknownReason::NotReported).unwrap(),
+    );
     let record = EvidenceRecord {
         run,
         turn: Some(ids.next_turn()),
@@ -299,17 +1124,36 @@ fn file_evidence_sink_writes_records_and_manifest() {
         parent: None,
         sequence: ids.next_sequence(),
         kind: CallKind::Provider,
-        payload: EvidencePayload::Structured(RedactedValue::redacted(
-            serde_json::json!({
-                "requested_route": "mock:mock-model",
-                "resolved": { "provider": "mock", "model": "mock-model", "wire": "openai-completions" },
-                "actual": { "provider": "mock", "model": "mock-model", "wire": "openai-completions" },
-                "auth_source": "environment",
-                "fallback": "used",
-            }),
-            RedactionMode::Summary,
-        )),
+        payload: EvidencePayload::Provider(ProviderEvidenceFacts {
+            route: route.clone(),
+            provenance: provenance.clone(),
+        }),
     };
+
+    let malformed_dir = tempfile::tempdir().unwrap();
+    let malformed_sink = FileEvidenceSink::new(malformed_dir.path());
+    malformed_sink.setup(&binding).unwrap();
+    let mut malformed_emit = record.clone();
+    malformed_emit.kind = CallKind::Tool;
+    assert!(matches!(
+        malformed_sink.emit(&malformed_emit),
+        Err(EvidenceError::Emission { .. })
+    ));
+    assert!(malformed_sink.has_failure());
+    assert!(malformed_sink.records().is_empty());
+    let malformed_run_dir = std::fs::read_dir(malformed_dir.path())
+        .unwrap()
+        .next()
+        .expect("setup allocated one run directory")
+        .unwrap()
+        .path();
+    assert!(
+        std::fs::read(malformed_run_dir.join("evidence.jsonl"))
+            .unwrap()
+            .is_empty(),
+        "a rejected record must not reach the file"
+    );
+
     sink.emit(&record).expect("emit appends one JSONL record");
 
     // The recorder sees the emitted record and no failure.
@@ -319,7 +1163,7 @@ fn file_evidence_sink_writes_records_and_manifest() {
     // Finalize a strict manifest built from the capture + recorded route.
     let capture = EvidenceCapture {
         recorder: sink.clone(),
-        source: AssemblySource::Cli,
+        source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
         binding: binding.clone(),
         config: ConfigIdentity {
             harness_digest: digest('1'),
@@ -330,20 +1174,18 @@ fn file_evidence_sink_writes_records_and_manifest() {
         policy: opi_agent::evidence::UserPolicyFacts {
             policy_digest: digest('c'),
             capability: None,
+            permission_ref: None,
+            permission_scope: None,
+            scoped_grant_ref: None,
         },
         system_digest: Some(digest('f')),
         tool_schema_digests: vec![digest('9')],
-        configured_route: opi_agent::evidence::RouteSelection {
-            provider_id: "mock".to_owned(),
-            model_id: "mock-model".to_owned(),
-            wire: opi_ai::WireApi::OpenAiCompletions,
-        },
         budget: Measurement::Known {
             value: 50,
             origin: MeasurementOrigin::Quota,
         },
     };
-    let dynamic = RunDynamicFacts {
+    let dynamic = || RunDynamicFacts {
         outcome: TerminalOutcome::Success,
         usage: UsageFacts {
             input_tokens: Measurement::Unknown {
@@ -354,28 +1196,119 @@ fn file_evidence_sink_writes_records_and_manifest() {
                 origin: MeasurementOrigin::ProviderReported,
             },
         },
-        session_branch: None,
+        session: SessionBinding::NoSession,
         prompt_digest: digest('e'),
-        actual_route: Some(opi_agent::evidence::RouteSelection {
-            provider_id: "mock".to_owned(),
-            model_id: "mock-model".to_owned(),
-            wire: opi_ai::WireApi::OpenAiCompletions,
-        }),
+        trigger: ExecutionTrigger::Invocation,
     };
-    let manifest = build_finalized_manifest(&capture, &sink.records(), dynamic);
-    manifest.require_complete().expect("manifest is complete");
+    let mut malformed_record = record.clone();
+    malformed_record.payload = EvidencePayload::Digest(digest('0'));
+    assert!(
+        build_finalized_manifest(&capture, &[malformed_record], dynamic()).is_err(),
+        "a provider-kind record without typed provider facts fails closed"
+    );
+
+    let mut provider_payload_under_tool_kind = record.clone();
+    provider_payload_under_tool_kind.kind = CallKind::Tool;
+    assert!(
+        build_finalized_manifest(
+            &capture,
+            std::slice::from_ref(&provider_payload_under_tool_kind),
+            dynamic(),
+        )
+        .is_err(),
+        "product assembly must reject a Provider payload under a non-Provider kind"
+    );
+
+    let malformed_terminal = EvidenceRecord {
+        run,
+        turn: record.turn,
+        call: ids.next_call(),
+        parent: None,
+        sequence: ids.next_sequence(),
+        kind: CallKind::Provider,
+        payload: EvidencePayload::Digest(digest('0')),
+    };
+    let mixed_records = [record.clone(), malformed_terminal];
+    assert!(
+        build_finalized_manifest(&capture, &mixed_records, dynamic()).is_err(),
+        "a valid Provider record cannot hide a malformed Provider-kind terminal record"
+    );
+
+    let manifest = build_finalized_manifest(&capture, &sink.records(), dynamic())
+        .expect("typed manifest is complete and correlated");
+
+    fn assert_binding_mismatch_marks_failure(
+        recorder: Arc<dyn EvidenceRecorder>,
+        binding: &RuntimeInputBinding,
+        record: &EvidenceRecord,
+        manifest: &opi_agent::evidence::FinalizedManifest,
+    ) {
+        recorder.setup(binding).unwrap();
+        recorder.emit(record).unwrap();
+        assert!(matches!(
+            recorder.finalize_run(manifest),
+            Err(EvidenceError::Finalization { .. })
+        ));
+        assert!(
+            recorder.has_failure(),
+            "a finalization observation mismatch must poison every recording adapter"
+        );
+        assert!(recorder.completed_manifest().is_none());
+    }
+
+    let mismatched_binding = RuntimeInputBinding::direct(
+        digest('8'),
+        opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
+    );
+    assert_binding_mismatch_marks_failure(
+        Arc::new(InMemoryEvidenceSink::new()),
+        &mismatched_binding,
+        &record,
+        &manifest,
+    );
+    let mismatch_dir = tempfile::tempdir().unwrap();
+    assert_binding_mismatch_marks_failure(
+        Arc::new(FileEvidenceSink::new(mismatch_dir.path())),
+        &mismatched_binding,
+        &record,
+        &manifest,
+    );
+
     // P17-PRV-005: the manifest extracts the real non-secret auth provenance
     // from the provider record, never assumes Static.
     assert_eq!(
-        manifest.provenance.auth_source,
-        AuthProvenanceSource::Environment,
+        manifest.provider.provenance().unwrap().auth_source(),
+        &AuthSourceFacts::Environment {
+            name: "MOCK_API_KEY".to_owned()
+        },
         "manifest must reflect the record's environment auth source"
     );
     assert_eq!(
-        manifest.provenance.fallback_allowed,
-        Some(true),
-        "manifest must reflect the record's used-fallback classification"
+        manifest.provider.provenance().unwrap().fallback(),
+        &AuthFallbackFacts::Used {
+            from: AuthSourceFacts::Static,
+            to: AuthSourceFacts::Environment {
+                name: "MOCK_API_KEY".to_owned()
+            },
+            stable_reason: opi_agent::evidence::RedactedEvidenceText::new(
+                "configured source unavailable"
+            ),
+        },
+        "manifest retains full fallback source, target, and reason"
     );
+    assert!(matches!(
+        manifest.environment.trigger,
+        ExecutionTrigger::Invocation
+    ));
+    assert!(matches!(manifest.session, SessionBinding::NoSession));
+    let retained_route = manifest.provider.route().unwrap();
+    assert_eq!(retained_route.requested().model_id(), "requested-model");
+    assert_eq!(retained_route.resolved().model_id(), "resolved-model");
+    assert!(matches!(
+        retained_route.actual(),
+        ActualRoute::WireUnknown { route, reason }
+            if route.model_id() == "actual-model" && *reason == UnknownReason::NotReported
+    ));
     sink.finalize_run(&manifest)
         .expect("finalize writes manifest.json");
 
@@ -402,7 +1335,22 @@ fn file_evidence_sink_writes_records_and_manifest() {
     let manifest_json = String::from_utf8(first_manifest_bytes.clone()).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&manifest_json).unwrap();
     // manifest.json round-trips and carries the parsed route from the record.
-    assert_eq!(parsed["route"]["resolved"]["provider_id"], "mock");
+    assert_eq!(
+        parsed["provider"]["route"]["requested"]["model_id"],
+        "requested-model"
+    );
+    assert_eq!(
+        parsed["provider"]["route"]["resolved"]["model_id"],
+        "resolved-model"
+    );
+    assert_eq!(
+        parsed["provider"]["route"]["actual"]["model_id"],
+        "actual-model"
+    );
+    assert_eq!(
+        parsed["provider"]["route"]["actual"]["reason"],
+        "not_reported"
+    );
     assert_eq!(parsed["binding"]["kind"], "direct_runtime_input");
 
     // Reusing the same capture root allocates a new child and cannot replace
@@ -432,8 +1380,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use opi_agent::agent::Agent;
-use opi_agent::authority::{Capability, RegisteredTool, RegistrationId, ToolOrigin};
-use opi_agent::evidence::CapabilityClass;
+use opi_agent::authority::{RegisteredTool, RegistrationId, ToolOrigin};
 use opi_agent::hooks::{AgentHooks, BeforeToolCallContext, BeforeToolCallResult};
 use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
 use opi_agent::message::AgentMessage;
@@ -512,7 +1459,7 @@ async fn required_evidence_failure_denies_unlaunched_tool_side_effect() {
         RegistrationId::new("test-write"),
         "write".to_owned(),
         ToolOrigin::Builtin,
-        Capability::Builtin(CapabilityClass::WorkspaceWrite),
+        opi_coding_agent::tool_authority::WORKSPACE_WRITE_CAPABILITY.clone(),
         opi_ai::message::ToolDef {
             name: "write".to_owned(),
             description: "write".to_owned(),
@@ -566,7 +1513,8 @@ async fn required_evidence_failure_denies_unlaunched_tool_side_effect() {
     .expect("agent builds");
     agent.set_evidence_sink(Some(sink.clone() as Arc<dyn EvidenceSink>));
 
-    let messages = agent.prompt("use write").await.expect("turn completes");
+    let run = agent.prompt("use write").await;
+    let messages = run.messages();
 
     // The unlaunched side effect failed closed: zero executions (P17-EVD-009).
     assert_eq!(
@@ -593,6 +1541,85 @@ async fn required_evidence_failure_denies_unlaunched_tool_side_effect() {
         }),
         "the denial carries the evidence_incomplete stable code"
     );
+    assert!(matches!(
+        run.into_execution_result(),
+        Err(AgentError::EvidenceFinalization(_))
+    ));
+    assert!(
+        sink.completed_manifest().is_none(),
+        "abandoned incomplete evidence produces no finalized manifest"
+    );
+}
+
+#[tokio::test]
+async fn malformed_provider_record_rejection_blocks_later_tool_launch() {
+    use opi_coding_agent::execution::permission::PermissionPolicy;
+    use opi_coding_agent::tool_authority::{EffectiveUserPolicy, ProductToolAuthorizer};
+
+    let count = Arc::new(AtomicUsize::new(0));
+    let write_tool = RegisteredTool::new(
+        RegistrationId::new("malformed-write"),
+        "write".to_owned(),
+        ToolOrigin::Builtin,
+        opi_coding_agent::tool_authority::WORKSPACE_WRITE_CAPABILITY.clone(),
+        opi_ai::message::ToolDef {
+            name: "write".to_owned(),
+            description: "write".to_owned(),
+            input_schema: serde_json::json!({ "type": "object" }),
+        },
+        Arc::new(RecordingTool {
+            count: count.clone(),
+        }),
+    );
+    let policy = Arc::new(EffectiveUserPolicy::build(
+        opi_coding_agent::config::ExecutionRunMode::NonInteractive,
+        vec!["write".to_owned()],
+        true,
+        PermissionPolicy::empty(),
+        true,
+        "project".to_owned(),
+        "package".to_owned(),
+        "workspace".to_owned(),
+    ));
+    let authorizer = Arc::new(ProductToolAuthorizer::new(policy, None));
+    let inner = Arc::new(InMemoryEvidenceSink::new());
+    let sink = Arc::new(RelabelProviderSink {
+        inner: inner.clone(),
+    });
+    let collection = Arc::new(single_route_collection(Box::new(MockProvider::new(
+        "mock",
+        vec![
+            tool_call_response("malformed-call", "write", "{}"),
+            text_response("done"),
+        ],
+    ))));
+    let mut agent = Agent::new(
+        collection,
+        vec![write_tool],
+        Some(authorizer),
+        "mock:mock-model".to_owned(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig {
+            max_turns: 5,
+            ..Default::default()
+        },
+        Box::new(NoopHooks),
+    )
+    .unwrap();
+    agent.set_evidence_sink(Some(sink as Arc<dyn EvidenceSink>));
+
+    let _ = agent.prompt("use write").await.into_execution_result();
+
+    assert_eq!(RecordingTool::count_of(&count), 0);
+    assert!(inner.has_failure());
+    assert!(
+        inner
+            .records()
+            .iter()
+            .all(|record| record.validate_kind_payload().is_ok()),
+        "the malformed Provider payload must not enter the accepted record set"
+    );
 }
 
 // ===========================================================================
@@ -605,6 +1632,7 @@ async fn required_evidence_failure_denies_unlaunched_tool_side_effect() {
 /// denied at the production harness boundary — not a hardcoded helper policy.
 #[tokio::test]
 async fn harness_complete_evidence_mapping_denies_unlaunched_tool() {
+    let sessions = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
     let sink = Arc::new(InMemoryEvidenceSink::new());
@@ -632,12 +1660,17 @@ async fn harness_complete_evidence_mapping_denies_unlaunched_tool() {
     )
     .global_config_dir(user.path().to_path_buf())
     .execution_mode(ExecutionRunMode::NonInteractive)
+    .resume(empty_resume_info(
+        workspace.path(),
+        sessions.path(),
+        "complete-evidence-denial",
+    ))
     .tool_selection(opi_coding_agent::policy::ToolSelection::Allowlist(vec![
         "write".to_owned(),
     ]))
     .evidence(EvidenceBuilderConfig {
         recorder,
-        source: AssemblySource::Cli,
+        source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
 
@@ -661,6 +1694,7 @@ async fn harness_complete_evidence_mapping_denies_unlaunched_tool() {
 /// no-op Minimal Runtime): the same write tool call is allowed and executes.
 #[tokio::test]
 async fn harness_capture_absent_allows_tool() {
+    let sessions = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
     let provider = MockProvider::new(
@@ -683,6 +1717,11 @@ async fn harness_capture_absent_allows_tool() {
     )
     .global_config_dir(user.path().to_path_buf())
     .execution_mode(ExecutionRunMode::NonInteractive)
+    .resume(empty_resume_info(
+        workspace.path(),
+        sessions.path(),
+        "capture-absent",
+    ))
     .tool_selection(opi_coding_agent::policy::ToolSelection::Allowlist(vec![
         "write".to_owned(),
     ]))
@@ -703,12 +1742,8 @@ async fn harness_capture_absent_allows_tool() {
 // ===========================================================================
 
 #[tokio::test]
-#[allow(clippy::await_holding_lock)]
 async fn harness_compaction_emits_correlated_evidence_record() {
-    let _lock = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let sessions = tempfile::tempdir().unwrap();
-    // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
-    unsafe { std::env::set_var("OPI_SESSIONS_DIR", sessions.path()) };
 
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
@@ -723,9 +1758,14 @@ async fn harness_compaction_emits_correlated_evidence_record() {
     )
     .global_config_dir(user.path().to_path_buf())
     .execution_mode(ExecutionRunMode::Interactive)
+    .resume(empty_resume_info(
+        workspace.path(),
+        sessions.path(),
+        "manual-compaction-evidence",
+    ))
     .evidence(EvidenceBuilderConfig {
         recorder,
-        source: AssemblySource::Cli,
+        source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
 
@@ -746,9 +1786,6 @@ async fn harness_compaction_emits_correlated_evidence_record() {
         .compact(opi_agent::session_event::CompactionReason::Manual)
         .expect("manual compaction succeeds");
     assert!(result.is_some(), "manual compaction produces output");
-
-    // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
-    unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
 
     let records = sink.records();
     assert!(
@@ -776,22 +1813,18 @@ async fn harness_compaction_emits_correlated_evidence_record() {
 // requested/resolved/actual route facts for each
 // ===========================================================================
 
-/// Read the resolved provider id from a Provider record's route payload.
+/// Read the resolved provider id from a typed Provider record.
 fn resolved_provider_of(record: &opi_agent::evidence::EvidenceRecord) -> Option<String> {
-    let payload = match &record.payload {
-        opi_agent::evidence::EvidencePayload::Structured(rv) => rv.as_value(),
+    let facts = match &record.payload {
+        opi_agent::evidence::EvidencePayload::Provider(facts) => facts,
         _ => return None,
     };
-    payload["resolved"]["provider"].as_str().map(str::to_owned)
+    Some(facts.route.resolved().provider_id().to_owned())
 }
 
 #[tokio::test]
-#[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in awaited dispatch.
 async fn phase17_harness_switches_providers_with_matching_route_evidence() {
-    let _lock = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let sessions = tempfile::tempdir().unwrap();
-    // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
-    unsafe { std::env::set_var("OPI_SESSIONS_DIR", sessions.path()) };
 
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
@@ -815,10 +1848,15 @@ async fn phase17_harness_switches_providers_with_matching_route_evidence() {
         TrustDecision::Trusted,
     )
     .global_config_dir(user.path().to_path_buf())
+    .resume(empty_resume_info(
+        workspace.path(),
+        sessions.path(),
+        "provider-switch",
+    ))
     .extra_routes(vec![(Box::new(beta), static_resolver())])
     .evidence(EvidenceBuilderConfig {
         recorder,
-        source: AssemblySource::Cli,
+        source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
 
@@ -829,10 +1867,15 @@ async fn phase17_harness_switches_providers_with_matching_route_evidence() {
     harness.set_model_validated("beta:b1".to_owned()).unwrap();
     harness.prompt("from beta").await.unwrap();
 
-    // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
-    unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
-
-    assert_eq!(alpha_manifest.route.resolved.provider_id, "alpha");
+    assert_eq!(
+        alpha_manifest
+            .provider
+            .route()
+            .unwrap()
+            .resolved()
+            .provider_id(),
+        "alpha"
+    );
     let records = sink.records();
     assert_eq!(
         records
@@ -848,10 +1891,15 @@ async fn phase17_harness_switches_providers_with_matching_route_evidence() {
     // resolved auth provenance (P17-PRV-005: requested/resolved/actual and
     // auth-source/fallback are all distinguishable).
     let manifest = sink.completed_manifest().expect("a finalized manifest");
-    assert_eq!(manifest.route.resolved.provider_id, "beta");
-    assert_eq!(manifest.route.actual.provider_id, "mock");
-    assert_eq!(manifest.route.actual.model_id, "mock-model");
-    assert_eq!(manifest.route.actual_reason, None);
+    let route = manifest.provider.route().unwrap();
+    assert_eq!(route.resolved().provider_id(), "beta");
+    assert!(matches!(
+        route.actual(),
+        opi_agent::evidence::ActualRoute::WireUnknown { route, reason }
+            if route.provider_id() == "mock"
+                && route.model_id() == "mock-model"
+                && *reason == opi_agent::evidence::UnknownReason::NotReported
+    ));
     assert_ne!(
         alpha_manifest.binding, manifest.binding,
         "a model switch must produce a fresh current-run binding"
@@ -860,16 +1908,16 @@ async fn phase17_harness_switches_providers_with_matching_route_evidence() {
         alpha_manifest.config.adapter_digest, manifest.config.adapter_digest,
         "the adapter identity follows the current route"
     );
-    assert_eq!(manifest.route.requested.provider_id, "beta");
-    assert_eq!(manifest.route.requested.model_id, "b1");
+    assert_eq!(route.requested().provider_id(), "beta");
+    assert_eq!(route.requested().model_id(), "b1");
     assert_eq!(
-        manifest.provenance.auth_source,
-        AuthProvenanceSource::Static,
+        manifest.provider.provenance().unwrap().auth_source(),
+        &opi_agent::evidence::AuthSourceFacts::Static,
         "the static resolver provenance is recorded"
     );
     assert_eq!(
-        manifest.provenance.fallback_allowed,
-        Some(false),
+        manifest.provider.provenance().unwrap().fallback(),
+        &opi_agent::evidence::AuthFallbackFacts::NotAttempted,
         "no auth fallback was attempted"
     );
 }
@@ -907,7 +1955,7 @@ async fn phase17_retry_keeps_route_parent_and_terminal_evidence() {
     .global_config_dir(user.path().to_path_buf())
     .evidence(EvidenceBuilderConfig {
         recorder,
-        source: AssemblySource::Cli,
+        source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
     harness.prompt("go").await.unwrap();
@@ -924,14 +1972,14 @@ async fn phase17_retry_keeps_route_parent_and_terminal_evidence() {
     // The retry is parented to the one provider call and follows it.
     assert_eq!(retry_rec.parent, Some(provider_rec.call));
     assert!(provider_rec.sequence < retry_rec.sequence);
-    // Exactly one provider route across the retry (prepare_call not re-invoked).
-    assert_eq!(
-        records
-            .iter()
-            .filter(|r| r.kind == CallKind::Provider)
-            .count(),
-        1
-    );
+    // One logical provider call emits pre-dispatch + terminal typed facts on
+    // the same call identity; the retry does not prepare a second route.
+    let provider_records = records
+        .iter()
+        .filter(|record| record.kind == CallKind::Provider)
+        .collect::<Vec<_>>();
+    assert_eq!(provider_records.len(), 2);
+    assert_eq!(provider_records[0].call, provider_records[1].call);
 }
 
 // ===========================================================================
@@ -972,7 +2020,7 @@ async fn phase17_complete_run_reconstructs_graph_and_rejects_missing_bindings() 
     .global_config_dir(user.path().to_path_buf())
     .evidence(EvidenceBuilderConfig {
         recorder,
-        source: AssemblySource::Sdk,
+        source: opi_coding_agent::evidence::SDK_ASSEMBLY.clone(),
     })
     .build();
     harness.prompt("hello").await.unwrap();
@@ -1012,24 +2060,12 @@ async fn phase17_complete_run_reconstructs_graph_and_rejects_missing_bindings() 
         records.iter().all(|r| r.run == records[0].run),
         "all records share one run identity"
     );
-    let manifest = sink
+    let _manifest = sink
         .completed_manifest()
         .expect("a complete run finalizes a manifest");
-    manifest
-        .require_complete()
-        .expect("the finalized manifest passes the strict gate");
-
-    // P17-EVD-003 / INV-008: a direct run must not claim an ActiveSnapshot. A
-    // manifest bound to ActiveSnapshot is rejected by the strict gate.
-    use opi_agent::evidence::{ContentDigest, RuntimeInputBinding, SnapshotRef};
-    let mut snapshot_manifest = manifest.clone();
-    snapshot_manifest.binding = RuntimeInputBinding::ActiveSnapshot {
-        snapshot_ref: SnapshotRef::new("fabricated"),
-    };
-    assert!(
-        snapshot_manifest.require_complete().is_err(),
-        "an ActiveSnapshot binding must be rejected for a direct run"
-    );
+    // A finalized manifest is the private validated wrapper; callers cannot
+    // mutate it into a fabricated ActiveSnapshot after validation.
+    use opi_agent::evidence::ContentDigest;
 
     // Invalid config identity cannot be represented: digest construction
     // rejects missing/non-canonical SHA-256 text before manifest assembly.
@@ -1046,27 +2082,23 @@ async fn phase17_complete_run_reconstructs_graph_and_rejects_missing_bindings() 
 // ===========================================================================
 
 #[tokio::test]
-#[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in the awaited dispatch.
 async fn phase17_one_run_graph_includes_tool_execution_record() {
-    // The compaction leg persists session state, so isolate the process-global
-    // sessions dir for the whole test (mirrors the compaction test below).
-    let _lock = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let sessions = tempfile::tempdir().unwrap();
-    // SAFETY: test-only env var mutation serialized by SESSION_TEST_LOCK.
-    unsafe { std::env::set_var("OPI_SESSIONS_DIR", sessions.path()) };
-
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
+    let evidence = tempfile::tempdir().unwrap();
     let mut config = OpiConfig::default();
     config.retry.max_attempts = 2;
     config.retry.initial_delay_ms = 0;
     config.retry.max_delay_ms = 0;
-    let sink = Arc::new(InMemoryEvidenceSink::new());
-    // One run, three legs: a retryable provider error (Retry record), a real
+    config.compaction.threshold_tokens = 0;
+    let sink = Arc::new(FileEvidenceSink::new(evidence.path()));
+    // One run, four legs: a retryable provider error (Retry record), a real
     // built-in `read` tool call over a workspace file (Tool record), then the
-    // terminal text turn (Provider record). The read tool executes through the
-    // production harness tool path, so the Tool evidence record is emitted by
-    // the product assembly, not just the 17.6 substrate.
+    // terminal text turn (Provider record), followed by threshold compaction
+    // during persistence. The read tool and automatic compaction execute
+    // through the production harness path before the one prompt manifest is
+    // finalized.
     let target = workspace.path().join("graph-fixture.txt");
     std::fs::write(&target, "phase17 one-run graph fixture\n").unwrap();
     let tool_call = opi_ai::test_support::tool_call_response(
@@ -1096,9 +2128,14 @@ async fn phase17_one_run_graph_includes_tool_execution_record() {
         TrustDecision::Trusted,
     )
     .global_config_dir(user.path().to_path_buf())
+    .resume(empty_resume_info(
+        workspace.path(),
+        sessions.path(),
+        "a09-one-run-graph",
+    ))
     .evidence(EvidenceBuilderConfig {
         recorder,
-        source: AssemblySource::Sdk,
+        source: opi_coding_agent::evidence::SDK_ASSEMBLY.clone(),
     })
     .build();
     harness.prompt("read the fixture file").await.unwrap();
@@ -1116,7 +2153,31 @@ async fn phase17_one_run_graph_includes_tool_execution_record() {
         .iter()
         .find(|r| r.kind == CallKind::Tool)
         .expect("a Tool record for the real built-in read execution");
+    let compaction_recs = records
+        .iter()
+        .filter(|r| r.kind == CallKind::Compaction)
+        .collect::<Vec<_>>();
     assert!(!provider_recs.is_empty(), "the run emits Provider records");
+    for required in [
+        CallKind::Provider,
+        CallKind::Retry,
+        CallKind::Tool,
+        CallKind::Compaction,
+    ] {
+        assert!(records.iter().any(|record| record.kind == required));
+    }
+    assert!(
+        records.iter().all(|record| matches!(
+            record.kind,
+            CallKind::Provider | CallKind::Retry | CallKind::Tool | CallKind::Compaction
+        )),
+        "the single prompt graph contains only the four required evidence kinds"
+    );
+    assert_eq!(
+        compaction_recs.len(),
+        2,
+        "automatic compaction emits one start and one terminal record"
+    );
     // The retry is parented to the provider call it retries.
     assert_eq!(
         retry_rec.parent,
@@ -1134,48 +2195,95 @@ async fn phase17_one_run_graph_includes_tool_execution_record() {
         "the Tool record has its own call identity"
     );
     assert!(
-        tool_rec.parent.is_some(),
-        "the Tool record is parented into the call graph"
+        provider_recs.iter().any(|provider| {
+            tool_rec.parent == Some(provider.call) && tool_rec.turn == provider.turn
+        }),
+        "the Tool record is parented to the exact provider request in its turn"
     );
-
-    let prompt_run = tool_rec.run;
-    let prompt_manifest = sink
-        .completed_manifest()
-        .expect("the tool-bearing prompt run is finalized");
-
-    // Manual compaction is a second immutable run; it never appends to the
-    // already finalized provider/retry/tool graph.
-    let compacted = harness
-        .compact(opi_agent::session_event::CompactionReason::Manual)
-        .expect("manual compaction succeeds");
-    assert!(compacted.is_some(), "compaction produces output");
-    let records = sink.records();
     assert!(
+        records.iter().all(|record| record.run == tool_rec.run),
+        "Provider, Retry, Tool, and automatic Compaction share one run identity"
+    );
+    assert_eq!(compaction_recs[0].call, compaction_recs[1].call);
+    assert_eq!(compaction_recs[0].turn, compaction_recs[1].turn);
+    assert!(matches!(
+        &compaction_recs[0].payload,
+        opi_agent::evidence::EvidencePayload::Compaction(facts)
+            if facts.trigger() == opi_agent::evidence::CompactionTrigger::Threshold
+                && facts.outcome().is_none()
+    ));
+    assert!(matches!(
+        &compaction_recs[1].payload,
+        opi_agent::evidence::EvidencePayload::Compaction(facts)
+            if facts.trigger() == opi_agent::evidence::CompactionTrigger::Threshold
+                && facts.outcome() == Some(opi_agent::evidence::CompactionOutcome::Succeeded)
+    ));
+
+    let manifest = sink
+        .completed_manifest()
+        .expect("the four-leg prompt run finalizes one strict manifest");
+    let terminal = records.last().expect("non-empty evidence graph");
+    assert_eq!(manifest.correlation.run, tool_rec.run);
+    assert_eq!(manifest.correlation.turn, terminal.turn);
+    assert_eq!(manifest.correlation.call, Some(terminal.call));
+    assert_eq!(manifest.correlation.parent, terminal.parent);
+    assert_eq!(manifest.correlation.sequence, terminal.sequence);
+    assert!(matches!(
+        manifest.provider,
+        ProviderInvocationFacts::Applicable { .. }
+    ));
+    assert!(matches!(
+        manifest.environment.trigger,
+        opi_agent::evidence::ExecutionTrigger::Invocation
+    ));
+    assert!(matches!(
+        manifest.session,
+        opi_agent::evidence::SessionBinding::Branch { .. }
+    ));
+
+    let run_dirs = sink.completed_run_dirs();
+    assert_eq!(run_dirs.len(), 1, "one prompt publishes one immutable run");
+    let records_path = run_dirs[0].join("evidence.jsonl");
+    let manifest_path = run_dirs[0].join("manifest.json");
+    assert!(
+        std::fs::metadata(&records_path).unwrap().len() > 0,
+        "the finalized evidence graph exists on disk"
+    );
+    assert!(
+        std::fs::metadata(&manifest_path).unwrap().len() > 0,
+        "the finalized manifest artifact exists on disk"
+    );
+    let persisted_manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(manifest_path).unwrap()).unwrap();
+    let persisted_records = std::fs::read_to_string(records_path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(persisted_records.len(), records.len());
+    assert!(
+        persisted_records
+            .iter()
+            .all(|record| record["run"] == manifest.correlation.run.to_string())
+    );
+    assert_eq!(
+        persisted_records
+            .iter()
+            .map(|record| record["call"].clone())
+            .collect::<Vec<_>>(),
         records
             .iter()
-            .all(|record| record.kind == CallKind::Compaction),
-        "the recorder contains only the current manual-compaction run"
+            .map(|record| serde_json::to_value(record).unwrap()["call"].clone())
+            .collect::<Vec<_>>()
     );
-    let compaction_rec = records
-        .iter()
-        .find(|r| r.kind == CallKind::Compaction)
-        .expect("a Compaction record in the independent run");
-    assert_ne!(compaction_rec.run, prompt_run);
-
-    // Both independent operations finalize strict manifests.
-    let compaction_manifest = sink
-        .completed_manifest()
-        .expect("the compaction run finalizes a manifest");
-    compaction_manifest
-        .require_complete()
-        .expect("the compaction run passes the strict completeness gate");
-    assert_ne!(
-        prompt_manifest.correlation.run,
-        compaction_manifest.correlation.run
+    assert_eq!(
+        persisted_manifest["correlation"]["run"],
+        manifest.correlation.run.to_string()
     );
-
-    // SAFETY: serialized by SESSION_TEST_LOCK.
-    unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
+    assert_eq!(
+        persisted_manifest["environment"]["trigger"]["kind"],
+        "invocation"
+    );
 }
 
 // ===========================================================================
@@ -1234,9 +2342,7 @@ async fn phase17_default_harness_emits_no_evidence() {
 // ===========================================================================
 
 #[tokio::test]
-#[allow(clippy::await_holding_lock)] // serializes the environment-channel canary across awaited dispatch.
 async fn phase17_canaries_stop_before_sink_file_and_manifest() {
-    let _lock = SESSION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
     let evidence_dir = tempfile::tempdir().unwrap();
@@ -1244,19 +2350,17 @@ async fn phase17_canaries_stop_before_sink_file_and_manifest() {
     let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
     let prompt_canary = "sk-canary-prompt-AAAAAAAAAAAAAAAAAAAA";
     let argument_canary = "sk-canary-argument-BBBBBBBBBBBBBBBBBBBB";
-    let environment_canary = "sk-canary-environment-CCCCCCCCCCCCCCCCCCCC";
+    let session_path_canary = "sk-canary-session-path-CCCCCCCCCCCCCCCCCCCC";
     let credential_canary = "sk-canary-credential-DDDDDDDDDDDDDDDDDDDD";
     let provider_error_canary = "sk-canary-provider-error-EEEEEEEEEEEEEEEEEEEE";
 
-    // Exercise prompt, tool-argument, process-environment, and credential
+    // Exercise prompt, tool-argument, explicit session-path, and credential
     // channels through one real harness run. The built-in read may fail for
     // the canary path; that controlled tool result is followed by a terminal
     // provider response and must still never expose the argument.
     let sessions = tempfile::tempdir().unwrap();
-    let canary_sessions = sessions.path().join(environment_canary);
+    let canary_sessions = sessions.path().join(session_path_canary);
     std::fs::create_dir_all(&canary_sessions).unwrap();
-    // SAFETY: process-global mutation is serialized by SESSION_TEST_LOCK.
-    unsafe { std::env::set_var("OPI_SESSIONS_DIR", &canary_sessions) };
     let provider = MockProvider::new_with_errors(
         "mock",
         vec![
@@ -1277,19 +2381,22 @@ async fn phase17_canaries_stop_before_sink_file_and_manifest() {
     )
     .global_config_dir(user.path().to_path_buf())
     .execution_mode(ExecutionRunMode::Interactive)
+    .resume(empty_resume_info(
+        workspace.path(),
+        &canary_sessions,
+        "canary-success",
+    ))
     .auth_resolver(Arc::new(opi_ai::auth::StaticAuthResolver::new(
         opi_ai::auth::AuthScheme::ApiKey,
         secrecy::SecretString::from(credential_canary),
     )))
     .evidence(EvidenceBuilderConfig {
         recorder,
-        source: AssemblySource::Cli,
+        source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
     let prompt = format!("here is a secret {prompt_canary} please ignore");
     let _ = harness.prompt(&prompt).await.expect("run completes");
-    // SAFETY: paired with the serialized override above.
-    unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
 
     // The run emitted records and finalized a manifest, and the prompt was
     // digested into the manifest (never stored raw): these make the absence
@@ -1306,7 +2413,7 @@ async fn phase17_canaries_stop_before_sink_file_and_manifest() {
     let input_canaries = [
         prompt_canary,
         argument_canary,
-        environment_canary,
+        session_path_canary,
         credential_canary,
     ];
 
@@ -1346,11 +2453,11 @@ async fn phase17_canaries_stop_before_sink_file_and_manifest() {
     let error_provider = MockProvider::new_with_errors(
         "mock",
         vec![MockResponse::Error(
-            opi_ai::provider::ProviderError::RequestFailed(provider_error_canary.to_owned()),
+            opi_ai::provider::ProviderError::RequestFailed(
+                opi_ai::provider::ProviderErrorSummary::from_untrusted(provider_error_canary),
+            ),
         )],
     );
-    // SAFETY: process-global mutation is serialized by SESSION_TEST_LOCK.
-    unsafe { std::env::set_var("OPI_SESSIONS_DIR", &canary_sessions) };
     let mut error_harness = CodingHarness::builder(
         Box::new(error_provider),
         "mock:mock-model".to_owned(),
@@ -1360,9 +2467,14 @@ async fn phase17_canaries_stop_before_sink_file_and_manifest() {
     )
     .global_config_dir(user.path().to_path_buf())
     .execution_mode(ExecutionRunMode::Interactive)
+    .resume(empty_resume_info(
+        workspace.path(),
+        &canary_sessions,
+        "canary-error",
+    ))
     .evidence(EvidenceBuilderConfig {
         recorder: error_recorder,
-        source: AssemblySource::Cli,
+        source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
     assert!(
@@ -1371,8 +2483,6 @@ async fn phase17_canaries_stop_before_sink_file_and_manifest() {
             .await
             .is_err()
     );
-    // SAFETY: paired with the serialized override above.
-    unsafe { std::env::remove_var("OPI_SESSIONS_DIR") };
 
     let error_records = serde_json::to_string(&error_sink.records()).unwrap();
     let error_run_dir = error_sink
@@ -1388,4 +2498,145 @@ async fn phase17_canaries_stop_before_sink_file_and_manifest() {
             "provider-error/diagnostic canary leaked: {output}"
         );
     }
+}
+
+#[tokio::test]
+async fn direct_subscriber_redacts_real_compaction_and_session_persist_events() {
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    let prompt_canary = "prompt/arbitrary/{phase17-direct}";
+    let tool_canary = "tool/arbitrary/{phase17-direct}";
+    let path_canary = "path-arbitrary-{phase17-direct}";
+    let credential_canary = "credential/arbitrary/{phase17-direct}";
+    let fixture_name = format!("{path_canary}-fixture.txt").replace('/', "_");
+    std::fs::write(
+        workspace.path().join(&fixture_name),
+        format!("{tool_canary} {path_canary}"),
+    )
+    .unwrap();
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Events(opi_ai::test_support::tool_call_response(
+                "direct-canary-read",
+                "read",
+                &serde_json::json!({ "path": fixture_name }).to_string(),
+            )),
+            MockResponse::Events(text_response("direct-safe-control")),
+        ],
+    );
+    let mut config = OpiConfig::default();
+    config.compaction.threshold_tokens = 0;
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".to_owned(),
+        config,
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .global_config_dir(user.path().to_path_buf())
+    .resume(empty_resume_info(
+        workspace.path(),
+        sessions.path(),
+        "subscriber-compaction",
+    ))
+    .tool_selection(opi_coding_agent::policy::ToolSelection::Allowlist(vec![
+        "read".to_owned(),
+    ]))
+    .auth_resolver(Arc::new(opi_ai::auth::StaticAuthResolver::new(
+        opi_ai::auth::AuthScheme::ApiKey,
+        secrecy::SecretString::from(credential_canary),
+    )))
+    .build();
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = events.clone();
+    harness.subscribe(Box::new(move |event| {
+        captured.lock().unwrap().push(event.clone());
+    }));
+    harness
+        .prompt(&format!(
+            "{prompt_canary} credential={credential_canary} read the fixture"
+        ))
+        .await
+        .expect("the automatic compaction run completes");
+
+    let compaction_events = events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                opi_agent::event::AgentEvent::CompactionStart { .. }
+                    | opi_agent::event::AgentEvent::CompactionEnd { .. }
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(compaction_events.len(), 2);
+    let compaction_json = serde_json::to_string(&compaction_events).unwrap();
+    assert!(compaction_json.contains("CompactionStart"));
+    assert!(compaction_json.contains("CompactionEnd"));
+    assert!(compaction_json.contains("threshold"));
+    assert!(compaction_json.contains("tokens_before"));
+    assert!(compaction_json.contains("[REDACTED]"));
+    for canary in [prompt_canary, tool_canary, path_canary, credential_canary] {
+        assert!(
+            !compaction_json.contains(canary),
+            "subscriber leaked {canary}"
+        );
+    }
+
+    let persist_root = tempfile::tempdir().unwrap();
+    let persist_dir = persist_root
+        .path()
+        .join(format!("persist-{path_canary}").replace('/', "_"));
+    std::fs::create_dir_all(&persist_dir).unwrap();
+    let persist_resume = empty_resume_info(workspace.path(), &persist_dir, "subscriber-persist");
+    let missing_path = persist_resume.path.clone();
+    let mut persist_harness = CodingHarness::builder(
+        Box::new(MockProvider::new(
+            "mock",
+            vec![text_response("persist-safe-control")],
+        )),
+        "mock:mock-model".to_owned(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .global_config_dir(user.path().to_path_buf())
+    .resume(persist_resume)
+    .build();
+    let persist_events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let persist_capture = persist_events.clone();
+    persist_harness.subscribe(Box::new(move |event| {
+        persist_capture.lock().unwrap().push(event.clone());
+    }));
+    std::fs::remove_file(&missing_path).unwrap();
+    assert!(matches!(
+        persist_harness
+            .prompt(&format!("{prompt_canary} credential={credential_canary}"))
+            .await,
+        Err(opi_agent::loop_types::AgentError::SessionPersist(_))
+    ));
+    let persist_json = serde_json::to_string(
+        &persist_events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    opi_agent::event::AgentEvent::SessionPersistError { .. }
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    assert!(persist_json.contains("SessionPersistError"));
+    assert!(persist_json.contains("[REDACTED]"));
+    assert!(!persist_json.contains(path_canary));
+    assert!(!persist_json.contains(&missing_path.display().to_string()));
 }

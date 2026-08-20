@@ -6,7 +6,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use opi_coding_agent::config::{ConfigSource, OpiConfig, load_config_file, resolve_config};
+use opi_coding_agent::config::{
+    ConfigSource, OpiConfig, load_config_file, resolve_config, stage_config,
+};
 use tempfile::NamedTempFile;
 
 // ---------------------------------------------------------------------------
@@ -99,6 +101,38 @@ api_key_env = "MY_ANTHROPIC_KEY"
     );
     let config = load_config_file(&path).unwrap();
     assert_eq!(config.providers.anthropic.api_key_env, "MY_ANTHROPIC_KEY");
+}
+
+#[test]
+fn staged_parent_config_debug_redacts_bedrock_access_key_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let access_key_canary = "AKIA_STAGED_CONFIG_DEBUG_CANARY";
+    let path = write_temp_config(
+        dir.path(),
+        &format!(
+            r#"
+[providers.bedrock]
+access_key_id = "{access_key_canary}"
+secret_access_key_env = "BEDROCK_SECRET_ENV"
+session_token_env = "BEDROCK_SESSION_ENV"
+"#,
+        ),
+    );
+    let staged = stage_config(ConfigSource {
+        cli_model: None,
+        config_path: None,
+        env_model: None,
+        project_dir: None,
+        user_config_path: Some(path),
+    })
+    .expect("stage raw config");
+
+    let debug = format!("{staged:?}");
+    assert!(
+        !debug.contains(access_key_canary),
+        "access key leaked: {debug}"
+    );
+    assert!(debug.contains("<redacted>"));
 }
 
 #[test]

@@ -37,14 +37,10 @@ pub trait Provider: Send + Sync {
     /// boundary, attaching the secret via [`secrecy::ExposeSecret`] immediately
     /// before the HTTP request.
     ///
-    /// Providers whose credential is a single API key or bearer token consume
-    /// `resolved.secret` at the wire boundary. Providers whose wire needs a
-    /// compound credential that [`ResolvedAuth`](crate::auth::ResolvedAuth) cannot carry (e.g. AWS SigV4
-    /// with separate access key, secret key, session token, and region) keep
-    /// that compound credential as construction-time state and attach it here,
-    /// ignoring the single-slot `resolved.secret`; such a provider holds no
-    /// [`AuthResolver`](crate::auth::AuthResolver) and is documented as a
-    /// compound-credential exemption.
+    /// API-key and Bearer routes consume `resolved.secret`; AWS routes consume
+    /// the typed [`AuthScheme::AwsSigV4`](crate::auth::AuthScheme::AwsSigV4)
+    /// credential variant. Every variant is prepared once by the collection
+    /// and reused unchanged across retry attempts.
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream;
 
     /// Replace this provider's effective model catalog before it is shared.
@@ -58,9 +54,11 @@ pub trait Provider: Send + Sync {
     /// catalog unchanged when returning `Err`, so collection and mapped-route
     /// callers can preserve atomic replacement semantics.
     fn replace_model_catalog(&mut self, _models: Vec<ModelInfo>) -> Result<(), ProviderError> {
-        Err(ProviderError::Config(format!(
-            "provider '{}' does not support effective model catalogs",
-            self.id()
+        Err(ProviderError::Config(ProviderErrorSummary::sanitized(
+            format!(
+                "provider '{}' does not support effective model catalogs",
+                self.id()
+            ),
         )))
     }
 
@@ -168,9 +166,11 @@ pub(crate) fn github_copilot_route_headers(
     if let Some((name, _)) = request.extra_headers.iter().find(|(name, _)| {
         GITHUB_COPILOT_MANAGED_HEADERS.contains(&name.to_ascii_lowercase().as_str())
     }) {
-        return Err(ProviderError::RequestFailed(format!(
-            "request header '{name}' is reserved for GitHub Copilot"
-        )));
+        return Err(ProviderError::RequestFailed(
+            ProviderErrorSummary::sanitized(format!(
+                "request header '{name}' is reserved for GitHub Copilot"
+            )),
+        ));
     }
 
     let mut headers = vec![("Openai-Intent".into(), "conversation-edits".into())];
@@ -202,29 +202,35 @@ pub fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), Provid
     for (name, value) in headers {
         if name.is_empty() {
             return Err(ProviderError::RequestFailed(
-                "extra_headers contains an empty header name".into(),
+                ProviderErrorSummary::attested_static(
+                    "extra_headers contains an empty header name",
+                ),
             ));
         }
         if name.contains(|c: char| c.is_control() || c == ':') {
-            return Err(ProviderError::RequestFailed(format!(
-                "extra_headers name contains invalid characters: {name:?}"
-            )));
+            return Err(ProviderError::RequestFailed(
+                ProviderErrorSummary::sanitized(format!(
+                    "extra_headers name contains invalid characters: {name:?}"
+                )),
+            ));
         }
         HeaderName::from_str(name).map_err(|_| {
-            ProviderError::RequestFailed(format!(
+            ProviderError::RequestFailed(ProviderErrorSummary::sanitized(format!(
                 "extra_headers name contains invalid characters: {name:?}"
-            ))
+            )))
         })?;
         HeaderValue::from_str(value).map_err(|_| {
-            ProviderError::RequestFailed(format!(
+            ProviderError::RequestFailed(ProviderErrorSummary::sanitized(format!(
                 "extra_headers contains an invalid value for header '{name}'"
-            ))
+            )))
         })?;
         let lower = name.to_ascii_lowercase();
         if RESERVED_PROVIDER_HEADERS.contains(&lower.as_str()) {
-            return Err(ProviderError::RequestFailed(format!(
-                "extra_headers name '{name}' is reserved for provider-managed auth"
-            )));
+            return Err(ProviderError::RequestFailed(
+                ProviderErrorSummary::sanitized(format!(
+                    "extra_headers name '{name}' is reserved for provider-managed auth"
+                )),
+            ));
         }
     }
     Ok(())
@@ -292,10 +298,12 @@ pub fn validate_request_for_model(
         && let Some(model) = model
         && !model.capabilities.supports_images
     {
-        return Err(ProviderError::UnsupportedCapability(format!(
-            "model '{}' for provider '{}' does not support image input",
-            model.id, provider_id
-        )));
+        return Err(ProviderError::UnsupportedCapability(
+            ProviderErrorSummary::sanitized(format!(
+                "model '{}' for provider '{}' does not support image input",
+                model.id, provider_id
+            )),
+        ));
     }
 
     if let Some(model) = model {
@@ -309,24 +317,155 @@ pub fn validate_request_for_model(
                 wire_api,
                 compat_wire,
             },
-            other => ProviderError::Config(other.to_string()),
+            other => ProviderError::Config(ProviderErrorSummary::sanitized(other.to_string())),
         })?;
         // Resolve the level only when thinking is enabled: a disabled request
-        // with a stale level must not be rejected (the level is unused).
+        // with a stale level must not be rejected (the level is unused). An
+        // enabled request still requires thinking capability even when its
+        // selected level is `None`.
         if request.thinking.enabled {
+            if !model.capabilities.supports_thinking {
+                return Err(ProviderError::UnsupportedCapability(
+                    ProviderErrorSummary::sanitized(format!(
+                        "model '{}' for provider '{}' does not support thinking",
+                        model.id, provider_id
+                    )),
+                ));
+            }
             model
                 .thinking_level_map
                 .resolve(request.thinking.level)
-                .map_err(|error| ProviderError::UnsupportedCapability(error.to_string()))?;
+                .map_err(|error| {
+                    ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(
+                        error.to_string(),
+                    ))
+                })?;
         }
     }
 
     Ok(())
 }
 
+/// Redaction-safe public summary carried by free-form [`ProviderError`] classes.
+///
+/// The inner string is private so a custom [`Provider`] cannot put a dynamic
+/// upstream payload into `ProviderError` by constructing a variant directly.
+/// Dynamic untrusted text can only enter through [`Self::from_untrusted`],
+/// which intentionally discards it. Closed no-input constructors expose the
+/// limited summaries custom providers can retain.
+///
+/// ```compile_fail
+/// use opi_ai::provider::ProviderError;
+///
+/// let raw_upstream = String::from("arbitrary provider response");
+/// let _ = ProviderError::ProviderSide(raw_upstream);
+/// ```
+///
+/// Static and deliberately leaked provider text are not safe conversions:
+///
+/// ```compile_fail
+/// use opi_ai::provider::ProviderError;
+///
+/// const PROVIDER_CANARY: &str = "static-provider-canary";
+/// let _ = ProviderError::ProviderSide(PROVIDER_CANARY.into());
+/// ```
+///
+/// ```compile_fail
+/// use opi_ai::provider::ProviderError;
+///
+/// let leaked: &'static str = Box::leak(String::from("leaked-provider-canary").into_boxed_str());
+/// let _ = ProviderError::ProviderSide(leaked.into());
+/// ```
+#[derive(Clone, PartialEq, Eq, Hash, serde::Serialize)]
+#[serde(transparent)]
+pub struct ProviderErrorSummary(String);
+
+impl ProviderErrorSummary {
+    const REDACTED: &'static str = "[REDACTED]";
+
+    /// Construct the closed redacted-detail summary without accepting text.
+    pub fn redacted() -> Self {
+        Self(Self::REDACTED.to_owned())
+    }
+
+    /// Construct the closed summary for credentials rejected by a provider.
+    pub fn authentication_rejected() -> Self {
+        Self("provider rejected credentials".to_owned())
+    }
+
+    /// Replace an arbitrary upstream error payload with a stable safe summary.
+    ///
+    /// The input is accepted so custom providers have an explicit producer
+    /// boundary, but it is never retained in public `Display`, `Debug`, or
+    /// serialized diagnostics.
+    pub fn from_untrusted(_payload: impl AsRef<str>) -> Self {
+        Self::redacted()
+    }
+
+    /// Return the safe summary text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Construct an in-crate summary after applying the shared defense-in-depth
+    /// redactor. Raw provider response bodies use [`Self::from_untrusted`]
+    /// instead; this path is for locally-produced context and transport errors.
+    pub(crate) fn sanitized(summary: impl AsRef<str>) -> Self {
+        Self(crate::http::safe_excerpt(summary.as_ref()))
+    }
+
+    /// Construct from crate-owned, caller-attested static diagnostic text.
+    pub(crate) fn attested_static(summary: &'static str) -> Self {
+        Self(summary.to_owned())
+    }
+
+    /// Construct a safe HTTP failure summary from status alone.
+    ///
+    /// Callers must not read a provider-controlled response body solely to
+    /// construct this summary.
+    pub(crate) fn from_http_response(status: u16) -> Self {
+        Self(format!("HTTP {status}: {}", Self::REDACTED))
+    }
+}
+
+impl std::ops::Deref for ProviderErrorSummary {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Display for ProviderErrorSummary {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl std::fmt::Debug for ProviderErrorSummary {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("ProviderErrorSummary")
+            .field(&self.as_str())
+            .finish()
+    }
+}
+
+impl PartialEq<str> for ProviderErrorSummary {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&str> for ProviderErrorSummary {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
 /// Errors that can occur during provider streaming.
 ///
-/// The [`ProviderError::category`] taxonomy exposes the nine Phase 12 classes
+/// The [`ProviderError::category`] taxonomy exposes nine closed classes
 /// (auth, config, request, network, rate_limit, provider, stream, capability,
 /// cancelled). `Timeout` is retained as a distinct variant but classifies as
 /// `Network`, since the spec defines the network class as "DNS, TLS, proxy,
@@ -338,11 +477,11 @@ pub enum ProviderError {
     #[error("request timed out")]
     Timeout,
     #[error("request failed: {0}")]
-    RequestFailed(String),
+    RequestFailed(ProviderErrorSummary),
     #[error("stream error: {0}")]
-    StreamError(String),
+    StreamError(ProviderErrorSummary),
     #[error("authentication failed: {0}")]
-    AuthFailed(String),
+    AuthFailed(ProviderErrorSummary),
     /// No credential is available for the provider. Non-retryable: the caller
     /// must obtain a credential (interactive login or a typed non-interactive
     /// diagnostic) before retrying. Distinct from [`AuthFailed`](Self::AuthFailed)
@@ -364,9 +503,9 @@ pub enum ProviderError {
     #[error("login cancelled for provider '{provider_id}'")]
     LoginCancelled { provider_id: String },
     #[error("network error: {0}")]
-    Network(String),
+    Network(ProviderErrorSummary),
     #[error("invalid provider configuration: {0}")]
-    Config(String),
+    Config(ProviderErrorSummary),
     #[error("unknown model '{model_id}' for provider '{provider_id}'")]
     UnknownModel {
         provider_id: String,
@@ -386,9 +525,9 @@ pub enum ProviderError {
         compat_wire: WireApi,
     },
     #[error("provider error: {0}")]
-    ProviderSide(String),
+    ProviderSide(ProviderErrorSummary),
     #[error("unsupported capability: {0}")]
-    UnsupportedCapability(String),
+    UnsupportedCapability(ProviderErrorSummary),
     #[error("cancelled")]
     Cancelled,
 }
@@ -469,8 +608,8 @@ pub enum ProviderErrorCategory {
     Stream,
     /// Unsupported image/tool/thinking capability rejected before the call.
     Capability,
-    /// User/runtime cancellation. Timing/backoff/stream-abort behavior is owned
-    /// by task 12.7; this class is the taxonomy/diagnostic-layer slot only.
+    /// User/runtime cancellation. The retry loop owns timing, backoff, and
+    /// stream-abort behavior; this is the taxonomy/diagnostic-layer slot.
     Cancelled,
 }
 

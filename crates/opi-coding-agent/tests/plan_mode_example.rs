@@ -429,7 +429,7 @@ async fn plan_mode_with_agent_blocks_mutating_tool_call() {
     )
     .expect("agent");
 
-    let _result = agent.prompt("test").await.unwrap();
+    let _result = agent.prompt("test").await.into_execution_result().unwrap();
     // The write tool should have been blocked by the extension
     let s = state.lock().unwrap();
     assert_eq!(s.tools_blocked, 1);

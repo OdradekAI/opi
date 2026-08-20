@@ -9,7 +9,7 @@
 //! Agent-level retry integration tests are in opi-agent/tests/retry_agent.rs.
 
 use opi_ai::Provider;
-use opi_ai::provider::{CacheRetention, ProviderError};
+use opi_ai::provider::{CacheRetention, ProviderError, ProviderErrorSummary};
 use opi_ai::retry::{
     RetryConfig, calculate_backoff_delay, parse_http_date_delay, parse_retry_after,
 };
@@ -212,39 +212,39 @@ fn timeout_is_retryable() {
 fn network_error_is_retryable() {
     // Transient transport failures (DNS/TLS/connection) classify as Network
     // and are retryable alongside RateLimited and Timeout.
-    assert!(ProviderError::Network("connection reset".into()).is_retryable());
+    assert!(ProviderError::Network(ProviderErrorSummary::redacted()).is_retryable());
 }
 
 #[test]
 fn auth_failed_is_not_retryable() {
-    assert!(!ProviderError::AuthFailed("bad key".into()).is_retryable());
+    assert!(
+        !ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected()).is_retryable()
+    );
 }
 
 #[test]
 fn request_failed_is_not_retryable() {
-    assert!(!ProviderError::RequestFailed("500 error".into()).is_retryable());
+    assert!(!ProviderError::RequestFailed(ProviderErrorSummary::redacted()).is_retryable());
 }
 
 #[test]
 fn config_error_is_not_retryable() {
     // Bad endpoint / unsupported model / bad profile is terminal: retrying will
     // not change the outcome. (Phase 12 task 12.7 DoD clause 3: config.)
-    assert!(!ProviderError::Config("bad endpoint".into()).is_retryable());
+    assert!(!ProviderError::Config(ProviderErrorSummary::redacted()).is_retryable());
 }
 
 #[test]
 fn unsupported_capability_is_not_retryable() {
     // Preflight validation rejecting an unsupported image/tool/thinking
     // capability is terminal. (Phase 12 task 12.7 DoD clause 3: validation.)
-    assert!(
-        !ProviderError::UnsupportedCapability("model lacks tool support".into()).is_retryable()
-    );
+    assert!(!ProviderError::UnsupportedCapability(ProviderErrorSummary::redacted()).is_retryable());
 }
 
 #[test]
 fn provider_side_error_is_not_retryable() {
     // A non-rate-limit 5xx maps to ProviderSide and is not retried.
-    assert!(!ProviderError::ProviderSide("internal error".into()).is_retryable());
+    assert!(!ProviderError::ProviderSide(ProviderErrorSummary::redacted()).is_retryable());
 }
 
 // ---------------------------------------------------------------------------

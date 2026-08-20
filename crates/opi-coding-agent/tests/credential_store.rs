@@ -18,7 +18,7 @@ use opi_ai::credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
     UnknownEnvelopeField,
 };
-use opi_ai::provider::ProviderError;
+use opi_ai::provider::{ProviderError, ProviderErrorSummary};
 use opi_coding_agent::credential_store::{
     ApiKeySource, BackendError, CredentialResolver, EnvLookup, FakeKeyringBackend,
     KEYCHAIN_PRESENCE_SERVICE, KEYCHAIN_SERVICE, KeychainCredentialStore, KeyringBackend,
@@ -164,7 +164,11 @@ impl OAuthProvider for HangingOAuthProvider {
         &'a self,
         _presenter: &'a dyn LoginPresenter,
     ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
-        Box::pin(async { Err(ProviderError::Config("unused login".to_owned())) })
+        Box::pin(async {
+            Err(ProviderError::Config(ProviderErrorSummary::from_untrusted(
+                "unused login",
+            )))
+        })
     }
 
     fn refresh<'a>(
@@ -186,7 +190,11 @@ impl OAuthProvider for FailingRefreshProvider {
         &'a self,
         _presenter: &'a dyn LoginPresenter,
     ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
-        Box::pin(async { Err(ProviderError::Config("unused login".to_owned())) })
+        Box::pin(async {
+            Err(ProviderError::Config(ProviderErrorSummary::from_untrusted(
+                "unused login",
+            )))
+        })
     }
 
     fn refresh<'a>(
@@ -195,7 +203,7 @@ impl OAuthProvider for FailingRefreshProvider {
     ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
         Box::pin(async {
             Err(ProviderError::Network(
-                "original refresh failure".to_owned(),
+                ProviderErrorSummary::from_untrusted("original refresh failure"),
             ))
         })
     }
@@ -215,7 +223,11 @@ impl OAuthProvider for BlockingRefreshProvider {
         &'a self,
         _presenter: &'a dyn LoginPresenter,
     ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
-        Box::pin(async { Err(ProviderError::Config("unused login".to_owned())) })
+        Box::pin(async {
+            Err(ProviderError::Config(ProviderErrorSummary::from_untrusted(
+                "unused login",
+            )))
+        })
     }
 
     fn refresh<'a>(
@@ -320,14 +332,22 @@ impl OAuthProvider for UnusedOAuthProvider {
         &'a self,
         _presenter: &'a dyn LoginPresenter,
     ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
-        Box::pin(async { Err(ProviderError::Config("unused login".to_owned())) })
+        Box::pin(async {
+            Err(ProviderError::Config(ProviderErrorSummary::from_untrusted(
+                "unused login",
+            )))
+        })
     }
 
     fn refresh<'a>(
         &'a self,
         _cred: &'a OAuthCredential,
     ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
-        Box::pin(async { Err(ProviderError::Config("unused refresh".to_owned())) })
+        Box::pin(async {
+            Err(ProviderError::Config(ProviderErrorSummary::from_untrusted(
+                "unused refresh",
+            )))
+        })
     }
 }
 
@@ -893,7 +913,7 @@ async fn oauth_marker_only_state_is_typed_and_never_leaks_secrets() {
         .expect_err("marker-only OAuth must remain a typed store error");
     assert!(matches!(error, ProviderError::Config(_)));
     let rendered = format!("{error:?} {error}");
-    assert!(rendered.contains("corrupt credential marker for 'github-copilot'"));
+    assert!(rendered.contains("[REDACTED]"));
     for canary in [API_KEY, ACCESS, REFRESH] {
         assert!(!rendered.contains(canary), "OAuth error leaked {canary}");
     }
@@ -991,7 +1011,7 @@ async fn kind_change_is_fail_closed_between_marker_and_protected_writes() {
     ));
     assert!(
         matches!(transitional, ProviderError::Config(ref reason)
-            if reason.contains("expected oauth_token, found api_key")),
+            if reason.as_str() == "[REDACTED]"),
         "unexpected transitional error: {transitional:?}"
     );
 
@@ -1091,7 +1111,7 @@ async fn api_key_marker_is_not_oauth_and_resolve_oauth_returns_safe_wrong_kind()
         .await
         .expect_err("API key must return wrong-kind, not CredentialNeeded");
     assert!(matches!(error, ProviderError::Config(_)), "{error:?}");
-    assert!(format!("{error}").contains("expected oauth_token, found api_key"));
+    assert!(format!("{error}").contains("[REDACTED]"));
     assert!(!format!("{error}").contains(api_key));
     assert!(!format!("{error:?}").contains(api_key));
 }
@@ -1383,8 +1403,7 @@ async fn refresh_timeout_survives_failed_post_failure_reread() {
     assert!(
         matches!(
             error,
-            ProviderError::AuthFailed(ref reason)
-                if reason == "OAuth refresh timed out for provider 'scripted-oauth'"
+            ProviderError::AuthFailed(ref reason) if reason.as_str() == "[REDACTED]"
         ),
         "post-failure reread must not replace the typed timeout: {error:?}"
     );
@@ -1403,7 +1422,7 @@ async fn provider_refresh_error_survives_failed_post_failure_reread() {
     assert!(
         matches!(
             error,
-            ProviderError::Network(ref reason) if reason == "original refresh failure"
+            ProviderError::Network(ref reason) if reason.as_str() == "[REDACTED]"
         ),
         "post-failure reread must not replace the provider error: {error:?}"
     );

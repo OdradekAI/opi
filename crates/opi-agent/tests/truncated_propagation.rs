@@ -139,6 +139,7 @@ async fn run_truncated(mode: ExecutionMode) -> (Option<bool>, Option<bool>) {
     let hooks = AllowHooks;
     let result = opi_agent::agent_loop(context, config, &hooks, sink, CancellationToken::new())
         .await
+        .into_execution_result()
         .unwrap();
 
     let message_truncated = result.context.iter().find_map(|m| match m {

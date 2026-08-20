@@ -1,857 +1,658 @@
-# Phase 17 Deep Agent Core Semantic Closure -- Independent Code Audit
+# Phase 17 Deep Agent Core Semantic Closure — Independent Code Audit
 
-**Auditor**: gpt5 (independent, no prior audit reports consulted)  
-**Date**: 2026-08-14  
-**Scope**: Phase 17 registered requirements and Tasks 17.1--17.9  
-**Implementation target**: `877c41fd6c7b0c7850839f41c8fd2824e90436a6` (current committed implementation)  
-**Phase exit commit**: `a4cfa4ddc74b4dfac59b4305d4657599af866480` (provenance only)  
-**History use**: provenance and discovery only; no diff coverage boundary  
-**Method**: Pinned-HEAD review of the normative specification, all task DoDs and 70 exit criteria, full relevant production call paths, tests, CI, documentation, and minimum-change traces. Standards and Spec were reviewed independently and are preserved as separate axes. Existing Phase 17 audit reports were neither opened nor searched.
+- Auditor: Codex
+- Audit date: 2026-08-15
+- Audited revision: `eb5e3166834f804c9b47f5d17f8131652931c601`
+- Recorded phase-exit commit: `a4cfa4ddc74b4dfac59b4305d4657599af866480`
+- Scope: tasks 17.1–17.9, their registered requirements, parent invariants, minimum-change overlays, and current committed implementation
+- Verdict: **FAIL**
+- Findings: **0 Blocker, 14 Major, 3 Minor**
 
----
+The phase does not satisfy its admitted semantic-closure claim. The full local
+workspace gate is green, but independent committed-HEAD inspection found
+systemic gaps in provider-call ownership, complete-state validation,
+authorization/evidence ordering, and evidence truthfulness. The passing tests
+do not exercise the negative paths that expose these gaps.
 
-## 1. Executive Summary
+## Method and evidence boundary
 
-**Verdict: FAIL**
+The audit pinned committed `HEAD` before inspection and used `git show`,
+`git grep`, and committed-object searches for implementation evidence. Existing
+Phase 17 `audit.*.md` reports were not read, searched, or used. Historical
+evidence was used only to understand the registered requirements, task ledger,
+and claimed phase-exit gates; findings target current committed code rather than
+diff shape.
 
-| Severity | Count |
-|----------|------:|
-| Blocker | 1 |
-| Major | 19 |
-| Minor | 3 |
-| Info | 0 |
+The independent Standards and Spec reviews were kept as separate axes. A third
+technical review checked correctness, security/redaction, tests, invariants,
+integration, and residual risks. All three reviewers targeted the same pinned
+revision.
 
-The implementation contains substantial provider-routing, authority, and evidence-lifecycle work, and the focused Phase 17 tests pass. It is nevertheless not a semantic closure: the interactive `Ask` path executes commands without a broker grant; production auth provenance is fabricated; configured OAuth routes are omitted unless active at startup; and finalized evidence can be incomplete, mutable, stale, or extended after finalization. Several findings overlap across the mandatory Standards and Spec axes; those independent observations are intentionally retained rather than merged.
+## Standards review
 
-The current-HEAD verification also is not wholly green. Formatting, clippy, doctests, rustdoc, documentation checks, and all focused Phase 17 binaries passed, but `cargo test --workspace --all-targets` fails under the repository-required external Cargo cache because `doctor_cli` searches only `<workspace>/target/debug/opi.exe`.
+### P17-STD-001 — Published Agent hook ordering and ownership documentation contradicts runtime
 
-### Per-task summary
+**Severity: Major.** Both `opi-agent` READMEs describe stop before preparation
+and schema validation before `before_tool_call`, while the runtime prepares and
+applies before stop and invokes the hook before schema validation. The API table
+also assigns product-owned `EffectiveUserPolicy` to `opi-agent`. Evidence:
+`crates/opi-agent/README.md:121-126,147-150,184,363`,
+`crates/opi-agent/README.zh.md:110-114,131-134,162,318`,
+`crates/opi-agent/src/agent_loop.rs:767-820,1271-1299`, and
+`crates/opi-coding-agent/src/tool_authority.rs:145`. This violates the README
+source-of-truth rule, bilingual synchronization obligation, and `INV-003`.
 
-| Task | Title | Verdict |
-|------|-------|---------|
-| 17.1 | Collection route/auth preparation | FAIL -- provenance and cancellation/stream terminal semantics are incomplete |
-| 17.2 | Atomic complete next-turn state | PASS-WITH-FINDINGS -- core ordering works, but public piecemeal surfaces remain |
-| 17.3 | Evidence identities and lifecycle | FAIL -- the strict manifest contract accepts materially incomplete identity |
-| 17.4 | Trusted tool authority | FAIL -- interactive commands may execute without a broker grant or scoped authorization |
-| 17.5 | Product provider routes | FAIL -- OAuth routes and truthful credential provenance are absent |
-| 17.6 | Agent evidence runtime | FAIL -- sequential side effects outrun evidence-health observation |
-| 17.7 | Product evidence/finalization/redaction | FAIL -- capture is unwired in modes and file/run finalization is not immutable |
-| 17.8 | Legacy migration | PASS |
-| 17.9 | Cross-mode/failure/docs/CI assurance | FAIL -- A14 is not exercised as specified and the workspace gate is not green in the required cache workflow |
-
----
-
-## 2. Standards Findings
-
-The Standards reviewer assessed the complete relevant implementation against `AGENTS.md` and the Fowler-smell baseline. This axis fails independently of the Spec axis.
-
-### 2.1 MAJOR: Extension tool names can be laundered into trusted built-ins
-
-**File:** `crates/opi-coding-agent/src/harness.rs`; `crates/opi-coding-agent/src/tool_authority.rs`  
-**Lines:** 1252--1297; 47--63  
-**Cause:** Extension implementations are concatenated with product tools, and trusted origin, registration ID, and capability are inferred solely from the model-visible tool name.  
-**Impact:** An extension tool named `read`, `write`, `edit`, or `bash` can acquire a built-in identity/capability, defeating the authority boundary and the intended extension exclusion.  
-**Fix:** Preserve origin before concatenation and register product-created built-ins only; never infer trusted identity from a tool-supplied name.
+Recommended fix: update both READMEs together to the implemented public order
+and remove `EffectiveUserPolicy` from the `opi-agent` surface table.
 
 ```yaml
-id: P17-AUD-GPT5-S01
+id: P17-STD-001
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: standards
 severity: Major
-title: Extension tool names can be laundered into trusted built-ins
-claim: >-
-  An extension tool using a built-in name is assigned Builtin origin, a builtin registration ID, and the corresponding trusted capability.
-evidence:
-  - location: crates/opi-coding-agent/src/harness.rs:1252-1297
-    detail: Extension tools are appended to the same vector before trusted registration.
-  - location: crates/opi-coding-agent/src/tool_authority.rs:47-63
-    detail: Origin, registration ID, and capability are derived only from definition.name.
-criterion_source: 'AGENTS.md Design boundaries; Phase 17 task 17.4 authority ownership'
+criterion_source: "AGENTS.md source-of-truth and bilingual-sync rules; docs/opi-spec.md INV-003"
 reproduction:
-  - 'rg -n "collect_tools|tools.extend\(extension_tools\)|builtin_capability|ToolOrigin::Builtin" crates/opi-coding-agent/src/harness.rs crates/opi-coding-agent/src/tool_authority.rs'
+  - "git grep -n -E 'should_stop_after_turn|prepare_next_turn|before_tool_call|EffectiveUserPolicy' eb5e3166834f804c9b47f5d17f8131652931c601 -- crates/opi-agent/README.md crates/opi-agent/README.zh.md crates/opi-agent/src/agent_loop.rs crates/opi-coding-agent/src/tool_authority.rs"
 confidence: high
 status: unverified
 ```
 
-### 2.2 MAJOR: Provider replacement can retain a stale resolver and provenance
+### P17-STD-002 — Agent Core closes public types over Reference Product policy
 
-**File:** `crates/opi-ai/src/provider_collection.rs`  
-**Lines:** 282--372  
-**Cause:** One route is split across the registry and several maps, while `register` and `register_route` update different subsets.  
-**Impact:** Re-registering a provider ID through the other public path can pair the new provider with the old credential resolver/source or stale metadata.  
-**Fix:** Store a route as one aggregate and replace it atomically, or route every update through one private all-fields replacement operation.
+**Severity: Major.** `AssemblySource` is closed over `Cli | Sdk | Rpc`, and
+`CapabilityClass` is closed over the coding product's built-in permission
+families (`crates/opi-agent/src/evidence.rs:347-358,652-673` and
+`crates/opi-agent/src/authority.rs:79-95`). The matching tool-policy map belongs
+to the Reference Product (`crates/opi-coding-agent/src/tool_authority.rs:40-50`).
+Another embedder must either misclassify itself or change Agent Core, contrary
+to `PRIN-003` and the admitted product/core placement.
+
+Recommended fix: keep opaque validated source/capability identities in core and
+define CLI/SDK/RPC plus workspace/tool constants in `opi-coding-agent`.
 
 ```yaml
-id: P17-AUD-GPT5-S02
+id: P17-STD-002
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: standards
 severity: Major
-title: Provider replacement can retain a stale resolver and provenance
-claim: >-
-  Registering a provider through one public replacement path after the other can rejoin the new provider with stale resolver, provenance, or probe state under the same string ID.
-evidence:
-  - location: crates/opi-ai/src/provider_collection.rs:282-296
-    detail: Route state is owned by multiple parallel registries and maps.
-  - location: crates/opi-ai/src/provider_collection.rs:336-372
-    detail: register and register_route update different subsets of the route state.
-criterion_source: 'AGENTS.md explicit ownership and fail-closed adapter boundaries'
+criterion_source: "docs/opi-spec.md PRIN-003; Phase 17 design placement review"
 reproduction:
-  - 'rg -n "pub struct ProviderCollection|pub fn register\(|pub fn register_route|self\.resolvers|self\.sources" crates/opi-ai/src/provider_collection.rs'
+  - "git grep -n -E 'enum AssemblySource|enum CapabilityClass|Capability::Builtin|fn builtin_capability' eb5e3166834f804c9b47f5d17f8131652931c601 -- crates/opi-agent/src crates/opi-coding-agent/src/tool_authority.rs"
 confidence: high
 status: unverified
 ```
 
-### 2.3 MAJOR: Production route assembly discards credential provenance
+### P17-STD-003 — Provider evidence crosses crates through a duplicated string protocol
 
-**File:** `crates/opi-coding-agent/src/provider_factory.rs`; `crates/opi-ai/src/provider_collection.rs`  
-**Lines:** 139--195, 336--362; 403--418  
-**Cause:** The product route bundle omits provenance, registers every route as `Static`, discards `ResolvedApiKey.source`, and overwrites resolver output with `NotAttempted`.  
-**Impact:** Evidence describing environment, credential-store, OAuth, or allowed fallback use is false.  
-**Fix:** Make the resolver return the actual typed provenance and preserve it through preparation and evidence.
+**Severity: Major.** Agent Core serializes provider route/provenance as ad-hoc
+JSON tokens (`crates/opi-agent/src/agent_loop.rs:183-205,1581-1603`); the product
+redeclares and reparses the shape (`crates/opi-coding-agent/src/evidence.rs:522-645`).
+Missing, malformed, or future values default to configured routes or
+`Static`/`NotAttempted`, although typed `RouteFacts` and `ProvenanceFacts`
+already exist at `crates/opi-agent/src/evidence.rs:599-650`. Schema drift can
+therefore produce a complete-looking manifest with invented facts. This
+violates the typed, fail-closed boundary rule and creates repeated-switch and
+shotgun-surgery pressure.
+
+Recommended fix: use one typed provider-evidence payload end to end and make
+conversion failures mark evidence incomplete.
 
 ```yaml
-id: P17-AUD-GPT5-S03
+id: P17-STD-003
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: standards
 severity: Major
-title: Production route assembly discards credential provenance
-claim: >-
-  Production credentials resolved from environment, store, or OAuth are recorded as Static with fallback NotAttempted.
-evidence:
-  - location: crates/opi-coding-agent/src/provider_factory.rs:188-197
-    detail: Every production route is registered with AuthProvenanceSource::Static.
-  - location: crates/opi-ai/src/provider_collection.rs:409-418
-    detail: Resolver provenance is overwritten and fallback is hardcoded to NotAttempted.
-criterion_source: 'AGENTS.md typed correctness and evidence-boundary truthfulness'
+criterion_source: "AGENTS.md typed fail-closed boundary rule; docs/opi-spec.md CTRL-002"
 reproduction:
-  - 'rg -n "ProviderAuthPair|AuthProvenanceSource::Static|AuthProvenance::default|AuthFallback::NotAttempted" crates/opi-ai/src/provider_collection.rs crates/opi-coding-agent/src/provider_factory.rs'
+  - "git grep -n -E 'requested_route|RoutePayload|auth_source_token|auth_source_from_token|capture_recorder_failed|empty_selection' eb5e3166834f804c9b47f5d17f8131652931c601 -- crates/opi-agent/src/agent_loop.rs crates/opi-agent/src/evidence.rs crates/opi-coding-agent/src/evidence.rs"
 confidence: high
 status: unverified
 ```
 
-### 2.4 MAJOR: File evidence emission ignores flush failure
+### P17-STD-004 — Finalized-manifest validity is optional at the public sink boundary
 
-**File:** `crates/opi-coding-agent/src/evidence.rs`  
-**Lines:** 118--142  
-**Cause:** `emit` handles `write_all` failure but discards the result of `BufWriter::flush`, then mirrors the record as successful.  
-**Impact:** A run can publish a healthy manifest while durable JSONL evidence is missing or truncated.  
-**Fix:** Treat flush as emission, latch and return the first failure, and mirror the record only after successful flush.
+**Severity: Major.** `FinalizedManifest` exposes mutable public fields,
+`require_complete` is an optional caller-side check, and `EvidenceSink::finalize_run`
+accepts the unvalidated type (`crates/opi-agent/src/evidence.rs:777-810,893-908,1058-1070,1113-1187`).
+The file sink writes it directly (`crates/opi-coding-agent/src/evidence.rs:203-258`).
+Only `CodingHarness` manually gates the value
+(`crates/opi-coding-agent/src/harness.rs:2884-2894`), so another public embedder
+can publish an invalid finalized manifest.
+
+Recommended fix: make finalized fields private and require a validated manifest
+type at every sink boundary.
 
 ```yaml
-id: P17-AUD-GPT5-S04
+id: P17-STD-004
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: standards
 severity: Major
-title: File evidence emission ignores flush failure
-claim: >-
-  FileEvidenceSink returns success and records an item in memory when flushing that item to the evidence file fails.
-evidence:
-  - location: crates/opi-coding-agent/src/evidence.rs:128-142
-    detail: write errors are handled, writer.flush is ignored, and the record is then pushed.
-criterion_source: 'AGENTS.md fail-closed evidence boundaries'
+criterion_source: "AGENTS.md fail-closed adapter-boundary rule; Phase 17 finalized-manifest contract"
 reproduction:
-  - 'rg -n "let _ = writer\.flush|records.*push|fn has_failure" crates/opi-coding-agent/src/evidence.rs'
+  - "git grep -n -E 'pub struct FinalizedManifest|pub completeness|fn require_complete|fn finalize_run|incomplete.completeness' eb5e3166834f804c9b47f5d17f8131652931c601 -- crates/opi-agent/src/evidence.rs crates/opi-coding-agent/src/evidence.rs crates/opi-coding-agent/src/harness.rs crates/opi-agent/tests/evidence_contract.rs"
 confidence: high
 status: unverified
 ```
 
-### 2.5 MAJOR: `ContentDigest` accepts arbitrary strings at a strict identity boundary
+### P17-STD-005 — Source comments preserve stale phase history
 
-**File:** `crates/opi-agent/src/evidence.rs`  
-**Lines:** 310--320, 1081--1132  
-**Cause:** `ContentDigest::from_hex` performs no hex or length validation, while the finalization gate checks only for emptiness.  
-**Impact:** Invalid digest identities can enter a manifest that is represented as strictly complete.  
-**Fix:** Use a validated fixed-width or algorithm-tagged digest and validate deserialization through `TryFrom`.
+**Severity: Minor.** Phase/task identifiers remain pervasive in source, and
+some current comments still say policy will arrive in 17.7 or refer to the
+removed `DiagnosticLinked` trace contract. Representative evidence is at
+`crates/opi-agent/src/agent_loop.rs:1538-1544,1639-1646` and
+`crates/opi-coding-agent/src/tool/bash.rs:447-454,509-514`. This conflicts with
+the repository rule that source comments describe current contracts rather
+than phase history.
 
-```yaml
-id: P17-AUD-GPT5-S05
-source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
-independence: unknown
-axis: standards
-severity: Major
-title: ContentDigest accepts arbitrary strings at a strict identity boundary
-claim: >-
-  ContentDigest::from_hex accepts non-hex and wrong-length strings that require_complete accepts when non-empty.
-evidence:
-  - location: crates/opi-agent/src/evidence.rs:310-320
-    detail: The constructor wraps the supplied string without validation.
-  - location: crates/opi-agent/src/evidence.rs:1087-1131
-    detail: Manifest validation rejects empty digest strings only.
-criterion_source: 'AGENTS.md typed correctness and fail-closed evidence boundaries'
-reproduction:
-  - 'rg -n "struct ContentDigest|fn from_hex|ContentDigest\(d\) if d\.is_empty" crates/opi-agent/src/evidence.rs'
-confidence: high
-status: unverified
-```
-
-### 2.6 MAJOR: The complete-state API retains public piecemeal mutators
-
-**File:** `crates/opi-agent/src/agent.rs`  
-**Lines:** 57--60, 214--280  
-**Cause:** Seven public convenience setters remain after recording `replace_state` as the one complete replacement seam; one panics on validation and the others discard the result.  
-**Impact:** The public surface duplicates the state-transition protocol and retains failure behavior that is inconsistent with the typed replacement operation.  
-**Fix:** Migrate product call sites to candidate construction plus `replace_state`, then remove or privatize the piecemeal methods and preserve typed errors.
+Recommended fix: rewrite affected comments as current invariants and keep
+delivery history in snapshots or Git.
 
 ```yaml
-id: P17-AUD-GPT5-S06
+id: P17-STD-005
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
-independence: unknown
-axis: standards
-severity: Major
-title: The complete-state API retains public piecemeal mutators
-claim: >-
-  Agent publicly exposes seven field-level mutation methods despite documenting replace_state as the one public replacement operation.
-evidence:
-  - location: crates/opi-agent/src/agent.rs:57-60
-    detail: Type documentation identifies replace_state as the sole complete replacement seam.
-  - location: crates/opi-agent/src/agent.rs:214-280
-    detail: Seven public mutators remain; set_model panics and several discard replacement results.
-criterion_source: 'AGENTS.md small/deep interfaces and Phase 17 task 17.2 surface-necessity trace'
-reproduction:
-  - 'rg -n "pub fn (set_model|set_max_tokens|set_thinking_config|set_initial_messages|inject_message|replace_messages|rewind_to)" crates/opi-agent/src/agent.rs'
-confidence: high
-status: unverified
-```
-
-### 2.7 MAJOR: `ProviderRegistry::register` is an unchecked compatibility bypass
-
-**File:** `crates/opi-ai/src/registry.rs`  
-**Lines:** 147--170  
-**Cause:** The checked `register_provider` boundary coexists with a public backward-compatible alias that installs the same type without validating an empty provider ID.  
-**Impact:** Invalid registry state remains constructible, and the Phase 17 removal audit misses an explicit compatibility surface.  
-**Fix:** Migrate tests/callers to `register_provider` and remove the unchecked alias.
-
-```yaml
-id: P17-AUD-GPT5-S07
-source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
-independence: unknown
-axis: standards
-severity: Major
-title: ProviderRegistry register is an unchecked compatibility bypass
-claim: >-
-  The public backward-compatible register alias accepts a provider that the checked register_provider boundary rejects.
-evidence:
-  - location: crates/opi-ai/src/registry.rs:147-170
-    detail: register_provider validates the ID; the documented compatibility alias inserts without that validation.
-criterion_source: 'AGENTS.md do not preserve compatibility unless requested; fail-closed adapter validation'
-reproduction:
-  - 'rg -n "Backward-compatible alias|pub fn register\(" crates/opi-ai/src/registry.rs crates/opi-ai/tests'
-confidence: high
-status: unverified
-```
-
-### 2.8 MINOR: Typed evidence identities do not reach authorization
-
-**File:** `crates/opi-agent/src/agent_loop.rs`; `crates/opi-agent/src/authority.rs`  
-**Lines:** 74--89, 271--277, 1041--1048; 231--243  
-**Cause:** The loop mints typed run/turn/call identities but sends `run_id: None`, a separately formatted turn string, and the provider tool-call string to authorization.  
-**Impact:** Authority decisions cannot be correlated to the core-owned evidence identity graph without a second string protocol.  
-**Fix:** Carry typed run/turn/call IDs into the authorization request and name any provider ID separately as untrusted correlation data.
-
-```yaml
-id: P17-AUD-GPT5-S08
-source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: standards
 severity: Minor
-title: Typed evidence identities do not reach authorization
-claim: >-
-  ToolAuthorizationRequest never receives the typed run and tool-call identities already minted by the loop.
-evidence:
-  - location: crates/opi-agent/src/agent_loop.rs:1041-1048
-    detail: Authorization is called with run_id None and string turn/call IDs.
-  - location: crates/opi-agent/src/agent_loop.rs:271-277
-    detail: A typed evidence call ID exists before tool execution.
-criterion_source: 'AGENTS.md typed correctness and deep-module surface necessity'
+criterion_source: "AGENTS.md current-contract comment rule"
 reproduction:
-  - 'rg -n "let turn_id = format|run_id: None|ToolAuthorizationRequest|tool_call_ids" crates/opi-agent/src/agent_loop.rs crates/opi-agent/src/authority.rs'
+  - "git grep -n -E 'Phase [0-9]|Task [0-9]|task [0-9]|P17-|17\\.[0-9]' eb5e3166834f804c9b47f5d17f8131652931c601 -- crates/opi-ai/src crates/opi-agent/src crates/opi-coding-agent/src"
 confidence: high
 status: unverified
 ```
 
----
+## Spec review
 
-## 3. Spec Findings
+### P17-SPEC-001 — Bedrock bypasses collection-owned per-call authentication
 
-The Spec reviewer checked every registered criterion, task claim, DoD item, production call site, and acceptance scenario. It assessed 45 rows met, 11 partial, 12 not met, and 2 unverified; this axis fails independently of Standards.
+**Severity: Major.** The production Bedrock route resolves AWS credentials at
+provider construction, discards the reported source, registers a placeholder
+static resolver, and ignores the `ResolvedAuth` frozen for each call
+(`crates/opi-coding-agent/src/provider_factory.rs:1913-1975` and
+`crates/opi-ai/src/bedrock/mod.rs:195-207`). The implementation added a
+"compound-credential exemption" to the provider contract
+(`crates/opi-ai/src/provider.rs:29-48`), but no registered Phase 17 requirement
+admits that exception. Bedrock therefore cannot rotate/remediate credentials
+per logical call and reports false static provenance.
 
-### 3.1 MAJOR: Production auth evidence fabricates `Static` / `NotAttempted`
-
-**File:** `crates/opi-ai/src/provider_collection.rs`; `crates/opi-coding-agent/src/provider_factory.rs`  
-**Lines:** 403--418; 188--197  
-**Cause:** Production discards the resolver's actual credential source/fallback and replaces it with route constants.  
-**Impact:** P17-A01 cannot establish agreement among requested, resolved, actual, auth-source, and fallback evidence.  
-**Fix:** Preserve typed resolver provenance and add production keychain/environment/OAuth/fallback manifest tests.
+Recommended fix: extend the closed secret-bearing prepared-auth value to carry
+compound SigV4 material; resolve it in `prepare_call` and remove provider-owned
+credentials and the placeholder resolver.
 
 ```yaml
-id: P17-AUD-GPT5-P01
+id: P17-SPEC-001
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: spec
 severity: Major
-title: Production auth evidence fabricates Static and NotAttempted
-claim: >-
-  Every production credential source and fallback is finalized as Static and NotAttempted regardless of the resolver outcome.
-evidence:
-  - location: crates/opi-coding-agent/src/provider_factory.rs:188-197
-    detail: All live product routes use Static provenance.
-  - location: crates/opi-ai/src/provider_collection.rs:409-418
-    detail: The collection overwrites resolver provenance and hardcodes fallback.
-criterion_source: 'P17-PRV-004, P17-PRV-005, P17-EVD-003, P17-A01, P17-A02, CTRL-002'
+criterion_source: "Phase 17 P17-PRV-001, P17-PRV-003, P17-PRV-004, P17-PRV-005; tasks 17.1 and 17.5 DoD"
 reproduction:
-  - 'rg -n "AuthProvenanceSource::Static|AuthFallback::NotAttempted|provenance:.*default" crates/opi-ai/src/provider_collection.rs crates/opi-coding-agent/src/provider_factory.rs crates/opi-coding-agent/src/credential_store.rs'
+  - "git grep -n -E 'compound-credential exemption|bedrock-compound-credential|build_bedrock|stream_prepared.*_auth' eb5e3166834f804c9b47f5d17f8131652931c601 -- crates/opi-ai/src crates/opi-coding-agent/src/provider_factory.rs"
 confidence: high
 status: unverified
 ```
 
-### 3.2 MAJOR: Configured OAuth providers are not dispatchable after startup
+### P17-SPEC-002 — `prepare_call` never validates request-route identity
 
-**File:** `crates/opi-coding-agent/src/provider_factory.rs`  
-**Lines:** 1513--1525  
-**Cause:** `build_extra_dispatch_routes` explicitly omits `github-copilot` and `openai-codex`; they are built only when active at startup.  
-**Impact:** A session starting on another provider cannot switch to those configured providers through its collection, despite the multi-provider runtime contract.  
-**Fix:** Register lazy-auth OAuth routes independently of startup selection and keep credential IO deferred to `prepare_call`.
+**Severity: Major.** `ProviderCollection::prepare_call` resolves `spec`, checks
+the resolved model's capabilities against the request, and freezes both, but it
+never compares `request.model` with the resolved route
+(`crates/opi-ai/src/provider_collection.rs:398-457`). `CollectionError` has no
+request-route mismatch variant (`:239-274`). A public caller can resolve one
+provider/model while dispatching a request naming another, contrary to the
+explicit request-route-mismatch failure requirement.
+
+Recommended fix: reject mismatched canonical request/route identities with a
+typed error before authentication or dispatch and add zero-call tests.
 
 ```yaml
-id: P17-AUD-GPT5-P02
+id: P17-SPEC-002
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: spec
 severity: Major
-title: Configured OAuth providers are not dispatchable after startup
-claim: >-
-  Copilot and OpenAI Codex remain metadata-only when another provider is selected at startup.
-evidence:
-  - location: crates/opi-coding-agent/src/provider_factory.rs:1513-1525
-    detail: The extra-route builder explicitly excludes both OAuth-only provider IDs.
-  - location: crates/opi-coding-agent/tests/phase17_product_evidence.rs
-    detail: Cross-provider tests inject synthetic routes rather than exercising production OAuth assembly.
-criterion_source: 'INV-001, P17-OUT-001, P17-PRV-001, P17-A01, task 17.5 DoD'
+criterion_source: "Task 17.1 DoD; Phase 17 provider failure table and P17-FAL-001"
 reproduction:
-  - 'rg -n -C 12 "OAuth-only providers|github-copilot.*openai-codex" crates/opi-coding-agent/src/provider_factory.rs'
+  - "git show eb5e3166834f804c9b47f5d17f8131652931c601:crates/opi-ai/src/provider_collection.rs | Select-Object -Skip 238 -First 220"
 confidence: high
 status: unverified
 ```
 
-### 3.3 MAJOR: `--trace` is ignored by interactive and binary RPC modes
+### P17-SPEC-003 — Stream-time credential rejection does not terminate a prepared call
 
-**File:** `crates/opi-coding-agent/src/main.rs`; `crates/opi-coding-agent/tests/phase17_cross_mode.rs`  
-**Lines:** 883, 1057--1069, 1192--1222; 23--27  
-**Cause:** The CLI forwards trace only to `NonInteractiveRunner`; RPC and interactive construction omit the recorder. The test substitutes injected builder/recorder seams and documents the asymmetry.  
-**Impact:** Explicit capture is unavailable or semantically divergent in two claimed Reference Product modes.  
-**Fix:** Construct the product recorder before mode branching, pass it into every entry path, and test the real mode entry cores.
+**Severity: Major.** `AttemptStream` clears only the shared active-attempt flag
+on every terminal error, and `start_attempt` checks only cancellation and that
+flag (`crates/opi-ai/src/provider_collection.rs:664-771`). Consequently a
+provider stream ending in `CredentialRevoked` or `CredentialNeeded` releases
+the slot and permits another attempt with the same rejected frozen credential.
+The rejection tests at `crates/opi-ai/tests/provider_collection.rs:1906-1957`
+cover resolver failure before a prepared call exists, not stream-time rejection.
+
+Recommended fix: retain a terminal-call state shared with `AttemptStream`, set
+it for credential rejection/expiry, return a typed terminated-call error from
+later attempts, and test that dispatch count remains one.
 
 ```yaml
-id: P17-AUD-GPT5-P03
+id: P17-SPEC-003
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: spec
 severity: Major
-title: Trace capture is ignored by interactive and binary RPC modes
-claim: >-
-  Supplying --trace configures non-interactive capture only; interactive and binary RPC do not receive a file evidence recorder.
-evidence:
-  - location: crates/opi-coding-agent/src/main.rs:1057-1069
-    detail: RPC construction omits cli.trace and an evidence recorder.
-  - location: crates/opi-coding-agent/src/main.rs:1192-1222
-    detail: Interactive harness assembly does not call evidence configuration.
-  - location: crates/opi-coding-agent/tests/phase17_cross_mode.rs:23-27
-    detail: The acceptance test explicitly records both capture asymmetries.
-criterion_source: 'P17-MIG-003, P17-MIG-005, P17-EVD-007, P17-A14, task 17.7 DoD'
+criterion_source: "Task 17.1 DoD; Phase 17 logical-call credential rejection contract"
 reproduction:
-  - 'rg -n "cli\.trace|new_with_runtime_packages|\.evidence\(" crates/opi-coding-agent/src/main.rs crates/opi-coding-agent/tests/phase17_cross_mode.rs'
+  - "git show eb5e3166834f804c9b47f5d17f8131652931c601:crates/opi-ai/src/provider_collection.rs | Select-Object -Skip 663 -First 110"
+  - "git show eb5e3166834f804c9b47f5d17f8131652931c601:crates/opi-ai/tests/provider_collection.rs | Select-Object -Skip 1889 -First 75"
 confidence: high
 status: unverified
 ```
 
-### 3.4 MAJOR: The strict manifest gate accepts incomplete or stale execution facts
+### P17-SPEC-004 — Complete next-turn candidates are validated only for route existence
 
-**File:** `crates/opi-agent/src/evidence.rs`; `crates/opi-coding-agent/src/evidence.rs`; `crates/opi-coding-agent/src/harness.rs`  
-**Lines:** 612--692, 764--791, 1081--1132; 295--330; 1527--1556, 2551--2554  
-**Cause:** `require_complete` does not check `EvidenceCompleteness`, system/tool-schema identities, permission scope/grants, artifacts, branch identity, or several environment facts. Product construction hardcodes several required fields empty and freezes binding/config at harness construction.  
-**Impact:** A manifest can claim completeness without reconstructing the resolved execution or current route/model/branch.  
-**Fix:** Represent and populate every required field at run setup/finalization, then make the strict gate exhaustive.
+**Severity: Major.** The complete state includes context, model selection,
+thinking, maximum tokens, and temperature, but both public replacement and loop
+preparation validate only `model_selection.to_spec()`
+(`crates/opi-agent/src/agent.rs:191-206`,
+`crates/opi-agent/src/agent_loop.rs:767-799`, and
+`crates/opi-agent/src/loop_types.rs:122-147`). A candidate can select a valid
+text model while enabling unsupported thinking, be applied, and be observed by
+stop; the capability error appears only on a later provider dispatch. Existing
+rollback coverage changes only the model to an unknown route.
+
+Recommended fix: validate route plus all candidate request/capability
+constraints through one shared validator before assignment; add unsupported
+thinking and invalid inference-setting rollback tests.
 
 ```yaml
-id: P17-AUD-GPT5-P04
+id: P17-SPEC-004
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: spec
 severity: Major
-title: The strict manifest gate accepts incomplete or stale execution facts
-claim: >-
-  FinalizedManifest::require_complete accepts Incomplete manifests and production manifests lacking required system, tool, permission, artifact, branch, or current-run identity facts.
-evidence:
-  - location: crates/opi-agent/src/evidence.rs:1081-1132
-    detail: The validator checks binding, four config digests, route, and prompt only; it never checks completeness.
-  - location: crates/opi-coding-agent/src/evidence.rs:295-330
-    detail: Production writes empty system/tool-schema and artifact facts.
-  - location: crates/opi-coding-agent/src/harness.rs:1527-1556
-    detail: Binding/config identity is frozen from the startup model rather than rebuilt per run.
-criterion_source: 'P17-OUT-004, P17-EVD-003, INV-008, P17-A09, tasks 17.3 and 17.7 DoD'
+criterion_source: "P17-NXT-002; task 17.2 DoD; Phase 17 entire-candidate validation contract"
 reproduction:
-  - 'rg -n "system_digest: None|tool_schema_digests: Vec::new|artifacts: Vec::new|pub fn require_complete|EvidenceCompleteness" crates/opi-agent/src/evidence.rs crates/opi-coding-agent/src/evidence.rs crates/opi-coding-agent/src/harness.rs'
+  - "git grep -n -E 'validate_state|validate_dispatchable_route|state = candidate|pub thinking|pub max_tokens|pub temperature' eb5e3166834f804c9b47f5d17f8131652931c601 -- crates/opi-agent/src/agent.rs crates/opi-agent/src/agent_loop.rs crates/opi-agent/src/loop_types.rs"
 confidence: high
 status: unverified
 ```
 
-### 3.5 MAJOR: Compaction is appended after its run manifest is finalized
+### P17-SPEC-005 — Parallel tools execute before authorization evidence can fail closed
 
-**File:** `crates/opi-coding-agent/src/harness.rs`; `crates/opi-coding-agent/tests/phase17_product_evidence.rs`  
-**Lines:** 2230--2254, 2835; 1032--1092  
-**Cause:** `prompt` finalizes the run, and a later `compact` call appends a record under the same run identity without re-finalizing. The acceptance test checks record presence but not manifest terminal correlation.  
-**Impact:** The immutable manifest's sequence/correlation omits a claimed member of the same run graph.  
-**Fix:** Include compaction before finalization or model it as a separately finalized correlated run; reject post-finalization emission.
+**Severity: Major.** The sequential path emits authorization evidence before
+execution. The parallel path passes `tool_evidence = None`, runs all futures
+through `join_all`, and emits records only after the tools finish
+(`crates/opi-agent/src/agent_loop.rs:430-479,515-566,1339-1416`). Because tools
+default to parallel (`crates/opi-agent/src/tool.rs:58-61`), a custom trusted
+side-effecting tool can execute before an authorization-record sink failure
+advances health. This violates the required deterministic source-order
+`resolve → hook → schema → authorize → emit → freshness check → execute` handoff.
+
+Recommended fix: preflight every call in source order through authorization,
+evidence emission, and freshness validation; then launch only fresh allowed
+parallel calls.
 
 ```yaml
-id: P17-AUD-GPT5-P05
+id: P17-SPEC-005
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: spec
 severity: Major
-title: Compaction is appended after its run manifest is finalized
-claim: >-
-  Manual compaction emits a newer record under a run whose manifest has already been finalized with an earlier terminal sequence.
-evidence:
-  - location: crates/opi-coding-agent/src/harness.rs:2230-2254
-    detail: prompt finalizes evidence before returning.
-  - location: crates/opi-coding-agent/src/harness.rs:2835
-    detail: compact emits evidence after that finalization.
-  - location: crates/opi-coding-agent/tests/phase17_product_evidence.rs:1069-1092
-    detail: The test performs prompt then compact but does not compare manifest correlation with the final record.
-criterion_source: 'P17-EVD-002, P17-EVD-003, P17-A09, immutable finalization contract'
+criterion_source: "P17-AUT-003, P17-EVD-009, P17-A12, PRIN-004, INV-005"
 reproduction:
-  - 'cargo test -p opi-coding-agent --test phase17_product_evidence phase17_one_run_graph_includes_tool_execution_record -- --exact'
+  - "git show eb5e3166834f804c9b47f5d17f8131652931c601:crates/opi-agent/src/agent_loop.rs | Select-Object -Skip 429 -First 140"
 confidence: high
 status: unverified
 ```
 
-### 3.6 MAJOR: Evidence failure cannot stop the next sequential tool in a batch
+### P17-SPEC-006 — Provider evidence loses auth provenance and fabricates the actual wire
 
-**File:** `crates/opi-agent/src/agent_loop.rs`  
-**Lines:** 292--365, 462--513  
-**Cause:** Every sequential tool is authorized and executed before the loop emits any tool evidence or observes the resulting evidence-health transition.  
-**Impact:** If evidence for tool 1 fails, tool 2 has already launched even when complete evidence is policy-required.  
-**Fix:** For each sequential call, authorize, emit/observe authorization, recheck health, execute, emit outcome, then proceed.
+**Severity: Major.** `ResolvedAuth` carries named environment/store/OAuth and
+fallback details (`crates/opi-ai/src/auth.rs:105-170`), but the Agent/product
+reduce them to four source tokens and a boolean-like fallback
+(`crates/opi-agent/src/agent_loop.rs:1581-1603`,
+`crates/opi-agent/src/evidence.rs:627-650`, and
+`crates/opi-coding-agent/src/evidence.rs:601-645`). Separately, provider response
+metadata has no exact `WireApi`; finalization assigns
+`actual.wire = configured.wire` and clears the unknown reason
+(`crates/opi-ai/src/message.rs:28-38`,
+`crates/opi-coding-agent/src/harness.rs:2897-2919`, and
+`crates/opi-coding-agent/src/evidence.rs:437-440`). Offline evidence therefore
+cannot reproduce auth selection and can falsely attest the configured wire as
+the wire actually used.
+
+Recommended fix: carry full redacted typed auth provenance and exact
+provider-observed wire metadata; if the actual wire is unavailable, preserve a
+typed unknown reason rather than copying configured state.
 
 ```yaml
-id: P17-AUD-GPT5-P06
+id: P17-SPEC-006
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: spec
 severity: Major
-title: Evidence failure cannot stop the next sequential tool in a batch
-claim: >-
-  A two-tool sequential batch can execute tool 2 before an evidence failure from tool 1 is observed.
-evidence:
-  - location: crates/opi-agent/src/agent_loop.rs:292-365
-    detail: The sequential execution loop completes all calls first.
-  - location: crates/opi-agent/src/agent_loop.rs:462-513
-    detail: Tool evidence and health advancement occur only in the later post-batch loop.
-criterion_source: 'P17-EVD-009, P17-AUT-003, P17-AUT-005, P17-FAL-002, P17-FAL-003, P17-A12'
+criterion_source: "P17-PRV-005, P17-EVD-003, P17-EVD-004, docs/opi-spec.md CTRL-002"
 reproduction:
-  - 'rg -n "if batch_is_sequential|execute_tool\(|Emit one Tool record|emit_evidence\(" crates/opi-agent/src/agent_loop.rs'
+  - "git grep -n -E 'auth_source_token|auth_fallback_token|fallback_allowed|actual_route_from_messages|configured.wire' eb5e3166834f804c9b47f5d17f8131652931c601 -- crates/opi-ai/src/auth.rs crates/opi-agent/src crates/opi-coding-agent/src/evidence.rs crates/opi-coding-agent/src/harness.rs"
 confidence: high
 status: unverified
 ```
 
-### 3.7 MAJOR: File-sink flush failures are converted to success
+### P17-SPEC-007 — Automatic compaction ignores evidence failure and records no terminal outcome
 
-**File:** `crates/opi-coding-agent/src/evidence.rs`; `crates/opi-coding-agent/src/harness.rs`  
-**Lines:** 118--166; 2564--2572  
-**Cause:** The file adapter ignores flush errors, and the harness discards finalization errors.  
-**Impact:** P17-A11 can produce a visible finalized manifest for non-durable/incomplete evidence without a typed failure reaching the caller.  
-**Fix:** Latch and propagate flush/finalization errors, publish the manifest only after durable record completion, and add real-file lifecycle failure tests.
+**Severity: Major.** `persist_turn` discards the result of
+`emit_compaction_evidence` and unconditionally calls `execute_compaction`
+(`crates/opi-coding-agent/src/harness.rs:2686-2754`). The emitted record contains
+only the reason (`crates/opi-agent/src/agent.rs:161-188`) and is never completed
+with success, abort, or failure. Under required-complete policy, a sink failure
+can therefore be followed by a not-yet-launched session mutation, while failed
+or empty compaction still lacks the required terminal graph outcome.
+
+Recommended fix: abort before session mutation on evidence failure and model
+compaction as start plus typed terminal outcome records; propagate the outcome
+to run finalization.
 
 ```yaml
-id: P17-AUD-GPT5-P07
+id: P17-SPEC-007
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: spec
 severity: Major
-title: File-sink flush failures are converted to success
-claim: >-
-  A failed evidence-file flush does not mark the run incomplete and does not prevent manifest publication.
-evidence:
-  - location: crates/opi-coding-agent/src/evidence.rs:139
-    detail: writer.flush return value is discarded.
-  - location: crates/opi-coding-agent/src/harness.rs:2572
-    detail: recorder.finalize_run return value is discarded.
-criterion_source: 'P17-EVD-008, P17-EVD-011, P17-FAL-003, P17-A11, PRIN-005'
+criterion_source: "P17-EVD-002, P17-EVD-009, P17-A12, P17-FAL-003, PRIN-004"
 reproduction:
-  - 'rg -n "let _ = writer\.flush|let _ = recorder\.finalize_run" crates/opi-coding-agent/src/evidence.rs crates/opi-coding-agent/src/harness.rs'
+  - "git show eb5e3166834f804c9b47f5d17f8131652931c601:crates/opi-coding-agent/src/harness.rs | Select-Object -Skip 2685 -First 75"
+  - "git show eb5e3166834f804c9b47f5d17f8131652931c601:crates/opi-agent/src/agent.rs | Select-Object -Skip 160 -First 30"
 confidence: high
 status: unverified
 ```
 
-### 3.8 MINOR: Authorization lacks stable run/call correlation identities
+### P17-SPEC-008 — Finalization failure cannot advance Agent Core evidence health
 
-**File:** `crates/opi-agent/src/agent_loop.rs`  
-**Lines:** 271--277, 1041--1048  
-**Cause:** Authorization receives no run ID and uses provider strings although core identities already exist.  
-**Impact:** Authority evidence cannot be joined directly to the stable core-owned graph.  
-**Fix:** Thread typed `RunId`, `TurnId`, and pre-minted `CallId` through authorization.
+**Severity: Minor.** Evidence health is loop-local and not returned
+(`crates/opi-agent/src/agent.rs:406-440`). Product finalization occurs afterward
+(`crates/opi-coding-agent/src/harness.rs:2836-2894`), so a finalization failure
+returns an error and withholds the manifest but cannot perform the specified
+core-owned `advance_on_failure(Finalization)` transition. The external behavior
+is fail-closed, but the registered core lifecycle/state-transition claim is not
+implemented.
+
+Recommended fix: move finalization into the core-owned lifecycle or return the
+health state and explicitly advance it on finalization failure.
 
 ```yaml
-id: P17-AUD-GPT5-P08
+id: P17-SPEC-008
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: spec
 severity: Minor
-title: Authorization lacks stable run and call correlation identities
-claim: >-
-  The trusted authorization boundary receives run_id None and provider strings instead of the typed identities minted by Agent Core.
-evidence:
-  - location: crates/opi-agent/src/agent_loop.rs:1041-1048
-    detail: The authorization request carries no run ID and uses the provider call string.
-  - location: crates/opi-agent/src/agent_loop.rs:271-277
-    detail: The core-owned evidence call ID is available before execution.
-criterion_source: 'Task 17.4 DoD, P17-EVD-001, P17-EVD-002, P17-OUT-004'
+criterion_source: "P17-EVD-008; tasks 17.6 and 17.7 DoD"
 reproduction:
-  - 'rg -n "run_id: None|tool_call_ids|authorize_and_verify" crates/opi-agent/src/agent_loop.rs'
+  - "git grep -n -E 'EvidenceHealth::healthy|finalize_evidence_run|finalize_run|advance_on_failure' eb5e3166834f804c9b47f5d17f8131652931c601 -- crates/opi-agent/src crates/opi-coding-agent/src"
 confidence: high
 status: unverified
 ```
 
----
+### P17-SPEC-009 — Three-platform phase-exit evidence does not cover the audited revision
 
-## 4. Correctness and Invariant Findings
+**Severity: Major.** The ledger records Linux/macOS/Windows success at
+`40f2e6ee4866f1cd44eefb952b8f40afcbb029ac`
+(`docs/snapshots/phase17/opi-impl-state.json:2260,2659,2804`), but the audited
+revision is `eb5e316...` and includes later Phase 17 runtime/test remediation at
+`211aba87fcf89bacea72fec7ac2c874df45a9aa3`. The required current implementation
+therefore lacks immutable three-platform evidence, so the 70/70 phase-exit
+claim is not reproducible for this target.
 
-### 4.1 MAJOR: Unterminated provider streams are silently reported as success
-
-**File:** `crates/opi-agent/src/agent_loop.rs`; `crates/opi-ai/src/provider_collection.rs`  
-**Lines:** 220--233, 722--727; 579--602, 682--704  
-**Cause:** When the stream reaches natural EOF without a terminal assistant event, the Agent emits `AgentEnd` and returns `Ok`. The collection-level drain helper treats the same condition as `StreamError`; the prepared-call active flag also clears only on an error or terminal event.  
-**Impact:** A partial provider failure becomes successful completion with unchanged state, and the logical prepared call can remain active.  
-**Fix:** Convert EOF without a terminal event into a typed stream failure and clear the active attempt on all stream termination/drop paths.
+Recommended fix: rerun the complete required matrix and six gates at the
+audited implementation commit, then record the immutable run through the owning
+workflow.
 
 ```yaml
-id: P17-AUD-GPT5-I01
+id: P17-SPEC-009
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
+independence: unknown
+axis: spec
+severity: Major
+criterion_source: "P17-PLT-001, P17-A15, P17-RBK-001, PRIN-005"
+reproduction:
+  - "git grep -n -E '31798070731|40f2e6ee4866f1cd44eefb952b8f40afcbb029ac' eb5e3166834f804c9b47f5d17f8131652931c601 -- docs/snapshots/phase17/opi-impl-state.json"
+  - "git log --format='%H %s' 40f2e6ee4866f1cd44eefb952b8f40afcbb029ac..eb5e3166834f804c9b47f5d17f8131652931c601 -- crates/opi-ai crates/opi-agent crates/opi-coding-agent"
+confidence: high
+status: unverified
+```
+
+## Correctness, security, tests, invariants, integration, and residuals
+
+### P17-INV-001 — Partial-side-effect and cleanup-unknown terminal outcomes are unreachable
+
+**Severity: Major.** The manifest declares `PartialSideEffect` and
+`CleanupUnknown` (`crates/opi-agent/src/evidence.rs:749-763`), but production
+never constructs them. Tool execution exposes only generic failure/cancellation
+and flattens errors into ordinary `ToolResult`s
+(`crates/opi-agent/src/tool.rs:111-118` and
+`crates/opi-agent/src/agent_loop.rs:1453-1477`); the harness maps all
+non-cancellation loop errors to `Failed`
+(`crates/opi-coding-agent/src/harness.rs:90-97`). A run with uncertain external
+effects can therefore finish as generic failure—or later success—without the
+admitted terminal classification.
+
+Recommended fix: add typed partial-effect and cleanup-unknown outcomes at the
+owning execution boundary and propagate them through loop and manifest
+finalization, with behavioral tests for both variants.
+
+```yaml
+id: P17-INV-001
+source_kind: audit
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: invariants
 severity: Major
-title: Unterminated provider streams are silently reported as success
-claim: >-
-  A provider stream that ends without a terminal assistant event causes agent_loop to return Ok rather than a typed stream failure.
-evidence:
-  - location: crates/opi-agent/src/agent_loop.rs:722-727
-    detail: Missing terminal_assistant returns Ok with preserved state.
-  - location: crates/opi-ai/src/provider_collection.rs:579-602
-    detail: The collection drain helper classifies terminal-less EOF as StreamError.
-  - location: crates/opi-ai/src/provider_collection.rs:682-704
-    detail: Attempt activity is cleared only for yielded error or terminal event.
-criterion_source: 'P17-FAL-003, INV-006'
+criterion_source: "P17-FAL-003; docs/opi-spec.md INV-006"
 reproduction:
-  - 'Add a provider fixture that yields a non-terminal delta and EOF; assert Agent::prompt returns a stream error and a second prepared attempt is not stuck active.'
+  - "git grep -n -E 'TerminalOutcome::PartialSideEffect|TerminalOutcome::CleanupUnknown' eb5e3166834f804c9b47f5d17f8131652931c601 -- crates"
+  - "git show eb5e3166834f804c9b47f5d17f8131652931c601:crates/opi-agent/src/agent_loop.rs | Select-Object -Skip 1452 -First 30"
 confidence: high
 status: unverified
 ```
 
-### 4.2 MAJOR: Cancellation cannot interrupt credential-store or OAuth preparation
+### P17-INV-002 — `RunId` is reused after every process restart
 
-**File:** `crates/opi-agent/src/agent_loop.rs`; `crates/opi-ai/src/provider_collection.rs`  
-**Lines:** 129--140; 390--418  
-**Cause:** The agent awaits `prepare_call` directly, and `prepare_call` awaits `AuthResolver::resolve` without selecting on the request cancellation token. The resolver contract has no cancellation input.  
-**Impact:** Cancellation during credential-store IO or OAuth refresh is not promptly observable and can wait indefinitely for the external preparation effect.  
-**Fix:** Make preparation cancellation-aware, selecting on the frozen request token and defining resolver cancellation/partial-effect reporting.
+**Severity: Minor.** `RunId` is documented as stable and non-reused, but it is
+allocated from a process-local `AtomicU64` initialized to zero
+(`crates/opi-agent/src/evidence.rs:49-53,97-115,156-158`). Every fresh CLI
+process can therefore emit `RunId(1)`. Tests cover multiple allocators only
+within one process (`crates/opi-agent/tests/evidence_contract.rs:121-129`). File
+bundle directory uniqueness reduces local collision risk, but offline
+correlation cannot treat `RunId` itself as non-reused.
+
+Recommended fix: use a process-independent opaque 128-bit identity and keep
+run-local counters only for child identities; test two subprocesses.
 
 ```yaml
-id: P17-AUD-GPT5-I02
+id: P17-INV-002
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: invariants
-severity: Major
-title: Cancellation cannot interrupt credential-store or OAuth preparation
-claim: >-
-  Cancelling a request while AuthResolver::resolve is pending does not cancel or terminate prepare_call until the resolver itself returns.
-evidence:
-  - location: crates/opi-agent/src/agent_loop.rs:129-140
-    detail: prepare_call is awaited without a cancellation select.
-  - location: crates/opi-ai/src/provider_collection.rs:409
-    detail: Resolver IO is awaited directly despite the request carrying a cancellation token.
-criterion_source: 'Phase 17 design lines 268-270 and 685-688; P17-FAL-003'
+severity: Minor
+criterion_source: "P17-EVD-001; docs/opi-spec.md CTRL-001"
 reproduction:
-  - 'Use a resolver blocked on a channel, start Agent::prompt, cancel the Agent, and assert the prompt settles as Cancelled before releasing the resolver.'
+  - "git show eb5e3166834f804c9b47f5d17f8131652931c601:crates/opi-agent/src/evidence.rs | Select-Object -Skip 48 -First 112"
 confidence: high
 status: unverified
 ```
 
----
+### P17-SEC-001 — Raw provider strings cross diagnostic and public Agent error boundaries
 
-## 5. Security and Redaction Findings
+**Severity: Major.** Arbitrary provider-supplied strings are copied into
+`Diagnostic.details` (`crates/opi-agent/src/diagnostic.rs:671-704,730-785`),
+stored unchanged by public `RecordingSink`
+(`crates/opi-agent/src/diagnostic_sink.rs:41,72-89`), and converted with
+`e.to_string()` into public `AgentError::Provider(String)`
+(`crates/opi-agent/src/agent_loop.rs:882-895` and
+`crates/opi-agent/src/agent.rs:212-219,406-432`). Concrete HTTP adapters use
+`safe_excerpt`, but the public `Provider` contract does not enforce it for
+custom providers or arbitrary request/stream errors.
 
-### 5.1 BLOCKER: Interactive `Ask` executes without a broker grant or scoped permission
-
-**File:** `crates/opi-coding-agent/src/tool_authority.rs`; `crates/opi-coding-agent/tests/phase17_tool_authority.rs`  
-**Lines:** 211--285; 485--508  
-**Cause:** In interactive mode, `command.execute=Ask` returns `Allow` merely because the mode is interactive. The authorizer intentionally ignores final arguments, uses `LOCAL_ADAPTER_ID` rather than the actual routed adapter, and returns capability identity as permission scope/reference.  
-**Impact:** An arbitrary registered command tool can reach `Tool::execute` with no permission-broker grant and without path/operation/adapter scope being authorized. This is a normal-path authority bypass with potential user-data and command-execution impact.  
-**Fix:** Route every `Ask` decision through the actual permission broker using validated final arguments and actual adapter/path/operation scope; absent, pending, stale, or mismatched permission must result in zero tool executions.
+Recommended fix: classify and redact at the producer boundary, expose only a
+stable class plus safe summary, and keep raw causes unavailable through public
+`Display` and diagnostic snapshots. Add a non-pattern secret canary test using
+a custom provider.
 
 ```yaml
-id: P17-AUD-GPT5-SEC01
+id: P17-SEC-001
 source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
+source_path: docs/snapshots/phase17/audit.codex.md
+source_model: codex
 independence: unknown
 axis: security
-severity: Blocker
-title: Interactive Ask executes without a broker grant or scoped permission
-claim: >-
-  Interactive command.execute Ask returns Allow and invokes Tool::execute without a permission-broker grant bound to final arguments, the actual adapter, and path or operation scope.
-evidence:
-  - location: crates/opi-coding-agent/src/tool_authority.rs:265-285
-    detail: Ask is allowed solely when run_mode is Interactive and no grant is required.
-  - location: crates/opi-coding-agent/src/tool_authority.rs:211-259
-    detail: Final arguments are intentionally ignored and command permission is checked against LOCAL_ADAPTER_ID.
-  - location: crates/opi-coding-agent/tests/phase17_tool_authority.rs:485-508
-    detail: The focused test confirms one Tool::execute call for the interactive Ask case.
-criterion_source: 'INV-005, P17-OUT-003, P17-AUT-003, P17-AUT-005, P17-A08, Phase 17 broker-before-execute order'
-reproduction:
-  - 'cargo test -p opi-coding-agent --test phase17_tool_authority phase17_command_execute_ask_interactive_allows_and_executes -- --exact'
-confidence: high
-status: unverified
-```
-
-No credential or raw user-content leak was found in the inspected evidence/diagnostic paths. Producer-side redaction, typed evidence payload channels, and secret-canary tests are otherwise strong.
-
----
-
-## 6. Test Quality Findings
-
-### 6.1 MAJOR: P17-A14 does not exercise the claimed cross-mode conjunction
-
-**File:** `crates/opi-coding-agent/tests/phase17_cross_mode.rs`  
-**Lines:** 1--27, 134--224, 455--505  
-**Cause:** The test labels a `CodingHarness` builder seam as the interactive binary, uses no tool calls, does not inject cancellation in the same fixture, and manually injects an RPC recorder instead of exercising binary RPC trace wiring.  
-**Impact:** Route-only equivalence passes while authority, cancellation, durable evidence, and actual entry-point differences remain undetected.  
-**Fix:** Run one tool-bearing/cancellable fixture through the real interactive launcher, harness, print, JSON/NDJSON, and RPC paths and compare the same route, authority, cancellation, evidence, and legacy facts.
-
-```yaml
-id: P17-AUD-GPT5-T01
-source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
-independence: unknown
-axis: test-quality
 severity: Major
-title: P17-A14 does not exercise the claimed cross-mode conjunction
-claim: >-
-  The A14 acceptance test can pass without spawning the interactive binary or exercising authority, cancellation, and durable evidence through the same fixture.
-evidence:
-  - location: crates/opi-coding-agent/tests/phase17_cross_mode.rs:143-186
-    detail: Interactive coverage is a CodingHarness builder seam.
-  - location: crates/opi-coding-agent/tests/phase17_cross_mode.rs:455-505
-    detail: Tool counts are zero and TUI/RPC trace behavior is classified as source-inferred.
-criterion_source: 'P17-A14, P17-MIG-005, task 17.9 DoD'
+criterion_source: "P17-FAL-004; docs/opi-spec.md CTRL-003; Phase 17 producer-boundary redaction contract"
 reproduction:
-  - 'rg -n "interactive assembly|Interactive TUI loop not spawned|RPC binary path|tool.*zero|source-inferred" crates/opi-coding-agent/tests/phase17_cross_mode.rs'
+  - "git show eb5e3166834f804c9b47f5d17f8131652931c601:crates/opi-agent/src/diagnostic.rs | Select-Object -Skip 670 -First 116"
+  - "git show eb5e3166834f804c9b47f5d17f8131652931c601:crates/opi-agent/src/agent_loop.rs | Select-Object -Skip 881 -First 20"
 confidence: high
 status: unverified
 ```
 
-### 6.2 MINOR: The workspace test gate fails with the required external Cargo cache
+## Test-quality assessment
 
-**File:** `crates/opi-coding-agent/tests/doctor_cli.rs`  
-**Lines:** 1269--1296  
-**Cause:** `opi_bin` searches only `<workspace>/target/{debug,release}/opi`, ignoring `CARGO_TARGET_DIR` and Cargo's integration-test binary location.  
-**Impact:** `cargo test --workspace --all-targets` fails in the repository-mandated external-cache workflow even though the binary was built successfully.  
-**Fix:** Use Cargo's binary environment contract or resolve the configured target directory rather than assuming a workspace-local target path.
+The existing tests strongly cover sequential authorization call counts,
+stale-health denial, complete-state replacement visibility, route reuse across
+retry, legacy byte identity, lifecycle setup/finalization failures, cross-mode
+dispatch, and rollback snapshots. They do not cover the negative paths that
+produce the findings above:
 
-```yaml
-id: P17-AUD-GPT5-T02
-source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
-independence: unknown
-axis: test-quality
-severity: Minor
-title: The workspace test gate fails with the required external Cargo cache
-claim: >-
-  doctor_unknown_scope_exits_one cannot locate opi.exe when CARGO_TARGET_DIR points at the repository external cache.
-evidence:
-  - location: crates/opi-coding-agent/tests/doctor_cli.rs:1269-1296
-    detail: The helper searches only workspace_root/target and then panics when spawning that path.
-  - location: 'cargo test -p opi-coding-agent --test doctor_cli -- --nocapture'
-    detail: At audit HEAD with the external cache, 43 tests passed and doctor_unknown_scope_exits_one failed with os error 3 for workspace/target/debug/opi.exe.
-criterion_source: 'AGENTS.md external Cargo cache workflow; task 17.9 workspace gate'
-reproduction:
-  - 'Set CARGO_TARGET_DIR to an external directory, then run cargo test -p opi-coding-agent --test doctor_cli doctor_unknown_scope_exits_one -- --exact --nocapture.'
-confidence: high
-status: unverified
-```
+- request/route identity mismatch;
+- stream-time credential rejection followed by another attempt;
+- unsupported inference settings in an otherwise valid next-state candidate;
+- authorization-evidence failure before an all-parallel batch;
+- exact actual-wire disagreement;
+- automatic-compaction evidence failure before mutation and terminal outcome;
+- production partial-side-effect and cleanup-unknown finalization;
+- cross-process `RunId` uniqueness;
+- a non-pattern provider-body canary through raw diagnostics and public errors.
 
----
+The absence of these focused adversarial tests explains why all local gates can
+pass while the registered semantic contracts remain unmet.
 
-## 7. Integration Findings
+## Parent invariant matrix
 
-### 7.1 MAJOR: File evidence reuses mutable paths and exposes stale manifests
+| Invariant | Status | Audit result |
+|---|---|---|
+| `PRIN-001` | Partial | Core evidence types are useful, but product-specific closed enums and bypassable validation weaken the deletion/depth case. |
+| `PRIN-002` | Partial | The evidence seam has multiple adapters, but duplicated string conversion is not one stable conformance boundary. |
+| `PRIN-003` | Fail | Reference Product run-mode and capability policy appears in Agent Core. |
+| `PRIN-004` | Fail | Parallel authorization evidence and automatic compaction fail open with respect to not-yet-launched effects. |
+| `PRIN-005` | Fail | Required three-platform evidence predates later runtime remediation. |
+| `CTRL-001` | Fail | `RunId` is reused across processes. |
+| `CTRL-002` | Fail | Exact actual wire and full authentication/fallback provenance are not retained. |
+| `CTRL-003` | Fail | Arbitrary provider strings reach public diagnostic/error surfaces unredacted. |
+| `INV-001` | Fail | Bedrock bypasses collection-owned runtime route/auth semantics; request-route mismatch is accepted. |
+| `INV-002` | Pass | Provider wire implementations remain behind provider-neutral request/stream interfaces. |
+| `INV-003` | Pass in runtime / Fail in docs | Runtime ordering is fixed and tested; published README ordering is wrong. |
+| `INV-004` | Partial | One atomic complete value is applied, but only its route is validated. |
+| `INV-005` | Fail | Parallel effects can start before authorization evidence/freshness completes. |
+| `INV-006` | Fail | Partial-side-effect and cleanup-unknown terminal states cannot be produced. |
+| `INV-007` | Pass | No active-branch, parent-link, leaf, or crash-recovery contradiction was found. |
+| `INV-008` | Fail | Actual route/auth facts can be lost or fabricated, and manifest validation is bypassable. |
 
-**File:** `crates/opi-coding-agent/src/evidence.rs`; `crates/opi-coding-agent/src/harness.rs`  
-**Lines:** 98--166; 2513--2519  
-**Cause:** Each prompt truncates fixed `evidence.jsonl`, overwrites fixed `manifest.json`, and leaves the prior durable manifest in place during setup or a later failed run.  
-**Impact:** A new/incomplete run can destroy prior evidence while still presenting the previous run's manifest as finalized; run artifacts are not immutable.  
-**Fix:** Allocate per-run immutable paths, remove no prior finalized data, and atomically publish a manifest exactly once after durable completion.
+## Per-task verdicts
 
-```yaml
-id: P17-AUD-GPT5-X01
-source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
-independence: unknown
-axis: integration
-severity: Major
-title: File evidence reuses mutable paths and exposes stale manifests
-claim: >-
-  Reusing an explicit trace directory truncates prior evidence and can leave its old manifest visible while the new run is incomplete or failed.
-evidence:
-  - location: crates/opi-coding-agent/src/evidence.rs:98-115
-    detail: Setup truncates evidence.jsonl but does not remove or version manifest.json.
-  - location: crates/opi-coding-agent/src/evidence.rs:152-166
-    detail: Finalization replaces the fixed manifest path.
-  - location: crates/opi-coding-agent/src/harness.rs:2513-2519
-    detail: The same recorder is set up again for each prompt.
-criterion_source: 'PRIN-005, P17-EVD-008, immutable finalization contract, INV-008'
-reproduction:
-  - 'Run two prompts through one FileEvidenceSink directory, fail the second run after setup, and inspect that the first manifest remains while its JSONL was truncated.'
-confidence: high
-status: unverified
-```
+| Task | Verdict | Governing findings |
+|---|---|---|
+| 17.1 | **FAIL** | `P17-SPEC-001`, `P17-SPEC-002`, `P17-SPEC-003` |
+| 17.2 | **FAIL** | `P17-SPEC-004` |
+| 17.3 | **FAIL** | `P17-STD-002`, `P17-STD-004`, `P17-INV-002` |
+| 17.4 | **FAIL** | `P17-STD-002`, `P17-SPEC-005` |
+| 17.5 | **FAIL** | `P17-SPEC-001` |
+| 17.6 | **FAIL** | `P17-STD-003`, `P17-SPEC-005`, `P17-SPEC-008` |
+| 17.7 | **FAIL** | `P17-STD-004`, `P17-SPEC-006`, `P17-SPEC-007`, `P17-INV-001`, `P17-SEC-001` |
+| 17.8 | **PASS** | No contradiction found in unique legacy-route normalization, fail-closed ambiguous/missing routes, or byte preservation. |
+| 17.9 | **FAIL** | `P17-STD-001`, `P17-STD-005`, `P17-SPEC-009`; the acceptance matrix omits the negative paths above. |
 
-### 7.2 MAJOR: In-memory capture mixes records and bindings across prompts
+## Minimum-change overlay
 
-**File:** `crates/opi-agent/src/evidence.rs`; `crates/opi-coding-agent/src/harness.rs`; `crates/opi-coding-agent/src/evidence.rs`  
-**Lines:** 997--1031; 1523--1560, 2513--2572; 351--370  
-**Cause:** `InMemoryEvidenceSink::setup` does not clear prior records/manifest/failure, while `EvidenceCapture` and its binding are created once per harness. Finalization consumes all accumulated records, uses the first record's run ID and the last record's terminal fields, and keeps the startup model digest.  
-**Impact:** A second prompt or RPC command can finalize a graph mixing two runs and a stale model/config binding while still passing `require_complete`.  
-**Fix:** Make capture and recorder state run-scoped, clear or replace all per-run state during setup, and finalize only a single run's correlated record slice with current dynamic binding.
+`R/P/S/C` means reuse search, placement, surface necessity, and simplification
+ceiling. `Drifted` records a current implementation that no longer satisfies
+its registered overlay even where the ledger field itself is present.
 
-```yaml
-id: P17-AUD-GPT5-X02
-source_kind: audit
-source_path: docs/snapshots/phase17/audit.gpt5.md
-source_model: gpt5
-independence: unknown
-axis: integration
-severity: Major
-title: In-memory capture mixes records and bindings across prompts
-claim: >-
-  Reusing a harness with InMemoryEvidenceSink can finalize records from multiple runs under the first run ID and a startup-time model binding.
-evidence:
-  - location: crates/opi-agent/src/evidence.rs:997-1004
-    detail: InMemoryEvidenceSink setup returns without clearing records, artifacts, manifest, or prior success state.
-  - location: crates/opi-coding-agent/src/harness.rs:1523-1560
-    detail: EvidenceCapture binding/config is created once from the startup model.
-  - location: crates/opi-coding-agent/src/evidence.rs:351-370
-    detail: Manifest correlation takes run from the first record and terminal fields from the last.
-criterion_source: 'P17-EVD-001, P17-EVD-002, P17-EVD-003, P17-A01, P17-A09, CTRL-002'
-reproduction:
-  - 'Reuse one evidence-enabled CodingHarness for two prompts with different selected providers; compare recorder run IDs and the second manifest correlation/binding.'
-confidence: high
-status: unverified
-```
+| Task | R | P | S | C | Status | Reason |
+|---|---:|---:|---:|---:|---|---|
+| 17.1 | Pass | Pass | Fail | Fail | Drifted | The unadmitted Bedrock exemption broadens the prepared-auth contract while required mismatch/termination outcomes are absent. |
+| 17.2 | Pass | Pass | Pass | Pass | Conforming | One complete state and one assignment are retained; the failure is semantic validation depth, not surface growth. |
+| 17.3 | Pass | Fail | Partial | Pass | Drifted | Product-specific assembly/capability values entered the neutral core evidence vocabulary. |
+| 17.4 | Pass | Partial | Pass | Pass | Drifted | Product capability families leaked into core and the parallel path bypasses the shared preflight. |
+| 17.5 | Partial | Pass | Fail | Fail | Drifted | Bedrock retains eager provider-owned credential state and a placeholder resolver. |
+| 17.6 | Partial | Pass | Pass | Pass | Drifted | Runtime evidence duplicates a string protocol rather than reusing typed route/provenance facts. |
+| 17.7 | Partial | Pass | Partial | Pass | Drifted | Product parsing invents defaults and file finalization can bypass strict validation. |
+| 17.8 | Pass | Pass | Pass | Pass | Conforming | No compatibility shim, legacy trace reader, or rewrite/down-conversion path was found. |
+| 17.9 | Pass | Pass | Pass | Pass | Drifted | Assurance-only placement is retained, but current docs and platform evidence do not describe/prove the audited implementation. |
 
----
+## Verification
 
-## 8. Invariant Verification
+The first PTY-backed invocation of the full smoke script was terminated after
+the PTY kept `adapter_host_mock` stdin open. The identical command was rerun
+without a PTY and completed successfully.
 
-| Invariant | Code evidence | Test coverage |
-|-----------|---------------|---------------|
-| INV-001: one resolved provider route owns dispatch | **FAIL** -- OAuth-only configured providers are excluded from extra dispatch routes | Synthetic alpha/beta tests pass; no production OAuth switching test |
-| INV-002: provider wire details stay behind provider-neutral contracts | PASS -- prepared calls retain provider-neutral request/stream seams | Provider/wire fixture suites cover the inspected adapters |
-| INV-003: next-turn preparation is one atomic complete replacement | PASS -- candidate is built then applied before stop/queues | `hooks_queues` and `agent_wrapper` cover valid/invalid ordering |
-| INV-004: failed/cancelled replacement preserves all mutable fields | PASS -- route validation precedes assignment and tests snapshot state | Focused next-turn failure tests pass |
-| INV-005: no side effect without trusted scoped authorization | **FAIL** -- interactive Ask and unbound arguments/adapter/scope allow execution | The focused test currently asserts the violating execution count of one |
-| INV-006: failures/partial effects are not success and later effects fail closed | **FAIL** -- terminal-less EOF returns `Ok`; sequential tools outrun evidence failure | No terminal-less EOF or two-sequential-tool failure test |
-| INV-007: legacy/session data is not rewritten | PASS -- normalization/remediation and byte-preservation paths are present | Legacy migration/rollback focused binaries pass |
-| INV-008: a finalized manifest reconstructs one immutable resolved run | **FAIL** -- required facts are empty/stale, paths are mutable, and compaction follows finalization | Negative tests cover only a subset of required facts and miss repeated-run lifecycle |
+- `python scripts/opi-cargo-cache.py status` — passed; external Cargo caches remained enabled.
+- `cargo test -p opi-agent --test evidence_contract --test evidence_runtime --test tool_authority --test agent_loop_semantics --test phase17_prepare_call` — 65 passed, 0 failed.
+- `cargo test -p opi-coding-agent --test phase17_api_audit --test phase17_artifact_truthfulness --test phase17_cross_mode --test phase17_failure_rollback --test phase17_legacy_migration --test phase17_product_evidence --test phase17_provider_runtime --test phase17_tool_authority` — 55 passed, 0 failed.
+- `cargo test -p opi-ai --test provider_diagnostics --test provider_error_classes` — 36 passed, 0 failed.
+- `powershell -ExecutionPolicy Bypass -File scripts\\opi-impl-smoke.ps1 full` — passed: format, Clippy all targets, rustdoc, and workspace all-target tests; final output `=== smoke PASSED [full] ===`.
+- `python scripts/opi-doc-check.py` — passed: `opi documentation contracts: PASS`.
 
----
+Test impact: **none**. This audit adds only this report and does not change
+runtime, tests, specifications, or the implementation ledger.
 
-## 9. Minimum-change Conformance
+## Residual risk and next action
 
-The standardized overlay was active for all nine tasks. Placement and dependency direction are mostly sound; the dominant drift is semantic shortcutting and retained surface rather than new crates or speculative dependencies.
+The green full gate establishes that the committed suite is internally
+consistent; it does not rebut the falsifiable negative paths above. The highest
+priority remediation order is:
 
-| Task | Scenario/source | Reuse | Placement | Surface | Production slice | Ceiling/trigger | Status |
-|------|-----------------|-------|-----------|---------|------------------|-----------------|--------|
-| 17.1 | Provider collection preparation | Existing registry/resolver reused | `opi-ai` is appropriate | Route state split across maps | Productive in Agent loop | Provenance/cancellation/EOF gaps trigger revisit | `triggered` |
-| 17.2 | Complete next-turn replacement | Existing Agent state reused | `opi-agent` is appropriate | Seven public piecemeal methods remain | Productive across prompts | Recorded surface ceiling exceeded | `drifted` |
-| 17.3 | Evidence schema/lifecycle | Existing diagnostic/redaction types reused | Core schema placement appropriate | Strict identities remain string/optional | Product manifest consumes it | Required facts/gate incomplete | `drifted` |
-| 17.4 | Trusted authority | Existing registry/schema validation reused | Core/product split mostly appropriate | Untyped name-to-trust and string correlation remain | Productive tool path | Permission broker/scope threshold triggered | `triggered` |
-| 17.5 | Product provider routes | Existing provider factories reused | Product placement appropriate | Compatibility alias and provenance shortcut remain | OAuth routes missing from live collection | Multi-provider production trigger unmet | `triggered` |
-| 17.6 | Agent evidence runtime | Existing loop and sink reused | Core placement appropriate | No new speculative dependency | Productive, but sequential barrier is late | Evidence-health trigger unmet | `triggered` |
-| 17.7 | Product file/finalization adapter | Existing recorder contract reused | Product-only file adapter is correct | No exporter/database added | Live capture exists only in some modes | Immutable/fail-closed ceiling exceeded | `triggered` |
-| 17.8 | Legacy migration | Existing session/config seams reused | Product placement appropriate | No legacy reader/shim found | Productive migration path | Ceiling respected | `conforming` |
-| 17.9 | Cross-mode/failure/docs/CI | Existing runners/tests/CI reused | Assurance placement appropriate | No runtime seam added | Claimed binary conjunction substituted with builder seams | Actual-mode acceptance trigger unmet | `triggered` |
+1. make tool authorization/evidence and automatic compaction fail closed before
+   side effects;
+2. restore truthful typed provider/auth/actual-wire evidence and enforce
+   validated manifests at the sink boundary;
+3. close the prepared-call mismatch/credential-terminal gaps and remove the
+   Bedrock exception;
+4. validate the complete next-turn candidate and propagate partial/unknown
+   outcomes;
+5. add the listed adversarial tests, synchronize both READMEs, and rerun the
+   required three-platform evidence profile at the remediated commit.
 
----
-
-## 10. Verification, Residuals, and Recommendations
-
-### Verification at audit HEAD
-
-- `python scripts/opi-doc-check.py` -- PASS.
-- `cargo fmt --check --all` -- PASS.
-- `cargo clippy --workspace --all-targets -- -D warnings` -- PASS.
-- `cargo test --workspace --doc` -- PASS.
-- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` -- PASS.
-- Focused Phase 17 binaries for provider collection/auth, next-turn state, evidence contract/runtime, authority, product evidence, legacy migration, cross-mode, failure/rollback, and API audit -- PASS.
-- `cargo test --workspace --all-targets` -- FAIL in `doctor_cli::doctor_unknown_scope_exits_one` under the required external Cargo cache; 43/44 tests in that binary passed.
-- Current HEAD remained `877c41fd6c7b0c7850839f41c8fd2824e90436a6` throughout the audit.
-
-### Residuals
-
-- Actual Linux/macOS/Windows evidence in the ledger is tied to `40f2e6e`, not the current audit HEAD. Later commits may be source-compatible, but prior-SHA CI is not current-HEAD proof; P17-A15/PLT-001 therefore remain unverified here.
-- Task 17.7 is marked passing while its archived task `evidence` field is null. This weakens the trace but is not a separate defect beyond the concrete evidence findings above.
-- No blocker was found in legacy byte preservation, provider-neutral wire isolation, next-turn atomic ordering, or producer-side secret redaction.
-
-### Priority recommendations
-
-1. Close the authority bypass first: make interactive `Ask` and every command capability depend on the real broker grant, final validated arguments, routed adapter, and immutable scope.
-2. Repair evidence as a run-scoped immutable transaction: truthful provenance, exhaustive manifest facts/gate, per-run recorder state and paths, durable flush, no post-finalization emission, and sequential launch barriers.
-3. Register every configured provider route, including lazy-auth OAuth routes, and add production credential-source/fallback switching tests.
-4. Replace the A14 builder approximation with real mode entry-point tests using one tool-bearing, cancellable fixture.
-5. Fix the external-target binary lookup, rerun the complete six workspace gates, then obtain current-HEAD three-platform CI evidence before reasserting Phase 17 exit.
-
-**Test impact:** none (audit report only).
+No source change should be admitted as Phase 17 remediation without revisiting
+the registered spec if maintainers intend to retain the Bedrock exception,
+product-specific core enums, lossy provenance, or configured-as-actual wire
+behavior.

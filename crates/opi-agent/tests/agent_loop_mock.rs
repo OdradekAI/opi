@@ -175,9 +175,16 @@ async fn no_tool_turn_emits_lifecycle_events() {
     };
 
     let hooks = TestHooks;
-    let result = opi_agent::agent_loop(context, config, &hooks, sink, CancellationToken::new())
-        .await
-        .unwrap();
+    let result =
+        opi_agent::agent_loop(context, config, &hooks, sink, CancellationToken::new()).await;
+
+    assert!(result.error().is_none());
+    assert_eq!(
+        result.terminal_outcome(),
+        &opi_agent::evidence::TerminalOutcome::Success
+    );
+    assert!(result.evidence_health().is_healthy());
+    let result = result.into_execution_result().unwrap();
 
     assert!(result.context.len() >= 2);
 
@@ -195,7 +202,7 @@ async fn no_tool_turn_emits_lifecycle_events() {
 }
 
 // ---------------------------------------------------------------------------
-// Test: provider AccountIdMissing maps to a typed AgentError (C-3.2)
+// Test: provider AccountIdMissing remains typed at the Agent boundary (C-3.2)
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -237,12 +244,16 @@ async fn account_id_missing_provider_error_maps_to_typed_agent_error() {
     let sink: AgentEventSink = Box::new(|_| {});
     let err = opi_agent::agent_loop(context, config, &TestHooks, sink, CancellationToken::new())
         .await
+        .into_execution_result()
         .expect_err("AccountIdMissing must surface as a typed AgentError, not Ok");
     match err {
-        AgentError::AccountIdMissing { provider_id } => {
-            assert_eq!(provider_id, "openai-codex");
-        }
-        other => panic!("expected AgentError::AccountIdMissing, got {other:?}"),
+        AgentError::Provider(failure) => match failure.provider_error() {
+            ProviderError::AccountIdMissing { provider_id } => {
+                assert_eq!(provider_id, "openai-codex");
+            }
+            other => panic!("expected retained AccountIdMissing provider error, got {other:?}"),
+        },
+        other => panic!("expected AgentError::Provider, got {other:?}"),
     }
 }
 
@@ -331,6 +342,7 @@ async fn tool_use_turn_executes_tool_and_loops() {
     let hooks = TestHooks;
     let result = opi_agent::agent_loop(context, config, &hooks, sink, CancellationToken::new())
         .await
+        .into_execution_result()
         .unwrap();
 
     // Tool should have been called
@@ -403,6 +415,7 @@ async fn text_content_preserved_in_assistant_message() {
     let hooks = TestHooks;
     let result = opi_agent::agent_loop(context, config, &hooks, sink, CancellationToken::new())
         .await
+        .into_execution_result()
         .unwrap();
 
     // Find the assistant message
@@ -449,12 +462,18 @@ async fn session_id_reaches_every_request() {
     .expect("agent");
 
     agent.set_session_id(Some("session-a".into()));
-    agent.prompt("first").await.unwrap();
+    agent.prompt("first").await.into_execution_result().unwrap();
     agent.set_session_id(Some("session-b".into()));
-    agent.continue_("second").await.unwrap();
+    agent
+        .continue_("second")
+        .await
+        .into_execution_result()
+        .unwrap();
 
     let calls = call_log.lock().unwrap();
     assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].model, "mock:mock-model");
+    assert_eq!(calls[1].model, "mock:mock-model");
     assert_eq!(calls[0].session_id.as_deref(), Some("session-a"));
     assert_eq!(calls[1].session_id.as_deref(), Some("session-b"));
 }

@@ -240,7 +240,7 @@ impl Extension for SubAgentExtension {
                     let child_token = child_agent.cancel_token();
                     *active_cancel.lock().unwrap() = Some(child_token);
 
-                    let result = child_agent.prompt(&prompt).await;
+                    let result = child_agent.prompt(&prompt).await.into_execution_result();
 
                     // Clear the active cancel token.
                     *active_cancel.lock().unwrap() = None;
@@ -545,7 +545,9 @@ async fn child_provider_error_propagates_to_parent() {
             Box::new(MockProvider::new_with_errors(
                 "child",
                 vec![opi_ai::test_support::MockResponse::Error(
-                    opi_ai::provider::ProviderError::AuthFailed("bad key".into()),
+                    opi_ai::provider::ProviderError::AuthFailed(
+                        opi_ai::provider::ProviderErrorSummary::from_untrusted("bad key"),
+                    ),
                 )],
             )) as Box<dyn Provider>
         }),

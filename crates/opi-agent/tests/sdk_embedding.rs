@@ -339,7 +339,7 @@ async fn sdk_prompt_flow() {
     let events = collect_events(&mut agent);
 
     let result = agent.prompt("test prompt").await;
-    assert!(result.is_ok());
+    assert!(result.error().is_none());
 
     let ev = events.lock().unwrap();
     assert_has_event(&ev, |e| matches!(e, AgentEvent::AgentStart));
@@ -353,17 +353,17 @@ async fn sdk_continue_flow() {
     let mut agent = make_agent(vec![text_response("first"), text_response("second")]);
 
     let first = agent.prompt("first prompt").await;
-    assert!(first.is_ok());
+    assert!(first.error().is_none());
 
     let second = agent.continue_("continue prompt").await;
-    assert!(second.is_ok());
+    assert!(second.error().is_none());
 }
 
 #[tokio::test]
 async fn sdk_continue_without_prior_prompt_errors() {
     let mut agent = make_agent(vec![]);
     let result = agent.continue_("orphan continue").await;
-    assert!(matches!(result, Err(AgentError::Hook(_))));
+    assert!(matches!(result.error(), Some(AgentError::Hook(_))));
 }
 
 #[tokio::test]
@@ -379,10 +379,9 @@ async fn sdk_abort_cancels_running_agent() {
     });
 
     let result = agent.prompt("test").await;
-    match result {
-        Ok(_) => {}
-        Err(AgentError::Cancelled) => {}
-        Err(e) => panic!("unexpected error: {:?}", e),
+    match result.error() {
+        None | Some(AgentError::Cancelled) => {}
+        Some(error) => panic!("unexpected error: {error:?}"),
     }
 
     let ev = events.lock().unwrap();
@@ -435,7 +434,7 @@ async fn sdk_steer_flow() {
     let mut agent = make_agent(vec![text_response("first"), text_response("steered")]);
     agent.steer("steer this".into());
     let result = agent.prompt("initial").await;
-    assert!(result.is_ok());
+    assert!(result.error().is_none());
 }
 
 #[tokio::test]
@@ -443,14 +442,14 @@ async fn sdk_follow_up_flow() {
     let mut agent = make_agent(vec![text_response("first"), text_response("followed")]);
     agent.follow_up("follow up".into());
     let result = agent.prompt("initial").await;
-    assert!(result.is_ok());
+    assert!(result.error().is_none());
 }
 
 #[tokio::test]
 async fn sdk_messages_snapshot_after_prompt() {
     let mut agent = make_agent(vec![text_response("response text")]);
     let result = agent.prompt("hello").await;
-    assert!(result.is_ok());
+    assert!(result.error().is_none());
     let snapshot = agent.messages_snapshot();
     // Should have at least user message + assistant message
     assert!(snapshot.len() >= 2);
@@ -679,7 +678,10 @@ async fn phase8_sdk_command_contract_agent_control_routes_steer_follow_up_abort(
     let steer_control = agent.control_handle();
     steer_control.steer("steer-via-control".into());
     let result = agent.prompt("initial").await;
-    assert!(result.is_ok(), "steered prompt should complete: {result:?}");
+    assert!(
+        result.error().is_none(),
+        "steered prompt should complete: {result:?}"
+    );
     assert_eq!(
         steer_log.lock().unwrap().len(),
         2,
@@ -698,7 +700,7 @@ async fn phase8_sdk_command_contract_agent_control_routes_steer_follow_up_abort(
     follow_up_control.follow_up("followup-via-control".into());
     let result = agent.prompt("initial").await;
     assert!(
-        result.is_ok(),
+        result.error().is_none(),
         "follow-up prompt should complete: {result:?}"
     );
     assert_eq!(

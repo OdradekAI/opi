@@ -53,8 +53,8 @@ fn main() {
         std::process::exit(exit_code);
     }
 
-    // Handle --export-session early — local file render only, no provider or
-    // network needed (Phase 13.5).
+    // Handle --export-session early — local file render only, with no provider
+    // or network needed.
     if let Some(session_ref) = cli.export_session.clone() {
         let exit_code = run_export_session(
             session_ref,
@@ -90,7 +90,7 @@ fn main() {
         cli.delete_session.as_deref(),
     ) {
         Ok((true, Some(session))) => {
-            // Phase 13.3: build the agent buffer through the opi-agent context
+            // Build the agent buffer through the opi-agent context
             // API so resume/fork use the same deterministic reconstruction as
             // `CodingHarness::resume_session_id` (no product-only walker).
             let recovery = session.recovery.clone();
@@ -137,7 +137,7 @@ fn main() {
             }
         };
         let exit_code = rt.block_on(async {
-            // Phase 15.8.1: two-stage headless trust preflight (project config
+            // Run two-stage headless trust preflight (project config
             // skipped unless explicitly trusted) before provider/runner construction.
             let (config, trust_decision) =
                 resolve_headless_trust_config(&cli, project_dir.clone(), user_config_dir.clone())
@@ -163,7 +163,7 @@ fn main() {
         };
 
         let exit_code = rt.block_on(async {
-            // Phase 15.8.1: two-stage headless trust preflight before
+            // Run two-stage headless trust preflight before
             // provider/runner construction.
             let (config, trust_decision) =
                 resolve_headless_trust_config(&cli, project_dir.clone(), user_config_dir.clone())
@@ -189,7 +189,7 @@ fn main() {
                 std::process::exit(1);
             }
         };
-        // Phase 15.8.2: two-stage trust-gated config + the interactive TUI
+        // Run two-stage trust-gated config plus the interactive TUI
         // prompt. `resolve_interactive_trust_config` runs `prepare_project_startup`
         // and renders the `TrustChoice` prompt for an undecided project with
         // trust-requiring resources BEFORE this returns, so `run_interactive`
@@ -260,8 +260,8 @@ fn resolve_headless_trust_config_blocking(
     ))
 }
 
-/// Phase 15.8.1 headless two-stage trust-gated config resolution for
-/// non-interactive and RPC startup.
+/// Headless two-stage trust-gated config resolution for non-interactive and RPC
+/// startup.
 ///
 /// Mirrors [`resolve_interactive_trust_config`] but resolves trust through the
 /// public `prepare_project_startup` preflight with the `HeadlessPreTrustUi`,
@@ -331,7 +331,7 @@ async fn resolve_headless_trust_config_core(
     let project_root = project_dir
         .as_deref()
         .unwrap_or_else(|| std::path::Path::new("."));
-    // Standard CLI: empty resolver registry (no -e / native loader in Phase 15).
+    // Standard CLI: empty resolver registry (no -e / native loader).
     let mut registry = ProjectTrustResolverRegistry::new();
     let plan = prepare_project_startup(
         trust_cli,
@@ -362,7 +362,7 @@ fn resolve_headless_trust_config_finalization(
     use opi_coding_agent::project_trust::TrustDecision;
 
     let mut config = staged.finalize_with_project(matches!(decision, TrustDecision::Trusted))?;
-    // Phase 16.9: apply --execution-backend / --execution-strategy. These touch
+    // Apply --execution-backend / --execution-strategy. These touch
     // only strategy/backend and never grant trust or permission (the resolved
     // permissions map is byte-identical before and after).
     config.apply_execution_overrides(execution_backend, execution_strategy);
@@ -370,7 +370,7 @@ fn resolve_headless_trust_config_finalization(
     Ok(config)
 }
 
-/// Phase 15.8.2 interactive two-stage trust-gated config + TUI prompt.
+/// Interactive two-stage trust-gated config plus TUI prompt.
 ///
 /// Stage 1 (`resolve_pre_trust_config`) resolves every layer except the project
 /// `.opi/config.toml`. `prepare_project_startup` runs the full precedence chain
@@ -468,7 +468,7 @@ async fn resolve_interactive_trust_config(
     (config, decision)
 }
 
-/// Phase 16.9: the prompt-independent tail of [`resolve_interactive_trust_config`]
+/// The prompt-independent tail of [`resolve_interactive_trust_config`]
 /// — `finalize_with_project` plus the CLI execution overrides. Extracted
 /// so the interactive execution-override call site is testable without the
 /// `TuiTrustPrompt` coupling (mirrors [`resolve_headless_trust_config_core`]):
@@ -491,10 +491,10 @@ fn resolve_interactive_trust_config_core(
     Ok(config)
 }
 
-/// Run `--export-session` and return the exit code (Phase 13.5).
+/// Run `--export-session` and return the exit code.
 ///
 /// Network-free: resolves the session ref (id or path), reads the source
-/// read-only, renders markdown or json with Phase 7 redaction plus
+/// read-only, renders markdown or json with standard redaction plus
 /// tool-output / thinking omission flags, and writes only `output`. The
 /// source session is never opened for writing. Returns exit code 0 on
 /// success, 1 on export error, 2 on argument error (missing `--output`).
@@ -752,6 +752,33 @@ fn merge_provider_diagnostics(
     startup.diagnostics.extend(diagnostics);
 }
 
+async fn complete_non_interactive_after_interrupt<Operation, Interrupt>(
+    operation: Operation,
+    interrupt: Interrupt,
+    cancellation: tokio_util::sync::CancellationToken,
+) -> opi_coding_agent::runner::NonInteractiveResult
+where
+    Operation: std::future::Future<Output = opi_coding_agent::runner::NonInteractiveResult>,
+    Interrupt: std::future::Future<Output = ()>,
+{
+    tokio::pin!(operation);
+    tokio::pin!(interrupt);
+    tokio::select! {
+        biased;
+        result = &mut operation => result,
+        () = &mut interrupt => {
+            cancellation.cancel();
+            operation.await
+        }
+    }
+}
+
+async fn wait_for_process_interrupt() {
+    if tokio::signal::ctrl_c().await.is_err() {
+        std::future::pending::<()>().await;
+    }
+}
+
 async fn run_non_interactive(
     cli: &Cli,
     config: &opi_coding_agent::config::OpiConfig,
@@ -893,13 +920,8 @@ where
             }
             .with_compact_ndjson(cli.json_compact);
 
-            let result = if cli.image.is_empty() {
-                // No images -- use the plain text path.
-                if cli.json {
-                    runner.run_json(prompt_text).await
-                } else {
-                    runner.run(prompt_text).await
-                }
+            let content = if cli.image.is_empty() {
+                None
             } else {
                 // Load images and combine with text prompt.
                 let mut content: Vec<opi_ai::message::InputContent> = Vec::new();
@@ -918,12 +940,23 @@ where
                         }
                     }
                 }
-                if cli.json {
-                    runner.run_json_with_content(content).await
-                } else {
-                    runner.run_with_content(content).await
+                Some(content)
+            };
+            let cancellation = runner.cancel_token();
+            let operation = async {
+                match (cli.json, content) {
+                    (true, None) => runner.run_json(prompt_text).await,
+                    (false, None) => runner.run(prompt_text).await,
+                    (true, Some(content)) => runner.run_json_with_content(content).await,
+                    (false, Some(content)) => runner.run_with_content(content).await,
                 }
             };
+            let result = complete_non_interactive_after_interrupt(
+                operation,
+                wait_for_process_interrupt(),
+                cancellation,
+            )
+            .await;
 
             observe_result(&result);
             if !result.stdout.is_empty() {
@@ -1178,7 +1211,7 @@ async fn run_interactive_core<Launch, LaunchFuture>(
 
     let hooks = Box::new(InteractiveCodingHooks::new(true));
     let initial_messages = resumed_messages.unwrap_or_default();
-    // Phase 15.8.2: trust_decision was resolved (with the TUI prompt when
+    // trust_decision was resolved (with the TUI prompt when
     // needed) BEFORE run_interactive_core was entered, so provider/package/
     // harness construction below provably follows trust resolution.
     let mut runtime_startup =
@@ -1208,7 +1241,7 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     .installed_packages(runtime_startup.installed_packages)
     .startup_diagnostics(runtime_startup.diagnostics)
     .trust_decision(trust_decision)
-    // Phase 17.5: production supplies the real per-call auth resolver (built
+    // Production supplies the real per-call auth resolver (built
     // alongside the active provider in the ProviderBundle) plus the eagerly
     // built extra dispatch routes. The harness registers them all on the one
     // dispatch collection so prepare_call resolves auth once per turn and a
@@ -1226,7 +1259,7 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     if let Some(path) = cli.trace.clone() {
         builder = builder.evidence(opi_coding_agent::evidence::EvidenceBuilderConfig {
             recorder: std::sync::Arc::new(opi_coding_agent::evidence::FileEvidenceSink::new(path)),
-            source: opi_agent::evidence::AssemblySource::Cli,
+            source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
         });
     }
     let harness = builder.build();
@@ -1254,7 +1287,7 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     let model_display = config.defaults.model.clone();
     let theme_name = config.defaults.theme.clone();
     let keybindings = parse_keybindings(&config.keybindings);
-    // Phase 14.2: attach the credential store and OAuth registry so the
+    // Attach the credential store and OAuth registry so the
     // interactive loop can handle /login, /logout, and CredentialNeeded retry.
     harness.credential_store = Some(bundle.store);
     harness.oauth_registry = Some(bundle.registry);
@@ -1426,7 +1459,7 @@ mod tests {
     const FIX_I_STORED_CANARY: &str = "fix-i-stored-wrong-type-DO-NOT-LEAK";
     const FIX_I_FALLBACK_CANARY: &str = "fix-i-env-fallback-DO-NOT-LEAK";
     const FIX_I_FALLBACK_ENV: &str = "OPI_TEST_FIX_I_FALLBACK_KEY";
-    const FIX_I_REDACTED_MALFORMED_DIAGNOSTIC: &str = "credential store error: malformed credential envelope for 'anthropic': credential envelope does not match the expected schema";
+    const FIX_I_REDACTED_MALFORMED_DIAGNOSTIC: &str = "invalid provider configuration: [REDACTED]";
 
     #[derive(Clone, Copy)]
     enum CanaryReply {
@@ -2074,6 +2107,34 @@ mod tests {
         assert_eq!(stdout, b"stdout bytes\n");
         assert_eq!(stderr, b"stderr bytes\n");
         assert_eq!(exit_code, 2);
+    }
+
+    #[tokio::test]
+    async fn print_and_json_interrupt_cancel_the_shared_token_and_return_the_lifecycle_result() {
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let observed = cancellation.clone();
+        let operation = async move {
+            observed.cancelled().await;
+            opi_coding_agent::runner::NonInteractiveResult {
+                stdout: "lifecycle-result-canary".to_owned(),
+                stderr: "cancelled".to_owned(),
+                exit_code: opi_coding_agent::runner::ExitCode::Interrupted as i32,
+            }
+        };
+
+        let result = super::complete_non_interactive_after_interrupt(
+            operation,
+            std::future::ready(()),
+            cancellation,
+        )
+        .await;
+
+        assert_eq!(result.stdout, "lifecycle-result-canary");
+        assert_eq!(result.stderr, "cancelled");
+        assert_eq!(
+            result.exit_code,
+            opi_coding_agent::runner::ExitCode::Interrupted as i32
+        );
     }
 
     struct OrderingKeyringBackend {

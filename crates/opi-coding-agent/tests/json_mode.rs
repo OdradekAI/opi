@@ -11,7 +11,7 @@ mod common;
 
 use opi_agent::session::{SessionHeader, SessionWriter};
 use opi_agent::session_event::AgentSessionEvent;
-use opi_ai::provider::{Provider, ProviderError};
+use opi_ai::provider::{Provider, ProviderError, ProviderErrorSummary};
 use opi_ai::test_support::{self, MockProvider, MockResponse};
 use opi_coding_agent::config::{ExecutionStrategy, OpiConfig, PermissionDecision};
 use opi_coding_agent::harness::ResumeInfo;
@@ -409,7 +409,9 @@ async fn json_mode_provider_error_exit_code() {
     );
     // Error info goes to stderr, not stdout
     assert!(
-        result.stderr.contains("provider error"),
+        result
+            .stderr
+            .contains("provider returned an error response"),
         "stderr should contain a redacted provider error class: {:?}",
         result.stderr
     );
@@ -423,9 +425,11 @@ async fn json_mode_provider_error_stderr_is_redacted() {
     let secret = "sk-proj-1234567890abcdefghijklmnopqrstuv";
     let provider = MockProvider::new_with_errors(
         "mock",
-        vec![MockResponse::Error(ProviderError::RequestFailed(format!(
-            "HTTP 500: body contained {secret} at C:\\Users\\alice\\.config\\opi\\config.toml"
-        )))],
+        vec![MockResponse::Error(ProviderError::RequestFailed(
+            ProviderErrorSummary::from_untrusted(format!(
+                "HTTP 500: body contained {secret} at C:\\Users\\alice\\.config\\opi\\config.toml"
+            )),
+        ))],
     );
     let mut runner = NonInteractiveRunner::new(
         Box::new(provider),
@@ -452,7 +456,7 @@ async fn json_mode_provider_error_stderr_is_redacted() {
         result.stderr
     );
     assert!(
-        result.stderr.contains("provider error"),
+        result.stderr.contains("provider request failed"),
         "stderr should retain a useful static error class: {}",
         result.stderr
     );
@@ -601,9 +605,9 @@ async fn provider_errors_are_redacted() {
     // Retryable Network error carrying a secret -> AutoRetryStart before the
     // final failure. Default RetryConfig retries, so an AutoRetry event fires.
     let make_err = || {
-        MockResponse::Error(ProviderError::Network(format!(
-            "conn reset; echoed key {secret}"
-        )))
+        MockResponse::Error(ProviderError::Network(
+            ProviderErrorSummary::from_untrusted(format!("conn reset; echoed key {secret}")),
+        ))
     };
     let provider = MockProvider::new_with_errors(
         "mock",
@@ -1469,9 +1473,9 @@ async fn phase17_canary_is_absent_from_json_and_ndjson() {
     // redact_text) into the NDJSON stdout. Non-vacuous: the error body reaches
     // the JSON/NDJSON output surface before redaction.
     let make_err = || {
-        MockResponse::Error(ProviderError::Network(format!(
-            "conn reset; echoed secret {canary}"
-        )))
+        MockResponse::Error(ProviderError::Network(
+            ProviderErrorSummary::from_untrusted(format!("conn reset; echoed secret {canary}")),
+        ))
     };
     let provider =
         MockProvider::new_with_errors("mock", vec![make_err(), make_err(), make_err(), make_err()]);
@@ -1502,6 +1506,140 @@ async fn phase17_canary_is_absent_from_json_and_ndjson() {
         !result.stdout.is_empty() || !result.stderr.is_empty(),
         "the provider error must surface redacted output"
     );
+}
+
+#[tokio::test]
+async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
+    fn resumed_runner(
+        provider: Box<dyn Provider>,
+        workspace: &std::path::Path,
+        session_dir: &std::path::Path,
+        session_id: &str,
+        config: OpiConfig,
+        tools: ToolSelection,
+    ) -> NonInteractiveRunner {
+        let session_path = session_dir.join(format!("{session_id}.jsonl"));
+        SessionWriter::create(
+            &session_path,
+            SessionHeader::new(
+                session_id.to_owned(),
+                "2026-08-19T00:00:00Z".to_owned(),
+                workspace.display().to_string(),
+                None,
+            ),
+        )
+        .unwrap();
+        NonInteractiveRunner::new_with_resume(
+            provider,
+            "mock-model".to_owned(),
+            config,
+            workspace.to_path_buf(),
+            false,
+            None,
+            Vec::new(),
+            Some(ResumeInfo {
+                path: session_path,
+                session_id: session_id.to_owned(),
+                entries: Vec::new(),
+                original_cwd: workspace.to_path_buf(),
+                diagnostics: Vec::new(),
+                recorded_model: None,
+                recorded_thinking: None,
+            }),
+            tools,
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
+        )
+        .unwrap()
+    }
+
+    let workspace = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    let prompt_canary = "prompt/arbitrary/{phase17-ndjson}";
+    let tool_canary = "tool/arbitrary/{phase17-ndjson}";
+    let path_canary = "path/arbitrary/{phase17-ndjson}";
+    let credential_canary = "credential/arbitrary/{phase17-ndjson}";
+    let fixture_name = format!("{path_canary}-fixture.txt").replace('/', "_");
+    std::fs::write(
+        workspace.path().join(&fixture_name),
+        format!("{tool_canary} {path_canary}"),
+    )
+    .unwrap();
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Events(test_support::tool_call_response(
+                "ndjson-canary-read",
+                "read",
+                &serde_json::json!({ "path": fixture_name }).to_string(),
+            )),
+            MockResponse::Events(test_support::text_response("ndjson-safe-control")),
+        ],
+    );
+    let mut config = OpiConfig::default();
+    config.compaction.threshold_tokens = 0;
+    let mut runner = resumed_runner(
+        Box::new(provider),
+        workspace.path(),
+        sessions.path(),
+        "ndjson-compaction",
+        config,
+        ToolSelection::Allowlist(vec!["read".to_owned()]),
+    );
+    let result = runner
+        .run_json(&format!(
+            "{prompt_canary} credential={credential_canary} read the fixture"
+        ))
+        .await;
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+    let lines = parse_ndjson(&result.stdout);
+    let compaction = lines
+        .iter()
+        .filter(|line| {
+            matches!(
+                line["type"].as_str(),
+                Some("CompactionStart" | "CompactionEnd")
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(compaction.len(), 2);
+    assert_eq!(compaction[0]["reason"], "threshold");
+    assert_eq!(compaction[1]["reason"], "threshold");
+    assert!(compaction[1]["result"]["tokens_before"].is_number());
+    assert_eq!(compaction[1]["result"]["summary"], "[REDACTED]");
+    let compaction_json = serde_json::to_string(&compaction).unwrap();
+    for canary in [prompt_canary, tool_canary, path_canary, credential_canary] {
+        assert!(!compaction_json.contains(canary), "NDJSON leaked {canary}");
+    }
+
+    let persist_sessions = tempfile::tempdir().unwrap();
+    let persist_path_id = format!("persist-{path_canary}").replace('/', "_");
+    let mut persist_runner = resumed_runner(
+        Box::new(MockProvider::new(
+            "mock",
+            vec![test_support::text_response("persist-safe-control")],
+        )),
+        workspace.path(),
+        persist_sessions.path(),
+        &persist_path_id,
+        OpiConfig::default(),
+        ToolSelection::Default,
+    );
+    let missing_path = persist_runner
+        .session()
+        .unwrap()
+        .session_path()
+        .to_path_buf();
+    std::fs::remove_file(&missing_path).unwrap();
+    let persist = persist_runner.run_json(prompt_canary).await;
+    let persist_lines = parse_ndjson(&persist.stdout);
+    let persist_event = persist_lines
+        .iter()
+        .find(|line| line["type"] == "Agent" && line["event"]["type"] == "SessionPersistError")
+        .expect("the real missing-session failure reaches NDJSON");
+    assert_eq!(persist_event["event"]["message"], "[REDACTED]");
+    let persist_json = serde_json::to_string(persist_event).unwrap();
+    assert!(!persist_json.contains(path_canary));
+    assert!(!persist_json.contains(&missing_path.display().to_string()));
 }
 
 // ---------------------------------------------------------------------------

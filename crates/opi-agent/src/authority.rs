@@ -1,5 +1,5 @@
 //! Trusted tool authorization: immutable registration, capability identity, and
-//! the mandatory fail-closed authorizer boundary (Phase 17 task 17.4).
+//! the mandatory fail-closed authorizer boundary.
 //!
 //! Tools enter the Agent loop only through an immutable [`RegisteredTool`] owned
 //! by trusted assembly, never through `Tool::definition()` alone. Every tool
@@ -10,7 +10,7 @@
 //! `EffectiveUserPolicy`, the fixed built-in capability map, and the concrete
 //! authorizer implementation).
 //!
-//! ## Phase 17.4 boundary
+//! ## Ownership boundary
 //!
 //! This substrate owns registration/capability identity and the fail-closed
 //! per-call authorization contract. The agent loop supplies typed correlation,
@@ -25,7 +25,11 @@ use std::sync::Arc;
 use opi_ai::message::ToolDef;
 use tokio_util::sync::CancellationToken;
 
-use crate::evidence::{CallId, CapabilityClass, EvidenceGeneration, EvidenceHealth, RunId, TurnId};
+pub use crate::evidence::CapabilityIdentity;
+use crate::evidence::{
+    CallId, EvidenceGeneration, EvidenceHealth, PermissionReference, PermissionScope,
+    PolicyReference, RunId, ScopedGrantReference, TurnId,
+};
 use crate::tool::Tool;
 
 // ===========================================================================
@@ -76,42 +80,6 @@ pub enum ToolOrigin {
     },
 }
 
-/// The capability a registered tool exercises. Built-in capabilities reuse the
-/// closed [`CapabilityClass`] families; extension capabilities are namespaced to
-/// the registration origin and tool name and require an exact existing
-/// permission, else the tool is excluded and denied.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Capability {
-    /// A closed built-in capability family.
-    Builtin(CapabilityClass),
-    /// An extension capability namespaced to its registration origin and name.
-    Extension {
-        /// The extension that contributes this capability.
-        extension_id: String,
-        /// The tool name within the extension.
-        name: String,
-    },
-}
-
-impl Capability {
-    /// Render a stable string identity for this capability, used for
-    /// permission lookup and evidence correlation without exposing the enum
-    /// shape across the core boundary.
-    pub fn as_identity(&self) -> String {
-        match self {
-            Capability::Builtin(class) => match class {
-                CapabilityClass::WorkspaceRead => "workspace.read".to_owned(),
-                CapabilityClass::WorkspaceWrite => "workspace.write".to_owned(),
-                CapabilityClass::CommandExecute => "command.execute".to_owned(),
-            },
-            Capability::Extension { extension_id, name } => {
-                format!("extension:{extension_id}:{name}")
-            }
-        }
-    }
-}
-
 /// Immutable registration of one tool owned by trusted assembly.
 ///
 /// Immutability is a usage guarantee: the [`ToolRegistry`] and the Agent hold
@@ -126,7 +94,7 @@ pub struct RegisteredTool {
     /// Registration-owned origin (built-in / extension / embedder).
     pub origin: ToolOrigin,
     /// Registration-derived capability identity.
-    pub capability: Capability,
+    pub capability: CapabilityIdentity,
     /// Provider-facing definition (name, description, JSON Schema).
     pub definition: ToolDef,
     /// The tool implementation invoked only after a current `Allow`.
@@ -139,7 +107,7 @@ impl RegisteredTool {
         registration_id: RegistrationId,
         provider_visible_name: String,
         origin: ToolOrigin,
-        capability: Capability,
+        capability: CapabilityIdentity,
         definition: ToolDef,
         implementation: Arc<dyn Tool>,
     ) -> Self {
@@ -220,10 +188,14 @@ impl ToolRegistry {
 // Authorization request, decision, and authorizer
 // ===========================================================================
 
-/// Core-confirmed facts supplied to the trusted authorizer. Full arguments are
-/// inspected inside the trusted boundary; the emitted authorization outcome
-/// carries only the classified or redacted representation. Run/turn/call are
-/// the typed evidence identities minted for this exact call.
+/// Opaque invocation context supplied by trusted runtime assembly.
+///
+/// [`Self::NoSession`] records explicit absence. [`Self::Session`] carries the
+/// assembly-provided reference without interpreting its product semantics or
+/// deriving it from model content or tool arguments. Evidence emission
+/// separately validates a session reference as an invocation binding; a
+/// malformed reference makes authorization evidence incomplete and prevents
+/// tool execution when an evidence sink is present.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InvocationContext {
     /// Trusted assembly supplied no session context for this invocation.
@@ -241,7 +213,21 @@ impl InvocationContext {
     }
 }
 
-/// Core-confirmed authorization facts for one resolved tool call.
+/// Core-confirmed authorization facts for one resolved, schema-validated tool
+/// call.
+///
+/// The runtime constructs this request only after resolving an immutable
+/// registration and validating the final [`Self::arguments`] against that
+/// registration's schema. [`Self::invocation_context`] comes from trusted
+/// assembly and is never inferred from those arguments. The run, turn, and call
+/// identities correlate this exact decision with its evidence records.
+///
+/// [`Self::evidence_health`] is the run-local snapshot at authorization time.
+/// An allow decision is executable only when it returns the same registration,
+/// capability, and evidence-health generation; a stale decision is reauthorized
+/// once and a persistent mismatch is denied without execution. Authorizers may
+/// inspect the full arguments, but emitted outcomes must remain classified or
+/// redacted.
 #[derive(Debug, Clone)]
 pub struct ToolAuthorizationRequest {
     /// Evidence run identity minted before the call.
@@ -255,7 +241,7 @@ pub struct ToolAuthorizationRequest {
     /// The resolved registered tool's trusted registration id.
     pub registration_id: RegistrationId,
     /// The registration-derived capability identity.
-    pub capability: Capability,
+    pub capability: CapabilityIdentity,
     /// The final validated arguments. The exact value authorized is the value
     /// executed (AUT-002).
     pub arguments: serde_json::Value,
@@ -274,15 +260,17 @@ pub enum AuthorizationDecision {
     /// executed.
     Allow {
         /// Opaque product-owned effective-policy reference (e.g. digest).
-        policy_ref: String,
+        policy_ref: PolicyReference,
         /// Opaque product-owned permission reference.
-        permission_ref: String,
+        permission_ref: PermissionReference,
         /// Opaque product-owned permission scope.
-        permission_scope: String,
+        permission_scope: PermissionScope,
+        /// Separately versioned scoped grant used by this decision, if any.
+        scoped_grant_ref: Option<ScopedGrantReference>,
         /// The registration the decision covers.
         registration_id: RegistrationId,
         /// The capability the decision covers.
-        capability: Capability,
+        capability: CapabilityIdentity,
         /// The evidence-health generation the decision was computed against.
         evidence_health_generation: EvidenceGeneration,
     },
@@ -394,7 +382,7 @@ mod tests {
         })
     }
 
-    fn registered(name: &str, capability: Capability) -> RegisteredTool {
+    fn registered(name: &str, capability: CapabilityIdentity) -> RegisteredTool {
         RegisteredTool::new(
             RegistrationId::new(format!("reg-{name}")),
             name.to_owned(),
@@ -411,7 +399,7 @@ mod tests {
 
     #[test]
     fn registry_rejects_duplicate_provider_visible_names() {
-        let cap = Capability::Builtin(CapabilityClass::WorkspaceRead);
+        let cap = CapabilityIdentity::new("acme.documents.read").unwrap();
         let result = ToolRegistry::from_tools(vec![
             registered("read", cap.clone()),
             registered("read", cap),
@@ -425,11 +413,17 @@ mod tests {
     #[test]
     fn registry_resolves_names_and_preserves_insertion_order() {
         let registry = ToolRegistry::from_tools(vec![
-            registered("read", Capability::Builtin(CapabilityClass::WorkspaceRead)),
-            registered("bash", Capability::Builtin(CapabilityClass::CommandExecute)),
+            registered(
+                "read",
+                CapabilityIdentity::new("acme.documents.read").unwrap(),
+            ),
+            registered(
+                "shell",
+                CapabilityIdentity::new("acme.process.run").unwrap(),
+            ),
             registered(
                 "write",
-                Capability::Builtin(CapabilityClass::WorkspaceWrite),
+                CapabilityIdentity::new("acme.documents.write").unwrap(),
             ),
         ])
         .expect("distinct names");
@@ -438,38 +432,35 @@ mod tests {
         assert!(registry.get("read").is_some());
         assert!(registry.get("missing").is_none());
         assert_eq!(
-            registry.get("bash").unwrap().capability,
-            Capability::Builtin(CapabilityClass::CommandExecute)
+            registry.get("shell").unwrap().capability,
+            CapabilityIdentity::new("acme.process.run").unwrap()
         );
 
         // Definitions preserve insertion order (not alphabetical, not map order).
         let defs = registry.definitions();
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names, vec!["read", "bash", "write"]);
+        assert_eq!(names, vec!["read", "shell", "write"]);
         assert_eq!(registry.len(), 3);
     }
 
     #[test]
     fn capability_identities_are_stable_and_distinct() {
-        let builtin_read = Capability::Builtin(CapabilityClass::WorkspaceRead);
-        let builtin_write = Capability::Builtin(CapabilityClass::WorkspaceWrite);
-        let builtin_exec = Capability::Builtin(CapabilityClass::CommandExecute);
-        let ext = Capability::Extension {
-            extension_id: "ext1".to_owned(),
-            name: "custom".to_owned(),
-        };
-        assert_eq!(builtin_read.as_identity(), "workspace.read");
-        assert_eq!(builtin_write.as_identity(), "workspace.write");
-        assert_eq!(builtin_exec.as_identity(), "command.execute");
-        assert_eq!(ext.as_identity(), "extension:ext1:custom");
+        let read = CapabilityIdentity::new("acme.documents.read").unwrap();
+        let write = CapabilityIdentity::new("acme.documents.write").unwrap();
+        let execute = CapabilityIdentity::new("acme.process.run").unwrap();
+        let extension = CapabilityIdentity::new("acme.extension:ext1:custom").unwrap();
+        assert_eq!(read.as_str(), "acme.documents.read");
+        assert_eq!(write.as_str(), "acme.documents.write");
+        assert_eq!(execute.as_str(), "acme.process.run");
+        assert_eq!(extension.as_str(), "acme.extension:ext1:custom");
         // Identities are pairwise distinct.
         let ids = [
-            builtin_read.as_identity(),
-            builtin_write.as_identity(),
-            builtin_exec.as_identity(),
-            ext.as_identity(),
+            read.as_str(),
+            write.as_str(),
+            execute.as_str(),
+            extension.as_str(),
         ];
-        let unique: std::collections::BTreeSet<&String> = ids.iter().collect();
+        let unique: std::collections::BTreeSet<&str> = ids.into_iter().collect();
         assert_eq!(unique.len(), ids.len());
     }
 
@@ -478,11 +469,12 @@ mod tests {
         // Allow carries the generation it was computed against; Deny carries a
         // stable code + redacted reason (no secrets, no raw args).
         let allow = AuthorizationDecision::Allow {
-            policy_ref: "digest".to_owned(),
-            permission_ref: "perm".to_owned(),
-            permission_scope: "scope".to_owned(),
+            policy_ref: PolicyReference::new("digest").unwrap(),
+            permission_ref: PermissionReference::new("perm").unwrap(),
+            permission_scope: PermissionScope::new("scope").unwrap(),
+            scoped_grant_ref: Some(ScopedGrantReference::new("grant").unwrap()),
             registration_id: RegistrationId::new("reg-read"),
-            capability: Capability::Builtin(CapabilityClass::WorkspaceRead),
+            capability: CapabilityIdentity::new("acme.documents.read").unwrap(),
             evidence_health_generation: EvidenceGeneration::INITIAL,
         };
         match allow {

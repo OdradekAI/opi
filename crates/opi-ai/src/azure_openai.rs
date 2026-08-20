@@ -1,4 +1,4 @@
-//! Azure OpenAI provider profile (task 3.2).
+//! Azure OpenAI provider profile.
 //!
 //! Routes through the OpenAI-compatible chat adapter with Azure-specific:
 //! - URL: `{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={version}`
@@ -18,9 +18,12 @@ use crate::model_info::WireApi;
 use crate::openai_chat::{
     CompatConfig, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent, parse_sse_events,
 };
-use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{
+    EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
+};
+use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
-use crate::stream::AssistantStreamEvent;
+use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_cancel};
 
 /// Default Azure OpenAI API version.
 const DEFAULT_API_VERSION: &str = "2024-06-01";
@@ -59,13 +62,15 @@ impl AzureOpenAIProvider {
     ) -> Result<Self, ProviderError> {
         let endpoint = endpoint.ok_or_else(|| {
             ProviderError::Config(
-                "Azure OpenAI endpoint is required. Set it via config [providers.azure] endpoint or AZURE_OPENAI_ENDPOINT env var.".into()
+                ProviderErrorSummary::attested_static(
+                    "Azure OpenAI endpoint is required. Set it via config [providers.azure] endpoint or AZURE_OPENAI_ENDPOINT env var."
+                )
             )
         })?;
         let api_version = api_version.unwrap_or_else(|| DEFAULT_API_VERSION.into());
         if deployment.trim().is_empty() {
             return Err(ProviderError::Config(
-                "Azure OpenAI deployment must not be empty".into(),
+                ProviderErrorSummary::attested_static("Azure OpenAI deployment must not be empty"),
             ));
         }
         let models = vec![deployment_model(&deployment)];
@@ -93,7 +98,9 @@ impl AzureOpenAIProvider {
     ) -> Result<Self, ProviderError> {
         let endpoint = endpoint.ok_or_else(|| {
             ProviderError::Config(
-                "Azure OpenAI endpoint is required. Set it via config [providers.azure] endpoint or AZURE_OPENAI_ENDPOINT env var.".into()
+                ProviderErrorSummary::attested_static(
+                    "Azure OpenAI endpoint is required. Set it via config [providers.azure] endpoint or AZURE_OPENAI_ENDPOINT env var."
+                )
             )
         })?;
         let api_version = api_version.unwrap_or_else(|| DEFAULT_API_VERSION.into());
@@ -103,7 +110,9 @@ impl AzureOpenAIProvider {
                 .any(|deployment| deployment.trim().is_empty())
         {
             return Err(ProviderError::Config(
-                "Azure OpenAI deployments must contain only non-empty deployment names".into(),
+                ProviderErrorSummary::attested_static(
+                    "Azure OpenAI deployments must contain only non-empty deployment names",
+                ),
             ));
         }
         let models = deployments
@@ -132,7 +141,7 @@ impl AzureOpenAIProvider {
     }
 
     /// Apply an OpenAI-compatible profile compat config to the inner shared
-    /// adapter (Phase 12 task 12.3). Azure is a first-class provider that
+    /// adapter. Azure is a first-class provider that
     /// routes request-body serialization through the shared OpenAI Chat
     /// adapter, so it honors the same compat flags (developer role, strict
     /// tool schema, max-tokens field, tool-result name) as config-driven
@@ -175,7 +184,9 @@ impl AzureOpenAIProvider {
                 ParsedEvent::UsageError(error) => stream_events.push(Err(error)),
                 ParsedEvent::Malformed { .. } => {
                     stream_events.push(Err(ProviderError::StreamError(
-                        "Azure OpenAI returned a malformed streaming frame".to_owned(),
+                        ProviderErrorSummary::attested_static(
+                            "Azure OpenAI returned a malformed streaming frame",
+                        ),
                     )));
                 }
             }
@@ -195,22 +206,6 @@ fn deployment_model(deployment: &str) -> ModelInfo {
             .with_images(true)
             .with_streaming(true),
     )
-}
-
-// Minimal ReceiverStream adapter for the tokio mpsc channel.
-struct ReceiverStream {
-    rx: tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>,
-}
-
-impl futures_core::Stream for ReceiverStream {
-    type Item = Result<AssistantStreamEvent, ProviderError>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        self.rx.poll_recv(cx)
-    }
 }
 
 impl Provider for AzureOpenAIProvider {
@@ -234,46 +229,81 @@ impl Provider for AzureOpenAIProvider {
         let url = self.build_azure_url(&model_id);
         let body = self.inner.build_request_body(&request);
         let cancel = request.cancel;
+        let timeout = request.timeout;
+        let extra_headers = request.extra_headers;
         let http_client = self.client.client().clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
+        let producer_cancel = cancel.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = stream_azure_http(http_client, api_key, &url, &body, cancel, &tx).await
-            {
-                let _ = tx.send(Err(e)).await;
+            let result = stream_azure_http(
+                http_client,
+                api_key,
+                &url,
+                &body,
+                producer_cancel.clone(),
+                timeout,
+                extra_headers,
+                &tx,
+            )
+            .await;
+            match result {
+                Ok(()) | Err(ProviderError::Cancelled) => {}
+                Err(error) => {
+                    let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                }
             }
         });
 
-        Box::pin(ReceiverStream { rx })
+        Box::pin(CancelAwareReceiverStream::new(rx, cancel))
     }
 }
 
 /// HTTP streaming with Azure-specific URL and `api-key` header.
+#[allow(clippy::too_many_arguments)]
 async fn stream_azure_http(
     http_client: reqwest::Client,
     api_key: String,
     url: &str,
     body: &serde_json::Value,
     cancel: CancellationToken,
+    timeout: Option<std::time::Duration>,
+    extra_headers: Vec<(String, String)>,
     tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
 ) -> Result<(), ProviderError> {
-    let req = http_client
-        .post(url)
-        .header("api-key", &api_key)
-        .header("content-type", "application/json");
+    let route_headers = vec![
+        ("api-key".to_owned(), api_key),
+        ("content-type".to_owned(), "application/json".to_owned()),
+    ];
+    let headers = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+    let mut req = http_client.post(url);
+    for (name, value) in headers {
+        req = req.header(name, value);
+    }
+    if let Some(timeout) = timeout {
+        req = req.timeout(timeout);
+    }
 
-    let response = req
-        .body(serde_json::to_string(body).unwrap_or_default())
-        .send()
-        .await
-        .map_err(|e| ProviderError::Network(e.to_string()))?;
+    let response = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
+        response = req
+            .body(serde_json::to_string(body).unwrap_or_default())
+            .send() => response,
+    }
+    .map_err(|error| {
+        if error.is_timeout() {
+            ProviderError::Timeout
+        } else {
+            ProviderError::Network(ProviderErrorSummary::sanitized(error.to_string()))
+        }
+    })?;
 
     let status = response.status();
     if !status.is_success() {
         let headers = response.headers().clone();
-        let error_body = response.text().await.unwrap_or_default();
-        return Err(map_azure_status(status, &error_body, &headers));
+        return Err(map_azure_status(status, &headers));
     }
 
     let mut byte_stream = response.bytes_stream();
@@ -283,8 +313,9 @@ async fn stream_azure_http(
 
     loop {
         let chunk = tokio::select! {
+            biased;
             _ = cancel.cancelled() => {
-                return Ok(());
+                return Err(ProviderError::Cancelled);
             }
             chunk = byte_stream.next() => {
                 match chunk {
@@ -294,7 +325,13 @@ async fn stream_azure_http(
             }
         };
 
-        let chunk = chunk.map_err(|e| ProviderError::StreamError(e.to_string()))?;
+        let chunk = chunk.map_err(|error| {
+            if error.is_timeout() {
+                ProviderError::Timeout
+            } else {
+                ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
+            }
+        })?;
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
         for parsed in drain_sse_events(&mut buffer) {
@@ -307,7 +344,7 @@ async fn stream_azure_http(
                                 AssistantStreamEvent::Done { .. }
                                     | AssistantStreamEvent::Error { .. }
                             );
-                            if tx.send(Ok(stream_event)).await.is_err() {
+                            if !send_or_cancel(&cancel, tx, Ok(stream_event)).await? {
                                 return Ok(());
                             }
                             if is_terminal {
@@ -317,15 +354,15 @@ async fn stream_azure_http(
                     }
                 }
                 ParsedEvent::UsageError(error) => {
-                    if tx.send(Err(error)).await.is_err() {
+                    if !send_or_cancel(&cancel, tx, Err(error)).await? {
                         return Ok(());
                     }
                 }
                 ParsedEvent::Malformed { .. } => {
-                    let err = ProviderError::StreamError(
-                        "Azure OpenAI returned a malformed streaming frame".to_owned(),
-                    );
-                    if tx.send(Err(err)).await.is_err() {
+                    let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                        "Azure OpenAI returned a malformed streaming frame",
+                    ));
+                    if !send_or_cancel(&cancel, tx, Err(err)).await? {
                         return Ok(());
                     }
                 }
@@ -334,8 +371,10 @@ async fn stream_azure_http(
     }
 
     if !saw_done {
-        let err = ProviderError::StreamError("stream ended without a terminal event".into());
-        let _ = tx.send(Err(err)).await;
+        let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+            "stream ended without a terminal event",
+        ));
+        let _ = send_or_cancel(&cancel, tx, Err(err)).await?;
     }
 
     Ok(())
@@ -357,28 +396,15 @@ fn drain_sse_events(buffer: &mut String) -> Vec<ParsedEvent> {
 
 fn map_azure_status(
     status: reqwest::StatusCode,
-    body: &str,
     headers: &reqwest::header::HeaderMap,
 ) -> ProviderError {
     match status.as_u16() {
-        401 => ProviderError::AuthFailed(format!(
-            "authentication failed: {}",
-            crate::http::safe_excerpt(body)
-        )),
-        403 => ProviderError::AuthFailed(format!(
-            "access denied: {}",
-            crate::http::safe_excerpt(body)
-        )),
-        404 => ProviderError::Config(format!(
-            "deployment not found: {}",
-            crate::http::safe_excerpt(body)
-        )),
+        401 | 403 => ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected()),
+        404 => ProviderError::Config(ProviderErrorSummary::from_http_response(404)),
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
         408 | 504 => ProviderError::Timeout,
-        code => {
-            ProviderError::ProviderSide(format!("HTTP {code}: {}", crate::http::safe_excerpt(body)))
-        }
+        code => ProviderError::ProviderSide(ProviderErrorSummary::from_http_response(code)),
     }
 }

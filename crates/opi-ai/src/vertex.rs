@@ -1,4 +1,4 @@
-//! Google Vertex AI provider (task 3.3).
+//! Google Vertex AI provider.
 //!
 //! Routes through the Gemini `streamGenerateContent` adapter with
 //! Vertex-specific URL and auth:
@@ -17,9 +17,12 @@ use tokio_util::sync::CancellationToken;
 use crate::gemini::{GeminiMapper, GeminiProvider, ParsedEvent, drain_sse_data, parse_sse_data};
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
-use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{
+    EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
+};
+use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
-use crate::stream::AssistantStreamEvent;
+use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_cancel};
 
 /// Google Vertex AI provider.
 ///
@@ -128,7 +131,9 @@ impl VertexProvider {
                     }
                     ParsedEvent::Malformed => {
                         stream_events.push(Err(ProviderError::StreamError(
-                            "Vertex returned a malformed streaming frame".to_owned(),
+                            ProviderErrorSummary::attested_static(
+                                "Vertex returned a malformed streaming frame",
+                            ),
                         )));
                     }
                 }
@@ -137,22 +142,6 @@ impl VertexProvider {
 
         let _cancel = cancel;
         Box::pin(stream::iter(stream_events))
-    }
-}
-
-// Minimal ReceiverStream adapter for the tokio mpsc channel.
-struct ReceiverStream {
-    rx: tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>,
-}
-
-impl futures_core::Stream for ReceiverStream {
-    type Item = Result<AssistantStreamEvent, ProviderError>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        self.rx.poll_recv(cx)
     }
 }
 
@@ -177,47 +166,85 @@ impl Provider for VertexProvider {
         let url = self.build_vertex_url(&model_id);
         let body = self.inner.build_request_body(&request);
         let cancel = request.cancel;
+        let timeout = request.timeout;
+        let extra_headers = request.extra_headers;
         let http_client = self.client.client().clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
+        let producer_cancel = cancel.clone();
 
         tokio::spawn(async move {
-            if let Err(e) =
-                stream_vertex_http(http_client, access_token, &url, &body, cancel, &tx).await
-            {
-                let _ = tx.send(Err(e)).await;
+            let result = stream_vertex_http(
+                http_client,
+                access_token,
+                &url,
+                &body,
+                producer_cancel.clone(),
+                timeout,
+                extra_headers,
+                &tx,
+            )
+            .await;
+            match result {
+                Ok(()) | Err(ProviderError::Cancelled) => {}
+                Err(error) => {
+                    let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                }
             }
         });
 
-        Box::pin(ReceiverStream { rx })
+        Box::pin(CancelAwareReceiverStream::new(rx, cancel))
     }
 }
 
 /// HTTP streaming with Vertex-specific URL and `Authorization: Bearer` header.
+#[allow(clippy::too_many_arguments)]
 async fn stream_vertex_http(
     http_client: reqwest::Client,
     access_token: String,
     url: &str,
     body: &serde_json::Value,
     cancel: CancellationToken,
+    timeout: Option<std::time::Duration>,
+    extra_headers: Vec<(String, String)>,
     tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
 ) -> Result<(), ProviderError> {
-    let req = http_client
-        .post(url)
-        .header("authorization", format!("Bearer {access_token}"))
-        .header("content-type", "application/json");
+    let route_headers = vec![
+        ("authorization".to_owned(), format!("Bearer {access_token}")),
+        ("content-type".to_owned(), "application/json".to_owned()),
+    ];
+    let headers = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+    let mut req = http_client.post(url);
+    for (name, value) in headers {
+        req = req.header(name, value);
+    }
+    if let Some(timeout) = timeout {
+        req = req.timeout(timeout);
+    }
 
-    let response = req
-        .body(serde_json::to_string(body).unwrap_or_default())
-        .send()
-        .await
-        .map_err(|e| ProviderError::Network(e.to_string()))?;
+    let response = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
+        response = req
+            .body(serde_json::to_string(body).unwrap_or_default())
+            .send() => response,
+    }
+    .map_err(|error| {
+        if error.is_timeout() {
+            ProviderError::Timeout
+        } else {
+            ProviderError::Network(ProviderErrorSummary::sanitized(error.to_string()))
+        }
+    })?;
 
     let status = response.status();
     if !status.is_success() {
         let headers = response.headers().clone();
-        let error_body = response.text().await.unwrap_or_default();
-        return Err(map_vertex_status(status, &error_body, &headers));
+        if status == reqwest::StatusCode::BAD_REQUEST {
+            let body = crate::http::read_bounded_error_body(response, &cancel, timeout).await?;
+            return Err(map_vertex_status(status, body.as_deref(), &headers));
+        }
+        return Err(map_vertex_status(status, None, &headers));
     }
 
     let mut byte_stream = response.bytes_stream();
@@ -227,8 +254,9 @@ async fn stream_vertex_http(
 
     loop {
         let chunk = tokio::select! {
+            biased;
             _ = cancel.cancelled() => {
-                return Ok(());
+                return Err(ProviderError::Cancelled);
             }
             chunk = byte_stream.next() => {
                 match chunk {
@@ -238,7 +266,13 @@ async fn stream_vertex_http(
             }
         };
 
-        let chunk = chunk.map_err(|e| ProviderError::StreamError(e.to_string()))?;
+        let chunk = chunk.map_err(|error| {
+            if error.is_timeout() {
+                ProviderError::Timeout
+            } else {
+                ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
+            }
+        })?;
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
         for parsed in drain_sse_data(&mut buffer) {
@@ -249,7 +283,7 @@ async fn stream_vertex_http(
                             stream_event,
                             AssistantStreamEvent::Done { .. } | AssistantStreamEvent::Error { .. }
                         );
-                        if tx.send(Ok(stream_event)).await.is_err() {
+                        if !send_or_cancel(&cancel, tx, Ok(stream_event)).await? {
                             return Ok(());
                         }
                         if is_terminal {
@@ -258,10 +292,10 @@ async fn stream_vertex_http(
                     }
                 }
                 ParsedEvent::Malformed => {
-                    let err = ProviderError::StreamError(
-                        "Vertex returned a malformed streaming frame".to_owned(),
-                    );
-                    if tx.send(Err(err)).await.is_err() {
+                    let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                        "Vertex returned a malformed streaming frame",
+                    ));
+                    if !send_or_cancel(&cancel, tx, Err(err)).await? {
                         return Ok(());
                     }
                 }
@@ -270,8 +304,10 @@ async fn stream_vertex_http(
     }
 
     if !saw_done {
-        let err = ProviderError::StreamError("stream ended without a terminal event".into());
-        let _ = tx.send(Err(err)).await;
+        let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+            "stream ended without a terminal event",
+        ));
+        let _ = send_or_cancel(&cancel, tx, Err(err)).await?;
     }
 
     Ok(())
@@ -279,38 +315,30 @@ async fn stream_vertex_http(
 
 fn map_vertex_status(
     status: reqwest::StatusCode,
-    body: &str,
+    body: Option<&[u8]>,
     headers: &reqwest::header::HeaderMap,
 ) -> ProviderError {
     match status.as_u16() {
-        401 | 403 => ProviderError::AuthFailed(format!(
-            "authentication failed: {}",
-            crate::http::safe_excerpt(body)
-        )),
+        401 | 403 => ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected()),
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
         408 | 504 => ProviderError::Timeout,
-        _ => {
+        400 => {
             // Vertex/Gemini may return auth errors with HTTP 400 but code 401/403 in body
-            if let Ok(err_body) = serde_json::from_str::<serde_json::Value>(body)
+            if let Some(body) = body
+                && let Ok(err_body) = serde_json::from_slice::<serde_json::Value>(body)
                 && let Some(code) = err_body
                     .get("error")
                     .and_then(|e| e.get("code"))
                     .and_then(|c| c.as_i64())
                 && (code == 401 || code == 403)
             {
-                return ProviderError::AuthFailed(format!(
-                    "authentication failed: {}",
-                    crate::http::safe_excerpt(body)
-                ));
+                return ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected());
             }
-            ProviderError::ProviderSide(format!(
-                "HTTP {}: {}",
-                status.as_u16(),
-                crate::http::safe_excerpt(body)
-            ))
+            ProviderError::ProviderSide(ProviderErrorSummary::from_http_response(400))
         }
+        code => ProviderError::ProviderSide(ProviderErrorSummary::from_http_response(code)),
     }
 }
 

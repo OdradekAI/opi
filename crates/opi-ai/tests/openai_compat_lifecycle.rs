@@ -146,7 +146,7 @@ mod openai_chat_profile {
         match result {
             Err(ProviderError::AuthFailed(msg)) => {
                 assert!(
-                    msg.contains("authentication failed"),
+                    msg.contains("provider rejected credentials"),
                     "should mention auth failure: {msg}"
                 );
             }
@@ -247,7 +247,8 @@ mod openai_chat_profile {
             .mount(&server)
             .await;
 
-        // Real signature is (api_key, base_url, provider_id, compat, extra_headers, models).
+        // Exact signature: new_for_profile(base_url, provider_id, compat,
+        // extra_headers, models).
         let provider = OpenAiChatProvider::new_for_profile(
             server.uri(),
             "zai".into(),
@@ -452,7 +453,7 @@ mod mistral_profile {
         match result {
             Err(ProviderError::AuthFailed(msg)) => {
                 assert!(
-                    msg.contains("authentication failed"),
+                    msg.contains("provider rejected credentials"),
                     "should mention auth failure: {msg}"
                 );
             }
@@ -694,7 +695,7 @@ mod openrouter_profile {
         match result {
             Err(ProviderError::AuthFailed(msg)) => {
                 assert!(
-                    msg.contains("authentication failed"),
+                    msg.contains("provider rejected credentials"),
                     "should mention auth failure: {msg}"
                 );
             }

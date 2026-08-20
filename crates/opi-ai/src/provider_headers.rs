@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use reqwest::header::{HeaderName, HeaderValue};
 
-use crate::provider::ProviderError;
+use crate::provider::{ProviderError, ProviderErrorSummary};
 
 /// Canonical reserved provider-managed header names shared by every wire.
 /// `ProviderHeaders::try_new` and `validate_extra_headers` both gate on this
@@ -80,14 +80,18 @@ impl ProviderHeaders {
             validate_pair(name, value).map_err(provider_header_error)?;
             let normalized = name.to_ascii_lowercase();
             if RESERVED_PROVIDER_HEADERS.contains(&normalized.as_str()) {
-                return Err(ProviderError::RequestFailed(format!(
-                    "request header '{name}' is reserved for provider-managed routing"
-                )));
+                return Err(ProviderError::RequestFailed(
+                    ProviderErrorSummary::sanitized(format!(
+                        "request header '{name}' is reserved for provider-managed routing"
+                    )),
+                ));
             }
             if !occupied.insert(normalized) {
-                return Err(ProviderError::RequestFailed(format!(
-                    "request header '{name}' cannot override a provider-managed header"
-                )));
+                return Err(ProviderError::RequestFailed(
+                    ProviderErrorSummary::sanitized(format!(
+                        "request header '{name}' cannot override a provider-managed header"
+                    )),
+                ));
             }
             merged.push((name.clone(), value.clone()));
         }
@@ -106,7 +110,7 @@ fn validate_pair(name: &str, value: &str) -> Result<(), ProviderHeadersError> {
 }
 
 fn provider_header_error(error: ProviderHeadersError) -> ProviderError {
-    ProviderError::RequestFailed(error.to_string())
+    ProviderError::RequestFailed(ProviderErrorSummary::sanitized(error.to_string()))
 }
 
 /// Invalid provider-configured HTTP header.

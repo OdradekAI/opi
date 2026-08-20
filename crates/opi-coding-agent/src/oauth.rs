@@ -1,4 +1,4 @@
-//! OAuth provider registry + PKCE/device-code flows (Phase 14.2).
+//! OAuth provider registry plus PKCE/device-code flows.
 //!
 //! Owns the concrete `OAuthProvider` implementations (Anthropic PKCE, GitHub
 //! Copilot device-code, OpenAI Codex browser/device-code), the
@@ -49,6 +49,22 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
+fn safe_provider_summary(message: impl AsRef<str>) -> opi_ai::provider::ProviderErrorSummary {
+    opi_ai::provider::ProviderErrorSummary::from_untrusted(message.as_ref())
+}
+
+fn provider_config_error(message: impl AsRef<str>) -> ProviderError {
+    ProviderError::Config(safe_provider_summary(message))
+}
+
+fn provider_network_error(message: impl AsRef<str>) -> ProviderError {
+    ProviderError::Network(safe_provider_summary(message))
+}
+
+fn provider_auth_error(message: impl AsRef<str>) -> ProviderError {
+    ProviderError::AuthFailed(safe_provider_summary(message))
+}
+
 /// PKCE `code_verifier` length in raw bytes before base64url encoding. 48 bytes
 /// encode to 64 URL-safe characters, within the RFC 7636 [43, 128] range.
 const CODE_VERIFIER_BYTES: usize = 48;
@@ -63,7 +79,7 @@ impl FlowBudget {
     fn new(duration: Duration) -> Result<Self, ProviderError> {
         let deadline = tokio::time::Instant::now()
             .checked_add(duration)
-            .ok_or_else(|| ProviderError::Config("OAuth login timeout is too large".into()))?;
+            .ok_or_else(|| provider_config_error("OAuth login timeout is too large"))?;
         Ok(Self { deadline })
     }
 
@@ -177,7 +193,7 @@ impl PkceInputError {
             Self::DuplicateState => "oauth redirect has duplicate state",
             Self::StateMismatch => "oauth state mismatch",
         };
-        ProviderError::Config(message.to_owned())
+        provider_config_error(message)
     }
 }
 
@@ -235,10 +251,10 @@ async fn run_pkce_login<'a>(
                 presenter.notify_failure("timeout");
             }
         })?
-        .map_err(|e| ProviderError::Config(format!("oauth loopback bind failed: {e}")))?;
+        .map_err(|e| provider_config_error(format!("oauth loopback bind failed: {e}")))?;
     let port = listener
         .local_addr()
-        .map_err(|e| ProviderError::Config(format!("oauth loopback local_addr failed: {e}")))?
+        .map_err(|e| provider_config_error(format!("oauth loopback local_addr failed: {e}")))?
         .port();
     let verifier = generate_code_verifier();
     let challenge = code_challenge_s256(&verifier);
@@ -319,7 +335,7 @@ async fn run_pkce_login<'a>(
         }
         LoginOutcome::CallbackIo(e) => {
             presenter.notify_failure("callback IO error");
-            return Err(ProviderError::Config(format!(
+            return Err(provider_config_error(format!(
                 "oauth callback IO error: {e}"
             )));
         }
@@ -411,7 +427,7 @@ async fn exchange_authorization_code(
     let resp = budget
         .wait(config.client.post(&config.token_url).form(&params).send())
         .await?
-        .map_err(|_| ProviderError::Network("token exchange failed".into()))?;
+        .map_err(|_| provider_network_error("token exchange failed"))?;
     let status = resp.status();
     if !status.is_success() {
         let body = budget.wait(resp.text()).await?.unwrap_or_default();
@@ -420,22 +436,20 @@ async fn exchange_authorization_code(
     let token: TokenResponse = budget
         .wait(resp.json())
         .await?
-        .map_err(|e| ProviderError::Config(format!("token response parse failed: {e}")))?;
+        .map_err(|e| provider_config_error(format!("token response parse failed: {e}")))?;
     let refresh = token
         .refresh_token
-        .ok_or_else(|| ProviderError::Config("token response missing refresh_token".into()))?;
+        .ok_or_else(|| provider_config_error("token response missing refresh_token"))?;
     let expires_in = token
         .expires_in
-        .ok_or_else(|| ProviderError::Config("token response missing expires_in".into()))?;
+        .ok_or_else(|| provider_config_error("token response missing expires_in"))?;
     Ok(OAuthCredential {
         access: SecretString::new(token.access_token.into_boxed_str()),
         refresh: SecretString::new(refresh.into_boxed_str()),
         expires_at: Some(
             OffsetDateTime::now_utc()
                 .checked_add(time::Duration::seconds(expires_in))
-                .ok_or_else(|| {
-                    ProviderError::Config("token response expires_in out of range".into())
-                })?,
+                .ok_or_else(|| provider_config_error("token response expires_in out of range"))?,
         ),
         base_url: None,
         account_id: None,
@@ -527,7 +541,7 @@ async fn refresh_oauth_token(
         .form(&params)
         .send()
         .await
-        .map_err(|_| ProviderError::Network("token refresh failed".into()))?;
+        .map_err(|_| provider_network_error("token refresh failed"))?;
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
         // Drain the body without surfacing it; a revoked credential is a typed
@@ -544,7 +558,7 @@ async fn refresh_oauth_token(
     let token: TokenResponse = resp
         .json()
         .await
-        .map_err(|e| ProviderError::Config(format!("refresh response parse failed: {e}")))?;
+        .map_err(|e| provider_config_error(format!("refresh response parse failed: {e}")))?;
     let refresh = token
         .refresh_token
         .map(|s| SecretString::new(s.into_boxed_str()))
@@ -554,7 +568,7 @@ async fn refresh_oauth_token(
         .map(|secs| {
             OffsetDateTime::now_utc()
                 .checked_add(time::Duration::seconds(secs))
-                .ok_or_else(|| ProviderError::Config("refresh expires_in out of range".into()))
+                .ok_or_else(|| provider_config_error("refresh expires_in out of range"))
         })
         .transpose()?;
     Ok(OAuthCredential {
@@ -603,7 +617,7 @@ fn token_endpoint_error(status: reqwest::StatusCode, body: &str) -> ProviderErro
         .and_then(|e| e.error.as_deref())
         .unwrap_or("");
     let msg = format!("token endpoint: {status} {}", oauth_error_class(code));
-    ProviderError::AuthFailed(msg)
+    provider_auth_error(msg)
 }
 
 /// Percent-encode a query value (RFC 3986 unreserved set kept). Used to build
@@ -1092,18 +1106,16 @@ async fn poll_codex_device_token(
                 .send(),
         )
         .await?
-        .map_err(|_| ProviderError::Network("device token poll failed".into()))?;
+        .map_err(|_| provider_network_error("device token poll failed"))?;
     let status = response.status();
     if status.is_success() {
         let token = budget
             .wait(response.json::<CodexDeviceToken>())
             .await?
-            .map_err(|_| {
-                ProviderError::Config("device token response missing required fields".into())
-            })?;
+            .map_err(|_| provider_config_error("device token response missing required fields"))?;
         if token.authorization_code.is_empty() || token.code_verifier.is_empty() {
-            return Err(ProviderError::Config(
-                "device token response missing required fields".into(),
+            return Err(provider_config_error(
+                "device token response missing required fields",
             ));
         }
         return Ok(CodexDevicePoll::Complete(token));
@@ -1132,7 +1144,7 @@ async fn poll_codex_device_token(
     if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::NOT_FOUND {
         return Ok(CodexDevicePoll::Pending);
     }
-    Err(ProviderError::AuthFailed(format!(
+    Err(provider_auth_error(format!(
         "device authorization failed ({status})"
     )))
 }
@@ -1156,7 +1168,7 @@ async fn run_codex_device_login_flow(
                 .send()
         ) => match response {
             Ok(response) => response.map_err(|_| {
-                ProviderError::Network("device authorization request failed".into())
+                provider_network_error("device authorization request failed")
             })?,
             Err(ProviderError::Timeout) => {
                 presenter.notify_failure("device authorization timed out");
@@ -1184,7 +1196,7 @@ async fn run_codex_device_login_flow(
         };
         drop(body);
         presenter.notify_failure("device authorization request failed");
-        return Err(ProviderError::AuthFailed(format!(
+        return Err(provider_auth_error(format!(
             "device authorization request failed ({status})"
         )));
     }
@@ -1196,9 +1208,7 @@ async fn run_codex_device_login_flow(
         }
         device = budget.wait(response.json::<CodexDeviceAuthorization>()) => match device {
             Ok(device) => device.map_err(|_| {
-                ProviderError::Config(
-                    "device authorization response missing required fields".into(),
-                )
+                provider_config_error("device authorization response missing required fields")
             })?,
             Err(ProviderError::Timeout) => {
                 presenter.notify_failure("device authorization timed out");
@@ -1208,11 +1218,11 @@ async fn run_codex_device_login_flow(
         }
     };
     let mut interval = codex_device_interval(&device.interval).ok_or_else(|| {
-        ProviderError::Config("device authorization response has invalid interval".into())
+        provider_config_error("device authorization response has invalid interval")
     })?;
     if device.device_auth_id.is_empty() || device.user_code.is_empty() {
-        return Err(ProviderError::Config(
-            "device authorization response missing required fields".into(),
+        return Err(provider_config_error(
+            "device authorization response missing required fields",
         ));
     }
 
@@ -1531,14 +1541,14 @@ async fn poll_device_token(
                 .send(),
         )
         .await?
-        .map_err(|_| ProviderError::Network("device token poll failed".into()))?;
+        .map_err(|_| provider_network_error("device token poll failed"))?;
     // GitHub returns 200 with an `error` body for pending/denied/expired and
     // 200 with `access_token` on success; tolerate either status by parsing
     // the body. The device_code is never surfaced on any path here.
     let body: DeviceTokenBody = budget
         .wait(resp.json())
         .await?
-        .map_err(|e| ProviderError::Config(format!("device token response parse failed: {e}")))?;
+        .map_err(|e| provider_config_error(format!("device token response parse failed: {e}")))?;
     if let Some(token) = body.access_token {
         return Ok(DevicePollOutcome::Token(token));
     }
@@ -1547,12 +1557,12 @@ async fn poll_device_token(
         Some("slow_down") => Ok(DevicePollOutcome::SlowDown),
         Some("access_denied") => Ok(DevicePollOutcome::Denied),
         Some("expired_token") => Ok(DevicePollOutcome::Expired),
-        Some(other) => Err(ProviderError::Config(format!(
+        Some(other) => Err(provider_config_error(format!(
             "device authorization error: {}",
             oauth_error_class(other)
         ))),
-        None => Err(ProviderError::Config(
-            "device token response has no access_token and no error".into(),
+        None => Err(provider_config_error(
+            "device token response has no access_token and no error",
         )),
     }
 }
@@ -1631,7 +1641,7 @@ impl CopilotOAuthProvider {
                 .send(),
         )
         .await?
-        .map_err(|_| ProviderError::Network("copilot token exchange failed".into()))?;
+        .map_err(|_| provider_network_error("copilot token exchange failed"))?;
         let status = resp.status();
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             let _ = within_optional_budget(budget, resp.text()).await?;
@@ -1649,7 +1659,7 @@ impl CopilotOAuthProvider {
             within_optional_budget(budget, resp.json())
                 .await?
                 .map_err(|e| {
-                    ProviderError::Config(format!("copilot token response parse failed: {e}"))
+                    provider_config_error(format!("copilot token response parse failed: {e}"))
                 })?;
         let expires_at = OffsetDateTime::from_unix_timestamp(body.expires_at).ok();
         let base_url = body.endpoints.and_then(|e| e.api).or(base_url_fallback);
@@ -1704,7 +1714,7 @@ impl OAuthProvider for CopilotOAuthProvider {
                     Err(error) => return Err(error),
                 }
             }
-            .map_err(|_| ProviderError::Network("device authorization request failed".into()))?;
+            .map_err(|_| provider_network_error("device authorization request failed"))?;
             let status = resp.status();
             if !status.is_success() {
                 let body = tokio::select! {
@@ -1733,7 +1743,7 @@ impl OAuthProvider for CopilotOAuthProvider {
                 }
                 body = budget.wait(resp.json()) => match body {
                     Ok(body) => body.map_err(|e| {
-                        ProviderError::Config(format!("device authorization parse failed: {e}"))
+                        provider_config_error(format!("device authorization parse failed: {e}"))
                     })?,
                     Err(ProviderError::Timeout) => {
                         presenter.notify_failure("device authorization timed out");
@@ -2109,7 +2119,7 @@ impl ManualInputBroker {
 
     async fn read_line(&self) -> Result<String, ProviderError> {
         if self.poisoned.load(Ordering::SeqCst) {
-            return Err(ProviderError::Config(MANUAL_INPUT_POISONED.into()));
+            return Err(provider_config_error(MANUAL_INPUT_POISONED));
         }
         let state = Arc::new(ManualReadState::new());
         let guard = ManualReadGuard {
@@ -2176,15 +2186,13 @@ impl ManualInputBroker {
         });
         let result = receiver
             .await
-            .map_err(|_| ProviderError::Config("manual input broker stopped".into()))?
+            .map_err(|_| provider_config_error("manual input broker stopped"))?
             .map_err(|error| match error {
-                ManualReadError::Cancelled => {
-                    ProviderError::Config("manual input cancelled".into())
-                }
+                ManualReadError::Cancelled => provider_config_error("manual input cancelled"),
                 ManualReadError::Io(error) => {
-                    ProviderError::Config(format!("stdin read failed: {error}"))
+                    provider_config_error(format!("stdin read failed: {error}"))
                 }
-                ManualReadError::Poisoned => ProviderError::Config(MANUAL_INPUT_POISONED.into()),
+                ManualReadError::Poisoned => provider_config_error(MANUAL_INPUT_POISONED),
             });
         drop(guard);
         result
@@ -2197,7 +2205,7 @@ impl ManualInputBroker {
             active.wait_finished().await;
         }
         if self.poisoned.load(Ordering::SeqCst) {
-            Err(ProviderError::Config(MANUAL_INPUT_POISONED.into()))
+            Err(provider_config_error(MANUAL_INPUT_POISONED))
         } else {
             Ok(())
         }
@@ -2250,7 +2258,7 @@ impl LoginPresenter for TuiLoginPresenter {
                 || methods != [OAuthLoginMethod::Browser, OAuthLoginMethod::DeviceCode]
                 || default != OAuthLoginMethod::Browser
             {
-                return Err(ProviderError::Config(format!(
+                return Err(provider_config_error(format!(
                     "OAuth provider '{provider_id}' supplied unsupported login methods"
                 )));
             }
@@ -2266,9 +2274,7 @@ impl LoginPresenter for TuiLoginPresenter {
                 "q" | "quit" | "cancel" => Err(ProviderError::LoginCancelled {
                     provider_id: "openai-codex".to_owned(),
                 }),
-                _ => Err(ProviderError::Config(
-                    "invalid OpenAI Codex login method".into(),
-                )),
+                _ => Err(provider_config_error("invalid OpenAI Codex login method")),
             }
         })
     }
@@ -2310,7 +2316,7 @@ impl LoginPresenter for TuiLoginPresenter {
         Box::pin(async move {
             tokio::signal::ctrl_c()
                 .await
-                .map_err(|_| ProviderError::Config("login cancellation signal failed".into()))?;
+                .map_err(|_| provider_config_error("login cancellation signal failed"))?;
             self.manual_input.cancel_active_and_wait().await?;
             Ok(())
         })
@@ -2443,7 +2449,7 @@ impl std::fmt::Debug for OAuthProviderRegistry {
 }
 
 // ---------------------------------------------------------------------------
-// /login and /logout command helpers (Phase 14.2 slice 6)
+// /login and /logout command helpers
 // ---------------------------------------------------------------------------
 
 /// Presenter adapter that delays the success notification until the acquired
@@ -2513,7 +2519,7 @@ fn store_error_to_provider(error: CredentialStoreError) -> ProviderError {
         }
         _ => "credential store operation failed",
     };
-    ProviderError::Config(message.to_owned())
+    provider_config_error(message)
 }
 
 /// Run the OAuth login flow for `provider_id`, writing the resulting
@@ -2532,7 +2538,7 @@ pub async fn login_oauth(
 ) -> Result<(), ProviderError> {
     let oauth = registry
         .lookup(provider_id)
-        .ok_or_else(|| ProviderError::Config(format!("unknown OAuth provider: {provider_id}")))?;
+        .ok_or_else(|| provider_config_error(format!("unknown OAuth provider: {provider_id}")))?;
     let deferred_presenter = DeferredSuccessPresenter { inner: presenter };
     let cred = oauth.login(&deferred_presenter).await?;
     let stored: opi_ai::credential::Credential = cred.into();
@@ -2775,7 +2781,7 @@ mod tests {
             assert!(matches!(
                 error,
                 super::ProviderError::Config(message)
-                    if message == "manual input unavailable after process termination failure"
+                    if message == "[REDACTED]"
             ));
             assert!(!format!("{error:?} {error}").contains("termination-secret-canary"));
         }

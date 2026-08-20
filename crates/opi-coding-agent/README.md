@@ -278,6 +278,24 @@ Failure details are deliberately bounded and redacted at public boundaries.
 Provider requests receive the LLM-visible content and failure state, not raw
 command/path-sensitive diagnostic context.
 
+## Trusted Product Assembly
+
+Product policy stays in this crate rather than Agent Core. `EffectiveUserPolicy`
+is assembled by the Reference Product from its resolved run mode, active tools,
+mutating opt-in, `command.execute` permission policy, complete-evidence
+requirement, project trust, package activation, and path scope; Agent Core sees
+only the resulting opaque policy references and authorization decisions.
+
+The product also owns the concrete validated identities passed through the
+core's opaque types. `evidence::{CLI_ASSEMBLY, SDK_ASSEMBLY, RPC_ASSEMBLY}` are
+the fixed `AssemblyIdentity` values for those entry paths, while
+`tool_authority::{WORKSPACE_READ_CAPABILITY, WORKSPACE_WRITE_CAPABILITY,
+COMMAND_EXECUTE_CAPABILITY}` are the built-in `CapabilityIdentity` constants.
+Session identity is dynamic, not a global constant: product manifest assembly
+maps the active branch tip through `SessionBinding::branch`, or emits
+`SessionBinding::NoSession`. Agent Core validates and transports these values;
+it does not assign Opi product names or policy.
+
 ## Tool Policy
 
 The eight built-in tools split into a read-only set and a mutating set. Mutating
@@ -534,8 +552,14 @@ data, tool selection, runtime package state, resource metadata, and startup
 diagnostics.
 
 Common methods include `prompt`, `prompt_with_content`, `queue_images`,
-`subscribe`, `cancel`, `set_model`, `model_picker_items`, `branch_picker_items`,
+`subscribe`, `cancel`, `cancel_token`, `set_model`, `model_picker_items`, `branch_picker_items`,
 `resource_metadata`, `resolve_theme`, and `session`.
+
+`CodingHarness::cancel` targets an active operation. `cancel_token(&mut self)`
+instead arms the next run generation so cancellation observed during awaited
+preflight remains attached to that run. `NonInteractiveRunner` exposes this
+armed form as `cancel_token(&mut self)`; clone the token before calling `run*`,
+which mutably borrows the runner through lifecycle completion.
 
 ## Boundaries
 

@@ -1,32 +1,26 @@
-//! Bedrock credential resolution (task 3.1).
+//! Bedrock credential resolution.
 //!
 //! Precedence: explicit config > env vars > shared AWS profile files.
 //! No live AWS calls.
 
 use std::path::Path;
-use std::process::Command;
+use std::process::Stdio;
+use std::time::Duration;
 
-/// Resolved AWS credentials for Bedrock.
-///
-/// Custom Debug redacts secret_access_key and session_token.
-#[derive(Clone)]
-pub struct BedrockCredentials {
-    pub access_key_id: String,
-    pub secret_access_key: String,
-    pub session_token: Option<String>,
-    pub region: String,
-}
+use secrecy::SecretString;
+use tokio::io::AsyncReadExt;
+use tokio::process::{Child, Command};
+use tokio::time::{Instant, sleep_until};
+use tokio_util::sync::CancellationToken;
 
-impl std::fmt::Debug for BedrockCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BedrockCredentials")
-            .field("access_key_id", &self.access_key_id)
-            .field("secret_access_key", &"***")
-            .field("session_token", &self.session_token.as_ref().map(|_| "***"))
-            .field("region", &self.region)
-            .finish()
-    }
-}
+use crate::auth::{
+    AuthFallback, AuthProvenance, AuthProvenanceSource, AwsCredentialSource, AwsSigV4Credentials,
+    ResolvedAuth,
+};
+use crate::provider::ProviderErrorSummary;
+
+/// Resolved zeroizing AWS credentials for Bedrock.
+pub type BedrockCredentials = AwsSigV4Credentials;
 
 /// Source of resolved credentials (for diagnostics, never logged with secrets).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +30,65 @@ pub enum CredentialSource {
     ProfileFile,
     ConfigFile,
     CredentialProcess,
+}
+
+/// Safe, typed failures from local AWS credential resolution.
+///
+/// Error values deliberately omit file paths, process output, operating-system
+/// diagnostics, and credential material so callers can surface them safely.
+#[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
+pub enum CredentialResolutionError {
+    #[error("no AWS credentials are available")]
+    Exhausted,
+    #[error("the attempted {credential_source:?} AWS credential source is incomplete")]
+    IncompleteSource { credential_source: CredentialSource },
+    #[error("the {credential_source:?} AWS profile could not be read")]
+    ProfileIo { credential_source: CredentialSource },
+    #[error("the {credential_source:?} AWS profile is malformed")]
+    ProfileParse { credential_source: CredentialSource },
+    #[error("credential_process could not be started")]
+    CredentialProcessSpawn,
+    #[error("credential_process command is blank")]
+    CredentialProcessCommand,
+    #[error("credential_process exited unsuccessfully")]
+    CredentialProcessExit,
+    #[error("credential_process timed out")]
+    CredentialProcessTimeout,
+    #[error("credential_process output exceeded the limit")]
+    CredentialProcessOutputLimit,
+    #[error("credential_process output could not be read")]
+    CredentialProcessOutput,
+    #[error("credential_process output was not valid JSON")]
+    CredentialProcessJson,
+    #[error("credential_process returned an unsupported version")]
+    CredentialProcessVersion,
+    #[error("credential_process returned incomplete credentials")]
+    CredentialProcessIncomplete,
+    #[error("credential_process resolution was cancelled")]
+    CredentialProcessCancelled,
+    #[error("credential_process resolution task failed")]
+    CredentialProcessJoin,
+}
+
+impl CredentialResolutionError {
+    /// Convert this closed, non-secret reason into a provider-facing summary.
+    /// Unlike arbitrary upstream text, these variants contain no paths,
+    /// process output, operating-system diagnostics, or credential material.
+    pub fn into_safe_provider_summary(self) -> ProviderErrorSummary {
+        ProviderErrorSummary::sanitized(self.to_string())
+    }
+}
+
+impl From<CredentialSource> for AwsCredentialSource {
+    fn from(source: CredentialSource) -> Self {
+        match source {
+            CredentialSource::ExplicitConfig => Self::ExplicitConfig,
+            CredentialSource::Environment => Self::Environment,
+            CredentialSource::ProfileFile => Self::ProfileFile,
+            CredentialSource::ConfigFile => Self::ConfigFile,
+            CredentialSource::CredentialProcess => Self::CredentialProcess,
+        }
+    }
 }
 
 /// Input parameters for credential resolution.
@@ -89,54 +142,71 @@ impl<'a> CredentialResolutionInput<'a> {
 /// Resolve Bedrock credentials with precedence:
 /// explicit config > env vars > shared AWS profile files.
 ///
-/// Returns `None` when no credentials are found.
-pub fn resolve_credentials(
+/// An entirely absent source advances to the next source. A partial or blank
+/// attempted pair fails closed with [`CredentialResolutionError::IncompleteSource`].
+pub async fn resolve_credentials(
     input: &CredentialResolutionInput<'_>,
-) -> Option<(BedrockCredentials, CredentialSource)> {
+) -> Result<(BedrockCredentials, CredentialSource), CredentialResolutionError> {
     // 1. Explicit config takes highest precedence
-    if let (Some(akid), Some(sak)) = (
-        non_blank(input.config_access_key_id),
-        non_blank(input.config_secret_access_key),
-    ) {
-        return Some((
-            BedrockCredentials {
-                access_key_id: akid.to_string(),
-                secret_access_key: sak.to_string(),
-                session_token: input
-                    .config_session_token
-                    .filter(|s| !s.trim().is_empty())
-                    .map(|s| s.to_string()),
-                region: input
-                    .config_region
-                    .filter(|s| !s.trim().is_empty())
-                    .unwrap_or("us-east-1")
-                    .to_string(),
-            },
-            CredentialSource::ExplicitConfig,
-        ));
+    let config_attempted = input.config_access_key_id.is_some()
+        || input.config_secret_access_key.is_some()
+        || input.config_session_token.is_some();
+    if config_attempted {
+        if let (Some(akid), Some(sak)) = (
+            non_blank(input.config_access_key_id),
+            non_blank(input.config_secret_access_key),
+        ) {
+            return Ok((
+                BedrockCredentials {
+                    access_key_id: SecretString::from(akid),
+                    secret_access_key: SecretString::from(sak),
+                    session_token: input
+                        .config_session_token
+                        .filter(|s| !s.trim().is_empty())
+                        .map(SecretString::from),
+                    region: input
+                        .config_region
+                        .filter(|s| !s.trim().is_empty())
+                        .unwrap_or("us-east-1")
+                        .to_string(),
+                },
+                CredentialSource::ExplicitConfig,
+            ));
+        }
+        return Err(CredentialResolutionError::IncompleteSource {
+            credential_source: CredentialSource::ExplicitConfig,
+        });
     }
 
     // 2. Environment variables
-    if let (Some(akid), Some(sak)) = (
-        non_blank(input.env_access_key_id),
-        non_blank(input.env_secret_access_key),
-    ) {
-        return Some((
-            BedrockCredentials {
-                access_key_id: akid.to_string(),
-                secret_access_key: sak.to_string(),
-                session_token: input
-                    .env_session_token
-                    .filter(|s| !s.trim().is_empty())
-                    .map(|s| s.to_string()),
-                region: input
-                    .env_region
-                    .filter(|s| !s.trim().is_empty())
-                    .unwrap_or("us-east-1")
-                    .to_string(),
-            },
-            CredentialSource::Environment,
-        ));
+    let environment_attempted = input.env_access_key_id.is_some()
+        || input.env_secret_access_key.is_some()
+        || input.env_session_token.is_some();
+    if environment_attempted {
+        if let (Some(akid), Some(sak)) = (
+            non_blank(input.env_access_key_id),
+            non_blank(input.env_secret_access_key),
+        ) {
+            return Ok((
+                BedrockCredentials {
+                    access_key_id: SecretString::from(akid),
+                    secret_access_key: SecretString::from(sak),
+                    session_token: input
+                        .env_session_token
+                        .filter(|s| !s.trim().is_empty())
+                        .map(SecretString::from),
+                    region: input
+                        .env_region
+                        .filter(|s| !s.trim().is_empty())
+                        .unwrap_or("us-east-1")
+                        .to_string(),
+                },
+                CredentialSource::Environment,
+            ));
+        }
+        return Err(CredentialResolutionError::IncompleteSource {
+            credential_source: CredentialSource::Environment,
+        });
     }
 
     // 3. Shared AWS credentials/config profiles. We intentionally keep this
@@ -147,42 +217,103 @@ pub fn resolve_credentials(
         .filter(|profile| !profile.trim().is_empty())
         .unwrap_or("default");
 
-    let credentials_props = input
-        .credentials_file_path
-        .filter(|path| path.exists())
-        .and_then(|path| read_profile_properties(path, profile, ProfileFileKind::Credentials));
-    let config_props = input
-        .config_file_path
-        .filter(|path| path.exists())
-        .and_then(|path| read_profile_properties(path, profile, ProfileFileKind::Config));
-
-    if credentials_props.is_some() || config_props.is_some() {
-        let merged = merge_profile_properties(credentials_props, config_props);
-        let region = first_non_empty(&[
-            input.config_region,
-            input.env_region,
-            merged.region.as_deref(),
-        ])
-        .unwrap_or("us-east-1")
-        .to_string();
-
-        if let Some(creds) = profile_properties_to_credentials(&merged, region.clone()) {
-            let source = if merged.static_source == Some(ProfileFileKind::Config) {
-                CredentialSource::ConfigFile
-            } else {
-                CredentialSource::ProfileFile
-            };
-            return Some((creds, source));
+    let credentials_props = match input.credentials_file_path {
+        Some(path) => {
+            read_profile_properties_async(
+                path,
+                profile,
+                ProfileFileKind::Credentials,
+                CredentialSource::ProfileFile,
+            )
+            .await?
         }
+        None => None,
+    };
 
-        if let Some(command) = merged.credential_process.as_deref()
-            && let Some(creds) = run_credential_process(command, region)
-        {
-            return Some((creds, CredentialSource::CredentialProcess));
-        }
+    if let Some(props) = credentials_props.as_ref()
+        && profile_static_credentials_attempted(props)
+        && !profile_static_credentials_complete(props)
+    {
+        return Err(CredentialResolutionError::IncompleteSource {
+            credential_source: CredentialSource::ProfileFile,
+        });
     }
 
-    None
+    let config_props = match input.config_file_path {
+        Some(path) => {
+            read_profile_properties_async(
+                path,
+                profile,
+                ProfileFileKind::Config,
+                CredentialSource::ConfigFile,
+            )
+            .await?
+        }
+        None => None,
+    };
+
+    let region = first_non_empty(&[
+        input.config_region,
+        input.env_region,
+        credentials_props
+            .as_ref()
+            .and_then(|props| props.region.as_deref()),
+        config_props
+            .as_ref()
+            .and_then(|props| props.region.as_deref()),
+    ])
+    .unwrap_or("us-east-1")
+    .to_string();
+
+    if let Some(props) = credentials_props.as_ref()
+        && profile_static_credentials_attempted(props)
+    {
+        return profile_properties_to_credentials(props, region.clone())
+            .map(|credentials| (credentials, CredentialSource::ProfileFile))
+            .ok_or(CredentialResolutionError::IncompleteSource {
+                credential_source: CredentialSource::ProfileFile,
+            });
+    }
+    if let Some(props) = config_props.as_ref()
+        && profile_static_credentials_attempted(props)
+    {
+        return profile_properties_to_credentials(props, region.clone())
+            .map(|credentials| (credentials, CredentialSource::ConfigFile))
+            .ok_or(CredentialResolutionError::IncompleteSource {
+                credential_source: CredentialSource::ConfigFile,
+            });
+    }
+    if let Some(command) = config_props
+        .as_ref()
+        .and_then(|props| props.credential_process.as_deref())
+    {
+        if command.trim().is_empty() {
+            return Err(CredentialResolutionError::CredentialProcessCommand);
+        }
+        let credentials = run_credential_process(command, region).await?;
+        return Ok((credentials, CredentialSource::CredentialProcess));
+    }
+
+    Err(CredentialResolutionError::Exhausted)
+}
+
+/// Resolve one complete prepared Bedrock authentication result.
+///
+/// The selected AWS source is retained as typed, non-secret provenance beside
+/// the zeroizing SigV4 credential bundle.
+pub async fn resolve_auth(
+    input: &CredentialResolutionInput<'_>,
+) -> Result<ResolvedAuth, CredentialResolutionError> {
+    let (credentials, source) = resolve_credentials(input).await?;
+    Ok(ResolvedAuth::aws_sigv4(
+        credentials,
+        AuthProvenance {
+            source: AuthProvenanceSource::AwsSigV4 {
+                source: source.into(),
+            },
+            fallback: AuthFallback::NotAttempted,
+        },
+    ))
 }
 
 /// Read a specific profile from an AWS credentials INI file.
@@ -203,14 +334,37 @@ enum ProfileFileKind {
     Config,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 struct ProfileProperties {
     access_key_id: Option<String>,
     secret_access_key: Option<String>,
     session_token: Option<String>,
     region: Option<String>,
     credential_process: Option<String>,
-    static_source: Option<ProfileFileKind>,
+}
+
+impl std::fmt::Debug for ProfileProperties {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProfileProperties")
+            .field(
+                "access_key_id",
+                &self.access_key_id.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "secret_access_key",
+                &self.secret_access_key.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "session_token",
+                &self.session_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field("region", &self.region)
+            .field(
+                "credential_process",
+                &self.credential_process.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 fn first_non_empty<'a>(values: &[Option<&'a str>]) -> Option<&'a str> {
@@ -224,32 +378,15 @@ fn non_blank(value: Option<&str>) -> Option<&str> {
     value.filter(|value| !value.trim().is_empty())
 }
 
-fn merge_profile_properties(
-    credentials: Option<ProfileProperties>,
-    config: Option<ProfileProperties>,
-) -> ProfileProperties {
-    let mut merged = ProfileProperties::default();
-    for props in [credentials, config].into_iter().flatten() {
-        if merged.access_key_id.is_none() {
-            merged.access_key_id = props.access_key_id;
-        }
-        if merged.secret_access_key.is_none() {
-            merged.secret_access_key = props.secret_access_key;
-        }
-        if merged.session_token.is_none() {
-            merged.session_token = props.session_token;
-        }
-        if merged.region.is_none() {
-            merged.region = props.region;
-        }
-        if merged.credential_process.is_none() {
-            merged.credential_process = props.credential_process;
-        }
-        if merged.static_source.is_none() {
-            merged.static_source = props.static_source;
-        }
-    }
-    merged
+fn profile_static_credentials_attempted(props: &ProfileProperties) -> bool {
+    props.access_key_id.is_some()
+        || props.secret_access_key.is_some()
+        || props.session_token.is_some()
+}
+
+fn profile_static_credentials_complete(props: &ProfileProperties) -> bool {
+    non_blank(props.access_key_id.as_deref()).is_some()
+        && non_blank(props.secret_access_key.as_deref()).is_some()
 }
 
 fn profile_properties_to_credentials(
@@ -259,12 +396,13 @@ fn profile_properties_to_credentials(
     match (&props.access_key_id, &props.secret_access_key) {
         (Some(a), Some(s)) if !a.trim().is_empty() && !s.trim().is_empty() => {
             Some(BedrockCredentials {
-                access_key_id: a.clone(),
-                secret_access_key: s.clone(),
+                access_key_id: a.clone().into(),
+                secret_access_key: s.clone().into(),
                 session_token: props
                     .session_token
                     .clone()
-                    .filter(|token| !token.trim().is_empty()),
+                    .filter(|token| !token.trim().is_empty())
+                    .map(SecretString::from),
                 region,
             })
         }
@@ -278,6 +416,48 @@ fn read_profile_properties(
     kind: ProfileFileKind,
 ) -> Option<ProfileProperties> {
     let contents = std::fs::read_to_string(path).ok()?;
+    parse_profile_properties(
+        &contents,
+        profile_name,
+        kind,
+        match kind {
+            ProfileFileKind::Credentials => CredentialSource::ProfileFile,
+            ProfileFileKind::Config => CredentialSource::ConfigFile,
+        },
+    )
+    .ok()
+    .flatten()
+}
+
+async fn read_profile_properties_async(
+    path: &Path,
+    profile_name: &str,
+    kind: ProfileFileKind,
+    source: CredentialSource,
+) -> Result<Option<ProfileProperties>, CredentialResolutionError> {
+    let exists =
+        tokio::fs::try_exists(path)
+            .await
+            .map_err(|_| CredentialResolutionError::ProfileIo {
+                credential_source: source,
+            })?;
+    if !exists {
+        return Ok(None);
+    }
+    let contents = tokio::fs::read_to_string(path).await.map_err(|_| {
+        CredentialResolutionError::ProfileIo {
+            credential_source: source,
+        }
+    })?;
+    parse_profile_properties(&contents, profile_name, kind, source)
+}
+
+fn parse_profile_properties(
+    contents: &str,
+    profile_name: &str,
+    kind: ProfileFileKind,
+    source: CredentialSource,
+) -> Result<Option<ProfileProperties>, CredentialResolutionError> {
     let target_header = match kind {
         ProfileFileKind::Credentials => format!("[{profile_name}]"),
         ProfileFileKind::Config if profile_name == "default" => "[default]".to_string(),
@@ -299,17 +479,20 @@ fn read_profile_properties(
             in_target = line == target_header;
             continue;
         }
-        if in_target && let Some((key, value)) = line.split_once('=') {
+        if in_target {
+            let Some((key, value)) = line.split_once('=') else {
+                return Err(CredentialResolutionError::ProfileParse {
+                    credential_source: source,
+                });
+            };
             let key = key.trim();
             let value = value.trim().to_string();
             match key {
                 "aws_access_key_id" => {
                     props.access_key_id = Some(value);
-                    props.static_source = Some(kind);
                 }
                 "aws_secret_access_key" => {
                     props.secret_access_key = Some(value);
-                    props.static_source = Some(kind);
                 }
                 "aws_session_token" => props.session_token = Some(value),
                 "region" => props.region = Some(value),
@@ -319,15 +502,15 @@ fn read_profile_properties(
         }
     }
 
-    (props.access_key_id.is_some()
+    Ok((props.access_key_id.is_some()
         || props.secret_access_key.is_some()
         || props.session_token.is_some()
         || props.region.is_some()
         || props.credential_process.is_some())
-    .then_some(props)
+    .then_some(props))
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct CredentialProcessOutput {
     version: u32,
@@ -336,33 +519,208 @@ struct CredentialProcessOutput {
     session_token: Option<String>,
 }
 
-fn run_credential_process(command: &str, region: String) -> Option<BedrockCredentials> {
-    let output = if cfg!(windows) {
-        Command::new("powershell")
-            .args(["-NoProfile", "-Command", command])
-            .output()
-            .ok()?
-    } else {
-        Command::new("sh").args(["-c", command]).output().ok()?
+impl std::fmt::Debug for CredentialProcessOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialProcessOutput")
+            .field("version", &self.version)
+            .field("access_key_id", &"<redacted>")
+            .field("secret_access_key", &"<redacted>")
+            .field(
+                "session_token",
+                &self.session_token.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
+/// Local credential processes are given three seconds and at most 64 KiB of
+/// stdout. Cancellation kills and reaps the spawned shell before its detached
+/// cleanup task exits.
+const CREDENTIAL_PROCESS_TIMEOUT: Duration = Duration::from_secs(3);
+const CREDENTIAL_PROCESS_MAX_STDOUT: usize = 64 * 1024;
+const PROCESS_TREE_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
+
+struct CancelProcessOnDrop {
+    cancellation: CancellationToken,
+    armed: bool,
+}
+
+impl Drop for CancelProcessOnDrop {
+    fn drop(&mut self) {
+        if self.armed {
+            self.cancellation.cancel();
+        }
+    }
+}
+
+async fn run_credential_process(
+    command: &str,
+    region: String,
+) -> Result<BedrockCredentials, CredentialResolutionError> {
+    let cancellation = CancellationToken::new();
+    let mut cancel_on_drop = CancelProcessOnDrop {
+        cancellation: cancellation.clone(),
+        armed: true,
     };
-    if !output.status.success() {
-        return None;
+    let command = command.to_owned();
+    let task =
+        tokio::spawn(
+            async move { run_credential_process_inner(&command, region, cancellation).await },
+        );
+    let result = task
+        .await
+        .map_err(|_| CredentialResolutionError::CredentialProcessJoin)?;
+    cancel_on_drop.armed = false;
+    result
+}
+
+async fn run_credential_process_inner(
+    command: &str,
+    region: String,
+    cancellation: CancellationToken,
+) -> Result<BedrockCredentials, CredentialResolutionError> {
+    let mut command_builder = if cfg!(windows) {
+        let mut builder = Command::new("powershell");
+        builder.args(["-NoProfile", "-Command", command]);
+        builder
+    } else {
+        let mut builder = Command::new("sh");
+        builder.args(["-c", command]);
+        builder
+    };
+    #[cfg(unix)]
+    command_builder.process_group(0);
+    let mut child = command_builder
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|_| CredentialResolutionError::CredentialProcessSpawn)?;
+    let root_pid = child.id();
+
+    let result = read_bounded_process_output(&mut child, root_pid, cancellation).await;
+    let output = result?;
+    let parsed: CredentialProcessOutput = match serde_json::from_slice(&output) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            terminate_tree_and_reap(&mut child, root_pid).await;
+            return Err(CredentialResolutionError::CredentialProcessJson);
+        }
+    };
+    if parsed.version != 1 {
+        terminate_tree_and_reap(&mut child, root_pid).await;
+        return Err(CredentialResolutionError::CredentialProcessVersion);
     }
-    let parsed: CredentialProcessOutput = serde_json::from_slice(&output.stdout).ok()?;
-    if parsed.version != 1
-        || parsed.access_key_id.trim().is_empty()
-        || parsed.secret_access_key.trim().is_empty()
-    {
-        return None;
+    if parsed.access_key_id.trim().is_empty() || parsed.secret_access_key.trim().is_empty() {
+        terminate_tree_and_reap(&mut child, root_pid).await;
+        return Err(CredentialResolutionError::CredentialProcessIncomplete);
     }
-    Some(BedrockCredentials {
-        access_key_id: parsed.access_key_id,
-        secret_access_key: parsed.secret_access_key,
+    Ok(BedrockCredentials {
+        access_key_id: parsed.access_key_id.into(),
+        secret_access_key: parsed.secret_access_key.into(),
         session_token: parsed
             .session_token
-            .filter(|token| !token.trim().is_empty()),
+            .filter(|token| !token.trim().is_empty())
+            .map(SecretString::from),
         region,
     })
+}
+
+async fn read_bounded_process_output(
+    child: &mut Child,
+    root_pid: Option<u32>,
+    cancellation: CancellationToken,
+) -> Result<Vec<u8>, CredentialResolutionError> {
+    let Some(mut stdout) = child.stdout.take() else {
+        terminate_tree_and_reap(child, root_pid).await;
+        return Err(CredentialResolutionError::CredentialProcessOutput);
+    };
+    let deadline = Instant::now() + CREDENTIAL_PROCESS_TIMEOUT;
+    let mut output = Vec::new();
+    let mut limited_stdout = (&mut stdout).take((CREDENTIAL_PROCESS_MAX_STDOUT + 1) as u64);
+    let read_result = tokio::select! {
+        _ = cancellation.cancelled() => {
+            terminate_tree_and_reap(child, root_pid).await;
+            return Err(CredentialResolutionError::CredentialProcessCancelled);
+        }
+        _ = sleep_until(deadline) => {
+            terminate_tree_and_reap(child, root_pid).await;
+            return Err(CredentialResolutionError::CredentialProcessTimeout);
+        }
+        result = limited_stdout.read_to_end(&mut output) => result,
+    };
+    if read_result.is_err() {
+        terminate_tree_and_reap(child, root_pid).await;
+        return Err(CredentialResolutionError::CredentialProcessOutput);
+    }
+    if output.len() > CREDENTIAL_PROCESS_MAX_STDOUT {
+        terminate_tree_and_reap(child, root_pid).await;
+        return Err(CredentialResolutionError::CredentialProcessOutputLimit);
+    }
+    let status = tokio::select! {
+        _ = cancellation.cancelled() => {
+            terminate_tree_and_reap(child, root_pid).await;
+            return Err(CredentialResolutionError::CredentialProcessCancelled);
+        }
+        _ = sleep_until(deadline) => {
+            terminate_tree_and_reap(child, root_pid).await;
+            return Err(CredentialResolutionError::CredentialProcessTimeout);
+        }
+        result = child.wait() => result,
+    };
+    let status = match status {
+        Ok(status) => status,
+        Err(_) => {
+            terminate_tree_and_reap(child, root_pid).await;
+            return Err(CredentialResolutionError::CredentialProcessOutput);
+        }
+    };
+    if !status.success() {
+        terminate_tree_and_reap(child, root_pid).await;
+        return Err(CredentialResolutionError::CredentialProcessExit);
+    }
+    Ok(output)
+}
+
+async fn terminate_tree_and_reap(child: &mut Child, root_pid: Option<u32>) {
+    if let Some(root_pid) = root_pid {
+        terminate_process_tree(root_pid).await;
+    }
+    let _ = child.start_kill();
+    let _ = child.wait().await;
+}
+
+async fn terminate_process_tree(root_pid: u32) {
+    #[cfg(unix)]
+    let mut command = {
+        let mut command = Command::new("kill");
+        command.arg("-KILL").arg(format!("-{root_pid}"));
+        command
+    };
+    #[cfg(windows)]
+    let mut command = {
+        let mut command = Command::new("taskkill");
+        command.args(["/PID", &root_pid.to_string(), "/T", "/F"]);
+        command
+    };
+    #[cfg(not(any(unix, windows)))]
+    return;
+
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let Ok(mut terminator) = command.spawn() else {
+        return;
+    };
+    if tokio::time::timeout(PROCESS_TREE_TERMINATION_TIMEOUT, terminator.wait())
+        .await
+        .is_err()
+    {
+        let _ = terminator.start_kill();
+        let _ = terminator.wait().await;
+    }
 }
 
 /// Read AWS credentials from environment variables.
@@ -385,7 +743,10 @@ pub fn credentials_from_env() -> (
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::ExposeSecret;
     use std::io::Write as IoWrite;
+
+    static CREDENTIAL_PROCESS_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     #[allow(clippy::too_many_arguments)]
     fn input<'a>(
@@ -415,8 +776,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn explicit_config_takes_precedence() {
+    #[tokio::test]
+    async fn explicit_config_takes_precedence() {
         let inp = input(
             Some("CONFIG_AKID"),
             Some("CONFIG_SAK"),
@@ -429,16 +790,22 @@ mod tests {
             None,
             None,
         );
-        let (result, source) = resolve_credentials(&inp).unwrap();
-        assert_eq!(result.access_key_id, "CONFIG_AKID");
-        assert_eq!(result.secret_access_key, "CONFIG_SAK");
-        assert_eq!(result.session_token.as_deref(), Some("CONFIG_TOKEN"));
+        let (result, source) = resolve_credentials(&inp).await.unwrap();
+        assert_eq!(result.access_key_id.expose_secret(), "CONFIG_AKID");
+        assert_eq!(result.secret_access_key.expose_secret(), "CONFIG_SAK");
+        assert_eq!(
+            result
+                .session_token
+                .as_ref()
+                .map(|token| token.expose_secret()),
+            Some("CONFIG_TOKEN")
+        );
         assert_eq!(result.region, "eu-west-1");
         assert_eq!(source, CredentialSource::ExplicitConfig);
     }
 
-    #[test]
-    fn env_vars_when_no_config() {
+    #[tokio::test]
+    async fn env_vars_when_no_config() {
         let inp = input(
             None,
             None,
@@ -451,14 +818,14 @@ mod tests {
             None,
             None,
         );
-        let (result, source) = resolve_credentials(&inp).unwrap();
-        assert_eq!(result.access_key_id, "ENV_AKID");
-        assert_eq!(result.secret_access_key, "ENV_SAK");
+        let (result, source) = resolve_credentials(&inp).await.unwrap();
+        assert_eq!(result.access_key_id.expose_secret(), "ENV_AKID");
+        assert_eq!(result.secret_access_key.expose_secret(), "ENV_SAK");
         assert_eq!(source, CredentialSource::Environment);
     }
 
-    #[test]
-    fn profile_file_when_no_config_or_env() {
+    #[tokio::test]
+    async fn profile_file_when_no_config_or_env() {
         let dir = tempfile::tempdir().unwrap();
         let cred_file = dir.path().join("credentials");
         {
@@ -481,15 +848,15 @@ mod tests {
             Some("default"),
             Some(cred_file.as_path()),
         );
-        let (result, source) = resolve_credentials(&inp).unwrap();
-        assert_eq!(result.access_key_id, "PROFILE_AKID");
-        assert_eq!(result.secret_access_key, "PROFILE_SAK");
+        let (result, source) = resolve_credentials(&inp).await.unwrap();
+        assert_eq!(result.access_key_id.expose_secret(), "PROFILE_AKID");
+        assert_eq!(result.secret_access_key.expose_secret(), "PROFILE_SAK");
         assert_eq!(result.region, "us-west-2");
         assert_eq!(source, CredentialSource::ProfileFile);
     }
 
-    #[test]
-    fn default_profile_file_used_when_profile_not_explicit() {
+    #[tokio::test]
+    async fn default_profile_file_used_when_profile_not_explicit() {
         let dir = tempfile::tempdir().unwrap();
         let cred_file = dir.path().join("credentials");
         {
@@ -511,13 +878,13 @@ mod tests {
             None,
             Some(cred_file.as_path()),
         );
-        let (result, source) = resolve_credentials(&inp).unwrap();
-        assert_eq!(result.access_key_id, "DEFAULT_AKID");
+        let (result, source) = resolve_credentials(&inp).await.unwrap();
+        assert_eq!(result.access_key_id.expose_secret(), "DEFAULT_AKID");
         assert_eq!(source, CredentialSource::ProfileFile);
     }
 
-    #[test]
-    fn shared_config_profile_region_is_used_with_credentials_file() {
+    #[tokio::test]
+    async fn shared_config_profile_region_is_used_with_credentials_file() {
         let dir = tempfile::tempdir().unwrap();
         let cred_file = dir.path().join("credentials");
         let config_file = dir.path().join("config");
@@ -546,14 +913,132 @@ mod tests {
             Some(cred_file.as_path()),
         );
         inp.config_file_path = Some(config_file.as_path());
-        let (result, source) = resolve_credentials(&inp).unwrap();
-        assert_eq!(result.access_key_id, "DEV_AKID");
+        let (result, source) = resolve_credentials(&inp).await.unwrap();
+        assert_eq!(result.access_key_id.expose_secret(), "DEV_AKID");
         assert_eq!(result.region, "ap-northeast-1");
         assert_eq!(source, CredentialSource::ProfileFile);
     }
 
-    #[test]
-    fn shared_config_static_credentials_are_supported() {
+    #[tokio::test]
+    async fn partial_credentials_file_does_not_mix_with_complete_config_file_pair() {
+        let dir = tempfile::tempdir().unwrap();
+        let credentials_file = dir.path().join("credentials");
+        let config_file = dir.path().join("config");
+        std::fs::write(
+            &credentials_file,
+            "[dev]\naws_access_key_id=CREDENTIALS_ACCESS\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &config_file,
+            "[profile dev]\naws_access_key_id=CONFIG_ACCESS\naws_secret_access_key=CONFIG_SECRET\n",
+        )
+        .unwrap();
+        let mut inp = input(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("dev"),
+            Some(credentials_file.as_path()),
+        );
+        inp.config_file_path = Some(config_file.as_path());
+
+        assert_eq!(
+            resolve_credentials(&inp).await.unwrap_err(),
+            CredentialResolutionError::IncompleteSource {
+                credential_source: CredentialSource::ProfileFile,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn credentials_file_pair_does_not_attach_config_file_session_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let credentials_file = dir.path().join("credentials");
+        let config_file = dir.path().join("config");
+        std::fs::write(
+            &credentials_file,
+            "[dev]\naws_access_key_id=CREDENTIALS_ACCESS\naws_secret_access_key=CREDENTIALS_SECRET\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &config_file,
+            "[profile dev]\naws_session_token=CONFIG_SESSION\nregion=eu-west-1\n",
+        )
+        .unwrap();
+        let mut inp = input(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("dev"),
+            Some(credentials_file.as_path()),
+        );
+        inp.config_file_path = Some(config_file.as_path());
+
+        let (credentials, source) = resolve_credentials(&inp)
+            .await
+            .expect("credentials file pair");
+        assert_eq!(source, CredentialSource::ProfileFile);
+        assert!(credentials.session_token.is_none());
+        assert_eq!(credentials.region, "eu-west-1");
+    }
+
+    #[tokio::test]
+    async fn partial_config_file_pair_does_not_fall_through_to_credential_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let output_file = dir.path().join("process-output.json");
+        let config_file = dir.path().join("config");
+        std::fs::write(
+            &output_file,
+            r#"{"Version":1,"AccessKeyId":"PROC_AKID","SecretAccessKey":"PROC_SAK"}"#,
+        )
+        .unwrap();
+        let command = if cfg!(windows) {
+            format!("Get-Content -Raw -LiteralPath '{}'", output_file.display())
+        } else {
+            format!("cat '{}'", output_file.display())
+        };
+        std::fs::write(
+            &config_file,
+            format!(
+                "[profile proc]\naws_access_key_id=PARTIAL_ACCESS\ncredential_process={command}\n"
+            ),
+        )
+        .unwrap();
+        let mut inp = input(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("proc"),
+            None,
+        );
+        inp.config_file_path = Some(config_file.as_path());
+
+        assert_eq!(
+            resolve_credentials(&inp).await.unwrap_err(),
+            CredentialResolutionError::IncompleteSource {
+                credential_source: CredentialSource::ConfigFile,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_config_static_credentials_are_supported() {
         let dir = tempfile::tempdir().unwrap();
         let config_file = dir.path().join("config");
         {
@@ -577,14 +1062,15 @@ mod tests {
             None,
         );
         inp.config_file_path = Some(config_file.as_path());
-        let (result, source) = resolve_credentials(&inp).unwrap();
-        assert_eq!(result.access_key_id, "CONFIG_AKID");
+        let (result, source) = resolve_credentials(&inp).await.unwrap();
+        assert_eq!(result.access_key_id.expose_secret(), "CONFIG_AKID");
         assert_eq!(result.region, "eu-central-1");
         assert_eq!(source, CredentialSource::ConfigFile);
     }
 
-    #[test]
-    fn credential_process_from_shared_config_is_supported() {
+    #[tokio::test]
+    async fn credential_process_from_shared_config_is_supported() {
+        let _process_lock = CREDENTIAL_PROCESS_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let output_file = dir.path().join("process-output.json");
         let config_file = dir.path().join("config");
@@ -621,21 +1107,30 @@ mod tests {
             None,
         );
         inp.config_file_path = Some(config_file.as_path());
-        let (result, source) = resolve_credentials(&inp).unwrap();
-        assert_eq!(result.access_key_id, "PROC_AKID");
-        assert_eq!(result.session_token.as_deref(), Some("PROC_TOKEN"));
+        let (result, source) = resolve_credentials(&inp).await.unwrap();
+        assert_eq!(result.access_key_id.expose_secret(), "PROC_AKID");
+        assert_eq!(
+            result
+                .session_token
+                .as_ref()
+                .map(|token| token.expose_secret()),
+            Some("PROC_TOKEN")
+        );
         assert_eq!(result.region, "us-west-1");
         assert_eq!(source, CredentialSource::CredentialProcess);
     }
 
-    #[test]
-    fn none_when_no_credentials_available() {
+    #[tokio::test]
+    async fn none_when_no_credentials_available() {
         let inp = input(None, None, None, None, None, None, None, None, None, None);
-        assert!(resolve_credentials(&inp).is_none());
+        assert_eq!(
+            resolve_credentials(&inp).await.unwrap_err(),
+            CredentialResolutionError::Exhausted
+        );
     }
 
-    #[test]
-    fn empty_config_values_fall_through() {
+    #[tokio::test]
+    async fn blank_config_pair_does_not_fall_through_to_environment() {
         let inp = input(
             Some(""),
             Some(""),
@@ -648,13 +1143,67 @@ mod tests {
             None,
             None,
         );
-        let (result, source) = resolve_credentials(&inp).unwrap();
-        assert_eq!(result.access_key_id, "ENV_AKID");
-        assert_eq!(source, CredentialSource::Environment);
+        assert_eq!(
+            resolve_credentials(&inp).await.unwrap_err(),
+            CredentialResolutionError::IncompleteSource {
+                credential_source: CredentialSource::ExplicitConfig,
+            }
+        );
     }
 
-    #[test]
-    fn whitespace_only_static_credential_pairs_are_absent() {
+    #[tokio::test]
+    async fn partial_config_pair_does_not_fall_through_to_environment() {
+        let inp = input(
+            Some("CONFIG_AKID"),
+            None,
+            None,
+            None,
+            Some("ENV_AKID"),
+            Some("ENV_SAK"),
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            resolve_credentials(&inp).await.unwrap_err(),
+            CredentialResolutionError::IncompleteSource {
+                credential_source: CredentialSource::ExplicitConfig,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn partial_environment_pair_does_not_fall_through_to_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let cred_file = dir.path().join("credentials");
+        std::fs::write(
+            &cred_file,
+            "[default]\naws_access_key_id=PROFILE_AKID\naws_secret_access_key=PROFILE_SAK\n",
+        )
+        .unwrap();
+        let inp = input(
+            None,
+            None,
+            None,
+            None,
+            Some("ENV_AKID"),
+            None,
+            None,
+            None,
+            None,
+            Some(cred_file.as_path()),
+        );
+        assert_eq!(
+            resolve_credentials(&inp).await.unwrap_err(),
+            CredentialResolutionError::IncompleteSource {
+                credential_source: CredentialSource::Environment,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn whitespace_only_static_credential_pairs_are_absent() {
         for inp in [
             input(
                 Some(" \t"),
@@ -706,14 +1255,17 @@ mod tests {
             ),
         ] {
             assert!(
-                resolve_credentials(&inp).is_none(),
+                matches!(
+                    resolve_credentials(&inp).await,
+                    Err(CredentialResolutionError::IncompleteSource { .. })
+                ),
                 "whitespace-only access/secret values must be absent"
             );
         }
     }
 
-    #[test]
-    fn whitespace_only_optional_values_are_absent() {
+    #[tokio::test]
+    async fn whitespace_only_optional_values_are_absent() {
         let inp = input(
             Some("CONFIG_AKID"),
             Some("CONFIG_SAK"),
@@ -726,14 +1278,46 @@ mod tests {
             None,
             None,
         );
-        let (credentials, source) = resolve_credentials(&inp).expect("valid configured pair");
+        let (credentials, source) = resolve_credentials(&inp)
+            .await
+            .expect("valid configured pair");
         assert_eq!(source, CredentialSource::ExplicitConfig);
-        assert_eq!(credentials.session_token, None);
+        assert!(credentials.session_token.is_none());
         assert_eq!(credentials.region, "us-east-1");
     }
 
     #[test]
-    fn default_region_when_not_specified() {
+    fn parsed_credential_helpers_do_not_debug_credential_values() {
+        let canaries = [
+            "AKIA_PROFILE_DEBUG",
+            "profile-secret-debug",
+            "profile-session-debug",
+        ];
+        let profile = ProfileProperties {
+            access_key_id: Some(canaries[0].into()),
+            secret_access_key: Some(canaries[1].into()),
+            session_token: Some(canaries[2].into()),
+            region: Some("us-east-1".into()),
+            credential_process: None,
+        };
+        let process = CredentialProcessOutput {
+            version: 1,
+            access_key_id: canaries[0].into(),
+            secret_access_key: canaries[1].into(),
+            session_token: Some(canaries[2].into()),
+        };
+
+        let debug = format!("{profile:?} {process:?}");
+        for canary in canaries {
+            assert!(
+                !debug.contains(canary),
+                "credential leaked through Debug: {debug}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn default_region_when_not_specified() {
         let inp = input(
             Some("AKID"),
             Some("SAK"),
@@ -746,7 +1330,7 @@ mod tests {
             None,
             None,
         );
-        let (result, _) = resolve_credentials(&inp).unwrap();
+        let (result, _) = resolve_credentials(&inp).await.unwrap();
         assert_eq!(result.region, "us-east-1");
     }
 
@@ -763,8 +1347,14 @@ mod tests {
         }
 
         let creds = read_profile(&cred_file, "my-profile").unwrap();
-        assert_eq!(creds.access_key_id, "AKID");
-        assert_eq!(creds.session_token.as_deref(), Some("TOKEN"));
+        assert_eq!(creds.access_key_id.expose_secret(), "AKID");
+        assert_eq!(
+            creds
+                .session_token
+                .as_ref()
+                .map(|token| token.expose_secret()),
+            Some("TOKEN")
+        );
     }
 
     #[test]
@@ -794,5 +1384,315 @@ mod tests {
 
         let result = read_profile(&cred_file, "incomplete");
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn typed_resolution_errors_distinguish_exhaustion_incomplete_and_profile_failures() {
+        let empty = input(None, None, None, None, None, None, None, None, None, None);
+        assert_eq!(
+            resolve_credentials(&empty).await.unwrap_err(),
+            CredentialResolutionError::Exhausted
+        );
+
+        let incomplete = input(
+            Some("CONFIG_ACCESS"),
+            None,
+            None,
+            None,
+            Some("ENV_ACCESS"),
+            Some("ENV_SECRET"),
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            resolve_credentials(&incomplete).await.unwrap_err(),
+            CredentialResolutionError::IncompleteSource {
+                credential_source: CredentialSource::ExplicitConfig,
+            }
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let unreadable = dir.path().join("profile-directory");
+        std::fs::create_dir(&unreadable).unwrap();
+        let profile_io = input(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("default"),
+            Some(unreadable.as_path()),
+        );
+        assert_eq!(
+            resolve_credentials(&profile_io).await.unwrap_err(),
+            CredentialResolutionError::ProfileIo {
+                credential_source: CredentialSource::ProfileFile,
+            }
+        );
+
+        let malformed = dir.path().join("malformed-profile");
+        std::fs::write(&malformed, "[default]\naws_access_key_id\n").unwrap();
+        let profile_parse = input(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("default"),
+            Some(malformed.as_path()),
+        );
+        assert_eq!(
+            resolve_credentials(&profile_parse).await.unwrap_err(),
+            CredentialResolutionError::ProfileParse {
+                credential_source: CredentialSource::ProfileFile,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn partial_credentials_profile_wins_over_malformed_lower_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let credentials_file = dir.path().join("credentials");
+        let config_file = dir.path().join("config");
+        std::fs::write(
+            &credentials_file,
+            "[dev]\naws_access_key_id=HIGHER_ACCESS\n",
+        )
+        .unwrap();
+        std::fs::write(&config_file, "[profile dev]\naws_secret_access_key\n").unwrap();
+        let mut input = input(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("dev"),
+            Some(credentials_file.as_path()),
+        );
+        input.config_file_path = Some(config_file.as_path());
+
+        assert_eq!(
+            resolve_credentials(&input).await.unwrap_err(),
+            CredentialResolutionError::IncompleteSource {
+                credential_source: CredentialSource::ProfileFile,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn credential_process_timeout_and_output_limit_are_typed_and_bounded() {
+        let _process_lock = CREDENTIAL_PROCESS_TEST_LOCK.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let config_file = dir.path().join("config");
+        let timeout_command = if cfg!(windows) {
+            "Start-Sleep -Seconds 30".to_owned()
+        } else {
+            "sleep 30".to_owned()
+        };
+        std::fs::write(
+            &config_file,
+            format!("[profile proc]\ncredential_process={timeout_command}\n"),
+        )
+        .unwrap();
+        let mut timeout_input = input(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("proc"),
+            None,
+        );
+        timeout_input.config_file_path = Some(config_file.as_path());
+        assert_eq!(
+            resolve_credentials(&timeout_input).await.unwrap_err(),
+            CredentialResolutionError::CredentialProcessTimeout
+        );
+
+        let output_command = if cfg!(windows) {
+            "[Console]::Out.Write('x' * 70000)".to_owned()
+        } else {
+            "head -c 70000 /dev/zero".to_owned()
+        };
+        std::fs::write(
+            &config_file,
+            format!("[profile proc]\ncredential_process={output_command}\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_credentials(&timeout_input).await.unwrap_err(),
+            CredentialResolutionError::CredentialProcessOutputLimit
+        );
+    }
+
+    #[tokio::test]
+    async fn blank_credential_process_is_a_typed_configured_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_file = dir.path().join("config");
+        std::fs::write(&config_file, "[profile proc]\ncredential_process=  \n").unwrap();
+        let mut input = input(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("proc"),
+            None,
+        );
+        input.config_file_path = Some(config_file.as_path());
+
+        assert_eq!(
+            resolve_credentials(&input).await.unwrap_err(),
+            CredentialResolutionError::CredentialProcessCommand
+        );
+    }
+
+    #[tokio::test]
+    async fn credential_process_exit_json_and_version_failures_are_typed() {
+        let _process_lock = CREDENTIAL_PROCESS_TEST_LOCK.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let cases = if cfg!(windows) {
+            vec![
+                (
+                    "exit 9".to_owned(),
+                    CredentialResolutionError::CredentialProcessExit,
+                ),
+                (
+                    "[Console]::Out.Write('not-json')".to_owned(),
+                    CredentialResolutionError::CredentialProcessJson,
+                ),
+                (
+                    r#"[Console]::Out.Write('{"Version":2,"AccessKeyId":"AKIA_VERSION_CANARY","SecretAccessKey":"version-secret-canary"}')"#.to_owned(),
+                    CredentialResolutionError::CredentialProcessVersion,
+                ),
+            ]
+        } else {
+            vec![
+                (
+                    "exit 9".to_owned(),
+                    CredentialResolutionError::CredentialProcessExit,
+                ),
+                (
+                    "printf 'not-json'".to_owned(),
+                    CredentialResolutionError::CredentialProcessJson,
+                ),
+                (
+                    r#"printf '{"Version":2,"AccessKeyId":"AKIA_VERSION_CANARY","SecretAccessKey":"version-secret-canary"}'"#.to_owned(),
+                    CredentialResolutionError::CredentialProcessVersion,
+                ),
+            ]
+        };
+
+        for (index, (command, expected)) in cases.into_iter().enumerate() {
+            let config_file = dir.path().join(format!("config-{index}"));
+            std::fs::write(
+                &config_file,
+                format!("[profile proc]\ncredential_process={command}\n"),
+            )
+            .unwrap();
+            let input = CredentialResolutionInput {
+                config_file_path: Some(config_file.as_path()),
+                profile_name: Some("proc"),
+                ..input(None, None, None, None, None, None, None, None, None, None)
+            };
+            let error = resolve_credentials(&input).await.unwrap_err();
+            assert_eq!(error, expected);
+            let rendered = format!("{error:?} {error}");
+            assert!(!rendered.contains("AKIA_VERSION_CANARY"));
+            assert!(!rendered.contains("version-secret-canary"));
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelling_real_credential_process_resolution_terminates_descendants() {
+        let _process_lock = CREDENTIAL_PROCESS_TEST_LOCK.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let started = dir.path().join("started");
+        let survived = dir.path().join("survived");
+        let descendant_script = dir.path().join(if cfg!(windows) {
+            "descendant.ps1"
+        } else {
+            "descendant.sh"
+        });
+        let config_file = dir.path().join("config");
+        let command = if cfg!(windows) {
+            std::fs::write(
+                &descendant_script,
+                "param([string]$Started, [string]$Survived)\nSet-Content -LiteralPath $Started -Value started\nStart-Sleep -Milliseconds 1200\nSet-Content -LiteralPath $Survived -Value survived\n",
+            )
+            .unwrap();
+            format!(
+                "$child = Start-Process -FilePath 'powershell' -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-File','{}','{}','{}'); Wait-Process -Id $child.Id",
+                descendant_script.display(),
+                started.display(),
+                survived.display()
+            )
+        } else {
+            std::fs::write(
+                &descendant_script,
+                "#!/bin/sh\nprintf started > \"$1\"\nsleep 1\nprintf survived > \"$2\"\n",
+            )
+            .unwrap();
+            format!(
+                "sh '{}' '{}' '{}' & wait",
+                descendant_script.display(),
+                started.display(),
+                survived.display()
+            )
+        };
+        std::fs::write(
+            &config_file,
+            format!("[profile proc]\ncredential_process={command}\n"),
+        )
+        .unwrap();
+        let task_config = config_file.clone();
+        let task = tokio::spawn(async move {
+            let mut process_input = input(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("proc"),
+                None,
+            );
+            process_input.config_file_path = Some(task_config.as_path());
+            resolve_credentials(&process_input).await
+        });
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while !started.exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("credential process started");
+        task.abort();
+        let _ = task.await;
+        tokio::time::sleep(std::time::Duration::from_millis(1800)).await;
+        assert!(
+            !survived.exists(),
+            "credential_process descendant survived resolver cancellation"
+        );
     }
 }

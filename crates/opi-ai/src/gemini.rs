@@ -14,9 +14,14 @@ use tokio_util::sync::CancellationToken;
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, OutputContent, ToolCall};
 use crate::model_info::WireApi;
-use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
+use crate::provider::{
+    EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
+};
+use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
-use crate::stream::{AssistantStreamEvent, StopReason, Usage};
+use crate::stream::{
+    AssistantStreamEvent, CancelAwareReceiverStream, StopReason, Usage, send_or_cancel,
+};
 
 const UPSTREAM_STREAM_ERROR: &str = "Gemini returned a streaming error";
 const MALFORMED_STREAM_FRAME: &str = "Gemini returned a malformed streaming frame";
@@ -599,7 +604,7 @@ impl GeminiProvider {
                     let mut response = serde_json::json!({
                         "content": response_text,
                     });
-                    // Phase 11.9: the Gemini REST API documents an `error` key INSIDE
+                    // The Gemini REST API documents an `error` key inside
                     // functionResponse.response as the failure signal ("if the
                     // function call failed to execute, the response can have an
                     // 'error' key"). Emit it only on failure so the success body
@@ -675,7 +680,7 @@ impl GeminiProvider {
                     }
                     ParsedEvent::Malformed => {
                         stream_events.push(Err(ProviderError::StreamError(
-                            MALFORMED_STREAM_FRAME.to_owned(),
+                            ProviderErrorSummary::attested_static(MALFORMED_STREAM_FRAME),
                         )));
                     }
                 }
@@ -687,6 +692,7 @@ impl GeminiProvider {
     }
 
     /// Real HTTP streaming: POST to Gemini streamGenerateContent API with ?alt=sse.
+    #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         http_client: reqwest::Client,
         api_key: String,
@@ -694,23 +700,46 @@ impl GeminiProvider {
         model_id: String,
         body: &serde_json::Value,
         cancel: CancellationToken,
+        timeout: Option<std::time::Duration>,
+        extra_headers: Vec<(String, String)>,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let url = format!("{base_url}/v1beta/models/{model_id}:streamGenerateContent?alt=sse");
-        let response = http_client
-            .post(&url)
-            .header("x-goog-api-key", &api_key)
-            .header("content-type", "application/json")
-            .body(serde_json::to_string(body).unwrap_or_default())
-            .send()
-            .await
-            .map_err(|e| ProviderError::Network(e.to_string()))?;
+        let route_headers = vec![
+            ("x-goog-api-key".to_owned(), api_key),
+            ("content-type".to_owned(), "application/json".to_owned()),
+        ];
+        let headers = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+        let mut request = http_client.post(&url);
+        for (name, value) in headers {
+            request = request.header(name, value);
+        }
+        if let Some(timeout) = timeout {
+            request = request.timeout(timeout);
+        }
+        let response = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
+            response = request
+                .body(serde_json::to_string(body).unwrap_or_default())
+                .send() => response,
+        }
+        .map_err(|error| {
+            if error.is_timeout() {
+                ProviderError::Timeout
+            } else {
+                ProviderError::Network(ProviderErrorSummary::sanitized(error.to_string()))
+            }
+        })?;
 
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
-            let error_body = response.text().await.unwrap_or_default();
-            return Err(map_gemini_error(status, &error_body, &headers));
+            if status == reqwest::StatusCode::BAD_REQUEST {
+                let body = crate::http::read_bounded_error_body(response, &cancel, timeout).await?;
+                return Err(map_gemini_error(status, body.as_deref(), &headers));
+            }
+            return Err(map_gemini_error(status, None, &headers));
         }
 
         let mut byte_stream = response.bytes_stream();
@@ -719,8 +748,9 @@ impl GeminiProvider {
 
         loop {
             let chunk = tokio::select! {
+                biased;
                 _ = cancel.cancelled() => {
-                    return Ok(());
+                    return Err(ProviderError::Cancelled);
                 }
                 chunk = byte_stream.next() => {
                     match chunk {
@@ -730,21 +760,29 @@ impl GeminiProvider {
                 }
             };
 
-            let chunk = chunk.map_err(|e| ProviderError::StreamError(e.to_string()))?;
+            let chunk = chunk.map_err(|error| {
+                if error.is_timeout() {
+                    ProviderError::Timeout
+                } else {
+                    ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
+                }
+            })?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
 
             for parsed in drain_sse_data(&mut buffer) {
                 match parsed {
                     ParsedEvent::Valid(event) => {
                         for stream_event in mapper.process(event) {
-                            if tx.send(Ok(stream_event)).await.is_err() {
+                            if !send_or_cancel(&cancel, tx, Ok(stream_event)).await? {
                                 return Ok(());
                             }
                         }
                     }
                     ParsedEvent::Malformed => {
-                        let err = ProviderError::StreamError(MALFORMED_STREAM_FRAME.to_owned());
-                        if tx.send(Err(err)).await.is_err() {
+                        let err = ProviderError::StreamError(
+                            ProviderErrorSummary::attested_static(MALFORMED_STREAM_FRAME),
+                        );
+                        if !send_or_cancel(&cancel, tx, Err(err)).await? {
                             return Ok(());
                         }
                     }
@@ -753,8 +791,10 @@ impl GeminiProvider {
         }
 
         if !mapper.saw_done {
-            let err = ProviderError::StreamError("stream ended without a terminal event".into());
-            let _ = tx.send(Err(err)).await;
+            let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                "stream ended without a terminal event",
+            ));
+            let _ = send_or_cancel(&cancel, tx, Err(err)).await?;
         }
 
         Ok(())
@@ -764,21 +804,6 @@ impl GeminiProvider {
 // ---------------------------------------------------------------------------
 // Streaming helpers
 // ---------------------------------------------------------------------------
-
-struct ReceiverStream {
-    rx: tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>,
-}
-
-impl futures_core::Stream for ReceiverStream {
-    type Item = Result<AssistantStreamEvent, ProviderError>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        self.rx.poll_recv(cx)
-    }
-}
 
 /// Drain complete SSE events from the buffer (delimited by `\n\n`).
 pub(crate) fn drain_sse_data(buffer: &mut String) -> Vec<ParsedEvent> {
@@ -803,38 +828,30 @@ pub(crate) fn drain_sse_data(buffer: &mut String) -> Vec<ParsedEvent> {
 /// `"code":401` or `"code":403`, so we inspect the body for those codes as well.
 fn map_gemini_error(
     status: reqwest::StatusCode,
-    body: &str,
+    body: Option<&[u8]>,
     headers: &reqwest::header::HeaderMap,
 ) -> ProviderError {
     match status.as_u16() {
-        401 | 403 => ProviderError::AuthFailed(format!(
-            "authentication failed: {}",
-            crate::http::safe_excerpt(body)
-        )),
+        401 | 403 => ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected()),
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
         408 | 504 => ProviderError::Timeout,
-        _ => {
+        400 => {
             // Gemini may return auth errors with HTTP 400 but code 401/403 in the body
-            if let Ok(err_body) = serde_json::from_str::<serde_json::Value>(body)
+            if let Some(body) = body
+                && let Ok(err_body) = serde_json::from_slice::<serde_json::Value>(body)
                 && let Some(code) = err_body
                     .get("error")
                     .and_then(|e| e.get("code"))
                     .and_then(|c| c.as_i64())
                 && (code == 401 || code == 403)
             {
-                return ProviderError::AuthFailed(format!(
-                    "authentication failed: {}",
-                    crate::http::safe_excerpt(body)
-                ));
+                return ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected());
             }
-            ProviderError::ProviderSide(format!(
-                "HTTP {}: {}",
-                status.as_u16(),
-                crate::http::safe_excerpt(body)
-            ))
+            ProviderError::ProviderSide(ProviderErrorSummary::from_http_response(400))
         }
+        code => ProviderError::ProviderSide(ProviderErrorSummary::from_http_response(code)),
     }
 }
 
@@ -849,20 +866,35 @@ impl Provider for GeminiProvider {
             .unwrap_or(request.model.clone());
         let body = self.build_request_body(&request);
         let cancel = request.cancel.clone();
+        let timeout = request.timeout;
+        let extra_headers = request.extra_headers;
         let http_client = self.client.client().clone();
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
+        let producer_cancel = cancel.clone();
 
         tokio::spawn(async move {
-            if let Err(e) =
-                Self::stream_http(http_client, api_key, base_url, model_id, &body, cancel, &tx)
-                    .await
-            {
-                let _ = tx.send(Err(e)).await;
+            let result = Self::stream_http(
+                http_client,
+                api_key,
+                base_url,
+                model_id,
+                &body,
+                producer_cancel.clone(),
+                timeout,
+                extra_headers,
+                &tx,
+            )
+            .await;
+            match result {
+                Ok(()) | Err(ProviderError::Cancelled) => {}
+                Err(error) => {
+                    let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                }
             }
         });
 
-        Box::pin(ReceiverStream { rx })
+        Box::pin(CancelAwareReceiverStream::new(rx, cancel))
     }
 
     fn id(&self) -> &str {

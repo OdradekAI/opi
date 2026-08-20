@@ -7,6 +7,8 @@
 //! exercises the freshness gate directly; evidence-failure-driven health
 //! advancement and product reauthorization belong to 17.7.
 
+// opi-phase17-acceptance
+
 mod common;
 
 use std::pin::Pin;
@@ -16,11 +18,12 @@ use std::sync::{Arc, Mutex};
 use futures_util::stream;
 use opi_agent::agent::Agent;
 use opi_agent::authority::{
-    AuthorizationDecision, AuthorizationError, Capability, InvocationContext, RegisteredTool,
-    RegistrationId, ToolAuthorizationRequest, ToolAuthorizer, ToolOrigin,
+    AuthorizationDecision, AuthorizationError, CapabilityIdentity, InvocationContext,
+    RegisteredTool, RegistrationId, ToolAuthorizationRequest, ToolAuthorizer, ToolOrigin,
 };
 use opi_agent::evidence::{
-    CallId, CapabilityClass, EvidenceGeneration, EvidenceHealth, RunId, TurnId,
+    CallId, EvidenceGeneration, EvidenceHealth, PermissionReference, PermissionScope,
+    PolicyReference, RunId, ScopedGrantReference, TurnId,
 };
 use opi_agent::hooks::{
     AgentHooks, BeforeToolCallContext, BeforeToolCallResult, ShouldStopAfterTurnContext,
@@ -100,9 +103,10 @@ impl ToolAuthorizer for CapturingAuthorizer {
         self.requests.lock().unwrap().push(request.clone());
         Box::pin(async move {
             Ok(AuthorizationDecision::Allow {
-                policy_ref: "test-policy".to_owned(),
-                permission_ref: "test-permission".to_owned(),
-                permission_scope: "test-scope".to_owned(),
+                policy_ref: PolicyReference::new("test-policy").unwrap(),
+                permission_ref: PermissionReference::new("test-permission").unwrap(),
+                permission_scope: PermissionScope::new("test-scope").unwrap(),
+                scoped_grant_ref: Some(ScopedGrantReference::new("test-grant").unwrap()),
                 registration_id: request.registration_id,
                 capability: request.capability,
                 evidence_health_generation: request.evidence_health.generation(),
@@ -256,8 +260,10 @@ async fn verified_authorization_is_forwarded_to_the_tool_execution_boundary() {
     let registration = RegisteredTool::new(
         RegistrationId::new("test-mytool"),
         "mytool".to_owned(),
-        ToolOrigin::Builtin,
-        Capability::Builtin(CapabilityClass::WorkspaceRead),
+        ToolOrigin::Embedder {
+            embedder_id: "acme.desktop".to_owned(),
+        },
+        CapabilityIdentity::new("acme.documents.review").unwrap(),
         definition,
         tool,
     );
@@ -272,16 +278,23 @@ async fn verified_authorization_is_forwarded_to_the_tool_execution_boundary() {
         })),
     );
 
-    agent.prompt("go").await.unwrap();
+    agent.prompt("go").await.into_execution_result().unwrap();
 
     let authorization = received
         .lock()
         .unwrap()
         .clone()
         .expect("verified Allow reaches the tool boundary");
-    assert_eq!(authorization.policy_ref, "test-policy");
-    assert_eq!(authorization.permission_ref, "test-permission");
-    assert_eq!(authorization.permission_scope, "test-scope");
+    assert_eq!(authorization.policy_ref.as_str(), "test-policy");
+    assert_eq!(authorization.permission_ref.as_str(), "test-permission");
+    assert_eq!(authorization.permission_scope.as_str(), "test-scope");
+    assert_eq!(
+        authorization
+            .scoped_grant_ref
+            .as_ref()
+            .map(ScopedGrantReference::as_str),
+        Some("test-grant")
+    );
 }
 
 #[tokio::test]
@@ -303,7 +316,7 @@ async fn authorization_uses_typed_evidence_ids_and_trusted_session_context() {
         })),
     );
     agent.set_session_id(Some("trusted-session".to_owned()));
-    agent.prompt("go").await.unwrap();
+    agent.prompt("go").await.into_execution_result().unwrap();
 
     let request = requests.lock().unwrap().first().cloned().unwrap();
     let _: RunId = request.run_id;
@@ -369,7 +382,7 @@ fn duplicate_provider_visible_name_is_rejected_at_construction() {
             RegistrationId::new("reg-dup"),
             "dup".to_owned(),
             ToolOrigin::Builtin,
-            Capability::Builtin(CapabilityClass::WorkspaceRead),
+            CapabilityIdentity::new("opi.workspace.read").unwrap(),
             def.clone(),
             tool_impl.clone(),
         )
@@ -443,7 +456,8 @@ async fn stale_evidence_health_generation_yields_zero_executions() {
         Box::new(|_| {}),
         cancel,
     )
-    .await;
+    .await
+    .into_execution_result();
     assert_eq!(
         RecordingTool::count_of(&count),
         0,

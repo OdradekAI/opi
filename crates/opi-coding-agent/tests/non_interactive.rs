@@ -10,8 +10,10 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use opi_agent::AgentError;
+use opi_agent::diagnostic::{Diagnostic, RedactionMode};
 use opi_agent::extension::ExtensionRegistry;
-use opi_ai::provider::ProviderError;
+use opi_ai::provider::{ProviderError, ProviderErrorSummary};
 use opi_ai::test_support::{self, MockProvider};
 use opi_coding_agent::config::{ExecutionStrategy, OpiConfig, PermissionDecision};
 use opi_coding_agent::package_resolver::local_lock_entry;
@@ -396,7 +398,9 @@ async fn runner_text_preserves_tool_failure_diagnostic_after_provider_recovery()
 
 #[tokio::test]
 async fn runner_provider_error_stderr_exit4() {
-    let response = test_support::error_response("connection refused");
+    let canary = "sk-provider-body-canary-1234567890";
+    let upstream_error = format!("connection refused; response body contained {canary}");
+    let response = test_support::error_response(&upstream_error);
     let provider = MockProvider::new("mock", vec![response]);
 
     let mut runner = NonInteractiveRunner::new(
@@ -417,16 +421,28 @@ async fn runner_provider_error_stderr_exit4() {
         ExitCode::ProviderFailure as i32,
         "should exit 4 on provider error"
     );
-    assert!(
-        result.stderr.contains("provider error"),
-        "stderr should contain a redacted provider error class, got: {:?}",
-        result.stderr
+    let expected_stderr = Diagnostic::from(&AgentError::from(ProviderError::ProviderSide(
+        ProviderErrorSummary::from_untrusted(&upstream_error),
+    )))
+    .redacted_payload(RedactionMode::Summary)
+    .message;
+    assert_eq!(
+        result.stderr, expected_stderr,
+        "stderr should be the typed ProviderSide public summary"
     );
     assert!(
-        !result.stderr.contains("connection refused"),
-        "stderr must not echo raw provider error text: {:?}",
-        result.stderr
+        result.stdout.is_empty(),
+        "provider failure must not write stdout: {:?}",
+        result.stdout
     );
+    for private_text in [&upstream_error, "connection refused", canary] {
+        assert!(
+            !result.stderr.contains(private_text) && !result.stdout.contains(private_text),
+            "provider output must not echo upstream text {private_text:?}: stdout={:?}, stderr={:?}",
+            result.stdout,
+            result.stderr
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

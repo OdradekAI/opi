@@ -36,12 +36,16 @@ use opi_agent::event::AgentEvent;
 use opi_agent::hooks::{
     AgentHooks, BeforeToolCallContext, BeforeToolCallResult, ShouldStopAfterTurnContext,
 };
-use opi_agent::loop_types::{AgentError, AgentLoopConfig, InferenceConfig};
+use opi_agent::loop_types::{
+    AgentError, AgentLoopConfig, InferenceConfig, InvalidNextTurnReason, ModelSelection,
+    NextTurnState,
+};
 use opi_agent::message::AgentMessage;
-use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message};
-use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
+use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message, UserMessage};
+use opi_ai::provider::{EventStream, Provider, ProviderError, Request, ThinkingConfig};
 use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
 use opi_ai::test_support::single_route_collection;
+use opi_ai::{ModelCapabilities, ModelInfo, ThinkingLevel, WireApi};
 
 // ---------------------------------------------------------------------------
 // Mock provider (reused from agent_loop_mock)
@@ -84,6 +88,45 @@ impl Provider for MockProvider {
     fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
         let events = self.responses.lock().unwrap().remove(0);
         Box::pin(stream::iter(events.into_iter().map(Ok::<_, ProviderError>)))
+    }
+}
+
+struct InvalidMetadataProvider {
+    models: Vec<ModelInfo>,
+}
+
+impl InvalidMetadataProvider {
+    fn new() -> Self {
+        Self {
+            models: vec![
+                ModelInfo::new(
+                    "mock-model",
+                    "Mock Model",
+                    WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(100_000, 4_096),
+                ),
+                ModelInfo::new(
+                    "invalid-model",
+                    "Invalid Model",
+                    WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(0, 4_096),
+                ),
+            ],
+        }
+    }
+}
+
+impl Provider for InvalidMetadataProvider {
+    fn id(&self) -> &str {
+        "invalid-metadata"
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        &self.models
+    }
+
+    fn stream_prepared(&self, _request: Request, _auth: opi_ai::auth::ResolvedAuth) -> EventStream {
+        Box::pin(stream::empty())
     }
 }
 
@@ -159,6 +202,276 @@ fn text_response(text: &str) -> Vec<AssistantStreamEvent> {
     ]
 }
 
+fn assert_same_state(actual: &NextTurnState, expected: &NextTurnState) {
+    assert_eq!(
+        serde_json::to_value(&actual.context).unwrap(),
+        serde_json::to_value(&expected.context).unwrap()
+    );
+    assert_eq!(actual.model_selection, expected.model_selection);
+    assert_eq!(actual.inference.max_tokens, expected.inference.max_tokens);
+    assert_eq!(actual.inference.temperature, expected.inference.temperature);
+    assert_eq!(
+        actual.inference.thinking.enabled,
+        expected.inference.thinking.enabled
+    );
+    assert_eq!(
+        actual.inference.thinking.budget_tokens,
+        expected.inference.thinking.budget_tokens
+    );
+    assert_eq!(
+        actual.inference.thinking.level,
+        expected.inference.thinking.level
+    );
+}
+
+fn contains_user_text(request: &Request, expected: &str) -> bool {
+    request.messages.iter().any(|message| match message {
+        Message::User(user) => user
+            .content
+            .iter()
+            .any(|content| matches!(content, InputContent::Text { text } if text == expected)),
+        _ => false,
+    })
+}
+
+fn recording_agent(responses: Vec<Vec<AssistantStreamEvent>>) -> (Agent, Arc<Mutex<Vec<Request>>>) {
+    let provider = opi_ai::test_support::MockProvider::new("mock", responses);
+    let calls = provider.call_log_handle();
+    let agent = Agent::new(
+        Arc::new(single_route_collection(Box::new(provider))),
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
+        "mock:mock-model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(TestHooks),
+    )
+    .expect("agent");
+    (agent, calls)
+}
+
+#[tokio::test]
+async fn armed_run_rejects_foreign_owner_before_mutation_or_dispatch() {
+    let (mut agent_a, calls_a) = recording_agent(vec![text_response("agent-a-valid")]);
+    let (mut agent_b, calls_b) = recording_agent(vec![text_response("agent-b-valid")]);
+    let run_a = agent_a.arm_run();
+    let run_b = agent_b.arm_run();
+    let state_a = agent_a.state_snapshot();
+    let state_b = agent_b.state_snapshot();
+
+    assert!(matches!(
+        agent_a.control_handle_for_run(&run_b),
+        Err(AgentError::InvalidArmedRun)
+    ));
+    assert!(matches!(
+        agent_b.control_handle_for_run(&run_a),
+        Err(AgentError::InvalidArmedRun)
+    ));
+    assert!(agent_a.control_handle_for_run(&run_a).is_ok());
+    assert!(agent_b.control_handle_for_run(&run_b).is_ok());
+
+    run_b.cancel_token().cancel();
+    let foreign_a = agent_a.prompt_armed("must not enter agent A", run_b).await;
+    assert!(matches!(
+        foreign_a.error(),
+        Some(AgentError::InvalidArmedRun)
+    ));
+    assert_same_state(&agent_a.state_snapshot(), &state_a);
+    assert!(calls_a.lock().unwrap().is_empty());
+
+    let foreign_b = agent_b.prompt_armed("must not enter agent B", run_a).await;
+    assert!(matches!(
+        foreign_b.error(),
+        Some(AgentError::InvalidArmedRun)
+    ));
+    assert_same_state(&agent_b.state_snapshot(), &state_b);
+    assert!(calls_b.lock().unwrap().is_empty());
+
+    agent_a
+        .prompt("agent A direct prompt")
+        .await
+        .into_execution_result()
+        .unwrap();
+    agent_b
+        .prompt("agent B direct prompt")
+        .await
+        .into_execution_result()
+        .unwrap();
+    assert_eq!(calls_a.lock().unwrap().len(), 1);
+    assert_eq!(calls_b.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn armed_run_rejects_stale_generation_before_mutation_or_dispatch() {
+    let (mut agent, calls) = recording_agent(vec![text_response("latest-valid")]);
+    let stale = agent.arm_run();
+    let latest = agent.arm_run();
+    let state = agent.state_snapshot();
+
+    assert!(matches!(
+        agent.control_handle_for_run(&stale),
+        Err(AgentError::InvalidArmedRun)
+    ));
+    assert!(agent.control_handle_for_run(&latest).is_ok());
+
+    let stale_result = agent.prompt_armed("must not enter stale run", stale).await;
+    assert!(matches!(
+        stale_result.error(),
+        Some(AgentError::InvalidArmedRun)
+    ));
+    assert_same_state(&agent.state_snapshot(), &state);
+    assert!(calls.lock().unwrap().is_empty());
+
+    agent
+        .prompt_armed("latest run", latest)
+        .await
+        .into_execution_result()
+        .unwrap();
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(contains_user_text(&calls[0], "latest run"));
+    assert!(!contains_user_text(&calls[0], "must not enter stale run"));
+}
+
+#[test]
+fn constructor_rejects_unsupported_initial_thinking() {
+    let result = Agent::new(
+        Arc::new(single_route_collection(Box::new(MockProvider::new(
+            "mock",
+            vec![],
+        )))),
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
+        "mock:mock-model".into(),
+        None,
+        InferenceConfig {
+            thinking: ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(2048),
+                level: ThinkingLevel::High,
+            },
+            ..Default::default()
+        },
+        AgentLoopConfig::default(),
+        Box::new(TestHooks),
+    );
+
+    assert!(matches!(
+        result,
+        Err(AgentError::InvalidNextTurnCandidate(
+            InvalidNextTurnReason::UnsupportedThinking { .. }
+        ))
+    ));
+}
+
+#[test]
+fn constructor_rejects_enabled_none_thinking_on_non_thinking_model() {
+    let result = Agent::new(
+        Arc::new(single_route_collection(Box::new(MockProvider::new(
+            "mock",
+            vec![],
+        )))),
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
+        "mock:mock-model".into(),
+        None,
+        InferenceConfig {
+            thinking: ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(2048),
+                level: ThinkingLevel::None,
+            },
+            ..Default::default()
+        },
+        AgentLoopConfig::default(),
+        Box::new(TestHooks),
+    );
+
+    assert!(matches!(
+        result,
+        Err(AgentError::InvalidNextTurnCandidate(
+            InvalidNextTurnReason::UnsupportedThinking { .. }
+        ))
+    ));
+}
+
+#[test]
+fn constructor_rejects_noncanonical_whitespace_model_identity() {
+    let result = Agent::new(
+        Arc::new(single_route_collection(Box::new(MockProvider::new(
+            "mock",
+            vec![],
+        )))),
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
+        " mock:mock-model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(TestHooks),
+    );
+
+    assert!(matches!(
+        result,
+        Err(AgentError::InvalidNextTurnCandidate(
+            InvalidNextTurnReason::NonCanonicalModelSelection { .. }
+        ))
+    ));
+}
+
+#[test]
+fn constructor_rejects_invalid_resolved_model_constraints() {
+    let result = Agent::new(
+        Arc::new(single_route_collection(Box::new(
+            InvalidMetadataProvider::new(),
+        ))),
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
+        "invalid-metadata:invalid-model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(TestHooks),
+    );
+
+    assert!(matches!(
+        result,
+        Err(AgentError::InvalidNextTurnCandidate(
+            InvalidNextTurnReason::InvalidModelConstraints { .. }
+        ))
+    ));
+}
+
+#[test]
+fn constructor_rejects_every_non_finite_initial_temperature() {
+    for temperature in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let result = Agent::new(
+            Arc::new(single_route_collection(Box::new(MockProvider::new(
+                "mock",
+                vec![],
+            )))),
+            common::registrations_from(vec![]),
+            Some(common::permissive_authorizer()),
+            "mock:mock-model".into(),
+            None,
+            InferenceConfig {
+                temperature: Some(temperature),
+                ..Default::default()
+            },
+            AgentLoopConfig::default(),
+            Box::new(TestHooks),
+        );
+
+        assert!(matches!(
+            result,
+            Err(AgentError::InvalidNextTurnCandidate(
+                InvalidNextTurnReason::NonFiniteTemperature
+            ))
+        ));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Test 1: prompt sends user message and returns result
 // ---------------------------------------------------------------------------
@@ -179,7 +492,11 @@ async fn prompt_sends_user_message_and_returns_result() {
     )
     .expect("agent");
 
-    let result = agent.prompt("Hi there").await.unwrap();
+    let result = agent
+        .prompt("Hi there")
+        .await
+        .into_execution_result()
+        .unwrap();
 
     // Should contain: user message + assistant message
     assert!(
@@ -222,10 +539,10 @@ async fn prompt_accumulates_state_across_calls() {
     )
     .expect("agent");
 
-    let r1 = agent.prompt("Hello").await.unwrap();
+    let r1 = agent.prompt("Hello").await.into_execution_result().unwrap();
     assert!(r1.len() >= 2);
 
-    let r2 = agent.prompt("World").await.unwrap();
+    let r2 = agent.prompt("World").await.into_execution_result().unwrap();
     // Second call should include messages from first call
     // r2 includes: [user1, assistant1, user2, assistant2]
     assert!(
@@ -258,10 +575,14 @@ async fn continue_appends_message_and_runs_loop() {
     )
     .expect("agent");
 
-    let r1 = agent.prompt("Hello").await.unwrap();
+    let r1 = agent.prompt("Hello").await.into_execution_result().unwrap();
     assert!(r1.len() >= 2);
 
-    let r2 = agent.continue_("Tell me more").await.unwrap();
+    let r2 = agent
+        .continue_("Tell me more")
+        .await
+        .into_execution_result()
+        .unwrap();
     assert!(
         r2.len() >= 4,
         "expected at least 4 messages after prompt+continue, got {}",
@@ -348,7 +669,7 @@ async fn abort_cancels_running_loop() {
     let result = handle.await.unwrap();
 
     assert!(
-        matches!(result, Err(AgentError::Cancelled)),
+        matches!(result.error(), Some(AgentError::Cancelled)),
         "expected Cancelled error, got {:?}",
         result
     );
@@ -394,7 +715,7 @@ async fn subscribe_receives_events() {
         collected_clone.lock().unwrap().push(name.to_owned());
     }));
 
-    let result = agent.prompt("Hello").await.unwrap();
+    let result = agent.prompt("Hello").await.into_execution_result().unwrap();
     assert!(result.len() >= 2);
 
     let events = collected.lock().unwrap();
@@ -485,8 +806,16 @@ async fn phase17_agent_persists_complete_next_turn_state() {
     )
     .expect("agent");
 
-    agent.prompt("turn one").await.unwrap();
-    agent.prompt("turn two").await.unwrap();
+    agent
+        .prompt("turn one")
+        .await
+        .into_execution_result()
+        .unwrap();
+    agent
+        .prompt("turn two")
+        .await
+        .into_execution_result()
+        .unwrap();
 
     let log = call_log.lock().unwrap();
     assert_eq!(log.len(), 2, "two provider calls across two prompts");
@@ -511,6 +840,225 @@ async fn phase17_agent_persists_complete_next_turn_state() {
     );
     // Model preserved across calls.
     assert_eq!(agent.model(), "mock-model");
+}
+
+#[tokio::test]
+async fn idle_replacement_rejects_enabled_none_thinking_atomically_without_consuming_queues() {
+    let provider = opi_ai::test_support::MockProvider::new(
+        "mock",
+        vec![
+            text_response("initial"),
+            text_response("steering"),
+            text_response("follow-up"),
+        ],
+    );
+    let call_log = provider.call_log_handle();
+    let mut agent = Agent::new(
+        Arc::new(single_route_collection(Box::new(provider))),
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
+        "mock:mock-model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(TestHooks),
+    )
+    .expect("agent");
+
+    let mut baseline = agent.state_snapshot();
+    baseline
+        .context
+        .push(AgentMessage::Llm(Message::Assistant(base_assistant())));
+    baseline.inference.max_tokens = Some(1234);
+    baseline.inference.temperature = Some(0.25);
+    agent.replace_state(baseline.clone()).unwrap();
+    agent.steer("queued steering".into());
+    agent.follow_up("queued follow-up".into());
+
+    let mut candidate = baseline.clone();
+    candidate
+        .context
+        .push(AgentMessage::Llm(Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "candidate-only context".into(),
+            }],
+            timestamp_ms: 0,
+        })));
+    candidate.inference.max_tokens = Some(9999);
+    candidate.inference.temperature = Some(0.75);
+    candidate.inference.thinking = ThinkingConfig {
+        enabled: true,
+        budget_tokens: Some(2048),
+        level: ThinkingLevel::None,
+    };
+
+    let error = agent
+        .replace_state(candidate)
+        .expect_err("thinking on a non-thinking model must be rejected");
+    assert!(matches!(
+        error,
+        AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::UnsupportedThinking { .. })
+    ));
+    assert_same_state(&agent.state_snapshot(), &baseline);
+
+    agent
+        .prompt("after rejection")
+        .await
+        .into_execution_result()
+        .unwrap();
+    let requests = call_log.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert!(
+        contains_user_text(&requests[1], "queued steering"),
+        "steering must not be consumed by invalid idle replacement"
+    );
+    assert!(
+        contains_user_text(&requests[2], "queued follow-up"),
+        "follow-up must not be consumed by invalid idle replacement"
+    );
+    assert_eq!(
+        requests[0]
+            .messages
+            .first()
+            .and_then(|message| match message {
+                Message::Assistant(message) => Some(message.stop_reason),
+                _ => None,
+            }),
+        Some(StopReason::Stop),
+        "the prior context's stop reason must remain unchanged"
+    );
+}
+
+#[test]
+fn idle_replacement_rejects_noncanonical_whitespace_identity_without_partial_apply() {
+    let provider = MockProvider::new("mock", vec![]);
+    let mut agent = Agent::new(
+        Arc::new(single_route_collection(Box::new(provider))),
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
+        "mock:mock-model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(TestHooks),
+    )
+    .expect("agent");
+    let mut baseline = agent.state_snapshot();
+    baseline
+        .context
+        .push(AgentMessage::Llm(Message::Assistant(base_assistant())));
+    baseline.inference.max_tokens = Some(1234);
+    baseline.inference.temperature = Some(0.25);
+    agent.replace_state(baseline.clone()).unwrap();
+
+    let mut candidate = baseline.clone();
+    candidate.model_selection = ModelSelection::new(" mock ", "mock-model");
+    candidate.inference.max_tokens = Some(9999);
+    candidate
+        .context
+        .push(AgentMessage::Llm(Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "candidate-only context".into(),
+            }],
+            timestamp_ms: 0,
+        })));
+
+    let error = agent
+        .replace_state(candidate)
+        .expect_err("noncanonical route identity must be rejected");
+    assert!(matches!(
+        error,
+        AgentError::InvalidNextTurnCandidate(
+            InvalidNextTurnReason::NonCanonicalModelSelection { .. }
+        )
+    ));
+    assert_same_state(&agent.state_snapshot(), &baseline);
+}
+
+#[test]
+fn idle_replacement_rejects_invalid_model_constraints_without_partial_apply() {
+    let mut agent = Agent::new(
+        Arc::new(single_route_collection(Box::new(
+            InvalidMetadataProvider::new(),
+        ))),
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
+        "invalid-metadata:mock-model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(TestHooks),
+    )
+    .expect("valid initial route");
+    let mut baseline = agent.state_snapshot();
+    baseline
+        .context
+        .push(AgentMessage::Llm(Message::Assistant(base_assistant())));
+    baseline.inference.max_tokens = Some(1234);
+    baseline.inference.temperature = Some(0.25);
+    agent.replace_state(baseline.clone()).unwrap();
+
+    let mut candidate = baseline.clone();
+    candidate.model_selection = ModelSelection::new("invalid-metadata", "invalid-model");
+    candidate.inference.max_tokens = Some(9999);
+    candidate
+        .context
+        .push(AgentMessage::Llm(Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "candidate-only context".into(),
+            }],
+            timestamp_ms: 0,
+        })));
+
+    let error = agent
+        .replace_state(candidate)
+        .expect_err("invalid model constraints must be rejected");
+    assert!(matches!(
+        error,
+        AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::InvalidModelConstraints { .. })
+    ));
+    assert_same_state(&agent.state_snapshot(), &baseline);
+}
+
+#[test]
+fn idle_replacement_rejects_every_non_finite_temperature_without_partial_apply() {
+    let provider = MockProvider::new("mock", vec![]);
+    let mut agent = Agent::new(
+        Arc::new(single_route_collection(Box::new(provider))),
+        common::registrations_from(vec![]),
+        Some(common::permissive_authorizer()),
+        "mock:mock-model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(TestHooks),
+    )
+    .expect("agent");
+    let baseline = agent.state_snapshot();
+
+    for temperature in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut candidate = baseline.clone();
+        candidate.model_selection = ModelSelection::new("mock", "mock-model");
+        candidate.inference.max_tokens = Some(7777);
+        candidate.inference.temperature = Some(temperature);
+        candidate
+            .context
+            .push(AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "must not apply".into(),
+                }],
+                timestamp_ms: 0,
+            })));
+
+        let error = agent
+            .replace_state(candidate)
+            .expect_err("non-finite JSON scalar must be rejected");
+        assert!(matches!(
+            error,
+            AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::NonFiniteTemperature)
+        ));
+        assert_same_state(&agent.state_snapshot(), &baseline);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -630,7 +1178,11 @@ async fn phase17_next_call_routes_from_applied_state_nxt006() {
     )
     .expect("agent");
 
-    agent.prompt("route me").await.unwrap();
+    agent
+        .prompt("route me")
+        .await
+        .into_execution_result()
+        .unwrap();
 
     assert!(
         *switched.lock().unwrap(),

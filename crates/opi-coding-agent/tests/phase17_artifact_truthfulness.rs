@@ -13,7 +13,7 @@
 use std::io::Write;
 use std::sync::Arc;
 
-use opi_agent::evidence::{AssemblySource, EvidenceRecorder};
+use opi_agent::evidence::EvidenceRecorder;
 use opi_ai::test_support::{MockProvider, MockResponse, text_response};
 use opi_coding_agent::config::{ExecutionRunMode, OpiConfig};
 use opi_coding_agent::evidence::{EvidenceBuilderConfig, FileEvidenceSink};
@@ -62,7 +62,7 @@ async fn phase17_task_17_7_artifact_truthfulness_directory() {
     .execution_mode(ExecutionRunMode::Interactive)
     .evidence(EvidenceBuilderConfig {
         recorder,
-        source: AssemblySource::Cli,
+        source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
     harness.subscribe(Box::new(move |event| {

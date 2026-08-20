@@ -31,7 +31,6 @@ use std::sync::Arc;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::azure_openai::AzureOpenAIProvider;
 use opi_ai::bedrock::BedrockProvider;
-use opi_ai::bedrock::sigv4::AwsCredentials;
 use opi_ai::gemini::GeminiProvider;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, OutputContent, ToolResultMessage, UserMessage};
@@ -47,15 +46,6 @@ use tokio_util::sync::CancellationToken;
 /// rendered tool-result text. Pinned in the test so the DoD word "deterministic"
 /// is a byte-for-byte assertion.
 const EXPECTED_ERROR_MARKER: &str = "[tool_error] ";
-
-fn test_credentials() -> AwsCredentials {
-    AwsCredentials {
-        access_key_id: "AKIAIOSFODNN7EXAMPLE".into(),
-        secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".into(),
-        session_token: None,
-        region: "us-east-1".into(),
-    }
-}
 
 /// Build a Request whose last message is a ToolResult with the requested
 /// `is_error` flag and a known payload text. A leading user message keeps the
@@ -135,7 +125,7 @@ fn anthropic_asserts(is_error: bool, payload: &str) {
 }
 
 fn bedrock_asserts(is_error: bool, payload: &str) {
-    let provider = BedrockProvider::new(test_credentials(), None, Arc::new(HttpClient::new()));
+    let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
     let body = provider.build_converse_body(&request_with_tool_result(is_error, payload));
     let result = &last_msg(&body, "messages")["content"][0]["toolResult"];
     assert_eq!(

@@ -1,4 +1,4 @@
-//! Phase 17 task 17.7 — Reference Product evidence adapter and manifest assembly.
+//! Reference Product evidence adapter and manifest assembly.
 //!
 //! The Agent Core evidence contract ([`opi_agent::evidence`]) is storage-
 //! neutral: it owns identities, health, the sink lifecycle, and the
@@ -18,7 +18,7 @@
 //!   recorder's dynamic facts (call-graph correlation, route) and the run's
 //!   terminal outcome/usage into one strict manifest.
 //!
-//! Redaction is the producer's responsibility (P17-EVD-005): structured evidence
+//! Redaction is the producer's responsibility: structured evidence
 //! values cross the sink already redacted via
 //! [`opi_agent::evidence::RedactedValue`]; this adapter never makes raw input
 //! safe and only durably stores already-redacted values.
@@ -31,13 +31,23 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use opi_agent::evidence::{
-    ArtifactReference, AuthProvenanceSource, CallKind, ConfigIdentity, ContentDigest,
-    EnvironmentFacts, EvidenceError, EvidenceRecord, EvidenceRecorder, EvidenceSink,
-    FinalizedManifest, ManifestCorrelation, Measurement, MeasurementOrigin, PlatformIdentity,
-    ProvenanceFacts, RouteFacts, RouteSelection, RuntimeInputBinding, TerminalOutcome,
+    ArtifactReference, AssemblyIdentity, CallKind, ConfigIdentity, ContentDigest, EnvironmentFacts,
+    EvidenceCompleteness, EvidenceError, EvidencePayload, EvidenceRecord, EvidenceRecorder,
+    EvidenceRunObservation, EvidenceSink, ExecutionTrigger, FinalizedManifest, ManifestCandidate,
+    ManifestCorrelation, Measurement, MeasurementOrigin, PlatformIdentity, ProviderInvocationFacts,
+    ProviderNotApplicableReason, RuntimeInputBinding, SessionBinding, TerminalOutcome,
     UnknownReason, UsageFacts, UserPolicyFacts,
 };
-use serde::Deserialize;
+
+/// Reference Product assembly identity for CLI-originated runs.
+pub static CLI_ASSEMBLY: std::sync::LazyLock<AssemblyIdentity> =
+    std::sync::LazyLock::new(|| AssemblyIdentity::new("opi.cli").expect("valid product identity"));
+/// Reference Product assembly identity for SDK-originated runs.
+pub static SDK_ASSEMBLY: std::sync::LazyLock<AssemblyIdentity> =
+    std::sync::LazyLock::new(|| AssemblyIdentity::new("opi.sdk").expect("valid product identity"));
+/// Reference Product assembly identity for RPC-originated runs.
+pub static RPC_ASSEMBLY: std::sync::LazyLock<AssemblyIdentity> =
+    std::sync::LazyLock::new(|| AssemblyIdentity::new("opi.rpc").expect("valid product identity"));
 
 /// One JSONL record file written by [`FileEvidenceSink::setup`].
 const RECORDS_FILE: &str = "evidence.jsonl";
@@ -55,13 +65,29 @@ const MANIFEST_FILE: &str = "manifest.json";
 pub struct FileEvidenceSink {
     root: PathBuf,
     next_run: AtomicU64,
-    active_dir: Mutex<Option<PathBuf>>,
-    records: Mutex<Vec<EvidenceRecord>>,
-    writer: Mutex<Option<std::io::BufWriter<std::fs::File>>>,
-    finalized: Mutex<bool>,
-    manifest: Mutex<Option<FinalizedManifest>>,
-    failure: Mutex<Option<EvidenceError>>,
-    completed_dirs: Mutex<Vec<PathBuf>>,
+    state: Mutex<FileEvidenceState>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FileEvidencePhase {
+    Ready,
+    SetupFailed,
+    Active,
+    FailedActive,
+    Completed,
+    Abandoned,
+}
+
+struct FileEvidenceState {
+    phase: FileEvidencePhase,
+    active_dir: Option<PathBuf>,
+    binding: Option<RuntimeInputBinding>,
+    records: Vec<EvidenceRecord>,
+    artifacts: Vec<ArtifactReference>,
+    writer: Option<std::io::BufWriter<std::fs::File>>,
+    manifest: Option<FinalizedManifest>,
+    failure: Option<EvidenceError>,
+    completed_dirs: Vec<PathBuf>,
 }
 
 impl FileEvidenceSink {
@@ -71,13 +97,17 @@ impl FileEvidenceSink {
         Self {
             root: root.into(),
             next_run: AtomicU64::new(1),
-            active_dir: Mutex::new(None),
-            records: Mutex::new(Vec::new()),
-            writer: Mutex::new(None),
-            finalized: Mutex::new(false),
-            manifest: Mutex::new(None),
-            failure: Mutex::new(None),
-            completed_dirs: Mutex::new(Vec::new()),
+            state: Mutex::new(FileEvidenceState {
+                phase: FileEvidencePhase::Ready,
+                active_dir: None,
+                binding: None,
+                records: Vec::new(),
+                artifacts: Vec::new(),
+                writer: None,
+                manifest: None,
+                failure: None,
+                completed_dirs: Vec::new(),
+            }),
         }
     }
 
@@ -88,17 +118,19 @@ impl FileEvidenceSink {
 
     /// Finalized immutable run directories in setup order.
     pub fn completed_run_dirs(&self) -> Vec<PathBuf> {
-        Self::lock(&self.completed_dirs).clone()
+        Self::lock(&self.state).completed_dirs.clone()
     }
 
     fn lock<T>(lock: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn mark_failure(&self, error: EvidenceError) {
-        let mut failure = Self::lock(&self.failure);
-        if failure.is_none() {
-            *failure = Some(error);
+    fn mark_failure(state: &mut FileEvidenceState, error: EvidenceError) {
+        if state.failure.is_none() {
+            state.failure = Some(error);
+        }
+        if state.phase == FileEvidencePhase::Active {
+            state.phase = FileEvidencePhase::FailedActive;
         }
     }
 
@@ -132,105 +164,206 @@ impl FileEvidenceSink {
 }
 
 impl EvidenceSink for FileEvidenceSink {
-    fn setup(&self, _binding: &RuntimeInputBinding) -> Result<(), EvidenceError> {
-        if Self::lock(&self.writer).is_some() {
-            return Err(EvidenceError::Setup {
+    fn setup(&self, binding: &RuntimeInputBinding) -> Result<(), EvidenceError> {
+        let mut state = Self::lock(&self.state);
+        if matches!(
+            state.phase,
+            FileEvidencePhase::Active | FileEvidencePhase::FailedActive
+        ) {
+            let error = EvidenceError::Setup {
                 detail: "previous evidence run has not been finalized".to_owned(),
-            });
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
         }
-        *Self::lock(&self.failure) = None;
-        let dir = self.allocate_run_dir()?;
+        state.failure = None;
+        state.active_dir = None;
+        state.binding = None;
+        state.records.clear();
+        state.artifacts.clear();
+        state.writer = None;
+        state.manifest = None;
+        state.phase = FileEvidencePhase::Ready;
+        let dir = match self.allocate_run_dir() {
+            Ok(dir) => dir,
+            Err(error) => {
+                state.phase = FileEvidencePhase::SetupFailed;
+                Self::mark_failure(&mut state, error.clone());
+                return Err(error);
+            }
+        };
         let records_path = dir.join(RECORDS_FILE);
-        let file = OpenOptions::new()
+        let file = match OpenOptions::new()
             .create_new(true)
             .write(true)
             .open(&records_path)
             .map_err(|e| EvidenceError::Setup {
                 detail: format!("evidence file {}: {e}", records_path.display()),
-            })?;
-        *Self::lock(&self.active_dir) = Some(dir);
-        *Self::lock(&self.writer) = Some(std::io::BufWriter::new(file));
-        Self::lock(&self.records).clear();
-        *Self::lock(&self.finalized) = false;
-        *Self::lock(&self.manifest) = None;
+            }) {
+            Ok(file) => file,
+            Err(error) => {
+                let _ = std::fs::remove_dir(&dir);
+                state.phase = FileEvidencePhase::SetupFailed;
+                Self::mark_failure(&mut state, error.clone());
+                return Err(error);
+            }
+        };
+        state.active_dir = Some(dir);
+        state.binding = Some(binding.clone());
+        state.writer = Some(std::io::BufWriter::new(file));
+        state.phase = FileEvidencePhase::Active;
         Ok(())
     }
 
     fn emit(&self, record: &EvidenceRecord) -> Result<(), EvidenceError> {
-        if *Self::lock(&self.finalized) {
+        let mut state = Self::lock(&self.state);
+        if state.phase == FileEvidencePhase::Completed {
             return Err(EvidenceError::Emission {
                 detail: "evidence run is already finalized".to_owned(),
             });
         }
-        let line = serde_json::to_string(record).map_err(|e| EvidenceError::Emission {
-            detail: e.to_string(),
-        })?;
-        let mut writer_guard = Self::lock(&self.writer);
-        let Some(writer) = writer_guard.as_mut() else {
-            return Err(EvidenceError::Emission {
+        if !matches!(
+            state.phase,
+            FileEvidencePhase::Active | FileEvidencePhase::FailedActive
+        ) {
+            let error = EvidenceError::Emission {
                 detail: "evidence sink used before setup".to_owned(),
-            });
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
+        }
+        if record.validate_kind_payload().is_err() {
+            let error = EvidenceError::Emission {
+                detail: "evidence record kind does not match its typed payload".to_owned(),
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
+        }
+        let line = match serde_json::to_string(record) {
+            Ok(line) => line,
+            Err(error) => {
+                let error = EvidenceError::Emission {
+                    detail: error.to_string(),
+                };
+                Self::mark_failure(&mut state, error.clone());
+                return Err(error);
+            }
+        };
+        let Some(writer) = state.writer.as_mut() else {
+            let error = EvidenceError::Emission {
+                detail: "evidence sink used before setup".to_owned(),
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
         };
         if let Err(e) = writer
             .write_all(line.as_bytes())
             .and_then(|()| writer.write_all(b"\n"))
             .and_then(|()| writer.flush())
         {
-            self.mark_failure(EvidenceError::Emission {
+            let error = EvidenceError::Emission {
                 detail: e.to_string(),
-            });
-            return Err(EvidenceError::Emission {
-                detail: e.to_string(),
-            });
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
         }
-        drop(writer_guard);
-        Self::lock(&self.records).push(record.clone());
+        state.records.push(record.clone());
         Ok(())
     }
 
-    fn finalize_artifact(&self, _artifact: &ArtifactReference) -> Result<(), EvidenceError> {
+    fn finalize_artifact(&self, artifact: &ArtifactReference) -> Result<(), EvidenceError> {
         // Artifact references are carried inside emitted records / the manifest;
-        // the file adapter has no separate artifact store (P17-EVD-005: payload
-        // references, not payloads).
-        if *Self::lock(&self.finalized) {
+        // the file adapter has no separate artifact store. References never
+        // contain payloads.
+        let mut state = Self::lock(&self.state);
+        if state.phase == FileEvidencePhase::Completed {
             return Err(EvidenceError::Finalization {
                 detail: "evidence run is already finalized".to_owned(),
             });
         }
+        if !matches!(
+            state.phase,
+            FileEvidencePhase::Active | FileEvidencePhase::FailedActive
+        ) || state.binding.is_none()
+            || state.writer.is_none()
+        {
+            let error = EvidenceError::Finalization {
+                detail: "evidence sink used before setup".to_owned(),
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
+        }
+        state.artifacts.push(artifact.clone());
         Ok(())
     }
 
     fn finalize_run(&self, manifest: &FinalizedManifest) -> Result<(), EvidenceError> {
-        if *Self::lock(&self.finalized) {
+        let mut state = Self::lock(&self.state);
+        if state.phase == FileEvidencePhase::Completed {
             return Err(EvidenceError::Finalization {
                 detail: "evidence run is already finalized".to_owned(),
             });
         }
-        let mut writer =
-            Self::lock(&self.writer)
-                .take()
-                .ok_or_else(|| EvidenceError::Finalization {
-                    detail: "evidence sink used before setup".to_owned(),
-                })?;
+        if state.failure.is_some() {
+            let error = EvidenceError::Finalization {
+                detail: "evidence lifecycle is incomplete".to_owned(),
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
+        }
+        if state.phase != FileEvidencePhase::Active {
+            let error = EvidenceError::Finalization {
+                detail: "evidence sink used before setup".to_owned(),
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
+        }
+        let Some(binding) = state.binding.as_ref() else {
+            let error = EvidenceError::Finalization {
+                detail: "evidence sink used before setup".to_owned(),
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
+        };
+        if let Err(error) = manifest.validate_observation(EvidenceRunObservation::new(
+            binding,
+            &state.records,
+            &state.artifacts,
+        )) {
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
+        }
+        let Some(writer) = state.writer.as_mut() else {
+            let error = EvidenceError::Finalization {
+                detail: "evidence sink used before setup".to_owned(),
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
+        };
         if let Err(error) = writer.flush().and_then(|()| writer.get_ref().sync_all()) {
             let evidence_error = EvidenceError::Finalization {
                 detail: format!("evidence record durability: {error}"),
             };
-            self.mark_failure(EvidenceError::Finalization {
-                detail: format!("evidence record durability: {error}"),
-            });
+            Self::mark_failure(&mut state, evidence_error.clone());
             return Err(evidence_error);
         }
-        let json =
-            serde_json::to_string_pretty(manifest).map_err(|e| EvidenceError::Finalization {
-                detail: e.to_string(),
-            })?;
-        let dir =
-            Self::lock(&self.active_dir)
-                .clone()
-                .ok_or_else(|| EvidenceError::Finalization {
-                    detail: "evidence sink used before setup".to_owned(),
-                })?;
+        let json = match serde_json::to_string_pretty(manifest) {
+            Ok(json) => json,
+            Err(error) => {
+                let error = EvidenceError::Finalization {
+                    detail: error.to_string(),
+                };
+                Self::mark_failure(&mut state, error.clone());
+                return Err(error);
+            }
+        };
+        let Some(dir) = state.active_dir.clone() else {
+            let error = EvidenceError::Finalization {
+                detail: "evidence sink used before setup".to_owned(),
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
+        };
         let manifest_path = dir.join(MANIFEST_FILE);
         let temporary_path = dir.join(".manifest.json.tmp");
         let publish = (|| -> std::io::Result<()> {
@@ -245,32 +378,65 @@ impl EvidenceSink for FileEvidenceSink {
             Ok(())
         })();
         if let Err(e) = publish {
-            self.mark_failure(EvidenceError::Finalization {
+            let error = EvidenceError::Finalization {
                 detail: format!("{}: {e}", manifest_path.display()),
-            });
-            return Err(EvidenceError::Finalization {
-                detail: format!("{}: {e}", manifest_path.display()),
-            });
+            };
+            Self::mark_failure(&mut state, error.clone());
+            return Err(error);
         }
-        *Self::lock(&self.manifest) = Some(manifest.clone());
-        *Self::lock(&self.finalized) = true;
-        Self::lock(&self.completed_dirs).push(dir);
+        state.writer = None;
+        state.manifest = Some(manifest.clone());
+        state.phase = FileEvidencePhase::Completed;
+        state.completed_dirs.push(dir);
+        Ok(())
+    }
+
+    fn abandon_run(&self, _outcome: &TerminalOutcome) -> Result<(), EvidenceError> {
+        let mut state = Self::lock(&self.state);
+        if !matches!(
+            state.phase,
+            FileEvidencePhase::Active | FileEvidencePhase::FailedActive
+        ) {
+            let error = EvidenceError::Finalization {
+                detail: "no active evidence run to abandon".to_owned(),
+            };
+            if state.phase != FileEvidencePhase::Completed {
+                Self::mark_failure(&mut state, error.clone());
+            }
+            return Err(error);
+        }
+        state.writer = None;
+        if let Some(dir) = state.active_dir.as_ref() {
+            let temporary_path = dir.join(".manifest.json.tmp");
+            if let Err(error) = std::fs::remove_file(&temporary_path)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                let error = EvidenceError::Finalization {
+                    detail: format!("evidence temporary manifest cleanup: {error}"),
+                };
+                Self::mark_failure(&mut state, error.clone());
+                return Err(error);
+            }
+        }
+        state.manifest = None;
+        state.phase = FileEvidencePhase::Abandoned;
         Ok(())
     }
 }
 
 impl EvidenceRecorder for FileEvidenceSink {
     fn records(&self) -> Vec<EvidenceRecord> {
-        Self::lock(&self.records).clone()
+        Self::lock(&self.state).records.clone()
     }
     fn has_failure(&self) -> bool {
-        Self::lock(&self.failure).is_some()
+        Self::lock(&self.state).failure.is_some()
     }
     fn completed_manifest(&self) -> Option<FinalizedManifest> {
-        if Self::lock(&self.failure).is_some() {
+        let state = Self::lock(&self.state);
+        if state.phase != FileEvidencePhase::Completed {
             return None;
         }
-        Self::lock(&self.manifest).clone()
+        state.manifest.clone()
     }
 }
 
@@ -283,7 +449,7 @@ pub struct EvidenceCapture {
     pub recorder: Arc<dyn EvidenceRecorder>,
     /// Direct-assembly origin retained so a long-lived harness can derive a
     /// fresh binding from current runtime state before every run.
-    pub source: opi_agent::evidence::AssemblySource,
+    pub source: AssemblyIdentity,
     /// The direct runtime-input binding (never ActiveSnapshot for a direct run).
     pub binding: RuntimeInputBinding,
     /// Resolved harness/runtime/adapter/material configuration identity.
@@ -294,8 +460,6 @@ pub struct EvidenceCapture {
     pub system_digest: Option<ContentDigest>,
     /// Exact provider-visible trusted tool definitions frozen at setup.
     pub tool_schema_digests: Vec<ContentDigest>,
-    /// Configured route frozen at setup.
-    pub configured_route: RouteSelection,
     /// Configured run budget frozen at setup.
     pub budget: Measurement,
 }
@@ -306,7 +470,7 @@ pub struct EvidenceBuilderConfig {
     /// The recording sink (also the Agent's evidence sink).
     pub recorder: Arc<dyn EvidenceRecorder>,
     /// Where the direct assembly originated (CLI / SDK / RPC).
-    pub source: opi_agent::evidence::AssemblySource,
+    pub source: AssemblyIdentity,
 }
 
 impl EvidenceCapture {
@@ -315,27 +479,30 @@ impl EvidenceCapture {
     /// material runtime inputs (system prompt, model selection, resolved config)
     /// whose digest addresses the runtime-input binding. Direct assembly always
     /// binds [`RuntimeInputBinding::DirectRuntimeInput`]; it never fabricates an
-    /// `ActiveSnapshot` (P17-EVD-003 / INV-008).
+    /// `ActiveSnapshot`.
     pub fn new(
         recorder: Arc<dyn EvidenceRecorder>,
-        source: opi_agent::evidence::AssemblySource,
+        source: AssemblyIdentity,
         policy_digest: ContentDigest,
         config: ConfigIdentity,
         material_inputs: &str,
     ) -> Self {
-        let binding_digest = runtime_input_digest(source, &policy_digest, &config, material_inputs);
+        let binding_digest =
+            runtime_input_digest(&source, &policy_digest, &config, material_inputs);
         Self {
             recorder,
+            binding: RuntimeInputBinding::direct(binding_digest, source.clone()),
             source,
-            binding: RuntimeInputBinding::direct(binding_digest, source),
             config,
             policy: UserPolicyFacts {
                 policy_digest,
                 capability: None,
+                permission_ref: None,
+                permission_scope: None,
+                scoped_grant_ref: None,
             },
             system_digest: None,
             tool_schema_digests: Vec::new(),
-            configured_route: empty_selection(),
             budget: Measurement::Unknown {
                 reason: UnknownReason::NotReported,
             },
@@ -350,20 +517,18 @@ impl EvidenceCapture {
         material_inputs: &str,
         system_digest: Option<ContentDigest>,
         tool_schema_digests: Vec<ContentDigest>,
-        configured_route: RouteSelection,
         budget: Measurement,
     ) {
         let binding_digest = runtime_input_digest(
-            self.source,
+            &self.source,
             &self.policy.policy_digest,
             &config,
             material_inputs,
         );
-        self.binding = RuntimeInputBinding::direct(binding_digest, self.source);
+        self.binding = RuntimeInputBinding::direct(binding_digest, self.source.clone());
         self.config = config;
         self.system_digest = system_digest;
         self.tool_schema_digests = tool_schema_digests;
-        self.configured_route = configured_route;
         self.budget = budget;
     }
 }
@@ -372,18 +537,14 @@ impl EvidenceCapture {
 /// the assembly source, the effective policy, the resolved configuration
 /// identity, and the material input rendering.
 fn runtime_input_digest(
-    source: opi_agent::evidence::AssemblySource,
+    source: &AssemblyIdentity,
     policy_digest: &ContentDigest,
     config: &ConfigIdentity,
     material_inputs: &str,
 ) -> ContentDigest {
     let mut hasher = sha2::Sha256::new();
     use sha2::Digest;
-    hasher.update(match source {
-        opi_agent::evidence::AssemblySource::Cli => b"cli".as_slice(),
-        opi_agent::evidence::AssemblySource::Sdk => b"sdk".as_slice(),
-        opi_agent::evidence::AssemblySource::Rpc => b"rpc".as_slice(),
-    });
+    hasher.update(source.as_str().as_bytes());
     hasher.update(b"\npolicy:");
     hasher.update(digest_bytes(policy_digest).as_bytes());
     hasher.update(b"\nharness:");
@@ -410,49 +571,37 @@ pub struct RunDynamicFacts {
     pub outcome: TerminalOutcome,
     /// Aggregated provider usage for the run.
     pub usage: UsageFacts,
-    /// Session branch reference, when a session is active.
-    pub session_branch: Option<opi_agent::evidence::SessionBranchRef>,
+    /// Required session branch or explicit non-session binding.
+    pub session: SessionBinding,
     /// Digest of the prompt that drove the run.
     pub prompt_digest: ContentDigest,
-    /// Provider-reported route from the terminal assistant message, when the
-    /// provider reports it.
-    pub actual_route: Option<RouteSelection>,
+    /// Exact product-owned execution trigger.
+    pub trigger: ExecutionTrigger,
 }
 
 /// Assemble the strict [`FinalizedManifest`] from the capture's static facts,
 /// the recorder's ordered records (call-graph correlation + route), and the
-/// run's terminal dynamic facts. The caller runs
-/// [`FinalizedManifest::require_complete`] and `finalize_run` afterwards.
+/// run's terminal dynamic facts. Validation occurs before this function
+/// returns; the caller passes the result to the recorder's `finalize_run`.
 pub fn build_finalized_manifest(
     capture: &EvidenceCapture,
     records: &[EvidenceRecord],
     dynamic: RunDynamicFacts,
-) -> FinalizedManifest {
+) -> Result<FinalizedManifest, EvidenceError> {
     let correlation = terminal_correlation(records);
-    let mut route = extract_route_facts(records);
-    if route.resolved.provider_id.is_empty() || route.resolved.model_id.is_empty() {
-        route.requested = capture.configured_route.clone();
-        route.resolved = capture.configured_route.clone();
-    }
-    if let Some(actual) = dynamic.actual_route {
-        route.actual = actual;
-        route.actual_reason = None;
-    }
+    let provider = extract_provider_facts(records, &dynamic.outcome)?;
     let completeness = if capture_recorder_failed(capture) {
-        opi_agent::evidence::EvidenceCompleteness::Incomplete
+        EvidenceCompleteness::Incomplete
     } else {
-        opi_agent::evidence::EvidenceCompleteness::Complete
+        EvidenceCompleteness::Complete
     };
-    FinalizedManifest {
+    let candidate = ManifestCandidate {
         correlation,
         outcome: dynamic.outcome,
-        session_branch: dynamic.session_branch,
+        session: dynamic.session,
         binding: capture.binding.clone(),
         config: capture.config.clone(),
-        route,
-        // Non-secret provenance extracted from the provider record's resolved
-        // authentication (P17-PRV-005), never assumed Static.
-        provenance: extract_provenance_facts(records),
+        provider,
         policy: capture.policy.clone(),
         input_identity: opi_agent::evidence::InputIdentity {
             prompt_digest: dynamic.prompt_digest,
@@ -461,6 +610,7 @@ pub fn build_finalized_manifest(
         },
         environment: EnvironmentFacts {
             budget: capture.budget,
+            trigger: dynamic.trigger,
             time: Measurement::Unknown {
                 reason: UnknownReason::NotReported,
             },
@@ -471,13 +621,13 @@ pub fn build_finalized_manifest(
         // adapter writes evidence.jsonl + manifest.json, but no separate
         // tool/provider artifact store exists to reference. The `artifacts`
         // field is therefore empty; "emits only finalized classified artifact
-        // references" is a constraint on any future producer (an empty set
-        // satisfies it vacuously), not a requirement to emit.
-        // ArtifactRole/SensitivityClassification/FinalizationState are reserved
-        // for a later artifact-producing task.
+        // references" is a constraint on producers (an empty set satisfies it
+        // vacuously), not a requirement to emit. This adapter does not produce
+        // `ArtifactRole`/`SensitivityClassification`/`FinalizationState` facts.
         artifacts: Vec::new(),
         completeness,
-    }
+    };
+    candidate.validate(EvidenceRunObservation::new(&capture.binding, records, &[]))
 }
 
 fn capture_recorder_failed(capture: &EvidenceCapture) -> bool {
@@ -519,164 +669,52 @@ fn terminal_correlation(records: &[EvidenceRecord]) -> ManifestCorrelation {
     }
 }
 
-/// Parsed shape of a Provider record's redacted route payload.
-#[derive(Deserialize)]
-struct RoutePayload {
-    requested_route: String,
-    resolved: RouteWire,
-    actual: RouteWire,
-    /// Non-secret auth source classification token (`static` / `environment` /
-    /// `credential_store` / `oauth`), absent on records predating 17.7.
-    auth_source: Option<String>,
-    /// Non-secret auth fallback token (`not_attempted` / `used`), absent on
-    /// records predating 17.7.
-    fallback: Option<String>,
-    /// Typed reason the actual route is empty (`not_reported`), absent on
-    /// records predating 17.7.
-    actual_reason: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct RouteWire {
-    provider: String,
-    model: String,
-    wire: opi_ai::WireApi,
-}
-
-/// Extract the requested/resolved/actual route facts from the last Provider
-/// record. Falls back to a resolved-equals-actual route from the resolved
-/// payload when only that is available.
-fn extract_route_facts(records: &[EvidenceRecord]) -> RouteFacts {
-    let provider_payload = records
+/// Consume the last typed provider record directly. Malformed or legacy
+/// structured payloads fail closed rather than defaulting route/provenance.
+/// A compaction-only graph and a run cancelled before provider preparation
+/// carry explicit not-applicable reasons.
+fn extract_provider_facts(
+    records: &[EvidenceRecord],
+    outcome: &TerminalOutcome,
+) -> Result<ProviderInvocationFacts, EvidenceError> {
+    for record in records {
+        record.validate_kind_payload()?;
+    }
+    if let Some(facts) = records
         .iter()
         .rev()
-        .find(|r| r.kind == CallKind::Provider)
-        .and_then(|r| match &r.payload {
-            opi_agent::evidence::EvidencePayload::Structured(rv) => Some(rv.as_value().clone()),
+        .find_map(|record| match &record.payload {
+            EvidencePayload::Provider(facts) => Some(facts),
             _ => None,
-        });
-    let Some(payload) = provider_payload else {
-        return RouteFacts {
-            requested: empty_selection(),
-            resolved: empty_selection(),
-            actual: empty_selection(),
-            actual_reason: Some(opi_agent::evidence::UnknownReason::NotReported),
-        };
-    };
-    match serde_json::from_value::<RoutePayload>(payload) {
-        Ok(parsed) => {
-            let requested = split_spec(&parsed.requested_route, &parsed.resolved);
-            let resolved = selection_from(&parsed.resolved);
-            let actual = selection_from(&parsed.actual);
-            RouteFacts {
-                requested,
-                resolved,
-                actual,
-                actual_reason: actual_reason_from_token(parsed.actual_reason.as_deref()),
-            }
-        }
-        Err(_) => RouteFacts {
-            requested: empty_selection(),
-            resolved: empty_selection(),
-            actual: empty_selection(),
-            actual_reason: Some(opi_agent::evidence::UnknownReason::NotReported),
-        },
+        })
+    {
+        return Ok(ProviderInvocationFacts::applicable(
+            facts.route.clone(),
+            facts.provenance.clone(),
+        ));
     }
-}
-
-/// Map the Provider record's actual-reason token to a typed [`UnknownReason`].
-/// A populated actual route has no reason; a token on an empty actual carries
-/// the reason. Absent on records predating the field.
-fn actual_reason_from_token(token: Option<&str>) -> Option<opi_agent::evidence::UnknownReason> {
-    match token {
-        Some("not_reported") => Some(opi_agent::evidence::UnknownReason::NotReported),
-        Some("withheld") => Some(opi_agent::evidence::UnknownReason::Withheld),
-        Some("pending_finalization") => {
-            Some(opi_agent::evidence::UnknownReason::PendingFinalization)
-        }
-        _ => None,
-    }
-}
-
-/// Extract the non-secret auth source + fallback classification from the last
-/// Provider record (P17-PRV-005). Falls back to a static/unknown provenance when
-/// the record predates the provenance fields or the token is unrecognized.
-fn extract_provenance_facts(records: &[EvidenceRecord]) -> ProvenanceFacts {
-    let provider_payload = records
+    if records
         .iter()
-        .rev()
-        .find(|r| r.kind == CallKind::Provider)
-        .and_then(|r| match &r.payload {
-            opi_agent::evidence::EvidencePayload::Structured(rv) => Some(rv.as_value().clone()),
-            _ => None,
-        });
-    let Some(payload) = provider_payload else {
-        return ProvenanceFacts {
-            auth_source: AuthProvenanceSource::Static,
-            fallback_allowed: None,
-        };
-    };
-    match serde_json::from_value::<RoutePayload>(payload) {
-        Ok(parsed) => ProvenanceFacts {
-            auth_source: auth_source_from_token(parsed.auth_source.as_deref()),
-            fallback_allowed: fallback_allowed_from_token(parsed.fallback.as_deref()),
-        },
-        Err(_) => ProvenanceFacts {
-            auth_source: AuthProvenanceSource::Static,
-            fallback_allowed: None,
-        },
+        .all(|record| record.kind == CallKind::Compaction)
+        && !records.is_empty()
+    {
+        return Ok(ProviderInvocationFacts::not_applicable(
+            ProviderNotApplicableReason::StandaloneCompaction,
+        ));
     }
-}
-
-fn auth_source_from_token(token: Option<&str>) -> AuthProvenanceSource {
-    match token {
-        Some("environment") => AuthProvenanceSource::Environment,
-        Some("credential_store") => AuthProvenanceSource::CredentialStore,
-        Some("oauth") => AuthProvenanceSource::Oauth,
-        _ => AuthProvenanceSource::Static,
+    if matches!(outcome, TerminalOutcome::Cancelled) && !records.is_empty() {
+        return Ok(ProviderInvocationFacts::not_applicable(
+            ProviderNotApplicableReason::CancelledBeforeProvider,
+        ));
     }
-}
-
-fn fallback_allowed_from_token(token: Option<&str>) -> Option<bool> {
-    match token {
-        Some("used") => Some(true),
-        Some("not_attempted") => Some(false),
-        _ => None,
-    }
-}
-
-fn selection_from(w: &RouteWire) -> RouteSelection {
-    RouteSelection {
-        provider_id: w.provider.clone(),
-        model_id: w.model.clone(),
-        wire: w.wire,
-    }
-}
-
-/// Split a `provider:model` spec into a route selection, borrowing the resolved
-/// wire when the request did not name one.
-fn split_spec(spec: &str, resolved: &RouteWire) -> RouteSelection {
-    let (provider, model) = spec
-        .split_once(':')
-        .map(|(p, m)| (p.to_owned(), m.to_owned()))
-        .unwrap_or_else(|| (resolved.provider.clone(), resolved.model.clone()));
-    RouteSelection {
-        provider_id: provider,
-        model_id: model,
-        wire: resolved.wire,
-    }
-}
-
-fn empty_selection() -> RouteSelection {
-    RouteSelection {
-        provider_id: String::new(),
-        model_id: String::new(),
-        wire: opi_ai::WireApi::OpenAiCompletions,
-    }
+    Err(EvidenceError::Finalization {
+        detail: "evidence graph has no typed provider facts and is not standalone compaction"
+            .to_owned(),
+    })
 }
 
 /// Convert an aggregated provider token usage into evidence usage facts.
-/// Unknown stays distinct from a measured zero (P17-EVD-004).
+/// Unknown stays distinct from a measured zero.
 pub fn usage_facts(input_tokens: Option<u64>, output_tokens: Option<u64>) -> UsageFacts {
     UsageFacts {
         input_tokens: measurement(input_tokens),

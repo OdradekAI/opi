@@ -68,6 +68,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::harness::{ProviderAuthFailure, provider_auth_failure};
+
 use opi_agent::agent::AgentControl;
 use opi_agent::diagnostic::Diagnostic;
 use opi_agent::event::AgentEvent;
@@ -158,10 +160,9 @@ impl RpcRunner {
         )
     }
 
-    /// Create a new RPC runner with an optional recording trace sink (Phase 7
-    /// task 7.5). When set, runs are traced and the `trace` command returns the
-    /// versioned redacted envelope; when `None`, `trace` returns a structured
-    /// unsupported error.
+    /// Create a new RPC runner with an optional evidence recorder. When set,
+    /// runs emit ordered redacted evidence records and the `trace` command
+    /// returns them; when `None`, `trace` returns a structured unsupported error.
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_trace(
         provider: Box<dyn Provider>,
@@ -351,12 +352,12 @@ impl RpcRunner {
                 .tool_config(tool_config)
                 .extra_routes(extra_routes)
                 .startup_diagnostics(startup_diagnostics)
-                // Phase 16.9: RPC run mode threaded into ExecutionRuntime::build
+                // Thread the RPC run mode into ExecutionRuntime::build
                 // (cannot be derived from tool_config.run_mode, which collapses
                 // RPC into NonInteractive).
                 .execution_mode(crate::config::ExecutionRunMode::Rpc)
-                // Record runtime diagnostics so run summaries can carry structured
-                // severity counts (Phase 7 task 7.5).
+                // Record runtime diagnostics so run summaries can carry
+                // structured severity counts.
                 .record_diagnostics(true);
         if let Some(auth_resolver) = auth_resolver {
             builder = builder.auth_resolver(auth_resolver);
@@ -376,10 +377,10 @@ impl RpcRunner {
         if let Some(recorder) = trace_sink.clone() {
             builder = builder.evidence(crate::evidence::EvidenceBuilderConfig {
                 recorder,
-                source: opi_agent::evidence::AssemblySource::Rpc,
+                source: crate::evidence::RPC_ASSEMBLY.clone(),
             });
         }
-        let harness = builder.build();
+        let mut harness = builder.build();
         let control = harness.control_handle();
         Ok(Self {
             harness: Some(harness),
@@ -493,7 +494,7 @@ impl RpcRunner {
                 let joined = task.await;
                 // Flush the run's queued events (incl. AgentEnd) BEFORE
                 // emitting the run_summary so the on-wire order is
-                // ...events, AgentEnd, run_summary (Phase 7 task 7.5).
+                // ...events, AgentEnd, run_summary.
                 drain_events(&mut event_rx, &mut emit);
                 if !self.complete_run_task(joined, &mut emit) {
                     return ExitCode::RuntimeFailure as i32;
@@ -584,7 +585,7 @@ impl RpcRunner {
                     let _ = run_task.take();
                     // Flush the run's queued events (incl. AgentEnd) BEFORE
                     // emitting the run_summary so the on-wire order is
-                    // ...events, AgentEnd, run_summary (Phase 7 task 7.5).
+                    // ...events, AgentEnd, run_summary.
                     drain_events(&mut event_rx, &mut emit);
                     if !self.complete_run_task(joined, &mut emit) {
                         return ExitCode::RuntimeFailure as i32;
@@ -662,7 +663,7 @@ impl RpcRunner {
                 if !self.handle_agent_result(result, emit) {
                     return false;
                 }
-                // Phase 7 task 7.5: emit a run-summary event with structured
+                // Emit a run-summary event with structured
                 // diagnostic counts after the run completes. Additive event.
                 if let Some(harness) = self.harness.as_ref()
                     && let Some(counts) = harness.diagnostic_counts()
@@ -876,7 +877,7 @@ impl RpcRunner {
                 if let Some(session) = harness.session() {
                     data["session_id"] = serde_json::Value::String(session.session_id().to_owned());
                 }
-                // Phase 13.4: surface live session metadata (name, labels,
+                // Surface live session metadata (name, labels,
                 // active branch, thinking) alongside the existing fields. The
                 // metadata view is read straight off the session coordinator.
                 if let Some(meta) = harness.session_metadata() {
@@ -898,10 +899,10 @@ impl RpcRunner {
                         "budget_tokens": meta.thinking.budget_tokens,
                     });
                 }
-                // Phase 13.6: surface the reconstructed branch tree so embedders
-                // and Phase 14 can render branch/session pickers without
+                // Surface the reconstructed branch tree so embedders can render
+                // branch/session pickers without
                 // re-parsing JSONL. Summaries are derived from message text, so
-                // they are redacted through Phase 7 `redact_text` (Summary mode)
+                // they are redacted through `redact_text` (Summary mode)
                 // before leaving the process; counts and ids are opaque metadata
                 // and emitted as-is.
                 if harness.session().is_some() {
@@ -1060,7 +1061,6 @@ impl RpcRunner {
         }
 
         let mut harness = self.harness.take().expect("harness checked above");
-        harness.reset_cancel_if_cancelled();
         self.control = harness.control_handle();
         self.running = true;
 
@@ -1081,43 +1081,29 @@ impl RpcRunner {
     ) -> bool {
         match result {
             Ok(_) | Err(AgentError::Cancelled) => true,
-            Err(AgentError::CredentialNeeded { provider_id }) => {
-                let error = AgentError::CredentialNeeded {
-                    provider_id: provider_id.clone(),
-                };
+            Err(error) => {
                 let diagnostic: Diagnostic = (&error).into();
-                emit(&serde_json::json!({
-                    "type": "CredentialNeeded",
-                    "provider_id": provider_id,
-                    "remediation": format!("/login {provider_id}"),
-                    "diagnostic": diagnostic.redacted_payload(RedactionMode::Summary),
-                }))
+                match provider_auth_failure(&error) {
+                    Some(
+                        ProviderAuthFailure::CredentialNeeded(provider_id)
+                        | ProviderAuthFailure::AccountIdMissing(provider_id),
+                    ) => emit(&serde_json::json!({
+                        "type": "CredentialNeeded",
+                        "provider_id": provider_id,
+                        "remediation": format!("/login {provider_id}"),
+                        "diagnostic": diagnostic.redacted_payload(RedactionMode::Summary),
+                    })),
+                    Some(ProviderAuthFailure::CredentialRevoked(provider_id)) => {
+                        emit(&serde_json::json!({
+                            "type": "CredentialRevoked",
+                            "provider_id": provider_id,
+                            "remediation": format!("/login {provider_id}"),
+                            "diagnostic": diagnostic.redacted_payload(RedactionMode::Summary),
+                        }))
+                    }
+                    None => true,
+                }
             }
-            Err(AgentError::CredentialRevoked { provider_id }) => {
-                let error = AgentError::CredentialRevoked {
-                    provider_id: provider_id.clone(),
-                };
-                let diagnostic: Diagnostic = (&error).into();
-                emit(&serde_json::json!({
-                    "type": "CredentialRevoked",
-                    "provider_id": provider_id,
-                    "remediation": format!("/login {provider_id}"),
-                    "diagnostic": diagnostic.redacted_payload(RedactionMode::Summary),
-                }))
-            }
-            Err(AgentError::AccountIdMissing { provider_id }) => {
-                let error = AgentError::AccountIdMissing {
-                    provider_id: provider_id.clone(),
-                };
-                let diagnostic: Diagnostic = (&error).into();
-                emit(&serde_json::json!({
-                    "type": "CredentialNeeded",
-                    "provider_id": provider_id,
-                    "remediation": format!("/login {provider_id}"),
-                    "diagnostic": diagnostic.redacted_payload(RedactionMode::Summary),
-                }))
-            }
-            Err(_) => true,
         }
     }
 }
@@ -1149,8 +1135,8 @@ fn response_error(id: Option<&str>, command: &str, message: &str) -> serde_json:
     serde_json::to_value(SdkResponse::error(id, command, message)).unwrap()
 }
 
-/// Build a structured error response carrying a stable machine-readable code
-/// (Phase 7 task 7.5), e.g. for an unsupported trace request.
+/// Build a structured error response carrying a stable machine-readable code,
+/// e.g. for an unsupported trace request.
 fn response_error_with_code(
     id: Option<&str>,
     command: &str,
@@ -1180,6 +1166,287 @@ fn drain_events(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::ExposeSecret;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    struct CredentialObservingToolProvider {
+        expected_credential: String,
+        tool_path: String,
+        auth_observations: Arc<AtomicUsize>,
+        provider_calls: Arc<AtomicUsize>,
+        saw_tool_result: Arc<AtomicBool>,
+    }
+
+    impl Provider for CredentialObservingToolProvider {
+        fn id(&self) -> &str {
+            "mock"
+        }
+
+        fn models(&self) -> &[opi_ai::provider::ModelInfo] {
+            static MODELS: std::sync::LazyLock<Vec<opi_ai::provider::ModelInfo>> =
+                std::sync::LazyLock::new(|| {
+                    vec![opi_ai::provider::ModelInfo::new(
+                        "mock-model",
+                        "mock-model",
+                        opi_ai::WireApi::OpenAiCompletions,
+                        opi_ai::ModelCapabilities::new(100_000, 4_096),
+                    )]
+                });
+            &MODELS
+        }
+
+        fn stream_prepared(
+            &self,
+            request: opi_ai::provider::Request,
+            auth: opi_ai::auth::ResolvedAuth,
+        ) -> opi_ai::provider::EventStream {
+            assert_eq!(auth.secret.expose_secret(), self.expected_credential);
+            self.auth_observations.fetch_add(1, Ordering::SeqCst);
+            let call = self.provider_calls.fetch_add(1, Ordering::SeqCst);
+            let events = if call == 0 {
+                opi_ai::test_support::tool_call_response(
+                    "writer-read-call",
+                    "read",
+                    &serde_json::json!({ "path": self.tool_path }).to_string(),
+                )
+            } else {
+                if request
+                    .messages
+                    .iter()
+                    .any(|message| matches!(message, opi_ai::message::Message::ToolResult(_)))
+                {
+                    self.saw_tool_result.store(true, Ordering::SeqCst);
+                }
+                opi_ai::test_support::text_response("rpc-writer-terminal-control")
+            };
+            Box::pin(futures_util::stream::iter(events.into_iter().map(Ok)))
+        }
+    }
+
+    struct JsonlWriterScenario {
+        output: String,
+        lines: Vec<serde_json::Value>,
+        auth_observations: usize,
+        provider_calls: usize,
+        saw_tool_result: bool,
+    }
+
+    struct JsonlWriterCanaries<'a> {
+        prompt: &'a str,
+        tool: &'a str,
+        path: &'a str,
+        credential: &'a str,
+    }
+
+    async fn join_run_loop_task<T: Send + 'static>(
+        mut task: tokio::task::JoinHandle<T>,
+        timeout: Duration,
+        label: &str,
+    ) -> Result<T, String> {
+        match tokio::time::timeout(timeout, &mut task).await {
+            Ok(joined) => joined.map_err(|error| format!("{label} task failed: {error}")),
+            Err(_) => {
+                task.abort();
+                let cleanup = match tokio::time::timeout(timeout, &mut task).await {
+                    Ok(Ok(_)) => "task completed while abort was being delivered".to_owned(),
+                    Ok(Err(error)) => format!("task abort join result: {error}"),
+                    Err(_) => format!("abort cleanup did not finish within {timeout:?}"),
+                };
+                Err(format!(
+                    "{label} did not terminate within {timeout:?}; task aborted ({cleanup})"
+                ))
+            }
+        }
+    }
+
+    // opi-phase17-acceptance
+    #[tokio::test]
+    async fn run_loop_join_guard_aborts_and_reports_timeout() {
+        struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
+
+        impl Drop for DropSignal {
+            fn drop(&mut self) {
+                if let Some(signal) = self.0.take() {
+                    let _ = signal.send(());
+                }
+            }
+        }
+
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let _drop_signal = DropSignal(Some(dropped_tx));
+            let _ = started_tx.send(());
+            std::future::pending::<i32>().await
+        });
+        tokio::time::timeout(Duration::from_millis(100), started_rx)
+            .await
+            .expect("pending canary starts")
+            .expect("pending canary reports readiness");
+        let error = tokio::time::timeout(
+            Duration::from_millis(100),
+            join_run_loop_task(task, Duration::from_millis(10), "join-guard canary"),
+        )
+        .await
+        .expect("post-abort cleanup has its own bound")
+        .expect_err("a stalled run_loop task must time out");
+        assert!(
+            error.contains("join-guard canary"),
+            "timeout identifies the stalled run_loop join: {error}"
+        );
+        tokio::time::timeout(Duration::from_millis(100), dropped_rx)
+            .await
+            .expect("aborted pending task is dropped within the bound")
+            .expect("aborted pending task reports that it is no longer live");
+    }
+
+    async fn run_jsonl_writer_scenario(
+        config: OpiConfig,
+        remove_session_before_prompt: bool,
+        terminal_event: &'static str,
+        canaries: JsonlWriterCanaries<'_>,
+    ) -> JsonlWriterScenario {
+        use opi_agent::session::{SessionHeader, SessionWriter};
+
+        let workspace = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        std::fs::write(
+            workspace.path().join(canaries.tool),
+            "rpc-writer-safe-file-control",
+        )
+        .unwrap();
+
+        let session_id = format!("session-{}", canaries.path);
+        let session_path = sessions.path().join(format!("{session_id}.jsonl"));
+        assert!(session_path.to_string_lossy().contains(canaries.path));
+        SessionWriter::create(
+            &session_path,
+            SessionHeader::new(
+                session_id.clone(),
+                "2026-08-20T00:00:00Z".to_owned(),
+                workspace.path().display().to_string(),
+                None,
+            ),
+        )
+        .unwrap();
+        let resume = ResumeInfo {
+            path: session_path.clone(),
+            session_id,
+            entries: Vec::new(),
+            original_cwd: workspace.path().to_path_buf(),
+            diagnostics: Vec::new(),
+            recorded_model: None,
+            recorded_thinking: None,
+        };
+        let auth_observations = Arc::new(AtomicUsize::new(0));
+        let provider_calls = Arc::new(AtomicUsize::new(0));
+        let saw_tool_result = Arc::new(AtomicBool::new(false));
+        let provider = CredentialObservingToolProvider {
+            expected_credential: canaries.credential.to_owned(),
+            tool_path: canaries.tool.to_owned(),
+            auth_observations: auth_observations.clone(),
+            provider_calls: provider_calls.clone(),
+            saw_tool_result: saw_tool_result.clone(),
+        };
+        let mut runner = RpcRunner::new_with_runtime_packages_and_auth(
+            Box::new(provider),
+            "mock:mock-model".to_owned(),
+            config,
+            workspace.path().to_path_buf(),
+            false,
+            ToolSelection::Allowlist(vec!["read".to_owned()]),
+            None,
+            Vec::new(),
+            RuntimePackageStartup {
+                extension_registry: ExtensionRegistry::new(),
+                installed_packages: Vec::new(),
+                diagnostics: Vec::new(),
+                trust_decision: TrustDecision::Trusted,
+            },
+            Some(resume),
+            None,
+            Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::ApiKey,
+                secrecy::SecretString::from(canaries.credential),
+            )),
+            Vec::new(),
+        )
+        .unwrap();
+        if remove_session_before_prompt {
+            std::fs::remove_file(&session_path).unwrap();
+        }
+
+        let (input_tx, input_rx) = tokio::sync::mpsc::unbounded_channel();
+        let jsonl_bytes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let written = jsonl_bytes.clone();
+        let saw_terminal_event = Arc::new(tokio::sync::Notify::new());
+        let terminal_notification = saw_terminal_event.clone();
+        let task = tokio::spawn(async move {
+            runner
+                .run_loop(input_rx, move |value| {
+                    let result = write_jsonl(&mut *written.lock().unwrap(), value).is_ok();
+                    if value["type"] == terminal_event {
+                        terminal_notification.notify_one();
+                    }
+                    result
+                })
+                .await
+        });
+
+        input_tx
+            .send(RpcInput::Command(RpcCommand::prompt {
+                id: Some("writer-prompt-control".to_owned()),
+                message: canaries.prompt.to_owned(),
+            }))
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), saw_terminal_event.notified())
+            .await
+            .unwrap_or_else(|_| panic!("{terminal_event} reaches the production JSONL writer"));
+        input_tx
+            .send(RpcInput::Command(RpcCommand::quit {
+                id: Some("writer-quit-control".to_owned()),
+            }))
+            .unwrap();
+        let exit = join_run_loop_task(task, Duration::from_secs(2), terminal_event)
+            .await
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(exit, ExitCode::Success as i32);
+
+        let bytes = jsonl_bytes.lock().unwrap().clone();
+        assert!(bytes.ends_with(b"\n"));
+        assert!(!bytes.contains(&b'\r'));
+        let output = String::from_utf8(bytes).unwrap();
+        let lines = output
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert!(lines.iter().all(|line| line.is_object()));
+        assert!(lines.iter().any(|line| {
+            line["type"] == "rpc_ready" && line["schema_version"] == RPC_SCHEMA_VERSION
+        }));
+        assert!(lines.iter().any(|line| {
+            line["type"] == "response"
+                && line["command"] == "prompt"
+                && line["id"] == "writer-prompt-control"
+                && line["success"] == true
+        }));
+        assert!(lines.iter().any(|line| {
+            line["type"] == "ToolExecutionEnd"
+                && line["tool_name"] == "read"
+                && line["is_error"] == false
+                && line["result"]
+                    .to_string()
+                    .contains("rpc-writer-safe-file-control")
+        }));
+
+        JsonlWriterScenario {
+            output,
+            lines,
+            auth_observations: auth_observations.load(Ordering::SeqCst),
+            provider_calls: provider_calls.load(Ordering::SeqCst),
+            saw_tool_result: saw_tool_result.load(Ordering::SeqCst),
+        }
+    }
 
     /// Pin the wire values of the RPC runtime-contract failure error codes.
     /// `agent_busy`, `extension_command_not_handled`, and `unsupported_trace_request`
@@ -1206,6 +1473,117 @@ mod tests {
                 parse_rpc_line(line),
                 Some(RpcInput::ParseError(_))
             ));
+        }
+    }
+
+    #[tokio::test]
+    async fn production_jsonl_writer_redacts_real_compaction_event_canaries() {
+        let prompt_canary = "prompt-arbitrary-rpc-compaction";
+        let tool_canary = "tool-arbitrary-rpc-compaction";
+        let path_canary = "path-arbitrary-rpc-compaction";
+        let credential_canary = "credential-arbitrary-rpc-compaction";
+        let mut config = OpiConfig::default();
+        config.compaction.threshold_tokens = 0;
+        let scenario = run_jsonl_writer_scenario(
+            config,
+            false,
+            "CompactionEnd",
+            JsonlWriterCanaries {
+                prompt: prompt_canary,
+                tool: tool_canary,
+                path: path_canary,
+                credential: credential_canary,
+            },
+        )
+        .await;
+
+        assert_eq!(scenario.auth_observations, 2);
+        assert_eq!(scenario.provider_calls, 2);
+        assert!(scenario.saw_tool_result);
+        assert!(scenario.output.contains(prompt_canary));
+        assert!(scenario.output.contains(tool_canary));
+        assert!(scenario.output.contains("rpc-writer-safe-file-control"));
+        assert!(!scenario.output.contains(credential_canary));
+
+        let tool_end_index = scenario
+            .lines
+            .iter()
+            .position(|line| line["type"] == "ToolExecutionEnd")
+            .expect("the real read completes before automatic compaction");
+        let events = scenario
+            .lines
+            .iter()
+            .enumerate()
+            .filter(|line| {
+                matches!(
+                    line.1["type"].as_str(),
+                    Some("CompactionStart" | "CompactionEnd")
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(events.len(), 2);
+        assert!(tool_end_index < events[0].0);
+        assert_eq!(events[0].1["type"], "CompactionStart");
+        assert_eq!(events[0].1["reason"], "threshold");
+        assert_eq!(events[1].1["type"], "CompactionEnd");
+        assert_eq!(events[1].1["reason"], "threshold");
+        assert!(events[1].1["result"]["tokens_before"].is_number());
+        assert_eq!(events[1].1["result"]["summary"], "[REDACTED]");
+        let event_json =
+            serde_json::to_string(&events.iter().map(|(_, event)| event).collect::<Vec<_>>())
+                .unwrap();
+        for canary in [prompt_canary, tool_canary, path_canary, credential_canary] {
+            assert!(!event_json.contains(canary), "event leaked {canary}");
+        }
+    }
+
+    #[tokio::test]
+    async fn production_jsonl_writer_redacts_real_session_persist_event_canaries() {
+        let prompt_canary = "prompt-arbitrary-rpc-persist";
+        let tool_canary = "tool-arbitrary-rpc-persist";
+        let path_canary = "path-arbitrary-rpc-persist";
+        let credential_canary = "credential-arbitrary-rpc-persist";
+        let scenario = run_jsonl_writer_scenario(
+            OpiConfig::default(),
+            true,
+            "SessionPersistError",
+            JsonlWriterCanaries {
+                prompt: prompt_canary,
+                tool: tool_canary,
+                path: path_canary,
+                credential: credential_canary,
+            },
+        )
+        .await;
+
+        assert_eq!(scenario.auth_observations, 2);
+        assert_eq!(scenario.provider_calls, 2);
+        assert!(scenario.saw_tool_result);
+        assert!(scenario.output.contains(prompt_canary));
+        assert!(scenario.output.contains(tool_canary));
+        assert!(scenario.output.contains("rpc-writer-safe-file-control"));
+        assert!(!scenario.output.contains(path_canary));
+        assert!(!scenario.output.contains(credential_canary));
+
+        let tool_end_index = scenario
+            .lines
+            .iter()
+            .position(|line| line["type"] == "ToolExecutionEnd")
+            .expect("the real read completes before session persistence fails");
+        let events = scenario
+            .lines
+            .iter()
+            .enumerate()
+            .filter(|line| line.1["type"] == "SessionPersistError")
+            .collect::<Vec<_>>();
+        assert_eq!(events.len(), 1);
+        assert!(tool_end_index < events[0].0);
+        assert_eq!(events[0].1["message"], "[REDACTED]");
+        let event_json =
+            serde_json::to_string(&events.iter().map(|(_, event)| event).collect::<Vec<_>>())
+                .unwrap();
+        for canary in [prompt_canary, tool_canary, path_canary, credential_canary] {
+            assert!(!event_json.contains(canary), "event leaked {canary}");
         }
     }
 }

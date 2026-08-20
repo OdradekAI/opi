@@ -18,15 +18,17 @@ use crate::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
     BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
 };
-use crate::loop_types::{AgentError, AgentLoopConfig, AgentLoopContext, NextTurnState};
+use crate::loop_types::{
+    AgentError, AgentLoopConfig, AgentLoopContext, NextTurnState, validate_next_turn_candidate,
+};
 use crate::message::AgentMessage;
 use crate::tool::{ExecutionMode, ToolDiagnostic, ToolResult};
 use crate::validation;
 
 /// Run the agent loop until completion or cancellation.
 ///
-/// Phase 17.2: the loop operates on one complete [`NextTurnState`] (context,
-/// canonical provider:model selection, inference) owned durably by the Agent.
+/// The loop operates on one complete [`NextTurnState`] (context, canonical
+/// provider:model selection, inference) owned durably by the Agent.
 /// Each turn prepares one logical model call through the registered
 /// [`opi_ai::ProviderCollection`] (route lookup + auth resolution + validation) before
 /// the retry loop, then opens every sequential attempt from that same opaque
@@ -36,8 +38,8 @@ use crate::validation;
 /// the applied state before any steering/follow-up polling.
 ///
 /// When `context.evidence_sink` is `Some`, the loop emits ordered, redacted
-/// evidence records (provider/tool/retry) over stable run/turn/call identities
-/// (Phase 17.6). An emission failure advances the run's versioned evidence
+/// evidence records (provider/tool/retry) over stable run/turn/call identities.
+/// An emission failure advances the run's versioned evidence
 /// health (fail-open for the run; the authorizer then fails closed under a
 /// complete-evidence policy). Evidence setup and run finalization are the
 /// caller's responsibility.
@@ -47,20 +49,121 @@ pub async fn agent_loop(
     hooks: &dyn AgentHooks,
     events: AgentEventSink,
     cancel: CancellationToken,
-) -> Result<NextTurnState, AgentError> {
-    let (state, _) = agent_loop_with_identities(context, config, hooks, events, cancel).await?;
-    Ok(state)
+) -> AgentLoopResult {
+    let events = crate::event::redacting_event_sink(events);
+    agent_loop_with_identities(context, config, hooks, events, cancel).await
 }
 
-/// Loop entry that also returns the run's identity allocator, so the Agent can
-/// persist it for post-run compaction correlation (P17-EVD-002).
+/// Complete core-owned result of one low-level loop execution.
+///
+/// The actual state, terminal outcome, and final evidence health remain
+/// composable even when execution fails. Discarding this value would also
+/// discard evidence-health and uncertain-side-effect truth.
+///
+/// ```compile_fail
+/// #![deny(unused_must_use)]
+/// use opi_agent::AgentLoopResult;
+/// fn result() -> AgentLoopResult { unimplemented!() }
+/// fn discard() { result(); }
+/// ```
+#[must_use = "inspect execution outcome and evidence health before discarding a loop result"]
+pub struct AgentLoopResult {
+    pub(crate) state: NextTurnState,
+    pub(crate) identities: crate::evidence::IdentityAllocator,
+    pub(crate) evidence_health: crate::evidence::EvidenceHealth,
+    pub(crate) terminal_outcome: crate::evidence::TerminalOutcome,
+    pub(crate) error: Option<AgentError>,
+}
+
+impl std::fmt::Debug for AgentLoopResult {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AgentLoopResult")
+            .field("state", &self.state)
+            .field("error", &self.error)
+            .field("terminal_outcome", &self.terminal_outcome)
+            .field("evidence_health", &self.evidence_health)
+            .finish_non_exhaustive()
+    }
+}
+
+impl AgentLoopResult {
+    /// State retained at the loop boundary, including any actual terminal tool
+    /// result produced before a partial-side-effect or cleanup-unknown error.
+    pub fn state(&self) -> &NextTurnState {
+        &self.state
+    }
+
+    /// The owning execution error, if the loop did not complete normally.
+    pub fn error(&self) -> Option<&AgentError> {
+        self.error.as_ref()
+    }
+
+    /// Exact terminal execution outcome.
+    pub fn terminal_outcome(&self) -> &crate::evidence::TerminalOutcome {
+        &self.terminal_outcome
+    }
+
+    /// Final core-owned evidence-health snapshot.
+    pub fn evidence_health(&self) -> &crate::evidence::EvidenceHealth {
+        &self.evidence_health
+    }
+
+    /// Consume the lifecycle result into the traditional execution result.
+    pub fn into_execution_result(self) -> Result<NextTurnState, AgentError> {
+        match self.error {
+            Some(error) => Err(error),
+            None => Ok(self.state),
+        }
+    }
+}
+
+pub(crate) fn terminal_outcome_for_error(error: &AgentError) -> crate::evidence::TerminalOutcome {
+    match error {
+        AgentError::Cancelled | AgentError::Tool(crate::tool::ToolError::Cancelled) => {
+            crate::evidence::TerminalOutcome::Cancelled
+        }
+        AgentError::Tool(crate::tool::ToolError::PartialSideEffect(_)) => {
+            crate::evidence::TerminalOutcome::PartialSideEffect
+        }
+        AgentError::Tool(crate::tool::ToolError::CleanupUnknown(_)) => {
+            crate::evidence::TerminalOutcome::CleanupUnknown
+        }
+        AgentError::Provider(_)
+        | AgentError::InvalidArmedRun
+        | AgentError::InvalidModelSpec { .. }
+        | AgentError::UnknownProvider { .. }
+        | AgentError::UnknownModel { .. }
+        | AgentError::AuthFailed(_)
+        | AgentError::CredentialNeeded { .. }
+        | AgentError::CredentialRevoked { .. }
+        | AgentError::AccountIdMissing { .. }
+        | AgentError::Hook(_)
+        | AgentError::Tool(crate::tool::ToolError::ExecutionFailed(_))
+        | AgentError::MaxTurnsExceeded(_)
+        | AgentError::EvidenceSetup(_)
+        | AgentError::EvidenceFinalization(_)
+        | AgentError::SessionResume(_)
+        | AgentError::SessionPersist(_)
+        | AgentError::RouteNotDispatchable { .. }
+        | AgentError::RequestRouteMismatch { .. }
+        | AgentError::CredentialTerminated { .. }
+        | AgentError::AttemptAlreadyActive
+        | AgentError::ProviderProtocol { .. }
+        | AgentError::InvalidNextTurnCandidate(_)
+        | AgentError::InvalidToolRegistration(_) => crate::evidence::TerminalOutcome::Failed,
+    }
+}
+
+/// Loop entry that also returns the run's identity allocator and final
+/// evidence health for post-loop lifecycle work.
 pub(crate) async fn agent_loop_with_identities(
     context: AgentLoopContext,
     config: AgentLoopConfig,
     hooks: &dyn AgentHooks,
     events: AgentEventSink,
     cancel: CancellationToken,
-) -> Result<(NextTurnState, crate::evidence::IdentityAllocator), AgentError> {
+) -> AgentLoopResult {
     // Clone the sink/collector/collection handles up front (before any partial
     // move out of `context`) so every failure path below can record an
     // observation and prepare the next route. `None` means emission is disabled
@@ -76,30 +179,86 @@ pub(crate) async fn agent_loop_with_identities(
     // One identity allocator per run mints opaque, non-reused run/turn/call
     // identities and a monotonic run-local sequence. Identities are minted
     // immediately before the corresponding lifecycle evidence is emitted, so
-    // correlation precedes any external effect (P17-EVD-001, Phase 17.6).
+    // correlation precedes any external effect.
     let mut identities = crate::evidence::IdentityAllocator::new();
     let run = identities.run_id();
     let mut state = context.state;
+
+    macro_rules! finish_with_error {
+        ($error:expr) => {{
+            let error = $error;
+            if matches!(&error, AgentError::Cancelled) {
+                let diagnostic_call = identities.next_call();
+                emit_evidence(
+                    &evidence_sink,
+                    &mut identities,
+                    &mut evidence_health,
+                    run,
+                    None,
+                    diagnostic_call,
+                    None,
+                    crate::evidence::CallKind::Diagnostic,
+                    crate::evidence::EvidencePayload::Diagnostic(
+                        crate::evidence::RedactedDiagnostic {
+                            severity: Severity::Info,
+                            code: CODE_AGENT_CANCELLED,
+                        },
+                    ),
+                );
+            }
+            return AgentLoopResult {
+                state,
+                identities,
+                evidence_health,
+                terminal_outcome: terminal_outcome_for_error(&error),
+                error: Some(error),
+            };
+        }};
+    }
+
+    macro_rules! finish_success {
+        () => {{
+            return AgentLoopResult {
+                state,
+                identities,
+                evidence_health,
+                terminal_outcome: crate::evidence::TerminalOutcome::Success,
+                error: None,
+            };
+        }};
+    }
 
     emit_public_event(&events, AgentEvent::AgentStart);
 
     let mut has_tools_pending = false;
     for turn_idx in 0..config.max_turns {
-        let turn_id = format!("t{turn_idx}");
         let turn = identities.next_turn();
         if cancel.is_cancelled() {
             observe(&diagnostic_sink, cancelled_diagnostic("before_turn"));
             emit_agent_end(&events, &state.context);
-            return Err(AgentError::Cancelled);
+            finish_with_error!(AgentError::Cancelled);
         }
 
         emit_public_event(&events, AgentEvent::TurnStart);
 
-        let transformed = hooks
+        let transformed = match hooks
             .transform_context(state.context.clone(), cancel.clone())
-            .await?;
+            .await
+        {
+            Ok(transformed) => transformed,
+            Err(error) => {
+                emit_agent_end(&events, &state.context);
+                finish_with_error!(error);
+            }
+        };
 
-        let llm_messages = hooks.convert_to_llm(&transformed)?;
+        let llm_messages = match hooks.convert_to_llm(&transformed) {
+            Ok(messages) => messages,
+            Err(error) => {
+                emit_agent_end(&events, &state.context);
+                finish_with_error!(error);
+            }
+        };
 
         let mut assistant_content: Vec<AssistantContent> = Vec::new();
         has_tools_pending = false;
@@ -111,10 +270,10 @@ pub(crate) async fn agent_loop_with_identities(
         // the request is not rebuilt inside the retry loop.
         let tool_defs = registry.definitions();
         let request = Request {
-            model: state.model_selection.model_id.clone(),
+            model: state.model_selection.to_spec(),
             system: context.system.clone(),
-            messages: llm_messages.clone(),
-            tools: tool_defs.clone(),
+            messages: llm_messages,
+            tools: tool_defs,
             max_tokens: state.inference.max_tokens,
             temperature: state.inference.temperature,
             thinking: state.inference.thinking.clone(),
@@ -137,9 +296,51 @@ pub(crate) async fn agent_loop_with_identities(
         {
             Ok(prepared) => prepared,
             Err(e) => {
-                let err = map_collection_error(e);
+                let err = AgentError::from(e);
+                if matches!(&err, AgentError::Cancelled) {
+                    observe(&diagnostic_sink, cancelled_diagnostic("during_prepare"));
+                    emit_agent_end(&events, &state.context);
+                    finish_with_error!(err);
+                }
                 let diagnostic: Diagnostic = (&err).into();
-                let provider_call = identities.next_call();
+                let diagnostic_call = identities.next_call();
+                emit_evidence(
+                    &evidence_sink,
+                    &mut identities,
+                    &mut evidence_health,
+                    run,
+                    Some(turn),
+                    diagnostic_call,
+                    None,
+                    crate::evidence::CallKind::Diagnostic,
+                    crate::evidence::EvidencePayload::Diagnostic(
+                        crate::evidence::RedactedDiagnostic {
+                            severity: diagnostic.severity,
+                            code: diagnostic.code,
+                        },
+                    ),
+                );
+                observe_provider_failure(&diagnostic_sink, diagnostic);
+                emit_agent_end(&events, &state.context);
+                finish_with_error!(err);
+            }
+        };
+
+        // The prepared call resolves the one immutable provider route reused
+        // across retries. Allocate its call identity and emit a Provider record
+        // carrying the requested/resolved route facts. The actual route is
+        // provider-reported and only known after
+        // the response; the pre-dispatch record marks it unknown rather than
+        // copying `resolved`, so a real divergence (if the provider ever reports
+        // a different model/wire) is not silently normalized away.
+        let resolved_route = prepared.route();
+        let provider_call = identities.next_call();
+        let mut provider_evidence = match crate::evidence::ProviderEvidenceFacts::from_prepared(
+            &state.model_selection.to_spec(),
+            resolved_route,
+            prepared.auth_provenance(),
+        ) {
+            Ok(facts) => {
                 emit_evidence(
                     &evidence_sink,
                     &mut identities,
@@ -149,69 +350,24 @@ pub(crate) async fn agent_loop_with_identities(
                     provider_call,
                     None,
                     crate::evidence::CallKind::Provider,
-                    crate::evidence::EvidencePayload::Diagnostic(
-                        crate::evidence::RedactedDiagnostic {
-                            severity: diagnostic.severity,
-                            code: diagnostic.code,
-                        },
-                    ),
+                    crate::evidence::EvidencePayload::Provider(facts.clone()),
                 );
-                observe_provider_failure(&diagnostic_sink, &err, &turn_id);
-                emit_agent_end(&events, &state.context);
-                return Err(err);
+                Some(facts)
             }
+            Err(_) if evidence_sink.is_some() => {
+                // A malformed fact must not be normalized into configured or
+                // default provenance. Mark capture incomplete before dispatch;
+                // complete-evidence policy will reject later side effects.
+                evidence_health.advance_on_failure(crate::evidence::EvidenceFailureCode::Emission);
+                None
+            }
+            Err(_) => None,
         };
-
-        // The prepared call resolves the one immutable provider route reused
-        // across retries. Allocate its call identity and emit a Provider record
-        // carrying the requested/resolved route facts (P17-EVD-002 / P17-PRV-005,
-        // Phase 17.6). The actual route is provider-reported and only known after
-        // the response; the pre-dispatch record marks it unknown rather than
-        // copying `resolved`, so a real divergence (if the provider ever reports
-        // a different model/wire) is not silently normalized away (P17-EVD-004).
-        let resolved_route = prepared.route();
-        let provider_call = identities.next_call();
-        emit_evidence(
-            &evidence_sink,
-            &mut identities,
-            &mut evidence_health,
-            run,
-            Some(turn),
-            provider_call,
-            None,
-            crate::evidence::CallKind::Provider,
-            crate::evidence::EvidencePayload::Structured(crate::evidence::RedactedValue::redacted(
-                json!({
-                    "requested_route": state.model_selection.to_spec(),
-                    "resolved": {
-                        "provider": resolved_route.provider_id,
-                        "model": resolved_route.model_id,
-                        "wire": resolved_route.wire_api,
-                    },
-                    "actual": {
-                        "provider": "",
-                        "model": "",
-                        "wire": resolved_route.wire_api,
-                    },
-                    // The actual route is provider-reported and only known after
-                    // the response; the pre-dispatch record carries a typed
-                    // not-reported reason rather than a bare empty.
-                    "actual_reason": "not_reported",
-                    // Non-secret auth source + fallback classification from the
-                    // resolved authentication (P17-PRV-005): the manifest must
-                    // distinguish the real source instead of assuming Static.
-                    "auth_source": auth_source_token(&prepared.auth_provenance().source),
-                    "fallback": auth_fallback_token(&prepared.auth_provenance().fallback),
-                }),
-                crate::diagnostic::RedactionMode::Summary,
-            )),
-        );
 
         // Outcome of the turn's provider/tool work, collected inside the stream
         // loop and consumed by the post-stream finalize → prepare → stop path.
         let mut turn_tool_results: Vec<ToolResultMessage> = Vec::new();
         let mut turn_terminate = false;
-        let terminal_assistant: AgentMessage;
 
         'stream: loop {
             let mut stream = match prepared.start_attempt() {
@@ -219,13 +375,14 @@ pub(crate) async fn agent_loop_with_identities(
                 Err(CollectionError::CallCancelled) => {
                     observe(&diagnostic_sink, cancelled_diagnostic("during_prepare"));
                     emit_agent_end(&events, &state.context);
-                    return Err(AgentError::Cancelled);
+                    finish_with_error!(AgentError::Cancelled);
                 }
                 Err(e) => {
-                    let err = map_collection_error(e);
-                    observe_provider_failure(&diagnostic_sink, &err, &turn_id);
+                    let err = AgentError::from(e);
+                    let diagnostic = Diagnostic::from(&err);
+                    observe_provider_failure(&diagnostic_sink, diagnostic);
                     emit_agent_end(&events, &state.context);
-                    return Err(err);
+                    finish_with_error!(err);
                 }
             };
             assistant_content.clear();
@@ -233,7 +390,7 @@ pub(crate) async fn agent_loop_with_identities(
             // for this attempt. Once content has been emitted to the caller, a
             // subsequent mid-stream retryable error must NOT trigger a retry:
             // re-invoking the provider would emit a second Start plus duplicated
-            // content. (Phase 12 task 12.7 DoD clause 5.)
+            // content.
             let mut stream_delivered_content = false;
 
             while let Some(item) = {
@@ -245,7 +402,7 @@ pub(crate) async fn agent_loop_with_identities(
                             cancelled_diagnostic("during_stream"),
                         );
                         emit_agent_end(&events, &state.context);
-                        return Err(AgentError::Cancelled);
+                        finish_with_error!(AgentError::Cancelled);
                     }
                     item = stream.next() => item,
                 }
@@ -271,6 +428,45 @@ pub(crate) async fn agent_loop_with_identities(
 
                             state.context.push(agent_msg.clone());
 
+                            if let (
+                                Some(provider_evidence),
+                                AgentMessage::Llm(Message::Assistant(assistant)),
+                            ) = (provider_evidence.take(), &agent_msg)
+                            {
+                                let actual_model = assistant
+                                    .response_model
+                                    .as_deref()
+                                    .unwrap_or(&assistant.model);
+                                let actual =
+                                    crate::evidence::ActualRoute::from_reported_provider_model(
+                                        assistant.provider.clone(),
+                                        actual_model.to_owned(),
+                                        crate::evidence::UnknownReason::NotReported,
+                                    );
+                                match actual {
+                                    Ok(actual) => {
+                                        emit_evidence(
+                                            &evidence_sink,
+                                            &mut identities,
+                                            &mut evidence_health,
+                                            run,
+                                            Some(turn),
+                                            provider_call,
+                                            None,
+                                            crate::evidence::CallKind::Provider,
+                                            crate::evidence::EvidencePayload::Provider(
+                                                provider_evidence.with_actual(actual),
+                                            ),
+                                        );
+                                    }
+                                    Err(_) if evidence_sink.is_some() => evidence_health
+                                        .advance_on_failure(
+                                            crate::evidence::EvidenceFailureCode::Emission,
+                                        ),
+                                    Err(_) => {}
+                                }
+                            }
+
                             let content = match &agent_msg {
                                 AgentMessage::Llm(Message::Assistant(a)) => &a.content,
                                 _ => &Vec::new(),
@@ -289,14 +485,14 @@ pub(crate) async fn agent_loop_with_identities(
                                 has_tools_pending = true;
                                 // Pre-mint one Tool call identity per proposed tool call,
                                 // before any executes, so correlation precedes the tool's
-                                // external effect (P17-EVD-001/002, Phase 17.6).
+                                // external effect.
                                 let tool_call_ids: Vec<crate::evidence::CallId> = (0..tool_calls
                                     .len())
                                     .map(|_| identities.next_call())
                                     .collect();
                                 let mut tool_results = Vec::new();
-                                let mut tool_decisions: Vec<Option<Authorized>> = Vec::new();
                                 let mut terminate_flags = Vec::new();
+                                let mut tool_terminal_error = None;
 
                                 let batch_is_sequential = tool_calls.iter().any(|tc| {
                                     registry
@@ -317,13 +513,11 @@ pub(crate) async fn agent_loop_with_identities(
                                             AgentEvent::ToolExecutionStart {
                                                 tool_call_id: parsed.tool_call.id.clone(),
                                                 tool_name: parsed.tool_call.name.clone(),
-                                                args: crate::diagnostic::redact_public_value(
-                                                    &parsed.args_for_event,
-                                                ),
+                                                args: parsed.args_for_event.clone(),
                                             },
                                         );
 
-                                        let (result, auth_decision) = match parsed.parsed_args {
+                                        let executed = match parsed.parsed_args {
                                             Ok(args) => {
                                                 let mut tool_evidence = ToolEvidenceContext {
                                                     sink: &evidence_sink,
@@ -332,8 +526,11 @@ pub(crate) async fn agent_loop_with_identities(
                                                     turn,
                                                     call: tool_call_ids[tool_index],
                                                     parent: provider_call,
+                                                    invocation: invocation_binding(
+                                                        &invocation_context,
+                                                    ),
                                                 };
-                                                execute_tool(
+                                                match execute_tool(
                                                     &parsed.tool_call.id,
                                                     &parsed.tool_call.name,
                                                     &args,
@@ -351,17 +548,43 @@ pub(crate) async fn agent_loop_with_identities(
                                                     &diagnostic_sink,
                                                 )
                                                 .await
+                                                {
+                                                    Ok(result) => result,
+                                                    Err(err) => {
+                                                        if matches!(err, AgentError::Cancelled) {
+                                                            observe(
+                                                                &diagnostic_sink,
+                                                                cancelled_diagnostic(
+                                                                    "during_tool_preflight",
+                                                                ),
+                                                            );
+                                                            emit_agent_end(&events, &state.context);
+                                                        }
+                                                        finish_with_error!(err);
+                                                    }
+                                                }
                                             }
-                                            Err(parse_error) => (
+                                            Err(parse_error) => ExecutedTool::ordinary(
                                                 malformed_tool_arguments_result(
                                                     &parsed.tool_call.name,
                                                     &parse_error,
                                                     &diagnostic_sink,
-                                                    &turn_id,
                                                 ),
-                                                None,
                                             ),
                                         };
+
+                                        let ExecutedTool {
+                                            result,
+                                            outcome,
+                                            terminal_error,
+                                        } = executed;
+                                        let stops_sequential_batch = terminal_error.is_some();
+                                        if let Some(error) = terminal_error {
+                                            retain_strongest_terminal_error(
+                                                &mut tool_terminal_error,
+                                                error,
+                                            );
+                                        }
 
                                         let is_error = result.is_error;
                                         let truncated = result.truncated;
@@ -395,18 +618,36 @@ pub(crate) async fn agent_loop_with_identities(
                                             turn,
                                             call: tool_call_ids[tool_index],
                                             parent: provider_call,
+                                            invocation: invocation_binding(&invocation_context),
                                         };
                                         emit_tool_outcome_evidence(
                                             &mut tool_evidence,
                                             &mut evidence_health,
                                             &registry,
                                             &trm,
+                                            outcome,
                                         );
                                         tool_results.push(trm.clone());
-                                        tool_decisions.push(auth_decision);
                                         state
                                             .context
                                             .push(AgentMessage::Llm(Message::ToolResult(trm)));
+                                        if stops_sequential_batch {
+                                            // The remaining source-ordered calls never cross
+                                            // preflight or execution after cancellation or an
+                                            // uncertain external effect. Controlled results keep
+                                            // the assistant/tool-result structure complete without
+                                            // fabricating execution evidence for calls that did not
+                                            // launch.
+                                            for skipped in tool_calls.iter().skip(tool_index + 1) {
+                                                let skipped =
+                                                    skipped_after_terminal_result(skipped);
+                                                tool_results.push(skipped.clone());
+                                                state.context.push(AgentMessage::Llm(
+                                                    Message::ToolResult(skipped),
+                                                ));
+                                            }
+                                            break;
+                                        }
                                     }
                                 } else {
                                     let parsed_calls: Vec<_> = tool_calls
@@ -418,68 +659,165 @@ pub(crate) async fn agent_loop_with_identities(
                                                 AgentEvent::ToolExecutionStart {
                                                     tool_call_id: parsed.tool_call.id.clone(),
                                                     tool_name: parsed.tool_call.name.clone(),
-                                                    args: crate::diagnostic::redact_public_value(
-                                                        &parsed.args_for_event,
-                                                    ),
+                                                    args: parsed.args_for_event.clone(),
                                                 },
                                             );
                                             parsed
                                         })
                                         .collect();
 
-                                    let futures: Vec<_> = parsed_calls
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(tool_index, parsed)| {
-                                            let registry = registry.clone();
-                                            let authorizer = authorizer.clone();
-                                            let evidence_health = evidence_health.clone();
-                                            let messages = &state.context;
-                                            let cancel = cancel.clone();
-                                            let diagnostic_sink = diagnostic_sink.clone();
-                                            let turn_id = turn_id.clone();
-                                            let invocation_context = invocation_context.clone();
-                                            let evidence_call_id = tool_call_ids[tool_index];
-                                            async move {
-                                                let mut evidence_health = evidence_health;
-                                                match parsed.parsed_args.clone() {
-                                                    Ok(args) => {
-                                                        execute_tool(
-                                                            &parsed.tool_call.id,
-                                                            &parsed.tool_call.name,
-                                                            &args,
-                                                            run,
-                                                            turn,
-                                                            evidence_call_id,
-                                                            invocation_context,
-                                                            &registry,
-                                                            authorizer.as_ref(),
-                                                            &mut evidence_health,
-                                                            None,
-                                                            hooks,
-                                                            messages,
-                                                            cancel,
-                                                            &diagnostic_sink,
-                                                        )
-                                                        .await
-                                                    }
-                                                    Err(parse_error) => (
-                                                        malformed_tool_arguments_result(
-                                                            &parsed.tool_call.name,
-                                                            &parse_error,
-                                                            &diagnostic_sink,
-                                                            &turn_id,
-                                                        ),
-                                                        None,
+                                    // Resolve, hook, schema-check, authorize, emit, and
+                                    // freshness-check every call in deterministic source
+                                    // order before any parallel launch. Call-local rejections
+                                    // retain their results; evidence/freshness invalidation
+                                    // aborts the entire not-yet-launched batch.
+                                    let mut preflights = Vec::with_capacity(parsed_calls.len());
+                                    for (tool_index, parsed) in parsed_calls.iter().enumerate() {
+                                        let preflight = match &parsed.parsed_args {
+                                            Ok(args) => {
+                                                let mut tool_evidence = ToolEvidenceContext {
+                                                    sink: &evidence_sink,
+                                                    identities: &mut identities,
+                                                    run,
+                                                    turn,
+                                                    call: tool_call_ids[tool_index],
+                                                    parent: provider_call,
+                                                    invocation: invocation_binding(
+                                                        &invocation_context,
                                                     ),
+                                                };
+                                                match preflight_tool(
+                                                    &parsed.tool_call.id,
+                                                    &parsed.tool_call.name,
+                                                    args,
+                                                    run,
+                                                    turn,
+                                                    tool_call_ids[tool_index],
+                                                    invocation_context.clone(),
+                                                    &registry,
+                                                    authorizer.as_ref(),
+                                                    &mut evidence_health,
+                                                    Some(&mut tool_evidence),
+                                                    hooks,
+                                                    &state.context,
+                                                    cancel.clone(),
+                                                    &diagnostic_sink,
+                                                )
+                                                .await
+                                                {
+                                                    Ok(preflight) => preflight,
+                                                    Err(err) => {
+                                                        if matches!(err, AgentError::Cancelled) {
+                                                            observe(
+                                                                &diagnostic_sink,
+                                                                cancelled_diagnostic(
+                                                                    "during_tool_preflight",
+                                                                ),
+                                                            );
+                                                            emit_agent_end(&events, &state.context);
+                                                        }
+                                                        finish_with_error!(err);
+                                                    }
                                                 }
                                             }
-                                        })
-                                        .collect();
-                                    let results = futures_util::future::join_all(futures).await;
-                                    for (parsed, (result, auth_decision)) in
-                                        parsed_calls.iter().zip(results)
+                                            Err(parse_error) => ToolPreflight::Rejected(
+                                                malformed_tool_arguments_result(
+                                                    &parsed.tool_call.name,
+                                                    parse_error,
+                                                    &diagnostic_sink,
+                                                ),
+                                            ),
+                                        };
+                                        preflights.push(preflight);
+                                    }
+
+                                    let launch_generation = evidence_health.generation();
+                                    let batch_is_invalid = preflights.iter().any(|preflight| {
+                                        matches!(preflight, ToolPreflight::BatchInvalid(_))
+                                            || matches!(
+                                                preflight,
+                                                ToolPreflight::Ready(prepared)
+                                                    if prepared.evidence_health_generation
+                                                        != launch_generation
+                                            )
+                                    });
+
+                                    if cancel.is_cancelled() {
+                                        observe(
+                                            &diagnostic_sink,
+                                            cancelled_diagnostic("before_parallel_tool_launch"),
+                                        );
+                                        emit_agent_end(&events, &state.context);
+                                        finish_with_error!(AgentError::Cancelled);
+                                    }
+
+                                    let results = if !batch_is_invalid {
+                                        let futures = preflights.into_iter().zip(&parsed_calls).map(
+                                            |(preflight, parsed)| {
+                                                let registry = registry.clone();
+                                                let cancel = cancel.clone();
+                                                let diagnostic_sink = diagnostic_sink.clone();
+                                                async move {
+                                                    match preflight {
+                                                        ToolPreflight::Ready(prepared) => {
+                                                            execute_prepared_tool(
+                                                                &parsed.tool_call.id,
+                                                                &parsed.tool_call.name,
+                                                                prepared,
+                                                                &registry,
+                                                                hooks,
+                                                                cancel,
+                                                                &diagnostic_sink,
+                                                            )
+                                                            .await
+                                                        }
+                                                        ToolPreflight::Rejected(result) => {
+                                                            ExecutedTool::ordinary(result)
+                                                        }
+                                                        ToolPreflight::BatchInvalid(_) => {
+                                                            unreachable!(
+                                                                "valid parallel batch contains no batch-invalid call"
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                        );
+                                        futures_util::future::join_all(futures).await
+                                    } else {
+                                        preflights
+                                            .into_iter()
+                                            .map(|preflight| match preflight {
+                                                ToolPreflight::Ready(_) => ExecutedTool::ordinary(
+                                                    denial_result(
+                                                        "parallel_preflight_aborted",
+                                                        "parallel tool batch failed preflight; execution denied",
+                                                    ),
+                                                ),
+                                                ToolPreflight::Rejected(result) => {
+                                                    ExecutedTool::ordinary(result)
+                                                }
+                                                ToolPreflight::BatchInvalid(result) => {
+                                                    ExecutedTool::ordinary(result)
+                                                }
+                                            })
+                                            .collect()
+                                    };
+
+                                    for (tool_index, (parsed, executed)) in
+                                        parsed_calls.iter().zip(results).enumerate()
                                     {
+                                        let ExecutedTool {
+                                            result,
+                                            outcome,
+                                            terminal_error,
+                                        } = executed;
+                                        if let Some(error) = terminal_error {
+                                            retain_strongest_terminal_error(
+                                                &mut tool_terminal_error,
+                                                error,
+                                            );
+                                        }
                                         let is_error = result.is_error;
                                         let truncated = result.truncated;
                                         terminate_flags.push(result.terminate);
@@ -504,66 +842,26 @@ pub(crate) async fn agent_loop_with_identities(
                                             truncated,
                                             timestamp_ms: opi_ai::time::now_ms(),
                                         };
+                                        let mut tool_evidence = ToolEvidenceContext {
+                                            sink: &evidence_sink,
+                                            identities: &mut identities,
+                                            run,
+                                            turn,
+                                            call: tool_call_ids[tool_index],
+                                            parent: provider_call,
+                                            invocation: invocation_binding(&invocation_context),
+                                        };
+                                        emit_tool_outcome_evidence(
+                                            &mut tool_evidence,
+                                            &mut evidence_health,
+                                            &registry,
+                                            &trm,
+                                            outcome,
+                                        );
                                         tool_results.push(trm.clone());
-                                        tool_decisions.push(auth_decision);
                                         state
                                             .context
                                             .push(AgentMessage::Llm(Message::ToolResult(trm)));
-                                    }
-                                }
-
-                                // Emit one Tool record per executed tool call, parented to
-                                // the provider call that produced it. Identities were pre-
-                                // minted before execution; sequence is assigned here in call
-                                // order (P17-EVD-002, Phase 17.6).
-                                if !batch_is_sequential {
-                                    for ((trm, call_id), decision) in
-                                        tool_results.iter().zip(&tool_call_ids).zip(&tool_decisions)
-                                    {
-                                        // Re-resolve the trusted registration for the tool's
-                                        // authorization identity facts (registration id +
-                                        // capability) and attach the authorization outcome the
-                                        // 17.4 chain resolved (Allow / Deny:<code>) (Phase 17.6).
-                                        let (registration_id, capability) =
-                                            match registry.get(trm.tool_name.as_str()) {
-                                                Some(r) => (
-                                                    Some(r.registration_id.as_str().to_owned()),
-                                                    Some(format!("{:?}", r.capability)),
-                                                ),
-                                                None => (None, None),
-                                            };
-                                        let authorization = match decision.as_ref() {
-                                            Some(Authorized::AllowFresh(_)) => "allow".to_owned(),
-                                            Some(Authorized::Deny { stable_code, .. }) => {
-                                                format!("deny:{stable_code}")
-                                            }
-                                            None => "not_reached".to_owned(),
-                                        };
-                                        emit_evidence(
-                                            &evidence_sink,
-                                            &mut identities,
-                                            &mut evidence_health,
-                                            run,
-                                            Some(turn),
-                                            *call_id,
-                                            Some(provider_call),
-                                            crate::evidence::CallKind::Tool,
-                                            crate::evidence::EvidencePayload::Structured(
-                                                crate::evidence::RedactedValue::redacted(
-                                                    json!({
-                                                        "tool": trm.tool_name,
-                                                        "is_error": trm.is_error,
-                                                        "registration_id": registration_id,
-                                                        "capability": capability,
-                                                        // Named `decision` (not `authorization`) so the
-                                                        // non-secret Allow/Deny label is not scrubbed as an
-                                                        // HTTP Authorization-header field by the SecretRedactor.
-                                                        "decision": authorization,
-                                                    }),
-                                                    crate::diagnostic::RedactionMode::Summary,
-                                                ),
-                                            ),
-                                        );
                                     }
                                 }
 
@@ -578,9 +876,13 @@ pub(crate) async fn agent_loop_with_identities(
                                     },
                                 );
 
+                                if let Some(error) = tool_terminal_error {
+                                    emit_agent_end(&events, &state.context);
+                                    finish_with_error!(error);
+                                }
+
                                 turn_tool_results = tool_results;
                                 turn_terminate = all_terminate;
-                                terminal_assistant = agent_msg;
                                 break 'stream;
                             }
 
@@ -592,7 +894,6 @@ pub(crate) async fn agent_loop_with_identities(
                                 },
                             );
 
-                            terminal_assistant = agent_msg;
                             break 'stream;
                         }
                     }
@@ -641,7 +942,7 @@ pub(crate) async fn agent_loop_with_identities(
                                         cancelled_diagnostic("during_retry_sleep"),
                                     );
                                     emit_agent_end(&events, &state.context);
-                                    return Err(AgentError::Cancelled);
+                                    finish_with_error!(AgentError::Cancelled);
                                 }
                                 _ = tokio::time::sleep(
                                     std::time::Duration::from_millis(delay_ms)
@@ -652,7 +953,7 @@ pub(crate) async fn agent_loop_with_identities(
                             // Retry record parented to the provider call: the
                             // attempt re-opens the one immutable route (no
                             // re-resolution), so it is a child of the provider
-                            // call (P17-EVD-002, Phase 17.6).
+                            // call.
                             let retry_call = identities.next_call();
                             emit_evidence(
                                 &evidence_sink,
@@ -719,20 +1020,22 @@ pub(crate) async fn agent_loop_with_identities(
 
                         // The underlying provider error is classified regardless of whether
                         // retries were attempted, so callers see what actually failed.
-                        let err = classify_provider_error(&e);
-                        observe(&diagnostic_sink, Diagnostic::from(&e));
+                        let err = AgentError::from(e);
+                        let diagnostic = Diagnostic::from(&err);
+                        observe_provider_failure(&diagnostic_sink, diagnostic);
                         emit_agent_end(&events, &state.context);
-                        return Err(err);
+                        finish_with_error!(err);
                     }
                 }
             }
 
             let err = AgentError::ProviderProtocol {
-                detail: "stream ended without a terminal event".to_owned(),
+                detail: opi_ai::provider::ProviderErrorSummary::redacted(),
             };
-            observe_provider_failure(&diagnostic_sink, &err, &turn_id);
+            let diagnostic = Diagnostic::from(&err);
+            observe_provider_failure(&diagnostic_sink, diagnostic);
             emit_agent_end(&events, &state.context);
-            return Err(err);
+            finish_with_error!(err);
         }
 
         // A retried turn that reached a terminal outcome emits the retry-success
@@ -759,14 +1062,9 @@ pub(crate) async fn agent_loop_with_identities(
             );
         }
 
-        // A turn must produce a terminal assistant message to finalize. If the
-        // stream ended without one (e.g. only non-terminal deltas) there is no
-        // outcome to build a candidate from; preserve state and stop.
-        let terminal_msg = terminal_assistant;
-
         // Construct the candidate next-turn state away from live state, validate
         // it as a unit, and atomically apply it. None retains the state; an
-        // error or cancellation leaves the prior state intact. (P17-NXT-002)
+        // error or cancellation leaves the prior state intact.
         let prep_ctx = PrepareNextTurnContext {
             state: state.clone(),
             tool_results: turn_tool_results.clone(),
@@ -774,48 +1072,83 @@ pub(crate) async fn agent_loop_with_identities(
             turn: turn_idx + 1,
         };
         let mut did_prepare = false;
+        let mut prior_state = None;
         let prepared_next_turn = tokio::select! {
             biased;
             _ = cancel.cancelled() => {
                 observe(&diagnostic_sink, cancelled_diagnostic("during_prepare_next_turn"));
                 emit_agent_end(&events, &state.context);
-                return Err(AgentError::Cancelled);
+                finish_with_error!(AgentError::Cancelled);
             }
             prepared = hooks.prepare_next_turn(prep_ctx) => prepared,
         };
         match prepared_next_turn {
             Ok(Some(candidate)) => {
-                if let Err(error) =
-                    collection.validate_dispatchable_route(&candidate.model_selection.to_spec())
-                {
-                    let err = AgentError::InvalidNextTurnCandidate(format!(
-                        "prepared model selection '{}' is invalid: {error}",
-                        candidate.model_selection.to_spec(),
-                    ));
+                if let Err(err) = validate_next_turn_candidate(&collection, &candidate) {
                     emit_agent_end(&events, &state.context);
-                    return Err(err);
+                    finish_with_error!(err);
                 }
-                state = candidate;
+                if cancel.is_cancelled() {
+                    observe(
+                        &diagnostic_sink,
+                        cancelled_diagnostic("after_prepare_next_turn_validation"),
+                    );
+                    emit_agent_end(&events, &state.context);
+                    finish_with_error!(AgentError::Cancelled);
+                }
+                prior_state = Some(std::mem::replace(&mut state, candidate));
                 did_prepare = true;
             }
             Ok(None) => {}
             Err(e) => {
                 emit_agent_end(&events, &state.context);
-                return Err(e);
+                finish_with_error!(e);
             }
         }
-        let _ = terminal_msg;
-
         // should_stop_after_turn observes the APPLIED state, after preparation.
-        // A tool-driven terminate flag forces the stop. (P17-NXT-003/004)
+        // A tool-driven terminate flag forces the stop.
         let stop_ctx = ShouldStopAfterTurnContext {
             state: state.clone(),
             tool_results: turn_tool_results,
         };
-        if turn_terminate || hooks.should_stop_after_turn(stop_ctx).await {
+        let should_stop = if turn_terminate {
+            true
+        } else {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    if let Some(prior) = prior_state.take() {
+                        state = prior;
+                    }
+                    observe(
+                        &diagnostic_sink,
+                        cancelled_diagnostic("during_should_stop_after_turn"),
+                    );
+                    emit_agent_end(&events, &state.context);
+                    finish_with_error!(AgentError::Cancelled);
+                }
+                stop = hooks.should_stop_after_turn(stop_ctx) => stop,
+            }
+        };
+        if cancel.is_cancelled() {
+            if let Some(prior) = prior_state.take() {
+                state = prior;
+            }
+            observe(
+                &diagnostic_sink,
+                cancelled_diagnostic("after_should_stop_after_turn"),
+            );
             emit_agent_end(&events, &state.context);
-            return Ok((state, identities));
+            finish_with_error!(AgentError::Cancelled);
         }
+        if should_stop {
+            emit_agent_end(&events, &state.context);
+            finish_success!();
+        }
+
+        // The cancellation-sensitive stop boundary completed. The applied
+        // candidate is now committed before queue polling begins.
+        drop(prior_state.take());
 
         // Queue input is applied only after the stop decision permits polling;
         // it cannot resurrect a transition that already failed or was cancelled.
@@ -860,9 +1193,9 @@ pub(crate) async fn agent_loop_with_identities(
         }
     }
 
-    // Phase 11.8 (S2): the for-loop only falls through when `turn_idx` reached
+    // The for-loop only falls through when `turn_idx` reached
     // `config.max_turns`. If tools were still pending on the final turn the run
-    // hit the turn cap mid-work — emit a max-turns warning diagnostic + trace
+    // hit the turn cap mid-work — emit a max-turns warning diagnostic
     // (BEFORE AgentEnd, mirroring the cancellation ordering at the top of the
     // loop) and return `AgentError::MaxTurnsExceeded` instead of a silent Ok. A
     // zero-turn run, or exhaustion without pending tools (e.g. steering kept the
@@ -871,80 +1204,21 @@ pub(crate) async fn agent_loop_with_identities(
         let err = AgentError::MaxTurnsExceeded(config.max_turns);
         observe(&diagnostic_sink, Diagnostic::from(&err));
         emit_agent_end(&events, &state.context);
-        return Err(err);
+        finish_with_error!(err);
     }
     emit_agent_end(&events, &state.context);
-    Ok((state, identities))
-}
-
-/// Classify a provider stream error into the typed [`AgentError`] it maps to.
-/// Shared by the in-stream error path and [`map_collection_error`].
-fn classify_provider_error(e: &ProviderError) -> AgentError {
-    match e {
-        ProviderError::AuthFailed(msg) => AgentError::AuthFailed(msg.clone()),
-        ProviderError::CredentialNeeded { provider_id } => AgentError::CredentialNeeded {
-            provider_id: provider_id.clone(),
-        },
-        ProviderError::CredentialRevoked { provider_id } => AgentError::CredentialRevoked {
-            provider_id: provider_id.clone(),
-        },
-        ProviderError::AccountIdMissing { provider_id } => AgentError::AccountIdMissing {
-            provider_id: provider_id.clone(),
-        },
-        ProviderError::Cancelled => AgentError::Cancelled,
-        _ => AgentError::Provider(e.to_string()),
+    AgentLoopResult {
+        state,
+        identities,
+        evidence_health,
+        terminal_outcome: crate::evidence::TerminalOutcome::Success,
+        error: None,
     }
 }
 
-/// Map a collection-owned preparation/dispatch failure ([`CollectionError`])
-/// into the typed [`AgentError`] boundary. Route/auth failures surface as a
-/// typed route error rather than a generic provider string; the wrapped
-/// provider error is classified via [`classify_provider_error`].
-pub(crate) fn map_collection_error(e: CollectionError) -> AgentError {
-    match e {
-        CollectionError::CallCancelled => AgentError::Cancelled,
-        CollectionError::AttemptAlreadyActive => AgentError::AttemptAlreadyActive,
-        CollectionError::Provider(p) => classify_provider_error(&p),
-        CollectionError::RouteNotDispatchable { provider } => {
-            AgentError::RouteNotDispatchable { provider }
-        }
-        CollectionError::AuthNotConfigured { provider, detail } => {
-            AgentError::AuthNotConfigured { provider, detail }
-        }
-        CollectionError::Registry(opi_ai::RegistryError::InvalidSpec(spec)) => {
-            AgentError::InvalidModelSpec { spec }
-        }
-        CollectionError::Registry(opi_ai::RegistryError::UnknownProvider(provider)) => {
-            AgentError::UnknownProvider { provider }
-        }
-        CollectionError::Registry(opi_ai::RegistryError::UnknownModel { provider, model }) => {
-            AgentError::UnknownModel { provider, model }
-        }
-        #[allow(unreachable_patterns)]
-        CollectionError::Registry(error) => AgentError::Provider(error.to_string()),
-    }
-}
-
-/// Observe a provider-route/preparation failure as a diagnostic.
-fn observe_provider_failure(
-    sink: &Option<Arc<dyn DiagnosticSink>>,
-    err: &AgentError,
-    _turn_id: &str,
-) {
-    let detail = err.to_string();
-    let severity = match err {
-        AgentError::Cancelled => Severity::Info,
-        _ => Severity::Error,
-    };
-    observe(
-        sink,
-        Diagnostic::new(
-            severity,
-            CODE_PROVIDER_CAPABILITY_INVALID,
-            SOURCE_PROVIDER,
-            detail,
-        ),
-    );
+/// Observe a provider failure using its preclassified diagnostic.
+fn observe_provider_failure(sink: &Option<Arc<dyn DiagnosticSink>>, diagnostic: Diagnostic) {
+    observe(sink, diagnostic);
 }
 
 fn process_stream_event(
@@ -1032,7 +1306,6 @@ fn malformed_tool_arguments_result(
     tool_name: &str,
     parse_error: &str,
     sink: &Option<Arc<dyn DiagnosticSink>>,
-    _turn_id: &str,
 ) -> ToolResult {
     observe(
         sink,
@@ -1054,17 +1327,42 @@ fn malformed_tool_arguments_result(
     }
 }
 
+fn skipped_after_terminal_result(tool_call: &ToolCall) -> ToolResultMessage {
+    ToolResultMessage {
+        tool_call_id: tool_call.id.clone(),
+        tool_name: tool_call.name.clone(),
+        content: vec![opi_ai::message::OutputContent::Text {
+            text: "tool was not executed because a prior sequential call ended the run".to_owned(),
+        }],
+        details: None,
+        is_error: true,
+        truncated: false,
+        timestamp_ms: opi_ai::time::now_ms(),
+    }
+}
+
 /// Outcome of mandatory trusted authorization for one resolved, validated call.
+#[derive(Clone)]
 enum Authorized {
     /// A fresh `Allow` whose registration, capability, and evidence-health
     /// generation all match the current call.
-    AllowFresh(crate::tool::ToolExecutionAuthorization),
+    AllowFresh {
+        authorization: crate::tool::ToolExecutionAuthorization,
+        evidence_health_generation: crate::evidence::EvidenceGeneration,
+    },
     /// Zero-execution denial (authorizer denial, stale generation, or authorizer
     /// error/unavailability). `stable_code` and `redacted_reason` are secret-free.
     Deny {
         stable_code: String,
         redacted_reason: String,
+        scope: AuthorizationRejectionScope,
     },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AuthorizationRejectionScope {
+    Call,
+    Batch,
 }
 
 struct ToolEvidenceContext<'a> {
@@ -1074,13 +1372,7 @@ struct ToolEvidenceContext<'a> {
     turn: crate::evidence::TurnId,
     call: crate::evidence::CallId,
     parent: crate::evidence::CallId,
-}
-
-fn authorization_label(decision: &Authorized) -> String {
-    match decision {
-        Authorized::AllowFresh(_) => "allow".to_owned(),
-        Authorized::Deny { stable_code, .. } => format!("deny:{stable_code}"),
-    }
+    invocation: Result<crate::evidence::InvocationBinding, crate::evidence::OpaqueIdentityError>,
 }
 
 fn emit_tool_authorization_evidence(
@@ -1088,27 +1380,21 @@ fn emit_tool_authorization_evidence(
     health: &mut crate::evidence::EvidenceHealth,
     registration: &crate::authority::RegisteredTool,
     decision: &Authorized,
-) {
-    emit_evidence(
-        evidence.sink,
-        evidence.identities,
-        health,
-        evidence.run,
-        Some(evidence.turn),
-        evidence.call,
-        Some(evidence.parent),
-        crate::evidence::CallKind::Tool,
-        crate::evidence::EvidencePayload::Structured(crate::evidence::RedactedValue::redacted(
-            json!({
-                "phase": "authorization",
-                "tool": registration.provider_visible_name,
-                "registration_id": registration.registration_id.as_str(),
-                "capability": format!("{:?}", registration.capability),
-                "decision": authorization_label(decision),
-            }),
-            crate::diagnostic::RedactionMode::Summary,
-        )),
-    );
+) -> bool {
+    let facts = evidence
+        .invocation
+        .as_ref()
+        .map_err(|error| crate::evidence::ToolEvidenceFactError::from(*error))
+        .and_then(|invocation| {
+            crate::evidence::ToolEvidenceFacts::authorization(
+                registration.provider_visible_name.clone(),
+                registration.registration_id.as_str().to_owned(),
+                registration.capability.clone(),
+                invocation.clone(),
+                authorization_evidence_facts(decision)?,
+            )
+        });
+    emit_tool_facts(evidence, health, facts)
 }
 
 fn emit_tool_outcome_evidence(
@@ -1116,29 +1402,81 @@ fn emit_tool_outcome_evidence(
     health: &mut crate::evidence::EvidenceHealth,
     registry: &crate::authority::ToolRegistry,
     result: &ToolResultMessage,
+    outcome: crate::evidence::ToolExecutionOutcome,
 ) {
-    let registration_id = registry
-        .get(result.tool_name.as_str())
-        .map(|registration| registration.registration_id.as_str().to_owned());
-    emit_evidence(
-        evidence.sink,
-        evidence.identities,
-        health,
-        evidence.run,
-        Some(evidence.turn),
-        evidence.call,
-        Some(evidence.parent),
-        crate::evidence::CallKind::Tool,
-        crate::evidence::EvidencePayload::Structured(crate::evidence::RedactedValue::redacted(
-            json!({
-                "phase": "outcome",
-                "tool": result.tool_name,
-                "registration_id": registration_id,
-                "is_error": result.is_error,
-            }),
-            crate::diagnostic::RedactionMode::Summary,
-        )),
-    );
+    let registration = registry.get(result.tool_name.as_str());
+    let facts = evidence
+        .invocation
+        .as_ref()
+        .map_err(|error| crate::evidence::ToolEvidenceFactError::from(*error))
+        .and_then(|invocation| {
+            crate::evidence::ToolEvidenceFacts::outcome(
+                result.tool_name.clone(),
+                registration.map(|item| item.registration_id.as_str()),
+                registration.map(|item| item.capability.clone()),
+                invocation.clone(),
+                outcome,
+            )
+        });
+    emit_tool_facts(evidence, health, facts);
+}
+
+fn emit_tool_facts(
+    evidence: &mut ToolEvidenceContext<'_>,
+    health: &mut crate::evidence::EvidenceHealth,
+    facts: Result<crate::evidence::ToolEvidenceFacts, crate::evidence::ToolEvidenceFactError>,
+) -> bool {
+    match facts {
+        Ok(facts) => emit_evidence(
+            evidence.sink,
+            evidence.identities,
+            health,
+            evidence.run,
+            Some(evidence.turn),
+            evidence.call,
+            Some(evidence.parent),
+            crate::evidence::CallKind::Tool,
+            crate::evidence::EvidencePayload::Tool(facts),
+        ),
+        Err(_) if evidence.sink.is_some() => {
+            health.advance_on_failure(crate::evidence::EvidenceFailureCode::Emission);
+            false
+        }
+        Err(_) => true,
+    }
+}
+
+fn invocation_binding(
+    context: &crate::authority::InvocationContext,
+) -> Result<crate::evidence::InvocationBinding, crate::evidence::OpaqueIdentityError> {
+    match context {
+        crate::authority::InvocationContext::NoSession => {
+            Ok(crate::evidence::InvocationBinding::NoSession)
+        }
+        crate::authority::InvocationContext::Session(reference) => {
+            crate::evidence::InvocationBinding::session(reference.clone())
+        }
+    }
+}
+
+fn authorization_evidence_facts(
+    decision: &Authorized,
+) -> Result<crate::evidence::ToolAuthorizationFacts, crate::evidence::OpaqueIdentityError> {
+    match decision {
+        Authorized::AllowFresh { authorization, .. } => {
+            Ok(crate::evidence::ToolAuthorizationFacts::Allowed {
+                policy_ref: authorization.policy_ref.clone(),
+                permission_ref: authorization.permission_ref.clone(),
+                permission_scope: authorization.permission_scope.clone(),
+                scoped_grant_ref: authorization.scoped_grant_ref.clone(),
+            })
+        }
+        Authorized::Deny {
+            stable_code,
+            redacted_reason,
+            ..
+        } => crate::evidence::ToolAuthorizationFacts::denied(stable_code.clone(), redacted_reason),
+    }
 }
 
 /// Resolve a current trusted `Allow` for one call: authorize against the
@@ -1147,9 +1485,9 @@ fn emit_tool_outcome_evidence(
 /// An authorizer error, denial, or a persistently stale generation all yield
 /// [`Authorized::Deny`] with zero execution (AUT-003/005).
 ///
-/// `evidence_health` is the loop's current run-local health. Sink failure can
-/// advance it between authorization and launch; the stale branch rebuilds the
-/// request with that newer generation and reauthorizes exactly once.
+/// `evidence_health` is the loop's current run-local snapshot. A stale decision
+/// is requested once more against that snapshot; the caller separately emits
+/// authorization evidence and verifies the live generation before launch.
 #[allow(clippy::too_many_arguments)] // one immutable authorization request assembled at this boundary
 async fn authorize_and_verify(
     authorizer: &dyn crate::authority::ToolAuthorizer,
@@ -1161,8 +1499,11 @@ async fn authorize_and_verify(
     call_id: crate::evidence::CallId,
     invocation_context: crate::authority::InvocationContext,
     cancel: CancellationToken,
-) -> Authorized {
+) -> Result<Authorized, AgentError> {
     for attempt in 0..2u8 {
+        if cancel.is_cancelled() {
+            return Err(AgentError::Cancelled);
+        }
         let request = crate::authority::ToolAuthorizationRequest {
             run_id,
             turn_id,
@@ -1173,14 +1514,20 @@ async fn authorize_and_verify(
             arguments: args.clone(),
             evidence_health: evidence_health.clone(),
         };
-        let decision = match authorizer.authorize(request, cancel.clone()).await {
+        let pending_decision = authorizer.authorize(request, cancel.clone());
+        let decision = match tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+            decision = pending_decision => decision,
+        } {
             Ok(decision) => decision,
             Err(_) => {
-                return Authorized::Deny {
+                return Ok(Authorized::Deny {
                     stable_code: "authorization_unavailable".to_owned(),
                     redacted_reason: "authorizer failed to reach a decision; execution denied"
                         .to_owned(),
-                };
+                    scope: AuthorizationRejectionScope::Call,
+                });
             }
         };
         match decision {
@@ -1188,15 +1535,17 @@ async fn authorize_and_verify(
                 stable_code,
                 redacted_reason,
             } => {
-                return Authorized::Deny {
+                return Ok(Authorized::Deny {
                     stable_code,
                     redacted_reason,
-                };
+                    scope: AuthorizationRejectionScope::Call,
+                });
             }
             crate::authority::AuthorizationDecision::Allow {
                 policy_ref,
                 permission_ref,
                 permission_scope,
+                scoped_grant_ref,
                 registration_id,
                 capability,
                 evidence_health_generation,
@@ -1205,22 +1554,42 @@ async fn authorize_and_verify(
                     && capability == registration.capability
                     && evidence_health_generation == evidence_health.generation()
                 {
-                    return Authorized::AllowFresh(crate::tool::ToolExecutionAuthorization {
-                        policy_ref,
-                        permission_ref,
-                        permission_scope,
+                    return Ok(Authorized::AllowFresh {
+                        authorization: crate::tool::ToolExecutionAuthorization {
+                            policy_ref,
+                            permission_ref,
+                            permission_scope,
+                            scoped_grant_ref,
+                        },
+                        evidence_health_generation,
                     });
                 }
-                // Stale: the Allow no longer matches the current registration,
-                // capability, or evidence-health generation. Reauthorize once
-                // with the current health; a still-stale second decision denies
-                // with zero execution (spec 509-515).
+                // Stale: the Allow does not match the current registration,
+                // capability, or evidence-health snapshot. Reauthorize once;
+                // a still-stale second decision denies with zero execution.
                 if attempt > 0 {
-                    return Authorized::Deny {
-                        stable_code: "authorization_stale".to_owned(),
-                        redacted_reason: "authorization Allow was stale; execution denied"
-                            .to_owned(),
-                    };
+                    let generation_mismatch =
+                        evidence_health_generation != evidence_health.generation();
+                    let identity_mismatch = registration_id != registration.registration_id
+                        || capability != registration.capability;
+                    return Ok(if generation_mismatch {
+                        Authorized::Deny {
+                            stable_code: "authorization_stale".to_owned(),
+                            redacted_reason: "authorization Allow was stale; execution denied"
+                                .to_owned(),
+                            scope: AuthorizationRejectionScope::Batch,
+                        }
+                    } else if identity_mismatch {
+                        Authorized::Deny {
+                            stable_code: "authorization_mismatch".to_owned(),
+                            redacted_reason:
+                                "authorization Allow did not match the resolved tool; execution denied"
+                                    .to_owned(),
+                            scope: AuthorizationRejectionScope::Call,
+                        }
+                    } else {
+                        unreachable!("a matching Allow returns before stale classification")
+                    });
                 }
             }
         }
@@ -1228,8 +1597,59 @@ async fn authorize_and_verify(
     unreachable!("authorize_and_verify loops at most twice before returning")
 }
 
+struct PreparedToolExecution {
+    args: serde_json::Value,
+    authorization: crate::tool::ToolExecutionAuthorization,
+    evidence_health_generation: crate::evidence::EvidenceGeneration,
+}
+
+struct ExecutedTool {
+    result: ToolResult,
+    outcome: crate::evidence::ToolExecutionOutcome,
+    terminal_error: Option<AgentError>,
+}
+
+impl ExecutedTool {
+    fn ordinary(result: ToolResult) -> Self {
+        let outcome = if result.is_error {
+            crate::evidence::ToolExecutionOutcome::Failed
+        } else {
+            crate::evidence::ToolExecutionOutcome::Succeeded
+        };
+        Self {
+            result,
+            outcome,
+            terminal_error: None,
+        }
+    }
+}
+
+fn retain_strongest_terminal_error(slot: &mut Option<AgentError>, candidate: AgentError) {
+    fn rank(error: &AgentError) -> u8 {
+        match error {
+            AgentError::Tool(crate::tool::ToolError::CleanupUnknown(_)) => 3,
+            AgentError::Tool(crate::tool::ToolError::PartialSideEffect(_)) => 2,
+            AgentError::Cancelled | AgentError::Tool(crate::tool::ToolError::Cancelled) => 1,
+            _ => 0,
+        }
+    }
+
+    if slot
+        .as_ref()
+        .is_none_or(|current| rank(&candidate) > rank(current))
+    {
+        *slot = Some(candidate);
+    }
+}
+
+enum ToolPreflight {
+    Ready(PreparedToolExecution),
+    Rejected(ToolResult),
+    BatchInvalid(ToolResult),
+}
+
 #[allow(clippy::too_many_arguments)] // private helper threading sinks + turn id alongside existing call context
-async fn execute_tool(
+async fn preflight_tool(
     call_id: &str,
     tool_name: &str,
     args: &serde_json::Value,
@@ -1245,13 +1665,10 @@ async fn execute_tool(
     messages: &[AgentMessage],
     cancel: CancellationToken,
     sink: &Option<Arc<dyn DiagnosticSink>>,
-) -> (ToolResult, Option<Authorized>) {
-    // Tool call boundary record; emitted for every path below (completed,
-    // failed, cancelled, denied) so the trace always brackets a tool execution.
-    // Authorization decision surfaced for the Tool evidence record (Phase
-    // 17.6): `None` until the trusted authorization boundary is reached.
-    let mut auth_decision: Option<Authorized> = None;
-
+) -> Result<ToolPreflight, AgentError> {
+    if cancel.is_cancelled() {
+        return Err(AgentError::Cancelled);
+    }
     // 1. Resolve one immutable trusted registration (AUT-001). Unknown tools
     //    never reach hook, validation, authorization, or execution.
     let registration = match registry.get(tool_name) {
@@ -1261,15 +1678,14 @@ async fn execute_tool(
                 sink,
                 tool_diagnostic(CODE_TOOL_UNKNOWN, tool_name, "unknown tool requested"),
             );
-            return (
-                error_text_result(format!("unknown tool: {tool_name}")),
-                auth_decision,
-            );
+            return Ok(ToolPreflight::Rejected(error_text_result(format!(
+                "unknown tool: {tool_name}"
+            ))));
         }
     };
 
     // 2. Non-authoritative before_tool_call hook: deny or continue (AUT-006).
-    //    Runs BEFORE schema validation (Phase 17.4 invocation order) so the hook
+    //    Runs BEFORE schema validation so the hook
     //    observes the proposed call regardless of argument validity; a denial
     //    still yields zero execution.
     let hook_ctx = BeforeToolCallContext {
@@ -1278,7 +1694,12 @@ async fn execute_tool(
         args: args.clone(),
         messages: messages.to_vec(),
     };
-    match hooks.before_tool_call(hook_ctx).await {
+    let hook_result = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+        result = hooks.before_tool_call(hook_ctx) => result,
+    };
+    match hook_result {
         BeforeToolCallResult::Continue => {}
         BeforeToolCallResult::Deny { reason } => {
             observe(
@@ -1289,7 +1710,7 @@ async fn execute_tool(
                     "tool call denied by hook",
                 ),
             );
-            return (error_text_result(reason), auth_decision);
+            return Ok(ToolPreflight::Rejected(error_text_result(reason)));
         }
     }
 
@@ -1305,7 +1726,9 @@ async fn execute_tool(
                 "tool arguments failed schema validation",
             ),
         );
-        return (ToolResult::from_validation_error(err), auth_decision);
+        return Ok(ToolPreflight::Rejected(ToolResult::from_validation_error(
+            err,
+        )));
     }
 
     // 4-5. Mandatory trusted authorization against the current evidence-health
@@ -1323,21 +1746,28 @@ async fn execute_tool(
                     "no trusted authorizer bound; execution denied",
                 ),
             );
-            auth_decision = Some(Authorized::Deny {
+            let decision = Authorized::Deny {
                 stable_code: "authorization_unavailable".to_owned(),
                 redacted_reason: "no trusted authorizer bound; execution denied".to_owned(),
-            });
-            return (
-                denial_result(
-                    "authorization_unavailable",
-                    "no trusted authorizer bound; execution denied",
-                ),
-                auth_decision,
+                scope: AuthorizationRejectionScope::Call,
+            };
+            let authorization_recorded = if let Some(evidence) = &mut tool_evidence {
+                emit_tool_authorization_evidence(evidence, evidence_health, registration, &decision)
+            } else {
+                true
+            };
+            let result = denial_result(
+                "authorization_unavailable",
+                "no trusted authorizer bound; execution denied",
             );
+            return Ok(if authorization_recorded {
+                ToolPreflight::Rejected(result)
+            } else {
+                ToolPreflight::BatchInvalid(result)
+            });
         }
     };
-    let authorized_generation = evidence_health.generation();
-    let mut decision = authorize_and_verify(
+    let decision = authorize_and_verify(
         authorizer.as_ref(),
         registration,
         args,
@@ -1348,68 +1778,92 @@ async fn execute_tool(
         invocation_context.clone(),
         cancel.clone(),
     )
-    .await;
-    if let Some(evidence) = &mut tool_evidence {
-        emit_tool_authorization_evidence(evidence, evidence_health, registration, &decision);
+    .await?;
+    if cancel.is_cancelled() {
+        return Err(AgentError::Cancelled);
+    }
+    let authorization_recorded = match &mut tool_evidence {
+        Some(evidence) => {
+            emit_tool_authorization_evidence(evidence, evidence_health, registration, &decision)
+        }
+        None => true,
+    };
+
+    if cancel.is_cancelled() {
+        return Err(AgentError::Cancelled);
+    }
+    if !authorization_recorded {
+        return Ok(ToolPreflight::BatchInvalid(denial_result(
+            "evidence_incomplete",
+            "authorization evidence was incomplete; execution denied",
+        )));
     }
 
-    if matches!(decision, Authorized::AllowFresh(_))
-        && evidence_health.generation() != authorized_generation
-    {
-        let reauthorized_generation = evidence_health.generation();
-        decision = authorize_and_verify(
-            authorizer.as_ref(),
-            registration,
-            args,
-            evidence_health.clone(),
-            run_id,
-            evidence_turn_id,
-            evidence_call_id,
-            invocation_context,
-            cancel.clone(),
-        )
-        .await;
-        if let Some(evidence) = &mut tool_evidence {
-            emit_tool_authorization_evidence(evidence, evidence_health, registration, &decision);
+    Ok(match &decision {
+        Authorized::AllowFresh {
+            authorization,
+            evidence_health_generation,
+        } if *evidence_health_generation == evidence_health.generation() => {
+            ToolPreflight::Ready(PreparedToolExecution {
+                args: args.clone(),
+                authorization: authorization.clone(),
+                evidence_health_generation: *evidence_health_generation,
+            })
         }
-        if matches!(decision, Authorized::AllowFresh(_))
-            && evidence_health.generation() != reauthorized_generation
-        {
-            decision = Authorized::Deny {
-                stable_code: "authorization_stale".to_owned(),
-                redacted_reason: "evidence changed before tool launch; execution denied".to_owned(),
-            };
-        }
-    }
-
-    let execution_authorization = match decision {
-        Authorized::AllowFresh(authorization) => {
-            auth_decision = Some(Authorized::AllowFresh(authorization.clone()));
-            authorization
+        Authorized::AllowFresh { .. } => {
+            observe(
+                sink,
+                tool_diagnostic(
+                    CODE_TOOL_AUTHORIZATION_DENIED,
+                    tool_name,
+                    "authorization evidence changed before launch",
+                ),
+            );
+            ToolPreflight::BatchInvalid(denial_result(
+                "evidence_incomplete",
+                "authorization evidence was incomplete; execution denied",
+            ))
         }
         Authorized::Deny {
             stable_code,
             redacted_reason,
+            scope,
         } => {
             observe(
                 sink,
-                tool_diagnostic(CODE_TOOL_AUTHORIZATION_DENIED, tool_name, &redacted_reason),
+                tool_diagnostic(CODE_TOOL_AUTHORIZATION_DENIED, tool_name, redacted_reason),
             );
-            auth_decision = Some(Authorized::Deny {
-                stable_code: stable_code.clone(),
-                redacted_reason: redacted_reason.clone(),
-            });
-            return (denial_result(&stable_code, &redacted_reason), auth_decision);
+            let result = denial_result(stable_code, redacted_reason);
+            if *scope == AuthorizationRejectionScope::Batch {
+                ToolPreflight::BatchInvalid(result)
+            } else {
+                ToolPreflight::Rejected(result)
+            }
         }
-    };
+    })
+}
+
+#[allow(clippy::too_many_arguments)] // private launch boundary over one fully prepared call
+async fn execute_prepared_tool(
+    call_id: &str,
+    tool_name: &str,
+    prepared: PreparedToolExecution,
+    registry: &crate::authority::ToolRegistry,
+    hooks: &dyn AgentHooks,
+    cancel: CancellationToken,
+    sink: &Option<Arc<dyn DiagnosticSink>>,
+) -> ExecutedTool {
+    let registration = registry
+        .get(tool_name)
+        .expect("a prepared tool retains its immutable registration");
 
     // 6. Execute: only a current Allow reaches Tool::execute (OUT-003).
-    let result = match registration
+    match registration
         .implementation
         .execute_authorized(
             call_id,
-            args.clone(),
-            execution_authorization,
+            prepared.args,
+            prepared.authorization,
             cancel.clone(),
             None,
         )
@@ -1426,7 +1880,7 @@ async fn execute_tool(
                 AfterToolCallResult::Replace(replacement) => replacement,
             };
             if final_result.is_error {
-                // Phase 11.8 (S1): lift tool-owned structured failure context from
+                // Lift tool-owned structured failure context from
                 // `final_result.diagnostics` into Diagnostics (per-cause code +
                 // structured context). The lift reads diagnostics AFTER
                 // `after_tool_call`, so a hook `Replace` owns the lifted set. When
@@ -1448,7 +1902,7 @@ async fn execute_tool(
                     }
                 }
             }
-            final_result
+            ExecutedTool::ordinary(final_result)
         }
         Err(e) => {
             observe(
@@ -1459,11 +1913,98 @@ async fn execute_tool(
                     "tool execution failed",
                 ),
             );
-            error_text_result(e.to_string())
+            let public_message = e.to_string();
+            let outcome = match &e {
+                crate::tool::ToolError::ExecutionFailed(_) => {
+                    crate::evidence::ToolExecutionOutcome::Failed
+                }
+                crate::tool::ToolError::Cancelled => {
+                    crate::evidence::ToolExecutionOutcome::Cancelled
+                }
+                crate::tool::ToolError::PartialSideEffect(_) => {
+                    crate::evidence::ToolExecutionOutcome::PartialSideEffect
+                }
+                crate::tool::ToolError::CleanupUnknown(_) => {
+                    crate::evidence::ToolExecutionOutcome::CleanupUnknown
+                }
+            };
+            let terminal_error = match e {
+                crate::tool::ToolError::ExecutionFailed(_) => None,
+                crate::tool::ToolError::Cancelled => Some(AgentError::Cancelled),
+                error @ crate::tool::ToolError::PartialSideEffect(_)
+                | error @ crate::tool::ToolError::CleanupUnknown(_) => {
+                    Some(AgentError::Tool(error))
+                }
+            };
+            ExecutedTool {
+                result: error_text_result(match outcome {
+                    crate::evidence::ToolExecutionOutcome::Cancelled => {
+                        "tool execution cancelled".to_owned()
+                    }
+                    crate::evidence::ToolExecutionOutcome::PartialSideEffect => {
+                        "tool execution ended with a partial side effect".to_owned()
+                    }
+                    crate::evidence::ToolExecutionOutcome::CleanupUnknown => {
+                        "tool execution cleanup could not be confirmed".to_owned()
+                    }
+                    crate::evidence::ToolExecutionOutcome::Failed => public_message,
+                    crate::evidence::ToolExecutionOutcome::Succeeded => {
+                        unreachable!("an error cannot be a successful tool outcome")
+                    }
+                }),
+                outcome,
+                terminal_error,
+            }
         }
-    };
+    }
+}
 
-    (result, auth_decision)
+#[allow(clippy::too_many_arguments)] // sequential compatibility wrapper over preflight + launch
+async fn execute_tool(
+    call_id: &str,
+    tool_name: &str,
+    args: &serde_json::Value,
+    run_id: crate::evidence::RunId,
+    evidence_turn_id: crate::evidence::TurnId,
+    evidence_call_id: crate::evidence::CallId,
+    invocation_context: crate::authority::InvocationContext,
+    registry: &crate::authority::ToolRegistry,
+    authorizer: Option<&Arc<dyn crate::authority::ToolAuthorizer>>,
+    evidence_health: &mut crate::evidence::EvidenceHealth,
+    tool_evidence: Option<&mut ToolEvidenceContext<'_>>,
+    hooks: &dyn AgentHooks,
+    messages: &[AgentMessage],
+    cancel: CancellationToken,
+    sink: &Option<Arc<dyn DiagnosticSink>>,
+) -> Result<ExecutedTool, AgentError> {
+    let preflight = preflight_tool(
+        call_id,
+        tool_name,
+        args,
+        run_id,
+        evidence_turn_id,
+        evidence_call_id,
+        invocation_context,
+        registry,
+        authorizer,
+        evidence_health,
+        tool_evidence,
+        hooks,
+        messages,
+        cancel.clone(),
+        sink,
+    )
+    .await?;
+    if cancel.is_cancelled() {
+        return Err(AgentError::Cancelled);
+    }
+    Ok(match preflight {
+        ToolPreflight::Ready(prepared) => {
+            execute_prepared_tool(call_id, tool_name, prepared, registry, hooks, cancel, sink).await
+        }
+        ToolPreflight::Rejected(result) => ExecutedTool::ordinary(result),
+        ToolPreflight::BatchInvalid(result) => ExecutedTool::ordinary(result),
+    })
 }
 
 /// A controlled tool error result carrying a single text message (no details).
@@ -1524,11 +2065,8 @@ fn user_text_message(text: String) -> AgentMessage {
     }))
 }
 
-/// Record a diagnostic into the optional sink AND mirror it as a
-/// diagnostic-linked trace record when a collector is attached. A `None` sink
-/// disables diagnostic emission without any other observable effect; the trace
-/// mirror is independent and fail-open. Routing every runtime diagnostic
-/// through here keeps the two surfaces in lockstep.
+/// Record a diagnostic into the optional sink. A `None` sink disables
+/// diagnostic emission without any other observable effect.
 fn observe(sink: &Option<Arc<dyn DiagnosticSink>>, diagnostic: Diagnostic) {
     if let Some(sink) = sink {
         sink.record(diagnostic);
@@ -1537,11 +2075,10 @@ fn observe(sink: &Option<Arc<dyn DiagnosticSink>>, diagnostic: Diagnostic) {
 
 /// Mint the next monotonic sequence and emit one evidence record through the
 /// bound sink. Identities are minted immediately before emission so correlation
-/// precedes any external effect (P17-EVD-001). A `None` sink is the capture-
-/// disabled default: nothing is minted or emitted and execution behavior is
-/// unchanged (P17-EVD-006). An emission failure advances the run's versioned
-/// health (P17-EVD-008); the product-fact manifest binding and fail-closed
-/// policy arrive in 17.7.
+/// precedes any external effect. A `None` sink is the capture-disabled default:
+/// nothing is minted or emitted and execution behavior is unchanged. An
+/// emission failure advances the run's versioned health; incomplete evidence
+/// cannot produce a finalized manifest and must be explicitly abandoned.
 ///
 /// The full run/turn/call/parent/kind/payload correlation tuple is intrinsic
 /// to one evidence record, so the argument count is the minimal honest shape.
@@ -1556,7 +2093,7 @@ fn emit_evidence(
     parent: Option<crate::evidence::CallId>,
     kind: crate::evidence::CallKind,
     payload: crate::evidence::EvidencePayload,
-) {
+) -> bool {
     if let Some(sink) = sink.as_ref() {
         let sequence = identities.next_sequence();
         let record = crate::evidence::EvidenceRecord {
@@ -1569,38 +2106,15 @@ fn emit_evidence(
             payload,
         };
         if let Err(err) = sink.emit(&record) {
-            // An emission failure advances the run's versioned health immediately
-            // (P17-EVD-008). The run preserves the actual execution outcome; a
-            // finalized manifest is withheld once health is incomplete (17.7 owns
-            // the fail-closed policy and the product-fact manifest binding).
+            // An emission failure advances the run's versioned health
+            // immediately. The run preserves the actual execution outcome; a
+            // finalized manifest is withheld once health is incomplete, and the
+            // evidence lifecycle must be explicitly abandoned.
             health.advance_on_failure(err.failure_code());
+            return false;
         }
     }
-}
-
-/// Non-secret auth source classification token carried in the Provider evidence
-/// record (P17-PRV-005). The `name`/`kind` labels of environment /
-/// credential-store / oauth sources are supplementary; the closed classification
-/// is what the manifest distinguishes. A future [`opi_ai::auth::AuthProvenanceSource`]
-/// variant maps to `static` until the manifest vocabulary gains a counterpart.
-fn auth_source_token(source: &opi_ai::auth::AuthProvenanceSource) -> &'static str {
-    match source {
-        opi_ai::auth::AuthProvenanceSource::Static => "static",
-        opi_ai::auth::AuthProvenanceSource::Environment { .. } => "environment",
-        opi_ai::auth::AuthProvenanceSource::CredentialStore { .. } => "credential_store",
-        opi_ai::auth::AuthProvenanceSource::OAuth { .. } => "oauth",
-        _ => "static",
-    }
-}
-
-/// Non-secret auth fallback classification token carried in the Provider
-/// evidence record (P17-PRV-005): whether an allowed fallback was used.
-fn auth_fallback_token(fallback: &opi_ai::auth::AuthFallback) -> &'static str {
-    match fallback {
-        opi_ai::auth::AuthFallback::NotAttempted => "not_attempted",
-        opi_ai::auth::AuthFallback::Used { .. } => "used",
-        _ => "not_attempted",
-    }
+    true
 }
 
 /// Emit the `AgentEnd` event, deduplicating the exit paths.
@@ -1614,7 +2128,10 @@ fn emit_agent_end(events: &AgentEventSink, messages: &[AgentMessage]) {
 }
 
 fn emit_public_event(events: &AgentEventSink, event: AgentEvent) {
-    events(event.redacted_for_public());
+    // `agent_loop` wraps direct consumers in the public event boundary, while
+    // `Agent` binds this raw producer sink to its sole redacting subscriber
+    // fan-out. Keeping producers raw ensures each route redacts exactly once.
+    events(event);
 }
 
 /// Build an informational cancellation diagnostic tagged with the lifecycle
@@ -1636,14 +2153,14 @@ fn tool_diagnostic(code: &'static str, tool_name: &str, message: &str) -> Diagno
         .details(json!({ "tool_name": tool_name }))
 }
 
-/// Lift one tool-owned [`ToolDiagnostic`] into a Phase 7 [`Diagnostic`] (Phase
-/// 11.8 / S1). The tool-owned code is resolved to its stable `&'static str`
-/// via [`crate::diagnostic::resolve_tool_code`], and `tool_name` is merged into
-/// the structured context so the record carries both the owning tool and the
+/// Lift one tool-owned [`ToolDiagnostic`] into a [`Diagnostic`]. The tool-owned
+/// code is resolved to its stable `&'static str` via
+/// [`crate::diagnostic::resolve_tool_code`], and `tool_name` is merged into the
+/// structured context so the record carries both the owning tool and the
 /// per-cause fields (path for read/write/edit; command/exit_code/cancelled/
-/// timed_out/truncated for bash). Routed through [`observe`] so the entry lands
-/// in both the diagnostic sink (redacted in Summary mode) and the
-/// DiagnosticLinked trace (code + severity only).
+/// timed_out/truncated for bash). [`observe`] records the resulting entry in the
+/// optional diagnostic sink; the original structured diagnostic remains on the
+/// public tool-completion event.
 fn tool_owned_diagnostic(tool_diag: &ToolDiagnostic, tool_name: &str) -> Diagnostic {
     let code = crate::diagnostic::resolve_tool_code(&tool_diag.code);
     let mut context = tool_diag.context.clone();

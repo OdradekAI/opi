@@ -55,7 +55,8 @@ id，`opi-ai` adapter 决定审查过的 cache-affinity 映射是否消费该值
 
 | 项 | 作用 |
 |----|------|
-| `Agent` | 对主循环的有状态封装，提供 prompt、continue、abort、subscribe、steering、follow-up 和完整状态的原子替换；可信 `RegisteredTool` 与 `ToolAuthorizer` 在构造时提供。 |
+| `Agent` | 对主循环的有状态封装，提供 prompt、continue、abort、subscribe、steering、follow-up 和完整状态的原子替换；可信 `RegisteredTool` 与 `ToolAuthorizer` 在构造时提供，公共 run 操作返回 `AgentRunResult`。 |
+| `AgentRunResult` / `AgentLoopResult` | 带 `must_use` 的类型化结果；即使失败也保留实际 state/messages、owning error（如有）、终止结果和 evidence health，而不会丢失生命周期事实。 |
 | `Tool` | 基于 JSON Schema 的工具契约，支持取消和可选进度更新。 |
 | `RegisteredTool` / `ToolRegistry` / `ToolAuthorizer` | 不可变可信工具注册，以及每次调用都必须经过的 authority 边界。 |
 | `ExecutionMode` | 控制工具能否进入并行批次，或是否强制串行执行。 |
@@ -77,8 +78,9 @@ agent_start                              # 仅一次，首轮之前
     turn_start
     transform_context                     # AgentHooks::transform_context
     convert_to_llm                        # AgentHooks::convert_to_llm
-    validate request capabilities         # 失败 -> AgentEnd, AgentError::Provider
     ProviderCollection::prepare_call(Request)
+      validate route/request model schema and capabilities
+                                         # hook 转换已经完成
       PreparedProviderCall::start_attempt
       message_start                       # assistant 流 Start
       message_update                      # 每个文本/思考 delta
@@ -91,14 +93,15 @@ agent_start                              # 仅一次，首轮之前
         after_tool_call                   # AgentHooks::after_tool_call（可替换结果）
         tool_execution_end                # 每个 tool call
         turn_end                          # assistant 消息 + tool_results
-        若所有结果都 terminate -> AgentEnd, return Ok
-        should_stop_after_turn            # true -> AgentEnd, return Ok（压缩停止）
       否则：
         turn_end                          # assistant 消息，无 tool_results
-        should_stop_after_turn            # true -> AgentEnd, return Ok
-    prepare_next_turn                     # AgentHooks::prepare_next_turn；在终止的
-                                         # should_stop_after_turn 之后被跳过；可注入消息
+    prepare_next_turn                     # hook 可返回完整候选状态
+    validate candidate as one unit
+    apply candidate atomically            # 先于停止判断
+    should_stop_after_turn                # 观察已应用状态；terminate 强制为 true
+                                         # true -> AgentEnd, 成功的 AgentLoopResult
     drain steering queue                  # 非空 -> QueueUpdate，追加，进入下一 turn
+    若已应用候选状态 -> 进入下一 turn
     若无待处理工具：
       pop follow-up queue                 # 非空 -> QueueUpdate，追加，进入下一 turn
       否则 -> 停止
@@ -107,11 +110,15 @@ agent_end                                 # 仅一次，终止时
 
 边界：
 
-- `should_stop_after_turn` 在 `turn_end` 之后、`prepare_next_turn` 及任何队列
-  轮询之前执行。压缩协调器在此返回 `true` 以在下一 turn 之前停止；终止停止
-  之后不会运行 `prepare_next_turn`，也不会轮询 steering/follow-up。
-- `prepare_next_turn` 仅在 `should_stop_after_turn` 允许继续时执行，且早于
-  steering/follow-up 轮询；注入的消息会进入下一次 provider 请求。
+- `transform_context` 与 `convert_to_llm` 先完成，随后
+  `ProviderCollection::prepare_call` 才针对已解析模型的 schema、wire 和能力校验
+  转换后的请求。
+- `prepare_next_turn` 在 live state 之外构造完整候选状态。主循环先把候选作为整体
+  校验并原子应用，再执行 `should_stop_after_turn`；取消或校验失败会保留（或恢复）
+  先前状态。
+- `should_stop_after_turn` 在 `turn_end` 和候选应用之后、任何队列轮询之前观察已应用
+  状态。终止停止会阻止 steering/follow-up 轮询；否则，已应用的 prepared candidate
+  会在弹出 follow-up 前获得自己的下一次 provider turn。
 - Steering 先于 follow-up 被排空。仅当无待处理工具且 steering 队列为空时，
   才弹出 follow-up。
 - `CompactionEngine` 只是上下文大小的原语；将压缩与持久化 CLI 会话相连的
@@ -130,16 +137,14 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
 | `convert_to_llm` | 将应用消息转换为 Provider 消息，并过滤仅会话状态。 |
 | `before_tool_call` | 在 JSON Schema 参数校验之后、`tool.execute` 之前运行；可 `Deny` 阻止执行（拒绝原因成为工具错误）。 |
 | `after_tool_call` | 在执行之后、最终的 `ToolExecutionEnd` 事件之前运行；可 `Replace` 结果，使替换后的结果成为被发出和持久化的值。 |
-| `should_stop_after_turn` | 在 `turn_end` 之后、steering/follow-up 轮询之前运行；返回 `true` 会在下一 turn 之前停止，并跳过 `prepare_next_turn`。 |
-| `prepare_next_turn` | 仅在 `should_stop_after_turn` 允许继续时运行，且早于 steering/follow-up 轮询；可向下一次 provider 请求注入消息。 |
+| `prepare_next_turn` | 在 `turn_end` 之后运行；可返回完整候选状态，该状态会在停止判断前被校验并原子应用。 |
+| `should_stop_after_turn` | 在候选准备/应用之后、steering/follow-up 轮询之前运行；返回 `true` 会在下一 turn 之前停止。 |
 
 扩展组合：`ExtensionRegistry::wrap_hooks` 先运行基础 `AgentHooks` 方法，再按注册顺序依次运行每个扩展。
 扩展的 `on_before_tool_call` 返回 `Block` 会在首个 block 处中断链路；后续扩展不会被调用。
 扩展的 `on_after_tool_call` 观察者不能修改结果；只有基础 hook 可以 `Replace`。
 
-当 adapter 或扩展只实现了部分 hook 时，其余 hook 方法默认为 no-op。（旧版基于
-`TraceCollector` / `Extension::set_trace_collector` 的 hook 跳过记录已随 Phase 17.7
-的 trace 契约一并移除。）
+当 adapter 或扩展只实现了部分 hook 时，其余 hook 方法默认为 no-op。
 
 ## 工具调度
 
@@ -192,7 +197,8 @@ evidence 记录。公共事件在发出前会脱敏；provider 请求只通过
 在 `agent_loop` 中，每个 turn 会在三处检查同一个 `CancellationToken`：turn 开始
 之前、provider 流式过程中、以及重试退避期间。一旦观察到取消，循环会记录一条信息级
 的 `agent cancelled` 诊断（标注生命周期阶段），发出携带已 finalized 消息缓冲区的终止
-`AgentEnd` 事件，并返回 `Err(AgentError::Cancelled)`。in-flight assistant 消息累积的
+`AgentEnd` 事件，并返回 error 为 `Some(AgentError::Cancelled)` 的
+`AgentLoopResult`。in-flight assistant 消息累积的
 部分流式内容会被丢弃：只有当流的 `Done` 事件到达时才会被推入消息缓冲区，因此流式
 过程中取消不会写入任何部分 assistant 消息。
 
@@ -200,16 +206,24 @@ evidence 记录。公共事件在发出前会脱敏；provider 请求只通过
 provider-stream cancellation 可能发出 `TurnStarted` 而没有匹配的 `TurnEnded`；
 这些路径的终止边界是 `AgentEnd` 以及关联的诊断。
 
-`Agent::abort`（以及 harness 的 `cancel` / `cancel_token` 辅助方法）会取消活跃 run
-的 token；token 会在下一 turn 之前被重置，因此被取消的运行时会回到 idle 并接受新的
-prompt。观察到自身 `CancellationToken` 的工具会立即返回——进程 adapter 工具在向 adapter
+`Agent::abort` 会取消活跃 run 的 token；token 会在下一次操作之前被重置，因此被取消的
+运行时会回到 idle 并接受新的 prompt。需要等待产品 preflight 的调用方可使用公共但
+doc-hidden 的 `Agent::arm_run`/`ArmedAgentRun` 及配套 `*_armed` 操作：这个不透明值把
+取消绑定到恰好一个 Agent 的最新 generation，foreign 或 stale 值会产生类型化
+`AgentError::InvalidArmedRun`。观察到自身 `CancellationToken` 的工具会立即返回——进程 adapter 工具在向 adapter
 子进程尽力派发一条 `cancel` 消息后返回 `ToolError::Cancelled`——其结果会成为一个已
 finalized 的错误工具结果，而非挂起。RPC abort、交互式 abort 与 shutdown 都归约为同一个
 token 原语，因此可观察契约在嵌入方边界之间是一致的。
 
 会话持久化对每条已 finalized 的 `AgentMessage::Llm` 条目进行 append-only 写入，而其
-run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因此存储中永远不会
+类型化 run 结果携带 `AgentError::Cancelled` 的 turn 根本不会被持久化，因此存储中永远不会
 出现部分 assistant 消息或半应用的工具结果。
+
+公共 `Agent` run 操作返回带 `must_use` 的 `AgentRunResult`，底层 `agent_loop` 返回
+`AgentLoopResult`。二者都暴露保留的 state/messages、owning error、`TerminalOutcome`
+与最终 `EvidenceHealth`；`into_execution_result` 是显式兼容转换。`AgentRunResult`
+还拥有 loop 后生命周期：报告 `AgentRunLifecyclePhase`，把 `begin_compaction` 与
+`finish_compaction` 配对，并通过 `finalize_evidence` 或 `abandon_evidence` 结束证据。
 
 ## 会话与压缩
 
@@ -295,6 +309,15 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 - `streaming_proxy` 可在任意 `BufRead`/`Write` 传输上转发 JSONL 命令/事件，输出
   `proxy_ready` header，提供事件缓冲、取消，并默认脱敏常见密钥模式。
 
+Evidence 生命周期是显式的：`EvidenceSink::setup` 先于有序 `emit`，artifact 经过
+`finalize_artifact`，只有已校验且不可变的 `FinalizedManifest` 才能进入
+`finalize_run`。无法发布的 run 通过 `abandon_run` 关闭；未完成生命周期时，
+`AgentRunResult` 会失败关闭地调用该路径。Evidence 与 manifest facts 均为类型化
+（包括 route/auth provenance、tool authorization/outcome、session binding、measurement
+与 terminal outcome），而 `AssemblyIdentity`、`CapabilityIdentity` 等 product/embedder
+identity 保持为经校验的不透明字符串。`RunId` 是不透明 UUIDv7，并按规范带连字符字符串
+序列化/解析；run-local turn/call/sequence identity 不暴露构造器。
+
 所有 SDK/RPC/proxy 表面都是不稳定的 0.x API。客户端应检查 schema version，并在
 需要时固定精确 crate 版本。
 
@@ -312,10 +335,11 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 |---|---|---|
 | `Agent` | 支持的 0.x | 对主循环的有状态封装；经契约测试。 |
 | `agent_loop` | 支持的 0.x | 核心异步入口；运行时事件顺序契约已测试。 |
+| `AgentRunResult`、`AgentLoopResult`、`AgentRunLifecyclePhase`、`PendingCompaction` | 支持的 0.x | 带 `must_use` 的类型化执行/生命周期结果；调用方在显式转换或 finalization 前检查实际 outcome 与 evidence health。 |
 | `AgentHooks` | 支持的 0.x | 六个生命周期 hooks；hook 顺序与失败契约已测试。 |
 | `AgentLoopConfig`、`AgentLoopContext`、`AgentError`、`AgentMessage` | 支持的 0.x | 受支持的底层 `agent_loop` 入口所需的类型。 |
 | `Tool`、`ToolDef`、`ToolResult`、`ToolError`、`ExecutionMode` | 支持的 0.x | JSON-Schema 工具契约，以及嵌入方使用的结果、错误和调度类型。 |
-| `RegisteredTool`、`ToolRegistry`、`ToolAuthorizer`、`EffectiveUserPolicy` | 支持的 0.x | 可信注册、面向 provider 的投影，以及 fail-closed 的逐调用授权。 |
+| `RegisteredTool`、`ToolRegistry`、`ToolAuthorizer`、`CapabilityIdentity` | 支持的 0.x | 产品中立的可信注册、经校验的不透明 capability identity、面向 provider 的投影，以及 fail-closed 的逐调用授权。产品策略和内置 capability 常量由产品/embedder 提供，不属于 Agent Core。 |
 | `AgentEvent`、`AgentEventSink` | 支持的 0.x | 进程内运行时事件流；`AgentEvent` 是 `#[non_exhaustive]`，因为 0.x 内可能新增变体。 |
 | `AgentSessionEvent` | 不稳定内部 | `opi --json` 线协议（`NDJSON_SCHEMA_VERSION = 2`，由 `opi-coding-agent` 拥有）；`#[non_exhaustive]`。请检查 schema 版本。 |
 | `SessionEntry` | 不稳定内部 | 会话 JSONL 存储布局；位于 `session::SessionEntry`，未在 crate root 重新导出；`#[non_exhaustive]`。 |
@@ -323,23 +347,24 @@ run 返回 `Err(AgentError::Cancelled)` 的 turn 根本不会被持久化，因�
 | `SdkCommand`、`SdkResponse`、`SDK_SCHEMA_VERSION` | 不稳定内部 | RPC/SDK 命令模型（`SDK_SCHEMA_VERSION = 3`）；`sdk` 模块标注为不稳定 0.x。 |
 | `StreamingProxy`、`ProxyConfig`、`ProxyEvent`、`ProxyHandler`、`SecretRedactor`、`StreamingProxyError` | 不稳定内部 | streaming-proxy 原语；`streaming_proxy` 模块标注为不稳定 0.x。 |
 | `Diagnostic`、`DiagnosticPayload`、`RedactionMode`、`Severity`、`redact`、`redact_text`、`DiagnosticSink`、`NullSink`、`RecordingSink` | 不稳定内部 | 运行时表面使用的诊断 payload 与 sink plumbing；当前契约是 redaction/schema-version 行为，不是稳定 API 形状。 |
-| `EvidenceSink`、`EvidenceRecorder`、`InMemoryEvidenceSink`、`NoopEvidenceSink`、`EvidenceRecord`、`FinalizedManifest`、`RuntimeInputBinding`、`EvidenceHealth`、`IdentityAllocator` | 不稳定内部 | 产品中立 evidence 契约（Phase 17.3/17.6/17.7）：存储中立 sink 生命周期与已解析执行清单值类型。`evidence` 模块标注为不稳定 0.x。 |
+| `EvidenceSink`、`EvidenceRecorder`、`InMemoryEvidenceSink`、`NoopEvidenceSink`、`EvidenceRecord`、`ManifestCandidate`、`FinalizedManifest`、`RuntimeInputBinding`、`EvidenceHealth`、`IdentityAllocator`、`RunId` | 不稳定内部 | 产品中立的类型化 evidence 契约：存储中立的 finalize/abandon 生命周期、经校验的 resolved-execution facts、不透明 identity 与规范 UUIDv7 run identity。`evidence` 模块标注为不稳定 0.x。 |
+| `agent::ArmedAgentRun` 及 doc-hidden `Agent::{arm_run,control_handle_for_run,*_armed}` | 不稳定内部 | 产品 preflight 使用的单次操作 cancellation generation；stale/foreign generation 返回 `AgentError::InvalidArmedRun`。 |
 | `HarnessError`、`HarnessResult`、`SavePoint`、`PendingWriteQueue`、`PendingWrite`、`PendingWriteKind`、`SessionRepo`、`SessionFacade`、`JsonlSessionRepo` | 不稳定内部 | 通用 session-facade/repo 编排 seam；`harness` 模块标注为不稳定 0.x。 |
 
-本次审查没有发现候选移除的 crate-root re-export。`src/lib.rs` 中的每个
-crate-root `pub use` 都已在上表点名。公共模块可能还会通过模块路径暴露其他项；
-除非这些项在这里被点名为支持的 0.x 表面，否则它们都属于不稳定内部 0.x API。
+上表列出了 `src/lib.rs` 中每个受支持的 crate-root `pub use`。公共模块可能还会通过
+模块路径暴露其他项；除非这些项在这里被点名为支持的 0.x 表面，否则它们都属于
+不稳定内部 0.x API。
 
 不会给出稳定 1.0 API 承诺。当前稳定性由 `AgentEvent`、`AgentSessionEvent`、
 `SessionEntry` 及 evidence/hook 结果枚举上的 `#[non_exhaustive]`，以及 `sdk`、
 `streaming_proxy`、`extension` 和 `evidence` 模块级的 `# Unstable` / 不稳定 0.x 说明来
-约束。没有 `#[doc(hidden)]` 或 `#[unstable]` feature gate，因此嵌入方应固定精确
-crate 版本。evidence sink 生命周期是捕获契约（Phase 17.7）。
+约束。上表列出的 preflight 与 armed-run 方法有意标记为 `#[doc(hidden)]` 内部表面；
+该属性只控制文档可见性，并不保证 API 稳定。不存在由编译器强制执行的
+`#[unstable]` gate，因此嵌入方只应依赖上表标明的受支持 0.x 分类，并固定精确
+crate 版本。evidence sink 生命周期是捕获契约。
 
-Phase 17 有意移除了 `Agent` 的零散 model/inference/message setter、
-`Agent::add_tool`、通用状态包，以及未使用的 phase/snapshot harness owner。嵌入方应原子
-替换一个经校验的完整 `NextTurnState`，并在构造时提供不可变 `RegisteredTool` 与
-`ToolAuthorizer`。
+Agent 状态以一个经校验的完整 `NextTurnState` 原子替换。嵌入方在构造时提供不可变
+`RegisteredTool` 与 `ToolAuthorizer`。
 
 ## 非目标（Non-Goals）
 

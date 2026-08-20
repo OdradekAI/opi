@@ -914,7 +914,7 @@ async fn session_integration_with_agent() {
     )
     .expect("agent");
 
-    let _result = agent.prompt("test").await.unwrap();
+    let _result = agent.prompt("test").await.into_execution_result().unwrap();
 
     // Fixture tools should still be in state after agent run.
     let s = state.lock().unwrap();

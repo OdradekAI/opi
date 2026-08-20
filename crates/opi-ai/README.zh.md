@@ -62,8 +62,10 @@ OpenAI-compatible profile 加入。
 | `WireApi` / `ModelInfo` / `ModelCapabilities` | 精确请求 wire identity，以及模型能力、thinking、compatibility 与 pricing 元数据。 |
 | `ApiMappedProvider` | 通过经校验的 `WireApi -> Provider` route map 派发一个公开 Provider identity/catalog。 |
 | `ProviderError` / `ProviderErrorCategory` | Provider 失败分类：auth、config、request、network、rate_limit、provider、stream、capability 和 cancelled（超时归为 network）。 |
+| `ProviderErrorSummary` | 封闭且可安全脱敏的 Provider error 文本。公共构造仅限 `redacted()`、`authentication_rejected()` 与 `from_untrusted(...)`；不会保留任意 Provider payload。 |
 | `ProviderRegistry` | 解析 `provider:model`、注册自定义 Provider、叠加模型覆盖。 |
 | `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | unstable-0.x 模型/鉴权 seam，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。 |
+| `PreparedProviderCall` / `PreparedRoute` | `ProviderCollection::prepare_call` 返回的不透明 logical-call 状态，以及公开的已脱敏 route facts。`route`、`auth_provenance` 与 `start_attempt` 是 prepared-call 生命周期 API。 |
 | `CredentialStore` / `Credential` / `CredentialSource` | 无 IO、object-safe 的凭据持久化与已脱敏三态探测契约。 |
 | `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | 与 flow 无关的 boxed-future OAuth 契约；具体 flow 位于 `opi-coding-agent`。 |
 | `AuthResolver` / `ResolvedAuth` | 由 collection 按调用解析的鉴权契约；attempt 开始前会冻结一次准备结果。 |
@@ -89,8 +91,12 @@ Copilot 和 OpenAI Codex 登录 flow；`opi-ai` 不执行 keychain、环境变�
 route 与 wire/compatibility 不匹配都会成为类型化、不可重试的失败。
 
 GitHub Copilot 把一个静态 catalog 路由到 Anthropic Messages、OpenAI Completions/Chat 与 OpenAI Responses；OpenAI Codex 使用专用 Responses provider，而不是标准 Responses 兼容标志。
-collection 在 `prepare_call` 中、任何 attempt 之前只解析一次 `AuthResolver`；每次
-`start_attempt` 都复用这份已冻结的鉴权。凭据缺失与撤销分别成为显式且不可重试的
+collection 在 `prepare_call` 中、任何 attempt 之前只解析一次 `AuthResolver`，并返回
+`PreparedProviderCall`。其 `route()` 只暴露 `PreparedRoute`，`auth_provenance()` 暴露
+非 secret provenance，每次 `start_attempt()` 都复用已冻结的 route、request、鉴权和
+cancellation token。attempt 必须串行：重叠 stream 返回
+`CollectionError::AttemptAlreadyActive`，取消返回 `CallCancelled`，先前 attempt 若报告
+credential-needed/revoked，则 prepared call 以 `CredentialTerminated` 关闭。凭据缺失与撤销分别成为显式且不可重试的
 `ProviderError::CredentialNeeded` 和 `ProviderError::CredentialRevoked`。
 按调用凭据仍不在范围内：`extra_headers` 会拒绝 Provider 管理的鉴权 header。
 

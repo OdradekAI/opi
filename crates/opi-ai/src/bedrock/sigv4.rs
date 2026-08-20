@@ -1,46 +1,42 @@
-//! AWS Signature Version 4 signing for Bedrock requests (task 3.1).
+//! AWS Signature Version 4 signing for Bedrock requests.
 //!
 //! Implements the SigV4 algorithm for signing HTTP requests to AWS services.
 //! Uses HMAC-SHA256 throughout. No live AWS dependency.
 
 use hmac::{Hmac, Mac};
+use secrecy::{ExposeSecret, SecretString};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
 /// AWS credentials for SigV4 signing.
-///
-/// Custom Debug implementation redacts secrets.
-#[derive(Clone)]
-pub struct AwsCredentials {
-    pub access_key_id: String,
-    pub secret_access_key: String,
-    pub session_token: Option<String>,
-    pub region: String,
-}
-
-impl std::fmt::Debug for AwsCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AwsCredentials")
-            .field("access_key_id", &self.access_key_id)
-            .field("secret_access_key", &"***")
-            .field("session_token", &self.session_token.as_ref().map(|_| "***"))
-            .field("region", &self.region)
-            .finish()
-    }
-}
+pub type AwsCredentials = crate::auth::AwsSigV4Credentials;
 
 /// Result of signing a request.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SignedRequest {
     /// The Authorization header value.
-    pub authorization: String,
+    pub authorization: SecretString,
     /// The X-Amz-Date header value (ISO 8601 basic: YYYYMMDDTHHmmssZ).
     pub x_amz_date: String,
     /// The X-Amz-Security-Token header (present when session token is set).
-    pub x_amz_security_token: Option<String>,
+    pub x_amz_security_token: Option<SecretString>,
     /// The SHA-256 hash of the payload (hex encoded).
     pub x_amz_content_sha256: String,
+}
+
+impl std::fmt::Debug for SignedRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignedRequest")
+            .field("authorization", &"<redacted>")
+            .field("x_amz_date", &self.x_amz_date)
+            .field(
+                "x_amz_security_token",
+                &self.x_amz_security_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field("x_amz_content_sha256", &self.x_amz_content_sha256)
+            .finish()
+    }
 }
 
 /// Sign an HTTP request using AWS SigV4.
@@ -73,7 +69,7 @@ pub fn sign_request(
     );
 
     let signing_key = get_signing_key(
-        &credentials.secret_access_key,
+        credentials.secret_access_key.expose_secret(),
         date_stamp,
         &credentials.region,
         service,
@@ -82,11 +78,11 @@ pub fn sign_request(
 
     let auth_header = format!(
         "AWS4-HMAC-SHA256 Credential={}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}",
-        credentials.access_key_id,
+        credentials.access_key_id.expose_secret(),
     );
 
     SignedRequest {
-        authorization: auth_header,
+        authorization: SecretString::from(auth_header),
         x_amz_date: amz_date.to_string(),
         x_amz_security_token: credentials.session_token.clone(),
         x_amz_content_sha256: payload_hash,
@@ -96,19 +92,19 @@ pub fn sign_request(
 /// Build canonical header string and signed headers list.
 fn canonicalize_headers(
     headers: &[(&str, &str)],
-    session_token: &Option<String>,
+    session_token: &Option<SecretString>,
 ) -> (String, String) {
     let mut all_headers: Vec<(&str, &str)> = headers.to_vec();
     // Session token is added as a header if present
     if let Some(token) = session_token {
-        all_headers.push(("x-amz-security-token", token.as_str()));
+        all_headers.push(("x-amz-security-token", token.expose_secret()));
     }
     // Sort by lowercase header name
     all_headers.sort_by_key(|a| a.0.to_lowercase());
 
     let canonical: String = all_headers
         .iter()
-        .map(|(k, v)| format!("{}:{}", k.to_lowercase(), v.trim()))
+        .map(|(k, v)| format!("{}:{}", k.to_lowercase(), normalize_header_value(v)))
         .collect::<Vec<_>>()
         .join("\n");
     let signed: String = all_headers
@@ -118,6 +114,15 @@ fn canonicalize_headers(
         .join(";");
 
     (signed, canonical)
+}
+
+fn normalize_header_value(value: &str) -> String {
+    value
+        .trim_matches([' ', '\t'])
+        .split([' ', '\t'])
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
@@ -205,13 +210,24 @@ mod tests {
             "20150830T123600Z",
         );
 
-        assert!(result.authorization.starts_with("AWS4-HMAC-SHA256"));
         assert!(
             result
                 .authorization
+                .expose_secret()
+                .starts_with("AWS4-HMAC-SHA256")
+        );
+        assert!(
+            result
+                .authorization
+                .expose_secret()
                 .contains("Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request")
         );
-        assert!(result.authorization.contains("SignedHeaders=host"));
+        assert!(
+            result
+                .authorization
+                .expose_secret()
+                .contains("SignedHeaders=host")
+        );
         assert_eq!(result.x_amz_date, "20150830T123600Z");
         assert!(result.x_amz_security_token.is_none());
     }
@@ -240,10 +256,23 @@ mod tests {
             "20250526T120000Z",
         );
 
-        assert!(result.authorization.contains("SignedHeaders="));
-        assert!(result.authorization.contains("x-amz-security-token"));
+        assert!(
+            result
+                .authorization
+                .expose_secret()
+                .contains("SignedHeaders=")
+        );
+        assert!(
+            result
+                .authorization
+                .expose_secret()
+                .contains("x-amz-security-token")
+        );
         assert_eq!(
-            result.x_amz_security_token.as_deref(),
+            result
+                .x_amz_security_token
+                .as_ref()
+                .map(ExposeSecret::expose_secret),
             Some("session-token-123")
         );
     }
@@ -283,5 +312,39 @@ mod tests {
         );
         assert_eq!(signed, "content-type;host");
         assert!(canonical.starts_with("content-type:application/json\n"));
+    }
+
+    #[test]
+    fn sign_request_collapses_sequential_spaces_and_tabs_in_header_values() {
+        let credentials = AwsCredentials {
+            access_key_id: "AKIDEXAMPLE".into(),
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".into(),
+            session_token: None,
+            region: "us-east-1".into(),
+        };
+        let payload = br#"{"messages":[]}"#;
+        let payload_hash = sha256_hex(payload);
+        let signed = sign_request(
+            "POST",
+            "/model/test/converse-stream",
+            "",
+            &[
+                ("host", "bedrock-runtime.us-east-1.amazonaws.com"),
+                ("content-type", "application/json"),
+                ("x-amz-content-sha256", &payload_hash),
+                ("x-amz-date", "20250815T123456Z"),
+                ("x-opi-custom", " \talpha   beta\t\tgamma  "),
+            ],
+            payload,
+            &credentials,
+            "bedrock",
+            "20250815",
+            "20250815T123456Z",
+        );
+
+        assert_eq!(
+            signed.authorization.expose_secret(),
+            "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20250815/us-east-1/bedrock/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-opi-custom, Signature=e6fa97332c5c3f3c9e8ca56062e2626ea4909ad8fa636260ffa90e35ffd6003d"
+        );
     }
 }

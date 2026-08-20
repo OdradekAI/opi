@@ -19,7 +19,7 @@ use crate::message::{
 };
 use crate::model_info::WireApi;
 use crate::provider::{
-    CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request,
+    CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
     github_copilot_initiator, github_copilot_route_headers,
 };
 use crate::provider_headers::ProviderHeaders;
@@ -194,8 +194,8 @@ fn validate_usage_subset(raw: &OpenAiRawChunk) -> Result<(), ProviderError> {
         .and_then(|details| details.reasoning_tokens)
         && reasoning > output
     {
-        return Err(ProviderError::StreamError(format!(
-            "reasoning_tokens ({reasoning}) exceeds completion_tokens ({output})"
+        return Err(ProviderError::StreamError(ProviderErrorSummary::sanitized(
+            format!("reasoning_tokens ({reasoning}) exceeds completion_tokens ({output})"),
         )));
     }
     Ok(())
@@ -770,10 +770,10 @@ const OPENAI_CHAT_STREAM_ERROR: &str = "openai chat stream error";
 /// each tool result. Modern OpenAI Chat Completions does not require this, so the
 /// shared adapter records the flag for compatibility metadata without altering
 /// message ordering; an endpoint that materially requires the legacy synthesis
-/// would need a reviewed first-class adapter (Phase 12 non-goal guard).
+/// needs a dedicated first-class adapter.
 pub use crate::model_info::OpenAiCompletionsCompat as CompatConfig;
 
-/// Per-model compat overrides (Phase 12 task 12.3).
+/// Per-model compatibility overrides.
 ///
 /// A model entry may override a subset of the provider-level [`CompatConfig`].
 /// At request-build time the provider resolves the effective config by layering
@@ -975,7 +975,7 @@ impl OpenAiChatProvider {
         Self { client, ..self }
     }
 
-    /// Attach per-model compat overrides (Phase 12 task 12.3). Model-level
+    /// Attach per-model compatibility overrides. Model-level
     /// overrides win over the provider-level [`CompatConfig`] for the models
     /// they declare; models without an entry inherit the provider default.
     pub fn with_model_overrides(mut self, overrides: HashMap<String, ModelCompatOverride>) -> Self {
@@ -1113,7 +1113,7 @@ impl OpenAiChatProvider {
                 }
                 ParsedEvent::Malformed { .. } => {
                     stream_events.push(Err(ProviderError::StreamError(
-                        "malformed OpenAI Chat SSE frame".to_owned(),
+                        ProviderErrorSummary::attested_static("malformed OpenAI Chat SSE frame"),
                     )));
                     break;
                 }
@@ -1167,17 +1167,15 @@ impl OpenAiChatProvider {
                 if e.is_timeout() {
                     ProviderError::Timeout
                 } else {
-                    ProviderError::Network(e.to_string())
+                    ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
                 }
             })?;
 
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
-            let error_body = response.text().await.unwrap_or_default();
             return Err(map_http_status(
                 status,
-                &error_body,
                 &headers,
                 auth_invalid_policy,
                 &provider_id,
@@ -1205,9 +1203,9 @@ impl OpenAiChatProvider {
                 if e.is_timeout() {
                     ProviderError::Timeout
                 } else if e.is_connect() {
-                    ProviderError::Network(e.to_string())
+                    ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
                 } else {
-                    ProviderError::StreamError(e.to_string())
+                    ProviderError::StreamError(ProviderErrorSummary::sanitized(e.to_string()))
                 }
             })?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
@@ -1226,7 +1224,9 @@ impl OpenAiChatProvider {
                     ParsedEvent::UsageError(error) => return Err(error),
                     ParsedEvent::Malformed { .. } => {
                         return Err(ProviderError::StreamError(
-                            "malformed OpenAI Chat SSE frame".to_owned(),
+                            ProviderErrorSummary::attested_static(
+                                "malformed OpenAI Chat SSE frame",
+                            ),
                         ));
                     }
                 }
@@ -1236,7 +1236,9 @@ impl OpenAiChatProvider {
         if let Some(done) = mapper.flush_pending_done() {
             let _ = tx.send(Ok(done)).await;
         } else if !mapper.saw_done {
-            let err = ProviderError::StreamError("stream ended without a terminal event".into());
+            let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                "stream ended without a terminal event",
+            ));
             let _ = tx.send(Err(err)).await;
         }
 
@@ -1279,7 +1281,6 @@ fn drain_sse_events(buffer: &mut String) -> Vec<ParsedEvent> {
 
 fn map_http_status(
     status: reqwest::StatusCode,
-    body: &str,
     headers: &reqwest::header::HeaderMap,
     policy: AuthInvalidPolicy,
     provider_id: &str,
@@ -1292,9 +1293,7 @@ fn map_http_status(
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
         408 | 504 => ProviderError::Timeout,
-        code => {
-            ProviderError::ProviderSide(format!("HTTP {code}: {}", crate::http::safe_excerpt(body)))
-        }
+        code => ProviderError::ProviderSide(ProviderErrorSummary::from_http_response(code)),
     }
 }
 
@@ -1413,7 +1412,7 @@ fn serialize_messages(
                         }
                     })
                     .collect();
-                // Phase 11.9: the Chat Completions API has no native error field on a
+                // The Chat Completions API has no native error field on a
                 // role:"tool" message, so prefix the deterministic failure marker when
                 // the tool result is an error; leave the success body byte-identical.
                 // Azure/OpenRouter/Mistral inherit this via the shared adapter.

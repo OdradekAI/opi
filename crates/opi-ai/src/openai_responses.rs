@@ -17,7 +17,7 @@ use crate::openai_responses_shared::{
     parse_sse_frames,
 };
 use crate::provider::{
-    CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request,
+    CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
     github_copilot_initiator, github_copilot_route_headers,
 };
 use crate::provider_headers::ProviderHeaders;
@@ -319,12 +319,16 @@ impl OpenAiResponsesProvider {
                     events.extend(mapper.process(event).into_iter().map(Ok));
                 }
                 ParsedEvent::UsageError(error) => {
-                    events.push(Err(ProviderError::StreamError(error)));
+                    events.push(Err(ProviderError::StreamError(
+                        ProviderErrorSummary::sanitized(error),
+                    )));
                     break;
                 }
                 ParsedEvent::Malformed { .. } => {
                     events.push(Err(ProviderError::StreamError(
-                        "malformed OpenAI Responses SSE frame".to_owned(),
+                        ProviderErrorSummary::attested_static(
+                            "malformed OpenAI Responses SSE frame",
+                        ),
                     )));
                     break;
                 }
@@ -373,7 +377,9 @@ impl OpenAiResponsesProvider {
         {
             let header_value =
                 reqwest::header::HeaderValue::from_str(&session_id).map_err(|_| {
-                    ProviderError::RequestFailed("invalid session-id header value".into())
+                    ProviderError::RequestFailed(ProviderErrorSummary::attested_static(
+                        "invalid session-id header value",
+                    ))
                 })?;
             request = request.header("session_id", header_value);
         }
@@ -385,16 +391,14 @@ impl OpenAiResponsesProvider {
                 if error.is_timeout() {
                     ProviderError::Timeout
                 } else {
-                    ProviderError::Network(error.to_string())
+                    ProviderError::Network(ProviderErrorSummary::sanitized(error.to_string()))
                 }
             })?;
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
-            let body = response.text().await.unwrap_or_default();
             return Err(map_http_status(
                 status,
-                &body,
                 &headers,
                 auth_invalid_policy,
                 &provider_id,
@@ -416,9 +420,9 @@ impl OpenAiResponsesProvider {
                 if error.is_timeout() {
                     ProviderError::Timeout
                 } else if error.is_connect() {
-                    ProviderError::Network(error.to_string())
+                    ProviderError::Network(ProviderErrorSummary::sanitized(error.to_string()))
                 } else {
-                    ProviderError::StreamError(error.to_string())
+                    ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
                 }
             })?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
@@ -432,11 +436,15 @@ impl OpenAiResponsesProvider {
                         }
                     }
                     ParsedEvent::UsageError(error) => {
-                        return Err(ProviderError::StreamError(error));
+                        return Err(ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                            error,
+                        )));
                     }
                     ParsedEvent::Malformed { .. } => {
                         return Err(ProviderError::StreamError(
-                            "malformed OpenAI Responses SSE frame".to_owned(),
+                            ProviderErrorSummary::attested_static(
+                                "malformed OpenAI Responses SSE frame",
+                            ),
                         ));
                     }
                 }
@@ -445,7 +453,7 @@ impl OpenAiResponsesProvider {
         if !mapper.saw_done {
             let _ = tx
                 .send(Err(ProviderError::StreamError(
-                    "stream ended without a terminal event".into(),
+                    ProviderErrorSummary::attested_static("stream ended without a terminal event"),
                 )))
                 .await;
         }
@@ -455,7 +463,6 @@ impl OpenAiResponsesProvider {
 
 fn map_http_status(
     status: reqwest::StatusCode,
-    body: &str,
     headers: &reqwest::header::HeaderMap,
     policy: AuthInvalidPolicy,
     provider_id: &str,
@@ -466,9 +473,7 @@ fn map_http_status(
             retry_after_ms: crate::retry::parse_retry_after(headers),
         },
         408 | 504 => ProviderError::Timeout,
-        code => {
-            ProviderError::ProviderSide(format!("HTTP {code}: {}", crate::http::safe_excerpt(body)))
-        }
+        code => ProviderError::ProviderSide(ProviderErrorSummary::from_http_response(code)),
     }
 }
 

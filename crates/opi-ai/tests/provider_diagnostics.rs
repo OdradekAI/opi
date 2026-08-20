@@ -14,8 +14,8 @@ use std::collections::HashSet;
 use opi_ai::http::safe_excerpt;
 use opi_ai::message::{ImageSource, InputContent, MediaType, Message, UserMessage};
 use opi_ai::provider::{
-    CacheRetention, ModelInfo, ProviderError, ProviderErrorCategory, Request, ThinkingConfig,
-    validate_request_capabilities,
+    CacheRetention, ModelInfo, ProviderError, ProviderErrorCategory, ProviderErrorSummary, Request,
+    ThinkingConfig, validate_request_capabilities,
 };
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::test_support::MockProvider;
@@ -56,7 +56,7 @@ fn timeout_classifies_as_network() {
 #[test]
 fn network_error_classifies_as_network() {
     assert_eq!(
-        ProviderError::Network("dns lookup failed".into()).category(),
+        ProviderError::Network(ProviderErrorSummary::redacted()).category(),
         ProviderErrorCategory::Network
     );
 }
@@ -64,7 +64,7 @@ fn network_error_classifies_as_network() {
 #[test]
 fn config_error_classifies_as_config() {
     assert_eq!(
-        ProviderError::Config("invalid endpoint".into()).category(),
+        ProviderError::Config(ProviderErrorSummary::redacted()).category(),
         ProviderErrorCategory::Config
     );
 }
@@ -72,7 +72,7 @@ fn config_error_classifies_as_config() {
 #[test]
 fn provider_side_error_classifies_as_provider() {
     assert_eq!(
-        ProviderError::ProviderSide("HTTP 500: internal error".into()).category(),
+        ProviderError::ProviderSide(ProviderErrorSummary::redacted()).category(),
         ProviderErrorCategory::Provider
     );
 }
@@ -80,8 +80,7 @@ fn provider_side_error_classifies_as_provider() {
 #[test]
 fn unsupported_capability_classifies_as_capability() {
     assert_eq!(
-        ProviderError::UnsupportedCapability("model does not support image input".into())
-            .category(),
+        ProviderError::UnsupportedCapability(ProviderErrorSummary::redacted()).category(),
         ProviderErrorCategory::Capability
     );
 }
@@ -121,7 +120,7 @@ fn taxonomy_exposes_exactly_the_nine_phase12_classes() {
 #[test]
 fn request_failed_classifies_as_request() {
     assert_eq!(
-        ProviderError::RequestFailed("internal server error".into()).category(),
+        ProviderError::RequestFailed(ProviderErrorSummary::redacted()).category(),
         ProviderErrorCategory::Request
     );
 }
@@ -129,7 +128,7 @@ fn request_failed_classifies_as_request() {
 #[test]
 fn stream_error_classifies_as_stream() {
     assert_eq!(
-        ProviderError::StreamError("connection reset".into()).category(),
+        ProviderError::StreamError(ProviderErrorSummary::redacted()).category(),
         ProviderErrorCategory::Stream
     );
 }
@@ -137,7 +136,7 @@ fn stream_error_classifies_as_stream() {
 #[test]
 fn auth_failed_classifies_as_auth() {
     assert_eq!(
-        ProviderError::AuthFailed("invalid api key".into()).category(),
+        ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected()).category(),
         ProviderErrorCategory::Auth
     );
 }
@@ -168,13 +167,13 @@ fn rate_limited_exposes_retry_after_ms() {
 fn non_rate_limit_errors_have_no_retry_after() {
     for error in [
         ProviderError::Timeout,
-        ProviderError::Network("boom".into()),
-        ProviderError::RequestFailed("boom".into()),
-        ProviderError::Config("boom".into()),
-        ProviderError::ProviderSide("boom".into()),
-        ProviderError::StreamError("boom".into()),
-        ProviderError::AuthFailed("boom".into()),
-        ProviderError::UnsupportedCapability("boom".into()),
+        ProviderError::Network(ProviderErrorSummary::redacted()),
+        ProviderError::RequestFailed(ProviderErrorSummary::redacted()),
+        ProviderError::Config(ProviderErrorSummary::redacted()),
+        ProviderError::ProviderSide(ProviderErrorSummary::redacted()),
+        ProviderError::StreamError(ProviderErrorSummary::redacted()),
+        ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected()),
+        ProviderError::UnsupportedCapability(ProviderErrorSummary::redacted()),
         ProviderError::Cancelled,
     ] {
         assert_eq!(error.retry_after_ms(), None);
@@ -263,6 +262,42 @@ fn safe_excerpt_redacts_credentialed_url_userinfo() {
     assert!(!out.contains("alice"), "username must be redacted: {out}");
     assert!(!out.contains("s3cr3t"), "password must be redacted: {out}");
     assert!(out.contains("gitlab.example.com"), "host preserved: {out}");
+}
+
+#[test]
+fn safe_excerpt_redacts_all_credential_bearing_query_keys() {
+    let keys = [
+        "api_key",
+        "api-key",
+        "apikey",
+        "key",
+        "token",
+        "access_token",
+        "access-token",
+        "refresh_token",
+        "refresh-token",
+        "session_token",
+        "session-token",
+        "access_key_id",
+        "access-key-id",
+        "secret_access_key",
+        "secret-access-key",
+        "secret",
+        "password",
+        "authorization",
+        "proxy_authorization",
+        "proxy-authorization",
+    ];
+
+    for key in keys {
+        let canary = format!("opaque-{key}-canary");
+        let out = safe_excerpt(&format!("https://example.test/path?{key}={canary}&ok=yes"));
+        assert!(
+            !out.contains(&canary),
+            "query credential for key '{key}' was not redacted: {out}"
+        );
+        assert!(out.contains("[REDACTED]"), "missing marker: {out}");
+    }
 }
 
 #[test]
@@ -393,7 +428,7 @@ fn retryable_categories_are_rate_limit_and_network_only() {
             retry_after_ms: None,
         },
         ProviderError::Timeout,
-        ProviderError::Network("transient dns failure".into()),
+        ProviderError::Network(ProviderErrorSummary::redacted()),
     ] {
         assert!(
             error.is_retryable(),
@@ -402,12 +437,12 @@ fn retryable_categories_are_rate_limit_and_network_only() {
         );
     }
     for error in [
-        ProviderError::RequestFailed("boom".into()),
-        ProviderError::Config("boom".into()),
-        ProviderError::ProviderSide("boom".into()),
-        ProviderError::StreamError("boom".into()),
-        ProviderError::AuthFailed("boom".into()),
-        ProviderError::UnsupportedCapability("boom".into()),
+        ProviderError::RequestFailed(ProviderErrorSummary::redacted()),
+        ProviderError::Config(ProviderErrorSummary::redacted()),
+        ProviderError::ProviderSide(ProviderErrorSummary::redacted()),
+        ProviderError::StreamError(ProviderErrorSummary::redacted()),
+        ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected()),
+        ProviderError::UnsupportedCapability(ProviderErrorSummary::redacted()),
         ProviderError::Cancelled,
     ] {
         assert!(

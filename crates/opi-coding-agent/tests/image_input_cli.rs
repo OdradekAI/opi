@@ -246,7 +246,11 @@ async fn prompt_with_content_sends_image_to_provider() {
     )
     .expect("agent");
 
-    let messages = agent.prompt_with_content(content).await.unwrap();
+    let messages = agent
+        .prompt_with_content(content)
+        .await
+        .into_execution_result()
+        .unwrap();
 
     // The first message should be a UserMessage with image content
     let first = &messages[0];

@@ -846,13 +846,14 @@ fn provider_scope_bedrock_accepts_aws_profile_env() {
 }
 
 #[test]
-fn provider_scope_bedrock_custom_secret_env_does_not_replace_default_env_pair() {
+fn provider_scope_bedrock_incomplete_configured_source_fails_closed_before_default_env_pair() {
     let mut config = test_config("bedrock:anthropic.claude-test");
+    config.providers.bedrock.access_key_id = Some("CONFIG_AKID_DO_NOT_LEAK".into());
     config.providers.bedrock.secret_access_key_env = Some("BEDROCK_SECRET".into());
     let dir = tempfile::tempdir().unwrap();
     let env_values: HashMap<&str, String> = [
-        ("AWS_ACCESS_KEY_ID", "akid".into()),
-        ("AWS_SECRET_ACCESS_KEY", "secret".into()),
+        ("AWS_ACCESS_KEY_ID", "DEFAULT_AKID_DO_NOT_LEAK".into()),
+        ("AWS_SECRET_ACCESS_KEY", "DEFAULT_SECRET_DO_NOT_LEAK".into()),
     ]
     .into_iter()
     .collect();
@@ -862,16 +863,27 @@ fn provider_scope_bedrock_custom_secret_env_does_not_replace_default_env_pair() 
 
     assert!(
         report.entries.iter().any(|e| {
-            e.diagnostic.severity == Severity::Info
+            e.diagnostic.severity == Severity::Warning
+                && e.diagnostic.code == "doctor_provider_credentials"
+                && e.diagnostic.source == "provider"
                 && e.diagnostic.details.as_ref().is_some_and(|details| {
-                    details["credentials_present"] == true
+                    details["provider"] == "bedrock"
+                        && details["credentials_present"] == false
                         && details["credential_probe"]
-                            == "env AWS_ACCESS_KEY_ID + env AWS_SECRET_ACCESS_KEY"
+                            == "config access_key_id + env BEDROCK_SECRET"
                 })
         }),
-        "bedrock should preserve the fixed default env pair when a custom secret env is configured: {:?}",
+        "bedrock should fail closed on the incomplete configured source before the complete default env pair: {:?}",
         report.entries
     );
+    let rendered = format!("{}{}", format_text(&report), format_json(&report));
+    for secret in [
+        "CONFIG_AKID_DO_NOT_LEAK",
+        "DEFAULT_AKID_DO_NOT_LEAK",
+        "DEFAULT_SECRET_DO_NOT_LEAK",
+    ] {
+        assert!(!rendered.contains(secret), "credential leaked: {rendered}");
+    }
 }
 
 #[test]

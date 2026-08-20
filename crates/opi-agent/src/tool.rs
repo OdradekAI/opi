@@ -9,6 +9,10 @@ use opi_ai::message::{OutputContent, ToolDef};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
+use crate::evidence::{
+    PermissionReference, PermissionScope, PolicyReference, ScopedGrantReference,
+};
+
 /// Callback for progress updates during tool execution.
 pub type UpdateCallback = Box<dyn Fn(serde_json::Value) + Send + Sync>;
 
@@ -19,11 +23,13 @@ pub type UpdateCallback = Box<dyn Fn(serde_json::Value) + Send + Sync>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolExecutionAuthorization {
     /// Opaque effective-policy reference.
-    pub policy_ref: String,
+    pub policy_ref: PolicyReference,
     /// Opaque product-owned permission reference.
-    pub permission_ref: String,
+    pub permission_ref: PermissionReference,
     /// Opaque product-owned permission scope.
-    pub permission_scope: String,
+    pub permission_scope: PermissionScope,
+    /// Separately versioned scoped grant used by this authorization, if any.
+    pub scoped_grant_ref: Option<ScopedGrantReference>,
 }
 
 /// Tool trait — each concrete tool implements this.
@@ -64,9 +70,8 @@ pub trait Tool: Send + Sync {
 /// Owned, lightweight diagnostic entry carried on a [`ToolResult`].
 ///
 /// Deliberately not coupled to [`crate::diagnostic`] so `tool.rs` keeps its
-/// zero-internal-dependency layering. Phase 11.8 lifts each entry into a Phase 7
-/// [`Diagnostic`](crate::diagnostic::Diagnostic) plus a diagnostic-linked trace
-/// record at the agent-loop boundary. The entry also serializes into the
+/// zero-internal-dependency layering. The agent-loop boundary lifts each entry
+/// into a [`Diagnostic`](crate::diagnostic::Diagnostic). The entry also serializes into the
 /// agent-facing `AgentEvent::ToolExecutionEnd.diagnostics` wire field (NDJSON /
 /// RPC) so headless consumers see per-cause context. It is deliberately NOT
 /// added to the provider-facing `ToolResultMessage`.
@@ -76,7 +81,8 @@ pub struct ToolDiagnostic {
     pub code: String,
     /// Human-readable cause description.
     pub message: String,
-    /// Structured per-cause payload; becomes `Diagnostic::details` at the 11.8 lift.
+    /// Structured per-cause payload; becomes `Diagnostic::details` at the
+    /// agent-loop boundary.
     pub context: serde_json::Value,
 }
 
@@ -89,7 +95,8 @@ pub struct ToolResult {
     pub terminate: bool,
     /// Whether `content` was truncated (large file, capped output, partial walk).
     pub truncated: bool,
-    /// Tool-owned structured failure context; lifted into diagnostics/trace in 11.8.
+    /// Tool-owned structured failure context; lifted into diagnostics by the
+    /// agent loop.
     pub diagnostics: Vec<ToolDiagnostic>,
 }
 
@@ -115,6 +122,12 @@ pub enum ToolError {
     ExecutionFailed(String),
     #[error("cancelled")]
     Cancelled,
+    /// The tool failed after an external side effect may have occurred.
+    #[error("partial side effect: {0}")]
+    PartialSideEffect(String),
+    /// The tool could not confirm cleanup of an external side effect.
+    #[error("cleanup unknown: {0}")]
+    CleanupUnknown(String),
 }
 
 /// Whether a tool runs sequentially or in parallel with others.

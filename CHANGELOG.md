@@ -12,16 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `opi-ai`: provider dispatch is collection-owned. `ProviderCollection` is the
   route/auth seam — `prepare_call` resolves one canonical `provider:model`
   route and authentication once per logical call, and every retry attempt
-  reuses the frozen route/request/auth through `stream_prepared`. The
+  reuses the frozen route/request/auth through the opaque
+  `PreparedProviderCall::start_attempt`; `PreparedRoute` and redacted auth
+  provenance are its only public facts. The
   `Provider::stream(Request)` entry, the `SharedProvider` wrapper, and the
   metadata-only `MetadataProvider` construction path were removed; unknown,
   ambiguous, unauthenticated, refresh-failed, fallback-disallowed, or
   wire-incompatible selections fail with typed errors before model HTTP
   dispatch, without silent provider or credential fallback.
+- `opi-ai`: arbitrary `ProviderErrorSummary` construction and string
+  conversions were closed; public callers must use `redacted()`,
+  `authentication_rejected()`, or `from_untrusted(...)`, which does not retain its
+  payload. The unreachable `CollectionError::AuthNotConfigured` variant was
+  removed in favor of the dispatchable-route and typed provider-auth errors.
 - `opi-agent`: `Agent` owns one durable atomic `NextTurnState` (context,
-  provider:model, thinking, max_tokens, temperature) applied in a fixed
-  prepare → validate → apply → stop → queues order; the append-only
-  `AgentLoopTurnUpdate`, the unused `AgentHarness`/`HarnessRuntimeConfig`
+  provider:model, thinking, max_tokens, temperature). Request-transform hooks
+  finish before collection-owned schema/capability validation; after a turn,
+  the fixed order is prepare the candidate → validate it as a unit → atomically
+  apply it → run the stop hook against applied state → poll queues. The
+  append-only `AgentLoopTurnUpdate`, the unused
+  `AgentHarness`/`HarnessRuntimeConfig`
   state owner, `SharedProvider`, and `Agent::add_tool` were removed. Tools are
   registered as immutable trusted `RegisteredTool`s and every execution passes
   a mandatory `ToolAuthorizer`; the pre-tool hook's authorization-suggesting
@@ -31,30 +41,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed; `ContentDigest::from_hex` now validates canonical SHA-256 text.
 - `opi-agent`: the storage-shaped core `TraceSink`/`TraceCollector` contract
   was superseded by the product-neutral evidence lifecycle
-  (`EvidenceSink`/`EvidenceRecorder`, opaque run/turn/call identities,
-  `EvidenceHealth`, immutable `FinalizedManifest`).
+  (`EvidenceSink`/`EvidenceRecorder`, opaque run/turn/call and compaction
+  identities, `EvidenceHealth`, immutable `FinalizedManifest`). `EvidenceSink`
+  now separates `finalize_run` from `abandon_run`; evidence and manifest route,
+  auth, tool, session, measurement, and terminal facts are typed, and product
+  identity/reference strings use validated opaque wrappers. `RunId` is now a
+  process-independent UUIDv7 serialized and parsed as its canonical hyphenated
+  string rather than a numeric/process-local identity.
+- `opi-agent`: `Agent` run operations and the low-level `agent_loop` now return the
+  must-use `AgentRunResult` and `AgentLoopResult`, preserving actual state,
+  owning error, terminal outcome, and evidence health on failure. Post-loop
+  evidence/compaction uses `AgentRunLifecyclePhase`, `PendingCompaction`, and
+  explicit finalize/abandon APIs. Preflight cancellation uses opaque
+  `ArmedAgentRun` generations; a stale or foreign generation returns typed
+  `AgentError::InvalidArmedRun`.
 - `opi-coding-agent`: legacy bare-model session routes normalize only when the
   dispatchable collection proves exactly one route; missing or ambiguous
   routes keep the configured model and report typed remediation instead of
   guessing from the active provider.
+- `opi-coding-agent`: `NonInteractiveRunner::cancel` was replaced by
+  `cancel_token(&mut self)`, which arms the next run generation and returns its
+  clonable cancellation token before `run*` takes the mutable borrow.
 
 ### Added
 
 - `opi-ai`: `ProviderCollection` with per-call `prepare_call` route/auth
   preparation, `AuthResolver`/`ResolvedAuth` carrying non-secret provenance,
-  and typed collection failures (`AuthNotConfigured`,
-  `RouteNotDispatchable`, `CallCancelled`, ...).
+  and typed collection failures (`RouteNotDispatchable`,
+  `RequestRouteMismatch`, `CallCancelled`, `CredentialTerminated`,
+  `AttemptAlreadyActive`, ...).
 - `opi-agent`: the product-neutral evidence module — `EvidenceSink` lifecycle,
   `EvidenceRecorder`, `EvidenceRecord` with call-graph correlation,
   `EvidenceHealth`, and no-op/in-memory adapters; trusted tool registration
   (`RegisteredTool`/`ToolRegistry`) with mandatory `ToolAuthorizer`
-  authorization and digest-addressed `EffectiveUserPolicy` snapshots.
+  authorization and validated opaque capability identities.
 - `opi-coding-agent`: opt-in `--trace <PATH>` evidence capture in interactive,
   non-interactive text, JSON, and RPC modes. The path is a capture root; every
   run receives an immutable child directory containing `evidence.jsonl` and
   `manifest.json`. Also added eager
   multi-route dispatch with cross-provider switching without harness
   reconstruction; `FileEvidenceSink` with fail-closed setup.
+  The Reference Product owns digest-addressed `EffectiveUserPolicy` snapshots,
+  fixed CLI/SDK/RPC assembly identities, built-in capability identities, and
+  active-session bindings; Agent Core supplies only product-neutral validated
+  types and enforcement mechanisms.
 
 ### Changed
 
