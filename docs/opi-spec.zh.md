@@ -48,7 +48,7 @@ Opi 并非逐行 Rust 移植。它保留有价值的语义，同时在能够构�
 
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| GOAL-001 | Opi **必须（MUST）**提供产品中立的 Agent 核心和一致的终端参考产品。 | Opi 维护者 | crate 依赖图、interface 测试和产品验收。 |
+| GOAL-001 | Opi **必须（MUST）**提供产品中立的 Agent 核心和一致的终端参考产品。跨越两个或更多 crate、adapter 或 extension 的用户可见功能**必须（MUST）**指定一个端到端参考产品责任方，并通过组装产品验收。 | Opi 维护者和参考产品责任方 | crate 依赖图、interface 测试和组装产品验收。 |
 | GOAL-002 | 可选工作流和可独立复用的能力**必须（MUST）**保留在 Agent 核心之外，除非它们通过第 8 章的所有门禁。 | 能力责任方 | 归属复审。 |
 | GOAL-003 | Rust 特有的设计**应该（SHOULD）**改善正确性、显式状态、可测试性、可移植性或交付，而不是模仿 TypeScript/npm 结构。 | module 责任方 | 设计评审和合规证据。 |
 | GOAL-004 | 即使没有评测、学习、远程托管或任何扩展 package，Opi **也必须（MUST）**保持可用。 | 参考产品责任方 | 最小运行时验收配置。 |
@@ -139,6 +139,8 @@ Rust 不能成为拆分浅层 crate、为一个假想 adapter 创建 trait，或
 
 参考产品可以负责 CLI/TUI 交互、配置组装、凭据交互、默认编程工具、会话导航、诊断和 package 激活。这些选择不得重新定义 Agent 核心状态机，也不得成为嵌入方的强制要求。
 
+跨组件的用户可见功能从组装后的产品入口进行验收，覆盖配置与路由选择、权威投影、会话与证据结果，以及 extension 缺失或冲突时的行为。各组件分别通过局部测试，不等同于产品验收通过。
+
 ### 4.3 生态与独立性
 
 Opi 特有的可选工作流属于扩展生态。当一项能力无需 Opi 即具备完整价值、拥有自己的制品和错误模型、可通过公开契约集成，并且在缺失或失败时不会改变最小运行时，它便属于独立伴生产品。
@@ -194,19 +196,18 @@ Agent 核心可观测性提供显式上下文传播，并为 Provider、轮次�
 
 ### 6.2 独立的跨 Agent 评测
 
-评测是一个独立伴生产品，暂定形态为一个不依赖 Opi crate 的 Rust library 加 CLI。其深层 interface 接受已解析的实验锁定清单和 adapter，生成不可变 RunBundle，并从已保存制品中重新计算报告。最终名称、仓库和品牌留待归属复审决定。
+评测是一个不依赖 Opi crate 的独立伴生产品。其持久结果契约接受已解析的实验身份以及 Agent 和 grader integration，生成不可变 RunBundle，调用基准原生 grader，并从已保存制品中重新计算报告。最终名称、仓库和品牌留待归属复审决定。
 
-Agent 与基准之间的差异通过两个支持进程的 seam 接入：
+具体 packaging、公开 seam 名称和规范 trace 格式是 Phase hypothesis，而非持久 interface。当前候选形态包括一个 Rust library 加 CLI；暂名为 `AgentAdapter` 和 `GraderAdapter`、支持进程的 Agent 与 grader integration；以及 ATIF 加 span 图。只有下方控制平面的准入证据证明最小共享 seam 后，这些形态才成为持久约束。证据决定该 seam 究竟是 Rust trait、进程 envelope、CLI convention，还是仅为 conformance fixture。
 
-- `AgentAdapter` 运行或导入 Agent 轨迹；以及
-- `GraderAdapter` 调用基准的原生评分器。
+持久证据 bundle 记录：
 
-规范证据 bundle 包含：
-
-- 一条经过验证的 [ATIF](https://github.com/harbor-framework/harbor/blob/main/rfcs/0001-trajectory-format.md) 轨迹；
-- 一张补充 span 图，覆盖运行、轮次、LLM、工具、压缩、重试和评分器调用链；
+- 经过验证的 Agent 轨迹表示；
+- 关联运行、轮次、LLM、工具、压缩、重试和 grader 的调用链；
 - 包含名称、版本、digest、原生指标和来源信息的评分器输出；以及
 - 一个按内容寻址的制品 manifest，覆盖输入、日志、最终 workspace 结果、轨迹、调用和评分器输出。
+
+经过验证的 [ATIF](https://github.com/harbor-framework/harbor/blob/main/rfcs/0001-trajectory-format.md) 轨迹加补充 span 图是当前格式 hypothesis；在同一准入证据完成之前，二者究竟是规范格式、补充格式还是派生关系仍是 provisional。
 
 报告以结果为先。报告将原生评分器给出的成功结果、墙钟时间和关键路径时间、首 token 时间、LLM/工具/压缩/重试的计数与延迟、输入/输出/cache/推理 token、已知成本及其覆盖率、压缩情况，以及失败调用的消耗分别呈现。质量、成本、安全性和权威不得合并为单一分数。
 
@@ -217,7 +218,7 @@ Agent 与基准之间的差异通过两个支持进程的 seam 接入：
 | CTRL-004 | 对外发布的基准主结果**必须（MUST）**来自已准入基准修订的原生 grader；LLM 裁判**可以（MAY）**仅提供单独标记的诊断信息。 | 证据生产者 | grader 来源、基准完整性记录和报告 schema 验证。 |
 | CTRL-005 | 基线运行和候选运行**必须（MUST）**在同一份冻结 manifest 下按任务和 trial 配对；缺失配对或 telemetry、排除项、任务完整性裁决和基础设施失败分类**必须（MUST）**保持可见。无效或基础设施失败的 trial **不得（MUST NOT）**计为 Agent 成功或失败。 | Eval 编排器 | 配对、覆盖率、裁决和失败分类检查。 |
 | CTRL-006 | 报告**必须（MUST）**可以从不可变 RunBundle 离线复现；新的真实执行**必须（MUST）**获得新的试验标识。 | 评测产品责任方 | 确定性的 recompute/regrade/render 合规验证。 |
-| CTRL-007 | 基准数据集、原生评分器、容器镜像、sandbox、远程调度器、exporter、leaderboard 和学习策略**必须（MUST）**保留在评测模块之外。 | 评测产品责任方 | 依赖和 package 内容评审。 |
+| CTRL-007 | 基准数据集、原生评分器、容器镜像、sandbox、远程调度器、exporter、leaderboard 和学习策略**必须（MUST）**保留在评测模块之外。公开评测 packaging、adapter seam 和规范 trace 格式在至少两个真实 Agent integration（其中一个来自 Opi 之外）及两个基准原生 grader integration 通过共享 conformance test 满足公开 seam 准入规则前，**必须（MUST）**保持 provisional。 | 评测产品责任方 | 依赖/package 内容评审、integration 清单及共享 Agent/grader conformance。 |
 
 ### 6.3 学习与变更权威
 
@@ -225,7 +226,7 @@ Agent 与基准之间的差异通过两个支持进程的 seam 接入：
 
 ```text
 Agent 核心证据 seam
-    ↓ AgentAdapter
+    ↓ Agent integration
 证据生产者 → 不可变 RunBundle
     ↓
 候选生产者 → 不可变 CandidateBundle
@@ -286,9 +287,11 @@ shadow → opt-in canary → active / rollback
 
 会话分支、重建、追加持久性、最终证据和运行时输入绑定都属于语义。JSONL、SQLite、搜索索引和云存储属于 adapter。只有在第二个真实 adapter 和共享合规验证证明存在必要变化后，repository seam 才应该扩展。
 
+Durable entry 的兼容性属于语义，而非尽力解析。未知 required entry 或不受支持的格式会阻止成功重建。只有不会影响权威、分支结构、模型可见上下文、运行时绑定或待处理副作用，并且被明确标记为 ignorable 的观察型 entry 才可以跳过。Reader 应区分不受支持的 vocabulary、损坏和写入中断的尾部。
+
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| INV-007 | 会话持久化**必须（MUST）**保留活跃分支重建、父级链接、叶节点选择和崩溃恢复。 | `opi-agent` | repository 合规测试和损坏恢复测试。 |
+| INV-007 | 会话持久化**必须（MUST）**保留活跃分支重建、父级链接、叶节点选择和崩溃恢复。Durable entry envelope **必须（MUST）**声明旧 reader 遇到该 entry 时应将其视为 required 还是明确 ignorable。Reader 遇到未知 required entry 或不受支持的格式版本时**必须（MUST）**失败关闭，并且在可能丢失重建语义时**不得（MUST NOT）**报告 resume 成功。只有明确 ignorable 的观察型 entry **可以（MAY）**跳过，而且它**不得（MUST NOT）**影响权威、分支结构、模型可见上下文、运行时绑定或待处理副作用。 | `opi-agent` | Required/ignorable entry fixture、不受支持版本诊断、分支重建、损坏恢复和写入中断尾部 conformance。 |
 | INV-008 | 最终运行证据**必须（MUST）**标识生成它的会话分支、精确的运行时输入绑定、已解析 harness/runtime/adapter 配置和有效用户策略。直接运行**必须（MUST）**标识直接运行时输入，并且**不得（MUST NOT）**声称活跃快照；只有晋级控制器可以提供活跃快照引用。 | Agent 运行时责任方 | 制品 schema variant、直接运行、晋级权威、resume/fork 和已解析执行离线测试。 |
 
 ### 7.5 扩展与命令执行
@@ -297,7 +300,9 @@ shadow → opt-in canary → active / rollback
 
 Package Trust 以对象为单位：它绑定精确的不可变 package artifact digest 和声明的 capability footprint。artifact 变化或 footprint 扩大后仍保持 Installed，但会形成新的信任对象；它不会自动继承 Trusted 或受影响的 Capability Permission。签名、扫描、registry 来源和评审结果只作为用户决策的证据，不产生 Trust。声明的 footprint 仍是 metadata，不执行操作系统 sandbox。
 
-一旦选择了外部执行 adapter，其失败就采取**失败关闭（fail-closed）**策略，并且绝不回退到本地执行。扩展 package 和 adapter 是受信任代码，拥有启动用户的操作系统权限；权限声明只是 metadata，并非强制执行的 sandbox。
+标准发行版将第三方 executable contribution 放在 host 进程之外，并通过版本化、能力专用的协议接入。不稳定的进程内 `opi_agent::Extension` seam 仅用于内建与第一方组装，或明确接受 host 同等权威的 embedder；它不是第三方 package ABI 或安全边界。项目信任和全局 package scope 不能替代以对象为单位的 Package Trust。
+
+一旦选择了外部执行 adapter，其失败就采取**失败关闭（fail-closed）**策略，并且绝不回退到本地执行。进程外协议约束 ABI、生命周期和故障传播，但不是操作系统安全边界。进程内 extension 和未受 sandbox 限制的进程 adapter 仍是受信任代码，拥有启动用户的权限；权限声明只是 metadata，并非强制执行的 sandbox。
 
 原生限制由独立伴生产品 `opi-sandbox` 负责；它仅依赖最小的 `opi-protocol` 命令执行契约，且不链接到 `opi` 二进制文件。其公开独立 surface 包括 `SandboxPolicy`、`SandboxRequest`、`SandboxRunner`、`SandboxEvent`、`SandboxResult` 和 `opi-sandbox backend --stdio`。
 
@@ -307,7 +312,7 @@ Docker、VM、SSH、远程执行 adapter、AppContainer、通用工具 shadowing
 
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| INV-009 | Installed、Trusted、Enabled、Selected 和 Permitted **必须（MUST）**保持为可独立观测和强制执行的生命周期状态。Package Trust **必须（MUST）**绑定精确的不可变 package artifact digest 和声明的 capability footprint；变化的 artifact 或扩大的 footprint **不得（MUST NOT）**在没有用户重新授权时继承 Trusted 或受影响的 Capability Permission。 | 参考产品责任方 | package 安装/更新、footprint 扩张、执行路由和生命周期诊断测试。 |
+| INV-009 | Installed、Trusted、Enabled、Selected 和 Permitted **必须（MUST）**保持为可独立观测和强制执行的生命周期状态。Package Trust **必须（MUST）**绑定精确的不可变 package artifact digest 和声明的 capability footprint；变化的 artifact 或扩大的 footprint **不得（MUST NOT）**在没有用户重新授权时继承 Trusted 或受影响的 Capability Permission。任何第三方 executable contribution 在被动态加载、链接或启动前，artifact drift 验证以及适用的 Installed、Trusted、Enabled 和 Selected 门禁**必须（MUST）**通过；每次调用前 Permitted **必须（MUST）**通过。项目信任或全局 scope **不得（MUST NOT）**绕过 Package Trust。标准发行版**不得（MUST NOT）**把第三方 package 激活为进程内 Extension，而**必须（MUST）**使用版本化、能力专用的进程外协议。 | 参考产品责任方 | 全局/项目 package fixture；adapter/command contribution 测试；drift、footprint 扩张和 spawn-before-trust 负向测试；执行路由和生命周期诊断。 |
 | INV-010 | 已选择的外部执行 backend 失败时**不得（MUST NOT）**回退到本地执行。 | Capability Router 责任方 | adapter 失败测试。 |
 | INV-011 | `opi-sandbox` **必须（MUST）**保持可在不链接 Opi 产品 crate 的情况下复用；平台降级**必须（MUST）**显式呈现。 | `opi-sandbox` 责任方 | 独立构建、协议合规测试和平台验收。 |
 
@@ -408,11 +413,11 @@ shadow 输出不影响工具、用户可见输出或持久状态。canary 的作
 
 ### STRAT-002 — 建立独立的跨 Agent Eval
 
-交付 Agent/Grader adapter、原生 grader 来源追溯、ATIF 轨迹及调用图、内容寻址的 run bundle、结果优先的配对报告，以及离线重计算。该产品必须能评估 Opi、pi 和其他 Agent，而无需链接它们的运行时。
+通过至少两个真实 Agent integration（其中一个来自 Opi 之外）、两个基准原生 grader integration 及共享 conformance，验证最小的、支持进程的 Agent/grader integration 和持久证据契约。交付原生 grader 来源追溯、内容寻址的 run bundle、结果优先的配对报告以及离线重计算。该产品必须能评估 Opi、pi 和其他 Agent，而无需链接它们的运行时。Packaging、公开 seam 名称和 ATIF/span 关系在这些证据通过公开 seam 准入门禁前保持 provisional。
 
 基准完整性准入与停用、覆盖率检查，以及任务/基础设施失败分类，先于任何使用报告的学习或晋级声明。
 
-将首个 Eval 交付塑形为一个专门 Phase，并与持续学习和晋级分离。只有最小的 Agent 核心证据 seam 可以作为其显式前置条件。
+将首个 Eval 交付塑形为 seam-validation Phase，并与持续学习、晋级、托管调度、leaderboard 和 workflow platform 工作分离。只有最小的 Agent 核心证据 seam 可以作为其显式前置条件；仅冻结 conformance 已证明的 interface surface。
 
 ### STRAT-003 — 深化可度量的 Agent 能力
 

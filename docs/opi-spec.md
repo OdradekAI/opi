@@ -66,7 +66,7 @@ module.
 
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
-| GOAL-001 | Opi **MUST** provide a product-neutral Agent Core and a coherent terminal Reference Product. | Opi maintainers | Crate dependency graph, interface tests, and product acceptance. |
+| GOAL-001 | Opi **MUST** provide a product-neutral Agent Core and a coherent terminal Reference Product. A user-visible feature spanning two or more crates, adapters, or extensions **MUST** name one end-to-end Reference Product owner and pass assembled-product acceptance. | Opi maintainers and Reference Product owner | Crate dependency graph, interface tests, and assembled-product acceptance. |
 | GOAL-002 | Optional workflows and independently reusable capabilities **MUST** remain outside the Agent Core unless they pass every gate in Chapter 8. | Capability owner | Placement Review. |
 | GOAL-003 | Rust-specific design **SHOULD** improve correctness, explicit state, testability, portability, or delivery rather than imitate TypeScript/npm structure. | Module owner | Design review and conformance evidence. |
 | GOAL-004 | Opi **MUST** remain useful without Eval, Learning, remote hosting, or any extension package. | Reference Product owner | Minimal Runtime acceptance profile. |
@@ -178,6 +178,11 @@ credential interaction, default coding tools, session navigation, diagnostics,
 and package activation. Those choices must not redefine the Agent Core state
 machine or become mandatory for embedders.
 
+Cross-cutting user-visible features are accepted from an assembled product
+entry point, including configuration and route selection, authority projection,
+session and evidence outcomes, and missing or conflicting extension behavior.
+Passing each component's local tests is not equivalent to product acceptance.
+
 ### 4.3 Ecosystem and independence
 
 Opi-specific optional workflows belong in the Extension Ecosystem. A capability
@@ -252,26 +257,32 @@ environment data require explicit capture and redaction policy.
 
 ### 6.2 Independent cross-Agent evaluation
 
-Evaluation is an Independent Companion, provisionally described as one Rust
-library plus CLI with no dependency on Opi crates. Its deep interface accepts a
-resolved experiment lock and adapters, produces an immutable run bundle, and
-recomputes reports from saved artifacts. Final naming, repository, and brand are
-left to Placement Review.
+Evaluation is an Independent Companion with no dependency on Opi crates. Its
+durable outcome contract accepts a resolved experiment identity plus Agent and
+grader integrations, produces an immutable run bundle, invokes the benchmark's
+native grader, and recomputes reports from saved artifacts. Final naming,
+repository, and brand are left to Placement Review.
 
-Agent and benchmark differences enter through two process-capable seams:
+Concrete packaging, public seam names, and canonical trace formats are Phase
+hypotheses rather than durable interfaces. Current candidates are one Rust
+library plus CLI; process-capable Agent and grader integrations tentatively
+named `AgentAdapter` and `GraderAdapter`; and ATIF plus a span graph. They become
+durable only after the control-plane admission evidence below demonstrates the
+smallest shared seam. The evidence determines whether that seam is a Rust
+trait, a process envelope, a CLI convention, or only conformance fixtures.
 
-- an `AgentAdapter` runs or imports an Agent trajectory; and
-- a `GraderAdapter` invokes the benchmark's native grader.
+The durable evidence bundle records:
 
-The canonical evidence bundle contains:
-
-- a validated [ATIF](https://github.com/harbor-framework/harbor/blob/main/rfcs/0001-trajectory-format.md)
-  trajectory;
-- a supplemental span graph for run, turn, LLM, tool, compaction, retry, and
-  grader call chains;
+- a validated Agent trajectory representation;
+- correlated run, turn, LLM, tool, compaction, retry, and grader call chains;
 - grader output with name, version, digest, native metrics, and provenance; and
 - a content-addressed artifact manifest covering inputs, logs, final workspace
   result, trajectory, calls, and grader output.
+
+A validated [ATIF](https://github.com/harbor-framework/harbor/blob/main/rfcs/0001-trajectory-format.md)
+trajectory plus a supplemental span graph is the current format hypothesis; its
+canonical, supplemental, or derived relationship remains provisional until the
+same admission evidence is complete.
 
 Reports are outcome-first. They present native success, wall and critical-path
 time, time to first token, LLM/tool/compaction/retry counts and latency,
@@ -290,7 +301,7 @@ trials. Coverage and every exclusion reason remain visible.
 | CTRL-004 | Headline benchmark results **MUST** come from the benchmark's native grader under an admitted benchmark revision; an LLM judge **MAY** provide a separately labelled diagnostic only. | Evidence Producer | Grader provenance, benchmark integrity record, and report-schema validation. |
 | CTRL-005 | Baseline and candidate runs **MUST** be paired by task and trial under one frozen manifest; missing pairs or telemetry, exclusions, task-integrity decisions, and infrastructure-failure classifications **MUST** remain visible. Invalid or infrastructure-failed trials **MUST NOT** be scored as Agent success or failure. | Evaluation orchestrator | Pairing, coverage, adjudication, and failure-classification checks. |
 | CTRL-006 | A report **MUST** be reproducible offline from immutable run bundles; a new real execution **MUST** receive a new trial identity. | Evaluation product owner | Deterministic recompute/regrade/render conformance. |
-| CTRL-007 | Benchmark datasets, native graders, container images, sandboxes, remote schedulers, exporters, leaderboards, and learning policy **MUST** remain outside the evaluation module. | Evaluation product owner | Dependency and package-content review. |
+| CTRL-007 | Benchmark datasets, native graders, container images, sandboxes, remote schedulers, exporters, leaderboards, and learning policy **MUST** remain outside the evaluation module. Public evaluation packaging, adapter seams, and canonical trace formats **MUST** remain provisional until at least two real Agent integrations, including one outside Opi, and two benchmark-native grader integrations satisfy the public-seam admission rule through shared conformance tests. | Evaluation product owner | Dependency/package-content review, integration inventory, and shared Agent/grader conformance. |
 
 ### 6.3 Learning and change authority
 
@@ -302,7 +313,7 @@ Delegated Promotion Policy, and Controlled Self-Iteration live in
 
 ```text
 Agent Core evidence seams
-    ↓ AgentAdapter
+    ↓ Agent integration
 Evidence Producer → immutable RunBundle
     ↓
 Candidate Producer → immutable CandidateBundle
@@ -393,9 +404,16 @@ runtime-input binding are semantics. JSONL, SQLite, search indexes, and cloud
 stores are adapters. A repository seam should expand only after a second real
 adapter and shared conformance demonstrate the necessary variation.
 
+Durable-entry compatibility is semantic rather than best-effort parsing. An
+unknown required entry or unsupported format prevents successful
+reconstruction. Only an explicitly ignorable observation that cannot affect
+authority, branch structure, model-visible context, runtime binding, or pending
+side effects may be skipped. Readers distinguish unsupported vocabulary,
+corruption, and an interrupted tail.
+
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
-| INV-007 | Session persistence **MUST** preserve active-branch reconstruction, parent links, leaf selection, and crash recovery. | `opi-agent` | Repository conformance and corruption recovery tests. |
+| INV-007 | Session persistence **MUST** preserve active-branch reconstruction, parent links, leaf selection, and crash recovery. The durable entry envelope **MUST** classify an entry as required or explicitly ignorable for an older reader. A reader **MUST** fail closed on an unknown required entry or unsupported format version and **MUST NOT** report successful resume when reconstruction semantics may be lost. Only an explicitly ignorable observational entry **MAY** be skipped, and it **MUST NOT** affect authority, branch structure, model-visible context, runtime binding, or pending side effects. | `opi-agent` | Required/ignorable entry fixtures, unsupported-version diagnostics, branch reconstruction, corruption recovery, and interrupted-tail conformance. |
 | INV-008 | Finalized run evidence **MUST** identify the session branch, exact Runtime Input Binding, resolved harness/runtime/adapter configuration, and effective User Policy that produced it. A direct run **MUST** identify a Direct Runtime Input and **MUST NOT** claim an Active Snapshot; only a Promotion Controller may supply an Active Snapshot reference. | Agent runtime owner | Artifact-schema variant, direct-run, Promotion-authority, resume/fork, and offline resolved-execution tests. |
 
 ### 7.5 Extensions and command execution
@@ -414,10 +432,19 @@ provenance, and review results are evidence for the user's decision, not sources
 of Trust. The declared footprint remains metadata and does not enforce an
 operating-system sandbox.
 
+The standard distribution keeps third-party executable contributions outside
+the host process behind versioned, capability-specific protocols. The unstable
+in-process `opi_agent::Extension` seam is reserved for built-in and first-party
+assembly or an embedder that explicitly accepts host-equivalent authority; it
+is not a third-party package ABI or security boundary. Project trust and global
+package scope do not substitute for object-specific Package Trust.
+
 Once an external execution adapter is Selected, failure is **fail-closed** and
-never falls back to local execution. Extension packages and adapters are trusted
-code with the launching user's operating-system permissions; permission
-declarations are metadata, not an enforced sandbox.
+never falls back to local execution. An out-of-process protocol constrains ABI,
+lifecycle, and failure propagation, but is not an operating-system security
+boundary. In-process extensions and unsandboxed process adapters remain trusted
+code with the launching user's permissions; permission declarations are
+metadata, not an enforced sandbox.
 
 Native restriction is owned by the Independent Companion `opi-sandbox`, which
 depends only on the minimal `opi-protocol` command-execution contract and is not
@@ -438,7 +465,7 @@ claim.
 
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
-| INV-009 | Installed, Trusted, Enabled, Selected, and Permitted **MUST** remain independently observable and enforceable lifecycle states. Package Trust **MUST** bind to an exact immutable package artifact digest and declared capability footprint; a changed artifact or expanded footprint **MUST NOT** inherit Trusted or affected Capability Permission without user reauthorization. | Reference Product owner | Package install/update, footprint-expansion, execution-routing, and lifecycle-diagnostic tests. |
+| INV-009 | Installed, Trusted, Enabled, Selected, and Permitted **MUST** remain independently observable and enforceable lifecycle states. Package Trust **MUST** bind to an exact immutable package artifact digest and declared capability footprint; a changed artifact or expanded footprint **MUST NOT** inherit Trusted or affected Capability Permission without user reauthorization. Before a third-party executable contribution is dynamically loaded, linked, or spawned, artifact-drift validation and the applicable Installed, Trusted, Enabled, and Selected gates **MUST** pass; Permitted **MUST** pass before each invocation. Project trust or global scope **MUST NOT** bypass Package Trust. The standard distribution **MUST NOT** activate a third-party package as an in-process Extension; it **MUST** use a versioned, capability-specific out-of-process protocol. | Reference Product owner | Global/project package fixtures; adapter/command contribution tests; drift, footprint-expansion, and spawn-before-trust negative tests; execution-routing and lifecycle diagnostics. |
 | INV-010 | A selected external execution backend failure **MUST NOT** fall back to local execution. | Capability Router owner | Adapter failure tests. |
 | INV-011 | `opi-sandbox` **MUST** remain reusable without linking Opi product crates; platform degradation **MUST** be explicit. | `opi-sandbox` owner | Standalone build, protocol conformance, and platform acceptance. |
 
@@ -584,18 +611,23 @@ the existing abstraction true at runtime.
 
 ### STRAT-002 — Establish independent cross-Agent Eval
 
-Deliver Agent/Grader adapters, native-grader provenance, ATIF trajectory plus a
-call graph, content-addressed run bundles, paired outcome-first reporting, and
-offline recomputation. The product must evaluate Opi, pi, and other Agents
-without linking their runtimes.
+Validate the smallest process-capable Agent/grader integration and durable
+evidence contracts through at least two real Agent integrations, including one
+outside Opi, two benchmark-native grader integrations, and shared conformance.
+Deliver native-grader provenance, content-addressed run bundles, paired
+outcome-first reporting, and offline recomputation. The product must evaluate
+Opi, pi, and other Agents without linking their runtimes. Packaging, public seam
+names, and the ATIF/span relationship remain provisional until this evidence
+passes the public-seam admission gate.
 
 Benchmark integrity admission, retirement, coverage, and task/infrastructure
 failure classification precede any Learning or Promotion claim that consumes
 the report.
 
-Shape the initial Eval delivery as a dedicated Phase, separate from Continual
-Learning and Promotion. Only the minimum Agent Core evidence seam may be an
-explicit prerequisite.
+Shape the initial Eval delivery as a seam-validation Phase, separate from
+Continual Learning, Promotion, hosted scheduling, leaderboards, and workflow
+platform work. Only the minimum Agent Core evidence seam may be an explicit
+prerequisite; freeze only the interface surface demonstrated by conformance.
 
 ### STRAT-003 — Deepen measurable Agent capability
 
