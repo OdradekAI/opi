@@ -94,8 +94,23 @@ Three-platform CI evidence run 31798070731 covers exit SHA `40f2e6e` only. At
 audit HEAD `a680c5d`: 5 unpushed commits (`211aba8..a680c5d`), zero CI runs;
 the glm5.3 audit's local runs (621 focused tests across 26 phase17 binaries,
 fmt, clippy-lib, doc-check; Windows) were the only validation attaching to
-`a680c5d`. Post-remediation CI status: see the remediation commit and the CI
-run recorded for the final SHA.
+`a680c5d`.
+
+**Closure (2026-08-21):** after the remediation cycle, the full 24-job CI
+matrix is green at final SHA `b922173` — run
+https://github.com/OdradekAI/opi/actions/runs/32481773629 (test ×3 OS incl.
+ubuntu 5m13s, clippy ×3, Phase 17 acceptance ×3, execution_acceptance ×3,
+target checks ×6, docs/fmt/doc/doctest, sandbox packages ×2). Closing the
+currency gap also surfaced and fixed four defects in the previously
+unvalidated unpushed range and toolchain drift, each verified locally
+(Windows + WSL2 Linux) before push: the gated `execution_product` suite's
+stale `agent_loop` API usage (glm5.3 M2's exact prediction); clippy 1.98
+lints in untouched files; the json_mode/non_interactive env-redirect race
+against fail-closed session persistence (tests now hold the isolation guard
+for their whole body); and the Linux credential-process tree-kill defect
+(procps `kill` ignores a bare negative pid — a surviving descendant also
+deadlocked the suite runner via the inherited stdout pipe) plus the
+too-tight 3s credential-process budget, raised to 10s.
 
 ## 5. Remediation cycle record (2026-08-21)
 
