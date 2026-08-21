@@ -734,8 +734,8 @@ async fn text_surface_refuses_local_ask_at_startup_without_prompt() {
         Vec::new(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
-    drop(_env_guard);
-
+    // The guard stays held through the run: the redirected config dir (and
+    // its tempdir) must remain alive for the session-persist step.
     let result = tokio::time::timeout(std::time::Duration::from_secs(2), runner.run("hello"))
         .await
         .expect("headless local ask must not wait for a permission prompt");

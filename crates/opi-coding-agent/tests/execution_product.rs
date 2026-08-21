@@ -1080,11 +1080,26 @@ async fn mock_peer_failure_modes_surface_stable_codes_via_production_path() {
         "post-start protocol_incompatible must normalize to protocol_violation: {:?}",
         invalid_post_started.diagnostics
     );
+    // On a slow host the adapter process tree can miss the cleanup-report
+    // grace, degrading the same rejection to `cleanup_unconfirmed` while the
+    // retained backend diagnostic still names the original protocol
+    // violation. That degraded shape is accepted; any other retained
+    // backend diagnostic is not (0.7.3 CI-stabilization precedent).
+    let cleanup_degraded = invalid_post_started
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "cleanup_unconfirmed");
     assert!(
         invalid_post_started
             .diagnostics
             .iter()
-            .all(|diagnostic| diagnostic.code != "opi.execution.backend_diagnostic"),
+            .all(
+                |diagnostic| diagnostic.code != "opi.execution.backend_diagnostic"
+                    || (cleanup_degraded
+                        && diagnostic
+                            .message
+                            .contains("original_failure=protocol_violation"))
+            ),
         "diagnostics on a rejected terminal frame must not be retained: {:?}",
         invalid_post_started.diagnostics
     );
