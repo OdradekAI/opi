@@ -105,10 +105,22 @@ lens or verdict. Design readiness verifies `reuse_search`, `placement`,
 the smallest production vertical slice, and the later scenario owner for each
 substrate task.
 
+When the draft claims an existing surface is unused, duplicate, or superseded,
+or proposes deletion, merging, replacement, or dependency substitution, the
+same lenses also inspect `production_consumers`, `nonproduction_consumers`,
+`net_deletion`, and `residual_glue`. They verify that production use is not
+inferred from tests, docs, or examples and that the stated deletion accounts
+for newly introduced glue. Every new or reconciled draft declares
+`simplification_trigger`; `none` leaves these subclauses unnecessary, while a
+listed non-`none` trigger requires them. Windows `ValidatePlan` rejects missing
+or malformed declared fields before graph confirmation; reviewers still assess
+whether the cited evidence is true.
+
 If the source is sufficient but the draft omits or malforms an answer, return
 `GRAPH_REVISION_REQUIRED`. Missing facts return `RESEARCH_REQUIRED`.
 Unsettled placement, surface, or simplification choices return
-`DESIGN_DECISION_REQUIRED`.
+`DESIGN_DECISION_REQUIRED`. A triggered claim with sufficient source evidence
+but missing conditional subclauses returns `GRAPH_REVISION_REQUIRED`.
 
 ### Execution readiness
 

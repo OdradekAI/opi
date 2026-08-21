@@ -20,6 +20,11 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
         "`surface_necessity`",
         "`simplification_ceiling`",
         "`legacy-unrecorded`",
+        "`production_consumers`",
+        "`nonproduction_consumers`",
+        "`net_deletion`",
+        "`residual_glue`",
+        "simplification_trigger=",
     ),
     ".claude/skills/opi-implement/references/initializer.md": (
         "#### Minimum-change trace",
@@ -30,6 +35,11 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
         "`revisit_when`",
         "transitive `depends_on` closure",
         "REFUSE `confirm-all`",
+        "`production_consumers=`",
+        "`nonproduction_consumers=`",
+        "`net_deletion=`",
+        "`residual_glue=`",
+        "simplification_trigger=",
     ),
     ".claude/skills/opi-implement/references/ledger-schema.md": (
         '`field = "reuse_search"`',
@@ -46,6 +56,11 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
         '`field = "simplification_ceiling"`',
         "`ceiling=`",
         "`revisit_when=`",
+        "`production_consumers=`",
+        "`nonproduction_consumers=`",
+        "`net_deletion=`",
+        "`residual_glue=`",
+        "simplification_trigger=",
     ),
     ".claude/skills/opi-implement/references/verify-engine.md": (
         "### Minimum-change trace overlay",
@@ -57,6 +72,11 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
         "`GRAPH_REVISION_REQUIRED`",
         "`RESEARCH_REQUIRED`",
         "`DESIGN_DECISION_REQUIRED`",
+        "`production_consumers`",
+        "`nonproduction_consumers`",
+        "`net_deletion`",
+        "`residual_glue`",
+        "`simplification_trigger`",
     ),
     ".claude/skills/opi-implement/scripts/plan.workflow.js": (
         '"reuse_search"',
@@ -65,6 +85,11 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
         '"simplification_ceiling"',
         "revisit_when",
         "transitive depends_on closure",
+        "require production_consumers",
+        "nonproduction_consumers",
+        "net_deletion",
+        "residual_glue",
+        "simplification_trigger",
     ),
 }
 
@@ -83,6 +108,10 @@ AUDIT_MINIMUM_CHANGE_CONFORMANCE_REQUIRED = {
         "current committed `audit_head`",
         "Finding routing remains on existing axes",
         "## N+2. Minimum-change Conformance",
+        "`production_consumers`",
+        "`nonproduction_consumers`",
+        "`net_deletion`",
+        "`residual_glue`",
     ),
     ".claude/skills/opi-audit/references/finding-template.md": (
         "## Minimum-change Conformance",
@@ -92,6 +121,10 @@ AUDIT_MINIMUM_CHANGE_CONFORMANCE_REQUIRED = {
         "`standards`",
         "`spec`",
         "`integration`",
+        "`production_consumers`",
+        "`nonproduction_consumers`",
+        "`net_deletion`",
+        "`residual_glue`",
     ),
 }
 
@@ -169,6 +202,78 @@ OPI_SPEC_EVIDENCE_REFINEMENT_REQUIRED = {
 }
 
 
+OPI_DOCUMENT_PROSE_CONTRACT_REQUIRED = {
+    ".claude/skills/opi-document/SKILL.md": (
+        "references/prose-contract.md",
+        "human-facing prose",
+        "complete proposition",
+        "semantic judgment",
+        "targeted scope",
+    ),
+    ".claude/skills/opi-document/references/prose-contract.md": (
+        "# Prose contract",
+        "## Scope and exclusions",
+        "## Preserve the complete proposition",
+        "## Owner-first editing",
+        "`keep`",
+        "`add`",
+        "`trim`",
+        "`restore`",
+        "`restructure`",
+        "`defer`",
+        "`docs/snapshots/`",
+        "Mechanical checks do not prove semantic quality",
+        "model-visible",
+    ),
+    ".claude/skills/opi-document/references/documentation-checks.md": (
+        "Semantic prose quality",
+        "`references/prose-contract.md`",
+        "semantic judgment",
+    ),
+}
+
+
+CHANGE_SCOPE_CHECK_SELECTION_REQUIRED = {
+    ".claude/skills/_shared/references/change-scope-and-check-selection.md": (
+        "# Change scope and check selection",
+        "`verified_base=<explicit live base ref>`",
+        "`head=<ref>`",
+        "`git merge-base <verified-base> <head>`",
+        "`git diff --name-status --find-renames <merge-base>..<head>`",
+        "`git diff --cached --name-status`",
+        "`git diff --name-status`",
+        "`git ls-files --others --exclude-standard`",
+        "record `committed`, `staged`, `unstaged`, and `untracked` separately",
+        "`check-selection-only`",
+        "does not bound audit coverage",
+        "does not define task ownership",
+        "does not define release manifest",
+        "Do not rerun unchanged evidence",
+        "worktree-only",
+    ),
+    "AGENTS.md": (
+        ".agents/skills/_shared/references/change-scope-and-check-selection.md",
+        "ordinary non-skill work",
+        "`check-selection-only`",
+    ),
+    ".claude/skills/opi-document/SKILL.md": (
+        "_shared/references/change-scope-and-check-selection.md",
+        "candidate discovery only",
+        "documentation authority",
+    ),
+    ".claude/skills/opi-remediate/SKILL.md": (
+        "_shared/references/change-scope-and-check-selection.md",
+        "normalized findings and derived layers",
+        "verification union",
+    ),
+    ".claude/skills/opi-slim-tests/SKILL.md": (
+        "_shared/references/change-scope-and-check-selection.md",
+        "Cargo metadata and complete test bodies",
+        "post-change focused gates",
+    ),
+}
+
+
 class SkillContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -211,6 +316,14 @@ class SkillContractTests(unittest.TestCase):
 
     def write_opi_spec_evidence_refinement_docs(self) -> None:
         for rel, tokens in OPI_SPEC_EVIDENCE_REFINEMENT_REQUIRED.items():
+            self.write(rel, "\n".join(tokens) + "\n")
+
+    def write_opi_document_prose_contract_docs(self) -> None:
+        for rel, tokens in OPI_DOCUMENT_PROSE_CONTRACT_REQUIRED.items():
+            self.write(rel, "\n".join(tokens) + "\n")
+
+    def write_change_scope_check_selection_docs(self) -> None:
+        for rel, tokens in CHANGE_SCOPE_CHECK_SELECTION_REQUIRED.items():
             self.write(rel, "\n".join(tokens) + "\n")
 
     def write_skill(
@@ -382,6 +495,78 @@ class SkillContractTests(unittest.TestCase):
                     checker()
                     self.assertIn(
                         f"{rel}: Opi spec evidence refinement contract "
+                        f"missing semantic tokens {[token]!r}",
+                        doc_check.ERRORS,
+                    )
+
+    def test_opi_document_prose_contract_passes(self) -> None:
+        self.write_opi_document_prose_contract_docs()
+        checker = getattr(
+            doc_check,
+            "check_opi_document_prose_contract",
+            None,
+        )
+        self.assertIsNotNone(checker, "Opi document prose checker must exist")
+        checker()
+        self.assertEqual([], doc_check.ERRORS)
+
+    def test_opi_document_prose_contract_requires_every_token(self) -> None:
+        checker = getattr(
+            doc_check,
+            "check_opi_document_prose_contract",
+            None,
+        )
+        self.assertIsNotNone(checker, "Opi document prose checker must exist")
+        for rel, tokens in OPI_DOCUMENT_PROSE_CONTRACT_REQUIRED.items():
+            for token in tokens:
+                with self.subTest(rel=rel, token=token):
+                    doc_check.ERRORS = []
+                    self.write_opi_document_prose_contract_docs()
+                    self.write(
+                        rel,
+                        "\n".join(item for item in tokens if item != token)
+                        + "\n",
+                    )
+                    checker()
+                    self.assertIn(
+                        f"{rel}: Opi document prose contract "
+                        f"missing semantic tokens {[token]!r}",
+                        doc_check.ERRORS,
+                    )
+
+    def test_change_scope_check_selection_contract_passes(self) -> None:
+        self.write_change_scope_check_selection_docs()
+        checker = getattr(
+            doc_check,
+            "check_change_scope_check_selection_contract",
+            None,
+        )
+        self.assertIsNotNone(checker, "change-scope checker must exist")
+        checker()
+        self.assertEqual([], doc_check.ERRORS)
+
+    def test_change_scope_check_selection_contract_requires_every_token(
+        self,
+    ) -> None:
+        checker = getattr(
+            doc_check,
+            "check_change_scope_check_selection_contract",
+            None,
+        )
+        self.assertIsNotNone(checker, "change-scope checker must exist")
+        for rel, tokens in CHANGE_SCOPE_CHECK_SELECTION_REQUIRED.items():
+            for token in tokens:
+                with self.subTest(rel=rel, token=token):
+                    doc_check.ERRORS = []
+                    self.write_change_scope_check_selection_docs()
+                    self.write(
+                        rel,
+                        "\n".join(item for item in tokens if item != token)
+                        + "\n",
+                    )
+                    checker()
+                    self.assertIn(
+                        f"{rel}: change-scope and check-selection contract "
                         f"missing semantic tokens {[token]!r}",
                         doc_check.ERRORS,
                     )

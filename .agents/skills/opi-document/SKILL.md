@@ -22,6 +22,13 @@ files=<path,...>                         # optional exact paths
 version=<X.Y.Z>                          # required for version-bump
 ```
 
+When `scope=targeted` omits `files`, use the
+[shared change-scope reference](../_shared/references/change-scope-and-check-selection.md)
+for candidate discovery only. It may locate outgoing documentation surfaces,
+but source ownership and this skill's inputs retain documentation authority;
+the diff does not expand the requested scope or authorize a repository-wide
+rewrite.
+
 ## 1. Establish the documentation delta
 
 Read the affected source, `[Unreleased]` plus the latest release in
@@ -36,6 +43,13 @@ candidate edits as:
 Every drift item cites its source of truth. Do not infer shipped behavior from
 a design plan or test name.
 
+When the requested scope contains human-facing prose, read the affected passage
+as a complete proposition before editing it. Preserve its actor, behavior,
+conditions, timing, modality, negative guarantees, exceptions, ownership,
+failure behavior, and consequences. Classify the candidate as keep, add, trim,
+restore, restructure, or defer; a smaller word count is not evidence of a
+better contract.
+
 ## 2. Load only applicable constraints
 
 Read [`references/documentation-checks.md`](references/documentation-checks.md). Use source code,
@@ -43,7 +57,14 @@ Cargo metadata, behavior tests, and the normative spec as authority. Do not
 preserve narrative wording solely because an obsolete prose test once matched
 it.
 
-For agent-facing prose, apply the project-local contract directly: keep the
+For human-facing prose or agent-facing instructions, also read
+[`references/prose-contract.md`](references/prose-contract.md). It owns
+semantic judgment, owner-first editing, current-state wording, and the
+exclusions for frozen or derivative material. Load it only for the targeted
+scope; a targeted scope never expands into an automatic repository-wide prose
+audit.
+
+For agent-facing instructions, also apply the project-local contract: keep the
 repository as source of truth, expose completion criteria near the action, and
 remove duplicated or no-op instructions. For net-new Chinese prose, use
 `baoyu-translate`; edit existing Chinese mirrors surgically rather than
@@ -95,4 +116,6 @@ Do not run the workspace test suite for a prose-only edit.
 - No weakening behavior tests to accommodate documentation.
 - No resurrection of phase-numbered prose guards.
 - No full-file Chinese regeneration.
+- No claim that a mechanical prose or documentation check proves semantic
+  quality.
 - Report exact checks run and any platform/runtime evidence not exercised.

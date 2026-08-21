@@ -93,7 +93,7 @@ const LENSES = [
   {
     key: 'design-lineage-placement',
     axis: 'design-readiness',
-    charter: 'Check pi design lineage, justified Rust-native divergence, evidence provenance, plugin-first placement, and whether any proposed core work is only the smallest missing extension seam. Require inference_notes fields "reuse_search", "placement", "surface_necessity", and "simplification_ceiling" with an observable revisit_when.',
+    charter: 'Check pi design lineage, justified Rust-native divergence, evidence provenance, plugin-first placement, and whether any proposed core work is only the smallest missing extension seam. Require inference_notes fields "reuse_search", "placement", "surface_necessity", and "simplification_ceiling" with an observable revisit_when and simplification_trigger. A trigger of none needs no extra evidence. When a task claims unused, duplicate, or superseded code, or proposes delete, merge, replace, or dependency substitution, require production_consumers, nonproduction_consumers, net_deletion, and residual_glue in the existing note reasons.',
   },
   {
     key: 'design-domain-seams',

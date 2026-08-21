@@ -19,6 +19,11 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
         "`surface_necessity`",
         "`simplification_ceiling`",
         "`legacy-unrecorded`",
+        "`production_consumers`",
+        "`nonproduction_consumers`",
+        "`net_deletion`",
+        "`residual_glue`",
+        "simplification_trigger=",
     ),
     ".claude/skills/opi-implement/references/initializer.md": (
         "#### Minimum-change trace",
@@ -29,6 +34,11 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
         "`revisit_when`",
         "transitive `depends_on` closure",
         "REFUSE `confirm-all`",
+        "`production_consumers=`",
+        "`nonproduction_consumers=`",
+        "`net_deletion=`",
+        "`residual_glue=`",
+        "simplification_trigger=",
     ),
     ".claude/skills/opi-implement/references/ledger-schema.md": (
         '`field = "reuse_search"`',
@@ -45,6 +55,11 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
         '`field = "simplification_ceiling"`',
         "`ceiling=`",
         "`revisit_when=`",
+        "`production_consumers=`",
+        "`nonproduction_consumers=`",
+        "`net_deletion=`",
+        "`residual_glue=`",
+        "simplification_trigger=",
     ),
     ".claude/skills/opi-implement/references/verify-engine.md": (
         "### Minimum-change trace overlay",
@@ -56,6 +71,11 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
         "`GRAPH_REVISION_REQUIRED`",
         "`RESEARCH_REQUIRED`",
         "`DESIGN_DECISION_REQUIRED`",
+        "`production_consumers`",
+        "`nonproduction_consumers`",
+        "`net_deletion`",
+        "`residual_glue`",
+        "`simplification_trigger`",
     ),
     ".claude/skills/opi-implement/scripts/plan.workflow.js": (
         '"reuse_search"',
@@ -64,6 +84,11 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
         '"simplification_ceiling"',
         "revisit_when",
         "transitive depends_on closure",
+        "require production_consumers",
+        "nonproduction_consumers",
+        "net_deletion",
+        "residual_glue",
+        "simplification_trigger",
     ),
 }
 
@@ -81,6 +106,10 @@ AUDIT_MINIMUM_CHANGE_CONFORMANCE_CONTRACT = {
         "current committed `audit_head`",
         "Finding routing remains on existing axes",
         "## N+2. Minimum-change Conformance",
+        "`production_consumers`",
+        "`nonproduction_consumers`",
+        "`net_deletion`",
+        "`residual_glue`",
     ),
     ".claude/skills/opi-audit/references/finding-template.md": (
         "## Minimum-change Conformance",
@@ -90,6 +119,10 @@ AUDIT_MINIMUM_CHANGE_CONFORMANCE_CONTRACT = {
         "`standards`",
         "`spec`",
         "`integration`",
+        "`production_consumers`",
+        "`nonproduction_consumers`",
+        "`net_deletion`",
+        "`residual_glue`",
     ),
 }
 
@@ -167,6 +200,78 @@ OPI_SPEC_EVIDENCE_REFINEMENT_CONTRACT = {
 }
 
 
+OPI_DOCUMENT_PROSE_CONTRACT = {
+    ".claude/skills/opi-document/SKILL.md": (
+        "references/prose-contract.md",
+        "human-facing prose",
+        "complete proposition",
+        "semantic judgment",
+        "targeted scope",
+    ),
+    ".claude/skills/opi-document/references/prose-contract.md": (
+        "# Prose contract",
+        "## Scope and exclusions",
+        "## Preserve the complete proposition",
+        "## Owner-first editing",
+        "`keep`",
+        "`add`",
+        "`trim`",
+        "`restore`",
+        "`restructure`",
+        "`defer`",
+        "`docs/snapshots/`",
+        "Mechanical checks do not prove semantic quality",
+        "model-visible",
+    ),
+    ".claude/skills/opi-document/references/documentation-checks.md": (
+        "Semantic prose quality",
+        "`references/prose-contract.md`",
+        "semantic judgment",
+    ),
+}
+
+
+CHANGE_SCOPE_CHECK_SELECTION_CONTRACT = {
+    ".claude/skills/_shared/references/change-scope-and-check-selection.md": (
+        "# Change scope and check selection",
+        "`verified_base=<explicit live base ref>`",
+        "`head=<ref>`",
+        "`git merge-base <verified-base> <head>`",
+        "`git diff --name-status --find-renames <merge-base>..<head>`",
+        "`git diff --cached --name-status`",
+        "`git diff --name-status`",
+        "`git ls-files --others --exclude-standard`",
+        "record `committed`, `staged`, `unstaged`, and `untracked` separately",
+        "`check-selection-only`",
+        "does not bound audit coverage",
+        "does not define task ownership",
+        "does not define release manifest",
+        "Do not rerun unchanged evidence",
+        "worktree-only",
+    ),
+    "AGENTS.md": (
+        ".agents/skills/_shared/references/change-scope-and-check-selection.md",
+        "ordinary non-skill work",
+        "`check-selection-only`",
+    ),
+    ".claude/skills/opi-document/SKILL.md": (
+        "_shared/references/change-scope-and-check-selection.md",
+        "candidate discovery only",
+        "documentation authority",
+    ),
+    ".claude/skills/opi-remediate/SKILL.md": (
+        "_shared/references/change-scope-and-check-selection.md",
+        "normalized findings and derived layers",
+        "verification union",
+    ),
+    ".claude/skills/opi-slim-tests/SKILL.md": (
+        "_shared/references/change-scope-and-check-selection.md",
+        "Cargo metadata and complete test bodies",
+        "post-change focused gates",
+    ),
+}
+
+
 def read(rel: str) -> str:
     path = ROOT / rel
     if not path.is_file():
@@ -223,6 +328,20 @@ def check_opi_spec_evidence_refinement_contract() -> None:
         require_tokens(
             rel,
             "Opi spec evidence refinement contract",
+            tokens,
+        )
+
+
+def check_opi_document_prose_contract() -> None:
+    for rel, tokens in OPI_DOCUMENT_PROSE_CONTRACT.items():
+        require_tokens(rel, "Opi document prose contract", tokens)
+
+
+def check_change_scope_check_selection_contract() -> None:
+    for rel, tokens in CHANGE_SCOPE_CHECK_SELECTION_CONTRACT.items():
+        require_tokens(
+            rel,
+            "change-scope and check-selection contract",
             tokens,
         )
 
@@ -726,6 +845,8 @@ def main() -> int:
     phase15_safety_sandbox_docs()
     phase16_command_execution_docs()
     check_opi_spec_evidence_refinement_contract()
+    check_opi_document_prose_contract()
+    check_change_scope_check_selection_contract()
     check_top_level_spec()
     check_current_contracts(docs)
     for rel in [*docs, *skill_docs, "AGENTS.md", "CLAUDE.md"]:

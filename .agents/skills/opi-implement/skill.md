@@ -69,17 +69,32 @@ not executable until expanded or explicitly accepted as a substrate-only task.
 MUST answer six questions using existing ledger fields: registered criterion
 or scenario; reuse search; architecture placement; necessity of public API,
 config, state, and dependency surfaces; the smallest production vertical
-slice; and any accepted simplification's ceiling plus observable revisit
+slice; and any simplification claim's ceiling plus observable revisit
 trigger. Reuse `acceptance_scenarios`, `production_call_sites`,
 `verification.behavioral_tests`, `depends_on`, and standardized
 `inference_notes` fields `reuse_search`, `placement`, `surface_necessity`, and
 `simplification_ceiling`. Do not add a duplicate trace object or bump the
 ledger schema. A substrate task must be in the transitive dependency closure
 of a later scenario-owning task; otherwise refuse it as orphan work.
+
+Every `simplification_ceiling` note in a new or reconciled draft also records
+`simplification_trigger=none|unused|duplicate|superseded|delete|merge|replace|dependency-substitution`.
+`none` records that no conditional simplification claim is made; any other
+value activates the additional evidence below. Windows plan validation rejects
+a draft that omits or malforms this declaration before graph confirmation.
 Placement targets use the controlled vocabulary `core`, `reference-product`,
 `extension`, `plugin`, `package`, `independent-companion`, or `assurance`;
 `assurance` is valid only for a task that introduces no runtime capability or
 ownership seam.
+
+When a task claims an existing surface is unused, duplicate, or superseded, or
+proposes deletion, merging, replacement, or dependency substitution, the same
+notes also record conditional simplification evidence. `reuse_search` must
+distinguish `production_consumers` from `nonproduction_consumers`, while
+`simplification_ceiling` must state `net_deletion` and `residual_glue`.
+Ordinary tasks do not need these subclauses. A `none` answer requires
+repository evidence, including checks for dynamic loading, configuration,
+wire or persistent formats, and public API use when applicable.
 
 ## Invocation
 

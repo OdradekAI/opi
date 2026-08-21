@@ -109,6 +109,13 @@ rules below exist to protect this independence.
     - all required trace evidence exists -> compare it with the complete
       relevant implementation at the current committed `audit_head`.
 
+    When a task claims an existing surface is unused, duplicate, or
+    superseded, or proposes deletion, merging, replacement, or dependency
+    substitution, also collect `production_consumers`,
+    `nonproduction_consumers`, `net_deletion`, and `residual_glue` from the
+    existing Reuse and Ceiling/trigger notes. Do not reconstruct these
+    conditional answers for a legacy `not-recorded` graph.
+
 6. If `phase_exit` exists for this phase, extract:
    - `completed_at` timestamp
    - `evaluator_summary` (prior evaluator's view -- use as context, not as
@@ -160,6 +167,15 @@ platform/build matrices, registered specs, and archived task evidence.
 External usage metrics, telemetry, provider dashboards, and dirty working-tree
 content are outside audit authority; classify those triggers
 `not-assessable` rather than inventing a finding.
+
+For triggered simplification claims, verify production consumers separately
+from tests, docs, and examples. Check applicable dynamic loading,
+configuration, wire or persistent formats, and public API use before accepting
+`production_consumers=none`. Verify that `net_deletion` subtracts new glue and
+that `residual_glue` names any surviving adapters, shims, or duplicate paths.
+Finding routing remains on existing axes; incomplete post-contract evidence is
+Spec drift, while demonstrated duplication or shallow seams remain Standards
+or Integration findings as applicable.
 
 **Inference heuristic**: scan task titles and the spec for keywords:
 - "export", "redact", "credential", "key", "auth" -> Security

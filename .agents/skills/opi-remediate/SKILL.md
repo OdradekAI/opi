@@ -225,6 +225,12 @@ For each fix item:
 
 ### Verification commands
 
+The normalized findings and derived layers define remediation scope. Use the
+[shared change-scope reference](../_shared/references/change-scope-and-check-selection.md)
+only after edits to inventory the actual changed surfaces and compute the
+verification union; it neither adds findings nor removes source-mandated
+coverage.
+
 Derive verification from the affected task/crate tier. A single-crate layer
 uses the scoped smoke mode and named affected integration tests. Reserve the
 full workspace mode for cross-crate/workspace changes. Documentation layers run

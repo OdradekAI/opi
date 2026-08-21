@@ -159,6 +159,12 @@ for published paths; and workspace gates for cross-crate runtime behavior, Phase
 exit, CI, and release. Report the exact commands run and their results. Do not
 claim that a gate passed unless that command was actually run.
 
+For ordinary non-skill work, use
+[the shared change-scope and check-selection contract](.agents/skills/_shared/references/change-scope-and-check-selection.md)
+to inventory outgoing changes and select the verification union. Its authority
+is `check-selection-only`; an active `opi-*` workflow keeps its own scope,
+admission, audit, remediation, and release authority.
+
 Runtime Rust or Cargo changes require the relevant `opi-implement` tier gate
 when that workflow is active. Documentation, skill, and metadata-only work uses
 the no-compile documentation check.

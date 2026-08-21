@@ -11,6 +11,7 @@ proves the current claim.
 | Runtime, CLI, provider, session, tool, or safety behavior | Owning behavior/integration test | named test binary or test filter |
 | Architecture boundary | Cargo metadata or topic-based contract test | focused architecture check |
 | Historical phase decision | frozen design/plan/snapshot | no current-product guard |
+| Semantic prose quality | Owning source plus the complete-proposition review in `references/prose-contract.md` | scoped semantic judgment; mechanical checks only verify applicable structure and routing |
 
 ## Rules
 
@@ -21,6 +22,9 @@ proves the current claim.
 - `scripts/opi-doc-check.py` is intentionally narrow and fast. Add a rule only
   when the claim is stable, source-derived, user-significant, and cheaper than
   the failure it prevents.
+- Automated checks may confirm that the prose workflow remains wired, but they
+  do not prove meaning, completeness, translation quality, or editorial
+  judgment.
 - When a rule becomes obsolete, delete or replace it in the same change as the
   product/doc transition. Do not accumulate phase-specific compatibility
   clauses.

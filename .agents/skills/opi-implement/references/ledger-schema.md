@@ -12,7 +12,6 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
   "spec_files_sha256": {
     "docs/opi-spec.md": "<hash at last init/reinit>"
   },
-  "task_graph_confirmed_at": "2026-05-20T09:30:00Z",
   "current_phase": 1,
   "tasks": [
     {
@@ -67,7 +66,6 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
       "start_commit": null,
       "baseline_dirty_files": [],
       "task_owned_paths": ["crates/opi-agent/**", "Cargo.toml"],
-      "last_attempt": null,
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
@@ -92,10 +90,9 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 
 | Field | Type | Mutability | Notes |
 |---|---|---|---|
-| `schema_version` | int | reinit-only | Current value `2`. v2 adds `task_owned_paths`, `definition_source`, `replaces`, `baseline_dirty_files`, `spec_files`, `spec_files_sha256`, `phase_exit[N].snapshot_path`, `phase_exit[N].task_summary`, dotted sub-task IDs, and open-string `crate` values. Reading a v1 ledger requires explicit reinit-time migration; refuse unknown versions. |
+| `schema_version` | int | reinit-only | Current live value `2`. v2 adds `task_owned_paths`, `definition_source`, `replaces`, `baseline_dirty_files`, `spec_files`, `spec_files_sha256`, `phase_exit[N].snapshot_path`, `phase_exit[N].task_summary`, dotted sub-task IDs, and open-string `crate` values. Live operations accept v2 only; frozen v1 snapshots remain audit-readable historical evidence. |
 | `spec_files` | array | const-on-init, reinit-editable | Normative spec file paths whose drift triggers the plan path's drift branch. Default `["docs/opi-spec.md"]`. Supplemental phases MUST include only the reviewed source files registered in `skill.md` for the active phase, plus `docs/opi-spec.md`. Adding or removing a path requires a plan-path sync. |
 | `spec_files_sha256` | object | reinit-only | Map of file path → its CRLF-normalized SHA-256 (replace `\r\n` with `\n` before hashing) at last init/reinit. The live root `.opi-impl-state.json` is pinned to the current spec by `crates/opi-coding-agent/tests/spec_ledger.rs`; phase-exit snapshots under `docs/snapshots/phaseN/` are historical and are NOT re-synced. Each entry is checked independently; any mismatch triggers the spec-alignment guard. |
-| `task_graph_confirmed_at` | string/null | init/reinit | ISO-8601 confirmation time |
 | `verify_runs` | array/null | plan+exec+phase-exit | Active-phase verify history. Each entry: `{ stage ("plan"|"exec"|"phase-exit"), wf_ref (string/null — null only when a supported plan fallback has no Workflow id), folded_count, flagged_count, rejected_count, ran_at, task_id (string for risk-gated exec; null for plan/phase-exit), criterion_id (string for phase-exit; null for plan/exec) }`. Tasks with `evaluator_required = false` create no exec entry. Additive/optional within a phase; after a durable pre-archive ledger checkpoint, archive compaction resets it to `[]`. The checkpoint remains the recovery source; do not duplicate the array into a generic history artifact. Does NOT affect `schema_version`. |
 | `session_notes` | array/null | plan+runtime+archive | Active-phase root coordination notes. This is distinct from per-task `tasks[].session_notes`. After a durable pre-archive ledger checkpoint, archive compaction resets it to `[]`; archived-phase notes do not accumulate in the live root ledger and remain recoverable from the checkpoint. |
 | `current_phase` | int | auto | Lowest phase with non-`passing` task |
@@ -123,7 +120,6 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 | `tasks[].start_commit` | string/null | runtime | HEAD when Phase B confirms |
 | `tasks[].baseline_dirty_files` | array | runtime | Files already dirty at Phase B start; used to avoid cleaning or staging unrelated user work |
 | `tasks[].task_owned_paths` | array | const-at-Phase-B, append-only during Phase C | Glob patterns the task is allowed to modify. Default derived from `crate` at init/reinit time (e.g. `crate = "opi-agent"` → `["crates/opi-agent/**", "Cargo.toml"]`). Phase C MAY append entries when implementation requires touching outside-prefix files; each append MUST add an `inference_notes` entry with `field = "task_owned_paths"` and a `reason`, written via the atomic ledger write. |
-| `tasks[].last_attempt` | object/null | runtime | `{attempt, started_at, ended_at, outcome, failing_gate, touched_files}` |
 | `tasks[].verified_at_commit` | string | runtime | Set in Phase E.2 |
 | `tasks[].evidence` | object/null | runtime | Mirror of `Opi-*` commit footers |
 | `tasks[].blocker` | string | runtime | Populated when `status = blocked` |
@@ -160,9 +156,30 @@ Validation rule: minimum-change notes retain `{ field, reason, source }`.
 adds no runtime capability or ownership seam. `field = "surface_necessity"` requires
 `public_api=`, `config=`, `state=`, and `dependency_edge=` clauses, each set to
 `none` or a necessity rationale. `field = "simplification_ceiling"` requires
-`accepted=`, `ceiling=`, and `revisit_when=` clauses; the revisit trigger must
+`ceiling=` and `revisit_when=` clauses; the revisit trigger must
 be observable rather than “when needed”. Missing clauses fail task-graph
 admission; explicit `none` or `not-applicable` remains valid when justified.
+
+For every new or reconciled plan draft, `field = "simplification_ceiling"`
+also requires `simplification_trigger=` with one of `none`, `unused`,
+`duplicate`, `superseded`, `delete`, `merge`, `replace`, or
+`dependency-substitution`. `none` records an ordinary task; any other value
+activates the conditional validation rule below. On Windows, run
+`ledger-guard.ps1 -Command ValidatePlan` before confirmation so a missing,
+unknown, or incomplete conditional declaration fails closed. This plan-only
+validation does not reinterpret legacy ledgers during ordinary `Validate` or
+`Install` operations.
+
+Conditional validation rule: when a task claims an existing surface is
+unused, duplicate, or superseded, or proposes deletion, merging, replacement,
+or dependency substitution, `field = "reuse_search"` also requires
+`production_consumers=` and `nonproduction_consumers=`, while
+`field = "simplification_ceiling"` also requires `net_deletion=` and
+`residual_glue=`. These are `reason` subclauses, not new ledger fields, so the
+schema version and `{ field, reason, source }` note shape remain unchanged.
+An explicit `none` must cite verifiable repository evidence and account for
+applicable dynamic loading, configuration, wire or persistent formats, and
+public API consumers.
 
 Validation rule: a `substrate_only` task with no owned acceptance scenario
 MUST appear in the transitive `depends_on` closure of a later task that owns a
@@ -261,7 +278,8 @@ normal checkpoint writes use the guard's transient replacement backup.
 
 **Write boundaries** (the only times the ledger is written):
 - End of Phase B (user confirms): mark `in_progress`, record `start_commit`
-- Each attempt boundary: record start, failing gate, touched files
+- Each attempt boundary: append outcome and failing-gate information to the
+  task session notes
 - Failure decision gate: mark `blocked`, extend cap, or record handoff
 - End of Phase E: mark `passing`, record commit + evidence
 - Reinit after task-graph review gate confirmed
@@ -285,60 +303,12 @@ may remain, and every required checkpoint must be contained in the destination
 branch. Resolve a ledger merge conflict by plan-path reconciliation against
 both branches' `Opi-*` evidence, never by accepting one side wholesale.
 
-## v1 → v2 Migration
+## Legacy Ledger Boundary
 
-Reinit MUST run this migration before any reconciliation when it loads a
-ledger with `schema_version < 2`. The migration is applied to a draft copy;
-nothing is overwritten until the task-graph review gate confirms.
-
-Per-task rules:
-
-- `definition_source`: compute by re-parsing the spec roadmap row.
-  - Spec row has explicit DoD column AND the v1 DoD string matches → `"verbatim"`.
-  - Spec row has no DoD column AND the v1 DoD's SHA-256 matches the
-    `Opi-DoD-SHA256` footer of the task's `verified_at_commit` → `"draft-reviewed"`
-    (work shipped under that DoD; preserve).
-  - Anything else → `"inferred"` AND demote `status` to `failing` AND require
-    re-confirmation at the task-graph review gate.
-- `replaces`: when the same task ID exists in v1 ledger and current spec but
-  title or DoD changed substantively (string distance beyond trivial whitespace
-  or punctuation), fill with the v1 title. Else `null`.
-- `baseline_dirty_files`: always `[]` at migration time; populated fresh at the
-  next Phase B.
-- `task_owned_paths`: derive from `tasks[].crate` per the rules in the field
-  definition (e.g. `crate = "opi-agent"` → `["crates/opi-agent/**", "Cargo.toml"]`).
-- `acceptance_scenarios`: set to `[]` for legacy tasks, then require reinit
-  task-graph review to populate scenarios for any current source-spec criteria
-  the task claims to close.
-- `production_call_sites`: set to `[]` for legacy tasks; task-graph review must
-  populate it before runtime/startup/CLI/session/adapter/provider claims can be
-  executable.
-- `substrate_only`: set to `false` by default; review may set `true` for
-  helper/parser/protocol/bridge tasks that intentionally do not close a product
-  acceptance scenario.
-
-Top-level field rules:
-
-- `spec_sha256` (v1 string) → `spec_files` = `["docs/opi-spec.md"]` AND
-  `spec_files_sha256` = `{"docs/opi-spec.md": <existing-hash>}`. Delete the
-  v1 `spec_sha256` key.
-- `phase{N}_summary` (v1 informal top-level array) → `phase_exit["<N>"].task_summary`.
-  Delete the v1 top-level keys.
-- `phase{N}_snapshot` (v1 informal top-level string) → `phase_exit["<N>"].snapshot_path`.
-  Delete the v1 top-level keys.
-
-After successful migration AND task-graph review gate confirmation, write
-`schema_version: 2` via the atomic write protocol.
-
-## verify_runs migration
-
-A ledger carrying the legacy single `init_verification` object is migrated on
-first run by pushing one `verify_runs` entry: `stage = "plan"`, `task_id = null`,
-`criterion_id = null`, and the legacy `wf_ref` / `folded_count` / `flagged_count`
-/ `rejected_count` / `ran_at` copied verbatim. **The legacy `mode` field
-("cheap"|"deep") is dropped** — cheap-vs-deep is no longer recorded at the
-ledger level after the auto-deep unification; `wf_ref` is the only surviving
-distinguisher. (Consumer-visible break; CHANGELOG'd.)
+There is no v1-to-v2 or `init_verification` migration path. Keep existing
+historical ledger snapshots unchanged and inspect them through `opi-audit`;
+they are evidence, not live inputs. New and reconciled live ledgers use the
+v2 fields defined above.
 
 ## Interrupt Recovery
 

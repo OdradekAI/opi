@@ -185,8 +185,24 @@ Add these four standardized notes using the existing
   `public_api=<none|necessity>; config=<none|necessity>;
   state=<none|necessity>; dependency_edge=<none|necessity>`;
 - `field = "simplification_ceiling"`: `reason` is
-  `accepted=<none|simplification>; ceiling=<known limit>;
-  revisit_when=<observable condition>`.
+  `ceiling=<known limit>;
+  revisit_when=<observable condition>;
+  simplification_trigger=<none|unused|duplicate|superseded|delete|merge|replace|dependency-substitution>`.
+
+When the task claims an existing surface is unused, duplicate, or superseded,
+or proposes deletion, merging, replacement, or dependency substitution,
+append conditional simplification evidence to those same notes:
+
+- `reuse_search.reason` also includes
+  `production_consumers=<items|none>; nonproduction_consumers=<tests/docs/examples|none>`;
+- `simplification_ceiling.reason` also includes
+  `net_deletion=<removed surfaces minus new glue>; residual_glue=<items|none>`.
+
+Use `simplification_trigger=none` for an ordinary task; the four consumer and
+deletion subclauses are required only for another trigger value. A `none`
+answer must cite verifiable repository evidence.
+Check dynamic loading, configuration lookup, wire and persistent formats, and
+public API consumers when those mechanisms could hide a live dependency.
 
 Every `source` cites the registered source heading, reviewed decision, or
 repository evidence used for that answer. `none` and `not-applicable` are
@@ -222,10 +238,12 @@ The two non-collapsible axes are:
   real dependencies, owned paths, production wiring, proportional verification,
   and forbidden scope.
 
-Review all six minimum-change answers explicitly. An omitted answer with
-otherwise sufficient source material is `GRAPH_REVISION_REQUIRED`; a missing
-fact is `RESEARCH_REQUIRED`; an unsettled placement, public surface, or
-simplification decision is `DESIGN_DECISION_REQUIRED`. Do not let generic
+Review all six minimum-change answers explicitly. When the conditional
+simplification trigger applies, also verify `production_consumers=`,
+`nonproduction_consumers=`, `net_deletion=`, and `residual_glue=`. An omitted
+answer with otherwise sufficient source material is `GRAPH_REVISION_REQUIRED`;
+a missing fact is `RESEARCH_REQUIRED`; an unsettled placement, public surface,
+or simplification decision is `DESIGN_DECISION_REQUIRED`. Do not let generic
 prose such as “reuse considered” satisfy a standardized note.
 
 Reviewers report findings and try to reject unsupported findings. They do not
@@ -271,11 +289,15 @@ any runtime criterion is covered only by a `substrate_only` task.
 
 Also render a six-row minimum-change trace per task. For substrate tasks, show
 the later scenario owner whose transitive `depends_on` closure contains the
-substrate. REFUSE `confirm-all` when a required answer is absent, any
-`surface_necessity` clause is missing, `simplification_ceiling` omits
-`revisit_when`, a substrate has no later scenario owner, or a runtime claim
-lacks either a production call site or behavioral verification. This is
-evidence inside the existing human graph gate, not an additional gate.
+substrate. Before graph confirmation, run
+`.claude/skills/opi-implement/scripts/ledger-guard.ps1 -Command ValidatePlan`
+against the draft on Windows. REFUSE `confirm-all` when that command fails,
+a required answer is absent, any `surface_necessity` clause is missing,
+`simplification_ceiling` omits
+`revisit_when`, a triggered simplification claim omits its four conditional
+consumer/deletion subclauses, a substrate has no later scenario owner, or a
+runtime claim lacks either a production call site or behavioral verification.
+This is evidence inside the existing human graph gate, not an additional gate.
 
 Gate options after a `READY` adversarial verdict:
 - **confirm-all** — accept the graph as shown
@@ -311,20 +333,12 @@ implementation code.
 ### A.init.7 Print Summary
 - Success message + next-task hint
 
-## Schema Version Migration
+## Schema Version Boundary
 
-On every invocation, inspect `schema_version` from the ledger before any other
-step.
-
-- `schema_version == 2` (current): proceed.
-- `schema_version == 1`: route the ledger into the unified plan path's
-  fresh/drift detection. Print "Ledger is v1; running v1 → v2 migration as part
-  of plan-path sync." Apply the v1 → v2 migration documented in
-  `ledger-schema.md`, then continue with the rest of plan-path sync (drift
-  reconciliation below + P.0 source admission + P.1/P.2 draft review + P.4
-  gate).
-- `schema_version > 2` or missing: refuse with an explicit message identifying
-  the offending value.
+Live plan and execution paths accept `schema_version == 2` only. Refuse a
+missing, v1, or future version with the offending value. Historical v1
+snapshots remain readable by `opi-audit`; do not route them through a live
+plan, mutate them, or promise an automatic migration.
 
 ## Reinit Reconciliation (drift branch of the plan path)
 

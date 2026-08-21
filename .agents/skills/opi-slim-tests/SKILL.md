@@ -94,6 +94,12 @@ current Rust assertions. Documentation contracts use
 
 ## 6. Verify proportionally
 
+Cargo metadata and complete test bodies remain the authority for candidate
+classification and consolidation. After editing, use the
+[shared change-scope reference](../_shared/references/change-scope-and-check-selection.md)
+only to inventory the resulting surfaces and select post-change focused gates;
+the diff does not decide which tests are duplicate, superseded, or load-bearing.
+
 For each retained/consolidated binary:
 
 ```text

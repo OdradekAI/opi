@@ -94,6 +94,12 @@ and `not-assessable`. `not-recorded` is a legacy state and
 `not-assessable` means required evidence is outside pinned-HEAD authority;
 neither creates a finding by itself.
 
+For a triggered simplification claim, the Reuse cell records
+`production_consumers` separately from `nonproduction_consumers`; tests, docs,
+and examples do not establish production use. The Ceiling/trigger cell records
+`net_deletion` after subtracting new glue and lists `residual_glue`. Keep these
+details in the existing cells rather than adding a new axis or verdict.
+
 Actionable rows still emit the shared normalized block. Use axis `standards`
 for shallow interfaces, duplicate implementation, or hypothetical seams; axis
 `spec` for unadmitted placement/surface or incomplete post-contract evidence;

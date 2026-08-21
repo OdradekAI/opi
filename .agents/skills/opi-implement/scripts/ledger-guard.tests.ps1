@@ -73,6 +73,25 @@ try {
     $valid = Invoke-Guard @("-Command", "Validate", "-Path", $validPath)
     Assert-Equal 0 $valid.ExitCode "Valid UTF-8 ledger should pass"
 
+    $missingSimplificationTriggerPath = Join-Path $tempRoot "missing-simplification-trigger.json"
+    Write-Utf8File $missingSimplificationTriggerPath @'
+{"schema_version":2,"tasks":[{"inference_notes":[{"field":"simplification_ceiling","reason":"ceiling=known limit; revisit_when=observable condition","source":"docs/opi-spec.md#Example"}]}]}
+'@
+    $missingSimplificationTrigger = Invoke-Guard @(
+        "-Command", "ValidatePlan", "-Path", $missingSimplificationTriggerPath
+    )
+    Assert-Equal 1 $missingSimplificationTrigger.ExitCode "Plan without simplification trigger should be rejected"
+    Assert-Contains "simplification_trigger" $missingSimplificationTrigger.Output "Missing trigger failure should be explicit"
+
+    $completeSimplificationEvidencePath = Join-Path $tempRoot "complete-simplification-evidence.json"
+    Write-Utf8File $completeSimplificationEvidencePath @'
+{"schema_version":2,"tasks":[{"inference_notes":[{"field":"simplification_ceiling","reason":"ceiling=known limit; revisit_when=observable condition; simplification_trigger=duplicate; net_deletion=old adapter removed minus new bridge; residual_glue=bridge","source":"docs/opi-spec.md#Example"},{"field":"reuse_search","reason":"searched=crates/opi-agent; reused=none; gap=smallest capability; production_consumers=opi CLI; nonproduction_consumers=tests/docs/examples","source":"docs/opi-spec.md#Example"}]}]}
+'@
+    $completeSimplificationEvidence = Invoke-Guard @(
+        "-Command", "ValidatePlan", "-Path", $completeSimplificationEvidencePath
+    )
+    Assert-Equal 0 $completeSimplificationEvidence.ExitCode "Complete simplification evidence should pass plan validation"
+
     $validChinesePath = Join-Path $tempRoot "valid-chinese.json"
     $validChinese = ([string][char]0x6402) + ([string][char]0x62B1)
     Write-Utf8File $validChinesePath ('{"schema_version":2,"message":"' + $validChinese + '"}')
