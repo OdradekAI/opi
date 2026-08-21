@@ -533,10 +533,13 @@ impl std::fmt::Debug for CredentialProcessOutput {
     }
 }
 
-/// Local credential processes are given three seconds and at most 64 KiB of
-/// stdout. Cancellation kills and reaps the spawned shell before its detached
+/// Local credential processes are given ten seconds and at most 64 KiB of
+/// stdout. The budget must absorb cold shell startup on loaded hosts (a
+/// Windows PowerShell cold start alone can exceed three seconds), so the
+/// process itself is only expected to finish well inside the window.
+/// Cancellation kills and reaps the spawned shell before its detached
 /// cleanup task exits.
-const CREDENTIAL_PROCESS_TIMEOUT: Duration = Duration::from_secs(3);
+const CREDENTIAL_PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 const CREDENTIAL_PROCESS_MAX_STDOUT: usize = 64 * 1024;
 const PROCESS_TREE_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
 

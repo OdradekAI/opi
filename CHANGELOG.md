@@ -148,6 +148,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   errors.
 - The RPC `session_info` `tree_read_error` field is summary-redacted like its
   sibling fields, so raw session-file paths no longer cross the RPC boundary.
+- Local `credential_process` execution is granted a ten-second budget
+  (previously three): cold shell startup on a loaded Windows host alone can
+  exceed three seconds, turning healthy credential helpers into spurious
+  typed timeouts. Cancelling a credential process now terminates its whole
+  process group with a portable kill invocation, so descendants no longer
+  survive resolver cancellation on Linux.
 
 ## [0.8.0] - 2026-08-12
 
