@@ -171,18 +171,12 @@ async fn ndjson_refuses_local_ask_at_startup_without_prompt() {
         Vec::new(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
-    drop(_env_guard);
-
+    // The guard stays held through the run: the redirected config dir (and
+    // its tempdir) must remain alive for the session-persist step.
     let result = tokio::time::timeout(std::time::Duration::from_secs(2), runner.run_json("hello"))
         .await
         .expect("headless local ask must not wait for a permission prompt");
-    assert_eq!(
-        result.exit_code,
-        ExitCode::Success as i32,
-        "stderr={:?} stdout={:?}",
-        result.stderr,
-        result.stdout
-    );
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
     let calls = call_log.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert!(
@@ -1556,20 +1550,14 @@ async fn phase17_conversation_echo_events_scrub_secret_canaries_on_ndjson() {
         Vec::new(),
         opi_coding_agent::project_trust::TrustDecision::Trusted,
     );
-    drop(_env_guard);
-
+    // The guard stays held through the run: the redirected config dir (and
+    // its tempdir) must remain alive for the session-persist step.
     let result = runner
         .run_json(&format!(
             "read {fixture_name} and report (key {key_canary})"
         ))
         .await;
-    assert_eq!(
-        result.exit_code,
-        ExitCode::Success as i32,
-        "stderr={:?} stdout={:?}",
-        result.stderr,
-        result.stdout
-    );
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
 
     // The canary-bearing shapes must actually be present so the absence
     // assertions below are non-vacuous.
@@ -1796,16 +1784,10 @@ async fn phase17_trace_cli_writes_evidence_files() {
         Vec::new(),
     )
     .expect("non-interactive tool policy should be valid");
-    drop(_env_guard);
-
+    // The guard stays held through the run: the redirected config dir (and
+    // its tempdir) must remain alive for the session-persist step.
     let result = runner.run_json("hello").await;
-    assert_eq!(
-        result.exit_code,
-        ExitCode::Success as i32,
-        "stderr={:?} stdout={:?}",
-        result.stderr,
-        result.stdout
-    );
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
 
     // `--trace` (trace_path) activates the FileEvidenceSink. The configured
     // path is a capture root; each run owns one immutable child directory.
