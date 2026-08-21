@@ -225,6 +225,11 @@ async fn ndjson_refuses_local_ask_at_startup_without_prompt() {
 
 #[tokio::test]
 async fn json_mode_schema_version_header() {
+    // Session persistence resolves under HOME: hold the env-isolation guard
+    // for the whole test (the static mutex also serializes these runs — a
+    // concurrently dropped guard deletes the redirected dir mid-persist).
+    let _env_guard = common::empty_user_config_dir();
+
     let response = test_support::text_response("hi");
     let provider = MockProvider::new("mock", vec![response]);
     let mut runner = NonInteractiveRunner::new(
@@ -255,6 +260,8 @@ async fn json_mode_schema_version_header() {
 
 #[tokio::test]
 async fn json_mode_each_line_valid_json_with_type() {
+    let _env_guard = common::empty_user_config_dir();
+
     let response = test_support::text_response("hello world");
     let provider = MockProvider::new("mock", vec![response]);
     let mut runner = NonInteractiveRunner::new(
@@ -288,6 +295,8 @@ async fn json_mode_each_line_valid_json_with_type() {
 
 #[tokio::test]
 async fn json_mode_agent_events_emitted() {
+    let _env_guard = common::empty_user_config_dir();
+
     let response = test_support::text_response("response text");
     let provider = MockProvider::new("mock", vec![response]);
     let mut runner = NonInteractiveRunner::new(
@@ -320,6 +329,8 @@ async fn json_mode_agent_events_emitted() {
 
 #[tokio::test]
 async fn json_mode_events_deserialize_as_session_events() {
+    let _env_guard = common::empty_user_config_dir();
+
     let response = test_support::text_response("hello");
     let provider = MockProvider::new("mock", vec![response]);
     let mut runner = NonInteractiveRunner::new(
@@ -358,6 +369,8 @@ async fn json_mode_events_deserialize_as_session_events() {
 
 #[tokio::test]
 async fn json_mode_no_blank_lines() {
+    let _env_guard = common::empty_user_config_dir();
+
     let response = test_support::text_response("ok");
     let provider = MockProvider::new("mock", vec![response]);
     let mut runner = NonInteractiveRunner::new(
@@ -387,6 +400,8 @@ async fn json_mode_no_blank_lines() {
 
 #[tokio::test]
 async fn json_mode_provider_error_exit_code() {
+    let _env_guard = common::empty_user_config_dir();
+
     let response = test_support::error_response("rate limited");
     let provider = MockProvider::new("mock", vec![response]);
     let mut runner = NonInteractiveRunner::new(
@@ -422,6 +437,8 @@ async fn json_mode_provider_error_exit_code() {
 
 #[tokio::test]
 async fn json_mode_provider_error_stderr_is_redacted() {
+    let _env_guard = common::empty_user_config_dir();
+
     let secret = "sk-proj-1234567890abcdefghijklmnopqrstuv";
     let provider = MockProvider::new_with_errors(
         "mock",
@@ -464,6 +481,8 @@ async fn json_mode_provider_error_stderr_is_redacted() {
 
 #[tokio::test]
 async fn json_mode_credential_needed_emits_typed_remediation_without_prompt() {
+    let _env_guard = common::empty_user_config_dir();
+
     let provider = MockProvider::new_with_errors(
         "anthropic",
         vec![MockResponse::Error(ProviderError::CredentialNeeded {
@@ -529,6 +548,8 @@ async fn json_mode_credential_needed_emits_typed_remediation_without_prompt() {
 
 #[tokio::test]
 async fn json_mode_account_id_missing_emits_typed_remediation_without_prompt() {
+    let _env_guard = common::empty_user_config_dir();
+
     // C-3.2: an AccountIdMissing auth failure (e.g. a Codex token lacking
     // chatgpt_account_id) must surface in JSON mode as a typed /login
     // remediation with an AuthFailure exit code, not a generic provider error.
@@ -601,6 +622,8 @@ async fn json_mode_account_id_missing_emits_typed_remediation_without_prompt() {
 /// (`AgentEvent::redacted_for_public`) must scrub it before it reaches stdout.
 #[tokio::test]
 async fn provider_errors_are_redacted() {
+    let _env_guard = common::empty_user_config_dir();
+
     let secret = "sk-proj-1234567890abcdefghijklmnopqrstuv";
     // Retryable Network error carrying a secret -> AutoRetryStart before the
     // final failure. Default RetryConfig retries, so an AutoRetry event fires.
@@ -652,6 +675,8 @@ async fn provider_errors_are_redacted() {
 
 #[tokio::test]
 async fn json_mode_tool_call_events() {
+    let _env_guard = common::empty_user_config_dir();
+
     let first = test_support::tool_call_response(
         "tc-1",
         "read",
@@ -694,6 +719,8 @@ async fn json_mode_tool_call_events() {
 
 #[tokio::test]
 async fn write_tool_result_carries_write_audit_details() {
+    let _env_guard = common::empty_user_config_dir();
+
     let first = test_support::tool_call_response(
         "tc-write",
         "write",
@@ -744,6 +771,8 @@ async fn write_tool_result_carries_write_audit_details() {
 
 #[tokio::test]
 async fn json_mode_stdout_is_only_ndjson() {
+    let _env_guard = common::empty_user_config_dir();
+
     let response = test_support::text_response("plain text response");
     let provider = MockProvider::new("mock", vec![response]);
     let mut runner = NonInteractiveRunner::new(
@@ -768,6 +797,8 @@ async fn json_mode_stdout_is_only_ndjson() {
 
 #[tokio::test]
 async fn json_mode_emits_session_summary_with_token_totals() {
+    let _env_guard = common::empty_user_config_dir();
+
     let response = test_support::text_response("hi");
     // Phase 17.5: the harness dispatches via ProviderCollection::prepare_call,
     // which strictly resolves the `provider:model` spec. Register the asserted
@@ -819,6 +850,8 @@ async fn json_mode_emits_session_summary_with_token_totals() {
 
 #[tokio::test]
 async fn json_mode_session_summary_roundtrips_through_agent_session_event() {
+    let _env_guard = common::empty_user_config_dir();
+
     // The session_summary line must be the AgentSessionEvent::SessionSummary
     // variant — not an ad-hoc JSON shape. Consumers parsing the NDJSON stream
     // as a sequence of AgentSessionEvent values rely on this.
@@ -921,6 +954,8 @@ mod phase7 {
     /// Startup diagnostics appear before accepted prompt output (clause 1).
     #[tokio::test]
     async fn phase7_startup_diagnostics_and_counts() {
+        let _env_guard = super::common::empty_user_config_dir();
+
         let provider = MockProvider::new("mock", vec![test_support::text_response("hi")]);
         let startup_diag = Diagnostic::new(
             Severity::Warning,
@@ -960,6 +995,8 @@ mod phase7 {
 
     #[tokio::test]
     async fn phase7_resume_diagnostics_are_startup_diagnostics() {
+        let _env_guard = super::common::empty_user_config_dir();
+
         let provider = MockProvider::new("mock", vec![test_support::text_response("hi")]);
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let session_path = workspace.path().join("resume.jsonl");
@@ -1029,6 +1066,8 @@ mod phase7 {
     /// all four fields are observable in one result.
     #[tokio::test]
     async fn tool_result_details_diagnostics_and_truncated_shape() {
+        let _env_guard = super::common::empty_user_config_dir();
+
         let cmd = if cfg!(windows) {
             "cmd /C exit 1"
         } else {
@@ -1093,6 +1132,8 @@ mod phase7 {
     /// Run summary carries structured diagnostic counts (clause 2).
     #[tokio::test]
     async fn phase7_run_summary_carries_diagnostic_counts() {
+        let _env_guard = super::common::empty_user_config_dir();
+
         // One retryable error then success: emits a Warning retry-attempt and
         // an Info retry-succeeded diagnostic, which must aggregate into counts.
         let provider = MockProvider::new_with_errors(
@@ -1163,6 +1204,8 @@ mod phase7 {
     /// proving the runtime did not collapse it to a free-text string.
     #[tokio::test]
     async fn phase8_startup_diagnostics_are_structured_and_redacted() {
+        let _env_guard = super::common::empty_user_config_dir();
+
         let provider = MockProvider::new("mock", vec![test_support::text_response("hi")]);
         let diagnostic = Diagnostic::new(
             Severity::Error,
@@ -1236,6 +1279,8 @@ mod phase7 {
 
 #[tokio::test]
 async fn json_mode_read_tool_result_does_not_leak_workspace_root() {
+    let _env_guard = common::empty_user_config_dir();
+
     let workspace = tempfile::tempdir().expect("workspace");
     std::fs::write(workspace.path().join("safe.txt"), "secret body").unwrap();
 
@@ -1269,6 +1314,8 @@ async fn json_mode_read_tool_result_does_not_leak_workspace_root() {
 
 #[tokio::test]
 async fn json_mode_runtime_messages_have_nonzero_timestamps() {
+    let _env_guard = common::empty_user_config_dir();
+
     let provider = MockProvider::new("mock", vec![test_support::text_response("hi")]);
     let mut runner = NonInteractiveRunner::new(
         Box::new(provider),
@@ -1305,6 +1352,8 @@ async fn json_mode_runtime_messages_have_nonzero_timestamps() {
 
 #[tokio::test]
 async fn json_mode_session_summary_reports_provider_turns() {
+    let _env_guard = common::empty_user_config_dir();
+
     let first = test_support::tool_call_response(
         "tc-read",
         "read",
@@ -1347,6 +1396,8 @@ async fn json_mode_session_summary_reports_provider_turns() {
 
 #[tokio::test]
 async fn json_mode_compact_text_deltas_are_constant_size() {
+    let _env_guard = common::empty_user_config_dir();
+
     use opi_ai::message::AssistantContent;
     use opi_ai::stream::AssistantStreamEvent;
 
@@ -1417,6 +1468,8 @@ async fn json_mode_compact_text_deltas_are_constant_size() {
 
 #[tokio::test]
 async fn json_mode_default_output_still_carries_partial() {
+    let _env_guard = common::empty_user_config_dir();
+
     use opi_ai::message::AssistantContent;
     use opi_ai::stream::AssistantStreamEvent;
 
@@ -1621,6 +1674,8 @@ async fn phase17_conversation_echo_events_scrub_secret_canaries_on_ndjson() {
 
 #[tokio::test]
 async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
+    let _env_guard = common::empty_user_config_dir();
+
     fn resumed_runner(
         provider: Box<dyn Provider>,
         workspace: &std::path::Path,

@@ -95,6 +95,11 @@ fn install_adapter_package(workspace: &Path, name: &str, command: &Path, args: &
 
 #[tokio::test]
 async fn runtime_startup_is_the_single_source_of_runner_trust_in_all_builds() {
+    // Session persistence resolves under HOME: hold the env-isolation guard
+    // for the whole test (the static mutex also serializes these runs — a
+    // concurrently dropped guard deletes the redirected dir mid-persist).
+    let _env_guard = common::empty_user_config_dir();
+
     let workspace = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(workspace.path().join(".git")).unwrap();
     std::fs::write(
@@ -149,6 +154,8 @@ async fn runtime_startup_is_the_single_source_of_runner_trust_in_all_builds() {
 
 #[tokio::test]
 async fn runner_text_prompt_stdout_exit0() {
+    let _env_guard = common::empty_user_config_dir();
+
     let response = test_support::text_response("Hello from runner!");
     let provider = MockProvider::new("mock", vec![response]);
 
@@ -179,6 +186,8 @@ async fn runner_text_prompt_stdout_exit0() {
 
 #[tokio::test]
 async fn runner_readonly_tool_succeeds() {
+    let _env_guard = common::empty_user_config_dir();
+
     let first = test_support::tool_call_response(
         "tc-1",
         "read",
@@ -211,6 +220,8 @@ async fn runner_readonly_tool_succeeds() {
 
 #[tokio::test]
 async fn runner_installed_adapter_tool_succeeds() {
+    let _env_guard = common::empty_user_config_dir();
+
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
     install_adapter_package(
@@ -258,6 +269,8 @@ async fn runner_installed_adapter_tool_succeeds() {
 
 #[tokio::test]
 async fn runner_installed_adapter_hook_blocks_mutating_tool() {
+    let _env_guard = common::empty_user_config_dir();
+
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
     install_adapter_package(
@@ -330,6 +343,8 @@ async fn runner_installed_adapter_hook_blocks_mutating_tool() {
 
 #[tokio::test]
 async fn runner_text_surfaces_local_effective_execution_contract() {
+    let _env_guard = common::empty_user_config_dir();
+
     let workspace = tempfile::tempdir().unwrap();
     let command = if cfg!(windows) { "exit 0" } else { "true" };
     let first = test_support::tool_call_response(
@@ -359,6 +374,8 @@ async fn runner_text_surfaces_local_effective_execution_contract() {
 
 #[tokio::test]
 async fn runner_text_preserves_tool_failure_diagnostic_after_provider_recovery() {
+    let _env_guard = common::empty_user_config_dir();
+
     let workspace = tempfile::tempdir().unwrap();
     let command = if cfg!(windows) { "exit /B 7" } else { "exit 7" };
     let first = test_support::tool_call_response(
@@ -396,6 +413,8 @@ async fn runner_text_preserves_tool_failure_diagnostic_after_provider_recovery()
 
 #[tokio::test]
 async fn runner_provider_error_stderr_exit4() {
+    let _env_guard = common::empty_user_config_dir();
+
     let canary = "sk-provider-body-canary-1234567890";
     let upstream_error = format!("connection refused; response body contained {canary}");
     let response = test_support::error_response(&upstream_error);
@@ -448,6 +467,8 @@ async fn runner_provider_error_stderr_exit4() {
 
 #[tokio::test]
 async fn runner_resume_forwards_compaction_summary_to_provider() {
+    let _env_guard = common::empty_user_config_dir();
+
     use opi_agent::message::{AgentMessage, CompactionSummaryMessage};
     use opi_ai::message::{InputContent, Message};
 
@@ -504,6 +525,8 @@ async fn runner_resume_forwards_compaction_summary_to_provider() {
 
 #[tokio::test]
 async fn runner_resume_forwards_branch_summary_to_provider() {
+    let _env_guard = common::empty_user_config_dir();
+
     use opi_agent::message::{AgentMessage, BranchSummaryMessage};
     use opi_ai::message::{InputContent, Message};
 
@@ -648,6 +671,8 @@ fn phase11_cli_help_tool_policy() {
 
 #[tokio::test]
 async fn credential_needed_fails_without_prompt() {
+    let _env_guard = common::empty_user_config_dir();
+
     // Phase 17.5: CredentialNeeded now surfaces through the harness's
     // ProviderCollection::prepare_call path. NonInteractiveRunner does not expose
     // a custom auth resolver (the harness installs a dummy static resolver that
@@ -784,6 +809,8 @@ async fn text_surface_refuses_local_ask_at_startup_without_prompt() {
 // ---------------------------------------------------------------------------
 #[tokio::test]
 async fn phase17_canary_is_absent_from_print_output() {
+    let _env_guard = common::empty_user_config_dir();
+
     // Plant the canary in a bash command, which genuinely flows through the
     // ToolExecutionEnd redaction boundary (redact_public_value scrubs the
     // "command" key) into print stdout/stderr. A provider error body is never
