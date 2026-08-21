@@ -1626,6 +1626,28 @@ mod tests {
     #[tokio::test]
     async fn cancelling_real_credential_process_resolution_terminates_descendants() {
         let _process_lock = CREDENTIAL_PROCESS_TEST_LOCK.lock().await;
+        // Cold shell startup on a loaded CI runner can exceed both this
+        // test's marker wait and the resolver's own credential-process
+        // timeout. Only the startup race is retryable: a marker that never
+        // appears because the resolver gave up first is a slow-host artifact,
+        // while a surviving descendant after a launched run is a real defect
+        // and fails immediately.
+        for attempt in 0..3 {
+            if let TestAttempt::Passed = run_cancellation_attempt().await {
+                return;
+            }
+            if attempt == 2 {
+                panic!("credential process did not start within three attempts");
+            }
+        }
+    }
+
+    enum TestAttempt {
+        Passed,
+        RetryStartup,
+    }
+
+    async fn run_cancellation_attempt() -> TestAttempt {
         let dir = tempfile::tempdir().unwrap();
         let started = dir.path().join("started");
         let survived = dir.path().join("survived");
@@ -1683,13 +1705,22 @@ mod tests {
             resolve_credentials(&process_input).await
         });
 
-        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
             while !started.exists() {
+                if task.is_finished() {
+                    // The resolver's own timeout cancelled the process
+                    // before the shell managed to start it — retry the
+                    // attempt on a slow host.
+                    return;
+                }
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
         })
         .await
-        .expect("credential process started");
+        .expect("credential process started within the wait budget");
+        if !started.exists() {
+            return TestAttempt::RetryStartup;
+        }
         task.abort();
         let _ = task.await;
         tokio::time::sleep(std::time::Duration::from_millis(1800)).await;
@@ -1697,5 +1728,6 @@ mod tests {
             !survived.exists(),
             "credential_process descendant survived resolver cancellation"
         );
+        TestAttempt::Passed
     }
 }
