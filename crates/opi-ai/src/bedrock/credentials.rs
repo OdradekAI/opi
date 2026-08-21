@@ -694,7 +694,10 @@ async fn terminate_process_tree(root_pid: u32) {
     #[cfg(unix)]
     let mut command = {
         let mut command = Command::new("kill");
-        command.arg("-KILL").arg(format!("-{root_pid}"));
+        // The `--` separator is required: procps-ng `kill` parses a bare
+        // `-<pgid>` argument as an option and exits successfully without
+        // signalling anyone, silently leaving the process group alive.
+        command.arg("-KILL").arg("--").arg(format!("-{root_pid}"));
         command
     };
     #[cfg(windows)]
