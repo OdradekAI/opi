@@ -1,195 +1,140 @@
-# Opi skills
+# Opi skills user manual
 
-The ten `.claude/skills/opi-*` skills implement one project workflow without
-turning product discovery into a mechanical pipeline.
+Opi has ten project skills. Their tracked source lives in `.agents/skills/`;
+`.claude/skills` is a compatibility symlink to the same directory. Edit only
+the canonical `.agents/skills/` files. Every skill requires explicit user
+invocation: for example `$opi-workflow` in Codex or `/opi-workflow` in Claude
+Code.
 
-The design principle is:
+Use `opi-workflow` when the correct entry is unclear. It recommends one next
+command and stops; it does not create another workflow ledger.
 
-> Follow pi's design ideas, implement them in Rust, and extend opi through
-> plugin/package seams so extensions can run independently and enrich the opi
-> ecosystem.
+## Choose an entry in 30 seconds
 
-All `opi-*` skills require explicit invocation. Claude metadata uses
-`disable-model-invocation: true`; Codex metadata uses
-`policy.allow_implicit_invocation: false`. Use `opi-workflow` when the correct
-entry point is unclear. Matt's `wayfinder`, `grill-with-docs`, `to-spec`, and
-setup command are also user-invoked: the router recommends their exact
-invocation but does not call them.
+1. Are you trying to decide **what should be built**?
+   - Compare opi with the pinned pi revision: `opi-realign`.
+   - Investigate an external capability or ecosystem option: `opi-research`.
+   - The evidence exists but the product decision is unsettled: use the
+     recommended human-led shaping command; do not start implementation.
+2. Is there a reviewed and registered Phase delivery source?
+   - No: return to evidence or shaping.
+   - Yes: run `opi-implement plan`; run `opi-implement` only after admission.
+3. Are you checking or correcting shipped behavior?
+   - Static requirement conformance: `opi-audit`.
+   - Credentialed real-provider behavior: `opi-eval`.
+   - Verify and optionally fix normalized findings: `opi-remediate`.
+   - Documentation, release, or test-link cleanup: use the named skill.
 
-## Workflow map
+## Lifecycle and return loops
 
-| Concern | Entry | Output/next decision |
-|---|---|---|
-| Inward evidence | `opi-realign` | Exact-revision pi/opi delta ledger under `docs/realign/` |
-| Outward evidence | `opi-research` | Primary-source capability study under `docs/research/` |
-| Foggy shaping | Explicit Matt `wayfinder` after tracker setup | Issue-tracker decision map and child decision tickets |
-| Bounded design challenge | Explicit Matt `grill-with-docs` | Explicit decisions; `docs/CONTEXT.md`/ADR updates when warranted |
-| Settled design | Explicit Matt `to-spec` after tracker setup | Non-normative candidate spec on the issue tracker |
-| Admission and delivery | `opi-implement plan`, then `opi-implement` | Reviewed task graph and canonical implementation ledger |
-| Static assurance | `opi-audit` | Current-HEAD requirements-conformance findings across separate Standards/Spec axes |
-| Runtime assurance | `opi-eval` | Runtime-fidelity findings and traces |
-| Verified correction | `opi-remediate` | Source-preserving verification and optional fixes |
-| Documentation | `opi-document` | Truthful EN/ZH docs and fast source-derived checks |
-| Publication | `opi-release <version>` | GitHub assets and six crates.io releases |
-| Test-link optimization | `opi-slim-tests` | Verified, uncommitted reduction in integration binaries |
+Solid arrows are workflow progression. Dashed arrows cross a human decision or
+materialization boundary. A `READY` verdict is not implementation or commit
+authorization.
 
-### Inward and outward evidence are separate
+```mermaid
+flowchart TD
+    RI[opi-realign<br/>inward evidence]
+    RO[opi-research<br/>outward evidence]
+    SH[Human-led shaping<br/>review and materialize decisions]
+    SRC[Registered Phase<br/>delivery source]
+    PLAN[opi-implement plan<br/>admission and graph review]
+    EXEC[opi-implement<br/>delivery and Phase exit]
+    ASSURE[opi-audit / opi-eval<br/>independent assurance]
+    FIX[opi-remediate<br/>verify and optionally fix]
+    DOC[opi-document]
+    REL[opi-release]
+    SLIM[opi-slim-tests<br/>independent test-link optimization]
 
-`opi-realign` is inward. It pins an exact `earendil-works/pi` revision and asks
-whether opi preserves pi's current semantics and design lineage using
-Rust-native architecture. It does not propose unrelated features.
+    RI --> SH
+    RO --> SH
+    SH -. human approval and registration .-> SRC
+    SRC --> PLAN
+    PLAN -->|READY + graph gate| EXEC
+    PLAN -. RESEARCH_REQUIRED .-> RI
+    PLAN -. DESIGN_DECISION_REQUIRED .-> SH
+    PLAN -->|GRAPH_REVISION_REQUIRED| PLAN
+    EXEC --> ASSURE
+    ASSURE -->|confirmed findings| FIX
+    FIX --> ASSURE
+    ASSURE -->|requirements satisfied| DOC
+    DOC -. public and irreversible gates .-> REL
+    EXEC -. current test graph .-> SLIM
+```
 
-`opi-research` is outward. It investigates capabilities pi lacks or does not
-serve well, prioritizes primary sources, evaluates Rust feasibility, and asks
-whether the capability belongs in an existing plugin/package, a new plugin, or
-the smallest evidenced core seam. It does not write a spec or authorize work.
+## Boundary rules
 
-Neither report is a requirement. Both are evidence for shaping.
+- Evidence is not a requirement. `opi-realign` and `opi-research` cannot
+  authorize product work.
+- Shaping is human-led. Tracker maps and candidate specs are non-normative
+  until reviewed and materialized into `docs/opi-spec.md` or a registered Phase
+  delivery source.
+- `opi-implement plan` tests readiness; it does not repair missing product
+  meaning. Graph confirmation and Git commit authorization are separate gates.
+- `opi-audit` and `opi-eval` diagnose; they do not edit production code.
+- `opi-remediate` verifies findings before fixing them and never writes the
+  live `.opi-impl-state.json`.
+- `opi-document` proves documentation truth; it does not authorize release.
+- `opi-release` is the only public publication workflow. Crates.io publication
+  has a separate last-moment irreversible gate.
 
-### Shaping stays human-led
+## Skill reference
 
-Turning evidence into a feature is intentionally not a fixed workflow. It is a
-loop of clarification, experiments, trade-offs, rejection, and return to
-evidence. Use Matt's tools directly according to uncertainty:
+Effect labels: `RO` reads only, `W` writes repository files, `C` may create a
+local commit after an explicit gate, `$` may use credentials or paid providers,
+`P` changes public state, and `I` contains an irreversible step.
 
-- `wayfinder` for large, foggy, multi-session design spaces;
-- `grill-with-docs` for a bounded decision that needs adversarial questioning
-  and domain-model updates;
-- `to-spec` only after material decisions have settled;
-- `research` or `opi-realign` again when a decision exposes an evidence gap.
+| Skill | Role and required input | Owned output | Stop/gate and usual next step | Effect |
+|---|---|---|---|---|
+| `opi-workflow` | Route an uncertain request | One recommended invocation | Stops at every explicit-skill boundary | RO |
+| `opi-realign` | Compare an exact pinned pi revision with opi | `docs/realign/*.md` | Evidence only; next is shaping or `opi-implement plan` after registration | W |
+| `opi-research` | Investigate outward capabilities from primary sources | `docs/research/*.md` | Evidence only; next is shaping | W |
+| `opi-implement` | Admit a registered Phase source, execute its graph, and archive Phase evidence | `.opi-impl-state.json`, Phase snapshots, task changes | Graph, task-commit, ledger-commit, and failure gates are distinct | W, C |
+| `opi-audit` | Verify one Phase against the complete relevant implementation at committed HEAD | `docs/snapshots/phase<N>/audit.*.md` | No fixes; confirmed findings go to `opi-remediate` | W |
+| `opi-eval` | Run explicit isolated real-provider fidelity cases | `docs/eval/` reports and history | Requires credentials and mutating-tool opt-in where applicable | W, $ |
+| `opi-remediate` | Verify normalized audit/eval findings and optionally correct them | `remediation-plan.md`, user-approved fixes | Execution requires a separate user gate; intent changes return to shaping | W |
+| `opi-document` | Synchronize truthful English/Chinese docs and source-derived checks | Documentation and doc-check changes | Does not publish | W |
+| `opi-release` | Run seven gated release phases for six crates and GitHub assets | Git tag/release and crates.io versions | Public Git gate, then separate irreversible crates gate | W, C, P, I |
+| `opi-slim-tests` | Remove duplicate or superseded Rust test binaries without losing behavior | Verified uncommitted test-graph reduction | Never commits automatically | W |
 
-`opi-workflow` routes to these skills but does not own another ledger or hide
-the loop behind automatic transitions.
-
-Matt's current `wayfinder` and `to-spec` are issue-tracker-native. Configure
-`docs/agents/issue-tracker.md` through Matt `setup-matt-pocock-skills` before
-using either. When `wayfinder` or `grill-with-docs` invokes
-`domain-modeling`, opi adapts its glossary target to the existing
-`docs/CONTEXT.md` and ADRs to `docs/adr/`; it must not create a root
-`CONTEXT.md`. Tracker maps, tickets, and candidate specs remain non-normative
-until human review materializes the result into `docs/opi-spec.md` or a
-supplemental source registered by `opi-implement`.
-
-These shaping commands are user-invoked Matt skills. `opi-workflow` returns the
-exact recommended command and stops at that boundary; it does not claim to
-invoke them as model-composable subskills.
-
-### `opi-implement plan` is an adversarial admission gate
-
-The plan path does not design the product. It tests whether a candidate source
-is ready to enter the canonical implementation state machine:
-
-1. admit and pin the normative source;
-2. derive a draft vertical-slice task graph without mutating the live ledger;
-3. challenge design readiness and execution readiness separately;
-4. return one deterministic verdict:
-   `READY`, `RESEARCH_REQUIRED`, `DESIGN_DECISION_REQUIRED`, or
-   `GRAPH_REVISION_REQUIRED`;
-5. mutate `.opi-impl-state.json` only after `READY` and the user's graph gate.
-
-A missing product decision routes back to shaping. Missing evidence routes to
-`opi-research` or `opi-realign`. The plan reviewer never silently amends the
-source or edits its own draft to manufacture a pass.
-
-## Matt vs Superpowers
-
-Model-invoked Matt skills are the default source of composable reasoning and
-artifact subskills inside `opi-*`. User-invoked Matt shaping commands remain
-direct human entry points. Project-local skills retain opi-specific artifact
-contracts. Superpowers remains only for narrow operational primitives that do
-not compete with opi's canonical ledger.
-
-| Need | Choice | Rationale |
-|---|---|---|
-| Outward evidence | Matt `research` | Primary-source, repository-artifact contract |
-| High-uncertainty shaping | Matt `wayfinder` | Decision-map workflow tolerates iteration and reversals |
-| Bounded adversarial shaping | Matt `grill-with-docs` | Couples questioning with domain-language maintenance |
-| Spec synthesis | Matt `to-spec` | Synthesizes settled context instead of restarting discovery |
-| Domain language | Matt `domain-modeling`, adapted by `opi-workflow` | Maintains `docs/CONTEXT.md` and creates ADRs only when warranted |
-| Test-seam design | Matt `codebase-design` | Supplies the shared deep-module and public-seam vocabulary used by `tdd` and `opi-implement` |
-| Implementation slices | Matt `tdd` | Public seam first; vertical red/green slices; no premature refactor phase |
-| Hard diagnosis | Matt `diagnosing-bugs` | Establishes a red-capable feedback loop, then minimizes/differentiates |
-| Audit lenses | Matt `code-review` | Supplies separate Standards/Spec axes and the smell baseline; `opi-audit` replaces its diff boundary with current-state verification |
-| Documentation | Project-local `opi-document`; `baoyu-translate` for net-new Chinese | Owns source-derived truth, EN/ZH synchronization, and no-compile checks |
-| Completion proof | Superpowers `verification-before-completion` | Narrow evidence-before-claim discipline |
-| Independent work | Superpowers `dispatching-parallel-agents` | Conditional concurrency primitive only |
-
-Not composed inside `opi-implement`:
-
-- Superpowers `brainstorming`, `writing-plans`, `executing-plans`, and
-  `subagent-driven-development` would create a second planning/execution
-  workflow beside the canonical ledger.
-- Matt `to-tickets` and `implement` encode useful heuristics, but their state
-  machine must not replace `.opi-impl-state.json`. Tracer-bullet decomposition
-  is absorbed into plan admission instead.
-- Matt tracker artifacts are shaping evidence. They become normative only
-  after human review materializes them into an opi source and registers any
-  supplemental spec with `opi-implement`.
-- Direct shaping remains available outside `opi-implement`; exclusion from the
-  harness is not a judgment that those skills are generally inferior.
-
-This selection follows the progressive-disclosure and invocation guidance in
-[AI Hero Skills](https://www.aihero.dev/skills), the locally pinned
-[Matt skills package](https://github.com/mattpocock/skills), and the locally
-available [Superpowers package](https://github.com/obra/superpowers).
-
-## Assurance contract
+## Assurance model
 
 `opi-audit` and `opi-eval` emit normalized findings using
-`_shared/references/finding-contract.md`. Each finding preserves its source
-kind/path/model, independence quality, axis, severity, evidence, reproduction,
-confidence, and unverified status.
+`_shared/references/finding-contract.md`. `opi-remediate` preserves the original
+source, severity, independence, and evidence while recording its own
+verification separately. Generic provider-fidelity canaries are runtime
+signals; only a registered runtime-fidelity case can close a product criterion.
 
-`opi-audit` builds its verification requirements from the registered specs,
-ledger task claims, definitions of done, and claimed evidence, then checks them
-against the complete relevant implementation at the current committed `HEAD`.
-Unchanged and pre-existing paths remain auditable. Commit history and diffs are
-provenance and discovery aids only; they never define audit coverage.
-
-`opi-remediate` consumes either source without manual transcription. It
-preserves provenance and severity, verifies the claim against code or runtime
-artifacts, and records remediation verification separately from the original
-finding. If a finding actually changes product intent, remediation stops and
-routes back to shaping.
-
-Use independent models/reviewers when practical, but report degraded
-independence honestly. Never encode one preferred provider or model into the
-project workflow.
+Use independent models or reviewers when practical and disclose degraded
+independence. No preferred provider or model is part of the project contract.
 
 ## Durable artifact ownership
 
-| Artifact | Owner |
+| Artifact | Owner and lifetime |
 |---|---|
-| `docs/realign/*.md` | `opi-realign`; generated, non-normative inward evidence |
-| `docs/research/*.md` | `opi-research`; generated, non-normative outward evidence |
-| Issue-tracker wayfinder maps/tickets and `to-spec` candidates | Human-led shaping; non-normative until materialized into a registered opi source |
-| `docs/opi-spec.md` and registered supplemental specs | Human-led shaping; normative sources |
+| `docs/realign/*.md` | `opi-realign`; non-normative inward evidence |
+| `docs/research/*.md` | `opi-research`; non-normative outward evidence |
+| Tracker maps/tickets and candidate specs | Human-led shaping; non-normative until materialized and registered |
+| `docs/opi-spec.md` and registered Phase delivery sources | Human-led shaping; normative sources |
 | `.opi-impl-state.json` | `opi-implement`; canonical tracked implementation ledger |
-| `docs/snapshots/phase<N>/` | `opi-implement` archive plus audit/remediation evidence |
-| `docs/eval/` | `opi-eval` reports/history |
-| `.opi-release-state.json` | `opi-release`; resumable public/irreversible transition state |
-| `_shared/references/finding-contract.md` | Cross-skill finding schema |
-Git safety is defined once in the always-loaded `AGENTS.md` / `CLAUDE.md`, not
-duplicated under `_shared`.
+| `.opi-impl-state.draft.json` | `opi-implement plan`; ignored scratch retained only while review/resume needs it |
+| `docs/snapshots/phase<N>/` | Frozen implementation, audit, and remediation evidence |
+| `docs/eval/` | `opi-eval` reports and history |
+| `.opi-release-state.json` | `opi-release`; ignored resume state retained only during an incomplete release |
+| `_shared/references/finding-contract.md` | Shared finding schema |
 
-Only `opi-implement` writes the canonical implementation ledger. Research,
-realign, audit, eval, remediation planning, documentation, and release must not
-create competing task ledgers.
+Only `opi-implement` writes the canonical implementation ledger. Do not create
+a second task ledger or record implementation progress in `docs/opi-spec.md`.
 
-## Skill index
+## Maintainer composition note
 
-| Skill | Contract |
-|---|---|
-| `opi-workflow` | Thin router; no state machine and no implementation |
-| `opi-realign` | Pinned-revision inward alignment; no outward proposals |
-| `opi-research` | Primary-source outward exploration; no requirements or implementation |
-| `opi-implement` | Source admission, adversarial graph review, TDD delivery, verification, and ledger checkpoints |
-| `opi-audit` | Independent current-HEAD requirement-conformance audit; history/diffs do not bound coverage; no fixes |
-| `opi-eval` | Explicit, credentialed runtime regression evaluation in isolation |
-| `opi-remediate` | Verify normalized audit/eval findings; execution remains user-gated |
-| `opi-document` | Truthful documentation, EN/ZH synchronization, and a no-compile documentation check |
-| `opi-release` | Seven gated local/public/irreversible release phases |
-| `opi-slim-tests` | Preserve current behavior while deleting duplicate/superseded Rust test binaries; no automatic commit |
+Project-local skills own Opi artifacts and lifecycle boundaries. Matt skills
+may supply evidence, domain modeling, design challenge, test-seam design, TDD,
+or review lenses when their invocation policy permits it. Superpowers may
+supply narrow operational primitives such as evidence-before-completion.
+Neither family may replace `.opi-impl-state.json`, silently invoke a
+user-only shaping command, or introduce a second plan/execution state machine
+inside `opi-implement`.
 
-Read the selected skill's `SKILL.md` and only the references it routes to.
-Invoke destructive, costly, credentialed, or publication skills explicitly.
+After selecting a skill, read its `SKILL.md` and only the references it routes
+to. Destructive, costly, credentialed, commit-producing, or publication actions
+always remain explicit user gates.

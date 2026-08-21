@@ -13,19 +13,20 @@ for docs-only tasks, tiered verification, and JSON-ledger checkpointing.
 
 This is a **harness**, not a coding assistant. It encodes opinions about state,
 evidence, failure recovery, and escalation. It does NOT edit `opi-spec.md`,
-push commits, publish crates, or make network calls to providers.
+push commits, publish crates, or make network calls to providers. Local task
+and ledger commits occur only at the explicit user gates described below.
 
 **Spec alignment rule:** Before executing any task whose `phase >= current_phase`,
 compare each entry in the ledger `spec_files_sha256` map with the current
 CRLF-normalized hash of the corresponding file in `spec_files`. If any entry differs, auto-enter the
 plan path's drift branch (Reinit Reconciliation + source admission + adversarial
-draft review + the human graph gate) per `references/initializer.md` and spec
-§5.3; do not
+draft review + the human graph gate) per `references/initializer.md` and
+`AUTH-003`/`PHASE-001` in `docs/opi-spec.md`; do not
 auto-pick or run a task until the human confirms the reconciled graph. Only
-`--status` bypasses drift handling. Phase 1/2 retries that fall below
-`current_phase` are allowed because their `Opi-DoD-SHA256` commit footers are
-the authoritative contract for shipped work. Do not run stale ledger tasks whose
-title or DoD contradicts the current spec.
+`--status` bypasses drift handling. A retry for an archived phase is allowed
+only when its frozen snapshot and `Opi-DoD-SHA256` commit footer identify the
+same shipped contract; it never reopens or rewrites the snapshot. Do not run
+stale ledger tasks whose title or DoD contradicts the current registered source.
 
 **Source-return rule:** The harness never repairs missing or wrong product
 meaning while initializing a graph or executing a task. Return missing evidence
@@ -80,8 +81,12 @@ of a later scenario-owning task; otherwise refuse it as orphan work.
 Every `simplification_ceiling` note in a new or reconciled draft also records
 `simplification_trigger=none|unused|duplicate|superseded|delete|merge|replace|dependency-substitution`.
 `none` records that no conditional simplification claim is made; any other
-value activates the additional evidence below. Windows plan validation rejects
-a draft that omits or malforms this declaration before graph confirmation.
+value activates the additional evidence below. Before graph confirmation on
+every platform, run
+`python .claude/skills/opi-implement/scripts/validate-plan.py .opi-impl-state.draft.json`;
+it rejects a missing, duplicated, or malformed declaration on any non-archived
+task. Retained reconciliation history with `status = archived` is not
+executable and is excluded from this admission gate.
 Placement targets use the controlled vocabulary `core`, `reference-product`,
 `extension`, `plugin`, `package`, `independent-companion`, or `assurance`;
 `assurance` is valid only for a task that introduces no runtime capability or
@@ -104,7 +109,7 @@ opi-implement plan                             # sync-only plan path (init or dr
 opi-implement <task-id>                        # specific task (sync-if-needed first; validates deps)
 opi-implement --status                         # print ledger summary
 opi-implement <task-id> --resume-from-manual   # verify a manual commit
-opi-implement <task-id> --extend-cap <N>       # raise iteration cap
+opi-implement <task-id> --extend-cap <N>       # set a higher absolute iteration cap
 opi-implement --clear-blocker <id> --because <text>  # unblock a task
 ```
 
@@ -118,36 +123,7 @@ non-`READY` admission verdict or the P.4 gate); `<task-id>` → run-specific mod
 bare → make-progress mode (sync-if-needed → auto-pick → run). Only `--status`
 bypasses drift handling.
 
-```dot
-digraph mode {
-  "Parse args" [shape=box];
-  "--status?" [shape=diamond];
-  "--clear-blocker?" [shape=diamond];
-  "<task-id> + lifecycle flag?" [shape=diamond];
-  "plan verb?" [shape=diamond];
-  "<task-id>?" [shape=diamond];
-  "Status mode" [shape=box];
-  "Clear-blocker mode" [shape=box];
-  "Task-lifecycle mode" [shape=box];
-  "Plan-only mode" [shape=box];
-  "Run-specific mode" [shape=box];
-  "Make-progress mode" [shape=box];
-
-  "Parse args" -> "--status?";
-  "--status?" -> "Status mode" [label="yes"];
-  "--status?" -> "--clear-blocker?" [label="no"];
-  "--clear-blocker?" -> "Clear-blocker mode" [label="yes"];
-  "--clear-blocker?" -> "<task-id> + lifecycle flag?" [label="no"];
-  "<task-id> + lifecycle flag?" -> "Task-lifecycle mode" [label="yes"];
-  "<task-id> + lifecycle flag?" -> "plan verb?" [label="no"];
-  "plan verb?" -> "Plan-only mode" [label="yes"];
-  "plan verb?" -> "<task-id>?" [label="no"];
-  "<task-id>?" -> "Run-specific mode" [label="yes"];
-  "<task-id>?" -> "Make-progress mode" [label="no (bare)"];
-}
-```
-
-**Drift rule (spec §5.3):** make-progress and run-specific both sync-if-needed
+**Drift rule (`AUTH-003`):** make-progress and run-specific both sync-if-needed
 first. On no drift, they proceed (make-progress auto-picks and runs;
 run-specific runs the named task). On drift, both run Reinit Reconciliation,
 P.0 source admission, and P.1/P.2 draft review. They stop on any non-`READY`
@@ -184,7 +160,9 @@ active tasks or archived phase summaries; print which dep is missing.
 
 Phases A, B, F are cheap and always execute. C and D are the work body.
 E is the only phase that mutates git **during normal task execution**.
-(The plan path also commits tracked harness files - see `references/initializer.md`.)
+The plan path installs a confirmed graph but creates a local checkpoint commit
+only after a separate explicit commit authorization; see
+`references/initializer.md`.
 
 1. **Phase A: Bootstrap**
    - A.1 Detect mode (status / clear-blocker / task-lifecycle / plan / run-specific / make-progress)
@@ -459,39 +437,11 @@ Commit scope is the crate name. Example: `feat(opi-agent): implement agent_loop`
 
 ## Red Flags - STOP Immediately
 
-These are the top violations this harness prevents. Full table with reasoning
-in `references/anti-patterns.md`.
-
-1. **Never delete or weaken tests to make them pass.** Fix the implementation.
-2. **Never bypass clippy with crate-wide `#[allow]`.** Per-item with comment OK.
-3. **Never self-grade verification.** Gates are mechanical (exit codes, grep).
-4. **Never auto-accept TUI snapshot changes.** Require explicit user approval.
-5. **Never clean/restore/discard user changes from failure gate.** Print
-   candidate commands; let the human decide.
-6. **Never satisfy DoD with stubs/TODOs.** Unless DoD explicitly says scaffolding.
-7. **Never silently rewrite task graph metadata.** Graph is a reviewed contract.
-8. **Never commit transient ledger files.** The canonical ledger requires a
-   dedicated checkpoint; tmp, draft, candidate, backup, and corrupt files
-   remain untracked.
-9. **Never skip `[workspace.dependencies]` for internal deps.** Lockstep versioning.
-10. **Never run live provider tests.** They belong in `#[ignore]`-gated tests.
-11. **Never close a product scenario with component-only tests.** Helper,
-    parser, protocol, and bridge tests are substrate evidence until an
-    end-to-end production path exercises them.
-12. **Never mark an unused runtime integration as passing.** If a function such
-    as startup registration, resolver loading, or state persistence has no
-    production call site, the task remains open or substrate-only.
-13. **Never archive a phase from ledger status alone.** Phase exit must trace
-    current source-spec criteria to code and tests independently.
-14. **Never let vague DoD verbs stand.** Expand them before execution or stop
-    for task-graph review.
-15. **Never implement a phase non-goal to satisfy an adjacent criterion.**
-    If a criterion appears to require npm, marketplace, OAuth, telemetry,
-    sandboxing, web-ui parity, pi session compatibility, or workflow tools in
-    core, stop for graph review instead.
-16. **Never add unregistered supplemental docs to `spec_files`.** Only the
-    reviewed source registry in this skill can make design/plan files
-    normative for ledger drift checks.
+Read `references/anti-patterns.md` for the full reasoned table. Stop
+immediately when work would weaken tests, self-grade evidence, rewrite the
+confirmed graph, touch unrelated user changes, commit transient ledgers, close
+a product scenario with substrate-only proof, implement a registered Non-Goal,
+or admit an unregistered source.
 
 The skill refuses to act if any rule would be violated, even if the user
 requests it during a failure-decision gate.
@@ -527,8 +477,3 @@ Print a summary table of all tasks:
 - Reading/writing user runtime data such as `~/.config/opi/`, real auth files,
   or real session storage. Editing source code for config/session behavior is
   allowed only when the selected spec task owns that behavior.
-
-## Design Spec
-
-Registered supplemental phase designs:
-- `docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md`

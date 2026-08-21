@@ -82,6 +82,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `opi-coding-agent`: `NonInteractiveRunner::cancel` was replaced by
   `cancel_token(&mut self)`, which arms the next run generation and returns its
   clonable cancellation token before `run*` takes the mutable borrow.
+- `opi-implement`: live implementation ledgers now require schema v2 and no
+  longer auto-migrate a schema-v1 ledger. Historical v1 snapshots remain
+  immutable audit evidence; preserve any still-live v1 file, then initialize
+  and review a fresh v2 graph from the registered sources before resuming
+  implementation.
 
 ### Added
 
@@ -108,6 +113,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Project skills now derive executable graphs only from reviewed, registered
+  Phase delivery sources instead of legacy parent-spec roadmap sections; graph
+  approval, local commit authorization, historical audit evidence, eval
+  uncertainty, and remediation formatting have explicit fail-closed
+  boundaries. The bilingual skill manual now includes lifecycle return loops,
+  per-skill side effects, and artifact ownership, and every skill uses the
+  standard `SKILL.md` entry name.
 - The Reference Product runs one coherent runtime: interactive,
   non-interactive/print, JSON/NDJSON, and RPC entry points expose equivalent
   route, authority, cancellation, and evidence semantics over the same

@@ -30,8 +30,8 @@ Reproduction commands: <exact commands>
 
 | Option | Effect |
 |---|---|
-| (a) Retry with extended cap | +5 attempts (total 10). Status stays `in_progress`. |
-| (b) Return to shaping | Apply the `skill.md` Source-return rule: route missing facts to `opi-research` or `opi-realign`; for unresolved product meaning, recommend the exact explicit user invocation of Matt `wayfinder` or `grill-with-docs`. After the reviewed source changes, the user re-runs `plan`. |
+| (a) Retry with extended cap | Ask for an absolute new cap greater than the current `max_iterations`, then apply `--extend-cap <N>`. Status stays `in_progress`; no default increment is assumed. |
+| (b) Return to shaping | Apply the `SKILL.md` Source-return rule: route missing facts to `opi-research` or `opi-realign`; for unresolved product meaning, recommend the exact explicit user invocation of Matt `wayfinder` or `grill-with-docs`. After the reviewed source changes, the user re-runs `plan`. |
 | (c) Mark blocked | Record blocker text. Leave failing tests. Stage nothing. Status → `blocked`. Skipped on auto until `--clear-blocker`. |
 | (d) Drop to manual | Print reproduction commands, touched files, suggested cleanup. Do NOT run cleanup. User finishes manually, then `--resume-from-manual`. |
 

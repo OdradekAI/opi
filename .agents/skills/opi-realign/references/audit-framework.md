@@ -17,8 +17,9 @@ classification is an opinion about intent. Mixing them ages the report badly
 
 ## Drift taxonomy (Layer B)
 
-The primary drift-status vocabulary is owned by `docs/opi-spec.md` §3.4 — use
-exactly those five statuses; do not invent extra primary statuses here:
+This five-status vocabulary is a non-normative Layer B classification owned by
+this audit framework. It must not be cited as product authority or written back
+into `docs/opi-spec.md` without human shaping:
 
 | Status | Meaning |
 |---|---|

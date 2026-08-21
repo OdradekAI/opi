@@ -168,8 +168,10 @@ Produce your evaluation in exactly this structure:
 - Base all judgments on the provided data. Do not speculate about what opi
   "should" do beyond what the test case criteria define.
 - Do not suggest code changes. Your role is diagnosis, not remediation.
-- If a test case's criteria are ambiguous, state the ambiguity and score
-  conservatively (lean toward PASS when uncertain).
+- If a test case's criteria are ambiguous, state the ambiguity and return
+  `N/A`, `ERROR`, or `DEGRADED` according to whether the criterion is
+  inapplicable, unscorable, or only partially evidenced. Never award PASS
+  solely because the evaluator is uncertain.
 - Compare history only when the complete comparison identity matches. For
   `incomparable` samples, report observed values without a delta claim.
 - Produce the full evaluation for all cases before stating the overall verdict.

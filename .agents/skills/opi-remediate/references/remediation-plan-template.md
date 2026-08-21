@@ -9,7 +9,8 @@ Output format for `docs/snapshots/phase<N>/remediation-plan.md`.
 
 **Date**: <YYYY-MM-DD>
 **Finding sources**: <list of audit/eval files consumed, with source kinds>
-**Commit range**: `<first>..<last>`
+**Verification target**: current committed `<HEAD>`
+**Phase-exit provenance**: <task `verified_at_commit` values or snapshot reference>
 **Design spec**: <spec file path(s)>
 
 ---
@@ -32,7 +33,6 @@ Output format for `docs/snapshots/phase<N>/remediation-plan.md`.
 
 **Verification**:
 
-    cargo fmt --all
     scripts/opi-impl-smoke.sh scoped --crate <crate> --test <affected-test-binary>
 
 #### Fix 1.1: <short title>
@@ -66,7 +66,8 @@ Findings that were refuted, downgraded to Info, or deferred:
 | Finding | Status | Reason |
 |---------|--------|--------|
 | ... | Refuted | <evidence> |
-| ... | Deferred to Phase <M> | <rationale> |
+| ... | Deferred by registered source | <source path + exact section + rationale> |
+| ... | Returned to shaping | <missing authorization or product decision> |
 ```
 
 ## Required fields per fix item
@@ -114,8 +115,11 @@ Every finding that does NOT produce a fix item must appear in the exclusions
 table with one of:
 
 - **Refuted**: Phase C verification showed the finding is incorrect.
-- **Deferred to Phase M**: Valid finding but intentionally left for a future
-  phase (must cite the rationale).
+- **Deferred by registered source**: Valid finding explicitly deferred by a
+  currently registered source; record the exact path and section.
+- **Returned to shaping**: Valid finding cannot be fixed without new product
+  meaning or future-work authorization. A naked “future Phase” label is not a
+  deferral contract.
 - **Info/No action**: Finding is informational and does not require a code
   change.
 - **Duplicate**: Finding is a subset of another cluster's fix.

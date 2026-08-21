@@ -11,7 +11,10 @@ CI remain the acceptance baseline.
   Used for trend analysis across versions.
 - `<version>-<date>-<model>.md` -- individual eval reports with per-case
   verdicts and runtime trace highlights.
-- `pi-baseline.jsonl` -- (future) baseline results from pi for comparison.
+
+The currently registered cases are provider-fidelity canaries. There is no
+registered runtime-fidelity acceptance case yet, so these canaries cannot by
+themselves close a product criterion or Phase exit condition.
 
 ## history.jsonl schema
 

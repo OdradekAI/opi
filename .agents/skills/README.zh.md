@@ -1,171 +1,130 @@
-# Opi 技能
+# Opi 技能用户手册
 
-`.claude/skills/opi-*` 下的十个技能共同构成项目工作流，但不会把产品探索
-强行变成机械流水线。
+Opi 有十个项目技能。受 Git 跟踪的真实来源位于 `.agents/skills/`；
+`.claude/skills` 是指向同一目录的兼容符号链接。只编辑
+`.agents/skills/` 下的正式文件。所有技能都必须由用户显式调用，例如 Codex
+中的 `$opi-workflow` 或 Claude Code 中的 `/opi-workflow`。
 
-核心设计理念是：
+不确定入口时使用 `opi-workflow`。它只推荐一个下一条命令并停止，不会创建
+另一套工作流账本。
 
-> 遵循 pi 的设计思路，用 Rust 实现；通过插件与包的边界扩展 opi，使插件既
-> 能单独调用，也能共同丰富 opi 生态。
+## 30 秒选择入口
 
-所有 `opi-*` 技能都只能显式调用。Claude 侧使用
-`disable-model-invocation: true`，Codex 侧使用
-`policy.allow_implicit_invocation: false`。不确定入口时，显式调用
-`opi-workflow`。Matt 的 `wayfinder`、`grill-with-docs`、`to-spec` 与 setup
-命令同样只能由用户调用：路由器只给出精确调用建议，不会代为调用。
+1. 你在决定“应该构建什么”吗？
+   - 对照固定的 pi 修订版检查 opi：使用 `opi-realign`。
+   - 调研外部能力或生态方案：使用 `opi-research`。
+   - 已有证据但产品决策未收敛：使用路由器推荐的人主导塑形命令，不要开始实现。
+2. 是否已有评审并登记过的 Phase 交付来源？
+   - 没有：返回证据或塑形。
+   - 有：先运行 `opi-implement plan`；通过准入后才能运行 `opi-implement`。
+3. 你在检查或修正已交付行为吗？
+   - 静态需求符合性：`opi-audit`。
+   - 带凭据的真实 provider 行为：`opi-eval`。
+   - 验证并按需修复统一发现：`opi-remediate`。
+   - 文档、发布或测试链接清理：使用对应的具名技能。
 
-## 工作流地图
+## 生命周期与返回循环
 
-| 关注点 | 入口 | 产物或下一步 |
-|---|---|---|
-| 向内证据 | `opi-realign` | `docs/realign/` 下基于精确 pi 修订版的差异账本 |
-| 向外证据 | `opi-research` | `docs/research/` 下基于一手资料的能力调研 |
-| 高不确定性塑形 | 完成 tracker 配置后显式调用 Matt `wayfinder` | issue tracker 决策地图及其子决策票据 |
-| 有界设计质询 | 显式调用 Matt `grill-with-docs` | 明确的设计抉择；必要时更新 `docs/CONTEXT.md`/ADR |
-| 设计已收敛 | 完成 tracker 配置后显式调用 Matt `to-spec` | issue tracker 上的非规范候选 spec |
-| 准入与交付 | `opi-implement plan`，再调用 `opi-implement` | 已评审任务图与规范实现账本 |
-| 静态保障 | `opi-audit` | 基于当前已提交 HEAD 的需求符合性审计，分别输出 Standards/Spec 双轴发现 |
-| 运行时保障 | `opi-eval` | 运行时保真度发现与 trace |
-| 验证后修复 | `opi-remediate` | 保留来源的验证与可选修复 |
-| 文档 | `opi-document` | 真实同步的中英文文档与快速、源派生检查 |
-| 发布 | `opi-release <version>` | GitHub 产物与六个 crates.io crate |
-| 测试链接优化 | `opi-slim-tests` | 已验证、未提交的集成测试二进制缩减 |
+实线表示工作流推进；虚线表示必须经过人工决策或将决策落入规范来源。
+`READY` 既不代表已经实现，也不代表授权提交。
 
-### 向内与向外必须分开
+```mermaid
+flowchart TD
+    RI[opi-realign<br/>向内证据]
+    RO[opi-research<br/>向外证据]
+    SH[人主导塑形<br/>评审并落地决策]
+    SRC[已登记的 Phase<br/>交付来源]
+    PLAN[opi-implement plan<br/>准入与任务图评审]
+    EXEC[opi-implement<br/>交付与 Phase exit]
+    ASSURE[opi-audit / opi-eval<br/>独立保障]
+    FIX[opi-remediate<br/>验证并按需修复]
+    DOC[opi-document]
+    REL[opi-release]
+    SLIM[opi-slim-tests<br/>独立测试链接优化]
 
-`opi-realign` 向内：固定 `earendil-works/pi` 的精确修订版，判断 opi 是否
-仍然保留 pi 当前的语义与设计脉络，同时采用 Rust 原生的架构。它不负责提出
-与 pi 无关的新功能。
+    RI --> SH
+    RO --> SH
+    SH -. 人工批准并登记 .-> SRC
+    SRC --> PLAN
+    PLAN -->|READY + 任务图关卡| EXEC
+    PLAN -. RESEARCH_REQUIRED .-> RI
+    PLAN -. DESIGN_DECISION_REQUIRED .-> SH
+    PLAN -->|GRAPH_REVISION_REQUIRED| PLAN
+    EXEC --> ASSURE
+    ASSURE -->|已确认发现| FIX
+    FIX --> ASSURE
+    ASSURE -->|需求已满足| DOC
+    DOC -. 公开与不可逆关卡 .-> REL
+    EXEC -. 当前测试图 .-> SLIM
+```
 
-`opi-research` 向外：研究 pi 没有或实现得不适合 opi 目标的能力，优先使用
-一手资料，评估 Rust 可行性，并判断应放入现有插件/包、新插件，还是一个有
-证据支持的最小核心 seam。它不写 spec，也不授权实现。
+## 边界规则
 
-两类报告都只是塑形输入，不是需求本身。
+- 证据不是需求。`opi-realign` 与 `opi-research` 不能授权产品实现。
+- 塑形由人主导。Tracker 地图与候选 spec 在经人工评审并落入
+  `docs/opi-spec.md` 或已登记 Phase 交付来源前不具规范性。
+- `opi-implement plan` 只检查就绪度，不修补缺失的产品含义。任务图确认与
+  Git commit 授权是两个不同关卡。
+- `opi-audit` 与 `opi-eval` 只诊断，不编辑生产代码。
+- `opi-remediate` 先验证发现再修复，并且永不写入正式
+  `.opi-impl-state.json`。
+- `opi-document` 证明文档真实，不授权发布。
+- `opi-release` 是唯一公开发布流程；crates.io 发布还有独立的最后时刻
+  不可逆关卡。
 
-### 需求塑形保持人为主导
+## 技能参考
 
-把证据转化为功能点本来就不是固定流程。它包含澄清、实验、取舍、否决和
-回到证据的循环。应按不确定性直接调用 Matt 技能：
+副作用标记：`RO` 只读，`W` 写仓库文件，`C` 经显式关卡后可能创建本地
+commit，`$` 可能使用凭据或付费 provider，`P` 改变公开状态，`I` 包含不可逆步骤。
 
-- 大型、模糊、跨会话的设计空间使用 `wayfinder`；
-- 边界较清楚、需要对抗性质询与领域模型维护时使用 `grill-with-docs`；
-- 关键决策稳定后才使用 `to-spec`；
-- 新暴露出的证据缺口重新进入 `research` 或 `opi-realign`。
+| 技能 | 角色与必要输入 | 归属产物 | 停止点、关卡与通常下一步 | 副作用 |
+|---|---|---|---|---|
+| `opi-workflow` | 为不确定请求选择入口 | 一条推荐调用 | 在每个显式技能边界停止 | RO |
+| `opi-realign` | 对照固定 pi 修订版检查 opi | `docs/realign/*.md` | 只是证据；经登记后进入塑形或 `opi-implement plan` | W |
+| `opi-research` | 基于一手资料调研向外能力 | `docs/research/*.md` | 只是证据；下一步为塑形 | W |
+| `opi-implement` | 准入 Phase 来源、执行任务图并归档 Phase 证据 | `.opi-impl-state.json`、Phase 快照、任务变更 | 任务图、任务 commit、账本 commit 和失败关卡相互独立 | W、C |
+| `opi-audit` | 按已提交 HEAD 的完整相关实现核实一个 Phase | `docs/snapshots/phase<N>/audit.*.md` | 不修复；已确认发现进入 `opi-remediate` | W |
+| `opi-eval` | 运行显式、隔离的真实 provider 保真度用例 | `docs/eval/` 报告与历史 | 可能需要凭据；变更工具还需额外确认 | W、$ |
+| `opi-remediate` | 验证 audit/eval 统一发现并按需修正 | `remediation-plan.md`、用户批准的修复 | 执行需要独立用户关卡；意图变化返回塑形 | W |
+| `opi-document` | 同步真实中英文文档及源派生检查 | 文档与 doc-check 变更 | 不发布 | W |
+| `opi-release` | 为六个 crate 与 GitHub 产物执行七阶段发布 | Git tag/release 与 crates.io 版本 | 公开 Git 关卡之后仍有独立 crates 不可逆关卡 | W、C、P、I |
+| `opi-slim-tests` | 在不丢失行为的前提下删除重复或已取代测试二进制 | 已验证、未提交的测试图缩减 | 从不自动提交 | W |
 
-`opi-workflow` 只负责路由，不新建账本，也不会把这个循环藏进自动转换。
+## 保障模型
 
-当前 Matt 的 `wayfinder` 与 `to-spec` 都以 issue tracker 为原生产物载体。
-使用前应通过 Matt `setup-matt-pocock-skills` 配置
-`docs/agents/issue-tracker.md`。当 `wayfinder` 或 `grill-with-docs` 调用
-`domain-modeling` 时，opi 将其词汇表目标适配为既有的 `docs/CONTEXT.md`，
-ADR 目标适配为 `docs/adr/`；不得新建根目录 `CONTEXT.md`。Tracker 地图、
-票据和候选 spec 在人工评审并落入 `docs/opi-spec.md` 或
-`opi-implement` 已登记的补充来源前，始终是非规范产物。
+`opi-audit` 与 `opi-eval` 使用 `_shared/references/finding-contract.md`
+输出统一发现。`opi-remediate` 保留原始来源、严重度、独立性和证据，并另行
+记录自己的验证。通用 provider-fidelity canary 只是运行时信号；只有登记过的
+runtime-fidelity 用例才能关闭产品条件。
 
-这些塑形命令是仅用户可调用的 Matt 技能。`opi-workflow` 会返回精确的推荐
-命令并停在该边界，不会声称把它们作为模型可组合子技能调用。
-
-### `opi-implement plan` 是对抗性准入关卡
-
-plan 路径不替代产品设计。它只验证候选来源能否进入唯一的实现状态机：
-
-1. 准入并固定规范来源；
-2. 在不修改正式账本的前提下生成纵向切片任务图草案；
-3. 分开质询设计就绪度与执行就绪度；
-4. 确定性地返回一个结论：`READY`、`RESEARCH_REQUIRED`、
-   `DESIGN_DECISION_REQUIRED` 或 `GRAPH_REVISION_REQUIRED`；
-5. 只有结论为 `READY` 且用户确认任务图后，才修改
-   `.opi-impl-state.json`。
-
-缺少产品抉择时回到塑形；缺少证据时回到 `opi-research` 或
-`opi-realign`。评审器不得暗中修改规范，也不得改写自己的草案来制造通过。
-
-## Matt 与 Superpowers 的取舍
-
-opi-* 内可组合的推理与产物级子技能默认采用可由模型调用的 Matt 技能；仅
-用户可调用的 Matt 塑形命令仍是直接的人为入口。项目本地技能继续拥有 opi
-特有的产物契约。Superpowers 只保留不会与 opi 正式账本竞争的窄操作原语。
-
-| 需求 | 选择 | 原因 |
-|---|---|---|
-| 向外证据 | Matt `research` | 一手资料优先，并产出仓库内调研文档 |
-| 高不确定性塑形 | Matt `wayfinder` | 决策地图允许反复、回退与跨会话探索 |
-| 有界对抗塑形 | Matt `grill-with-docs` | 将追问与领域语言维护结合 |
-| Spec 合成 | Matt `to-spec` | 从已收敛上下文合成，而不是重新启动探索 |
-| 领域语言 | Matt `domain-modeling`，由 `opi-workflow` 适配 | 维护 `docs/CONTEXT.md`，仅在确有必要时创建 ADR |
-| 测试 seam 设计 | Matt `codebase-design` | 为 `tdd` 与 `opi-implement` 提供统一的深模块和公共 seam 词汇 |
-| 实现切片 | Matt `tdd` | 先约定公共 seam，再做纵向 red/green 切片 |
-| 困难诊断 | Matt `diagnosing-bugs` | 先建立可变红反馈环，再最小化与差分定位 |
-| 审计视角 | Matt `code-review` | 提供独立 Standards/Spec 双轴与 smell baseline；`opi-audit` 以当前状态核实替代其 diff 边界 |
-| 文档 | 项目本地 `opi-document`；新增中文使用 `baoyu-translate` | 负责源派生事实、中英文同步与无需编译的检查 |
-| 完成证明 | Superpowers `verification-before-completion` | 狭窄的“先证据、后声明”纪律 |
-| 独立并行 | Superpowers `dispatching-parallel-agents` | 仅作为条件性并发原语 |
-
-不组合进 `opi-implement` 的技能：
-
-- Superpowers `brainstorming`、`writing-plans`、`executing-plans`、
-  `subagent-driven-development` 会在正式账本旁形成第二套计划/执行流。
-- Matt `to-tickets` 与 `implement` 含有可吸收的启发式规则，但不能替代
-  `.opi-impl-state.json`；其中 tracer-bullet 拆分原则已进入 plan 准入。
-- Matt tracker 产物只是塑形证据；只有经人工评审、落入 opi 规范来源，并在
-  必要时登记为 `opi-implement` 补充 spec 后，才具有规范性。
-- 这些技能仍可在实现 harness 之外直接用于塑形；不组合不代表它们普遍更差。
-
-这套选择结合了 [AI Hero Skills 官方文档](https://www.aihero.dev/skills)、
-本地固定版本的 [Matt 技能包](https://github.com/mattpocock/skills) 与
-[Superpowers 技能包](https://github.com/obra/superpowers)。
-
-## 保障契约
-
-`opi-audit` 与 `opi-eval` 按 `_shared/references/finding-contract.md` 输出
-统一发现。每条发现保留来源类型、路径、模型、独立性、轴、严重度、证据、
-复现方式、置信度与“尚未验证”状态。
-
-`opi-audit` 从已登记的 spec、账本任务声明、DoD 与证据声明建立核实要求，
-再逐项检查当前已提交 `HEAD` 中的完整相关实现。未变更和既有路径同样属于
-审计对象。提交历史与 diff 仅用于溯源和定位，绝不定义审计覆盖范围。
-
-`opi-remediate` 可以直接消费任一来源，不再手工转录。它保留来源和严重度，
-再用代码或运行时产物验证，并把修复验证与原始发现分开记录。如果发现实际
-改变产品意图，remediate 必须停止并返回塑形。
-
-条件允许时使用独立模型/评审器；无法完全独立时要如实标记。项目工作流不
-固定某个 provider 或模型。
+条件允许时使用独立模型或评审器，并如实披露独立性降级。项目契约不固定某个
+provider 或模型。
 
 ## 持久产物归属
 
-| 产物 | 所有者 |
+| 产物 | 所有者与生命周期 |
 |---|---|
-| `docs/realign/*.md` | `opi-realign`；非规范的向内证据 |
-| `docs/research/*.md` | `opi-research`；非规范的向外证据 |
-| issue tracker 中的 wayfinder 地图/票据与 `to-spec` 候选 | 人主导塑形；落入已登记的 opi 来源前不具规范性 |
-| `docs/opi-spec.md` 与登记过的补充 spec | 人主导塑形；规范来源 |
-| `.opi-impl-state.json` | `opi-implement`；受 Git 跟踪的唯一实现账本 |
-| `docs/snapshots/phase<N>/` | `opi-implement` 归档及 audit/remediation 证据 |
+| `docs/realign/*.md` | `opi-realign`；非规范向内证据 |
+| `docs/research/*.md` | `opi-research`；非规范向外证据 |
+| Tracker 地图、票据和候选 spec | 人主导塑形；落入并登记前不具规范性 |
+| `docs/opi-spec.md` 与已登记 Phase 交付来源 | 人主导塑形；规范来源 |
+| `.opi-impl-state.json` | `opi-implement`；唯一正式、受跟踪实现账本 |
+| `.opi-impl-state.draft.json` | `opi-implement plan`；仅在评审/恢复需要时保留的忽略草稿 |
+| `docs/snapshots/phase<N>/` | 冻结的实现、审计与修复证据 |
 | `docs/eval/` | `opi-eval` 报告与历史 |
-| `.opi-release-state.json` | `opi-release` 的可恢复公开/不可逆转换状态 |
-| `_shared/references/finding-contract.md` | 跨技能发现格式 |
-Git 安全规则只在始终加载的 `AGENTS.md` / `CLAUDE.md` 中定义，不在
-`_shared` 下重复维护。
+| `.opi-release-state.json` | `opi-release`；仅在未完成发布期间保留的忽略恢复状态 |
+| `_shared/references/finding-contract.md` | 共享发现格式 |
 
-只有 `opi-implement` 可以写正式实现账本。research、realign、audit、eval、
-remediation 计划、文档和发布都不得创建竞争性的任务账本。
+只有 `opi-implement` 能写正式实现账本。不得创建第二套任务账本，也不得在
+`docs/opi-spec.md` 中记录实现进度。
 
-## 技能索引
+## 维护者组合说明
 
-| 技能 | 契约 |
-|---|---|
-| `opi-workflow` | 薄路由器；无状态机，不实现功能 |
-| `opi-realign` | 固定修订版的向内对齐；不提出向外功能 |
-| `opi-research` | 一手资料优先的向外探索；不生成需求或实现 |
-| `opi-implement` | 来源准入、对抗性任务图评审、TDD 交付、验证与账本检查点 |
-| `opi-audit` | 独立核实当前 HEAD 的需求符合性；历史/diff 不限制覆盖范围；不修复 |
-| `opi-eval` | 显式、带凭据、隔离运行的运行时回归评估 |
-| `opi-remediate` | 验证 audit/eval 的统一发现；执行仍需用户确认 |
-| `opi-document` | 真实文档、中英文同步与无需编译的文档检查 |
-| `opi-release` | 七阶段本地/公开/不可逆发布流程 |
-| `opi-slim-tests` | 保留当前行为并删除重复/已取代的 Rust 测试二进制；不自动提交 |
+项目本地技能拥有 Opi 产物和生命周期边界。调用策略允许时，Matt 技能可以
+提供证据、领域建模、设计质询、测试 seam 设计、TDD 或评审视角；Superpowers
+可以提供“完成前先验证”等窄操作原语。两者都不得替换
+`.opi-impl-state.json`、暗中调用仅用户可调用的塑形命令，或在
+`opi-implement` 内建立第二套计划/执行状态机。
 
-调用后完整阅读对应 `SKILL.md`，只按其路由加载需要的 references。破坏性、
-付费、使用凭据或发布类技能必须显式调用。
+选定技能后，完整阅读其 `SKILL.md`，并只加载它路由到的 references。破坏性、
+付费、使用凭据、产生 commit 或发布的动作始终需要显式用户关卡。

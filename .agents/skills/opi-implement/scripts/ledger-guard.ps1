@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Validate", "ValidatePlan", "Install")]
+    [ValidateSet("Validate", "Install")]
     [string]$Command,
 
     [Parameter(Mandatory = $true)]
@@ -132,80 +132,6 @@ function Test-LedgerValue {
     }
 }
 
-function Get-ReasonClause {
-    param(
-        [Parameter(Mandatory = $true)][string]$Reason,
-        [Parameter(Mandatory = $true)][string]$Name
-    )
-
-    $pattern = "(?:^|;)\s*" + [System.Text.RegularExpressions.Regex]::Escape($Name) + "\s*=\s*(?<value>[^;]+?)\s*(?=;|$)"
-    $match = [System.Text.RegularExpressions.Regex]::Match($Reason, $pattern)
-    if (-not $match.Success) {
-        return $null
-    }
-
-    return $match.Groups["value"].Value.Trim()
-}
-
-function Assert-PlanMinimumChangeEvidence {
-    param([Parameter(Mandatory = $true)]$Ledger)
-
-    if ($null -eq $Ledger.PSObject.Properties["tasks"]) {
-        return
-    }
-
-    $allowedTriggers = @(
-        "none",
-        "unused",
-        "duplicate",
-        "superseded",
-        "delete",
-        "merge",
-        "replace",
-        "dependency-substitution"
-    )
-    $taskIndex = 0
-    foreach ($task in @($Ledger.tasks)) {
-        $notes = @($task.inference_notes)
-        $reuseNotes = @($notes | Where-Object { $_.field -eq "reuse_search" })
-        $ceilingNotes = @($notes | Where-Object { $_.field -eq "simplification_ceiling" })
-
-        foreach ($ceilingNote in $ceilingNotes) {
-            $reason = [string]$ceilingNote.reason
-            $trigger = Get-ReasonClause -Reason $reason -Name "simplification_trigger"
-            if ([string]::IsNullOrWhiteSpace($trigger)) {
-                throw "task[$taskIndex] simplification_ceiling requires simplification_trigger="
-            }
-            if ($allowedTriggers -notcontains $trigger) {
-                throw "task[$taskIndex] simplification_trigger '$trigger' is not recognized"
-            }
-            if ($trigger -eq "none") {
-                continue
-            }
-
-            foreach ($name in @("net_deletion", "residual_glue")) {
-                if ([string]::IsNullOrWhiteSpace((Get-ReasonClause -Reason $reason -Name $name))) {
-                    throw "task[$taskIndex] simplification_trigger=$trigger requires $name="
-                }
-            }
-
-            $hasConsumerEvidence = $false
-            foreach ($reuseNote in $reuseNotes) {
-                $reuseReason = [string]$reuseNote.reason
-                if (-not [string]::IsNullOrWhiteSpace((Get-ReasonClause -Reason $reuseReason -Name "production_consumers")) -and
-                    -not [string]::IsNullOrWhiteSpace((Get-ReasonClause -Reason $reuseReason -Name "nonproduction_consumers"))) {
-                    $hasConsumerEvidence = $true
-                    break
-                }
-            }
-            if (-not $hasConsumerEvidence) {
-                throw "task[$taskIndex] simplification_trigger=$trigger requires production_consumers= and nonproduction_consumers= in reuse_search"
-            }
-        }
-        $taskIndex += 1
-    }
-}
-
 function Read-AndValidateLedger {
     param(
         [Parameter(Mandatory = $true)][string]$LedgerPath,
@@ -252,7 +178,6 @@ function Read-AndValidateLedger {
         Bytes = $bytes
         Length = $bytes.LongLength
         Sha256 = Get-Sha256 -FilePath $resolved
-        Ledger = $ledger
     }
 }
 
@@ -278,10 +203,7 @@ function Assert-ExpectedTargetHash {
 try {
     $candidate = Read-AndValidateLedger -LedgerPath $Path -ByteLimit $MaxBytes -StringLimit $MaxStringChars
 
-    if ($Command -eq "Validate" -or $Command -eq "ValidatePlan") {
-        if ($Command -eq "ValidatePlan") {
-            Assert-PlanMinimumChangeEvidence -Ledger $candidate.Ledger
-        }
+    if ($Command -eq "Validate") {
         Write-Output "ledger validation ok bytes=$($candidate.Length) sha256=$($candidate.Sha256)"
         exit 0
     }

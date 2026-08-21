@@ -4,7 +4,7 @@ disable-model-invocation: true
 description: >-
   Perform an independent code audit of a specific opi implementation phase.
   Given a phase number, extract the task graph, registered specs, definitions
-  of done, and claimed evidence from impl-state.json, pin the repository's
+  of done, and claimed evidence from `.opi-impl-state.json`, pin the repository's
   current committed HEAD, then verify every requirement against the complete
   relevant implementation at that HEAD. Use this skill whenever the user
   mentions "audit",
@@ -101,12 +101,16 @@ rules below exist to protect this independence.
     - scenario/task `production_call_sites` and
       `verification.behavioral_tests`.
 
-    Classify trace availability structurally:
-    - none of the four standardized notes exists -> `not-recorded`; continue
-      the ordinary audit without reconstructing legacy answers;
-    - at least one note exists but a required note or clause is absent ->
-      `drifted`; add a Spec requirement for incomplete admission evidence;
-    - all required trace evidence exists -> compare it with the complete
+    Classify trace availability without applying a newer admission contract
+    retroactively to a frozen snapshot:
+    - if no task records `simplification_trigger=`, treat the graph as
+      pre-contract; classify absent notes or clauses as `not-recorded`, inspect
+      any evidence that is present, and do not create a finding solely for the
+      historical omission;
+    - if at least one task records `simplification_trigger=`, the graph claims
+      the current contract; a missing required note or clause is `drifted` and
+      adds a Spec requirement for incomplete admission evidence;
+    - when the complete required trace exists, compare it with the complete
       relevant implementation at the current committed `audit_head`.
 
     When a task claims an existing surface is unused, duplicate, or
@@ -273,7 +277,8 @@ canonical severity definitions in
 **Spec axis follow-through**:
 - Map each Success Criterion from the spec to code evidence
 - Verify each Non-Goal is not accidentally implemented
-- Check priority tiers (P0/P1/P2) against actual completion
+- Check source-declared priority or risk tiers, when present, against actual
+  completion; do not invent a fixed P0/P1/P2 taxonomy
 - Verify explicit deferrals are documented
 
 **Invariant audit** (when active):

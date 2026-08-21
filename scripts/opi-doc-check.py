@@ -13,7 +13,7 @@ from urllib.parse import unquote
 ROOT = Path(__file__).resolve().parent.parent
 ERRORS: list[str] = []
 MINIMUM_CHANGE_TRACE_CONTRACT = {
-    ".claude/skills/opi-implement/skill.md": (
+    ".claude/skills/opi-implement/SKILL.md": (
         "**Minimum-change trace rule:**",
         "`reuse_search`",
         "`surface_necessity`",
@@ -24,6 +24,7 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
         "`net_deletion`",
         "`residual_glue`",
         "simplification_trigger=",
+        "validate-plan.py",
     ),
     ".claude/skills/opi-implement/references/initializer.md": (
         "#### Minimum-change trace",
@@ -39,6 +40,7 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
         "`net_deletion=`",
         "`residual_glue=`",
         "simplification_trigger=",
+        "validate-plan.py",
     ),
     ".claude/skills/opi-implement/references/ledger-schema.md": (
         '`field = "reuse_search"`',
@@ -60,6 +62,7 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
         "`net_deletion=`",
         "`residual_glue=`",
         "simplification_trigger=",
+        "validate-plan.py",
     ),
     ".claude/skills/opi-implement/references/verify-engine.md": (
         "### Minimum-change trace overlay",
@@ -76,6 +79,7 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
         "`net_deletion`",
         "`residual_glue`",
         "`simplification_trigger`",
+        "validate-plan.py",
     ),
     ".claude/skills/opi-implement/scripts/plan.workflow.js": (
         '"reuse_search"',
@@ -89,6 +93,7 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
         "net_deletion",
         "residual_glue",
         "simplification_trigger",
+        "max_parallel_agents",
     ),
 }
 
@@ -248,6 +253,7 @@ CHANGE_SCOPE_CHECK_SELECTION_CONTRACT = {
         "does not define release manifest",
         "Do not rerun unchanged evidence",
         "worktree-only",
+        "Workflow, checker, or script behavior",
     ),
     "AGENTS.md": (
         ".agents/skills/_shared/references/change-scope-and-check-selection.md",
@@ -632,11 +638,11 @@ def check_skill_contracts() -> list[str]:
         candidates = [
             path
             for path in directory.iterdir()
-            if path.is_file() and path.name.lower() == "skill.md"
+            if path.is_file() and path.name == "SKILL.md"
         ]
         if len(candidates) != 1:
             ERRORS.append(
-                f".claude/skills/{name}: expected exactly one SKILL.md or skill.md"
+                f".claude/skills/{name}: expected exactly one SKILL.md"
             )
             continue
 

@@ -15,22 +15,12 @@ Parse the `packages[].dependencies` to build the internal dependency graph.
 Only consider workspace-internal dependencies (those with a `path` field
 pointing within the workspace).
 
-### From CLAUDE.md (fallback)
+### From Cargo manifests (fallback)
 
-If `cargo metadata` is unavailable, read the workspace layout from
-`CLAUDE.md`:
-
-```text
-opi-ai (no internal deps)
-opi-tui (no internal deps)
-opi-protocol (no internal deps)
-opi-agent -> opi-ai
-opi-sandbox -> opi-protocol
-opi-coding-agent -> opi-ai, opi-agent, opi-protocol, opi-tui
-```
-
-This is a snapshot of CLAUDE.md's workspace-layout diagram; prefer `cargo metadata`
-(which always reflects the current workspace) when available.
+If `cargo metadata` is unavailable, parse workspace members and internal
+dependencies from the root and crate `Cargo.toml` files. Manifests own the
+current graph; do not copy a static crate table from `AGENTS.md` or
+`CLAUDE.md` into this skill.
 
 ### Layer assignment
 
@@ -85,7 +75,11 @@ For documentation layers, run `python scripts/opi-doc-check.py` and verify:
 ### Step 3: Gate
 
 - **All pass**: Proceed to the next layer.
-- **fmt fails**: Auto-fix with `cargo fmt --all` and re-verify.
+- **fmt fails**: Identify every path the formatter would change. Format only
+  remediation-owned paths that were not dirty at the baseline, using the
+  narrowest package/file target, then re-verify. If formatting would touch a
+  carried-in or unowned path, stop and report the conflict; never run an
+  automatic workspace-wide rewrite.
 - **clippy fails**: Fix the warning, re-verify. If evidence shows the warning
   predates the remediation and is outside owned scope, stop and ask whether to
   record a scoped exclusion or expand the remediation; do not call the layer

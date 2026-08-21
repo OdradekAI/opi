@@ -107,16 +107,6 @@ deltas._
 
 ---
 
-## pi Comparison
-
-_Present only when docs/eval/pi-baseline.jsonl exists._
-
-| Case | opi verdict | pi verdict | Notes |
-|------|-------------|------------|-------|
-| ... | ... | ... | ... |
-
----
-
 ## Environment
 
 - OS: <platform>
@@ -134,9 +124,7 @@ _Present only when docs/eval/pi-baseline.jsonl exists._
 
 Filename: `<version>-<date>-<model-short>.md`
 
-Examples:
-- `0.7.2-2026-07-07-anthropic-claude-sonnet-4.md`
-- `0.7.2-2026-07-07-openai-gpt-4o.md`
+Example: `<workspace-version>-2026-08-21-<provider-model>.md`
 
 Rules:
 - Version is the workspace semver from `Cargo.toml`

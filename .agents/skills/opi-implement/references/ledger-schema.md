@@ -8,64 +8,73 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 ```json
 {
   "schema_version": 2,
-  "spec_files": ["docs/opi-spec.md"],
+  "spec_files": [
+    "docs/opi-spec.md",
+    "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md"
+  ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "<hash at last init/reinit>"
+    "docs/opi-spec.md": "<hash at last init/reinit>",
+    "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md": "<hash at last init/reinit>"
   },
-  "current_phase": 1,
+  "current_phase": 17,
+  "task_graph_confirmed_at": "2026-08-12T13:10:55+08:00",
   "tasks": [
     {
-      "id": "1.6",
-      "phase": 1,
-      "title": "agent_loop",
-      "crate": "opi-agent",
-      "definition_of_done": "mock tests cover no-tool and tool-use turns",
-      "definition_source": "verbatim",
+      "id": "17.5",
+      "phase": 17,
+      "title": "Wire the Reference Product to dispatchable provider routes",
+      "crate": "workspace",
+      "definition_of_done": "The Reference Product dispatches registered provider routes and returns owning typed failures before model HTTP dispatch.",
+      "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
-      "depends_on": ["1.1", "1.2", "1.5"],
+      "depends_on": ["17.2"],
       "inference_notes": [
         {
-          "field": "depends_on",
-          "reason": "agent_loop consumes provider and tool traits",
-          "source": "opi-spec.md §15 + DoD references"
+          "field": "definition_of_done",
+          "reason": "Expanded the registered delivery outcome into an observable Reference Product path.",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification"
         }
       ],
-      "tier": "library",
+      "tier": "workspace",
       "commit_type": "feat",
       "parallelize": [],
       "evaluator_required": false,
       "verification": {
         "library_gates": [
-          "cargo test -p opi-agent",
-          "cargo clippy -p opi-agent -- -D warnings",
-          "RUSTDOCFLAGS=\"-D warnings\" cargo doc -p opi-agent --no-deps"
+          "cargo test -p opi-coding-agent --test phase17_provider_runtime",
+          "cargo clippy --workspace --all-targets -- -D warnings",
+          "RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps"
         ],
-        "behavioral_tests": ["crates/opi-agent/tests/agent_loop_mock.rs"],
+        "behavioral_tests": ["crates/opi-coding-agent/tests/phase17_provider_runtime.rs"],
         "snapshot_tests": [],
         "smoke_addendum": null
       },
       "acceptance_scenarios": [
         {
-          "id": "phase1-agent-loop-tool-use",
-          "source": "docs/opi-spec.md §15 Phase 1 exit criteria",
-          "scenario": "Mock provider requests a tool, the production agent loop validates and executes it, and the next provider turn receives the result.",
+          "id": "P17-A02",
+          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "scenario": "An invalid registered provider route returns its owning typed failure before model HTTP dispatch.",
           "verification": [
-            "cargo test -p opi-agent --test agent_loop_mock tool_use_turn"
+            "cargo test -p opi-coding-agent --test phase17_provider_runtime phase17_route_and_auth_failures_do_not_dispatch_model_http"
           ],
           "production_call_sites": [
-            "opi_agent::agent_loop"
+            "opi_coding_agent::CodingHarness::prompt",
+            "opi_ai::ProviderCollection::prepare_call"
           ],
           "status": "open"
         }
       ],
-      "production_call_sites": ["opi_agent::agent_loop"],
+      "production_call_sites": [
+        "opi_coding_agent::CodingHarness::prompt",
+        "opi_ai::ProviderCollection::prepare_call"
+      ],
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
       "start_commit": null,
       "baseline_dirty_files": [],
-      "task_owned_paths": ["crates/opi-agent/**", "Cargo.toml"],
+      "task_owned_paths": ["crates/opi-coding-agent/**", "Cargo.toml"],
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
@@ -73,13 +82,13 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
     }
   ],
   "phase_exit": {
-    "1": {
+    "16": {
       "completed_at": "2026-04-12T18:00:00Z",
       "exit_criteria_met": true,
-      "evaluator_summary": "all Phase 1 exit criteria met; see commit 4d9c64...",
-      "snapshot_path": "docs/snapshots/phase1/opi-impl-state.json",
+      "evaluator_summary": "all registered Phase 16 exit criteria met; see snapshot",
+      "snapshot_path": "docs/snapshots/phase16/opi-impl-state.json",
       "task_summary": [
-        { "id": "1.0", "title": "introduce Phase 1 dependencies", "status": "passing", "verified_at_commit": "4d9c64..." }
+        { "id": "16.1", "title": "archived task", "status": "passing", "verified_at_commit": "4d9c64..." }
       ]
     }
   }
@@ -91,17 +100,18 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 | Field | Type | Mutability | Notes |
 |---|---|---|---|
 | `schema_version` | int | reinit-only | Current live value `2`. v2 adds `task_owned_paths`, `definition_source`, `replaces`, `baseline_dirty_files`, `spec_files`, `spec_files_sha256`, `phase_exit[N].snapshot_path`, `phase_exit[N].task_summary`, dotted sub-task IDs, and open-string `crate` values. Live operations accept v2 only; frozen v1 snapshots remain audit-readable historical evidence. |
-| `spec_files` | array | const-on-init, reinit-editable | Normative spec file paths whose drift triggers the plan path's drift branch. Default `["docs/opi-spec.md"]`. Supplemental phases MUST include only the reviewed source files registered in `skill.md` for the active phase, plus `docs/opi-spec.md`. Adding or removing a path requires a plan-path sync. |
+| `spec_files` | array | const-on-init, reinit-editable | Normative source paths whose drift triggers the plan path. A fresh active graph includes `docs/opi-spec.md` plus exactly the reviewed Phase delivery source files registered in `SKILL.md`. The parent specification is not itself parsed as a roadmap. Adding or removing a path requires a plan-path sync. |
 | `spec_files_sha256` | object | reinit-only | Map of file path → its CRLF-normalized SHA-256 (replace `\r\n` with `\n` before hashing) at last init/reinit. The live root `.opi-impl-state.json` is pinned to the current spec by `crates/opi-coding-agent/tests/spec_ledger.rs`; phase-exit snapshots under `docs/snapshots/phaseN/` are historical and are NOT re-synced. Each entry is checked independently; any mismatch triggers the spec-alignment guard. |
 | `verify_runs` | array/null | plan+exec+phase-exit | Active-phase verify history. Each entry: `{ stage ("plan"|"exec"|"phase-exit"), wf_ref (string/null — null only when a supported plan fallback has no Workflow id), folded_count, flagged_count, rejected_count, ran_at, task_id (string for risk-gated exec; null for plan/phase-exit), criterion_id (string for phase-exit; null for plan/exec) }`. Tasks with `evaluator_required = false` create no exec entry. Additive/optional within a phase; after a durable pre-archive ledger checkpoint, archive compaction resets it to `[]`. The checkpoint remains the recovery source; do not duplicate the array into a generic history artifact. Does NOT affect `schema_version`. |
 | `session_notes` | array/null | plan+runtime+archive | Active-phase root coordination notes. This is distinct from per-task `tasks[].session_notes`. After a durable pre-archive ledger checkpoint, archive compaction resets it to `[]`; archived-phase notes do not accumulate in the live root ledger and remain recoverable from the checkpoint. |
-| `current_phase` | int | auto | Lowest phase with non-`passing` task |
-| `tasks[].id` | string | const | Matches a row in `opi-spec.md` §15 OR a sub-task expansion. Pattern: `^\d+\.\d+(\.\d+)?$`. Sub-task IDs carry a third component (e.g. `4.6.1`) and MUST also set `parent_spec_row`. |
-| `tasks[].phase` | int | const | From row's phase grouping |
-| `tasks[].title` | string | const | Spec row title |
+| `current_phase` | int | auto | Phase represented by the active `tasks` array. After archive compaction leaves `tasks = []`, retain the most recently archived phase until the next registered Phase is admitted. |
+| `task_graph_confirmed_at` | timestamp/null | plan/reinit | Time of the most recent human graph confirmation. Preserve it in the Phase snapshot; replace it only when a new or reconciled graph is confirmed. |
+| `tasks[].id` | string | const | Stable task ID derived from the registered Phase delivery source. Pattern: `^\d+\.\d+(\.\d+)?$`. A third component denotes a reviewed split and uses `parent_spec_row` when the source item has a stable identifier. |
+| `tasks[].phase` | int | const | Registered Phase number. |
+| `tasks[].title` | string | const | Registered source title or a review-confirmed split title. |
 | `tasks[].crate` | string | const | One of opi's six workspace crates (`opi-ai`, `opi-agent`, `opi-coding-agent`, `opi-protocol`, `opi-sandbox`, `opi-tui`), `workspace`, or any free-string packaging identifier (e.g. `examples`, `package-template`) when the reviewed source uses an open identifier. The review gate warns for unknown values but does not refuse solely on that basis. |
-| `tasks[].parent_spec_row` | string/null | const | Source spec row ID when this task is a sub-task expansion (e.g. `"4.7"` for `4.7.1`). Direct spec rows MUST use `null`, not an empty string. |
-| `tasks[].definition_of_done` | string | const | Verbatim from spec |
+| `tasks[].parent_spec_row` | string/null | const | Stable source item ID when a bundled delivery item is split into independently demonstrable tasks. `null` for direct tasks and for reviewed sources without row identifiers. Retained for v2 and snapshot compatibility; it does not imply a parent-spec roadmap table. |
+| `tasks[].definition_of_done` | string | const | Observable completion contract from the registered source or confirmed task-graph expansion; provenance is declared by `definition_source`. |
 | `tasks[].definition_source` | enum | const | `verbatim`, `inferred`, or `draft-reviewed`; inferred values require review gate confirmation |
 | `tasks[].replaces` | string/null | const | Prior task title/meaning superseded during reinit, when the same task ID was repurposed by spec changes |
 | `tasks[].status` | enum | runtime | `failing`/`in_progress`/`passing`/`blocked`/`archived` |
@@ -116,7 +126,7 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 | `tasks[].production_call_sites` | array | const-on-init, append-only during Phase C | Production entry points that must call or exercise this task's implementation before the task can close runtime acceptance. Examples: CLI subcommand handler, harness startup, agent loop hook wrapper, session persistence path. Tests-only helpers do not count. |
 | `tasks[].substrate_only` | bool | const-on-init, reinit-editable | `true` means the task intentionally implements a helper/parser/protocol/bridge slice and cannot by itself close product acceptance scenarios. A later vertical-slice task must consume it through a production call site. |
 | `tasks[].iteration_count` | int | runtime | Attempts since `in_progress` |
-| `tasks[].max_iterations` | int | const | Default 5 |
+| `tasks[].max_iterations` | int | user-gated runtime | Default 5. `--extend-cap <N>` sets an absolute new cap and requires `N` to be greater than the current value; graph approval does not authorize this mutation. |
 | `tasks[].start_commit` | string/null | runtime | HEAD when Phase B confirms |
 | `tasks[].baseline_dirty_files` | array | runtime | Files already dirty at Phase B start; used to avoid cleaning or staging unrelated user work |
 | `tasks[].task_owned_paths` | array | const-at-Phase-B, append-only during Phase C | Glob patterns the task is allowed to modify. Default derived from `crate` at init/reinit time (e.g. `crate = "opi-agent"` → `["crates/opi-agent/**", "Cargo.toml"]`). Phase C MAY append entries when implementation requires touching outside-prefix files; each append MUST add an `inference_notes` entry with `field = "task_owned_paths"` and a `reason`, written via the atomic ledger write. |
@@ -164,11 +174,14 @@ For every new or reconciled plan draft, `field = "simplification_ceiling"`
 also requires `simplification_trigger=` with one of `none`, `unused`,
 `duplicate`, `superseded`, `delete`, `merge`, `replace`, or
 `dependency-substitution`. `none` records an ordinary task; any other value
-activates the conditional validation rule below. On Windows, run
-`ledger-guard.ps1 -Command ValidatePlan` before confirmation so a missing,
-unknown, or incomplete conditional declaration fails closed. This plan-only
-validation does not reinterpret legacy ledgers during ordinary `Validate` or
-`Install` operations.
+activates the conditional validation rule below. On every platform, run
+`python .claude/skills/opi-implement/scripts/validate-plan.py .opi-impl-state.draft.json`
+before confirmation so missing or duplicated notes and unknown or incomplete
+declarations on non-archived tasks fail closed. Retained `status = archived`
+reconciliation history is not executable and is excluded. The Windows ledger
+guard remains responsible for strict UTF-8 validation and atomic installation;
+it does not reinterpret plan semantics during ordinary `Validate` or `Install`
+operations.
 
 Conditional validation rule: when a task claims an existing surface is
 unused, duplicate, or superseded, or proposes deletion, merging, replacement,
@@ -208,8 +221,9 @@ criterion is intentionally deferred, the scenario must be assigned to a
 documentation/alignment task that updates the source spec or records an exact
 current-spec citation for the deferral.
 
-Validation rule: for every supplemental phase registered in `skill.md`,
-`spec_files` MUST include the registered source file(s) for the active phase.
+Validation rule: for every Phase registered in `SKILL.md`, `spec_files` MUST
+include the registered delivery source file(s) for the active phase plus the
+parent `docs/opi-spec.md`.
 Unregistered design docs, snapshot files, skill source files, `AGENTS.md`, and
 `CLAUDE.md` MUST NOT be added to `spec_files`.
 

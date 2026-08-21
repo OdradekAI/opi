@@ -112,9 +112,10 @@ same lenses also inspect `production_consumers`, `nonproduction_consumers`,
 inferred from tests, docs, or examples and that the stated deletion accounts
 for newly introduced glue. Every new or reconciled draft declares
 `simplification_trigger`; `none` leaves these subclauses unnecessary, while a
-listed non-`none` trigger requires them. Windows `ValidatePlan` rejects missing
-or malformed declared fields before graph confirmation; reviewers still assess
-whether the cited evidence is true.
+listed non-`none` trigger requires them. The cross-platform
+`scripts/validate-plan.py` gate rejects missing, duplicated, or malformed
+declared fields on non-archived tasks before graph confirmation; reviewers
+still assess whether the cited evidence is true.
 
 If the source is sufficient but the draft omits or malforms an answer, return
 `GRAPH_REVISION_REQUIRED`. Missing facts return `RESEARCH_REQUIRED`.
@@ -153,6 +154,7 @@ checks their blocking findings, and returns:
   graph_findings,
   flagged_for_human,
   rejected,
+  resource_summary,
   report
 }
 ```
@@ -224,7 +226,8 @@ A surviving blocking finding for criterion C upserts
 ## Report and guardrails
 
 - **plan** — independence, primary verdict, design findings, graph findings,
-  non-blocking human flags, and rejected findings;
+  non-blocking human flags, rejected findings, and a deterministic resource
+  summary including total reviewers and `max_parallel_agents`;
 - **exec** — must-fix, human flags, and rejected findings;
 - **phase exit** — not-met, human flags, and rejected findings.
 

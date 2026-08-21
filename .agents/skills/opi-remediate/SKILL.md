@@ -69,12 +69,14 @@ digraph remediate {
 
 3. Read `docs/snapshots/phase<N>/opi-impl-state.json`:
    - Extract `spec_files` (or `spec_path` for schema v1).
-   - Extract the commit range from task `verified_at_commit` values.
+   - Extract task `verified_at_commit` values as phase-exit provenance; they do
+     not define remediation coverage.
    - Extract task graph for context (task IDs, titles, crates, DoDs).
 
 4. Read every selected source report in full. Also read:
    - The design spec(s) referenced by `spec_files`.
-   - `CLAUDE.md` / `AGENTS.md` for project context.
+   - `AGENTS.md` for project context (`CLAUDE.md` is only its compatibility
+     link).
    - `docs/opi-spec.md` for the normative spec.
 
 ## Phase B: Cross-reference
@@ -200,9 +202,9 @@ Read `references/remediation-plan-template.md` for the output format.
 
 Fixes are organized into layers based on the workspace dependency graph:
 
-1. Run `cargo metadata --no-deps --format-version 1` (or read the root
-   `Cargo.toml` workspace layout from `CLAUDE.md`) to determine crate
-   dependencies.
+1. Run `cargo metadata --no-deps --format-version 1`; if unavailable, derive
+   the graph from the root and crate `Cargo.toml` manifests, which own the
+   current workspace topology.
 2. Crates with no internal dependencies are Layer 1 (substrate).
 3. Crates that depend on Layer 1 crates are Layer 2.
 4. Continue until all crates are assigned.
@@ -289,9 +291,9 @@ opi-remediate  -->  consumes normalized findings, produces remediation-plan.md,
 opi-implement  -->  drives next-phase implementation (independent ledger)
 ```
 
-`opi-remediate` never reads or writes the `opi-implement` ledger. The two
-skills operate on different lifecycle stages: `opi-implement` builds new
-phases forward; `opi-remediate` fixes backward from audit findings.
+`opi-remediate` may read the frozen Phase snapshot ledger as historical
+requirements and provenance. It never reads as authority from, or writes, the
+live canonical `.opi-impl-state.json`; `opi-implement` alone owns that state.
 
 ## References
 

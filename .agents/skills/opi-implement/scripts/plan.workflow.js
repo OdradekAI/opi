@@ -15,6 +15,7 @@ const draft = _args.draftTasks
 const sourcePath = _args.sourceDesignPath
 const activePhase = _args.phase
 const independence = _args.independence || 'unknown'
+const VERIFY_BATCH_SIZE = 5
 
 const FINDINGS_SCHEMA = {
   type: 'object',
@@ -138,19 +139,41 @@ const blocking = allFindings.filter((finding) => finding.blocking)
 const nonBlocking = allFindings.filter((finding) => !finding.blocking)
 
 phase('Verify')
-const verified = await parallel(blocking.map((finding) => () =>
-  agent(
-    'Try to REJECT this proposed plan-admission finding.\n' +
-    'Source design: ' + sourcePath + '\n' +
-    'Original draft graph: ' + JSON.stringify(draft) + '\n' +
-    'Finding: ' + JSON.stringify(finding) + '\n' +
-    'Reject it if the citation does not support the claim, the issue is already satisfied, the route is wrong, or the finding invents scope. Default to accepted=false when uncertain.\n' +
-    'Do not propose or apply edits. Do not invoke another reviewer or spawn agents.',
-    { label: 'verify:' + finding.lens + ':' + (finding.task_id || 'source'), phase: 'Verify', schema: VERDICT_SCHEMA },
-  )
-    .then((verdict) => ({ finding, verdict }))
-    .catch(() => ({ finding, verdict: { accepted: false, reason: 'verify-agent-error' } }))
-))
+const verified = []
+for (let offset = 0; offset < blocking.length; offset += VERIFY_BATCH_SIZE) {
+  const batch = blocking.slice(offset, offset + VERIFY_BATCH_SIZE)
+  const batchResults = await parallel(batch.map((finding) => () =>
+    agent(
+      'Try to REJECT this proposed plan-admission finding.\n' +
+      'Source design: ' + sourcePath + '\n' +
+      'Original draft graph: ' + JSON.stringify(draft) + '\n' +
+      'Finding: ' + JSON.stringify(finding) + '\n' +
+      'Reject it if the citation does not support the claim, the issue is already satisfied, the route is wrong, or the finding invents scope. Default to accepted=false when uncertain.\n' +
+      'Do not propose or apply edits. Do not invoke another reviewer or spawn agents.',
+      { label: 'verify:' + finding.lens + ':' + (finding.task_id || 'source'), phase: 'Verify', schema: VERDICT_SCHEMA },
+    )
+      .then((verdict) => ({
+        finding,
+        verdict: verdict && typeof verdict.accepted === 'boolean' && typeof verdict.reason === 'string'
+          ? verdict
+          : { accepted: false, reason: 'verify-agent-error' },
+      }))
+      .catch(() => ({ finding, verdict: { accepted: false, reason: 'verify-agent-error' } }))
+  ))
+  verified.push(...batchResults)
+}
+
+const resourceSummary = {
+  lens_agents: LENSES.length,
+  verify_agents: blocking.length,
+  synthesis_agents: 1,
+  total_agents: LENSES.length + blocking.length + 1,
+  max_parallel_agents: Math.max(
+    LENSES.length,
+    Math.min(VERIFY_BATCH_SIZE, blocking.length),
+    1,
+  ),
+}
 
 const surviving = verified
   .filter(Boolean)
@@ -192,5 +215,6 @@ return {
   graph_findings: graphFindings,
   flagged_for_human: nonBlocking,
   rejected,
+  resource_summary: resourceSummary,
   report,
 }

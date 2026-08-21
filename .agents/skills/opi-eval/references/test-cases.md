@@ -118,9 +118,9 @@ Verification:
 | Dimension | Criteria |
 |-----------|----------|
 | Correctness | `result.txt` contains `10` |
-| Tool calls | Exactly 2 tool calls: read then write. Args must reference correct filenames. |
+| Tool calls | Read then write are required and args must reference the correct filenames. A third discovery call is allowed but makes this dimension DEGRADED. |
 | Context | Tool result from read must inform the write content |
-| Efficiency | 2 tool calls minimum; up to 3 acceptable (read + ls + write). >3 is degraded. |
+| Efficiency | 2 calls is PASS; 3 calls is DEGRADED; more than 3 is FAIL unless the trace proves a case-defined recovery path. |
 | Resources | Record token, timing, and tool-call observations; score `N/A` with `record-only` resource status. |
 | Errors | No `is_error: true` in tool results |
 

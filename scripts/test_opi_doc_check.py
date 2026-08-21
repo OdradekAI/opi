@@ -14,7 +14,7 @@ SPEC.loader.exec_module(doc_check)
 
 
 MINIMUM_CHANGE_TRACE_REQUIRED = {
-    ".claude/skills/opi-implement/skill.md": (
+    ".claude/skills/opi-implement/SKILL.md": (
         "**Minimum-change trace rule:**",
         "`reuse_search`",
         "`surface_necessity`",
@@ -25,6 +25,7 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
         "`net_deletion`",
         "`residual_glue`",
         "simplification_trigger=",
+        "validate-plan.py",
     ),
     ".claude/skills/opi-implement/references/initializer.md": (
         "#### Minimum-change trace",
@@ -40,6 +41,7 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
         "`net_deletion=`",
         "`residual_glue=`",
         "simplification_trigger=",
+        "validate-plan.py",
     ),
     ".claude/skills/opi-implement/references/ledger-schema.md": (
         '`field = "reuse_search"`',
@@ -61,6 +63,7 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
         "`net_deletion=`",
         "`residual_glue=`",
         "simplification_trigger=",
+        "validate-plan.py",
     ),
     ".claude/skills/opi-implement/references/verify-engine.md": (
         "### Minimum-change trace overlay",
@@ -77,6 +80,7 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
         "`net_deletion`",
         "`residual_glue`",
         "`simplification_trigger`",
+        "validate-plan.py",
     ),
     ".claude/skills/opi-implement/scripts/plan.workflow.js": (
         '"reuse_search"',
@@ -90,6 +94,7 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
         "net_deletion",
         "residual_glue",
         "simplification_trigger",
+        "max_parallel_agents",
     ),
 }
 
@@ -250,6 +255,7 @@ CHANGE_SCOPE_CHECK_SELECTION_REQUIRED = {
         "does not define release manifest",
         "Do not rerun unchanged evidence",
         "worktree-only",
+        "Workflow, checker, or script behavior",
     ),
     "AGENTS.md": (
         ".agents/skills/_shared/references/change-scope-and-check-selection.md",
@@ -613,14 +619,17 @@ class SkillContractTests(unittest.TestCase):
             doc_check.ERRORS,
         )
 
-    def test_lowercase_skill_entry_is_supported(self) -> None:
+    def test_lowercase_skill_entry_is_rejected(self) -> None:
         self.write_skill(entry="skill.md")
         self.write_indexes(("opi-example",))
 
         paths = doc_check.check_skill_contracts()
 
-        self.assertEqual([], doc_check.ERRORS)
-        self.assertIn(".claude/skills/opi-example/skill.md", paths)
+        self.assertIn(
+            ".claude/skills/opi-example: expected exactly one SKILL.md",
+            doc_check.ERRORS,
+        )
+        self.assertNotIn(".claude/skills/opi-example/skill.md", paths)
 
     def test_codex_invocation_must_be_explicit(self) -> None:
         self.write_skill(allow_implicit_invocation="true")

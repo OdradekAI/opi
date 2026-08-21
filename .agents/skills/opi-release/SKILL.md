@@ -237,9 +237,11 @@ Before publishing the draft:
    otherwise.
 
 Publish the draft only after these checks pass. Mark the resume state complete,
-then remove the transient release-notes file. Retain release artifacts by
-default. Disk-cache deletion is a separate user decision with an explicit,
-resolved target path.
+report the final verified release, then remove `.opi-release-state.json` and
+the transient release-notes file. The resume state exists only for an
+incomplete release; a completed release is recoverable from public registries
+and Git history. Retain non-empty release artifacts by default. Disk-cache
+deletion is a separate user decision with an explicit, resolved target path.
 
 ## Failure recovery
 

@@ -54,6 +54,7 @@ Choose the union of checks required by every changed surface:
 | Changed surface | Minimum check family |
 |---|---|
 | Documentation, skills, or metadata only | `python scripts/opi-doc-check.py` and `git diff --check` |
+| Workflow, checker, or script behavior | Exact script unit test plus a representative CLI/subprocess negative path; add the owning platform check when behavior is platform-specific |
 | One crate's local behavior | focused crate test and affected-target clippy |
 | CLI, TUI, or model-visible behavior | integration, snapshot, or subprocess test at the affected seam |
 | Protocol, schema, fixture, or durable format | fixture and conformance tests |

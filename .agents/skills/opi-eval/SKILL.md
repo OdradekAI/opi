@@ -200,11 +200,6 @@ Mark all other prior samples `incomparable`; do not calculate or narrate a
 percentage delta. Opi version and commit remain recorded but are intentionally
 outside the identity because cross-version comparison is the purpose.
 
-### pi comparison (reserved)
-
-If a pi baseline file exists at `docs/eval/pi-baseline.jsonl`, include a
-comparison section. Otherwise omit the section entirely.
-
 **Completion criterion**: report markdown file written, `history.jsonl` updated.
 
 ### Normalized regressions

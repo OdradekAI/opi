@@ -11,30 +11,41 @@ run-specific invocation enters it only on drift.
   Refuse only when dirty files would be overwritten by init/reinit outputs;
   do not require unrelated user changes to be cleaned.
 
-### A.init.2 Parse Spec
-Parse `opi-spec.md` §15 roadmap tables. For each task row extract:
-- id, title, crate, DoD (when present), phase number
-- **Infer:** tier (from crate + description), commit_type (from task verbs),
-  depends_on (from ordering + DoD references), evaluator_required (from risk rules)
-- Attach `inference_notes` for every non-verbatim field
-- Documentation/alignment rows whose source phase explicitly forbids runtime
-  behavior or code migration use tier `documentation`. If any inferred task
-  owns Rust source, Cargo manifests, runtime scripts, fixtures, snapshots, or
-  generated artifacts, promote it to the relevant non-documentation tier before
-  graph confirmation.
-- Rows without explicit DoD:
-  - Phase 1 rows with a "Definition of done" column use that text verbatim.
-  - Phase 2+ rows may receive a draft `definition_of_done` inferred from the
-    roadmap row, feature parity matrix, relevant crate section, security
-    requirements, and phase exit criteria.
-  - Every inferred DoD MUST include `inference_notes` with source section names.
-  - The task remains non-executable until the task-graph review gate confirms
-    the inferred DoD.
+### A.init.2 Select the Registered Phase Source
 
-### A.init.2d Reviewed Supplemental Task Sources
+`docs/opi-spec.md` is the durable parent specification. It supplies stable
+clauses, invariants, and strategic goals, but it is not parsed as a task
+roadmap. A fresh plan requires one human-reviewed Phase delivery source that:
 
-Supplemental phases are sourced only from the reviewed
-design registry in `skill.md`. Do not scan arbitrary `docs/superpowers/specs/` files.
+- cites stable clauses and one strategic goal from `docs/opi-spec.md`;
+- defines the Phase problem, scope, non-goals, success/exit criteria, and
+  delivery decomposition;
+- is explicitly registered in `SKILL.md` before admission.
+
+If no registered Phase delivery source exists, return
+`DESIGN_DECISION_REQUIRED`; do not infer a roadmap from the parent spec or scan
+arbitrary files under `docs/superpowers/specs/`.
+
+For each task described by the registered source, extract id or source order,
+title, owning crate/surface, definition of done, phase number, dependencies,
+and verification evidence. Infer tier, commit type, evaluator requirement, and
+any missing execution metadata. Attach `inference_notes` with an exact source
+heading for every non-verbatim field. An inferred or review-expanded DoD stays
+non-executable until the task-graph gate confirms it.
+
+When one source item bundles independently demonstrable deliverables, split it
+into separate `<phase>.<N>` tasks and retain the source item's stable identifier
+in `parent_spec_row` when one exists. Do not create a placeholder parent task.
+The graph review shows the split as a unit so the user can accept or revise it.
+
+Documentation/alignment tasks whose source explicitly forbids runtime behavior
+may use tier `documentation`. A task that owns Rust source, Cargo manifests,
+runtime scripts, fixtures, snapshots, or generated artifacts uses the relevant
+non-documentation tier.
+
+### A.init.2a Registered Phase Delivery Sources
+
+Phase delivery sources come only from the reviewed registry in `SKILL.md`.
 
 | Phase | Registered source | Draft task extraction |
 |---:|---|---|
@@ -44,7 +55,7 @@ For each active phase:
 
 - Include `docs/opi-spec.md` and the phase's registered source in `spec_files`.
 - Hash both files in `spec_files_sha256` using the CRLF-normalized SHA-256
-  (replace `\r\n` with `\n` before hashing; see `skill.md`).
+  (replace `\r\n` with `\n` before hashing; see `SKILL.md`).
 - Derive task IDs as `<phase>.<N>` in source order unless the reviewed source
   already names a stricter sequence.
 - Convert success criteria into `acceptance_scenarios` before graph review.
@@ -56,7 +67,7 @@ For each active phase:
 - If `docs/opi-spec.md` and the registered phase design conflict on phase
   scope, stop for graph review instead of choosing silently.
 
-### A.init.2c Design Acceptance Extraction
+### A.init.2b Design Acceptance Extraction
 
 For every active phase whose source files include goals, success criteria, exit
 criteria, or named user workflows, extract them before task-graph review.
@@ -85,42 +96,6 @@ whose acceptance scenario starts at a real user/API entry point and ends at the
 runtime effect claimed by the design. Component tasks may pass as substrate, but
 they cannot by themselves satisfy this rule.
 
-### A.init.2a Composite Row Detection
-
-Some spec roadmap rows describe N independent deliverables in one line
-(e.g. `4.6 | extension examples: permission gate, sub-agent, plan mode, todo, MCP adapter`).
-These rows MUST NOT become a single ledger task.
-
-Trigger heuristic: a roadmap row is composite when any of these is true:
-
-- the row title contains `:` followed by at least two comma-separated items;
-- the row title begins with `examples:` or `task family:`;
-- the row title is a Phase 4 resource-family row listing at least three independent resource nouns joined by commas or `and`, such as `skills, prompt fragments, themes, and packages`;
-- the row's crate column is an open packaging identifier such as `examples / package template` and the title lists at least two deliverables.
-
-Do not split a row merely because the DoD contains commas. The split decision is based on the roadmap row title and crate column.
-
-For each composite row:
-
-- Generate sub-tasks with IDs `<row>.1`, `<row>.2`, ..., `<row>.N`.
-- Set `parent_spec_row = "<row>"` on each.
-- Independent draft DoD per item, drawn from the item phrase plus relevant
-  spec sections.
-- Each sub-task inherits the parent's `depends_on` unless review-gate narrows.
-- Each sub-task inherits the parent's `crate` (or `"package-template"` /
-  `"examples"` when the row's crate column is non-standard).
-- `definition_source = "inferred"` for every sub-task (composite rows never
-  produce verbatim DoDs).
-- The composite row itself does NOT produce a parent task; there is no
-  placeholder entry with id `<row>`.
-- The task-graph review gate MUST surface composite decompositions in a
-  dedicated section so the user reviews them as a unit before confirmation.
-
-Phase 4 examples:
-
-- `4.7 | skills, prompt fragments, themes, and packages with progressive discovery` becomes `4.7.1` skills, `4.7.2` prompt fragments/templates, `4.7.3` themes, and `4.7.4` packages.
-- `4.8 | extension/package examples: permission gate, protected paths, sub-agent, plan mode, todo, MCP adapter` becomes six package/example tasks; the parent row is not executable.
-
 ### P.0 Source Admission
 
 Run after extraction has identified the registered source files and before a
@@ -140,7 +115,7 @@ Source admission does not edit the source. Return one of these stop verdicts
 when evidence or product meaning is missing:
 
 - `RESEARCH_REQUIRED` — route to `opi-research` or `opi-realign`.
-- `DESIGN_DECISION_REQUIRED` — apply the `skill.md` Source-return rule and
+- `DESIGN_DECISION_REQUIRED` — apply the `SKILL.md` Source-return rule and
   recommend the exact explicit user invocation of Matt `wayfinder` or
   `grill-with-docs`.
 
@@ -290,8 +265,9 @@ any runtime criterion is covered only by a `substrate_only` task.
 Also render a six-row minimum-change trace per task. For substrate tasks, show
 the later scenario owner whose transitive `depends_on` closure contains the
 substrate. Before graph confirmation, run
-`.claude/skills/opi-implement/scripts/ledger-guard.ps1 -Command ValidatePlan`
-against the draft on Windows. REFUSE `confirm-all` when that command fails,
+`python .claude/skills/opi-implement/scripts/validate-plan.py .opi-impl-state.draft.json`
+on every platform. The validator excludes retained `status = archived`
+reconciliation history. REFUSE `confirm-all` when that command fails,
 a required answer is absent, any `surface_necessity` clause is missing,
 `simplification_ceiling` omits
 `revisit_when`, a triggered simplification claim omits its four conditional
@@ -312,11 +288,24 @@ confirmation.
 REFUSE to proceed until whole graph is confirmed.
 MUST NOT silently apply inferred changes.
 
+Graph confirmation authorizes installation of the canonical ledger; it does
+not authorize a Git commit. After confirmation, present a separate checkpoint
+choice:
+
+- **write-only** — install the canonical ledger and leave the change
+  uncommitted; this is the default for `opi-implement plan`;
+- **commit-checkpoint** — explicitly authorize the narrowly scoped bootstrap or
+  reconciliation commit described in A.init.6;
+- **abort-before-write** — stop with only the ignored draft changed.
+
 ### P.5 Write Ledger
 - Write `.opi-impl-state.json` atomically
 - Ensure `.opi-impl-state.json` is tracked
 - Add `.opi-impl-state.json.tmp`, `.opi-impl-state.draft.json`, candidate,
   backup, and corrupt ledger patterns to `.gitignore` if missing
+- After the canonical install is verified, remove the ignored draft. Retain it
+  only when the user exported it, stopped before installation, or explicitly
+  needs it to resume graph review.
 
 ### A.init.5 Write Smoke Script
 - `scripts/opi-impl-smoke.sh` (+ `.ps1` sibling on Windows)
@@ -326,6 +315,10 @@ MUST NOT silently apply inferred changes.
 **Note:** This is the bootstrap checkpoint outside normal task Phase E. It
 commits harness infrastructure and the confirmed canonical ledger, not task
 implementation code.
+
+Run this step only when the user selected **commit-checkpoint** at the separate
+checkpoint choice. `confirm-all`, `plan`, or approval of the task graph alone
+does not authorize a commit.
 
 - Commit ONLY the canonical ledger, smoke scripts, and any `.gitignore` update
 - Message: `chore: bootstrap opi-implement ledger and smoke`
@@ -342,7 +335,8 @@ plan, mutate them, or promise an automatic migration.
 
 ## Reinit Reconciliation (drift branch of the plan path)
 
-This is the drift branch of the unified plan path (spec §5.3), reached when the
+This is the drift branch of the unified plan path required by `AUTH-003`,
+reached when the
 plan path detects a `spec_files_sha256` mismatch — not via a separate `--reinit`
 flag. When drift is detected on a bare (make-progress) or run-specific
 invocation, the harness runs this reconciliation, then P.0 source admission and
@@ -356,7 +350,8 @@ When drift is detected against an existing ledger:
 1. For each path in `spec_files`, recompute its SHA-256 and compare with
    `spec_files_sha256`. If every entry matches → refuse, suggest `--status`.
    If any differs → proceed.
-2. Re-parse spec into fresh ledger.
+2. Re-derive a fresh graph from the registered Phase delivery source while
+   checking it against the parent specification.
 3. Reconcile field-by-field:
    - **Both:** preserve `status`, `verified_at_commit`, `iteration_count`,
      `session_notes`, `blocker`
@@ -368,9 +363,9 @@ When drift is detected against an existing ledger:
      task-graph review gate with row-level diff, require confirmation
 4. Update every entry in `spec_files_sha256` to the freshly recomputed
    CRLF-normalized hash after confirmation.
-5. Commit the reconciled canonical ledger and any changed harness files
-   (`.gitignore`, smoke) with
-   `chore: reconcile opi-implement harness files with opi-spec.md changes`
+5. Install the reconciled canonical ledger and any changed harness files. Only
+   if the user separately selected **commit-checkpoint**, commit them with
+   `chore: reconcile opi-implement harness files with registered source changes`.
 6. The ignored draft is never committed. If reconciliation produces no
    canonical-ledger or harness-file change, do not create an empty commit.
 
@@ -385,12 +380,8 @@ substantively, show a row-level diff and default to:
 - record an `inference_notes` entry with `field = "replaces"` when the new task
   intentionally supersedes an old one under the same ID.
 
-Examples from the 2026-05-25 spec adjustment:
-
-- `3.7 OPI.md context loading` becomes `3.7 AGENTS.md / CLAUDE.md context loading`;
-- `3.8 permission profiles and policy system` becomes `3.8 pi-style tool selection and safety hooks`;
-- `3.9 MCP client adapter` becomes `3.9 find / ls built-in tool parity`;
-- MCP moves to Phase 4 as an extension/package example, not a Phase 3 core task.
+Do not embed old Phase-specific meaning changes in the active initializer.
+Frozen snapshots and Git history retain those examples.
 
 ## Draft Export/Import
 
@@ -409,9 +400,9 @@ row into executable, it must supply `definition_of_done` + inference note.
 ## apply-rule Examples
 
 Batch graph edits for tedious one-by-one changes:
-- Add `1.17` as dep to every task using `MockProvider`
-- Change all `opi-tui` rows to tier `tui`
-- Mark public-protocol rows as `evaluator_required = true`
+- Add a named substrate task as a dependency of every task that consumes it.
+- Change every task owning `opi-tui` runtime paths to tier `tui`.
+- Mark public-protocol tasks as `evaluator_required = true`.
 
 Always show before/after diff for affected rows, invalidate the prior `READY`
 verdict, repeat P.2, then return to P.4.
