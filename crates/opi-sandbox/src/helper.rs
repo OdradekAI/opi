@@ -328,12 +328,12 @@ fn native_to_os_string(ns: &NativeString) -> Result<OsString, FailureCode> {
 fn native_to_os_string(ns: &NativeString) -> Result<OsString, FailureCode> {
     use std::os::windows::ffi::OsStringExt;
 
-    let mut chunks = ns.as_bytes().chunks_exact(2);
+    let (chunks, remainder) = ns.as_bytes().as_chunks::<2>();
     let units = chunks
-        .by_ref()
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
         .collect::<Vec<_>>();
-    if !chunks.remainder().is_empty() || units.contains(&0) {
+    if !remainder.is_empty() || units.contains(&0) {
         return Err(FailureCode::ProtocolViolation);
     }
     Ok(OsString::from_wide(&units))

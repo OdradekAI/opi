@@ -109,7 +109,7 @@ pub fn iterm_escape(data: &ImageData) -> String {
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&data.bytes);
 
-    let mut parts = vec![format!("inline=1")];
+    let mut parts = vec!["inline=1".to_string()];
     if let Some(w) = data.width {
         parts.push(format!("width={w}"));
     }
