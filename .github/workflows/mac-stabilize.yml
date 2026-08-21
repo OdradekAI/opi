@@ -14,11 +14,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: opi-sandbox unit tests
-        run: cargo test -p opi-sandbox
-      - name: native_keyring unit tests
-        run: cargo test -p opi-coding-agent --lib native_keyring
-      - name: execution acceptance
+      - name: focused json_mode diagnosis
         run: |
-          cargo test -p opi-coding-agent --test execution_product
-          cargo test -p opi-coding-agent --test execution_protocol_host
+          cargo test -p opi-coding-agent --test json_mode --no-fail-fast -- --nocapture --test-threads=1
