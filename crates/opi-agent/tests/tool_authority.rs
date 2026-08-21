@@ -39,7 +39,9 @@ use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::test_support::{single_route_collection, text_response, tool_call_response};
 
-use common::{DenyingAuthorizer, RecordingTool, StaleGenerationAuthorizer};
+use common::{
+    DenyingAuthorizer, RecordingTool, StaleGenerationAuthorizer, StaleThenFreshAuthorizer,
+};
 
 struct CapturingAuthorizer {
     requests: Arc<Mutex<Vec<ToolAuthorizationRequest>>>,
@@ -462,5 +464,70 @@ async fn stale_evidence_health_generation_yields_zero_executions() {
         RecordingTool::count_of(&count),
         0,
         "a stale evidence-health generation must deny execution"
+    );
+}
+
+#[tokio::test]
+async fn stale_then_fresh_authorization_reauthorizes_once_and_executes() {
+    // The run's current health is G1. The authorizer's first Allow carries the
+    // stale INITIAL generation; its second echoes the request's current
+    // generation. The freshness gate must reauthorize exactly once, accept the
+    // fresh Allow, execute the tool exactly once, and complete the run — the
+    // recovery direction the fixed-stale fixture cannot distinguish from
+    // deny-on-first-stale.
+    let count = Arc::new(AtomicUsize::new(0));
+    let registry = Arc::new(
+        opi_agent::authority::ToolRegistry::from_tools(recording_registry(count.clone()))
+            .expect("distinct names"),
+    );
+    let collection = Arc::new(single_route_collection(Box::new(MockProvider::new(vec![
+        tool_call_response("c1", "mytool", "{}"),
+        text_response("done"),
+    ]))));
+    let authorizer = Arc::new(StaleThenFreshAuthorizer::default());
+    let context = AgentLoopContext {
+        collection,
+        registry,
+        authorizer: Some(authorizer.clone()),
+        evidence_health: EvidenceHealth::Healthy {
+            generation: EvidenceGeneration::INITIAL.next(),
+        },
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "go".to_owned(),
+                }],
+                timestamp_ms: opi_ai::time::now_ms(),
+            }))],
+            ModelSelection::new("mock", "mock-model"),
+            InferenceConfig::default(),
+        ),
+        system: None,
+        steering_queue: None,
+        follow_up_queue: None,
+        diagnostic_sink: None,
+        session_id: None,
+        evidence_sink: None,
+    };
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let result = agent_loop(
+        context,
+        AgentLoopConfig::default(),
+        &TestHooks,
+        Box::new(|_| {}),
+        cancel,
+    )
+    .await
+    .into_execution_result();
+    assert!(result.is_ok(), "a fresh second Allow must complete the run");
+    assert_eq!(
+        authorizer.calls(),
+        2,
+        "the stale first Allow must trigger exactly one reauthorization"
+    );
+    assert_eq!(
+        RecordingTool::count_of(&count),
+        1,
+        "the recovered fresh Allow must reach Tool::execute exactly once"
     );
 }

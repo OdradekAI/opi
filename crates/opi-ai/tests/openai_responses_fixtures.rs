@@ -710,7 +710,7 @@ async fn responses_reasoning_malformed_subset_stops_production_stream_with_non_r
     let results: Vec<_> = provider
         .stream_prepared(
             responses_tool_request(),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         )
         .collect()
         .await;
@@ -1208,7 +1208,8 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         session_id: None,
     };
 
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -1274,7 +1275,8 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
 
     let _ = stream
         .next()

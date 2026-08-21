@@ -308,6 +308,21 @@ fn base_assistant_has_sensible_defaults() {
     assert_eq!(msg.usage, Usage::default());
 }
 
+#[test]
+fn resolved_auth_helpers_pin_their_prepared_schemes() {
+    // `resolved_auth` prepares ApiKey (anthropic/azure/gemini wires) and
+    // `resolved_bearer_auth` prepares Bearer (openai family, vertex); the
+    // Bearer-only adapters reject the ApiKey helper before the wire.
+    assert!(matches!(
+        test_support::resolved_auth().scheme,
+        opi_ai::auth::AuthScheme::ApiKey
+    ));
+    assert!(matches!(
+        test_support::resolved_bearer_auth().scheme,
+        opi_ai::auth::AuthScheme::Bearer
+    ));
+}
+
 // ---------------------------------------------------------------------------
 // Provider trait compliance
 // ---------------------------------------------------------------------------

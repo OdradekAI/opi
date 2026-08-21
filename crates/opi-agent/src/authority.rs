@@ -250,7 +250,6 @@ pub struct ToolAuthorizationRequest {
 }
 
 /// The closed authorization decision returned by a [`ToolAuthorizer`].
-#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum AuthorizationDecision {
     /// Authorization granted against the effective User Policy at the carried

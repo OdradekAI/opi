@@ -506,6 +506,47 @@ async fn bounded_event_channel_capacity_respected() {
     );
 }
 
+#[tokio::test]
+async fn bounded_event_channel_saturates_and_drops_overflow() {
+    // The handler emits more events during one command than the channel can
+    // buffer, and nothing drains until `handle_command` returns, so the
+    // excess is dropped at the sink (server-side warn only; there is no
+    // consumer-visible overflow signal). Pins the actual drop semantics:
+    // exactly `capacity` events are delivered, the command response still
+    // lands, and the run completes.
+    let config = ProxyConfig {
+        event_channel_capacity: 2,
+        ..Default::default()
+    };
+    let handler = MockHandler::new();
+    for i in 0..5 {
+        handler.emit_event(ProxyEvent::Agent(json!({
+            "type": "ToolExecutionEnd",
+            "sequence": i,
+        })));
+    }
+    let input = jsonl_input(&[r#"{"type":"session_info"}"#]);
+
+    let output = run_proxy_with_config(&input, handler, config).await;
+    let messages = parse_jsonl(&output);
+
+    let agent_events: Vec<_> = messages
+        .iter()
+        .filter(|m| m["type"] == "ToolExecutionEnd")
+        .collect();
+    assert_eq!(
+        agent_events.len(),
+        2,
+        "only the buffered capacity is delivered; overflow is dropped: got {agent_events:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|m| m["type"] == "response" && m["success"] == true),
+        "the overflow drops must not fail the command: {messages:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // 7. Client disconnect (write error)
 // ---------------------------------------------------------------------------

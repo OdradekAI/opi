@@ -276,27 +276,22 @@ def check_counterparts() -> list[str]:
     return [path for pair in pairs for path in pair]
 
 
-def normalize_root_guidance(text: str, *, claude: bool) -> str:
-    if not claude:
-        return text
-    replacements = {
-        "# CLAUDE.md": "# AGENTS.md",
-        "Claude Code (claude.ai/code)": "Codex (Codex.ai/code)",
-        "`AGENTS.md` is the Codex-flavored sibling of this file":
-            "`CLAUDE.md` is the Claude Code-flavored sibling of this file",
-        "Co-Authored-By: Claude": "Co-Authored-By: Codex",
-    }
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-    return text
-
-
 def check_root_guidance_lockstep() -> None:
-    agents = normalize_root_guidance(read("AGENTS.md"), claude=False)
-    claude = normalize_root_guidance(read("CLAUDE.md"), claude=True)
+    agents = read("AGENTS.md")
+    claude = read("CLAUDE.md")
+    if claude.strip() == "AGENTS.md":
+        # Degraded clone: the filesystem materialized the CLAUDE.md symlink as
+        # a text file holding its target path. Guidance stays single-sourced;
+        # restore the symlink on such a checkout before committing.
+        print(
+            "WARN: CLAUDE.md is a materialized symlink placeholder, not a symlink",
+            file=sys.stderr,
+        )
+        return
     if re.sub(r"\s+", " ", agents).strip() != re.sub(r"\s+", " ", claude).strip():
         ERRORS.append(
-            "AGENTS.md and CLAUDE.md drift beyond their four intentional flavor differences"
+            "AGENTS.md and CLAUDE.md diverge; CLAUDE.md is a symlink to AGENTS.md,"
+            " so edit AGENTS.md and restore the link"
         )
 
 

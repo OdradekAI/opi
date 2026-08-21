@@ -569,7 +569,7 @@ impl Agent {
     /// call; `inference` is the initial per-request inference configuration.
     /// Both live in the durable [`NextTurnState`] and may be replaced atomically
     /// via [`Agent::replace_state`] between runs.
-    #[allow(clippy::too_many_arguments)] // Agent construction seam (Phase 17.4 adds the authorizer binding)
+    #[allow(clippy::too_many_arguments)] // Agent construction seam (carries the authorizer binding)
     pub fn new(
         collection: Arc<ProviderCollection>,
         registrations: Vec<crate::authority::RegisteredTool>,

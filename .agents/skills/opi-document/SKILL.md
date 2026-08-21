@@ -55,9 +55,9 @@ Update each English file and its `*.zh.md` counterpart together. Preserve
 identifiers, CLI flags, provider IDs, schema constants, file paths, and version
 numbers exactly. Translate explanations, not code vocabulary.
 
-`AGENTS.md` and `CLAUDE.md` change in lockstep except for their four intentional
-Codex/Claude flavor differences. A version bump changes documentation only
-after `opi-release` has changed the workspace version.
+`CLAUDE.md` is a symlink to `AGENTS.md`: edit `AGENTS.md` only and never
+`CLAUDE.md` directly. A version bump changes documentation only after
+`opi-release` has changed the workspace version.
 
 If `docs/opi-spec.md` changes, also update `docs/opi-spec.zh.md` and route the
 live `.opi-impl-state.json` hash through the guarded `opi-implement` plan/reinit

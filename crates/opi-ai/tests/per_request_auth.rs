@@ -21,13 +21,16 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::auth::{AuthProvenance, AuthResolver, AuthScheme, ResolvedAuth};
+use opi_ai::azure_openai::AzureOpenAIProvider;
 use opi_ai::credential::BoxAuthFuture;
+use opi_ai::gemini::GeminiProvider;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
 use opi_ai::openai_responses::OpenAiResponsesProvider;
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+use opi_ai::vertex::VertexProvider;
 use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
@@ -175,7 +178,7 @@ async fn openai_chat_stream_prepared_applies_resolved_secret_to_authorization_he
         Arc::new(HttpClient::new()),
     );
     let resolved = ResolvedAuth {
-        scheme: AuthScheme::ApiKey,
+        scheme: AuthScheme::Bearer,
         secret: SecretString::from("resolved-chat-key"),
         base_url: None,
         account_id: None,
@@ -205,7 +208,7 @@ async fn openai_responses_stream_prepared_applies_resolved_secret_to_authorizati
         Arc::new(HttpClient::new()),
     );
     let resolved = ResolvedAuth {
-        scheme: AuthScheme::ApiKey,
+        scheme: AuthScheme::Bearer,
         secret: SecretString::from("resolved-responses-key"),
         base_url: None,
         account_id: None,
@@ -346,4 +349,107 @@ async fn openai_codex_stream_prepared_uses_supplied_auth_at_the_wire() {
     let mut stream = provider.stream_prepared(sample_request("openai-codex:gpt-5"), resolved);
     drain(&mut stream).await;
     server.verify().await;
+}
+
+// --- Prepared-scheme mismatches are rejected before the wire ---
+
+/// Assert the first stream item is the typed scheme-rejection error and that no
+/// HTTP request was dispatched (no mock is mounted, so any request would be
+/// recorded by the server as unmatched).
+async fn assert_scheme_rejected_before_wire(
+    mut stream: opi_ai::provider::EventStream,
+    server: &MockServer,
+) {
+    let error = stream
+        .next()
+        .await
+        .expect("scheme mismatch should produce an event")
+        .expect_err("scheme mismatch should produce ProviderError");
+    assert!(
+        matches!(error, ProviderError::Config(_)),
+        "expected Config error, got {error:?}"
+    );
+    assert!(
+        server.received_requests().await.unwrap().is_empty(),
+        "scheme mismatch must be rejected before the wire"
+    );
+}
+
+#[tokio::test]
+async fn openai_chat_rejects_api_key_scheme_before_the_wire() {
+    let server = MockServer::start().await;
+    let provider = OpenAiChatProvider::with_auth(
+        Some(server.uri()),
+        Default::default(),
+        "openai".into(),
+        vec![],
+        Arc::new(HttpClient::new()),
+    );
+    let resolved = ResolvedAuth {
+        scheme: AuthScheme::ApiKey,
+        secret: SecretString::from("resolved-chat-key"),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    };
+    assert_scheme_rejected_before_wire(
+        provider.stream_prepared(sample_request("openai:gpt-4o"), resolved),
+        &server,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn gemini_rejects_bearer_scheme_before_the_wire() {
+    let server = MockServer::start().await;
+    let provider = GeminiProvider::new(Some(server.uri()));
+    let resolved = ResolvedAuth {
+        scheme: AuthScheme::Bearer,
+        secret: SecretString::from("resolved-gemini-key"),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    };
+    assert_scheme_rejected_before_wire(
+        provider.stream_prepared(sample_request("gemini:gemini-2.5-flash"), resolved),
+        &server,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn azure_rejects_bearer_scheme_before_the_wire() {
+    let server = MockServer::start().await;
+    let provider = AzureOpenAIProvider::new(Some(server.uri()), "my-gpt4o".into(), None)
+        .expect("wiremock endpoint is a valid azure endpoint");
+    let resolved = ResolvedAuth {
+        scheme: AuthScheme::Bearer,
+        secret: SecretString::from("resolved-azure-key"),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    };
+    assert_scheme_rejected_before_wire(
+        provider.stream_prepared(sample_request("azure:my-gpt4o"), resolved),
+        &server,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn vertex_rejects_api_key_scheme_before_the_wire() {
+    let server = MockServer::start().await;
+    let provider = VertexProvider::new("proj".into(), "loc".into(), Some(server.uri()));
+    let resolved = ResolvedAuth {
+        scheme: AuthScheme::ApiKey,
+        secret: SecretString::from("resolved-vertex-token"),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    };
+    assert_scheme_rejected_before_wire(
+        provider.stream_prepared(sample_request("vertex:gemini-2.5-flash"), resolved),
+        &server,
+    )
+    .await;
 }

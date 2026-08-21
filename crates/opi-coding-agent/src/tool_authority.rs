@@ -10,10 +10,11 @@
 //!
 //! Boundary: the [`ProductToolAuthorizer`] decision derives ONLY from the
 //! immutable policy + the capability + the current evidence-health snapshot
-//! (AUT-003/004). Model content (`arguments`) is never consulted for the
-//! permission decision. Full arg-driven adapter binding for `command.execute`
-//! stays in the routed bash backend; the authorizer adds the fail-closed
-//! immutable-policy gate in front of it.
+//! (AUT-003/004). For `command.execute`, the validated arguments select the
+//! adapter binding inside this trusted boundary; no permission fact derives
+//! from argument content. The routed bash backend still owns arg-driven
+//! adapter execution behind the authorizer's fail-closed immutable-policy
+//! gate.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -28,7 +29,6 @@ use opi_agent::authority::{
 use opi_agent::evidence::{
     PermissionReference, PermissionScope, PolicyReference, ScopedGrantReference,
 };
-use opi_agent::extension::CollectedExtensionTool;
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
@@ -55,7 +55,8 @@ pub static COMMAND_EXECUTE_CAPABILITY: std::sync::LazyLock<CapabilityIdentity> =
         CapabilityIdentity::new("opi.command.execute").expect("valid product capability")
     });
 
-/// The fixed built-in capability map (spec lines 419-423). Returns `None` for
+/// The fixed built-in capability map for Reference Product tools (the
+/// trusted-tool-registration capability table). Returns `None` for
 /// names that are not built-in Reference Product tools.
 pub fn builtin_capability(name: &str) -> Option<CapabilityIdentity> {
     match name {
@@ -88,42 +89,12 @@ pub fn register_builtin_tools(tools: Vec<Box<dyn Tool>>) -> Vec<RegisteredTool> 
         .collect()
 }
 
-/// Convert extension-owned tool contributions into immutable registrations
-/// without inferring trust from their provider-visible names. Reference
-/// Product assembly may then apply its exact extension-capability permission
-/// filter; there is no implicit permission, so the default product projection
-/// excludes these registrations.
-pub fn register_extension_tools(tools: Vec<CollectedExtensionTool>) -> Vec<RegisteredTool> {
-    tools
-        .into_iter()
-        .map(|collected| {
-            let (extension_id, tool) = collected.into_parts();
-            let definition = tool.definition();
-            let name = definition.name.clone();
-            RegisteredTool::new(
-                RegistrationId::new(format!("extension:{extension_id}:{name}")),
-                name.clone(),
-                ToolOrigin::Extension {
-                    extension_id: extension_id.clone(),
-                },
-                CapabilityIdentity::new(format!("opi.extension.{extension_id}.{name}"))
-                    .expect("trusted extension identity is non-empty"),
-                definition,
-                Arc::from(tool),
-            )
-        })
-        .collect()
-}
-
 /// Assemble the Reference Product's trusted registrations without laundering
 /// extension names through the built-in capability table. The product defines
-/// no permission language for extension capabilities, so every extension
-/// tool is intentionally excluded without materializing a registration that
-/// the product would immediately discard.
-pub fn register_product_tools(
-    builtin_tools: Vec<Box<dyn Tool>>,
-    _extension_tools: Vec<CollectedExtensionTool>,
-) -> Vec<RegisteredTool> {
+/// no permission language for extension capabilities, so extension tool
+/// contributions are excluded before registration and never materialize a
+/// registration that the product would immediately discard.
+pub fn register_product_tools(builtin_tools: Vec<Box<dyn Tool>>) -> Vec<RegisteredTool> {
     register_builtin_tools(builtin_tools)
 }
 
@@ -143,13 +114,13 @@ pub fn digest_of(input: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-/// Immutable, digest-addressed effective user policy for the run (spec lines
-/// 433-441). Assembled from facts the product already resolves: run mode,
-/// active-tool selection, mutating opt-in, `command.execute` adapter permission
-/// rules, whether complete evidence is required, project trust, and package
-/// artifact/trust/activation state. Live session-scoped grants
-/// ([`PermissionManager`]) are separately versioned and do NOT mutate this
-/// digest (spec lines 437-439).
+/// Immutable, digest-addressed effective user policy for the run (the
+/// effective-product-policy contract). Assembled from facts the product
+/// already resolves: run mode, active-tool selection, mutating opt-in,
+/// `command.execute` adapter permission rules, whether complete evidence is
+/// required, project trust, and package artifact/trust/activation state. Live
+/// session-scoped grants ([`PermissionManager`]) are separately versioned and
+/// do NOT mutate this digest.
 #[derive(Debug, Clone)]
 pub struct EffectiveUserPolicy {
     mutating_allowed: bool,
@@ -466,8 +437,11 @@ impl ToolAuthorizer for ProductToolAuthorizer {
                 });
             }
             // AUT-003/004: the decision derives only from the immutable policy +
-            // the capability + the current health snapshot. The validated
-            // `request.arguments` are intentionally NOT consulted for permission.
+            // the capability + the current health snapshot. The `command.execute`
+            // arm below passes the validated `request.arguments` to the trusted
+            // command context so the adapter binding matches the arguments the
+            // tool will run with; no permission fact derives from argument
+            // content.
             let permission = if request.capability == *WORKSPACE_READ_CAPABILITY {
                 Some((
                     PermissionReference::new("opi.workspace.read")

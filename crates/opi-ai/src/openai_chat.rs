@@ -12,7 +12,7 @@ use secrecy::ExposeSecret;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{AuthInvalidPolicy, ResolvedAuth};
+use crate::auth::{AuthInvalidPolicy, AuthScheme, ResolvedAuth};
 use crate::http::HttpClient;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
@@ -1142,15 +1142,23 @@ impl OpenAiChatProvider {
         timeout: Option<std::time::Duration>,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
+        let secret = resolved.secret.expose_secret();
+        let bearer = match resolved.scheme {
+            AuthScheme::Bearer => format!("Bearer {secret}"),
+            AuthScheme::ApiKey | AuthScheme::AwsSigV4(_) => {
+                return Err(ProviderError::Config(
+                    ProviderErrorSummary::attested_static(
+                        "OpenAI Chat accepts only Bearer authentication",
+                    ),
+                ));
+            }
+        };
         let mut req = http_client
             .post(crate::endpoint::join_endpoint(
                 &base_url,
                 &chat_completions_path,
             ))
-            .header(
-                "authorization",
-                format!("Bearer {}", resolved.secret.expose_secret()),
-            )
+            .header("authorization", bearer)
             .header("content-type", "application/json");
         // Apply per-request timeout.
         if let Some(d) = timeout {

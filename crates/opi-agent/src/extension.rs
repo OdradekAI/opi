@@ -243,8 +243,8 @@ pub trait Extension: Send + Sync {
 
     /// Prepare the complete next-turn state before it is atomically applied.
     ///
-    /// Phase 17.2: preparation returns a complete replacement state (not a
-    /// message append). The base hook is authoritative; an extension returning
+    /// Preparation returns a complete replacement state (not a message
+    /// append). The base hook is authoritative; an extension returning
     /// `Ok(Some(replacement))` replaces the current candidate (last-wins, in
     /// registration order); `Ok(None)` contributes nothing; `Err(_)` propagates
     /// and leaves the prior state intact.
@@ -673,8 +673,8 @@ impl AgentHooks for CompositeHooks {
         let base = self.base.clone();
         let extensions = self.extensions.clone();
         Box::pin(async move {
-            // Base hook is authoritative. Phase 17.2 preparation is complete
-            // state replacement (not a message append), so each extension that
+            // Base hook is authoritative. Preparation is complete state
+            // replacement (not a message append), so each extension that
             // returns Some replaces the current candidate (last-wins, in
             // registration order); an error propagates and preserves prior state.
             let mut candidate = base.prepare_next_turn(ctx.clone()).await?;

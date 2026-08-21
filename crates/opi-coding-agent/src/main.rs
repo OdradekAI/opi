@@ -1202,7 +1202,6 @@ async fn run_interactive_core<Launch, LaunchFuture>(
         }
     };
     let provider_diagnostics = std::mem::take(&mut bundle.diagnostics);
-    let provider = bundle.provider;
 
     let user_system_prompt = cli
         .system
@@ -1223,6 +1222,21 @@ async fn run_interactive_core<Launch, LaunchFuture>(
         .await;
     merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
 
+    // A mistyped startup model must exit with a typed diagnostic, not panic
+    // inside harness construction (`build()` resolves the startup route with
+    // an expect). Validated against the same dispatchable set the harness
+    // will assemble: active provider, extra routes, extension overrides.
+    if let Err(message) = validate_startup_model(
+        &config.defaults.model,
+        &*bundle.provider,
+        &bundle.extra_routes,
+        &runtime_startup.extension_registry.collect_model_overrides(),
+    ) {
+        eprintln!("opi: {message}");
+        std::process::exit(2);
+    }
+
+    let provider = bundle.provider;
     let tool_config =
         ToolRuntimeConfig::resolve(RunMode::Interactive, true, tool_selection.clone())
             .expect("interactive tool config should be valid");
@@ -1295,6 +1309,91 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     if let Err(e) = launch_tui(harness, model_display, theme_name, keybindings).await {
         eprintln!("opi: TUI error: {e}");
         std::process::exit(1);
+    }
+}
+
+/// Model ids one dispatchable provider serves once extension model overrides
+/// are applied: the provider's advertised catalog plus overrides targeting it
+/// (an override replaces a same-id model or adds a new one), mirroring how
+/// harness assembly materializes overrides onto the dispatch collection.
+fn effective_startup_models(
+    provider: &dyn opi_ai::provider::Provider,
+    extension_overrides: &[(String, opi_ai::ModelInfo)],
+) -> Vec<String> {
+    let mut models: Vec<String> = provider
+        .models()
+        .iter()
+        .map(|model| model.id.clone())
+        .collect();
+    for (provider_id, model) in extension_overrides {
+        if provider_id == provider.id() && !models.contains(&model.id) {
+            models.push(model.id.clone());
+        }
+    }
+    models
+}
+
+/// Validate the configured startup model against the dispatchable routes
+/// assembled at startup (active provider plus extra dispatch routes), so a
+/// mistyped `--model` or config default exits with a typed diagnostic here
+/// instead of panicking inside harness construction. A canonical
+/// `provider:model` spec must name a dispatchable provider and one of its
+/// effective models; a bare model must match exactly one dispatchable
+/// provider.
+fn validate_startup_model(
+    model: &str,
+    active_provider: &dyn opi_ai::provider::Provider,
+    extra_routes: &[opi_coding_agent::provider_factory::ProviderAuthPair],
+    extension_overrides: &[(String, opi_ai::ModelInfo)],
+) -> Result<(), String> {
+    let mut dispatchable: Vec<(&str, Vec<String>)> = vec![(
+        active_provider.id(),
+        effective_startup_models(active_provider, extension_overrides),
+    )];
+    for (provider, _) in extra_routes {
+        dispatchable.push((
+            provider.id(),
+            effective_startup_models(&**provider, extension_overrides),
+        ));
+    }
+    let provider_ids: Vec<&str> = dispatchable.iter().map(|(id, _)| *id).collect();
+
+    if model.contains(':') {
+        let (provider_id, model_id) =
+            match opi_coding_agent::provider_factory::parse_model_spec(model) {
+                Ok(parts) => parts,
+                Err(error) => return Err(format!("invalid startup model: {error}")),
+            };
+        let Some((_, models)) = dispatchable.iter().find(|(id, _)| *id == provider_id) else {
+            return Err(format!(
+                "unknown provider '{provider_id}' in startup model '{model}'; dispatchable providers: {}",
+                provider_ids.join(", ")
+            ));
+        };
+        if !models.iter().any(|candidate| candidate == model_id) {
+            return Err(format!(
+                "unknown model '{model_id}' for provider '{provider_id}' in startup model '{model}'"
+            ));
+        }
+        return Ok(());
+    }
+
+    let model_id = model.trim();
+    let matches: Vec<&str> = dispatchable
+        .iter()
+        .filter(|(_, models)| models.iter().any(|candidate| candidate == model_id))
+        .map(|(id, _)| *id)
+        .collect();
+    match matches.as_slice() {
+        [_] => Ok(()),
+        [] => Err(format!(
+            "startup model '{model}' matches no model of a dispatchable provider; dispatchable providers: {}",
+            provider_ids.join(", ")
+        )),
+        many => Err(format!(
+            "startup model '{model}' is ambiguous across dispatchable providers: {}",
+            many.join(", ")
+        )),
     }
 }
 
@@ -3264,5 +3363,155 @@ mod tests {
             "real opi subprocesses must be proven pre-provider early exits:\n{}",
             failures.join("\n")
         );
+    }
+}
+
+#[cfg(test)]
+mod startup_model_validation_tests {
+    //! Typed startup-model validation: a mistyped `--model`/config default
+    //! must produce a diagnostic naming the provider or model, never reach
+    //! harness construction (which resolves the startup route with an expect).
+
+    use super::{effective_startup_models, validate_startup_model};
+    use opi_ai::ModelCapabilities;
+    use opi_ai::ModelInfo;
+    use opi_ai::model_info::WireApi;
+    use opi_ai::test_support::MockProvider;
+
+    fn model(id: &str) -> ModelInfo {
+        ModelInfo::new(
+            id,
+            id,
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(8_192, 1_024),
+        )
+    }
+
+    fn provider(id: &str, models: &[&str]) -> Box<dyn opi_ai::provider::Provider> {
+        Box::new(MockProvider::new_with_models(
+            id,
+            models.iter().map(|m| model(m)).collect(),
+            Vec::new(),
+        ))
+    }
+
+    fn resolver() -> std::sync::Arc<dyn opi_ai::auth::AuthResolver> {
+        std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+            opi_ai::auth::AuthScheme::ApiKey,
+            secrecy::SecretString::from("startup-validation-test"),
+        ))
+    }
+
+    fn active(models: &[&str]) -> Box<dyn opi_ai::provider::Provider> {
+        provider("alpha", models)
+    }
+
+    #[test]
+    fn canonical_spec_on_active_provider_passes() {
+        assert!(
+            validate_startup_model(
+                "alpha:alpha-model",
+                &*active(&["alpha-model", "other"]),
+                &[],
+                &[]
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn canonical_spec_on_extra_route_passes() {
+        let extra = vec![(provider("beta", &["beta-model"]), resolver())];
+        assert!(
+            validate_startup_model("beta:beta-model", &*active(&["alpha-model"]), &extra, &[])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn mistyped_model_id_is_a_typed_unknown_model_error() {
+        let error = validate_startup_model(
+            "alpha:not-a-real-model",
+            &*active(&["alpha-model"]),
+            &[],
+            &[],
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("unknown model 'not-a-real-model' for provider 'alpha'"),
+            "got: {error}"
+        );
+    }
+
+    #[test]
+    fn unknown_provider_error_lists_dispatchable_providers() {
+        let extra = vec![(provider("beta", &["beta-model"]), resolver())];
+        let error =
+            validate_startup_model("gamma:gamma-model", &*active(&["alpha-model"]), &extra, &[])
+                .unwrap_err();
+        assert!(
+            error.contains("unknown provider 'gamma'") && error.contains("alpha, beta"),
+            "got: {error}"
+        );
+    }
+
+    #[test]
+    fn malformed_spec_is_a_typed_parse_error() {
+        let error =
+            validate_startup_model("alpha:", &*active(&["alpha-model"]), &[], &[]).unwrap_err();
+        assert!(error.contains("invalid startup model"), "got: {error}");
+    }
+
+    #[test]
+    fn unique_bare_model_passes_and_ambiguous_bare_model_fails() {
+        let extra = vec![(provider("beta", &["shared-model"]), resolver())];
+        // Unique: only the active provider serves it.
+        assert!(
+            validate_startup_model("alpha-model", &*active(&["alpha-model"]), &[], &[]).is_ok()
+        );
+        // Ambiguous across two dispatchable providers.
+        let error =
+            validate_startup_model("shared-model", &*active(&["shared-model"]), &extra, &[])
+                .unwrap_err();
+        assert!(
+            error.contains("ambiguous") && error.contains("alpha") && error.contains("beta"),
+            "got: {error}"
+        );
+        // Missing everywhere.
+        let error =
+            validate_startup_model("no-such-model", &*active(&["alpha-model"]), &extra, &[])
+                .unwrap_err();
+        assert!(
+            error.contains("matches no model") && error.contains("alpha, beta"),
+            "got: {error}"
+        );
+    }
+
+    #[test]
+    fn extension_overrides_extend_the_effective_catalog() {
+        let overrides = vec![("alpha".to_owned(), model("extension-model"))];
+        assert!(
+            validate_startup_model(
+                "alpha:extension-model",
+                &*active(&["alpha-model"]),
+                &[],
+                &overrides
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_startup_model(
+                "alpha:extension-model",
+                &*active(&["alpha-model"]),
+                &[],
+                &[]
+            )
+            .is_err()
+        );
+        // The effective-catalog helper applies overrides only to the targeted
+        // provider.
+        let models = effective_startup_models(&*active(&["alpha-model"]), &overrides);
+        assert!(models.contains(&"extension-model".to_owned()));
+        assert!(models.contains(&"alpha-model".to_owned()));
     }
 }

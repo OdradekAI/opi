@@ -150,6 +150,57 @@ impl ToolAuthorizer for StaleGenerationAuthorizer {
     }
 }
 
+/// Test authorizer proving the reauthorize-once RECOVERY direction: the first
+/// `Allow` carries the stale [`EvidenceGeneration::INITIAL`] generation and the
+/// second echoes the request's current health, so the freshness gate
+/// reauthorizes exactly once and then executes. The run's health must be past
+/// `INITIAL` for the first stamp to count as stale. Counts authorize calls.
+pub struct StaleThenFreshAuthorizer {
+    calls: AtomicUsize,
+}
+
+impl Default for StaleThenFreshAuthorizer {
+    fn default() -> Self {
+        Self {
+            calls: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl StaleThenFreshAuthorizer {
+    /// How many authorize calls were served.
+    pub fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl ToolAuthorizer for StaleThenFreshAuthorizer {
+    fn authorize(
+        &self,
+        request: ToolAuthorizationRequest,
+        _cancel: CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = Result<AuthorizationDecision, AuthorizationError>> + Send>>
+    {
+        let call_index = self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            let evidence_health_generation = if call_index == 0 {
+                EvidenceGeneration::INITIAL
+            } else {
+                request.evidence_health.generation()
+            };
+            Ok(AuthorizationDecision::Allow {
+                policy_ref: PolicyReference::new("test-policy").unwrap(),
+                permission_ref: PermissionReference::new("test-permission").unwrap(),
+                permission_scope: PermissionScope::new("test-scope").unwrap(),
+                scoped_grant_ref: None,
+                registration_id: request.registration_id.clone(),
+                capability: request.capability.clone(),
+                evidence_health_generation,
+            })
+        })
+    }
+}
+
 // ---- Recording tool ------------------------------------------------------
 
 /// Tool whose execution counts how many times it runs, so fail-closed tests

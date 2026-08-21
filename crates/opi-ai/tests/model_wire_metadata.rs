@@ -192,7 +192,8 @@ async fn run_production_request(
     request: Request,
 ) -> Result<(), ProviderError> {
     validate_request_capabilities(provider, &request)?;
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
     while let Some(event) = stream.next().await {
         event?;
     }

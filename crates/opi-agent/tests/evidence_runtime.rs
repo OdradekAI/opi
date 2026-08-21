@@ -624,7 +624,19 @@ fn make_agent_with_sink(
         Box::new(TestHooks),
     )
     .expect("agent builds");
-    agent.set_evidence_sink(Some(sink));
+    agent.set_evidence_sink(Some(sink.clone()));
+    // The runtime-input binding and capture setup are assembly-owned facts:
+    // trusted wiring sets the sink up before the first provider call, so the
+    // fixture mirrors that contract instead of emitting before setup.
+    let digest_byte = "agent-runtime"
+        .as_bytes()
+        .iter()
+        .fold(0_u8, |acc, b| acc ^ b);
+    let binding = RuntimeInputBinding::direct(
+        ContentDigest::from_hex(format!("{digest_byte:02x}").repeat(32)).expect("valid digest"),
+        AssemblyIdentity::new("opi.test.fixture").expect("valid assembly identity"),
+    );
+    EvidenceSink::setup(&*sink, &binding).expect("the in-memory sink accepts a direct-run binding");
     agent
 }
 
@@ -1116,6 +1128,25 @@ async fn emission_failure_advances_health_copied_into_authorization() {
         common::RecordingTool::count_of(&count),
         0,
         "the advanced health generation (1) reaches authorization and mismatches the stale Allow (0)"
+    );
+    // The run is deliberately fail-open for provider dispatch: the trusted
+    // authorizer at tool launch, not the provider request, is the fail-closed
+    // boundary after evidence health becomes incomplete. Both scripted
+    // provider attempts therefore proceeded and completed — the tool-call turn
+    // and the recovered text turn are both in the run's visible conversation —
+    // even though health advanced to incomplete before the first dispatch.
+    let messages = run.messages();
+    assert!(
+        messages.iter().any(|m| matches!(m,
+            AgentMessage::Llm(Message::Assistant(a))
+                if a.content.iter().any(|c| matches!(c, AssistantContent::ToolCall { .. })))),
+        "the first provider attempt proceeded after the failed pre-dispatch emission"
+    );
+    assert!(
+        messages.iter().any(|m| matches!(m,
+            AgentMessage::Llm(Message::Assistant(a))
+                if a.content.iter().any(|c| matches!(c, AssistantContent::Text { text } if text == "done")))),
+        "the second provider attempt also proceeded with health already incomplete"
     );
     let generation = run.evidence_health().generation();
     assert!(run.begin_compaction(CompactionTrigger::Threshold).is_err());
@@ -2285,4 +2316,115 @@ async fn sequential_uncertain_or_cancelled_tool_stops_every_later_side_effect() 
         assert_eq!(tool_results[1].tool_name, "second");
         assert!(tool_results[1].is_error);
     }
+}
+
+// ===========================================================================
+// In-band stream Error terminal: typed non-retryable failure, partial message
+// retained, zero retries (never converted into a normally completed turn)
+// ===========================================================================
+
+#[tokio::test]
+async fn in_band_stream_error_terminal_fails_the_run_without_retry() {
+    let sink = Arc::new(InMemoryEvidenceSink::new());
+    // Partial assistant payload delivered before the in-band error terminal.
+    let mut partial = AssistantMessage {
+        content: vec![],
+        api: opi_ai::ApiKind::OpenAi,
+        provider: "mock".to_owned(),
+        model: "mock-model".to_owned(),
+        response_model: None,
+        response_id: None,
+        usage: Usage::default(),
+        stop_reason: StopReason::Error,
+        error_message: Some("overloaded".to_owned()),
+        timestamp_ms: 0,
+    };
+    partial.content.push(AssistantContent::Text {
+        text: "partial before failure".to_owned(),
+    });
+    let start_partial = AssistantMessage {
+        content: vec![],
+        ..partial.clone()
+    };
+    let attempt = vec![
+        AssistantStreamEvent::Start {
+            partial: start_partial,
+        },
+        AssistantStreamEvent::TextDelta {
+            content_index: 0,
+            delta: "partial before failure".to_owned(),
+            partial: partial.clone(),
+        },
+        AssistantStreamEvent::Error {
+            reason: StopReason::Error,
+            message: partial,
+        },
+    ];
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Events(attempt),
+            // A second scripted response proves the failure is not retried: it
+            // must never be consumed.
+            MockResponse::Events(text_response("recovered")),
+        ],
+    );
+    let calls = provider.call_log_handle();
+    let collection = Arc::new(single_route_collection(Box::new(provider)));
+    let mut agent = Agent::new(
+        collection,
+        Vec::new(),
+        None,
+        "mock:mock-model".to_owned(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig {
+            max_turns: 5,
+            // Retry is deliberately enabled: an in-band error terminal is a
+            // non-retryable provider failure even under a retry policy.
+            retry: Some(fast_retry()),
+        },
+        Box::new(TestHooks),
+    )
+    .expect("agent builds");
+    agent.set_evidence_sink(Some(sink));
+    let run = agent.prompt("go").await;
+
+    // The provider's complete terminal message stays visible in the run.
+    let assistants: Vec<_> = run
+        .messages()
+        .iter()
+        .filter_map(|message| match message {
+            AgentMessage::Llm(Message::Assistant(assistant)) => Some(assistant),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        assistants.len(),
+        1,
+        "the partial assistant message is retained by the failed run"
+    );
+    assert_eq!(assistants[0].error_message.as_deref(), Some("overloaded"));
+    assert!(matches!(
+        assistants[0].content.first(),
+        Some(AssistantContent::Text { text }) if text == "partial before failure"
+    ));
+
+    let error = run.into_execution_result().unwrap_err();
+    assert!(
+        matches!(&error, AgentError::Provider(e) if matches!(
+            e.provider_error(),
+            ProviderError::StreamError(_)
+        )),
+        "the in-band error terminal fails the run with a typed stream error, got {error:?}"
+    );
+    assert!(
+        matches!(&error, AgentError::Provider(e) if !e.provider_error().is_retryable()),
+        "the typed stream error is non-retryable"
+    );
+    assert_eq!(
+        calls.lock().unwrap().len(),
+        1,
+        "the in-band error terminal is never retried (second response unconsumed)"
+    );
 }

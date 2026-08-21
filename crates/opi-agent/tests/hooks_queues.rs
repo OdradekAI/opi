@@ -1406,9 +1406,9 @@ async fn phase17_stop_observes_complete_next_turn_state() {
         .lock()
         .unwrap()
         .expect("should_stop must run after a successful prepare");
-    assert!(
-        len >= 3,
-        "should_stop observed the prepared context (user + assistant + prepared): got {len}"
+    assert_eq!(
+        len, 3,
+        "should_stop observed the complete prepared context: user prompt + assistant reply + prepared marker"
     );
 }
 
@@ -1461,6 +1461,15 @@ async fn phase17_failed_prepare_preserves_state_and_skips_later_boundaries() {
             stop_calls: stop_calls.clone(),
         }),
     );
+    // Non-default baseline so a failure-path bug resetting inference or model
+    // selection to defaults cannot pass unnoticed.
+    let mut baseline = agent.state_snapshot();
+    baseline
+        .context
+        .push(AgentMessage::Llm(Message::Assistant(base_assistant())));
+    baseline.inference.max_tokens = Some(1111);
+    baseline.inference.temperature = Some(0.25);
+    agent.replace_state(baseline.clone()).unwrap();
     let result = agent.prompt("test").await;
 
     assert!(
@@ -1473,13 +1482,9 @@ async fn phase17_failed_prepare_preserves_state_and_skips_later_boundaries() {
         0,
         "should_stop must not run after a failed prepare"
     );
-    // Prior state preserved: only the user message remains (the turn's
-    // assistant message is discarded because the candidate never applied).
-    assert_eq!(
-        agent.messages_snapshot().len(),
-        1,
-        "prior state preserved: only the user message remains"
-    );
+    // Prior state preserved field-by-field (the turn's assistant message is
+    // discarded because the candidate never applied).
+    assert_prior_state_plus_prompt(&agent.state_snapshot(), &baseline, "test");
     // No steering/follow-up polling: exactly one provider call, no next turn.
     assert_eq!(
         received.lock().unwrap().len(),
@@ -1545,6 +1550,15 @@ async fn phase17_invalid_prepare_candidate_preserves_state_with_typed_error() {
             stop_calls: stop_calls.clone(),
         }),
     );
+    // Non-default baseline so a failure-path bug resetting inference or model
+    // selection to defaults cannot pass unnoticed.
+    let mut baseline = agent.state_snapshot();
+    baseline
+        .context
+        .push(AgentMessage::Llm(Message::Assistant(base_assistant())));
+    baseline.inference.max_tokens = Some(1111);
+    baseline.inference.temperature = Some(0.25);
+    agent.replace_state(baseline.clone()).unwrap();
     let result = agent.prompt("test").await;
 
     assert!(
@@ -1561,11 +1575,7 @@ async fn phase17_invalid_prepare_candidate_preserves_state_with_typed_error() {
         0,
         "the stop gate must not run after an invalid candidate"
     );
-    assert_eq!(
-        agent.messages_snapshot().len(),
-        1,
-        "prior state preserved: only the user message remains"
-    );
+    assert_prior_state_plus_prompt(&agent.state_snapshot(), &baseline, "test");
     assert_eq!(
         received.lock().unwrap().len(),
         1,

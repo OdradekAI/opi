@@ -264,7 +264,8 @@ async fn openai_chat_session_id_becomes_prompt_cache_key() {
     let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
     let request = make_openai_chat_request(cancel, Some("sess-abc123".into()));
 
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
     while let Some(item) = stream.next().await {
         match item {
             Ok(_) => {}
@@ -298,7 +299,8 @@ async fn openai_chat_session_id_clamps_to_64_chars() {
     let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
     let request = make_openai_chat_request(cancel, Some(session_id));
 
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
     while let Some(item) = stream.next().await {
         match item {
             Ok(_) => {}
@@ -326,7 +328,8 @@ async fn openai_chat_no_session_id_no_cache_key_header() {
     let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
     let request = make_openai_chat_request(cancel, None);
 
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
     while let Some(item) = stream.next().await {
         match item {
             Ok(_) => {}
@@ -360,7 +363,7 @@ async fn session_affinity_wire_mappings() {
     let direct = opi_ai::openai_chat::OpenAiChatProvider::new(Some(chat_server.uri()));
     drain(direct.stream_prepared(
         make_openai_chat_request(CancellationToken::new(), Some("session-direct".into())),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
     let compatible = opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
@@ -375,7 +378,7 @@ async fn session_affinity_wire_mappings() {
     );
     drain(compatible.stream_prepared(
         make_openai_chat_request(CancellationToken::new(), Some("session-compatible".into())),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
     let compatible_default = opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
@@ -387,13 +390,13 @@ async fn session_affinity_wire_mappings() {
     );
     drain(compatible_default.stream_prepared(
         make_openai_chat_request(CancellationToken::new(), Some("session-default".into())),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
     let mut disabled =
         make_openai_chat_request(CancellationToken::new(), Some("session-disabled".into()));
     disabled.cache_retention = CacheRetention::Disabled;
-    drain(compatible.stream_prepared(disabled, opi_ai::test_support::resolved_auth())).await;
+    drain(compatible.stream_prepared(disabled, opi_ai::test_support::resolved_bearer_auth())).await;
 
     let chat_requests = chat_server.received_requests().await.unwrap();
     assert_eq!(chat_requests.len(), 4);
@@ -424,7 +427,7 @@ async fn session_affinity_wire_mappings() {
         opi_ai::openai_responses::OpenAiResponsesProvider::new(Some(responses_server.uri()));
     drain(standard.stream_prepared(
         make_openai_responses_request("openai-responses:model", "session-standard"),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
     let direct_with_session_header =
@@ -437,12 +440,12 @@ async fn session_affinity_wire_mappings() {
         );
     drain(direct_with_session_header.stream_prepared(
         make_openai_responses_request("openai-responses:model", "session-direct-header"),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
     let mut disabled = make_openai_responses_request("openai-responses:model", "session-disabled");
     disabled.cache_retention = CacheRetention::Disabled;
-    drain(standard.stream_prepared(disabled, opi_ai::test_support::resolved_auth())).await;
+    drain(standard.stream_prepared(disabled, opi_ai::test_support::resolved_bearer_auth())).await;
     let custom_model = ModelInfo::new(
         "model",
         "Model",
@@ -458,7 +461,7 @@ async fn session_affinity_wire_mappings() {
     );
     drain(custom_default.stream_prepared(
         make_openai_responses_request("custom-responses:model", "session-custom-default"),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
     let custom_opt_in_model = custom_model
@@ -478,7 +481,7 @@ async fn session_affinity_wire_mappings() {
     );
     drain(custom_opt_in.stream_prepared(
         make_openai_responses_request("custom-responses:model", "session-custom-opt-in"),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
 
@@ -551,7 +554,7 @@ async fn session_affinity_wire_mappings() {
     let anthropic = opi_ai::anthropic::AnthropicProvider::new(Some(anthropic_server.uri()));
     let mut request = make_anthropic_request(CancellationToken::new(), None);
     request.session_id = Some("session-anthropic".into());
-    drain(anthropic.stream_prepared(request, opi_ai::test_support::resolved_auth())).await;
+    drain(anthropic.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth())).await;
     let request = anthropic_server
         .received_requests()
         .await

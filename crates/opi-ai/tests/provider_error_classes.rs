@@ -61,10 +61,17 @@ async fn mount_500_echoing_secret(server: &MockServer) {
         .await;
 }
 
-/// Drive the stream to its first event and assert a bodyless provider-side error.
-async fn assert_provider_side_bodyless(provider: Box<dyn Provider>, model: &str) {
-    let mut stream =
-        provider.stream_prepared(text_request(model), opi_ai::test_support::resolved_auth());
+/// Drive the stream to its first event and assert a bodyless provider-side
+/// error. `bearer` selects the prepared scheme the wire accepts: the OpenAI
+/// family and vertex attach `Authorization: Bearer`; anthropic, gemini, and
+/// azure attach their ApiKey header.
+async fn assert_provider_side_bodyless(provider: Box<dyn Provider>, model: &str, bearer: bool) {
+    let auth = if bearer {
+        opi_ai::test_support::resolved_bearer_auth()
+    } else {
+        opi_ai::test_support::resolved_auth()
+    };
+    let mut stream = provider.stream_prepared(text_request(model), auth);
     while let Some(result) = stream.next().await {
         if let Err(error) = result {
             assert_eq!(
@@ -90,7 +97,7 @@ async fn anthropic_500_classifies_as_provider_with_bodyless_summary() {
     let provider: Box<dyn Provider> = Box::new(opi_ai::anthropic::AnthropicProvider::new(Some(
         server.uri(),
     )));
-    assert_provider_side_bodyless(provider, "anthropic:claude-sonnet-4-5-20250514").await;
+    assert_provider_side_bodyless(provider, "anthropic:claude-sonnet-4-5-20250514", false).await;
 }
 
 #[tokio::test]
@@ -98,7 +105,7 @@ async fn openai_chat_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> = Box::new(OpenAiChatProvider::new(Some(server.uri())));
-    assert_provider_side_bodyless(provider, "openai:gpt-4o").await;
+    assert_provider_side_bodyless(provider, "openai:gpt-4o", true).await;
 }
 
 #[tokio::test]
@@ -106,7 +113,7 @@ async fn openai_responses_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> = Box::new(OpenAiResponsesProvider::new(Some(server.uri())));
-    assert_provider_side_bodyless(provider, "openai-responses:gpt-4o").await;
+    assert_provider_side_bodyless(provider, "openai-responses:gpt-4o", true).await;
 }
 
 #[tokio::test]
@@ -115,7 +122,7 @@ async fn openrouter_500_classifies_as_provider_with_bodyless_summary() {
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> =
         Box::new(opi_ai::openrouter::openrouter_provider(Some(server.uri())));
-    assert_provider_side_bodyless(provider, "openrouter:openai/gpt-4o").await;
+    assert_provider_side_bodyless(provider, "openrouter:openai/gpt-4o", true).await;
 }
 
 #[tokio::test]
@@ -124,7 +131,7 @@ async fn mistral_500_classifies_as_provider_with_bodyless_summary() {
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> =
         Box::new(opi_ai::mistral::mistral_provider(Some(server.uri())));
-    assert_provider_side_bodyless(provider, "mistral:mistral-small-latest").await;
+    assert_provider_side_bodyless(provider, "mistral:mistral-small-latest", true).await;
 }
 
 #[tokio::test]
@@ -133,7 +140,7 @@ async fn gemini_500_classifies_as_provider_with_bodyless_summary() {
     mount_500_echoing_secret(&server).await;
     let provider: Box<dyn Provider> =
         Box::new(opi_ai::gemini::GeminiProvider::new(Some(server.uri())));
-    assert_provider_side_bodyless(provider, "gemini:gemini-2.5-flash").await;
+    assert_provider_side_bodyless(provider, "gemini:gemini-2.5-flash", false).await;
 }
 
 #[tokio::test]
@@ -147,7 +154,7 @@ async fn azure_500_classifies_as_provider_with_bodyless_summary() {
     )
     .unwrap();
     let provider: Box<dyn Provider> = Box::new(provider);
-    assert_provider_side_bodyless(provider, "azure:my-gpt4o").await;
+    assert_provider_side_bodyless(provider, "azure:my-gpt4o", false).await;
 }
 
 #[tokio::test]
@@ -159,5 +166,5 @@ async fn vertex_500_classifies_as_provider_with_bodyless_summary() {
         "us-central1".into(),
         Some(server.uri()),
     ));
-    assert_provider_side_bodyless(provider, "vertex:gemini-2.5-flash").await;
+    assert_provider_side_bodyless(provider, "vertex:gemini-2.5-flash", true).await;
 }

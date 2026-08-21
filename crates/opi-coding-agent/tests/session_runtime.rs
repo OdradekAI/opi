@@ -1305,8 +1305,10 @@ async fn harness_unprefixed_embedded_pricing_survives_switch_resume_and_fork() {
     let unknown = harness
         .set_model_validated("unknown-model".into())
         .unwrap_err();
+    // A bare model resolves only through the unique-dispatchable-route proof:
+    // no match is typed remediation, not a spec parse error.
     assert!(
-        unknown.contains("invalid model spec") || unknown.contains("unknown model"),
+        unknown.contains("bare model") && unknown.contains("matches no dispatchable route"),
         "{unknown}"
     );
     // A cross-provider switch to an UNREGISTERED provider still fails, now at

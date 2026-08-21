@@ -18,10 +18,10 @@ pub struct BeforeToolCallContext {
 
 /// Result of the before_tool_call hook.
 ///
-/// Phase 17.4 (AUT-006): this is a non-authoritative observation hook. It may
-/// deny a tool call, but it is **not** an authority grant; the former `Allow`
-/// variant is renamed `Continue` so no hook result can be mistaken for an
-/// authorization decision. The authoritative decision is owned by the
+/// This is a non-authoritative observation hook. It may deny a tool call, but
+/// it is **not** an authority grant; the former `Allow` variant is renamed
+/// `Continue` so no hook result can be mistaken for an authorization decision.
+/// The authoritative decision is owned by the
 /// [`ToolAuthorizer`](crate::authority::ToolAuthorizer).
 #[non_exhaustive]
 pub enum BeforeToolCallResult {
@@ -49,9 +49,9 @@ pub enum AfterToolCallResult {
 
 /// Context provided to the should_stop_after_turn hook.
 ///
-/// Phase 17.2: stop evaluation runs after the next-turn state has been
-/// atomically applied, so this observes the applied complete state (not the
-/// pre-preparation buffer).
+/// Stop evaluation runs after the next-turn state has been atomically applied,
+/// so this observes the applied complete state (not the pre-preparation
+/// buffer).
 #[derive(Clone)]
 pub struct ShouldStopAfterTurnContext {
     pub state: NextTurnState,
@@ -60,10 +60,10 @@ pub struct ShouldStopAfterTurnContext {
 
 /// Context provided to the prepare_next_turn hook.
 ///
-/// Phase 17.2: receives a snapshot of the current complete state plus the
-/// completed turn outcome (tool results and any tool-driven terminate flag).
-/// Returns a complete replacement state, `None` to retain the current state,
-/// or an error/cancellation that leaves the prior state intact.
+/// Receives a snapshot of the current complete state plus the completed turn
+/// outcome (tool results and any tool-driven terminate flag). Returns a
+/// complete replacement state, `None` to retain the current state, or an
+/// error/cancellation that leaves the prior state intact.
 #[derive(Clone)]
 pub struct PrepareNextTurnContext {
     pub state: NextTurnState,
@@ -121,7 +121,7 @@ pub trait AgentHooks: Send + Sync {
     /// turn outcome. Return `Ok(Some(replacement))` to replace the state with a
     /// validated complete value, `Ok(None)` to retain the current state, or
     /// `Err(_)` to leave the prior state intact and terminate the transition.
-    /// Phase 17.2: this runs before `should_stop_after_turn` observes state.
+    /// This runs before `should_stop_after_turn` observes state.
     fn prepare_next_turn(
         &self,
         _ctx: PrepareNextTurnContext,

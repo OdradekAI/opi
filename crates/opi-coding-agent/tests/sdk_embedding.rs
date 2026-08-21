@@ -145,12 +145,13 @@ fn phase8_harness_command_contract_set_model_validated_returns_structured_errors
         .expect_err("unregistered cross-provider model must be rejected");
     assert!(err.contains("unknown model"), "cross-provider error: {err}");
 
-    // Malformed spec is rejected.
+    // A bare input resolves only through the unique-dispatchable-route proof,
+    // so a no-match bare id returns typed remediation rather than a parse error.
     let err = harness
         .set_model_validated("not-a-spec".into())
         .expect_err("malformed spec must be rejected");
     assert!(
-        err.contains("invalid model spec"),
+        err.contains("bare model") && err.contains("matches no dispatchable route"),
         "invalid spec error: {err}"
     );
 

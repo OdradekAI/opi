@@ -417,7 +417,8 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         session_id: None,
     };
 
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -532,7 +533,8 @@ async fn stream_cancellation_aborts_before_completion() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
 
     let first = stream
         .next()

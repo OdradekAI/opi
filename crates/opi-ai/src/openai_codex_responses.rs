@@ -11,7 +11,7 @@ use futures_util::{StreamExt, stream};
 use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::ResolvedAuth;
+use crate::auth::{AuthScheme, ResolvedAuth};
 use crate::http::HttpClient;
 use crate::openai_responses_shared::{
     ParsedEvent, ResponsesEvent, ResponsesMapper, convert_messages, drain_sse_frames,
@@ -150,13 +150,21 @@ impl OpenAiCodexResponsesProvider {
             .ok_or_else(|| ProviderError::AccountIdMissing {
                 provider_id: PROVIDER_ID.into(),
             })?;
+        let secret = resolved.secret.expose_secret();
+        let bearer = match resolved.scheme {
+            AuthScheme::Bearer => format!("Bearer {secret}"),
+            AuthScheme::ApiKey | AuthScheme::AwsSigV4(_) => {
+                return Err(ProviderError::Config(
+                    ProviderErrorSummary::attested_static(
+                        "OpenAI Codex Responses accepts only Bearer authentication",
+                    ),
+                ));
+            }
+        };
         let url = crate::endpoint::join_endpoint(&base_url, RESPONSES_PATH);
         let mut request = client
             .post(url)
-            .header(
-                "authorization",
-                format!("Bearer {}", resolved.secret.expose_secret()),
-            )
+            .header("authorization", bearer)
             .header("chatgpt-account-id", account_id)
             .header("originator", "opi")
             .header("OpenAI-Beta", "responses=experimental")

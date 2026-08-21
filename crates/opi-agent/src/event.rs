@@ -1,10 +1,13 @@
 //! Agent event protocol (S7.4).
 
+use std::sync::LazyLock;
+
 use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::{RedactionMode, redact_public_value, redact_text};
 use crate::message::AgentMessage;
 use crate::session_event::{CompactionReason, CompactionResult};
+use crate::streaming_proxy::SecretRedactor;
 use crate::tool::ToolDiagnostic;
 
 /// Callback type for emitting agent events to subscribers.
@@ -169,7 +172,7 @@ impl AgentEvent {
             } => AgentEvent::ToolExecutionEnd {
                 tool_call_id: tool_call_id.clone(),
                 tool_name: tool_name.clone(),
-                result: result.clone(),
+                result: CONVERSATION_SECRET_REDACTOR.redact(result),
                 details: details.as_ref().map(redact_public_value),
                 is_error: *is_error,
                 truncated: *truncated,
@@ -261,11 +264,56 @@ fn redact_compaction_result(result: &CompactionResult) -> CompactionResult {
     }
 }
 
+/// Conversation-echo scrubber for the public event boundary.
+///
+/// User prompts, tool results, and tool execution results are echoed back to
+/// the same client that produced them, so they are intended product output and
+/// are deliberately NOT reduced to summary redaction (which would redact
+/// paths and ordinary tool output and break transcript and TUI consumers).
+/// Only recognized credential patterns are scrubbed, so a live secret read by
+/// a tool cannot cross into JSON/NDJSON/RPC output byte-for-byte.
+static CONVERSATION_SECRET_REDACTOR: LazyLock<SecretRedactor> =
+    LazyLock::new(SecretRedactor::default);
+
+/// Scrub recognized credential patterns from one conversation text leaf.
+///
+/// A matching leaf is replaced wholesale with `[REDACTED]`, matching the
+/// streaming proxy's established secret-scrubbing semantics.
+fn scrub_conversation_text(text: &str) -> String {
+    match CONVERSATION_SECRET_REDACTOR.redact(&serde_json::Value::String(text.to_owned())) {
+        serde_json::Value::String(scrubbed) => scrubbed,
+        _ => text.to_owned(),
+    }
+}
+
+fn scrub_input_content(content: &opi_ai::message::InputContent) -> opi_ai::message::InputContent {
+    match content {
+        opi_ai::message::InputContent::Text { text } => opi_ai::message::InputContent::Text {
+            text: scrub_conversation_text(text),
+        },
+        other => other.clone(),
+    }
+}
+
+fn scrub_output_content(
+    content: &opi_ai::message::OutputContent,
+) -> opi_ai::message::OutputContent {
+    match content {
+        opi_ai::message::OutputContent::Text { text } => opi_ai::message::OutputContent::Text {
+            text: scrub_conversation_text(text),
+        },
+        other => other.clone(),
+    }
+}
+
 fn redact_agent_message(message: &AgentMessage) -> AgentMessage {
     match message {
-        AgentMessage::Llm(opi_ai::message::Message::User(user)) => {
-            AgentMessage::Llm(opi_ai::message::Message::User(user.clone()))
-        }
+        AgentMessage::Llm(opi_ai::message::Message::User(user)) => AgentMessage::Llm(
+            opi_ai::message::Message::User(opi_ai::message::UserMessage {
+                content: user.content.iter().map(scrub_input_content).collect(),
+                timestamp_ms: user.timestamp_ms,
+            }),
+        ),
         AgentMessage::Llm(opi_ai::message::Message::Assistant(assistant)) => AgentMessage::Llm(
             opi_ai::message::Message::Assistant(redact_assistant_message(assistant)),
         ),
@@ -345,7 +393,7 @@ fn redact_tool_result_message(
     opi_ai::message::ToolResultMessage {
         tool_call_id: message.tool_call_id.clone(),
         tool_name: message.tool_name.clone(),
-        content: message.content.clone(),
+        content: message.content.iter().map(scrub_output_content).collect(),
         details: message.details.as_ref().map(redact_public_value),
         is_error: message.is_error,
         truncated: message.truncated,

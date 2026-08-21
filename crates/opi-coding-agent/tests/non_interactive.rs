@@ -10,10 +10,8 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use opi_agent::AgentError;
-use opi_agent::diagnostic::{Diagnostic, RedactionMode};
 use opi_agent::extension::ExtensionRegistry;
-use opi_ai::provider::{ProviderError, ProviderErrorSummary};
+use opi_ai::provider::ProviderError;
 use opi_ai::test_support::{self, MockProvider};
 use opi_coding_agent::config::{ExecutionStrategy, OpiConfig, PermissionDecision};
 use opi_coding_agent::package_resolver::local_lock_entry;
@@ -421,14 +419,13 @@ async fn runner_provider_error_stderr_exit4() {
         ExitCode::ProviderFailure as i32,
         "should exit 4 on provider error"
     );
-    let expected_stderr = Diagnostic::from(&AgentError::from(ProviderError::ProviderSide(
-        ProviderErrorSummary::from_untrusted(&upstream_error),
-    )))
-    .redacted_payload(RedactionMode::Summary)
-    .message;
-    assert_eq!(
-        result.stderr, expected_stderr,
-        "stderr should be the typed ProviderSide public summary"
+    // An in-band stream error terminal fails the run with the typed
+    // stream-failure diagnostic; the upstream text stays redacted (asserted
+    // below).
+    assert!(
+        result.stderr.contains("provider stream failed"),
+        "stderr should be the typed stream-failure summary: {:?}",
+        result.stderr
     );
     assert!(
         result.stdout.is_empty(),

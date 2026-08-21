@@ -1580,8 +1580,15 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
                 },
             )
         } else {
+            // Each wire attaches only its accepted scheme: anthropic accepts
+            // ApiKey/Bearer, gemini and azure attach ApiKey, and every other
+            // built-in single-wire provider attaches Bearer.
+            let scheme = match case.provider_id {
+                "anthropic" | "gemini" | "azure" => opi_ai::AuthScheme::ApiKey,
+                _ => opi_ai::AuthScheme::Bearer,
+            };
             opi_ai::auth::ResolvedAuth {
-                scheme: opi_ai::AuthScheme::ApiKey,
+                scheme,
                 secret: secrecy::SecretString::from("test-secret"),
                 base_url: None,
                 account_id: None,

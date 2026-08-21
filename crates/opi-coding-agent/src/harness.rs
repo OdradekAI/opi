@@ -32,7 +32,7 @@ use opi_agent::diagnostic::{
     Diagnostic, DiagnosticPayload, RedactionMode, SOURCE_SESSION, Severity,
 };
 use opi_agent::event::AgentEvent;
-use opi_agent::extension::{CollectedExtensionTool, ExtensionRegistry};
+use opi_agent::extension::ExtensionRegistry;
 use opi_agent::hooks::AgentHooks;
 use opi_agent::loop_types::{AgentError, AgentLoopConfig};
 use opi_agent::message::AgentMessage;
@@ -881,23 +881,6 @@ fn push_metadata_section(
     sections.push(format!("{title}:\n{lines}"));
 }
 
-fn filter_extension_tools(
-    tools: Vec<CollectedExtensionTool>,
-    selection: &ToolSelection,
-) -> Vec<CollectedExtensionTool> {
-    match selection {
-        ToolSelection::Default | ToolSelection::NoBuiltin => tools,
-        ToolSelection::Disabled => Vec::new(),
-        ToolSelection::Allowlist(names) => tools
-            .into_iter()
-            .filter(|tool| {
-                let name = tool.definition().name;
-                names.iter().any(|allowed| allowed == &name)
-            })
-            .collect(),
-    }
-}
-
 /// Builder for SDK embedders that need to inject extension registries or
 /// precomputed discovery metadata without dynamic loading.
 pub struct CodingHarnessBuilder {
@@ -1098,9 +1081,8 @@ impl CodingHarnessBuilder {
     }
 
     pub fn build(self) -> CodingHarness {
-        let tool_selection = self.tool_selection;
         let tool_config = self.tool_config.unwrap_or_else(|| {
-            ToolRuntimeConfig::resolve(RunMode::Interactive, true, tool_selection.clone())
+            ToolRuntimeConfig::resolve(RunMode::Interactive, true, self.tool_selection.clone())
                 .expect("interactive tool config should be valid")
         });
         CodingHarness::new_with_build_options(
@@ -1120,7 +1102,6 @@ impl CodingHarnessBuilder {
                 resource_metadata: self.resource_metadata,
                 installed_packages: self.installed_packages,
                 startup_diagnostics: self.startup_diagnostics,
-                tool_selection,
                 record_diagnostics: self.record_diagnostics,
                 evidence: self.evidence,
                 trust_decision: self.trust_decision,
@@ -1140,7 +1121,6 @@ struct HarnessBuildOptions {
     resource_metadata: Option<DiscoveredResourceMetadata>,
     installed_packages: Option<Vec<PackageResource>>,
     startup_diagnostics: Vec<Diagnostic>,
-    tool_selection: ToolSelection,
     record_diagnostics: bool,
     /// Opt-in evidence capture (recorder plus direct-assembly source).
     evidence: Option<EvidenceBuilderConfig>,
@@ -1169,7 +1149,6 @@ impl Default for HarnessBuildOptions {
             resource_metadata: None,
             installed_packages: None,
             startup_diagnostics: Vec::new(),
-            tool_selection: ToolSelection::Default,
             record_diagnostics: false,
             evidence: None,
             trust_decision: TrustDecision::Undecided,
@@ -1439,7 +1418,6 @@ impl CodingHarness {
         #[cfg(test)]
         let session_dir_override = build_options.session_dir_override.clone();
         let mut hooks = hooks;
-        let mut extension_tools = Vec::new();
         let mut injected_extension_names = Vec::new();
         let mut extension_event_registry = None;
         let extension_registry = build_options.extension_registry;
@@ -1474,10 +1452,6 @@ impl CodingHarness {
                 .into_iter()
                 .map(str::to_owned)
                 .collect::<Vec<_>>();
-            extension_tools = filter_extension_tools(
-                registry.collect_tools_with_origin(),
-                &build_options.tool_selection,
-            );
             hooks = registry.wrap_hooks(hooks);
         }
 
@@ -1569,15 +1543,12 @@ impl CodingHarness {
             }
         };
         // Register the built-in Reference Product tools as trusted
-        // registrations with their fixed capabilities. Extension tools retain
-        // their registry-owned origin, but the product excludes them before
-        // registration because the product defines no implicit extension
-        // permission.
-        // They are never combined with the product-owned built-in vector, so an
-        // extension named read/write/bash cannot acquire Builtin origin. The
-        // system-prompt projection uses only the permitted trusted registrations
-        // (AUT-008).
-        let registrations = crate::tool_authority::register_product_tools(tools, extension_tools);
+        // registrations with their fixed capabilities. Extension tool
+        // contributions are excluded before registration because the product
+        // defines no implicit extension permission, so an extension named
+        // read/write/bash cannot acquire Builtin origin. The system-prompt
+        // projection uses only the permitted trusted registrations (AUT-008).
+        let registrations = crate::tool_authority::register_product_tools(tools);
         let tool_defs: Vec<_> = registrations.iter().map(|r| r.definition.clone()).collect();
 
         // Build the immutable digest-addressed effective user policy and the
@@ -1986,63 +1957,69 @@ impl CodingHarness {
     /// without advancing it. A later resume observes the recorded model and
     /// re-applies it when compatible with the CLI/config provider.
     pub fn set_model_validated(&mut self, model: String) -> Result<String, String> {
-        self.try_configure_model(&model)?;
-        // Normalize a bare model input to the canonical
-        // `provider:model` spec before persisting, so the durable entry carries
-        // BOTH the canonical selection and the distinct bare-source fact (a
-        // bare input resumed under a different active provider would otherwise
-        // normalize against the wrong provider).
-        let (canonical, input_source) = if model.contains(':') {
-            (model.clone(), ModelInputSource::Canonical)
+        // Validate and normalize in one step: a bare model id canonicalizes
+        // only when exactly one dispatchable route serves it, so the durable
+        // entry carries BOTH the canonical selection and the distinct
+        // bare-source fact, and an unknown, ambiguous, or lookup-only
+        // selection fails BEFORE anything is persisted.
+        let canonical = self.try_configure_model(&model)?;
+        let input_source = if model.contains(':') {
+            ModelInputSource::Canonical
         } else {
-            (
-                canonical_model_spec(self.agent.provider_id(), &model),
-                ModelInputSource::BareNormalized,
-            )
+            ModelInputSource::BareNormalized
         };
         if let Some(session) = self.session.as_mut() {
             session
-                .append_model_change(canonical, input_source)
+                .append_model_change(canonical.clone(), input_source)
                 .map_err(|e| format!("model change write failed: {e}"))?;
         }
-        self.apply_agent_model(&model)?;
+        self.apply_agent_model(&canonical)?;
         self.sync_session_cost_model();
         Ok(self.agent.model_spec())
     }
 
-    /// Validate that `model` is a known spec and compatible with the current
-    /// thinking configuration, without persisting or mutating session state.
-    /// Used by [`Self::set_model_validated`] (persists) and by resume (applies a
+    /// Validate that `model` is a known, dispatchable spec and compatible with
+    /// the current thinking configuration, without persisting or mutating
+    /// session state. Returns the canonical `provider:model` spec. Used by
+    /// [`Self::set_model_validated`] (persists) and by resume (applies a
     /// recorded model without re-persisting the entry).
     ///
-    /// A cross-provider model spec is accepted as long as it
-    /// resolves to a registered route; dispatch resolves the route at the next
-    /// `prepare_call`.
-    fn try_configure_model(&mut self, model: &str) -> Result<(), String> {
-        let current_provider = self.agent.provider_id();
-        let normalized;
+    /// A `provider:model` spec is accepted when it resolves to a registered
+    /// route AND the provider holds a dispatchable route (a live auth
+    /// resolver); dispatch still resolves the route at the next
+    /// `prepare_call`. A bare model id normalizes only when exactly one
+    /// dispatchable provider serves it — ambiguity or absence is a typed
+    /// error, never a guess from the active provider.
+    fn try_configure_model(&mut self, model: &str) -> Result<String, String> {
         let model_spec = if model.contains(':') {
-            model
+            model.to_owned()
         } else {
-            normalized = canonical_model_spec(current_provider, model);
-            if self.model_info(&normalized).is_some() {
-                &normalized
-            } else {
-                model
-            }
+            self.normalize_recorded_route(model)
+                .map_err(|remediation| match remediation {
+                    RouteRemediation::Ambiguous { candidates } => format!(
+                        "bare model '{model}' matches more than one dispatchable route: {}",
+                        candidates.join(", ")
+                    ),
+                    RouteRemediation::Missing => {
+                        format!("bare model '{model}' matches no dispatchable route")
+                    }
+                })?
         };
         let (requested_provider, requested_model) =
-            crate::provider_factory::parse_model_spec(model_spec)?;
+            crate::provider_factory::parse_model_spec(&model_spec)?;
 
-        let requested_model_info = self.model_info(model_spec);
+        let requested_model_info = self.model_info(&model_spec);
         let Some(requested_model_info) = requested_model_info else {
             return Err(format!(
                 "unknown model '{requested_model}' for provider '{requested_provider}'"
             ));
         };
+        self.model_registry
+            .validate_dispatchable_route(&model_spec)
+            .map_err(|e| e.to_string())?;
 
         self.validate_current_thinking_for_model(&requested_model_info)?;
-        Ok(())
+        Ok(model_spec)
     }
 
     /// Change the thinking level used by subsequent provider requests.
@@ -2255,13 +2232,41 @@ impl CodingHarness {
         let session =
             crate::session_cli::resume_session(&dir, session_id).map_err(|e| e.to_string())?;
 
+        let (path, loaded_session_id) = (session.path, session.header.id);
+        let message_count = self.adopt_session_entries(
+            &session.entries,
+            &session.recovery,
+            path,
+            loaded_session_id,
+            "failed to reopen resumed session",
+            true,
+        )?;
+        self.sync_session_id();
+        Ok(message_count)
+    }
+
+    /// Adopt a loaded session's entries into this harness: reconstruct the
+    /// agent context through the opi-agent context API, re-apply the recorded
+    /// model/thinking metadata, surface reconstruction diagnostics, and reopen
+    /// the session coordinator for the adopted entries. Shared by session
+    /// resume, fork, and branch adoption. `error_context` names the caller in
+    /// the reopen failure; `clear_resume_error` resets a stale startup resume
+    /// error only where adoption replaces the whole session identity.
+    fn adopt_session_entries(
+        &mut self,
+        entries: &[opi_agent::session::SessionEntry],
+        recovery: &opi_agent::session::CrashRecovery,
+        path: PathBuf,
+        session_id: String,
+        error_context: &str,
+        clear_resume_error: bool,
+    ) -> Result<usize, String> {
         // Build the agent buffer and metadata view through the
         // reusable opi-agent context API instead of the product-only walker.
-        let recovery = session.recovery.clone();
-        let ctx = reconstruct_context(&session.entries, &recovery);
+        let ctx = reconstruct_context(entries, recovery);
         let message_count = ctx.messages.len();
         self.replace_agent_context(ctx.messages)?;
-        self.defer_extension_state_from_entries(&session.entries);
+        self.defer_extension_state_from_entries(entries);
 
         // Apply recorded model/thinking metadata (latest-wins on the active
         // chain). Each branch keeps the CLI/config selection when the recorded
@@ -2271,7 +2276,7 @@ impl CodingHarness {
 
         // Surface recovery + missing-parent diagnostics. `reconstruct_context`
         // already forwards load-time recovery diagnostics, so do not append
-        // `session.diagnostics` separately.
+        // loaded-session diagnostics separately.
         for diagnostic in ctx.diagnostics {
             self.resources.metadata.diagnostics.push(diagnostic.clone());
             self.record_harness_diagnostic(diagnostic);
@@ -2283,18 +2288,19 @@ impl CodingHarness {
         };
         self.session = Some(
             SessionCoordinator::open_existing(
-                session.path,
-                session.header.id,
-                &session.entries,
+                path,
+                session_id,
+                entries,
                 message_count,
                 compaction_config,
                 self.agent.model().to_string(),
             )
-            .map_err(|error| format!("failed to reopen resumed session: {error}"))?,
+            .map_err(|error| format!("{error_context}: {error}"))?,
         );
-        self.session_resume_error = None;
+        if clear_resume_error {
+            self.session_resume_error = None;
+        }
         self.sync_session_cost_model();
-        self.sync_session_id();
         self.turn_offset = message_count;
         Ok(message_count)
     }
@@ -2365,8 +2371,26 @@ impl CodingHarness {
             );
             return;
         }
-        self.apply_agent_model(&normalized)
-            .expect("recorded model was validated before application");
+        if let Err(reason) = self.apply_agent_model(&normalized) {
+            // Unreachable for every validated input today (validation covers
+            // registry resolution, dispatchability, and thinking
+            // compatibility), but a resume must fail visibly with the same
+            // typed diagnostic rather than panic if application and
+            // validation ever diverge.
+            self.record_harness_diagnostic(
+                Diagnostic::new(
+                    Severity::Warning,
+                    CODE_SESSION_RESUME_MODEL_INCOMPATIBLE,
+                    SOURCE_SESSION,
+                    "recorded model_change could not be applied to the active runtime; keeping CLI/config model",
+                )
+                .details(serde_json::json!({
+                    "recorded_model": spec,
+                    "active_model": self.agent.model(),
+                    "reason": reason,
+                })),
+            );
+        }
     }
 
     /// Normalize a recorded model spec against the dispatchable collection. An
@@ -2448,40 +2472,18 @@ impl CodingHarness {
 
         let forked = crate::session_cli::fork_session(&dir, &source_session_id)
             .map_err(|e| e.to_string())?;
-        let ctx = reconstruct_context(&forked.entries, &forked.recovery);
-        let message_count = ctx.messages.len();
-        self.replace_agent_context(ctx.messages)?;
-        self.defer_extension_state_from_entries(&forked.entries);
-        // Re-apply the forked chain's recorded route (canonical
-        // accepted; legacy bare normalized against the dispatchable collection
-        // or kept fail-closed with typed remediation), mirroring resume.
-        self.apply_recorded_model(ctx.model.as_deref());
-        self.apply_recorded_thinking(ctx.thinking_level);
-        for diagnostic in ctx.diagnostics {
-            self.resources.metadata.diagnostics.push(diagnostic.clone());
-            self.record_harness_diagnostic(diagnostic);
-        }
-
-        let compaction_config = opi_agent::compaction::CompactionConfig {
-            enabled: self.config.compaction.enabled,
-            threshold_tokens: self.config.compaction.threshold_tokens,
-        };
-        let path = forked.path;
+        // Adopt the forked chain's entries (recorded route re-applied:
+        // canonical accepted; legacy bare normalized against the dispatchable
+        // collection or kept fail-closed with typed remediation).
         let session_id = forked.header.id;
-        let entries = forked.entries;
-        self.session = Some(
-            SessionCoordinator::open_existing(
-                path,
-                session_id.clone(),
-                &entries,
-                message_count,
-                compaction_config,
-                self.agent.model().to_string(),
-            )
-            .map_err(|e| format!("failed to open forked session: {e}"))?,
-        );
-        self.sync_session_cost_model();
-        self.turn_offset = message_count;
+        let message_count = self.adopt_session_entries(
+            &forked.entries,
+            &forked.recovery,
+            forked.path,
+            session_id.clone(),
+            "failed to open forked session",
+            false,
+        )?;
         self.sync_session_id();
         Ok((session_id, message_count))
     }
@@ -2559,37 +2561,18 @@ impl CodingHarness {
             .map_err(|e| format!("failed to select branch: {e}"))?;
         let (_, entries, recovery) = opi_agent::session::SessionReader::read_with_recovery(&path)
             .map_err(|e| format!("failed to read selected branch: {e}"))?;
-        let ctx = reconstruct_context(&entries, &recovery);
-        let message_count = ctx.messages.len();
-        self.replace_agent_context(ctx.messages)?;
-        self.defer_extension_state_from_entries(&entries);
-        // Re-apply the selected branch's recorded route (canonical
-        // accepted; legacy bare normalized against the dispatchable collection
-        // or kept fail-closed with typed remediation), mirroring resume.
-        self.apply_recorded_model(ctx.model.as_deref());
-        self.apply_recorded_thinking(ctx.thinking_level);
-        for diagnostic in ctx.diagnostics {
-            self.resources.metadata.diagnostics.push(diagnostic.clone());
-            self.record_harness_diagnostic(diagnostic);
-        }
-
-        let compaction_config = opi_agent::compaction::CompactionConfig {
-            enabled: self.config.compaction.enabled,
-            threshold_tokens: self.config.compaction.threshold_tokens,
-        };
-        self.session = Some(
-            SessionCoordinator::open_existing(
-                path,
-                session_id,
-                &entries,
-                message_count,
-                compaction_config,
-                self.agent.model().to_string(),
-            )
-            .map_err(|e| format!("failed to reopen selected branch: {e}"))?,
-        );
-        self.sync_session_cost_model();
-        self.turn_offset = message_count;
+        // Adopt the selected branch's entries (recorded route re-applied:
+        // canonical accepted; legacy bare normalized against the dispatchable
+        // collection or kept fail-closed with typed remediation). The session
+        // identity is unchanged, so no session-id resync is needed.
+        let message_count = self.adopt_session_entries(
+            &entries,
+            &recovery,
+            path,
+            session_id,
+            "failed to reopen selected branch",
+            false,
+        )?;
         Ok(message_count)
     }
 

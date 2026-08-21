@@ -528,7 +528,10 @@ async fn reasoning_malformed_subset_stops_production_stream_with_non_retryable_e
 
     let provider = OpenAiChatProvider::new(Some(server.uri()));
     let results: Vec<_> = provider
-        .stream_prepared(make_test_request(), opi_ai::test_support::resolved_auth())
+        .stream_prepared(
+            make_test_request(),
+            opi_ai::test_support::resolved_bearer_auth(),
+        )
         .collect()
         .await;
     let errors: Vec<_> = results
@@ -1548,7 +1551,8 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         session_id: None,
     };
 
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -1615,7 +1619,8 @@ async fn profile_extra_headers_reach_the_http_wire() {
         session_id: None,
     };
 
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
     while let Some(result) = stream.next().await {
         match result {
             Ok(event) if event.is_terminal() => break,
@@ -1665,7 +1670,8 @@ async fn stream_cancellation_aborts_before_completion() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
 
     let first = stream
         .next()

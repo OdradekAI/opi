@@ -158,6 +158,27 @@ fn register_counting_route(
     dispatches
 }
 
+/// An extension contributing one custom provider. Product assembly registers
+/// extension providers LOOKUP-ONLY (registry entry without an
+/// auth-resolver-backed route), so `ext:ext-model` resolves in the registry
+/// but is not dispatchable.
+struct ExtProviderExtension;
+
+impl opi_agent::extension::Extension for ExtProviderExtension {
+    fn name(&self) -> &str {
+        "ext-providers"
+    }
+
+    fn providers(&self) -> Vec<Box<dyn Provider>> {
+        use opi_ai::test_support::{MockProvider, text_response};
+        vec![Box::new(MockProvider::new_with_models(
+            "ext",
+            vec![model_info("ext-model")],
+            vec![text_response("ext-response")],
+        ))]
+    }
+}
+
 /// P17-A02 (owned acceptance): an unknown, ambiguous, or unauthenticated
 /// provider:model returns the owning typed failure before model dispatch, with
 /// no silent provider/credential fallback. Every dispatch counter stays at 0.
@@ -403,14 +424,14 @@ async fn phase17_coding_harness_cross_provider_switch_dispatches_both_providers(
     assert_eq!(
         harness.set_model_validated("a1".into()).unwrap(),
         "alpha:a1",
-        "a bare interactive selection normalizes against the caller-owned active provider"
+        "a bare selection normalizes only when exactly one dispatchable route serves it (here: alpha)"
     );
     let unknown = harness
         .set_model_validated("missing".into())
-        .expect_err("an unknown bare selection remains a parser-owned typed failure");
+        .expect_err("an unknown bare selection is a typed failure before any write");
     assert_eq!(
-        unknown,
-        "invalid model spec: spec must be 'provider:model', got: \"missing\""
+        unknown, "bare model 'missing' matches no dispatchable route",
+        "an unknown bare selection fails with typed remediation, not a parse error"
     );
     assert_eq!(
         harness.model_spec(),
@@ -449,6 +470,265 @@ async fn phase17_coding_harness_cross_provider_switch_dispatches_both_providers(
         beta_calls.lock().unwrap().len(),
         1,
         "beta dispatched exactly once"
+    );
+
+    phase17::clear_sessions_dir();
+}
+
+/// P17-PRV-002 write side: a bare model served by MORE THAN ONE dispatchable
+/// route is ambiguous and must fail with typed remediation naming every
+/// candidate BEFORE anything is persisted. The active route is kept and no
+/// provider is dispatched.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in awaited dispatch.
+async fn phase17_bare_selection_ambiguous_across_dispatchable_routes_fails_typed() {
+    use opi_ai::test_support::{MockProvider, text_response};
+    use opi_coding_agent::config::OpiConfig;
+    use opi_coding_agent::harness::CodingHarness;
+    use opi_coding_agent::project_trust::TrustDecision;
+
+    let _lock = phase17::session_lock();
+    let sessions = tempfile::tempdir().expect("sessions tempdir");
+    phase17::set_sessions_dir(sessions.path());
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+
+    let alpha_provider = MockProvider::new_with_models(
+        "alpha",
+        vec![model_info("shared")],
+        vec![text_response("alpha-shared")],
+    );
+    let alpha_calls = alpha_provider.call_log_handle();
+    let beta_provider = MockProvider::new_with_models(
+        "beta",
+        vec![model_info("shared")],
+        vec![text_response("beta-shared")],
+    );
+    let beta_calls = beta_provider.call_log_handle();
+
+    let mut harness = CodingHarness::builder(
+        Box::new(alpha_provider),
+        "alpha:shared".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .extra_routes(vec![(Box::new(beta_provider), static_resolver())])
+    .build();
+    harness.prompt("seed").await.expect("seed prompt runs");
+
+    let err = harness
+        .set_model_validated("shared".into())
+        .expect_err("an ambiguous bare selection must fail before any write");
+    assert_eq!(
+        err,
+        "bare model 'shared' matches more than one dispatchable route: alpha:shared, beta:shared",
+        "ambiguity names every candidate route"
+    );
+    assert_eq!(
+        harness.model_spec(),
+        "alpha:shared",
+        "a rejected ambiguous selection keeps the active route"
+    );
+
+    // The durable session records no model_change for the rejected selection.
+    let (_, entries) = opi_agent::session::SessionReader::read_all(
+        harness
+            .session()
+            .expect("session remains active")
+            .session_path(),
+    )
+    .unwrap();
+    assert!(
+        entries
+            .iter()
+            .all(|entry| { !matches!(entry, opi_agent::session::SessionEntry::ModelChange(_)) }),
+        "no model_change entry may be persisted for an ambiguous bare selection"
+    );
+    assert_eq!(
+        alpha_calls.lock().unwrap().len(),
+        1,
+        "alpha dispatched only for the seed prompt"
+    );
+    assert_eq!(
+        beta_calls.lock().unwrap().len(),
+        0,
+        "beta was never dispatched"
+    );
+
+    phase17::clear_sessions_dir();
+}
+
+/// Lookup-only extension providers are registry-resolvable but hold no
+/// dispatchable route: a model-change write to such a spec must fail BEFORE
+/// the durable `model_change` entry is appended, leaving the session and the
+/// live route unchanged instead of persisting a route the runtime would
+/// reject at the next dispatch.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in awaited dispatch.
+async fn phase17_set_model_to_lookup_only_extension_route_fails_without_persisting() {
+    use opi_ai::test_support::{MockProvider, text_response};
+    use opi_coding_agent::config::OpiConfig;
+    use opi_coding_agent::harness::CodingHarness;
+    use opi_coding_agent::project_trust::TrustDecision;
+
+    let _lock = phase17::session_lock();
+    let sessions = tempfile::tempdir().expect("sessions tempdir");
+    phase17::set_sessions_dir(sessions.path());
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+
+    let alpha_provider = MockProvider::new_with_models(
+        "alpha",
+        vec![model_info("a1")],
+        vec![text_response("alpha-response")],
+    );
+    let mut registry = opi_agent::extension::ExtensionRegistry::new();
+    registry
+        .register(Box::new(ExtProviderExtension))
+        .expect("extension registers");
+
+    let mut harness = CodingHarness::builder(
+        Box::new(alpha_provider),
+        "a1".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .extension_registry(registry)
+    .build();
+    assert_eq!(harness.model_spec(), "alpha:a1");
+    harness.prompt("seed").await.expect("seed prompt runs");
+
+    let err = harness
+        .set_model_validated("ext:ext-model".into())
+        .expect_err("a lookup-only route must fail before the durable write");
+    assert_eq!(
+        err, "provider 'ext' has no dispatchable route",
+        "the failure is the collection's typed route error"
+    );
+    assert_eq!(
+        harness.model_spec(),
+        "alpha:a1",
+        "a rejected model change keeps the live route"
+    );
+
+    // The durable session records no model_change for the rejected selection:
+    // validation must precede the append, not trail it.
+    let (_, entries) = opi_agent::session::SessionReader::read_all(
+        harness
+            .session()
+            .expect("session remains active")
+            .session_path(),
+    )
+    .unwrap();
+    assert!(
+        entries
+            .iter()
+            .all(|entry| { !matches!(entry, opi_agent::session::SessionEntry::ModelChange(_)) }),
+        "no model_change entry may be persisted for a rejected lookup-only route"
+    );
+
+    phase17::clear_sessions_dir();
+}
+
+/// Resuming a session whose latest `model_change` records a lookup-only
+/// (registry-resolvable, resolver-less) route keeps the CLI/config model and
+/// emits the typed model-incompatible diagnostic instead of panicking at the
+/// application step.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in awaited dispatch.
+async fn phase17_resume_of_lookup_only_recorded_route_is_typed_not_panicking() {
+    use opi_agent::diagnostic::code::CODE_SESSION_RESUME_MODEL_INCOMPATIBLE;
+    use opi_agent::session::{
+        LeafEntry, MessageEntry, ModelChangeEntry, SessionEntry, SessionHeader, SessionWriter,
+    };
+    use opi_ai::message::{InputContent, Message, UserMessage};
+    use opi_ai::test_support::{MockProvider, text_response};
+    use opi_coding_agent::config::OpiConfig;
+    use opi_coding_agent::harness::CodingHarness;
+    use opi_coding_agent::project_trust::TrustDecision;
+
+    let _lock = phase17::session_lock();
+    let sessions = tempfile::tempdir().expect("sessions tempdir");
+    phase17::set_sessions_dir(sessions.path());
+    let workspace = tempfile::tempdir().expect("workspace tempdir");
+
+    // Session fixture: one user message, then a canonical model_change naming
+    // the lookup-only extension route, with the leaf on the message.
+    let path = sessions.path().join("s-ext.jsonl");
+    let header = SessionHeader::new(
+        "s-ext".into(),
+        "2026-08-21T12:00:00Z".into(),
+        "/repo".into(),
+        None,
+    );
+    let mut writer = SessionWriter::create(&path, header).unwrap();
+    writer
+        .append(&SessionEntry::Message(MessageEntry {
+            id: "msg-1".into(),
+            parent_id: None,
+            timestamp: "2026-08-21T12:00:01Z".into(),
+            message: Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "seed".into(),
+                }],
+                timestamp_ms: 0,
+            }),
+        }))
+        .unwrap();
+    writer
+        .append(&SessionEntry::ModelChange(ModelChangeEntry {
+            id: "model-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-08-21T12:00:02Z".into(),
+            model: "ext:ext-model".into(),
+            input_source: None,
+        }))
+        .unwrap();
+    writer
+        .append(&SessionEntry::Leaf(LeafEntry {
+            id: "leaf-1".into(),
+            parent_id: Some("msg-1".into()),
+            timestamp: "2026-08-21T12:00:03Z".into(),
+            entry_id: "msg-1".into(),
+        }))
+        .unwrap();
+    drop(writer);
+
+    let alpha = MockProvider::new_with_models(
+        "alpha",
+        vec![model_info("a1")],
+        vec![text_response("alpha-response")],
+    );
+    let mut registry = opi_agent::extension::ExtensionRegistry::new();
+    registry
+        .register(Box::new(ExtProviderExtension))
+        .expect("extension registers");
+    let mut harness = CodingHarness::builder(
+        Box::new(alpha),
+        "a1".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .extension_registry(registry)
+    .record_diagnostics(true)
+    .build();
+
+    let resumed = harness
+        .resume_session_id("s-ext")
+        .expect("resume keeps the CLI/config model instead of panicking");
+    assert_eq!(resumed, 1, "one user message is reconstructed");
+    assert_eq!(
+        harness.model_spec(),
+        "alpha:a1",
+        "the lookup-only recorded route is never applied"
+    );
+    assert!(
+        harness
+            .recorded_diagnostics()
+            .iter()
+            .any(|d| d.code == CODE_SESSION_RESUME_MODEL_INCOMPATIBLE),
+        "the lookup-only recorded route emits the typed model-incompatible diagnostic"
     );
 
     phase17::clear_sessions_dir();

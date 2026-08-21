@@ -407,11 +407,11 @@ async fn json_mode_provider_error_exit_code() {
         ExitCode::ProviderFailure as i32,
         "should exit 4 on provider error"
     );
-    // Error info goes to stderr, not stdout
+    // Error info goes to stderr, not stdout. An in-band stream error terminal
+    // fails the run with the typed stream-failure diagnostic (the raw
+    // error-class text from the provider stays redacted).
     assert!(
-        result
-            .stderr
-            .contains("provider returned an error response"),
+        result.stderr.contains("provider stream failed"),
         "stderr should contain a redacted provider error class: {:?}",
         result.stderr
     );
@@ -1505,6 +1505,117 @@ async fn phase17_canary_is_absent_from_json_and_ndjson() {
     assert!(
         !result.stdout.is_empty() || !result.stderr.is_empty(),
         "the provider error must surface redacted output"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 17 remediation (AUD-17-007): the conversation-echo event shapes
+// (AgentEnd/TurnEnd/ToolExecutionEnd) legitimately carry user prompts and
+// tool results, but recognized credential patterns must be scrubbed at the
+// public boundary instead of crossing byte-for-byte into NDJSON stdout.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn phase17_conversation_echo_events_scrub_secret_canaries_on_ndjson() {
+    let key_canary = "sk-ant-canary-0123456789abcdef0123";
+    let jwt_canary =
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjYW5hcnkifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+    let workspace = tempfile::tempdir().unwrap();
+    let fixture_name = "credential-scan-fixture.txt";
+    let ordinary_line = "3 configuration entries scanned, nothing else matched";
+    std::fs::write(
+        workspace.path().join(fixture_name),
+        format!("{ordinary_line}\napi_key={key_canary}\nbearer {jwt_canary}\n"),
+    )
+    .unwrap();
+
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Events(test_support::tool_call_response(
+                "ndjson-echo-canary-read",
+                "read",
+                &serde_json::json!({ "path": fixture_name }).to_string(),
+            )),
+            MockResponse::Events(test_support::text_response("scan complete")),
+        ],
+    );
+    let _env_guard = common::empty_user_config_dir();
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        OpiConfig::default(),
+        workspace.path().to_path_buf(),
+        false,
+        None,
+        Vec::new(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    );
+    drop(_env_guard);
+
+    let result = runner
+        .run_json(&format!(
+            "read {fixture_name} and report (key {key_canary})"
+        ))
+        .await;
+    assert_eq!(result.exit_code, ExitCode::Success as i32);
+
+    // The canary-bearing shapes must actually be present so the absence
+    // assertions below are non-vacuous.
+    let lines = parse_ndjson(&result.stdout);
+    let event_types = |event_type: &str| {
+        lines
+            .iter()
+            .filter(|line| line["type"] == "Agent" && line["event"]["type"] == event_type)
+            .count()
+    };
+    assert!(
+        event_types("AgentEnd") >= 1,
+        "AgentEnd must reach NDJSON for the scan to be meaningful: {}",
+        result.stdout
+    );
+    assert!(
+        event_types("ToolExecutionEnd") >= 1,
+        "ToolExecutionEnd must reach NDJSON for the scan to be meaningful: {}",
+        result.stdout
+    );
+    assert!(
+        event_types("TurnEnd") >= 1,
+        "TurnEnd must reach NDJSON for the scan to be meaningful: {}",
+        result.stdout
+    );
+
+    for canary in [key_canary, jwt_canary] {
+        assert!(
+            !result.stdout.contains(canary),
+            "NDJSON stdout leaked the secret-shaped canary {canary}: {}",
+            result.stdout
+        );
+        assert!(
+            !result.stderr.contains(canary),
+            "NDJSON stderr leaked the secret-shaped canary {canary}: {}",
+            result.stderr
+        );
+    }
+    assert!(
+        result.stdout.contains("[REDACTED]"),
+        "scrubbed canaries leave the redaction marker: {}",
+        result.stdout
+    );
+
+    // The echo itself stays pattern-scrubbed, not Summary-redacted. A matching
+    // text leaf is replaced wholesale (the fixture's ordinary line shares the
+    // canary-bearing leaf), and tool-argument paths were already key-redacted
+    // before this boundary — but identity fields and the canary-free assistant
+    // completion text still cross verbatim; a Summary mode would redact both.
+    assert!(
+        result.stdout.contains("ndjson-echo-canary-read"),
+        "the read call's identity fields must still echo verbatim: {}",
+        result.stdout
+    );
+    assert!(
+        result.stdout.contains("scan complete"),
+        "ordinary assistant text must still echo verbatim: {}",
+        result.stdout
     );
 }
 

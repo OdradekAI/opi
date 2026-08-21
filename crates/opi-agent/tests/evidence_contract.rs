@@ -741,13 +741,17 @@ fn binding_variants_are_distinguishable_and_not_normalizable() {
     };
     assert!(direct.is_direct());
     assert!(!snapshot.is_direct());
-    fn kind(b: &RuntimeInputBinding) -> u8 {
-        match b {
-            RuntimeInputBinding::DirectRuntimeInput { .. } => 0,
-            RuntimeInputBinding::ActiveSnapshot { .. } => 1,
-        }
-    }
-    assert_ne!(kind(&direct), kind(&snapshot));
+    let bindings = [&direct, &snapshot];
+    let rendered: Vec<String> = bindings
+        .iter()
+        .map(|b| serde_json::to_string(b).unwrap())
+        .collect();
+    let unique: std::collections::BTreeSet<&String> = rendered.iter().collect();
+    assert_eq!(
+        unique.len(),
+        rendered.len(),
+        "binding variants must remain serialization-distinct: {rendered:?}"
+    );
 }
 
 #[test]
@@ -959,6 +963,18 @@ fn strict_manifest_rejects_incomplete_and_pending_artifacts() {
     pending_artifact.finalization = FinalizationState::Pending;
     pending.artifacts.push(pending_artifact);
     assert!(validate_with_candidate_observation(pending).is_err());
+}
+
+#[test]
+fn manifest_validation_rejects_active_snapshot_binding() {
+    // Only a trusted Promotion Controller may supply an ActiveSnapshot
+    // reference; a direct run claiming one must be rejected at validation,
+    // before any sink sees the candidate.
+    let mut candidate = sample_manifest_candidate(SessionBinding::NoSession);
+    candidate.binding = RuntimeInputBinding::ActiveSnapshot {
+        snapshot_ref: SnapshotRef::new("fabricated-promotion-snapshot"),
+    };
+    assert!(validate_with_candidate_observation(candidate).is_err());
 }
 
 #[test]
@@ -1517,6 +1533,26 @@ fn noop_and_in_memory_satisfy_one_lifecycle_conformance_contract() {
         );
         assert!(sink.finalize_run(&manifest).is_ok());
     }
+
+    // Before any setup, a recording adapter fails closed instead of accepting
+    // records with no bound run; the no-op adapter keeps capture disabled and
+    // silently discards.
+    let unbound = InMemoryEvidenceSink::new();
+    let mut alloc = IdentityAllocator::new();
+    let rec = fresh_record(
+        &mut alloc,
+        CallKind::Provider,
+        EvidencePayload::Digest(digest("pre")),
+    );
+    let err = unbound.emit(&rec).unwrap_err();
+    assert!(matches!(err, EvidenceError::Emission { .. }));
+    assert!(unbound.has_failure());
+    assert!(
+        unbound.records().is_empty(),
+        "a record emitted before setup must not be retained"
+    );
+    assert!(NoopEvidenceSink::new().emit(&rec).is_ok());
+
     exercise(&NoopEvidenceSink::new());
     exercise(&InMemoryEvidenceSink::new());
 }

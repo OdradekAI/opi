@@ -19,7 +19,8 @@ use crate::hooks::{
     BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
 };
 use crate::loop_types::{
-    AgentError, AgentLoopConfig, AgentLoopContext, NextTurnState, validate_next_turn_candidate,
+    AgentError, AgentLoopConfig, AgentLoopContext, AgentProviderFailure, NextTurnState,
+    validate_next_turn_candidate,
 };
 use crate::message::AgentMessage;
 use crate::tool::{ExecutionMode, ToolDiagnostic, ToolResult};
@@ -36,6 +37,11 @@ use crate::validation;
 /// it, builds and validates a candidate next-turn state away from live state,
 /// atomically applies it, and only then lets `should_stop_after_turn` observe
 /// the applied state before any steering/follow-up polling.
+///
+/// An in-band provider stream `Error` terminal is a provider failure, not a
+/// completed turn: the provider's complete terminal message stays visible in
+/// the turn's events, no tool call is launched, and the run fails with a
+/// typed, non-retryable provider error.
 ///
 /// When `context.evidence_sink` is `Some`, the loop emits ordered, redacted
 /// evidence records (provider/tool/retry) over stable run/turn/call identities.
@@ -260,7 +266,6 @@ pub(crate) async fn agent_loop_with_identities(
             }
         };
 
-        let mut assistant_content: Vec<AssistantContent> = Vec::new();
         has_tools_pending = false;
         let mut retry_attempt: u32 = 0;
         let max_attempts = config.retry.as_ref().map(|r| r.max_attempts).unwrap_or(0);
@@ -385,7 +390,6 @@ pub(crate) async fn agent_loop_with_identities(
                     finish_with_error!(err);
                 }
             };
-            assistant_content.clear();
             // Track whether the provider has already delivered any stream item
             // for this attempt. Once content has been emitted to the caller, a
             // subsequent mid-stream retryable error must NOT trigger a retry:
@@ -412,11 +416,12 @@ pub(crate) async fn agent_loop_with_identities(
                         // Any successfully delivered stream item means the
                         // caller has observed output for this attempt.
                         stream_delivered_content = true;
-                        if let Some(msg) =
-                            process_stream_event(&event, &mut assistant_content, &events)
-                        {
-                            // Use the provider's complete content, which can include thinking,
-                            // instead of the local accumulator that tracks text and tool calls.
+                        let terminal = process_stream_event(&event, &events);
+                        let in_band_error_terminal = matches!(terminal, StreamTerminal::Error(_));
+                        if let Some(msg) = terminal.into_message() {
+                            // Use the provider's complete terminal payload, which can
+                            // include thinking, rather than reassembling it from the
+                            // streamed deltas.
                             let agent_msg = AgentMessage::Llm(Message::Assistant(msg));
 
                             emit_public_event(
@@ -465,6 +470,30 @@ pub(crate) async fn agent_loop_with_identities(
                                         ),
                                     Err(_) => {}
                                 }
+                            }
+
+                            if in_band_error_terminal {
+                                // An in-band stream error is a provider failure, not a
+                                // completed turn: the partial message above stays visible
+                                // in the turn's events, but no tool call is launched and
+                                // the run fails with a typed, non-retryable error (the
+                                // raw error class was redacted at the adapter).
+                                emit_public_event(
+                                    &events,
+                                    AgentEvent::TurnEnd {
+                                        message: agent_msg.clone(),
+                                        tool_results: vec![],
+                                    },
+                                );
+                                let err = AgentError::Provider(AgentProviderFailure::new(
+                                    ProviderError::StreamError(
+                                        opi_ai::provider::ProviderErrorSummary::redacted(),
+                                    ),
+                                ));
+                                let diagnostic = Diagnostic::from(&err);
+                                observe_provider_failure(&diagnostic_sink, diagnostic);
+                                emit_agent_end(&events, &state.context);
+                                finish_with_error!(err);
                             }
 
                             let content = match &agent_msg {
@@ -517,7 +546,7 @@ pub(crate) async fn agent_loop_with_identities(
                                             },
                                         );
 
-                                        let executed = match parsed.parsed_args {
+                                        let executed = match &parsed.parsed_args {
                                             Ok(args) => {
                                                 let mut tool_evidence = ToolEvidenceContext {
                                                     sink: &evidence_sink,
@@ -533,7 +562,7 @@ pub(crate) async fn agent_loop_with_identities(
                                                 match execute_tool(
                                                     &parsed.tool_call.id,
                                                     &parsed.tool_call.name,
-                                                    &args,
+                                                    args,
                                                     run,
                                                     turn,
                                                     tool_call_ids[tool_index],
@@ -567,70 +596,35 @@ pub(crate) async fn agent_loop_with_identities(
                                             Err(parse_error) => ExecutedTool::ordinary(
                                                 malformed_tool_arguments_result(
                                                     &parsed.tool_call.name,
-                                                    &parse_error,
+                                                    parse_error,
                                                     &diagnostic_sink,
                                                 ),
                                             ),
                                         };
 
-                                        let ExecutedTool {
-                                            result,
-                                            outcome,
-                                            terminal_error,
-                                        } = executed;
-                                        let stops_sequential_batch = terminal_error.is_some();
-                                        if let Some(error) = terminal_error {
-                                            retain_strongest_terminal_error(
-                                                &mut tool_terminal_error,
-                                                error,
-                                            );
-                                        }
-
-                                        let is_error = result.is_error;
-                                        let truncated = result.truncated;
-                                        terminate_flags.push(result.terminate);
-                                        emit_public_event(
-                                            &events,
-                                            AgentEvent::ToolExecutionEnd {
-                                                tool_call_id: parsed.tool_call.id.clone(),
-                                                tool_name: parsed.tool_call.name.clone(),
-                                                result: serde_json::json!(&result.content),
-                                                details: result.details.clone(),
-                                                truncated,
-                                                is_error,
-                                                diagnostics: result.diagnostics.clone(),
-                                            },
-                                        );
-
-                                        let trm = ToolResultMessage {
-                                            tool_call_id: parsed.tool_call.id,
-                                            tool_name: parsed.tool_call.name.clone(),
-                                            content: result.content,
-                                            details: result.details,
-                                            is_error,
-                                            truncated,
-                                            timestamp_ms: opi_ai::time::now_ms(),
-                                        };
-                                        let mut tool_evidence = ToolEvidenceContext {
-                                            sink: &evidence_sink,
+                                        let stops_sequential_batch =
+                                            executed.terminal_error.is_some();
+                                        let mut completion = ToolCompletion {
+                                            events: &events,
+                                            evidence_sink: &evidence_sink,
                                             identities: &mut identities,
+                                            registry: &registry,
+                                            evidence_health: &mut evidence_health,
                                             run,
                                             turn,
-                                            call: tool_call_ids[tool_index],
-                                            parent: provider_call,
-                                            invocation: invocation_binding(&invocation_context),
+                                            provider_call,
+                                            invocation_context: &invocation_context,
+                                            tool_results: &mut tool_results,
+                                            terminate_flags: &mut terminate_flags,
+                                            tool_terminal_error: &mut tool_terminal_error,
+                                            context: &mut state.context,
                                         };
-                                        emit_tool_outcome_evidence(
-                                            &mut tool_evidence,
-                                            &mut evidence_health,
-                                            &registry,
-                                            &trm,
-                                            outcome,
+                                        complete_tool_call(
+                                            &mut completion,
+                                            &parsed,
+                                            tool_call_ids[tool_index],
+                                            executed,
                                         );
-                                        tool_results.push(trm.clone());
-                                        state
-                                            .context
-                                            .push(AgentMessage::Llm(Message::ToolResult(trm)));
                                         if stops_sequential_batch {
                                             // The remaining source-ordered calls never cross
                                             // preflight or execution after cancellation or an
@@ -807,61 +801,27 @@ pub(crate) async fn agent_loop_with_identities(
                                     for (tool_index, (parsed, executed)) in
                                         parsed_calls.iter().zip(results).enumerate()
                                     {
-                                        let ExecutedTool {
-                                            result,
-                                            outcome,
-                                            terminal_error,
-                                        } = executed;
-                                        if let Some(error) = terminal_error {
-                                            retain_strongest_terminal_error(
-                                                &mut tool_terminal_error,
-                                                error,
-                                            );
-                                        }
-                                        let is_error = result.is_error;
-                                        let truncated = result.truncated;
-                                        terminate_flags.push(result.terminate);
-                                        emit_public_event(
-                                            &events,
-                                            AgentEvent::ToolExecutionEnd {
-                                                tool_call_id: parsed.tool_call.id.clone(),
-                                                tool_name: parsed.tool_call.name.clone(),
-                                                result: serde_json::json!(&result.content),
-                                                details: result.details.clone(),
-                                                truncated,
-                                                is_error,
-                                                diagnostics: result.diagnostics.clone(),
-                                            },
-                                        );
-                                        let trm = ToolResultMessage {
-                                            tool_call_id: parsed.tool_call.id.clone(),
-                                            tool_name: parsed.tool_call.name.clone(),
-                                            content: result.content,
-                                            details: result.details,
-                                            is_error,
-                                            truncated,
-                                            timestamp_ms: opi_ai::time::now_ms(),
-                                        };
-                                        let mut tool_evidence = ToolEvidenceContext {
-                                            sink: &evidence_sink,
+                                        let mut completion = ToolCompletion {
+                                            events: &events,
+                                            evidence_sink: &evidence_sink,
                                             identities: &mut identities,
+                                            registry: &registry,
+                                            evidence_health: &mut evidence_health,
                                             run,
                                             turn,
-                                            call: tool_call_ids[tool_index],
-                                            parent: provider_call,
-                                            invocation: invocation_binding(&invocation_context),
+                                            provider_call,
+                                            invocation_context: &invocation_context,
+                                            tool_results: &mut tool_results,
+                                            terminate_flags: &mut terminate_flags,
+                                            tool_terminal_error: &mut tool_terminal_error,
+                                            context: &mut state.context,
                                         };
-                                        emit_tool_outcome_evidence(
-                                            &mut tool_evidence,
-                                            &mut evidence_health,
-                                            &registry,
-                                            &trm,
-                                            outcome,
+                                        complete_tool_call(
+                                            &mut completion,
+                                            parsed,
+                                            tool_call_ids[tool_index],
+                                            executed,
                                         );
-                                        tool_results.push(trm.clone());
-                                        state
-                                            .context
-                                            .push(AgentMessage::Llm(Message::ToolResult(trm)));
                                     }
                                 }
 
@@ -1221,30 +1181,40 @@ fn observe_provider_failure(sink: &Option<Arc<dyn DiagnosticSink>>, diagnostic: 
     observe(sink, diagnostic);
 }
 
+/// Terminal outcome of one consumed provider stream event.
+enum StreamTerminal {
+    /// The event was informational; the stream has not reached a terminal.
+    Pending,
+    /// The provider delivered the completed assistant message normally.
+    Done(opi_ai::message::AssistantMessage),
+    /// The provider terminated the stream with an in-band error. The message
+    /// is the provider's complete terminal payload (partial content plus the
+    /// in-band error).
+    Error(opi_ai::message::AssistantMessage),
+}
+
+impl StreamTerminal {
+    fn into_message(self) -> Option<opi_ai::message::AssistantMessage> {
+        match self {
+            StreamTerminal::Pending => None,
+            StreamTerminal::Done(message) | StreamTerminal::Error(message) => Some(message),
+        }
+    }
+}
+
 fn process_stream_event(
     event: &opi_ai::stream::AssistantStreamEvent,
-    content: &mut Vec<AssistantContent>,
     events: &AgentEventSink,
-) -> Option<opi_ai::message::AssistantMessage> {
+) -> StreamTerminal {
     use opi_ai::stream::AssistantStreamEvent::*;
 
     match event {
         Start { partial } => {
             let msg = AgentMessage::Llm(Message::Assistant(partial.clone()));
             emit_public_event(events, AgentEvent::MessageStart { message: msg });
-            None
+            StreamTerminal::Pending
         }
-        TextDelta { delta, partial, .. } => {
-            match content.last_mut() {
-                Some(AssistantContent::Text { text }) => {
-                    text.push_str(delta);
-                }
-                _ => {
-                    content.push(AssistantContent::Text {
-                        text: delta.clone(),
-                    });
-                }
-            }
+        TextDelta { partial, .. } => {
             let msg = AgentMessage::Llm(Message::Assistant(partial.clone()));
             emit_public_event(
                 events,
@@ -1253,14 +1223,9 @@ fn process_stream_event(
                     assistant_event: Box::new(event.clone()),
                 },
             );
-            None
+            StreamTerminal::Pending
         }
-        ToolCallEnd { tool_call, .. } => {
-            content.push(AssistantContent::ToolCall {
-                tool_call: tool_call.clone(),
-            });
-            None
-        }
+        ToolCallEnd { .. } => StreamTerminal::Pending,
         ThinkingStart { partial, .. }
         | ThinkingDelta { partial, .. }
         | ThinkingEnd { partial, .. } => {
@@ -1272,11 +1237,11 @@ fn process_stream_event(
                     assistant_event: Box::new(event.clone()),
                 },
             );
-            None
+            StreamTerminal::Pending
         }
-        Done { message, .. } => Some(message.clone()),
-        Error { message, .. } => Some(message.clone()),
-        _ => None,
+        Done { message, .. } => StreamTerminal::Done(message.clone()),
+        Error { message, .. } => StreamTerminal::Error(message.clone()),
+        _ => StreamTerminal::Pending,
     }
 }
 
@@ -1640,6 +1605,92 @@ fn retain_strongest_terminal_error(slot: &mut Option<AgentError>, candidate: Age
     {
         *slot = Some(candidate);
     }
+}
+
+/// Turn-scoped handles threaded through the tool-completion pipeline shared
+/// by the sequential and parallel execution arms.
+struct ToolCompletion<'a> {
+    events: &'a AgentEventSink,
+    evidence_sink: &'a Option<Arc<dyn crate::evidence::EvidenceSink>>,
+    identities: &'a mut crate::evidence::IdentityAllocator,
+    registry: &'a crate::authority::ToolRegistry,
+    evidence_health: &'a mut crate::evidence::EvidenceHealth,
+    run: crate::evidence::RunId,
+    turn: crate::evidence::TurnId,
+    provider_call: crate::evidence::CallId,
+    invocation_context: &'a crate::authority::InvocationContext,
+    tool_results: &'a mut Vec<ToolResultMessage>,
+    terminate_flags: &'a mut Vec<bool>,
+    tool_terminal_error: &'a mut Option<AgentError>,
+    context: &'a mut Vec<AgentMessage>,
+}
+
+/// Complete one executed tool call: surface its terminal error, emit the
+/// public completion event, assemble the tool-result message, emit its
+/// outcome evidence, and push the result into the turn's context. Returns
+/// whether this call produced a terminal error.
+fn complete_tool_call(
+    completion: &mut ToolCompletion<'_>,
+    parsed: &ParsedToolCall,
+    call: crate::evidence::CallId,
+    executed: ExecutedTool,
+) -> bool {
+    let ExecutedTool {
+        result,
+        outcome,
+        terminal_error,
+    } = executed;
+    let had_terminal_error = terminal_error.is_some();
+    if let Some(error) = terminal_error {
+        retain_strongest_terminal_error(completion.tool_terminal_error, error);
+    }
+
+    let is_error = result.is_error;
+    let truncated = result.truncated;
+    completion.terminate_flags.push(result.terminate);
+    emit_public_event(
+        completion.events,
+        AgentEvent::ToolExecutionEnd {
+            tool_call_id: parsed.tool_call.id.clone(),
+            tool_name: parsed.tool_call.name.clone(),
+            result: serde_json::json!(&result.content),
+            details: result.details.clone(),
+            truncated,
+            is_error,
+            diagnostics: result.diagnostics.clone(),
+        },
+    );
+
+    let trm = ToolResultMessage {
+        tool_call_id: parsed.tool_call.id.clone(),
+        tool_name: parsed.tool_call.name.clone(),
+        content: result.content,
+        details: result.details,
+        is_error,
+        truncated,
+        timestamp_ms: opi_ai::time::now_ms(),
+    };
+    let mut tool_evidence = ToolEvidenceContext {
+        sink: completion.evidence_sink,
+        identities: completion.identities,
+        run: completion.run,
+        turn: completion.turn,
+        call,
+        parent: completion.provider_call,
+        invocation: invocation_binding(completion.invocation_context),
+    };
+    emit_tool_outcome_evidence(
+        &mut tool_evidence,
+        completion.evidence_health,
+        completion.registry,
+        &trm,
+        outcome,
+    );
+    completion.tool_results.push(trm.clone());
+    completion
+        .context
+        .push(AgentMessage::Llm(Message::ToolResult(trm)));
+    had_terminal_error
 }
 
 enum ToolPreflight {

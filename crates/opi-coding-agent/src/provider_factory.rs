@@ -240,6 +240,91 @@ pub fn materialize_active_overrides(
 const CODE_PROVIDER_CREDENTIAL_BACKEND_UNAVAILABLE: &str =
     "provider_credential_backend_unavailable";
 
+const CODE_PROVIDER_ROUTE_SKIPPED: &str = "provider_route_skipped";
+
+/// Startup diagnostic for an eagerly-built extra route dropped because its
+/// non-secret CONFIG is invalid (bad proxy URL, malformed profile).
+///
+/// Config-class failures can embed config-derived text (a proxy URL may itself
+/// carry credentials), so only the provider id and a stable reason cross into
+/// the diagnostic; the dynamic error text never does.
+fn skipped_route_diagnostic(provider_id: &str) -> Diagnostic {
+    Diagnostic::new(
+        Severity::Warning,
+        CODE_PROVIDER_ROUTE_SKIPPED,
+        SOURCE_PROVIDER,
+        format!("extra dispatch route skipped for {provider_id}: invalid non-secret configuration"),
+    )
+    .details(serde_json::json!({
+        "provider": provider_id,
+        "reason": "invalid_non_secret_configuration",
+    }))
+}
+
+/// Whether the user explicitly configured this provider's non-secret
+/// settings. Unconfigured optional providers (empty azure deployments, a
+/// vertex section without a project) fail construction by design and stay
+/// silently absent; only a provider the user actually configured earns a
+/// skip diagnostic when its construction fails. Credential IO is lazy by
+/// contract, so credential-class construction failures never earn a
+/// diagnostic either.
+fn route_explicitly_configured(config: &OpiConfig, provider_id: &str) -> bool {
+    let providers = &config.providers;
+    match provider_id {
+        "anthropic" => {
+            providers.anthropic.base_url.is_some() || providers.anthropic.proxy.is_some()
+        }
+        "openai" => providers.openai.base_url.is_some() || providers.openai.proxy.is_some(),
+        "openrouter" => {
+            providers.openrouter.base_url.is_some()
+                || providers.openrouter.referer.is_some()
+                || providers.openrouter.proxy.is_some()
+        }
+        "mistral" => providers.mistral.base_url.is_some() || providers.mistral.proxy.is_some(),
+        "openai-responses" => {
+            providers.openai_responses.base_url.is_some()
+                || providers.openai_responses.proxy.is_some()
+        }
+        "gemini" => providers.gemini.base_url.is_some() || providers.gemini.proxy.is_some(),
+        "bedrock" => {
+            providers.bedrock.region.is_some()
+                || providers.bedrock.profile.is_some()
+                || providers.bedrock.base_url.is_some()
+                || providers.bedrock.proxy.is_some()
+        }
+        "azure" => {
+            !providers.azure.deployments.is_empty()
+                || providers.azure.endpoint.is_some()
+                || providers.azure.proxy.is_some()
+        }
+        "vertex" => {
+            providers.vertex.project.is_some()
+                || providers.vertex.location.is_some()
+                || !providers.vertex.models.is_empty()
+                || providers.vertex.base_url.is_some()
+                || providers.vertex.proxy.is_some()
+        }
+        // Custom and openai-compatible providers exist only because the user
+        // declared their sections; they are always explicitly configured.
+        _ => true,
+    }
+}
+
+/// Record one dropped extra route: only an explicitly configured provider
+/// whose construction failed on its non-secret CONFIG earns a diagnostic.
+fn note_skipped_route(
+    config: &OpiConfig,
+    provider_id: &str,
+    error: &ProviderBuildError,
+    skipped: &mut Vec<Diagnostic>,
+) {
+    if matches!(error, ProviderBuildError::Config(_))
+        && route_explicitly_configured(config, provider_id)
+    {
+        skipped.push(skipped_route_diagnostic(provider_id));
+    }
+}
+
 fn backend_fallback_diagnostic(provider_id: &str, env_var: &str) -> Diagnostic {
     Diagnostic::new(
         Severity::Warning,
@@ -1514,16 +1599,22 @@ pub async fn build_provider_bundle(
     let registry = crate::oauth::OAuthProviderRegistry::registry_with_builtins();
     let outcome = build_provider_with_oauth_outcome(config, &resolver, &registry).await?;
     let active_provider_id = outcome.provider.id().to_owned();
-    let extra_routes =
+    let (extra_routes, skipped_route_diagnostics) =
         build_extra_dispatch_routes(config, &resolver, &registry, &active_provider_id).await;
+    let ProviderBuildOutcome {
+        provider,
+        auth_resolver,
+        mut diagnostics,
+    } = outcome;
+    diagnostics.extend(skipped_route_diagnostics);
     Ok(ProviderBundle {
-        provider: outcome.provider,
-        auth_resolver: outcome.auth_resolver,
+        provider,
+        auth_resolver,
         extra_routes,
         store,
         resolver,
         registry,
-        diagnostics: outcome.diagnostics,
+        diagnostics,
     })
 }
 
@@ -1532,16 +1623,21 @@ pub async fn build_provider_bundle(
 /// constructed eagerly (concrete adapter + lazy auth resolver); credential IO
 /// happens inside the resolver at `prepare_call`, so a missing credential is
 /// not a construction failure and the route is still registered. A provider
-/// with invalid non-secret CONFIG (bad proxy, malformed profile) is skipped
-/// silently.
+/// the user explicitly configured whose construction fails on its non-secret
+/// CONFIG (bad proxy, malformed profile) is skipped with a redacted startup
+/// diagnostic, so a later unknown-model failure can point back at the dropped
+/// route; unconfigured optional providers and credential-class failures stay
+/// silently absent.
 ///
+/// Returns the constructed routes plus one diagnostic per skipped route.
 async fn build_extra_dispatch_routes(
     config: &OpiConfig,
     resolver: &CredentialResolver,
     registry: &OAuthProviderRegistry,
     active_provider_id: &str,
-) -> Vec<ProviderAuthPair> {
+) -> (Vec<ProviderAuthPair>, Vec<Diagnostic>) {
     let mut routes = Vec::new();
+    let mut skipped = Vec::new();
     for provider_id in BUILT_IN_PROVIDER_IDS {
         if *provider_id == active_provider_id {
             continue;
@@ -1552,27 +1648,30 @@ async fn build_extra_dispatch_routes(
             "anthropic" => build_anthropic_route(config, resolver, registry),
             _ => build_runtime_route(config, provider_id, resolver),
         };
-        if let Ok(route) = route {
-            routes.push(route);
+        match route {
+            Ok(route) => routes.push(route),
+            Err(error) => note_skipped_route(config, provider_id, &error, &mut skipped),
         }
     }
     for provider_id in config.providers.custom.keys() {
         if provider_id == active_provider_id {
             continue;
         }
-        if let Ok(route) = build_runtime_route(config, provider_id, resolver) {
-            routes.push(route);
+        match build_runtime_route(config, provider_id, resolver) {
+            Ok(route) => routes.push(route),
+            Err(error) => note_skipped_route(config, provider_id, &error, &mut skipped),
         }
     }
     for provider_id in config.providers.openai_compatible.keys() {
         if provider_id == active_provider_id {
             continue;
         }
-        if let Ok(route) = build_runtime_route(config, provider_id, resolver) {
-            routes.push(route);
+        match build_runtime_route(config, provider_id, resolver) {
+            Ok(route) => routes.push(route),
+            Err(error) => note_skipped_route(config, provider_id, &error, &mut skipped),
         }
     }
-    routes
+    (routes, skipped)
 }
 
 /// Build the active provider through the production credential resolver: a
@@ -1899,7 +1998,7 @@ fn build_runtime_adapter(
         }
         other => {
             // Custom providers may map multiple wires; they skip the single-wire
-            // catalog guard (mirrors the pre-17.5 path).
+            // catalog guard.
             if let Some(profile) = config.providers.custom.get(other) {
                 return build_custom_provider(profile).map(|p| Box::new(p) as Box<dyn Provider>);
             }
@@ -2370,7 +2469,7 @@ mod tests {
         let mut config = OpiConfig::default();
         config.defaults.model = "openai:gpt-4o".to_owned();
 
-        let routes =
+        let (routes, _skip_diagnostics) =
             super::build_extra_dispatch_routes(&config, &resolver, &registry, "openai").await;
         let ids: std::collections::BTreeSet<_> =
             routes.iter().map(|(provider, _)| provider.id()).collect();

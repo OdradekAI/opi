@@ -675,6 +675,9 @@ struct EvidenceLifecycleFixture {
     binding: opi_agent::evidence::RuntimeInputBinding,
     record: opi_agent::evidence::EvidenceRecord,
     artifact: opi_agent::evidence::ArtifactReference,
+    /// The pre-validation candidate behind `manifest`, kept so negative
+    /// validation legs can mutate one field and re-validate.
+    candidate: opi_agent::evidence::ManifestCandidate,
     manifest: opi_agent::evidence::FinalizedManifest,
 }
 
@@ -773,6 +776,7 @@ fn evidence_lifecycle_fixture() -> EvidenceLifecycleFixture {
         completeness: EvidenceCompleteness::Complete,
     };
     let manifest = candidate
+        .clone()
         .validate(EvidenceRunObservation::new(
             &binding,
             std::slice::from_ref(&record),
@@ -783,12 +787,35 @@ fn evidence_lifecycle_fixture() -> EvidenceLifecycleFixture {
         binding,
         record,
         artifact,
+        candidate,
         manifest,
     }
 }
 
 fn assert_complete_recorder_lifecycle(recorder: &dyn EvidenceRecorder) {
     let fixture = evidence_lifecycle_fixture();
+    // Before-setup leg: no lifecycle method may accept work before setup is
+    // observed — each fails with its typed error and marks the recorder
+    // failed, mirroring the core no-op/in-memory conformance contract. The
+    // rejected attempts leave the recorder unstarted, so the subsequent
+    // setup still opens a clean run.
+    assert!(
+        recorder.emit(&fixture.record).is_err(),
+        "emit before setup must fail closed"
+    );
+    assert!(
+        recorder.finalize_artifact(&fixture.artifact).is_err(),
+        "finalize_artifact before setup must fail closed"
+    );
+    assert!(
+        recorder.finalize_run(&fixture.manifest).is_err(),
+        "finalize_run before setup must fail closed"
+    );
+    assert!(
+        recorder.has_failure(),
+        "the rejected before-setup attempts mark the lifecycle incomplete"
+    );
+
     recorder.setup(&fixture.binding).unwrap();
     recorder.emit(&fixture.record).unwrap();
     recorder.finalize_artifact(&fixture.artifact).unwrap();
@@ -1651,6 +1678,7 @@ async fn harness_complete_evidence_mapping_denies_unlaunched_tool() {
             text_response("done"),
         ],
     );
+    let call_log = provider.call_log_handle();
     let mut harness = CodingHarness::builder(
         Box::new(provider),
         "mock:mock-model".to_owned(),
@@ -1674,6 +1702,19 @@ async fn harness_complete_evidence_mapping_denies_unlaunched_tool() {
     })
     .build();
 
+    let denial_details: Arc<std::sync::Mutex<Option<serde_json::Value>>> =
+        Arc::new(std::sync::Mutex::new(None));
+    let denial_capture = denial_details.clone();
+    harness.subscribe(Box::new(move |event| {
+        if let opi_agent::event::AgentEvent::TurnEnd { tool_results, .. } = event {
+            for result in tool_results {
+                if result.tool_call_id == "c-write" {
+                    *denial_capture.lock().unwrap() = result.details.clone();
+                }
+            }
+        }
+    }));
+
     let result = harness.prompt("write a file").await;
     assert!(matches!(
         result,
@@ -1685,9 +1726,40 @@ async fn harness_complete_evidence_mapping_denies_unlaunched_tool() {
         !workspace.path().join("should_not_exist.txt").exists(),
         "the write tool must not execute when evidence is incomplete"
     );
-    // The lower-level authority conformance test above pins the stable
-    // `evidence_incomplete` result; this boundary test pins the visible capture
-    // failure and absence of a side effect.
+    // The denial is the authorization boundary's controlled outcome carrying
+    // the owning stable code (the lower-level conformance test pins the same
+    // code at the ProductToolAuthorizer seam).
+    let denial = denial_details.lock().unwrap().clone();
+    assert!(
+        denial.as_ref().is_some_and(|details| {
+            details
+                .get("stable_code")
+                .is_some_and(|code| code.as_str() == Some("evidence_incomplete"))
+        }),
+        "the denied write surfaces the evidence_incomplete stable code, got {denial:?}"
+    );
+
+    // Projection stays registration-composed (AUT-008): both provider requests
+    // of the run still advertise the trusted `write` registration, while its
+    // launch is denied at the authorization boundary.
+    let calls = call_log.lock().unwrap().clone();
+    assert_eq!(
+        calls.len(),
+        2,
+        "the run consumes both scripted responses (fail-open dispatch, fail-closed launch)"
+    );
+    for (index, request) in calls.iter().enumerate() {
+        assert!(
+            request.tools.iter().any(|tool| tool.name == "write"),
+            "provider request {} must still advertise the registered write tool: {:?}",
+            index + 1,
+            request
+                .tools
+                .iter()
+                .map(|tool| tool.name.clone())
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 /// A capture-absent harness maps to `complete_evidence_required = false` (the
@@ -2072,6 +2144,28 @@ async fn phase17_complete_run_reconstructs_graph_and_rejects_missing_bindings() 
     assert!(
         ContentDigest::from_hex("").is_err(),
         "a missing config identity must be rejected at construction"
+    );
+
+    // A fabricated ActiveSnapshot binding is rejected at manifest validation
+    // itself, before any sink sees the candidate: only a trusted Promotion
+    // Controller may supply one, and this direct run cannot. The observation
+    // carries the SAME swapped binding so the rejection is attributable to the
+    // direct-run clause rather than a binding mismatch.
+    let fixture = evidence_lifecycle_fixture();
+    let mut snapshot_claim = fixture.candidate.clone();
+    snapshot_claim.binding = opi_agent::evidence::RuntimeInputBinding::ActiveSnapshot {
+        snapshot_ref: opi_agent::evidence::SnapshotRef::new("fabricated-promotion-snapshot"),
+    };
+    assert!(
+        snapshot_claim
+            .clone()
+            .validate(opi_agent::evidence::EvidenceRunObservation::new(
+                &snapshot_claim.binding,
+                std::slice::from_ref(&fixture.record),
+                std::slice::from_ref(&fixture.artifact),
+            ))
+            .is_err(),
+        "a direct run must not be able to claim an ActiveSnapshot binding at validation"
     );
 }
 

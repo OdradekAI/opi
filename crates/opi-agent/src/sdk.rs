@@ -115,9 +115,9 @@ pub enum SdkCommand {
         name: String,
         args: serde_json::Value,
     },
-    /// Request the run's evidence records (Phase 17.7). Unsupported when
-    /// evidence capture is not enabled for the session; the runner returns a
-    /// structured `unsupported_trace_request` error then.
+    /// Request the run's evidence records. Unsupported when evidence capture
+    /// is not enabled for the session; the runner returns a structured
+    /// `unsupported_trace_request` error then.
     trace {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,

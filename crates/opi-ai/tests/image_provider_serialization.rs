@@ -210,7 +210,7 @@ async fn openai_chat_image_url_in_request_body() {
     let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
     drain_stream(provider.stream_prepared(
         make_request(vec![image_url_msg()]),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
 
@@ -239,7 +239,7 @@ async fn openai_chat_image_base64_as_data_uri() {
     let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
     drain_stream(provider.stream_prepared(
         make_request(vec![image_base64_msg()]),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
 
@@ -266,7 +266,7 @@ async fn openai_chat_mixed_text_image_not_flattened() {
     let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
     drain_stream(provider.stream_prepared(
         make_request(vec![mixed_text_image_msg()]),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
 
@@ -295,7 +295,7 @@ async fn openai_responses_image_url_in_request_body() {
     let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new(Some(server.uri()));
     drain_stream(provider.stream_prepared(
         make_request(vec![image_url_msg()]),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
 
@@ -327,7 +327,7 @@ async fn openai_responses_image_base64_as_data_uri() {
     let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new(Some(server.uri()));
     drain_stream(provider.stream_prepared(
         make_request(vec![image_base64_msg()]),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
 
@@ -410,7 +410,7 @@ async fn openrouter_image_in_request_body() {
     let provider = opi_ai::openrouter::openrouter_provider(Some(server.uri()));
     drain_stream(provider.stream_prepared(
         make_request(vec![mixed_text_image_msg()]),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
 
@@ -439,7 +439,7 @@ async fn mistral_image_in_request_body() {
     let provider = opi_ai::mistral::mistral_provider(Some(server.uri()));
     drain_stream(provider.stream_prepared(
         make_request(vec![mixed_text_image_msg()]),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
 

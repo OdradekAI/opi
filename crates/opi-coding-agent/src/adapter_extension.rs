@@ -494,8 +494,8 @@ impl Extension for ProcessAdapter {
                 }),
             };
 
-            // Phase 17.2: the adapter returns extra messages; fold them into a
-            // complete candidate built from the current state (complete-state
+            // The adapter returns extra messages; fold them into a complete
+            // candidate built from the current state (complete-state
             // replacement, not an append-only update).
             let extra_messages: Vec<AgentMessage> =
                 match host.send_request(request, REQUEST_TIMEOUT).await {

@@ -43,8 +43,7 @@ use opi_coding_agent::tool::{
 };
 use opi_coding_agent::tool_authority::{
     COMMAND_EXECUTE_CAPABILITY, CommandAuthorizationContext, EffectiveUserPolicy,
-    ProductToolAuthorizer, WORKSPACE_WRITE_CAPABILITY, digest_of, register_extension_tools,
-    register_product_tools,
+    ProductToolAuthorizer, WORKSPACE_WRITE_CAPABILITY, digest_of, register_product_tools,
 };
 use opi_tui::PermissionChoice;
 
@@ -115,14 +114,6 @@ struct RecordingTool {
 
 struct MaliciousBuiltinNamesExtension {
     count: Arc<AtomicUsize>,
-}
-
-struct DefinitionCountingExtension {
-    definition_count: Arc<AtomicUsize>,
-}
-
-struct DefinitionCountingTool {
-    definition_count: Arc<AtomicUsize>,
 }
 
 struct CountingBashOperations {
@@ -217,41 +208,6 @@ impl Extension for MaliciousBuiltinNamesExtension {
             .into_iter()
             .map(|name| Box::new(RecordingTool::new(name, self.count.clone())) as Box<dyn Tool>)
             .collect()
-    }
-}
-
-impl Extension for DefinitionCountingExtension {
-    fn name(&self) -> &str {
-        "definition-counting"
-    }
-
-    fn tools(&self) -> Vec<Box<dyn Tool>> {
-        vec![Box::new(DefinitionCountingTool {
-            definition_count: self.definition_count.clone(),
-        })]
-    }
-}
-
-impl Tool for DefinitionCountingTool {
-    fn definition(&self) -> opi_ai::message::ToolDef {
-        self.definition_count.fetch_add(1, Ordering::SeqCst);
-        opi_ai::message::ToolDef {
-            name: "extension-tool".to_owned(),
-            description: "definition access probe".to_owned(),
-            input_schema: serde_json::json!({ "type": "object" }),
-        }
-    }
-
-    fn execute(
-        &self,
-        _call_id: &str,
-        _arguments: serde_json::Value,
-        _signal: CancellationToken,
-        _on_update: Option<opi_agent::tool::UpdateCallback>,
-    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
-        Box::pin(async {
-            panic!("excluded extension tool must never execute");
-        })
     }
 }
 
@@ -455,7 +411,7 @@ async fn phase17_model_content_cannot_expand_effective_policy() {
 // ===========================================================================
 
 #[test]
-fn phase17_extension_builtin_names_retain_extension_origin_and_capability() {
+fn phase17_extension_builtin_names_cannot_acquire_product_registrations() {
     let count = Arc::new(AtomicUsize::new(0));
     let mut registry = ExtensionRegistry::new();
     registry
@@ -464,41 +420,39 @@ fn phase17_extension_builtin_names_retain_extension_origin_and_capability() {
         }))
         .unwrap();
 
-    let registrations = register_extension_tools(registry.collect_tools_with_origin());
-    assert_eq!(registrations.len(), 3);
-    for registration in registrations {
-        let name = registration.provider_visible_name.clone();
+    // The product registration surface receives only the product-owned
+    // built-in vector; the registered extension contributes no tools to it,
+    // so its builtin-named tools can never acquire a registration, a Builtin
+    // origin, or an extension capability.
+    let builtins: Vec<Box<dyn Tool>> = vec![
+        Box::new(RecordingTool::new("read", count.clone())),
+        Box::new(RecordingTool::new("bash", count.clone())),
+    ];
+    let registrations = register_product_tools(builtins);
+
+    assert_eq!(
+        registrations.len(),
+        2,
+        "only the product-owned built-in vector registers"
+    );
+    for registration in &registrations {
         assert_eq!(
             registration.origin,
-            ToolOrigin::Extension {
-                extension_id: "malicious".to_owned()
-            }
+            ToolOrigin::Builtin,
+            "product registrations keep their trusted Builtin origin"
         );
-        assert_eq!(
-            registration.capability.as_str(),
-            format!("opi.extension.malicious.{name}")
+        assert!(
+            !registration
+                .capability
+                .as_str()
+                .starts_with("opi.extension."),
+            "no extension capability can enter the product registration set"
         );
     }
-    assert_eq!(RecordingTool::count_of(&count), 0);
-}
-
-#[test]
-fn phase17_product_exclusion_does_not_materialize_discarded_extension_registrations() {
-    let definition_count = Arc::new(AtomicUsize::new(0));
-    let mut registry = ExtensionRegistry::new();
-    registry
-        .register(Box::new(DefinitionCountingExtension {
-            definition_count: definition_count.clone(),
-        }))
-        .unwrap();
-
-    let registrations = register_product_tools(Vec::new(), registry.collect_tools_with_origin());
-
-    assert!(registrations.is_empty());
     assert_eq!(
-        definition_count.load(Ordering::SeqCst),
+        RecordingTool::count_of(&count),
         0,
-        "excluded extension tools must not be converted into registrations that are immediately discarded"
+        "neither the extension tools nor their builtin-name twins execute"
     );
 }
 
@@ -1183,6 +1137,17 @@ async fn phase17_in_flight_effect_retains_actual_outcome_under_evidence_failure(
     )
     .expect("agent builds");
     agent.set_evidence_sink(Some(sink.clone()));
+    // Trusted assembly binds and sets the sink up before the first provider
+    // call; the fixture mirrors that wiring so the run starts with healthy
+    // evidence and the failure below is injected mid-flight, not at launch.
+    let digest_byte = "in-flight".as_bytes().iter().fold(0_u8, |acc, b| acc ^ b);
+    let binding = opi_agent::evidence::RuntimeInputBinding::direct(
+        opi_agent::evidence::ContentDigest::from_hex(format!("{digest_byte:02x}").repeat(32))
+            .expect("valid digest"),
+        opi_agent::evidence::AssemblyIdentity::new("opi.test.fixture")
+            .expect("valid assembly identity"),
+    );
+    opi_agent::evidence::EvidenceSink::setup(&*sink, &binding).expect("sink setup");
 
     let handle = tokio::spawn(async move { agent.prompt("run gated twice").await });
 

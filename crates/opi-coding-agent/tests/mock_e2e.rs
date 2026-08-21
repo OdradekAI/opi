@@ -312,13 +312,23 @@ async fn e2e_error_response_from_provider() {
     )
     .expect("agent");
 
-    let result = agent.prompt("Hello").await.into_execution_result().unwrap();
+    let events: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let ev = events.clone();
+    agent.subscribe(Box::new(move |event| {
+        let is_auto_retry = matches!(event, opi_agent::event::AgentEvent::AutoRetryStart { .. });
+        ev.lock().unwrap().push(if is_auto_retry {
+            "AutoRetryStart".to_owned()
+        } else {
+            event_name(event).to_owned()
+        });
+    }));
 
-    // Should still have messages (user + error assistant)
-    assert!(result.len() >= 2);
+    let run = agent.prompt("Hello").await;
 
-    // The assistant message should have error_message set
-    let has_error_msg = result.iter().any(|m| {
+    // The partial assistant message produced before the in-band error
+    // terminal stays observable on the run handle (the durable Agent state
+    // follows the ordinary-failure rollback contract).
+    let has_error_msg = run.messages().iter().any(|m| {
         if let AgentMessage::Llm(Message::Assistant(a)) = m {
             a.error_message.is_some()
         } else {
@@ -327,6 +337,32 @@ async fn e2e_error_response_from_provider() {
     });
     assert!(
         has_error_msg,
-        "should have an assistant message with error_message set"
+        "the run should retain the partial assistant message with error_message set"
+    );
+
+    // An in-band stream error terminal is a typed, non-retryable provider
+    // failure: the run must not complete Ok.
+    let error = run.into_execution_result().unwrap_err();
+    assert!(
+        matches!(&error, AgentError::Provider(e) if matches!(
+            e.provider_error(),
+            opi_ai::provider::ProviderError::StreamError(_)
+        )),
+        "in-band error terminal must fail the run with a typed stream error, got {error:?}"
+    );
+    assert!(
+        matches!(&error, AgentError::Provider(e) if !e.provider_error().is_retryable()),
+        "the typed stream error must be non-retryable"
+    );
+
+    // The failure is terminal for the run: no retry was scheduled.
+    let ev_lock = events.lock().unwrap();
+    assert!(
+        !ev_lock.iter().any(|name| name == "AutoRetryStart"),
+        "an in-band error terminal must not schedule a retry, got {ev_lock:?}"
+    );
+    assert!(
+        ev_lock.iter().any(|name| name == "AgentEnd"),
+        "the failed run still emits AgentEnd, got {ev_lock:?}"
     );
 }

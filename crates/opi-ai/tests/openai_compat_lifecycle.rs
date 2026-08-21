@@ -72,7 +72,7 @@ mod openai_chat_profile {
         let provider = OpenAiChatProvider::new(Some(server.uri()));
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let mut events = Vec::new();
@@ -139,7 +139,7 @@ mod openai_chat_profile {
         let provider = OpenAiChatProvider::new(Some(server.uri()));
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
@@ -174,7 +174,7 @@ mod openai_chat_profile {
         let provider = OpenAiChatProvider::new(Some(server.uri()));
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
@@ -207,7 +207,7 @@ mod openai_chat_profile {
         let provider = OpenAiChatProvider::new(Some(server.uri()));
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let mut saw_stream_error = false;
@@ -262,7 +262,7 @@ mod openai_chat_profile {
 
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
         let first = stream
             .next()
@@ -292,7 +292,7 @@ mod openai_chat_profile {
         let provider = OpenAiChatProvider::new(Some(server.uri()));
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
         let first = stream
             .next()
@@ -379,7 +379,7 @@ mod mistral_profile {
         let provider = make_provider(server.uri());
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let mut events = Vec::new();
@@ -446,7 +446,7 @@ mod mistral_profile {
         let provider = make_provider(server.uri());
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
@@ -481,7 +481,7 @@ mod mistral_profile {
         let provider = make_provider(server.uri());
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
@@ -514,7 +514,7 @@ mod mistral_profile {
         let provider = make_provider(server.uri());
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let mut saw_stream_error = false;
@@ -621,7 +621,7 @@ mod openrouter_profile {
         let provider = make_provider(server.uri());
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let mut events = Vec::new();
@@ -688,7 +688,7 @@ mod openrouter_profile {
         let provider = make_provider(server.uri());
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
@@ -723,7 +723,7 @@ mod openrouter_profile {
         let provider = make_provider(server.uri());
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
@@ -756,7 +756,7 @@ mod openrouter_profile {
         let provider = make_provider(server.uri());
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let mut saw_stream_error = false;
@@ -803,7 +803,7 @@ mod openrouter_profile {
         let provider = make_provider(server.uri());
         let mut stream = provider.stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         // Consume the stream -- the mock will only match if both extra headers are present.

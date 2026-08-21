@@ -794,14 +794,17 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
     );
     std::fs::copy(session_file, dir.join("session.jsonl")).unwrap();
 
+    // Every numeric claim below is measured from the mode's own dispatch log
+    // and workspace marker, not transcribed, so the `verified` rows in
+    // RUN_SUMMARY.md stay truthful about what this execution observed.
     let provider_assertion = serde_json::json!({
         "fixture_model_spec": MODEL_SPEC,
         "modes": {
-            "interactive_assembly": { "provider": "alpha", "calls": 2, "evidence_kinds": interactive_kinds },
-            "coding_harness_prompt": { "provider": "alpha", "calls": 2, "evidence_kinds": harness_kinds },
-            "runner_print": { "provider": "alpha", "calls": 2, "evidence_kinds": print_kinds },
-            "runner_json": { "provider": "alpha", "calls": 2, "evidence_kinds": json_kinds, "summary_model": MODEL_SPEC },
-            "rpc": { "provider": "alpha", "calls": 2, "evidence_kinds": rpc_kinds },
+            "interactive_assembly": { "provider": "alpha", "calls": calls1.lock().unwrap().len(), "evidence_kinds": interactive_kinds },
+            "coding_harness_prompt": { "provider": "alpha", "calls": calls2.lock().unwrap().len(), "evidence_kinds": harness_kinds },
+            "runner_print": { "provider": "alpha", "calls": calls3.lock().unwrap().len(), "evidence_kinds": print_kinds },
+            "runner_json": { "provider": "alpha", "calls": calls4.lock().unwrap().len(), "evidence_kinds": json_kinds, "summary_model": MODEL_SPEC },
+            "rpc": { "provider": "alpha", "calls": calls5.lock().unwrap().len(), "evidence_kinds": rpc_kinds },
         },
         "equivalent": true,
     });
@@ -810,14 +813,20 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
         serde_json::to_string_pretty(&provider_assertion).unwrap(),
     )
     .unwrap();
+    let authority_probe_count = |workspace: &std::path::Path| {
+        usize::from(workspace.join("authority-executed.txt").exists())
+    };
     std::fs::write(
         dir.join("tool-execution-counts.json"),
         serde_json::to_string_pretty(&serde_json::json!({
             "modes": {
-                "interactive_assembly": 0, "coding_harness_prompt": 0,
-                "runner_print": 0, "runner_json": 0, "rpc": 0,
+                "interactive_assembly": authority_probe_count(ws1.path()),
+                "coding_harness_prompt": authority_probe_count(ws2.path()),
+                "runner_print": authority_probe_count(ws3.path()),
+                "runner_json": authority_probe_count(ws4.path()),
+                "rpc": authority_probe_count(ws5.path()),
             },
-            "note": "the fixture requests bash in every mode; the real product authorizer denies it before the marker command executes"
+            "note": "measured from each mode's authority-executed.txt marker; the real product authorizer denies the command before execution"
         }))
         .unwrap(),
     )
@@ -833,7 +842,7 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
         serde_json::to_string_pretty(&serde_json::json!({})).unwrap(),
     )
     .unwrap();
-    std::fs::write(dir.join("exit-code.txt"), "0\n").unwrap();
+    std::fs::write(dir.join("exit-code.txt"), format!("{rpc_exit}\n")).unwrap();
     std::fs::write(dir.join("stdout.txt"), "").unwrap();
     std::fs::write(dir.join("stderr.txt"), "").unwrap();
 

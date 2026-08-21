@@ -9,7 +9,7 @@ use futures_util::{StreamExt, stream};
 use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{AuthInvalidPolicy, ResolvedAuth};
+use crate::auth::{AuthInvalidPolicy, AuthScheme, ResolvedAuth};
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::openai_responses_shared::{
@@ -355,13 +355,21 @@ impl OpenAiResponsesProvider {
         request_id: Option<String>,
         tx: tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
+        let secret = resolved.secret.expose_secret();
+        let bearer = match resolved.scheme {
+            AuthScheme::Bearer => format!("Bearer {secret}"),
+            AuthScheme::ApiKey | AuthScheme::AwsSigV4(_) => {
+                return Err(ProviderError::Config(
+                    ProviderErrorSummary::attested_static(
+                        "OpenAI Responses accepts only Bearer authentication",
+                    ),
+                ));
+            }
+        };
         let url = crate::endpoint::join_endpoint(&base_url, &route_path);
         let mut request = client
             .post(url)
-            .header(
-                "authorization",
-                format!("Bearer {}", resolved.secret.expose_secret()),
-            )
+            .header("authorization", bearer)
             .header("content-type", "application/json");
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);

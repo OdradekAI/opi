@@ -274,7 +274,7 @@ impl ProviderRegistry {
 
     /// Get a shared (`Arc`) handle to a provider by id.
     ///
-    /// Prepared calls (Phase 17) need an owned provider handle that outlives the
+    /// Prepared calls need an owned provider handle that outlives the
     /// collection borrow; this clones the shared handle stored by the registry.
     pub fn get_provider_arc(&self, id: &str) -> Option<Arc<dyn Provider>> {
         self.providers.iter().find(|p| p.id() == id).cloned()

@@ -954,8 +954,12 @@ impl RpcRunner {
                             data["branches"] = serde_json::Value::Array(branches_arr);
                         }
                         Err(e) => {
-                            data["tree_read_error"] = serde_json::json!(format!(
-                                "session file could not be read for branch tree: {e}"
+                            // The raw read error carries the session path, so it
+                            // is summarized like the sibling branch/recovery
+                            // text instead of leaving the process verbatim.
+                            data["tree_read_error"] = serde_json::json!(redact_text(
+                                &format!("session file could not be read for branch tree: {e}"),
+                                RedactionMode::Summary
                             ));
                         }
                     }

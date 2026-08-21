@@ -509,7 +509,7 @@ async fn auth_error_bodies_are_absent_from_public_errors() {
 
         let mut stream = provider.stream_prepared(
             lifecycle_text_request(),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
         let error = stream
             .next()
@@ -537,7 +537,7 @@ async fn direct_auth_statuses_do_not_wait_for_stalled_bodies() {
         let provider = VertexProvider::new("my-project".into(), "us-central1".into(), Some(server));
         let mut stream = provider.stream_prepared(
             lifecycle_text_request(),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         );
 
         tokio::time::timeout(
@@ -583,7 +583,7 @@ async fn oversized_embedded_auth_body_is_not_read_past_the_classification_cap() 
     );
     let mut stream = provider.stream_prepared(
         lifecycle_text_request(),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     );
 
     let error = stream
@@ -651,7 +651,8 @@ async fn request_timeout_maps_to_typed_timeout_at_vertex_boundary() {
     );
     let mut request = lifecycle_text_request();
     request.timeout = Some(std::time::Duration::from_millis(20));
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
 
     let result = tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
         .await
@@ -670,7 +671,8 @@ async fn stalled_embedded_auth_body_respects_a_stricter_request_timeout() {
     let provider = VertexProvider::new("my-project".into(), "us-central1".into(), Some(server));
     let mut request = lifecycle_text_request();
     request.timeout = Some(std::time::Duration::from_millis(50));
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
 
     tokio::time::timeout(
         std::time::Duration::from_secs(2),
@@ -808,7 +810,8 @@ async fn request_header_cannot_override_vertex_auth_routing() {
     );
     let mut request = lifecycle_text_request();
     request.extra_headers = vec![("authorization".into(), "override".into())];
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
 
     assert!(matches!(
         stream.next().await,
@@ -834,7 +837,8 @@ async fn assert_vertex_cancelled(stall_point: VertexStallPoint) {
     let provider = VertexProvider::new("my-project".into(), "us-central1".into(), Some(server));
     let mut request = lifecycle_text_request();
     request.cancel = cancel.clone();
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
 
     tokio::time::timeout(std::time::Duration::from_secs(1), stalled.notified())
         .await

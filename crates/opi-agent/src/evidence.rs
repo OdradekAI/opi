@@ -130,7 +130,7 @@ impl<'de> serde::Deserialize<'de> for RunId {
 
 /// Mints opaque identities and a monotonic run-local [`Sequence`] for one run.
 ///
-/// One allocator belongs to one run. The loop (17.6) holds it; identities are
+/// One allocator belongs to one run. The agent loop holds it; identities are
 /// minted immediately before the corresponding lifecycle evidence is emitted so
 /// correlation precedes any external effect. `RunId` collision resistance
 /// across processes comes from UUID version 7; run-internal `TurnId`, `CallId`,
@@ -223,7 +223,7 @@ pub enum EvidenceFailureCode {
 /// immediately when setup, emission, or finalization fails: the loop owns
 /// during-run transitions and [`crate::agent::AgentRunResult`] owns post-loop
 /// compaction/finalization transitions. Sinks do not expose a mutable health
-/// handle; authorizers receive a *copy* in each request (17.4), so
+/// handle; authorizers receive a *copy* in each request, so
 /// authorization never shares mutable health with the sink.
 ///
 /// The two variants are exhaustive (not `#[non_exhaustive]`): health is either
@@ -1774,7 +1774,6 @@ pub struct ManifestCorrelation {
 /// Closed terminal outcome of a run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-#[non_exhaustive]
 pub enum TerminalOutcome {
     /// The run completed normally.
     Success,
@@ -1788,8 +1787,8 @@ pub enum TerminalOutcome {
     CleanupUnknown,
 }
 
-/// Closed evidence completeness state. Required-complete-evidence policy
-/// (17.7) treats [`EvidenceCompleteness::Incomplete`] as fail-closed.
+/// Closed evidence completeness state. A required-complete-evidence policy
+/// treats [`EvidenceCompleteness::Incomplete`] as fail-closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceCompleteness {
@@ -2363,7 +2362,7 @@ impl InMemoryEvidenceSink {
 
     /// Snapshot of emitted records in emission order.
     pub fn records(&self) -> Vec<EvidenceRecord> {
-        Self::lock(&self.records).clone()
+        EvidenceRecorder::records(self)
     }
 
     /// Snapshot of finalized artifacts in finalization order.
@@ -2373,16 +2372,13 @@ impl InMemoryEvidenceSink {
 
     /// Whether any lifecycle phase failed.
     pub fn has_failure(&self) -> bool {
-        Self::lock(&self.failure).is_some()
+        EvidenceRecorder::has_failure(self)
     }
 
     /// The completed manifest, but only if no lifecycle phase failed. Returns
     /// `None` while incomplete or after a failure (the manifest is withheld).
     pub fn completed_manifest(&self) -> Option<FinalizedManifest> {
-        if Self::lock(&self.failure).is_some() {
-            return None;
-        }
-        Self::lock(&self.manifest).clone()
+        EvidenceRecorder::completed_manifest(self)
     }
 }
 
@@ -2408,6 +2404,13 @@ impl EvidenceSink for InMemoryEvidenceSink {
                 detail: "evidence run is already finalized".to_owned(),
             });
         }
+        if Self::lock(&self.binding).is_none() {
+            let error = EvidenceError::Emission {
+                detail: "evidence sink used before setup".to_owned(),
+            };
+            *Self::lock(&self.failure) = Some(error.clone());
+            return Err(error);
+        }
         if record.validate_kind_payload().is_err() {
             let error = EvidenceError::Emission {
                 detail: "evidence record kind does not match its typed payload".to_owned(),
@@ -2428,6 +2431,13 @@ impl EvidenceSink for InMemoryEvidenceSink {
             return Err(EvidenceError::Finalization {
                 detail: "evidence run is already finalized".to_owned(),
             });
+        }
+        if Self::lock(&self.binding).is_none() {
+            let error = EvidenceError::Finalization {
+                detail: "evidence sink used before setup".to_owned(),
+            };
+            *Self::lock(&self.failure) = Some(error.clone());
+            return Err(error);
         }
         if let Some(err) = Self::lock(&self.inject).finalization.clone() {
             *Self::lock(&self.failure) = Some(err.clone());

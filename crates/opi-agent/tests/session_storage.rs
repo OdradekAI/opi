@@ -937,6 +937,40 @@ fn crash_recovery_reports_unknown_future_type_separately_from_corrupt() {
 }
 
 #[test]
+fn read_with_recovery_fails_closed_on_unsupported_format_version() {
+    // A header whose format version this build does not support must be
+    // rejected with the typed InvalidData error before any entry is read,
+    // never silently loaded.
+    for unsupported_version in [2u32, 0u32] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("v{unsupported_version}.jsonl"));
+        let mut header = serde_json::to_value(make_header("versioned")).unwrap();
+        header["version"] = serde_json::json!(unsupported_version);
+        {
+            let mut f = std::fs::File::create(&path).unwrap();
+            writeln!(f, "{header}").unwrap();
+            writeln!(
+                f,
+                "{}",
+                serde_json::to_string(&test_message_entry("e1", "real")).unwrap()
+            )
+            .unwrap();
+        }
+
+        let error = SessionReader::read_with_recovery(&path).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            std::io::ErrorKind::InvalidData,
+            "version {unsupported_version}: {error}"
+        );
+        assert!(
+            error.to_string().contains("unsupported session version"),
+            "version {unsupported_version}: {error}"
+        );
+    }
+}
+
+#[test]
 fn crash_recovery_unknown_and_corrupt_are_independent_buckets() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mixed.jsonl");

@@ -857,7 +857,17 @@ fn map_gemini_error(
 
 impl Provider for GeminiProvider {
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
-        let api_key = auth.secret.expose_secret().to_string();
+        let secret = auth.secret.expose_secret();
+        let api_key = match auth.scheme {
+            crate::auth::AuthScheme::ApiKey => secret.to_string(),
+            crate::auth::AuthScheme::Bearer | crate::auth::AuthScheme::AwsSigV4(_) => {
+                return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                    ProviderErrorSummary::attested_static(
+                        "Gemini requires prepared API-key authentication",
+                    ),
+                ))]));
+            }
+        };
         let base_url = self.base_url.clone();
         let model_id = request
             .model

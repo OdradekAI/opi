@@ -155,7 +155,17 @@ impl Provider for VertexProvider {
     }
 
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
-        let access_token = auth.secret.expose_secret().to_string();
+        let secret = auth.secret.expose_secret();
+        let access_token = match auth.scheme {
+            crate::auth::AuthScheme::Bearer => secret.to_string(),
+            crate::auth::AuthScheme::ApiKey | crate::auth::AuthScheme::AwsSigV4(_) => {
+                return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                    ProviderErrorSummary::attested_static(
+                        "Vertex accepts only Bearer authentication",
+                    ),
+                ))]));
+            }
+        };
         let model_id = request
             .model
             .split_once(':')

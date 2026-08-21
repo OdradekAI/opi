@@ -58,7 +58,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `opi-coding-agent`: legacy bare-model session routes normalize only when the
   dispatchable collection proves exactly one route; missing or ambiguous
   routes keep the configured model and report typed remediation instead of
-  guessing from the active provider.
+  guessing from the active provider. Direct model selection
+  (`set_model`/`set_model_validated`, RPC `set_model`, and CLI startup
+  validation) now applies the same unique-dispatchable-route proof to bare
+  input, and a model change that cannot be dispatched is rejected before any
+  durable `model_change` entry is written.
+- `opi-agent`: an in-band provider stream `Error` terminal (for example an
+  SSE `error` event) now fails the run with the typed, non-retryable stream
+  failure instead of completing the turn as a normal assistant message; the
+  partial assistant message remains visible in the run's event stream.
+- `opi-ai`: every concrete adapter validates the prepared `AuthScheme` at its
+  wire boundary and rejects a mismatched scheme with a typed configuration
+  error before attaching the secret, instead of attaching it unconditionally.
+- `opi-agent`: `InMemoryEvidenceSink` fails closed with the typed evidence
+  error when `emit`/`finalize_artifact` run before `setup`, matching the file
+  adapter's lifecycle contract.
+- `opi-agent`: the closed decision enums `AuthorizationDecision` and
+  `TerminalOutcome` are no longer `#[non_exhaustive]`.
+- `opi-coding-agent`: the speculative `register_extension_tools` seam and the
+  discarded `_extension_tools` parameter of `register_product_tools` were
+  removed (extension tools remain excluded from product registration), and
+  the fully dead `FileEvidenceSink::dir()` accessor was removed.
 - `opi-coding-agent`: `NonInteractiveRunner::cancel` was replaced by
   `cancel_token(&mut self)`, which arms the next run generation and returns its
   clonable cancellation token before `run*` takes the mutable borrow.
@@ -101,6 +121,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trusted tool schemas, route, inference budget, active session branch, and
   terminal provider response. Setup, requested-session reopen, and durable
   finalization failures now remain visible instead of silently degrading.
+- The public event boundary (`AgentEvent::redacted_for_public`) scrubs
+  recognized credential patterns (API-key, bearer, and JWT shapes) from user
+  message content, tool-result content, and terminal tool results before they
+  reach NDJSON/RPC output; ordinary conversation content continues to echo
+  verbatim.
+- An invalid configured startup model (for example a mistyped
+  `--model provider:model` id) exits at CLI startup with a typed diagnostic
+  instead of panicking during harness construction.
+- Providers configured with broken non-secret configuration (for example an
+  invalid proxy URL) that are skipped during eager extra-route construction
+  now surface a redacted startup diagnostic naming the dropped provider,
+  instead of degrading later model switches to unexplained unknown-model
+  errors.
+- The RPC `session_info` `tree_read_error` field is summary-redacted like its
+  sibling fields, so raw session-file paths no longer cross the RPC boundary.
 
 ## [0.8.0] - 2026-08-12
 

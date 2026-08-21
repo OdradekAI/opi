@@ -362,8 +362,11 @@ async fn openai_chat_api_key_uses_managed_revocation_policy() {
         vec![],
         Arc::new(HttpClient::new()),
     );
+    // An API-key credential on the OpenAI wire is attached as a Bearer header
+    // (production route credentials pin Bearer for this wire), so the prepared
+    // auth carries the Bearer scheme.
     let mut stream =
-        provider.stream_prepared(sample_request("openai:gpt-4o"), apikey_auth("sk-openai"));
+        provider.stream_prepared(sample_request("openai:gpt-4o"), bearer_auth("sk-openai"));
     let err = stream
         .next()
         .await
@@ -488,11 +491,10 @@ async fn reusable_route_auth_invalid_policy_matrix_is_scheme_independent_and_bod
                     .mount(&server)
                     .await;
                 let (provider, model) = reusable_route(route, credential_managed, server.uri());
+                // Every route in this matrix accepts the Bearer scheme
+                // (Anthropic accepts both Bearer and ApiKey).
                 let error = provider
-                    .stream_prepared(
-                        sample_request(&model),
-                        opi_ai::test_support::resolved_auth(),
-                    )
+                    .stream_prepared(sample_request(&model), bearer_auth("test-key"))
                     .next()
                     .await
                     .expect("auth-invalid error")
@@ -571,8 +573,10 @@ async fn static_route_auth_errors_are_bodyless_for_all_profiles_and_schemes() {
                 .mount(&server)
                 .await;
             let (provider, model) = static_route(route, server.uri());
+            // Every wire in this matrix accepts the Bearer scheme (Anthropic
+            // accepts both Bearer and ApiKey).
             let error = provider
-                .stream_prepared(sample_request(model), opi_ai::test_support::resolved_auth())
+                .stream_prepared(sample_request(model), bearer_auth("test-key"))
                 .next()
                 .await
                 .expect("auth-invalid error")

@@ -282,9 +282,11 @@ async fn rpc_set_model_rejects_invalid_spec() {
         .unwrap();
     let resp = recv_response(&mut output_rx, "set_model").await;
     assert_eq!(resp["success"], false);
+    // A bare model resolves only through the unique-dispatchable-route proof,
+    // so a no-match input returns typed remediation rather than a parse error.
     assert_eq!(
         resp["error"],
-        "invalid model spec: spec must be 'provider:model', got: \"not-a-model-spec\""
+        "bare model 'not-a-model-spec' matches no dispatchable route"
     );
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -1745,11 +1747,23 @@ async fn phase13_rpc_session_info_reports_tree_read_error() {
         .unwrap();
     let resp = recv_response(&mut output_rx, "session_info").await;
     assert_eq!(resp["success"], true, "session_info should succeed: {resp}");
+    // The tree read failure is still surfaced as a structured field, but the
+    // message is redacted like its sibling fields: the raw session location
+    // must not cross into the RPC response.
     assert!(
         resp["data"]["tree_read_error"]
             .as_str()
-            .is_some_and(|message| message.contains("session file could not be read")),
+            .is_some_and(|m| !m.is_empty()),
         "tree read failure should be surfaced without failing session_info: {resp}"
+    );
+    let resp_serialized = serde_json::to_string(&resp).unwrap();
+    assert!(
+        !resp_serialized.contains(&session_path.display().to_string()),
+        "tree_read_error must not leak the raw session path: {resp_serialized}"
+    );
+    assert!(
+        !resp_serialized.contains(&format!("{session_id}.jsonl")),
+        "tree_read_error must not leak the session file name: {resp_serialized}"
     );
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -4812,11 +4826,13 @@ mod phase7 {
 // ---------------------------------------------------------------------------
 // Phase 17 task 17.7 (P17-A10): a canary secret in the prompt must not leak
 // into the RPC evidence trace (route facts) or diagnostic-bearing events.
+// Phase 17 remediation (AUD-17-007): the full public event stream is scanned
+// (including the AgentEnd echo of the prompt), not just the trace response.
 // ---------------------------------------------------------------------------
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase17_canary_is_absent_from_rpc_jsonl() {
     use opi_agent::evidence::InMemoryEvidenceSink;
-    let canary = "sk-canary-RPC_JSONL_LEAK_9f8e7d6c";
+    let canary = "sk-ant-canary-0123456789abcdef0123";
     let provider = MockProvider::new("mock", vec![text_response("done")]);
     let workspace = tempfile::tempdir().unwrap();
     let recorder = Arc::new(InMemoryEvidenceSink::new());
@@ -4844,7 +4860,32 @@ async fn phase17_canary_is_absent_from_rpc_jsonl() {
         })
         .unwrap();
     let _ = recv_response(&mut output_rx, "prompt").await;
-    recv_until_agent_end(&mut output_rx).await;
+
+    // Capture the FULL public event stream through AgentEnd instead of
+    // discarding it: the prompt echo crosses in these shapes, so the
+    // absence check must cover them to be non-vacuous.
+    let mut event_stream = Vec::new();
+    loop {
+        let line = recv_rpc_line(&mut output_rx).await;
+        let is_agent_end = line["type"] == "AgentEnd";
+        event_stream.push(line);
+        if is_agent_end {
+            break;
+        }
+    }
+    assert!(
+        event_stream.iter().any(|line| line["type"] == "TurnEnd"),
+        "the run must emit TurnEnd for the scan to be meaningful"
+    );
+    let stream_serialized = serde_json::to_string(&event_stream).unwrap();
+    assert!(
+        !stream_serialized.contains(canary),
+        "rpc event stream leaked the prompt canary (conversation echo must scrub recognized credential patterns): {stream_serialized}"
+    );
+    assert!(
+        stream_serialized.contains("[REDACTED]"),
+        "the scrubbed prompt echo leaves the redaction marker: {stream_serialized}"
+    );
 
     // The evidence trace (route facts) must not carry the raw canary. Assert the
     // trace is non-empty so the absence check is not vacuous: the run actually

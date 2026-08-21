@@ -76,8 +76,8 @@ impl PermissionPolicy {
     }
 
     /// The resolved (adapter_id, decision) entries in canonical sorted order, for
-    /// digest-addressing an immutable policy snapshot (Phase 17.4). Exposes only
-    /// the already-resolved user/explicit-layer decisions, not the defaulting rule.
+    /// digest-addressing an immutable policy snapshot. Exposes only the
+    /// already-resolved user/explicit-layer decisions, not the defaulting rule.
     pub fn canonical_entries(&self) -> Vec<(&str, PermissionDecision)> {
         self.decisions
             .iter()

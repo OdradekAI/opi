@@ -60,6 +60,21 @@ pub fn resolved_auth() -> ResolvedAuth {
     }
 }
 
+/// Bearer-scheme sibling of [`resolved_auth`] for wires that attach the secret
+/// as an `Authorization: Bearer` header (openai_chat, openai_responses,
+/// openai_codex_responses, vertex, and api-mapped routes onto those wires).
+/// Those adapters reject a prepared ApiKey scheme before the wire.
+#[doc(hidden)]
+pub fn resolved_bearer_auth() -> ResolvedAuth {
+    ResolvedAuth {
+        scheme: AuthScheme::Bearer,
+        secret: SecretString::from("test-key"),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    }
+}
+
 /// Build a [`ProviderCollection`] with one dispatchable route for `provider`,
 /// using a dummy static resolver. Mock providers ignore the resolved auth, so
 /// this lets tests dispatch through `prepare_call` without supplying real

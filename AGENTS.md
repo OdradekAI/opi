@@ -29,8 +29,12 @@ Use the narrowest authoritative source for each claim:
   completed delivery history. Do not record progress in `docs/opi-spec.md`.
 
 When documentation has an English/Chinese counterpart, update both in the same
-change or state why synchronization is unnecessary. Keep `AGENTS.md` and
-`CLAUDE.md` identical except for their four intentional tool-flavor phrases.
+change or state why synchronization is unnecessary. `CLAUDE.md` is a symlink to
+`AGENTS.md`, so the repository keeps exactly one guidance file; edit
+`AGENTS.md` and never `CLAUDE.md` directly. On a filesystem without symlink
+support a fresh clone materializes `CLAUDE.md` as a text file containing
+`AGENTS.md`; `scripts/opi-doc-check.py` warns on that state and fails on real
+content drift.
 
 ## Design boundaries
 

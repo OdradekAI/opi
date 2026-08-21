@@ -1797,6 +1797,7 @@ async fn agent_loop_redacts_hostile_backend_rejected_by_model_schema() {
         CancellationToken::new(),
     )
     .await
+    .into_execution_result()
     .expect("schema rejection is a normal tool result");
     let public_tool_results = messages
         .context

@@ -42,7 +42,6 @@ ignore = { workspace = true }
 globset = { workspace = true }
 regex = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 schemars = { workspace = true }
 tokio-util = { workspace = true }
 crossterm = { workspace = true }

@@ -86,7 +86,7 @@ async fn stream_success() {
     let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let mut stream = provider.stream_prepared(
         make_request(CancellationToken::new()),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     );
 
     let mut events = Vec::new();
@@ -158,7 +158,7 @@ async fn stream_accepts_canonical_data_only_responses_frames() {
     let results: Vec<_> = provider
         .stream_prepared(
             make_request(CancellationToken::new()),
-            opi_ai::test_support::resolved_auth(),
+            opi_ai::test_support::resolved_bearer_auth(),
         )
         .collect()
         .await;
@@ -194,7 +194,7 @@ async fn stream_auth_error() {
     let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let mut stream = provider.stream_prepared(
         make_request(CancellationToken::new()),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     );
 
     let result = stream.next().await.expect("should have event");
@@ -229,7 +229,7 @@ async fn stream_rate_limited() {
     let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let mut stream = provider.stream_prepared(
         make_request(CancellationToken::new()),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     );
 
     let result = stream.next().await.expect("should have event");
@@ -263,7 +263,7 @@ async fn stream_no_terminal_event() {
     let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let mut stream = provider.stream_prepared(
         make_request(CancellationToken::new()),
-        opi_ai::test_support::resolved_auth(),
+        opi_ai::test_support::resolved_bearer_auth(),
     );
 
     let mut saw_stream_error = false;
