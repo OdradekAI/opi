@@ -1,7 +1,7 @@
 ---
 name: opi-implement
 disable-model-invocation: true
-description: Use when executing opi-spec.md tasks or reviewed supplemental opi phase tasks, checking implementation status, reinitializing the task ledger, resuming interrupted implementation, clearing task blockers, or auto-selecting the next unblocked task. Triggers on implement, resume, verify, or progress requests for spec tasks; not on merely reading or discussing specs.
+description: Admit and execute the canonical Opi implementation ledger one reviewed task at a time.
 ---
 
 # opi-implement
@@ -101,6 +101,11 @@ Ordinary tasks do not need these subclauses. A `none` answer requires
 repository evidence, including checks for dynamic loading, configuration,
 wire or persistent formats, and public API use when applicable.
 
+When plan admission detects a shared semantic decision, read
+`../_shared/references/shared-decision-and-test-stewardship.md` in full and
+apply its trigger and plan-note contract before P.4. Do not manufacture a
+shared seam for an ordinary one-consumer helper.
+
 ## Invocation
 
 ```text
@@ -176,7 +181,9 @@ only after a separate explicit commit authorization; see
    - B.1 Print task DoD + verification tier + parallelize plan + owned
      acceptance scenarios + required production call-site traces + phase
      source files + phase-specific forbidden-scope guards + the six-answer
-     minimum-change trace. For a graph confirmed before this contract, print
+     minimum-change trace + every participating shared-decision note and its
+     owner/consumer/Interface/closure-test map. For a graph confirmed before
+     this contract, print
      absent answers as `legacy-unrecorded`; never fabricate them. The exemption
      ends when the graph next enters the plan path. Phase B does not reinterpret
      the answers. If implementation would change an admitted API, config item,
@@ -193,9 +200,12 @@ only after a separate explicit commit authorization; see
    - B.3 If confirmed: mark `in_progress`, record `start_commit`, write ledger
 
 3. **Phase C: Implement**
-   - C.1 Open and invoke Matt `tdd`. Before the first test, record and confirm
-     the highest practical public seam in the task plan. Work one vertical
-     red-green slice at a time; do not bulk-write imagined tests.
+   - C.1 Open and invoke Matt `tdd`. Before the first test for a runtime task,
+     read the shared decision and test stewardship reference, record and
+     confirm the highest practical public seam in the task plan, read existing
+     tests at that Interface, and choose the smallest
+     `add|update|delete|retain|none` disposition. Work one vertical red-green
+     slice at a time; do not bulk-write imagined tests.
      - If `parallelize` contains disjoint owned units ->
        `superpowers:dispatching-parallel-agents`
    - C.1a If implementation requires modifying files outside
@@ -217,6 +227,11 @@ only after a separate explicit commit authorization; see
      - If the scenario cannot be exercised yet, the task may pass only as
        substrate coverage and must leave the scenario open on a later vertical
        slice task.
+     - Account for every test added, updated, deleted, or intentionally retained
+       in `session_notes[].gate_results.test_disposition` using the shared
+       reference. A task-local deletion requires a passing equal-or-stronger
+       Interface replacement; an out-of-scope duplicate or superseded test
+       remains unchanged with a non-null slim candidate.
    - D.0a Artifact truthfulness gate:
      - If a task claims runtime, CLI, JSON/NDJSON, RPC, session, provider, tool,
        browser, or generated-artifact behavior, read
@@ -234,10 +249,14 @@ only after a separate explicit commit authorization; see
      checks. Phase addenda extend this command set without rerunning it.
    - D.2 Run the task-level risk evaluator only when
      `evaluator_required = true`. It invokes
-     `.claude/skills/opi-implement/scripts/exec.workflow.js` (full 6-lens deep).
+     `.claude/skills/opi-implement/scripts/exec.workflow.js` (full 7-lens deep).
      Deterministic documentation, skill, test-only, mechanical, and
      behavior-preserving internal-refactor tasks skip D.2. Must-fix findings
      block Phase D and route to Phase C (incrementing `iteration_count`).
+     Accepted findings with a non-null `decision_id` are appended to the current
+     attempt's gate results. If that ID already appears in an accepted finding
+     anywhere in the active phase task notes, stop local repair and return to
+     graph review with `GRAPH_REVISION_REQUIRED`.
    - D.3 Run only acceptance, production-call-site, generated-artifact, or
      authoritative-platform checks still missing after D.0/D.1. Record the
      union of commands; never rerun D.1 under a second label. Then apply the
@@ -261,7 +280,7 @@ only after a separate explicit commit authorization; see
      files, inspect code/tests independently of ledger claims, and produce a
      criteria trace with one of:
      `met`, `deferred-by-updated-design`, or `not-met`. It then invokes
-     `.claude/skills/opi-implement/scripts/phase-exit.workflow.js` (5-lens audit of the trace per
+     `.claude/skills/opi-implement/scripts/phase-exit.workflow.js` (6-lens audit of the trace and completed phase tasks per
      `references/verify-engine.md`); accepted findings upsert
      `criteria_trace[C].status = not-met`, and F.1b REFUSEs archive.
    - F.1b REFUSE phase archive when any criterion is `not-met`, or when
@@ -333,7 +352,7 @@ digraph select {
 | C.1 | `tdd` | behavior tests at a pre-agreed public seam, one vertical red-green slice at a time |
 | C.1 | `superpowers:dispatching-parallel-agents` | only for disjoint task-owned units when `parallelize` is non-empty |
 | C.2 | `diagnosing-bugs` | tight feedback loop for hard bugs, performance regressions, nondeterminism, or attempt 3+ |
-| D.2 | verify engine exec stage (`.claude/skills/opi-implement/scripts/exec.workflow.js`) | adversarial must-fix verify for semantic high-risk tasks only |
+| D.2 | verify engine exec stage (`.claude/skills/opi-implement/scripts/exec.workflow.js`) | seven-lens adversarial must-fix verify, including shared-decision and test closure |
 | D pre-commit | `superpowers:verification-before-completion` | evidence-before-claim |
 
 Each invocation announces itself:

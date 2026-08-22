@@ -20,7 +20,8 @@ adversarial-verification conventions, but their authority differs.
 - **plan** — registered source paths, the original draft task array, current
   phase, and reported reviewer independence;
 - **exec** — task object, HEAD commit, and registered phase source;
-- **phase-exit** — F.1a `criteria_trace[]`, registered phase source, and phase.
+- **phase-exit** — F.1a `criteria_trace[]`, completed phase tasks, registered
+  phase source, and phase.
 
 ## Dispatch modes
 
@@ -35,7 +36,7 @@ ledger does not store:
   `fresh-context-same-family` degraded independence;
 - both paths return the same result schema.
 
-Exec remains risk-gated: `evaluator_required = true` uses the six-lens Workflow
+Exec remains risk-gated: `evaluator_required = true` uses the seven-lens Workflow
 in `scripts/exec.workflow.js`; other tasks skip exec review because their
 D.0/D.1/D.3 proof is deterministic. Phase exit always uses
 `scripts/phase-exit.workflow.js` once per phase.
@@ -49,6 +50,7 @@ Every finding contains:
   "lens": "<lens-key>",
   "task_id": "<string at plan/exec; null at phase-exit>",
   "criterion_id": "<string at phase-exit; null at plan/exec>",
+  "decision_id": "<stable shared decision id or null>",
   "field": "<field or subject>",
   "problem": "<falsifiable problem>",
   "severity": "high | medium | low",
@@ -72,6 +74,11 @@ Plan findings additionally carry:
 emitting reviewer verifies that the cited heading exists. An adversarial
 verifier tries to reject each blocking or must-fix finding. Uncertain verifier
 results are rejected rather than used to mutate or block state.
+
+Use `decision_id` only for a declared `shared_decision`; ordinary findings use
+`null`. Accepted exec decision findings are copied into the task attempt's
+`session_notes[].gate_results` so recurrence is detectable across active phase
+tasks.
 
 For exec and phase exit, high findings and medium/high-confidence findings enter
 the blocking verification set; other findings are reported for human review.
@@ -116,6 +123,13 @@ listed non-`none` trigger requires them. The cross-platform
 `scripts/validate-plan.py` gate rejects missing, duplicated, or malformed
 declared fields on non-archived tasks before graph confirmation; reviewers
 still assess whether the cited evidence is true.
+
+When the shared-decision trigger fires, P-D3 also verifies one stable decision
+identity, exactly one owner, one typed Interface and representation, agreeing
+production consumers, and explicit temporary-path closure. P-D4 verifies that
+the owner's closure test exercises that Interface and that the planned test
+impact follows replace-don't-layer. The deterministic validator checks the note
+grammar and graph relationships; reviewers check repository truth.
 
 If the source is sufficient but the draft omits or malforms an answer, return
 `GRAPH_REVISION_REQUIRED`. Missing facts return `RESEARCH_REQUIRED`.
@@ -187,6 +201,7 @@ them through Matt `tdd` or, for a hard bug, Matt `diagnosing-bugs`.
 | L-D4 Evidence is truthful | Artifacts and `Opi-*` evidence match the commands and behavior actually observed. |
 | L-D5 Non-goals remain excluded | The implementation does not drift into a registered source Non-Goal. |
 | L-D6 Workspace dependency rules hold | Internal dependencies use the workspace and publishable path+version rules. |
+| L-D7 Decision locality and test stewardship | Declared decisions have one owning typed Interface, every production consumer routes through it, legacy paths close, and test disposition neither layers equivalent tests nor pins a superseded Interface. |
 
 Deep-path protocol:
 
@@ -197,6 +212,11 @@ result: { must_fix, flagged_for_human, rejected, report }
 ```
 
 Store the run id in `verify_runs[].wf_ref` when available.
+
+After an accepted finding with non-null `decision_id`, append that ID and the
+finding summary to the current attempt's `gate_results`. If an accepted finding
+with the same ID already exists in any active phase task note, stop task-local
+repair and return to graph review with `GRAPH_REVISION_REQUIRED`.
 
 ## Phase-exit stage (Phase F.1a)
 
@@ -209,17 +229,20 @@ F.1a first constructs the current criteria trace. The Workflow then audits it:
 | L-F3 Non-goals respected | No Non-Goal was implemented to satisfy a criterion. |
 | L-F4 Residuals exactly cited | Every deferral cites the exact current source. |
 | L-F5 Substrate/product distinction honest | No product criterion is closed by substrate-only work. |
+| L-F6 Shared decisions closed | Completed tasks and assembled code prove one owner and Interface, all production consumers, closed legacy paths, the closure test, and truthful exhaustive test dispositions. |
 
 Invoke:
 
 ```text
 scriptPath: .claude/skills/opi-implement/scripts/phase-exit.workflow.js
-args: { criteriaTrace, sourceDesignPath, phase }
+args: { criteriaTrace, phaseTasks, sourceDesignPath, phase }
 result: { not_met, flagged_for_human, rejected, report }
 ```
 
 A surviving blocking finding for criterion C upserts
 `criteria_trace[C].status = not-met` with the source citation as evidence.
+An L-F6 finding uses a criterion declared by its decision note and carries the
+stable `decision_id`.
 `F.1b` then refuses archive. An uncited `deferred-by-updated-design` is also
 `not-met`. Non-blocking findings do not mutate the trace.
 

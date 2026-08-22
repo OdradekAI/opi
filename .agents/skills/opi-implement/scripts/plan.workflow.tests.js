@@ -4,7 +4,10 @@ const path = require('node:path')
 
 async function runWorkflow() {
   const workflowPath = path.join(__dirname, 'plan.workflow.js')
-  const source = fs.readFileSync(workflowPath, 'utf8')
+  const workflowSource = fs.readFileSync(workflowPath, 'utf8')
+  assert.match(workflowSource, /shared decision identity/)
+  assert.match(workflowSource, /replace-don't-layer/)
+  const source = workflowSource
     .replace('export const meta =', 'const meta =')
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
   const execute = new AsyncFunction('args', 'phase', 'parallel', 'agent', source)
@@ -22,6 +25,7 @@ async function runWorkflow() {
           axis: 'design-readiness',
           lens: 'design-lineage-placement',
           task_id: String(index),
+          decision_id: null,
           field: 'test',
           problem: 'test finding',
           severity: 'high',

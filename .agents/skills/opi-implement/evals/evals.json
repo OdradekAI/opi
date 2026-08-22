@@ -1,0 +1,56 @@
+{
+  "skill_name": "opi-implement",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Run a non-mutating $opi-implement plan review. The registered source says provider/model selection has one canonical provider-aware resolver. Draft task 18.1 adds ProviderCollection::resolve_model returning ResolvedProviderRoute and tests tests/provider_route.rs; task 18.2 depends on 18.1 but also proposes a CodingHarness contains(':') normalization helper and tests tests/model_change.rs. Both tasks list real production call sites and evaluator_required=true, but neither has a shared_decision note. Return the plan admission verdict and the exact graph correction. Do not edit files.",
+      "expected_output": "One decision owner or GRAPH_REVISION_REQUIRED, with a typed Interface and legacy-path closure.",
+      "files": [],
+      "expectations": [
+        "Names exactly one semantic owner or returns GRAPH_REVISION_REQUIRED",
+        "Names a typed Interface or representation",
+        "Rejects parallel caller-local normalization",
+        "Requires one matching shared_decision note per participant using all eleven contract clauses",
+        "Names both closure_test and legacy_paths closure evidence"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "During $opi-implement Phase C for task 18.3, the agreed Interface is ProviderCollection::resolve_model. Existing test provider_route_conformance already covers unique, ambiguous, and missing model resolution through that Interface. The proposed TDD step adds model_resolution_phase18 with the same fixtures and assertions under a phase-specific name. Decide the test impact and the next red-green action. Do not modify files.",
+      "expected_output": "Retain or update the existing Interface test instead of adding an equivalent test.",
+      "files": [],
+      "expectations": [
+        "Chooses retain or update",
+        "Names provider_route_conformance as the reused test",
+        "Does not recommend adding the equivalent phase-specific test",
+        "Preserves a red-first proof",
+        "Records subject, action, test, interface, replacement, and slim_candidate=null in test_disposition"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Run a non-mutating $opi-implement plan review for task 18.4. It adds one private formatter used by exactly one diagnostic call site, is not Agent state-machine semantics, has no second adapter or consumer, and changes no public Interface. The task already has a focused observable diagnostic test. Decide whether a shared_decision note or new trait/Interface is required. Do not edit files.",
+      "expected_output": "Keep the private concrete implementation and do not manufacture a shared seam.",
+      "files": [],
+      "expectations": [
+        "Rejects or avoids a shared_decision note",
+        "Does not propose a new trait or public Interface",
+        "Uses the existing focused observable test",
+        "Checks intrinsic-state, multiple-consumers, expand-contract, and recurrent-finding triggers as inapplicable"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "During $opi-implement Phase D for task 18.5, a new owning Interface test in crates/opi-agent/tests/evidence_contract.rs replaces an old implementation-coupled test in crates/opi-coding-agent/tests/phase15_evidence.rs. Task-owned paths include only crates/opi-agent/**. Full-body inspection shows the old test is superseded, but changing opi-coding-agent would expand task scope. Produce the test disposition and next action. Do not edit files.",
+      "expected_output": "Keep the outside-scope test for this task, record a superseded slim candidate, and hand it to opi-slim-tests.",
+      "files": [],
+      "expectations": [
+        "Does not expand task-owned paths solely for cleanup",
+        "Records slim_candidate=superseded",
+        "Keeps the old test during this task",
+        "Names explicit opi-slim-tests handoff",
+        "Emits separate six-field test_disposition entries for the new and retained tests"
+      ]
+    }
+  ]
+}

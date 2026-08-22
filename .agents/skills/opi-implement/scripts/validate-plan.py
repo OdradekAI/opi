@@ -49,6 +49,25 @@ SIMPLIFICATION_TRIGGERS = {
     "replace",
     "dependency-substitution",
 }
+SHARED_DECISION_CLAUSES = (
+    "decision_id",
+    "role",
+    "owner_task",
+    "module",
+    "interface",
+    "representation",
+    "consumer_tasks",
+    "criterion_ids",
+    "legacy_paths",
+    "closure_test",
+    "trigger",
+)
+SHARED_DECISION_TRIGGERS = {
+    "intrinsic-state",
+    "multiple-consumers",
+    "expand-contract",
+    "recurrent-finding",
+}
 
 
 def reason_clauses(reason: str, name: str) -> list[str]:
@@ -64,6 +83,229 @@ def reason_clause(reason: str, name: str) -> str | None:
     if len(values) != 1 or not values[0]:
         return None
     return values[0]
+
+
+def csv_values(value: str) -> set[str]:
+    if value == "none":
+        return set()
+    return {item.strip() for item in value.split(",") if item.strip()}
+
+
+def dependency_closure(
+    task_id: str, tasks_by_id: dict[str, dict[str, object]]
+) -> set[str]:
+    seen: set[str] = set()
+    depends_on = tasks_by_id[task_id].get("depends_on", [])
+    pending = list(depends_on) if isinstance(depends_on, list) else []
+    while pending:
+        dependency = pending.pop()
+        if not isinstance(dependency, str) or dependency in seen:
+            continue
+        seen.add(dependency)
+        task = tasks_by_id.get(dependency)
+        if task is None:
+            continue
+        transitive = task.get("depends_on", [])
+        if isinstance(transitive, list):
+            pending.extend(transitive)
+    return seen
+
+
+def task_verification_tokens(task: dict[str, object]) -> set[str]:
+    tokens: set[str] = set()
+    verification = task.get("verification", {})
+    if isinstance(verification, dict):
+        for field in ("behavioral_tests", "library_gates"):
+            values = verification.get(field, [])
+            if isinstance(values, list):
+                tokens.update(value for value in values if isinstance(value, str))
+    scenarios = task.get("acceptance_scenarios", [])
+    if isinstance(scenarios, list):
+        for scenario in scenarios:
+            if not isinstance(scenario, dict):
+                continue
+            values = scenario.get("verification", [])
+            if isinstance(values, list):
+                tokens.update(value for value in values if isinstance(value, str))
+    return tokens
+
+
+def validate_shared_decisions(tasks: list[object]) -> list[str]:
+    errors: list[str] = []
+    tasks_by_id = {
+        task["id"]: task
+        for task in tasks
+        if isinstance(task, dict)
+        and isinstance(task.get("id"), str)
+        and task.get("status") != "archived"
+    }
+    grouped: dict[
+        str, list[tuple[str, dict[str, object], dict[str, str]]]
+    ] = {}
+
+    for task_index, task in enumerate(tasks):
+        if not isinstance(task, dict) or task.get("status") == "archived":
+            continue
+        task_id = task.get("id")
+        if not isinstance(task_id, str):
+            continue
+        notes = task.get("inference_notes", [])
+        if not isinstance(notes, list):
+            continue
+        for note in notes:
+            if not isinstance(note, dict) or note.get("field") != "shared_decision":
+                continue
+            source = note.get("source")
+            if not isinstance(source, str) or not source.strip():
+                errors.append(
+                    f"task[{task_index}] shared_decision requires non-empty source"
+                )
+            reason = note.get("reason")
+            if not isinstance(reason, str) or not reason.strip():
+                errors.append(
+                    f"task[{task_index}] shared_decision requires non-empty reason"
+                )
+                continue
+            clauses: dict[str, str] = {}
+            malformed = False
+            for clause in SHARED_DECISION_CLAUSES:
+                values = reason_clauses(reason, clause)
+                if len(values) != 1 or not values[0]:
+                    errors.append(
+                        f"task[{task_index}] shared_decision requires exactly one "
+                        f"non-empty {clause}="
+                    )
+                    malformed = True
+                else:
+                    clauses[clause] = values[0]
+            if malformed:
+                continue
+            grouped.setdefault(clauses["decision_id"], []).append(
+                (task_id, task, clauses)
+            )
+
+    shared_fields = (
+        "owner_task",
+        "module",
+        "interface",
+        "representation",
+        "consumer_tasks",
+        "criterion_ids",
+        "legacy_paths",
+        "closure_test",
+        "trigger",
+    )
+    for decision_id, entries in grouped.items():
+        first = entries[0][2]
+        participant_ids = [task_id for task_id, _, _ in entries]
+        if len(participant_ids) != len(set(participant_ids)):
+            errors.append(
+                f"decision {decision_id} requires one note per participating task"
+            )
+        for _, _, clauses in entries[1:]:
+            for field in shared_fields:
+                if clauses[field] != first[field]:
+                    errors.append(f"decision {decision_id} disagrees on {field}")
+
+        roles = [clauses["role"] for _, _, clauses in entries]
+        invalid_roles = sorted(
+            {role for role in roles if role not in {"owner", "consumer"}}
+        )
+        if invalid_roles:
+            errors.append(
+                f"decision {decision_id} has invalid roles "
+                f"{','.join(invalid_roles)}"
+            )
+        owners = [
+            task_id
+            for task_id, _, clauses in entries
+            if clauses["role"] == "owner"
+        ]
+        if len(owners) != 1:
+            errors.append(f"decision {decision_id} requires exactly one owner")
+            continue
+        owner_task = first["owner_task"]
+        if owners[0] != owner_task:
+            errors.append(
+                f"decision {decision_id} owner note {owners[0]} does not match "
+                f"owner_task {owner_task}"
+            )
+
+        declared_consumers = csv_values(first["consumer_tasks"])
+        noted_consumers = {
+            task_id
+            for task_id, _, clauses in entries
+            if clauses["role"] == "consumer"
+        }
+        if declared_consumers != noted_consumers:
+            errors.append(f"decision {decision_id} consumer notes do not match")
+
+        for task_id, task, _ in entries:
+            if task.get("evaluator_required") is not True:
+                errors.append(
+                    f"task {task_id} shared decision requires "
+                    "evaluator_required=true"
+                )
+        for consumer in sorted(declared_consumers):
+            if consumer not in tasks_by_id:
+                errors.append(f"decision {decision_id} consumer {consumer} is missing")
+                continue
+            if owner_task not in dependency_closure(consumer, tasks_by_id):
+                errors.append(
+                    f"task {consumer} must depend transitively on owner {owner_task}"
+                )
+
+        scenario_ids: set[str] = set()
+        for _, task, _ in entries:
+            scenarios = task.get("acceptance_scenarios", [])
+            if not isinstance(scenarios, list):
+                continue
+            scenario_ids.update(
+                scenario["id"]
+                for scenario in scenarios
+                if isinstance(scenario, dict)
+                and isinstance(scenario.get("id"), str)
+            )
+        criterion_ids = csv_values(first["criterion_ids"])
+        if not criterion_ids:
+            errors.append(f"decision {decision_id} requires a sourced criterion")
+        for criterion_id in sorted(criterion_ids):
+            if criterion_id not in scenario_ids:
+                errors.append(
+                    f"decision {decision_id} criterion {criterion_id} has no scenario"
+                )
+
+        owner = tasks_by_id.get(owner_task)
+        if owner is None:
+            errors.append(f"decision {decision_id} owner task {owner_task} is missing")
+        elif first["closure_test"] not in task_verification_tokens(owner):
+            errors.append(
+                f"decision {decision_id} owner {owner_task} lacks closure_test "
+                f"{first['closure_test']}"
+            )
+
+        trigger = first["trigger"]
+        if trigger not in SHARED_DECISION_TRIGGERS:
+            errors.append(f"decision {decision_id} trigger {trigger} is not recognized")
+        if trigger == "multiple-consumers":
+            production_participants = sum(
+                bool(task.get("production_call_sites")) for _, task, _ in entries
+            )
+            if production_participants < 2:
+                errors.append(
+                    f"decision {decision_id} requires two production participants"
+                )
+        if trigger == "expand-contract":
+            if not declared_consumers:
+                errors.append(
+                    f"decision {decision_id} expand-contract requires a consumer task"
+                )
+            if first["legacy_paths"] == "none":
+                errors.append(
+                    f"decision {decision_id} expand-contract requires "
+                    "legacy_paths other than none"
+                )
+    return errors
 
 
 def validate_plan(ledger: object) -> list[str]:
@@ -193,6 +435,7 @@ def validate_plan(ledger: object) -> list[str]:
                     f"task[{task_index}] simplification_trigger={trigger} "
                     f"requires non-empty {clause}="
                 )
+    errors.extend(validate_shared_decisions(tasks))
     return errors
 
 

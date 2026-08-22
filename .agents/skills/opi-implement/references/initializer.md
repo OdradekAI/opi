@@ -179,6 +179,14 @@ answer must cite verifiable repository evidence.
 Check dynamic loading, configuration lookup, wire and persistent formats, and
 public API consumers when those mechanisms could hide a live dependency.
 
+When the registered source or repository evidence shows intrinsic Agent state,
+two production task participants sharing one rule, an expand-contract
+transition, or a recurrent decision finding, read
+`../../_shared/references/shared-decision-and-test-stewardship.md` in full.
+Add one `field = "shared_decision"` inference note per participating task using
+its exact eleven-clause plan-note contract. Do not add the note for an ordinary
+one-consumer helper. Every participating task sets `evaluator_required = true`.
+
 Every `source` cites the registered source heading, reviewed decision, or
 repository evidence used for that answer. `none` and `not-applicable` are
 valid only with a reason. `revisit_when` must name an observable workflow,
@@ -207,11 +215,11 @@ independence is cross-model or fresh-context same-model.
 The two non-collapsible axes are:
 
 - **design readiness** — pi direction, justified Rust divergence, plugin-first
-  placement, domain language, deep interfaces, public seams, contradictions,
-  and unstated assumptions;
+  placement, domain language, deep interfaces, public seams, shared decision
+  ownership and closure, contradictions, and unstated assumptions;
 - **execution readiness** — criterion coverage, demonstrable vertical slices,
   real dependencies, owned paths, production wiring, proportional verification,
-  and forbidden scope.
+  replace-don't-layer test impact, and forbidden scope.
 
 Review all six minimum-change answers explicitly. When the conditional
 simplification trigger applies, also verify `production_consumers=`,
@@ -403,6 +411,8 @@ Batch graph edits for tedious one-by-one changes:
 - Add a named substrate task as a dependency of every task that consumes it.
 - Change every task owning `opi-tui` runtime paths to tier `tui`.
 - Mark public-protocol tasks as `evaluator_required = true`.
+- Mark every task participating in a `shared_decision` as
+  `evaluator_required = true`.
 
 Always show before/after diff for affected rows, invalidate the prior `READY`
 verdict, repeat P.2, then return to P.4.

@@ -14,6 +14,10 @@ Stop at a verified working-tree diff. Git safety and commit authorization come
 from the always-loaded `AGENTS.md` / `CLAUDE.md`; this skill never stages or
 commits automatically.
 
+When an `opi-implement` live ledger or Phase snapshot is available, seed the
+candidate inventory from non-null `slim_candidate` entries. A candidate is a
+search hint, not deletion authority; classify its full body again.
+
 ## 1. Establish the baseline
 
 Use `cargo metadata --no-deps --format-version 1` to inventory integration test
@@ -28,32 +32,18 @@ directory merely to prove isolation.
 
 ## 2. Classify from full bodies
 
-Every candidate receives exactly one primary classification:
-
-- **current-contract**: proves observable shipped behavior or a live public
-  protocol/API/safety boundary;
-- **duplicate**: another test reaches the same seam with equivalent fixtures
-  and assertions;
-- **superseded**: pins behavior, prose, phase status, or non-goals replaced by
-  the current implementation/design;
-- **historical-evidence**: records why an old phase shipped; belongs in a frozen
-  plan/snapshot, not the current test graph;
-- **platform-only**: has a real OS/toolchain-specific contract;
-- **helper-binary**: exists mainly to provide a subprocess fixture rather than
-  assertions.
+Read
+[`shared-decision-and-test-stewardship.md`](../_shared/references/shared-decision-and-test-stewardship.md)
+in full. Apply its primary candidate classifications to every candidate and
+cite the retained Interface or execution contract.
 
 Names are not evidence. Read candidate bodies in full and cite the retained
 behavioral seam. “Documentation guard” is not automatically load-bearing.
 
 ## 3. Record test impact for the product change
 
-For each feature/refactor/removal that led to the candidate, choose:
-
-- `add`: new observable behavior needs coverage;
-- `update`: the current contract changed;
-- `delete`: removed/superseded behavior should remove its old test;
-- `retain`: existing coverage already proves unchanged behavior;
-- `none`: docs/skills/metadata only, with no runtime contract.
+Apply the shared reference's test-impact actions to each product change that
+created a candidate. Preserve its replace-don't-layer ordering and proof.
 
 This prevents a refactor from accumulating old and new tests for mutually
 exclusive designs. A later phase that replaces an earlier contract should

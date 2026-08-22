@@ -6,6 +6,7 @@ column explains reasoning so you can apply judgment in edge cases.
 | Rule | Why |
 |---|---|
 | Never delete or weaken tests to make them pass | A passing suite that doesn't catch regressions creates false confidence. Fix the implementation, not the test. |
+| Replace a superseded test only after equal-or-stronger Interface proof passes | A passing replacement preserves the contract while removing sediment. Without replacement proof, retain the test or hand the candidate to `opi-slim-tests`. |
 | Never bypass clippy with crate-wide `#[allow]` | Suppresses future warnings too. Targeted `#[allow]` on specific item with comment is OK; blanket suppression hides real issues. |
 | Never commit with broken smoke | Smoke is cheapest proof prior work holds. Broken baseline means next invocation can't distinguish old from new breakage. |
 | Never self-grade verification | LLMs rationalize success. Mechanical gates (exit codes, grep) are deterministic and auditable. |

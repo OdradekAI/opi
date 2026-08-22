@@ -25,11 +25,12 @@ const FINDINGS_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['lens', 'task_id', 'criterion_id', 'field', 'problem', 'severity', 'suggested_fix', 'source_citation', 'confidence'],
+        required: ['lens', 'task_id', 'criterion_id', 'decision_id', 'field', 'problem', 'severity', 'suggested_fix', 'source_citation', 'confidence'],
         properties: {
           lens: { type: 'string' },
           task_id: { type: 'string' },
           criterion_id: { type: 'null' },
+          decision_id: { type: ['string', 'null'] },
           field: { type: 'string' },
           problem: { type: 'string' },
           severity: { enum: ['high', 'medium', 'low'] },
@@ -72,6 +73,7 @@ const LENSES = [
   { key: 'evidence-truthfulness', charter: 'L-D4: the Opi-* commit footers + verification evidence match reality (commands ran, outputs preserved).' },
   { key: 'non-goal-leak', charter: 'L-D5: the implementation does not drift into a phase Non-Goal (token-trigger: npm, marketplace, OAuth, telemetry, sandboxing, web-UI parity, pi session compatibility, workflow tools, MCP core, plan mode core, sub-agent core).' },
   { key: 'workspace-deps-honored', charter: 'L-D6: internal deps go through [workspace.dependencies]; no bare path deps in any changed Cargo.toml.' },
+  { key: 'decision-locality-test-stewardship', charter: 'L-D7: for every task shared_decision, search its owner, production consumers, legacy paths, and relevant unchanged consumer code. One typed Interface must own the decision; all consumers must route through it; listed legacy paths must be closed. Read relevant test bodies and reject layered equivalent tests, superseded-Interface tests, or an incomplete or false session_notes gate_results.test_disposition.' },
 ]
 
 phase('Lens audit')
@@ -84,6 +86,7 @@ const lensResults = await parallel(LENSES.map((l) => () =>
     'Phase design doc (for Non-Goals + DoD context): ' + sourcePath + '\n' +
     'Apply lens ' + l.key + ': ' + l.charter + '\n' +
     'Hard rules: cite the source section (use § or #) for every finding; verify the cited heading appears verbatim; ' +
+    'use the stable shared decision id for a decision finding and decision_id=null otherwise; ' +
     'emit one finding per real problem. If the lens finds nothing real, return findings: [].',
     { label: 'lens:' + l.key, phase: 'Lens audit', schema: FINDINGS_SCHEMA }
   )
@@ -98,7 +101,7 @@ phase('Verify')
 const verdicts = await parallel(foldable.map((f) => () =>
   agent(
     'Adversarially verify this exec-verify finding. Try to REJECT it.\n' +
-    'Task: ' + f.task_id + '  Commit: ' + commit + '\n' +
+    'Task: ' + f.task_id + '  Decision: ' + (f.decision_id || 'none') + '  Commit: ' + commit + '\n' +
     'Problem: ' + f.problem + '\n  Proposed fix: ' + f.suggested_fix + '\n' +
     'Read the changed files at ' + commit + ' and decide. ACCEPT only if the problem is real AND the fix is correct. ' +
     'Default to accepted=false if the implementation already satisfies the concern or the fix is wrong.',

@@ -116,7 +116,7 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 | `tasks[].replaces` | string/null | const | Prior task title/meaning superseded during reinit, when the same task ID was repurposed by spec changes |
 | `tasks[].status` | enum | runtime | `failing`/`in_progress`/`passing`/`blocked`/`archived` |
 | `tasks[].depends_on` | array | const | Task IDs that must be `passing` |
-| `tasks[].inference_notes` | array | const | Reasons for inferred fields. Phase non-goal guards use `field = "forbidden_scope"` with an exact source heading. Plan extraction may use `field` ∈ {`deferred`,`split`,`residual`} with `reason` packed as `"<verb>: trigger=<clause|null>"` (a `null` trigger requires a human decision before P.4 confirmation). Inferred placement or public-test-seam choices also record their rationale here. Minimum-change admission standardizes four additional `field` values without changing the note shape or schema version: `reuse_search`, `placement`, `surface_necessity`, and `simplification_ceiling`. |
+| `tasks[].inference_notes` | array | const | Reasons for inferred fields. Phase non-goal guards use `field = "forbidden_scope"` with an exact source heading. Plan extraction may use `field` ∈ {`deferred`,`split`,`residual`} with `reason` packed as `"<verb>: trigger=<clause|null>"` (a `null` trigger requires a human decision before P.4 confirmation). Inferred placement or public-test-seam choices also record their rationale here. Minimum-change admission standardizes `reuse_search`, `placement`, `surface_necessity`, and `simplification_ceiling`. Triggered cross-task or intrinsic decisions use one `shared_decision` note per participating task. All reuse the existing note shape and schema version. |
 | `tasks[].tier` | enum | const | `documentation`/`workspace`/`library`/`cli-tool`/`cli-runtime`/`tui` |
 | `tasks[].commit_type` | enum | const | `feat`/`fix`/`docs`/`refactor`/`test`/`chore`/`perf` |
 | `tasks[].parallelize` | array | const | Sub-unit names for parallel dispatch |
@@ -133,7 +133,7 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 | `tasks[].verified_at_commit` | string | runtime | Set in Phase E.2 |
 | `tasks[].evidence` | object/null | runtime | Mirror of `Opi-*` commit footers |
 | `tasks[].blocker` | string | runtime | Populated when `status = blocked` |
-| `tasks[].session_notes` | array | runtime | Append-only `{timestamp, attempt, summary, gate_results}` |
+| `tasks[].session_notes` | array | runtime | Append-only `{timestamp, attempt, summary, gate_results}`. Runtime tasks record exhaustive test impact under `gate_results.test_disposition`; accepted decision findings record their stable `decision_id` here for active-phase recurrence detection. |
 | `phase_exit[N]` | object | runtime | Before archive it may carry evaluator working detail. After archive the root entry contains only `completed_at`, `exit_criteria_met`, `evaluator_summary`, `snapshot_path`, and `task_summary`; `evaluator_summary` is at most 256 characters and points to the snapshot for detail. |
 | `phase_exit[N].snapshot_path` | string/null | runtime | Path to a committed phase-local snapshot at the moment phase `N` exited. `null` while the phase is incomplete. Written under `docs/snapshots/phase<N>/`. |
 | `phase_exit[N].criteria_trace` | array | runtime/archive | Phase-exit evaluator's independent trace from current source-spec success/exit criteria to evidence. Every item uses `status = met`, `deferred-by-updated-design`, or `not-met`. Phase archive is refused if any item is `not-met` or if a deferral lacks an exact current-spec citation. Preserve the detailed trace in the phase-local snapshot; remove it from the root entry during archive compaction. |
@@ -169,6 +169,26 @@ adds no runtime capability or ownership seam. `field = "surface_necessity"` requ
 `ceiling=` and `revisit_when=` clauses; the revisit trigger must
 be observable rather than “when needed”. Missing clauses fail task-graph
 admission; explicit `none` or `not-applicable` remains valid when justified.
+
+Validation rule: read
+`../../_shared/references/shared-decision-and-test-stewardship.md` when any task
+contains `field = "shared_decision"`. Each note requires exactly one non-empty
+`decision_id`, `role`, `owner_task`, `module`, `interface`, `representation`,
+`consumer_tasks`, `criterion_ids`, `legacy_paths`, `closure_test`, and `trigger`
+clause. Notes with the same ID agree except for `role`; exactly one owner exists;
+consumer notes exactly match `consumer_tasks`; every consumer depends
+transitively on the owner; criteria appear in participating acceptance
+scenarios; the owner verification contains the exact closure test; and every
+participant is evaluator-required. `multiple-consumers` requires two
+participants with production call sites. `expand-contract` requires a consumer
+and non-`none` legacy paths. `intrinsic-state` may have only the owner. These are
+optional schema-v2 inference notes, not a new ledger object.
+
+Validation rule: every runtime task records each added, updated, deleted, or
+intentionally retained test in `session_notes[].gate_results.test_disposition`
+before passing. Each entry contains `subject`, `action`, `test`, `interface`,
+`replacement`, and `slim_candidate`. A non-null slim candidate remains
+unchanged by the current task when its path is outside `task_owned_paths`.
 
 For every new or reconciled plan draft, `field = "simplification_ceiling"`
 also requires `simplification_trigger=` with one of `none`, `unused`,

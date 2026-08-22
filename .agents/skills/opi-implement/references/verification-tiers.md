@@ -36,10 +36,10 @@ Use for focused `opi-ai`, `opi-agent`, or `opi-tui` library changes that do not
 add provider wire formats, CLI runtime behavior, or visual snapshot surfaces.
 
 Gates:
-1. Record test impact as `add`, `update`, `delete`, `retain`, or `none`.
-   Features and bug fixes normally require `add`/`update`; a behavior-preserving
-   internal refactor may use `retain`; test-only cleanup may use `delete`;
-   docs/skills/metadata may use `none`.
+1. Read
+   [`shared-decision-and-test-stewardship.md`](../../_shared/references/shared-decision-and-test-stewardship.md)
+   and record one test-impact action for every affected behavior. Its
+   replace-don't-layer proof governs additions, updates, and deletions.
 2. Run `scripts/opi-impl-smoke.sh scoped --crate <crate> [--test <name> ...]`
    (or the PowerShell sibling). Name every affected integration binary; with no
    `--test`, the gate runs lib tests only. The script owns format, production
@@ -281,11 +281,12 @@ self-approve the finding away.
 The D.2 evaluator is realized by the verify engine's exec stage (see
 `references/verify-engine.md`):
 
-- `evaluator_required = true` tasks → full 6-lens deep Workflow at
+- `evaluator_required = true` tasks → full 7-lens deep Workflow at
   `.claude/skills/opi-implement/scripts/exec.workflow.js` (L-D1 implementation-matches-DoD, L-D2
   tests-non-vacuous, L-D3 production-call-site-proven, L-D4
-  evidence-truthfulness, L-D5 non-goal-leak, L-D6 workspace-deps-honored), with
-  adversarial verify before any must-fix disposition.
+  evidence-truthfulness, L-D5 non-goal-leak, L-D6 workspace-deps-honored, L-D7
+  decision-locality-test-stewardship), with adversarial verify before any
+  must-fix disposition.
 - All other tasks → no D.2 run and no `verify_runs` exec entry.
 
 Must-fix findings BLOCK Phase D pass, route to Phase C, and increment
@@ -296,10 +297,10 @@ Must-fix findings BLOCK Phase D pass, route to Phase C, and increment
 
 The F.1a phase-exit evaluator produces its criteria trace from the active
 registered source; the verify engine's phase-exit stage then adversarially audits
-that trace (see `references/verify-engine.md`). It always runs the full 5-lens
+that trace (see `references/verify-engine.md`). It always runs the full 6-lens
 deep Workflow at `.claude/skills/opi-implement/scripts/phase-exit.workflow.js` (L-F1 traced-to-code, L-F2
 traced-to-test, L-F3 non-goals-respected, L-F4 residuals-exactly-cited, L-F5
-substrate-vs-product-honest), once per phase.
+substrate-vs-product-honest, L-F6 shared-decision-closure), once per phase.
 
 Findings that survive adversarial verify upsert
 `phase_exit[N].criteria_trace[C].status = not-met` (with the finding's

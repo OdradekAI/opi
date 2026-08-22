@@ -28,13 +28,14 @@ const FINDINGS_SCHEMA = {
         type: 'object',
         additionalProperties: false,
         required: [
-          'axis', 'lens', 'task_id', 'field', 'problem', 'severity',
+          'axis', 'lens', 'task_id', 'decision_id', 'field', 'problem', 'severity',
           'suggested_fix', 'source_citation', 'confidence', 'route', 'blocking',
         ],
         properties: {
           axis: { enum: ['design-readiness', 'execution-readiness'] },
           lens: { type: 'string' },
           task_id: { type: ['string', 'null'] },
+          decision_id: { type: ['string', 'null'] },
           field: { type: 'string' },
           problem: { type: 'string' },
           severity: { enum: ['high', 'medium', 'low'] },
@@ -99,7 +100,7 @@ const LENSES = [
   {
     key: 'design-domain-seams',
     axis: 'design-readiness',
-    charter: 'Check domain vocabulary, deep module interfaces, explicit public acceptance/test seams, problem/solution/out-of-scope completeness, contradictions, and unstated decisions.',
+    charter: 'Check domain vocabulary, deep module interfaces, explicit public acceptance/test seams, shared decision identity, exactly one owner, typed representation, consumer agreement, temporary-path closure, problem/solution/out-of-scope completeness, contradictions, and unstated decisions.',
   },
   {
     key: 'execution-coverage-slices',
@@ -114,7 +115,7 @@ const LENSES = [
   {
     key: 'execution-verification-scope',
     axis: 'execution-readiness',
-    charter: 'Check observable DoDs, agreed behavioral seams, proportional verification tiers/addenda, forbidden-scope guards, non-goal leakage, and whether every runtime claim has both a production caller and behavioral verification.',
+    charter: "Check observable DoDs, agreed behavioral seams, proportional verification tiers/addenda, forbidden-scope guards, non-goal leakage, whether every runtime claim has both a production caller and behavioral verification, and whether planned tests follow replace-don't-layer at the owning Interface.",
   },
 ]
 
@@ -129,6 +130,7 @@ const lensResults = await parallel(LENSES.map((lens) => () =>
     'Never edit the source or draft. Never invent product scope. Emit one finding per falsifiable problem.\n' +
     'Use RESEARCH_REQUIRED only for missing facts/evidence, DESIGN_DECISION_REQUIRED only for an unsettled product/architecture/domain/seam decision, and GRAPH_REVISION_REQUIRED only when the reviewed source is sufficient but the task graph is defective.\n' +
     'Set blocking=false for observations that do not prevent source or graph admission. Cite an exact source heading for every finding and verify it exists.\n' +
+    'Use the stable shared decision id when the finding concerns a declared shared_decision; otherwise set decision_id=null.\n' +
     'Do not invoke opi-implement, this review workflow, or spawn additional agents.\n' +
     'Draft task graph JSON:\n' + JSON.stringify(draft),
     { label: 'plan:' + lens.key, phase: 'Lens audit', schema: FINDINGS_SCHEMA },
