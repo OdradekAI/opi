@@ -1,6 +1,6 @@
 interface:
   display_name: "Opi Audit"
-  short_description: "Audit one implementation phase against its specs"
-  default_prompt: "Use $opi-audit to independently audit phase=<N> against its registered requirements and the complete relevant implementation at current committed HEAD."
+  short_description: "Seal and audit one Opi phase"
+  default_prompt: "Use $opi-audit phase=<N> to run a sealed conformance audit at committed HEAD and emit immutable normalized findings."
 policy:
   allow_implicit_invocation: false

@@ -1,0 +1,35 @@
+{
+  "skill_name": "opi-remediate",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Use $opi-remediate mode=plan phase=17 on three immutable findings: A has the same closure_key as a previously closed issue, B shares only its family_key, and C has the same closure_key as an explicit deferral. Classify their lineage and say whether they belong in one closure batch.",
+      "expected_output": "A is recurrent-same-defect, B is recurrent-adjacent-path, C is carried-forward-deferred, and they are not clustered unless one closure predicate and one root fix prove all three closed.",
+      "expectations": [
+        "Classifies A as recurrent-same-defect.",
+        "Classifies B as recurrent-adjacent-path and C as carried-forward-deferred.",
+        "Does not cluster by theme or family_key alone; requires one closure predicate."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Use $opi-remediate mode=plan phase=17. Verification confirms a finding, but fixing it requires choosing a new public product policy that no registered source resolves. What status and outputs are allowed?",
+      "expected_output": "A DRAFT-UNRESOLVED immutable plan and dispositions that preserve the finding, identify the required authority and alternatives, and refuse READY-FOR-APPLY.",
+      "expectations": [
+        "Uses DRAFT-UNRESOLVED and explicitly refuses READY-FOR-APPLY.",
+        "Records the unresolved decision, alternatives, and authority needed.",
+        "Records decision pending:D<N> and closure_batch null in an immutable plan-stage disposition instead of inferring blanket approval."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use $opi-remediate mode=apply plan=docs/snapshots/phase17/remediation.136c380.r4.plan.md. The plan says READY-FOR-APPLY, but current committed HEAD differs and the user only approved an older remediation-plan.md. State the action and the remaining closure loop.",
+      "expected_output": "Refuse application because both exact endpoint and exact-plan approval fail; after a valid apply, execute red/green closure batches, write an immutable result, and hand off to a fresh independent audit.",
+      "expectations": [
+        "Refuses to edit because current HEAD does not match the exact remediation head.",
+        "Refuses to treat approval of a different mutable plan as approval of this plan.",
+        "Names closure-batch verification, immutable result, and fresh independent audit as the valid loop."
+      ]
+    }
+  ]
+}

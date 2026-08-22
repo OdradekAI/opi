@@ -1,113 +1,56 @@
-# Cross-Reference Matrix
+# Finding lineage and closure matrix
 
-Algorithm and rules for cross-referencing findings from independent audit and
-runtime eval reports.
+Use the normalized finding contract for ingestion and the remediation
+disposition contract for output. Preserve every source record unchanged.
 
-## Severity unification
+## Lineage classification
 
-Canonical four-tier definitions, foreign-label normalization, and non-standard-
-label mapping live in `../../_shared/references/finding-contract.md`. Normalize
-every finding to that scale before clustering. Preserve the source label and
-normalization rationale; never infer a source model or silently rewrite its
-severity.
+Compare immutable `(source_path, id)`, `closure_key`, `family_key`, and prior
+disposition evidence:
 
-## Clustering algorithm
-
-### Step 1: Extract findings
-
-From each selected audit or eval report, parse normalized finding blocks from
-`../../_shared/references/finding-contract.md`. Preserve these source fields:
-
-```
-source_kind:  <audit | eval>
-source_path:  <artifact path>
-source_model: <reported identity>
-finding_id:   <source-stable ID>
-axis:         <normalized axis>
-severity:     <source unified tier>
-evidence:     <locations and observed details>
-claim:        <falsifiable problem>
-independence: <reported relationship>
-```
-
-### Step 2: Cluster by theme
-
-Two findings belong to the same cluster when they describe the same underlying
-issue. Use these signals:
-
-1. **File-path overlap**: findings citing the same file(s) AND the same
-   function/method are strong candidates.
-2. **Behavioral-theme match**: findings describing the same observable behavior
-   (e.g., "metadata lost on resume", "walker divergence on corrupt Leaf") even
-   if they cite different lines.
-3. **Causal overlap**: evidence points to the same violated invariant or
-   production seam even when the reports propose different fixes.
-
-Do NOT cluster findings that merely touch the same file but describe unrelated
-issues. The unit of clustering is the behavioral issue, not the file.
-
-Recommendations alone are not a clustering key. Two reviewers can recommend
-the same refactor for unrelated defects.
-
-### Step 3: Record source coverage
-
-| Coverage | Condition |
+| Kind | Rule |
 |---|---|
-| Full independent overlap | Every eligible independent source reports the behavior |
-| Partial independent overlap | More than one, but not every, eligible independent source reports it |
-| Single independent source | Exactly one eligible independent source reports it |
-| Correlated/degraded overlap | Repeated only by same-family or unknown-independence sources |
+| `new` | No prior occurrence has the same closure or family identity. |
+| `recurrent-same-defect` | The same closure identity was previously observed and was not explicitly deferred; prior disposition shows whether a closure was attempted. |
+| `recurrent-adjacent-path` | The family is known but the current closure predicate identifies a different behavioral path. |
+| `regression` | Evidence ties the reappearance to a known previously passing endpoint or change. |
+| `carried-forward-deferred` | The same closure identity was explicitly deferred and remains unresolved. |
 
-Count independent source families, not report files. Same-family fresh contexts
-remain useful evidence but do not manufacture additional independent votes.
-Coverage is descriptive, not a confidence score or a decision about whether the
-finding enters remediation. Severity, evidence quality, reproducibility, and
-Phase C verification determine action.
+Text similarity is only a search hint. Do not classify recurrence from titles,
+shared files, or recommendations alone. When history is incomplete, prefer
+`new` and record the evidence limitation rather than invent lineage.
 
-### Step 4: Resolve severity conflicts
+When exact-closure history contains conflicting dispositions, preserve all of
+them. `carried-forward-deferred` applies only when every exact prior disposition
+is an explicit deferral; any non-deferred exact occurrence yields
+`recurrent-same-defect`. Use `regression` only when `regression_of` evidence ties
+the current failure to a known passing endpoint/change.
 
-When sources assign different unified severities to the same cluster:
+## Closure clustering
 
-- **Candidate severity** = highest severity assigned by any source.
-- **Record the range** with each source path/model and original label.
-- Phase C verification may assign a final severity based on code/trace evidence,
-  but the matrix retains every original source severity and the adjustment
-  rationale.
+Two findings may enter the same closure batch only if all are true:
 
-## Single-report mode
+1. they have one closure predicate;
+2. one root change is expected to satisfy that predicate for every member;
+3. one red-before/green-after evidence pair can discriminate closure;
+4. they can be reviewed and reverted as one bounded change.
 
-When only one finding source is available:
+Shared files, family keys, severity, or suggested refactors do not satisfy the
+one closure predicate rule. Keep adjacent paths separate and link them through
+`family_key`.
 
-- Skip Steps 2-4 (no clustering or source-coverage comparison is possible).
-- Mark every finding as single-source and unverified; do not fabricate a
-  numeric trust weight.
-- Phase C verification is especially critical: increase the verification
-  depth for each finding.
-- The remediation plan should note that findings are single-source and have
-  not been cross-validated.
+## Coverage and severity
 
-## Cross-reference matrix output
+Record independent source-family coverage as full overlap, partial overlap,
+single source, or correlated/degraded overlap. Coverage is descriptive, not a
+vote. Candidate severity is the highest normalized source tier; final severity
+comes from current verification and retains every source tier plus rationale.
 
-The matrix is an internal working document consumed by Phase D. Format:
+Contradictory sources remain separate evidence until verification resolves the
+claim. `Cannot confirm` is not `Refuted`.
 
-```markdown
-| Cluster | Theme | Source findings | Independence | Coverage | Severity range | Verification |
-|---------|-------|-----------------|--------------|----------|----------------|-------------|
-| C1 | session metadata lost on resume | audit-a:A2; eval-b:E4 | independent-family | Partial independent overlap | Major / Major | pending |
-| C2 | picker bypasses durable write | audit-c:S1 | unknown | Single independent source | Major | pending |
-```
+## Matrix
 
-The `Verification` column is updated during Phase C.
-
-## Edge cases
-
-- **Contradictory findings**: When one source reports a finding and another
-  explicitly refutes it, record
-  both positions. Phase C must independently verify.
-- **Partially overlapping findings**: When two findings describe overlapping
-  but not identical issues, create separate clusters but note the relationship.
-- **Info-level findings**: Do not cluster Info findings unless they converge
-  into a pattern that suggests a higher-severity systemic issue.
-- **Cross-kind overlap**: An audit and eval finding may cluster only when they
-  describe the same behavior. Runtime evidence strengthens verification but
-  does not automatically validate the static audit's causal claim.
+| Batch | Closure key/predicate | Family | Source findings | Lineage | Coverage | Source severity | Verification | Decision |
+|---|---|---|---|---|---|---|---|---|
+| B1 | ... | ... | ... | ... | ... | ... | ... | ... |

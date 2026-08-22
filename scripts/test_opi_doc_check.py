@@ -99,37 +99,86 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
 }
 
 
-AUDIT_MINIMUM_CHANGE_CONFORMANCE_REQUIRED = {
+ASSURANCE_WORKFLOW_REQUIRED = {
     ".claude/skills/opi-audit/SKILL.md": (
-        "minimum-change conformance matrix",
+        "sealed audit",
+        "proof obligation",
+        "references/audit-proof-obligations.md",
+        "isolated checkout of `audit_head`",
+        "audit.<model>.<head7>.<run-id>.findings.jsonl",
+        "validate_assurance_artifact.py findings",
+        "`met`",
+        "`partially-met`",
+        "`not-met`",
+        "`not-assessable`",
+        "`PASS-WITH-FINDINGS`",
+    ),
+    ".claude/skills/opi-audit/references/audit-proof-obligations.md": (
+        "anti-vacuity",
+        "Blocker/Major refutation",
+        "Minimum-change conformance matrix",
         "`reuse_search`",
         "`surface_necessity`",
         "`simplification_ceiling`",
-        "`conforming`",
-        "`drifted`",
-        "`triggered`",
-        "`not-recorded`",
-        "`not-assessable`",
-        "current committed `audit_head`",
-        "Finding routing remains on existing axes",
-        "## N+2. Minimum-change Conformance",
         "`production_consumers`",
         "`nonproduction_consumers`",
         "`net_deletion`",
         "`residual_glue`",
     ),
     ".claude/skills/opi-audit/references/finding-template.md": (
+        "audit.<model>.<head7>.<run-id>.md",
+        "audit.<model>.<head7>.<run-id>.findings.jsonl",
+        "Requirement state",
         "## Minimum-change Conformance",
-        "| Task | Scenario/source | Reuse | Placement | Surface | Production slice | Ceiling/trigger | Status |",
-        "`not-recorded`",
-        "`not-assessable`",
         "`standards`",
         "`spec`",
         "`integration`",
-        "`production_consumers`",
-        "`nonproduction_consumers`",
-        "`net_deletion`",
-        "`residual_glue`",
+    ),
+    ".claude/skills/opi-audit/evals/evals.json": (
+        '"skill_name": "opi-audit"',
+        "partially-met",
+        "without overwriting old reports",
+        "counter-evidence",
+    ),
+    ".claude/skills/opi-remediate/SKILL.md": (
+        "mode=plan | apply",
+        "DRAFT-UNRESOLVED",
+        "READY-FOR-APPLY",
+        "closure batch",
+        "red-before",
+        "isolated checkout of `remediation_head`",
+        "remediation.<head7>.<round>.plan.dispositions.jsonl",
+        "remediation.<head7>.<round>.result.dispositions.jsonl",
+        "validate_assurance_artifact.py plan",
+        "compare_finding_lineage.py",
+    ),
+    ".claude/skills/opi-remediate/references/cross-reference-matrix.md": (
+        "recurrent-same-defect",
+        "recurrent-adjacent-path",
+        "carried-forward-deferred",
+        "one closure predicate",
+    ),
+    ".claude/skills/opi-remediate/references/remediation-plan-template.md": (
+        "remediation.<head7>.<round>.plan.md",
+        "Status: DRAFT-UNRESOLVED | READY-FOR-APPLY",
+        "## Unresolved decisions",
+        "**Closure predicate**:",
+        "**Red-before**:",
+        "**Green-after**:",
+    ),
+    ".claude/skills/opi-remediate/references/execution-protocol.md": (
+        "exact remediation head",
+        "dirty-worktree baseline",
+        "red-before",
+        "remediation.<head7>.<round>.result.md",
+        "fresh independent audit",
+        "explicit new `$opi-audit` invocation",
+    ),
+    ".claude/skills/opi-remediate/evals/evals.json": (
+        '"skill_name": "opi-remediate"',
+        "recurrent-same-defect",
+        "DRAFT-UNRESOLVED",
+        "current committed HEAD differs",
     ),
 }
 
@@ -312,8 +361,8 @@ class SkillContractTests(unittest.TestCase):
         for rel, tokens in MINIMUM_CHANGE_TRACE_REQUIRED.items():
             self.write(rel, "\n".join(tokens) + "\n")
 
-    def write_audit_minimum_change_conformance_docs(self) -> None:
-        for rel, tokens in AUDIT_MINIMUM_CHANGE_CONFORMANCE_REQUIRED.items():
+    def write_assurance_workflow_docs(self) -> None:
+        for rel, tokens in ASSURANCE_WORKFLOW_REQUIRED.items():
             self.write(rel, "\n".join(tokens) + "\n")
 
     def write_eval_behavior_baseline_docs(self) -> None:
@@ -392,32 +441,32 @@ class SkillContractTests(unittest.TestCase):
                         doc_check.ERRORS,
                     )
 
-    def test_audit_minimum_change_conformance_contract_passes(self) -> None:
-        self.write_audit_minimum_change_conformance_docs()
+    def test_assurance_workflow_contract_passes(self) -> None:
+        self.write_assurance_workflow_docs()
 
         checker = getattr(
             doc_check,
-            "check_audit_minimum_change_conformance_contract",
+            "check_assurance_workflow_contract",
             None,
         )
-        self.assertIsNotNone(checker, "audit conformance checker must exist")
+        self.assertIsNotNone(checker, "assurance workflow checker must exist")
         checker()
 
         self.assertEqual([], doc_check.ERRORS)
 
-    def test_audit_minimum_change_conformance_requires_every_token(self) -> None:
+    def test_assurance_workflow_contract_requires_every_token(self) -> None:
         checker = getattr(
             doc_check,
-            "check_audit_minimum_change_conformance_contract",
+            "check_assurance_workflow_contract",
             None,
         )
-        self.assertIsNotNone(checker, "audit conformance checker must exist")
+        self.assertIsNotNone(checker, "assurance workflow checker must exist")
 
-        for rel, tokens in AUDIT_MINIMUM_CHANGE_CONFORMANCE_REQUIRED.items():
+        for rel, tokens in ASSURANCE_WORKFLOW_REQUIRED.items():
             for token in tokens:
                 with self.subTest(rel=rel, token=token):
                     doc_check.ERRORS = []
-                    self.write_audit_minimum_change_conformance_docs()
+                    self.write_assurance_workflow_docs()
                     self.write(
                         rel,
                         "\n".join(item for item in tokens if item != token) + "\n",
@@ -426,7 +475,7 @@ class SkillContractTests(unittest.TestCase):
                     checker()
 
                     self.assertIn(
-                        f"{rel}: audit minimum-change conformance contract "
+                        f"{rel}: assurance workflow contract "
                         f"missing semantic tokens {[token]!r}",
                         doc_check.ERRORS,
                     )

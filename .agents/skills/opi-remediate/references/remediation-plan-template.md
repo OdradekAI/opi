@@ -1,125 +1,70 @@
-# Remediation Plan Template
+# Remediation plan template
 
-Output format for `docs/snapshots/phase<N>/remediation-plan.md`.
+Output a new `remediation.<head7>.<round>.plan.md` and its sibling dispositions.
+Never reuse `remediation-plan.md` for a new run.
 
-## File structure
+The header contract is `Status: DRAFT-UNRESOLVED | READY-FOR-APPLY`.
 
 ```markdown
 # Phase <N> Remediation Plan
 
-**Date**: <YYYY-MM-DD>
-**Finding sources**: <list of audit/eval files consumed, with source kinds>
-**Verification target**: current committed `<HEAD>`
-**Phase-exit provenance**: <task `verified_at_commit` values or snapshot reference>
-**Design spec**: <spec file path(s)>
+**Status**: DRAFT-UNRESOLVED | READY-FOR-APPLY
+**Verification target**: committed `<full SHA>`
+**Round**: <immutable round identity>
+**Finding sources**: <immutable source paths>
+**Disposition artifact**: `remediation.<head7>.<round>.plan.dispositions.jsonl`
+**Dirty-worktree baseline**: <staged/unstaged/untracked inventory>
+**Unresolved decisions**: none | D<N>, ...
 
----
+## Lineage and verification summary
 
-## Finding cross-reference summary
+| Source finding | Verification | Final severity + rationale | Lineage | Closure batch | Decision |
+|---|---|---|---|---|---|
+| ... | ... | ... | ... | ... | ... |
 
-| Cluster | Theme | Sources | Independence | Coverage | Source severity range | Final severity + rationale | Verification |
-|---------|-------|---------|--------------|----------|-----------------------|----------------------------|-------------|
-| ... | ... | ... | ... | ... | Confirmed / Partially / Refuted |
+## Unresolved decisions
 
-## Decision record
+| ID | Required decision | Why evidence cannot decide | Alternatives | Authority needed |
+|---|---|---|---|---|
+| ... | ... | ... | ... | ... |
 
-| ID | Finding cluster(s) | Decision | Rationale | Decided by |
-|----|-------------------|----------|-----------|------------|
-| D1 | C1, C3 | ... | ... | auto / user |
+Use `none` when the plan is `READY-FOR-APPLY`.
+A `DRAFT-UNRESOLVED` may stop here before fix design when the missing decision
+determines the closure predicate. Do not add placeholder fix items to satisfy a
+template.
 
-## Remediation layers
+## Closure batches
 
-### Layer 1: <crate-name> (substrate)
+### Batch B1: <one behavioral closure>
 
-**Verification**:
+**Closure predicate**: <one falsifiable outcome shared by every batch member>
+**Dependencies**: <earlier batches or none>
+**Verification union**: <deduplicated checks>
 
-    scripts/opi-impl-smoke.sh scoped --crate <crate> --test <affected-test-binary>
+#### Fix B1.1: <short title>
 
-#### Fix 1.1: <short title>
-
-- **Finding source**: <source paths, kinds, model IDs, and finding IDs>
-- **Cluster**: C<N>
+- **Finding source**: <immutable source_path + id>
+- **Lineage**: <kind + prior evidence>
 - **Decision**: D<N>
-- **Verification status**: Confirmed
-- **File(s)**: `<path>` ~L<range>
-- **Change**: <description of what to modify>
-- **Test plan**: <new test / modified test / existing test name>
-
-#### Fix 1.2: ...
-
-### Layer 2: <crate-name> (product)
-
-...
-
-### Layer N: Documentation
-
-...
+- **Verification status**: Confirmed | Partially confirmed
+- **File(s)**: `<path>`
+- **Change kind**: behavioral | test-only | documentation | metadata
+- **Change**: <minimum bounded change>
+- **Closure predicate**: <observable outcome>
+- **Red-before**: <command and observed failure, or concrete N/A reason>
+- **Green-after**: <same discriminating check and expected pass>
 
 ## Final verification
 
-    <union of affected tier gates; smoke full only for workspace/cross-crate scope>
+    <deduplicated verification union>
 
-## Scope exclusions
+## Exclusions
 
-Findings that were refuted, downgraded to Info, or deferred:
-
-| Finding | Status | Reason |
-|---------|--------|--------|
-| ... | Refuted | <evidence> |
-| ... | Deferred by registered source | <source path + exact section + rationale> |
-| ... | Returned to shaping | <missing authorization or product decision> |
+| Source finding | Disposition | Evidence/authority |
+|---|---|---|
+| ... | Refuted / Cannot confirm / Info-no-action / Returned to shaping / Deferred by registered source | ... |
 ```
 
-## Required fields per fix item
-
-Every fix item in the plan MUST include these fields:
-
-| Field | Description |
-|---|---|
-| Finding source | Which audit/eval artifacts, source kinds, model IDs, and finding IDs identified this issue |
-| Cluster | The cross-reference cluster ID (omit if single-source) |
-| Decision | The decision record ID that resolved the fix direction |
-| Verification status | Confirmed / Partially confirmed (from Phase C) |
-| File(s) | Exact file path(s) and approximate line numbers |
-| Change | What to modify -- specific enough that a developer can act on it |
-| Test plan | How the fix will be verified (new test name, or existing test) |
-
-## Decision record format
-
-Each decision in the table must specify:
-
-| Field | Description |
-|---|---|
-| ID | Sequential identifier (D1, D2, ...) |
-| Finding cluster(s) | Which cluster(s) this decision addresses |
-| Decision | The chosen approach, stated concisely |
-| Rationale | Why this approach was chosen over alternatives |
-| Decided by | `auto` (clear fix direction) or `user` (escalated) |
-
-For user-decided items, also record the alternatives that were presented and
-the user's selection.
-
-## Layer ordering rules
-
-1. Layers follow the workspace dependency graph (leaf crates first).
-2. Within a layer, fixes are ordered:
-   - New public APIs or type changes (other fixes may depend on these)
-   - Behavioral code changes
-   - Test additions
-3. Documentation fixes are always the final layer.
-4. Each layer's verification commands must pass before the next layer starts.
-
-## Scope exclusions section
-
-Every finding that does NOT produce a fix item must appear in the exclusions
-table with one of:
-
-- **Refuted**: Phase C verification showed the finding is incorrect.
-- **Deferred by registered source**: Valid finding explicitly deferred by a
-  currently registered source; record the exact path and section.
-- **Returned to shaping**: Valid finding cannot be fixed without new product
-  meaning or future-work authorization. A naked “future Phase” label is not a
-  deferral contract.
-- **Info/No action**: Finding is informational and does not require a code
-  change.
-- **Duplicate**: Finding is a subset of another cluster's fix.
+Layer batches by the live workspace dependency graph when dependencies require
+it, but do not merge independent closure predicates merely to share a layer.
+Every source finding must appear either in a fix item or exclusions.

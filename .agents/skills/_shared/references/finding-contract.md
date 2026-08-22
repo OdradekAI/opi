@@ -1,14 +1,17 @@
 # Normalized Finding Contract
 
 Audit and runtime eval artifacts use this interchange when their findings may
-enter `opi-remediate`. Narrative reports remain human-readable; each actionable
-finding also carries these fields.
+enter `opi-remediate`. New producers write the records as JSON Lines in an
+immutable `*.findings.jsonl` sibling; the human-readable report references the
+same IDs instead of copying the machine record. Legacy inline YAML blocks
+remain readable as explicitly degraded input.
 
 ```yaml
 id: <source-stable identifier>
 source_kind: audit | eval
 source_path: <repo-relative artifact path>
 source_model: <reported reviewer/evaluator identity>
+observed_at: <full committed implementation SHA>
 independence: independent-family | fresh-context-same-family | unknown
 axis: standards | spec | security | test-quality | invariants | integration | residuals | runtime-fidelity
 severity: Blocker | Major | Minor | Info
@@ -32,6 +35,8 @@ status: unverified
   evidence. It does not imply either source is more trustworthy.
 - `source_model` reports the identity claimed by the producer. Never invent a
   model ID.
+- `observed_at` is the full committed implementation SHA from which the
+  finding evidence was derived. It is not a historical diff boundary.
 - `independence` reports the actual relationship to the implementation or model
   under evaluation. A fresh context on the same family is degraded independence,
   not `independent-family`.
@@ -54,9 +59,22 @@ confirm`, or `Refuted`. Consensus clustering may select a candidate severity,
 but it never silently reranks an individual source finding. Any final severity
 change is recorded with code/trace evidence and rationale.
 
-Malformed finding blocks remain visible in the source report but are not
+New audit artifacts use immutable names:
+`audit.<model>.<head7+>.<run-id>.md` and the sibling
+`audit.<model>.<head7+>.<run-id>.findings.jsonl`. Reusing
+`audit.<model>.md` would change the meaning of the stable `(source_path, id)`
+key and is therefore invalid. Eval producers use an equivalently immutable
+case/run identity.
+
+Malformed finding records remain visible in the source report but are not
 silently repaired. Remediation reports the missing fields and asks for a source
 correction or treats the narrative as an explicitly degraded legacy input.
+
+Validate new finding sidecars with:
+
+```text
+python .agents/skills/_shared/scripts/validate_assurance_artifact.py findings <path>
+```
 
 ## Severity scale
 

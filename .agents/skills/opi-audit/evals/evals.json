@@ -1,0 +1,35 @@
+{
+  "skill_name": "opi-audit",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Use $opi-audit phase=17. The worktree contains two old audit reports plus an uncommitted remediation-plan edit. Before doing any writes, explain the exact evidence endpoint, history-isolation order, and new artifact names you will use.",
+      "expected_output": "A sealed-audit trace that pins committed HEAD, treats dirty files as contamination rather than acceptance evidence, builds current proof obligations before reading old conclusions, and chooses immutable report/findings siblings.",
+      "expectations": [
+        "Inventories staged, unstaged, and untracked paths separately and excludes them from committed audit evidence.",
+        "After sealing current candidate findings, compares prior immutable audits only for recurrence or coverage gaps without changing current findings.",
+        "Names both audit.<model>.<head7>.<run-id>.md and audit.<model>.<head7>.<run-id>.findings.jsonl without overwriting old reports."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Use $opi-audit phase=17. All tests pass and no Major findings remain, but one mandatory registered requirement is only partially implemented. State the requirement state and final audit verdict, with the deciding rule.",
+      "expected_output": "The requirement is partially-met and the verdict is FAIL because mandatory conformance is independent of finding severity or passing but non-discriminating tests.",
+      "expectations": [
+        "Assigns partially-met to the mandatory requirement.",
+        "Returns FAIL rather than PASS or PASS-WITH-FINDINGS.",
+        "Explains that severity and test command success do not independently determine conformance."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use $opi-audit phase=17. A candidate Major says a durable field is missing, while a helper test passes after only checking object construction. Describe the proof needed before publishing the finding.",
+      "expected_output": "An anti-vacuity review of the test and a Blocker/Major refutation attempt across production consumers, durable formats, counter-evidence, and a discriminating reproduction.",
+      "expectations": [
+        "Applies the anti-vacuity rule and requires an assertion that fails when the durable field is absent.",
+        "Traces the field through the production and durable paths named by the requirement.",
+        "Attempts and records counter-evidence before retaining Major severity."
+      ]
+    }
+  ]
+}

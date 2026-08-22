@@ -71,8 +71,10 @@ flowchart TD
 - `opi-implement plan` tests readiness; it does not repair missing product
   meaning. Graph confirmation and Git commit authorization are separate gates.
 - `opi-audit` and `opi-eval` diagnose; they do not edit production code.
-- `opi-remediate` verifies findings before fixing them and never writes the
-  live `.opi-impl-state.json`.
+  Audit runs seal committed evidence before comparing history.
+- `opi-remediate mode=plan` verifies and plans; `mode=apply` requires explicit
+  approval of the exact immutable plan. Neither mode writes the live
+  `.opi-impl-state.json`.
 - `opi-document` proves documentation truth; it does not authorize release.
 - `opi-release` is the only public publication workflow. Crates.io publication
   has a separate last-moment irreversible gate.
@@ -89,9 +91,9 @@ local commit after an explicit gate, `$` may use credentials or paid providers,
 | `opi-realign` | Compare an exact pinned pi revision with opi | `docs/realign/*.md` | Evidence only; next is shaping or `opi-implement plan` after registration | W |
 | `opi-research` | Investigate outward capabilities from primary sources | `docs/research/*.md` | Evidence only; next is shaping | W |
 | `opi-implement` | Admit a registered Phase source, execute its graph, and archive Phase evidence | `.opi-impl-state.json`, Phase snapshots, task changes | Graph, task-commit, ledger-commit, and failure gates are distinct | W, C |
-| `opi-audit` | Verify one Phase against the complete relevant implementation at committed HEAD | `docs/snapshots/phase<N>/audit.*.md` | No fixes; confirmed findings go to `opi-remediate` | W |
+| `opi-audit` | Seal and verify one Phase against the complete relevant implementation at committed HEAD | Immutable `audit.<model>.<head7>.<run-id>.md` and `.findings.jsonl` siblings | No fixes; confirmed findings go to `opi-remediate` | W |
 | `opi-eval` | Run explicit isolated real-provider fidelity cases | `docs/eval/` reports and history | Requires credentials and mutating-tool opt-in where applicable | W, $ |
-| `opi-remediate` | Verify normalized audit/eval findings and optionally correct them | `remediation-plan.md`, user-approved fixes | Execution requires a separate user gate; intent changes return to shaping | W |
+| `opi-remediate` | With `mode=plan`, verify immutable findings and derive closure batches; with `mode=apply`, execute one approved plan | Immutable plan, dispositions, result, and user-approved fixes | `READY-FOR-APPLY` plus exact-plan approval gates execution; intent changes return to shaping | W |
 | `opi-document` | Synchronize truthful English/Chinese docs and source-derived checks | Documentation and doc-check changes | Does not publish | W |
 | `opi-release` | Run seven gated release phases for six crates and GitHub assets | Git tag/release and crates.io versions | Public Git gate, then separate irreversible crates gate | W, C, P, I |
 | `opi-slim-tests` | Remove duplicate or superseded Rust test binaries without losing behavior | Verified uncommitted test-graph reduction | Never commits automatically | W |
@@ -100,9 +102,11 @@ local commit after an explicit gate, `$` may use credentials or paid providers,
 
 `opi-audit` and `opi-eval` emit normalized findings using
 `_shared/references/finding-contract.md`. `opi-remediate` preserves the original
-source, severity, independence, and evidence while recording its own
-verification separately. Generic provider-fidelity canaries are runtime
-signals; only a registered runtime-fidelity case can close a product criterion.
+source, severity, independence, and evidence while recording verification,
+lineage, decisions, and closure proofs separately in an immutable disposition
+artifact. A remediation result can close a batch; only a fresh audit can prove
+Phase conformance. Generic provider-fidelity canaries are runtime signals; only
+a registered runtime-fidelity case can close a product criterion.
 
 Use independent models or reviewers when practical and disclose degraded
 independence. No preferred provider or model is part of the project contract.
@@ -121,6 +125,7 @@ independence. No preferred provider or model is part of the project contract.
 | `docs/eval/` | `opi-eval` reports and history |
 | `.opi-release-state.json` | `opi-release`; ignored resume state retained only during an incomplete release |
 | `_shared/references/finding-contract.md` | Shared finding schema |
+| `_shared/references/remediation-disposition-contract.md` | Shared verification, lineage, decision, and closure schema |
 
 Only `opi-implement` writes the canonical implementation ledger. Do not create
 a second task ledger or record implementation progress in `docs/opi-spec.md`.

@@ -1,420 +1,439 @@
 # Phase 17 Remediation Plan
 
-**Date**: 2026-08-21
-**Finding sources**:
-- `docs/snapshots/phase17/audit.codex.md` (audit, codex, 2026-08-20, verdict FAIL 0B/4M/3m; working-tree version supersedes the committed 2026-08-15 report retitled by `a680c5d`)
-- `docs/snapshots/phase17/audit.glm5.3.md` (audit, glm5.3, 2026-08-21, verdict PASS-WITH-FINDINGS 0B/4M/24m/28I; working-tree version supersedes the committed 2026-08-15 glm5.2 report retitled by `a680c5d`)
+**Date**: 2026-08-22
+**Finding sources**: `docs/snapshots/phase17/audit.codex.md` (audit, codex), `docs/snapshots/phase17/audit.glm5.3.md` (audit, glm5.3)
+**Verification target**: current committed `136c380f0c5eea541190cc1a0f5c1d62f983b4e8`
+**Phase-exit provenance**: frozen `docs/snapshots/phase17/opi-impl-state.json`; Tasks 17.1--17.9 were verified at `41464d8`, `0e7ed0b`, `96370ce`, `5ebadac`, `6600cd2`, `b547f45`, `32c79e7`, `4893014`, and `a4cfa4d` respectively. These commits are provenance, not remediation coverage.
+**Design spec**: `docs/opi-spec.md`; `docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md`
 
-**Degraded-input note**: the codex report's normalized blocks declare
-`source_path: docs/snapshots/phase17/audit.codex-gpt5.md`, but the file lives at
-`audit.codex.md`. IDs are treated as stable within that file; no fields were
-repaired in the source reports. Both sources self-declare
-`fresh-context-same-family` (reduced independence versus the implementation);
-they are distinct model families from each other, so cross-source overlap counts
-as independent coverage.
+This is a plan-only artifact. It does not authorize execution, does not revise either specification, and does not modify `.opi-impl-state.json`.
 
-**Commit range**: task commits `41464d8..a4cfa4d`; audit target `a680c5d`
-(5 unpushed commits `211aba8..a680c5d` beyond `origin/main` = `877c41f`).
-**Design spec**: `docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md`, `docs/opi-spec.md`
-
-**Verification method**: all 66 findings (7 codex + 59 glm5.3) were verified
-against code at `a680c5d` by six parallel read-only verification agents plus
-inline `git`/`gh` checks. Tally: 57 Confirmed, 6 Partially confirmed
-(AUD-17-001/006/007, MIN-23/24, INFO-04), 0 Refuted, 0 Cannot-confirm.
+Success means that every normalized finding is either tied to a verified fix below or appears in Scope exclusions; each fix has a failing-before/passing-after focused check; and the final cross-crate verification union passes without weakening a registered Phase 17 requirement.
 
 ---
 
 ## Finding cross-reference summary
 
-Majors:
+Both reports' normalized blocks declare `fresh-context-same-family`. Therefore repeated findings are **correlated overlap**, not independent-family consensus. Single-report findings are **single same-family source**. Coverage is descriptive only; the final status below comes from verification against the current committed source.
 
-| Cluster | Theme | Sources | Coverage | Source severity | Final severity + rationale | Verification |
-|---------|-------|---------|----------|-----------------|----------------------------|-------------|
-| C1 | No CI or recorded full-suite validation covers audit HEAD (5 unpushed commits incl. ~15k source + ~8k test rewrite) | glm5.3 M1+M2 | single | Major / Major | **Major** — confirmed inline: `origin/main..HEAD` = 5 commits; `gh run list --commit a680c5d` = 0 runs; newest run 31803930575 at 2026-08-14 | Confirmed |
-| C2 | `set_model_validated` persists a `model_change` entry its own runtime application rejects (lookup-only provider: registry-resolvable, not dispatchable) | glm5.3 M3 | single | Major | **Major** — persist→apply order verified; no compensating rollback; reachable via RPC `set_model` | Confirmed |
-| C3 | `apply_recorded_model` panics via `.expect` on a recorded non-dispatchable route (resume/fork/branch-switch/builder-resume) | glm5.3 M4 | single | Major | **Major** — `.expect` verified; a 4th call site (builder resume, harness.rs:1873) found beyond the audit's 3 | Confirmed |
-| C4 | Bare model selection canonicalizes to the active provider when multiple dispatchable routes share the model id | codex AUD-17-005 | single | Major | **Major** — violates the design-spec general selection invariant ("only when the product can prove exactly one valid route") and P17-PRV-002; behavior pinned by an intentional test (spec-vs-implementation conflict) | Confirmed |
-| C5 | Pre-dispatch evidence-emission failure does not stop the not-yet-launched provider request | codex AUD-17-001 | single | Major | **Minor (pin + clarify)** — code facts confirmed; conformant reading wins: EVD-009's stated mechanism is the trusted authorizer, the module contract documents "fail-open for the run", verification column is authorization-side | Partially confirmed |
-| C6 | Incomplete evidence still advertises unavailable tools in later provider requests | codex AUD-17-006 | single | Major | **Minor (pin + clarify)** — code facts confirmed; conformant reading wins: AUT-008 recomputation is registration-composition by construction (EffectiveUserPolicy stores active-tool selection only in its digest); health denial is the designed authorization-boundary stable code | Partially confirmed |
-| C7 | Public Agent events carry raw user/tool-result content with zero secret scrubbing into NDJSON/RPC | codex AUD-17-007 | single | Major | **Minor (harden)** — passthrough mechanics and canary-test gap confirmed (RPC canary test literally discards the leaking `AgentEnd` line); conversation echo is a recorded in-repo decision and FAL-004/A10 scope to diagnostics/evidence; real residual = recognized credentials cross unscrubbed | Partially confirmed |
+| Cluster | Theme | Sources | Independence | Coverage | Source severity range | Final severity + rationale | Verification |
+|---|---|---|---|---|---|---|---|
+| C01 | One dispatchable provider-route owner | codex `P17-CODEX-STD-001`; glm `glm53-007`, `glm53-059` | same family | correlated/related overlap | Major--Info | Major: the split stores and listing-only `Provider` are real and contradict the registered single collection owner; repeated product switches already drift on availability | Confirmed |
+| C02 | Auth provenance must not use a valid value as “unset” | codex `P17-CODEX-STD-002`; glm `glm53-024` | same family | correlated overlap | Major--Info | Major: `Static + NotAttempted` is both valid and the overwrite sentinel | Confirmed |
+| C03 | Atomic, origin-preserving trusted tool registration | codex `P17-CODEX-STD-003`; glm `glm53-025`, `glm53-039` | same family | correlated/related overlap | Major--Info | Major: registration can retain inconsistent identity/schema, and A07 never exercises the laundering path | Confirmed |
+| C04 | Safe typed denial facts | codex `P17-CODEX-STD-004`; glm `glm53-021` | same family | correlated overlap | Major--Minor | Major: arbitrary reason/code text reaches model-visible results and diagnostics | Confirmed |
+| C05 | Safe public evidence failures | codex `P17-CODEX-STD-005` | same family | single source | Major | Major: public `EvidenceError` renders unrestricted adapter detail | Confirmed |
+| C06 | Classified artifact metadata | codex `P17-CODEX-STD-006` | same family | single source | Major | Major: infallible public strings cannot enforce the producer classification boundary | Confirmed |
+| C07 | Content-bearing Agent `Debug` | codex `P17-CODEX-STD-007` | same family | single source | Major | Major: complete message and cleanup content is printed | Confirmed |
+| C08 | Secret-bearing configuration and adapter copies | codex `P17-CODEX-STD-008`; glm `glm53-032`, `glm53-033` | same family | related overlap | Major--Minor | Major for externally printable proxy/API-key configuration; Minor for non-zeroizing request-task copies | Confirmed |
+| C09 | Canonical model normalization and mutation | codex `P17-CODEX-STD-009`, `P17-CODEX-SPEC-004`; glm `glm53-006`, `glm53-009`, `glm53-010` | same family | correlated overlap | Major--Minor | Major: startup can discard the uniquely proven provider; colon-bearing bare IDs are misclassified; public mutation can panic or persist before full validation | Confirmed |
+| C10 | Typed provider assembly and consistent startup | codex `P17-CODEX-STD-011`; glm `glm53-005`, `glm53-023`, `glm53-055` | same family | related overlap | Minor | Minor: duplicated mode classification, extension-reachable panics, eager Anthropic store failure, and route-local fallback visibility are real | Confirmed |
+| C11 | Durable session prefix, envelope, and runtime binding | codex `P17-CODEX-SPEC-001` | same family | single source | Major | Major: current v1 reader skips unknown tags and reconstructs no immutable `RuntimeInputBinding`, contrary to `INV-007` | Confirmed |
+| C12 | Bounded, observable steering/follow-up queues | codex `P17-CODEX-SPEC-002`; glm `glm53-074` | same family | correlated overlap | Major--Info | Major: parent `INV-006` explicitly requires observable closure/overflow; unbounded `VecDeque` makes the matrix vacuous | Confirmed |
+| C13 | Settle previously committed state and queued input | codex `P17-CODEX-SPEC-003`; glm `glm53-019` | same family | related overlap | Major--Minor | Major: an ordinary later error discards a transition already committed before queue polling and can lose drained user input | Confirmed |
+| C14 | Complete next-turn intrinsic validation | codex `P17-CODEX-SPEC-005` | same family | single source | Major | Major: model output ceilings and thinking-budget relationships are omitted | Confirmed |
+| C15 | Reauthorize after evidence-health generation changes | codex `P17-CODEX-SPEC-006` | same family | single source | Minor | Minor: execution fails closed, but the specified stale-Allow reauthorization is bypassed | Confirmed |
+| C16 | Truthful evidence manifest construction | codex `P17-CODEX-SPEC-007`; glm `glm53-014`, `glm53-015`, `glm53-017` | same family | correlated/related overlap | Minor--Info | Major for missing content/authority binding required by `CTRL-001/002` and `P17-OUT-004`; Minor for divergent empty observations and the public empty-record panic | Partially confirmed: empty builder behavior is exact; final authority-reference shape needs user selection |
+| C17 | Exact capability, policy, and execution scope facts | codex `P17-CODEX-SPEC-008`, `P17-CODEX-SEC-001`; glm `glm53-003`, `glm53-004`, `glm53-035` | same family | related overlap | Major--Minor | Major: external reads can be recorded as workspace-only; fixed IDs differ from the spec. Digest/list duplication and untyped backend binding are Minor | Confirmed; external-read policy direction needs user selection |
+| C18 | Execute the registered rollback profile | codex `P17-CODEX-SPEC-009`; glm `glm53-016` | same family | correlated overlap | Minor--Info | Minor: the frozen evidence explicitly substituted a structural scan for the required pre-Phase runtime profile | Confirmed |
+| C19 | Frozen-auth terminal classification | codex `P17-CODEX-INV-001` | same family | single source | Major | Major: `AuthFailed` and `AccountIdMissing` can redispatch the rejected frozen credential | Confirmed |
+| C20 | Compaction persistence failure must be public failure | codex `P17-CODEX-INT-001` | same family | single source | Major | Major: `prompt` returns `Ok`/exit zero while evidence records failure or cleanup uncertainty | Confirmed |
+| C21 | Session CLI must honor Cargo's resolved binary | codex `P17-CODEX-TST-001`; glm `glm53-065` | same family | correlated overlap | Minor--Info | Minor: hard-coded workspace `target/debug/opi` breaks the repository cache contract and its fallback is unreachable | Confirmed |
+| C22 | Bedrock event-stream corruption is terminal | glm `glm53-018` | same family | single source | Major | Major: CRC-invalid complete frames are consumed and silently dropped | Confirmed |
+| C23 | Bedrock thinking-history wire semantics | glm `glm53-012` | same family | single source | Minor | Minor: thinking is relabeled as ordinary text; the correct supported wire representation needs protocol confirmation | Partially confirmed |
+| C24 | Anthropic malformed-frame terminal ordering | glm `glm53-020` | same family | single source | Minor | Minor: both fixture and HTTP loops can emit `Err` followed by `Ok`/`Done` | Confirmed |
+| C25 | Collision-resistant session creation | glm `glm53-022` | same family | single source | Minor | Minor: millisecond-only IDs collide across concurrent creators | Confirmed |
+| C26 | Redaction parity across proxy and TUI | glm `glm53-030`, `glm53-031`, `glm53-034` | same family | related overlap | Minor | Minor: raw proxy input/responses, common secret-field spellings, and interactive errors bypass shared redaction | Confirmed |
+| C27 | Phase acceptance tests that currently cannot fail for their named rule | glm `glm53-011`, `glm53-040`, `glm53-041`, `glm53-042`, `glm53-043`, `glm53-044` | same family | single-source group | Minor | Minor: each cited fixture or guard misses its stated production/rule path | Confirmed |
+| C28 | Product integration failure and disclosure edges | glm `glm53-056`, `glm53-057`, `glm53-058`, `glm53-063`, `glm53-064` | same family | single-source group | Minor | Minor: blocking keyring calls, mid-run trace semantics, absolute-root disclosure, lost diagnostics, and timeout misclassification are present | Confirmed |
+| C29 | Current-contract source comments | codex `P17-CODEX-STD-012`; glm `glm53-001`, `glm53-002` | same family | correlated/related overlap | Minor--Info | Minor: Phase/task markers violate `AGENTS.md`, and one test comment states the inverse ordering | Confirmed |
+| C30 | Unadmitted provider refresh surface | codex `P17-CODEX-STD-010` | same family | single source | Minor | Minor: no production trigger and only one real adapter; removal is a public API decision | Confirmed |
 
-Minors (all single-source unless noted; every one verified **Confirmed** except MIN-23/24 partially):
+## Review decisions required
 
-| Cluster | Theme | Sources | Final severity | Verification |
-|---------|-------|---------|----------------|-------------|
-| C8 | Phase/task history in production source comments | glm5.3 MIN-01 + codex AUD-17-003 (**full 2/2 overlap**) | Minor | Confirmed — 15 sites (audits' 14 + `provider_factory.rs:1902` both missed) |
-| C9 | `#[non_exhaustive]` on closed state enums | codex AUD-17-002 | Minor | Confirmed — 2 of 4 mechanically removable; 2 are documented fail-closed conversion design |
-| C10 | `FileEvidenceSink` public test-only accessors | codex AUD-17-004 | Minor | Confirmed — `dir()` has zero callers anywhere (understated by audit) |
-| C11 | Six adapters attach auth secret unconditionally (no AuthScheme check) | glm5.3 MIN-07 | Minor | Confirmed — check is behavior-preserving for every in-repo caller |
-| C12 | AUT-003 "arguments never consulted" phrasing falsifiable | glm5.3 MIN-08 | Minor | Confirmed inline (comment vs `command.authorize(&request.arguments)`); behavior design-conformant |
-| C13 | A09 test's rejection leg weakened; ledger rows still cite it | glm5.3 MIN-09 | Minor | Confirmed — and the `ManifestCandidate::validate` ActiveSnapshot branch (evidence.rs:2538-2543) has zero coverage at HEAD |
-| C14 | Archived criteria_trace citations stale vs HEAD | glm5.3 MIN-10 (+INFO-24/28 sub-findings) | Minor | Confirmed — staleness confined to the archived snapshot; live ledger clean |
-| C15 | CLAUDE.md/AGENTS.md lockstep contract self-false | glm5.3 MIN-11 | Minor | Confirmed — mechanism is a git **symlink** (mode 120000) from `eb5e316`; doc-check guard now vacuous |
-| C16 | In-band stream `Error` terminal converted into normally completed turn | glm5.3 MIN-12 | Minor (behavioral) | Confirmed — behavior additionally pinned by `mock_e2e.rs:298-332` |
-| C17 | INV-007 required/ignorable entry classification unimplemented | glm5.3 MIN-13 | Minor (defer) | Confirmed — clause tightened post-exit (93d75f4, 2026-08-20) |
-| C18 | Unsupported-session-version rejection untested | glm5.3 MIN-14 | Minor | Confirmed |
-| C19 | No registration-order permutation tests | glm5.3 MIN-15 | Minor (defer) | Confirmed inline — only `hooks_called_in_registration_order` exists (ordering, not invariance) |
-| C20 | Project-trust resolver conflicts resolve first-wins | glm5.3 MIN-16 | Minor (defer) | Confirmed — post-exit tightening; pinned by its own test; latent |
-| C21 | Bounded-channel overflow test never saturates | glm5.3 MIN-17 | Minor | Confirmed |
-| C22 | Emit-before-setup divergence between sinks unpinned | glm5.3 MIN-18 | Minor | Confirmed + strengthened — two shared contracts, both happy-path-only |
-| C23 | Stale-allow reauthorization recovery leg untested | glm5.3 MIN-19 | Minor | Confirmed |
-| C24 | Prepare-failure preservation tests weak (len proxy, default priors) | glm5.3 MIN-20 | Minor | Confirmed |
-| C25 | `binding_variants` not-normalizable assertion tautological | glm5.3 MIN-21 | Minor | Confirmed |
-| C26 | Invalid extra-route configs dropped silently | glm5.3 MIN-22 | Minor | Confirmed — downstream "unknown model" failure traced |
-| C27 | Embedder-facing builder/`set_model` panic on invalid model | glm5.3 MIN-23 | Minor→**Major-leaning** | Partially confirmed — production CLI does NOT pre-validate startup model: `opi --model provider:typo` panics at build |
-| C28 | Duplicated code: agent-loop arms / InMemory sink / adoption tails / telescoping constructors | glm5.3 MIN-02/03/04/05 | Minor | Confirmed (MIN-05 deferred: public-API churn without behavioral defect) |
-| C29 | Speculative `register_extension_tools` seam + discarded parameter | glm5.3 MIN-06 | Minor | Confirmed + dead producer chain (`filter_extension_tools` feeds only the discard) |
+Approval of this plan means selecting the recommended **(a)** option for every user-pending decision: D1, D5--D12, and D15. Any different selection should be recorded here before execution.
 
-Info findings (28, glm5.3): all verified (INFO-04 partially — inventory
-corrected: 4 adapters run the preflight, **bedrock** is a 4th skipper,
-`api_mapped` performs the equivalent model-resolved check). Disposition in
-Scope exclusions.
+1. **D1 — provider route surface**
+   - **(a) Recommended:** replace split route maps with one private atomic `RouteEntry`, remove lookup-only `Provider` registration/construction, and expose listing metadata as data rather than a fake provider.
+   - **(b):** retain the public lookup-only surface, which requires an explicit registered-spec revision because the current design removes the metadata-only proxy and second owner.
+   - Codex recommends consolidation; glm recommends a descriptor row but treats it as a lower-severity smell.
+2. **D5 — queue bound/API**
+   - **(a) Recommended:** one crate-owned finite default and `Result<(), AgentControlError::{Full, Closed}>` from both `Agent` and `AgentControl`; do not add a user config key.
+   - **(b):** add queue capacities to `AgentLoopConfig`, broadening public configuration and test permutations.
+   - Codex requires an observable bounded queue; glm would document the owner split unless steering becomes producer-facing. It already is producer-facing, so documentation alone does not satisfy `INV-006`.
+3. **D6 — durable session format**
+   - **(a) Recommended:** add a new versioned envelope for newly written entries with required/ignorable classification and an immutable runtime-binding header; continue reading legacy v1 byte-for-byte without rewriting it.
+   - **(b):** revise `INV-007` to accept best-effort unknown-tag skipping and a non-durable runtime binding.
+   - Only codex reported the gap; the parent spec is explicit and favors (a).
+4. **D8 — artifact/manifest shape**
+   - **(a) Recommended:** make artifact locations validated opaque/relative references, content-address `evidence.jsonl`, and use ordered set-valued authority references so multiple tool calls remain representable.
+   - **(b):** bind only the evidence log and narrow the registered manifest-authority requirement in shaping.
+   - Codex requires artifact and applicable authority binding; glm considers the current empty set documented but identifies divergent validation inputs.
+5. **D9 — interactive outside-workspace reads**
+   - **(a) Recommended:** preserve the intentional feature, add a distinct typed external-read permission scope containing a non-secret path identity, and revalidate the resolved relation at execution.
+   - **(b):** prohibit outside-workspace reads so the existing `workspace:read` fact becomes truthful.
+   - Codex identifies the mismatch; glm did not report it. `AGENTS.md` requires approval before removing intentional behavior, so (b) cannot be automatic.
+6. **D12 — provider refresh**
+   - **(a) Recommended:** remove the public refresh seam and test-only adapter until a real trigger and second consumer justify it.
+   - **(b):** register a real production trigger and second adapter/conformance suite, which expands scope beyond remediation and would need shaping.
+   - Codex recommends narrowing/removal; glm notes adjacent dead surfaces but does not independently require refresh.
+7. **D15 — Bedrock thinking history**
+   - **(a) Recommended:** verify the supported Converse reasoning-content shape against authoritative protocol documentation, map to it when supported, and otherwise omit thinking blocks rather than relabel them as assistant text.
+   - **(b):** remove advertised Bedrock thinking support until round-trip semantics exist.
+   - Glm recommends a reasoning mapping or deliberate omission; no second report covers this path.
+8. **D7 — authority public API**
+   - **(a) Recommended:** make registration and denial construction private/fallible and update all callers together.
+   - **(b):** retain the old infallible constructors as compatibility shims, which conflicts with the repository's 0.x cleanup policy and leaves the unsafe boundary callable.
+   - Codex requires the API closure; glm confirms the unvalidated fields and vacuous laundering test.
+9. **D10 — secret-bearing public configuration**
+   - **(a) Recommended:** change `ProviderConfig.api_key` to a secrecy-wrapped type, remove secret-emitting derives, and use redacted proxy/config debug.
+   - **(b):** preserve the field/serde API and document that debug/serialization can expose credentials, which does not satisfy `P17-FAL-004`.
+   - Codex covers proxy configuration; glm covers `ProviderConfig` and request-task copies.
+10. **D11 — model-mutation public API**
+    - **(a) Recommended:** change `set_model` to return the existing typed `Result` and update callers.
+    - **(b):** retain the panicking method and add another checked method, leaving a compatibility path that violates the typed-boundary rule.
+    - Both reports identify the panic; codex also identifies lost provider normalization and glm the persist-before-apply divergence.
 
 ## Decision record
 
 | ID | Finding cluster(s) | Decision | Rationale | Decided by |
-|----|-------------------|----------|-----------|------------|
-| D1 | C2, C3 (M3/M4) | Add `validate_dispatchable_route` to `try_configure_model` after the registry check; replace the `apply_recorded_model` `.expect` with the existing typed-diagnostic branch | Single verified root cause (resolvability-vs-dispatchability predicate divergence); matches the collection's documented lookup-only semantics; one fix covers all four resume/fork call sites and feeds the existing `CODE_SESSION_RESUME_MODEL_INCOMPATIBLE` branch | auto |
-| D2 | C4 (AUD-17-005) | **Enforce spec**: bare input in `set_model_validated` runs the same unique-dispatchable-route enumeration as the legacy path; 0 matches → typed missing error, >1 → typed ambiguity error, before persist; update the pinned test; bare-on-non-active-provider gets typed remediation instead of a generic parse error | Design spec is explicit ("only when the product can prove exactly one valid route"; PRV-002 "MUST fail"); enumeration helper already exists on the read path; alternatives (amend spec) recorded | **user** (option a) |
-| D3 | C5 (AUD-17-001) | **Accept conformant reading + pin**: keep "fail-open for the run"; add a test pinning that the provider attempt proceeds and later launches fail closed after a pre-dispatch emission failure; add one clarifying sentence to the design-spec EVD-009 clause | The spec's stated mechanism is the trusted authorizer; verification column is authorization-side; gating the provider call would make the authorizer mechanism nearly vacuous and contradicts the documented module contract | **user** (accept + pin) |
-| D4 | C6 (AUD-17-006) | **Accept conformant reading + pin**: keep registration-only projection; extend the cited product test to assert the post-failure request still advertises the tool AND its launch yields the `evidence_incomplete` denial; add one clarifying sentence to the design-spec AUT-008 clause | Projection is registration-composition by construction (policy stores active-tool selection only in its digest); the design wants the model to receive the visible stable-code denial rather than silent omission | **user** (accept + pin) |
-| D5 | C7 (AUD-17-007) | **Echo + secret scrub**: keep the conversation echo as intended; run `Message::User` content, `ToolResultMessage.content`, and `ToolExecutionEnd.result` through value-pattern secret scrubbing (NOT Summary redaction — preserves TUI images/transcripts); add NDJSON/RPC canary tests for `AgentEnd`/`TurnEnd`/`ToolExecutionEnd` | Recorded in-repo decision + pi precedent support the echo; the verified real risk is recognized live credentials crossing unscrubbed; full redaction (alternative) breaks product output | **user** (echo + scrub) |
-| D6 | C16 (MIN-12) | **Fail closed**: distinguish the `Error` terminal at the seam; the run fails with a typed provider error (non-retryable), the partial assistant message remains in durable context; update the pinned `mock_e2e` test | Matches the phase's FAL-003 posture; retryability classification (alternative c) would require adapters to surface a redacted retryable class — larger change, not taken | **user** (fail closed) |
-| D7 | C27 (MIN-23) | CLI-side typed validation of the startup model spec before `builder.build()`; document the builder/`set_model` panic contract in doc comments (leave the public signatures unchanged) | Production-reachable panic from a config typo contradicts the repo's typed-failure posture; CLI validation is the narrowest fix; `build() -> Result` (alternative) is broader public-API churn not required by the finding | auto |
-| D8 | C8 (MIN-01) | Rewrite exactly the 15 verified Phase-17 comment sites; do NOT sweep the 119 repo-wide phase-14..17 references | Minimum change: every changed line must trace to the verified finding; the repo-wide sweep is out of remediation scope (recorded as deferred) | auto |
-| D9 | C15 (MIN-11) | Commit to the symlink: revise the AGENTS.md lockstep sentence to the single-content policy, de-vacuate `check_root_guidance_lockstep`, update the opi-document skill line | Truthful doc wording; restoring a flavored CLAUDE.md would undo the deliberate `eb5e316` centralization (alternative recorded) | auto |
-| D10 | C9 (AUD-17-002) | Remove `#[non_exhaustive]` from `AuthorizationDecision` and `TerminalOutcome` (same-crate, closed, no wildcard arms); keep it on `AuthProvenanceSource`/`AuthFallback` | The two auth enums' wildcards (evidence.rs:1140/1201) are attribute-forced and documented as intentional fail-closed conversion design ("future unsupported variants cannot silently become static/no-fallback facts") | auto |
-| D11 | C10 (AUD-17-004) | Remove `dir()` outright; keep `completed_run_dirs()` with a doc contract as a verification-tooling inspection seam | `dir()` is fully dead; `completed_run_dirs` is required by external integration tests (`#[cfg(test)]` gating would not work for `tests/` binaries) | auto |
-| D12 | C26 (MIN-22) | Surface per-route skip diagnostics in `ProviderBundle` diagnostics; keep fail-open-at-startup semantics | Diagnostics point later "unknown model" failures at the broken config without changing startup posture; fail-the-switch (alternative) is a product-behavior change not required by the finding | auto |
-| D13 | C29 (MIN-06) | Delete `register_extension_tools`, drop the `_extension_tools` parameter, delete the `filter_extension_tools` collection chain; update the one test | Speculative seam with zero production callers; production currently pays to collect and filter tools it then discards | auto |
-| D14 | C17/C19/C20 (MIN-13/15/16) | Defer to the spec-owning flow; record the divergences in the dated addendum (Fix 4.3) | All three clauses were tightened post-exit (93d75f4/aff8875, 2026-08-20); Phase 17's registered contract predates them; MIN-13 needs a durable-format change contradicting the documented additive session policy. MIN-14 (one fixture) is cheap and in-scope | auto |
-| D15 | C28-partial (MIN-24) | Defer; record the residual (incl. `output_began` blindness to tool-only prefixes) in the addendum | Discard is a documented intentional rollback contract; a real fix needs new mechanism (retry-time idempotency or read-only retained turns), which is new design, not remediation | auto |
+|---|---|---|---|---|
+| D1 | C01 | Recommended option (a): one atomic route entry and data-only listing metadata | Directly implements the registered single collection owner without a new trait or registry | user (pending plan approval) |
+| D2 | C02, C19 | Represent resolver omission explicitly; classify every frozen-auth rejection/expiry as terminal | Closed domain states already determine the correction | auto |
+| D3 | C22, C24 | Propagate complete-frame parse failures as one terminal stream error; stop Anthropic after malformed input | No valid consumer semantics permit content after corruption/error | auto |
+| D4 | C13, C14 | Persist the loop's last committed state on later failure and validate all resolved model ceilings before commit | The loop already defines the commit point and retains the prior state until then | auto |
+| D5 | C12 | Recommended option (a): bounded queue with observable `Full`/`Closed` results and no new config key | Satisfies `INV-006` with the smallest public mechanism | user (pending plan approval) |
+| D6 | C11 | Recommended option (a): versioned required/ignorable envelope plus immutable runtime binding for new writes; legacy read-only compatibility | `INV-007` states the durable semantics; the choice affects the on-disk format | user (pending plan approval) |
+| D7 | C03, C04, C15 | Private/fallible registration and safe denial types; reauthorize once after evidence-generation change | Existing authority order and closed facts uniquely determine the fix | user (pending plan approval for public API break) |
+| D8 | C05, C06, C16 | Recommended option (a): safe public evidence summaries, validated artifact references, content-bound log, set-valued authority refs | Required to make `CTRL-001/002/003` mechanically true; changes public/schema surfaces | user (pending plan approval) |
+| D9 | C17 | Recommended option (a): preserve external reads with a distinct typed scope; also use exact fixed IDs, canonical policy serialization, one mutating classifier, and typed backend scope | Keeps intentional behavior while making the recorded authority truthful | user (pending plan approval for external-read meaning) |
+| D10 | C07, C08, C26 | Metadata-only `Debug`, secrecy-wrapped credentials, explicit common-field redaction, and TUI/proxy parity | Behavior-preserving boundary hardening; `ProviderConfig` field/serde changes are 0.x breaking | user (pending plan approval for `ProviderConfig` API break) |
+| D11 | C09 | One provider-aware canonicalizer; public `set_model` returns `Result`; validate before durable append and make commit infallible | Removes three divergent decisions and prevents panic/durable-live divergence | user (pending plan approval for public API break) |
+| D12 | C30 | Recommended option (a): remove unadmitted refresh APIs and their one-off test implementation | Removing intentional public surface requires explicit approval | user (pending plan approval) |
+| D13 | C10 | Return typed provider-assembly failures, keep credential resolution lazy, emit fallback facts per route, and share startup classification | Existing typed failures and per-call auth contract determine the correction | auto |
+| D14 | C20, C25, C28 | Propagate actual product failures, use UUIDv7-style session IDs, and close the cited disclosure/classification edges | Local behavior has one clear truthful outcome | auto |
+| D15 | C23 | Recommended option (a): verified reasoning wire mapping or deliberate omission, never ordinary-text relabeling | Correct mapping depends on the supported external protocol | user (pending plan approval) |
+| D16 | C21, C27, C29 | Repair the named tests/comments to exercise and describe current production contracts | Test/document truthfulness is behavior-preserving | auto |
+| D17 | C18 | Run the exact pre-Phase rollback profile in an isolated checkout and record results without editing the implementation ledger | This is the mechanical verification required by `P17-RBK-002` | auto |
 
 ## Remediation layers
 
-### Layer 1: opi-ai (substrate)
+### Layer 1: `opi-ai` (substrate)
 
 **Verification**:
 
-    cargo fmt --all
-    cargo clippy -p opi-ai --all-targets -- -D warnings
-    cargo test -p opi-ai --test per_request_auth
-    cargo test -p opi-ai --test <new scheme-mismatch test binary>
+    cargo test -p opi-ai --lib bedrock::event_stream
+    cargo test -p opi-ai --test provider_collection --test per_request_auth --test auth_contracts
+    cargo test -p opi-ai --test bedrock_fixtures --test anthropic_fixtures
 
-#### Fix 1.1: Fail-closed AuthScheme attachment in six adapter paths
+#### Fix 1.1: Make a provider route one atomic owned value
 
-- **Finding source**: audit.glm5.3.md (audit, glm5.3), MIN-07
-- **Cluster**: C11; **Decision**: D10-adjacent (auto — fail-closed adapter-boundary validation, matches the Anthropic/Bedrock positive pattern)
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-STD-001`); `audit.glm5.3.md` (audit/glm5.3 `glm53-007`, `glm53-059`)
+- **Cluster**: C01
+- **Decision**: D1
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-ai/src/openai_chat.rs` ~L1145-1154; `openai_responses.rs` ~L359-365; `openai_codex_responses.rs` ~L154-159; `azure_openai.rs` ~L221, 275-278; `gemini.rs` ~L860, 708-711; `vertex.rs` ~L158, 200-204
-- **Change**: before attaching `resolved.secret`, match the prepared `AuthScheme` and reject mismatches with a typed `ProviderError::Config` mirroring `anthropic.rs:957-972`. Accepted sets: Bearer-only for `openai_chat`, `openai_responses`, `openai_codex_responses`, `vertex`; ApiKey-only for `azure_openai`, `gemini`. `api_mapped` needs no own check (pure delegation; delegated routes check).
-- **Test plan**: new mismatched-scheme rejection test per wire (extend `per_request_auth.rs` or the adapter fixture suites); existing suites must stay green (verified: no in-repo caller prepares a mismatched scheme — config validation already forbids the only possible mismatch).
-- **CHANGELOG**: `[Unreleased]` entry (embedder-visible adapter behavior change).
+- **File(s)**: `crates/opi-ai/src/provider_collection.rs` ~L297--580; `crates/opi-ai/src/registry.rs`
+- **Change**: Store provider, resolver, auth descriptor/provenance source, compatibility, probe, and catalog metadata in one private `RouteEntry` inserted/replaced atomically. Remove lookup-only `from_registry`/`register` behavior and expose catalog metadata as data rather than through a non-dispatchable `Provider`.
+- **Test plan**: Update `provider_collection` registration/replacement/listing tests to prove one insertion/replacement changes every route fact atomically and no lookup-only provider can be constructed.
 
-### Layer 2: opi-agent (core)
+#### Fix 1.2: Make auth provenance and terminal state explicit
+
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-STD-002`, `P17-CODEX-INV-001`); `audit.glm5.3.md` (audit/glm5.3 `glm53-024`)
+- **Cluster**: C02, C19
+- **Decision**: D2
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-ai/src/auth.rs` ~L90--220; `crates/opi-ai/src/provider_collection.rs` ~L445--459, L727--827
+- **Change**: Replace equality-to-default omission detection with an explicit resolver outcome (`Reported(AuthProvenance)` versus `UseRegisteredSource`). Centralize a closed `terminates_frozen_auth` classification covering `AuthFailed`, `CredentialNeeded`, `CredentialRevoked`, and `AccountIdMissing`; after any such error, every later `start_attempt` returns the terminal error without dispatch.
+- **Test plan**: Add a non-static registered route whose resolver truthfully reports default static provenance and assert no overwrite; extend `stream_time_credential_failure_forbids_redispatch` for all four terminal auth classes and a retryable non-auth control.
+
+#### Fix 1.3: Fail closed on Bedrock/Anthropic stream corruption
+
+- **Finding source**: `audit.glm5.3.md` (audit/glm5.3 `glm53-018`, `glm53-020`)
+- **Cluster**: C22, C24
+- **Decision**: D3
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-ai/src/bedrock/event_stream.rs` ~L18--130, L385; `crates/opi-ai/src/bedrock/mod.rs` stream consumer; `crates/opi-ai/src/anthropic.rs` ~L900--1040
+- **Change**: Return typed frame outcomes that distinguish incomplete input from malformed length/header/CRC; consume a complete malformed frame only while emitting one terminal `StreamError`. Break both Anthropic parse loops immediately after malformed input.
+- **Test plan**: Replace `parse_frames_ignores_bad_crc_without_panic` with prelude-CRC, message-CRC, header-overflow, and invalid-header tests that assert exactly one error and no later content/Done; add Anthropic fixture and HTTP-stream cases asserting no post-error event.
+
+#### Fix 1.4: Keep provider credentials secrecy-wrapped
+
+- **Finding source**: `audit.glm5.3.md` (audit/glm5.3 `glm53-032`, `glm53-033`)
+- **Cluster**: C08
+- **Decision**: D10
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-ai/src/config.rs` ~L1--20; `crates/opi-ai/src/gemini.rs` ~L858; `crates/opi-ai/src/azure_openai.rs` ~L220; `crates/opi-ai/src/vertex.rs` ~L157
+- **Change**: Change the unused public `ProviderConfig.api_key` to a secrecy-wrapped value, remove secret-emitting derived `Debug`/`Serialize`, and provide only redacted debug plus explicit secret exposure at the wire boundary. Move `ResolvedAuth`/`SecretString` into Gemini, Azure, and Vertex request tasks and call `expose_secret()` only while constructing the header/query.
+- **Test plan**: Add compile/runtime safety tests proving `Debug` and ordinary serialization cannot reveal a canary; extend adapter fixture tests with drop/lifetime-safe prepared auth and unchanged wire headers.
+
+#### Fix 1.5: Correct provider-path test depth
+
+- **Finding source**: `audit.glm5.3.md` (audit/glm5.3 `glm53-042`)
+- **Cluster**: C27
+- **Decision**: D16
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-ai/tests/provider_collection.rs` ~L713--760
+- **Change**: Replace the misleading `store_credential_dispatch_*` setup with real `AuthDescriptor::StoreCredential` routes and an injected probe; retain separate names for static-resolver tests.
+- **Test plan**: Assert probe call count, present/missing/backend-error outcomes, dispatch count, and no probe on static routes.
+
+### Layer 2: `opi-agent` (Agent Core)
 
 **Verification**:
 
-    cargo fmt --all
-    cargo clippy -p opi-agent --all-targets -- -D warnings
-    cargo test -p opi-agent --test evidence_contract --test evidence_runtime --test tool_authority --test hooks_queues --test streaming_proxy --test session_storage
+    cargo test -p opi-agent --test agent_wrapper --test hooks_queues --test agent_loop_semantics
+    cargo test -p opi-agent --test session_contract --test session_storage --test session_branching --test session_facade
+    cargo test -p opi-agent --test tool_authority --test tool_validation
+    cargo test -p opi-agent --test evidence_contract --test evidence_runtime
+    cargo test -p opi-agent --test streaming_proxy --test provider_public_safety
 
-#### Fix 2.1: In-band stream `Error` terminal fails closed (public behavior)
+#### Fix 2.1: Settle committed next-turn state and make queue outcomes observable
 
-- **Finding source**: audit.glm5.3.md, MIN-12; **Decision**: D6 (user)
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-SPEC-002`, `P17-CODEX-SPEC-003`); `audit.glm5.3.md` (audit/glm5.3 `glm53-019`, `glm53-074`)
+- **Cluster**: C12, C13
+- **Decision**: D4, D5
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-agent/src/agent_loop.rs` ~L1277-1278 (seam `process_stream_event`), ~L411-429 (consumption), ~L889-1028 (terminal/retry gate)
-- **Change**: make the seam distinguish the `Error` terminal from `Done` (e.g. return the terminal reason or a small enum); on an `Error` terminal, preserve the partial assistant message in durable context and end the run with a typed, **non-retryable** provider failure (reuse the existing `Err` failure path so `retain_strongest_terminal_error`/run-failure surfacing apply). Do not attempt retryability classification (adapters intentionally discard the raw class for redaction).
-- **Test plan**: new agent-core test driving an in-band `Error` event through a scripted provider (assert typed run failure + partial message retained + zero retries); update pinned `crates/opi-coding-agent/tests/mock_e2e.rs:298-332` (`e2e_error_response_from_provider`) to expect the typed failure (Layer 3).
-- **CHANGELOG**: `[Unreleased]` entry.
+- **File(s)**: `crates/opi-agent/src/agent.rs` ~L490--520, L550--615, L925--965; `crates/opi-agent/src/loop_types.rs` ~L430--470; `crates/opi-agent/src/agent_loop.rs` ~L1000--1160, L2089--2110
+- **Change**: Always settle the loop's returned state because cancellation/validation before the commit point already restores `prior_state`; this preserves earlier committed transitions and drained queued input on a later ordinary error. Replace raw shared `VecDeque`s with one bounded internal queue type whose producer methods return `Full` or `Closed`, preserve steering priority, and close producers when the owning Agent is dropped.
+- **Test plan**: Add a two-turn failure test proving turn-1 state remains the Agent state; add steering and follow-up cases proving drained input is retained exactly once after turn-2 failure. Add boundary tests for capacity, FIFO, steering priority, closure, concurrent producers, and zero provider dispatch on rejected enqueue.
 
-#### Fix 2.2: Extract shared tool-result completion pipeline
+#### Fix 2.2: Validate every intrinsic next-turn limit atomically
 
-- **Finding source**: audit.glm5.3.md, MIN-02; **Decision**: auto (behavior-preserving extraction)
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-SPEC-005`)
+- **Cluster**: C14
+- **Decision**: D4
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-agent/src/agent_loop.rs` L507-866 (`ToolEvidenceContext` at L522-532, 614-622, 678-688, 845-853)
-- **Change**: extract one completion helper (event emission → `ToolResultMessage` assembly → outcome emission → context push) shared by the sequential and parallel arms; bundle the ~10 context parameters in a small struct to avoid `too_many_arguments`; keep the sequential arm's stop/skip logic outside the helper. Pure extraction — no assertion or ordering changes.
-- **Test plan**: existing `tool_authority`/`hooks_queues`/`evidence_runtime` suites must stay green unchanged.
+- **File(s)**: `crates/opi-agent/src/loop_types.rs` ~L342--405; `crates/opi-ai/src/model_info.rs` resolved capability fields
+- **Change**: Extend `validate_next_turn_candidate` to reject `max_tokens` above the resolved model ceiling and invalid thinking budgets/levels before `mem::replace`. Keep all checks pure and shared with product pre-persist validation.
+- **Test plan**: Add boundary values (equal/above ceiling), enabled-thinking budget relationships, and cancellation tests asserting byte-equivalent prior state plus untouched stop/queues.
 
-#### Fix 2.3: Delete the vestigial `assistant_content` accumulator
+#### Fix 2.3: Make the committed session prefix and runtime binding durable truth
 
-- **Finding source**: audit.glm5.3.md, INFO-23; **Decision**: auto (verified dead: 3 occurrences, no read site)
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-SPEC-001`)
+- **Cluster**: C11
+- **Decision**: D6
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-agent/src/agent_loop.rs` L263, 388, 416-419 (and the write arms inside `process_stream_event`)
-- **Change**: remove the accumulator and drop the parameter from `process_stream_event`.
-- **Test plan**: existing suites green.
+- **File(s)**: `crates/opi-agent/src/session.rs` ~L1--540; core session entry/envelope and reconstruction types
+- **Change**: Introduce a new versioned envelope for newly written entries with `required` versus explicitly `ignorable-observation` semantics. Persist one immutable `RuntimeInputBinding` header for the branch and return it with the validated committed prefix. Fail distinctly on unsupported version, unknown required entry, corruption, and interrupted tail; skip only explicitly ignorable observations. Preserve the core legacy-v1 reader without rewrite behavior; product resume/fork/export adaptation follows in Layer 3.
+- **Test plan**: Add required/ignorable/unsupported fixtures, binding mismatch and missing-binding failures, committed-prefix plus tail recovery, and resume/fork/export equality from the same `(prefix, binding)` pair. Retain every legacy byte-immutability fixture.
 
-#### Fix 2.4: Value-pattern secret scrubbing at the public event boundary
+#### Fix 2.4: Make trusted registration one validated immutable construction
 
-- **Finding source**: audit.codex.md (audit, codex), AUD-17-007; **Decision**: D5 (user)
-- **Verification status**: Partially confirmed (mechanics confirmed; violation reading resolved as echo-as-intended + hardening)
-- **File(s)**: `crates/opi-agent/src/event.rs` ~L266-268 (`Message::User`), ~L348 (`ToolResultMessage.content`), ~L172 (`ToolExecutionEnd.result`)
-- **Change**: run these three passthrough surfaces through value-pattern secret scrubbing (the `SecretRedactor` pattern set: sk-/bearer/JWT shapes) — NOT `redact_public_value`/Summary (which would redact paths and destroy transcripts/TUI image rendering). Scrub string leaves of the structured content values. Add a boundary comment recording the D5 decision (conversation echo intended; recognized-credential scrubbing only).
-- **Test plan**: Layer-3 canary tests (Fix 3.5) prove absence on NDJSON/RPC terminal shapes; add a focused unit test in opi-agent asserting a secret-shaped canary in user content/tool result is scrubbed while ordinary paths/text pass through.
-- **CHANGELOG**: `[Unreleased]` entry.
-
-#### Fix 2.5: `InMemoryEvidenceSink::emit` fails closed before setup
-
-- **Finding source**: audit.glm5.3.md, MIN-18; **Decision**: auto (align oracle with the file adapter's documented fail-closed phase gate)
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-STD-003`); `audit.glm5.3.md` (audit/glm5.3 `glm53-025`, `glm53-039`)
+- **Cluster**: C03
+- **Decision**: D7
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-agent/src/evidence.rs` ~L2405-2424
-- **Change**: `emit` (and `finalize_*`) reject with the typed `EvidenceError` when the sink has no bound run (no `setup` observed), matching `FileEvidenceSink::emit`.
-- **Test plan**: add a before-setup leg to the shared conformance contract `noop_and_in_memory_satisfy_one_lifecycle_conformance_contract` (`crates/opi-agent/tests/evidence_contract.rs:1500-1522`); second contract extension in Layer 3 (Fix 3.6).
+- **File(s)**: `crates/opi-agent/src/authority.rs` ~L35--160; `crates/opi-agent/src/extension.rs` ~L410--430
+- **Change**: Make `RegistrationId` and `RegisteredTool` fields private and construction fallible; validate opaque identity and bind implementation, visible name, schema digest, origin, and capability in the same value. Require trusted assembly to supply origin rather than allowing a later name-based inference.
+- **Test plan**: Add empty/control/padded ID rejection, schema/name mismatch, duplicate ID/name, and origin-preservation cases at the core registry boundary. Product one-definition/A07 coverage follows in Layer 3.
 
-#### Fix 2.6: Inherent `InMemoryEvidenceSink` query methods delegate to the trait impl
+#### Fix 2.5: Enforce safe denial facts and stale-Allow reauthorization
 
-- **Finding source**: audit.glm5.3.md, MIN-03; **Decision**: auto
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-STD-004`, `P17-CODEX-SPEC-006`); `audit.glm5.3.md` (audit/glm5.3 `glm53-021`)
+- **Cluster**: C04, C15
+- **Decision**: D7
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-agent/src/evidence.rs` L2364-2386 vs L2509-2522
-- **Change**: inherent `records()`/`has_failure()`/`completed_manifest()` delegate to the explicitly-qualified `EvidenceRecorder` impl.
-- **Test plan**: existing evidence suites green.
+- **File(s)**: `crates/opi-agent/src/authority.rs` ~L270--290; `crates/opi-agent/src/agent_loop.rs` ~L1820--1885, L2070--2085; `crates/opi-agent/src/evidence.rs` denial constructors
+- **Change**: Replace denial strings with a validated stable-code identity and redacted safe-summary type shared by the decision, evidence, diagnostic, and tool-result paths. If authorization-evidence emission changes the health generation, rebuild the request with current health and call the authorizer once more; enforce and record the second decision before launch.
+- **Test plan**: Add canary code/reason rejection/redaction across model context, diagnostics, events, and evidence; add counting-authorizer tests for unchanged generation, one reauthorization, second denial/error, and zero execution.
 
-#### Fix 2.7: Remove `#[non_exhaustive]` from the two same-crate closed enums
+#### Fix 2.6: Seal evidence errors, artifact references, and public `Debug`
 
-- **Finding source**: audit.codex.md, AUD-17-002; **Decision**: D10 (auto, split)
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-STD-005`, `P17-CODEX-STD-006`, `P17-CODEX-STD-007`)
+- **Cluster**: C05, C06, C07
+- **Decision**: D8, D10
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-agent/src/authority.rs` ~L253 (`AuthorizationDecision`); `crates/opi-agent/src/evidence.rs` ~L1777 (`TerminalOutcome`)
-- **Change**: delete the two attributes. KEEP the attributes on `AuthProvenanceSource`/`AuthFallback` (`crates/opi-ai/src/auth.rs:194,253`) — their wildcard conversion arms (`evidence.rs:1140/1201`) are documented intentional fail-closed design; record this in the plan exclusions.
-- **Test plan**: `cargo clippy --workspace --all-targets -- -D warnings` must stay clean (no newly-dead wildcard arms in opi-agent — verified none exist for these two enums); CHANGELOG `[Unreleased]` entry (published-API relaxation).
+- **File(s)**: `crates/opi-agent/src/evidence.rs` ~L290--325, L660--705; `crates/opi-agent/src/agent.rs` ~L95--120
+- **Change**: Expose only a private validated/redacted evidence-summary type publicly while retaining raw adapter source/path detail in an internal error chain. Make artifact construction fallible and restrict the public location to the approved opaque/relative form selected in D8. Change `AgentRunResult::Debug` to correlation/count/outcome metadata only and audit adjacent public state debug implementations reached from it.
+- **Test plan**: Add secret/path canaries to `Debug`/`Display`, invalid artifact locations/media, serialization, and file-adapter failures; assert metadata-only `AgentRunResult` debug contains no prompt, tool argument/result, or cleanup content.
 
-#### Fix 2.8: Comment-contract rewrites (opi-agent share of C8)
+#### Fix 2.7: Redact every StreamingProxy output path
 
-- **Finding source**: audit.glm5.3.md MIN-01 + audit.codex.md AUD-17-003; **Decision**: D8 (auto)
+- **Finding source**: `audit.glm5.3.md` (audit/glm5.3 `glm53-030`, `glm53-031`)
+- **Cluster**: C26
+- **Decision**: D10
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-agent/src/hooks.rs` L21, 52, 63, 124; `agent.rs` L572; `evidence.rs` L133, 226, 1792; `extension.rs` L246, 676; `sdk.rs` L118 (11 sites)
-- **Change**: rewrite each comment to state the current contract only, dropping `Phase 17.x` / `(17.x)` tokens (keep the invariant text).
-- **Test plan**: `python scripts/opi-doc-check.py` (verified: no doc-guard pins these strings).
+- **File(s)**: `crates/opi-agent/src/streaming_proxy.rs` ~L230--305, L330--460
+- **Change**: Apply the configured redactor to malformed-input responses and handler `SdkResponse`s, not only Agent events. Add the explicitly identified common sensitive field spellings; do not use broad substring rules that would unpredictably erase normal data.
+- **Test plan**: Add raw JSONL, handler response, nested object/array, case/dash/underscore field, opaque-value, and `redact_secrets=false` controls.
 
-#### Fix 2.9: Test-strength fixes in opi-agent suites
+#### Fix 2.8: Repair authority/evidence tests that assert the wrong rule
 
-- **Finding source**: MIN-19 (C23), MIN-20 + INFO-12 (C24), MIN-21 (C25), MIN-14 (C18), MIN-17 (C21), MIN-09 core half (C13); **Decision**: auto
-- **Verification status**: all Confirmed
-- **File(s) / changes / tests**:
-  - `crates/opi-agent/tests/tool_authority.rs` (+ `tests/common/mod.rs`): new stale-first/fresh-second authorizer fixture with a request counter — assert the tool executes exactly once and `authorize` was called exactly twice; optionally pin `stable_code: "authorization_stale"` on the still-stale leg. (MIN-19)
-  - `crates/opi-agent/tests/hooks_queues.rs` L1452-1489, L1536-1574: install the non-default baseline (max_tokens 1111, temperature 0.25, extra assistant message) and assert via `assert_prior_state_plus_prompt` instead of `len() == 1`. (MIN-20)
-  - same file ~L1405-1412: tighten the A04 context leg from `len >= 3` to exact equality matching the sibling helper. (INFO-12, rides along in the same file)
-  - `crates/opi-agent/tests/evidence_contract.rs` L737-751: replace the test-local `kind()` tautology with the render + `BTreeSet` uniqueness pattern from `measurement_origins_are_distinct` (L789-806). (MIN-21)
-  - new test beside `ManifestCandidate::validate` coverage: an `ActiveSnapshot`-bound candidate through `validate` → `Err` (closes the only untested enforcement branch of "a direct run must not claim an ActiveSnapshot", evidence.rs:2538-2543). (MIN-09)
-  - session tests: write a header with `version: 2` (and `0`) and assert `read_with_recovery` returns `InvalidData`. (MIN-14)
-  - `crates/opi-agent/tests/streaming_proxy.rs` L488-507: make the bounded-channel test actually saturate (handler emits > capacity events during one command) and assert the delivered count; drop semantics stay as-is (consumer-visible overflow signal = recorded design decision, not taken). (MIN-17)
+- **Finding source**: `audit.glm5.3.md` (audit/glm5.3 `glm53-040`, `glm53-041`)
+- **Cluster**: C27
+- **Decision**: D16
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-agent/tests/tool_validation.rs` ~L640; `crates/opi-agent/tests/evidence_contract.rs` ~L580--590, L1035--1090
+- **Change**: Add a counting authorizer to the invalid-schema precedence case and rebuild graph-rule fixtures so kind/payload pairs are valid and only the named parent/kind/turn/retry relation is invalid.
+- **Test plan**: Assert authorizer count zero and downstream execution zero; for each manifest fixture, assert it passes kind/payload validation before the target graph rule rejects it.
 
-### Layer 3: opi-coding-agent (product)
+### Layer 3: `opi-coding-agent` (Reference Product)
 
 **Verification**:
 
-    cargo fmt --all
-    cargo clippy -p opi-coding-agent --all-targets -- -D warnings
-    cargo test -p opi-coding-agent --test phase17_provider_runtime --test phase17_product_evidence --test phase17_tool_authority --test mock_e2e --test json_mode --test rpc_jsonl --test phase17_cross_mode --test phase17_failure_rollback
+    cargo test -p opi-coding-agent --lib
+    cargo test -p opi-coding-agent --test provider_factory --test phase17_provider_runtime --test phase17_product_evidence
+    cargo test -p opi-coding-agent --test phase17_tool_authority --test phase17_failure_rollback --test phase17_legacy_migration
+    cargo test -p opi-coding-agent --test phase17_cross_mode --test json_mode --test session_cli
+    cargo test -p opi-coding-agent --test credential_store --test rpc_jsonl --test execution_protocol_host
+    cargo test -p opi-coding-agent --test tools_glob_grep --test interactive_mock --test config_tests
 
-#### Fix 3.1: Validate dispatchability in `try_configure_model` (fixes M3 + M4)
+#### Fix 3.1: Use one provider-aware canonical model decision
 
-- **Finding source**: audit.glm5.3.md, M3 + M4; **Decision**: D1 (auto)
-- **Verification status**: Confirmed (both)
-- **File(s)**: `crates/opi-coding-agent/src/harness.rs` ~L2021-2046 (`try_configure_model`), ~L2368-2369 (`apply_recorded_model`)
-- **Change**:
-  1. In `try_configure_model`, after the `model_info` resolve, call `self.model_registry.validate_dispatchable_route(model_spec)` and map failures to the existing error type; update the doc comment ("accepted as long as it resolves to a registered route" → dispatchable route).
-  2. Replace `apply_recorded_model`'s `.expect("recorded model was validated before application")` with a `match` feeding the same `CODE_SESSION_RESUME_MODEL_INCOMPATIBLE` diagnostic branch used one step earlier (belt-and-suspenders; behavior-preserving for every currently-surviving input).
-- **Test plan**: (a) `set_model_validated` with a lookup-only extension provider registered → `Err` AND the session unchanged (no appended `model_change`); (b) resume/fork of a session whose latest `model_change` records a lookup-only route → typed diagnostic, no panic. Covers all four call sites (incl. builder resume at harness.rs:1873).
-
-#### Fix 3.2: Bare-model unique-route enumeration on the write path
-
-- **Finding source**: audit.codex.md, AUD-17-005; **Decision**: D2 (user — enforce spec)
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-STD-009`, `P17-CODEX-SPEC-004`); `audit.glm5.3.md` (audit/glm5.3 `glm53-006`, `glm53-009`, `glm53-010`)
+- **Cluster**: C09
+- **Decision**: D11
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/harness.rs` ~L1995-2033 (`set_model_validated` bare branch + `try_configure_model` fallback)
-- **Change**: for bare input, enumerate dispatchable routes serving the model id (reuse the read path's `dispatchable_provider_ids` enumeration from `normalize_recorded_route` ~L2378-2395): exactly one → canonicalize + persist with `BareNormalized`; zero → typed missing-model error; more than one → typed ambiguity error — both before any durable write. Bare ids served only by a non-active provider now get the typed remediation instead of the generic `parse_model_spec` error.
-- **Test plan**: update the pinned test `phase17_provider_runtime.rs:398-441` (currently asserts active-provider normalization) to assert ambiguity rejection; add a two-provider/same-model test asserting `Err`, unchanged state, zero dispatches.
-- **CHANGELOG**: `[Unreleased]` entry (user-visible behavior change).
+- **File(s)**: `crates/opi-coding-agent/src/harness.rs` ~L175--210, L1870--1995; `crates/opi-coding-agent/src/provider_factory.rs` startup normalization; `crates/opi-agent/src/harness.rs` model-input provenance
+- **Change**: Replace every `contains(':')` heuristic with one collection-aware resolver that evaluates both an exact bare model ID and a parsed registered-provider prefix, fails on two different valid routes, and returns the exact canonical `provider:model` plus source. Make `set_model` return the existing typed error. Run the shared intrinsic next-state validation before appending `model_change`; after a successful append, commit through an infallible validated state operation.
+- **Test plan**: Cover unique/ambiguous/missing bare IDs, registered/unregistered colon prefixes, Bedrock IDs containing additional colons, canonical-vs-bare dual matches, no provider dispatch on failure, public non-panicking mutation, and no session append when thinking/output validation fails.
 
-#### Fix 3.3: CLI startup model validation (production panic)
+#### Fix 3.2: Make provider assembly single-owned, typed, lazy, and mode-consistent
 
-- **Finding source**: audit.glm5.3.md, MIN-23; **Decision**: D7 (auto)
-- **Verification status**: Partially confirmed (production reachability is worse than the audit stated)
-- **File(s)**: `crates/opi-coding-agent/src/main.rs` ~L1229-1265 (startup assembly); `harness.rs` ~L1718-1728 (builder doc comment)
-- **Change**: validate the configured startup model spec against the provider catalog (registry resolve + dispatchability) before `builder.build()`; exit with a typed diagnostic on failure (`opi --model anthropic:not-a-real-model` currently panics). Add a doc-comment line on `CodingHarness` builder `build()` stating the panic contract for embedders.
-- **Test plan**: CLI/binary test (or builder-level test mirroring the validation) asserting a typed startup error for an invalid configured model.
-
-#### Fix 3.4: Session-adoption tail extraction
-
-- **Finding source**: audit.glm5.3.md, MIN-04; **Decision**: auto
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-STD-001`, `P17-CODEX-STD-011`); `audit.glm5.3.md` (audit/glm5.3 `glm53-005`, `glm53-007`, `glm53-023`, `glm53-055`, `glm53-059`)
+- **Cluster**: C01, C10
+- **Decision**: D1, D13
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/harness.rs` L2258-2300, 2451-2487, 2562-2594
-- **Change**: extract a private `adopt_session_entries` helper parameterized on (path, session_id, entries, message_count, error-context string, clear-resume-error flag); preserve per-site differences (error strings; only `resume_session_id` clears `session_resume_error`; fork's returned session_id; `open_existing` after `apply_recorded_model`).
-- **Test plan**: existing resume/fork/branch suites green unchanged.
+- **File(s)**: `crates/opi-coding-agent/src/provider_factory.rs` ~L150--200, L1320--1390, L1620--1830; `crates/opi-coding-agent/src/main.rs` ~L830--1210
+- **Change**: Replace the six provider-id switches and `ListingMetadataProvider` with one product descriptor table consumed by construction, listing, environment, auth, availability, and the Layer-1 route API. Return typed registration/config errors instead of `expect`; retain operational credential-store failures in the lazy resolver so startup still permits remediation; emit fallback diagnostics for every constructed route. Factor provider-bundle construction and failure taxonomy into one helper consumed by interactive, noninteractive, and RPC paths, leaving presentation local.
+- **Test plan**: Add descriptor parity and listing/runtime availability tests, including keychain-backed `openai_compatible`; add extension provider collision/malformed route inputs with no panic, active Anthropic unavailable/corrupt store startup plus prepare-call failure, extra-route env fallback diagnostics, and a cross-mode table asserting identical typed category/redaction.
 
-#### Fix 3.5: Public-event canary coverage (NDJSON + RPC terminal shapes)
+#### Fix 3.3: Make product authority facts exact and canonical
 
-- **Finding source**: audit.codex.md, AUD-17-007; **Decision**: D5 (user)
-- **Verification status**: Partially confirmed
-- **File(s)**: `crates/opi-coding-agent/tests/json_mode.rs` (new test); `crates/opi-coding-agent/tests/rpc_jsonl.rs` (extend `phase17_canary_is_absent_from_rpc_jsonl:4816-4872`)
-- **Change**: NDJSON test plants a secret-shaped canary in a tool result and the prompt and scans `AgentEnd`/`TurnEnd`/`ToolExecutionEnd` lines for it (must be absent post-Fix-2.4); the RPC test must scan the full event stream instead of discarding it via `recv_until_agent_end`.
-- **Test plan**: the tests themselves.
-
-#### Fix 3.6: Extend the product shared conformance contract with a before-setup leg
-
-- **Finding source**: audit.glm5.3.md, MIN-18 (second contract found by verification)
-- **Decision**: auto; **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/tests/phase17_product_evidence.rs:790-809` (`assert_complete_recorder_lifecycle`)
-- **Change**: add the before-setup leg (emit without setup → typed error) for both file and in-memory recorders.
-- **Test plan**: the contract itself.
-
-#### Fix 3.7: Restore the manifest-rejection leg of the A09 product test
-
-- **Finding source**: audit.glm5.3.md, MIN-09 (product half); **Decision**: auto
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-STD-003`, `P17-CODEX-SPEC-008`, `P17-CODEX-SEC-001`); `audit.glm5.3.md` (audit/glm5.3 `glm53-003`, `glm53-004`, `glm53-039`, `glm53-035`)
+- **Cluster**: C03, C17
+- **Decision**: D7, D9
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/tests/phase17_product_evidence.rs:2063-2075`
-- **Change**: beside the digest-constructor check, construct an `ActiveSnapshot`-bound `ManifestCandidate` and assert `validate` fails (restores the test's name-claim at the now-correct level).
-- **Test plan**: the test itself (complements Fix 2.9's core-level test).
+- **File(s)**: `crates/opi-coding-agent/src/tool_authority.rs` ~L40--70, L130--190, L430--460; `crates/opi-coding-agent/src/harness.rs` ~L1545--1590; `crates/opi-coding-agent/src/policy.rs`; `crates/opi-coding-agent/src/execution/runtime.rs` ~L450--500
+- **Change**: Read each product tool definition once, carry origin from the builtin/extension assembly seam into the fallible core registration, and never assign builtin capability from a name alone. Use the exact fixed IDs `workspace.read`, `workspace.write`, and `command.execute`; call the one policy-owned mutating classifier; hash explicitly versioned canonical fields with deterministic package ordering instead of `Debug`; replace string `authorized_backend` with validated `CommandPermissionScope`. Under recommended D9(a), represent external-read permission separately, bind a non-secret path identity/relation, and recheck it immediately before reading.
+- **Test plan**: Rewrite A07 so malicious extension `read`/`write`/`bash` tools traverse actual product assembly and execute zero times; add an alternating-definition tool. Update authority/evidence fixtures for exact IDs; add digest golden/permutation/toolchain-independent serialization tests, typed backend mismatch/ask tests, and interactive external-read Allow/Deny/stale-path cases asserting truthful evidence and zero access after relation change.
 
-#### Fix 3.8: Pin EVD-009 and AUT-008 conformant semantics
+#### Fix 3.4: Make product evidence finalization truthful
 
-- **Finding source**: audit.codex.md, AUD-17-001 + AUD-17-006; **Decision**: D3 + D4 (user — accept + pin)
-- **Verification status**: Partialially confirmed (both)
-- **File(s)**: `crates/opi-agent/tests/evidence_runtime.rs:1070-1127` (extend); `crates/opi-coding-agent/tests/phase17_product_evidence.rs:1633-1691` (extend)
-- **Change**: (a) emission-failure test additionally asserts the provider attempt proceeded and completed (pinning "fail-open for the run" deliberately) while later launches fail closed; (b) product test additionally asserts the second request still advertises `write` AND the launch is denied with stable code `evidence_incomplete`.
-- **Test plan**: the tests themselves.
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-SPEC-007`, `P17-CODEX-INT-001`); `audit.glm5.3.md` (audit/glm5.3 `glm53-014`, `glm53-015`, `glm53-017`)
+- **Cluster**: C16, C20
+- **Decision**: D8, D14
+- **Verification status**: Partially confirmed for final manifest shape; Confirmed for builder/compaction behavior
+- **File(s)**: `crates/opi-coding-agent/src/evidence.rs` ~L430--680; `crates/opi-coding-agent/src/harness.rs` ~L2860--3050, L4710--4735; `crates/opi-coding-agent/src/runner.rs` ~L440--460
+- **Change**: Pass the recorder's actual artifact observation into the builder and return typed `Finalization` on an empty record graph. Under D8(a), finalize/hash `evidence.jsonl` before manifest validation and include it plus the ordered authority references represented by the run. On automatic-compaction persistence or rollback-cleanup failure, retain the committed turn and truthful terminal evidence but return a typed public error so runners exit nonzero.
+- **Test plan**: Add mismatched builder/sink artifact sets, empty records, tampered evidence-log digest, multiple authority refs, and no-artifact runs. Invert `automatic_compaction_rollback_failure_emits_cleanup_unknown_terminal` to require typed `Err`, retained committed content, `CleanupUnknown`, withheld/appropriate manifest, and nonzero print/JSON exit.
 
-#### Fix 3.9: Surface silently-dropped extra-route diagnostics
+#### Fix 3.5: Use collision-safe session IDs and Cargo's test binary
 
-- **Finding source**: audit.glm5.3.md, MIN-22; **Decision**: D12 (auto)
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-SPEC-001`, `P17-CODEX-TST-001`); `audit.glm5.3.md` (audit/glm5.3 `glm53-022`, `glm53-065`)
+- **Cluster**: C11, C21, C25
+- **Decision**: D6, D14, D16
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/provider_factory.rs` L1526, 1544-1575
-- **Change**: collect per-route non-secret skip reasons into `ProviderBundle` diagnostics (three `if let Ok(route)` sites); startup remains fail-open.
-- **Test plan**: new test asserting a broken proxy/profile config yields a startup diagnostic naming the dropped provider.
+- **File(s)**: `crates/opi-coding-agent/src/session_coordinator.rs` session creation/reconstruction and ~L950--970; `crates/opi-coding-agent/src/session_cli.rs` resume/fork/export; `crates/opi-coding-agent/tests/session_cli.rs` ~L830--855
+- **Change**: Adapt product session creation, resume, fork, export, and evidence binding to the Layer-2 `(validated prefix, RuntimeInputBinding)` result while preserving legacy bytes. Generate sortable collision-resistant IDs using the repository's UUIDv7 precedent and create the initial file exclusively. Resolve the integration-test executable from Cargo's `CARGO_BIN_EXE_opi` contract; remove the dead local-build fallback and workspace-target assumption.
+- **Test plan**: Extend Phase 17 legacy migration with new required/ignorable/binding fixtures across resume/fork/export. Concurrent same-timestamp/session-process creation yields distinct paths; session CLI passes with the external cache and with no worktree-local `target/debug/opi`.
 
-#### Fix 3.10: Remove the speculative extension-tool registration seam
+#### Fix 3.6: Close configuration, TUI, and structured-output disclosure paths
 
-- **Finding source**: audit.glm5.3.md, MIN-06; **Decision**: D13 (auto)
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-STD-008`); `audit.glm5.3.md` (audit/glm5.3 `glm53-034`, `glm53-058`)
+- **Cluster**: C08, C26, C28
+- **Decision**: D10, D14
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/tool_authority.rs` L96-116, 123-128; `crates/opi-coding-agent/src/harness.rs` ~L1442, 1477 (`filter_extension_tools` chain)
-- **Change**: delete `register_extension_tools` (update its one test consumer `tests/phase17_tool_authority.rs:467`), drop the discarded `_extension_tools` parameter from `register_product_tools`, delete the now-dead `filter_extension_tools` collection chain.
-- **Test plan**: affected suites green; CHANGELOG `[Unreleased]` (public item removal, 0.x).
+- **File(s)**: `crates/opi-coding-agent/src/config.rs` ~L20--35, L450--465; `crates/opi-ai/src/http.rs` ~L80--95; `crates/opi-coding-agent/src/interactive.rs` ~L760--790, L1120--1145, L1670--1680; `crates/opi-coding-agent/src/tool/grep.rs` ~L185--195; `crates/opi-coding-agent/src/tool/glob.rs` ~L135--145
+- **Change**: Parse proxy URLs into a credential-redacting wrapper whose `Debug`/`Display` removes userinfo and sensitive query values. Apply Summary redaction at every interactive error render. Remove absolute `workspace_root` from public grep/glob details and retain only the relation plus workspace-relative result paths.
+- **Test plan**: Add proxy userinfo/query canaries across config and HTTP debug, TUI prompt/compaction/session-persist canaries, and JSON/NDJSON tool-result assertions that no absolute root appears.
 
-#### Fix 3.11: `FileEvidenceSink` accessor cleanup
+#### Fix 3.7: Move keyring I/O off async workers
 
-- **Finding source**: audit.codex.md, AUD-17-004; **Decision**: D11 (auto)
+- **Finding source**: `audit.glm5.3.md` (audit/glm5.3 `glm53-056`)
+- **Cluster**: C28
+- **Decision**: D14
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/evidence.rs` L114-122
-- **Change**: remove `dir()` (zero callers anywhere); keep `completed_run_dirs()` with a doc contract naming it a verification-tooling inspection seam.
-- **Test plan**: existing suites green; CHANGELOG `[Unreleased]`.
+- **File(s)**: `crates/opi-coding-agent/src/credential_store.rs` ~L800--910 and all async backend get/set/delete call sites
+- **Change**: Run synchronous backend operations in `spawn_blocking` at the existing async credential-store seam, preserving the refresh lock across the required read/HTTP/write transaction without nesting runtimes.
+- **Test plan**: Use a blocking fake backend plus a Tokio heartbeat to prove the runtime stays responsive; cover task join failure and existing marker/credential atomicity.
 
-#### Fix 3.12: Truthful tool-authority comments + spec-citation fixes
+#### Fix 3.8: Preserve typed RPC/protocol failure semantics
 
-- **Finding source**: audit.glm5.3.md, MIN-08 + INFO-03; **Decision**: auto (truthful doc wording)
-- **Verification status**: Confirmed (both)
-- **File(s)**: `crates/opi-coding-agent/src/tool_authority.rs` L11-16, L468-470 (AUT-003 phrasing), L58, L146-147, L152 (spec line-number citations)
-- **Change**: reword to "arguments select the adapter binding inside the trusted boundary; no permission fact derives from argument content"; replace the three `(spec lines …)` citations with the normative concept names (capability map / effective-policy sections).
-- **Test plan**: `python scripts/opi-doc-check.py`.
-
-#### Fix 3.13: Comment-contract rewrites (opi-coding-agent + opi-ai share of C8)
-
-- **Finding source**: MIN-01 + AUD-17-003; **Decision**: D8 (auto)
+- **Finding source**: `audit.glm5.3.md` (audit/glm5.3 `glm53-057`, `glm53-063`, `glm53-064`)
+- **Cluster**: C28
+- **Decision**: D14
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-ai/src/registry.rs:277`; `crates/opi-coding-agent/src/adapter_extension.rs:497`; `crates/opi-coding-agent/src/execution/permission.rs:79`; `crates/opi-coding-agent/src/provider_factory.rs:1902`
-- **Change**: drop the phase/task tokens, keep contract text.
-- **Test plan**: doc-check.
+- **File(s)**: `crates/opi-coding-agent/src/rpc.rs` ~L990--1030; `crates/opi-coding-agent/src/execution/protocol_host.rs` ~L270--295, L1320--1350
+- **Change**: Guard `trace` with the same `agent_busy` rule as `session_info`; carry accumulated diagnostics through `terminate_and_fail`; introduce a distinct handshake-timeout failure code instead of `protocol_violation` before traffic begins.
+- **Test plan**: Add active-run trace rejection and idle trace success; inject diagnostics before a malformed frame and assert retention; distinguish pre-traffic timeout from malformed/out-of-order protocol traffic.
 
-#### Fix 3.14: Redact the RPC `tree_read_error` field
+#### Fix 3.9: Repair product acceptance depth and environment isolation
 
-- **Finding source**: audit.glm5.3.md, INFO-27; **Decision**: auto (matches sibling fields' established pattern)
+- **Finding source**: `audit.glm5.3.md` (audit/glm5.3 `glm53-011`, `glm53-043`, `glm53-044`)
+- **Cluster**: C27
+- **Decision**: D16
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/src/rpc.rs` L956-960
-- **Change**: wrap the formatted error in `redact_text(..., RedactionMode::Summary)` like the sibling `tree_recovery`/`branch_summary` fields.
-- **Test plan**: extend an RPC session_info test asserting the path-bearing error text is summarized.
+- **File(s)**: `crates/opi-coding-agent/tests/phase17_product_evidence.rs` ~L1960--1980; `crates/opi-coding-agent/tests/provider_factory.rs` ~L340--390; `crates/opi-coding-agent/tests/json_mode.rs` ~L1540 and sibling case
+- **Change**: Make the A01 provider mocks report each dispatched route and assert requested/resolved/actual agreement for both providers. Prepare a real factory-built extra route through `build_harness_collection`. Keep the scoped environment guard and temp directory alive through agent/session persistence.
+- **Test plan**: Run the three exact integration binaries; add a negative wrong-actual-route assertion, resolver/prepare call counts for the extra route, and a host-session-directory canary for JSON mode.
 
-#### Fix 3.15: Write measured values into the 17.9 artifact bundle
-
-- **Finding source**: audit.glm5.3.md, INFO-16; **Decision**: auto (artifact-truthfulness convention)
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-coding-agent/tests/phase17_cross_mode.rs` L797-853
-- **Change**: `provider-assertion.json` / `tool-execution-counts.json` / `exit-code.txt` write the measured values (`calls1.len()`, real exit codes, real counters) instead of literals, so `RUN_SUMMARY` "verified" rows are truthful.
-- **Test plan**: the suite itself (in-test assertions unchanged).
-
-#### Fix 3.16: Remove the unused `tracing-subscriber` dependency
-
-- **Finding source**: verification pass discovery adjacent to INFO-17 (declared in `crates/opi-coding-agent/Cargo.toml:45`, zero uses workspace-wide)
-- **Decision**: auto (supply-chain hygiene: dependency changes are reviewed code; unused dep removal is invisible)
-- **Verification status**: Confirmed by verification agent grep
-- **File(s)**: `crates/opi-coding-agent/Cargo.toml` (+ regenerate `Cargo.lock` via Cargo, never hand-edited)
-- **Change**: drop the unused declaration.
-- **Test plan**: `cargo check -p opi-coding-agent`; INFO-17 itself (verbatim stderr at debug level) is **no action** — no subscriber is installed in shipped binaries.
-
-### Layer 4: Documentation
+### Layer 4: Documentation, comments, and rollback evidence
 
 **Verification**:
 
     python scripts/opi-doc-check.py
+    cargo test -p opi-agent --test hooks_queues
+    cargo test -p opi-coding-agent --test phase17_api_audit
 
-#### Fix 4.1: Make the guidance-lockstep contract truthful (symlink policy)
+#### Fix 4.1: Rewrite historical/stale comments as current contracts
 
-- **Finding source**: audit.glm5.3.md, MIN-11; **Decision**: D9 (auto)
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-STD-012`); `audit.glm5.3.md` (audit/glm5.3 `glm53-001`, `glm53-002`)
+- **Cluster**: C29
+- **Decision**: D16
 - **Verification status**: Confirmed
-- **File(s)**: `AGENTS.md` L33 (lockstep sentence); `scripts/opi-doc-check.py` `check_root_guidance_lockstep` (L279-300, currently vacuous); `.agents/skills/opi-document/SKILL.md` L58 (and the `.claude/skills/` counterpart if present)
-- **Change**: state the single-content policy (CLAUDE.md is a symlink to AGENTS.md; keep them one file); replace the vacuous four-flavor normalization with a check that CLAUDE.md resolves to AGENTS.md (fails if a real divergent file reappears); update the skill line. Note the Windows-clone portability caveat (symlinks materialize as text without symlink support).
-- **Test plan**: doc-check.
+- **File(s)**: `crates/opi-coding-agent/src/policy.rs` module/inline comments; `crates/opi-coding-agent/src/execution/permission.rs`; `crates/opi-coding-agent/src/rpc.rs` ~L1266; `crates/opi-agent/tests/hooks_queues.rs` ~L715--722; `crates/opi-coding-agent/tests/phase17_api_audit.rs` marker discovery
+- **Change**: Remove Phase/task/workstream history while retaining current invariants. Correct the hook/schema/prepare/stop ordering comment. Replace acceptance discovery based on a production Phase marker with behavior/source facts that do not require historical comments.
+- **Test plan**: Run the exact two source-sensitive test binaries and the documentation contract.
 
-#### Fix 4.2: One-sentence spec clarifications (user-approved via D3/D4)
+#### Fix 4.2: Execute and record the registered rollback profile
 
-- **Finding source**: audit.codex.md, AUD-17-001 + AUD-17-006; **Decision**: D3 + D4 (user)
-- **Verification status**: Partialially confirmed
-- **File(s)**: `docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md` (EVD-009 and AUT-008 rows)
-- **Change**: EVD-009: clarify that provider model requests are not authorization-gated side effects; fail-closed applies at the tool launch boundary. AUT-008: clarify that projection recomputation means composition from trusted registrations; evidence-health denial surfaces as the authorization boundary's stable code. (Spec-status rules respected: no implementation status recorded.)
-- **Test plan**: doc-check; spec edit re-syncs the live ledger spec hash only via the owning workflow if required (do not hand-edit `.opi-impl-state.json`).
+- **Finding source**: `audit.codex.md` (audit/codex `P17-CODEX-SPEC-009`); `audit.glm5.3.md` (audit/glm5.3 `glm53-016`)
+- **Cluster**: C18
+- **Decision**: D17
+- **Verification status**: Confirmed
+- **File(s)**: isolated temporary Git worktree only; result appended to this remediation artifact or a newly authorized remediation-results artifact, never `docs/snapshots/phase17/opi-impl-state.json`
+- **Change**: In an isolated worktree, revert the complete registered Phase 17 range, run the named pre-Phase regression profile, then verify that representative Phase 17 evidence/session files remain preserved and that the pre-Phase binary neither rewrites nor broadens authority. Record exact commits, commands, exit results, and artifact hashes. Do not alter the current branch or user worktree.
+- **Test plan**: The rollback commands themselves are the test; require a clean isolated worktree before/after and preserve the generated evidence for review.
 
-#### Fix 4.3: Dated citation addendum for the archived ledger
+#### Fix 4.3: Record deliberate 0.x public/schema changes
 
-- **Finding source**: audit.glm5.3.md, MIN-10 + INFO-24 + INFO-28 + INFO-05 + INFO-06 + INFO-13 + INFO-15 (+ the C17/C19/C20 divergence records from D14)
-- **Decision**: auto; **Verification status**: Confirmed
-- **File(s)**: new `docs/snapshots/phase17/citation-addendum-2026-08-21.md`
-- **Change**: map stale criteria_trace citations to their HEAD locations (agent.rs collection field, agent_loop prepare/apply at 1065-1193, preflight/execute split, UUIDv7 `IdentityAllocator` replacing `RUN_ID_COUNTER`, `ManifestCandidate::validate`/`FinalizedManifest` replacing `require_complete`); record the corrected residuals (PRV-005 narrowed at HEAD; cross-mode `--trace` asymmetries closed; A03 "one call identity" wording; PRV-006 wiremock drives four adapters); record the deferred tightened-invariant divergences (MIN-13 classification, MIN-15 permutation tests, MIN-16 project-trust first-wins, MIN-24 rollback residual). The archived ledger itself is NOT rewritten.
-- **Test plan**: doc-check.
-
-#### Fix 4.4: CHANGELOG `[Unreleased]` entries
-
-- **File(s)**: `CHANGELOG.md`
-- **Change**: one consolidated entry set covering: adapter AuthScheme fail-closed attachment; bare-model ambiguity/missing typed errors; in-band stream error → typed failure; secret-scrubbing at the public event boundary; CLI startup model validation; removed public items (`FileEvidenceSink::dir`, `register_extension_tools`, `_extension_tools` parameter, two `#[non_exhaustive]` markers). Read the full `[Unreleased]` section first; reuse existing subsections.
+- **Finding source**: all confirmed public-surface findings implemented under D1, D5--D12
+- **Cluster**: C01, C03, C05, C06, C08, C09, C11, C12, C16, C17, C30
+- **Decision**: D1, D5--D12
+- **Verification status**: Confirmed/Partially confirmed as recorded above
+- **File(s)**: `CHANGELOG.md` complete `## [Unreleased]` section; affected English/Chinese user documentation only if current behavior/API text exists in both
+- **Change**: After implementation, read the full Unreleased section, update the existing subsection once for user-visible breaking changes, and synchronize any existing localized counterpart. Do not write phase status or remediation history into normative specs.
+- **Test plan**: `python scripts/opi-doc-check.py`; generated `opi --help` snapshot only if a CLI surface changed.
 
 ## Final verification
 
+After each layer's focused commands pass, use the actual changed-file inventory to compute the union from `.agents/skills/_shared/references/change-scope-and-check-selection.md`. Because the proposed remediation changes all three runtime crates and public/durable schemas, the expected final union is the Phase 17 workspace gate:
+
     python scripts/opi-doc-check.py
     cargo fmt --check --all
-    cargo clippy --workspace --all-targets -- -D warnings   # at CI scope, after fmt
-    cargo test --workspace --all-targets                     # per-target on this host (disk constraints), union at CI scope
+    cargo clippy --workspace --all-targets -- -D warnings
+    cargo test --workspace --all-targets
     cargo test --workspace --doc
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-Then (C1 / M1+M2 closure — requires explicit user authorization to push):
-
-1. Commit the remediation (explicit paths only; Conventional Commits).
-2. Push `main` (all unpushed commits, `211aba8..HEAD`).
-3. Confirm the three-platform CI matrix green at the final SHA (`phase17_acceptance` + workspace jobs) and record the run URL in the citation addendum.
-4. Until then, the archived ledger's "ran green" rows remain historical (the glm5.3 audit's local HEAD validation — 621 focused tests, fmt, clippy-lib, doc-check — is the only validation attaching to `a680c5d`).
+Before running Cargo, inspect `python scripts/opi-cargo-cache.py status`; keep incremental compilation and the repository external cache enabled. No test may call a paid/live provider or depend on credentials/network. Expected test impact: `add` and `update`; no deletion unless D12 removal is approved, in which case only refresh-specific tests made obsolete by that removal may be deleted.
 
 ## Scope exclusions
 
+Findings not producing a fix item in this plan:
+
 | Finding | Status | Reason |
-|---------|--------|--------|
-| glm5.3 MIN-13 | Deferred | INV-007 entry classification tightened post-exit (93d75f4); needs a durable-format change contradicting the documented additive session policy — route to the spec-owning flow (D14) |
-| glm5.3 MIN-15 | Deferred | Post-exit PRIN-004/INV-005 permutation-matrix verification route; route to a tasked phase (D14) |
-| glm5.3 MIN-16 | Deferred | Post-exit tightening; first-wins is pinned by its own documented embedder test; latent (standard CLI registers no resolvers); divergence recorded in addendum (D14) |
-| glm5.3 MIN-24 | Deferred | Documented intentional rollback contract; fix needs new mechanism (retry idempotency / read-only retained turns); `output_began` blindness noted in addendum (D15) |
-| glm5.3 MIN-05 | Deferred | Telescoping-constructor consolidation is public-API churn without a behavioral defect; verified fix shape (params struct per runner family) recorded for a dedicated cleanup |
-| glm5.3 MIN-23 (builder/`set_model` half) | Partially deferred | CLI-side fix taken (Fix 3.3); `build() -> Result` and typed `set_model` are broader public-API changes recorded as alternatives, not taken (D7) |
-| codex AUD-17-001 / AUD-17-006 (semantic-change option) | Excluded by decision | User accepted the conformant reading (D3/D4); fixes are pinning tests + spec clarifications only |
-| codex AUD-17-007 (full-redaction option) | Excluded by decision | User chose echo + secret-scrub (D5); full redaction breaks TUI images/transcripts and exceeds spec scope |
-| glm5.3 INFO-01 | Info/No action | Both `facts()` and `Deref` have distinct real consumer sets |
-| glm5.3 INFO-02 | Info/No action | Double parse is real; the tightening side effect (trimmed canonical ids) is a behavior change not requested |
-| glm5.3 INFO-04 | Info/No action | Collection-level validation covers all dispatched calls; corrected inventory recorded in addendum (4 adapters preflight; bedrock also skips; api_mapped equivalent) |
-| glm5.3 INFO-07 | Info/No action | Design-conformant (RPC `trace` command requires the recorder); recorded in addendum |
-| glm5.3 INFO-08 | Info/No action | Both call sites guarded (second structurally); typed-error conversion noted as future hardening |
-| glm5.3 INFO-09 | Info/No action | Latent (no phase17 tests exist in the three unscanned crates today); noted |
-| glm5.3 INFO-10 | Info/No action | Future work (Promotion-Controller world); no dual durable owner exists today |
-| glm5.3 INFO-11 | Info/No action | Mid-run re-setup divergence remains (MIN-18 fix covers emit-before-setup only); within a single lifecycle EVD-008 holds in both |
-| glm5.3 INFO-14 | Info/No action | Behavioral proof exists in the runtime test; contract-level test kept |
-| glm5.3 INFO-17 | Info/No action | No subscriber installed in shipped binaries; the unused dependency is removed instead (Fix 3.16) |
-| glm5.3 INFO-18 / INFO-19 | Info/No action | Memory-hygiene defense-in-depth; no output path exposes them (sigv4.rs scope noted in addendum) |
-| glm5.3 INFO-20 | Info/No action | Latent (no production `{:?}` print path); helper retained |
-| glm5.3 INFO-21 | Info/No action | Durability-vs-latency design decision; per-record flush + finalize fsync retained |
-| glm5.3 INFO-22 | Info/No action | Bounded cost (PathBufs per completed run); noted |
-| glm5.3 INFO-25 / INFO-26 | Info/No action | Latent; no in-repo caller/resolver hits the paths |
-| Repo-wide phase-history sweep (119 phase-14..17 refs beyond the 15 verified sites) | Deferred | Out of finding scope (D8); minimum-change rule |
-| Restoring a flavored CLAUDE.md file | Excluded by decision | Would undo the deliberate `eb5e316` centralization; symlink policy adopted instead (D9) |
+|---|---|---|
+| `glm53-013` | Refuted | `split_once(':')` splits only the provider prefix and preserves every later colon in the returned model ID; the cited Bedrock code does not truncate the ID. C09 still fixes the separate product-level `contains(':')` misclassification. |
+| `glm53-008` | Info/No action | Factual dead/misleading surface observations, but the source assigns Info and no registered Phase 17 behavior fails. Remove only items made unused by approved fixes. |
+| `glm53-026`, `glm53-027`, `glm53-028`, `glm53-029` | Info/No action | Preflight sink lifecycle asymmetry, test-oracle locking, rollback-of-rollback, and year-zero parsing are verified defense/edge observations without a Phase 17 Major/Minor requirement in the source. |
+| `glm53-036`, `glm53-037`, `glm53-038` | Info/No action | Documented conversation-redaction tradeoff and memory-hygiene observations; D10 may incidentally improve shared secrecy storage, but this plan adds no separate work. |
+| `glm53-045`, `glm53-046`, `glm53-047`, `glm53-048`, `glm53-049`, `glm53-050`, `glm53-051`, `glm53-052`, `glm53-053` | Info/No action | Low-severity test robustness/coverage observations; none is needed to prove an actionable cluster after C27's named gaps are repaired. |
+| `glm53-054` | Returned to shaping | Code inspection confirms credentials-file `credential_process` is ignored, but the cited local criterion does not require parity with that external AWS placement. Admit the compatibility requirement with authoritative protocol evidence before changing resolution semantics. |
+| `glm53-060`, `glm53-061`, `glm53-062` | Info/No action | RPC tail emit, Codex default system text, and hypothetical sparse Anthropic indices are informational integration observations outside the selected Phase 17 correction set. |
+| `glm53-066`, `glm53-067`, `glm53-068`, `glm53-069`, `glm53-070`, `glm53-071`, `glm53-072`, `glm53-073` | Info/No action | Fork atomicity, login ergonomics, sync navigation I/O, temp cleanup, cosmetic output/casts, dead capture, and tail-scan performance are verified residuals but source-classified Info. |
+| `glm53-016` | Duplicate | Covered by C18 / Fix 4.2 with the stronger codex Minor finding. |
+| `glm53-017` | Duplicate | Its factual empty-artifact observation is covered by C16 / Fix 3.4; the reports disagree on acceptability, so D8 records the user decision. |
+| `glm53-024`, `glm53-025`, `glm53-059`, `glm53-065`, `glm53-074` | Duplicate | Covered respectively by C02, C03, C01, C21, and C12 fixes. |
+| `P17-CODEX-STD-010` | Returned to shaping pending D12 | Removal or admission of a public refresh seam requires the user's explicit choice; approval of recommended D12(a) promotes it into Fix 1.1 cleanup and updates tests/changelog. |
+| `glm53-012` | Returned to shaping pending D15 | The ordinary-text relabeling is confirmed, but exact Bedrock reasoning wire support must be verified before implementation; approval of D15(a) promotes it into Fix 1.3 as a separate serialization fixture. |

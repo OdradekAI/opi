@@ -65,9 +65,10 @@ flowchart TD
   `docs/opi-spec.md` 或已登记 Phase 交付来源前不具规范性。
 - `opi-implement plan` 只检查就绪度，不修补缺失的产品含义。任务图确认与
   Git commit 授权是两个不同关卡。
-- `opi-audit` 与 `opi-eval` 只诊断，不编辑生产代码。
-- `opi-remediate` 先验证发现再修复，并且永不写入正式
-  `.opi-impl-state.json`。
+- `opi-audit` 与 `opi-eval` 只诊断，不编辑生产代码；audit 会先封存已提交
+  证据，再对照历史。
+- `opi-remediate mode=plan` 只验证和规划；`mode=apply` 必须显式批准精确的
+  不可变计划。两种模式都不写入正式 `.opi-impl-state.json`。
 - `opi-document` 证明文档真实，不授权发布。
 - `opi-release` 是唯一公开发布流程；crates.io 发布还有独立的最后时刻
   不可逆关卡。
@@ -83,9 +84,9 @@ commit，`$` 可能使用凭据或付费 provider，`P` 改变公开状态，`I`
 | `opi-realign` | 对照固定 pi 修订版检查 opi | `docs/realign/*.md` | 只是证据；经登记后进入塑形或 `opi-implement plan` | W |
 | `opi-research` | 基于一手资料调研向外能力 | `docs/research/*.md` | 只是证据；下一步为塑形 | W |
 | `opi-implement` | 准入 Phase 来源、执行任务图并归档 Phase 证据 | `.opi-impl-state.json`、Phase 快照、任务变更 | 任务图、任务 commit、账本 commit 和失败关卡相互独立 | W、C |
-| `opi-audit` | 按已提交 HEAD 的完整相关实现核实一个 Phase | `docs/snapshots/phase<N>/audit.*.md` | 不修复；已确认发现进入 `opi-remediate` | W |
+| `opi-audit` | 封存并按已提交 HEAD 的完整相关实现核实一个 Phase | 不可变 `audit.<model>.<head7>.<run-id>.md` 及 `.findings.jsonl` 兄弟文件 | 不修复；已确认发现进入 `opi-remediate` | W |
 | `opi-eval` | 运行显式、隔离的真实 provider 保真度用例 | `docs/eval/` 报告与历史 | 可能需要凭据；变更工具还需额外确认 | W、$ |
-| `opi-remediate` | 验证 audit/eval 统一发现并按需修正 | `remediation-plan.md`、用户批准的修复 | 执行需要独立用户关卡；意图变化返回塑形 | W |
+| `opi-remediate` | `mode=plan` 验证不可变发现并生成 closure batch；`mode=apply` 执行一个已批准计划 | 不可变计划、disposition、结果和用户批准的修复 | `READY-FOR-APPLY` 与精确计划批准共同控制执行；意图变化返回塑形 | W |
 | `opi-document` | 同步真实中英文文档及源派生检查 | 文档与 doc-check 变更 | 不发布 | W |
 | `opi-release` | 为六个 crate 与 GitHub 产物执行七阶段发布 | Git tag/release 与 crates.io 版本 | 公开 Git 关卡之后仍有独立 crates 不可逆关卡 | W、C、P、I |
 | `opi-slim-tests` | 在不丢失行为的前提下删除重复或已取代测试二进制 | 已验证、未提交的测试图缩减 | 从不自动提交 | W |
@@ -93,9 +94,10 @@ commit，`$` 可能使用凭据或付费 provider，`P` 改变公开状态，`I`
 ## 保障模型
 
 `opi-audit` 与 `opi-eval` 使用 `_shared/references/finding-contract.md`
-输出统一发现。`opi-remediate` 保留原始来源、严重度、独立性和证据，并另行
-记录自己的验证。通用 provider-fidelity canary 只是运行时信号；只有登记过的
-runtime-fidelity 用例才能关闭产品条件。
+输出统一发现。`opi-remediate` 保留原始来源、严重度、独立性和证据，并在不可变
+disposition 产物中另行记录验证、lineage、决策与关闭证明。修复结果只能关闭一个
+batch；只有新的 audit 才能证明 Phase 符合性。通用 provider-fidelity canary
+只是运行时信号；只有登记过的 runtime-fidelity 用例才能关闭产品条件。
 
 条件允许时使用独立模型或评审器，并如实披露独立性降级。项目契约不固定某个
 provider 或模型。
@@ -114,6 +116,7 @@ provider 或模型。
 | `docs/eval/` | `opi-eval` 报告与历史 |
 | `.opi-release-state.json` | `opi-release`；仅在未完成发布期间保留的忽略恢复状态 |
 | `_shared/references/finding-contract.md` | 共享发现格式 |
+| `_shared/references/remediation-disposition-contract.md` | 共享验证、lineage、决策与关闭格式 |
 
 只有 `opi-implement` 能写正式实现账本。不得创建第二套任务账本，也不得在
 `docs/opi-spec.md` 中记录实现进度。

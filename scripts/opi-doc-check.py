@@ -97,37 +97,86 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
     ),
 }
 
-AUDIT_MINIMUM_CHANGE_CONFORMANCE_CONTRACT = {
+ASSURANCE_WORKFLOW_CONTRACT = {
     ".claude/skills/opi-audit/SKILL.md": (
-        "minimum-change conformance matrix",
+        "sealed audit",
+        "proof obligation",
+        "references/audit-proof-obligations.md",
+        "isolated checkout of `audit_head`",
+        "audit.<model>.<head7>.<run-id>.findings.jsonl",
+        "validate_assurance_artifact.py findings",
+        "`met`",
+        "`partially-met`",
+        "`not-met`",
+        "`not-assessable`",
+        "`PASS-WITH-FINDINGS`",
+    ),
+    ".claude/skills/opi-audit/references/audit-proof-obligations.md": (
+        "anti-vacuity",
+        "Blocker/Major refutation",
+        "Minimum-change conformance matrix",
         "`reuse_search`",
         "`surface_necessity`",
         "`simplification_ceiling`",
-        "`conforming`",
-        "`drifted`",
-        "`triggered`",
-        "`not-recorded`",
-        "`not-assessable`",
-        "current committed `audit_head`",
-        "Finding routing remains on existing axes",
-        "## N+2. Minimum-change Conformance",
         "`production_consumers`",
         "`nonproduction_consumers`",
         "`net_deletion`",
         "`residual_glue`",
     ),
     ".claude/skills/opi-audit/references/finding-template.md": (
+        "audit.<model>.<head7>.<run-id>.md",
+        "audit.<model>.<head7>.<run-id>.findings.jsonl",
+        "Requirement state",
         "## Minimum-change Conformance",
-        "| Task | Scenario/source | Reuse | Placement | Surface | Production slice | Ceiling/trigger | Status |",
-        "`not-recorded`",
-        "`not-assessable`",
         "`standards`",
         "`spec`",
         "`integration`",
-        "`production_consumers`",
-        "`nonproduction_consumers`",
-        "`net_deletion`",
-        "`residual_glue`",
+    ),
+    ".claude/skills/opi-audit/evals/evals.json": (
+        '"skill_name": "opi-audit"',
+        "partially-met",
+        "without overwriting old reports",
+        "counter-evidence",
+    ),
+    ".claude/skills/opi-remediate/SKILL.md": (
+        "mode=plan | apply",
+        "DRAFT-UNRESOLVED",
+        "READY-FOR-APPLY",
+        "closure batch",
+        "red-before",
+        "isolated checkout of `remediation_head`",
+        "remediation.<head7>.<round>.plan.dispositions.jsonl",
+        "remediation.<head7>.<round>.result.dispositions.jsonl",
+        "validate_assurance_artifact.py plan",
+        "compare_finding_lineage.py",
+    ),
+    ".claude/skills/opi-remediate/references/cross-reference-matrix.md": (
+        "recurrent-same-defect",
+        "recurrent-adjacent-path",
+        "carried-forward-deferred",
+        "one closure predicate",
+    ),
+    ".claude/skills/opi-remediate/references/remediation-plan-template.md": (
+        "remediation.<head7>.<round>.plan.md",
+        "Status: DRAFT-UNRESOLVED | READY-FOR-APPLY",
+        "## Unresolved decisions",
+        "**Closure predicate**:",
+        "**Red-before**:",
+        "**Green-after**:",
+    ),
+    ".claude/skills/opi-remediate/references/execution-protocol.md": (
+        "exact remediation head",
+        "dirty-worktree baseline",
+        "red-before",
+        "remediation.<head7>.<round>.result.md",
+        "fresh independent audit",
+        "explicit new `$opi-audit` invocation",
+    ),
+    ".claude/skills/opi-remediate/evals/evals.json": (
+        '"skill_name": "opi-remediate"',
+        "recurrent-same-defect",
+        "DRAFT-UNRESOLVED",
+        "current committed HEAD differs",
     ),
 }
 
@@ -311,11 +360,11 @@ def check_minimum_change_trace_contract() -> None:
         require_tokens(rel, "minimum-change trace contract", tokens)
 
 
-def check_audit_minimum_change_conformance_contract() -> None:
-    for rel, tokens in AUDIT_MINIMUM_CHANGE_CONFORMANCE_CONTRACT.items():
+def check_assurance_workflow_contract() -> None:
+    for rel, tokens in ASSURANCE_WORKFLOW_CONTRACT.items():
         require_tokens(
             rel,
-            "audit minimum-change conformance contract",
+            "assurance workflow contract",
             tokens,
         )
 
@@ -844,7 +893,7 @@ def main() -> int:
     docs = check_counterparts()
     skill_docs = check_skill_contracts()
     check_minimum_change_trace_contract()
-    check_audit_minimum_change_conformance_contract()
+    check_assurance_workflow_contract()
     check_eval_behavior_baseline_contract()
     check_root_guidance_lockstep()
     check_workspace_graph()
