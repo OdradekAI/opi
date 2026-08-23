@@ -18,7 +18,7 @@ use opi_agent::message::AgentMessage;
 use opi_agent::session::{
     BranchSummaryEntry, CompactionEntry, CrashRecovery, ExtensionStateEntry, LabelAction,
     LabelEntry, LeafEntry, MessageEntry, ModelChangeEntry, SessionEntry, SessionHeader,
-    SessionInfoEntry, SessionReader, SessionWriter, ThinkingLevelChangeEntry,
+    SessionInfoEntry, SessionReader, ThinkingLevelChangeEntry,
 };
 use opi_agent::session_context::{
     ReconstructedContext, active_chain_entry_ids, reconstruct_context,
@@ -666,20 +666,23 @@ fn corrupt_middle_entries_forwarded_from_crash_recovery() {
 fn read_with_recovery_feeds_corrupt_middle_into_reconstruct_context() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("corrupt-middle.jsonl");
-    let header = SessionHeader::new(
-        "corrupt-middle".into(),
-        "2026-07-01T00:00:00Z".into(),
-        "/repo".into(),
-        None,
-    );
-    let mut writer = SessionWriter::create(&path, header).unwrap();
-    writer.append(&user_msg("m1", None, "hello")).unwrap();
-    drop(writer);
-
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .open(&path)
-        .unwrap();
+    let header = SessionHeader {
+        type_: "session".into(),
+        version: 1,
+        id: "corrupt-middle".into(),
+        timestamp: "2026-07-01T00:00:00Z".into(),
+        cwd: "/repo".into(),
+        parent_session: None,
+        runtime_input_binding: None,
+    };
+    let mut file = std::fs::File::create(&path).unwrap();
+    writeln!(file, "{}", serde_json::to_string(&header).unwrap()).unwrap();
+    writeln!(
+        file,
+        "{}",
+        serde_json::to_string(&user_msg("m1", None, "hello")).unwrap()
+    )
+    .unwrap();
     writeln!(file, "{{not valid json}}").unwrap();
 
     let (_header, entries, recovery) = SessionReader::read_with_recovery(&path).unwrap();

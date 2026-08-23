@@ -80,6 +80,17 @@ struct GatedAllowAuthorizer {
     release: Arc<tokio::sync::Notify>,
 }
 
+#[derive(Default)]
+struct CountingCompleteEvidenceAuthorizer {
+    calls: AtomicUsize,
+}
+
+impl CountingCompleteEvidenceAuthorizer {
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
 struct UncertainTool {
     outcome: UncertainToolOutcome,
 }
@@ -375,6 +386,38 @@ impl ToolAuthorizer for GatedAllowAuthorizer {
         Box::pin(async move {
             started.notify_one();
             release.notified().await;
+            Ok(AuthorizationDecision::Allow {
+                policy_ref: PolicyReference::new("test-policy").unwrap(),
+                permission_ref: PermissionReference::new("test-permission").unwrap(),
+                permission_scope: PermissionScope::new("test-scope").unwrap(),
+                scoped_grant_ref: None,
+                registration_id: request.registration_id,
+                capability: request.capability,
+                evidence_health_generation: request.evidence_health.generation(),
+            })
+        })
+    }
+}
+
+impl ToolAuthorizer for CountingCompleteEvidenceAuthorizer {
+    fn authorize(
+        &self,
+        request: ToolAuthorizationRequest,
+        _cancel: CancellationToken,
+    ) -> Pin<
+        Box<
+            dyn std::future::Future<Output = Result<AuthorizationDecision, AuthorizationError>>
+                + Send,
+        >,
+    > {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            if !request.evidence_health.is_healthy() {
+                return Ok(AuthorizationDecision::Deny {
+                    stable_code: "evidence_incomplete".to_owned(),
+                    redacted_reason: "complete evidence is required".to_owned(),
+                });
+            }
             Ok(AuthorizationDecision::Allow {
                 policy_ref: PolicyReference::new("test-policy").unwrap(),
                 permission_ref: PermissionReference::new("test-permission").unwrap(),
@@ -1217,13 +1260,14 @@ async fn parallel_authorization_record_failure_on_first_or_second_launches_zero_
             authorizations: AtomicUsize::new(0),
             fail_on,
         });
+        let authorizer = Arc::new(CountingCompleteEvidenceAuthorizer::default());
         let mut agent = make_agent_with_sink(
             vec![
                 MockResponse::Events(two_tool_response()),
                 MockResponse::Events(text_response("done")),
             ],
             registrations,
-            Some(common::permissive_authorizer()),
+            Some(authorizer.clone()),
             None,
             sink.clone(),
         );
@@ -1237,8 +1281,13 @@ async fn parallel_authorization_record_failure_on_first_or_second_launches_zero_
         );
         assert_eq!(
             sink.authorizations.load(Ordering::SeqCst),
-            2,
-            "both authorization decisions are preflighted in source order"
+            3,
+            "the changed evidence generation is reauthorized once before later preflight"
+        );
+        assert_eq!(
+            authorizer.calls(),
+            3,
+            "the first failed authorization record triggers one complete-evidence reauthorization"
         );
     }
 }

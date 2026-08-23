@@ -1459,10 +1459,10 @@ fn legacy_pricing_fallback_remains_for_unmigrated_model() {
 }
 
 #[test]
-fn thinking_level_additions_round_trip_without_schema_bump() {
+fn thinking_level_additions_round_trip_with_current_session_schema() {
     use opi_agent::session::FORMAT_VERSION;
 
-    assert_eq!(FORMAT_VERSION, 1);
+    assert_eq!(FORMAT_VERSION, 2);
     for (level, expected) in [
         (ThinkingLevel::None, "\"none\""),
         (ThinkingLevel::Minimal, "\"minimal\""),
@@ -2622,10 +2622,7 @@ fn phase14_usage_subsets_survive_session_resume() {
     let (header, entries, recovery) = SessionReader::read_with_recovery(&session_path).unwrap();
     assert!(recovery.is_clean());
     assert_eq!(header.version, FORMAT_VERSION);
-    assert_eq!(
-        FORMAT_VERSION, 1,
-        "usage correction must not bump session schema"
-    );
+    assert_eq!(FORMAT_VERSION, 2, "durable session bindings use schema v2");
 
     let reconstructed = opi_agent::session_context::reconstruct_context(&entries, &recovery);
     let resumed_harness = CodingHarness::builder(
@@ -2702,10 +2699,15 @@ fn phase14_usage_subsets_survive_session_resume() {
         .append(true)
         .open(&legacy_path)
         .unwrap();
+    let legacy_envelope = serde_json::json!({
+        "type": "entry",
+        "classification": "required",
+        "entry": legacy_value,
+    });
     writeln!(
         legacy_file,
         "{}",
-        serde_json::to_string(&legacy_value).unwrap()
+        serde_json::to_string(&legacy_envelope).unwrap()
     )
     .unwrap();
     drop(legacy_file);
@@ -2781,7 +2783,12 @@ fn open_existing_treats_legacy_nonzero_usage_as_reported_for_cost_summary() {
         .append(true)
         .open(&path)
         .unwrap();
-    writeln!(file, "{}", serde_json::to_string(&legacy_value).unwrap()).unwrap();
+    let legacy_envelope = serde_json::json!({
+        "type": "entry",
+        "classification": "required",
+        "entry": legacy_value,
+    });
+    writeln!(file, "{}", serde_json::to_string(&legacy_envelope).unwrap()).unwrap();
     drop(file);
 
     let (_header, entries) = SessionReader::read_all(&path).unwrap();

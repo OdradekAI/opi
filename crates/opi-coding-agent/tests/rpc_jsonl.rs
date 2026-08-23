@@ -1585,14 +1585,18 @@ async fn phase13_rpc_session_info_reports_tree_recovery_diagnostics() {
             .append(true)
             .open(&session_path)
             .expect("open session for corrupt fixture");
-        writeln!(file, "{{not valid json}}").expect("write corrupt line");
+        writeln!(
+            file,
+            r#"{{"type":"entry","classification":"ignorable_observation","entry":{{"type":"future_entry"}}}}"#
+        )
+        .expect("write ignorable future observation");
     }
 
     let (_header, entries, recovery) =
         SessionReader::read_with_recovery(&session_path).expect("read with recovery");
     assert!(
-        recovery.corrupt_count > 0,
-        "fixture must carry corrupt recovery"
+        recovery.unknown_count > 0,
+        "fixture must carry unknown-entry recovery"
     );
     let resume_info = ResumeInfo {
         path: session_path,
@@ -1649,8 +1653,8 @@ async fn phase13_rpc_session_info_reports_tree_recovery_diagnostics() {
     assert!(
         recovery
             .iter()
-            .any(|diag| diag["code"] == code::CODE_SESSION_CORRUPT_ENTRIES),
-        "tree_recovery should include corrupt-entry diagnostic: {resp}"
+            .any(|diag| diag["code"] == code::CODE_SESSION_UNKNOWN_ENTRIES),
+        "tree_recovery should include unknown-entry diagnostic: {resp}"
     );
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();

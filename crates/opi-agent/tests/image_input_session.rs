@@ -8,14 +8,12 @@ use opi_ai::message::{ImageSource, InputContent, MediaType, Message, UserMessage
 use tempfile::TempDir;
 
 fn make_header() -> SessionHeader {
-    SessionHeader {
-        type_: "session".into(),
-        version: 1,
-        id: "test-session".into(),
-        timestamp: "2026-05-26T12:00:00Z".into(),
-        cwd: "/test".into(),
-        parent_session: None,
-    }
+    SessionHeader::new(
+        "test-session".into(),
+        "2026-05-26T12:00:00Z".into(),
+        "/test".into(),
+        None,
+    )
 }
 
 fn image_url_msg() -> Message {
@@ -181,7 +179,7 @@ fn session_roundtrip_stable_json_shape() {
     let raw = std::fs::read_to_string(&path).unwrap();
     let line = raw.lines().nth(1).unwrap();
     let val: serde_json::Value = serde_json::from_str(line).unwrap();
-    let content = &val["message"]["content"][0];
+    let content = &val["entry"]["message"]["content"][0];
     assert_eq!(content["type"], "image");
     assert_eq!(content["source"]["type"], "url");
     assert_eq!(content["source"]["url"], "https://example.com/photo.png");

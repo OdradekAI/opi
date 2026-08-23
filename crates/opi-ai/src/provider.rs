@@ -1,4 +1,4 @@
-//! LLM provider abstraction (S8.1).
+//! LLM provider abstraction.
 
 use std::pin::Pin;
 use std::str::FromStr;

@@ -1989,6 +1989,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.18",
  "time",
@@ -2027,7 +2028,6 @@ dependencies = [
 name = "opi-coding-agent"
 version = "0.8.0"
 dependencies = [
- "anyhow",
  "apple-native-keyring-store",
  "base64",
  "cap-std",

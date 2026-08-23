@@ -130,7 +130,16 @@ impl BedrockProvider {
     /// Parse event-stream bytes and emit stream events from fixture data.
     pub fn stream_from_fixture(&self, data: &[u8], cancel: CancellationToken) -> EventStream {
         let mut buffer = data.to_vec();
-        let frames = event_stream::parse_frames(&mut buffer);
+        let frames = match event_stream::parse_frames(&mut buffer) {
+            Ok(frames) => frames,
+            Err(_) => {
+                return Box::pin(stream::iter(vec![Err(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static(
+                        "Bedrock stream contains a malformed complete frame",
+                    ),
+                ))]));
+            }
+        };
         let mut mapper = BedrockMapper::new();
 
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
@@ -389,7 +398,22 @@ impl BedrockProvider {
             })?;
             buffer.extend_from_slice(&chunk);
 
-            let frames = event_stream::parse_frames(&mut buffer);
+            let frames = match event_stream::parse_frames(&mut buffer) {
+                Ok(frames) => frames,
+                Err(_) => {
+                    let _ = send_or_cancel(
+                        &cancel,
+                        tx,
+                        Err(ProviderError::StreamError(
+                            ProviderErrorSummary::attested_static(
+                                "Bedrock stream contains a malformed complete frame",
+                            ),
+                        )),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+            };
             for frame in frames {
                 let payload_str = std::str::from_utf8(&frame.payload).unwrap_or("");
                 for event in parse_bedrock_event(&frame.event_type, payload_str) {

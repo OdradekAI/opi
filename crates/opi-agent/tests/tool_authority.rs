@@ -12,7 +12,7 @@
 mod common;
 
 use std::pin::Pin;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures_util::stream;
@@ -182,6 +182,33 @@ impl AgentHooks for TestHooks {
     }
 }
 
+struct CountingHooks {
+    before_tool_calls: Arc<AtomicUsize>,
+}
+
+impl AgentHooks for CountingHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        Ok(messages
+            .iter()
+            .filter_map(|message| match message {
+                AgentMessage::Llm(message) => Some(message.clone()),
+                _ => None,
+            })
+            .collect())
+    }
+
+    fn before_tool_call(
+        &self,
+        _ctx: BeforeToolCallContext,
+    ) -> Pin<Box<dyn std::future::Future<Output = BeforeToolCallResult> + Send>> {
+        let before_tool_calls = self.before_tool_calls.clone();
+        Box::pin(async move {
+            before_tool_calls.fetch_add(1, Ordering::SeqCst);
+            BeforeToolCallResult::Continue
+        })
+    }
+}
+
 fn recording_registry(count: Arc<AtomicUsize>) -> Vec<RegisteredTool> {
     common::registrations_from(vec![Box::new(RecordingTool::new("mytool", count))])
 }
@@ -190,6 +217,15 @@ fn make_agent(
     responses: Vec<Vec<AssistantStreamEvent>>,
     registrations: Vec<RegisteredTool>,
     authorizer: Option<Arc<dyn opi_agent::authority::ToolAuthorizer>>,
+) -> Agent {
+    make_agent_with_hooks(responses, registrations, authorizer, Box::new(TestHooks))
+}
+
+fn make_agent_with_hooks(
+    responses: Vec<Vec<AssistantStreamEvent>>,
+    registrations: Vec<RegisteredTool>,
+    authorizer: Option<Arc<dyn opi_agent::authority::ToolAuthorizer>>,
+    hooks: Box<dyn AgentHooks>,
 ) -> Agent {
     let collection = Arc::new(single_route_collection(Box::new(MockProvider::new(
         responses,
@@ -205,7 +241,7 @@ fn make_agent(
             max_turns: 5,
             ..Default::default()
         },
-        Box::new(TestHooks),
+        hooks,
     )
     .expect("agent builds")
 }
@@ -358,19 +394,28 @@ async fn denying_authorizer_yields_zero_executions() {
 async fn unknown_tool_yields_zero_executions() {
     // The model proposes a name that is NOT in the trusted registry.
     let count = Arc::new(AtomicUsize::new(0));
-    let mut agent = make_agent(
+    let before_tool_calls = Arc::new(AtomicUsize::new(0));
+    let mut agent = make_agent_with_hooks(
         vec![
             tool_call_response("c1", "nope", "{}"),
             text_response("done"),
         ],
         recording_registry(count.clone()),
         Some(common::permissive_authorizer()),
+        Box::new(CountingHooks {
+            before_tool_calls: before_tool_calls.clone(),
+        }),
     );
     let _ = agent.prompt("go").await;
     assert_eq!(
         RecordingTool::count_of(&count),
         0,
         "an unregistered tool name must not execute"
+    );
+    assert_eq!(
+        before_tool_calls.load(Ordering::SeqCst),
+        0,
+        "an unregistered tool must be rejected before the pre-tool hook"
     );
 }
 

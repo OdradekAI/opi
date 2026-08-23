@@ -6,10 +6,15 @@ mod common;
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures_util::stream;
 use opi_agent::ToolDef;
+use opi_agent::authority::{
+    AuthorizationDecision, AuthorizationError, ToolAuthorizationRequest, ToolAuthorizer,
+};
+use opi_agent::evidence::{PermissionReference, PermissionScope, PolicyReference};
 use opi_agent::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
     BeforeToolCallResult, ShouldStopAfterTurnContext,
@@ -356,6 +361,32 @@ struct ProbeTool {
     executed: Arc<Mutex<bool>>,
 }
 
+struct CountingAuthorizer {
+    calls: Arc<AtomicUsize>,
+}
+
+impl ToolAuthorizer for CountingAuthorizer {
+    fn authorize(
+        &self,
+        request: ToolAuthorizationRequest,
+        _cancel: CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = Result<AuthorizationDecision, AuthorizationError>> + Send>>
+    {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            Ok(AuthorizationDecision::Allow {
+                policy_ref: PolicyReference::new("test-policy").unwrap(),
+                permission_ref: PermissionReference::new("test-permission").unwrap(),
+                permission_scope: PermissionScope::new("test-scope").unwrap(),
+                scoped_grant_ref: None,
+                registration_id: request.registration_id,
+                capability: request.capability,
+                evidence_health_generation: request.evidence_health.generation(),
+            })
+        })
+    }
+}
+
 impl Tool for ProbeTool {
     fn definition(&self) -> ToolDef {
         ToolDef {
@@ -588,6 +619,7 @@ fn tool_call_response(call_id: &str, name: &str, args: &str) -> Vec<AssistantStr
 async fn phase8_tool_validation_failure_contract() {
     let executed = Arc::new(Mutex::new(false));
     let before_called = Arc::new(Mutex::new(false));
+    let authorizer_calls = Arc::new(AtomicUsize::new(0));
 
     // greet requires `name`; this call omits it, so validation fails.
     let provider = ScriptedProvider::new(vec![
@@ -606,7 +638,9 @@ async fn phase8_tool_validation_failure_contract() {
     let context = AgentLoopContext {
         collection: Arc::new(single_route_collection(Box::new(provider))),
         registry: common::test_registry(tools),
-        authorizer: Some(common::permissive_authorizer()),
+        authorizer: Some(Arc::new(CountingAuthorizer {
+            calls: authorizer_calls.clone(),
+        })),
         evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
         state: NextTurnState::new(
             vec![AgentMessage::Llm(Message::User(
@@ -649,6 +683,11 @@ async fn phase8_tool_validation_failure_contract() {
     assert!(
         *before_called.lock().unwrap(),
         "hook may observe schema-unvalidated args; the tool never executes on invalid arguments"
+    );
+    assert_eq!(
+        authorizer_calls.load(Ordering::SeqCst),
+        0,
+        "invalid schema arguments must be rejected before trusted authorization"
     );
 
     let error_result = messages

@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use opi_agent::harness::{HarnessError, JsonlSessionRepo, SessionFacade, SessionRepo};
 use opi_agent::session::{
-    CrashRecovery, LabelAction, LeafEntry, MessageEntry, SessionEntry, SessionHeader,
+    CrashRecovery, LabelAction, LeafEntry, MessageEntry, SessionEntry, SessionHeader, SessionReader,
 };
 use opi_agent::session_event::ThinkingLevel;
 use opi_ai::message::{InputContent, Message, UserMessage};
@@ -36,11 +36,52 @@ fn header(id: &str) -> SessionHeader {
     SessionHeader::new(id.into(), "0".into(), "/repo".into(), None)
 }
 
+fn legacy_header(id: &str) -> SessionHeader {
+    SessionHeader {
+        type_: "session".into(),
+        version: 1,
+        id: id.into(),
+        timestamp: "0".into(),
+        cwd: "/repo".into(),
+        parent_session: None,
+        runtime_input_binding: None,
+    }
+}
+
 /// In-memory `SessionRepo` that records appended entries. Used for fast
 /// queue/ordering checks that do not need a real JSONL file.
 #[derive(Default)]
 struct RecordingSessionRepo {
     entries: Vec<SessionEntry>,
+}
+
+struct ReadOnlyJsonlSessionRepo {
+    path: PathBuf,
+    count: usize,
+}
+
+impl ReadOnlyJsonlSessionRepo {
+    fn open(path: &Path) -> std::io::Result<Self> {
+        let count = SessionReader::read_all(path).map(|(_header, entries)| entries.len())?;
+        Ok(Self {
+            path: path.to_path_buf(),
+            count,
+        })
+    }
+}
+
+impl SessionRepo for ReadOnlyJsonlSessionRepo {
+    fn append(&mut self, _entry: &SessionEntry) -> std::io::Result<()> {
+        Err(std::io::Error::other("legacy session is read-only"))
+    }
+
+    fn load(&self) -> std::io::Result<(SessionHeader, Vec<SessionEntry>, CrashRecovery)> {
+        SessionReader::read_with_recovery(&self.path)
+    }
+
+    fn message_count(&self) -> std::io::Result<usize> {
+        Ok(self.count)
+    }
 }
 
 impl SessionRepo for RecordingSessionRepo {
@@ -268,7 +309,7 @@ fn session_facade_appends_and_reads_in_order() {
 
     let (h, entries, _recovery) = facade.load().unwrap();
     assert_eq!(h.id, "s1");
-    assert_eq!(h.version, 1);
+    assert_eq!(h.version, 2);
     assert_eq!(entries.len(), 2);
     // Agent-emitted message persists before the extension-state write.
     assert!(matches!(entries[0], SessionEntry::Message(_)));
@@ -287,7 +328,12 @@ fn session_facade_preserves_v1_readability_with_unknown_future_entry() {
     let path = dir.path().join("future.jsonl");
     {
         let mut f = fs::File::create(&path).unwrap();
-        writeln!(f, "{}", serde_json::to_string(&header("s1")).unwrap()).unwrap();
+        writeln!(
+            f,
+            "{}",
+            serde_json::to_string(&legacy_header("s1")).unwrap()
+        )
+        .unwrap();
         let real = SessionEntry::Message(MessageEntry {
             id: "m1".into(),
             parent_id: None,
@@ -305,7 +351,7 @@ fn session_facade_preserves_v1_readability_with_unknown_future_entry() {
         .unwrap();
     }
 
-    let repo = JsonlSessionRepo::open(&path).unwrap();
+    let repo = ReadOnlyJsonlSessionRepo::open(&path).unwrap();
     let facade = SessionFacade::new(Box::new(repo)).unwrap();
     let (h, entries, recovery) = facade.load().unwrap();
 
@@ -330,7 +376,12 @@ fn session_facade_reconstructs_active_branch_leaf_deterministically() {
     let path = dir.path().join("branch.jsonl");
     {
         let mut f = fs::File::create(&path).unwrap();
-        writeln!(f, "{}", serde_json::to_string(&header("s1")).unwrap()).unwrap();
+        writeln!(
+            f,
+            "{}",
+            serde_json::to_string(&legacy_header("s1")).unwrap()
+        )
+        .unwrap();
         let m1 = SessionEntry::Message(MessageEntry {
             id: "m1".into(),
             parent_id: None,
@@ -354,7 +405,8 @@ fn session_facade_reconstructs_active_branch_leaf_deterministically() {
         }
     }
 
-    let facade = SessionFacade::new(Box::new(JsonlSessionRepo::open(&path).unwrap())).unwrap();
+    let facade =
+        SessionFacade::new(Box::new(ReadOnlyJsonlSessionRepo::open(&path).unwrap())).unwrap();
     let tip = facade.active_tip().unwrap();
     assert_eq!(tip.as_deref(), Some("m2"));
     // Deterministic: a second read over the same repo yields the same tip.

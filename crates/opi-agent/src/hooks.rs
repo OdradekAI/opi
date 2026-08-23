@@ -1,4 +1,4 @@
-//! Hook trait for agent loop customization (S8.2).
+//! Hook trait for agent loop customization.
 
 use std::future::Future;
 use std::pin::Pin;

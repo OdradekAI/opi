@@ -1818,7 +1818,7 @@ async fn preflight_tool(
             });
         }
     };
-    let decision = authorize_and_verify(
+    let mut decision = authorize_and_verify(
         authorizer.as_ref(),
         registration,
         args,
@@ -1833,12 +1833,41 @@ async fn preflight_tool(
     if cancel.is_cancelled() {
         return Err(AgentError::Cancelled);
     }
-    let authorization_recorded = match &mut tool_evidence {
+    let mut authorization_recorded = match &mut tool_evidence {
         Some(evidence) => {
             emit_tool_authorization_evidence(evidence, evidence_health, registration, &decision)
         }
         None => true,
     };
+
+    // Recording an Allow can advance the live evidence generation. Rebuild the
+    // same authorization request against that live snapshot exactly once, then
+    // record and validate the replacement decision before launch.
+    if matches!(decision, Authorized::AllowFresh { .. })
+        && decision_evidence_generation(&decision) != Some(evidence_health.generation())
+    {
+        decision = authorize_and_verify(
+            authorizer.as_ref(),
+            registration,
+            args,
+            evidence_health.clone(),
+            run_id,
+            evidence_turn_id,
+            evidence_call_id,
+            invocation_context.clone(),
+            cancel.clone(),
+        )
+        .await?;
+        if cancel.is_cancelled() {
+            return Err(AgentError::Cancelled);
+        }
+        authorization_recorded = match &mut tool_evidence {
+            Some(evidence) => {
+                emit_tool_authorization_evidence(evidence, evidence_health, registration, &decision)
+            }
+            None => true,
+        };
+    }
 
     if cancel.is_cancelled() {
         return Err(AgentError::Cancelled);
@@ -1892,6 +1921,18 @@ async fn preflight_tool(
             }
         }
     })
+}
+
+fn decision_evidence_generation(
+    decision: &Authorized,
+) -> Option<crate::evidence::EvidenceGeneration> {
+    match decision {
+        Authorized::AllowFresh {
+            evidence_health_generation,
+            ..
+        } => Some(*evidence_health_generation),
+        Authorized::Deny { .. } => None,
+    }
 }
 
 #[allow(clippy::too_many_arguments)] // private launch boundary over one fully prepared call

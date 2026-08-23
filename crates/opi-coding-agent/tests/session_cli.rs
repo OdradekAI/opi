@@ -9,7 +9,7 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use opi_agent::diagnostic::code::{CODE_SESSION_CORRUPT_ENTRIES, CODE_SESSION_TRUNCATED_LINE};
+use opi_agent::diagnostic::code::CODE_SESSION_TRUNCATED_LINE;
 use opi_agent::session::{
     LabelAction, LabelEntry, LeafEntry, MessageEntry, SessionEntry, SessionHeader,
     SessionInfoEntry, SessionWriter,
@@ -746,7 +746,7 @@ fn valid_session_ids_accepted() {
 }
 
 #[test]
-fn resume_session_reports_skipped_corrupt_entries() {
+fn resume_session_rejects_corrupt_required_entries() {
     let dir = create_session_dir();
     let header = make_header("corrupt-sess", "/repo");
     let path = dir.path().join("corrupt-sess.jsonl");
@@ -766,25 +766,10 @@ fn resume_session_reports_skipped_corrupt_entries() {
         file.write_all(b"{not valid json}\n").unwrap();
     }
 
-    // Write another valid entry
-    let mut writer = SessionWriter::open(&path).unwrap();
-    writer
-        .append(&test_message_entry("e2", "also-good"))
-        .unwrap();
-
-    let result = resume_session(dir.path(), "corrupt-sess").unwrap();
-    assert_eq!(result.entries.len(), 2, "should have 2 valid entries");
-    assert_eq!(
-        result.skipped_entries, 1,
-        "should report 1 corrupt entry skipped"
-    );
+    let result = resume_session(dir.path(), "corrupt-sess");
     assert!(
-        result
-            .diagnostics
-            .iter()
-            .any(|d| d.code == CODE_SESSION_CORRUPT_ENTRIES
-                && d.details.as_ref().and_then(|v| v["corrupt_count"].as_u64()) == Some(1)),
-        "resume should carry CrashRecovery diagnostics"
+        matches!(result, Err(session_cli::SessionCliError::Corrupt(_))),
+        "a v2 session must reject a corrupt required entry"
     );
 }
 
@@ -833,20 +818,7 @@ fn resume_session_recovery_warnings_include_truncated_tail() {
 // ---------------------------------------------------------------------------
 
 fn opi_binary() -> std::path::PathBuf {
-    // Tests run in the crate directory; the binary is at workspace_root/target/debug/opi
-    let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
-    let workspace_root = std::path::PathBuf::from(&crate_dir)
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("crate should be in crates/opi-coding-agent")
-        .to_path_buf();
-    let bin_name = if cfg!(windows) { "opi.exe" } else { "opi" };
-    let path = workspace_root.join("target").join("debug").join(bin_name);
-    assert!(
-        path.exists(),
-        "opi binary must be built: run `cargo build -p opi-coding-agent`"
-    );
-    path
+    std::path::PathBuf::from(env!("CARGO_BIN_EXE_opi"))
 }
 
 fn build_opi_if_needed() {

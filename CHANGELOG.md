@@ -77,8 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TerminalOutcome` are no longer `#[non_exhaustive]`.
 - `opi-coding-agent`: the speculative `register_extension_tools` seam and the
   discarded `_extension_tools` parameter of `register_product_tools` were
-  removed (extension tools remain excluded from product registration), and
-  the fully dead `FileEvidenceSink::dir()` accessor was removed.
+  removed (extension tools remain excluded from product registration).
 - `opi-coding-agent`: `NonInteractiveRunner::cancel` was replaced by
   `cancel_token(&mut self)`, which arms the next run generation and returns its
   clonable cancellation token before `run*` takes the mutable borrow.

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use opi_agent::compaction::{CompactionConfig, CompactionEngine, DefaultCompactionHooks, Entry};
+use opi_agent::evidence::{AssemblyIdentity, ContentDigest, RuntimeInputBinding};
 use opi_agent::message::{AgentMessage, CompactionSummaryMessage};
 use opi_agent::session::{
     CompactionEntry, ExtensionStateEntry, LabelAction, LabelEntry, LeafEntry, MessageEntry,
@@ -61,6 +62,7 @@ pub struct SessionCoordinator {
     usage: CumulativeUsage,
     session_id: String,
     session_path: PathBuf,
+    runtime_input_binding: RuntimeInputBinding,
     model: String,
     model_pricing: Option<ModelPricing>,
     /// Entries accumulated so far, used as compaction input.
@@ -108,7 +110,15 @@ impl SessionCoordinator {
     ) -> std::io::Result<Self> {
         let id = generate_session_id();
         let timestamp = now_iso();
-        let header = SessionHeader::new(id.clone(), timestamp, cwd.into(), None);
+        let model = model.into();
+        let runtime_input_binding = session_runtime_input_binding(cwd, &model);
+        let header = SessionHeader::new_with_runtime_input_binding(
+            id.clone(),
+            timestamp,
+            cwd.into(),
+            None,
+            runtime_input_binding.clone(),
+        );
         let path = dir.join(format!("{id}.jsonl"));
         std::fs::create_dir_all(dir)?;
         let writer = SessionWriter::create(&path, header)?;
@@ -118,7 +128,8 @@ impl SessionCoordinator {
             usage: CumulativeUsage::default(),
             session_id: id,
             session_path: path,
-            model: model.into(),
+            runtime_input_binding,
+            model,
             model_pricing: None,
             entries: Vec::new(),
             agent_message_indices: Vec::new(),
@@ -162,6 +173,14 @@ impl SessionCoordinator {
         compaction_config: CompactionConfig,
         model: impl Into<String>,
     ) -> std::io::Result<Self> {
+        let validated = opi_agent::session::SessionReader::read_validated_with_recovery(&path)?;
+        if validated.header.id != session_id {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "session header id does not match the requested session",
+            ));
+        }
+        let runtime_input_binding = validated.runtime_input_binding;
         let writer = SessionWriter::open(&path)?;
 
         // Advance the global sequence counter past any existing IDs.
@@ -304,6 +323,7 @@ impl SessionCoordinator {
             usage,
             session_id,
             session_path: path,
+            runtime_input_binding,
             model: model.into(),
             model_pricing: None,
             entries,
@@ -543,6 +563,11 @@ impl SessionCoordinator {
 
     pub fn session_path(&self) -> &Path {
         &self.session_path
+    }
+
+    /// Immutable binding stored with this session's validated durable prefix.
+    pub fn runtime_input_binding(&self) -> &RuntimeInputBinding {
+        &self.runtime_input_binding
     }
 
     pub fn usage(&self) -> &CumulativeUsage {
@@ -960,6 +985,16 @@ fn generate_session_id() -> String {
         .unwrap_or_default()
         .as_millis();
     format!("{ts:x}")
+}
+
+fn session_runtime_input_binding(cwd: &str, model: &str) -> RuntimeInputBinding {
+    let digest = ContentDigest::from_hex(crate::tool_authority::digest_of(&format!(
+        "session-runtime-input\ncwd:{cwd}\nmodel:{model}"
+    )))
+    .expect("digest_of returns a canonical SHA-256 hex digest");
+    let source = AssemblyIdentity::new("opi.coding-agent.session")
+        .expect("static session assembly identity is valid");
+    RuntimeInputBinding::direct(digest, source)
 }
 
 fn now_iso() -> String {

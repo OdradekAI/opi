@@ -145,7 +145,7 @@ fn jsonl_round_trip_all_entry_types() {
     let (read_header, read_entries) = write_and_read(header.clone(), &entries);
 
     assert_eq!(read_header.id, "rt-001");
-    assert_eq!(read_header.version, 1);
+    assert_eq!(read_header.version, 2);
     assert_eq!(entries.len(), read_entries.len(), "entry count mismatch");
 
     // Verify each entry round-trips via serde (re-serialize and compare JSON)
@@ -562,7 +562,7 @@ proptest! {
         prop_assert_eq!(back.id, id);
         prop_assert_eq!(back.cwd, cwd);
         prop_assert_eq!(back.parent_session, parent);
-        prop_assert_eq!(back.version, 1);
+        prop_assert_eq!(back.version, 2);
         prop_assert_eq!(back.type_, "session");
     }
 
@@ -601,7 +601,7 @@ proptest! {
         }
     }
 
-    /// Session header schema invariant: version=1, type="session".
+    /// Session header schema invariant: version=2, type="session".
     #[test]
     fn prop_header_schema_invariant(
         id in proptest::string::string_regex("[a-zA-Z0-9_-]{1,10}").unwrap()
@@ -610,7 +610,7 @@ proptest! {
         let val: serde_json::Value = serde_json::to_value(&header).unwrap();
 
         prop_assert_eq!(&val["type"], "session");
-        prop_assert_eq!(&val["version"], 1);
+        prop_assert_eq!(&val["version"], 2);
         prop_assert!(val["id"].is_string());
         prop_assert!(val["timestamp"].is_string());
         prop_assert!(val["cwd"].is_string());

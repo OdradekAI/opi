@@ -1,26 +1,24 @@
-//! Session JSONL storage — format version 1 with an additive entry model.
+//! Session JSONL storage with a fail-closed version-2 entry envelope.
 //!
 //! Append-only, versioned JSONL format for session persistence. The first line
 //! is a header; subsequent lines are tree entries forming a conversation tree.
 //!
 //! # Entry model and compatibility contract
 //!
-//! The format keeps **header version 1** with **additive** entry variants. The
-//! JSONL structure supports the following `type` tags:
+//! Legacy **header version 1** remains readable as immutable historical input.
+//! New writers produce header version 2. Its JSONL structure supports the
+//! following inner `type` tags:
 //! (`session_info`, `model_change`, `thinking_level_change`, `label`,
 //! `branch_summary`). A version bump is reserved for a future breaking
 //! structural change; v1 files written by older opi builds remain readable
 //! and resumable without a migration command.
 //!
-//! `SessionEntry` is `#[non_exhaustive]` and [`SessionReader`] distinguishes
-//! three line outcomes during load:
-//! - known `type` tag → deserialized into the matching variant;
-//! - **unknown** `type` tag (a valid JSON object whose `type` this build does
-//!   not recognize) → skipped and counted in [`CrashRecovery::unknown_count`],
-//!   never fatal — this is the forward-compatibility path for entries a newer
-//!   opi might write;
-//! - **corrupt** line (invalid JSON, or a JSON object without a `type` field)
-//!   → skipped and counted in [`CrashRecovery::corrupt_count`].
+//! Every v2 entry is wrapped in an envelope declaring it `required` or an
+//! `ignorable_observation`. An unknown required entry fails closed; only an
+//! explicitly ignorable observation with an unknown inner type is skipped.
+//! The v2 header retains the immutable [`crate::evidence::RuntimeInputBinding`]
+//! that belongs to the validated committed prefix. Version 1 preserves its
+//! historical crash-recovery behavior but cannot be reopened for writing.
 //!
 //! `branch_summary`, `session_info`, `model_change`, `thinking_level_change`,
 //! and `label` are metadata/context attachments: they are parented to the
@@ -45,19 +43,16 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-/// Current session format version.
-///
-/// Version 1 supports additive entries. See the module docs for the full
-/// compatibility policy.
-pub const FORMAT_VERSION: u32 = 1;
+/// Current session format version for new writers.
+pub const FORMAT_VERSION: u32 = 2;
+
+/// Historical format accepted for read-only recovery and export.
+pub const LEGACY_FORMAT_VERSION: u32 = 1;
 
 /// Human-readable session format/compatibility policy. Asserted by tests so the
 /// pi-compatibility disclaimer cannot drift silently from the module-level
 /// documentation above.
-pub const SESSION_FORMAT_POLICY: &str = "opi session format: version 1 (additive entries). \
- opi sessions are not pi-session-v3 compatible; opi learns from pi's append-only \
- tree/context shape but does not read or write arbitrary pi session files. Unknown \
- future entry types are skipped on load and reported via CrashRecovery::unknown_count.";
+pub const SESSION_FORMAT_POLICY: &str = "opi session format: version 2 (required or ignorable entry envelopes and immutable runtime-input binding); version 1 is read-only legacy input. opi sessions are not pi-session-v3 compatible; opi learns from pi's append-only tree/context shape but does not read or write arbitrary pi session files. Unknown required v2 entries fail closed; only explicitly ignorable unknown observations are skipped.";
 
 /// Session header — the first line of a JSONL file (S9.3).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,10 +64,27 @@ pub struct SessionHeader {
     pub timestamp: String,
     pub cwd: String,
     pub parent_session: Option<String>,
+    /// Immutable binding for the runtime inputs that created this session.
+    /// Version 1 headers have no binding and remain read-only legacy input.
+    #[serde(default)]
+    pub runtime_input_binding: Option<crate::evidence::RuntimeInputBinding>,
 }
 
 impl SessionHeader {
     pub fn new(id: String, timestamp: String, cwd: String, parent_session: Option<String>) -> Self {
+        let binding = default_runtime_input_binding(&id, &timestamp, &cwd, &parent_session);
+        Self::new_with_runtime_input_binding(id, timestamp, cwd, parent_session, binding)
+    }
+
+    /// Construct a v2 header with the exact immutable runtime-input binding
+    /// resolved by trusted product assembly.
+    pub fn new_with_runtime_input_binding(
+        id: String,
+        timestamp: String,
+        cwd: String,
+        parent_session: Option<String>,
+        runtime_input_binding: crate::evidence::RuntimeInputBinding,
+    ) -> Self {
         Self {
             type_: "session".to_owned(),
             version: FORMAT_VERSION,
@@ -80,8 +92,29 @@ impl SessionHeader {
             timestamp,
             cwd,
             parent_session,
+            runtime_input_binding: Some(runtime_input_binding),
         }
     }
+}
+
+fn default_runtime_input_binding(
+    id: &str,
+    timestamp: &str,
+    cwd: &str,
+    parent_session: &Option<String>,
+) -> crate::evidence::RuntimeInputBinding {
+    use sha2::Digest;
+
+    let mut hasher = sha2::Sha256::new();
+    for value in [id, timestamp, cwd, parent_session.as_deref().unwrap_or("")] {
+        hasher.update(value.as_bytes());
+        hasher.update([0]);
+    }
+    let digest = crate::evidence::ContentDigest::from_hex(format!("{:x}", hasher.finalize()))
+        .expect("SHA-256 formatter produces a canonical digest");
+    let source = crate::evidence::AssemblyIdentity::new("opi.session.header")
+        .expect("static assembly identity is valid");
+    crate::evidence::RuntimeInputBinding::direct(digest, source)
 }
 
 /// A message tree entry (S9.3 `message` type).
@@ -263,6 +296,44 @@ impl SessionEntry {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum SessionEntryClassification {
+    Required,
+    IgnorableObservation,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SessionEntryEnvelope {
+    #[serde(rename = "type")]
+    type_: String,
+    classification: SessionEntryClassification,
+    entry: serde_json::Value,
+}
+
+impl SessionEntryEnvelope {
+    fn required(entry: &SessionEntry) -> Result<Self, serde_json::Error> {
+        Ok(Self {
+            type_: "entry".to_owned(),
+            classification: SessionEntryClassification::Required,
+            entry: serde_json::to_value(entry)?,
+        })
+    }
+}
+
+/// One validated durable session prefix and its immutable runtime binding.
+///
+/// This value is available only for v2 sessions. Legacy v1 files remain
+/// readable through [`SessionReader::read_with_recovery`] but cannot be used
+/// as a mutable resume/fork source because they lack the binding.
+#[derive(Debug, Clone)]
+pub struct ValidatedSession {
+    pub header: SessionHeader,
+    pub entries: Vec<SessionEntry>,
+    pub recovery: CrashRecovery,
+    pub runtime_input_binding: crate::evidence::RuntimeInputBinding,
+}
+
 /// Crash recovery status returned by [`SessionReader`].
 ///
 /// Three independent observations keep **unknown future entry types**
@@ -347,16 +418,26 @@ impl CrashRecovery {
 /// Append-only JSONL writer with fsync and recoverable line-boundary handling.
 pub struct SessionWriter {
     file: std::fs::File,
+    format_version: u32,
 }
 
 impl SessionWriter {
     /// Create a new session file with the given header.
     pub fn create(path: &Path, header: SessionHeader) -> std::io::Result<Self> {
+        if header.version != FORMAT_VERSION || header.runtime_input_binding.is_none() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "new session writers require a v2 header with a runtime-input binding",
+            ));
+        }
         let mut file = std::fs::File::create(path)?;
         let header_json = serde_json::to_string(&header)?;
         writeln!(file, "{header_json}")?;
         file.sync_all()?;
-        Ok(Self { file })
+        Ok(Self {
+            file,
+            format_version: header.version,
+        })
     }
 
     /// Open an existing session file for appending (seeks to end).
@@ -366,6 +447,23 @@ impl SessionWriter {
     /// land on a clean line boundary.
     pub fn open(path: &Path) -> std::io::Result<Self> {
         use std::io::{Read, Seek, SeekFrom};
+
+        let header_content = std::fs::read_to_string(path)?;
+        let header_line = header_content.lines().next().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "empty session file")
+        })?;
+        let header: SessionHeader = serde_json::from_str(header_line).map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid session header: {error}"),
+            )
+        })?;
+        if header.version != FORMAT_VERSION || header.runtime_input_binding.is_none() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "legacy session is read-only; fork or export it without rewriting",
+            ));
+        }
 
         // Open read+write (not append) so set_len works on Windows.
         let mut file = std::fs::OpenOptions::new()
@@ -407,12 +505,16 @@ impl SessionWriter {
             file.seek(SeekFrom::End(0))?;
         }
 
-        Ok(Self { file })
+        Ok(Self {
+            file,
+            format_version: header.version,
+        })
     }
 
     /// Append a session entry as a new JSONL line.
     pub fn append(&mut self, entry: &SessionEntry) -> std::io::Result<()> {
-        let json = serde_json::to_string(entry)?;
+        debug_assert_eq!(self.format_version, FORMAT_VERSION);
+        let json = serde_json::to_string(&SessionEntryEnvelope::required(entry)?)?;
         writeln!(self.file, "{json}")?;
         self.file.sync_all()
     }
@@ -483,13 +585,25 @@ impl SessionReader {
                 format!("expected header type 'session', got '{}'", header.type_),
             ));
         }
-        if header.version != FORMAT_VERSION {
+        if header.version != LEGACY_FORMAT_VERSION && header.version != FORMAT_VERSION {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
-                    "unsupported session version {}, expected {}",
-                    header.version, FORMAT_VERSION
+                    "unsupported session version {}, expected {} or {}",
+                    header.version, LEGACY_FORMAT_VERSION, FORMAT_VERSION
                 ),
+            ));
+        }
+        if header.version == FORMAT_VERSION && header.runtime_input_binding.is_none() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "v2 session header is missing its runtime-input binding",
+            ));
+        }
+        if header.version == LEGACY_FORMAT_VERSION && header.runtime_input_binding.is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "legacy v1 session header must not claim a runtime-input binding",
             ));
         }
 
@@ -507,28 +621,83 @@ impl SessionReader {
             if last_line_incomplete && i == total - 1 {
                 continue;
             }
-            // Parse to a `Value` first so an unrecognized `type` tag can be
-            // distinguished from genuine corruption. An additive entry written by a newer
-            // opi build is skipped and reported via `unknown_count`, never
-            // fatal. A JSON object without a `type` field, or a known type tag
-            // with a malformed payload, stays corrupt; only a present but
-            // unrecognized `type` tag lands in the unknown bucket.
-            match serde_json::from_str::<serde_json::Value>(line) {
-                Ok(value) => match serde_json::from_value::<SessionEntry>(value.clone()) {
-                    Ok(entry) => entries.push(entry),
-                    Err(_) => {
-                        let unknown = value
-                            .get("type")
-                            .and_then(serde_json::Value::as_str)
-                            .is_some_and(|t| !KNOWN_ENTRY_TYPES.contains(&t));
-                        if unknown {
+            if header.version == LEGACY_FORMAT_VERSION {
+                // Legacy v1 has no envelope. Preserve its historical recovery
+                // semantics without allowing it to become a mutable source.
+                match serde_json::from_str::<serde_json::Value>(line) {
+                    Ok(value) => match serde_json::from_value::<SessionEntry>(value.clone()) {
+                        Ok(entry) => entries.push(entry),
+                        Err(_) => {
+                            let unknown = value
+                                .get("type")
+                                .and_then(serde_json::Value::as_str)
+                                .is_some_and(|tag| !KNOWN_ENTRY_TYPES.contains(&tag));
+                            if unknown {
+                                unknown_count += 1;
+                            } else {
+                                corrupt_count += 1;
+                            }
+                        }
+                    },
+                    Err(_) => corrupt_count += 1,
+                }
+                continue;
+            }
+
+            let envelope: SessionEntryEnvelope = serde_json::from_str(line).map_err(|error| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid required v2 session entry envelope: {error}"),
+                )
+            })?;
+            if envelope.type_ != "entry" {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "unknown required v2 session envelope type '{}'",
+                        envelope.type_
+                    ),
+                ));
+            }
+            match serde_json::from_value::<SessionEntry>(envelope.entry.clone()) {
+                Ok(entry) => {
+                    if envelope.classification == SessionEntryClassification::IgnorableObservation {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "known session entry cannot be classified as an ignorable observation",
+                        ));
+                    }
+                    entries.push(entry);
+                }
+                Err(_) => {
+                    let unknown = envelope
+                        .entry
+                        .get("type")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|tag| !KNOWN_ENTRY_TYPES.contains(&tag));
+                    match envelope.classification {
+                        SessionEntryClassification::Required => {
+                            let detail = if unknown {
+                                "unknown required session entry type"
+                            } else {
+                                "invalid required session entry"
+                            };
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                detail,
+                            ));
+                        }
+                        SessionEntryClassification::IgnorableObservation => {
+                            if !unknown {
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "ignorable observation must carry an unknown entry type",
+                                ));
+                            }
                             unknown_count += 1;
-                        } else {
-                            corrupt_count += 1;
                         }
                     }
-                },
-                Err(_) => corrupt_count += 1,
+                }
             }
         }
 
@@ -539,6 +708,30 @@ impl SessionReader {
         };
 
         Ok((header, entries, recovery))
+    }
+
+    /// Read the v2 prefix and binding that a mutable product session must use
+    /// together for resume, fork, and evidence reconstruction.
+    pub fn read_validated_with_recovery(path: &Path) -> std::io::Result<ValidatedSession> {
+        let (header, entries, recovery) = Self::read_with_recovery(path)?;
+        if header.version != FORMAT_VERSION {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "legacy session is read-only because it has no runtime-input binding",
+            ));
+        }
+        let runtime_input_binding = header.runtime_input_binding.clone().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "v2 session header is missing its runtime-input binding",
+            )
+        })?;
+        Ok(ValidatedSession {
+            header,
+            entries,
+            recovery,
+            runtime_input_binding,
+        })
     }
 }
 

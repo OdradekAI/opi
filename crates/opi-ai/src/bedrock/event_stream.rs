@@ -14,28 +14,30 @@ pub struct EventFrame {
     pub payload: Vec<u8>,
 }
 
+/// A complete event-stream frame failed structural or checksum validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameParseError {
+    MalformedCompleteFrame,
+}
+
 /// Parse all complete frames from a byte buffer.
 ///
 /// Returns parsed frames and removes consumed bytes from the buffer.
 /// Incomplete frames remain in the buffer for future appends.
-pub fn parse_frames(buffer: &mut Vec<u8>) -> Vec<EventFrame> {
+pub fn parse_frames(buffer: &mut Vec<u8>) -> Result<Vec<EventFrame>, FrameParseError> {
     let mut frames = Vec::new();
     while buffer.len() >= MIN_FRAME_SIZE {
         let total_len = read_u32_be(&buffer[0..4]);
         if total_len < (PRELUDE_LEN + 4) as u32 {
-            // Malformed: too short even for prelude + message CRC
-            buffer.drain(..4); // skip the bad length bytes
-            continue;
+            return Err(FrameParseError::MalformedCompleteFrame);
         }
         if (total_len as usize) > buffer.len() {
             break; // incomplete frame, wait for more data
         }
         let frame_bytes: Vec<u8> = buffer.drain(..total_len as usize).collect();
-        if let Some(frame) = parse_single_frame(&frame_bytes) {
-            frames.push(frame);
-        }
+        frames.push(parse_single_frame(&frame_bytes)?);
     }
-    frames
+    Ok(frames)
 }
 
 /// Minimum frame size: prelude (12 bytes) + message CRC (4 bytes).
@@ -43,9 +45,9 @@ const MIN_FRAME_SIZE: usize = 16;
 /// Prelude length: total_len (4) + headers_len (4) + prelude CRC (4).
 const PRELUDE_LEN: usize = 12;
 
-fn parse_single_frame(data: &[u8]) -> Option<EventFrame> {
+fn parse_single_frame(data: &[u8]) -> Result<EventFrame, FrameParseError> {
     if data.len() < PRELUDE_LEN + 4 {
-        return None;
+        return Err(FrameParseError::MalformedCompleteFrame);
     }
 
     let total_len = read_u32_be(&data[0..4]) as usize;
@@ -54,20 +56,20 @@ fn parse_single_frame(data: &[u8]) -> Option<EventFrame> {
     let message_crc = read_u32_be(&data[data.len() - 4..]);
 
     if total_len != data.len() {
-        return None;
+        return Err(FrameParseError::MalformedCompleteFrame);
     }
     if crc32(&data[0..8]) != prelude_crc {
-        return None;
+        return Err(FrameParseError::MalformedCompleteFrame);
     }
     if crc32(&data[..data.len() - 4]) != message_crc {
-        return None;
+        return Err(FrameParseError::MalformedCompleteFrame);
     }
 
     // Skip prelude CRC (bytes 8..12)
     let headers_start = PRELUDE_LEN;
     let headers_end = headers_start + headers_len;
     if headers_end > data.len() - 4 {
-        return None; // headers overflow into CRC space
+        return Err(FrameParseError::MalformedCompleteFrame); // headers overflow into CRC space
     }
 
     let headers_data = &data[headers_start..headers_end];
@@ -82,7 +84,7 @@ fn parse_single_frame(data: &[u8]) -> Option<EventFrame> {
         let name_len = headers_data[pos] as usize;
         pos += 1;
         if pos + name_len + 1 > headers_data.len() {
-            return None;
+            return Err(FrameParseError::MalformedCompleteFrame);
         }
         let name = std::str::from_utf8(&headers_data[pos..pos + name_len]).unwrap_or("");
         pos += name_len;
@@ -94,12 +96,12 @@ fn parse_single_frame(data: &[u8]) -> Option<EventFrame> {
         if header_type == 7 {
             // String header: 2 bytes length + value
             if pos + 2 > headers_data.len() {
-                return None;
+                return Err(FrameParseError::MalformedCompleteFrame);
             }
             let val_len = read_u16_be(&headers_data[pos..pos + 2]) as usize;
             pos += 2;
             if pos + val_len > headers_data.len() {
-                return None;
+                return Err(FrameParseError::MalformedCompleteFrame);
             }
             let value = std::str::from_utf8(&headers_data[pos..pos + val_len]).unwrap_or("");
             pos += val_len;
@@ -111,15 +113,16 @@ fn parse_single_frame(data: &[u8]) -> Option<EventFrame> {
             }
         } else {
             // Skip non-string headers based on type
-            let skip_len = skip_header_value_len(header_type, &headers_data[pos..])?;
+            let skip_len = skip_header_value_len(header_type, &headers_data[pos..])
+                .ok_or(FrameParseError::MalformedCompleteFrame)?;
             if pos + skip_len > headers_data.len() {
-                return None;
+                return Err(FrameParseError::MalformedCompleteFrame);
             }
             pos += skip_len;
         }
     }
 
-    Some(EventFrame {
+    Ok(EventFrame {
         event_type,
         content_type,
         payload: payload.to_vec(),
@@ -258,7 +261,7 @@ mod tests {
         let frame_bytes = build_test_frame("messageStart", "application/json", payload);
 
         let mut buffer = frame_bytes.clone();
-        let frames = parse_frames(&mut buffer);
+        let frames = parse_frames(&mut buffer).unwrap();
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0].event_type, "messageStart");
         assert_eq!(frames[0].content_type, "application/json");
@@ -289,7 +292,7 @@ mod tests {
         buffer.extend_from_slice(&f2);
         buffer.extend_from_slice(&f3);
 
-        let frames = parse_frames(&mut buffer);
+        let frames = parse_frames(&mut buffer).unwrap();
         assert_eq!(frames.len(), 3);
         assert_eq!(frames[0].event_type, "messageStart");
         assert_eq!(frames[1].event_type, "contentBlockDelta");
@@ -302,7 +305,7 @@ mod tests {
         let frame = build_test_frame("messageStart", "application/json", b"{}");
         let mut buffer = frame[..frame.len() - 5].to_vec(); // chop off last 5 bytes
 
-        let frames = parse_frames(&mut buffer);
+        let frames = parse_frames(&mut buffer).unwrap();
         assert!(frames.is_empty());
         assert!(!buffer.is_empty());
     }
@@ -313,11 +316,11 @@ mod tests {
         let split = frame.len() / 2;
 
         let mut buffer = frame[..split].to_vec();
-        let mut frames = parse_frames(&mut buffer);
+        let mut frames = parse_frames(&mut buffer).unwrap();
         assert!(frames.is_empty());
 
         buffer.extend_from_slice(&frame[split..]);
-        frames.extend(parse_frames(&mut buffer));
+        frames.extend(parse_frames(&mut buffer).unwrap());
         assert_eq!(frames.len(), 1);
         assert!(buffer.is_empty());
     }
@@ -325,7 +328,7 @@ mod tests {
     #[test]
     fn empty_buffer_returns_no_frames() {
         let mut buffer = Vec::new();
-        let frames = parse_frames(&mut buffer);
+        let frames = parse_frames(&mut buffer).unwrap();
         assert!(frames.is_empty());
     }
 
@@ -333,13 +336,13 @@ mod tests {
     fn frame_with_empty_payload() {
         let frame = build_test_frame("contentBlockStop", "application/json", b"");
         let mut buffer = frame;
-        let frames = parse_frames(&mut buffer);
+        let frames = parse_frames(&mut buffer).unwrap();
         assert_eq!(frames.len(), 1);
         assert!(frames[0].payload.is_empty());
     }
 
     #[test]
-    fn parse_frames_ignores_header_length_past_total_length_without_panic() {
+    fn parse_frames_rejects_header_length_past_total_length() {
         let mut frame = build_test_frame("messageStart", "application/json", b"{}");
         let total_len = read_u32_be(&frame[0..4]);
         let bad_headers_len = total_len;
@@ -351,13 +354,14 @@ mod tests {
         frame[message_crc_pos..].copy_from_slice(&message_crc.to_be_bytes());
 
         let mut buffer = frame;
-        let frames = parse_frames(&mut buffer);
-        assert!(frames.is_empty());
-        assert!(buffer.is_empty());
+        assert_eq!(
+            parse_frames(&mut buffer),
+            Err(FrameParseError::MalformedCompleteFrame)
+        );
     }
 
     #[test]
-    fn parse_frames_ignores_string_header_value_past_header_region_without_panic() {
+    fn parse_frames_rejects_string_header_value_past_header_region() {
         let mut frame = build_test_frame("messageStart", "application/json", b"{}");
         let headers_start = PRELUDE_LEN;
         let event_name_len = b":event-type".len();
@@ -368,29 +372,31 @@ mod tests {
         frame[message_crc_pos..].copy_from_slice(&message_crc.to_be_bytes());
 
         let mut buffer = frame;
-        let frames = parse_frames(&mut buffer);
-        assert!(frames.is_empty());
-        assert!(buffer.is_empty());
+        assert_eq!(
+            parse_frames(&mut buffer),
+            Err(FrameParseError::MalformedCompleteFrame)
+        );
     }
 
     #[test]
     fn parse_frames_ignores_garbage_shorter_than_min_frame_without_panic() {
         let mut buffer = vec![0xAA, 0xBB, 0xCC, 0xDD, 0xEE];
-        let frames = parse_frames(&mut buffer);
+        let frames = parse_frames(&mut buffer).unwrap();
         assert!(frames.is_empty());
         assert_eq!(buffer, vec![0xAA, 0xBB, 0xCC, 0xDD, 0xEE]);
     }
 
     #[test]
-    fn parse_frames_ignores_bad_crc_without_panic() {
+    fn parse_frames_rejects_bad_crc() {
         let mut frame = build_test_frame("messageStart", "application/json", b"{}");
         let last = frame.len() - 1;
         frame[last] ^= 0xFF;
 
         let mut buffer = frame;
-        let frames = parse_frames(&mut buffer);
-        assert!(frames.is_empty());
-        assert!(buffer.is_empty());
+        assert_eq!(
+            parse_frames(&mut buffer),
+            Err(FrameParseError::MalformedCompleteFrame)
+        );
     }
 
     #[test]
@@ -410,7 +416,7 @@ mod tests {
 
         let payload = br#"{"role":"assistant"}"#;
         let mut buffer = build_test_frame_with_prefix_headers(&prefix_headers, payload);
-        let frames = parse_frames(&mut buffer);
+        let frames = parse_frames(&mut buffer).unwrap();
 
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0].event_type, "messageStart");

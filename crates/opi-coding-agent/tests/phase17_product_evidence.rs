@@ -371,6 +371,11 @@ async fn evidence_capture_finalizes_direct_runtime_input_manifest() {
         sink.clone(),
         opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     );
+    let session_binding = harness
+        .session()
+        .expect("harness created a durable session")
+        .runtime_input_binding()
+        .clone();
     let messages = harness.prompt("hello").await.expect("run completes");
     assert!(!messages.is_empty(), "the run produced assistant output");
 
@@ -387,9 +392,8 @@ async fn evidence_capture_finalizes_direct_runtime_input_manifest() {
         "a Provider record is emitted through the production path",
     );
 
-    // A healthy run finalizes exactly one strict manifest bound to the direct
-    // runtime-input assembly (P17-EVD-003: a direct run must not claim an
-    // ActiveSnapshot).
+    // A healthy run finalizes exactly one strict manifest bound to the same
+    // immutable runtime input as its durable session.
     let manifest = sink
         .completed_manifest()
         .expect("a healthy run finalizes a manifest");
@@ -397,13 +401,7 @@ async fn evidence_capture_finalizes_direct_runtime_input_manifest() {
         manifest.binding.is_direct(),
         "direct CLI run binds DirectRuntimeInput"
     );
-    assert!(matches!(
-        &manifest.binding,
-        opi_agent::evidence::RuntimeInputBinding::DirectRuntimeInput {
-            assembly_source,
-            ..
-        } if assembly_source == &*opi_coding_agent::evidence::CLI_ASSEMBLY
-    ));
+    assert_eq!(manifest.binding, session_binding);
     assert!(matches!(
         manifest.session,
         opi_agent::evidence::SessionBinding::Branch { .. }
@@ -1227,6 +1225,10 @@ fn file_evidence_sink_writes_records_and_manifest() {
         prompt_digest: digest('e'),
         trigger: ExecutionTrigger::Invocation,
     };
+    assert!(matches!(
+        build_finalized_manifest(&capture, &[], dynamic()),
+        Err(EvidenceError::Finalization { .. })
+    ));
     let mut malformed_record = record.clone();
     malformed_record.payload = EvidencePayload::Digest(digest('0'));
     assert!(
@@ -1972,9 +1974,9 @@ async fn phase17_harness_switches_providers_with_matching_route_evidence() {
                 && route.model_id() == "mock-model"
                 && *reason == opi_agent::evidence::UnknownReason::NotReported
     ));
-    assert_ne!(
+    assert_eq!(
         alpha_manifest.binding, manifest.binding,
-        "a model switch must produce a fresh current-run binding"
+        "a model switch retains the session's immutable runtime-input binding"
     );
     assert_ne!(
         alpha_manifest.config.adapter_digest, manifest.config.adapter_digest,

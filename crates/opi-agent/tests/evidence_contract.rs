@@ -585,8 +585,18 @@ fn parent_call_link_correlates_retry_to_origin() {
         parent: Some(origin),
         sequence: alloc.next_sequence(),
         kind: CallKind::Retry,
-        payload: EvidencePayload::Digest(digest("retry")),
+        payload: EvidencePayload::Structured(RedactedValue::redacted(
+            serde_json::json!({ "attempt": 2, "reason": "transient" }),
+            RedactionMode::Summary,
+        )),
     };
+    let sink = InMemoryEvidenceSink::new();
+    let binding = RuntimeInputBinding::direct(digest("retry-link"), assembly("opi.embedder"));
+    sink.setup(&binding)
+        .expect("valid retry facts pass sink validation");
+    sink.emit(&record)
+        .expect("retry records use the structured retry payload channel");
+    let record = sink.records().into_iter().next().unwrap();
     assert_eq!(record.parent, Some(origin));
     assert_eq!(record.kind, CallKind::Retry);
     assert_ne!(record.parent.unwrap(), record.call);

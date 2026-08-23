@@ -52,6 +52,8 @@ pub struct SessionInfo {
 pub struct ResumedSession {
     pub header: opi_agent::session::SessionHeader,
     pub entries: Vec<opi_agent::session::SessionEntry>,
+    /// Immutable binding paired with the validated committed prefix.
+    pub runtime_input_binding: opi_agent::evidence::RuntimeInputBinding,
     /// Filesystem path of the resumed session JSONL file. Used by the harness
     /// to open the file in append mode instead of creating a new session.
     pub path: PathBuf,
@@ -177,8 +179,12 @@ pub fn resume_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Se
         return Err(SessionCliError::NotFound(session_id.into()));
     }
 
-    let (header, entries, recovery) = opi_agent::session::SessionReader::read_with_recovery(&path)
+    let validated = opi_agent::session::SessionReader::read_validated_with_recovery(&path)
         .map_err(|e| SessionCliError::Corrupt(format!("{}: {e}", path.display())))?;
+    let header = validated.header;
+    let entries = validated.entries;
+    let recovery = validated.recovery;
+    let runtime_input_binding = validated.runtime_input_binding;
 
     let skipped_entries = recovery.corrupt_count();
     let diagnostics = recovery.diagnostics();
@@ -186,6 +192,7 @@ pub fn resume_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Se
     Ok(ResumedSession {
         header,
         entries,
+        runtime_input_binding,
         path,
         skipped_entries,
         recovery,
@@ -226,7 +233,8 @@ pub fn fork_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Sess
         }
     }
 
-    let (header, path) = new_fork_session_target(dir, &source.header)?;
+    let (header, path) =
+        new_fork_session_target(dir, &source.header, source.runtime_input_binding.clone())?;
 
     std::fs::create_dir_all(dir)?;
     let mut writer = opi_agent::session::SessionWriter::create(&path, header.clone())?;
@@ -250,6 +258,7 @@ pub fn fork_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Sess
     Ok(ResumedSession {
         header,
         entries,
+        runtime_input_binding: source.runtime_input_binding,
         path,
         skipped_entries: 0,
         recovery: opi_agent::session::CrashRecovery::default(),
@@ -812,6 +821,7 @@ pub fn handle_session_cli(
 fn new_fork_session_target(
     dir: &Path,
     source: &opi_agent::session::SessionHeader,
+    runtime_input_binding: opi_agent::evidence::RuntimeInputBinding,
 ) -> Result<(opi_agent::session::SessionHeader, PathBuf), SessionCliError> {
     for suffix in 0..1000 {
         let base = generate_session_id();
@@ -824,11 +834,12 @@ fn new_fork_session_target(
         if path.exists() {
             continue;
         }
-        let header = opi_agent::session::SessionHeader::new(
+        let header = opi_agent::session::SessionHeader::new_with_runtime_input_binding(
             id,
             now_iso(),
             source.cwd.clone(),
             Some(source.id.clone()),
+            runtime_input_binding.clone(),
         );
         return Ok((header, path));
     }

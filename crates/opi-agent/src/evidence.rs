@@ -27,7 +27,7 @@
 //! finalized record through another path: once a lifecycle phase fails, the
 //! run's evidence is incomplete and the completed manifest is withheld.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::RedactionMode;
 
@@ -374,6 +374,16 @@ impl ContentDigest {
     }
 }
 
+impl<'de> Deserialize<'de> for ContentDigest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = <String as Deserialize>::deserialize(deserializer)?;
+        Self::from_hex(value).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Validation failure for a product- or embedder-owned opaque identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("opaque identity must be non-empty, trimmed, and contain no control characters")]
@@ -484,7 +494,7 @@ opaque_identity!(
 /// Reserved: the current Reference Product has no Promotion Controller and must
 /// not fabricate this authority. [`RuntimeInputBinding`] exposes no constructor
 /// that produces an [`RuntimeInputBinding::ActiveSnapshot`] for a direct run.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SnapshotRef(String);
 
@@ -505,7 +515,7 @@ impl SnapshotRef {
 /// resolved material runtime inputs and whose assembly identity remains opaque
 /// to Agent Core. [`RuntimeInputBinding::ActiveSnapshot`] is accepted only when
 /// a future trusted Promotion Controller supplies its reference.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RuntimeInputBinding {
     /// Direct assembly: the material runtime inputs are resolved and digested

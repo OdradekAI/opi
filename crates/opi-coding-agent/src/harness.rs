@@ -2996,6 +2996,9 @@ impl CodingHarness {
                 &self.system_prompt,
                 &self.model_registry,
             );
+            if let Some(session) = self.session.as_ref() {
+                capture.binding = session.runtime_input_binding().clone();
+            }
             capture
                 .recorder
                 .setup(&capture.binding)

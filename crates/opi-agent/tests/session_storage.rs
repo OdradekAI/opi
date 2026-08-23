@@ -278,15 +278,28 @@ fn make_header_with_parent(id: &str, parent: &str) -> SessionHeader {
     )
 }
 
+fn make_legacy_header(id: &str) -> SessionHeader {
+    SessionHeader {
+        type_: "session".into(),
+        version: opi_agent::session::LEGACY_FORMAT_VERSION,
+        id: id.into(),
+        timestamp: "2026-05-22T12:00:00Z".into(),
+        cwd: "/repo".into(),
+        parent_session: None,
+        runtime_input_binding: None,
+    }
+}
+
 #[test]
 fn session_header_round_trip() {
     let header = make_header("018f-abc");
     let json = serde_json::to_string(&header).unwrap();
     let back: SessionHeader = serde_json::from_str(&json).unwrap();
-    assert_eq!(back.version, 1);
+    assert_eq!(back.version, FORMAT_VERSION);
     assert_eq!(back.id, "018f-abc");
     assert_eq!(back.cwd, "/repo");
     assert!(back.parent_session.is_none());
+    assert!(back.runtime_input_binding.is_some());
 }
 
 #[test]
@@ -294,8 +307,9 @@ fn session_header_serializes_with_type_field() {
     let header = make_header_with_parent("018f-abc", "parent-sess");
     let val: serde_json::Value = serde_json::to_value(&header).unwrap();
     assert_eq!(val["type"], "session");
-    assert_eq!(val["version"], 1);
+    assert_eq!(val["version"], FORMAT_VERSION);
     assert_eq!(val["parent_session"], "parent-sess");
+    assert!(val["runtime_input_binding"].is_object());
 }
 
 // ---------------------------------------------------------------------------
@@ -456,7 +470,7 @@ fn jsonl_write_and_read_round_trip() {
     }
 
     let (read_header, entries) = SessionReader::read_all(&path).unwrap();
-    assert_eq!(read_header.version, 1);
+    assert_eq!(read_header.version, FORMAT_VERSION);
     assert_eq!(read_header.id, "sess-001");
     assert_eq!(entries.len(), 2);
 
@@ -525,7 +539,7 @@ fn crash_recovery_reports_corrupt_middle_entry() {
     let path = dir.path().join("corrupt.jsonl");
 
     // Write a valid session, then inject corrupt lines by rewriting.
-    let header = make_header("corrupt-1");
+    let header = make_legacy_header("corrupt-1");
     let entry1 = test_message_entry("e1", "Hi");
     let entry3 = test_message_entry("e3", "Bye");
     let entry1_json = serde_json::to_string(&entry1).unwrap();
@@ -673,22 +687,12 @@ fn writer_truncates_all_when_no_newline_in_file() {
         write!(f, "GARBAGE_NO_NEWLINES").unwrap();
     }
 
-    // This is a degenerate case — the file no longer has a valid header.
-    // SessionWriter::open still opens it for append; the truncation logic
-    // should handle "no newline found" by truncating to 0.
-    let mut writer = SessionWriter::open(&path).unwrap();
-    // After truncation to 0, appending writes a valid JSONL line.
-    writer
-        .append(&test_message_entry("e-new", "post-recovery"))
-        .unwrap();
-
-    // The file is no longer a valid session (header was destroyed), but the
-    // new entry should be on its own line.
-    let content = std::fs::read_to_string(&path).unwrap();
-    assert!(
-        content.ends_with('\n'),
-        "file should end with a newline after append"
-    );
+    // Without a valid header there is no durable binding to preserve. Opening
+    // for append must fail rather than inventing a new session tail.
+    let error = SessionWriter::open(&path)
+        .err()
+        .expect("invalid header must not open for append");
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
 }
 
 // ---------------------------------------------------------------------------
@@ -873,7 +877,7 @@ fn known_entry_types_match_session_entry_serde_tags() {
         writeln!(
             file,
             "{}",
-            serde_json::to_string(&make_header("known-tags")).unwrap()
+            serde_json::to_string(&make_legacy_header("known-tags")).unwrap()
         )
         .unwrap();
         for fixture in &fixtures {
@@ -905,7 +909,7 @@ fn crash_recovery_reports_unknown_future_type_separately_from_corrupt() {
         writeln!(
             f,
             "{}",
-            serde_json::to_string(&make_header("future-1")).unwrap()
+            serde_json::to_string(&make_legacy_header("future-1")).unwrap()
         )
         .unwrap();
         writeln!(
@@ -937,11 +941,66 @@ fn crash_recovery_reports_unknown_future_type_separately_from_corrupt() {
 }
 
 #[test]
+fn v2_retains_runtime_binding_and_rejects_unknown_required_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    let known_path = dir.path().join("v2-known.jsonl");
+    let required_path = dir.path().join("v2-required.jsonl");
+    let binding = serde_json::json!({
+        "kind": "direct_runtime_input",
+        "digest": "a".repeat(64),
+        "assembly_source": "test.session",
+    });
+    let header_json = serde_json::json!({
+        "type": "session",
+        "version": 2,
+        "id": "v2-session",
+        "timestamp": "2026-08-23T00:00:00Z",
+        "cwd": "/repo",
+        "parent_session": null,
+        "runtime_input_binding": binding,
+    });
+    let known_entry = serde_json::json!({
+        "type": "entry",
+        "classification": "required",
+        "entry": serde_json::to_value(test_message_entry("e1", "real")).unwrap(),
+    });
+    {
+        let mut file = std::fs::File::create(&known_path).unwrap();
+        writeln!(file, "{header_json}").unwrap();
+        writeln!(file, "{known_entry}").unwrap();
+    }
+    let (header, entries, recovery) = SessionReader::read_with_recovery(&known_path).unwrap();
+    assert_eq!(header.version, 2);
+    assert!(
+        serde_json::to_value(&header)
+            .unwrap()
+            .get("runtime_input_binding")
+            .is_some()
+    );
+    assert_eq!(entries.len(), 1);
+    assert!(recovery.is_clean());
+
+    {
+        let mut file = std::fs::File::create(&required_path).unwrap();
+        writeln!(file, "{header_json}").unwrap();
+        writeln!(file, "{known_entry}").unwrap();
+        writeln!(
+            file,
+            r#"{{"type":"entry","classification":"required","entry":{{"type":"future_required","id":"x1"}}}}"#
+        )
+        .unwrap();
+    }
+    let error = SessionReader::read_with_recovery(&required_path).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(error.to_string().contains("unknown required session entry"));
+}
+
+#[test]
 fn read_with_recovery_fails_closed_on_unsupported_format_version() {
     // A header whose format version this build does not support must be
     // rejected with the typed InvalidData error before any entry is read,
     // never silently loaded.
-    for unsupported_version in [2u32, 0u32] {
+    for unsupported_version in [3u32, 0u32] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(format!("v{unsupported_version}.jsonl"));
         let mut header = serde_json::to_value(make_header("versioned")).unwrap();
@@ -979,7 +1038,7 @@ fn crash_recovery_unknown_and_corrupt_are_independent_buckets() {
         writeln!(
             f,
             "{}",
-            serde_json::to_string(&make_header("mixed-1")).unwrap()
+            serde_json::to_string(&make_legacy_header("mixed-1")).unwrap()
         )
         .unwrap();
         writeln!(
@@ -1016,7 +1075,7 @@ fn crash_recovery_json_object_without_type_field_is_corrupt() {
         writeln!(
             f,
             "{}",
-            serde_json::to_string(&make_header("notype-1")).unwrap()
+            serde_json::to_string(&make_legacy_header("notype-1")).unwrap()
         )
         .unwrap();
         writeln!(
@@ -1046,14 +1105,12 @@ fn crash_recovery_json_object_without_type_field_is_corrupt() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn session_format_version_is_v1_and_policy_disclaims_pi_v3_compatibility() {
-    // Phase 13 keeps header version 1 with additive entries; it does not
-    // introduce version 2 and does not claim pi session v3 compatibility.
-    assert_eq!(FORMAT_VERSION, 1);
+fn session_format_version_is_v2_and_policy_disclaims_pi_v3_compatibility() {
+    assert_eq!(FORMAT_VERSION, 2);
     let policy = opi_agent::session::SESSION_FORMAT_POLICY;
     assert!(
-        policy.contains("version 1"),
-        "policy must state version 1, got: {policy}"
+        policy.contains("version 2") && policy.contains("read-only legacy input"),
+        "policy must state the v2 and legacy-v1 contract, got: {policy}"
     );
     let lower = policy.to_lowercase();
     assert!(

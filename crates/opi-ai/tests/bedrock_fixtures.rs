@@ -247,6 +247,31 @@ async fn text_streaming_from_fixture() {
 }
 
 #[tokio::test]
+async fn crc_invalid_complete_frame_emits_one_error_and_stops() {
+    let mut events_data = build_bedrock_stream(&[
+        ("messageStart", r#"{"role":"assistant"}"#),
+        (
+            "metadata",
+            r#"{"usage":{"inputTokens":1,"outputTokens":1}}"#,
+        ),
+    ]);
+    let first_frame_len = u32::from_be_bytes(events_data[..4].try_into().unwrap()) as usize;
+    events_data[first_frame_len - 1] ^= 0xff;
+
+    let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
+    let request = text_stream_request();
+    let results: Vec<_> = provider
+        .stream_from_fixture(&events_data, request.cancel)
+        .collect()
+        .await;
+
+    assert!(
+        matches!(results.as_slice(), [Err(ProviderError::StreamError(_))]),
+        "a CRC-invalid complete frame must produce exactly one terminal stream error: {results:?}"
+    );
+}
+
+#[tokio::test]
 async fn exception_frame_does_not_expose_upstream_message() {
     let canary = "bedrock-provider-error-secret-canary";
     let payload = format!(r#"{{"message":"{canary}"}}"#);

@@ -1,4 +1,4 @@
-//! Non-interactive runner (S10).
+//! Non-interactive runner.
 //!
 //! Takes a single prompt, runs it through the agent, captures assistant text
 //! for stdout, diagnostics for stderr, and returns an exit code.

@@ -588,6 +588,11 @@ pub fn build_finalized_manifest(
     records: &[EvidenceRecord],
     dynamic: RunDynamicFacts,
 ) -> Result<FinalizedManifest, EvidenceError> {
+    if records.is_empty() {
+        return Err(EvidenceError::Finalization {
+            detail: "evidence graph has no records".to_owned(),
+        });
+    }
     let correlation = terminal_correlation(records);
     let provider = extract_provider_facts(records, &dynamic.outcome)?;
     let completeness = if capture_recorder_failed(capture) {

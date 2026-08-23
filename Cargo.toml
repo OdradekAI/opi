@@ -38,7 +38,6 @@ base64 = "0.22"
 
 # errors
 thiserror = "2"
-anyhow = "1"
 
 # async traits
 
