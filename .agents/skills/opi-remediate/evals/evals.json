@@ -3,32 +3,57 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Use $opi-remediate mode=plan phase=17 on three immutable findings: A has the same closure_key as a previously closed issue, B shares only its family_key, and C has the same closure_key as an explicit deferral. Classify their lineage and say whether they belong in one closure batch.",
-      "expected_output": "A is recurrent-same-defect, B is recurrent-adjacent-path, C is carried-forward-deferred, and they are not clustered unless one closure predicate and one root fix prove all three closed.",
+      "prompt": "Use $opi-remediate mode=plan phase=17. A disposition names a different audit_run_id but the finding title is identical to the current audit. May it enter the plan?",
+      "expected_output": "Refuse the disposition because source identity must match the current audit_run_id and findings_sha256 exactly; prose similarity and older runs are irrelevant.",
+      "files": [],
       "expectations": [
-        "Classifies A as recurrent-same-defect.",
-        "Classifies B as recurrent-adjacent-path and C as carried-forward-deferred.",
-        "Does not cluster by theme or family_key alone; requires one closure predicate."
+        "Validates the current active audit set first.",
+        "Rejects the mismatched audit_run_id even though the title matches.",
+        "Does not search history or classify recurrence."
       ]
     },
     {
       "id": 2,
-      "prompt": "Use $opi-remediate mode=plan phase=17. Verification confirms a finding, but fixing it requires choosing a new public product policy that no registered source resolves. What status and outputs are allowed?",
-      "expected_output": "A DRAFT-UNRESOLVED immutable plan and dispositions that preserve the finding, identify the required authority and alternatives, and refuse READY-FOR-APPLY.",
+      "prompt": "Use $opi-remediate mode=apply phase=17 plan_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. The result narrative mentions an extra source edit, but no planned or incidental disposition owns that path. Can the result be sealed?",
+      "expected_output": "Refuse result validation because every reported changed path must be attributed to a planned or accepted incidental record.",
+      "files": [],
       "expectations": [
-        "Uses DRAFT-UNRESOLVED and explicitly refuses READY-FOR-APPLY.",
-        "Records the unresolved decision, alternatives, and authority needed.",
-        "Records decision pending:D<N> and closure_batch null in an immutable plan-stage disposition instead of inferring blanket approval."
+        "Rejects the narrative-only unplanned correction.",
+        "Requires exact Changed paths union across result dispositions.",
+        "Does not silently add the path to the approved plan."
       ]
     },
     {
       "id": 3,
-      "prompt": "Use $opi-remediate mode=apply plan=docs/snapshots/phase17/remediation.136c380.r4.plan.md. The plan says READY-FOR-APPLY, but current committed HEAD differs and the user only approved an older remediation-plan.md. State the action and the remaining closure loop.",
-      "expected_output": "Refuse application because both exact endpoint and exact-plan approval fail; after a valid apply, execute red/green closure batches, write an immutable result, and hand off to a fresh independent audit.",
+      "prompt": "Use $opi-remediate mode=apply phase=17 with the exact approved digest. A workspace test now fails because a private helper in the same batch collides with the approved implementation; fixing that helper changes no public or durable contract. What evidence and record are required?",
+      "expected_output": "Permit a bounded incidental repair only after causal-scope proof and focused red, then record all guardrails, changed path, and observed red/green in an I<N> result disposition.",
+      "files": [],
       "expectations": [
-        "Refuses to edit because current HEAD does not match the exact remediation head.",
-        "Refuses to treat approval of a different mutable plan as approval of this plan.",
-        "Names closure-batch verification, immutable result, and fresh independent audit as the valid loop."
+        "Requires the defect to block the current green-after and remain within the causal batch surface.",
+        "Requires all protected-contract guardrails to be false and records a focused FAIL/PASS.",
+        "Creates a separate incidental-repair result record rather than mutating the approved plan."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Use $opi-remediate mode=apply phase=17 with the exact approved digest. Verification reveals the fix also needs a new public constructor and a Cargo dependency. May this be handled as an incidental repair?",
+      "expected_output": "No. Public API and dependency changes breach the incidental guardrails, so apply stops and returns to a new plan/authority decision.",
+      "files": [],
+      "expectations": [
+        "Rejects bounded incidental repair because public API and dependency graph would change.",
+        "Stops the current apply instead of broadening scope.",
+        "Requires a new plan and any needed authority decision."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Use $opi-remediate mode=apply phase=17 with the exact approved digest. All checks pass and the fixed result validates, but the fixes and assurance directory are still uncommitted. Should a new $opi-audit start now?",
+      "expected_output": "No. Stop at materialization; the fixes and complete active set must be committed together and clean before a separate fresh audit is requested.",
+      "files": [],
+      "expectations": [
+        "Does not invoke or authorize a new audit while the active set is uncommitted.",
+        "Requires fixes and assurance artifacts to be committed together and clean.",
+        "Keeps Phase conformance authority with the later independent audit."
       ]
     }
   ]

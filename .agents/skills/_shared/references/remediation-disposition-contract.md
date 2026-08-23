@@ -1,76 +1,141 @@
-# Remediation disposition contract
+# Remediation Disposition Contract
 
-`opi-remediate` records its verification, lineage, decision, and closure proof
-without changing the source audit or eval finding. Records are JSON Lines in
-two immutable stages:
+`opi-remediate` consumes only the current active audit set. It records one
+decision for every current finding without consulting earlier audit or
+remediation artifacts.
 
-- `remediation.<head7+>.<round>.plan.dispositions.jsonl` records verification,
-  lineage, decisions, observed red-before, and the planned green-after;
-- `remediation.<head7+>.<round>.result.dispositions.jsonl` copies the plan
-  disposition identity and adds observed green-after plus final remediation
-  status. It never overwrites the plan-stage record.
+The fixed files are:
+
+```text
+remediation.plan.md
+remediation.plan.dispositions.jsonl
+remediation.result.md
+remediation.result.dispositions.jsonl
+```
+
+## Current finding disposition
+
+Plan and result stages use this record shape:
 
 ```json
 {
-  "source": {"source_path": "docs/snapshots/phase17/audit.codex.136c380.run1.md", "id": "P17-CODEX-SPEC-001"},
-  "verified_at": "136c380f0c5eea541190cc1a0f5c1d62f983b4e8",
+  "record_kind": "finding-disposition",
+  "source": {
+    "audit_run_id": "phase17-136c380-20260824t010203z",
+    "findings_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "id": "P17-AUD-001"
+  },
+  "verified_at": "236c380f0c5eea541190cc1a0f5c1d62f983b4e8",
   "verification_status": "Confirmed",
   "final_severity": "Major",
   "final_severity_rationale": "The mandatory durable binding is absent.",
   "closure_key": "session.runtime-binding",
   "family_key": "session.durability",
-  "lineage": {
-    "kind": "carried-forward-deferred",
-    "prior_occurrences": [],
-    "prior_disposition": "Deferred by registered source"
-  },
-  "decision": "D6",
-  "closure_batch": "B2",
+  "decision": "fix:persist-runtime-binding",
+  "closure_batch": "B1",
   "change_kind": "behavioral",
-  "red_before": {"command": "cargo test ...", "expected": "FAIL", "observed": "FAIL"},
-  "green_after": {"command": "cargo test ...", "expected": "PASS", "observed": "not-run"}
+  "changed_paths": ["crates/opi-agent/src/session.rs"],
+  "red_before": {
+    "command": "cargo test -p opi-agent --test session_contract binding",
+    "expected": "FAIL because the binding is absent",
+    "observed": "FAIL: binding was None"
+  },
+  "green_after": {
+    "command": "cargo test -p opi-agent --test session_contract binding",
+    "expected": "PASS",
+    "observed": "not-run"
+  }
 }
 ```
 
-## Field rules
+`source.audit_run_id` and `source.findings_sha256` match `audit.meta.json`
+exactly. `(audit_run_id, id)` identifies the source finding. Every current
+finding appears exactly once in a fix or explicit exclusion; extra or older
+source identities are invalid.
 
-- `source` is the immutable `(source_path, id)` from the producer artifact.
-- `verified_at` is the full committed HEAD used for remediation verification.
-- `verification_status` is `Confirmed`, `Partially confirmed`,
-  `Cannot confirm`, or `Refuted`.
-- `closure_key` names one falsifiable behavior that one root fix can close.
-- `family_key` connects adjacent paths without merging them into one fix.
-- `lineage.kind` is `new`, `recurrent-same-defect`,
-  `recurrent-adjacent-path`, `regression`, or `carried-forward-deferred`.
-- `decision` refers to the immutable remediation plan's decision record.
-- `closure_batch` groups only fixes that share one closure predicate and can be
-  reviewed independently.
-- `change_kind` is `behavioral`, `test-only`, `documentation`, or `metadata`.
-- Behavioral fixes require `red_before` and `green_after` records. The plan
-  stage observes red-before and records the expected green-after; the result
-  stage records the observed green-after. Other change kinds require either
-  `red_before` or
-  `red_before_not_applicable` with a concrete reason.
-- A plan-stage record uses `green_after.observed: "not-run"` and cannot claim a
-  `remediation_status`.
-- A `DRAFT-UNRESOLVED` record still assigns a defect-level `closure_key` and
-  `family_key`; these describe the falsifiable claim, not the chosen solution.
-  Use `decision: "pending:D<N>"`, `closure_batch: null`, and a `green_after`
-  whose command/expected fields name the pending decision when that decision
-  prevents a concrete check. If the decision also prevents a discriminating
-  red check, use the same pending form for `red_before` with
-  `observed: "not-run"`; a later decided round must replace the placeholder with
-  observed red-before before it can be ready. For a verified no-action
-  disposition, keep the claim keys, use `closure_batch: null`, and record
-  concrete red/green N/A reasons rather than omitting fields.
-- A result-stage record requires observed green-after and a
-  `remediation_status`: `Closed`, `Not closed`, `Deferred by registered source`,
-  `Returned to shaping`, `Info/No action`, `Refuted`, or `Cannot confirm`.
-  A remediate run may say `Closed`; only a later independent audit can declare
-  the Phase requirement satisfied.
+`closure_key` names one falsifiable behavior. `family_key` clusters adjacent
+findings only inside the current set. Historical `lineage`,
+`prior_occurrences`, and `prior_disposition` fields are forbidden.
 
-Validate records with:
+`verification_status` is `Confirmed`, `Partially confirmed`, `Cannot confirm`,
+or `Refuted`. `change_kind` is `behavioral`, `test-only`, `documentation`, or
+`metadata`. Behavioral changes require observed red-before. Non-behavioral
+changes require either `red_before` or a concrete
+`red_before_not_applicable` reason.
+
+At plan stage, `green_after.observed` is `not-run`, and no
+`remediation_status` is allowed. At result stage, green-after is observed and
+`remediation_status` is `Closed`, `Not closed`, `Deferred by registered
+source`, `Returned to shaping`, `Info/No action`, `Refuted`, or `Cannot
+confirm`.
+
+## Plan approval identity
+
+`remediation.plan.md` records `Audit run ID`, `Findings SHA-256`, `Remediation
+head`, the fixed disposition filename, status, and unresolved decisions. The
+validator computes:
 
 ```text
-python .agents/skills/_shared/scripts/validate_assurance_artifact.py dispositions <path>
+sha256(remediation.plan.md exact bytes + NUL + remediation.plan.dispositions.jsonl exact bytes)
 ```
+
+It prints `plan: PASS plan_sha256=<digest>`. Apply requires explicit user
+approval of the fixed plan path and that digest. Any byte change invalidates
+the approval.
+
+## Bounded incidental repair
+
+An apply run may add an incidental result record only when a recorded
+verification command exposes a new defect that blocks the approved batch:
+
+```json
+{
+  "record_kind": "incidental-repair",
+  "id": "I1",
+  "trigger_batch": "B1",
+  "blocking_check": "cargo test --workspace --all-targets",
+  "scope_rationale": "The collision blocks the approved B1 workspace gate.",
+  "guardrails": {
+    "required_for_green": true,
+    "within_causal_surface": true,
+    "changes_public_api": false,
+    "changes_durable_format": false,
+    "changes_dependency_graph": false,
+    "changes_spec_or_authority": false
+  },
+  "changed_paths": ["crates/opi-agent/src/worker.rs"],
+  "red_before": {
+    "command": "cargo test --workspace --all-targets",
+    "expected": "FAIL",
+    "observed": "FAIL: helper name collision"
+  },
+  "green_after": {
+    "command": "cargo test --workspace --all-targets",
+    "expected": "PASS",
+    "observed": "PASS"
+  },
+  "remediation_status": "Closed"
+}
+```
+
+All bounded incidental repair guardrails are literal. An incidental repair cannot change a public API,
+durable format, dependency graph, registered specification, authority boundary,
+Cargo manifest/lockfile, implementation ledger, or public schema. It needs its
+own observed FAIL/PASS. If any guardrail fails, stop and create a new plan.
+Non-blocking observations are reported but not fixed.
+
+`remediation.result.md` records the exact `Audit run ID`, `Findings SHA-256`,
+approved `Plan SHA-256`, and a JSON array in `Changed paths`. The array must
+equal the union of paths attributed by planned and accepted incidental result
+records. Narrative-only corrections fail validation.
+
+Validate with:
+
+```text
+python .agents/skills/_shared/scripts/validate_assurance_artifact.py dispositions docs/snapshots/phase<N>/assurance/remediation.plan.dispositions.jsonl
+python .agents/skills/_shared/scripts/validate_assurance_artifact.py plan docs/snapshots/phase<N>/assurance/remediation.plan.md
+python .agents/skills/_shared/scripts/validate_assurance_artifact.py result docs/snapshots/phase<N>/assurance/remediation.result.md
+```
+
+A later audit is admitted only after fixes and the complete active set are
+materialized by being committed together and the assurance directory is clean.

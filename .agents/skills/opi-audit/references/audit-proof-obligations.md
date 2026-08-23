@@ -1,89 +1,81 @@
-# Audit proof obligations
+# Audit Proof Obligations
 
-Use this reference to turn registered Phase requirements into falsifiable
-evidence obligations before reviewing implementation details.
+Turn the latest committed registered requirements into falsifiable evidence
+obligations before inspecting implementation.
 
-## Requirement matrix
+## Requirement records
 
-Create one row per mandatory requirement:
+Create one `audit.requirements.jsonl` record per independently decidable
+requirement using the shared audit-set contract. Seal these fields first:
 
-| Requirement | Source | Observable behavior | Production surfaces | Test/fixture evidence | Check | State |
-|---|---|---|---|---|---|---|
-| R1 | `<path:section>` | ... | ... | ... | ... | `met` / `partially-met` / `not-met` / `not-assessable` |
+- `audit_run_id`, requirement `id`, and `mandatory`;
+- exact criterion path, SHA-256, and citation;
+- observable behavior.
 
-Do not merge requirements merely because one change implemented them together.
-Every row must be decidable from cited evidence. `not-assessable` means the
-auditor could not obtain sufficient evidence, not that the requirement passes.
+Then populate `production_surfaces`, `test_evidence`, `checks`, `state`, and
+reciprocal `finding_ids` from current `audit_head` evidence. Do not merge
+requirements merely because one implementation change addressed them together.
+
+`not-assessable` means sufficient current evidence is unavailable or
+contaminated. It never means pass. Each non-met mandatory record must link a
+finding that explains the gap.
 
 ## Review axes
 
-Run these lenses against the complete current surfaces named by the matrix:
+Apply these lenses to the complete current surfaces named by the records:
 
 - **Standards**: repository rules, Rust correctness, dependency direction,
   failure behavior, public contract consistency, and documentation lockstep.
-- **Spec**: each registered requirement and observable acceptance behavior.
+- **Spec**: each latest committed registered requirement and its observable
+  acceptance behavior.
 - **Security/authority**: validation, permissions, process boundaries, secrets,
   durable inputs, and fail-closed behavior.
 - **Invariants/integration**: state transitions, adapters, persistence,
   protocol/schema consumers, CLI/TUI/model-visible output, and recovery paths.
-- **Test quality**: positive, invalid-input, boundary, integration, fixture, and
-  conformance coverage at the owning seam.
-- **Residuals**: placeholders, compatibility remnants, dead branches, duplicated
-  mechanisms, unused public surface, and unresolved TODOs in Phase scope.
+- **Test quality**: positive, invalid-input, boundary, integration, fixture,
+  and conformance coverage at the owning seam.
+- **Residuals**: placeholders, compatibility remnants, dead branches,
+  duplicated mechanisms, unused public surface, and unresolved TODOs in scope.
 
 ## Test anti-vacuity
 
-For every test used as acceptance evidence, establish:
+For every test used as acceptance evidence, establish that:
 
-1. the assertion observes the required behavior rather than only success or
-   object construction;
-2. the test reaches the production path, not a parallel helper or mock-only
-   implementation;
-3. its input distinguishes the required behavior from the previous/default
-   behavior;
-4. invalid or boundary cases exercise the claimed validation/failure boundary;
-5. fixtures and snapshots contain the field or state whose preservation is
-   claimed;
-6. skipped, ignored, platform-gated, or feature-gated tests are not counted as
-   universal evidence without a stated limitation.
+1. its assertion observes the required behavior rather than only success or
+   construction;
+2. it reaches the production path, not a parallel helper or mock-only path;
+3. its input distinguishes required behavior from previous/default behavior;
+4. invalid and boundary cases exercise the claimed failure boundary;
+5. fixtures and snapshots contain the field or state claimed as preserved;
+6. skipped, ignored, platform-gated, or feature-gated tests are not treated as
+   universal evidence without a limitation.
 
-A command that passes without a discriminating assertion is weak evidence and
-cannot by itself mark a mandatory requirement `met`.
+A passing command without a discriminating assertion is insufficient to mark a
+mandatory requirement `met`.
 
 ## Blocker/Major refutation
 
-Before publishing a Blocker or Major, attempt to refute it:
+Before publishing a Blocker or Major:
 
-- search every production caller and alternate implementation path;
-- check exact locked dependency behavior when the claim depends on it;
-- inspect tests and fixtures for counterexamples;
+- search current production callers and alternate paths;
+- verify exact locked dependency behavior when relevant;
+- inspect current tests and fixtures for counterexamples;
 - reproduce the defect or show a static invariant violation;
-- distinguish an absent requirement from an intentionally registered deferral.
+- distinguish a missing requirement from a currently registered deferral.
 
-Record the strongest counter-evidence and why it fails to refute the claim.
-If the claim cannot survive this Blocker/Major refutation, downgrade, rewrite,
-or remove it.
+Record the strongest current counter-evidence and why it does not refute the
+claim. Downgrade, rewrite, or remove claims that do not survive this check.
+Historical audit conclusions are not counter-evidence.
 
-## Minimum-change conformance matrix
+## Minimum-change conformance
 
-Audit every admitted implementation task at current committed `audit_head`.
-The matrix is requirement evidence, not a new finding axis.
+Audit every admitted implementation task at current `audit_head`. Verify the
+recorded `reuse_search`, `surface_necessity`, and `simplification_ceiling`
+against current code. For introduced public seams, record
+`production_consumers`, `nonproduction_consumers`, `net_deletion`, and
+`residual_glue`.
 
-| Task | Scenario/source | Reuse | Placement | Surface | Production slice | Ceiling/trigger | Status |
-|---|---|---|---|---|---|---|---|
-
-Verify the recorded `reuse_search`, `surface_necessity`, and
-`simplification_ceiling` against current code. For any introduced public seam,
-record `production_consumers`, `nonproduction_consumers`, `net_deletion`, and
-`residual_glue`. Use `conforming`, `drifted`, `triggered`, `not-recorded`, or
-`not-assessable` as status.
-
-- `conforming`: evidence still supports the recorded minimum-change decision.
-- `drifted`: current code no longer matches the trace.
-- `triggered`: a recorded revisit condition now holds.
-- `not-recorded`: legacy work has no required trace; inspect current evidence
-  directly and do not invent historical intent.
-- `not-assessable`: required evidence is unavailable or contaminated.
-
-Route any actionable defect through the existing `standards`, `spec`,
-`security`, `test-quality`, `invariants`, `integration`, or `residuals` axis.
+Use `conforming`, `drifted`, `triggered`, `not-recorded`, or `not-assessable`.
+`not-recorded` requires direct current inspection; never invent historical
+intent. Route actionable defects through the normal finding axes instead of
+creating a separate historical axis.

@@ -1,154 +1,171 @@
 ---
 name: opi-remediate
 disable-model-invocation: true
-description: Verify immutable assurance findings, plan closure, or apply an approved remediation plan.
+description: Verify and remediate only the current Opi active audit set, binding plan/apply to exact run and content digests. Use only when the user explicitly invokes opi-remediate.
 ---
 
 # Opi Remediate
 
-Turn normalized audit/eval findings into independently reviewable closure
-evidence. The workflow preserves source identity, distinguishes recurring
-defects from new findings, and separates planning authority from execution.
+Turn the current active audit findings into independently reviewable closure
+evidence. The workflow has no historical ingestion or lineage pass: one audit
+run, one findings digest, one fixed plan, and one fixed result.
 
 ## Invocation contract
 
-Require `mode=plan | apply`.
+Require one of:
 
-For `mode=plan`, require `phase=<N>` and one or more `sources=<path,...>` unless
-the Phase snapshot unambiguously identifies them. Optional `scope=<area>` may
-order verification but cannot hide a source finding.
+```text
+$opi-remediate mode=plan phase=<N>
+$opi-remediate mode=apply phase=<N> plan_sha256=<64 lowercase hex>
+```
 
-For `mode=apply`, require `plan=<immutable-plan-path>`. Do not infer approval
-from the existence of a plan, a previous conversation, or blanket consent.
+The source is always:
 
-Outputs under `docs/snapshots/phase<N>/` are immutable:
+```text
+docs/snapshots/phase<N>/assurance/audit.meta.json
+docs/snapshots/phase<N>/assurance/audit.findings.jsonl
+```
 
-- `remediation.<head7>.<round>.plan.md`
-- `remediation.<head7>.<round>.plan.dispositions.jsonl`
-- after application or a verified no-change outcome,
-  `remediation.<head7>.<round>.result.md` and
-  `remediation.<head7>.<round>.result.dispositions.jsonl`
+Do not accept `sources=`, a historical default, an eval artifact, a round, or
+an alternate plan path. Apply approval is the current explicit invocation plus
+the exact validator-emitted plan digest; blanket or earlier approval is not
+sufficient.
 
-`<head7>` is the first seven characters of the full remediation head. Derive
-`<round>` as the next free `rN` among immutable artifacts for that Phase and
-head, starting at `r1`; never fill a deleted or historical gap.
+The only outputs are:
 
-Never overwrite source findings, a prior plan, dispositions, or result.
+```text
+docs/snapshots/phase<N>/assurance/remediation.plan.md
+docs/snapshots/phase<N>/assurance/remediation.plan.dispositions.jsonl
+docs/snapshots/phase<N>/assurance/remediation.result.md
+docs/snapshots/phase<N>/assurance/remediation.result.dispositions.jsonl
+```
+
+Git history preserves superseded sets after materialization. Do not create
+timestamped siblings or a separate remediation ledger.
 
 ## Shared contracts
 
 Always read:
 
+- `../_shared/references/audit-set-contract.md`
 - `../_shared/references/finding-contract.md`
 - `../_shared/references/remediation-disposition-contract.md`
 - `../_shared/references/change-scope-and-check-selection.md`
 - `references/cross-reference-matrix.md`
 
+Use the change-scope contract only to inventory normalized findings and derived layers
+and to select the verification union; it does not expand remediation
+ownership beyond the current active audit set.
+
 In `mode=plan`, also read `references/remediation-plan-template.md`. Read
-`references/execution-protocol.md` only for `mode=apply`; this keeps execution
-mechanics out of the planning context.
+`references/execution-protocol.md` only in `mode=apply`.
+
+## History boundary
+
+Read the current four audit files only. Never read, search, compare, or import:
+
+- earlier audit/remediation files or their Git history;
+- prior fixed plan/result content from another run;
+- eval findings as remediation sources;
+- conclusions from a previous task or scratch ledger.
+
+`closure_key` and `family_key` group findings inside the current set only.
+Historical `lineage`, `prior_occurrences`, recurrence, regression, and consensus
+classification are forbidden.
 
 ## `mode=plan`
 
-### 1. Freeze the verification endpoint
+### 1. Admit exactly one current audit set
 
-Record the full committed remediation head and inventory committed, staged,
-unstaged, and untracked paths. The shared change-scope reference selects the
-verification union only; normalized findings and derived layers own remediation
-scope. Verify committed evidence. Isolate overlapping dirty paths with
-`git show <head>:<path>` or stop when that cannot be done safely.
+Run `audit-set` against the fixed directory. Read `audit_run_id` and
+`findings_sha256` from validated `audit.meta.json`; recompute the findings hash
+and refuse on mismatch. These values identify every plan disposition source.
 
-Run all plan-stage checks from an isolated checkout of `remediation_head`.
-Write only the immutable plan artifacts to the
-original worktree. Apply mode operates in the original worktree only after its
-separate exact-plan and dirty-baseline admission checks.
+Record the full committed `remediation_head` and staged, unstaged, and untracked
+path inventory. Inspect committed code and run plan-stage checks in a unique
+temporary `git archive` export of `remediation_head`; do not use a Git worktree.
+The live worktree receives only the fixed plan outputs.
 
-Reject mutable source names for new artifacts. Legacy narrative findings may
-be ingested only as degraded input with their missing fields recorded.
+If prior fixed remediation files have uncommitted path state, refuse rather
+than overwrite them. A tracked clean prior remediation group may be replaced
+without reading its content because Git preserves it.
 
-### 2. Verify every source finding
+### 2. Verify every current finding
 
-Preserve the source `(source_path, id)`, severity, evidence, model identity, and
-independence. Against current committed code and tests, assign `Confirmed`,
-`Partially confirmed`, `Cannot confirm`, or `Refuted`. A final severity change
-requires evidence and rationale; it never rewrites the source record.
+Preserve the source run ID, findings digest, finding ID, evidence, model
+identity, and reported severity. Against current committed code/tests, assign
+`Confirmed`, `Partially confirmed`, `Cannot confirm`, or `Refuted`. Any final
+severity change requires current evidence and rationale.
 
-Compare current records with prior immutable result dispositions:
-
-```text
-python .agents/skills/_shared/scripts/compare_finding_lineage.py --current <verified-findings.jsonl> --history <prior-result-dispositions.jsonl>...
-```
-
-Classify each as `new`, `recurrent-same-defect`,
-`recurrent-adjacent-path`, `regression`, or `carried-forward-deferred`.
-Recurrence is based on closure identity and prior disposition, not similar prose.
+Give every finding a falsifiable `closure_key` and `family_key`. Resolve
+conflicting current claims through evidence, not voting. Every current finding
+must appear exactly once in a fix or explicit exclusion; no older or extra
+source identity is admissible.
 
 ### 3. Derive closure batches and decisions
 
-Give each actionable finding a falsifiable `closure_key` and broader
-`family_key`. Cluster findings into one closure batch only when one root change
-and one closure predicate prove all members closed. Similar paths, themes, or
-recommendations are insufficient.
+Cluster findings only when one root change and one closure predicate prove all
+members closed. Shared files, family keys, wording, or severity are not enough.
 
 Record the exact decision for every confirmed or partially confirmed finding.
-If the change requires new product meaning, authority, scope, or a contested
-tradeoff, list the unresolved decision and stop at `DRAFT-UNRESOLVED`. Never
-turn ambiguity into an implementation choice.
+When a change needs new product meaning, public contract, authority, scope, or
+a contested trade-off, record the decision and stop at `DRAFT-UNRESOLVED`.
+Never infer product authority from an audit finding.
 
-For each behavioral fix, define and observe a red-before check before any
-production edit. If current behavior cannot make the check fail, revise the
-claim or explain why the change is non-behavioral. Define the corresponding
-green-after check and the verification union. When an unresolved product
-decision prevents even defining the discriminating behavior, a draft may mark
-both checks `pending:D<N>` with `observed: not-run`; that artifact cannot become
-`READY-FOR-APPLY`. After the decision, create a new round and observe red-before.
+For each behavioral fix, observe a discriminating red-before before production
+edits and define its green-after. If the behavior cannot be made red, revise or
+refute the claim. A draft may use `pending:D<N>` only while the named unresolved
+decision prevents a concrete check; it cannot be ready for apply.
 
-### 4. Seal the plan and dispositions
+### 4. Seal and validate the fixed plan
 
-Create the immutable plan and plan-stage dispositions together. Use
-`READY-FOR-APPLY` only when every source has a disposition, every actionable
-item has a decision and closure proof, all required red-before observations are
-recorded, and `Unresolved decisions` is `none`.
+Write the fixed plan and plan dispositions together. Use
+`READY-FOR-APPLY` only when every current finding has one disposition, every
+actionable item has a decision and closure proof, all required red-before
+observations exist, and unresolved decisions are `none`.
 
-Validate:
+Run:
 
 ```text
-python .agents/skills/_shared/scripts/validate_assurance_artifact.py dispositions <path>
-python .agents/skills/_shared/scripts/validate_assurance_artifact.py plan <path>
+python .agents/skills/_shared/scripts/validate_assurance_artifact.py dispositions docs/snapshots/phase<N>/assurance/remediation.plan.dispositions.jsonl
+python .agents/skills/_shared/scripts/validate_assurance_artifact.py plan docs/snapshots/phase<N>/assurance/remediation.plan.md
 ```
 
-If all findings are refuted, informational, or already closed, emit the
-plan-stage dispositions plus an immutable result and result-stage dispositions,
-then stop; do not fabricate a fix item or request apply approval.
+The second command emits `plan_sha256`. Present status, current finding
+coverage, closure batches, unresolved decisions, exact checks, fixed paths, and
+the digest. Do not apply until the user invokes apply with that digest.
 
-Present the user with the plan status, verified lineage summary, closure
-batches, unresolved decisions, exact verification commands, and output paths.
+If all findings are refuted, Info/no-action, deferred by a registered current
+source, or returned to shaping, write and validate the fixed no-change result;
+do not fabricate a fix.
 
 ## `mode=apply`
 
 Follow `references/execution-protocol.md`.
 
-Refuse execution unless the named plan is `READY-FOR-APPLY`, its validator
-passes, the current committed HEAD matches its exact remediation head, no
-unresolved decision remains, and the user explicitly approved that exact plan.
+Validate the fixed plan and compare its emitted digest to the invocation
+exactly. Refuse unless status is `READY-FOR-APPLY`, current committed HEAD is
+the exact remediation head, unresolved decisions are none, and dirty changes do
+not overlap owned paths.
 
-Apply one closure batch at a time. Preserve the dirty-worktree baseline, make
-only planned changes, run the recorded green-after check and deduplicated
-verification union, and stop on unexplained failure or endpoint drift. Write a
-new immutable result and result-stage dispositions; do not mutate the plan or
-its plan-stage dispositions.
+Apply one closure batch at a time. Make planned changes only, except for the
+bounded verification-blocking incidental repair defined in the shared
+disposition contract. Record every actual changed path in a planned or
+incidental result disposition; narrative-only corrections are invalid.
 
-After all batches pass, stop for the user's normal commit/materialization gate.
-Once the fixes and immutable result are committed, request a fresh independent
-`$opi-audit` invocation at that new committed endpoint. `opi-remediate` does not
-silently invoke another explicit-only Opi skill. Remediation may report a batch
-`Closed`; only that later audit may establish Phase conformance.
+Validate the fixed result with `validate_assurance_artifact.py result`.
+Remediation may report a batch `Closed`, but cannot
+declare the Phase conformant.
+
+After success, stop at materialization. A later audit is allowed only after the
+fixes and complete active assurance set are committed together, the assurance
+directory is clean, required external evidence is resolved, and any owning
+workflow return is complete. Never commit or invoke `opi-audit` automatically.
 
 ## Completion criterion
 
-Planning completes when every source finding has a validated immutable
-disposition and the outcome is either a valid `DRAFT-UNRESOLVED`, a valid
-`READY-FOR-APPLY`, or a verified no-change result. Application completes only
-when every approved closure batch passes its checks, the immutable result is
-written, carried-in changes remain untouched, and the fresh audit requirement
-is reported or fulfilled.
+Planning completes with a validated fixed `DRAFT-UNRESOLVED`, validated fixed
+`READY-FOR-APPLY` plus digest, or validated no-change result. Apply completes
+only when every planned batch and accepted incidental repair has red/green
+evidence, result coverage is exact, carried-in work is untouched, and the
+materialization requirement is explicit.

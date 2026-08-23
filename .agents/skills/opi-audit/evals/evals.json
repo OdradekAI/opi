@@ -3,32 +3,57 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Use $opi-audit phase=17. The worktree contains two old audit reports plus an uncommitted remediation-plan edit. Before doing any writes, explain the exact evidence endpoint, history-isolation order, and new artifact names you will use.",
-      "expected_output": "A sealed-audit trace that pins committed HEAD, treats dirty files as contamination rather than acceptance evidence, builds current proof obligations before reading old conclusions, and chooses immutable report/findings siblings.",
+      "prompt": "Use $opi-audit phase=17. A previously committed active assurance set exists and is clean. Explain exactly what you inspect before replacing it and whether you read its report or findings.",
+      "expected_output": "The audit runs rotation path-state admission, never reads the old set, builds a current-spec audit in temporary staging, and replaces the four fixed audit paths only after validation.",
+      "files": [],
       "expectations": [
-        "Inventories staged, unstaged, and untracked paths separately and excludes them from committed audit evidence.",
-        "After sealing current candidate findings, compares prior immutable audits only for recurrence or coverage gaps without changing current findings.",
-        "Names both audit.<model>.<head7>.<run-id>.md and audit.<model>.<head7>.<run-id>.findings.jsonl without overwriting old reports."
+        "Runs validate_assurance_artifact.py rotation against docs/snapshots/phase17 before reading requirements.",
+        "States that old audit/remediation content and Git history are not read or compared.",
+        "Names the four fixed audit outputs under docs/snapshots/phase17/assurance and removes fixed remediation siblings only after staged validation."
       ]
     },
     {
       "id": 2,
-      "prompt": "Use $opi-audit phase=17. All tests pass and no Major findings remain, but one mandatory registered requirement is only partially implemented. State the requirement state and final audit verdict, with the deciding rule.",
-      "expected_output": "The requirement is partially-met and the verdict is FAIL because mandatory conformance is independent of finding severity or passing but non-discriminating tests.",
+      "prompt": "Use $opi-audit phase=17. Phase 17 exited against an older supplemental spec hash, but that registered spec now has a newer committed version at HEAD. Which version is authoritative and what hashes enter audit.meta.json?",
+      "expected_output": "The latest committed registered source is authoritative; the old stored hash is mismatch evidence only, and exact current bytes are hashed into the latest-committed-spec baseline.",
+      "files": [],
       "expectations": [
-        "Assigns partially-met to the mandatory requirement.",
-        "Returns FAIL rather than PASS or PASS-WITH-FINDINGS.",
-        "Explains that severity and test command success do not independently determine conformance."
+        "Uses the supplemental spec contents committed at audit_head rather than the older stored hash.",
+        "Records baseline_policy latest-committed-spec and SHA-256 for root state, Phase state, docs/opi-spec.md, and registered supplemental sources.",
+        "Does not consult prior audit conclusions to interpret the mismatch."
       ]
     },
     {
       "id": 3,
-      "prompt": "Use $opi-audit phase=17. A candidate Major says a durable field is missing, while a helper test passes after only checking object construction. Describe the proof needed before publishing the finding.",
-      "expected_output": "An anti-vacuity review of the test and a Blocker/Major refutation attempt across production consumers, durable formats, counter-evidence, and a discriminating reproduction.",
+      "prompt": "Use $opi-audit phase=17. The requirement mandates current-head Linux, macOS, and Windows CI evidence, but no run exists for audit_head. Other local tests pass. State the requirement state and verdict.",
+      "expected_output": "The mandatory requirement is not-assessable and the audit verdict is FAIL; local passes cannot substitute missing required platform evidence.",
+      "files": [],
       "expectations": [
-        "Applies the anti-vacuity rule and requires an assertion that fails when the durable field is absent.",
-        "Traces the field through the production and durable paths named by the requirement.",
-        "Attempts and records counter-evidence before retaining Major severity."
+        "Assigns not-assessable to the mandatory requirement.",
+        "Returns FAIL rather than PASS-WITH-FINDINGS.",
+        "Creates a reciprocal blocking finding and does not let passing local tests override the missing evidence."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Use $opi-audit phase=17. Your staged audit.findings.jsonl is malformed and the audit-set validator rejects it. What is published and what verdict do you report?",
+      "expected_output": "Nothing is copied into the live Phase; the prior active set remains unchanged and the run reports AUDIT-INCOMPLETE without a PASS/FAIL verdict.",
+      "files": [],
+      "expectations": [
+        "Reports AUDIT-INCOMPLETE and no PASS, PASS-WITH-FINDINGS, or FAIL verdict.",
+        "Leaves the previously committed active set unchanged.",
+        "Repairs or discards temporary staging rather than publishing a partial set."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Use $opi-audit phase=17. docs/snapshots/phase17 still has audit.codex.old.md, tracked at HEAD but deleted only in the live worktree. May the new audit begin?",
+      "expected_output": "Rotation refuses because the legacy path remains in HEAD/Git status; cleanup must be materialized before requirements or old report contents are read.",
+      "files": [],
+      "expectations": [
+        "Refuses at rotation admission before reading requirements.",
+        "Explains that an uncommitted deletion does not satisfy materialization.",
+        "Does not open the legacy report to decide whether to proceed."
       ]
     }
   ]

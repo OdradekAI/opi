@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import subprocess
 import sys
@@ -17,20 +19,14 @@ VALIDATOR = (
     / "scripts"
     / "validate_assurance_artifact.py"
 )
-LINEAGE = (
-    ROOT
-    / ".agents"
-    / "skills"
-    / "_shared"
-    / "scripts"
-    / "compare_finding_lineage.py"
-)
-HEAD = "136c380f0c5eea541190cc1a0f5c1d62f983b4e8"
+AUDIT_HEAD = "136c380f0c5eea541190cc1a0f5c1d62f983b4e8"
+REMEDIATION_HEAD = "236c380f0c5eea541190cc1a0f5c1d62f983b4e8"
+RUN_ID = "phase17-136c380-20260824t010203z"
 
 
-def run_script(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def run_validator(kind: str, path: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(script), *args],
+        [sys.executable, str(VALIDATOR), kind, str(path)],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -38,19 +34,81 @@ def run_script(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def finding_record() -> dict[str, object]:
+def run_git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def write_json(path: Path, value: dict[str, object]) -> None:
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def write_jsonl(path: Path, records: list[dict[str, object]]) -> None:
+    path.write_text(
+        "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+
+def requirement_record(
+    *,
+    requirement_id: str = "P17-A1",
+    mandatory: bool = True,
+    state: str = "met",
+    finding_ids: list[str] | None = None,
+) -> dict[str, object]:
     return {
-        "id": "P17-CODEX-SPEC-001",
+        "audit_run_id": RUN_ID,
+        "id": requirement_id,
+        "mandatory": mandatory,
+        "criterion_source": {
+            "path": "docs/opi-spec.md",
+            "sha256": "a" * 64,
+            "citation": "P17-A1",
+        },
+        "observable_behavior": "The registered behavior is present.",
+        "production_surfaces": ["crates/opi-agent/src/lib.rs"],
+        "test_evidence": ["phase17_api_audit"],
+        "checks": [
+            {
+                "command": "cargo test -p opi-agent phase17_api_audit",
+                "observed": "PASS",
+            }
+        ],
+        "state": state,
+        "finding_ids": finding_ids or [],
+    }
+
+
+def finding_record(
+    *,
+    finding_id: str = "P17-AUD-001",
+    requirement_ids: list[str] | None = None,
+    severity: str = "Major",
+    conformance_effect: str = "blocks",
+) -> dict[str, object]:
+    return {
+        "audit_run_id": RUN_ID,
+        "id": finding_id,
         "source_kind": "audit",
-        "source_path": (
-            "docs/snapshots/phase17/"
-            "audit.codex.136c380.run1.md"
-        ),
+        "source_path": "docs/snapshots/phase17/assurance/audit.md",
         "source_model": "codex",
-        "observed_at": HEAD,
+        "observed_at": AUDIT_HEAD,
         "independence": "fresh-context-same-family",
         "axis": "spec",
-        "severity": "Major",
+        "severity": severity,
+        "conformance_effect": conformance_effect,
         "title": "Durable session binding is absent",
         "claim": "New sessions do not persist the required runtime binding.",
         "evidence": [
@@ -59,6 +117,7 @@ def finding_record() -> dict[str, object]:
                 "detail": "The serialized header has no runtime binding.",
             }
         ],
+        "requirement_ids": requirement_ids or ["P17-A1"],
         "criterion_source": "docs/opi-spec.md#INV-007",
         "reproduction": ["cargo test -p opi-agent --test session_contract"],
         "confidence": "high",
@@ -67,34 +126,28 @@ def finding_record() -> dict[str, object]:
 
 
 def disposition_record(
+    findings_sha256: str,
     *,
-    closure_key: str = "session.runtime-binding",
-    family_key: str = "session.durability",
-    lineage_kind: str = "new",
-    prior_disposition: str = "none",
+    finding_id: str = "P17-AUD-001",
+    audit_run_id: str = RUN_ID,
 ) -> dict[str, object]:
     return {
+        "record_kind": "finding-disposition",
         "source": {
-            "source_path": (
-                "docs/snapshots/phase17/"
-                "audit.codex.136c380.run1.md"
-            ),
-            "id": "P17-CODEX-SPEC-001",
+            "audit_run_id": audit_run_id,
+            "findings_sha256": findings_sha256,
+            "id": finding_id,
         },
-        "verified_at": HEAD,
+        "verified_at": REMEDIATION_HEAD,
         "verification_status": "Confirmed",
         "final_severity": "Major",
         "final_severity_rationale": "The mandatory durable binding is absent.",
-        "closure_key": closure_key,
-        "family_key": family_key,
-        "lineage": {
-            "kind": lineage_kind,
-            "prior_occurrences": [],
-            "prior_disposition": prior_disposition,
-        },
-        "decision": "D6",
-        "closure_batch": "B2",
+        "closure_key": "session.runtime-binding",
+        "family_key": "session.durability",
+        "decision": "fix:persist-runtime-binding",
+        "closure_batch": "B1",
         "change_kind": "behavioral",
+        "changed_paths": ["crates/opi-agent/src/session.rs"],
         "red_before": {
             "command": "cargo test -p opi-agent --test session_contract binding",
             "expected": "FAIL because the binding is absent",
@@ -103,709 +156,591 @@ def disposition_record(
         "green_after": {
             "command": "cargo test -p opi-agent --test session_contract binding",
             "expected": "PASS",
-            "observed": "PASS",
+            "observed": "not-run",
         },
     }
 
 
-class AssuranceArtifactValidatorTests(unittest.TestCase):
+def incidental_record(*, changed_path: str) -> dict[str, object]:
+    return {
+        "record_kind": "incidental-repair",
+        "id": "I1",
+        "trigger_batch": "B1",
+        "blocking_check": "cargo test --workspace --all-targets",
+        "scope_rationale": "The collision blocks the approved B1 workspace gate.",
+        "guardrails": {
+            "required_for_green": True,
+            "within_causal_surface": True,
+            "changes_public_api": False,
+            "changes_durable_format": False,
+            "changes_dependency_graph": False,
+            "changes_spec_or_authority": False,
+        },
+        "changed_paths": [changed_path],
+        "red_before": {
+            "command": "cargo test --workspace --all-targets",
+            "expected": "FAIL",
+            "observed": "FAIL: helper name collision",
+        },
+        "green_after": {
+            "command": "cargo test --workspace --all-targets",
+            "expected": "PASS",
+            "observed": "PASS",
+        },
+        "remediation_status": "Closed",
+    }
+
+
+class AssuranceFixture(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        self.phase_dir = self.root / "docs" / "snapshots" / "phase17"
+        self.assurance_dir = self.phase_dir / "assurance"
+        self.assurance_dir.mkdir(parents=True)
 
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def write_jsonl(self, name: str, records: list[dict[str, object]]) -> Path:
-        path = self.root / name
-        path.write_text(
-            "".join(json.dumps(record) + "\n" for record in records),
+    def write_audit_set(
+        self,
+        *,
+        requirements: list[dict[str, object]] | None = None,
+        findings: list[dict[str, object]] | None = None,
+        verdict: str | None = None,
+    ) -> dict[str, Path]:
+        requirement_records = requirements or [requirement_record()]
+        finding_records = findings or []
+        requirements_path = self.assurance_dir / "audit.requirements.jsonl"
+        findings_path = self.assurance_dir / "audit.findings.jsonl"
+        report_path = self.assurance_dir / "audit.md"
+        meta_path = self.assurance_dir / "audit.meta.json"
+        write_jsonl(requirements_path, requirement_records)
+        write_jsonl(findings_path, finding_records)
+        derived = verdict
+        if derived is None:
+            if any(
+                record.get("mandatory") and record.get("state") != "met"
+                for record in requirement_records
+            ):
+                derived = "FAIL"
+            elif any(record.get("severity") != "Info" for record in finding_records):
+                derived = "PASS-WITH-FINDINGS"
+            else:
+                derived = "PASS"
+        meta = {
+            "schema_version": 1,
+            "audit_run_id": RUN_ID,
+            "phase": 17,
+            "audit_head": AUDIT_HEAD,
+            "reviewer_model": "codex",
+            "independence": "fresh-context-same-family",
+            "baseline_policy": "latest-committed-spec",
+            "baseline_sources": [
+                {"path": ".opi-impl-state.json", "sha256": "b" * 64},
+                {
+                    "path": "docs/snapshots/phase17/opi-impl-state.json",
+                    "sha256": "c" * 64,
+                },
+                {"path": "docs/opi-spec.md", "sha256": "d" * 64},
+            ],
+            "requirements_sha256": sha256(requirements_path),
+            "findings_sha256": sha256(findings_path),
+            "verdict": derived,
+        }
+        write_json(meta_path, meta)
+        report_path.write_text(
+            "# Phase 17 Audit\n\n"
+            f"**Audit run ID**: `{RUN_ID}`\n"
+            f"**Audit head**: `{AUDIT_HEAD}`\n"
+            f"**Verdict**: {derived}\n",
             encoding="utf-8",
         )
-        return path
+        return {
+            "meta": meta_path,
+            "requirements": requirements_path,
+            "findings": findings_path,
+            "report": report_path,
+        }
 
-    def test_valid_immutable_finding_artifact_passes(self) -> None:
-        path = self.write_jsonl(
-            "audit.codex.136c380.run1.findings.jsonl",
-            [finding_record()],
+    def write_plan(
+        self,
+        *,
+        disposition: dict[str, object] | None = None,
+        status: str = "READY-FOR-APPLY",
+    ) -> tuple[Path, Path]:
+        meta = json.loads(
+            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
         )
-        (self.root / "audit.codex.136c380.run1.md").write_text(
-            "# Audit\n",
+        record = disposition or disposition_record(meta["findings_sha256"])
+        disposition_path = self.assurance_dir / "remediation.plan.dispositions.jsonl"
+        plan_path = self.assurance_dir / "remediation.plan.md"
+        write_jsonl(disposition_path, [record])
+        plan_path.write_text(
+            "# Phase 17 Remediation Plan\n\n"
+            f"**Status**: {status}\n"
+            f"**Audit run ID**: `{meta['audit_run_id']}`\n"
+            f"**Findings SHA-256**: `{meta['findings_sha256']}`\n"
+            f"**Remediation head**: `{REMEDIATION_HEAD}`\n"
+            "**Disposition artifact**: `remediation.plan.dispositions.jsonl`\n"
+            "**Unresolved decisions**: none\n\n"
+            "Source finding: P17-AUD-001\n\n"
+            "#### Fix B1.1: Persist the runtime binding\n\n"
+            "- **Closure predicate**: reconstructed sessions retain the binding\n"
+            "- **Red-before**: `cargo test binding` -> FAIL\n"
+            "- **Green-after**: `cargo test binding` -> PASS\n",
             encoding="utf-8",
         )
+        return plan_path, disposition_path
 
-        result = run_script(VALIDATOR, "findings", str(path))
+    def write_result(
+        self,
+        plan_path: Path,
+        plan_disposition_path: Path,
+        *,
+        incidentals: list[dict[str, object]] | None = None,
+        reported_paths: list[str] | None = None,
+    ) -> tuple[Path, Path]:
+        plan_records = [
+            json.loads(line)
+            for line in plan_disposition_path.read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+        result_records = copy.deepcopy(plan_records)
+        for record in result_records:
+            record["green_after"]["observed"] = "PASS"
+            record["remediation_status"] = "Closed"
+        result_records.extend(incidentals or [])
+        disposition_path = self.assurance_dir / "remediation.result.dispositions.jsonl"
+        result_path = self.assurance_dir / "remediation.result.md"
+        write_jsonl(disposition_path, result_records)
+        paths = reported_paths
+        if paths is None:
+            paths = sorted(
+                {
+                    changed_path
+                    for record in result_records
+                    for changed_path in record.get("changed_paths", [])
+                }
+            )
+        digest = hashlib.sha256()
+        digest.update(plan_path.read_bytes())
+        digest.update(b"\0")
+        digest.update(plan_disposition_path.read_bytes())
+        meta = json.loads(
+            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
+        )
+        result_path.write_text(
+            "# Phase 17 Remediation Result\n\n"
+            "**Status**: COMPLETE\n"
+            f"**Audit run ID**: `{meta['audit_run_id']}`\n"
+            f"**Findings SHA-256**: `{meta['findings_sha256']}`\n"
+            f"**Plan SHA-256**: `{digest.hexdigest()}`\n"
+            f"**Changed paths**: {json.dumps(paths)}\n",
+            encoding="utf-8",
+        )
+        return result_path, disposition_path
+
+
+class AuditSetValidatorTests(AssuranceFixture):
+    def test_current_audit_set_passes_when_meta_digests_and_verdict_match(self) -> None:
+        self.write_audit_set()
+
+        result = run_validator("audit-set", self.assurance_dir)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("findings: PASS", result.stdout)
+        self.assertIn("audit-set: PASS", result.stdout)
 
-    def test_empty_immutable_finding_artifact_represents_no_findings(self) -> None:
-        path = self.write_jsonl(
-            "audit.codex.136c380.run1.findings.jsonl",
-            [],
+    def test_fail_is_required_when_one_mandatory_requirement_is_not_assessable(
+        self,
+    ) -> None:
+        requirement = requirement_record(
+            state="not-assessable",
+            finding_ids=["P17-AUD-001"],
         )
-        (self.root / "audit.codex.136c380.run1.md").write_text(
-            "# Audit\n",
-            encoding="utf-8",
+        finding = finding_record()
+        self.write_audit_set(
+            requirements=[requirement],
+            findings=[finding],
+            verdict="PASS-WITH-FINDINGS",
         )
 
-        result = run_script(VALIDATOR, "findings", str(path))
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("verdict must be FAIL", result.stderr)
+
+    def test_pass_with_findings_allows_a_major_optional_nonconformance(self) -> None:
+        mandatory = requirement_record()
+        optional = requirement_record(
+            requirement_id="P17-O1",
+            mandatory=False,
+            state="not-met",
+            finding_ids=["P17-AUD-001"],
+        )
+        finding = finding_record(requirement_ids=["P17-O1"])
+        self.write_audit_set(requirements=[mandatory, optional], findings=[finding])
+
+        result = run_validator("audit-set", self.assurance_dir)
 
         self.assertEqual(0, result.returncode, result.stderr)
 
-    def test_finding_sidecar_requires_immutable_report_sibling(self) -> None:
-        path = self.write_jsonl(
-            "audit.codex.136c380.run1.findings.jsonl",
-            [finding_record()],
+    def test_finding_requirement_ids_must_exist_in_requirement_sidecar(self) -> None:
+        self.write_audit_set(
+            findings=[
+                finding_record(
+                    requirement_ids=["P17-MISSING"],
+                    severity="Minor",
+                    conformance_effect="advisory",
+                )
+            ],
+            verdict="PASS-WITH-FINDINGS",
         )
 
-        result = run_script(VALIDATOR, "findings", str(path))
+        result = run_validator("audit-set", self.assurance_dir)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("missing immutable report sibling", result.stderr)
+        self.assertIn("unknown requirement P17-MISSING", result.stderr)
 
-    def test_mutable_finding_artifact_name_is_rejected(self) -> None:
-        path = self.write_jsonl("audit.codex.findings.jsonl", [finding_record()])
+    def test_every_finding_and_requirement_must_share_audit_run_id(self) -> None:
+        requirement = requirement_record(
+            state="not-met",
+            finding_ids=["P17-AUD-001"],
+        )
+        finding = finding_record()
+        finding["audit_run_id"] = "phase17-older-run"
+        self.write_audit_set(requirements=[requirement], findings=[finding])
 
-        result = run_script(VALIDATOR, "findings", str(path))
+        result = run_validator("audit-set", self.assurance_dir)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("immutable audit findings filename", result.stderr)
+        self.assertIn("audit_run_id does not match audit.meta.json", result.stderr)
 
-    def test_finding_requires_observed_at(self) -> None:
-        record = finding_record()
-        del record["observed_at"]
-        path = self.write_jsonl(
-            "audit.codex.136c380.run1.findings.jsonl",
-            [record],
+    def test_finding_identity_is_audit_run_id_plus_id(self) -> None:
+        first = finding_record(
+            finding_id="P17-AUD-001",
+            requirement_ids=["P17-O1"],
+        )
+        second = finding_record(
+            finding_id="P17-AUD-001",
+            requirement_ids=["P17-O1"],
+        )
+        optional = requirement_record(
+            requirement_id="P17-O1",
+            mandatory=False,
+            state="not-met",
+            finding_ids=["P17-AUD-001"],
+        )
+        self.write_audit_set(
+            requirements=[requirement_record(), optional],
+            findings=[first, second],
         )
 
-        result = run_script(VALIDATOR, "findings", str(path))
+        result = run_validator("audit-set", self.assurance_dir)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("missing fields: observed_at", result.stderr)
+        self.assertIn("duplicate (audit_run_id, id)", result.stderr)
 
-    def test_finding_requires_nonempty_claim_and_structured_evidence(self) -> None:
-        record = finding_record()
-        record["claim"] = ""
-        record["evidence"] = [{"location": "", "detail": ""}]
-        path = self.write_jsonl(
-            "audit.codex.136c380.run1.findings.jsonl",
-            [record],
+    def test_blocking_finding_rejects_met_linked_requirement(self) -> None:
+        requirement = requirement_record(finding_ids=["P17-AUD-001"])
+        self.write_audit_set(
+            requirements=[requirement],
+            findings=[finding_record()],
+            verdict="PASS-WITH-FINDINGS",
         )
-        (self.root / "audit.codex.136c380.run1.md").write_text(
-            "# Audit\n",
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("blocking finding links met requirement P17-A1", result.stderr)
+
+    def test_standalone_findings_requires_fixed_filename(self) -> None:
+        path = self.assurance_dir / "audit.codex.136c380.run1.findings.jsonl"
+        write_jsonl(path, [])
+
+        result = run_validator("findings", path)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("expected fixed filename audit.findings.jsonl", result.stderr)
+
+    def test_report_verdict_must_match_meta(self) -> None:
+        self.write_audit_set()
+        report = self.assurance_dir / "audit.md"
+        report.write_text(
+            report.read_text(encoding="utf-8").replace("PASS", "FAIL"),
             encoding="utf-8",
         )
 
-        result = run_script(VALIDATOR, "findings", str(path))
+        result = run_validator("audit-set", self.assurance_dir)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("claim must be non-empty", result.stderr)
-        self.assertIn("evidence entries require non-empty location and detail", result.stderr)
+        self.assertIn("audit.md Verdict does not match audit.meta.json", result.stderr)
 
-    def test_finding_source_path_must_be_repo_relative_phase_snapshot(self) -> None:
-        record = finding_record()
-        record["source_path"] = "audit.codex.136c380.run1.md"
-        path = self.write_jsonl(
-            "audit.codex.136c380.run1.findings.jsonl",
-            [record],
-        )
-        (self.root / "audit.codex.136c380.run1.md").write_text(
-            "# Audit\n",
-            encoding="utf-8",
-        )
 
-        result = run_script(VALIDATOR, "findings", str(path))
+class RemediationValidatorTests(AssuranceFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        requirement = requirement_record(
+            state="not-met",
+            finding_ids=["P17-AUD-001"],
+        )
+        self.write_audit_set(requirements=[requirement], findings=[finding_record()])
+
+    def test_plan_source_requires_exact_audit_run_id_and_findings_digest(self) -> None:
+        meta = json.loads(
+            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
+        )
+        record = disposition_record(meta["findings_sha256"])
+        record["source"]["findings_sha256"] = "f" * 64
+        plan_path, _ = self.write_plan(disposition=record)
+
+        result = run_validator("plan", plan_path)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("repo-relative Phase snapshot report", result.stderr)
+        self.assertIn("source findings_sha256 does not match current audit", result.stderr)
 
-    def test_finding_source_path_phase_must_match_physical_sibling(self) -> None:
-        record = finding_record()
-        record["source_path"] = (
-            "docs/snapshots/phase999/audit.codex.136c380.run1.md"
+    def test_plan_cannot_reference_a_different_audit_run(self) -> None:
+        meta = json.loads(
+            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
         )
-        phase_dir = self.root / "docs" / "snapshots" / "phase17"
-        phase_dir.mkdir(parents=True)
-        path = phase_dir / "audit.codex.136c380.run1.findings.jsonl"
-        path.write_text(json.dumps(record) + "\n", encoding="utf-8")
-        (phase_dir / "audit.codex.136c380.run1.md").write_text(
-            "# Audit\n",
-            encoding="utf-8",
+        record = disposition_record(
+            meta["findings_sha256"],
+            audit_run_id="phase17-older-run",
         )
+        plan_path, _ = self.write_plan(disposition=record)
 
-        result = run_script(VALIDATOR, "findings", str(path))
+        result = run_validator("plan", plan_path)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("source_path Phase must match artifact directory", result.stderr)
+        self.assertIn("source audit_run_id does not match current audit", result.stderr)
 
-    def test_audit_findings_sidecar_cannot_claim_eval_source_kind(self) -> None:
-        record = finding_record()
-        record["source_kind"] = "eval"
-        path = self.write_jsonl(
-            "audit.codex.136c380.run1.findings.jsonl",
-            [record],
+    def test_disposition_contract_rejects_lineage_fields(self) -> None:
+        meta = json.loads(
+            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
         )
-        (self.root / "audit.codex.136c380.run1.md").write_text(
-            "# Audit\n",
-            encoding="utf-8",
-        )
+        record = disposition_record(meta["findings_sha256"])
+        record["lineage"] = {"kind": "new"}
+        plan_path, _ = self.write_plan(disposition=record)
 
-        result = run_script(VALIDATOR, "findings", str(path))
+        result = run_validator("plan", plan_path)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("audit findings source_kind must be audit", result.stderr)
+        self.assertIn("historical lineage fields are forbidden", result.stderr)
 
-    def test_valid_plan_disposition_artifact_passes(self) -> None:
-        record = disposition_record()
-        record["green_after"]["observed"] = "not-run"
-        path = self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [record],
-        )
-        (self.root / "remediation.136c380.r4.plan.md").write_text(
-            "# Plan\n",
+    def test_plan_digest_changes_when_plan_or_dispositions_change(self) -> None:
+        plan_path, dispositions_path = self.write_plan()
+
+        first = run_validator("plan", plan_path)
+        plan_path.write_text(
+            plan_path.read_text(encoding="utf-8") + "\n",
             encoding="utf-8",
         )
+        second = run_validator("plan", plan_path)
+        dispositions_path.write_text(
+            dispositions_path.read_text(encoding="utf-8") + "\n",
+            encoding="utf-8",
+        )
+        third = run_validator("plan", plan_path)
 
-        result = run_script(VALIDATOR, "dispositions", str(path))
+        self.assertEqual(0, first.returncode, first.stderr)
+        self.assertEqual(0, second.returncode, second.stderr)
+        self.assertEqual(0, third.returncode, third.stderr)
+        digests = [
+            result.stdout.strip().split("plan_sha256=")[1]
+            for result in (first, second, third)
+        ]
+        self.assertEqual(3, len(set(digests)))
+
+    def test_ready_plan_requires_observed_red_before(self) -> None:
+        meta = json.loads(
+            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
+        )
+        record = disposition_record(meta["findings_sha256"])
+        record["red_before"]["observed"] = "not-run"
+        plan_path, _ = self.write_plan(disposition=record)
+
+        result = run_validator("plan", plan_path)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("READY-FOR-APPLY requires observed FAIL red-before", result.stderr)
+
+    def test_result_accepts_verification_blocking_bounded_incidental_repair(self) -> None:
+        plan_path, dispositions_path = self.write_plan()
+        result_path, _ = self.write_result(
+            plan_path,
+            dispositions_path,
+            incidentals=[
+                incidental_record(changed_path="crates/opi-agent/src/worker.rs")
+            ],
+        )
+
+        result = run_validator("result", result_path)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("dispositions: PASS", result.stdout)
 
-    def test_valid_result_disposition_artifact_passes(self) -> None:
-        plan_record = disposition_record()
-        plan_record["green_after"]["observed"] = "not-run"
-        self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [plan_record],
-        )
-        (self.root / "remediation.136c380.r4.plan.md").write_text(
-            "# Plan\n",
-            encoding="utf-8",
-        )
-        record = disposition_record()
-        record["remediation_status"] = "Closed"
-        path = self.write_jsonl(
-            "remediation.136c380.r4.result.dispositions.jsonl",
-            [record],
-        )
-        (self.root / "remediation.136c380.r4.result.md").write_text(
-            "# Result\n",
-            encoding="utf-8",
+    def test_incidental_repair_rejects_public_api_change(self) -> None:
+        plan_path, dispositions_path = self.write_plan()
+        incidental = incidental_record(changed_path="crates/opi-agent/src/worker.rs")
+        incidental["guardrails"]["changes_public_api"] = True
+        result_path, _ = self.write_result(
+            plan_path,
+            dispositions_path,
+            incidentals=[incidental],
         )
 
-        result = run_script(VALIDATOR, "dispositions", str(path))
-
-        self.assertEqual(0, result.returncode, result.stderr)
-
-    def test_result_disposition_requires_remediation_status(self) -> None:
-        plan_record = disposition_record()
-        plan_record["green_after"]["observed"] = "not-run"
-        self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [plan_record],
-        )
-        (self.root / "remediation.136c380.r4.plan.md").write_text(
-            "# Plan\n",
-            encoding="utf-8",
-        )
-        path = self.write_jsonl(
-            "remediation.136c380.r4.result.dispositions.jsonl",
-            [disposition_record()],
-        )
-        (self.root / "remediation.136c380.r4.result.md").write_text(
-            "# Result\n",
-            encoding="utf-8",
-        )
-
-        result = run_script(VALIDATOR, "dispositions", str(path))
+        result = run_validator("result", result_path)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("result disposition requires remediation_status", result.stderr)
+        self.assertIn("incidental repair changes a protected contract", result.stderr)
 
-    def test_behavioral_disposition_requires_red_before(self) -> None:
-        record = disposition_record()
-        del record["red_before"]
-        path = self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [record],
+    def test_incidental_repair_rejects_dependency_or_spec_change(self) -> None:
+        for changed_path in ("Cargo.toml", "docs/opi-spec.md"):
+            with self.subTest(changed_path=changed_path):
+                plan_path, dispositions_path = self.write_plan()
+                result_path, _ = self.write_result(
+                    plan_path,
+                    dispositions_path,
+                    incidentals=[incidental_record(changed_path=changed_path)],
+                )
+
+                result = run_validator("result", result_path)
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("incidental repair names protected path", result.stderr)
+
+    def test_incidental_repair_requires_observed_fail_and_pass(self) -> None:
+        for check_name, observed in (
+            ("red_before", "not-run"),
+            ("green_after", "not-run"),
+        ):
+            with self.subTest(check_name=check_name):
+                plan_path, dispositions_path = self.write_plan()
+                incidental = incidental_record(
+                    changed_path="crates/opi-agent/src/worker.rs"
+                )
+                incidental[check_name]["observed"] = observed
+                result_path, _ = self.write_result(
+                    plan_path,
+                    dispositions_path,
+                    incidentals=[incidental],
+                )
+
+                result = run_validator("result", result_path)
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(
+                    "incidental repair requires observed FAIL and PASS",
+                    result.stderr,
+                )
+
+    def test_unrecorded_result_change_is_rejected(self) -> None:
+        plan_path, dispositions_path = self.write_plan()
+        result_path, _ = self.write_result(
+            plan_path,
+            dispositions_path,
+            reported_paths=[
+                "crates/opi-agent/src/session.rs",
+                "crates/opi-agent/src/unrecorded.rs",
+            ],
         )
 
-        result = run_script(VALIDATOR, "dispositions", str(path))
+        result = run_validator("result", result_path)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("behavioral disposition requires red_before", result.stderr)
+        self.assertIn("unattributed changed path", result.stderr)
 
-    def test_one_closure_batch_cannot_hide_multiple_closure_keys(self) -> None:
-        first = disposition_record()
-        first["green_after"]["observed"] = "not-run"
-        second = disposition_record(closure_key="session.required-entry")
-        second["source"]["id"] = "P17-CODEX-SPEC-002"
-        second["green_after"]["observed"] = "not-run"
-        path = self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [first, second],
+    def test_result_disposition_cannot_drift_from_plan(self) -> None:
+        plan_path, dispositions_path = self.write_plan()
+        result_path, result_dispositions = self.write_result(
+            plan_path,
+            dispositions_path,
         )
-        (self.root / "remediation.136c380.r4.plan.md").write_text(
-            "# Plan\n",
-            encoding="utf-8",
-        )
+        records = [
+            json.loads(line)
+            for line in result_dispositions.read_text(encoding="utf-8").splitlines()
+        ]
+        records[0]["final_severity"] = "Minor"
+        write_jsonl(result_dispositions, records)
 
-        result = run_script(VALIDATOR, "dispositions", str(path))
-
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("closure batch B2 has multiple closure keys", result.stderr)
-
-    def test_result_disposition_cannot_drift_from_plan_stage(self) -> None:
-        plan_record = disposition_record()
-        plan_record["green_after"]["observed"] = "not-run"
-        self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [plan_record],
-        )
-        (self.root / "remediation.136c380.r4.plan.md").write_text(
-            "# Plan\n",
-            encoding="utf-8",
-        )
-        result_record = disposition_record()
-        result_record["final_severity"] = "Minor"
-        result_record["remediation_status"] = "Closed"
-        path = self.write_jsonl(
-            "remediation.136c380.r4.result.dispositions.jsonl",
-            [result_record],
-        )
-        (self.root / "remediation.136c380.r4.result.md").write_text(
-            "# Result\n",
-            encoding="utf-8",
-        )
-
-        result = run_script(VALIDATOR, "dispositions", str(path))
+        result = run_validator("result", result_path)
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("drifts from plan-stage disposition", result.stderr)
 
-    def test_ready_plan_passes_when_decisions_and_closure_proofs_are_complete(
-        self,
-    ) -> None:
-        plan_disposition = disposition_record()
-        plan_disposition["green_after"]["observed"] = "not-run"
-        self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [plan_disposition],
-        )
-        path = self.root / "remediation.136c380.r4.plan.md"
-        path.write_text(
-            "# Phase 17 Remediation Plan\n\n"
-            "**Status**: READY-FOR-APPLY\n"
-            f"**Verification target**: committed `{HEAD}`\n"
-            "**Disposition artifact**: `remediation.136c380.r4.plan.dispositions.jsonl`\n"
-            "**Unresolved decisions**: none\n\n"
-            "Source: docs/snapshots/phase17/audit.codex.136c380.run1.md "
-            "P17-CODEX-SPEC-001\n\n"
-            "#### Fix B1.1: Persist the runtime binding\n\n"
-            "- **Closure predicate**: a reconstructed branch returns the exact binding\n"
-            "- **Red-before**: `cargo test binding` -> FAIL: binding absent\n"
-            "- **Green-after**: `cargo test binding` -> PASS\n",
-            encoding="utf-8",
-        )
 
-        result = run_script(VALIDATOR, "plan", str(path))
+class RotationValidatorTests(AssuranceFixture):
+    def initialize_repo(self) -> Path:
+        repo = self.root
+        for args in (
+            ("init",),
+            ("config", "user.email", "test@example.com"),
+            ("config", "user.name", "Assurance Test"),
+        ):
+            result = run_git(repo, *args)
+            self.assertEqual(0, result.returncode, result.stderr)
+        return repo
 
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("plan: PASS", result.stdout)
+    def commit_active_set(self) -> Path:
+        repo = self.initialize_repo()
+        self.write_audit_set()
+        add = run_git(repo, "add", "--", "docs/snapshots/phase17/assurance")
+        self.assertEqual(0, add.returncode, add.stderr)
+        commit = run_git(repo, "commit", "-m", "test: add active assurance set")
+        self.assertEqual(0, commit.returncode, commit.stderr)
+        return repo
 
-    def test_ready_plan_requires_observed_red_before(self) -> None:
-        plan_disposition = disposition_record()
-        plan_disposition["red_before"]["observed"] = "not-run"
-        plan_disposition["green_after"]["observed"] = "not-run"
-        self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [plan_disposition],
-        )
-        path = self.root / "remediation.136c380.r4.plan.md"
-        path.write_text(
-            "# Phase 17 Remediation Plan\n\n"
-            "**Status**: READY-FOR-APPLY\n"
-            f"**Verification target**: committed `{HEAD}`\n"
-            "**Disposition artifact**: `remediation.136c380.r4.plan.dispositions.jsonl`\n"
-            "**Unresolved decisions**: none\n\n"
-            "Source: docs/snapshots/phase17/audit.codex.136c380.run1.md "
-            "P17-CODEX-SPEC-001\n\n"
-            "#### Fix B1.1: Persist the runtime binding\n\n"
-            "- **Closure predicate**: the binding survives reconstruction\n"
-            "- **Red-before**: pending\n"
-            "- **Green-after**: `cargo test binding` -> PASS\n",
-            encoding="utf-8",
-        )
+    def test_rotation_passes_when_active_set_is_tracked_and_clean(self) -> None:
+        self.commit_active_set()
 
-        result = run_script(VALIDATOR, "plan", str(path))
-
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("READY-FOR-APPLY requires observed red-before", result.stderr)
-
-    def test_ready_plan_requires_nonempty_closure_proof_fields(self) -> None:
-        plan_disposition = disposition_record()
-        plan_disposition["green_after"]["observed"] = "not-run"
-        self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [plan_disposition],
-        )
-        path = self.root / "remediation.136c380.r4.plan.md"
-        path.write_text(
-            "# Phase 17 Remediation Plan\n\n"
-            "**Status**: READY-FOR-APPLY\n"
-            f"**Verification target**: committed `{HEAD}`\n"
-            "**Disposition artifact**: `remediation.136c380.r4.plan.dispositions.jsonl`\n"
-            "**Unresolved decisions**: none\n\n"
-            "Source: docs/snapshots/phase17/audit.codex.136c380.run1.md "
-            "P17-CODEX-SPEC-001\n\n"
-            "#### Fix B1.1: Persist the runtime binding\n\n"
-            "- **Closure predicate**: the binding survives reconstruction\n"
-            "- **Red-before**:\n"
-            "- **Green-after**: `cargo test binding` -> PASS\n",
-            encoding="utf-8",
-        )
-
-        result = run_script(VALIDATOR, "plan", str(path))
-
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("empty Red-before", result.stderr)
-
-    def test_ready_plan_requires_concrete_green_after_command(self) -> None:
-        plan_disposition = disposition_record()
-        plan_disposition["green_after"]["command"] = ""
-        plan_disposition["green_after"]["observed"] = "not-run"
-        self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [plan_disposition],
-        )
-        path = self.root / "remediation.136c380.r4.plan.md"
-        path.write_text(
-            "# Phase 17 Remediation Plan\n\n"
-            "**Status**: READY-FOR-APPLY\n"
-            f"**Verification target**: committed `{HEAD}`\n"
-            "**Disposition artifact**: `remediation.136c380.r4.plan.dispositions.jsonl`\n"
-            "**Unresolved decisions**: none\n\n"
-            "Source: docs/snapshots/phase17/audit.codex.136c380.run1.md "
-            "P17-CODEX-SPEC-001\n\n"
-            "#### Fix B1.1: Persist the runtime binding\n\n"
-            "- **Closure predicate**: the binding survives reconstruction\n"
-            "- **Red-before**: `cargo test binding` -> FAIL\n"
-            "- **Green-after**: pending command\n",
-            encoding="utf-8",
-        )
-
-        result = run_script(VALIDATOR, "plan", str(path))
-
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("READY-FOR-APPLY requires concrete green-after", result.stderr)
-
-    def test_ready_plan_must_cover_every_source_disposition(self) -> None:
-        first = disposition_record()
-        first["green_after"]["observed"] = "not-run"
-        second = disposition_record()
-        second["source"]["id"] = "P17-CODEX-SPEC-002"
-        second["green_after"]["observed"] = "not-run"
-        self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [first, second],
-        )
-        path = self.root / "remediation.136c380.r4.plan.md"
-        path.write_text(
-            "# Phase 17 Remediation Plan\n\n"
-            "**Status**: READY-FOR-APPLY\n"
-            f"**Verification target**: committed `{HEAD}`\n"
-            "**Disposition artifact**: `remediation.136c380.r4.plan.dispositions.jsonl`\n"
-            "**Unresolved decisions**: none\n\n"
-            "Source: docs/snapshots/phase17/audit.codex.136c380.run1.md "
-            "P17-CODEX-SPEC-001\n\n"
-            "#### Fix B1.1: Persist the runtime binding\n\n"
-            "- **Closure predicate**: the binding survives reconstruction\n"
-            "- **Red-before**: `cargo test binding` -> FAIL\n"
-            "- **Green-after**: `cargo test binding` -> PASS\n",
-            encoding="utf-8",
-        )
-
-        result = run_script(VALIDATOR, "plan", str(path))
-
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("missing source disposition P17-CODEX-SPEC-002", result.stderr)
-
-    def test_ready_plan_cannot_carry_pending_decisions(self) -> None:
-        plan_disposition = disposition_record()
-        plan_disposition["green_after"]["observed"] = "not-run"
-        self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [plan_disposition],
-        )
-        path = self.root / "remediation.136c380.r4.plan.md"
-        path.write_text(
-            "# Phase 17 Remediation Plan\n\n"
-            "**Status**: READY-FOR-APPLY\n"
-            f"**Verification target**: committed `{HEAD}`\n"
-            "**Disposition artifact**: `remediation.136c380.r4.plan.dispositions.jsonl`\n"
-            "**Unresolved decisions**: D6\n\n"
-            "#### Fix B1.1: Persist the runtime binding\n\n"
-            "- **Closure predicate**: the binding survives reconstruction\n"
-            "- **Red-before**: `cargo test binding` -> FAIL\n"
-            "- **Green-after**: `cargo test binding` -> PASS\n",
-            encoding="utf-8",
-        )
-
-        result = run_script(VALIDATOR, "plan", str(path))
-
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("READY-FOR-APPLY requires no unresolved decisions", result.stderr)
-
-    def test_draft_unresolved_plan_can_stop_before_fix_design(self) -> None:
-        plan_disposition = disposition_record()
-        plan_disposition["green_after"]["observed"] = "not-run"
-        self.write_jsonl(
-            "remediation.136c380.r4.plan.dispositions.jsonl",
-            [plan_disposition],
-        )
-        path = self.root / "remediation.136c380.r4.plan.md"
-        path.write_text(
-            "# Phase 17 Remediation Plan\n\n"
-            "**Status**: DRAFT-UNRESOLVED\n"
-            f"**Verification target**: committed `{HEAD}`\n"
-            "**Disposition artifact**: `remediation.136c380.r4.plan.dispositions.jsonl`\n"
-            "**Unresolved decisions**: D6\n\n"
-            "## Unresolved decisions\n\n"
-            "| ID | Required decision | Authority needed |\n"
-            "|---|---|---|\n"
-            "| D6 | Choose public policy | registered product source |\n",
-            encoding="utf-8",
-        )
-
-        result = run_script(VALIDATOR, "plan", str(path))
+        result = run_validator("rotation", self.phase_dir)
 
         self.assertEqual(0, result.returncode, result.stderr)
 
-    def test_plan_requires_its_exact_disposition_sibling(self) -> None:
-        path = self.root / "remediation.136c380.r4.plan.md"
-        path.write_text(
-            "# Phase 17 Remediation Plan\n\n"
-            "**Status**: DRAFT-UNRESOLVED\n"
-            f"**Verification target**: committed `{HEAD}`\n"
-            "**Disposition artifact**: `remediation.136c380.r4.plan.dispositions.jsonl`\n"
-            "**Unresolved decisions**: D6\n",
-            encoding="utf-8",
-        )
+    def test_rotation_rejects_uncommitted_active_set_changes(self) -> None:
+        self.commit_active_set()
+        (self.assurance_dir / "audit.md").write_text("changed\n", encoding="utf-8")
 
-        result = run_script(VALIDATOR, "plan", str(path))
+        result = run_validator("rotation", self.phase_dir)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("missing exact plan disposition sibling", result.stderr)
+        self.assertIn("active assurance set is not clean", result.stderr)
 
+    def test_rotation_rejects_untracked_active_set_files(self) -> None:
+        self.commit_active_set()
+        (self.assurance_dir / "notes.md").write_text("untracked\n", encoding="utf-8")
 
-class FindingLineageTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        result = run_validator("rotation", self.phase_dir)
 
-    def tearDown(self) -> None:
-        self.temp.cleanup()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("active assurance set is not clean", result.stderr)
 
-    def write_jsonl(self, name: str, records: list[dict[str, object]]) -> Path:
-        path = self.root / name
-        path.write_text(
-            "".join(json.dumps(record) + "\n" for record in records),
-            encoding="utf-8",
-        )
-        return path
+    def test_rotation_rejects_legacy_audit_or_remediation_siblings(self) -> None:
+        for name in ("audit.codex.old.md", "remediation.old.plan.md"):
+            with self.subTest(name=name):
+                nested = self.root / name.replace(".", "-")
+                nested.mkdir()
+                phase_dir = nested / "docs" / "snapshots" / "phase17"
+                phase_dir.mkdir(parents=True)
+                repo = nested
+                for args in (
+                    ("init",),
+                    ("config", "user.email", "test@example.com"),
+                    ("config", "user.name", "Assurance Test"),
+                ):
+                    command = run_git(repo, *args)
+                    self.assertEqual(0, command.returncode, command.stderr)
+                legacy = phase_dir / name
+                legacy.write_text("legacy\n", encoding="utf-8")
+                add = run_git(repo, "add", "--", f"docs/snapshots/phase17/{name}")
+                self.assertEqual(0, add.returncode, add.stderr)
+                commit = run_git(repo, "commit", "-m", "test: add legacy artifact")
+                self.assertEqual(0, commit.returncode, commit.stderr)
+                legacy.unlink()
 
-    def compare(
-        self,
-        current: list[dict[str, object]],
-        history: list[dict[str, object]],
-    ) -> list[dict[str, object]]:
-        current_path = self.write_jsonl("current.jsonl", current)
-        history_path = self.write_jsonl("history.jsonl", history)
-        result = run_script(
-            LINEAGE,
-            "--current",
-            str(current_path),
-            "--history",
-            str(history_path),
-        )
-        self.assertEqual(0, result.returncode, result.stderr)
-        return [json.loads(line) for line in result.stdout.splitlines() if line]
+                result = run_validator("rotation", phase_dir)
 
-    def test_exact_closed_issue_is_recurrent_same_defect(self) -> None:
-        history = disposition_record()
-        history["remediation_status"] = "Closed"
-        current = {
-            "closure_key": "session.runtime-binding",
-            "family_key": "session.durability",
-            "verified_at": HEAD,
-        }
-
-        compared = self.compare([current], [history])
-
-        self.assertEqual("recurrent-same-defect", compared[0]["lineage"]["kind"])
-
-    def test_exact_deferred_issue_is_carried_forward(self) -> None:
-        history = disposition_record()
-        history["remediation_status"] = "Deferred by registered source"
-        current = {
-            "closure_key": "session.runtime-binding",
-            "family_key": "session.durability",
-            "verified_at": HEAD,
-        }
-
-        compared = self.compare([current], [history])
-
-        self.assertEqual(
-            "carried-forward-deferred",
-            compared[0]["lineage"]["kind"],
-        )
-
-    def test_exact_info_no_action_issue_is_recurrent_not_deferred(self) -> None:
-        history = disposition_record()
-        history["remediation_status"] = "Info/No action"
-        current = {
-            "closure_key": "session.runtime-binding",
-            "family_key": "session.durability",
-            "verified_at": HEAD,
-        }
-
-        compared = self.compare([current], [history])
-
-        self.assertEqual("recurrent-same-defect", compared[0]["lineage"]["kind"])
-
-    def test_mixed_closed_and_deferred_history_is_recurrent(self) -> None:
-        closed = disposition_record()
-        closed["remediation_status"] = "Closed"
-        deferred = disposition_record()
-        deferred["source"]["id"] = "P17-CODEX-SPEC-000"
-        deferred["remediation_status"] = "Deferred by registered source"
-        current = {
-            "closure_key": "session.runtime-binding",
-            "family_key": "session.durability",
-            "verified_at": HEAD,
-        }
-
-        compared = self.compare([current], [closed, deferred])
-
-        self.assertEqual("recurrent-same-defect", compared[0]["lineage"]["kind"])
-        self.assertIn("Closed", compared[0]["lineage"]["prior_disposition"])
-        self.assertIn(
-            "Deferred by registered source",
-            compared[0]["lineage"]["prior_disposition"],
-        )
-
-    def test_known_passing_change_can_be_classified_as_regression(self) -> None:
-        history = disposition_record()
-        history["remediation_status"] = "Closed"
-        current = {
-            "closure_key": "session.required-entry",
-            "family_key": "session.durability",
-            "regression_of": "session.runtime-binding",
-            "verified_at": HEAD,
-        }
-
-        compared = self.compare([current], [history])
-
-        self.assertEqual("regression", compared[0]["lineage"]["kind"])
-
-    def test_deferred_history_cannot_prove_regression(self) -> None:
-        history = disposition_record()
-        history["remediation_status"] = "Deferred by registered source"
-        current = {
-            "closure_key": "session.required-entry",
-            "family_key": "session.durability",
-            "regression_of": "session.runtime-binding",
-            "verified_at": HEAD,
-        }
-
-        compared = self.compare([current], [history])
-
-        self.assertEqual(
-            "recurrent-adjacent-path",
-            compared[0]["lineage"]["kind"],
-        )
-
-    def test_same_family_different_closure_is_adjacent_path(self) -> None:
-        history = disposition_record()
-        history["remediation_status"] = "Closed"
-        current = {
-            "closure_key": "session.required-entry",
-            "family_key": "session.durability",
-            "verified_at": HEAD,
-        }
-
-        compared = self.compare([current], [history])
-
-        self.assertEqual(
-            "recurrent-adjacent-path",
-            compared[0]["lineage"]["kind"],
-        )
-
-    def test_unseen_family_is_new(self) -> None:
-        current = {
-            "closure_key": "queue.observable-full",
-            "family_key": "agent.control-queue",
-            "verified_at": HEAD,
-        }
-
-        compared = self.compare([current], [])
-
-        self.assertEqual("new", compared[0]["lineage"]["kind"])
-
-    def test_first_run_can_omit_history_argument(self) -> None:
-        current_path = self.write_jsonl(
-            "current-without-history.jsonl",
-            [
-                {
-                    "closure_key": "queue.observable-full",
-                    "family_key": "agent.control-queue",
-                    "verified_at": HEAD,
-                }
-            ],
-        )
-
-        result = run_script(LINEAGE, "--current", str(current_path))
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        compared = json.loads(result.stdout)
-        self.assertEqual("new", compared["lineage"]["kind"])
-
-    def test_history_can_span_multiple_result_disposition_artifacts(self) -> None:
-        first = disposition_record(
-            closure_key="session.other",
-            family_key="session.other-family",
-        )
-        first["remediation_status"] = "Closed"
-        second = disposition_record()
-        second["remediation_status"] = "Closed"
-        current_path = self.write_jsonl(
-            "current-multiple.jsonl",
-            [
-                {
-                    "closure_key": "session.required-entry",
-                    "family_key": "session.durability",
-                    "verified_at": HEAD,
-                }
-            ],
-        )
-        first_path = self.write_jsonl("history-one.jsonl", [first])
-        second_path = self.write_jsonl("history-two.jsonl", [second])
-
-        result = run_script(
-            LINEAGE,
-            "--current",
-            str(current_path),
-            "--history",
-            str(first_path),
-            str(second_path),
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        compared = json.loads(result.stdout)
-        self.assertEqual("recurrent-adjacent-path", compared["lineage"]["kind"])
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("legacy assurance artifact", result.stderr)
 
 
 if __name__ == "__main__":

@@ -101,22 +101,30 @@ MINIMUM_CHANGE_TRACE_REQUIRED = {
 
 ASSURANCE_WORKFLOW_REQUIRED = {
     ".claude/skills/opi-audit/SKILL.md": (
-        "sealed audit",
-        "proof obligation",
+        "audit.meta.json",
+        "audit.requirements.jsonl",
+        "audit.findings.jsonl",
+        "latest committed",
         "references/audit-proof-obligations.md",
-        "isolated checkout of `audit_head`",
-        "audit.<model>.<head7>.<run-id>.findings.jsonl",
-        "validate_assurance_artifact.py findings",
+        "validate_assurance_artifact.py rotation",
+        "validate_assurance_artifact.py audit-set",
+        "`audit_run_id`",
+        "`findings_sha256`",
+        "git archive",
+        "Do not use a Git worktree",
+        "AUDIT-INCOMPLETE",
         "`met`",
         "`partially-met`",
         "`not-met`",
         "`not-assessable`",
         "`PASS-WITH-FINDINGS`",
+        "reciprocal blocking finding",
+        "discard it",
     ),
     ".claude/skills/opi-audit/references/audit-proof-obligations.md": (
         "anti-vacuity",
         "Blocker/Major refutation",
-        "Minimum-change conformance matrix",
+        "Minimum-change conformance",
         "`reuse_search`",
         "`surface_necessity`",
         "`simplification_ceiling`",
@@ -126,59 +134,110 @@ ASSURANCE_WORKFLOW_REQUIRED = {
         "`residual_glue`",
     ),
     ".claude/skills/opi-audit/references/finding-template.md": (
-        "audit.<model>.<head7>.<run-id>.md",
-        "audit.<model>.<head7>.<run-id>.findings.jsonl",
-        "Requirement state",
+        "audit.meta.json",
+        "audit.requirements.jsonl",
+        "audit.findings.jsonl",
+        "**Audit run ID**",
+        "**Audit head**",
         "## Minimum-change Conformance",
-        "`standards`",
-        "`spec`",
-        "`integration`",
+        "AUDIT-INCOMPLETE",
     ),
     ".claude/skills/opi-audit/evals/evals.json": (
         '"skill_name": "opi-audit"',
-        "partially-met",
-        "without overwriting old reports",
-        "counter-evidence",
+        "latest-committed-spec",
+        "not-assessable",
+        "AUDIT-INCOMPLETE",
+        "legacy",
     ),
     ".claude/skills/opi-remediate/SKILL.md": (
-        "mode=plan | apply",
+        "mode=plan phase=<N>",
+        "mode=apply phase=<N> plan_sha256=<64 lowercase hex>",
+        "audit_run_id",
+        "findings_sha256",
+        "`plan_sha256`",
         "DRAFT-UNRESOLVED",
         "READY-FOR-APPLY",
         "closure batch",
         "red-before",
-        "isolated checkout of `remediation_head`",
-        "remediation.<head7>.<round>.plan.dispositions.jsonl",
-        "remediation.<head7>.<round>.result.dispositions.jsonl",
+        "git archive",
+        "do not use a Git worktree",
+        "bounded verification-blocking incidental repair",
+        "remediation.plan.dispositions.jsonl",
+        "remediation.result.dispositions.jsonl",
         "validate_assurance_artifact.py plan",
-        "compare_finding_lineage.py",
+        "validate_assurance_artifact.py result",
     ),
     ".claude/skills/opi-remediate/references/cross-reference-matrix.md": (
-        "recurrent-same-defect",
-        "recurrent-adjacent-path",
-        "carried-forward-deferred",
-        "one closure predicate",
+        "Current-set verification",
+        "current `audit_run_id`",
+        "one falsifiable closure predicate",
+        "Coverage",
     ),
     ".claude/skills/opi-remediate/references/remediation-plan-template.md": (
-        "remediation.<head7>.<round>.plan.md",
-        "Status: DRAFT-UNRESOLVED | READY-FOR-APPLY",
-        "## Unresolved decisions",
+        "remediation.plan.md",
+        "**Audit run ID**",
+        "**Findings SHA-256**",
+        "**Remediation head**",
+        "## Unresolved Decisions",
         "**Closure predicate**:",
         "**Red-before**:",
         "**Green-after**:",
     ),
     ".claude/skills/opi-remediate/references/execution-protocol.md": (
-        "exact remediation head",
-        "dirty-worktree baseline",
-        "red-before",
-        "remediation.<head7>.<round>.result.md",
-        "fresh independent audit",
-        "explicit new `$opi-audit` invocation",
+        "plan_sha256",
+        "Bounded verification-blocking incidental repair",
+        "changes no public API",
+        "remediation.result.md",
+        "**Changed paths**",
+        "Materialization handoff",
     ),
     ".claude/skills/opi-remediate/evals/evals.json": (
         '"skill_name": "opi-remediate"',
+        "different audit_run_id",
+        "narrative-only",
+        "incidental-repair",
+        "uncommitted",
+    ),
+    ".claude/skills/_shared/references/audit-set-contract.md": (
+        "audit.meta.json",
+        "audit.requirements.jsonl",
+        "audit.findings.jsonl",
+        "latest-committed-spec",
+        "Git history",
+        "rotation",
+        "audit-set",
+    ),
+    ".claude/skills/_shared/references/finding-contract.md": (
+        "(audit_run_id, id)",
+        "conformance_effect",
+        "requirement_ids",
+        "fixed Phase `audit.md`",
+    ),
+    ".claude/skills/_shared/references/remediation-disposition-contract.md": (
+        "findings_sha256",
+        "plan_sha256",
+        "bounded incidental repair",
+        "Changed paths",
+        "materialized",
+    ),
+}
+
+ASSURANCE_WORKFLOW_FORBIDDEN_REQUIRED = {
+    ".claude/skills/opi-audit/SKILL.md": (
+        "audit.<model>.<head7>",
+        "history comparison",
+    ),
+    ".claude/skills/opi-audit/references/finding-template.md": (
+        "audit.<model>.<head7>",
+    ),
+    ".claude/skills/opi-remediate/SKILL.md": (
+        "sources=<path",
+        "compare_finding_lineage.py",
+        "remediation.<head7>",
+    ),
+    ".claude/skills/opi-remediate/references/cross-reference-matrix.md": (
         "recurrent-same-defect",
-        "DRAFT-UNRESOLVED",
-        "current committed HEAD differs",
+        "carried-forward-deferred",
     ),
 }
 
@@ -477,6 +536,34 @@ class SkillContractTests(unittest.TestCase):
                     self.assertIn(
                         f"{rel}: assurance workflow contract "
                         f"missing semantic tokens {[token]!r}",
+                        doc_check.ERRORS,
+                    )
+
+    def test_assurance_workflow_contract_rejects_legacy_tokens(self) -> None:
+        checker = getattr(
+            doc_check,
+            "check_assurance_workflow_contract",
+            None,
+        )
+        self.assertIsNotNone(checker, "assurance workflow checker must exist")
+
+        for rel, tokens in ASSURANCE_WORKFLOW_FORBIDDEN_REQUIRED.items():
+            for token in tokens:
+                with self.subTest(rel=rel, token=token):
+                    doc_check.ERRORS = []
+                    self.write_assurance_workflow_docs()
+                    path = self.root / rel
+                    path.write_text(
+                        path.read_text(encoding="utf-8") + token + "\n",
+                        encoding="utf-8",
+                        newline="\n",
+                    )
+
+                    checker()
+
+                    self.assertIn(
+                        f"{rel}: assurance workflow contract "
+                        f"contains forbidden legacy tokens {[token]!r}",
                         doc_check.ERRORS,
                     )
 

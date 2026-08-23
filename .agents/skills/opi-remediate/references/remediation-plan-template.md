@@ -1,70 +1,67 @@
-# Remediation plan template
+# Fixed Remediation Plan Template
 
-Output a new `remediation.<head7>.<round>.plan.md` and its sibling dispositions.
-Never reuse `remediation-plan.md` for a new run.
-
-The header contract is `Status: DRAFT-UNRESOLVED | READY-FOR-APPLY`.
+Output `remediation.plan.md` and
+`remediation.plan.dispositions.jsonl` under the current Phase `assurance/`
+directory. The JSONL contract is
+`../../_shared/references/remediation-disposition-contract.md`.
 
 ```markdown
 # Phase <N> Remediation Plan
 
 **Status**: DRAFT-UNRESOLVED | READY-FOR-APPLY
-**Verification target**: committed `<full SHA>`
-**Round**: <immutable round identity>
-**Finding sources**: <immutable source paths>
-**Disposition artifact**: `remediation.<head7>.<round>.plan.dispositions.jsonl`
+**Audit run ID**: `<exact audit.meta.json value>`
+**Findings SHA-256**: `<exact audit.meta.json value>`
+**Remediation head**: `<full committed SHA>`
+**Disposition artifact**: `remediation.plan.dispositions.jsonl`
 **Dirty-worktree baseline**: <staged/unstaged/untracked inventory>
 **Unresolved decisions**: none | D<N>, ...
 
-## Lineage and verification summary
+## Current Finding Verification
 
-| Source finding | Verification | Final severity + rationale | Lineage | Closure batch | Decision |
+| Finding ID | Verification | Final severity + rationale | Closure key/family | Batch | Decision |
 |---|---|---|---|---|---|
 | ... | ... | ... | ... | ... | ... |
 
-## Unresolved decisions
+## Unresolved Decisions
 
 | ID | Required decision | Why evidence cannot decide | Alternatives | Authority needed |
 |---|---|---|---|---|
 | ... | ... | ... | ... | ... |
 
-Use `none` when the plan is `READY-FOR-APPLY`.
-A `DRAFT-UNRESOLVED` may stop here before fix design when the missing decision
-determines the closure predicate. Do not add placeholder fix items to satisfy a
-template.
+Use `none` when ready. A draft may stop before fix design when a decision
+determines the closure predicate; do not add placeholder fixes.
 
-## Closure batches
+## Closure Batches
 
 ### Batch B1: <one behavioral closure>
 
-**Closure predicate**: <one falsifiable outcome shared by every batch member>
+**Closure predicate**: <one falsifiable outcome>
 **Dependencies**: <earlier batches or none>
 **Verification union**: <deduplicated checks>
 
 #### Fix B1.1: <short title>
 
-- **Finding source**: <immutable source_path + id>
-- **Lineage**: <kind + prior evidence>
-- **Decision**: D<N>
+- **Finding source**: <current audit_run_id + findings_sha256 + finding ID>
+- **Decision**: <exact decision>
 - **Verification status**: Confirmed | Partially confirmed
-- **File(s)**: `<path>`
+- **File(s)**: `<paths>`
 - **Change kind**: behavioral | test-only | documentation | metadata
 - **Change**: <minimum bounded change>
 - **Closure predicate**: <observable outcome>
 - **Red-before**: <command and observed failure, or concrete N/A reason>
 - **Green-after**: <same discriminating check and expected pass>
 
-## Final verification
+## Final Verification
 
     <deduplicated verification union>
 
 ## Exclusions
 
-| Source finding | Disposition | Evidence/authority |
+| Finding ID | Disposition | Current evidence/authority |
 |---|---|---|
 | ... | Refuted / Cannot confirm / Info-no-action / Returned to shaping / Deferred by registered source | ... |
 ```
 
-Layer batches by the live workspace dependency graph when dependencies require
-it, but do not merge independent closure predicates merely to share a layer.
-Every source finding must appear either in a fix item or exclusions.
+Every finding ID must appear in a fix or exclusion and in exactly one plan
+disposition. After validation, present the emitted `plan_sha256`; never write
+that digest into the plan itself because it hashes the exact plan bytes.

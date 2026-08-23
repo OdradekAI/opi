@@ -1,69 +1,85 @@
-# Audit report template
+# Active Audit Set Template
 
-Create immutable siblings:
+Create these four files in a unique temporary staging directory, validate them,
+then publish the fixed Phase paths together:
 
-- `audit.<model>.<head7>.<run-id>.md`
-- `audit.<model>.<head7>.<run-id>.findings.jsonl`
+```text
+audit.meta.json
+audit.requirements.jsonl
+audit.findings.jsonl
+audit.md
+```
 
-The JSONL sibling is the source of truth for normalized findings. The Markdown
-report references finding IDs and adds context; it must not duplicate a second
-editable copy of the machine records.
+Use the exact JSON schemas from
+`../../_shared/references/audit-set-contract.md` and
+`../../_shared/references/finding-contract.md`. An empty findings sidecar is
+valid; do not invent an Info finding to make it non-empty.
+
+The Markdown report references machine record IDs and adds explanation. It is
+not a second editable copy of the JSONL records.
 
 ```markdown
 # Phase <N> Audit
 
+**Audit run ID**: `<phase-scoped run identity>`
 **Audit head**: `<full committed SHA>`
 **Reviewer/model**: <reported identity>
-**Independence**: <class + rationale>
-**Run ID**: <immutable run identity>
-**Contamination**: <none, or dirty-path isolation details>
+**Independence**: <class and rationale>
+**Baseline policy**: latest-committed-spec
 **Verdict**: PASS | PASS-WITH-FINDINGS | FAIL
+
+## Baseline Sources
+
+| Path | SHA-256 | Registration note |
+|---|---|---|
+| ... | ... | current committed source / stored-hash mismatch |
 
 ## Requirement Conformance
 
-| Requirement | Criterion source | Evidence | Requirement state | Finding IDs |
+| Requirement ID | Criterion | Current evidence | State | Finding IDs |
 |---|---|---|---|---|
-| ... | ... | ... | `met` / `partially-met` / `not-met` / `not-assessable` | ... |
+| ... | ... | ... | met / partially-met / not-met / not-assessable | ... |
 
 ## Standards Review
 
-<standards evidence and findings>
+<current audit_head evidence>
 
 ## Spec Review
 
-<spec evidence and findings>
+<current audit_head evidence>
 
 ## Security, Invariants, Integration, Test Quality, and Residuals
 
-<evidence grouped by the owning axis>
+<current evidence grouped by owning axis>
 
 ## Minimum-change Conformance
 
-| Task | Scenario/source | Reuse | Placement | Surface | Production slice | Ceiling/trigger | Status |
-|---|---|---|---|---|---|---|---|
+<current task evidence and status>
 
 ## Findings
 
 ### <finding ID>: <title>
 
-- Axis: `standards` | `spec` | `security` | `test-quality` | `invariants` | `integration` | `residuals`
+- Axis: <axis>
 - Severity: Blocker | Major | Minor | Info
-- Claim: <falsifiable problem statement>
+- Conformance effect: blocks | advisory
+- Requirement IDs: <IDs>
+- Claim: <falsifiable problem>
 - Evidence: <locations and observed details>
-- Criterion: <registered rule or none>
-- Refutation attempted: <counter-evidence and result; required for Blocker/Major>
-- Suggested closure: <behavioral outcome, not a prescribed patch unless necessary>
+- Refutation attempted: <required for Blocker/Major>
+- Suggested closure: <behavioral outcome>
 
 ## Verification Commands
 
-| Command | Result | Obligation/finding |
+| Command | Result | Requirement/finding |
 |---|---|---|
 | ... | PASS / FAIL / NOT RUN | ... |
 
 ## Verdict Rationale
 
-<derive the verdict from mandatory Requirement state values, independently of severity>
+<derive from mandatory requirement states and actionable current findings>
 ```
 
-When there are no findings, create an empty sidecar. Do not invent an
-informational finding merely to make the file non-empty.
+If staging validation fails, do not copy any staged file to the Phase and do
+not put a PASS/FAIL verdict in the user-facing completion message. Report
+`AUDIT-INCOMPLETE` with validator errors.

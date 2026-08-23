@@ -1,80 +1,83 @@
 # Normalized Finding Contract
 
-Audit and runtime eval artifacts use this interchange when their findings may
-enter `opi-remediate`. New producers write the records as JSON Lines in an
-immutable `*.findings.jsonl` sibling; the human-readable report references the
-same IDs instead of copying the machine record. Legacy inline YAML blocks
-remain readable as explicitly degraded input.
+Audit and runtime-eval findings share severity, evidence, and confidence
+vocabulary. Only findings in the current audit set are admissible to
+`opi-remediate`; eval findings remain evaluation evidence and do not become an
+implicit remediation source.
 
-```yaml
-id: <source-stable identifier>
-source_kind: audit | eval
-source_path: <repo-relative artifact path>
-source_model: <reported reviewer/evaluator identity>
-observed_at: <full committed implementation SHA>
-independence: independent-family | fresh-context-same-family | unknown
-axis: standards | spec | security | test-quality | invariants | integration | residuals | runtime-fidelity
-severity: Blocker | Major | Minor | Info
-title: <concise title>
-claim: <falsifiable problem statement>
-evidence:
-  - location: <file:line, trace event, artifact, or command>
-    detail: <observed evidence>
-criterion_source: <spec/rule citation or null>
-reproduction:
-  - <command or eval case>
-confidence: high | medium | low
-status: unverified
+## Current audit findings
+
+Write audit findings as JSON Lines to the fixed path
+`docs/snapshots/phase<N>/assurance/audit.findings.jsonl`. The human report is
+the fixed sibling `audit.md`. A finding uses this shape:
+
+```json
+{
+  "audit_run_id": "phase17-136c380-20260824t010203z",
+  "id": "P17-AUD-001",
+  "source_kind": "audit",
+  "source_path": "docs/snapshots/phase17/assurance/audit.md",
+  "source_model": "reported reviewer identity",
+  "observed_at": "136c380f0c5eea541190cc1a0f5c1d62f983b4e8",
+  "independence": "fresh-context-same-family",
+  "axis": "spec",
+  "severity": "Major",
+  "conformance_effect": "blocks",
+  "title": "Durable session binding is absent",
+  "claim": "New sessions do not persist the required runtime binding.",
+  "evidence": [
+    {
+      "location": "crates/opi-agent/src/session.rs:42",
+      "detail": "The serialized header has no runtime binding."
+    }
+  ],
+  "requirement_ids": ["P17-A1"],
+  "criterion_source": "docs/opi-spec.md#INV-007",
+  "reproduction": ["cargo test -p opi-agent --test session_contract"],
+  "confidence": "high",
+  "status": "unverified"
+}
 ```
+
+Audit finding identity is `(audit_run_id, id)`. The fixed `source_path` is
+traceability, not identity. IDs need only be unique inside one audit run.
 
 ## Field rules
 
-- `id` is stable within `source_path`. Consumers identify the source finding by
-  `(source_path, id)`; they do not assume IDs are globally unique.
-- `source_kind` distinguishes static/code review evidence from runtime fidelity
-  evidence. It does not imply either source is more trustworthy.
-- `source_model` reports the identity claimed by the producer. Never invent a
-  model ID.
-- `observed_at` is the full committed implementation SHA from which the
-  finding evidence was derived. It is not a historical diff boundary.
-- `independence` reports the actual relationship to the implementation or model
-  under evaluation. A fresh context on the same family is degraded independence,
-  not `independent-family`.
-- `axis` preserves Standards and Spec as separate Matt review axes. Opi-specific
-  audit dimensions and eval use the remaining values.
-- `severity` uses the four-tier scale below. Foreign labels are normalized at
-  ingestion while preserving the original label in the narrative report.
-- `claim` must be independently checkable. Recommendations belong outside the
-  claim.
-- `evidence` cites observed facts, not reviewer confidence or conclusions.
+- `audit_run_id` matches `audit.meta.json` exactly.
+- `source_kind` is `audit`; `source_path` names the fixed Phase `audit.md`.
+- `source_model` reports the producer's actual identity. Never invent it.
+- `observed_at` is the full committed `audit_head` inspected by the run.
+- `independence` is `independent-family`, `fresh-context-same-family`, or
+  `unknown`. A new context on the same model family is not independent-family.
+- `axis` is `standards`, `spec`, `security`, `test-quality`, `invariants`,
+  `integration`, `residuals`, or `runtime-fidelity`.
+- `conformance_effect` is `blocks` or `advisory`. Blocker and Major findings
+  always block. Advisory findings may be Minor or Info only.
+- `requirement_ids` is non-empty and reciprocal with the linked requirement
+  records. A blocking finding cannot link a requirement whose state is `met`.
+- `claim` is falsifiable; `evidence` cites observations; `reproduction` names a
+  runnable check or a concrete case.
 - `criterion_source` is `null` only when no normative criterion applies.
-- `reproduction` may name an eval case when a direct command is unavailable.
-- `status` is always `unverified` at production time.
+- `status` is `unverified` at publication. Remediation records its own
+  verification separately.
 
-## Remediation ownership
-
-`opi-remediate` preserves every source field unchanged and records its own
-verification status separately as `Confirmed`, `Partially confirmed`, `Cannot
-confirm`, or `Refuted`. Consensus clustering may select a candidate severity,
-but it never silently reranks an individual source finding. Any final severity
-change is recorded with code/trace evidence and rationale.
-
-New audit artifacts use immutable names:
-`audit.<model>.<head7+>.<run-id>.md` and the sibling
-`audit.<model>.<head7+>.<run-id>.findings.jsonl`. Reusing
-`audit.<model>.md` would change the meaning of the stable `(source_path, id)`
-key and is therefore invalid. Eval producers use an equivalently immutable
-case/run identity.
-
-Malformed finding records remain visible in the source report but are not
-silently repaired. Remediation reports the missing fields and asks for a source
-correction or treats the narrative as an explicitly degraded legacy input.
-
-Validate new finding sidecars with:
+Validate the current audit sidecar with:
 
 ```text
-python .agents/skills/_shared/scripts/validate_assurance_artifact.py findings <path>
+python .agents/skills/_shared/scripts/validate_assurance_artifact.py findings docs/snapshots/phase<N>/assurance/audit.findings.jsonl
 ```
+
+A complete audit must validate the whole set with the `audit-set` command; the
+standalone command is diagnostic only.
+
+## Runtime eval findings
+
+`opi-eval` may reuse the axis, severity, evidence, reproduction, confidence,
+and independence fields. Its producer-owned case/run identity remains outside
+the active audit set. A later independent audit may reproduce eval evidence,
+but remediation never ingests an eval artifact or silently converts it into an
+audit finding.
 
 ## Severity scale
 
@@ -83,19 +86,9 @@ python .agents/skills/_shared/scripts/validate_assurance_artifact.py findings <p
 | **Blocker** | Cannot ship safely: normal-path data loss, credential/user-data exposure, crash or panic on expected input, or a common-path deadlock/infinite loop. |
 | **Major** | Incorrect behavior or a significant gap that must be fixed before the next phase: wrong output for valid input, silent edge-case corruption, material spec deviation, cascading error handling failure, or a critical-path test gap. |
 | **Minor** | Quality or completeness gap without incorrect behavior: a non-critical test gap, documentation drift, duplicate logic, naming inconsistency, or an unsynchronized localized counterpart. |
-| **Info** | Improvement or future consideration rather than a defect: performance opportunity, API ergonomics, scale observation, or documented design trade-off. |
+| **Info** | Improvement or future consideration rather than a defect: performance opportunity, API ergonomics, scale observation, or a documented design trade-off. |
 
-Normalize foreign labels as follows while retaining the producer's original
-label in narrative evidence:
-
-| Canonical | Common foreign labels |
-|---|---|
-| Blocker | P0, Critical |
-| Major | P1, High |
-| Minor | P2, Medium, Warning |
-| Info | P3, Low, Note |
-
-When a label is unfamiliar, map by described impact rather than spelling:
-security/data-loss/crash to Blocker; wrong behavior/spec deviation to Major;
-quality/test/doc gap to Minor; suggestion/style/future work to Info. A healthy
-review usually has few Blockers; do not inflate severity to create urgency.
+Normalize foreign labels while retaining the original label in narrative
+evidence: P0/Critical to Blocker, P1/High to Major, P2/Medium/Warning to Minor,
+and P3/Low/Note to Info. Map unfamiliar labels by described impact rather than
+spelling.
