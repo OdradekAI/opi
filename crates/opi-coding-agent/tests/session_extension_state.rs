@@ -15,7 +15,7 @@ use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::harness::{CodingHarness, ResumeInfo};
 
 fn make_header(id: &str, cwd: &str) -> SessionHeader {
-    SessionHeader::new(id.into(), "2026-06-09T00:00:00Z".into(), cwd.into(), None)
+    SessionHeader::new_for_test(id.into(), "2026-06-09T00:00:00Z".into(), cwd.into(), None)
 }
 
 fn user_entry(id: &str, parent_id: Option<&str>, text: &str) -> SessionEntry {

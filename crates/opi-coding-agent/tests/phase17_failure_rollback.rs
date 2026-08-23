@@ -65,7 +65,7 @@ fn empty_resume_info(
     let path = sessions.join(format!("{session_id}.jsonl"));
     opi_agent::session::SessionWriter::create(
         &path,
-        opi_agent::session::SessionHeader::new(
+        opi_agent::session::SessionHeader::new_for_test(
             session_id.to_owned(),
             "2026-08-20T00:00:00Z".to_owned(),
             workspace.display().to_string(),
@@ -300,6 +300,34 @@ impl FailAutomaticCompactionEmissionOnceSink {
         *self.session_path.lock().unwrap() = Some(path);
     }
 
+    fn session_path_at_evidence_boundary(&self) -> std::path::PathBuf {
+        let source_path = self
+            .session_path
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("session path installed before prompt");
+        let (source_header, _) = opi_agent::session::SessionReader::read_all(&source_path)
+            .expect("observed source session remains readable");
+        let parent = source_path
+            .parent()
+            .expect("observed source session has a parent directory");
+
+        std::fs::read_dir(parent)
+            .expect("observed session directory remains readable")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|candidate| {
+                candidate != &source_path
+                    && matches!(
+                        opi_agent::session::SessionReader::read_all(candidate),
+                        Ok((header, _))
+                            if header.parent_session.as_deref() == Some(&source_header.id)
+                    )
+            })
+            .unwrap_or(source_path)
+    }
+
     fn session_bytes_at_failure(&self) -> Vec<u8> {
         self.session_bytes_at_failure
             .lock()
@@ -336,12 +364,7 @@ impl EvidenceSink for FailAutomaticCompactionEmissionOnceSink {
             AutomaticCompactionFailurePhase::Terminal => compaction_outcome.is_some(),
         };
         if target && self.fail_next.swap(false, Ordering::SeqCst) {
-            let path = self
-                .session_path
-                .lock()
-                .unwrap()
-                .clone()
-                .expect("session path installed before prompt");
+            let path = self.session_path_at_evidence_boundary();
             *self.session_bytes_at_failure.lock().unwrap() =
                 Some(std::fs::read(path).expect("session bytes at evidence boundary"));
             let mut invalid = record.clone();
@@ -1095,7 +1118,6 @@ async fn persisted_turn_commits_before_finalization_failure_and_retains_tool_pro
         sessions.path(),
         "persisted-finalization-failure",
     );
-    let session_path = resume.path.clone();
     let mut harness = CodingHarness::builder(
         Box::new(provider),
         "mock:mock-model".to_owned(),
@@ -1124,6 +1146,11 @@ async fn persisted_turn_commits_before_finalization_failure_and_retains_tool_pro
         "the public finalization failure poisons recorder health for the incomplete run"
     );
     assert!(sink.completed_manifest().is_none());
+    let session_path = harness
+        .session()
+        .expect("a binding mismatch creates an active child before the run")
+        .session_path()
+        .to_path_buf();
     let session_after_first = std::fs::read(&session_path).unwrap();
     assert!(!session_after_first.is_empty());
     {
@@ -1394,7 +1421,7 @@ async fn automatic_compaction_start_failure_preserves_boundary_and_recovers_next
         sessions.path(),
         "automatic-compaction-start",
     );
-    let session_path = resume.path.clone();
+    let source_session_path = resume.path.clone();
     let mut harness = CodingHarness::builder(
         Box::new(provider),
         "mock:mock-model".to_owned(),
@@ -1409,12 +1436,18 @@ async fn automatic_compaction_start_failure_preserves_boundary_and_recovers_next
         source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
-    sink.observe_session(session_path.clone());
+    sink.observe_session(source_session_path.clone());
 
     assert!(matches!(
         harness.prompt("first prompt").await,
         Err(AgentError::EvidenceFinalization(_))
     ));
+    let session_path = harness
+        .session()
+        .expect("a binding mismatch creates an active child before the run")
+        .session_path()
+        .to_path_buf();
+    assert_ne!(session_path, source_session_path);
     assert_eq!(
         std::fs::read(&session_path).unwrap(),
         sink.session_bytes_at_failure(),
@@ -1585,7 +1618,7 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
     let recovery_config = config.clone();
     let provider = MockProvider::new("mock", vec![text_response(assistant_sentinel)]);
     let resume = empty_resume_info(workspace.path(), sessions.path(), "a11-auto-compaction");
-    let session_path = resume.path.clone();
+    let source_session_path = resume.path.clone();
     let mut harness = CodingHarness::builder(
         Box::new(provider),
         "mock:mock-model".to_owned(),
@@ -1600,7 +1633,7 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
         source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
-    sink.observe_session(session_path.clone());
+    sink.observe_session(source_session_path.clone());
     let live_events = Arc::new(Mutex::new(Vec::new()));
     let live_events_capture = live_events.clone();
     harness.subscribe(Box::new(move |event| {
@@ -1611,6 +1644,12 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
         harness.prompt(prompt_sentinel).await,
         Err(AgentError::EvidenceFinalization(_))
     ));
+    let session_path = harness
+        .session()
+        .expect("a binding mismatch creates an active child before the run")
+        .session_path()
+        .to_path_buf();
+    assert_ne!(session_path, source_session_path);
     let bytes_after_failure = std::fs::read(&session_path).unwrap();
     assert_eq!(
         bytes_after_failure,

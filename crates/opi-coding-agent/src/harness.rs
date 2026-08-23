@@ -44,7 +44,8 @@ use opi_agent::{Agent, DiagnosticSink, RecordingSink};
 use opi_ai::message::Message;
 
 use crate::evidence::{
-    EvidenceBuilderConfig, EvidenceCapture, RunDynamicFacts, build_finalized_manifest, usage_facts,
+    EvidenceBuilderConfig, EvidenceCapture, RunDynamicFacts, build_finalized_manifest,
+    direct_runtime_input_binding, usage_facts,
 };
 use opi_ai::provider::{ModelInfo, Provider, ThinkingConfig};
 use serde::Serialize;
@@ -193,13 +194,25 @@ fn canonical_model_spec(provider_id: &str, input: &str) -> String {
     }
 }
 
-fn rebind_evidence_capture(
-    capture: &mut EvidenceCapture,
+struct ResolvedRuntimeInput {
+    binding: opi_agent::evidence::RuntimeInputBinding,
+    config: opi_agent::evidence::ConfigIdentity,
+    material_inputs: String,
+    system_digest: Option<opi_agent::evidence::ContentDigest>,
+    tool_schema_digests: Vec<opi_agent::evidence::ContentDigest>,
+    budget: opi_agent::evidence::Measurement,
+}
+
+/// Resolve the material facts that both durable session ownership and optional
+/// evidence capture must bind before a run begins.
+fn resolve_runtime_input(
+    source: &opi_agent::evidence::AssemblyIdentity,
+    policy_digest: &opi_agent::evidence::ContentDigest,
     agent: &Agent,
     config: &OpiConfig,
     system_prompt: &str,
     model_registry: &opi_ai::ProviderCollection,
-) {
+) -> ResolvedRuntimeInput {
     let state = agent.state_snapshot();
     let model_spec = state.model_selection.to_spec();
     let model = model_registry
@@ -304,21 +317,26 @@ fn rebind_evidence_capture(
             "temperature": state.inference.temperature,
         },
     }));
-    capture.rebind(
-        opi_agent::evidence::ConfigIdentity {
-            harness_digest,
-            runtime_digest,
-            adapter_digest,
-            material_digest,
-        },
-        &material_inputs,
+    let max_iterations = config.defaults.max_iterations;
+    let config = opi_agent::evidence::ConfigIdentity {
+        harness_digest,
+        runtime_digest,
+        adapter_digest,
+        material_digest,
+    };
+    let budget = opi_agent::evidence::Measurement::Known {
+        value: u64::from(max_iterations),
+        origin: opi_agent::evidence::MeasurementOrigin::Quota,
+    };
+    let binding = direct_runtime_input_binding(source, policy_digest, &config, &material_inputs);
+    ResolvedRuntimeInput {
+        binding,
+        config,
+        material_inputs,
         system_digest,
         tool_schema_digests,
-        opi_agent::evidence::Measurement::Known {
-            value: u64::from(config.defaults.max_iterations),
-            origin: opi_agent::evidence::MeasurementOrigin::Quota,
-        },
-    );
+        budget,
+    }
 }
 
 /// Resolved routed-execution inputs threaded into
@@ -615,6 +633,7 @@ fn harness_execution(
 
 /// Optional pre-existing session the harness can adopt instead of creating
 /// a new JSONL file. Produced by `--resume` flows.
+#[derive(Clone)]
 pub struct ResumeInfo {
     pub path: PathBuf,
     pub session_id: String,
@@ -682,6 +701,11 @@ pub struct CodingHarness {
     /// to assemble the finalized manifest. `None` is the capture-
     /// disabled no-op (Minimal Runtime); the Agent's evidence sink stays unset.
     evidence: Option<EvidenceCapture>,
+    /// The trusted product assembly that owns direct runtime-input bindings
+    /// even when evidence capture is disabled.
+    runtime_input_source: opi_agent::evidence::AssemblyIdentity,
+    /// Effective policy identity shared by session headers and manifests.
+    runtime_input_policy_digest: opi_agent::evidence::ContentDigest,
     /// The OS-keychain-backed credential store, set by production startup.
     /// Used by the interactive loop for `/login` and `/logout`.
     pub credential_store: Option<Arc<KeychainCredentialStore>>,
@@ -904,6 +928,8 @@ pub struct CodingHarnessBuilder {
     /// Opt-in evidence capture (recorder plus direct-assembly source).
     /// `None` is the capture-disabled no-op Minimal Runtime.
     evidence: Option<EvidenceBuilderConfig>,
+    runtime_input_source: opi_agent::evidence::AssemblyIdentity,
+    fork_on_start: bool,
     trust_decision: TrustDecision,
     execution_mode: ExecutionRunMode,
     /// Collection-owned auth resolver for the active dispatch route
@@ -945,6 +971,8 @@ impl CodingHarnessBuilder {
             startup_diagnostics: Vec::new(),
             record_diagnostics: false,
             evidence: None,
+            runtime_input_source: crate::evidence::SDK_ASSEMBLY.clone(),
+            fork_on_start: false,
             trust_decision,
             execution_mode: ExecutionRunMode::Interactive,
             auth_resolver: None,
@@ -971,6 +999,13 @@ impl CodingHarnessBuilder {
 
     pub fn resume(mut self, resume: ResumeInfo) -> Self {
         self.resume = Some(resume);
+        self
+    }
+
+    /// Fork the supplied resume source only after trusted product assembly has
+    /// resolved the current runtime-input binding.
+    pub fn fork_on_start(mut self) -> Self {
+        self.fork_on_start = true;
         self
     }
 
@@ -1029,7 +1064,16 @@ impl CodingHarnessBuilder {
     /// direct-assembly origin (CLI / SDK / RPC). Absent capture is the no-op
     /// Minimal Runtime.
     pub fn evidence(mut self, config: EvidenceBuilderConfig) -> Self {
+        self.runtime_input_source = config.source.clone();
         self.evidence = Some(config);
+        self
+    }
+
+    /// Set the trusted product assembly used for direct bindings when capture
+    /// is disabled. SDK construction keeps the SDK default; CLI and RPC
+    /// startup select their own existing assembly identities.
+    pub fn runtime_input_source(mut self, source: opi_agent::evidence::AssemblyIdentity) -> Self {
+        self.runtime_input_source = source;
         self
     }
 
@@ -1104,6 +1148,8 @@ impl CodingHarnessBuilder {
                 startup_diagnostics: self.startup_diagnostics,
                 record_diagnostics: self.record_diagnostics,
                 evidence: self.evidence,
+                runtime_input_source: self.runtime_input_source,
+                fork_on_start: self.fork_on_start,
                 trust_decision: self.trust_decision,
                 execution_mode: self.execution_mode,
                 auth_resolver: self.auth_resolver,
@@ -1124,6 +1170,8 @@ struct HarnessBuildOptions {
     record_diagnostics: bool,
     /// Opt-in evidence capture (recorder plus direct-assembly source).
     evidence: Option<EvidenceBuilderConfig>,
+    runtime_input_source: opi_agent::evidence::AssemblyIdentity,
+    fork_on_start: bool,
     trust_decision: TrustDecision,
     /// The run mode threaded into `ExecutionRuntime::build`.
     /// Legacy constructors derive interactive/non-interactive from tool config;
@@ -1151,6 +1199,8 @@ impl Default for HarnessBuildOptions {
             startup_diagnostics: Vec::new(),
             record_diagnostics: false,
             evidence: None,
+            runtime_input_source: crate::evidence::SDK_ASSEMBLY.clone(),
+            fork_on_start: false,
             trust_decision: TrustDecision::Undecided,
             execution_mode: ExecutionRunMode::Interactive,
             auth_resolver: None,
@@ -1429,6 +1479,14 @@ impl CodingHarness {
             .as_ref()
             .map(|info| info.diagnostics.clone())
             .unwrap_or_default();
+        let is_legacy_resume = resume.as_ref().is_some_and(|info| {
+            opi_agent::session::SessionReader::read_with_recovery(&info.path)
+                .map(|(header, _, _)| header.version == opi_agent::session::LEGACY_FORMAT_VERSION)
+                .unwrap_or(false)
+        });
+        let deferred_resume = (is_legacy_resume || build_options.fork_on_start)
+            .then(|| resume.clone())
+            .flatten();
         // Gather extension providers plus model overrides up front, and
         // materialize the active provider's overrides onto the provider itself
         // while it is still mutable (before it becomes a dispatch route). The
@@ -1581,6 +1639,10 @@ impl CodingHarness {
         // Capture the policy digest before it moves into the authorizer; the
         // evidence manifest addresses the effective policy by this digest.
         let evidence_policy_digest_hex = effective_policy.digest().to_owned();
+        let runtime_input_policy_digest =
+            opi_agent::evidence::ContentDigest::from_hex(evidence_policy_digest_hex.clone())
+                .expect("effective policy digest is canonical SHA-256 hex");
+        let runtime_input_source = build_options.runtime_input_source.clone();
         let authorizer = Arc::new(crate::tool_authority::ProductToolAuthorizer::new(
             effective_policy,
             Some(command_authorization),
@@ -1725,6 +1787,14 @@ impl CodingHarness {
             enabled: config.compaction.enabled,
             threshold_tokens: config.compaction.threshold_tokens,
         };
+        let initial_runtime_input = resolve_runtime_input(
+            &runtime_input_source,
+            &runtime_input_policy_digest,
+            &agent,
+            &config,
+            &system_prompt,
+            &dispatch_collection,
+        );
 
         // Capture recorded model/thinking up front so `resume` can still move
         // into SessionCoordinator::open_existing below. Applied after the
@@ -1732,7 +1802,9 @@ impl CodingHarness {
         let recorded_model = resume.as_ref().and_then(|info| info.recorded_model.clone());
         let recorded_thinking = resume.as_ref().and_then(|info| info.recorded_thinking);
 
-        let (session, session_resume_error) = if let Some(info) = resume {
+        let (session, session_resume_error) = if deferred_resume.is_some() {
+            (None, None)
+        } else if let Some(info) = resume {
             let path_display = info.path.display().to_string();
             match SessionCoordinator::open_existing(
                 info.path,
@@ -1759,7 +1831,14 @@ impl CodingHarness {
             #[cfg(not(test))]
             let session_dir = crate::session_cli::session_dir();
             (
-                SessionCoordinator::new(&session_dir, &cwd, compaction_config, model.clone()).ok(),
+                SessionCoordinator::new(
+                    &session_dir,
+                    &cwd,
+                    compaction_config,
+                    model.clone(),
+                    initial_runtime_input.binding.clone(),
+                )
+                .ok(),
                 None,
             )
         };
@@ -1798,12 +1877,12 @@ impl CodingHarness {
                 },
                 &material_inputs,
             );
-            rebind_evidence_capture(
-                &mut capture,
-                &agent,
-                &config,
-                &system_prompt,
-                &dispatch_collection,
+            capture.rebind(
+                initial_runtime_input.config.clone(),
+                &initial_runtime_input.material_inputs,
+                initial_runtime_input.system_digest.clone(),
+                initial_runtime_input.tool_schema_digests.clone(),
+                initial_runtime_input.budget,
             );
             // The recorder is also the Agent's evidence sink (EvidenceRecorder
             // is a sub-trait of EvidenceSink), so the loop emits through it.
@@ -1827,6 +1906,8 @@ impl CodingHarness {
             pending_extension_state: resume_extension_state,
             diagnostics,
             evidence,
+            runtime_input_source,
+            runtime_input_policy_digest,
             credential_store: None,
             oauth_registry: None,
             oauth_endpoints: OAuthEndpointConfig::production(),
@@ -1837,13 +1918,24 @@ impl CodingHarness {
             session_dir_override,
         };
 
-        // Re-apply recorded model/thinking on the CLI --resume path
-        // (and any other builder-driven resume), mirroring resume_session_id.
-        // The diagnostic sink is already wired above so incompat warnings flow
-        // through the same channel as the interactive path.
-        harness.apply_recorded_model(recorded_model.as_deref());
-        harness.apply_recorded_thinking(recorded_thinking);
-        harness.sync_session_cost_model();
+        if let Some(info) = deferred_resume {
+            let adoption = if is_legacy_resume {
+                harness.adopt_legacy_resume(info)
+            } else {
+                harness.fork_initial_resume(info)
+            };
+            if let Err(error) = adoption {
+                harness.session_resume_error = Some(error);
+            }
+        } else {
+            // Re-apply recorded model/thinking on the CLI --resume path
+            // (and any other builder-driven resume), mirroring resume_session_id.
+            // The diagnostic sink is already wired above so incompat warnings flow
+            // through the same channel as the interactive path.
+            harness.apply_recorded_model(recorded_model.as_deref());
+            harness.apply_recorded_thinking(recorded_thinking);
+            harness.sync_session_cost_model();
+        }
         harness.sync_session_id();
 
         harness
@@ -2207,6 +2299,149 @@ impl CodingHarness {
         validate_thinking_budget_for_model(model, budget_tokens, max_tokens)
     }
 
+    /// Adopt a genuine v1 source through one immutable, parented v2 child.
+    /// The source is read-only: route normalization and exact binding assembly
+    /// happen before the child is allocated, so ambiguity, missing routes, and
+    /// recovery damage fail before provider or tool dispatch.
+    fn adopt_legacy_resume(&mut self, info: ResumeInfo) -> Result<(), String> {
+        let (header, _, recovery) =
+            opi_agent::session::SessionReader::read_with_recovery(&info.path).map_err(|error| {
+                format!(
+                    "could not read legacy session '{}': {error}",
+                    info.session_id
+                )
+            })?;
+        if header.version != opi_agent::session::LEGACY_FORMAT_VERSION {
+            return Err(format!(
+                "session '{}' is not a legacy v1 source",
+                info.session_id
+            ));
+        }
+        if !recovery.is_clean() {
+            return Err(format!(
+                "legacy session '{}' requires clean recovery before migration",
+                info.session_id
+            ));
+        }
+        let recorded_model = info.recorded_model.as_deref().ok_or_else(|| {
+            format!(
+                "legacy session '{}' has no recorded route to normalize",
+                info.session_id
+            )
+        })?;
+        let canonical = match self.normalize_recorded_route(recorded_model) {
+            Ok(canonical) => canonical,
+            Err(RouteRemediation::Ambiguous { candidates }) => {
+                self.record_harness_diagnostic(
+                    Diagnostic::new(
+                        Severity::Warning,
+                        CODE_SESSION_RESUME_ROUTE_AMBIGUOUS,
+                        SOURCE_SESSION,
+                        "legacy bare model matches more than one dispatchable route",
+                    )
+                    .details(serde_json::json!({
+                        "recorded_model": recorded_model,
+                        "candidates": candidates,
+                    })),
+                );
+                return Err(format!(
+                    "legacy session route is ambiguous for model '{recorded_model}'"
+                ));
+            }
+            Err(RouteRemediation::Missing) => {
+                self.record_harness_diagnostic(
+                    Diagnostic::new(
+                        Severity::Warning,
+                        CODE_SESSION_RESUME_ROUTE_MISSING,
+                        SOURCE_SESSION,
+                        "legacy bare model matches no dispatchable route",
+                    )
+                    .details(serde_json::json!({ "recorded_model": recorded_model })),
+                );
+                return Err(format!(
+                    "legacy session route is missing for model '{recorded_model}'"
+                ));
+            }
+        };
+        self.try_configure_model(&canonical)?;
+        self.apply_agent_model(&canonical)?;
+        self.apply_recorded_thinking(info.recorded_thinking);
+
+        let runtime_input = resolve_runtime_input(
+            &self.runtime_input_source,
+            &self.runtime_input_policy_digest,
+            &self.agent,
+            &self.config,
+            &self.system_prompt,
+            &self.model_registry,
+        );
+        let dir = info.path.parent().ok_or_else(|| {
+            format!(
+                "legacy session '{}' has no parent directory",
+                info.session_id
+            )
+        })?;
+        let forked = crate::session_cli::fork_session_with_runtime_input_binding(
+            dir,
+            &info.session_id,
+            runtime_input.binding,
+        )
+        .map_err(|error| {
+            format!(
+                "failed to migrate legacy session '{}': {error}",
+                info.session_id
+            )
+        })?;
+        self.adopt_session_entries(
+            &forked.entries,
+            &forked.recovery,
+            forked.path,
+            forked.header.id,
+            "failed to adopt migrated legacy session",
+            true,
+        )?;
+        self.sync_session_id();
+        Ok(())
+    }
+
+    /// Complete a requested v2 startup fork only after product assembly has
+    /// resolved the binding for the current startup inputs.
+    fn fork_initial_resume(&mut self, info: ResumeInfo) -> Result<(), String> {
+        let runtime_input = resolve_runtime_input(
+            &self.runtime_input_source,
+            &self.runtime_input_policy_digest,
+            &self.agent,
+            &self.config,
+            &self.system_prompt,
+            &self.model_registry,
+        );
+        let dir = info
+            .path
+            .parent()
+            .ok_or_else(|| format!("session '{}' has no parent directory", info.session_id))?;
+        let forked = crate::session_cli::fork_session_with_runtime_input_binding(
+            dir,
+            &info.session_id,
+            runtime_input.binding,
+        )
+        .map_err(|error| {
+            format!(
+                "failed to fork requested session '{}': {error}",
+                info.session_id
+            )
+        })?;
+        self.adopt_session_entries(
+            &forked.entries,
+            &forked.recovery,
+            forked.path,
+            forked.header.id,
+            "failed to open startup fork",
+            true,
+        )?;
+        self.sync_session_id();
+        Ok(())
+    }
+
     /// Resume an existing session by ID into this harness.
     ///
     /// Reconstructs the active-branch context through the opi-agent context API:
@@ -2231,6 +2466,20 @@ impl CodingHarness {
         let dir = crate::session_cli::session_dir();
         let session =
             crate::session_cli::resume_session(&dir, session_id).map_err(|e| e.to_string())?;
+
+        if session.header.version == opi_agent::session::LEGACY_FORMAT_VERSION {
+            let ctx = reconstruct_context(&session.entries, &session.recovery);
+            self.adopt_legacy_resume(ResumeInfo {
+                path: session.path,
+                session_id: session.header.id,
+                entries: session.entries,
+                original_cwd: PathBuf::from(session.header.cwd),
+                diagnostics: ctx.diagnostics,
+                recorded_model: ctx.model,
+                recorded_thinking: ctx.thinking_level,
+            })?;
+            return Ok(self.turn_offset);
+        }
 
         let (path, loaded_session_id) = (session.path, session.header.id);
         let message_count = self.adopt_session_entries(
@@ -2982,23 +3231,86 @@ impl CodingHarness {
         }
     }
 
+    /// Ensure the active mutable branch carries the exact binding resolved for
+    /// this external run. A mismatch creates a parented v2 child before any
+    /// evidence setup, provider dispatch, or tool side effect.
+    fn ensure_session_runtime_input_binding(
+        &mut self,
+        binding: &opi_agent::evidence::RuntimeInputBinding,
+    ) -> Result<(), AgentError> {
+        let needs_child = self
+            .session
+            .as_ref()
+            .is_some_and(|session| session.runtime_input_binding() != binding);
+        if !needs_child {
+            return Ok(());
+        }
+
+        let (source_path, source_session_id) = {
+            let session = self
+                .session
+                .as_ref()
+                .expect("session was present when binding mismatch was observed");
+            (
+                session.session_path().to_path_buf(),
+                session.session_id().to_owned(),
+            )
+        };
+        let forked = crate::session_cli::fork_session_path_with_runtime_input_binding(
+            &source_path,
+            binding.clone(),
+        )
+        .map_err(|error| {
+            AgentError::SessionResume(format!(
+                "failed to create a bound child for session '{source_session_id}': {error}"
+            ))
+        })?;
+        let model = self.agent.model_spec();
+        let message_count = self.agent.messages_snapshot().len();
+        let coordinator = SessionCoordinator::open_existing(
+            forked.path,
+            forked.header.id,
+            &forked.entries,
+            message_count,
+            opi_agent::compaction::CompactionConfig {
+                enabled: self.config.compaction.enabled,
+                threshold_tokens: self.config.compaction.threshold_tokens,
+            },
+            model,
+        )
+        .map_err(|error| {
+            AgentError::SessionResume(format!("failed to adopt bound child session: {error}"))
+        })?;
+        self.session = Some(coordinator);
+        self.sync_session_cost_model();
+        self.sync_session_id();
+        Ok(())
+    }
+
     /// Prepare the evidence sink before the run (fail-closed). A setup failure
     /// aborts the run as `AgentError::EvidenceSetup` before its first
     /// provider/tool call so the run never starts with unprepared capture.
     /// No-op when capture is not configured.
     fn setup_evidence_run(&mut self) -> Result<(), AgentError> {
         self.clear_run_diagnostics();
+        let runtime_input = resolve_runtime_input(
+            &self.runtime_input_source,
+            &self.runtime_input_policy_digest,
+            &self.agent,
+            &self.config,
+            &self.system_prompt,
+            &self.model_registry,
+        );
+        self.ensure_session_runtime_input_binding(&runtime_input.binding)?;
         if let Some(capture) = &mut self.evidence {
-            rebind_evidence_capture(
-                capture,
-                &self.agent,
-                &self.config,
-                &self.system_prompt,
-                &self.model_registry,
+            capture.rebind(
+                runtime_input.config,
+                &runtime_input.material_inputs,
+                runtime_input.system_digest,
+                runtime_input.tool_schema_digests,
+                runtime_input.budget,
             );
-            if let Some(session) = self.session.as_ref() {
-                capture.binding = session.runtime_input_binding().clone();
-            }
+            debug_assert_eq!(capture.binding, runtime_input.binding);
             capture
                 .recorder
                 .setup(&capture.binding)

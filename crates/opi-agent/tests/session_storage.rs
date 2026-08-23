@@ -261,7 +261,7 @@ fn compaction_reason_all_variants_round_trip() {
 // ---------------------------------------------------------------------------
 
 fn make_header(id: &str) -> SessionHeader {
-    SessionHeader::new(
+    SessionHeader::new_for_test(
         id.into(),
         "2026-05-22T12:00:00Z".into(),
         "/repo".into(),
@@ -270,7 +270,7 @@ fn make_header(id: &str) -> SessionHeader {
 }
 
 fn make_header_with_parent(id: &str, parent: &str) -> SessionHeader {
-    SessionHeader::new(
+    SessionHeader::new_for_test(
         id.into(),
         "2026-05-22T12:00:00Z".into(),
         "/repo".into(),

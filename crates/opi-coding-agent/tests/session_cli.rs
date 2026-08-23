@@ -25,11 +25,11 @@ use opi_coding_agent::session_cli::{
 // ---------------------------------------------------------------------------
 
 fn make_header(id: &str, cwd: &str) -> SessionHeader {
-    SessionHeader::new(id.into(), "2026-05-22T12:00:00Z".into(), cwd.into(), None)
+    SessionHeader::new_for_test(id.into(), "2026-05-22T12:00:00Z".into(), cwd.into(), None)
 }
 
 fn make_header_with_parent(id: &str, cwd: &str, parent: &str) -> SessionHeader {
-    SessionHeader::new(
+    SessionHeader::new_for_test(
         id.into(),
         "2026-05-22T12:00:00Z".into(),
         cwd.into(),
@@ -1043,7 +1043,7 @@ fn e2e_export_session_writes_output_and_preserves_source() {
 
     // Build a session fixture with a secret canary directly on disk.
     let session_path = sessions.path().join("e2e-export.jsonl");
-    let header = SessionHeader::new(
+    let header = SessionHeader::new_for_test(
         "e2e-export".into(),
         "2026-07-05T00:00:00Z".into(),
         "/workspace".into(),

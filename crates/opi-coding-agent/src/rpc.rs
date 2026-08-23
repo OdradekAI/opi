@@ -350,6 +350,7 @@ impl RpcRunner {
                 .initial_messages(initial_messages)
                 .tool_selection(tool_selection)
                 .tool_config(tool_config)
+                .runtime_input_source(crate::evidence::RPC_ASSEMBLY.clone())
                 .extra_routes(extra_routes)
                 .startup_diagnostics(startup_diagnostics)
                 // Thread the RPC run mode into ExecutionRuntime::build
@@ -1325,7 +1326,7 @@ mod tests {
         assert!(session_path.to_string_lossy().contains(canaries.path));
         SessionWriter::create(
             &session_path,
-            SessionHeader::new(
+            SessionHeader::new_for_test(
                 session_id.clone(),
                 "2026-08-20T00:00:00Z".to_owned(),
                 workspace.path().display().to_string(),
@@ -1376,15 +1377,13 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        if remove_session_before_prompt {
-            std::fs::remove_file(&session_path).unwrap();
-        }
-
         let (input_tx, input_rx) = tokio::sync::mpsc::unbounded_channel();
         let jsonl_bytes = Arc::new(std::sync::Mutex::new(Vec::new()));
         let written = jsonl_bytes.clone();
         let saw_terminal_event = Arc::new(tokio::sync::Notify::new());
         let terminal_notification = saw_terminal_event.clone();
+        let saw_run_end = Arc::new(tokio::sync::Notify::new());
+        let run_end_notification = saw_run_end.clone();
         let task = tokio::spawn(async move {
             runner
                 .run_loop(input_rx, move |value| {
@@ -1392,10 +1391,35 @@ mod tests {
                     if value["type"] == terminal_event {
                         terminal_notification.notify_one();
                     }
+                    if value["type"] == "AgentEnd" {
+                        run_end_notification.notify_one();
+                    }
                     result
                 })
                 .await
         });
+
+        if remove_session_before_prompt {
+            input_tx
+                .send(RpcInput::Command(RpcCommand::prompt {
+                    id: Some("writer-prime-control".to_owned()),
+                    message: canaries.prompt.to_owned(),
+                }))
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(2), saw_run_end.notified())
+                .await
+                .unwrap_or_else(|_| panic!("initial RPC run creates the bound session child"));
+            let active_child = std::fs::read_dir(sessions.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .find(|path| {
+                    path.extension()
+                        .is_some_and(|extension| extension == "jsonl")
+                        && path != &session_path
+                })
+                .expect("initial run creates one bound child session");
+            std::fs::remove_file(active_child).unwrap();
+        }
 
         input_tx
             .send(RpcInput::Command(RpcCommand::prompt {
@@ -1560,8 +1584,8 @@ mod tests {
         )
         .await;
 
-        assert_eq!(scenario.auth_observations, 2);
-        assert_eq!(scenario.provider_calls, 2);
+        assert_eq!(scenario.auth_observations, 3);
+        assert_eq!(scenario.provider_calls, 3);
         assert!(scenario.saw_tool_result);
         assert!(scenario.output.contains(prompt_canary));
         assert!(scenario.output.contains(tool_canary));

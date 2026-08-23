@@ -52,8 +52,9 @@ pub struct SessionInfo {
 pub struct ResumedSession {
     pub header: opi_agent::session::SessionHeader,
     pub entries: Vec<opi_agent::session::SessionEntry>,
-    /// Immutable binding paired with the validated committed prefix.
-    pub runtime_input_binding: opi_agent::evidence::RuntimeInputBinding,
+    /// Immutable v2 binding. A v1 source remains read-only and carries no
+    /// binding until trusted product assembly creates its parented v2 child.
+    pub runtime_input_binding: Option<opi_agent::evidence::RuntimeInputBinding>,
     /// Filesystem path of the resumed session JSONL file. Used by the harness
     /// to open the file in append mode instead of creating a new session.
     pub path: PathBuf,
@@ -175,16 +176,20 @@ pub fn list_sessions(dir: &Path) -> Result<Vec<SessionInfo>, SessionCliError> {
 pub fn resume_session(dir: &Path, session_id: &str) -> Result<ResumedSession, SessionCliError> {
     validate_session_id(session_id)?;
     let path = dir.join(format!("{session_id}.jsonl"));
+    resume_session_path(path, session_id)
+}
+
+fn resume_session_path(
+    path: PathBuf,
+    missing_session: &str,
+) -> Result<ResumedSession, SessionCliError> {
     if !path.exists() {
-        return Err(SessionCliError::NotFound(session_id.into()));
+        return Err(SessionCliError::NotFound(missing_session.into()));
     }
 
-    let validated = opi_agent::session::SessionReader::read_validated_with_recovery(&path)
+    let (header, entries, recovery) = opi_agent::session::SessionReader::read_with_recovery(&path)
         .map_err(|e| SessionCliError::Corrupt(format!("{}: {e}", path.display())))?;
-    let header = validated.header;
-    let entries = validated.entries;
-    let recovery = validated.recovery;
-    let runtime_input_binding = validated.runtime_input_binding;
+    let runtime_input_binding = header.runtime_input_binding.clone();
 
     let skipped_entries = recovery.corrupt_count();
     let diagnostics = recovery.diagnostics();
@@ -216,7 +221,59 @@ pub fn resume_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Se
 /// copy dropped.
 pub fn fork_session(dir: &Path, session_id: &str) -> Result<ResumedSession, SessionCliError> {
     let source = resume_session(dir, session_id)?;
+    let binding = source.runtime_input_binding.clone().ok_or_else(|| {
+        SessionCliError::Corrupt(
+            "legacy session requires trusted runtime-input binding assembly before forking".into(),
+        )
+    })?;
+    fork_loaded_session(dir, source, binding)
+}
 
+/// Fork a validated mutable session into a child carrying `runtime_input_binding`.
+///
+/// The caller supplies the binding derived from the current trusted material
+/// inputs. This is used when those inputs changed between runs, before the next
+/// provider or tool side effect.
+pub fn fork_session_with_runtime_input_binding(
+    dir: &Path,
+    session_id: &str,
+    runtime_input_binding: opi_agent::evidence::RuntimeInputBinding,
+) -> Result<ResumedSession, SessionCliError> {
+    let source = resume_session(dir, session_id)?;
+    fork_loaded_session(dir, source, runtime_input_binding)
+}
+
+/// Fork a validated session file into a child carrying `runtime_input_binding`.
+///
+/// Resume callers already hold an exact file path, which need not use the
+/// standard `<session-id>.jsonl` storage name. Preserve that source identity
+/// when a changed runtime binding requires a child before the next run.
+pub(crate) fn fork_session_path_with_runtime_input_binding(
+    source_path: &Path,
+    runtime_input_binding: opi_agent::evidence::RuntimeInputBinding,
+) -> Result<ResumedSession, SessionCliError> {
+    let source = resume_session_path(
+        source_path.to_path_buf(),
+        &source_path.display().to_string(),
+    )?;
+    let dir = source
+        .path
+        .parent()
+        .ok_or_else(|| {
+            SessionCliError::Corrupt(format!(
+                "session source has no parent directory: {}",
+                source.path.display()
+            ))
+        })?
+        .to_path_buf();
+    fork_loaded_session(&dir, source, runtime_input_binding)
+}
+
+fn fork_loaded_session(
+    dir: &Path,
+    source: ResumedSession,
+    runtime_input_binding: opi_agent::evidence::RuntimeInputBinding,
+) -> Result<ResumedSession, SessionCliError> {
     // Active-chain entry ids in root->tip order. Keep the content-only tip for
     // the fresh Leaf, but filter copied metadata against the full chain so
     // degraded sessions whose parent walk passes through metadata preserve the
@@ -234,7 +291,7 @@ pub fn fork_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Sess
     }
 
     let (header, path) =
-        new_fork_session_target(dir, &source.header, source.runtime_input_binding.clone())?;
+        new_fork_session_target(dir, &source.header, runtime_input_binding.clone())?;
 
     std::fs::create_dir_all(dir)?;
     let mut writer = opi_agent::session::SessionWriter::create(&path, header.clone())?;
@@ -258,7 +315,7 @@ pub fn fork_session(dir: &Path, session_id: &str) -> Result<ResumedSession, Sess
     Ok(ResumedSession {
         header,
         entries,
-        runtime_input_binding: source.runtime_input_binding,
+        runtime_input_binding: Some(runtime_input_binding),
         path,
         skipped_entries: 0,
         recovery: opi_agent::session::CrashRecovery::default(),
@@ -787,11 +844,10 @@ pub fn handle_session_cli(
             }
         }
     } else if let Some(id) = fork {
-        match fork_session(&dir, id) {
+        match resume_session(&dir, id) {
             Ok(session) => {
                 eprintln!(
-                    "Forked session {id} -> {} ({} entries, cwd: {})",
-                    session.header.id,
+                    "Preparing fork of session {id} ({} entries, cwd: {})",
                     session.entries.len(),
                     session.header.cwd,
                 );
@@ -1020,7 +1076,7 @@ mod tests {
     const KEY_CANARY: &str = "sk-ant-FAKE1234567890abcdefghijklmnop";
 
     fn test_header() -> opi_agent::session::SessionHeader {
-        opi_agent::session::SessionHeader::new(
+        opi_agent::session::SessionHeader::new_for_test(
             "custom-export".into(),
             "2026-07-06T00:00:00Z".into(),
             "/repo".into(),

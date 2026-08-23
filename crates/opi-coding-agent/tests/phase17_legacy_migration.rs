@@ -16,9 +16,7 @@
 
 use std::sync::Mutex;
 
-use opi_agent::session::{
-    LeafEntry, MessageEntry, ModelChangeEntry, SessionEntry, SessionHeader, SessionWriter,
-};
+use opi_agent::session::{LeafEntry, MessageEntry, ModelChangeEntry, SessionEntry};
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::test_support::{MockProvider, text_response};
 use opi_coding_agent::config::OpiConfig;
@@ -63,19 +61,23 @@ fn model_info(id: &str) -> opi_ai::provider::ModelInfo {
     )
 }
 
-/// Write a legacy session whose active branch records a bare/canonical
-/// `model_change` (input_source `None` = pre-17.5 legacy entry). The active
-/// chain is `msg-1` (the `Leaf` points at it); the `model_change` is parented to
-/// it so `reconstruct_context` surfaces `model` as the recorded route.
+/// Write a genuine v1 session: a version-1 header without a binding followed
+/// by unwrapped entries. The active branch records a bare/canonical
+/// `model_change` (input_source `None` = pre-17.5 legacy entry).
 fn write_legacy_session(dir: &std::path::Path, session_id: &str, recorded_model: &str) {
+    use std::io::Write;
+
     let path = dir.join(format!("{session_id}.jsonl"));
-    let header = SessionHeader::new(
-        session_id.into(),
-        "2026-08-14T12:00:00Z".into(),
-        "/repo".into(),
-        None,
-    );
-    let mut writer = SessionWriter::create(&path, header).unwrap();
+    let header = serde_json::json!({
+        "type": "session",
+        "version": 1,
+        "id": session_id,
+        "timestamp": "2026-08-14T12:00:00Z",
+        "cwd": "/repo",
+        "parent_session": null,
+    });
+    let mut writer = std::fs::File::create(path).unwrap();
+    writeln!(writer, "{}", serde_json::to_string(&header).unwrap()).unwrap();
     let user = SessionEntry::Message(MessageEntry {
         id: "msg-1".into(),
         parent_id: None,
@@ -87,24 +89,22 @@ fn write_legacy_session(dir: &std::path::Path, session_id: &str, recorded_model:
             timestamp_ms: 0,
         }),
     });
-    writer.append(&user).unwrap();
-    writer
-        .append(&SessionEntry::ModelChange(ModelChangeEntry {
-            id: "model-1".into(),
-            parent_id: Some("msg-1".into()),
-            timestamp: "2026-08-14T12:00:02Z".into(),
-            model: recorded_model.into(),
-            input_source: None,
-        }))
-        .unwrap();
-    writer
-        .append(&SessionEntry::Leaf(LeafEntry {
-            id: "leaf-1".into(),
-            parent_id: Some("msg-1".into()),
-            timestamp: "2026-08-14T12:00:03Z".into(),
-            entry_id: "msg-1".into(),
-        }))
-        .unwrap();
+    let model = SessionEntry::ModelChange(ModelChangeEntry {
+        id: "model-1".into(),
+        parent_id: Some("msg-1".into()),
+        timestamp: "2026-08-14T12:00:02Z".into(),
+        model: recorded_model.into(),
+        input_source: None,
+    });
+    let leaf = SessionEntry::Leaf(LeafEntry {
+        id: "leaf-1".into(),
+        parent_id: Some("msg-1".into()),
+        timestamp: "2026-08-14T12:00:03Z".into(),
+        entry_id: "msg-1".into(),
+    });
+    for entry in [user, model, leaf] {
+        writeln!(writer, "{}", serde_json::to_string(&entry).unwrap()).unwrap();
+    }
 }
 
 use std::sync::Arc;
@@ -153,6 +153,14 @@ fn phase17_legacy_bare_model_normalizes_to_unique_dispatchable_route() {
         "beta:shared-model",
         "legacy bare model normalizes to the unique dispatchable route, not the active provider"
     );
+    let session = harness.session().expect("v1 source migrated to a v2 child");
+    let (header, _) = opi_agent::session::SessionReader::read_all(session.session_path()).unwrap();
+    assert_eq!(header.version, 2);
+    assert_eq!(header.parent_session.as_deref(), Some("s-unique"));
+    assert_eq!(
+        header.runtime_input_binding,
+        Some(session.runtime_input_binding().clone())
+    );
 
     clear_sessions_dir();
 }
@@ -164,8 +172,12 @@ fn phase17_legacy_bare_model_normalizes_to_unique_dispatchable_route() {
 fn build_multi_route_harness(
     workspace: &std::path::Path,
     extra: Vec<(String, String)>,
-) -> CodingHarness {
+) -> (
+    CodingHarness,
+    Vec<std::sync::Arc<Mutex<Vec<opi_ai::provider::Request>>>>,
+) {
     let alpha = MockProvider::new_with_models("alpha", vec![model_info("alpha-model")], Vec::new());
+    let mut call_logs = vec![alpha.call_log_handle()];
     let extra_routes: Vec<(
         Box<dyn opi_ai::provider::Provider>,
         Arc<dyn opi_ai::auth::AuthResolver>,
@@ -173,13 +185,14 @@ fn build_multi_route_harness(
         .into_iter()
         .map(|(pid, mid)| {
             let p = MockProvider::new_with_models(&pid, vec![model_info(&mid)], Vec::new());
+            call_logs.push(p.call_log_handle());
             (
                 Box::new(p) as Box<dyn opi_ai::provider::Provider>,
                 static_resolver(),
             )
         })
         .collect();
-    CodingHarness::builder(
+    let harness = CodingHarness::builder(
         Box::new(alpha),
         "alpha:alpha-model".into(),
         OpiConfig::default(),
@@ -188,11 +201,12 @@ fn build_multi_route_harness(
     )
     .extra_routes(extra_routes)
     .record_diagnostics(true)
-    .build()
+    .build();
+    (harness, call_logs)
 }
 
 #[test]
-fn phase17_legacy_bare_model_ambiguous_route_keeps_cli_and_emits_typed_remediation() {
+fn phase17_legacy_bare_model_ambiguous_route_fails_before_creating_a_child() {
     use opi_agent::diagnostic::code::CODE_SESSION_RESUME_ROUTE_AMBIGUOUS;
 
     let _lock = session_lock();
@@ -201,23 +215,18 @@ fn phase17_legacy_bare_model_ambiguous_route_keeps_cli_and_emits_typed_remediati
     write_legacy_session(sessions.path(), "s-ambig", "shared-model");
 
     let workspace = tempfile::tempdir().unwrap();
-    let mut harness = build_multi_route_harness(
+    let (mut harness, call_logs) = build_multi_route_harness(
         workspace.path(),
         vec![
             ("beta".into(), "shared-model".into()),
             ("gamma".into(), "shared-model".into()),
         ],
     );
-    harness
-        .resume_session_id("s-ambig")
-        .expect("resume succeeds");
-
-    // Ambiguity is fail-closed: the CLI/config model is kept (never guessed).
-    assert_eq!(
-        harness.model_spec(),
-        "alpha:alpha-model",
-        "ambiguous bare route keeps the CLI/config model"
-    );
+    let source_path = sessions.path().join("s-ambig.jsonl");
+    let source_before = std::fs::read(&source_path).unwrap();
+    let sessions_before = std::fs::read_dir(sessions.path()).unwrap().count();
+    let error = harness.resume_session_id("s-ambig").unwrap_err();
+    assert!(error.contains("ambiguous"));
     assert!(
         harness
             .recorded_diagnostics()
@@ -225,11 +234,21 @@ fn phase17_legacy_bare_model_ambiguous_route_keeps_cli_and_emits_typed_remediati
             .any(|d| d.code == CODE_SESSION_RESUME_ROUTE_AMBIGUOUS),
         "ambiguous route emits a typed remediation diagnostic"
     );
+    assert_eq!(std::fs::read(&source_path).unwrap(), source_before);
+    assert_eq!(
+        std::fs::read_dir(sessions.path()).unwrap().count(),
+        sessions_before,
+        "ambiguous route creates no guessed mutable child"
+    );
+    assert!(
+        call_logs.iter().all(|log| log.lock().unwrap().is_empty()),
+        "ambiguous route must fail before provider dispatch"
+    );
     clear_sessions_dir();
 }
 
 #[test]
-fn phase17_legacy_bare_model_missing_route_keeps_cli_and_emits_typed_remediation() {
+fn phase17_legacy_bare_model_missing_route_fails_before_creating_a_child() {
     use opi_agent::diagnostic::code::CODE_SESSION_RESUME_ROUTE_MISSING;
 
     let _lock = session_lock();
@@ -238,25 +257,31 @@ fn phase17_legacy_bare_model_missing_route_keeps_cli_and_emits_typed_remediation
     write_legacy_session(sessions.path(), "s-missing", "ghost-model");
 
     let workspace = tempfile::tempdir().unwrap();
-    let mut harness = build_multi_route_harness(
+    let (mut harness, call_logs) = build_multi_route_harness(
         workspace.path(),
         vec![("beta".into(), "other-model".into())],
     );
-    harness
-        .resume_session_id("s-missing")
-        .expect("resume succeeds");
-
-    assert_eq!(
-        harness.model_spec(),
-        "alpha:alpha-model",
-        "missing bare route keeps the CLI/config model"
-    );
+    let source_path = sessions.path().join("s-missing.jsonl");
+    let source_before = std::fs::read(&source_path).unwrap();
+    let sessions_before = std::fs::read_dir(sessions.path()).unwrap().count();
+    let error = harness.resume_session_id("s-missing").unwrap_err();
+    assert!(error.contains("missing"));
     assert!(
         harness
             .recorded_diagnostics()
             .iter()
             .any(|d| d.code == CODE_SESSION_RESUME_ROUTE_MISSING),
         "missing route emits a typed remediation diagnostic"
+    );
+    assert_eq!(std::fs::read(&source_path).unwrap(), source_before);
+    assert_eq!(
+        std::fs::read_dir(sessions.path()).unwrap().count(),
+        sessions_before,
+        "missing route creates no guessed mutable child"
+    );
+    assert!(
+        call_logs.iter().all(|log| log.lock().unwrap().is_empty()),
+        "missing route must fail before provider dispatch"
     );
     clear_sessions_dir();
 }
@@ -270,7 +295,7 @@ fn phase17_legacy_exact_canonical_route_accepted_on_resume() {
     write_legacy_session(sessions.path(), "s-exact", "beta:shared-model");
 
     let workspace = tempfile::tempdir().unwrap();
-    let mut harness = build_multi_route_harness(
+    let (mut harness, _call_logs) = build_multi_route_harness(
         workspace.path(),
         vec![("beta".into(), "shared-model".into())],
     );
@@ -282,6 +307,14 @@ fn phase17_legacy_exact_canonical_route_accepted_on_resume() {
         harness.model_spec(),
         "beta:shared-model",
         "an exact canonical recorded route is accepted unchanged"
+    );
+    assert_ne!(
+        harness
+            .session()
+            .expect("canonical v1 source migrated")
+            .session_path(),
+        sessions.path().join("s-exact.jsonl"),
+        "migration never appends to the v1 source"
     );
     clear_sessions_dir();
 }
@@ -326,6 +359,15 @@ fn phase17_legacy_session_fixture_byte_identical_after_resume_normalize_fork() {
         harness.model_spec(),
         "beta:shared-model",
         "the route is normalized in memory"
+    );
+    let migrated = harness.session().expect("v1 source migrated to a child");
+    let (migrated_header, _) =
+        opi_agent::session::SessionReader::read_all(migrated.session_path()).unwrap();
+    assert_eq!(migrated_header.version, 2);
+    assert_eq!(migrated_header.parent_session.as_deref(), Some("s-bytes"));
+    assert_eq!(
+        migrated_header.runtime_input_binding.as_ref(),
+        Some(migrated.runtime_input_binding())
     );
     // Fork writes a NEW session file; the source legacy fixture must be untouched.
     harness.fork_current_session().expect("fork succeeds");

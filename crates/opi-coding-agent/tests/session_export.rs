@@ -203,7 +203,7 @@ fn write_session(
     active_tip_entry_id: Option<&str>,
 ) -> PathBuf {
     let path = dir.join(format!("{id}.jsonl"));
-    let header = SessionHeader::new(id.into(), TS.into(), "/workspace".into(), None);
+    let header = SessionHeader::new_for_test(id.into(), TS.into(), "/workspace".into(), None);
     let mut writer = SessionWriter::create(&path, header).expect("create session");
     for entry in entries {
         writer.append(entry).expect("append entry");

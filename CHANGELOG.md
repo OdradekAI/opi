@@ -128,6 +128,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing locations; new-schema evidence never overwrites, rewrites,
   upgrades, down-converts, or deletes them, and sessions are never rewritten
   by load, normalization, resume, or fork.
+- `opi-agent` session writers now emit envelope-based version 2 files whose
+  headers carry a required exact runtime-input binding; `SessionHeader`
+  construction requires that binding. The Reference Product reads genuine
+  version 1 sessions without modifying their source bytes, then resumes or
+  forks only after uniquely normalizing their recorded route into a parented,
+  exactly bound version 2 child. Corrupt, unsupported, missing, or ambiguous
+  legacy inputs fail closed before execution; only version 2 sessions are
+  mutable writers.
+- `opi-ai`: Bedrock HTTP streaming now treats decoder residue at EOF as a
+  typed stream failure rather than flushing a pending successful terminal
+  event.
 - Evidence manifests are bound to the current run's exact system prompt,
   trusted tool schemas, route, inference budget, active session branch, and
   terminal provider response. Setup, requested-session reopen, and durable

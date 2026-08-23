@@ -379,7 +379,7 @@ async fn resumed_installed_adapter_state_restores_on_current_thread_runtime() {
         .unwrap();
 
     let session_path = workspace.path().join("session.jsonl");
-    let header = SessionHeader::new(
+    let header = SessionHeader::new_for_test(
         "sess-adapter-restore".into(),
         "2026-06-15T00:00:00Z".into(),
         workspace.path().display().to_string(),
@@ -1100,7 +1100,7 @@ async fn coding_harness_composes_generic_opi_agent_seams() {
     // Pre-create a session file the harness adopts (ResumeInfo), so the test
     // never touches the real user session dir or OPI_SESSIONS_DIR.
     let session_path = workspace.path().join("compose-session.jsonl");
-    let header = SessionHeader::new(
+    let header = SessionHeader::new_for_test(
         "sess-compose".into(),
         "2026-06-26T00:00:00Z".into(),
         workspace.path().display().to_string(),
@@ -1170,7 +1170,8 @@ async fn coding_harness_composes_generic_opi_agent_seams() {
     // The wrapper persisted the new turn through the generic session-storage
     // seam: SessionReader::read_all now holds more Message entries than the
     // single seed entry written before the turn.
-    let (_hdr, entries) = opi_agent::session::SessionReader::read_all(&session_path)
+    let committed_path = harness.session().expect("active session").session_path();
+    let (_hdr, entries) = opi_agent::session::SessionReader::read_all(committed_path)
         .expect("session readable via generic SessionReader seam");
     let message_count = entries
         .iter()

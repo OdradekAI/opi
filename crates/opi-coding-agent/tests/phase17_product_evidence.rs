@@ -169,7 +169,7 @@ fn empty_resume_info(workspace: &Path, sessions: &Path, session_id: &str) -> Res
     let path = sessions.join(format!("{session_id}.jsonl"));
     opi_agent::session::SessionWriter::create(
         &path,
-        opi_agent::session::SessionHeader::new(
+        opi_agent::session::SessionHeader::new_for_test(
             session_id.to_owned(),
             "2026-08-20T00:00:00Z".to_owned(),
             workspace.display().to_string(),
@@ -262,7 +262,6 @@ async fn assert_a11_failure_preserves_live_persisted_and_reopened_outcome(
         ],
     );
     let resume = empty_resume_info(workspace.path(), sessions.path(), &format!("a11-{case}"));
-    let session_path = resume.path.clone();
     let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
     let mut harness = CodingHarness::builder(
         Box::new(provider),
@@ -292,6 +291,11 @@ async fn assert_a11_failure_preserves_live_persisted_and_reopened_outcome(
     ));
     assert!(sink.has_failure());
     assert!(sink.completed_manifest().is_none());
+    let session_path = harness
+        .session()
+        .expect("the resumed source was adopted or migrated before the run")
+        .session_path()
+        .to_path_buf();
     let live_messages = live_events
         .lock()
         .unwrap()
@@ -1938,6 +1942,16 @@ async fn phase17_harness_switches_providers_with_matching_route_evidence() {
     let alpha_manifest = sink
         .completed_manifest()
         .expect("alpha run finalizes independently");
+    let alpha_session = harness
+        .session()
+        .expect("alpha run owns a bound session branch");
+    let alpha_session_id = alpha_session.session_id().to_owned();
+    let alpha_session_path = alpha_session.session_path().to_path_buf();
+    assert_eq!(
+        alpha_session.runtime_input_binding(),
+        &alpha_manifest.binding,
+        "the alpha header and manifest share one exact binding"
+    );
     harness.set_model_validated("beta:b1".to_owned()).unwrap();
     harness.prompt("from beta").await.unwrap();
 
@@ -1974,9 +1988,37 @@ async fn phase17_harness_switches_providers_with_matching_route_evidence() {
                 && route.model_id() == "mock-model"
                 && *reason == opi_agent::evidence::UnknownReason::NotReported
     ));
-    assert_eq!(
+    let beta_session = harness
+        .session()
+        .expect("beta run adopts a new bound session branch");
+    let beta_session_id = beta_session.session_id().to_owned();
+    let beta_session_path = beta_session.session_path().to_path_buf();
+    assert_ne!(
+        alpha_session_id, beta_session_id,
+        "a between-run user model change creates a new session branch"
+    );
+    assert_ne!(
         alpha_manifest.binding, manifest.binding,
-        "a model switch retains the session's immutable runtime-input binding"
+        "the beta branch has a new material-input binding"
+    );
+    assert_eq!(
+        beta_session.runtime_input_binding(),
+        &manifest.binding,
+        "the beta header and manifest share one exact binding"
+    );
+    let (alpha_header, _) =
+        opi_agent::session::SessionReader::read_all(&alpha_session_path).unwrap();
+    let (beta_header, _) = opi_agent::session::SessionReader::read_all(&beta_session_path).unwrap();
+    assert_eq!(alpha_header.id, alpha_session_id);
+    assert_eq!(beta_header.id, beta_session_id);
+    assert_eq!(
+        beta_header.parent_session.as_deref(),
+        Some(alpha_session_id.as_str())
+    );
+    assert_eq!(
+        beta_header.runtime_input_binding.as_ref(),
+        Some(&manifest.binding),
+        "the persisted beta header retains the exact manifest binding"
     );
     assert_ne!(
         alpha_manifest.config.adapter_digest, manifest.config.adapter_digest,
@@ -2694,7 +2736,10 @@ async fn direct_subscriber_redacts_real_compaction_and_session_persist_events() 
     let mut persist_harness = CodingHarness::builder(
         Box::new(MockProvider::new(
             "mock",
-            vec![text_response("persist-safe-control")],
+            vec![
+                text_response("persist-prepare-control"),
+                text_response("persist-safe-control"),
+            ],
         )),
         "mock:mock-model".to_owned(),
         OpiConfig::default(),
@@ -2709,7 +2754,20 @@ async fn direct_subscriber_redacts_real_compaction_and_session_persist_events() 
     persist_harness.subscribe(Box::new(move |event| {
         persist_capture.lock().unwrap().push(event.clone());
     }));
-    std::fs::remove_file(&missing_path).unwrap();
+    persist_harness
+        .prompt("prepare bound session for persistence failure")
+        .await
+        .expect("the initial bound run completes");
+    let active_path = persist_harness
+        .session()
+        .expect("the initial run keeps an active session")
+        .session_path()
+        .to_path_buf();
+    assert_ne!(
+        active_path, missing_path,
+        "fixture source migrated to its bound child"
+    );
+    std::fs::remove_file(&active_path).unwrap();
     assert!(matches!(
         persist_harness
             .prompt(&format!("{prompt_canary} credential={credential_canary}"))
@@ -2734,5 +2792,5 @@ async fn direct_subscriber_redacts_real_compaction_and_session_persist_events() 
     assert!(persist_json.contains("SessionPersistError"));
     assert!(persist_json.contains("[REDACTED]"));
     assert!(!persist_json.contains(path_canary));
-    assert!(!persist_json.contains(&missing_path.display().to_string()));
+    assert!(!persist_json.contains(&active_path.display().to_string()));
 }

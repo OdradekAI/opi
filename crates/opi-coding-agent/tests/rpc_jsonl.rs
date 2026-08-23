@@ -1187,7 +1187,7 @@ async fn phase13_rpc_session_info_returns_metadata() {
 
     // Pre-populate a session file with a content tip + typed metadata via the
     // production coordinator (avoids hand-rolling entry fixtures).
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         workspace.path(),
         &workspace.path().display().to_string(),
         opi_agent::compaction::CompactionConfig::default(),
@@ -1332,7 +1332,7 @@ async fn phase13_rpc_session_metadata_shape() {
     let session_path = sessions.path().join(format!("{session_id}.jsonl"));
     let ts = "2026-07-06T00:00:00Z";
     {
-        let header = SessionHeader::new(
+        let header = SessionHeader::new_for_test(
             session_id.into(),
             ts.into(),
             workspace.path().display().to_string(),
@@ -1559,7 +1559,7 @@ async fn phase13_rpc_session_info_reports_tree_recovery_diagnostics() {
     let ts = "2026-07-06T00:00:00Z";
 
     {
-        let header = SessionHeader::new(
+        let header = SessionHeader::new_for_test(
             session_id.into(),
             ts.into(),
             workspace.path().display().to_string(),
@@ -1677,7 +1677,7 @@ async fn phase13_rpc_session_info_reports_tree_read_error() {
     let ts = "2026-07-06T00:00:00Z";
 
     {
-        let header = SessionHeader::new(
+        let header = SessionHeader::new_for_test(
             session_id.into(),
             ts.into(),
             workspace.path().display().to_string(),
@@ -4210,7 +4210,7 @@ mod phase7 {
 
     fn empty_resume_info(workspace: &tempfile::TempDir, session_id: &str) -> ResumeInfo {
         let session_path = workspace.path().join(format!("{session_id}.jsonl"));
-        let header = SessionHeader::new(
+        let header = SessionHeader::new_for_test(
             session_id.into(),
             "2026-06-26T00:00:00Z".into(),
             workspace.path().display().to_string(),

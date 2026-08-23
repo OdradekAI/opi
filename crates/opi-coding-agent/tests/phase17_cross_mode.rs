@@ -173,7 +173,7 @@ fn empty_resume_info(
     let path = sessions.join(format!("{session_id}.jsonl"));
     opi_agent::session::SessionWriter::create(
         &path,
-        opi_agent::session::SessionHeader::new(
+        opi_agent::session::SessionHeader::new_for_test(
             session_id.to_owned(),
             "2026-08-20T00:00:00Z".to_owned(),
             workspace.display().to_string(),

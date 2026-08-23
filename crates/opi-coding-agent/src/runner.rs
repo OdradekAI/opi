@@ -273,6 +273,7 @@ impl NonInteractiveRunner {
                 .initial_messages(initial_messages)
                 .tool_selection(tool_selection)
                 .tool_config(tool_config)
+                .runtime_input_source(crate::evidence::CLI_ASSEMBLY.clone())
                 .extra_routes(extra_routes)
                 // Thread the non-interactive run mode into ExecutionRuntime::build.
                 .execution_mode(crate::config::ExecutionRunMode::NonInteractive)

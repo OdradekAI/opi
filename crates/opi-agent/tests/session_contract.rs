@@ -26,7 +26,7 @@ use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message,
 // ---------------------------------------------------------------------------
 
 fn make_header(id: &str) -> SessionHeader {
-    SessionHeader::new(
+    SessionHeader::new_for_test(
         id.into(),
         "2026-05-22T12:00:00Z".into(),
         "/repo".into(),
@@ -550,7 +550,7 @@ proptest! {
             proptest::string::string_regex("[a-zA-Z0-9_-]{1,20}").unwrap()
         )
     ) {
-        let header = SessionHeader::new(
+        let header = SessionHeader::new_for_test(
             id.clone(),
             "2026-05-22T12:00:00Z".into(),
             cwd.clone(),

@@ -1180,6 +1180,57 @@ async fn stream_http_flushes_done_without_metadata() {
 }
 
 #[tokio::test]
+async fn terminal_stream_with_truncated_trailer_fails_closed() {
+    let mut body_bytes = build_bedrock_stream(&[
+        ("messageStart", r#"{"role":"assistant"}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"text":{}},"contentBlockIndex":0}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"text":"partial terminal"},"contentBlockIndex":0}"#,
+        ),
+        ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+        ("messageStop", r#"{"stopReason":"end_turn"}"#),
+    ]);
+    let trailer = event_stream::build_test_frame("metadata", "application/json", b"{}");
+    body_bytes.extend_from_slice(&trailer[..trailer.len() - 1]);
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/model/anthropic.claude-sonnet-4/converse-stream"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(body_bytes, "application/vnd.amazon.eventstream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()));
+    let mut stream = provider.stream_prepared(lifecycle_text_request(), test_auth());
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, Err(ProviderError::StreamError(_))))
+            .count(),
+        1,
+        "truncated Bedrock trailer must produce exactly one StreamError: {events:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, Ok(AssistantStreamEvent::Done { .. }))),
+        "truncated Bedrock trailer must not flush Done: {events:?}"
+    );
+}
+
+#[tokio::test]
 async fn auth_error_bodies_are_absent_from_public_errors() {
     let canary = "AKIA_AUTH_ERROR_CANARY";
     for status in [401, 403] {

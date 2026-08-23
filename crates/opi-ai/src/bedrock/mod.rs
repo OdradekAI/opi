@@ -435,6 +435,20 @@ impl BedrockProvider {
             }
         }
 
+        if !buffer.is_empty() {
+            let _ = send_or_cancel(
+                &cancel,
+                tx,
+                Err(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static(
+                        "Bedrock stream ended with an incomplete frame",
+                    ),
+                )),
+            )
+            .await?;
+            return Ok(());
+        }
+
         if let Some(pending) = mapper.flush_pending() {
             let _ = send_or_cancel(&cancel, tx, Ok(pending)).await?;
         }

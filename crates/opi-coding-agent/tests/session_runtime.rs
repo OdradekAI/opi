@@ -29,7 +29,7 @@ use opi_coding_agent::session_coordinator::SessionCoordinator;
 // ---------------------------------------------------------------------------
 
 fn make_header(id: &str, cwd: &str) -> SessionHeader {
-    SessionHeader::new(id.into(), "2026-05-22T12:00:00Z".into(), cwd.into(), None)
+    SessionHeader::new_for_test(id.into(), "2026-05-22T12:00:00Z".into(), cwd.into(), None)
 }
 
 fn test_message_entry(id: &str, text: &str) -> SessionEntry {
@@ -92,7 +92,7 @@ fn clear_sessions_dir() {
 #[test]
 fn session_coordinator_creates_jsonl_file() {
     let dir = tempfile::tempdir().unwrap();
-    let coord = SessionCoordinator::new(
+    let coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test/cwd",
         opi_agent::compaction::CompactionConfig::default(),
@@ -117,9 +117,42 @@ fn session_coordinator_creates_jsonl_file() {
 }
 
 #[test]
+fn session_coordinator_rapid_creations_use_distinct_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let start = Arc::new(std::sync::Barrier::new(16));
+    let mut paths = (0..16)
+        .map(|_| {
+            let start = start.clone();
+            let path = dir.path().to_path_buf();
+            std::thread::spawn(move || {
+                start.wait();
+                SessionCoordinator::new_for_test(
+                    &path,
+                    "/test/cwd",
+                    opi_agent::compaction::CompactionConfig::default(),
+                    "anthropic:claude-sonnet-4",
+                )
+                .unwrap()
+                .session_path()
+                .to_path_buf()
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let mut paths = paths
+        .drain(..)
+        .map(|thread| thread.join().expect("session creation thread panicked"))
+        .collect::<Vec<_>>();
+
+    paths.sort();
+    paths.dedup();
+    assert_eq!(paths.len(), 16, "each new session must own a distinct file");
+}
+
+#[test]
 fn session_coordinator_persists_messages_on_turn_end() {
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         opi_agent::compaction::CompactionConfig::default(),
@@ -172,7 +205,7 @@ fn phase13_model_thinking_metadata_does_not_advance_leaf() {
     use opi_agent::session_event::ThinkingLevel;
 
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         opi_agent::compaction::CompactionConfig::default(),
@@ -291,7 +324,7 @@ fn phase13_session_info_and_label_appends_are_durable_and_do_not_advance_leaf() 
     use opi_agent::session::{LabelAction, SessionEntry};
 
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         opi_agent::compaction::CompactionConfig::default(),
@@ -417,7 +450,7 @@ fn phase13_empty_string_name_and_label_are_preserved_by_coordinator_api() {
     use opi_agent::session::LabelAction;
 
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         opi_agent::compaction::CompactionConfig::default(),
@@ -450,7 +483,7 @@ fn phase13_coordinator_open_existing_seeds_name_and_labels() {
     use opi_agent::session::{LabelAction, SessionEntry};
 
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         opi_agent::compaction::CompactionConfig::default(),
@@ -502,7 +535,7 @@ fn phase13_coordinator_open_existing_seeds_metadata_parented_to_active_metadata_
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("metadata-through-metadata.jsonl");
-    let header = SessionHeader::new(
+    let header = SessionHeader::new_for_test(
         "metadata-through-metadata".into(),
         "2026-07-06T00:00:00Z".into(),
         "/test".into(),
@@ -572,7 +605,7 @@ fn phase13_coordinator_open_existing_seeds_metadata_parented_to_active_metadata_
 #[test]
 fn session_coordinator_redacts_tool_result_details_but_keeps_content() {
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         opi_agent::compaction::CompactionConfig::default(),
@@ -631,7 +664,7 @@ fn session_coordinator_redacts_tool_result_details_but_keeps_content() {
 #[test]
 fn session_coordinator_redacts_assistant_tool_call_arguments() {
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         opi_agent::compaction::CompactionConfig::default(),
@@ -667,7 +700,7 @@ fn session_coordinator_redacts_assistant_tool_call_arguments() {
 #[test]
 fn session_coordinator_accumulates_usage() {
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         opi_agent::compaction::CompactionConfig::default(),
@@ -1085,7 +1118,7 @@ fn compaction_shrinks_buffer_and_returns_summary_plus_kept() {
     use opi_ai::stream::Usage;
 
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         // Tiny threshold so compaction triggers immediately.
@@ -1149,7 +1182,7 @@ fn compaction_engine_reads_pricing_and_reports_cost() {
     use opi_ai::stream::Usage;
 
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         CompactionConfig::default(),
@@ -1172,7 +1205,7 @@ fn cost_summary_returns_none_for_unknown_model() {
     use opi_agent::compaction::CompactionConfig;
 
     let dir = tempfile::tempdir().unwrap();
-    let coord = SessionCoordinator::new(
+    let coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         CompactionConfig::default(),
@@ -1189,7 +1222,7 @@ fn cost_summary_returns_none_when_any_turn_has_unknown_usage() {
     use opi_ai::stream::Usage;
 
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         CompactionConfig::default(),
@@ -1338,7 +1371,7 @@ fn embedded_model_pricing_overrides_legacy_fallback() {
     use opi_ai::stream::{Pricing, Usage};
 
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         CompactionConfig::default(),
@@ -1384,7 +1417,7 @@ fn embedded_model_pricing_updates_on_model_switch_and_resume() {
     use opi_ai::stream::{Pricing, Usage};
 
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         CompactionConfig::default(),
@@ -1444,7 +1477,7 @@ fn legacy_pricing_fallback_remains_for_unmigrated_model() {
     use opi_ai::stream::Usage;
 
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         CompactionConfig::default(),
@@ -1616,7 +1649,7 @@ fn open_existing_appends_to_original_file() {
 
     // Create initial session and persist a turn.
     let (session_path, session_id) = {
-        let mut coord = SessionCoordinator::new(
+        let mut coord = SessionCoordinator::new_for_test(
             dir.path(),
             "/repo",
             CompactionConfig::default(),
@@ -2110,7 +2143,7 @@ fn session_coordinator_append_leaf_switches_active_branch() {
 #[test]
 fn session_coordinator_links_turn_entries_and_updates_leaf_tip() {
     let dir = tempfile::tempdir().unwrap();
-    let mut coord = SessionCoordinator::new(
+    let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
         opi_agent::compaction::CompactionConfig::default(),
@@ -2569,7 +2602,7 @@ fn phase14_usage_subsets_survive_session_resume() {
     use opi_coding_agent::harness::ResumeInfo;
 
     let dir = tempfile::tempdir().unwrap();
-    let mut coordinator = SessionCoordinator::new(
+    let mut coordinator = SessionCoordinator::new_for_test(
         dir.path(),
         "/repo",
         CompactionConfig::default(),
@@ -3547,7 +3580,7 @@ fn write_phase13_recorded_session(
     use opi_agent::session::{LeafEntry, ModelChangeEntry, ThinkingLevelChangeEntry};
 
     let path = dir.join(format!("{session_id}.jsonl"));
-    let header = SessionHeader::new(
+    let header = SessionHeader::new_for_test(
         session_id.into(),
         "2026-07-05T12:00:00Z".into(),
         "/repo".into(),
@@ -3654,7 +3687,7 @@ fn phase13_builder_resume_applies_recorded_model_cli_path() {
     // recorded metadata is supplied via ResumeInfo directly to exercise the
     // builder-application path independent of reconstruct_context.
     let session_path = sessions.path().join("cli-resume.jsonl");
-    let header = SessionHeader::new(
+    let header = SessionHeader::new_for_test(
         "cli-resume".into(),
         "2026-07-05T12:00:00Z".into(),
         workspace.path().display().to_string(),
@@ -3768,7 +3801,7 @@ fn write_phase13_branch_summary_session(
 
     let ts = |s: &str| s.to_owned();
     let path = dir.join(format!("{session_id}.jsonl"));
-    let header = SessionHeader::new(
+    let header = SessionHeader::new_for_test(
         session_id.into(),
         ts("2026-07-05T12:00:00Z"),
         "/repo".into(),
@@ -3904,7 +3937,7 @@ fn phase17_route_model_info(id: &str) -> opi_ai::provider::ModelInfo {
 fn write_two_branch_route_session(dir: &std::path::Path, session_id: &str) {
     use opi_agent::session::{LeafEntry, ModelChangeEntry};
     let path = dir.join(format!("{session_id}.jsonl"));
-    let header = SessionHeader::new(
+    let header = SessionHeader::new_for_test(
         session_id.into(),
         "2026-08-14T12:00:00Z".into(),
         "/repo".into(),

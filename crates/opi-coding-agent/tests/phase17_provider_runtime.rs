@@ -655,7 +655,7 @@ async fn phase17_resume_of_lookup_only_recorded_route_is_typed_not_panicking() {
     // Session fixture: one user message, then a canonical model_change naming
     // the lookup-only extension route, with the leaf on the message.
     let path = sessions.path().join("s-ext.jsonl");
-    let header = SessionHeader::new(
+    let header = SessionHeader::new_for_test(
         "s-ext".into(),
         "2026-08-21T12:00:00Z".into(),
         "/repo".into(),

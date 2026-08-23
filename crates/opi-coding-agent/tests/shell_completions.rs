@@ -6,23 +6,13 @@
 
 use std::process::Command;
 
-fn opi_bin() -> String {
-    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest.parent().unwrap().parent().unwrap();
-
-    // Prefer release binary, fall back to debug when running tests locally or in CI
-    let exe_name = if cfg!(windows) { "opi.exe" } else { "opi" };
-    let release = workspace_root.join("target/release").join(exe_name);
-    let debug = workspace_root.join("target/debug").join(exe_name);
-
-    let path = if release.exists() { release } else { debug };
-
-    path.to_string_lossy().into_owned()
+fn opi_bin() -> &'static str {
+    env!("CARGO_BIN_EXE_opi")
 }
 
 fn assert_completion(shell: &str) {
     let bin = opi_bin();
-    let output = Command::new(&bin)
+    let output = Command::new(bin)
         .arg("--generate-completion")
         .arg(shell)
         .output()
@@ -70,7 +60,7 @@ fn generates_elvish_completions() {
 #[test]
 fn generate_completion_rejects_unknown_shell() {
     let bin = opi_bin();
-    let output = Command::new(&bin)
+    let output = Command::new(bin)
         .arg("--generate-completion")
         .arg("foobar")
         .output()
@@ -86,7 +76,7 @@ fn generate_completion_rejects_unknown_shell() {
 #[test]
 fn generate_completion_rejects_missing_shell() {
     let bin = opi_bin();
-    let output = Command::new(&bin)
+    let output = Command::new(bin)
         .arg("--generate-completion")
         .output()
         .unwrap();
@@ -101,7 +91,7 @@ fn generate_completion_rejects_missing_shell() {
 #[test]
 fn completion_output_is_plausible_bash() {
     let bin = opi_bin();
-    let output = Command::new(&bin)
+    let output = Command::new(bin)
         .arg("--generate-completion")
         .arg("bash")
         .output()

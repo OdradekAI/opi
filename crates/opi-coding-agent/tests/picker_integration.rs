@@ -542,7 +542,7 @@ fn phase13_branch_picker_session_metadata() {
         name: &str,
         labels: &[&str],
     ) {
-        let header = SessionHeader::new(id.into(), timestamp.into(), cwd.into(), None);
+        let header = SessionHeader::new_for_test(id.into(), timestamp.into(), cwd.into(), None);
         let path = dir.join(format!("{id}.jsonl"));
         let mut writer = SessionWriter::create(&path, header).expect("create session");
         let tip_id = "msg-1";

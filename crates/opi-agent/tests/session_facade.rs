@@ -33,7 +33,7 @@ fn user_msg(text: &str) -> Message {
 }
 
 fn header(id: &str) -> SessionHeader {
-    SessionHeader::new(id.into(), "0".into(), "/repo".into(), None)
+    SessionHeader::new_for_test(id.into(), "0".into(), "/repo".into(), None)
 }
 
 fn legacy_header(id: &str) -> SessionHeader {

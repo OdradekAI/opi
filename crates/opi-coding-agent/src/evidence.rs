@@ -487,11 +487,11 @@ impl EvidenceCapture {
         config: ConfigIdentity,
         material_inputs: &str,
     ) -> Self {
-        let binding_digest =
-            runtime_input_digest(&source, &policy_digest, &config, material_inputs);
+        let binding =
+            direct_runtime_input_binding(&source, &policy_digest, &config, material_inputs);
         Self {
             recorder,
-            binding: RuntimeInputBinding::direct(binding_digest, source.clone()),
+            binding,
             source,
             config,
             policy: UserPolicyFacts {
@@ -519,13 +519,12 @@ impl EvidenceCapture {
         tool_schema_digests: Vec<ContentDigest>,
         budget: Measurement,
     ) {
-        let binding_digest = runtime_input_digest(
+        self.binding = direct_runtime_input_binding(
             &self.source,
             &self.policy.policy_digest,
             &config,
             material_inputs,
         );
-        self.binding = RuntimeInputBinding::direct(binding_digest, self.source.clone());
         self.config = config;
         self.system_digest = system_digest;
         self.tool_schema_digests = tool_schema_digests;
@@ -536,6 +535,22 @@ impl EvidenceCapture {
 /// The runtime-input binding digest covers the resolved material runtime inputs:
 /// the assembly source, the effective policy, the resolved configuration
 /// identity, and the material input rendering.
+/// Derive the exact binding owned by one trusted Reference Product assembly.
+///
+/// Session ownership and evidence capture both call this pure function so a
+/// durable v2 header and its manifest address the same material run inputs.
+pub(crate) fn direct_runtime_input_binding(
+    source: &AssemblyIdentity,
+    policy_digest: &ContentDigest,
+    config: &ConfigIdentity,
+    material_inputs: &str,
+) -> RuntimeInputBinding {
+    RuntimeInputBinding::direct(
+        runtime_input_digest(source, policy_digest, config, material_inputs),
+        source.clone(),
+    )
+}
+
 fn runtime_input_digest(
     source: &AssemblyIdentity,
     policy_digest: &ContentDigest,

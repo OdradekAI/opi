@@ -29,9 +29,9 @@ JSONL 存储、分支重建、上下文压缩、SDK/RPC 类型、扩展、本地
 `ToolExecutionEnd` 事件上暴露，同时让面向 provider 的工具结果消息只携带 LLM 可见内容
 和失败状态。来自 `opi-ai` 的 `ProviderErrorCategory` 会映射为已脱敏 diagnostics 和
 evidence 记录；provider 返回的 cancellation 表现为 `AgentError::Cancelled`；retry diagnostics
-会区分重试预算耗尽与部分 provider 输出后的重试抑制。append-only 会话存储携带类型化
-metadata 条目和分支摘要，同时保持 `SessionHeader::version = 1`；metadata 条目不进入
-provider 上下文，但分支摘要会通过 `session_context::reconstruct_context` 进入。
+会区分重试预算耗尽与部分 provider 输出后的重试抑制。append-only 会话存储写入携带精确
+运行时输入绑定的版本 2 头部；旧版 1 输入保持只读。metadata 条目不进入 provider 上下文，
+但分支摘要会通过 `session_context::reconstruct_context` 进入。
 
 它依赖 `opi-ai` 的 Provider 和消息类型。它不实现 `opi` CLI、终端 UI 或具体的
 文件/ shell 内置工具；这些能力分别位于 `opi-coding-agent` 和 `opi-tui`。
@@ -229,22 +229,22 @@ token 原语，因此可观察契约在嵌入方边界之间是一致的。
 
 会话存储使用 append-only JSONL：
 
-- 第一行：`SessionHeader`（`version = 1`）。
-- 条目：`MessageEntry`、`CompactionEntry`、`LeafEntry` 和 `ExtensionStateEntry`
-  （`SessionEntry` 枚举为 `#[non_exhaustive]`；0.x 内可能新增附加变体）。
-- v1 头部上的增补类型条目：`SessionInfoEntry`（`session_info`）、
+- 当前写入器生成 `version = 2` 的 `SessionHeader`，其中含必需的精确
+  `RuntimeInputBinding`。每个条目都是分类为 `required` 或
+  `ignorable_observation` 的 envelope。
+- 会话条目包括 `MessageEntry`、`CompactionEntry`、`LeafEntry`、
+  `ExtensionStateEntry`、`SessionInfoEntry`（`session_info`）、
   `ModelChangeEntry`（`model_change`）、`ThinkingLevelChangeEntry`
   （`thinking_level_change`）、`LabelEntry`（`label`）和
-  `BranchSummaryEntry`（`branch_summary`）。元数据条目（`session_info`、
-  `model_change`、`thinking_level_change`、`label`）不推进内容 tip，也不进入
+  `BranchSummaryEntry`（`branch_summary`）。元数据条目不推进内容 tip，也不进入
   provider 上下文；`branch_summary` 由 `session_context::reconstruct_context`
-  作为 metadata-parented 消息注入重建的 LLM 上下文，并在存在时由产品层 provider
-  转换作为上下文转发。
-- `custom_message` 推迟：opi 不提供 `custom_message` 写入器，并在读取时把未知
-  `custom_message` 条目当作其他未知未来条目处理。
-- Reader 恢复区分损坏的中间条目（畸形 JSON 或缺少必需字段，作为诊断上报）与未知未来
-  条目类型（格式良好的 JSON 但 `type` 无法识别，会被跳过并计数，但不会跨
-  read+rewrite 保留），并跳过末尾截断行。
+  作为 metadata-parented 消息注入重建的 LLM 上下文。
+- 未知的 required 版本 2 envelope、损坏输入和不支持的版本都会 fail closed。未知的
+  ignorable-observation envelope 会被跳过；Reader recovery 会记录损坏的中间条目，
+  并跳过末尾截断行。
+- 版本 1 reader 是历史兼容且只读：绝不改写源字节。Reference Product 仅在能够唯一证明
+  路由规范化后才可 resume 或 fork v1 会话，并会在执行前创建并采用一个携带当前精确绑定的
+  parented 版本 2 child。缺失或歧义路由会在 provider 或 tool dispatch 前失败。
 - `session_branch::SessionTree` 根据 `parent_id` 链接和最新 `LeafEntry` 重建活跃分支。
 
 压缩基础能力包括 threshold/manual/overflow 原因、

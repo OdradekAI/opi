@@ -1251,6 +1251,7 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     .initial_messages(initial_messages)
     .tool_selection(tool_selection)
     .tool_config(tool_config)
+    .runtime_input_source(opi_coding_agent::evidence::CLI_ASSEMBLY.clone())
     .extension_registry(runtime_startup.extension_registry)
     .installed_packages(runtime_startup.installed_packages)
     .startup_diagnostics(runtime_startup.diagnostics)
@@ -1269,6 +1270,9 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     }
     if let Some(resume_info) = resume_info {
         builder = builder.resume(resume_info);
+    }
+    if cli.fork.is_some() {
+        builder = builder.fork_on_start();
     }
     if let Some(path) = cli.trace.clone() {
         builder = builder.evidence(opi_coding_agent::evidence::EvidenceBuilderConfig {
@@ -3244,7 +3248,7 @@ mod tests {
             ),
             (
                 "shell_completions.rs",
-                "Command::new(&bin)",
+                "Command::new(bin)",
                 4,
                 "fn opi_bin()",
                 1,

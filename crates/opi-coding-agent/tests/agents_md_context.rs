@@ -367,7 +367,7 @@ async fn e2e_resume_context_from_original_workspace() {
     // Create a session header and entries for resume
     let session_dir = tempfile::tempdir().unwrap();
     let session_path = session_dir.path().join("test_session.jsonl");
-    let header = opi_agent::session::SessionHeader::new(
+    let header = opi_agent::session::SessionHeader::new_for_test(
         "test-session-id".into(),
         "2026-01-01T00:00:00Z".into(),
         original_cwd.to_string_lossy().into_owned(),

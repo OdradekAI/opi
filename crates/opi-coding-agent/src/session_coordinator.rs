@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use opi_agent::compaction::{CompactionConfig, CompactionEngine, DefaultCompactionHooks, Entry};
-use opi_agent::evidence::{AssemblyIdentity, ContentDigest, RuntimeInputBinding};
+use opi_agent::evidence::RuntimeInputBinding;
 use opi_agent::message::{AgentMessage, CompactionSummaryMessage};
 use opi_agent::session::{
     CompactionEntry, ExtensionStateEntry, LabelAction, LabelEntry, LeafEntry, MessageEntry,
@@ -20,6 +20,7 @@ use opi_ai::stream::{CumulativeUsage, Usage};
 use crate::pricing::lookup_pricing;
 
 static ENTRY_SEQ: AtomicU64 = AtomicU64::new(1);
+static SESSION_SEQ: AtomicU64 = AtomicU64::new(1);
 
 /// Result of a compaction triggered during `on_turn_end`.
 ///
@@ -107,11 +108,11 @@ impl SessionCoordinator {
         cwd: &str,
         compaction_config: CompactionConfig,
         model: impl Into<String>,
+        runtime_input_binding: RuntimeInputBinding,
     ) -> std::io::Result<Self> {
         let id = generate_session_id();
         let timestamp = now_iso();
         let model = model.into();
-        let runtime_input_binding = session_runtime_input_binding(cwd, &model);
         let header = SessionHeader::new_with_runtime_input_binding(
             id.clone(),
             timestamp,
@@ -146,6 +147,33 @@ impl SessionCoordinator {
             #[cfg(test)]
             rollback_failure: false,
         })
+    }
+
+    /// Construct a coordinator with a deterministic fixture binding.
+    ///
+    /// Production session creation must use [`Self::new`] with the exact
+    /// trusted-product binding for the run.
+    #[doc(hidden)]
+    pub fn new_for_test(
+        dir: &Path,
+        cwd: &str,
+        compaction_config: CompactionConfig,
+        model: impl Into<String>,
+    ) -> std::io::Result<Self> {
+        let model = model.into();
+        let digest = opi_agent::evidence::ContentDigest::from_hex(
+            crate::tool_authority::digest_of(&format!("test-session\ncwd:{cwd}\nmodel:{model}")),
+        )
+        .expect("digest_of returns a canonical SHA-256 hex digest");
+        let source = opi_agent::evidence::AssemblyIdentity::new("opi.session.fixture")
+            .expect("static fixture assembly identity is valid");
+        Self::new(
+            dir,
+            cwd,
+            compaction_config,
+            model,
+            RuntimeInputBinding::direct(digest, source),
+        )
     }
 
     /// Open an existing session file for appending (resume).
@@ -984,17 +1012,8 @@ fn generate_session_id() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    format!("{ts:x}")
-}
-
-fn session_runtime_input_binding(cwd: &str, model: &str) -> RuntimeInputBinding {
-    let digest = ContentDigest::from_hex(crate::tool_authority::digest_of(&format!(
-        "session-runtime-input\ncwd:{cwd}\nmodel:{model}"
-    )))
-    .expect("digest_of returns a canonical SHA-256 hex digest");
-    let source = AssemblyIdentity::new("opi.coding-agent.session")
-        .expect("static session assembly identity is valid");
-    RuntimeInputBinding::direct(digest, source)
+    let sequence = SESSION_SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("{ts:x}-{sequence:x}")
 }
 
 fn now_iso() -> String {
@@ -1068,7 +1087,7 @@ mod tests {
     #[test]
     fn failed_leaf_append_keeps_active_tip_for_the_next_message_parent() {
         let dir = tempfile::tempdir().expect("session dir");
-        let mut coordinator = super::SessionCoordinator::new(
+        let mut coordinator = super::SessionCoordinator::new_for_test(
             dir.path(),
             ".",
             opi_agent::compaction::CompactionConfig::default(),
@@ -1119,7 +1138,7 @@ mod tests {
     #[test]
     fn post_write_leaf_failure_rolls_back_bytes_and_reopens_on_committed_tip() {
         let dir = tempfile::tempdir().expect("session dir");
-        let mut coordinator = super::SessionCoordinator::new(
+        let mut coordinator = super::SessionCoordinator::new_for_test(
             dir.path(),
             ".",
             opi_agent::compaction::CompactionConfig::default(),
@@ -1180,7 +1199,7 @@ mod tests {
     #[test]
     fn failed_leaf_rollback_preserves_both_errors_and_poisons_until_reopen() {
         let dir = tempfile::tempdir().expect("session dir");
-        let mut coordinator = super::SessionCoordinator::new(
+        let mut coordinator = super::SessionCoordinator::new_for_test(
             dir.path(),
             ".",
             opi_agent::compaction::CompactionConfig::default(),
@@ -1262,7 +1281,7 @@ mod tests {
     #[test]
     fn post_write_metadata_failure_rolls_back_before_live_or_reopened_state_changes() {
         let dir = tempfile::tempdir().expect("session dir");
-        let mut coordinator = super::SessionCoordinator::new(
+        let mut coordinator = super::SessionCoordinator::new_for_test(
             dir.path(),
             ".",
             opi_agent::compaction::CompactionConfig::default(),
@@ -1305,7 +1324,7 @@ mod tests {
     #[test]
     fn post_write_compaction_leaf_failure_rolls_back_the_whole_compaction() {
         let dir = tempfile::tempdir().expect("session dir");
-        let mut coordinator = super::SessionCoordinator::new(
+        let mut coordinator = super::SessionCoordinator::new_for_test(
             dir.path(),
             ".",
             opi_agent::compaction::CompactionConfig::default(),
@@ -1374,7 +1393,7 @@ mod tests {
     #[test]
     fn failed_batch_rollback_preserves_append_error_and_poisons_coordinator() {
         let dir = tempfile::tempdir().expect("session dir");
-        let mut coordinator = super::SessionCoordinator::new(
+        let mut coordinator = super::SessionCoordinator::new_for_test(
             dir.path(),
             ".",
             opi_agent::compaction::CompactionConfig::default(),
@@ -1458,7 +1477,7 @@ mod tests {
     #[test]
     fn cost_summary_uses_exact_cumulative_totals_above_u32_max() {
         let dir = tempfile::tempdir().expect("session dir");
-        let mut coordinator = super::SessionCoordinator::new(
+        let mut coordinator = super::SessionCoordinator::new_for_test(
             dir.path(),
             ".",
             opi_agent::compaction::CompactionConfig::default(),

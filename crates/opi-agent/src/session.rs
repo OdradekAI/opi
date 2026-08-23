@@ -71,14 +71,9 @@ pub struct SessionHeader {
 }
 
 impl SessionHeader {
-    pub fn new(id: String, timestamp: String, cwd: String, parent_session: Option<String>) -> Self {
-        let binding = default_runtime_input_binding(&id, &timestamp, &cwd, &parent_session);
-        Self::new_with_runtime_input_binding(id, timestamp, cwd, parent_session, binding)
-    }
-
     /// Construct a v2 header with the exact immutable runtime-input binding
     /// resolved by trusted product assembly.
-    pub fn new_with_runtime_input_binding(
+    pub fn new(
         id: String,
         timestamp: String,
         cwd: String,
@@ -95,26 +90,54 @@ impl SessionHeader {
             runtime_input_binding: Some(runtime_input_binding),
         }
     }
-}
 
-fn default_runtime_input_binding(
-    id: &str,
-    timestamp: &str,
-    cwd: &str,
-    parent_session: &Option<String>,
-) -> crate::evidence::RuntimeInputBinding {
-    use sha2::Digest;
+    /// Construct a deterministic v2 header for test fixtures only.
+    ///
+    /// Production callers must use [`Self::new`] with the exact binding from
+    /// trusted product assembly.
+    #[doc(hidden)]
+    pub fn new_for_test(
+        id: String,
+        timestamp: String,
+        cwd: String,
+        parent_session: Option<String>,
+    ) -> Self {
+        use sha2::Digest;
 
-    let mut hasher = sha2::Sha256::new();
-    for value in [id, timestamp, cwd, parent_session.as_deref().unwrap_or("")] {
-        hasher.update(value.as_bytes());
-        hasher.update([0]);
+        let mut hasher = sha2::Sha256::new();
+        for value in [
+            id.as_str(),
+            timestamp.as_str(),
+            cwd.as_str(),
+            parent_session.as_deref().unwrap_or(""),
+        ] {
+            hasher.update(value.as_bytes());
+            hasher.update([0]);
+        }
+        let digest = crate::evidence::ContentDigest::from_hex(format!("{:x}", hasher.finalize()))
+            .expect("SHA-256 formatter produces a canonical digest");
+        let source = crate::evidence::AssemblyIdentity::new("opi.session.fixture")
+            .expect("static assembly identity is valid");
+        Self::new(
+            id,
+            timestamp,
+            cwd,
+            parent_session,
+            crate::evidence::RuntimeInputBinding::direct(digest, source),
+        )
     }
-    let digest = crate::evidence::ContentDigest::from_hex(format!("{:x}", hasher.finalize()))
-        .expect("SHA-256 formatter produces a canonical digest");
-    let source = crate::evidence::AssemblyIdentity::new("opi.session.header")
-        .expect("static assembly identity is valid");
-    crate::evidence::RuntimeInputBinding::direct(digest, source)
+
+    /// Backward-compatible spelling for callers that already supply an exact
+    /// runtime-input binding.
+    pub fn new_with_runtime_input_binding(
+        id: String,
+        timestamp: String,
+        cwd: String,
+        parent_session: Option<String>,
+        runtime_input_binding: crate::evidence::RuntimeInputBinding,
+    ) -> Self {
+        Self::new(id, timestamp, cwd, parent_session, runtime_input_binding)
+    }
 }
 
 /// A message tree entry (S9.3 `message` type).

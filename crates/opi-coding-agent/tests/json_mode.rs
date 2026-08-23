@@ -37,7 +37,7 @@ fn runner_with_isolated_session(
     let workspace = std::env::current_dir().expect("workspace cwd");
     let session_id = "json-mode-summary".to_owned();
     let session_path = session_dir.path().join(format!("{session_id}.jsonl"));
-    let header = SessionHeader::new(
+    let header = SessionHeader::new_for_test(
         session_id.clone(),
         "2026-07-14T00:00:00Z".into(),
         workspace.display().to_string(),
@@ -1002,7 +1002,7 @@ mod phase7 {
         let session_path = workspace.path().join("resume.jsonl");
         SessionWriter::create(
             &session_path,
-            SessionHeader::new(
+            SessionHeader::new_for_test(
                 "resume".into(),
                 "2026-08-15T00:00:00Z".into(),
                 workspace.path().display().to_string(),
@@ -1687,7 +1687,7 @@ async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
         let session_path = session_dir.join(format!("{session_id}.jsonl"));
         SessionWriter::create(
             &session_path,
-            SessionHeader::new(
+            SessionHeader::new_for_test(
                 session_id.to_owned(),
                 "2026-08-19T00:00:00Z".to_owned(),
                 workspace.display().to_string(),
@@ -1782,7 +1782,10 @@ async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
     let mut persist_runner = resumed_runner(
         Box::new(MockProvider::new(
             "mock",
-            vec![test_support::text_response("persist-safe-control")],
+            vec![
+                test_support::text_response("persist-prime-control"),
+                test_support::text_response("persist-safe-control"),
+            ],
         )),
         workspace.path(),
         persist_sessions.path(),
@@ -1790,11 +1793,19 @@ async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
         OpiConfig::default(),
         ToolSelection::Default,
     );
+    let source_path = persist_runner
+        .session()
+        .expect("resumed source session")
+        .session_path()
+        .to_path_buf();
+    let prime = persist_runner.run_json("persist-prime-control").await;
+    assert_eq!(prime.exit_code, ExitCode::Success as i32);
     let missing_path = persist_runner
         .session()
         .unwrap()
         .session_path()
         .to_path_buf();
+    assert_ne!(missing_path, source_path, "prime must create a bound child");
     std::fs::remove_file(&missing_path).unwrap();
     let persist = persist_runner.run_json(prompt_canary).await;
     let persist_lines = parse_ndjson(&persist.stdout);

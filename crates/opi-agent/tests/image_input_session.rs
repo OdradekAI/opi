@@ -8,7 +8,7 @@ use opi_ai::message::{ImageSource, InputContent, MediaType, Message, UserMessage
 use tempfile::TempDir;
 
 fn make_header() -> SessionHeader {
-    SessionHeader::new(
+    SessionHeader::new_for_test(
         "test-session".into(),
         "2026-05-26T12:00:00Z".into(),
         "/test".into(),

@@ -33,10 +33,10 @@ messages limited to LLM-visible content and failure state.
 `ProviderErrorCategory` values from `opi-ai` map into redacted diagnostics and
 evidence records, provider-returned cancellations surface as `AgentError::Cancelled`,
 and retry diagnostics distinguish exhausted retry budgets from suppression
-after partial provider output. Append-only session storage carries typed
-metadata entries and branch summaries while keeping `SessionHeader::version =
-1`; metadata entries do not enter provider context, but branch summaries do,
-through `session_context::reconstruct_context`.
+after partial provider output. Append-only session storage writes version 2
+headers with an exact runtime-input binding; legacy version 1 input remains
+read-only. Metadata entries do not enter provider context, but branch summaries
+do, through `session_context::reconstruct_context`.
 
 It depends on `opi-ai` for provider and message types. It does not implement the
 `opi` CLI, terminal UI, or built-in filesystem/shell tools; those live in
@@ -266,25 +266,26 @@ and completes evidence through `finalize_evidence` or `abandon_evidence`.
 
 Session storage is append-only JSONL:
 
-- First line: `SessionHeader` (`version = 1`).
-- Entries: `MessageEntry`, `CompactionEntry`, `LeafEntry`, and
-  `ExtensionStateEntry` (the `SessionEntry` enum is `#[non_exhaustive]`;
-  additive variants may arrive across 0.x).
-- Additive typed entries on the v1 header: `SessionInfoEntry`
-  (`session_info`), `ModelChangeEntry` (`model_change`),
-  `ThinkingLevelChangeEntry` (`thinking_level_change`), `LabelEntry` (`label`),
-  and `BranchSummaryEntry` (`branch_summary`). Metadata entries
-  (`session_info`, `model_change`, `thinking_level_change`, `label`) do not
-  advance the content tip and do not enter provider context; `branch_summary`
-  is injected into reconstructed LLM context as a metadata-parented message by
-  `session_context::reconstruct_context`, and product provider conversion
-  forwards it as context when present.
-- `custom_message` is deferred: opi ships no `custom_message` writer and treats
-  unknown `custom_message` entries like other unknown future entries on read.
-- Reader recovery distinguishes corrupt middle entries (malformed JSON or
-  missing required fields, surfaced as diagnostics) from unknown future entry
-  types (well-formed JSON with an unrecognized `type`, skipped and counted but
-  not preserved across read+rewrite), and skips truncated trailing lines.
+- Current writers emit a `SessionHeader` at `version = 2` with the required
+  exact `RuntimeInputBinding`. Each entry is an envelope classified as
+  `required` or `ignorable_observation`.
+- Session entries include `MessageEntry`, `CompactionEntry`, `LeafEntry`,
+  `ExtensionStateEntry`, `SessionInfoEntry` (`session_info`),
+  `ModelChangeEntry` (`model_change`), `ThinkingLevelChangeEntry`
+  (`thinking_level_change`), `LabelEntry` (`label`), and
+  `BranchSummaryEntry` (`branch_summary`). The metadata entries do not advance
+  the content tip or enter provider context; `branch_summary` is injected into
+  reconstructed LLM context as a metadata-parented message by
+  `session_context::reconstruct_context`.
+- Unknown required version 2 envelopes, corrupt input, and unsupported
+  versions fail closed. Unknown ignorable-observation envelopes are skipped;
+  reader recovery records corrupt middle entries and skips truncated trailing
+  lines.
+- The version 1 reader is historical and read-only: it never rewrites source
+  bytes. The Reference Product can resume or fork a v1 session only after a
+  uniquely provable route normalization, and before execution creates and
+  adopts a parented version 2 child with the exact current binding. Missing or
+  ambiguous routes fail before provider or tool dispatch.
 - `session_branch::SessionTree` reconstructs active branches from `parent_id`
   links and the latest `LeafEntry`.
 
