@@ -3,17 +3,17 @@
   "members": [
     {
       "artifact_stem": "audit.claude.glm53",
-      "audit_head": "890de6b5316f151206f3d4680954d51fc39871b0",
-      "audit_run_id": "phase17-claude-glm53-890de6b-20260824t081717z",
+      "audit_head": "87377fcf750a5d0a38919bf82e740b7baefe8a8b",
+      "audit_run_id": "phase17-claude-glm53-87377fc-20260824t135741z",
       "digests": {
-        "findings_sha256": "1b6817b639093f72f017167096ea21501042c7126e5aae209c91e7a969020c50",
-        "meta_sha256": "3525e5e61ef4bf160cf37fa6523080450cdf256b59c416115bd87b70062553d9",
-        "report_sha256": "8f5f23c3e22e8250b0ce30e2a7353ebbea9e4e72fdf899532bb77be2727cc40a",
-        "requirements_sha256": "83918192f31f7cefc16928d998732e7728da43ec53bb41ae433303071ac713bb"
+        "findings_sha256": "5d2b87eff189de3513b4f5109fc074fa37137262f9842d427ede3495906edcd8",
+        "meta_sha256": "e8b170465ac8502060e4fda1bddf9babafb4469c840d2bbca970f63270a7c679",
+        "report_sha256": "37a918606b569f58b5cf0b0049a729f573215d60ea02145d15f5f8e8d9770b96",
+        "requirements_sha256": "50c46d0e0dfc022e10671fc23c9448227f26c9d07124ef9bc55093849aa75229"
       },
       "model_id": "glm53",
       "reviewer_id": "claude",
-      "verdict": "FAIL"
+      "verdict": "PASS"
     },
     {
       "artifact_stem": "audit.codex.gpt56",
@@ -31,6 +31,6 @@
     }
   ],
   "phase": 17,
-  "revision": 3,
+  "revision": 4,
   "schema_version": 2
 }
