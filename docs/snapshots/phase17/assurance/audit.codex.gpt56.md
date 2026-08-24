@@ -1,6 +1,5 @@
 # Phase 17 Audit
 
-**Audit generation ID**: `phase17-20260824t024210z`
 **Audit run ID**: `phase17-3a15ed4-20260824t024210z`
 **Audit head**: `3a15ed4fe3118536aca7457353e65782042465e5`
 **Reviewer ID**: `codex`

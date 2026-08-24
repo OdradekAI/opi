@@ -9,15 +9,18 @@ Before editing:
 
 1. validate `remediation.plan.md` and its dispositions;
 2. compare the emitted `plan_sha256` byte-for-byte with the invocation;
-3. verify current committed HEAD equals the full `Remediation head`;
-4. reproduce staged, unstaged, and untracked baseline and stop on overlapping
+3. verify the exact `Audit index SHA-256` still matches the live index and
+   every indexed member still validates;
+4. verify current committed HEAD equals the full `Remediation head`;
+5. reproduce staged, unstaged, and untracked baseline and stop on overlapping
    unowned changes;
-5. verify `READY-FOR-APPLY`, no unresolved decision, complete current finding
+6. verify `READY-FOR-APPLY`, no unresolved decision, complete strict-union
    coverage, and observed behavioral red-before.
 
-Approval provenance is the current apply invocation, fixed plan path, digest,
-and task context. Do not treat a different digest, older task, blanket consent,
-or file existence as approval.
+Approval provenance is the current apply invocation, fixed plan path, plan
+digest, active index digest, and task context. Any index, member, sidecar, or
+membership byte change invalidates approval. Do not treat a different digest,
+older task, blanket consent, or file existence as approval.
 
 Do not revise approved product meaning while applying. New evidence that
 changes public API, durable format, dependencies, specification, authority, or
@@ -61,8 +64,7 @@ Write fixed `remediation.result.md` and
 
 ```markdown
 **Status**: COMPLETE
-**Audit run ID**: `<exact current run>`
-**Findings SHA-256**: `<exact current digest>`
+**Audit index SHA-256**: `<exact active index digest>`
 **Plan SHA-256**: `<approved digest>`
 **Changed paths**: ["path/owned/by/planned-or-incidental-record"]
 ```
@@ -79,7 +81,7 @@ python .agents/skills/_shared/scripts/validate_assurance_artifact.py result docs
 ## Materialization handoff
 
 Do not modify the plan retroactively and do not commit automatically. A fresh
-audit may be requested only after fixes plus the complete active set are
-committed together, the assurance directory is clean, external evidence is
+audit or reviewer re-run may be requested only after fixes plus the current
+live set are committed, the assurance directory is clean, external evidence is
 resolved, and any owning-workflow return is complete. `opi-remediate` never
 invokes another explicit-only skill itself and never grants a Phase PASS.

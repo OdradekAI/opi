@@ -9,8 +9,7 @@ directory. The JSONL contract is
 # Phase <N> Remediation Plan
 
 **Status**: DRAFT-UNRESOLVED | READY-FOR-APPLY
-**Audit run ID**: `<exact audit.meta.json value>`
-**Findings SHA-256**: `<exact audit.meta.json value>`
+**Audit index SHA-256**: `<exact raw-byte digest>`
 **Remediation head**: `<full committed SHA>`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
 **Dirty-worktree baseline**: <staged/unstaged/untracked inventory>
@@ -18,7 +17,7 @@ directory. The JSONL contract is
 
 ## Current Finding Verification
 
-| Finding ID | Verification | Final severity + rationale | Closure key/family | Batch | Decision |
+| Source run / Finding ID | Verification | Source and final severity + rationale | Closure key/family | Batch | Decision |
 |---|---|---|---|---|---|
 | ... | ... | ... | ... | ... | ... |
 
@@ -41,7 +40,7 @@ determines the closure predicate; do not add placeholder fixes.
 
 #### Fix B1.1: <short title>
 
-- **Finding source**: <current audit_run_id + findings_sha256 + finding ID>
+- **Finding source(s)**: <one or more exact audit_run_id + owning findings_sha256 + finding ID keys>
 - **Decision**: <exact decision>
 - **Verification status**: Confirmed | Partially confirmed
 - **File(s)**: `<paths>`
@@ -62,6 +61,8 @@ determines the closure predicate; do not add placeholder fixes.
 | ... | Refuted / Cannot confirm / Info-no-action / Returned to shaping / Deferred by registered source | ... |
 ```
 
-Every finding ID must appear in a fix or exclusion and in exactly one plan
-disposition. After validation, present the emitted `plan_sha256`; never write
-that digest into the plan itself because it hashes the exact plan bytes.
+Every source key in the indexed strict union must appear in a fix or exclusion
+and in exactly one plan disposition. Similar IDs never merge. After
+validation, present the emitted `plan_sha256`; never write that digest into the
+plan itself because it hashes the exact plan bytes. Any active-index byte change
+invalidates the plan binding and its approval.

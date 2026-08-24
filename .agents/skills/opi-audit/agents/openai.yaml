@@ -1,6 +1,6 @@
 interface:
   display_name: "Opi Audit"
-  short_description: "Seal and audit one Opi phase"
-  default_prompt: "Use $opi-audit phase=<N> to run a sealed conformance audit at committed HEAD and emit immutable normalized findings."
+  short_description: "Audit one identified Opi peer slot"
+  default_prompt: "Use $opi-audit phase=<N> reviewer=<reviewer-id> model=<model-id> reviewer_model_id=<exact-runtime-model> model_identity_source=<source> member=<member-directory> to independently audit one registered Phase and install the validated report into the live indexed assurance set. The model identity fields disclose the runtime selection; they do not select a model."
 policy:
   allow_implicit_invocation: false

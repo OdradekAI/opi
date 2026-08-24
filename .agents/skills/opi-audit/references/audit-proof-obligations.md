@@ -5,8 +5,9 @@ obligations before inspecting implementation.
 
 ## Requirement records
 
-Create one `audit.requirements.jsonl` record per independently decidable
-requirement using the shared audit-set contract. Seal these fields first:
+Create one record per independently decidable requirement in the current
+member's `audit.<reviewer-id>.<model-id>.requirements.jsonl` sidecar using the
+shared audit-set contract. Seal these fields first:
 
 - `audit_run_id`, requirement `id`, and `mandatory`;
 - exact criterion path, SHA-256, and citation;

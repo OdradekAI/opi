@@ -9,8 +9,12 @@ import json
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+
+sys.dont_write_bytecode = True
 
 
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -18,20 +22,64 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 RUN_ID_RE = re.compile(r"^phase([1-9][0-9]*)-[a-z0-9][a-z0-9.-]*$")
 PHASE_RE = re.compile(r"^phase([1-9][0-9]*)$")
 INCIDENTAL_ID_RE = re.compile(r"^I[1-9][0-9]*$")
+SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+AUDIT_STEM_RE = re.compile(
+    r"^audit\.(?P<reviewer>[a-z0-9][a-z0-9-]*)\."
+    r"(?P<model>[a-z0-9][a-z0-9-]*)$"
+)
+AUDIT_MEMBER_FILE_RE = re.compile(
+    r"^(?P<stem>audit\.[a-z0-9][a-z0-9-]*\."
+    r"[a-z0-9][a-z0-9-]*)\."
+    r"(?P<kind>meta\.json|requirements\.jsonl|findings\.jsonl|md)$"
+)
+AUDIT_INDEX_FILE = "audit.index.json"
 
-AUDIT_FILES = {
-    "audit.meta.json",
-    "audit.requirements.jsonl",
-    "audit.findings.jsonl",
-    "audit.md",
-}
 REMEDIATION_FILES = {
     "remediation.plan.md",
     "remediation.plan.dispositions.jsonl",
     "remediation.result.md",
     "remediation.result.dispositions.jsonl",
 }
-ALLOWED_ASSURANCE_FILES = AUDIT_FILES | REMEDIATION_FILES
+
+INDEX_FIELDS = {
+    "schema_version",
+    "phase",
+    "revision",
+    "aggregate_verdict",
+    "members",
+}
+INDEX_MEMBER_FIELDS = {
+    "reviewer_id",
+    "model_id",
+    "artifact_stem",
+    "audit_run_id",
+    "audit_head",
+    "verdict",
+    "digests",
+}
+INDEX_DIGEST_FIELDS = {
+    "meta_sha256",
+    "requirements_sha256",
+    "findings_sha256",
+    "report_sha256",
+}
+MEMBER_META_FIELDS = {
+    "schema_version",
+    "audit_run_id",
+    "phase",
+    "audit_head",
+    "reviewer_id",
+    "reviewer_identity",
+    "model_id",
+    "reviewer_model_id",
+    "model_identity_source",
+    "independence",
+    "baseline_policy",
+    "baseline_sources",
+    "requirements_sha256",
+    "findings_sha256",
+    "verdict",
+}
 
 META_FIELDS = {
     "schema_version",
@@ -147,6 +195,30 @@ REMEDIATION_STATUSES = {
     "Refuted",
     "Cannot confirm",
 }
+MODEL_IDENTITY_SOURCES = {
+    "runtime-attested",
+    "request-config",
+    "operator-declared",
+}
+
+
+@dataclass(frozen=True)
+class AuditMemberPaths:
+    stem: str
+    meta: Path
+    requirements: Path
+    findings: Path
+    report: Path
+
+
+def member_paths(directory: Path, stem: str) -> AuditMemberPaths:
+    return AuditMemberPaths(
+        stem=stem,
+        meta=directory / f"{stem}.meta.json",
+        requirements=directory / f"{stem}.requirements.jsonl",
+        findings=directory / f"{stem}.findings.jsonl",
+        report=directory / f"{stem}.md",
+    )
 
 
 def nonempty_string(value: Any) -> bool:
@@ -306,10 +378,13 @@ def validate_meta(meta: dict[str, Any]) -> list[str]:
 def validate_requirement_records(
     path: Path,
     meta: dict[str, Any] | None,
+    *,
+    expected_stem: str = "audit",
 ) -> tuple[list[dict[str, Any]], list[str]]:
     errors: list[str] = []
-    if path.name != "audit.requirements.jsonl":
-        errors.append("expected fixed filename audit.requirements.jsonl")
+    expected_name = f"{expected_stem}.requirements.jsonl"
+    if path.name != expected_name:
+        errors.append(f"expected audit requirements filename {expected_name}")
     records = load_jsonl(path, errors)
     seen: set[str] = set()
     for number, record in enumerate(records, start=1):
@@ -360,21 +435,32 @@ def validate_requirement_records(
 
 
 def validate_requirements(path: Path) -> list[str]:
-    meta_path = path.with_name("audit.meta.json")
+    suffix = ".requirements.jsonl"
+    stem = path.name[: -len(suffix)] if path.name.endswith(suffix) else ""
+    if AUDIT_STEM_RE.fullmatch(stem) is None:
+        return [
+            "requirements filename must match "
+            "audit.<reviewer>.<model>.requirements.jsonl"
+        ]
+    meta_path = path.with_name(f"{stem}.meta.json")
     meta = read_json(meta_path, []) if meta_path.is_file() else None
-    _, errors = validate_requirement_records(path, meta)
+    _, errors = validate_requirement_records(path, meta, expected_stem=stem)
     return errors
 
 
 def validate_finding_records(
     path: Path,
     meta: dict[str, Any] | None,
+    *,
+    expected_stem: str = "audit",
 ) -> tuple[list[dict[str, Any]], list[str]]:
     errors: list[str] = []
-    if path.name != "audit.findings.jsonl":
-        errors.append("expected fixed filename audit.findings.jsonl")
-    if not path.with_name("audit.md").is_file():
-        errors.append("missing fixed report sibling: audit.md")
+    expected_name = f"{expected_stem}.findings.jsonl"
+    if path.name != expected_name:
+        errors.append(f"expected audit findings filename {expected_name}")
+    report_name = f"{expected_stem}.md"
+    if not path.with_name(report_name).is_file():
+        errors.append(f"missing audit report sibling: {report_name}")
     records = load_jsonl(path, errors, allow_empty=True)
     seen: set[tuple[str, str]] = set()
     for number, record in enumerate(records, start=1):
@@ -397,20 +483,27 @@ def validate_finding_records(
             errors.append(prefix + "source_kind must be audit")
         phase = meta.get("phase") if meta is not None else None
         expected_source = (
-            f"docs/snapshots/phase{phase}/assurance/audit.md"
+            f"docs/snapshots/phase{phase}/assurance/{expected_stem}.md"
             if isinstance(phase, int)
             else None
         )
         source_path = record.get("source_path")
         if expected_source is not None and source_path != expected_source:
-            errors.append(prefix + "source_path must name the fixed Phase audit.md")
+            errors.append(prefix + f"source_path must name {expected_source}")
         elif expected_source is None and not (
             isinstance(source_path, str)
-            and re.fullmatch(r"docs/snapshots/phase[1-9][0-9]*/assurance/audit\.md", source_path)
+            and re.fullmatch(
+                rf"docs/snapshots/phase[1-9][0-9]*/assurance/{re.escape(expected_stem)}\.md",
+                source_path,
+            )
         ):
-            errors.append(prefix + "source_path must name the fixed Phase audit.md")
+            errors.append(prefix + f"source_path must name {report_name}")
         if not nonempty_string(record.get("source_model")):
             errors.append(prefix + "source_model must be non-empty")
+        elif meta is not None and "reviewer_model_id" in meta and record.get(
+            "source_model"
+        ) != meta.get("reviewer_model_id"):
+            errors.append(prefix + "source_model does not match reviewer_model_id")
         observed_at = record.get("observed_at")
         if not isinstance(observed_at, str) or FULL_SHA_RE.fullmatch(observed_at) is None:
             errors.append(prefix + "observed_at must be a full lowercase commit SHA")
@@ -456,52 +549,55 @@ def validate_finding_records(
 
 
 def validate_findings(path: Path) -> list[str]:
-    meta_path = path.with_name("audit.meta.json")
+    suffix = ".findings.jsonl"
+    stem = path.name[: -len(suffix)] if path.name.endswith(suffix) else ""
+    if AUDIT_STEM_RE.fullmatch(stem) is None:
+        return ["findings filename must match audit.<reviewer>.<model>.findings.jsonl"]
+    meta_path = path.with_name(f"{stem}.meta.json")
     meta = read_json(meta_path, []) if meta_path.is_file() else None
-    _, errors = validate_finding_records(path, meta)
+    _, errors = validate_finding_records(path, meta, expected_stem=stem)
     return errors
 
 
-def validate_audit_set(directory: Path) -> list[str]:
+def validate_member_meta(meta: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if not directory.is_dir():
-        return [f"audit set directory does not exist: {directory}"]
-    names = {path.name for path in directory.iterdir() if path.is_file()}
-    missing = sorted(AUDIT_FILES - names)
+    missing = missing_fields(meta, MEMBER_META_FIELDS)
     if missing:
-        errors.append("active audit set missing: " + ", ".join(missing))
-    unknown = sorted(names - ALLOWED_ASSURANCE_FILES)
-    if unknown:
-        errors.append("assurance directory contains unexpected files: " + ", ".join(unknown))
-    if missing:
+        errors.append("member metadata missing fields: " + ", ".join(missing))
         return errors
+    if meta.get("schema_version") != 3:
+        errors.append("member metadata schema_version must be 3")
+    projection = dict(meta)
+    projection["schema_version"] = 1
+    projection["reviewer_model"] = meta.get("reviewer_model_id")
+    errors.extend(validate_meta(projection))
+    for field in ("reviewer_id", "model_id"):
+        value = meta.get(field)
+        if not isinstance(value, str) or SLUG_RE.fullmatch(value) is None:
+            errors.append(f"member metadata {field} must be a file-safe slug")
+    for field in ("reviewer_identity", "reviewer_model_id"):
+        if not nonempty_string(meta.get(field)):
+            errors.append(f"member metadata {field} must be non-empty")
+    if meta.get("model_identity_source") not in MODEL_IDENTITY_SOURCES:
+        errors.append("member metadata model_identity_source is invalid")
+    return errors
 
-    meta_path = directory / "audit.meta.json"
-    requirements_path = directory / "audit.requirements.jsonl"
-    findings_path = directory / "audit.findings.jsonl"
-    report_path = directory / "audit.md"
-    meta = read_json(meta_path, errors)
-    errors.extend(validate_meta(meta))
-    requirements, requirement_errors = validate_requirement_records(
-        requirements_path,
-        meta,
-    )
-    findings, finding_errors = validate_finding_records(findings_path, meta)
-    errors.extend(requirement_errors)
-    errors.extend(finding_errors)
 
-    requirements_digest = raw_sha256(requirements_path, errors)
-    findings_digest = raw_sha256(findings_path, errors)
-    if requirements_digest is not None and meta.get("requirements_sha256") != requirements_digest:
-        errors.append("requirements_sha256 does not match audit.requirements.jsonl")
-    if findings_digest is not None and meta.get("findings_sha256") != findings_digest:
-        errors.append("findings_sha256 does not match audit.findings.jsonl")
-
+def validate_member_semantics(
+    requirements: list[dict[str, Any]],
+    findings: list[dict[str, Any]],
+    meta: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
     requirements_by_id = {
-        record["id"]: record for record in requirements if nonempty_string(record.get("id"))
+        record["id"]: record
+        for record in requirements
+        if nonempty_string(record.get("id"))
     }
     findings_by_id = {
-        record["id"]: record for record in findings if nonempty_string(record.get("id"))
+        record["id"]: record
+        for record in findings
+        if nonempty_string(record.get("id"))
     }
     for finding in findings:
         finding_id = finding.get("id")
@@ -514,7 +610,9 @@ def validate_audit_set(directory: Path) -> list[str]:
                 errors.append(
                     f"finding {finding_id}: requirement {requirement_id} lacks reciprocal finding_id"
                 )
-            if finding.get("conformance_effect") == "blocks" and requirement.get("state") == "met":
+            if finding.get("conformance_effect") == "blocks" and requirement.get(
+                "state"
+            ) == "met":
                 errors.append(
                     f"finding {finding_id}: blocking finding links met requirement {requirement_id}"
                 )
@@ -552,22 +650,296 @@ def validate_audit_set(directory: Path) -> list[str]:
     )
     if meta.get("verdict") != expected_verdict:
         errors.append(f"verdict must be {expected_verdict}")
-
-    try:
-        report = report_path.read_text(encoding="utf-8-sig")
-    except OSError as exc:
-        errors.append(f"cannot read {report_path}: {exc}")
-    else:
-        report_values = {
-            "Audit run ID": meta.get("audit_run_id"),
-            "Audit head": meta.get("audit_head"),
-            "Verdict": meta.get("verdict"),
-        }
-        for label, expected in report_values.items():
-            actual = unquote_code(header_value(report, label))
-            if actual != expected:
-                errors.append(f"audit.md {label} does not match audit.meta.json")
     return errors
+
+
+def derive_aggregate_verdict(verdicts: list[str]) -> str:
+    if any(verdict == "FAIL" for verdict in verdicts):
+        return "FAIL"
+    if any(verdict == "PASS-WITH-FINDINGS" for verdict in verdicts):
+        return "PASS-WITH-FINDINGS"
+    return "PASS"
+
+
+def validate_staged_member(
+    directory: Path,
+    *,
+    phase: int,
+    reviewer_id: str,
+    model_id: str,
+) -> tuple[dict[str, Any], dict[str, str], list[str]]:
+    errors: list[str] = []
+    stem = f"audit.{reviewer_id}.{model_id}"
+    paths = member_paths(directory, stem)
+    path_by_digest = {
+        "meta_sha256": paths.meta,
+        "requirements_sha256": paths.requirements,
+        "findings_sha256": paths.findings,
+        "report_sha256": paths.report,
+    }
+    expected_names = sorted(path.name for path in path_by_digest.values())
+    present_names = sorted(entry.name for entry in directory.iterdir())
+    if present_names != expected_names:
+        errors.append(
+            "member directory must contain exactly the four "
+            "audit.<reviewer>.<model>.* files"
+        )
+    for path in path_by_digest.values():
+        if not path.is_file():
+            errors.append(f"missing member file: {path.name}")
+        elif b"\r" in path.read_bytes():
+            errors.append(f"member file {path.name} must use LF line endings only")
+    if any(error.startswith("missing member file:") for error in errors):
+        return {}, {}, errors
+
+    meta = read_json(paths.meta, errors)
+    errors.extend(validate_member_meta(meta))
+    expectations = {
+        "phase": phase,
+        "reviewer_id": reviewer_id,
+        "model_id": model_id,
+    }
+    for field, expected in expectations.items():
+        if meta.get(field) != expected:
+            errors.append(f"metadata {field} does not match staged member")
+    requirements, requirement_errors = validate_requirement_records(
+        paths.requirements,
+        meta,
+        expected_stem=stem,
+    )
+    findings, finding_errors = validate_finding_records(
+        paths.findings,
+        meta,
+        expected_stem=stem,
+    )
+    errors.extend(requirement_errors)
+    errors.extend(finding_errors)
+    errors.extend(validate_member_semantics(requirements, findings, meta))
+    requirements_digest = raw_sha256(paths.requirements, errors)
+    findings_digest = raw_sha256(paths.findings, errors)
+    if meta.get("requirements_sha256") != requirements_digest:
+        errors.append("requirements_sha256 does not match member sidecar")
+    if meta.get("findings_sha256") != findings_digest:
+        errors.append("findings_sha256 does not match member sidecar")
+    report = read_text(paths.report, errors)
+    report_expectations = {
+        "Audit run ID": meta.get("audit_run_id"),
+        "Audit head": meta.get("audit_head"),
+        "Reviewer ID": reviewer_id,
+        "Model ID": model_id,
+        "Reviewer identity": meta.get("reviewer_identity"),
+        "Reviewer model ID": meta.get("reviewer_model_id"),
+        "Model identity source": meta.get("model_identity_source"),
+        "Verdict": meta.get("verdict"),
+    }
+    for label, expected in report_expectations.items():
+        if unquote_code(header_value(report, label)) != expected:
+            errors.append(f"report {label} does not match metadata")
+    digests = {
+        field: digest
+        for field, path in path_by_digest.items()
+        if (digest := raw_sha256(path, errors)) is not None
+    }
+    return meta, digests, errors
+
+
+def validate_indexed_audit_set(
+    directory: Path, *, allow_partial_remediation: bool = False
+) -> list[str]:
+    errors: list[str] = []
+    index_path = directory / AUDIT_INDEX_FILE
+    index = read_json(index_path, errors)
+    missing = missing_fields(index, INDEX_FIELDS)
+    if missing:
+        errors.append("audit.index.json missing fields: " + ", ".join(missing))
+        return errors
+    extra = sorted(set(index) - INDEX_FIELDS)
+    if extra:
+        errors.append("audit.index.json has unexpected fields: " + ", ".join(extra))
+    if index.get("schema_version") != 2:
+        errors.append("audit.index.json schema_version must be 2")
+    phase = index.get("phase")
+    if not isinstance(phase, int) or isinstance(phase, bool) or phase < 1:
+        errors.append("audit.index.json phase must be a positive integer")
+    revision = index.get("revision")
+    if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+        errors.append("audit.index.json revision must be a positive integer")
+    if index.get("aggregate_verdict") not in VERDICTS:
+        errors.append("audit.index.json aggregate_verdict is invalid")
+    members = index.get("members")
+    if not isinstance(members, list) or not members:
+        errors.append("audit.index.json members must be a non-empty list")
+        return errors
+
+    member_pairs: list[tuple[str, str]] = []
+    run_ids: set[str] = set()
+    expected_names = {AUDIT_INDEX_FILE}
+    member_verdicts: list[str] = []
+    baseline_paths: list[Any] | None = None
+    baseline_policy: str | None = None
+    for number, member in enumerate(members, start=1):
+        prefix = f"index member {number}: "
+        if not isinstance(member, dict):
+            errors.append(prefix + "must be an object")
+            continue
+        member_missing = missing_fields(member, INDEX_MEMBER_FIELDS)
+        if member_missing:
+            errors.append(prefix + "missing fields: " + ", ".join(member_missing))
+            continue
+        member_extra = sorted(set(member) - INDEX_MEMBER_FIELDS)
+        if member_extra:
+            errors.append(prefix + "unexpected fields: " + ", ".join(member_extra))
+        reviewer_id = member.get("reviewer_id")
+        model_id = member.get("model_id")
+        if not isinstance(reviewer_id, str) or SLUG_RE.fullmatch(reviewer_id) is None:
+            errors.append(prefix + "reviewer_id must be a file-safe slug")
+            continue
+        if not isinstance(model_id, str) or SLUG_RE.fullmatch(model_id) is None:
+            errors.append(prefix + "model_id must be a file-safe slug")
+            continue
+        pair = (reviewer_id, model_id)
+        if pair in member_pairs:
+            errors.append(prefix + "duplicate reviewer/model pair")
+        member_pairs.append(pair)
+        stem = f"audit.{reviewer_id}.{model_id}"
+        if member.get("artifact_stem") != stem:
+            errors.append(prefix + "artifact_stem does not match reviewer/model")
+        run_id = member.get("audit_run_id")
+        if not nonempty_string(run_id):
+            errors.append(prefix + "audit_run_id must be non-empty")
+        elif run_id in run_ids:
+            errors.append(prefix + "duplicate audit_run_id")
+        else:
+            run_ids.add(run_id)
+        member_head = member.get("audit_head")
+        if not isinstance(member_head, str) or FULL_SHA_RE.fullmatch(member_head) is None:
+            errors.append(prefix + "audit_head must be a full lowercase commit SHA")
+        verdict = member.get("verdict")
+        if verdict not in VERDICTS:
+            errors.append(prefix + "verdict is invalid")
+        else:
+            member_verdicts.append(verdict)
+        digests = member.get("digests")
+        if not isinstance(digests, dict):
+            errors.append(prefix + "digests must be an object")
+            continue
+        if set(digests) != INDEX_DIGEST_FIELDS:
+            errors.append(prefix + "digests fields are invalid")
+        for field in INDEX_DIGEST_FIELDS:
+            digest = digests.get(field)
+            if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
+                errors.append(prefix + f"{field} must be a lowercase SHA-256")
+
+        paths = member_paths(directory, stem)
+        path_by_digest = {
+            "meta_sha256": paths.meta,
+            "requirements_sha256": paths.requirements,
+            "findings_sha256": paths.findings,
+            "report_sha256": paths.report,
+        }
+        for path in path_by_digest.values():
+            expected_names.add(path.name)
+            if not path.is_file():
+                errors.append(prefix + f"missing member file: {path.name}")
+        if any(not path.is_file() for path in path_by_digest.values()):
+            continue
+        for field, path in path_by_digest.items():
+            actual = raw_sha256(path, errors)
+            if actual is not None and digests.get(field) != actual:
+                errors.append(prefix + f"{field} does not match {path.name}")
+
+        meta = read_json(paths.meta, errors)
+        errors.extend(prefix + error for error in validate_member_meta(meta))
+        expectations = {
+            "phase": phase,
+            "audit_head": member_head,
+            "reviewer_id": reviewer_id,
+            "model_id": model_id,
+            "audit_run_id": run_id,
+            "verdict": verdict,
+        }
+        for field, expected in expectations.items():
+            if meta.get(field) != expected:
+                errors.append(prefix + f"metadata {field} does not match index")
+        requirements, requirement_errors = validate_requirement_records(
+            paths.requirements,
+            meta,
+            expected_stem=stem,
+        )
+        findings, finding_errors = validate_finding_records(
+            paths.findings,
+            meta,
+            expected_stem=stem,
+        )
+        errors.extend(prefix + error for error in requirement_errors)
+        errors.extend(prefix + error for error in finding_errors)
+        errors.extend(prefix + error for error in validate_member_semantics(requirements, findings, meta))
+        if meta.get("requirements_sha256") != raw_sha256(paths.requirements, errors):
+            errors.append(prefix + "requirements_sha256 does not match member sidecar")
+        if meta.get("findings_sha256") != raw_sha256(paths.findings, errors):
+            errors.append(prefix + "findings_sha256 does not match member sidecar")
+
+        current_paths = [
+            source.get("path") for source in meta.get("baseline_sources", [])
+        ]
+        current_policy = meta.get("baseline_policy")
+        if baseline_paths is None:
+            baseline_paths = current_paths
+            baseline_policy = current_policy
+        elif current_paths != baseline_paths or current_policy != baseline_policy:
+            errors.append(prefix + "baseline paths do not match the other active members")
+
+        report = read_text(paths.report, errors)
+        report_expectations = {
+            "Audit run ID": run_id,
+            "Audit head": member_head,
+            "Reviewer ID": reviewer_id,
+            "Model ID": model_id,
+            "Reviewer identity": meta.get("reviewer_identity"),
+            "Reviewer model ID": meta.get("reviewer_model_id"),
+            "Model identity source": meta.get("model_identity_source"),
+            "Verdict": verdict,
+        }
+        for label, expected in report_expectations.items():
+            if unquote_code(header_value(report, label)) != expected:
+                errors.append(prefix + f"report {label} does not match metadata")
+
+    if member_pairs != sorted(member_pairs):
+        errors.append("audit.index.json members must be sorted by reviewer_id/model_id")
+    if len(member_verdicts) == len(members):
+        aggregate = derive_aggregate_verdict(member_verdicts)
+        if index.get("aggregate_verdict") != aggregate:
+            errors.append(f"aggregate_verdict must be {aggregate}")
+
+    names = {path.name for path in directory.iterdir() if path.is_file()}
+    present_remediation = names & REMEDIATION_FILES
+    if (
+        not allow_partial_remediation
+        and present_remediation
+        and present_remediation != REMEDIATION_FILES
+    ):
+        errors.append("active assurance set has an incomplete remediation file group")
+    expected_names.update(present_remediation)
+    unknown = sorted(names - expected_names)
+    if unknown:
+        errors.append("assurance directory contains unindexed files: " + ", ".join(unknown))
+    unexpected_directories = sorted(
+        path.name
+        for path in directory.iterdir()
+        if path.is_dir() and path.name != "history"
+    )
+    for name in unexpected_directories:
+        errors.append(f"assurance directory contains unexpected directory: {name}")
+    return errors
+
+
+def validate_audit_set(directory: Path) -> list[str]:
+    errors: list[str] = []
+    if not directory.is_dir():
+        return [f"audit set directory does not exist: {directory}"]
+    if (directory / AUDIT_INDEX_FILE).is_file():
+        return validate_indexed_audit_set(directory)
+    return ["active audit set requires audit.index.json"]
 
 
 def source_key(record: dict[str, Any]) -> tuple[str, str] | None:
@@ -581,11 +953,69 @@ def source_key(record: dict[str, Any]) -> tuple[str, str] | None:
     return (audit_run_id, finding_id)
 
 
+@dataclass(frozen=True)
+class RemediationAuditContext:
+    index_sha256: str
+    metadata_by_run: dict[str, dict[str, Any]]
+    findings_by_key: dict[tuple[str, str], dict[str, Any]]
+
+
+def load_remediation_context(
+    directory: Path, errors: list[str]
+) -> RemediationAuditContext:
+    errors.extend(
+        f"current audit: {error}"
+        for error in validate_indexed_audit_set(
+            directory, allow_partial_remediation=True
+        )
+    )
+    index_path = directory / AUDIT_INDEX_FILE
+    index = read_json(index_path, errors)
+    index_digest = raw_sha256(index_path, errors) or ""
+    metadata_by_run: dict[str, dict[str, Any]] = {}
+    findings_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    members = index.get("members")
+    if not isinstance(members, list):
+        members = []
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        stem = member.get("artifact_stem")
+        if not isinstance(stem, str) or AUDIT_STEM_RE.fullmatch(stem) is None:
+            continue
+        paths = member_paths(directory, stem)
+        meta = read_json(paths.meta, errors)
+        run_id = meta.get("audit_run_id")
+        if not nonempty_string(run_id):
+            continue
+        if run_id in metadata_by_run:
+            errors.append(f"duplicate indexed audit_run_id: {run_id}")
+        metadata_by_run[run_id] = meta
+        finding_errors: list[str] = []
+        findings = load_jsonl(paths.findings, finding_errors, allow_empty=True)
+        errors.extend(f"{stem} findings: {error}" for error in finding_errors)
+        for finding in findings:
+            finding_id = finding.get("id")
+            if not nonempty_string(finding_id):
+                continue
+            key = (run_id, finding_id)
+            if key in findings_by_key:
+                errors.append(
+                    f"duplicate current finding: {run_id}/{finding_id}"
+                )
+            findings_by_key[key] = finding
+    return RemediationAuditContext(
+        index_sha256=index_digest,
+        metadata_by_run=metadata_by_run,
+        findings_by_key=findings_by_key,
+    )
+
+
 def validate_finding_disposition(
     record: dict[str, Any],
     *,
     stage: str,
-    meta: dict[str, Any] | None,
+    context: RemediationAuditContext,
     prefix: str,
 ) -> list[str]:
     errors: list[str] = []
@@ -610,11 +1040,25 @@ def validate_finding_disposition(
         digest = source.get("findings_sha256")
         if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
             errors.append(prefix + "source findings_sha256 must be lowercase SHA-256")
-        if meta is not None:
-            if source.get("audit_run_id") != meta.get("audit_run_id"):
-                errors.append(prefix + "source audit_run_id does not match current audit")
-            if source.get("findings_sha256") != meta.get("findings_sha256"):
-                errors.append(prefix + "source findings_sha256 does not match current audit")
+        audit_run_id = source.get("audit_run_id")
+        finding_id = source.get("id")
+        owner = (
+            context.metadata_by_run.get(audit_run_id)
+            if isinstance(audit_run_id, str)
+            else None
+        )
+        if owner is None:
+            errors.append(prefix + "source audit_run_id is not in current index")
+        else:
+            if source.get("findings_sha256") != owner.get("findings_sha256"):
+                errors.append(
+                    prefix + "source findings_sha256 does not match owning audit"
+                )
+            if (
+                not isinstance(finding_id, str)
+                or (audit_run_id, finding_id) not in context.findings_by_key
+            ):
+                errors.append(prefix + "source finding is not in current index")
     verified_at = record.get("verified_at")
     if not isinstance(verified_at, str) or FULL_SHA_RE.fullmatch(verified_at) is None:
         errors.append(prefix + "verified_at must be a full lowercase commit SHA")
@@ -673,7 +1117,7 @@ def protected_incidental_path(path: str, baseline_paths: set[str]) -> bool:
 def validate_incidental(
     record: dict[str, Any],
     *,
-    meta: dict[str, Any],
+    baseline_paths: set[str],
     prefix: str,
 ) -> list[str]:
     errors: list[str] = []
@@ -714,11 +1158,6 @@ def validate_incidental(
     if not string_list(changed_paths, allow_empty=False):
         errors.append(prefix + "incidental repair changed_paths must be non-empty")
     else:
-        baseline_paths = {
-            source.get("path")
-            for source in meta.get("baseline_sources", [])
-            if isinstance(source, dict) and isinstance(source.get("path"), str)
-        }
         for path in changed_paths:
             if protected_incidental_path(path, baseline_paths):
                 errors.append(prefix + f"incidental repair names protected path: {path}")
@@ -747,7 +1186,7 @@ def disposition_stage(path: Path) -> str | None:
 def validate_disposition_records(
     path: Path,
     *,
-    meta: dict[str, Any] | None,
+    context: RemediationAuditContext,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     errors: list[str] = []
     stage = disposition_stage(path)
@@ -764,6 +1203,12 @@ def validate_disposition_records(
     seen_sources: set[tuple[str, str]] = set()
     seen_incidentals: set[str] = set()
     batch_keys: dict[str, str] = {}
+    baseline_paths = {
+        source.get("path")
+        for meta in context.metadata_by_run.values()
+        for source in meta.get("baseline_sources", [])
+        if isinstance(source, dict) and isinstance(source.get("path"), str)
+    }
     for number, record in enumerate(records, start=1):
         prefix = f"record {number}: "
         kind = record.get("record_kind")
@@ -771,10 +1216,16 @@ def validate_disposition_records(
             if stage != "result":
                 errors.append(prefix + "incidental repairs are allowed only in results")
                 continue
-            if meta is None:
+            if not context.metadata_by_run:
                 errors.append(prefix + "incidental repair requires current audit metadata")
                 continue
-            errors.extend(validate_incidental(record, meta=meta, prefix=prefix))
+            errors.extend(
+                validate_incidental(
+                    record,
+                    baseline_paths=baseline_paths,
+                    prefix=prefix,
+                )
+            )
             incidental_id = record.get("id")
             if isinstance(incidental_id, str):
                 if incidental_id in seen_incidentals:
@@ -785,7 +1236,7 @@ def validate_disposition_records(
             validate_finding_disposition(
                 record,
                 stage=stage,
-                meta=meta,
+                context=context,
                 prefix=prefix,
             )
         )
@@ -804,9 +1255,10 @@ def validate_disposition_records(
 
 
 def validate_dispositions(path: Path) -> list[str]:
-    meta_path = path.with_name("audit.meta.json")
-    meta = read_json(meta_path, []) if meta_path.is_file() else None
-    _, errors = validate_disposition_records(path, meta=meta)
+    errors: list[str] = []
+    context = load_remediation_context(path.parent, errors)
+    _, disposition_errors = validate_disposition_records(path, context=context)
+    errors.extend(disposition_errors)
     return errors
 
 
@@ -831,19 +1283,14 @@ def validate_plan(path: Path) -> list[str]:
     if path.name != "remediation.plan.md":
         errors.append("expected fixed filename remediation.plan.md")
     directory = path.parent
-    meta_path = directory / "audit.meta.json"
-    findings_path = directory / "audit.findings.jsonl"
     disposition_path = directory / "remediation.plan.dispositions.jsonl"
-    meta = read_json(meta_path, errors)
-    if meta:
-        errors.extend(validate_meta(meta))
+    context = load_remediation_context(directory, errors)
     text = read_text(path, errors)
     status = header_value(text, "Status")
     if status not in PLAN_STATUSES:
         errors.append("Status must be DRAFT-UNRESOLVED or READY-FOR-APPLY")
     header_expectations = {
-        "Audit run ID": meta.get("audit_run_id"),
-        "Findings SHA-256": meta.get("findings_sha256"),
+        "Audit index SHA-256": context.index_sha256,
     }
     for label, expected in header_expectations.items():
         if unquote_code(header_value(text, label)) != expected:
@@ -860,31 +1307,30 @@ def validate_plan(path: Path) -> list[str]:
         errors.append("READY-FOR-APPLY requires no unresolved decisions")
     records, disposition_errors = validate_disposition_records(
         disposition_path,
-        meta=meta,
+        context=context,
     )
     errors.extend(f"plan disposition: {error}" for error in disposition_errors)
 
-    finding_errors: list[str] = []
-    findings = load_jsonl(findings_path, finding_errors, allow_empty=True)
-    errors.extend(f"current findings: {error}" for error in finding_errors)
-    finding_ids = {
-        record.get("id") for record in findings if nonempty_string(record.get("id"))
-    }
-    disposition_ids = {
-        key[1]
+    finding_keys = set(context.findings_by_key)
+    disposition_keys = {
+        key
         for record in records
         if record.get("record_kind") == "finding-disposition"
         and (key := source_key(record)) is not None
     }
-    missing_sources = sorted(finding_ids - disposition_ids)
-    extra_sources = sorted(disposition_ids - finding_ids)
-    for finding_id in missing_sources:
-        errors.append(f"plan is missing current finding {finding_id}")
-    for finding_id in extra_sources:
-        errors.append(f"plan references non-current finding {finding_id}")
+    missing_sources = sorted(finding_keys - disposition_keys)
+    extra_sources = sorted(disposition_keys - finding_keys)
+    for audit_run_id, finding_id in missing_sources:
+        errors.append(
+            f"plan is missing current finding {audit_run_id}/{finding_id}"
+        )
+    for audit_run_id, finding_id in extra_sources:
+        errors.append(
+            f"plan references non-current finding {audit_run_id}/{finding_id}"
+        )
 
     fix_starts = list(re.finditer(r"(?m)^#### Fix\s+[^\n]+$", text))
-    if status == "READY-FOR-APPLY" and findings and not fix_starts:
+    if status == "READY-FOR-APPLY" and finding_keys and not fix_starts:
         errors.append("plan contains no Fix items")
     for index, start in enumerate(fix_starts):
         end = fix_starts[index + 1].start() if index + 1 < len(fix_starts) else len(text)
@@ -969,9 +1415,7 @@ def validate_result(path: Path) -> list[str]:
     if path.name != "remediation.result.md":
         errors.append("expected fixed filename remediation.result.md")
     directory = path.parent
-    meta = read_json(directory / "audit.meta.json", errors)
-    if meta:
-        errors.extend(validate_meta(meta))
+    context = load_remediation_context(directory, errors)
     plan_path = directory / "remediation.plan.md"
     plan_dispositions_path = directory / "remediation.plan.dispositions.jsonl"
     result_dispositions_path = directory / "remediation.result.dispositions.jsonl"
@@ -979,23 +1423,19 @@ def validate_result(path: Path) -> list[str]:
     errors.extend(f"plan: {error}" for error in plan_errors)
     plan_records, plan_record_errors = validate_disposition_records(
         plan_dispositions_path,
-        meta=meta,
+        context=context,
     )
     errors.extend(f"plan disposition: {error}" for error in plan_record_errors)
     result_records, result_record_errors = validate_disposition_records(
         result_dispositions_path,
-        meta=meta,
+        context=context,
     )
     errors.extend(f"result disposition: {error}" for error in result_record_errors)
     text = read_text(path, errors)
     if header_value(text, "Status") != "COMPLETE":
         errors.append("result Status must be COMPLETE")
-    for label, expected in (
-        ("Audit run ID", meta.get("audit_run_id")),
-        ("Findings SHA-256", meta.get("findings_sha256")),
-    ):
-        if unquote_code(header_value(text, label)) != expected:
-            errors.append(f"result {label} does not match current audit")
+    if unquote_code(header_value(text, "Audit index SHA-256")) != context.index_sha256:
+        errors.append("result Audit index SHA-256 does not match current audit")
     try:
         expected_plan_digest = plan_digest(plan_path, plan_dispositions_path)
     except OSError as exc:
@@ -1135,15 +1575,41 @@ def validate_rotation(phase_directory: Path) -> list[str]:
     assurance_dir = phase_directory / "assurance"
     if assurance_dir.is_dir():
         names = {path.name for path in assurance_dir.iterdir() if path.is_file()}
-        unknown = sorted(names - ALLOWED_ASSURANCE_FILES)
+        dynamic_groups: dict[str, set[str]] = {}
+        dynamic_names: set[str] = set()
+        for name in names:
+            match = AUDIT_MEMBER_FILE_RE.fullmatch(name)
+            if match is None:
+                continue
+            dynamic_names.add(name)
+            dynamic_groups.setdefault(match.group("stem"), set()).add(match.group("kind"))
+        allowed = {AUDIT_INDEX_FILE} | REMEDIATION_FILES | dynamic_names
+        unknown = sorted(names - allowed)
         if unknown:
             errors.append("active assurance set has unexpected files: " + ", ".join(unknown))
-        present_audit = names & AUDIT_FILES
-        if present_audit and present_audit != AUDIT_FILES:
-            errors.append("active assurance set has an incomplete audit file group")
+        if dynamic_groups and AUDIT_INDEX_FILE not in names:
+            errors.append("active assurance set requires audit.index.json")
+        if AUDIT_INDEX_FILE in names and not dynamic_groups:
+            errors.append("active assurance set has no reviewer/model audit group")
+        expected_kinds = {
+            "meta.json",
+            "requirements.jsonl",
+            "findings.jsonl",
+            "md",
+        }
+        for stem, kinds in sorted(dynamic_groups.items()):
+            if kinds != expected_kinds:
+                errors.append(f"active assurance set has incomplete group: {stem}")
         present_remediation = names & REMEDIATION_FILES
         if present_remediation and present_remediation != REMEDIATION_FILES:
             errors.append("active assurance set has an incomplete remediation file group")
+        unexpected_directories = sorted(
+            path.name
+            for path in assurance_dir.iterdir()
+            if path.is_dir() and path.name != "history"
+        )
+        for name in unexpected_directories:
+            errors.append(f"active assurance set has unexpected directory: {name}")
     return errors
 
 
@@ -1172,7 +1638,29 @@ def main() -> int:
         "result": validate_result,
         "rotation": validate_rotation,
     }
-    errors = validators[args.kind](args.path)
+    lock_recovery_kinds = {"audit-set", "rotation", "dispositions", "plan", "result"}
+    if args.kind in lock_recovery_kinds:
+        import assurance_set
+
+        try:
+            phase_directory = (
+                args.path
+                if args.kind == "rotation"
+                else args.path.parent
+                if args.kind in {"dispositions", "plan", "result"}
+                else args.path
+            )
+            if phase_directory.name == "assurance":
+                phase_directory = phase_directory.parent
+            repository = assurance_set.repository_root(phase_directory)
+            phase = assurance_set.parse_phase(phase_directory)
+            with assurance_set.AssuranceLock(repository, phase):
+                assurance_set.recover_locked(repository, phase_directory)
+                errors = validators[args.kind](args.path)
+        except (assurance_set.AssuranceSetError, OSError) as exc:
+            errors = [str(exc)]
+    else:
+        errors = validators[args.kind](args.path)
     if errors:
         for error in errors:
             print(f"FAIL: {error}", file=sys.stderr)

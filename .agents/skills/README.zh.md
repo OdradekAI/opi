@@ -67,9 +67,10 @@ flowchart TD
   Git commit 授权是两个不同关卡。
 - `opi-audit` 与 `opi-eval` 只诊断，不编辑生产代码。每次 audit 只使用最新已提交
   的登记来源，绝不读取先前 audit 或 remediation 结论。
-- `opi-remediate mode=plan` 验证当前活动 audit 并规划；`mode=apply` 必须显式
-  批准该固定计划的精确摘要。apply 只允许契约限定的顺手修复，两种模式都不写入
-  正式 `.opi-impl-state.json`。
+- `opi-remediate mode=plan` 验证当前活动 indexed audit set 的每个成员，并为
+  findings 严格并集制定计划；`mode=apply` 必须显式批准固定计划摘要与精确活动
+  index 摘要。apply 只允许契约限定的顺手修复，两种模式都不写入正式
+  `.opi-impl-state.json`。
 - `opi-document` 证明文档真实，不授权发布。
 - `opi-release` 是唯一公开发布流程；crates.io 发布还有独立的最后时刻
   不可逆关卡。
@@ -85,9 +86,9 @@ commit，`$` 可能使用凭据或付费 provider，`P` 改变公开状态，`I`
 | `opi-realign` | 对照固定 pi 修订版检查 opi | `docs/realign/*.md` | 只是证据；经登记后进入塑形或 `opi-implement plan` | W |
 | `opi-research` | 基于一手资料调研向外能力 | `docs/research/*.md` | 只是证据；下一步为塑形 | W |
 | `opi-implement` | 准入 Phase 来源、执行任务图并归档 Phase 证据 | `.opi-impl-state.json`、Phase 快照、任务变更 | 任务图、任务 commit、账本 commit 和失败关卡相互独立 | W、C |
-| `opi-audit` | 按最新已提交的登记来源和实现独立核实一个 Phase | `docs/snapshots/phase<N>/assurance/` 下固定的 metadata、requirements、findings 与 report 活动集 | 不修复；当前发现进入 `opi-remediate` | W |
+| `opi-audit` | 以显式 reviewer/model 身份，按最新已提交的登记来源独立核实一个 Phase | `docs/snapshots/phase<N>/assurance/` 活动索引集合中一个带后缀的四文件报告组 | 不修复；各报告独立入集，当前发现进入 `opi-remediate` | W |
 | `opi-eval` | 运行显式、隔离的真实 provider 保真度用例 | `docs/eval/` 报告与历史 | 可能需要凭据；变更工具还需额外确认 | W、$ |
-| `opi-remediate` | `mode=plan` 验证当前活动 audit 并生成 closure batch；`mode=apply` 执行精确批准摘要对应的计划 | 活动集内固定的计划、disposition、结果和用户批准的修复 | `READY-FOR-APPLY` 与精确摘要批准共同控制执行；意图变化返回塑形 | W |
+| `opi-remediate` | `mode=plan` 验证活动 indexed set 并为 findings 严格并集生成 closure batch；`mode=apply` 执行精确批准的 plan 与 index 摘要 | 集合级固定计划、disposition、结果和用户批准的修复 | `READY-FOR-APPLY` 与两个精确摘要绑定共同控制执行；意图变化返回塑形 | W |
 | `opi-document` | 同步真实中英文文档及源派生检查 | 文档与 doc-check 变更 | 不发布 | W |
 | `opi-release` | 为六个 crate 与 GitHub 产物执行七阶段发布 | Git tag/release 与 crates.io 版本 | 公开 Git 关卡之后仍有独立 crates 不可逆关卡 | W、C、P、I |
 | `opi-slim-tests` | 在不丢失行为的前提下删除重复或已取代测试二进制 | 已验证、未提交的测试图缩减 | 从不自动提交 | W |
@@ -95,16 +96,21 @@ commit，`$` 可能使用凭据或付费 provider，`P` 改变公开状态，`I`
 ## 保障模型
 
 `opi-audit` 与 `opi-eval` 使用 `_shared/references/finding-contract.md` 的统一
-发现词汇，但只有当前活动 audit 的 findings 能进入 `opi-remediate`。每个 Phase 的
-`assurance/` 目录只保留一套固定活动保证集；已提交的旧集合由 Git 历史归档。
-audit run ID 与原始文件摘要把 requirements、findings、plan 和 result 绑定起来，
-不引入历史 lineage 或共识输入。修复结果只能关闭一个 batch，并且只允许带独立
-red/green 证明、阻塞验证且受限的顺手修复。只有修复与完整活动集已共同提交且
-assurance 目录干净后，才能开始下一次独立 audit。通用 provider-fidelity canary
-只是运行时信号；只有登记过的 runtime-fidelity 用例才能关闭产品条件。
+发现词汇，但只有当前活动 indexed set 能进入 `opi-remediate`。每个 Phase 只有一个
+活动 assurance set，其中包含独立入集的 reviewer/model 报告组；各报告地位相等，
+不存在 canonical report，每个成员携带自己的已提交 `audit_head`，单成员集合即合法。
+聚合 verdict 采用 fail-dominant 规则，remediation 消费全部 indexed finding 的严格
+并集，并把批准绑定到精确 `audit.index.json` 摘要。
 
-条件允许时使用独立模型或评审器，并如实披露独立性降级。项目契约不固定某个
-provider 或模型。
+同一 reviewer/model 重跑会替换自己的条目；被替代的 run 移入
+`assurance/history/<audit-run-id>/`，永不成为语义输入。一个行为证明可以关闭多个
+source key，但每个来源仍有独立 disposition；结果只允许带独立 red/green 证明、阻塞
+验证且受限的顺手修复。只有修复与活动集合已提交且 assurance 目录干净后，才能开始
+新的独立 audit 或重跑。通用 provider-fidelity canary 只是运行时信号；只有登记过的
+runtime-fidelity 用例才能关闭产品条件。
+
+条件允许时使用独立模型或评审器，并如实披露独立性降级。reviewer/model ID 只披露
+实际 runtime 身份，绝不选择 provider model。项目契约不固定某个 provider 或模型。
 
 ## 持久产物归属
 
@@ -117,12 +123,12 @@ provider 或模型。
 | `.opi-impl-state.json` | `opi-implement`；唯一正式、受跟踪实现账本 |
 | `.opi-impl-state.draft.json` | `opi-implement plan`；仅在评审/恢复需要时保留的忽略草稿 |
 | `docs/snapshots/phase<N>/` | 冻结的实现账本快照与非保证类 Phase 证据 |
-| `docs/snapshots/phase<N>/assurance/` | 一套活动 audit/remediation 集；已提交的旧集合保留在 Git 历史中 |
+| `docs/snapshots/phase<N>/assurance/` | 一个含独立入集报告组的活动 indexed audit set 与一组 remediation；被替代 run 位于 `history/`，不参与语义输入 |
 | `docs/eval/` | `opi-eval` 报告与历史 |
 | `.opi-release-state.json` | `opi-release`；仅在未完成发布期间保留的忽略恢复状态 |
 | `_shared/references/finding-contract.md` | 共享发现格式 |
-| `_shared/references/audit-set-contract.md` | 固定活动集路径、摘要绑定、轮换与发布规则 |
-| `_shared/references/remediation-disposition-contract.md` | 共享当前集验证、决策、顺手修复与关闭格式 |
+| `_shared/references/audit-set-contract.md` | indexed 报告路径、身份、聚合 verdict、锁/恢复、独立入集、轮换与历史规则 |
+| `_shared/references/remediation-disposition-contract.md` | 严格并集来源绑定、index 摘要批准、决策、顺手修复与关闭格式 |
 
 只有 `opi-implement` 能写正式实现账本。不得创建第二套任务账本，也不得在
 `docs/opi-spec.md` 中记录实现进度。

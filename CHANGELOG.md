@@ -86,6 +86,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   immutable audit evidence; preserve any still-live v1 file, then initialize
   and review a fresh v2 graph from the registered sources before resuming
   implementation.
+- Project assurance: a Phase audit set is now a live index of independently
+  installed `audit.<reviewer-id>.<model-id>.*` report groups rather than one
+  atomically published generation. `audit.index.json` moves to schema 2 and
+  member metadata to schema 3: there is no generation identity or set-wide
+  head, each member carries its own committed `audit_head`, reports install
+  immediately via `assurance_set.py complete`, and a reviewer/model re-run
+  replaces its own entry while archiving the superseded run under
+  `history/<audit-run-id>/`. Remediation consumes every indexed finding and
+  binds approval to the exact `audit.index.json` digest alone. Legacy schema-1
+  sets require the one-time `assurance_set.py migrate` and are not dual-read;
+  assurance paths are now pinned to LF in `.gitattributes` so byte digests
+  survive fresh checkouts.
 
 ### Added
 

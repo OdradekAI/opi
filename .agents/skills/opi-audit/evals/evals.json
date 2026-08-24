@@ -3,18 +3,18 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Use $opi-audit phase=17. A previously committed active assurance set exists and is clean. Explain exactly what you inspect before replacing it and whether you read its report or findings.",
-      "expected_output": "The audit runs rotation path-state admission, never reads the old set, builds a current-spec audit in temporary staging, and replaces the four fixed audit paths only after validation.",
+      "prompt": "Use $opi-audit phase=17 reviewer=codex model=gpt56 reviewer_model_id=gpt-5.6 model_identity_source=request-config member=<path>. A claude:glm53 report is already installed in the live set at a different audit_head. Explain the peer input boundary and installation.",
+      "expected_output": "Codex audits independently in a fresh context, writes only audit.codex.gpt56.*, never reads the installed Claude output, and installs its own report immediately; the two members coexist at their own heads under the fail-dominant index.",
       "files": [],
       "expectations": [
-        "Runs validate_assurance_artifact.py rotation against docs/snapshots/phase17 before reading requirements.",
-        "States that old audit/remediation content and Git history are not read or compared.",
-        "Names the four fixed audit outputs under docs/snapshots/phase17/assurance and removes fixed remediation siblings only after staged validation."
+        "Runs rotation before reading requirements and derives its own latest-committed-spec baseline at its own audit_head.",
+        "States that old content, history, and audit.claude.glm53.* conclusions are not read or compared.",
+        "Names audit.codex.gpt56.* and uses assurance_set.py complete rather than manual copying, without waiting for any other reviewer."
       ]
     },
     {
       "id": 2,
-      "prompt": "Use $opi-audit phase=17. Phase 17 exited against an older supplemental spec hash, but that registered spec now has a newer committed version at HEAD. Which version is authoritative and what hashes enter audit.meta.json?",
+      "prompt": "Use $opi-audit phase=17. Phase 17 exited against an older supplemental spec hash, but that registered spec now has a newer committed version at HEAD. Which version is authoritative and what hashes enter the member metadata?",
       "expected_output": "The latest committed registered source is authoritative; the old stored hash is mismatch evidence only, and exact current bytes are hashed into the latest-committed-spec baseline.",
       "files": [],
       "expectations": [
@@ -36,13 +36,13 @@
     },
     {
       "id": 4,
-      "prompt": "Use $opi-audit phase=17. Your staged audit.findings.jsonl is malformed and the audit-set validator rejects it. What is published and what verdict do you report?",
-      "expected_output": "Nothing is copied into the live Phase; the prior active set remains unchanged and the run reports AUDIT-INCOMPLETE without a PASS/FAIL verdict.",
+      "prompt": "Use $opi-audit phase=17 reviewer=codex model=gpt56 reviewer_model_id=gpt-5.6 model_identity_source=request-config member=<path>. Your staged audit.codex.gpt56.findings.jsonl is malformed while a valid live set is installed. What is installed and what verdict do you report?",
+      "expected_output": "Nothing is copied into the live Phase; the installed set remains unchanged and the run reports AUDIT-INCOMPLETE without a PASS/FAIL verdict.",
       "files": [],
       "expectations": [
         "Reports AUDIT-INCOMPLETE and no PASS, PASS-WITH-FINDINGS, or FAIL verdict.",
-        "Leaves the previously committed active set unchanged.",
-        "Repairs or discards temporary staging rather than publishing a partial set."
+        "Leaves the previously committed live set unchanged.",
+        "Repairs or abandons the member rather than installing an invalid report."
       ]
     },
     {
@@ -54,6 +54,17 @@
         "Refuses at rotation admission before reading requirements.",
         "Explains that an uncommitted deletion does not satisfy materialization.",
         "Does not open the legacy report to decide whether to proceed."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Use $opi-audit phase=17 reviewer=codex model=gpt56 reviewer_model_id=gpt-5.6 model_identity_source=request-config member=<path>. The same reviewer/model re-run: an older audit.codex.gpt56 run is already indexed and committed, and this new run carries a fresh audit_run_id at a newer head. What does installation do?",
+      "expected_output": "complete replaces that reviewer/model's own entry, archives the superseded run's four files under history/<audit-run-id>/, leaves every other member untouched, and advances the index revision.",
+      "files": [],
+      "expectations": [
+        "Installs under the assurance lock after rotation admission and the committed-ancestor check.",
+        "Moves only the superseded run's four files to history/<audit-run-id>/ and bumps the index revision.",
+        "Does not overwrite, merge, or vote across other members and does not copy files manually."
       ]
     }
   ]

@@ -22,6 +22,15 @@ VALIDATOR = (
 AUDIT_HEAD = "136c380f0c5eea541190cc1a0f5c1d62f983b4e8"
 REMEDIATION_HEAD = "236c380f0c5eea541190cc1a0f5c1d62f983b4e8"
 RUN_ID = "phase17-136c380-20260824t010203z"
+GENERATION_ID = "phase17-20260824t010203z"
+
+
+def artifact_stem(reviewer_id: str, model_id: str) -> str:
+    return f"audit.{reviewer_id}.{model_id}"
+
+
+def member_run_id(reviewer_id: str, model_id: str) -> str:
+    return f"phase17-{reviewer_id}-{model_id}-136c380-20260824t010203z"
 
 
 def run_validator(kind: str, path: Path) -> subprocess.CompletedProcess[str]:
@@ -63,13 +72,14 @@ def write_jsonl(path: Path, records: list[dict[str, object]]) -> None:
 
 def requirement_record(
     *,
+    audit_run_id: str = RUN_ID,
     requirement_id: str = "P17-A1",
     mandatory: bool = True,
     state: str = "met",
     finding_ids: list[str] | None = None,
 ) -> dict[str, object]:
     return {
-        "audit_run_id": RUN_ID,
+        "audit_run_id": audit_run_id,
         "id": requirement_id,
         "mandatory": mandatory,
         "criterion_source": {
@@ -93,18 +103,22 @@ def requirement_record(
 
 def finding_record(
     *,
+    audit_run_id: str = RUN_ID,
     finding_id: str = "P17-AUD-001",
+    source_path: str = "docs/snapshots/phase17/assurance/audit.codex.gpt56.md",
+    source_model: str = "gpt-5.6",
+    observed_at: str = AUDIT_HEAD,
     requirement_ids: list[str] | None = None,
     severity: str = "Major",
     conformance_effect: str = "blocks",
 ) -> dict[str, object]:
     return {
-        "audit_run_id": RUN_ID,
+        "audit_run_id": audit_run_id,
         "id": finding_id,
         "source_kind": "audit",
-        "source_path": "docs/snapshots/phase17/assurance/audit.md",
-        "source_model": "codex",
-        "observed_at": AUDIT_HEAD,
+        "source_path": source_path,
+        "source_model": source_model,
+        "observed_at": observed_at,
         "independence": "fresh-context-same-family",
         "axis": "spec",
         "severity": severity,
@@ -198,11 +212,18 @@ class AssuranceFixture(unittest.TestCase):
         self.phase_dir = self.root / "docs" / "snapshots" / "phase17"
         self.assurance_dir = self.phase_dir / "assurance"
         self.assurance_dir.mkdir(parents=True)
+        for args in (
+            ("init",),
+            ("config", "user.email", "test@example.com"),
+            ("config", "user.name", "Assurance Test"),
+        ):
+            result = run_git(self.root, *args)
+            self.assertEqual(0, result.returncode, result.stderr)
 
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def write_audit_set(
+    def write_legacy_audit_set(
         self,
         *,
         requirements: list[dict[str, object]] | None = None,
@@ -263,28 +284,184 @@ class AssuranceFixture(unittest.TestCase):
             "report": report_path,
         }
 
+    def write_audit_member(
+        self,
+        reviewer_id: str,
+        model_id: str,
+        reviewer_model_id: str,
+        *,
+        requirements: list[dict[str, object]] | None = None,
+        findings: list[dict[str, object]] | None = None,
+        verdict: str | None = None,
+        audit_head: str = AUDIT_HEAD,
+        audit_run_id: str | None = None,
+        baseline_hashes: list[str] | None = None,
+    ) -> dict[str, object]:
+        stem = artifact_stem(reviewer_id, model_id)
+        run_id = audit_run_id or member_run_id(reviewer_id, model_id)
+        requirement_records = requirements or [requirement_record(audit_run_id=run_id)]
+        finding_records = findings or []
+        requirements_path = self.assurance_dir / f"{stem}.requirements.jsonl"
+        findings_path = self.assurance_dir / f"{stem}.findings.jsonl"
+        report_path = self.assurance_dir / f"{stem}.md"
+        meta_path = self.assurance_dir / f"{stem}.meta.json"
+        write_jsonl(requirements_path, requirement_records)
+        write_jsonl(findings_path, finding_records)
+        derived = verdict
+        if derived is None:
+            if any(
+                record.get("mandatory") and record.get("state") != "met"
+                for record in requirement_records
+            ):
+                derived = "FAIL"
+            elif any(record.get("severity") != "Info" for record in finding_records):
+                derived = "PASS-WITH-FINDINGS"
+            else:
+                derived = "PASS"
+        hashes = baseline_hashes or ["b" * 64, "c" * 64, "d" * 64]
+        meta = {
+            "schema_version": 3,
+            "audit_run_id": run_id,
+            "phase": 17,
+            "audit_head": audit_head,
+            "reviewer_id": reviewer_id,
+            "reviewer_identity": reviewer_id.capitalize(),
+            "model_id": model_id,
+            "reviewer_model_id": reviewer_model_id,
+            "model_identity_source": "operator-declared",
+            "independence": "fresh-context-same-family",
+            "baseline_policy": "latest-committed-spec",
+            "baseline_sources": [
+                {"path": ".opi-impl-state.json", "sha256": hashes[0]},
+                {
+                    "path": "docs/snapshots/phase17/opi-impl-state.json",
+                    "sha256": hashes[1],
+                },
+                {"path": "docs/opi-spec.md", "sha256": hashes[2]},
+            ],
+            "requirements_sha256": sha256(requirements_path),
+            "findings_sha256": sha256(findings_path),
+            "verdict": derived,
+        }
+        write_json(meta_path, meta)
+        report_path.write_text(
+            "# Phase 17 Audit\n\n"
+            f"**Audit run ID**: `{run_id}`\n"
+            f"**Audit head**: `{audit_head}`\n"
+            f"**Reviewer ID**: `{reviewer_id}`\n"
+            f"**Model ID**: `{model_id}`\n"
+            f"**Reviewer identity**: `{reviewer_id.capitalize()}`\n"
+            f"**Reviewer model ID**: `{reviewer_model_id}`\n"
+            "**Model identity source**: `operator-declared`\n"
+            f"**Verdict**: {derived}\n",
+            encoding="utf-8",
+        )
+        return {
+            "reviewer_id": reviewer_id,
+            "model_id": model_id,
+            "artifact_stem": stem,
+            "audit_run_id": run_id,
+            "audit_head": audit_head,
+            "verdict": derived,
+            "digests": {
+                "meta_sha256": sha256(meta_path),
+                "requirements_sha256": sha256(requirements_path),
+                "findings_sha256": sha256(findings_path),
+                "report_sha256": sha256(report_path),
+            },
+        }
+
+    def write_audit_index(self, members: list[dict[str, object]]) -> Path:
+        sorted_members = sorted(
+            members,
+            key=lambda member: (str(member["reviewer_id"]), str(member["model_id"])),
+        )
+        verdicts = [str(member["verdict"]) for member in sorted_members]
+        aggregate = (
+            "FAIL"
+            if "FAIL" in verdicts
+            else "PASS-WITH-FINDINGS"
+            if "PASS-WITH-FINDINGS" in verdicts
+            else "PASS"
+        )
+        path = self.assurance_dir / "audit.index.json"
+        write_json(
+            path,
+            {
+                "schema_version": 2,
+                "phase": 17,
+                "revision": 1,
+                "aggregate_verdict": aggregate,
+                "members": sorted_members,
+            },
+        )
+        return path
+
+    def write_audit_set(
+        self,
+        *,
+        requirements: list[dict[str, object]] | None = None,
+        findings: list[dict[str, object]] | None = None,
+        verdict: str | None = None,
+    ) -> dict[str, Path]:
+        member = self.write_audit_member(
+            "codex",
+            "gpt56",
+            "gpt-5.6",
+            requirements=requirements,
+            findings=findings,
+            verdict=verdict,
+            audit_run_id=RUN_ID,
+        )
+        self.write_audit_index([member])
+        stem = artifact_stem("codex", "gpt56")
+        return {
+            "meta": self.assurance_dir / f"{stem}.meta.json",
+            "requirements": self.assurance_dir / f"{stem}.requirements.jsonl",
+            "findings": self.assurance_dir / f"{stem}.findings.jsonl",
+            "report": self.assurance_dir / f"{stem}.md",
+            "index": self.assurance_dir / "audit.index.json",
+        }
+
     def write_plan(
         self,
         *,
         disposition: dict[str, object] | None = None,
+        dispositions: list[dict[str, object]] | None = None,
         status: str = "READY-FOR-APPLY",
     ) -> tuple[Path, Path]:
-        meta = json.loads(
-            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
+        index_path = self.assurance_dir / "audit.index.json"
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        first_member = index["members"][0]
+        first_meta = json.loads(
+            (
+                self.assurance_dir
+                / f"{first_member['artifact_stem']}.meta.json"
+            ).read_text(encoding="utf-8")
         )
-        record = disposition or disposition_record(meta["findings_sha256"])
+        records = dispositions or [
+            disposition
+            or disposition_record(
+                first_meta["findings_sha256"],
+                audit_run_id=first_meta["audit_run_id"],
+            )
+        ]
         disposition_path = self.assurance_dir / "remediation.plan.dispositions.jsonl"
         plan_path = self.assurance_dir / "remediation.plan.md"
-        write_jsonl(disposition_path, [record])
+        write_jsonl(disposition_path, records)
+        source_lines = "\n".join(
+            f"Source finding: {record['source']['audit_run_id']}/{record['source']['id']}"
+            for record in records
+            if record.get("record_kind") == "finding-disposition"
+        )
         plan_path.write_text(
             "# Phase 17 Remediation Plan\n\n"
             f"**Status**: {status}\n"
-            f"**Audit run ID**: `{meta['audit_run_id']}`\n"
-            f"**Findings SHA-256**: `{meta['findings_sha256']}`\n"
+            f"**Audit index SHA-256**: `{sha256(index_path)}`\n"
             f"**Remediation head**: `{REMEDIATION_HEAD}`\n"
             "**Disposition artifact**: `remediation.plan.dispositions.jsonl`\n"
             "**Unresolved decisions**: none\n\n"
-            "Source finding: P17-AUD-001\n\n"
+            f"{source_lines}\n\n"
             "#### Fix B1.1: Persist the runtime binding\n\n"
             "- **Closure predicate**: reconstructed sessions retain the binding\n"
             "- **Red-before**: `cargo test binding` -> FAIL\n"
@@ -327,14 +504,11 @@ class AssuranceFixture(unittest.TestCase):
         digest.update(plan_path.read_bytes())
         digest.update(b"\0")
         digest.update(plan_disposition_path.read_bytes())
-        meta = json.loads(
-            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
-        )
+        index_path = self.assurance_dir / "audit.index.json"
         result_path.write_text(
             "# Phase 17 Remediation Result\n\n"
             "**Status**: COMPLETE\n"
-            f"**Audit run ID**: `{meta['audit_run_id']}`\n"
-            f"**Findings SHA-256**: `{meta['findings_sha256']}`\n"
+            f"**Audit index SHA-256**: `{sha256(index_path)}`\n"
             f"**Plan SHA-256**: `{digest.hexdigest()}`\n"
             f"**Changed paths**: {json.dumps(paths)}\n",
             encoding="utf-8",
@@ -454,18 +628,25 @@ class AuditSetValidatorTests(AssuranceFixture):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("blocking finding links met requirement P17-A1", result.stderr)
 
-    def test_standalone_findings_requires_fixed_filename(self) -> None:
+    def test_standalone_findings_rejects_invalid_member_filename(self) -> None:
         path = self.assurance_dir / "audit.codex.136c380.run1.findings.jsonl"
         write_jsonl(path, [])
 
         result = run_validator("findings", path)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("expected fixed filename audit.findings.jsonl", result.stderr)
+        self.assertIn("filename must match audit.<reviewer>.<model>", result.stderr)
+
+    def test_standalone_findings_accepts_indexed_member_filename(self) -> None:
+        paths = self.write_audit_set()
+
+        result = run_validator("findings", paths["findings"])
+
+        self.assertEqual(0, result.returncode, result.stderr)
 
     def test_report_verdict_must_match_meta(self) -> None:
-        self.write_audit_set()
-        report = self.assurance_dir / "audit.md"
+        paths = self.write_audit_set()
+        report = paths["report"]
         report.write_text(
             report.read_text(encoding="utf-8").replace("PASS", "FAIL"),
             encoding="utf-8",
@@ -474,7 +655,315 @@ class AuditSetValidatorTests(AssuranceFixture):
         result = run_validator("audit-set", self.assurance_dir)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("audit.md Verdict does not match audit.meta.json", result.stderr)
+        self.assertIn("report Verdict does not match metadata", result.stderr)
+
+
+class IndexedAuditSetValidatorTests(AssuranceFixture):
+    def test_two_active_members_derive_pass(self) -> None:
+        codex = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        claude = self.write_audit_member("claude", "glm53", "glm-5.3")
+        self.write_audit_index([codex, claude])
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_unexpected_root_directory_is_rejected(self) -> None:
+        member = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        self.write_audit_index([member])
+        (self.assurance_dir / "scratch").mkdir()
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("unexpected directory: scratch", result.stderr)
+
+    def test_one_failed_member_derives_fail(self) -> None:
+        codex = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        run_id = member_run_id("claude", "glm53")
+        failed = self.write_audit_member(
+            "claude",
+            "glm53",
+            "glm-5.3",
+            requirements=[
+                requirement_record(
+                    audit_run_id=run_id,
+                    state="not-met",
+                    finding_ids=["P17-AUD-001"],
+                )
+            ],
+            findings=[
+                finding_record(
+                    audit_run_id=run_id,
+                    source_path=(
+                        "docs/snapshots/phase17/assurance/"
+                        "audit.claude.glm53.md"
+                    ),
+                    source_model="glm-5.3",
+                )
+            ],
+        )
+        index_path = self.write_audit_index([codex, failed])
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        self.assertEqual("FAIL", index["aggregate_verdict"])
+
+    def test_pass_with_findings_is_preserved_in_aggregate(self) -> None:
+        run_id = member_run_id("codex", "gpt56")
+        member = self.write_audit_member(
+            "codex",
+            "gpt56",
+            "gpt-5.6",
+            requirements=[
+                requirement_record(audit_run_id=run_id),
+                requirement_record(
+                    audit_run_id=run_id,
+                    requirement_id="P17-O1",
+                    mandatory=False,
+                    state="not-met",
+                    finding_ids=["P17-AUD-001"],
+                ),
+            ],
+            findings=[
+                finding_record(
+                    audit_run_id=run_id,
+                    source_path=(
+                        "docs/snapshots/phase17/assurance/"
+                        "audit.codex.gpt56.md"
+                    ),
+                    source_model="gpt-5.6",
+                    requirement_ids=["P17-O1"],
+                )
+            ],
+        )
+        index_path = self.write_audit_index([member])
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        self.assertEqual("PASS-WITH-FINDINGS", index["aggregate_verdict"])
+
+    def test_missing_indexed_member_file_is_rejected(self) -> None:
+        member = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        self.write_audit_index([member])
+        (self.assurance_dir / "audit.codex.gpt56.md").unlink()
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("missing member file: audit.codex.gpt56.md", result.stderr)
+
+    def test_member_head_must_match_index_member_entry(self) -> None:
+        member = self.write_audit_member(
+            "codex",
+            "gpt56",
+            "gpt-5.6",
+            audit_head=REMEDIATION_HEAD,
+        )
+        index_path = self.write_audit_index([member])
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        index["members"][0]["audit_head"] = AUDIT_HEAD
+        write_json(index_path, index)
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("metadata audit_head does not match index", result.stderr)
+
+    def test_mixed_member_heads_are_accepted(self) -> None:
+        codex = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        claude = self.write_audit_member(
+            "claude",
+            "glm53",
+            "glm-5.3",
+            audit_head=REMEDIATION_HEAD,
+            baseline_hashes=["e" * 64, "f" * 64, "9" * 64],
+        )
+        self.write_audit_index([codex, claude])
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_member_entry_requires_audit_head(self) -> None:
+        member = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        index_path = self.write_audit_index([member])
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        del index["members"][0]["audit_head"]
+        write_json(index_path, index)
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("index member 1: missing fields: audit_head", result.stderr)
+
+    def test_index_schema_1_is_rejected(self) -> None:
+        member = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        index_path = self.assurance_dir / "audit.index.json"
+        write_json(
+            index_path,
+            {
+                "schema_version": 1,
+                "phase": 17,
+                "audit_generation_id": GENERATION_ID,
+                "audit_head": AUDIT_HEAD,
+                "revision": 1,
+                "aggregate_verdict": member["verdict"],
+                "members": [member],
+            },
+        )
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("schema_version must be 2", result.stderr)
+
+    def test_member_meta_schema_2_is_rejected(self) -> None:
+        member = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        index_path = self.write_audit_index([member])
+        meta_path = self.assurance_dir / "audit.codex.gpt56.meta.json"
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["schema_version"] = 2
+        meta["audit_generation_id"] = GENERATION_ID
+        write_json(meta_path, meta)
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        index["members"][0]["digests"]["meta_sha256"] = sha256(meta_path)
+        write_json(index_path, index)
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("member metadata schema_version must be 3", result.stderr)
+
+    def test_filename_and_metadata_reviewer_identity_must_match(self) -> None:
+        member = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        index_path = self.write_audit_index([member])
+        meta_path = self.assurance_dir / "audit.codex.gpt56.meta.json"
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["reviewer_id"] = "claude"
+        write_json(meta_path, meta)
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        index["members"][0]["digests"]["meta_sha256"] = sha256(meta_path)
+        write_json(index_path, index)
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("metadata reviewer_id does not match index", result.stderr)
+
+    def test_index_digest_must_match_exact_member_bytes(self) -> None:
+        member = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        index_path = self.write_audit_index([member])
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        index["members"][0]["digests"]["report_sha256"] = "f" * 64
+        write_json(index_path, index)
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("report_sha256 does not match", result.stderr)
+
+    def test_full_model_identity_header_must_match_member_metadata(self) -> None:
+        member = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        index_path = self.write_audit_index([member])
+        report_path = self.assurance_dir / "audit.codex.gpt56.md"
+        report_path.write_text(
+            report_path.read_text(encoding="utf-8").replace(
+                "**Reviewer model ID**: `gpt-5.6`",
+                "**Reviewer model ID**: `gpt-5.5`",
+            ),
+            encoding="utf-8",
+        )
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        index["members"][0]["digests"]["report_sha256"] = sha256(report_path)
+        write_json(index_path, index)
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("report Reviewer model ID does not match metadata", result.stderr)
+
+    def test_members_must_be_sorted(self) -> None:
+        codex = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        claude = self.write_audit_member("claude", "glm53", "glm-5.3")
+        index_path = self.write_audit_index([codex, claude])
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        index["members"].reverse()
+        write_json(index_path, index)
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("members must be sorted", result.stderr)
+
+    def test_duplicate_reviewer_model_pair_is_rejected(self) -> None:
+        member = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        index_path = self.write_audit_index([member])
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        index["members"].append(copy.deepcopy(index["members"][0]))
+        write_json(index_path, index)
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("duplicate reviewer/model pair", result.stderr)
+
+    def test_unindexed_dynamic_file_is_rejected(self) -> None:
+        member = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        self.write_audit_index([member])
+        (self.assurance_dir / "audit.claude.glm53.md").write_text(
+            "orphan\n",
+            encoding="utf-8",
+        )
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("unindexed files: audit.claude.glm53.md", result.stderr)
+
+    def test_baseline_source_digests_may_differ_across_heads(self) -> None:
+        codex = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        claude = self.write_audit_member(
+            "claude",
+            "glm53",
+            "glm-5.3",
+            audit_head=REMEDIATION_HEAD,
+            baseline_hashes=["e" * 64, "f" * 64, "9" * 64],
+        )
+        self.write_audit_index([codex, claude])
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_baseline_paths_must_match_across_members(self) -> None:
+        codex = self.write_audit_member("codex", "gpt56", "gpt-5.6")
+        claude = self.write_audit_member("claude", "glm53", "glm-5.3")
+        meta_path = self.assurance_dir / "audit.claude.glm53.meta.json"
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["baseline_sources"][0]["path"] = "docs/snapshots/phase16/opi-impl-state.json"
+        write_json(meta_path, meta)
+        claude["digests"]["meta_sha256"] = sha256(meta_path)
+        self.write_audit_index([codex, claude])
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            "baseline paths do not match the other active members", result.stderr
+        )
+
+    def test_legacy_unsuffixed_audit_set_is_rejected(self) -> None:
+        self.write_legacy_audit_set()
+
+        result = run_validator("audit-set", self.assurance_dir)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("active audit set requires audit.index.json", result.stderr)
 
 
 class RemediationValidatorTests(AssuranceFixture):
@@ -486,9 +975,195 @@ class RemediationValidatorTests(AssuranceFixture):
         )
         self.write_audit_set(requirements=[requirement], findings=[finding_record()])
 
+    def write_two_member_failed_set(
+        self,
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        for path in self.assurance_dir.iterdir():
+            if path.is_file():
+                path.unlink()
+        members: list[dict[str, object]] = []
+        for reviewer_id, model_id, reviewer_model_id in (
+            ("claude", "glm53", "glm-5.3"),
+            ("codex", "gpt56", "gpt-5.6"),
+        ):
+            run_id = member_run_id(reviewer_id, model_id)
+            members.append(
+                self.write_audit_member(
+                    reviewer_id,
+                    model_id,
+                    reviewer_model_id,
+                    requirements=[
+                        requirement_record(
+                            audit_run_id=run_id,
+                            state="not-met",
+                            finding_ids=["P17-AUD-001"],
+                        )
+                    ],
+                    findings=[
+                        finding_record(
+                            audit_run_id=run_id,
+                            source_path=(
+                                "docs/snapshots/phase17/assurance/"
+                                f"audit.{reviewer_id}.{model_id}.md"
+                            ),
+                            source_model=reviewer_model_id,
+                        )
+                    ],
+                )
+            )
+        self.write_audit_index(members)
+        metadata = []
+        for member in members:
+            metadata.append(
+                json.loads(
+                    (
+                        self.assurance_dir
+                        / f"{member['artifact_stem']}.meta.json"
+                    ).read_text(encoding="utf-8")
+                )
+            )
+        return metadata[0], metadata[1]
+
+    def dispositions_for(
+        self, *metadata: dict[str, object]
+    ) -> list[dict[str, object]]:
+        return [
+            disposition_record(
+                str(meta["findings_sha256"]),
+                audit_run_id=str(meta["audit_run_id"]),
+            )
+            for meta in metadata
+        ]
+
+    def test_plan_covers_strict_union_of_duplicate_textual_ids(self) -> None:
+        first, second = self.write_two_member_failed_set()
+        plan_path, _ = self.write_plan(
+            dispositions=self.dispositions_for(first, second)
+        )
+
+        result = run_validator("plan", plan_path)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_plan_omitting_one_run_identity_fails_union_coverage(self) -> None:
+        first, second = self.write_two_member_failed_set()
+        plan_path, _ = self.write_plan(dispositions=self.dispositions_for(first))
+
+        result = run_validator("plan", plan_path)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            f"{second['audit_run_id']}/P17-AUD-001",
+            result.stderr,
+        )
+
+    def test_source_digest_must_match_owning_member(self) -> None:
+        first, second = self.write_two_member_failed_set()
+        records = self.dispositions_for(first, second)
+        records[0]["source"]["findings_sha256"] = second["findings_sha256"]
+        plan_path, _ = self.write_plan(dispositions=records)
+
+        result = run_validator("plan", plan_path)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("source findings_sha256 does not match owning audit", result.stderr)
+
+    def test_source_run_absent_from_index_is_rejected(self) -> None:
+        first, second = self.write_two_member_failed_set()
+        records = self.dispositions_for(first, second)
+        records[0]["source"]["audit_run_id"] = "phase17-absent-run"
+        plan_path, _ = self.write_plan(dispositions=records)
+
+        result = run_validator("plan", plan_path)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("source audit_run_id is not in current index", result.stderr)
+
+    def test_index_change_invalidates_existing_plan_binding(self) -> None:
+        first, second = self.write_two_member_failed_set()
+        plan_path, _ = self.write_plan(
+            dispositions=self.dispositions_for(first, second)
+        )
+        index_path = self.assurance_dir / "audit.index.json"
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        report_path = self.assurance_dir / "audit.codex.gpt56.md"
+        report_path.write_text(
+            report_path.read_text(encoding="utf-8") + "\n",
+            encoding="utf-8",
+        )
+        codex = next(
+            member
+            for member in index["members"]
+            if member["reviewer_id"] == "codex"
+        )
+        codex["digests"]["report_sha256"] = sha256(report_path)
+        write_json(index_path, index)
+
+        result = run_validator("plan", plan_path)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Audit index SHA-256 does not match current audit", result.stderr)
+
+    def test_result_preserves_exact_two_run_source_set(self) -> None:
+        first, second = self.write_two_member_failed_set()
+        plan_path, dispositions_path = self.write_plan(
+            dispositions=self.dispositions_for(first, second)
+        )
+        result_path, _ = self.write_result(plan_path, dispositions_path)
+
+        result = run_validator("result", result_path)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_result_omitting_one_plan_source_fails_exact_coverage(self) -> None:
+        first, second = self.write_two_member_failed_set()
+        plan_path, dispositions_path = self.write_plan(
+            dispositions=self.dispositions_for(first, second)
+        )
+        result_path, result_dispositions = self.write_result(
+            plan_path, dispositions_path
+        )
+        records = [
+            json.loads(line)
+            for line in result_dispositions.read_text(encoding="utf-8").splitlines()
+        ]
+        write_jsonl(result_dispositions, records[:1])
+
+        result = run_validator("result", result_path)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            "result dispositions must cover exactly the plan sources",
+            result.stderr,
+        )
+
+    def test_shared_closure_batch_accepts_two_source_keys(self) -> None:
+        first, second = self.write_two_member_failed_set()
+        records = self.dispositions_for(first, second)
+        self.assertEqual(records[0]["closure_key"], records[1]["closure_key"])
+        self.assertEqual(records[0]["closure_batch"], records[1]["closure_batch"])
+        plan_path, _ = self.write_plan(dispositions=records)
+
+        result = run_validator("plan", plan_path)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_shared_batch_rejects_different_closure_keys(self) -> None:
+        first, second = self.write_two_member_failed_set()
+        records = self.dispositions_for(first, second)
+        records[1]["closure_key"] = "different.behavior"
+        plan_path, _ = self.write_plan(dispositions=records)
+
+        result = run_validator("plan", plan_path)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("closure batch B1 has multiple closure keys", result.stderr)
+
     def test_plan_source_requires_exact_audit_run_id_and_findings_digest(self) -> None:
         meta = json.loads(
-            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
+            (self.assurance_dir / "audit.codex.gpt56.meta.json").read_text(
+                encoding="utf-8"
+            )
         )
         record = disposition_record(meta["findings_sha256"])
         record["source"]["findings_sha256"] = "f" * 64
@@ -497,11 +1172,13 @@ class RemediationValidatorTests(AssuranceFixture):
         result = run_validator("plan", plan_path)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("source findings_sha256 does not match current audit", result.stderr)
+        self.assertIn("source findings_sha256 does not match owning audit", result.stderr)
 
     def test_plan_cannot_reference_a_different_audit_run(self) -> None:
         meta = json.loads(
-            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
+            (self.assurance_dir / "audit.codex.gpt56.meta.json").read_text(
+                encoding="utf-8"
+            )
         )
         record = disposition_record(
             meta["findings_sha256"],
@@ -512,11 +1189,13 @@ class RemediationValidatorTests(AssuranceFixture):
         result = run_validator("plan", plan_path)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("source audit_run_id does not match current audit", result.stderr)
+        self.assertIn("source audit_run_id is not in current index", result.stderr)
 
     def test_disposition_contract_rejects_lineage_fields(self) -> None:
         meta = json.loads(
-            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
+            (self.assurance_dir / "audit.codex.gpt56.meta.json").read_text(
+                encoding="utf-8"
+            )
         )
         record = disposition_record(meta["findings_sha256"])
         record["lineage"] = {"kind": "new"}
@@ -553,7 +1232,9 @@ class RemediationValidatorTests(AssuranceFixture):
 
     def test_ready_plan_requires_observed_red_before(self) -> None:
         meta = json.loads(
-            (self.assurance_dir / "audit.meta.json").read_text(encoding="utf-8")
+            (self.assurance_dir / "audit.codex.gpt56.meta.json").read_text(
+                encoding="utf-8"
+            )
         )
         record = disposition_record(meta["findings_sha256"])
         record["red_before"]["observed"] = "not-run"
@@ -698,7 +1379,10 @@ class RotationValidatorTests(AssuranceFixture):
 
     def test_rotation_rejects_uncommitted_active_set_changes(self) -> None:
         self.commit_active_set()
-        (self.assurance_dir / "audit.md").write_text("changed\n", encoding="utf-8")
+        (self.assurance_dir / "audit.codex.gpt56.md").write_text(
+            "changed\n",
+            encoding="utf-8",
+        )
 
         result = run_validator("rotation", self.phase_dir)
 

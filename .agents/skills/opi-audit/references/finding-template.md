@@ -1,19 +1,21 @@
 # Active Audit Set Template
 
-Create these four files in a unique temporary staging directory, validate them,
-then publish the fixed Phase paths together:
+Create these four files for this peer in its private member directory, then
+let `assurance_set.py` validate the member and install it into the live
+indexed assurance set:
 
 ```text
-audit.meta.json
-audit.requirements.jsonl
-audit.findings.jsonl
-audit.md
+audit.<reviewer-id>.<model-id>.meta.json
+audit.<reviewer-id>.<model-id>.requirements.jsonl
+audit.<reviewer-id>.<model-id>.findings.jsonl
+audit.<reviewer-id>.<model-id>.md
 ```
 
 Use the exact JSON schemas from
 `../../_shared/references/audit-set-contract.md` and
 `../../_shared/references/finding-contract.md`. An empty findings sidecar is
-valid; do not invent an Info finding to make it non-empty.
+valid; do not invent an Info finding to make it non-empty. Every file must use
+LF line endings only.
 
 The Markdown report references machine record IDs and adds explanation. It is
 not a second editable copy of the JSONL records.
@@ -23,7 +25,11 @@ not a second editable copy of the JSONL records.
 
 **Audit run ID**: `<phase-scoped run identity>`
 **Audit head**: `<full committed SHA>`
-**Reviewer/model**: <reported identity>
+**Reviewer ID**: `<reviewer-id>`
+**Model ID**: `<model-id>`
+**Reviewer identity**: <human-readable reviewer/runtime identity>
+**Reviewer model ID**: `<exact runtime model identity>`
+**Model identity source**: runtime-attested | request-config | operator-declared
 **Independence**: <class and rationale>
 **Baseline policy**: latest-committed-spec
 **Verdict**: PASS | PASS-WITH-FINDINGS | FAIL
@@ -80,6 +86,8 @@ not a second editable copy of the JSONL records.
 <derive from mandatory requirement states and actionable current findings>
 ```
 
-If staging validation fails, do not copy any staged file to the Phase and do
-not put a PASS/FAIL verdict in the user-facing completion message. Report
-`AUDIT-INCOMPLETE` with validator errors.
+If member validation or installation fails, do not copy any staged file
+manually and do not put a PASS/FAIL set verdict in the user-facing completion
+message. Report `AUDIT-INCOMPLETE` with the validator errors and, on
+interruption, run `assurance_set.py recover` before retrying. No member may
+read a sibling peer report while auditing.

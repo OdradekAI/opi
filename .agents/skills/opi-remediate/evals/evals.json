@@ -3,13 +3,13 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Use $opi-remediate mode=plan phase=17. A disposition names a different audit_run_id but the finding title is identical to the current audit. May it enter the plan?",
-      "expected_output": "Refuse the disposition because source identity must match the current audit_run_id and findings_sha256 exactly; prose similarity and older runs are irrelevant.",
+      "prompt": "Use $opi-remediate mode=plan phase=17. audit.codex.gpt56 and audit.claude.glm53 each publish finding ID P17-AUD-001 for the same behavior. May the plan keep only one disposition?",
+      "expected_output": "No. The current index contributes two distinct (audit_run_id, id) source keys. Both owning findings digests require dispositions, although one closure batch and evidence pair may close both.",
       "files": [],
       "expectations": [
-        "Validates the current active audit set first.",
-        "Rejects the mismatched audit_run_id even though the title matches.",
-        "Does not search history or classify recurrence."
+        "Validates audit.index.json and every indexed member first.",
+        "Requires exact strict-union coverage for both run identities despite the duplicate textual ID.",
+        "Allows shared repair evidence only while preserving two source-bound dispositions."
       ]
     },
     {
@@ -48,12 +48,23 @@
     {
       "id": 5,
       "prompt": "Use $opi-remediate mode=apply phase=17 with the exact approved digest. All checks pass and the fixed result validates, but the fixes and assurance directory are still uncommitted. Should a new $opi-audit start now?",
-      "expected_output": "No. Stop at materialization; the fixes and complete active set must be committed together and clean before a separate fresh audit is requested.",
+      "expected_output": "No. Stop at materialization; the fixes and current live set must be committed and clean before a separate fresh audit or reviewer re-run is requested.",
       "files": [],
       "expectations": [
-        "Does not invoke or authorize a new audit while the active set is uncommitted.",
-        "Requires fixes and assurance artifacts to be committed together and clean.",
+        "Does not invoke or authorize a new audit while the live set is uncommitted.",
+        "Requires fixes and assurance artifacts to be committed and clean.",
         "Keeps Phase conformance authority with the later independent audit."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Use $opi-remediate mode=apply phase=17 with the exact approved plan_sha256. One indexed member byte and audit.index.json digest changed after approval, while the prose plan is unchanged. May production edits begin?",
+      "expected_output": "No. Apply fails admission because the plan's Audit index SHA-256 no longer matches; any membership, member, sidecar, or index-byte change invalidates approval.",
+      "files": [],
+      "expectations": [
+        "Revalidates the complete live index before editing.",
+        "Rejects the stale Audit index SHA-256 even when plan_sha256 still matches the plan files.",
+        "Makes no production change and returns to a plan bound to the current live set."
       ]
     }
   ]

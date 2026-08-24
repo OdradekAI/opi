@@ -99,25 +99,26 @@ MINIMUM_CHANGE_TRACE_CONTRACT = {
 
 ASSURANCE_WORKFLOW_CONTRACT = {
     ".claude/skills/opi-audit/SKILL.md": (
-        "audit.meta.json",
-        "audit.requirements.jsonl",
-        "audit.findings.jsonl",
+        "`audit-set-contract.md` owns the index",
         "latest committed",
         "references/audit-proof-obligations.md",
         "validate_assurance_artifact.py rotation",
         "validate_assurance_artifact.py audit-set",
+        "audit.<reviewer-id>.<model-id>",
+        "audit_head",
         "`audit_run_id`",
-        "`findings_sha256`",
+        "reviewer_model_id",
+        "model_identity_source",
+        "audit.index.json",
+        "assurance_set.py",
+        "member directory",
+        "merge-base --is-ancestor",
         "git archive",
         "Do not use a Git worktree",
         "AUDIT-INCOMPLETE",
-        "`met`",
-        "`partially-met`",
-        "`not-met`",
-        "`not-assessable`",
-        "`PASS-WITH-FINDINGS`",
-        "reciprocal blocking finding",
-        "discard it",
+        "Every sealed requirement has current evidence or an explicit limitation",
+        "Every durable or public seam is traced",
+        "Every Blocker or Major finding includes current refutation evidence",
     ),
     ".claude/skills/opi-audit/references/audit-proof-obligations.md": (
         "anti-vacuity",
@@ -132,11 +133,16 @@ ASSURANCE_WORKFLOW_CONTRACT = {
         "`residual_glue`",
     ),
     ".claude/skills/opi-audit/references/finding-template.md": (
-        "audit.meta.json",
-        "audit.requirements.jsonl",
-        "audit.findings.jsonl",
+        "audit.<reviewer-id>.<model-id>.meta.json",
+        "audit.<reviewer-id>.<model-id>.requirements.jsonl",
+        "audit.<reviewer-id>.<model-id>.findings.jsonl",
+        "audit.<reviewer-id>.<model-id>.md",
         "**Audit run ID**",
         "**Audit head**",
+        "**Reviewer ID**",
+        "**Model ID**",
+        "**Reviewer model ID**",
+        "**Model identity source**",
         "## Minimum-change Conformance",
         "AUDIT-INCOMPLETE",
     ),
@@ -145,11 +151,16 @@ ASSURANCE_WORKFLOW_CONTRACT = {
         "latest-committed-spec",
         "not-assessable",
         "AUDIT-INCOMPLETE",
-        "legacy",
+        "audit.codex.gpt56",
+        "history/<audit-run-id>",
     ),
     ".claude/skills/opi-remediate/SKILL.md": (
         "mode=plan phase=<N>",
         "mode=apply phase=<N> plan_sha256=<64 lowercase hex>",
+        "Validate the complete indexed active audit set",
+        "audit.index.json",
+        "strict union",
+        "index SHA-256",
         "audit_run_id",
         "findings_sha256",
         "`plan_sha256`",
@@ -159,22 +170,28 @@ ASSURANCE_WORKFLOW_CONTRACT = {
         "red-before",
         "git archive",
         "do not use a Git worktree",
-        "bounded verification-blocking incidental repair",
         "remediation.plan.dispositions.jsonl",
         "remediation.result.dispositions.jsonl",
+        "Plan-only references",
+        "references/cross-reference-matrix.md",
+        "references/remediation-plan-template.md",
+        "../_shared/references/change-scope-and-check-selection.md",
+        "Apply-only reference",
+        "references/execution-protocol.md",
         "validate_assurance_artifact.py plan",
-        "validate_assurance_artifact.py result",
     ),
     ".claude/skills/opi-remediate/references/cross-reference-matrix.md": (
         "Current-set verification",
-        "current `audit_run_id`",
+        "strict union",
+        "(path, sha256, citation)",
+        "highest source severity",
         "one falsifiable closure predicate",
         "Coverage",
+        "do not load history",
     ),
     ".claude/skills/opi-remediate/references/remediation-plan-template.md": (
         "remediation.plan.md",
-        "**Audit run ID**",
-        "**Findings SHA-256**",
+        "**Audit index SHA-256**",
         "**Remediation head**",
         "## Unresolved Decisions",
         "**Closure predicate**:",
@@ -186,37 +203,64 @@ ASSURANCE_WORKFLOW_CONTRACT = {
         "Bounded verification-blocking incidental repair",
         "changes no public API",
         "remediation.result.md",
+        "**Audit index SHA-256**",
         "**Changed paths**",
         "Materialization handoff",
     ),
     ".claude/skills/opi-remediate/evals/evals.json": (
         '"skill_name": "opi-remediate"',
-        "different audit_run_id",
+        "two distinct (audit_run_id, id) source keys",
+        "Audit index SHA-256",
         "narrative-only",
         "incidental-repair",
         "uncommitted",
     ),
     ".claude/skills/_shared/references/audit-set-contract.md": (
-        "audit.meta.json",
-        "audit.requirements.jsonl",
-        "audit.findings.jsonl",
-        "latest-committed-spec",
-        "Git history",
+        "audit.index.json",
+        "audit.<reviewer-id>.<model-id>",
+        "audit_head",
+        '"reviewer_id"',
+        '"model_id"',
+        "model_identity_source",
+        "assurance_set.py",
+        "AUDIT-INCOMPLETE",
+        "history/<audit-run-id>",
+        "committed ancestor",
+        "merge-base --is-ancestor",
+        "migrate",
         "rotation",
         "audit-set",
+        "latest-committed-spec",
+        "Exposure to a sibling conclusion invalidates that peer",
     ),
     ".claude/skills/_shared/references/finding-contract.md": (
         "(audit_run_id, id)",
+        "audit.<reviewer-id>.<model-id>.findings.jsonl",
+        "source_model` equals `reviewer_model_id",
         "conformance_effect",
         "requirement_ids",
-        "fixed Phase `audit.md`",
     ),
     ".claude/skills/_shared/references/remediation-disposition-contract.md": (
+        "strict union",
+        "Audit index SHA-256",
         "findings_sha256",
         "plan_sha256",
         "bounded incidental repair",
         "Changed paths",
         "materialized",
+        "`within_causal_surface` are `true`",
+        "protected `changes_*` fields",
+    ),
+    ".claude/skills/opi-audit/agents/openai.yaml": (
+        "$opi-audit phase=<N>",
+        "reviewer=<reviewer-id>",
+        "model=<model-id>",
+        "do not select a model",
+    ),
+    ".claude/skills/opi-remediate/agents/openai.yaml": (
+        "$opi-remediate mode=plan phase=<N>",
+        "audit.index.json",
+        "strict union",
     ),
 }
 
@@ -224,20 +268,85 @@ ASSURANCE_WORKFLOW_FORBIDDEN = {
     ".claude/skills/opi-audit/SKILL.md": (
         "audit.<model>.<head7>",
         "history comparison",
+        "`audit.meta.json`",
+        "`audit.findings.jsonl`",
+        "majority vote",
+        "audit_generation_id",
+        "--generation-id",
+        "--expected-index",
+        "publish",
+        "compare-and-swap",
     ),
     ".claude/skills/opi-audit/references/finding-template.md": (
         "audit.<model>.<head7>",
+        "`audit.meta.json`",
+        "`audit.findings.jsonl`",
+        "**Audit generation ID**",
+        "publish",
+    ),
+    ".claude/skills/_shared/references/audit-set-contract.md": (
+        "`audit.meta.json`",
+        "`audit.requirements.jsonl`",
+        "`audit.findings.jsonl`",
+        "`audit.md`",
+        "majority vote",
+        "audit_generation_id",
+        "history/<audit-generation-id>",
+        "--generation-id",
+        "--expected-index",
+        "publication requires every member complete",
+    ),
+    ".claude/skills/_shared/references/finding-contract.md": (
+        "fixed Phase `audit.md`",
+        "/assurance/audit.findings.jsonl",
+    ),
+    ".claude/skills/_shared/references/remediation-disposition-contract.md": (
+        "`Audit run ID`",
+        "`Findings SHA-256`",
     ),
     ".claude/skills/opi-remediate/SKILL.md": (
         "sources=<path",
         "compare_finding_lineage.py",
         "remediation.<head7>",
+        "consume only `audit.meta.json`",
+        "**Audit run ID**",
+        "**Findings SHA-256**",
+        "majority vote",
     ),
     ".claude/skills/opi-remediate/references/cross-reference-matrix.md": (
         "recurrent-same-defect",
         "carried-forward-deferred",
     ),
+    ".claude/skills/opi-remediate/references/remediation-plan-template.md": (
+        "**Audit run ID**",
+        "**Findings SHA-256**",
+        "**Audit generation ID**",
+    ),
+    ".claude/skills/opi-remediate/references/execution-protocol.md": (
+        "**Audit run ID**",
+        "**Findings SHA-256**",
+        "**Audit generation ID**",
+    ),
+    ".claude/skills/opi-audit/agents/openai.yaml": (
+        "immutable normalized findings",
+    ),
+    ".claude/skills/opi-remediate/agents/openai.yaml": (
+        "sources=<",
+        "immutable findings",
+        "remediation.<head7>",
+        "round=",
+    ),
 }
+
+REMEDIATION_PLAN_ONLY_REFERENCES = (
+    "../_shared/references/change-scope-and-check-selection.md",
+    "references/cross-reference-matrix.md",
+    "references/remediation-plan-template.md",
+)
+
+REMEDIATION_APPLY_ONLY_REFERENCES = (
+    "references/execution-protocol.md",
+)
 
 
 EVAL_BEHAVIOR_BASELINE_CONTRACT = {
@@ -433,6 +542,38 @@ def check_assurance_workflow_contract() -> None:
             ERRORS.append(
                 f"{rel}: assurance workflow contract contains forbidden legacy tokens {found!r}"
             )
+    check_remediation_reference_scope()
+
+
+def check_remediation_reference_scope() -> None:
+    rel = ".claude/skills/opi-remediate/SKILL.md"
+    text = read(rel)
+    plan_marker = "## `mode=plan`"
+    apply_marker = "## `mode=apply`"
+    plan_index = text.find(plan_marker)
+    apply_index = text.find(apply_marker)
+
+    if plan_index < 0 or apply_index < 0 or plan_index >= apply_index:
+        ERRORS.append(f"{rel}: remediation branches are missing or out of order")
+        return
+
+    common = text[:plan_index]
+    plan = text[plan_index:apply_index]
+    apply = text[apply_index:]
+    for token in REMEDIATION_PLAN_ONLY_REFERENCES:
+        if token in common:
+            ERRORS.append(
+                f"{rel}: branch-only reference appears before its branch {[token]!r}"
+            )
+        if token not in plan:
+            ERRORS.append(f"{rel}: plan branch missing reference {[token]!r}")
+    for token in REMEDIATION_APPLY_ONLY_REFERENCES:
+        if token in common or token in plan:
+            ERRORS.append(
+                f"{rel}: branch-only reference appears before its branch {[token]!r}"
+            )
+        if token not in apply:
+            ERRORS.append(f"{rel}: apply branch missing reference {[token]!r}")
 
 
 def check_eval_behavior_baseline_contract() -> None:

@@ -1,15 +1,6 @@
 {
-  "schema_version": 2,
-  "audit_generation_id": "phase17-20260824t024210z",
-  "audit_run_id": "phase17-3a15ed4-20260824t024210z",
-  "phase": 17,
   "audit_head": "3a15ed4fe3118536aca7457353e65782042465e5",
-  "reviewer_id": "codex",
-  "reviewer_identity": "Codex",
-  "model_id": "gpt56",
-  "reviewer_model_id": "gpt-5.6",
-  "model_identity_source": "operator-declared",
-  "independence": "fresh-context-same-family",
+  "audit_run_id": "phase17-3a15ed4-20260824t024210z",
   "baseline_policy": "latest-committed-spec",
   "baseline_sources": [
     {
@@ -29,7 +20,15 @@
       "sha256": "525d4339a78dc5e8b1fddc05f69affc6789f58d7954d6e18ccc1b11b7757635f"
     }
   ],
-  "requirements_sha256": "843025e1dd361197aecdb54a2eacb2de17e031d7d1250322c40d999e666e3858",
   "findings_sha256": "f0a75558fc5c5ad3f45d2f9a015d9d93ab0ffddd697ae8ca6e6d0b2735e7dea4",
+  "independence": "fresh-context-same-family",
+  "model_id": "gpt56",
+  "model_identity_source": "operator-declared",
+  "phase": 17,
+  "requirements_sha256": "843025e1dd361197aecdb54a2eacb2de17e031d7d1250322c40d999e666e3858",
+  "reviewer_id": "codex",
+  "reviewer_identity": "Codex",
+  "reviewer_model_id": "gpt-5.6",
+  "schema_version": 3,
   "verdict": "FAIL"
 }
