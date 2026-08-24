@@ -1184,7 +1184,7 @@ impl AgentHooks for TransformingHooks {
                     text: "transformed-by-after-call".to_owned(),
                 }],
                 details: None,
-                is_error: false,
+                is_error: true,
                 terminate: false,
                 truncated: false,
                 diagnostics: Vec::new(),
@@ -1195,8 +1195,11 @@ impl AgentHooks for TransformingHooks {
 
 #[tokio::test]
 async fn phase17_after_call_replace_keeps_later_authorization_unchanged() {
+    use opi_agent::evidence::{EvidencePayload, InMemoryEvidenceSink, ToolExecutionOutcome};
+
     let count = Arc::new(AtomicUsize::new(0));
     let replaced = Arc::new(AtomicUsize::new(0));
+    let sink = Arc::new(InMemoryEvidenceSink::new());
     // The policy is built explicitly so its digest is observable before and
     // after the transforming run.
     let policy = Arc::new(EffectiveUserPolicy::build(
@@ -1243,11 +1246,20 @@ async fn phase17_after_call_replace_keeps_later_authorization_unchanged() {
         }),
     )
     .expect("agent builds");
-    agent
-        .prompt("call write twice")
-        .await
-        .into_execution_result()
-        .expect("run completes");
+    agent.set_evidence_sink(Some(sink.clone()));
+    let digest_byte = "after-call-outcome"
+        .as_bytes()
+        .iter()
+        .fold(0_u8, |acc, b| acc ^ b);
+    let binding = opi_agent::evidence::RuntimeInputBinding::direct(
+        opi_agent::evidence::ContentDigest::from_hex(format!("{digest_byte:02x}").repeat(32))
+            .expect("valid digest"),
+        opi_agent::evidence::AssemblyIdentity::new("opi.test.fixture")
+            .expect("valid assembly identity"),
+    );
+    opi_agent::evidence::EvidenceSink::setup(&*sink, &binding).expect("sink setup");
+    let run = agent.prompt("call write twice").await;
+    assert!(run.error().is_none(), "run completes: {:?}", run.error());
 
     assert_eq!(count.load(Ordering::SeqCst), 2, "both calls executed");
     assert_eq!(
@@ -1291,6 +1303,39 @@ async fn phase17_after_call_replace_keeps_later_authorization_unchanged() {
         policy.digest(),
         digest_before,
         "the effective policy digest is unchanged by the after-call transform"
+    );
+    let presented_results = run
+        .messages()
+        .iter()
+        .filter_map(|message| match message {
+            AgentMessage::Llm(Message::ToolResult(result))
+                if matches!(result.tool_call_id.as_str(), "tc-1" | "tc-2") =>
+            {
+                Some(result)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(presented_results.len(), 2);
+    assert!(
+        presented_results.iter().all(|result| result.is_error),
+        "the replacement remains the error-marked presentation result"
+    );
+    let outcomes = sink
+        .records()
+        .into_iter()
+        .filter_map(|record| match record.payload {
+            EvidencePayload::Tool(facts) => facts.outcome_facts().map(|facts| facts.execution),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        outcomes,
+        vec![
+            ToolExecutionOutcome::Succeeded,
+            ToolExecutionOutcome::Succeeded
+        ],
+        "presentation replacement must not rewrite lower-boundary execution outcome"
     );
 }
 

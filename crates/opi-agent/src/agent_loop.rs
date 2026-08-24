@@ -1962,6 +1962,11 @@ async fn execute_prepared_tool(
         .await
     {
         Ok(result) => {
+            let outcome = if result.is_error {
+                crate::evidence::ToolExecutionOutcome::Failed
+            } else {
+                crate::evidence::ToolExecutionOutcome::Succeeded
+            };
             let ctx = AfterToolCallContext {
                 tool_call_id: call_id.to_owned(),
                 tool_name: tool_name.to_owned(),
@@ -1994,7 +1999,11 @@ async fn execute_prepared_tool(
                     }
                 }
             }
-            ExecutedTool::ordinary(final_result)
+            ExecutedTool {
+                result: final_result,
+                outcome,
+                terminal_error: None,
+            }
         }
         Err(e) => {
             observe(
