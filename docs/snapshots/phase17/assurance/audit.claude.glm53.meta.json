@@ -1,0 +1,34 @@
+{
+  "audit_head": "890de6b5316f151206f3d4680954d51fc39871b0",
+  "audit_run_id": "phase17-claude-glm53-890de6b-20260824t081717z",
+  "baseline_policy": "latest-committed-spec",
+  "baseline_sources": [
+    {
+      "path": ".opi-impl-state.json",
+      "sha256": "de5420ab9fc38407704fb2cc1a0fc999061d1aa817706198db6910941b974133"
+    },
+    {
+      "path": "docs/snapshots/phase17/opi-impl-state.json",
+      "sha256": "801ac6d69b32acaa0f6301419c397c94450fc131e765ad9895c80c7cc33dd879"
+    },
+    {
+      "path": "docs/opi-spec.md",
+      "sha256": "cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md",
+      "sha256": "72f7e2996b0fbab7fd0c56d349b9dc0d5764c8a54e4ffd6cfc48245ac2bd4917"
+    }
+  ],
+  "findings_sha256": "1b6817b639093f72f017167096ea21501042c7126e5aae209c91e7a969020c50",
+  "independence": "fresh-context-same-family",
+  "model_id": "glm53",
+  "model_identity_source": "runtime-attested",
+  "phase": 17,
+  "requirements_sha256": "83918192f31f7cefc16928d998732e7728da43ec53bb41ae433303071ac713bb",
+  "reviewer_id": "claude",
+  "reviewer_identity": "Claude",
+  "reviewer_model_id": "glm-5.3[1M]",
+  "schema_version": 3,
+  "verdict": "FAIL"
+}

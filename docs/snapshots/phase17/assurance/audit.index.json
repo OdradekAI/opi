@@ -2,6 +2,20 @@
   "aggregate_verdict": "FAIL",
   "members": [
     {
+      "artifact_stem": "audit.claude.glm53",
+      "audit_head": "890de6b5316f151206f3d4680954d51fc39871b0",
+      "audit_run_id": "phase17-claude-glm53-890de6b-20260824t081717z",
+      "digests": {
+        "findings_sha256": "1b6817b639093f72f017167096ea21501042c7126e5aae209c91e7a969020c50",
+        "meta_sha256": "3525e5e61ef4bf160cf37fa6523080450cdf256b59c416115bd87b70062553d9",
+        "report_sha256": "8f5f23c3e22e8250b0ce30e2a7353ebbea9e4e72fdf899532bb77be2727cc40a",
+        "requirements_sha256": "83918192f31f7cefc16928d998732e7728da43ec53bb41ae433303071ac713bb"
+      },
+      "model_id": "glm53",
+      "reviewer_id": "claude",
+      "verdict": "FAIL"
+    },
+    {
       "artifact_stem": "audit.codex.gpt56",
       "audit_head": "3a15ed4fe3118536aca7457353e65782042465e5",
       "audit_run_id": "phase17-3a15ed4-20260824t024210z",
@@ -17,6 +31,6 @@
     }
   ],
   "phase": 17,
-  "revision": 2,
+  "revision": 3,
   "schema_version": 2
 }
