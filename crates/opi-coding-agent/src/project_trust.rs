@@ -38,11 +38,13 @@
 //!
 //! [`resolve_trust`] applies, in order: CLI override, registered resolver votes,
 //! the store's nearest-ancestor decision, the global-only default, then ask.
-//! The first `Trusted`/`Untrusted` result wins; `Undecided` falls through. The
-//! registry accepts deterministic-order registrations through an explicit
-//! public embedder/startup API only; a default registry is empty, late
-//! registration after [`ProjectTrustResolverRegistry::seal`] is rejected, and
-//! the registry exposes no metadata discovery or native-code loading path.
+//! The CLI override is authoritative. Within the resolver layer, `Deny`
+//! dominates `Trust`, `Trust` applies only when no resolver denies, and an
+//! all-`Undecided` result falls through. The registry accepts
+//! deterministic-order registrations through an explicit public
+//! embedder/startup API only; a default registry is empty, late registration
+//! after [`ProjectTrustResolverRegistry::seal`] is rejected, and the registry
+//! exposes no metadata discovery or native-code loading path.
 
 #![forbid(unsafe_code)]
 
@@ -216,8 +218,8 @@ pub struct TrustContext {
 /// The trait is dyn-safe via hand-rolled boxed futures (matching the
 /// `opi-agent` `Tool`/`AgentHooks` style); no `async-trait` dependency.
 pub trait ProjectTrustResolver: Send + Sync {
-    /// Vote on the project. `Trust`/`Deny` are authoritative at precedence
-    /// position 2; `Undecided` falls through to store/default/ask.
+    /// Vote on the project. At precedence position 2, `Deny` dominates
+    /// `Trust`; an all-`Undecided` result falls through to store/default/ask.
     fn resolve(
         &self,
         ctx: &TrustContext,
@@ -458,10 +460,12 @@ fn complete_record_with_unlock(
 /// Resolve the trust decision for `ctx` using the pi-style precedence chain:
 /// CLI override, registered resolver votes (deterministic order), the store's
 /// nearest-ancestor decision, the global-only default, then ask via
-/// [`PreTrustUi::confirm`]. The first `Trusted`/`Untrusted` wins; `Undecided`
-/// falls through. `global_default == Undecided` means "ask". An unavailable ask
-/// yields a terminal [`TrustDecision::Undecided`] that headless callers
-/// (15.8.1) map to `Untrusted`.
+/// [`PreTrustUi::confirm`]. The CLI override is authoritative. Within the
+/// resolver layer, `Deny` dominates `Trust`, `Trust` applies only in the
+/// absence of `Deny`, and an all-`Undecided` result falls through.
+/// `global_default == Undecided` means "ask". An unavailable ask yields a
+/// terminal [`TrustDecision::Undecided`] that headless callers (15.8.1) map to
+/// `Untrusted`.
 pub async fn resolve_trust(
     cli_override: Option<TrustDecision>,
     registry: &ProjectTrustResolverRegistry,
@@ -476,11 +480,18 @@ pub async fn resolve_trust(
     }
 
     // 2. Registered resolver votes, in deterministic registration order.
+    //    Trust remains provisional until every later resolver has had the
+    //    opportunity to deny. Deny is terminal because no vote can narrow it.
+    let mut resolver_decision = TrustDecision::Undecided;
     for resolver in registry.resolvers() {
-        let decision = resolver.resolve(ctx, ui).await.to_decision();
-        if decision.is_decided() {
-            return decision;
+        match resolver.resolve(ctx, ui).await {
+            TrustVote::Deny => return TrustDecision::Untrusted,
+            TrustVote::Trust => resolver_decision = TrustDecision::Trusted,
+            TrustVote::Undecided => {}
         }
+    }
+    if resolver_decision.is_decided() {
+        return resolver_decision;
     }
 
     // 3. Store: nearest ancestor decision.
@@ -655,7 +666,8 @@ impl PreTrustUi for HeadlessPreTrustUi {
 /// `registry` (rejecting late registration), loads `trust.json` from
 /// `user_config_dir`, then runs [`resolve_trust`]: CLI override, registered
 /// resolver votes, nearest stored decision, `global_default`, then ask. The
-/// first `Trust`/`Deny` wins; `Undecided` falls through.
+/// CLI override is authoritative; within the resolver layer, `Deny` dominates
+/// `Trust`, and an all-`Undecided` result falls through.
 ///
 /// `global_default` must be the **global** (pre-trust) `[defaults]
 /// default_project_trust` value so a project cannot self-authorize via its own

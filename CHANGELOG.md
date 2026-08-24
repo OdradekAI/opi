@@ -81,6 +81,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `opi-coding-agent`: `NonInteractiveRunner::cancel` was replaced by
   `cancel_token(&mut self)`, which arms the next run generation and returns its
   clonable cancellation token before `run*` takes the mutable borrow.
+- `opi-coding-agent`: conflicting registered project-trust resolver votes now
+  combine fail-closed: `Deny` dominates `Trust` regardless of registration
+  order, while `Trust` applies only when no resolver denies. This changes the
+  previous first-decided short-circuit behavior for embedders.
 - `opi-implement`: live implementation ledgers now require schema v2 and no
   longer auto-migrate a schema-v1 ledger. Historical v1 snapshots remain
   immutable audit evidence; preserve any still-live v1 file, then initialize

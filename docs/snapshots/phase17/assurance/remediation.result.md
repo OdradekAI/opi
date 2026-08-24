@@ -1,66 +1,101 @@
 # Phase 17 Remediation Result
 
 **Status**: COMPLETE
-**Audit index SHA-256**: `bc8041d8e8aa26d9067b02f006263ecf922c23d8263e13e1ac60b8b434194ed1`
-**Plan SHA-256**: `09ac20ef83029cb2d9084e4ad859dea382432303d87922a7a3bd150ab7767fb1`
-**Changed paths**: ["crates/opi-agent/src/agent_loop.rs","crates/opi-coding-agent/tests/phase17_tool_authority.rs"]
+**Audit index SHA-256**: `3a431c990871dd9183b31a1376daee59a3e4f2d888b7393dfb208e14a3cdea3f`
+**Plan SHA-256**: `d724f0fd26b1e43389af37d649ec952d9103a104f271eaa929aaef93f8dfb363`
+**Changed paths**: ["CHANGELOG.md", "crates/opi-coding-agent/src/project_trust.rs", "crates/opi-coding-agent/tests/project_trust_store.rs"]
 
-## Result
+`COMPLETE` means this apply execution and its machine dispositions are fully
+recorded. It does not mean every finding is closed or that Phase 17 conforms.
 
-- `P17-AUD-001`: Closed. Terminal tool evidence now derives its execution
-  outcome from the actual lower-boundary `Tool::execute` result before the
-  presentation-only after-call replacement. The replacement still owns
-  diagnostics, events, messages, and model context.
-- `P17-AUD-002`: Refuted. Independent fixed-ref comparison and GitHub run
-  `32733627895` establish byte-identical implementation/CI inputs and
-  successful Phase 17 acceptance on Ubuntu, macOS, and Windows.
-- `P17-AUD-003`: Info/No action. The trace-compatible RPC constructor remains
-  intentional and its supported command path remains covered.
+## Admission
 
-No incidental repair was admitted. The first workspace all-targets run exposed
-the known unrelated RPC thinking-level timeout under parallel load. Its exact
-isolated test passed, no repair was made, and a fresh complete workspace
-all-targets rerun passed, including all 80 `rpc_jsonl` tests.
+- `audit-set`: PASS for the current live Phase 17 index.
+- Plan dispositions: PASS.
+- Approved plan: PASS with the exact invocation digest
+  `d724f0fd26b1e43389af37d649ec952d9103a104f271eaa929aaef93f8dfb363`.
+- Current `HEAD` remained
+  `23f5754c6e9b1f46ea3151222fc1c1289ae5b64a`, matching the approved
+  remediation head.
+- The active index digest remained
+  `3a431c990871dd9183b31a1376daee59a3e4f2d888b7393dfb208e14a3cdea3f`.
+- The three approved production paths had no staged or unstaged overlap before
+  apply. Carried-in assurance changes were preserved.
 
-## Verification
+## Batch B1 result — P17-AUD-001
 
-    cargo test -p opi-coding-agent --test phase17_tool_authority phase17_after_call_replace_keeps_later_authorization_unchanged -- --exact --nocapture
-    RED: FAIL, outcomes [Failed, Failed] instead of [Succeeded, Succeeded]
-    GREEN: PASS, 1 passed, 0 failed
+**Remediation status**: Not closed
 
-    cargo fmt --check --all
-    PASS
+The behavioral defect is repaired in the worktree: registered resolver votes
+now combine monotonically so `Deny` dominates `Trust` regardless of
+registration order, while all-`Undecided` still falls through. Explicit CLI
+override precedence, an empty standard registry, store/default/ask fallback,
+and sealing behavior remain unchanged.
 
-    cargo clippy --workspace --all-targets -- -D warnings
-    PASS
+The approved red-before test was reproduced in a fresh archive of the bound
+head before production edits:
 
-    cargo test --workspace --all-targets
-    First run: FAIL, one unrelated rpc_jsonl timeout
-    Isolated rpc_set_thinking_level_off_medium_high_change_runtime_config: PASS
-    Fresh complete rerun: PASS
+```text
+cargo test -p opi-coding-agent --test project_trust_store conflicting_resolver_votes_deny_independent_of_registration_order
+FAIL: left Trusted, right Untrusted
+```
 
-    cargo test --workspace --doc
-    PASS
+The same regression and the updated embedder precedence case both failed for
+the expected reason after the tests were installed and before implementation.
+After the minimal implementation change, both passed.
 
-    $env:RUSTDOCFLAGS = "-D warnings"; cargo doc --workspace --no-deps
-    PASS
+The finding remains `Not closed` because the approved verification union did
+not become entirely green. The exact global command `git diff --check` failed
+on a carried-in active audit report:
 
-    python scripts/opi-doc-check.py
-    PASS
+```text
+docs/snapshots/phase17/assurance/audit.codex.gpt56.md:218: new blank line at EOF.
+```
 
-    git diff --quiet 87377fcf750a5d0a38919bf82e740b7baefe8a8b..68507a86b5e99a226bb65b219f274f4f729fd88c -- .github crates Cargo.toml Cargo.lock scripts
-    PASS
+That report is outside Batch B1's causal and owned paths, and its bytes are
+bound by the active audit index. Editing it as an incidental repair would both
+violate the approved path boundary and invalidate the approval digest, so no
+such edit was made. A scoped `git diff --check` over the three approved
+production paths passed.
 
-    gh run view 32733627895 --repo OdradekAI/opi --json headSha,status,conclusion,jobs
-    PASS: head 87377fcf750a5d0a38919bf82e740b7baefe8a8b, completed,
-    success, three successful Phase 17 acceptance jobs
+## P17-AUD-002 result
 
-    git diff --check
-    PASS
+**Remediation status**: Info/No action
 
-## Materialization Boundary
+`cargo test -p opi-coding-agent --test phase17_api_audit` passed all 22 local
+static checks on Windows. This confirms the platform-neutral acceptance and CI
+matrix structure only. It does not provide Linux or macOS execution evidence,
+and no current-head three-platform closure is claimed.
 
-The approved fixes and fixed remediation artifacts are materialized only in the
-current worktree. They are not committed or published. A fresh audit or
-reviewer rerun is not admitted until the fixes and active assurance set are
-committed and the assurance directory is clean.
+## Verification evidence
+
+| Command | Result |
+| --- | --- |
+| `cargo test -p opi-coding-agent --test project_trust_store conflicting_resolver_votes_deny_independent_of_registration_order` | PASS after the observed red-before failure |
+| `cargo test -p opi-coding-agent --test project_trust_store` | PASS: 27 passed |
+| `cargo test -p opi-coding-agent --test project_trust_startup` | PASS: 11 passed |
+| `cargo test -p opi-coding-agent --test interactive_trust` | PASS: 4 passed |
+| `cargo test -p opi-coding-agent --test non_interactive_trust` | PASS: 2 passed |
+| `cargo test -p opi-coding-agent --test rpc_trust` | PASS: 2 passed |
+| `cargo test -p opi-coding-agent --test phase17_api_audit` | PASS: 22 passed locally on Windows |
+| `cargo clippy -p opi-coding-agent --all-targets -- -D warnings` | PASS |
+| `cargo fmt --check --all` | PASS |
+| `python scripts/opi-doc-check.py` | PASS |
+| `git diff --check` | FAIL on the carried-in active audit report named above |
+| `git diff --check -- CHANGELOG.md crates/opi-coding-agent/src/project_trust.rs crates/opi-coding-agent/tests/project_trust_store.rs` | PASS |
+
+Test impact: `update`. The existing `project_trust_store` integration binary
+now rejects conflict-order authority widening; no new test binary was added.
+
+## Worktree and materialization boundary
+
+- `HEAD` is unchanged; this task created no commit.
+- Task-owned production changes are exactly `CHANGELOG.md`,
+  `crates/opi-coding-agent/src/project_trust.rs`, and
+  `crates/opi-coding-agent/tests/project_trust_store.rs`.
+- Fixed plan/result artifacts are remediation-owned outputs. Existing audit
+  and history modifications remain carried-in and untouched.
+- No staged or untracked paths were introduced.
+- The behavior repair and current audit set must be materialized deliberately,
+  and the global diff-check blocker must be resolved under a newly bound plan,
+  before any fresh audit request. This result grants no Phase PASS.

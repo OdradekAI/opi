@@ -495,32 +495,35 @@ async fn explicit_registry_is_ordered_and_default_is_empty() {
     assert_eq!(*log.lock().unwrap(), vec![1, 2]);
 }
 
-/// First Trust/Deny vote wins; later resolvers are not consulted once a
-/// resolver decides.
+/// A deny vote dominates a trust vote regardless of registration order.
 #[tokio::test]
-async fn first_resolver_decision_wins_and_short_circuits() {
-    let log: Log = Arc::new(Mutex::new(vec![]));
-    let mut reg = ProjectTrustResolverRegistry::new();
-    reg.register(Arc::new(fake(TrustVote::Trust, 1, &log)))
-        .unwrap();
-    // A later resolver that panics if reached proves the first short-circuits.
-    reg.register(Arc::new(PanicResolver)).unwrap();
+async fn conflicting_resolver_votes_deny_independent_of_registration_order() {
+    for votes in [
+        [(TrustVote::Trust, 1), (TrustVote::Deny, 2)],
+        [(TrustVote::Deny, 1), (TrustVote::Trust, 2)],
+    ] {
+        let log: Log = Arc::new(Mutex::new(vec![]));
+        let mut reg = ProjectTrustResolverRegistry::new();
+        for (vote, id) in votes {
+            reg.register(Arc::new(fake(vote, id, &log))).unwrap();
+        }
 
-    let user_dir = tempfile::tempdir().unwrap();
-    let project = tempfile::tempdir().unwrap();
-    let store = ProjectTrustStore::load(user_dir.path()).unwrap();
-    let ui = FakeUi::headless();
-    let decision = resolve_trust(
-        None,
-        &reg,
-        &store,
-        &ctx(project.path()),
-        TrustDecision::Undecided,
-        &ui,
-    )
-    .await;
-    assert_eq!(decision, TrustDecision::Trusted);
-    assert_eq!(*log.lock().unwrap(), vec![1]);
+        let user_dir = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let store = ProjectTrustStore::load(user_dir.path()).unwrap();
+        let ui = FakeUi::headless();
+        let decision = resolve_trust(
+            None,
+            &reg,
+            &store,
+            &ctx(project.path()),
+            TrustDecision::Undecided,
+            &ui,
+        )
+        .await;
+
+        assert_eq!(decision, TrustDecision::Untrusted);
+    }
 }
 
 /// An Undecided resolver vote falls through to the next layer.
@@ -785,9 +788,9 @@ fn trust_decision_is_decided_predicate() {
 
 /// Phase 15 task 15.8.1 acceptance: the resolver path is the explicit embedder
 /// API only. The standard opi CLI registry is empty (Phase 15 adds no CLI `-e`
-/// or native loader), a registered embedder resolver's first `Trust`/`Deny`
-/// wins in registration order over the store and over later resolvers,
-/// `Undecided` falls through, and registration after the registry is sealed
+/// or native loader), a registered embedder resolver's `Deny` vote dominates
+/// `Trust` over the store, `Undecided` falls through, and registration after
+/// the registry is sealed
 /// (e.g. a project extension attempting self-authorization once preflight has
 /// run) is rejected.
 #[tokio::test]
@@ -806,25 +809,25 @@ async fn explicit_embedder_resolver_precedence_and_cli_empty_registry() {
 
     let ui = FakeUi::headless();
 
-    // First Trust/Deny wins in registration order over a later resolver and
-    // over the (absent) store.
+    // Deny dominates Trust regardless of registration order and both override
+    // the (absent) store.
     let log: Log = Arc::new(Mutex::new(Vec::new()));
     let mut reg = ProjectTrustResolverRegistry::new();
     reg.register(Arc::new(fake(TrustVote::Trust, 1, &log)))
         .unwrap();
     reg.register(Arc::new(fake(TrustVote::Deny, 2, &log)))
-        .unwrap(); // shadowed, must not decide
+        .unwrap();
     reg.seal();
     let decision = resolve_trust(None, &reg, &store, &context, TrustDecision::Undecided, &ui).await;
     assert_eq!(
         decision,
-        TrustDecision::Trusted,
-        "first resolver Trust wins"
+        TrustDecision::Untrusted,
+        "resolver Deny dominates Trust"
     );
     assert_eq!(
         *log.lock().unwrap(),
-        vec![1],
-        "only the deciding resolver ran"
+        vec![1, 2],
+        "a Trust vote does not hide a later Deny"
     );
 
     // Undecided falls through to the next layer (store/default/ask).

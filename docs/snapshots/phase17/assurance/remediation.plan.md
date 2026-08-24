@@ -1,60 +1,87 @@
 # Phase 17 Remediation Plan
 
 **Status**: READY-FOR-APPLY
-**Audit index SHA-256**: `bc8041d8e8aa26d9067b02f006263ecf922c23d8263e13e1ac60b8b434194ed1`
-**Remediation head**: `68507a86b5e99a226bb65b219f274f4f729fd88c`
+**Audit index SHA-256**: `3a431c990871dd9183b31a1376daee59a3e4f2d888b7393dfb208e14a3cdea3f`
+**Remediation head**: `23f5754c6e9b1f46ea3151222fc1c1289ae5b64a`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
-**Dirty-worktree baseline**: staged=none; unstaged=[`.gitignore`] (carried-in, not touched); untracked=none before fixed plan output
+**Dirty-worktree baseline**: staged: none; unstaged: deleted `audit.claude.glm53.{findings.jsonl,md,meta.json,requirements.jsonl}`, modified `audit.codex.gpt56.{findings.jsonl,md,meta.json,requirements.jsonl}` and `audit.index.json`, deleted four files under `history/phase17-claude-glm53-890de6b-20260824t081717z/`; untracked: none. These are carried-in changes and are outside remediation ownership.
 **Unresolved decisions**: none
 
-## Current Finding Verification
+## Bound audit set
 
-| Source run / Finding ID | Verification | Source and final severity + rationale | Closure key/family | Batch | Decision |
-|---|---|---|---|---|---|
-| `phase17-3a15ed4-20260824t024210z` / `P17-AUD-001` | Confirmed at remediation head. `execute_prepared_tool` passes the after-hook `final_result` to `ExecutedTool::ordinary`, which derives terminal evidence from the replacement `is_error`. A sealed-export discriminating test observed `[Failed, Failed]` where both lower-boundary executions succeeded. | Major -> Major. This rewrites the evidence fact for actual execution and partially violates P17-OUT-004. | `tool.execution-outcome.truthfulness` / `tool.evidence.truthfulness` | B1 | `fix:preserve-lower-boundary-tool-outcome` |
-| `phase17-3a15ed4-20260824t024210z` / `P17-AUD-002` | Refuted as a current remediation defect. Independent GitHub query confirms run `32733627895` completed successfully at descendant head `87377fcf750a5d0a38919bf82e740b7baefe8a8b`, including all three literal Phase 17 acceptance jobs. The `crates` tree, CI workflow blob, and `Cargo.lock` blob at that head are byte-identical to the remediation head; the only later committed changes are assurance artifacts. The historical absence of checks at `3a15ed4fe3118536aca7457353e65782042465e5` remains true, but it no longer supports the claim that platform identity and passage cannot be established for the current committed implementation. | Major -> Major retained as source severity; the current defect is refuted by independently queried three-platform evidence and committed-object identity, not by reviewer vote. | `phase17.ci-three-platform.current-implementation` / `phase17.platform-acceptance` | none | `no-action:refuted-by-current-three-platform-evidence` |
-| `phase17-claude-glm53-87377fc-20260824t135741z` / `P17-AUD-003` | Confirmed at remediation head. `RpcRunner::new_with_trace` and its `trace_sink` parameter remain, while the value is an `EvidenceRecorder`. | Info -> Info. P17-MIG-003 remains met, the RPC `trace` command is still supported, and the finding identifies an advisory naming residual rather than incorrect behavior. | `rpc.evidence-recorder.constructor-naming` / `rpc.evidence-compatibility` | none | `no-action:retain-rpc-trace-compatible-name` |
+- Current indexed run: `phase17-codex-gpt56-23f5754-20260824t162222z`
+- Current findings digest: `ab88f5d00ef08251abd18aca2b849c6e7e67dc4c7877448fca3a0bc7c8d611c0`
+- Strict current finding union: `P17-AUD-001`, `P17-AUD-002`
+- Plan scope is limited to those two current findings. Historical audit groups, prior remediation outputs, and evaluation artifacts are not semantic inputs.
 
-## Unresolved Decisions
+## Current finding verification
 
-none
+| Finding | Verification | Final severity | Disposition |
+| --- | --- | --- | --- |
+| `P17-AUD-001` | Confirmed. The committed registry loop returns the first decided resolver vote. In an isolated archive of the remediation head, a new order-permutation regression observed `Trusted` for `Trust` followed by `Deny`. | Major | Batch `B1`: merge resolver votes by the most restrictive decision. |
+| `P17-AUD-002` | Confirmed. The current local `phase17_api_audit` passes the static platform-neutral matrix checks, but that cannot establish Linux and macOS execution for the current head. | Info | `no-action:current-head-three-platform-evidence-requires-post-materialization-ci`; no repository edit can retroactively produce current-head CI evidence. |
 
-## Closure Batches
+## Batch B1 — monotonic project-trust resolver composition
 
-### Batch B1: Preserve the lower-boundary tool execution outcome
+#### Fix P17-AUD-001 — make Deny dominate conflicting resolver votes
 
-**Closure predicate**: When `Tool::execute` returns an ordinary success or failure result and `after_tool_call` replaces only its presentation result, terminal tool evidence retains the outcome derived from the actual `Tool::execute` result while the replacement remains the user/model-visible result.
-**Dependencies**: none
-**Verification union**: focused `phase17_tool_authority` regression; documentation contract; format, clippy, workspace tests, doctests, rustdoc; `git diff --check`
-
-#### Fix B1.1: Separate execution outcome from presentation replacement
-
-- **Finding source(s)**: `phase17-3a15ed4-20260824t024210z` + `f0a75558fc5c5ad3f45d2f9a015d9d93ab0ffddd697ae8ca6e6d0b2735e7dea4` + `P17-AUD-001`
-- **Decision**: `fix:preserve-lower-boundary-tool-outcome`
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-agent/src/agent_loop.rs`, `crates/opi-coding-agent/tests/phase17_tool_authority.rs`
+- **Source**: `phase17-codex-gpt56-23f5754-20260824t162222z/P17-AUD-001`
+- **Closure key**: `project-trust.resolver-deny-dominates`
+- **Family key**: `project-trust.authority-composition`
+- **Decision**: `fix:merge-resolver-votes-most-restrictive`
 - **Change kind**: behavioral
-- **Change**: Derive `ToolExecutionOutcome` from the actual `Tool::execute` `ToolResult` before invoking `after_tool_call`; retain the hook replacement only as the presentation result used for diagnostics, events, messages, and context. Extend the existing after-call replacement acceptance test with an inverted `is_error` replacement and in-memory evidence assertion.
-- **Closure predicate**: A successful lower-boundary result followed by an error-marked presentation replacement emits `ToolExecutionOutcome::Succeeded`; the replacement remains an error-marked tool result, and later authorization remains unchanged.
-- **Red-before**: `cargo test -p opi-coding-agent --test phase17_tool_authority phase17_after_call_replace_keeps_later_authorization_unchanged -- --exact --nocapture` in unique `git archive` export -> observed `FAIL`: evidence outcomes were `[Failed, Failed]`, expected `[Succeeded, Succeeded]`.
-- **Green-after**: Run the same focused command after the production change -> expected `PASS` with lower-boundary outcomes preserved and the existing later-authorization assertions green.
+- **Changed paths**: `CHANGELOG.md`; `crates/opi-coding-agent/src/project_trust.rs`; `crates/opi-coding-agent/tests/project_trust_store.rs`
+- **Closure predicate**: Within the registered-resolver layer, the effective result is independent of registration order: any `Deny` vote resolves `Untrusted`; otherwise any `Trust` vote resolves `Trusted`; all-`Undecided` falls through to the persistent store/default/prompt layers. The earlier explicit CLI override remains authoritative, and an encountered `Deny` may short-circuit because no later vote can widen it.
+- **Red-before**: `cargo test -p opi-coding-agent --test project_trust_store conflicting_resolver_votes_deny_independent_of_registration_order` must fail before production edits; observed failure was `left: Trusted`, `right: Untrusted` for `Trust` followed by `Deny` at the bound remediation head.
+- **Green-after**: `cargo test -p opi-coding-agent --test project_trust_store conflicting_resolver_votes_deny_independent_of_registration_order` must pass after the resolver merge is implemented, covering both conflicting registration orders.
 
-## Final Verification
+Implementation is restricted to the following minimal changes:
 
-    cargo test -p opi-coding-agent --test phase17_tool_authority phase17_after_call_replace_keeps_later_authorization_unchanged -- --exact
-    python scripts/opi-doc-check.py
-    cargo fmt --check --all
-    cargo clippy --workspace --all-targets -- -D warnings
-    cargo test --workspace --all-targets
-    cargo test --workspace --doc
-    $env:RUSTDOCFLAGS = "-D warnings"; cargo doc --workspace --no-deps
-    git diff --quiet 87377fcf750a5d0a38919bf82e740b7baefe8a8b..68507a86b5e99a226bb65b219f274f4f729fd88c -- .github crates Cargo.toml Cargo.lock scripts
-    gh run view 32733627895 --repo OdradekAI/opi --json headSha,status,conclusion,jobs --jq '[.headSha,.status,.conclusion,([.jobs[] | select(.name | startswith("Phase 17 acceptance")) | select(.status=="completed" and .conclusion=="success")] | length)] | @tsv'
-    git diff --check
+1. In `resolve_trust`, retain the explicit CLI override as the earlier layer. In the registered-resolver layer, stop treating `Trust` as a terminal first vote: remember it, continue scanning for a possible `Deny`, return `Untrusted` on `Deny`, and return `Trusted` after the registry is exhausted only when at least one resolver voted `Trust`. Preserve the existing all-`Undecided` fallback.
+2. Update the module and API rustdoc that currently promises first-decided-wins semantics so it states the monotonic `Deny > Trust > Undecided` composition contract. Do not add a new trait, feature flag, compatibility shim, or registry abstraction.
+3. Replace the test that requires a `Trust` vote to hide all later resolvers with the discriminating two-order regression. Update `explicit_embedder_resolver_precedence_and_cli_empty_registry` so `Trust` followed by `Deny` expects `Untrusted` and records that the later `Deny` was consulted. Retain the separate CLI-override short-circuit and empty-registry coverage.
+4. Add one concise entry under the existing `CHANGELOG.md` `Unreleased / Breaking Changes` section because the public 0.x embedder resolver seam deliberately changes conflict semantics. No bilingual counterpart exists for this file.
 
-## Exclusions
+No normative specification, domain-model document, manifest, dependency, schema, fixture, implementation ledger, or historical snapshot is changed by this batch.
 
-| Finding ID | Disposition | Current evidence/authority |
-|---|---|---|
-| `P17-AUD-002` | Refuted | GitHub run `32733627895` independently reports `headSha=87377fcf750a5d0a38919bf82e740b7baefe8a8b`, `completed`, `success`, with successful `Phase 17 acceptance` jobs on `ubuntu-latest`, `macos-latest`, and `windows-latest` (and 24/24 total jobs successful). Git object identity independently proves the remediation head has the same `crates` tree (`7bd043b0e62ed15571da2c7307e8a7d5211e0d02`), CI workflow blob (`b4dae51ce69325dd83eb5460e152bd695e9dbd21`), and `Cargo.lock` blob (`7f185dcefb568d8df59351cec6f515d3301ecb5c`) as the tested head; `git diff 87377fc..68507a8` contains assurance artifacts only. The admitted source remains exactly run `phase17-3a15ed4-20260824t024210z` and findings digest `f0a75558fc5c5ad3f45d2f9a015d9d93ab0ffddd697ae8ca6e6d0b2735e7dea4`; title similarity cannot substitute for identity, and no older source was consulted. |
-| `P17-AUD-003` | Info/No action | The trace-named Reference Product constructor remains a real compatibility entry point for the supported RPC `trace` command and accepts the evidence-recorder contract. P17-MIG-003 is met; no normative source requires a rename, so a public API/test churn change would exceed this advisory finding. Admission is bound only to run `phase17-claude-glm53-87377fc-20260824t135741z` and findings digest `5d2b87eff189de3513b4f5109fc074fa37137262f9842d427ede3495906edcd8`; title similarity cannot substitute for identity, and no older source was consulted. |
+## P17-AUD-002 — bounded no-action disposition
+
+The current-head three-platform evidence advisory is confirmed but is not a repository defect that the apply branch can close. The materialized remediation commit does not exist at plan time, and Linux/macOS/Windows execution evidence can only be produced by CI after that commit is formed and published to the relevant CI context. Apply must therefore:
+
+- make no production or assurance-index edit for `P17-AUD-002`;
+- retain final severity `Info`, closure batch `null`, and decision `no-action:current-head-three-platform-evidence-requires-post-materialization-ci` in the result disposition;
+- run `cargo test -p opi-coding-agent --test phase17_api_audit` locally to confirm the static matrix contract, while explicitly not representing that result as Linux/macOS execution evidence; and
+- avoid claiming Phase 17 conformity or current-head three-platform closure from the remediation result alone.
+
+## Apply sequence and checks
+
+Apply is admitted only when the current `audit.index.json` digest, remediation `HEAD`, approved plan digest, and carried-in dirty baseline still match this plan. Execute the following sequence:
+
+1. Revalidate the audit set and both plan artifacts.
+2. Re-run the exact `P17-AUD-001` red-before test against the unmodified bound head and require the same discriminating failure.
+3. Implement Batch `B1` only in the three declared paths.
+4. Run the focused green test, then the regression and repository checks below.
+5. Inventory outgoing changes against the dirty baseline; reject any undeclared path rather than absorbing it.
+6. Write the fixed remediation result artifacts only after all required checks pass.
+
+Required verification union:
+
+```text
+cargo test -p opi-coding-agent --test project_trust_store conflicting_resolver_votes_deny_independent_of_registration_order
+cargo test -p opi-coding-agent --test project_trust_store
+cargo test -p opi-coding-agent --test project_trust_startup
+cargo test -p opi-coding-agent --test interactive_trust
+cargo test -p opi-coding-agent --test non_interactive_trust
+cargo test -p opi-coding-agent --test rpc_trust
+cargo test -p opi-coding-agent --test phase17_api_audit
+cargo clippy -p opi-coding-agent --all-targets -- -D warnings
+cargo fmt --check --all
+python scripts/opi-doc-check.py
+git diff --check
+```
+
+Expected results are PASS for every command after Batch `B1`. The `phase17_api_audit` result is limited to its local static assertions. Test impact for apply is `update`: the existing project-trust integration test file is changed to reject the vulnerable conflict behavior; no new test binary is added.
+
+## Apply stop conditions
+
+Stop without production edits if the audit index digest or remediation head changes, the approved combined plan digest does not match, the carried-in worktree overlaps a declared production path, the red-before no longer fails for the stated reason, or implementation requires any path or decision outside this plan. Such a change requires a new `mode=plan` run and a new approval digest.
