@@ -107,7 +107,7 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `--trust` / `--no-trust` | One-shot project-trust override for the session; mutually exclusive. |
 | `--tools <TOOLS>` | Comma-separated built-in tool allowlist. |
 | `--no-tools` | Disable all tools. |
-| `--no-builtin-tools` | Disable built-in tools while leaving extension/custom tools available. |
+| `--no-builtin-tools` | Disable built-in tools; the Reference Product does not register extension tool contributions. |
 | `--image <PATH>` | Attach one image to the initial prompt; repeatable. |
 | `--list-models` | List models exposed by configured providers and exit. |
 | `--list-sessions` | List stored sessions and exit. |
@@ -122,7 +122,7 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `--exclude-thinking` | Omit thinking content from the export. |
 | `--redact <summary\|verbose\|none>` | Redaction mode for `--export-session`. |
 | `--generate-completion <SHELL>` | Generate completion for `bash`, `zsh`, `fish`, `powershell`, or `elvish`. |
-| `--trace <PATH>` | Write opt-in evidence (evidence.jsonl + manifest.json) for a non-interactive/JSON run. |
+| `--trace <PATH>` | Write opt-in evidence (`evidence.jsonl` + `manifest.json`) for interactive, non-interactive text, JSON, and RPC runs. |
 | `-v, --verbose` | Enable debug tracing. |
 | `doctor [--json] [--scope ...]` | Local, network-free health check. |
 | `package <add|remove|list|doctor|enable|disable>` | Manage local/git extension packages and executable-package activation. |
@@ -324,8 +324,9 @@ Tool flags resolve with deterministic precedence:
 `--no-tools` > `--tools <list>` > `--no-builtin-tools` > default
 
 `--no-tools` disables every tool; `--tools` keeps only the named built-ins;
-`--no-builtin-tools` drops built-ins while leaving extension/custom tools
-available; otherwise the mode default applies.
+`--no-builtin-tools` drops built-ins. Extension tools are excluded from
+Reference Product registration, so that selection currently leaves the
+product with no registered tools. Otherwise the mode default applies.
 
 ### bash execution
 

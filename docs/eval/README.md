@@ -47,9 +47,7 @@ Each line is a self-contained JSON object:
   "overall": "PASS",
   "evaluator": "readonly-subagent",
   "evaluator_model": "openai:gpt-5.6",
-  "independence": "independent-family",
-  "compaction_triggered": false,
-  "retries": 0
+  "independence": "independent-family"
 }
 ```
 
@@ -83,8 +81,6 @@ Each per-case object records `case_id`, `case_class`, `case_revision`,
 | `evaluator` | string | Type of readonly evaluator subagent used |
 | `evaluator_model` | string | Evaluator `provider:model` identity |
 | `independence` | enum | `independent-family`, `fresh-context-same-family`, or `unknown` |
-| `compaction_triggered` | boolean | Whether any case triggered compaction |
-| `retries` | number | Total auto-retry count across all cases |
 
 ## Comparison rules
 

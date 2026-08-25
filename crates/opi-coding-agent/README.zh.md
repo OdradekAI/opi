@@ -101,7 +101,7 @@ opi --allow-mutating "更新 README。"
 | `--trust` / `--no-trust` | 针对本次会话的一次性项目信任覆盖；二者互斥。 |
 | `--tools <TOOLS>` | 逗号分隔的内置工具 allowlist。 |
 | `--no-tools` | 禁用所有工具。 |
-| `--no-builtin-tools` | 禁用内置工具，同时保留 extension/custom 工具可用性。 |
+| `--no-builtin-tools` | 禁用内置工具；Reference Product 不注册 extension 工具贡献。 |
 | `--image <PATH>` | 给初始提示词附加一张图片；可重复。 |
 | `--list-models` | 列出已配置 Provider 暴露的模型并退出。 |
 | `--list-sessions` | 列出已保存会话并退出。 |
@@ -116,7 +116,7 @@ opi --allow-mutating "更新 README。"
 | `--exclude-thinking` | 从导出中省略思考内容。 |
 | `--redact <summary\|verbose\|none>` | `--export-session` 的脱敏模式。 |
 | `--generate-completion <SHELL>` | 为 `bash`、`zsh`、`fish`、`powershell` 或 `elvish` 生成补全。 |
-| `--trace <PATH>` | 为非交互/JSON 运行写入可选的证据（evidence.jsonl + manifest.json）。 |
+| `--trace <PATH>` | 为交互式、非交互文本、JSON 与 RPC 运行写入可选证据（`evidence.jsonl` + `manifest.json`）。 |
 | `-v, --verbose` | 启用调试追踪。 |
 | `doctor [--json] [--scope ...]` | 本地、无网络健康检查。 |
 | `package <add|remove|list|doctor|enable|disable>` | 管理本地/git extension package 与可执行 package 的激活状态。 |
@@ -293,8 +293,9 @@ WORKSPACE_WRITE_CAPABILITY, COMMAND_EXECUTE_CAPABILITY}` 是内置
 
 `--no-tools` > `--tools <list>` > `--no-builtin-tools` > 默认
 
-`--no-tools` 禁用全部工具；`--tools` 仅保留指定的内置工具；`--no-builtin-tools`
-关闭内置工具但保留 extension/custom 工具可用；否则使用模式默认值。
+`--no-tools` 禁用全部工具；`--tools` 仅保留指定的内置工具；
+`--no-builtin-tools` 关闭内置工具。Extension 工具不会注册到 Reference Product，
+因此该选择目前会让产品不再拥有已注册工具。否则使用模式默认值。
 
 ### bash 执行
 

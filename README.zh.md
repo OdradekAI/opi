@@ -211,8 +211,9 @@ package 和资源，也不会注入项目 `AGENTS.md`/`CLAUDE.md`；工具本身
 
 ## Package 与命令执行
 
-Package 可以提供 skill、prompt fragment、主题、extension、工具、命令、hook 和
-进程 adapter。
+Package 可以提供 skill、prompt fragment、主题、extension 和 `command.execute`
+adapter。Extension 可以提供命令与 hook，但其工具贡献目前不会注册到 Reference
+Product。
 
 ```sh
 opi package add <PATH_OR_GIT_URL>

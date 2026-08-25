@@ -424,11 +424,21 @@ OPI_SPEC_EVIDENCE_REFINEMENT_CONTRACT = {
 
 OPI_DOCUMENT_PROSE_CONTRACT = {
     ".claude/skills/opi-document/SKILL.md": (
+        "scope=<full | targeted | version-bump>   # default: full",
+        "# Scope semantics",
+        "references/readme-audit.md",
         "references/prose-contract.md",
         "human-facing prose",
         "complete proposition",
         "semantic judgment",
         "targeted scope",
+    ),
+    ".claude/skills/opi-document/references/readme-audit.md": (
+        "# Full README audit",
+        "`git ls-files`",
+        "## Evidence routing",
+        "## Coverage matrix",
+        "Every included README",
     ),
     ".claude/skills/opi-document/references/prose-contract.md": (
         "# Prose contract",
@@ -449,6 +459,12 @@ OPI_DOCUMENT_PROSE_CONTRACT = {
         "Semantic prose quality",
         "`references/prose-contract.md`",
         "semantic judgment",
+    ),
+    ".claude/skills/README.md": (
+        "every maintained current-product README",
+    ),
+    ".claude/skills/README.zh.md": (
+        "审计每份受维护的当前产品 README",
     ),
 }
 

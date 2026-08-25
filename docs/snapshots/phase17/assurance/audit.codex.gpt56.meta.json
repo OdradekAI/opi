@@ -1,1 +1,34 @@
-{"schema_version":3,"audit_run_id":"phase17-codex-gpt56-23f5754-20260824t162222z","phase":17,"audit_head":"23f5754c6e9b1f46ea3151222fc1c1289ae5b64a","reviewer_id":"codex","reviewer_identity":"Codex","model_id":"gpt56","reviewer_model_id":"gpt56","model_identity_source":"operator-declared","independence":"fresh-context-same-family","baseline_policy":"latest-committed-spec","baseline_sources":[{"path":".opi-impl-state.json","sha256":"9f2c0377fb5242d7a95a3abba799e5d9097960d137ec9b7464e79bfd21f52bb0"},{"path":"docs/snapshots/phase17/opi-impl-state.json","sha256":"da4628f94e74c3d519aaaea3c3d4025d3f09a542a7d4dbec6e8021969d8824d0"},{"path":"docs/opi-spec.md","sha256":"0812c8c63b5f9dd1a884094d7c3713dd8e7b24efb59bf47f39edda8513b86330"},{"path":"docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md","sha256":"525d4339a78dc5e8b1fddc05f69affc6789f58d7954d6e18ccc1b11b7757635f"}],"requirements_sha256":"75c6939dc722f87e090aa24bd2abc93da5977b2af87d997c69df121021bb19e3","findings_sha256":"ab88f5d00ef08251abd18aca2b849c6e7e67dc4c7877448fca3a0bc7c8d611c0","verdict":"FAIL"}
+{
+  "schema_version": 3,
+  "audit_run_id": "phase17-codex-gpt56-52f66ee-20260824t183354z",
+  "phase": 17,
+  "audit_head": "52f66ee8df2b600bd6233619acada9465a7dd148",
+  "reviewer_id": "codex",
+  "reviewer_identity": "Codex",
+  "model_id": "gpt56",
+  "reviewer_model_id": "gpt-5.6",
+  "model_identity_source": "request-config",
+  "independence": "fresh-context-same-family",
+  "baseline_policy": "latest-committed-spec",
+  "baseline_sources": [
+    {
+      "path": ".opi-impl-state.json",
+      "sha256": "de5420ab9fc38407704fb2cc1a0fc999061d1aa817706198db6910941b974133"
+    },
+    {
+      "path": "docs/snapshots/phase17/opi-impl-state.json",
+      "sha256": "801ac6d69b32acaa0f6301419c397c94450fc131e765ad9895c80c7cc33dd879"
+    },
+    {
+      "path": "docs/opi-spec.md",
+      "sha256": "cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md",
+      "sha256": "72f7e2996b0fbab7fd0c56d349b9dc0d5764c8a54e4ffd6cfc48245ac2bd4917"
+    }
+  ],
+  "requirements_sha256": "dc3d5c204973a5d6937ed5d3d1275f60a3f3a4b468c7e4687063faef9b77f187",
+  "findings_sha256": "a6aef861bc9affdb9cac516fdee3e39c5e0e8a3e4cd64c496cec6313ba77cade",
+  "verdict": "FAIL"
+}

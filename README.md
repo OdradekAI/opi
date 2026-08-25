@@ -225,8 +225,10 @@ These controls select Agent tools; they are not an operating-system sandbox.
 
 ## Packages and command execution
 
-Packages can contribute skills, prompt fragments, themes, extensions, tools,
-commands, hooks, and process adapters.
+Packages can contribute skills, prompt fragments, themes, extensions, and
+`command.execute` adapters. Extensions may contribute commands and hooks, but
+their tool contributions are currently excluded from Reference Product
+registration.
 
 ```sh
 opi package add <PATH_OR_GIT_URL>

@@ -78,7 +78,10 @@ flowchart TD
   explicit approval of that fixed plan's digest and exact live-index digest.
   Apply permits only contract-bounded incidental repairs, and neither mode
   writes the live `.opi-impl-state.json`.
-- `opi-document` proves documentation truth; it does not authorize release.
+- By default, `opi-document` independently audits every maintained
+  current-product README against implementation evidence; targeted and
+  version-bump scopes must be explicit. It repairs documentation but does not
+  authorize release.
 - `opi-release` is the only public publication workflow. Crates.io publication
   has a separate last-moment irreversible gate.
 
@@ -97,7 +100,7 @@ local commit after an explicit gate, `$` may use credentials or paid providers,
 | `opi-audit` | Independently verify one Phase as an explicitly identified reviewer/model peer against the latest committed registered sources | One suffixed four-file report group installed into the live indexed set under `docs/snapshots/phase<N>/assurance/` | No fixes; each report installs independently and current findings go to `opi-remediate` | W |
 | `opi-eval` | Run explicit isolated real-provider fidelity cases | `docs/eval/` reports and history | Requires credentials and mutating-tool opt-in where applicable | W, $ |
 | `opi-remediate` | With `mode=plan`, verify the live indexed set and derive closure batches for its strict finding union; with `mode=apply`, execute the exact approved plan and index digests | Set-wide fixed plan, dispositions, result, and user-approved fixes | `READY-FOR-APPLY` plus both exact-digest bindings gate execution; intent changes return to shaping | W |
-| `opi-document` | Synchronize truthful English/Chinese docs and source-derived checks | Documentation and doc-check changes | Does not publish | W |
+| `opi-document` | Audit every maintained current-product README against implementation evidence by default; apply explicit targeted/version-bump doc synchronization | Documentation and doc-check changes | Does not publish | W |
 | `opi-release` | Run seven gated release phases for six crates and GitHub assets | Git tag/release and crates.io versions | Public Git gate, then separate irreversible crates gate | W, C, P, I |
 | `opi-slim-tests` | Remove duplicate or superseded Rust test binaries without losing behavior | Verified uncommitted test-graph reduction | Never commits automatically | W |
 

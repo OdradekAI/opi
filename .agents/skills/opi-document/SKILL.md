@@ -2,10 +2,11 @@
 name: opi-document
 disable-model-invocation: true
 description: >-
-  Update opi documentation so shipped claims remain truthful and English and
-  Chinese counterparts stay synchronized. Use for README/doc refreshes,
-  documentation drift, localized mirrors, or the documentation phase before a
-  release.
+  Independently audit every maintained current-product README against shipped
+  implementation by default, repair documentation drift, and keep English and
+  Chinese counterparts synchronized. Use for full README truth audits,
+  targeted README/doc refreshes, localized mirrors, or the documentation phase
+  before a release.
 ---
 
 # Opi Document
@@ -17,23 +18,36 @@ truth and are not rewritten merely to make a check pass.
 ## Inputs
 
 ```text
-scope=<full | targeted | version-bump>   # default: targeted
-files=<path,...>                         # optional exact paths
+scope=<full | targeted | version-bump>   # default: full
+files=<path,...>                         # targeted only; optional exact paths
 version=<X.Y.Z>                          # required for version-bump
 ```
 
-When `scope=targeted` omits `files`, use the
-[shared change-scope reference](../_shared/references/change-scope-and-check-selection.md)
-for candidate discovery only. It may locate outgoing documentation surfaces,
-but source ownership and this skill's inputs retain documentation authority;
-the diff does not expand the requested scope or authorize a repository-wide
-rewrite.
+## Scope semantics
+
+A bare invocation is `scope=full`. Do not infer `scope=targeted` from the dirty
+worktree, the current branch diff, or the most recent implementation change.
+
+- `scope=full`: read [`references/readme-audit.md`](references/readme-audit.md)
+  and independently audit every maintained current-product README against its
+  owning implementation evidence. A diff or prior audit may suggest risky
+  claims but never narrows coverage.
+- `scope=targeted`: limit semantic review to `files`, or, when `files` is
+  omitted, use the
+  [shared change-scope reference](../_shared/references/change-scope-and-check-selection.md)
+  for candidate discovery only. Source ownership and this skill's inputs retain
+  documentation authority; the diff does not expand the requested scope or
+  authorize a repository-wide rewrite.
+- `scope=version-bump`: update version-bearing documentation only after
+  `opi-release` has changed the workspace version; `version` is required.
 
 ## 1. Establish the documentation delta
 
-Read the affected source, `[Unreleased]` plus the latest release in
-`CHANGELOG.md`, the workspace version, and the relevant current docs. Classify
-candidate edits as:
+For `scope=full`, first build the complete README coverage matrix required by
+`references/readme-audit.md`, then read every included README in full. For
+other scopes, read the affected source and relevant current docs. In every
+scope, also read `[Unreleased]` plus the latest release in `CHANGELOG.md` and
+the workspace version. Classify candidate edits as:
 
 - **drift**: a current claim is false, stale, or unverifiable;
 - **noise**: internal milestone language that a user cannot act on;
@@ -60,9 +74,9 @@ it.
 For human-facing prose or agent-facing instructions, also read
 [`references/prose-contract.md`](references/prose-contract.md). It owns
 semantic judgment, owner-first editing, current-state wording, and the
-exclusions for frozen or derivative material. Load it only for the targeted
-scope; a targeted scope never expands into an automatic repository-wide prose
-audit.
+exclusions for frozen or derivative material. Load it for the human-facing or
+agent-facing prose selected by the active scope; a targeted scope never expands
+into an automatic repository-wide prose audit.
 
 For agent-facing instructions, also apply the project-local contract: keep the
 repository as source of truth, expose completion criteria near the action, and
@@ -84,7 +98,17 @@ If `docs/opi-spec.md` changes, also update `docs/opi-spec.zh.md` and route the
 live `.opi-impl-state.json` hash through the guarded `opi-implement` plan/reinit
 flow. Never hand-edit the canonical ledger or rewrite phase snapshots.
 
-## 4. Verify once
+## 4. Report semantic coverage
+
+For `scope=full`, report the complete coverage matrix from
+`references/readme-audit.md`, including unchanged `keep` rows, edited rows,
+explicit exclusions, and every `defer` limitation. Do not claim that the full
+README set is truthful while any included row is unreviewed or deferred.
+
+For `scope=targeted` or `scope=version-bump`, report the exact inspected paths
+and state explicitly that repository-wide README truth was not assessed.
+
+## 5. Verify once
 
 Run:
 

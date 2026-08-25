@@ -86,9 +86,11 @@ agent_start                              # 仅一次，首轮之前
       message_update                      # 每个文本/思考 delta
       message_end                         # 完整的 assistant 消息
       若存在 tool call：
-        validate tool args (jsonschema)
         tool_execution_start              # 每个 tool call
-        before_tool_call                  # AgentHooks::before_tool_call（可阻止）
+        resolve trusted registration
+        before_tool_call                  # 可阻止；绝不授予 authority
+        validate tool args (jsonschema)
+        authorize tool call               # 必须经过可信 ToolAuthorizer
         tool.execute                      # 并行批次；若任一工具为 Sequential 则整批串行
         after_tool_call                   # AgentHooks::after_tool_call（可替换结果）
         tool_execution_end                # 每个 tool call
@@ -135,8 +137,8 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
 |------|------------|
 | `transform_context` | 在 Provider 转换之前运行；可改写应用层消息。 |
 | `convert_to_llm` | 将应用消息转换为 Provider 消息，并过滤仅会话状态。 |
-| `before_tool_call` | 在 JSON Schema 参数校验之后、`tool.execute` 之前运行；可 `Deny` 阻止执行（拒绝原因成为工具错误）。 |
-| `after_tool_call` | 在执行之后、最终的 `ToolExecutionEnd` 事件之前运行；可 `Replace` 结果，使替换后的结果成为被发出和持久化的值。 |
+| `before_tool_call` | 在解析可信工具之后、JSON Schema 参数校验与强制 authorization 之前运行；可 `Deny` 阻止执行（拒绝原因成为工具错误）。`Continue` 不是授权。 |
+| `after_tool_call` | 在执行之后、最终的 `ToolExecutionEnd` 事件之前运行；可 `Replace` 展示结果，使替换值被发出并持久化，但工具 evidence 仍保留原始的底层执行结果。 |
 | `prepare_next_turn` | 在 `turn_end` 之后运行；可返回完整候选状态，该状态会在停止判断前被校验并原子应用。 |
 | `should_stop_after_turn` | 在候选准备/应用之后、steering/follow-up 轮询之前运行；返回 `true` 会在下一 turn 之前停止。 |
 
@@ -164,9 +166,10 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
 - 仅当批次中每一个已完成的工具结果都设置 `terminate` 时，运行才提前终止。
   只要有一个非终止结果，运行就继续到下一 turn。
 
-参数校验在 `before_tool_call` 和 `Tool::execute` 之前执行。校验失败是正常的
-运行时结果，而非循环错误：会持久化一个错误 `ToolResult`（`is_error = true`、
-`terminate = false`）并继续运行；hook 不会执行，工具也不会执行。
+对于已解析的工具，`before_tool_call` 先运行；随后参数校验会在强制 authorization 与
+`Tool::execute` 之前执行。校验失败是正常的运行时结果，而非循环错误：会持久化一个
+错误 `ToolResult`（`is_error = true`、`terminate = false`）并继续运行。此时 hook
+已经运行，但 authorizer 与工具不会运行；未知工具则会在 hook 之前被拒绝。
 
 ## 工具结果与诊断
 

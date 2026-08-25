@@ -97,9 +97,11 @@ agent_start                              # once, before turn 0
       message_update                      # per text/thinking delta
       message_end                         # complete assistant message
       if tool calls are present:
-        validate tool args (jsonschema)
         tool_execution_start              # per tool call
-        before_tool_call                  # AgentHooks::before_tool_call (may block)
+        resolve trusted registration
+        before_tool_call                  # may block; never grants authority
+        validate tool args (jsonschema)
+        authorize tool call               # mandatory trusted ToolAuthorizer
         tool.execute                      # parallel batch, or sequential if any tool is Sequential
         after_tool_call                   # AgentHooks::after_tool_call (may replace result)
         tool_execution_end                # per tool call
@@ -151,8 +153,8 @@ these effects:
 |------|----------------|
 | `transform_context` | Runs before provider conversion; may alter app-level messages. |
 | `convert_to_llm` | Converts app messages to provider messages and filters session-only state. |
-| `before_tool_call` | Runs after JSON Schema argument validation and before `tool.execute`; may `Deny` to block execution (the deny reason becomes the tool error). |
-| `after_tool_call` | Runs after execution and before the final `ToolExecutionEnd` event; may `Replace` the result so the replacement is what is emitted and persisted. |
+| `before_tool_call` | Runs after trusted tool resolution and before JSON Schema argument validation and mandatory authorization; may `Deny` to block execution (the deny reason becomes the tool error). `Continue` is not an authorization grant. |
+| `after_tool_call` | Runs after execution and before the final `ToolExecutionEnd` event; may `Replace` the presentation result so the replacement is emitted and persisted, while tool evidence retains the original lower-boundary execution outcome. |
 | `prepare_next_turn` | Runs after `turn_end`; may return a complete candidate state, which is validated and atomically applied before the stop decision. |
 | `should_stop_after_turn` | Runs after candidate preparation/application and before steering/follow-up polling; returning `true` stops before the next turn. |
 
@@ -186,10 +188,12 @@ each batch by these rules:
 - The run terminates early only when every finalized tool result in the batch
   sets `terminate`. A single non-terminating result lets the run continue.
 
-Argument validation runs before `before_tool_call` and before `Tool::execute`.
-A validation failure is a normal runtime outcome, not a loop error: an error
-`ToolResult` (`is_error = true`, `terminate = false`) is persisted and the run
-continues; the hook does not run and the tool does not execute.
+For a resolved tool, `before_tool_call` runs first; argument validation then
+runs before mandatory authorization and `Tool::execute`. A validation failure
+is a normal runtime outcome, not a loop error: an error `ToolResult`
+(`is_error = true`, `terminate = false`) is persisted and the run continues.
+The hook has already run, but the authorizer and tool do not. An unknown tool
+is rejected before the hook.
 
 ## Tool Results and Diagnostics
 

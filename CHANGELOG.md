@@ -134,7 +134,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uncertainty, and remediation formatting have explicit fail-closed
   boundaries. The bilingual skill manual now includes lifecycle return loops,
   per-skill side effects, and artifact ownership, and every skill uses the
-  standard `SKILL.md` entry name.
+  standard `SKILL.md` entry name. A bare `opi-document` invocation now performs
+  an implementation-backed audit of every maintained current-product README;
+  targeted and version-bump scopes are explicit.
 - The Reference Product runs one coherent runtime: interactive,
   non-interactive/print, JSON/NDJSON, and RPC entry points expose equivalent
   route, authority, cancellation, and evidence semantics over the same
@@ -159,6 +161,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trusted tool schemas, route, inference budget, active session branch, and
   terminal provider response. Setup, requested-session reopen, and durable
   finalization failures now remain visible instead of silently degrading.
+- `opi-agent`: an `after_tool_call` replacement now changes only the emitted
+  and persisted presentation result; tool evidence retains the original
+  lower-boundary execution outcome instead of allowing a hook to rewrite what
+  actually executed.
 - The public event boundary (`AgentEvent::redacted_for_public`) scrubs
   recognized credential patterns (API-key, bearer, and JWT shapes) from user
   message content, tool-result content, and terminal tool results before they

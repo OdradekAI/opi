@@ -71,7 +71,8 @@ flowchart TD
   findings 严格并集制定计划；`mode=apply` 必须显式批准固定计划摘要与精确活动
   index 摘要。apply 只允许契约限定的顺手修复，两种模式都不写入正式
   `.opi-impl-state.json`。
-- `opi-document` 证明文档真实，不授权发布。
+- 默认情况下，`opi-document` 会依据实现证据独立审计每份受维护的当前产品 README；
+  targeted 与 version-bump scope 必须显式指定。它可以修正文档，但不授权发布。
 - `opi-release` 是唯一公开发布流程；crates.io 发布还有独立的最后时刻
   不可逆关卡。
 
@@ -89,7 +90,7 @@ commit，`$` 可能使用凭据或付费 provider，`P` 改变公开状态，`I`
 | `opi-audit` | 以显式 reviewer/model 身份，按最新已提交的登记来源独立核实一个 Phase | `docs/snapshots/phase<N>/assurance/` 活动索引集合中一个带后缀的四文件报告组 | 不修复；各报告独立入集，当前发现进入 `opi-remediate` | W |
 | `opi-eval` | 运行显式、隔离的真实 provider 保真度用例 | `docs/eval/` 报告与历史 | 可能需要凭据；变更工具还需额外确认 | W、$ |
 | `opi-remediate` | `mode=plan` 验证活动 indexed set 并为 findings 严格并集生成 closure batch；`mode=apply` 执行精确批准的 plan 与 index 摘要 | 集合级固定计划、disposition、结果和用户批准的修复 | `READY-FOR-APPLY` 与两个精确摘要绑定共同控制执行；意图变化返回塑形 | W |
-| `opi-document` | 同步真实中英文文档及源派生检查 | 文档与 doc-check 变更 | 不发布 | W |
+| `opi-document` | 默认依据实现证据审计每份受维护的当前产品 README；按显式 targeted/version-bump scope 同步文档 | 文档与 doc-check 变更 | 不发布 | W |
 | `opi-release` | 为六个 crate 与 GitHub 产物执行七阶段发布 | Git tag/release 与 crates.io 版本 | 公开 Git 关卡之后仍有独立 crates 不可逆关卡 | W、C、P、I |
 | `opi-slim-tests` | 在不丢失行为的前提下删除重复或已取代测试二进制 | 已验证、未提交的测试图缩减 | 从不自动提交 | W |
 

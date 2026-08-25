@@ -43,7 +43,11 @@ pub struct AfterToolCallContext {
 pub enum AfterToolCallResult {
     /// Keep the original tool result unchanged.
     Keep,
-    /// Replace the tool result entirely (field replacement, no deep merge).
+    /// Replace the emitted and persisted presentation result entirely (field
+    /// replacement, no deep merge).
+    ///
+    /// Tool evidence retains the original lower-boundary execution outcome;
+    /// replacement cannot rewrite what actually executed.
     Replace(crate::tool::ToolResult),
 }
 
