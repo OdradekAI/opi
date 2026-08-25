@@ -10,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.8.0"
+version = "0.8.1"
 edition = "2024"
 rust-version = "1.97"
 license = "MIT"
@@ -18,11 +18,11 @@ repository = "https://github.com/OdradekAI/opi"
 authors = ["OdradekAI"]
 
 [workspace.dependencies]
-opi-ai = { path = "crates/opi-ai", version = "0.8.0" }
-opi-agent = { path = "crates/opi-agent", version = "0.8.0" }
-opi-coding-agent = { path = "crates/opi-coding-agent", version = "0.8.0" }
-opi-protocol = { path = "crates/opi-protocol", version = "0.8.0" }
-opi-tui = { path = "crates/opi-tui", version = "0.8.0" }
+opi-ai = { path = "crates/opi-ai", version = "0.8.1" }
+opi-agent = { path = "crates/opi-agent", version = "0.8.1" }
+opi-coding-agent = { path = "crates/opi-coding-agent", version = "0.8.1" }
+opi-protocol = { path = "crates/opi-protocol", version = "0.8.1" }
+opi-tui = { path = "crates/opi-tui", version = "0.8.1" }
 
 # async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "test-util", "signal", "process", "io-util", "io-std", "fs", "net"] }
