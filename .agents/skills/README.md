@@ -12,7 +12,8 @@ command and stops; it does not create another workflow ledger.
 ## Choose an entry in 30 seconds
 
 1. Are you trying to decide **what should be built**?
-   - Compare opi with the pinned pi revision: `opi-realign`.
+   - Compare opi with a pinned pi revision, including its target-design horizon:
+     `opi-realign`.
    - Investigate an external capability or ecosystem option: `opi-research`.
    - The evidence exists but the product decision is unsettled: use the
      recommended human-led shaping command; do not start implementation.
@@ -94,7 +95,7 @@ local commit after an explicit gate, `$` may use credentials or paid providers,
 | Skill | Role and required input | Owned output | Stop/gate and usual next step | Effect |
 |---|---|---|---|---|
 | `opi-workflow` | Route an uncertain request | One recommended invocation | Stops at every explicit-skill boundary | RO |
-| `opi-realign` | Compare an exact pinned pi revision with opi | `docs/realign/*.md` | Evidence only; next is shaping or `opi-implement plan` after registration | W |
+| `opi-realign` | Compare an exact pinned pi revision's current state and target-design horizon with opi | `docs/realign/*.md` | Evidence only; next is shaping or `opi-implement plan` after registration | W |
 | `opi-research` | Investigate outward capabilities from primary sources | `docs/research/*.md` | Evidence only; next is shaping | W |
 | `opi-implement` | Admit a registered Phase source, execute its graph, and archive Phase evidence | `.opi-impl-state.json`, Phase snapshots, task changes | Graph, task-commit, ledger-commit, and failure gates are distinct | W, C |
 | `opi-audit` | Independently verify one Phase as an explicitly identified reviewer/model peer against the latest committed registered sources | One suffixed four-file report group installed into the live indexed set under `docs/snapshots/phase<N>/assurance/` | No fixes; each report installs independently and current findings go to `opi-remediate` | W |

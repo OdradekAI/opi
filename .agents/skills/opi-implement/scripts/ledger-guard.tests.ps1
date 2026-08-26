@@ -20,12 +20,15 @@ function Read-Utf8File {
 }
 
 function Invoke-Guard {
-    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [string]$PowerShellPath = "powershell.exe"
+    )
 
     $previousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $guard @Arguments 2>&1
+        $output = & $PowerShellPath -NoProfile -ExecutionPolicy Bypass -File $guard @Arguments 2>&1
     } finally {
         $ErrorActionPreference = $previousErrorAction
     }
@@ -72,6 +75,12 @@ try {
     Write-Utf8File $validPath ('{"schema_version":2,"message":"valid ' + $dash + ' ' + $section + '"}')
     $valid = Invoke-Guard @("-Command", "Validate", "-Path", $validPath)
     Assert-Equal 0 $valid.ExitCode "Valid UTF-8 ledger should pass"
+
+    $isoTimestampPath = Join-Path $tempRoot "iso-timestamp.json"
+    Write-Utf8File $isoTimestampPath '{"schema_version":2,"completed_at":"2026-08-26T04:35:30Z"}'
+    $currentPowerShell = (Get-Process -Id $PID).Path
+    $isoTimestamp = Invoke-Guard -Arguments @("-Command", "Validate", "-Path", $isoTimestampPath) -PowerShellPath $currentPowerShell
+    Assert-Equal 0 $isoTimestamp.ExitCode "ISO timestamps should validate under the current PowerShell runtime"
 
     $validChinesePath = Join-Path $tempRoot "valid-chinese.json"
     $validChinese = ([string][char]0x6402) + ([string][char]0x62B1)

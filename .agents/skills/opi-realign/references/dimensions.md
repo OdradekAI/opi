@@ -1,12 +1,16 @@
 # Comparison dimensions
 
 This is the full inward comparison surface for opi and pi. A scoped audit uses
-only the named slice but still measures both projects from current, pinned
-source. Adapt a dimension only when the same concept is named differently; do
-not replace it with an outward feature proposal.
+only the named slice, measures both projects from current pinned source, and
+maps active target-design evidence in the pinned pi tree for that slice. Adapt
+a dimension only when the same concept is named differently; do not replace it
+with an outward feature proposal.
 
 For every dimension, record both projects with `file:line` anchors (or
-`absent: searched <paths>`), then write objective differences.
+`absent: searched <paths>`), then write objective current differences. When an
+implementation specification, architecture/design document, RFC, or explicitly
+forward-looking section defines behavior beyond current pi source, also record
+it in Layer H with authority and maturity evidence.
 
 1. **Provider abstraction and dispatch** - provider interface, registry,
    factory, model lookup, and dispatch path to the wire.
@@ -20,7 +24,7 @@ For every dimension, record both projects with `file:line` anchors (or
 5. **Agent loop and harness** - loop, hooks, stateful agent wrapper, generic
    harness, save points/pending writes, and the product loop's actual path.
 6. **Session model** - format/version, entries, migration, branches/forks,
-   leaves, compaction, reconstruction, and storage abstraction.
+   leaves, compaction, reconstruction, storage abstraction, and session search.
 7. **Extension and plugin surface** - tools, commands, providers, lifecycle
    hooks, state, UI/message renderers, events, subagents, registration timing,
    and out-of-process adapters.

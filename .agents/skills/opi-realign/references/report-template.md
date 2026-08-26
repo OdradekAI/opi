@@ -3,8 +3,10 @@
 Write to `docs/realign/YYYY-MM-DD-opi-vs-pi-<revision>.md`, using a short pi
 commit prefix or immutable tag in the filename.
 
-The body is Layer A (objective). Layer B (judgment) is an appendix produced
-only when requested. See `audit-framework.md` for the taxonomy.
+Layer A records current objective differences. Layer H separately records
+active target-design evidence found in the pinned pi tree. Layer B (judgment)
+is an appendix produced only when requested. See `audit-framework.md` for the
+taxonomies.
 
 ## Header
 
@@ -15,7 +17,8 @@ only when requested. See `audit-framework.md` for the taxonomy.
 - Scope and dimension count.
 - Method: both sides read from source; every retained delta adversarially
   checked; any non-independent verification limitation stated.
-- Framing: `No phases, baselines, or roadmap framing.`
+- Framing: `Layer A has no phases, baselines, or roadmap framing; Layer H
+  separately records pinned target-design evidence and maturity.`
 
 Never leave `latest`, a moving branch name, or only a semantic version as the
 target identity.
@@ -23,8 +26,9 @@ target identity.
 ## Body: Layer A
 
 Start with a short `How to read` block: project columns are cited facts;
-`Difference` is factual; absence names searched paths; judgment appears only in
-the appendix.
+`Difference` is factual; absence names searched paths; Layer H is target intent,
+not shipped behavior or an Opi requirement; judgment appears only in the
+appendix.
 
 For each dimension in `dimensions.md` order:
 
@@ -36,12 +40,31 @@ For each dimension in `dimensions.md` order:
 Allowed outcomes are `confirmed`, `refuted`, `refined`, and `added`. Refuted
 items are normally omitted from the main table and retained as method notes.
 
-### Body cleanliness gate
+### Layer A cleanliness gate
 
 Search the objective body for roadmap language such as
 `Phase [0-9]`, `roadmap`, `matrix says`, `should`, `needs to`, and `planned`.
 Remove judgment leaks. A source symbol actually named `Phase` is allowed when
 clearly cited as code.
+
+## Layer H: target design horizon
+
+Include this section when the pinned pi tree contains active design material
+that describes in-scope behavior beyond current implementation. For a full
+audit, state the searched design paths even when no qualifying artifact exists.
+
+Start with the target document's title, location, and self-declared authority.
+For each affected dimension, use:
+
+`Item | pi target design | Design authority/status | pi current evidence | Observed maturity | opi current evidence | Objective horizon difference | Verification outcome`
+
+Use only the maturity statuses and verification outcomes in
+`audit-framework.md`. Cite design authority/status from the artifact itself.
+Every maturity label except `not-assessed` needs current source, test,
+changelog, or explicit absence-search evidence. A `not-assessed` row may use
+`N/A` for current evidence and must state that no Opi parity conclusion follows.
+Layer H may describe build order or future direction because it is isolated
+from Layer A; it must not recommend adoption or assign Opi priority.
 
 ## Appendix A: drift classification (optional)
 
@@ -54,12 +77,13 @@ Do not add priorities unless the user separately asked for prioritization.
 
 ## Appendix B: method and verification
 
-Record the dimension count, outcome tally, refuted-delta notes, unavailable
-evidence, and every dimension that lacked an independent verifier.
+Record the Layer A dimension count and outcome tally, the Layer H maturity and
+outcome tallies, refuted-item notes, unavailable evidence, and every dimension
+or horizon item that lacked an independent verifier.
 
 ## Chat summary
 
-Report the highest-signal inward deltas, grouped as `pi ahead` and `opi ahead`,
-without phase/roadmap framing. State the exact pi revision, disclose any
-single-pass dimensions, link the report, and route outward opportunities to
-`opi-research`.
+Report the highest-signal current deltas, grouped as `pi ahead` and `opi ahead`,
+then summarize the target-design horizon with maturity labels. State the exact
+pi revision, disclose any single-pass dimensions or horizon items, link the
+report, and route outward opportunities to `opi-research`.

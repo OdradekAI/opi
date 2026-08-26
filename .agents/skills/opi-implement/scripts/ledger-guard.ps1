@@ -160,7 +160,11 @@ function Read-AndValidateLedger {
     }
 
     try {
-        $ledger = $text | ConvertFrom-Json
+        if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey("DateKind")) {
+            $ledger = $text | ConvertFrom-Json -DateKind String
+        } else {
+            $ledger = $text | ConvertFrom-Json
+        }
     } catch {
         throw "ledger is not valid JSON: $($_.Exception.Message)"
     }

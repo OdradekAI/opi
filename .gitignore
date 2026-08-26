@@ -64,6 +64,7 @@ release-notes.md
 
 # opi-implement transient/recovery state (canonical ledger is tracked)
 .opi-impl-state.json.tmp
+.opi-impl-state.json.replace-backup
 .opi-impl-state.draft.json
 .opi-impl-state.corrupt-*
 .opi-impl-state.*candidate*.json

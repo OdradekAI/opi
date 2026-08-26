@@ -11,7 +11,7 @@ Opi 有十个项目技能。受 Git 跟踪的真实来源位于 `.agents/skills/
 ## 30 秒选择入口
 
 1. 你在决定“应该构建什么”吗？
-   - 对照固定的 pi 修订版检查 opi：使用 `opi-realign`。
+   - 对照固定的 pi 修订版检查 opi，并纳入其目标设计视野：使用 `opi-realign`。
    - 调研外部能力或生态方案：使用 `opi-research`。
    - 已有证据但产品决策未收敛：使用路由器推荐的人主导塑形命令，不要开始实现。
 2. 是否已有评审并登记过的 Phase 交付来源？
@@ -84,7 +84,7 @@ commit，`$` 可能使用凭据或付费 provider，`P` 改变公开状态，`I`
 | 技能 | 角色与必要输入 | 归属产物 | 停止点、关卡与通常下一步 | 副作用 |
 |---|---|---|---|---|
 | `opi-workflow` | 为不确定请求选择入口 | 一条推荐调用 | 在每个显式技能边界停止 | RO |
-| `opi-realign` | 对照固定 pi 修订版检查 opi | `docs/realign/*.md` | 只是证据；经登记后进入塑形或 `opi-implement plan` | W |
+| `opi-realign` | 对照固定 pi 修订版的当前状态与目标设计视野检查 opi | `docs/realign/*.md` | 只是证据；经登记后进入塑形或 `opi-implement plan` | W |
 | `opi-research` | 基于一手资料调研向外能力 | `docs/research/*.md` | 只是证据；下一步为塑形 | W |
 | `opi-implement` | 准入 Phase 来源、执行任务图并归档 Phase 证据 | `.opi-impl-state.json`、Phase 快照、任务变更 | 任务图、任务 commit、账本 commit 和失败关卡相互独立 | W、C |
 | `opi-audit` | 以显式 reviewer/model 身份，按最新已提交的登记来源独立核实一个 Phase | `docs/snapshots/phase<N>/assurance/` 活动索引集合中一个带后缀的四文件报告组 | 不修复；各报告独立入集，当前发现进入 `opi-remediate` | W |

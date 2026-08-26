@@ -42,6 +42,7 @@ registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
 | Phase | Source files |
 |---:|---|
 | 17 | `docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md` |
+| 18 | `docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md` |
 
 When a ledger is initialized or reconciled for a supplemental phase, the
 phase's registered source files MUST be included in `spec_files` and hashed in

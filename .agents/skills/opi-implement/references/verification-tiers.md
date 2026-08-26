@@ -32,8 +32,10 @@ Gates:
 
 ## `library` Tier
 
-Use for focused `opi-ai`, `opi-agent`, or `opi-tui` library changes that do not
-add provider wire formats, CLI runtime behavior, or visual snapshot surfaces.
+Use for focused library changes in one workspace crate that do not add provider
+wire formats, CLI runtime behavior, cross-crate integration harnesses, or visual
+snapshot surfaces. This includes a registered Independent Companion crate; its
+placement and dependency checks remain governed by its Phase source.
 
 Gates:
 1. Read
@@ -74,6 +76,17 @@ Gates: All `library` gates, plus:
 Grep `crates/opi-ai/src/test_support.rs` (or feature-gated path). If absent:
 > "Task `<id>` requires MockProvider scaffolding, but the registered task graph
 > has no passing dependency that provides it. Return to graph review."
+
+### Independent Companion replacement
+
+When the task's reviewed `placement` is `independent-companion`, replace the
+Opi-specific E2E and MockProvider precondition above with one subprocess test
+that starts the Companion binary at its public CLI interface, invokes only
+local deterministic process/provider fixtures, and asserts stdout, stderr,
+exit code, and the saved artifact directory. The Companion must not add an Opi
+crate dependency to satisfy this tier. Its authoritative D.1 command remains
+`smoke scoped --crate <companion-crate> --test <integration-binary>...`; saved
+artifact audit and external-platform evidence remain D.0/D.3 checks.
 
 ## `tui` Tier
 
@@ -160,6 +173,14 @@ Build the union of D.0, D.1, and D.3 commands before execution and deduplicate
 exact commands and equivalent supersets. A workspace-tier D.1 `smoke full` is
 never repeated in D.3. A focused task is promoted to workspace tier only for a
 real cross-crate semantic contract, not as a precaution.
+
+In a schema-v2 ledger, `verification.library_gates` contains exactly the one
+authoritative D.1 smoke command. Record task-specific artifact, generator,
+Python contract, or authoritative-platform commands in
+`verification.smoke_addendum` as a command string, or `null` when none remain.
+Scenario commands stay in `acceptance_scenarios[].verification`. Before running
+the union, remove any addendum or scenario command already covered by the D.1
+smoke command.
 
 Commit-staging gates (every non-documentation tier, unchanged):
 

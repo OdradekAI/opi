@@ -1,6 +1,6 @@
 interface:
   display_name: "Opi Realign"
-  short_description: "Compare opi inward with an exact pi revision"
-  default_prompt: "Use $opi-realign target=<path> target-revision=<commit-or-tag> to audit opi inward against a pinned pi revision."
+  short_description: "Compare opi with pinned pi code and target design"
+  default_prompt: "Use $opi-realign target=<path> target-revision=<commit-or-tag> to audit opi against a pinned pi revision's current implementation and target-design horizon."
 policy:
   allow_implicit_invocation: false

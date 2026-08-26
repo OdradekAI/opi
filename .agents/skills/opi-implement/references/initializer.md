@@ -50,6 +50,7 @@ Phase delivery sources come only from the reviewed registry in `SKILL.md`.
 | Phase | Registered source | Draft task extraction |
 |---:|---|---|
 | 17 | `docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md` | Outcome, Non-goals, Architecture placement case, Dispatchable provider collection, Atomic next-turn state, Trusted tool authorization, Product-neutral evidence seam, Failure and migration, Acceptance scenarios, Risk thresholds and rollback, Delivery dependency order |
+| 18 | `docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md` | Outcome, Non-goals, Architecture placement case, Resolved experiment identity and pairing, Trial durability and effect uncertainty, Agent harness process integrations, Benchmark task-package and native-verifier integrations, Post-Phase Eval coverage roadmap, Benchmark revision integrity, Content-addressed RunBundle, Trajectory and causal-span hypotheses, Failure/cancellation/classification, Offline recomputation and outcome-first reporting, Privacy/authority/supply-chain boundaries, Compatibility/migration/Minimal Runtime, Platform scope, Acceptance scenarios, Risk thresholds and rollback, Delivery dependency order |
 
 For each active phase:
 
