@@ -1,0 +1,9 @@
+
+running 4 tests
+test fixed_local_effective_allow_is_direct_even_with_enabled_external_identity ... ok
+test enabled_identities_ignores_corrupt_package_trust_file ... ok
+test enabled_identities_returns_adapter_for_trusted_enabled_record_only ... ok
+test tool_assembly_minimal_runtime_preserves_schema_and_runs_local_backend ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+

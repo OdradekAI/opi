@@ -2073,6 +2073,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "opi-eval"
+version = "0.8.1"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
+]
+
+[[package]]
 name = "opi-protocol"
 version = "0.8.1"
 dependencies = [

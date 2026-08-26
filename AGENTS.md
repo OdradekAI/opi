@@ -63,6 +63,7 @@ All crates use lockstep workspace versioning and Rust edition 2024.
 ```text
 opi-ai       (no internal deps)       - provider-neutral LLM API
 opi-tui      (no internal deps)       - terminal UI components
+opi-eval     (no internal deps)       - unpublished Independent Companion eval toolkit
 opi-agent    -> opi-ai                - product-neutral Agent runtime
 opi-protocol (no internal deps)       - command-execution protocol
 opi-sandbox  -> opi-protocol          - standalone restriction SDK/CLI

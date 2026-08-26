@@ -3,6 +3,7 @@ members = [
     "crates/opi-ai",
     "crates/opi-agent",
     "crates/opi-coding-agent",
+    "crates/opi-eval",
     "crates/opi-protocol",
     "crates/opi-sandbox",
     "crates/opi-tui",

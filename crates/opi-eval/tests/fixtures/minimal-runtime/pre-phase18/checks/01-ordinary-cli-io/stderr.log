@@ -1,0 +1,9 @@
+   Compiling secret-service v5.1.0
+   Compiling reqwest v0.12.28
+   Compiling opi-ai v0.8.1 (/mnt/d/Luiz/Odradek/opi/crates/opi-ai)
+   Compiling jsonschema v0.28.3
+   Compiling zbus-secret-service-keyring-store v1.0.0
+   Compiling opi-agent v0.8.1 (/mnt/d/Luiz/Odradek/opi/crates/opi-agent)
+   Compiling opi-coding-agent v0.8.1 (/mnt/d/Luiz/Odradek/opi/crates/opi-coding-agent)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 30.60s
+     Running `/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi --help`

@@ -1,0 +1,50 @@
+# Phase 18 minimal pairing fixture: two real harness subjects, one directed
+# comparison edge, fully explicit shared model controls. Data only; the
+# resolution contract is Agent-neutral and no harness name is hard-coded.
+schema = "phase18-experiment/1"
+experiment_id = "phase18-minimal-pairing"
+
+[benchmark]
+name = "terminal-bench"
+revision = "2.1"
+dataset = "laude-institute/terminal-bench-2.1"
+
+[[subjects]]
+id = "opi"
+product = "opi"
+version = "0.8.1"
+
+[[subjects]]
+id = "pi"
+product = "pi"
+version = "0.84.1"
+
+[[edges]]
+id = "opi-baseline-vs-pi-candidate"
+baseline = "opi"
+candidate = "pi"
+
+[model_controls]
+provider = "mock"
+model = "mock-model"
+endpoint_class = "local"
+temperature = 0.0
+max_output_tokens = 4096
+reasoning = "omitted"
+
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "workspace-root"
+
+[[trials]]
+id = "trial-opi-hello"
+subject = "opi"
+task = "hello"
+group = "hello"
+
+[[trials]]
+id = "trial-pi-hello"
+subject = "pi"
+task = "hello"
+group = "hello"

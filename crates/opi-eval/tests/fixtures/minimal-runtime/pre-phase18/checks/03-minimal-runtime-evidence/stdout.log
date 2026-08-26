@@ -1,0 +1,7 @@
+
+running 2 tests
+test minimal_runtime_local_ask_is_permission_required ... ok
+test minimal_runtime_returns_local_ops_directly_and_skips_store ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.01s
+
