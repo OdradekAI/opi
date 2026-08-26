@@ -8,7 +8,7 @@
     "docs/opi-spec.md": "cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c",
     "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md": "43b2759d327cbf0af8d35d4eba50839eef7aac473978b58fcb707b335dad8265"
   },
-  "task_graph_confirmed_at": "2026-08-27T01:38:45.9894900+08:00",
+  "task_graph_confirmed_at": "2026-08-27T02:08:48+08:00",
   "current_phase": 18,
   "tasks": [
     {
@@ -1522,7 +1522,7 @@
       "title": "Assemble the hermetic paired Evaluation runner",
       "crate": "opi-eval",
       "parent_spec_row": null,
-      "definition_of_done": "The opi-eval run CLI and ExperimentRunner become the end-to-end Evaluation product owner for resolve, run, settle, grade, seal, and handoff to reporting, while reusing the already executable 18.10.1 conformance subcommand without redefining it. They assemble the frozen experiment, durable lifecycle, AgentExecution, BenchmarkExecution, all concrete adapters, IntegrityRecord, ComparisonSet, projection, RunBundle, authority policy, and failure ownership. Black-box tests cover malformed/unknown/missing-terminal/excess-output failures, timeout/cancellation races, effect-unknown recovery, invalid package/verifier failure, pairing mismatch, integrity exclusion, artifact collection, final workspace, grader lifecycles, and pre-seal records. Cross-platform wrappers preserve command, stdout, stderr, exit code, bundle/receipt bytes, and artifact-audit results; no test launches a paid provider or claims the later Linux native artifact.",
+      "definition_of_done": "The opi-eval run CLI and ExperimentRunner become the end-to-end Evaluation product owner for resolve, run, settle, grade, seal, and handoff to reporting, while reusing the already executable 18.10.1 conformance subcommand without redefining it. They assemble the frozen experiment, durable lifecycle, AgentExecution, BenchmarkExecution, all concrete adapters, IntegrityRecord, ComparisonSet, projection, RunBundle, authority policy, and failure ownership. Black-box tests cover malformed/unknown/missing-terminal/excess-output failures, timeout/cancellation races, effect-unknown recovery, invalid package/verifier failure, pairing mismatch, integrity exclusion, artifact collection, final workspace, grader lifecycles, and pre-seal records. The authority boundary suite additionally closes P18-FAL-002 mechanical verification: for every owning failure boundary it proves zero downstream authority-transition executions through call-count evidence recorded in the trial receipt and bundle, so a boundary failure stops all later transitions (no grade dispatch after an Agent-process or evidence failure, no sealing after a settlement failure, no report after a sealing or grader failure) instead of only leaving output files absent. Cross-platform wrappers preserve command, stdout, stderr, exit code, bundle/receipt bytes, and artifact-audit results; no test launches a paid provider or claims the later Linux native artifact.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -1557,7 +1557,7 @@
         },
         {
           "field": "criterion_mapping",
-          "reason": "owns=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-EXP-001,P18-EXP-002,P18-EXP-004,P18-EXP-008,P18-PLC-003,P18-SEC-001,P18-SEC-002 and assembled production wiring; consumes=all Agent,benchmark,trajectory,lifecycle,bundle,integrity,failure decisions; verification=black-box hermetic CLI freezes the resolved experiment before first dispatch,exercises both adapters' fail-closed stream paths,records ProjectionPipeline causal output through typed bundle insertion,and closes process-race,authority,and pairing failures,while real Opi/pi/native-verifier closure remains 18.15",
+          "reason": "owns=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-EXP-001,P18-EXP-002,P18-EXP-004,P18-EXP-008,P18-PLC-003,P18-SEC-001,P18-SEC-002,P18-FAL-002 and assembled production wiring; consumes=all Agent,benchmark,trajectory,lifecycle,bundle,integrity,failure decisions; verification=black-box hermetic CLI freezes the resolved experiment before first dispatch,exercises both adapters' fail-closed stream paths,records ProjectionPipeline causal output through typed bundle insertion,and closes process-race,authority,and pairing failures,while real Opi/pi/native-verifier closure remains 18.15,and per-boundary downstream call-count authority closure(P18-FAL-002)",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#End-to-end control model"
         },
         {
@@ -1634,6 +1634,11 @@
           "field": "shared_decision",
           "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark revision integrity"
+        },
+        {
+          "field": "graph_revision",
+          "reason": "2026-08-27 user-authorized amendment after external graph review, applied before any task started; adds the P18-FAL-002 per-boundary downstream call-count mechanical-verification commitment that the original DoD expansion omitted",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
         }
       ],
       "tier": "cli-runtime",
@@ -1979,7 +1984,7 @@
       "title": "Commit the sole Linux native-smoke producer contract",
       "crate": "opi-eval",
       "parent_spec_row": null,
-      "definition_of_done": "A dedicated manually authorized ubuntu-24.04 workflow, native-smoke script, exact Agent build/locator script, and checked-in deterministic Python previously conformance-proved deterministic provider executable are committed before any native run. The producer contract records github.workflow_ref and github.workflow_sha, hashes the workflow bytes read from that workflow SHA, and binds them to the candidate_sha version together with every invoked script, immutable action, provider, adapter-source manifest, and compiled opi-eval executable digest. Before Agent dispatch it records Opi's canonical resolved executable path, SHA-256, file/ldd metadata, checkout/dirty/Cargo.lock/rustc -Vv/cargo/target/profile/features identities; pi's canonical Node executable path and SHA-256 plus file/ldd/version, npm identity, checkout/dirty/package/lock/archive/installed-tree identities, and canonical bundle path/digest; and each adapter's exact argv, cwd, allowlisted environment, and configuration projection. The provider runs through the canonical Python executable in isolated no-site mode with an exact argv/cwd, closed environment allowlist, explicit standard-library-only dependency closure, one pre-resolved listener endpoint, and one dedicated Docker-network identity; reachability probes must prove that only the admitted Opi/pi Agent-phase task containers can reach that endpoint and that verifier phases, ambient credentials/configuration, undeclared listeners, default routes, and outbound fallback are absent. It then runs the existing opi-eval conformance CLI for the three exact task packages, preserves native verifier authority and typed trajectory/span source edges, and uploads only a sealed audited artifact plus an outer seal/upload receipt. Static/unit verification proves the producer schema and negative checks; this task does not claim that the six trials have run.",
+      "definition_of_done": "A dedicated manually authorized ubuntu-24.04 workflow, native-smoke script, exact Agent build/locator script, and checked-in deterministic Python previously conformance-proved deterministic provider executable are committed before any native run. The producer contract records github.workflow_ref and github.workflow_sha, hashes the workflow bytes read from that workflow SHA, and binds them to the candidate_sha version together with every invoked script, immutable action, provider, adapter-source manifest, and compiled opi-eval executable digest. Before Agent dispatch it records Opi's canonical resolved executable path, SHA-256, file/ldd metadata, checkout/dirty/Cargo.lock/rustc -Vv/cargo/target/profile/features identities; pi's canonical Node executable path and SHA-256 plus file/ldd/version, npm identity, checkout/dirty/package/lock/archive/installed-tree identities, and canonical bundle path/digest; and each adapter's exact argv, cwd, allowlisted environment, and configuration projection. The provider runs through the canonical Python executable in isolated no-site mode with an exact argv/cwd, closed environment allowlist, explicit standard-library-only dependency closure, one pre-resolved listener endpoint, and one dedicated Docker-network identity; reachability probes must prove that only the admitted Opi/pi Agent-phase task containers can reach that endpoint and that verifier phases, ambient credentials/configuration, undeclared listeners, default routes, and outbound fallback are absent. The producer also runs a canary-oracle preflight closing P18-BMK-003: before any Agent trial it probes the projected Agent-phase environments, mounts, configuration, and scripted-provider response paths for the pinned oracle and reference-solution material by digest and canary markers, and records the required negative result in the outer receipt. It then runs the existing opi-eval conformance CLI for the three exact task packages, preserves native verifier authority and typed trajectory/span source edges, and uploads only a sealed audited artifact plus an outer seal/upload receipt. Static/unit verification proves the producer schema and negative checks; this task does not claim that the six trials have run.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -1994,7 +1999,7 @@
         },
         {
           "field": "criterion_mapping",
-          "reason": "owns=P18-PLT-002..P18-PLT-004 and P18-AGT-001/P18-BMK-001..P18-BMK-011 producer substrate; later_scenario_owner=18.15(P18-A02..P18-A04,P18-A08..P18-A10,P18-A12); verification=static workflow/build/script contract; reuses the task 18.10.1 deterministic provider without taking ownership of its semantics",
+          "reason": "owns=P18-PLT-002..P18-PLT-004 and P18-AGT-001/P18-BMK-001..P18-BMK-011 producer substrate; later_scenario_owner=18.15(P18-A02..P18-A04,P18-A08..P18-A10,P18-A12); verification=static workflow/build/script contract plus canary-oracle preflight(P18-BMK-003); reuses the task 18.10.1 deterministic provider without taking ownership of its semantics",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Platform scope"
         },
         {
@@ -2041,6 +2046,11 @@
           "field": "test_impact",
           "reason": "subject=native-smoke producer contract; action=add; test=scripts/test_verify_phase18_native_ci.py; interface=committed workflow,build script,native script,and provider boundary; replacement=null; slim_candidate=null",
           "source": ".agents/skills/_shared/references/shared-decision-and-test-stewardship.md#Test impact"
+        },
+        {
+          "field": "graph_revision",
+          "reason": "2026-08-27 user-authorized amendment after external graph review, applied before any task started; adds the P18-BMK-003 canary-oracle preflight commitment that the original DoD expansion omitted",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark task-package and native-verifier integrations"
         }
       ],
       "tier": "workspace",
@@ -2088,7 +2098,7 @@
       "title": "Execute the sole Linux x86_64 native smoke and bind its artifact",
       "crate": "opi-eval",
       "parent_spec_row": null,
-      "definition_of_done": "After task 18.14 and its ledger checkpoint are committed and a human publishes the workflow producer to the repository default branch so workflow_dispatch is available, a human-authorized dispatch checks out exactly the 18.14 candidate_sha and produces one successful unexpired artifact. Before either Agent starts, the receipt verifies github.workflow_ref/github.workflow_sha, the workflow path and bytes loaded from that SHA against the candidate_sha workflow, every invoked script/action/provider/adapter-source digest, the compiled opi-eval executable, complete Opi canonical-path/SHA-256/file/ldd/checkout/dirty/Cargo.lock/toolchain/target/profile/features provenance, complete pi canonical Node-path/SHA-256/file/ldd/version/npm/checkout/dirty/package/lock/archive/installed-tree/bundle provenance, both adapters' exact argv/cwd/allowlisted environment/configuration projections, and the provider's source/Python path+digest+version/isolated argv/cwd/closed environment/stdlib dependency/listener/socket/Docker-network/reachability/request-log identities. The producer reruns the task 18.10.1 shared AgentExecution and BenchmarkExecution conformance suites through those exact built Opi/pi programs and all three exact native revisions before accepting the artifact. The sealed manifest binds three exact task packages, passing oracle preflights, exactly six paired trials, completed authoritative Terminal-Bench 2.1/3.0 and DeepSWE verifiers, comparison edges, and typed trajectory/span artifacts with native-source edges covering Agent activity, all three grader lifecycles, artifact collection, final workspaces, verifiers, and the pre-seal lifecycle; an outer receipt binds the seal result, sealed manifest digest, artifact id/url/digest, and expiry without self-reference. Opi/pi reward zero is accepted as an integration result but never as Agent task success, while ambient provider credentials/configuration, an undeclared or overbroad listener/network, verifier access to the provider, a missing or non-completing verifier, or any mismatch, fallback, cached result, edited verifier, paid-provider path, missing trial, or missing causal artifact rejects the task.",
+      "definition_of_done": "After task 18.14 and its ledger checkpoint are committed and a human publishes the workflow producer to the repository default branch so workflow_dispatch is available, a human-authorized dispatch checks out exactly the 18.14 candidate_sha and produces one successful unexpired artifact. Before either Agent starts, the receipt verifies github.workflow_ref/github.workflow_sha, the workflow path and bytes loaded from that SHA against the candidate_sha workflow, every invoked script/action/provider/adapter-source digest, the compiled opi-eval executable, complete Opi canonical-path/SHA-256/file/ldd/checkout/dirty/Cargo.lock/toolchain/target/profile/features provenance, complete pi canonical Node-path/SHA-256/file/ldd/version/npm/checkout/dirty/package/lock/archive/installed-tree/bundle provenance, both adapters' exact argv/cwd/allowlisted environment/configuration projections, and the provider's source/Python path+digest+version/isolated argv/cwd/closed environment/stdlib dependency/listener/socket/Docker-network/reachability/request-log identities, plus the canary-oracle preflight result proving oracle and reference-solution material never entered either Agent-phase environment. The producer reruns the task 18.10.1 shared AgentExecution and BenchmarkExecution conformance suites through those exact built Opi/pi programs and all three exact native revisions before accepting the artifact. The sealed manifest binds three exact task packages, passing oracle preflights, exactly six paired trials, completed authoritative Terminal-Bench 2.1/3.0 and DeepSWE verifiers, comparison edges, and typed trajectory/span artifacts with native-source edges covering Agent activity, all three grader lifecycles, artifact collection, final workspaces, verifiers, and the pre-seal lifecycle; an outer receipt binds the seal result, sealed manifest digest, artifact id/url/digest, and expiry without self-reference. Opi/pi reward zero is accepted as an integration result but never as Agent task success, while ambient provider credentials/configuration, an undeclared or overbroad listener/network, verifier access to the provider, a positive canary-oracle probe, a missing or non-completing verifier, or any mismatch, fallback, cached result, edited verifier, paid-provider path, missing trial, or missing causal artifact rejects the task.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -2103,7 +2113,7 @@
         },
         {
           "field": "criterion_mapping",
-          "reason": "owns=P18-A02,P18-A03,P18-A04,P18-A08,P18-A09,P18-A10,P18-A12 plus P18-AGT-002/P18-BMK-005 real-suite closure,P18-EXP-007 real Opi/pi closure,P18-OUT-001,P18-OUT-002 runtime proof,P18-BMK-001..P18-BMK-011 native proof,P18-INT-001..P18-INT-005 native proof,P18-SEC-003 run-produced identities; reruns=18.10.1 shared suites against exact built Opi/pi and all three exact revisions; generic N-harness substrate=18.1/18.12; later_artifact_consumer=18.16(P18-A20,P18-A22)",
+          "reason": "owns=P18-A02,P18-A03,P18-A04,P18-A08,P18-A09,P18-A10,P18-A12 plus P18-AGT-002/P18-BMK-005 real-suite closure,P18-EXP-007 real Opi/pi closure,P18-OUT-001,P18-OUT-002 runtime proof,P18-BMK-001..P18-BMK-011 native proof,P18-INT-001..P18-INT-005 native proof,P18-SEC-003 run-produced identities,P18-BMK-003 canary-oracle receipt evidence; reruns=18.10.1 shared suites against exact built Opi/pi and all three exact revisions; generic N-harness substrate=18.1/18.12; later_artifact_consumer=18.16(P18-A20,P18-A22)",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Acceptance scenarios and verification"
         },
         {
@@ -2190,6 +2200,11 @@
           "field": "shared_decision",
           "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark revision integrity"
+        },
+        {
+          "field": "graph_revision",
+          "reason": "2026-08-27 user-authorized amendment after external graph review, applied before any task started; binds the P18-BMK-003 canary-oracle preflight evidence into the native receipt and its rejection contract",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark task-package and native-verifier integrations"
         }
       ],
       "tier": "cli-runtime",
@@ -3950,6 +3965,16 @@
       "flagged_count": 0,
       "rejected_count": 8,
       "ran_at": "2026-08-27T01:23:00.5657808+08:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": "codex-collaboration:/root/phase18_graph_revision_review_1",
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 1,
+      "ran_at": "2026-08-27T02:08:48+08:00",
       "task_id": null,
       "criterion_id": null
     }
