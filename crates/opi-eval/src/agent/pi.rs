@@ -130,6 +130,13 @@ impl PiProcessAdapter {
             profile: PiProfile::checked_in(),
         }
     }
+
+    /// Build from an already-validated profile. Crate-private: used by the
+    /// conformance facade to stage bounded-timeout variants of the same
+    /// pinned profile; every identity and launch invariant is unchanged.
+    pub(crate) fn from_profile(profile: PiProfile) -> Self {
+        Self { profile }
+    }
 }
 
 impl Default for PiProcessAdapter {
