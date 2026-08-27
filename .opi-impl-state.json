@@ -1482,7 +1482,7 @@
       "definition_of_done": "PiProcessAdapter consumes only the AgentExecution Interface while owning the pinned pi coding-agent declarative profile, current JSON importer, documented completion/process facts, typed unknowns, and fail-closed schema behavior. Module unit tests use pinned native-output fixtures; real pi source build, Node/bundle identity, shared scripted provider, and cross-Agent process conformance remain open for task 18.15.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "18.6"
       ],
@@ -1568,7 +1568,7 @@
         "scripts/phase18-native-smoke.sh"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "aa13286",
       "baseline_dirty_files": [],
@@ -1578,10 +1578,45 @@
         "crates/opi-eval/profiles/agents/pi.toml",
         "crates/opi-eval/tests/fixtures/agents/pi/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "b57255f63945b4917f08474f86a8bffa85c8e1fc",
+      "evidence": {
+        "Opi-Task": "18.7",
+        "Opi-DoD-SHA256": "b50ac87333de8ae4a55526f8bc62225d4e417f1ec6cdfaf88d33c02f41c31db5",
+        "Opi-Verification": "library; scripts/opi-impl-smoke.sh scoped --crate opi-eval PASS (fmt + all-target clippy + crate tests; proxies unset, RUST_TEST_THREADS=4) + cargo check -p opi-eval --target x86_64-pc-windows-msvc --all-targets PASS",
+        "Opi-Evaluator": "passed (0 must-fix; 3 flagged-for-human; 0 rejected)"
+      },
       "blocker": null,
-      "session_notes": [],
+      "session_notes": [
+        {
+          "timestamp": "2026-08-27T22:55:00+08:00",
+          "attempt": 1,
+          "summary": "18.7 passing. Production facts verified by source greps of pinned .repo/pi-0.84.3 (args.ts, config.ts, print-mode.ts, json-event.ts, agent.ts, types.ts, ai/types.ts): argv --mode json --print --no-session --no-extensions --no-skills --no-context-files --no-approve --provider <p> --model <m> --thinking <pinned level> -- <prompt>; env PI_CODING_AGENT_DIR=<isolated app_data/pi-agent> + PI_CODING_AGENT_SESSION_DIR + HOME/USERPROFILE + exact extras; stdout = v2 session header {type,version=2,id,timestamp,cwd} then AgentSessionEvent NDJSON; terminal = assistant message_end {role,provider,model,usage{input,output,cacheRead,cacheWrite,totalTokens,cost},stopReason} then agent_end{messages}. Slices: (1) declarative pi.toml (schema phase18-agent-profile/1 fail-closed; launch invariants; thinking pinned to off/minimal/low/high; pi-specific agent_dir_env key parsed by module-private structs so the shared 18.6 profile code is untouched) + exact argv/env/identity tests; (2) PiImporter over 11 saved fixtures under tests/fixtures/agents/pi - v2 header exact identity, pinned event-type vocabulary, message_update strip-partial shape, deep terminal message validation, usage projected Known{provider_reported}, raw stream retained as content-addressed native artifact trace_root/pi-events.jsonl (P18-AGT-007: pi claims no EvidenceManifest capability); (3) completion predicate: JSON-mode pi exits 0 even for error/aborted stopReason (print-mode text-only branch), so completion = exit AND stopReason==stop AND exactly one agent_end AND terminal provider/model re-verified vs request (agent-model-mismatch/Evidence, never concealed); fail-closed matrix: corrupt->parse-failure/Adapter, unknown-event+old-header+no-header->unsupported-schema/Adapter, multiple-agent-end->ambiguous-stream/Adapter, no-agent-end+empty-stdout->evidence-missing/Evidence, truncated->evidence-incomplete/Evidence; non-zero exit/timeout/cancel/spawn authoritative via shared failure_kinds; (4) e2e fake-pi helper scripts (cfg unix) through AgentExecution::run: completed record with native artifact + usage facts; exit 3 typed; spawn-not-found redacted (AgentIdentity Debug redaction reused). No pi code linkage, no Harness v2 claims (future_lane_event fixture fails closed), no vitest-evals dep, no network/credentials (P18-AGT-005/006). Model corrections during red: settle match arm conflated outcome vs mismatch (split); relative fixture path failed under child cwd (canonicalized); anchor-consumed settled_zero header restored. Zero manifest changes. D.1 scoped smoke PASS; D.3 windows --all-targets PASS; D.2 exec 7-lens (harness agent; wf_ref unavailable): must-fix 0, flagged 3 (ledger module naming agent::execution vs shipped agent::process - reconcile at next graph review; event vocabulary is a v0.84.3 snapshot so 18.15 must re-pin from the built pi; model-mismatch/Evidence vs outcome/AgentProcess boundary split needs 18.9 ratification), rejected 0.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval (library D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "18.7",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/agent/pi.rs",
+                  "interface": "crate-private PiProcessAdapter (eval-agent-process-contract + eval-failure-boundary-contract consumer)",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "D.3 windows cross-check (cargo check x86_64-pc-windows-msvc --all-targets)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per 18.1-18.6 precedent)",
+              "result": "must-fix 0; flagged-for-human 3; rejected 0"
+            }
+          ]
+        }
+      ],
       "started_at": "2026-08-27T22:10:00+08:00"
     },
     {
@@ -4682,6 +4717,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 3 (Debug-only executable redaction; opaque manifest field ceiling; exit-code-in-token); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.7",
+      "timestamp": "2026-08-27T22:55:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 3 (module-name drift agent::execution vs agent::process; v0.84.3 event vocabulary re-pin at 18.15; boundary split ratification at 18.9); rejected 0"
     }
   ]
 }
