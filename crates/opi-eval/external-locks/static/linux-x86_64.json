@@ -346,7 +346,7 @@
           "name": "libldap-common",
           "version": "2.5.13+dfsg-5",
           "path": "pool/main/o/openldap/libldap-common_2.5.13+dfsg-5_all.deb",
-          "sha256": "72a6c113801a0f307f3a9ab9fe7a7f9559d9164af990494ed2c50617a1e20452"
+          "sha256": "72a6c113801a0f307f3a9ab9fe7a7f9559d9164af990494ed2c50617a0e20452"
         },
         {
           "name": "libnghttp2-14",
@@ -382,7 +382,7 @@
           "name": "libsasl2-modules-db",
           "version": "2.1.28+dfsg-10",
           "path": "pool/main/c/cyrus-sasl2/libsasl2-modules-db_2.1.28+dfsg-10_amd64.deb",
-          "sha256": "3ac4fd6cbe3b3b06e68d24b931bf3eb938b842f15604a37ed25310e948ca0ee6"
+          "sha256": "3ac4fd6cbe3b3b06e68d24b931bf3eb9385b42f15604a37ed25310e948ca0ee6"
         },
         {
           "name": "libssh2-1",
