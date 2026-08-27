@@ -1,0 +1,53 @@
+# Declarative Terminal-Bench 3.0 benchmark profile for the Phase 18 eval seam.
+# Identity, pinned task-tree identity, native verifier entry with the
+# separate-verifier semantics, and limits only: no grading policy, no parser
+# configuration, no credentials.
+# Pinned to the canonical harbor-framework/terminal-bench repository, tag
+# v3.0.0, commit 2b0442c3c583b710ca8da14c8e601b99f2f1f244 exactly as admitted
+# by the static external lock. Unlike 2.1, no byte-level task-package file
+# table is committed for 3.0 yet: the lock admits the task-tree identity only
+# (files table empty) and the task/verifier images and native results are
+# unresolved slots owned by task 18.15. The adapter therefore fails closed on
+# task-package admission until a reviewed byte table is registered.
+
+schema = "phase18-benchmark-profile/1"
+benchmark = "terminal-bench"
+revision = "3.0"
+
+[identity]
+upstream = "https://github.com/harbor-framework/terminal-bench"
+tag = "v3.0.0"
+source_commit = "2b0442c3c583b710ca8da14c8e601b99f2f1f244"
+tasks_tree = "a10dbfde7cd4d1c3ceaf22ed39b52a98dc775d54"
+task_id = "batched-eval-parity"
+task_tree = "729916599199dd1de6be0e0c543da9788d6129b5"
+package_pin = "tree-identity"
+package_manifest_sha256 = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+adapter = "opi-eval-terminal-bench-30-adapter/1"
+
+[verifier]
+# Harbor v0.22.0 (commit 4407eb5227a2ff4f0d3f16b2eb48849382fdf276) driven
+# through uv --locked; the adapter spawns uv, never an ambient harbor.
+runner_kind = "harbor"
+runner_version = "v0.22.0"
+runner_commit = "4407eb5227a2ff4f0d3f16b2eb48849382fdf276"
+launch = ["run", "-p", "<task-dir>"]
+# TB 3.0 verifier semantics that must not be normalized away: the verifier
+# runs as a separate container (P18-BMK-003) declaring /app/evalbench/, and
+# Harbor v0.22 delivers only declared artifacts at their original paths.
+lifecycle = "separate-container"
+verifier_workdir = "/app/evalbench"
+artifact_policy = "declared-original-paths"
+# No 3.0 native-output schema is committed: the oracle preflight and native
+# verifier results are unresolved slots owned by task 18.15. Exit-0 runs
+# therefore settle fail-closed until that schema is pinned.
+output_kind = "unpinned-pending-18-15"
+
+[resources]
+cpus = 1
+memory_gib = 4
+
+[limits]
+timeout_secs = 900
+stdout_cap_bytes = 1048576
+stderr_cap_bytes = 1048576
