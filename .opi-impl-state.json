@@ -2403,7 +2403,7 @@
       "definition_of_done": "The opi-eval run CLI and ExperimentRunner become the end-to-end Evaluation product owner for resolve, run, settle, grade, seal, and handoff to reporting, while reusing the already executable 18.10.1 conformance subcommand without redefining it. They assemble the frozen experiment, durable lifecycle, AgentExecution, BenchmarkExecution, all concrete adapters, IntegrityRecord, ComparisonSet, projection, RunBundle, authority policy, and failure ownership. Black-box tests cover malformed/unknown/missing-terminal/excess-output failures, timeout/cancellation races, effect-unknown recovery, invalid package/verifier failure, pairing mismatch, integrity exclusion, artifact collection, final workspace, grader lifecycles, and pre-seal records. The authority boundary suite additionally closes P18-FAL-002 mechanical verification: for every owning failure boundary it proves zero downstream authority-transition executions through call-count evidence recorded in the trial receipt and bundle, so a boundary failure stops all later transitions (no grade dispatch after an Agent-process or evidence failure, no sealing after a settlement failure, no report after a sealing or grader failure) instead of only leaving output files absent. Cross-platform wrappers preserve command, stdout, stderr, exit code, bundle/receipt bytes, and artifact-audit results; no test launches a paid provider or claims the later Linux native artifact.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "18.11"
       ],
@@ -2517,6 +2517,10 @@
           "field": "graph_revision",
           "reason": "2026-08-27 user-authorized amendment after external graph review, applied before any task started; adds the P18-FAL-002 per-boundary downstream call-count mechanical-verification commitment that the original DoD expansion omitted",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Appended the fixtures/experiment glob after implementation added six sibling experiment documents (duplicate-pair, unsupported-control, integrity-exclusion, invalid-task, tb30, deepswe) beside the owned phase18-local.toml pin; the append was performed at Phase E rather than before editing (harness timing miss, recorded honestly), and no other path outside the owned list was touched."
         }
       ],
       "tier": "cli-runtime",
@@ -2549,7 +2553,7 @@
             "opi_eval::agent::opi::OpiProcessAdapter::collect",
             "opi_eval::agent::pi::PiProcessAdapter::collect"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "P18-A06",
@@ -2562,7 +2566,7 @@
             "opi_eval::cli::run",
             "opi_eval::runner::ExperimentRunner::run"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "P18-A07",
@@ -2575,7 +2579,7 @@
             "opi_eval::cli::run",
             "opi_eval::runner::experiment::ExperimentRunner::run"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "P18-A11",
@@ -2588,7 +2592,7 @@
             "opi_eval::cli::run",
             "opi_eval::runner::ExperimentRunner::run"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "P18-A13",
@@ -2602,7 +2606,7 @@
             "opi_eval::cli::run",
             "opi_eval::comparison::ComparisonSet::assemble"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "P18-A14",
@@ -2617,7 +2621,7 @@
             "opi_eval::integrity::IntegrityRegistry::admit",
             "opi_eval::comparison::ComparisonSet::assemble"
           ],
-          "status": "open"
+          "status": "closed"
         }
       ],
       "production_call_sites": [
@@ -2628,7 +2632,7 @@
         "scripts/phase18-eval-smoke.sh"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "40af829ce3a6b8bd677e7670dce343e6a9bd67f7",
       "baseline_dirty_files": [],
@@ -2647,12 +2651,109 @@
         "crates/opi-eval/tests/fixtures/assembled/**",
         "scripts/phase18-eval-smoke.ps1",
         "scripts/phase18-eval-smoke.sh",
-        "scripts/test_phase18_eval_smoke.py"
+        "scripts/test_phase18_eval_smoke.py",
+        "crates/opi-eval/tests/fixtures/experiment/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "9b00c6733440f64de241320226231f31795cfef0",
+      "evidence": {
+        "Opi-Task": "18.12",
+        "Opi-DoD-SHA256": "34f34c048acb2945a549ab2e9f951b3698461b14d97bc06d6b323773bc2923a4",
+        "Opi-Verification": "library; smoke scoped (assembled/pairing/authority) + python addendum + windows check + 158 crate tests",
+        "Opi-Evaluator": "passed (0 must-fix; 7 flagged-for-human; 0 rejected)",
+        "Opi-Acceptance": "P18-A05,A06,A07,A11,A13,A14 closed through the production run binary"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-28T06:55:00+08:00",
+          "attempt": 1,
+          "summary": "18.12 passing. New runner/experiment.rs (ExperimentRunner = run_experiment + run_trial), cli/run.rs (run command, exit 0 completed/1 incomplete-or-failed/2 error), authority.rs (AuthorityLedger P18-FAL-002: attempt/attempt_failed/fail; grade refused after agent-process|adapter|evidence|infrastructure, seal refused after trial-durability, report refused after trial-durability|grader or a failed seal; boundary_token map; counts serialized into the outer receipt AND sealed as bundle/native/authority-ledger.json covering transitions up to sealing). Per-trial flow: refuse identity reuse when bundle/intent.json exists (P18-EXP-005, found by test: second run same root exited 0 overwriting intent - now refused exit 2), plan lifecycle, publish durable intent, effect-pending, crash-after-intent behavior exits 70 at the exact durable point, agent dispatch via AgentExecution (generated deterministic helper per product, env-cleared, isolated dirs, never ambient PATH; timeout behavior = include_str!-embedded pinned profile with timeout_secs=900|1800 patched to 2; cancelled behavior = tokio::select!-polled run + wait for the workspace mutation marker answer.txt then cancel - NEVER a pre-spawn kill, tokio trap: Box::pin alone does not poll the future), settle, stage native stdout/stderr/answer/imported evidence/verifier captures/report, grade via BenchmarkExecution with all three concrete benchmark revisions wired against their synthetic byte-table pins (tb21 fixture-task, tb30+deepswe synthetic-fixture-task; each fixture experiment pins its derived fixture-integrity-review digest, unit-test-pinned; deepswe reward known:1(pier-report), tb reward typed unknown pending 18.15), pre-seal ProjectionPipeline project (18.11), seal (seal-failure behavior tampers a staged artifact -> failed:at-evidence -> report refused:seal-failed, no manifest, no receipt), TrialReceipt JSON (status/agent/verifier/authority/bundle_identity/pre_seal_digest/seal_result), mark_graded+reported. ComparisonSet::assemble drives coverage: duplicate-slot -> typed comparison_error + exit 1; exclusion/invalid-task/unsupported-control (reasoning Value on either pinned profile -> unsupported-controls:reasoning, honest per-profile gap) -> non-comparable with exact reasons; integrity digest mismatch -> exit 2 refusal before any trial; recovery mode (--recover) reads bundle/intent|settlement|manifest only -> effect-unknown with original identity, edge missing_sides exact; replacement (--replacement-for) line-scoped TOML rewrite of the crashed group's ids+group to .r2 -> fresh contract, fresh identities, comparable pair, prior evidence byte-identical. Report exposes experiment/manifest_digest/integrity_digest/outcome/trials/pairs. RunReport schema phase18-run-report/1, trial receipt phase18-trial-receipt/1. Tests: phase18_assembled_smoke 8 (exp001 happy end-to-end with receipts/bundle/workspace on disk, A05 four stream-contract behaviors with per-product pinned truth table + refusal tokens + verifier:null + single dispatch, A06 timeout+cancel retaining partial artifacts/cleanup/mutated workspace + no replay, A07 crash 70 -> recover effect-unknown -> replacement .r2 completed + prior intent bytes unchanged, A11 prompt-only package rejected:task-package-drift persisted + verifier-failure verifier-non-zero-exit grader + report refused + no receipt file + reward typed unknown, A13 duplicate/unsupported through run, A14 exclusion/invalid-task + three distinct immutable digests, exp002 tb30+deepswe grade end-to-end), pairing_and_integrity 2 (A13 digest-gate exit 2 before any trial + duplicate + missing sides; A14 identity-reuse refusal + manifest bytes unchanged + three distinct digests), authority_boundaries 3 (grade zero executions after agent/evidence failures proven from receipt AND sealed ledger artifact; seal-failure stops report with counts; grader failure stops report with sealed evidence retained), lib +2 (authority unit gates incl. failed-seal report refusal; fixture digest pinning loop over all seven experiment documents), python addendum 2 (wrapper preserves command/stdout/stderr/exit/receipts/manifests/audit; content-addressed bundle identity identical across runs). Scripts: phase18-eval-smoke.sh/.ps1 wrappers + audit json (receipt_written inverted-boolean bug caught by python test). Red-phase catches that mattered: settled_lifecycle-style helper mistakes avoided; pi helper argv guard verified; missing settle/report attempts in receipt; recovery read the trial root instead of bundle/; tb30/deepswe initially assumed tree-identity refusal but both synthetic profiles are byte-table -> wired complete end-to-end grading instead. D.1 scoped smoke PASS (158 crate tests); addendum python PASS; D.3 windows cargo check --all-targets 0 errors; D.2 exec 7-lens: must-fix 0, flagged 7: (1) C.1a glob append performed late at Phase E (timing miss recorded in inference_notes); (2) owned path tests/fixtures/assembled/** unused - helpers are runtime-generated under run roots; (3) admitted_lock_digest stays the fixture digest until 18.15 resolved locks (same family as 18.10.1 flag); (4) A13 control-mismatch arm cannot arise through the frozen single-shared-controls schema - UnsupportedControl proven via the pinned reasoning gap, per-subject control realization arrives with 18.15; (5) replace_group is a line-scoped TOML editor safe only under the schema's unique id/group values; (6) sealed authority-ledger artifact covers transitions only up to sealing (seal/report states live in the outer receipt); (7) --behavior is hermetic staging plumbing, never a production run mode. Rejected 0. Test disposition: add.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval --test phase18_assembled_smoke --test pairing_and_integrity --test authority_boundaries (D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "P18-A05",
+                  "action": "add",
+                  "test": "crates/opi-eval/tests/phase18_assembled_smoke.rs::p18_a05_agent_stream_contract_fails_closed",
+                  "interface": "production opi-eval run binary (cli::run -> ExperimentRunner)",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "P18-A06",
+                  "action": "add",
+                  "test": "::p18_a06_process_timeout_cancellation_race",
+                  "interface": "production opi-eval run binary",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "P18-A07",
+                  "action": "add",
+                  "test": "::p18_a07_effect_unknown_reopen",
+                  "interface": "production opi-eval run binary (--recover/--replacement-for)",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "P18-A11",
+                  "action": "add",
+                  "test": "::p18_a11_incomplete_package_and_native_failure",
+                  "interface": "production opi-eval run binary",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "P18-A13",
+                  "action": "add",
+                  "test": "::p18_a13_non_comparable_surfaces_through_run + tests/pairing_and_integrity.rs::p18_a13_pair_and_control_fail_closed",
+                  "interface": "production opi-eval run binary",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "P18-A14",
+                  "action": "add",
+                  "test": "::p18_a14_integrity_exclusion_surfaces_through_run + ::p18_a14_integrity_exclusion_and_reclassification",
+                  "interface": "production opi-eval run binary",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "P18-FAL-002",
+                  "action": "add",
+                  "test": "tests/authority_boundaries.rs (3)",
+                  "interface": "receipt + sealed authority-ledger artifact",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "artifact-truthfulness",
+                  "action": "add",
+                  "test": "scripts/test_phase18_eval_smoke.py (2) + wrappers",
+                  "interface": "cross-platform wrapper preserved bytes",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "python scripts/test_phase18_eval_smoke.py (smoke addendum)",
+              "result": "passed"
+            },
+            {
+              "gate": "cargo check -p opi-eval --target x86_64-pc-windows-msvc --all-targets (D.3)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per precedent)",
+              "result": "passed"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "18.13",
@@ -4953,6 +5054,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 5 (thin pi turn pairing state; textual turn pairing; unbounded capture walk; textual parity guard; test-only nodes_matching); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.12",
+      "timestamp": "2026-08-28T06:55:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 7 (late C.1a glob append; unused assembled/ owned path; fixture admitted_lock_digest; A13 control-mismatch arm schema-impossible until 18.15; line-scoped replace_group editor; sealed ledger scope ends at sealing; --behavior is hermetic staging); rejected 0"
     }
   ]
 }
