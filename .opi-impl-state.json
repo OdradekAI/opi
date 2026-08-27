@@ -593,7 +593,7 @@
       "definition_of_done": "The committed Linux materializer runs against the exact task 18.2 commit; a verifier audits workflow, job, artifact, receipt, digests, expiry, and producer bytes before writing the resolved Linux lock. The task then invokes task 18.2's typed ExternalArtifactLock admission against that repository lock, rejecting stale, mismatched, or unverifiable evidence without introducing another Rust lock type.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "18.2"
       ],
@@ -667,6 +667,10 @@
           "field": "graph_revision",
           "reason": "2026-08-27 third amendment (static-lock data correction, no code change). Run 33052214794 passed stages 0-2 and failed stage 3 on libldap-common: downloaded bytes hashed 72a6c113801a0f307f3a9ab9fe7a7f9559d9164af990494ed2c50617a0e20452 while the pin recorded ...17a1e20452. Arbitration against the closure's own pinned (and independently digest-verified) snapshot Packages indexes - the admitted authority inside the same static lock - proved exactly two transcription typos: libldap-common (one hex digit) and libsasl2-modules-db (b842f -> 85b42f). Both corrected to the index-authoritative values. Full pre-dispatch local verification sweep of every remaining runner-verifiable pin: 3 apt indexes OK, 19 packages now all matching, uv installer+archive OK against live bytes and the official checksum asset, uv/uvx in-archive binary digests OK, 6 wheels OK against the PyPI JSON API, task image manifest+config+layers OK against the Docker Hub registry API, harbor 4407eb52 and pier df89f994 uv.lock git_blob+sha256 both OK against live clones, TB21 trees/blobs already proven by the run's stage 2. Stage-8 semantics re-verified against harbor source: default no-filter verifier runs download the entire verifier dir (CTRF lands inside the trial dir), reward parses from reward.txt via _parse_reward_text, and result_path is written in the run() finally before return. This correction changes only two data characters inside an already-admitted contract whose admitted authority (the pinned indexes) dictated the values; no producer, workflow, schema, or admission semantics changed.",
           "source": "docs/research/2026-08-26-phase18-external-execution-locks.md#A.3 Primary-source findings"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The pre_d1_materialization contract requires the scoped crate gate to execute ExternalArtifactLock::admit against the repository resolved lock; admitting it needs a committed-artifact test appended to the 18.2-owned external_lock.rs test module (additive test only, no contract change)."
         }
       ],
       "tier": "library",
@@ -699,10 +703,17 @@
         "scripts/verify-phase18-materialization-artifact.py",
         "scripts/test_verify_phase18_materialization_artifact.py",
         "scripts/phase18-materialize-locks.sh",
-        "crates/opi-eval/external-locks/static/linux-x86_64.json"
+        "crates/opi-eval/external-locks/static/linux-x86_64.json",
+        "crates/opi-eval/src/external_lock.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "d5b8b2af49c1e01656cf843d80e68ebcbc55bcf3",
+      "evidence": {
+        "Opi-Task": "18.3",
+        "Opi-DoD-SHA256": "b087e08c88d7d2dcee0f8e6c66d86828a89b7e50b4fc627e99f54b8604989def",
+        "Opi-Verification": "library; smoke scoped --crate opi-eval PASS (fmt+clippy+rustdoc+38/38) plus addendum PASS (53/53 artifact contract tests, verify-lock over real evidence, doc-check, 15/15 ci tests, artifact-audit ok)",
+        "Opi-Evaluator": "passed",
+        "run": "33053090976/1 candidate f4648d9; artifact 9638477224 sha256:7b07baba586d289cff2e6f517b5fa852cfeb981ccf7c47981527cae633a7f173; closure f981bb43025c (33 files); resolved lock bound to static 95b7dd29db75; oracle passed reward 1.0; network mode public (truthful, option-A deferral recorded)"
+      },
       "blocker": null,
       "session_notes": [
         {
@@ -794,6 +805,59 @@
             {
               "gate": "cargo test -p opi-eval --lib",
               "result": "passed (37/37)"
+            }
+          ]
+        },
+        {
+          "timestamp": "2026-08-27T17:05:00+08:00",
+          "attempt": 1,
+          "summary": "18.3 passing at d5b8b2af49c1e01656cf843d80e68ebcbc55bcf3. Dispatch 33053090976 (candidate f4648d9) completed all 9 stages green after the three recorded amendments (glob fix, option-A oracle/network semantics, two transcribed apt digest corrections); oracle preflight reward 1.0, closure f981bb43025c over 33 files, artifact 9638477224 downloaded and digest-bound. Verifier formats fixed in-task: GitHub qualified workflow ref normalized to bare refs/, artifact zip digest switched to exact bytes (binary payload; LF normalization was wrong). Resolved lock written via --write-lock, re-verified via --verify-lock, admitted through the 18.2 Rust contract (new committed-artifact test, deterministic now = receipt resolved_at), cross-checked against the committed receipt fixture. D.1 scoped gate PASS; addendum 53/53 + verify-lock + doc-check + 15/15 + artifact-audit ok. D.2 seven-lens executed by harness agent per 18.1 precedent: must-fix 0, flagged-for-human 1 (offline-enforcement deferral is the recorded option-A decision; revisit before any network none claim), rejected 0. Temporary download directory deleted after gates; durable evidence = committed receipt fixture + resolved lock + GitHub artifact (retention to 2026-09-26).",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval (library D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "linux-lock-materialization-receipt",
+                  "action": "add",
+                  "test": "scripts/test_verify_phase18_materialization_artifact.py",
+                  "interface": "downloaded materialization receipt/artifact verifier",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "run-produced resolved lock admission",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/external_lock.rs::committed_resolved_linux_lock_admits_against_the_static_contract",
+                  "interface": "task 18.2 ExternalArtifactLock::admit over the repository resolved lock",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "18.2 external-lock suites",
+                  "action": "retain",
+                  "test": "crates/opi-eval/src/external_lock.rs (static/resolved/committed-artifact suites)",
+                  "interface": "ExternalArtifactLock",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "materialization-ci-verifier-contract",
+                  "action": "retain",
+                  "test": "scripts/test_verify_phase18_materialization_ci.py",
+                  "interface": "committed workflow/producer/action pin contract",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "smoke addendum (artifact tests, verify-lock, doc-check, ci tests, artifact-audit)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per 18.1 precedent)",
+              "result": "must-fix 0; flagged-for-human 1 (recorded option-A deferral); rejected 0"
             }
           ]
         }
