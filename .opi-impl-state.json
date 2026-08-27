@@ -2274,7 +2274,7 @@
       "definition_of_done": "A crate-private ProjectionPipeline projects Opi/pi native events, all three benchmark grader lifecycles, artifact collection, final-workspace capture, verifier execution, and the pre-seal lifecycle into provisional trajectories and causal spans while retaining source-specific facts, typed unknowns, and source order. Unit tests require grader and artifact nodes/edges for every revision family and reject invented chronology, synthetic parity, or a self-referential seal-result node; ExperimentRunner is the sole later production caller and records the actual seal result only in the outer receipt.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "18.10.1"
       ],
@@ -2349,7 +2349,7 @@
         "crates/opi-eval/src/runner/experiment.rs::ExperimentRunner::run"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "66598b9217a675d0b0ba8f3f9bf927f5603aa672",
       "baseline_dirty_files": [],
@@ -2358,10 +2358,41 @@
         "crates/opi-eval/src/trajectory/**",
         "crates/opi-eval/tests/fixtures/trajectories/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "d863fa08d5a0d75e7aeabfd6bc95d6996431cd32",
+      "evidence": {
+        "Opi-Task": "18.11",
+        "Opi-DoD-SHA256": "aa76c01d031aebaae573a39680d3b1f42f84374e0e0a02c65450f0ab6726c62b",
+        "Opi-Verification": "library; scripts/opi-impl-smoke.sh scoped --crate opi-eval PASS (fmt + all-target clippy + 125 lib tests + rustdoc)",
+        "Opi-Evaluator": "passed (0 must-fix; 5 flagged-for-human; 0 rejected)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-28T05:20:00+08:00",
+          "attempt": 1,
+          "summary": "18.11 passing. New crate-private module trajectory/mod.rs (lib.rs registered #[allow(dead_code)] mod trajectory; zero public surface, zero manifest changes). ProjectionPipeline::project(TrialInputs{agent: &AgentRecord, benchmark: Option<&BenchmarkRecord>, lifecycle: &TrialLifecycle, workspace: Option<&Path>}) -> ProvisionalTrajectory{schema 'phase18-provisional-trajectory/1' (provisional per P18-TRJ-005), product, nodes, edges, spans}; fails closed LifecycleBeyondPreSeal when the ladder passed Settled, ArtifactDrift when native artifact bytes changed since settlement (sha re-verified at projection time), WorkspaceMissing when the capture root vanished, NativeParse on non-native schema bytes. Nodes carry NodeSource + NodeKind{Lifecycle{phase},AgentExecution,AgentEvent{event_type},Artifact{role},WorkspaceCapture,VerifierExecution,Grader{family,revision}} + Provenance{artifact_role, artifact_sha256, rule} (P18-TRJ-001) + per-source source_order (native sequence for opi, line index for pi; never a global total order) + BTreeMap<String,Fact> with typed unknowns. EdgeRelation has NO total-order variant by design; Parent edges only within one Agent event stream; SourceOrder only within one source; validate() rejects InventedChronology, SyntheticParity (Known fact origin naming the other product, prefix-guarded so 'pier-report' never trips), SelfReferentialSeal (any Sealed/Graded/Reported lifecycle rung or seal*/bundle/* artifact role: sealing consumes the trajectory so such a node references itself), DanglingEdge, SchemaDrift, MissingProduct. Opi importer: one node per evidence line retaining kind verbatim (provider/tool/retry/compaction/diagnostic), turn/call facts, native parent CallId -> Parent edges (unobserved parent ids fabricate nothing); spans: Llm/Tool/Retry/Compaction per call + one Turn span per native turn. Pi importer: one node per session line retaining type verbatim, timestamp_ms Known only when the native message carries one; Turn span turn_start..turn_end; Llm span per paired message id with duration_ms Known only when both native timestamps exist else Unknown{native-timing-absent} (P18-TRJ-002/004). Benchmark: VerifierExecution (exit/wall_time) -> Grader{family,revision} (reward Fact verbatim incl. TB Unknown native-reward-pending-18-15-smoke and DeepSWE Known pier-report; completion; CTRF counters verbatim) -> native report Artifact nodes; causal chain ProcessEffectPending -> AgentExecution -> workspace capture -> verifier -> grader -> report; Grader span covers verifier+verdict+report. WorkspaceCapture: digest over sorted (relpath, file sha) pairs with files/bytes facts, explicitly pre-seal (immutable bundle sealed later). TrajectoryReceipt{pre_seal_digest (canonical content_digest of the pre-seal projection), seal_result: Option<SealOutcome>} is the ONLY home of the actual seal result - record_seal fills the receipt, the trajectory exposes no seal representation, digest stable. ExperimentRunner remains the sole later production caller (18.12 wires runner/experiment.rs; recorded call site). 6 unit tests at the crate-private seam: opi events/parent/order; pi events/spans/typed-unknown timing (fixture with timestamps + inline sparse stream without); grader+artifact nodes/edges for every revision family (tb21/tb30 ok-six-passed CTRF + deepswe pier resolved.json, reusing committed benchmark fixtures); pre-seal ladder + workspace capture (incl. planned-only prefix); rejection matrix (invented chronology cross-source SourceOrder + non-stream Parent, synthetic parity pi- origin on opi node, sealed rung, seal artifact role, dangling edge); seal-result-only-in-receipt (digest stability, LifecycleBeyondPreSeal via a genuinely sealed RunBundle ladder). New owned fixtures: tests/fixtures/trajectories/{opi/evidence.jsonl (6 lines incl. parent-call linkage + retry + compaction + two turns), pi/session.jsonl (7 lines, timestamps only on message events)}. Red-phase corrections: settled_lifecycle helper initially returned a Planned ladder (test caught: 1 node != 4) -> helper now advances through a real durable RunBundle intent proof; ProcessEffectPending (not Settled) is the causal source of AgentExecution - the process runs effect-pending; clippy collapses, PairedMessage type factored from the 4-tuple; clippy -D warnings clean. D.1 scoped smoke PASS (125 lib tests, +6). D.2 exec 7-lens (harness agent): must-fix 0, flagged 5: (1) pi_open_turn pairing state thin (only is_some consulted); (2) pi turn pairing trusts textual turn_start/turn_end, no nested-turn fixture; (3) workspace-capture digest walks unbounded trees - explicit bound decision deferred to 18.12; (4) parity guard is origin-prefix textual not typed; (5) nodes_matching helper currently test-only. Rejected 0. D.3 none (no process/CLI/artifact surface). Test disposition: add (6 unit tests); consumers of eval-agent-process-contract (AgentRecord), eval-benchmark-verifier-contract (BenchmarkRecord), trial lifecycle - no new shared seam manufactured (single consumer until 18.12).",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval (library D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "18.11",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/trajectory/mod.rs unit tests (6)",
+                  "interface": "crate-private trajectory::ProjectionPipeline (consumer of AgentRecord/BenchmarkRecord/TrialLifecycle owners; sole later production caller = ExperimentRunner, 18.12)",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per precedent)",
+              "result": "passed"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "18.12",
@@ -4914,6 +4945,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 5 (fixture admitted-digest honesty + external-lock consumer-note overstatement; runtime-generated helpers; fixture-grade revision metadata strings; text-patched timeout profiles; tb21 synthetic-bytes production-pin-drift); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.11",
+      "timestamp": "2026-08-28T05:20:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 5 (thin pi turn pairing state; textual turn pairing; unbounded capture walk; textual parity guard; test-only nodes_matching); rejected 0"
     }
   ]
 }
