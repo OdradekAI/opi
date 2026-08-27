@@ -2096,7 +2096,7 @@
       "definition_of_done": "Two parameterized integration binaries execute the production opi-eval conformance subcommand introduced by this task as the minimum provisional process facade over crate-private AgentExecution and BenchmarkExecution interfaces. The subcommand drives each concrete adapter with pinned saved native bytes, isolated directories, bounded deterministic helper processes, and the local provider fixture across identity, package closure, output, parse failure, non-zero exit, timeout, cancellation, isolation, and immutable-capture cases. The call chain is integration test or native script to opi-eval conformance to the selected crate-private adapter; task 18.12 reuses that entry beside run, and task 18.15 reruns the same suite through the committed exact executables. This task proves fixture-level hermetic conformance only and does not claim an exact built Opi/pi program, official task environment, or native verifier.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "18.7",
         "18.9",
@@ -2198,7 +2198,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "aa2eeae0e3320932985abecd693cdb40ba70c703",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/main.rs",
