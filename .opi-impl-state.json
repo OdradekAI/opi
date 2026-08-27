@@ -593,7 +593,7 @@
       "definition_of_done": "The committed Linux materializer runs against the exact task 18.2 commit; a verifier audits workflow, job, artifact, receipt, digests, expiry, and producer bytes before writing the resolved Linux lock. The task then invokes task 18.2's typed ExternalArtifactLock admission against that repository lock, rejecting stale, mismatched, or unverifiable evidence without introducing another Rust lock type.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "18.2"
       ],
@@ -676,7 +676,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "ce682fa41528c0d11e63544b76f9fba9d6f82d6c",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/external-locks/resolved/linux-x86_64.json",
@@ -687,7 +687,23 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-27T14:05:00+08:00",
+          "attempt": 1,
+          "summary": "18.3 in_progress, manual handoff pause. Slice 1 complete: scripts/verify-phase18-materialization-artifact.py audits receipt schema/identity/candidate-commit binding, static-lock digest and local workflow/producer pin bytes, workflow ref/sha/path/bytes binding with optional cross-checks, nonzero run id/attempt (rejects locally simulated runs), artifact zip digest + embedded-receipt equality, closure manifest recomputed file-by-file from the zip, pulled-image graph vs static pins, oracle status/reward/CTRF/harbor digests, network none evidence, canonical expiry ordering, then writes or re-verifies the deterministic resolved linux-x86_64 lock deriving the six 18.3-owned resolved identities and the 18.15 future partition from the static lock. scripts/test_verify_phase18_materialization_artifact.py 49/49 green over hermetic workspaces that copy the real committed pins plus a real-root acceptance run; opi-doc-check PASS. Both files untracked pending Phase E. Awaiting human: push main (workflow not yet on origin), dispatch phase18-lock-materialization with candidate_sha=838b6f2613f59aed91a37a15b1ac75253ea4bd8d, download artifact zip+receipt, supply resume inputs. Rust admission test against the repository resolved lock is deliberately deferred to after the artifact write per the pre_d1_materialization ordering; D.1 scoped gate has not run yet.",
+          "gate_results": [
+            {
+              "gate": "python scripts/test_verify_phase18_materialization_artifact.py",
+              "result": "passed (49/49)"
+            },
+            {
+              "gate": "python scripts/opi-doc-check.py",
+              "result": "passed"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "18.4",
