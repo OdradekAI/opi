@@ -1,0 +1,677 @@
+//! Crate-private shared benchmark execution contract (Phase 18 task 18.8).
+//!
+//! [`BenchmarkExecution`] consumes [`crate::process::ProcessSupervisor`], an
+//! admitted external lock digest, a read-only [`crate::integrity::IntegrityRecord`],
+//! and one [`BenchmarkAdapter`] to produce a single settled
+//! [`BenchmarkRecord`]: exit state, bounded captures, cleanup evidence,
+//! native metrics with their benchmark-defined names, the native reward as a
+//! typed fact, content-addressed native artifacts, and a typed completion
+//! verdict mapped into [`crate::failure::FailureBoundaryCode`]. The contract
+//! is benchmark-neutral: task-package shape, verifier argv, native schemas,
+//! and failure mapping are owned by each adapter, never by this module
+//! (`P18-BMK-005`, `P18-BMK-007`).
+
+use crate::agent::process::{Fact, NativeArtifact};
+use crate::failure::FailureBoundaryCode;
+use crate::integrity::IntegrityRecord;
+use crate::process::{
+    CleanupEvidence, ExitState, OutputCapture, ProcessSupervisor, SpawnReason, SpawnSpec,
+};
+use std::collections::BTreeMap;
+use std::ffi::OsString;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
+
+/// Exact benchmark-verifier identity retained on every settled record
+/// (`P18-BMK-001`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BenchmarkIdentity {
+    /// Benchmark family, e.g. `terminal-bench`.
+    pub benchmark: String,
+    /// Admitted revision identity, e.g. `2.1`.
+    pub revision: String,
+    /// Adapter identity plus its contract identity.
+    pub adapter: String,
+}
+
+/// One frozen verification request: the exact resolved verifier executable,
+/// the materialized task package, the sealed Agent output, the admitted
+/// external lock digest, and the immutable integrity admission. Limits come
+/// from the adapter's declarative profile.
+#[derive(Debug, Clone)]
+pub(crate) struct BenchmarkRunRequest {
+    /// Resolved verifier entry executable (argv[0]; e.g. the pinned `uv`
+    /// that drives `harbor --locked`). Never resolved from ambient PATH.
+    pub verifier_executable: PathBuf,
+    /// Materialized complete task package root (validated by the adapter).
+    pub task_dir: PathBuf,
+    /// Task id inside the admitted revision.
+    pub task_id: String,
+    /// Sealed final Agent output the verifier grades.
+    pub agent_output: PathBuf,
+    /// Fresh capture root for native verifier outputs.
+    pub trace_root: PathBuf,
+    /// Digest of the admitted resolved external lock
+    /// ([`crate::external_lock::AdmittedLock::digest`]).
+    pub admitted_lock_digest: String,
+    /// Immutable integrity record admitting the revision and classifying the
+    /// task. Consumed read-only; no adapter or Agent path can mutate it
+    /// (`P18-INT-003`).
+    pub integrity: IntegrityRecord,
+    /// Additional exact environment entries.
+    pub extra_env: BTreeMap<OsString, OsString>,
+}
+
+/// Native metrics with their benchmark-defined names retained verbatim
+/// (`P18-BMK-007`): one fact per CTRF summary counter, never a composite
+/// score, never renamed.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct NativeMetrics {
+    pub tests: Option<Fact>,
+    pub passed: Option<Fact>,
+    pub failed: Option<Fact>,
+    pub skipped: Option<Fact>,
+    pub pending: Option<Fact>,
+    pub other: Option<Fact>,
+}
+
+/// Typed failure carried on a settled record. A failed verification run is
+/// settled evidence, not an unsettable error (`P18-BMK-006`: no fallback to
+/// another revision, grader, cached score, heuristic, or LLM judgment).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BenchmarkFailure {
+    /// Static redacted token describing the failure kind.
+    pub kind: &'static str,
+    /// Owning failure boundary.
+    pub boundary: FailureBoundaryCode,
+}
+
+/// Authoritative completion verdict of one native verification run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BenchmarkCompletion {
+    /// The verifier ran to completion and its native output was imported.
+    Verified {
+        /// Native summary counters with benchmark-defined names.
+        metrics: NativeMetrics,
+        /// Raw native outputs as content-addressed references.
+        artifacts: Vec<NativeArtifact>,
+    },
+    /// The run settled as a typed failure.
+    Failed(BenchmarkFailure),
+}
+
+/// Provenance binding one settled record to its admitted inputs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BenchmarkProvenance {
+    /// Digest of the admitted resolved external lock.
+    pub admitted_lock_digest: String,
+    /// Identity digest of the consumed integrity record.
+    pub integrity_digest: String,
+    /// Revision the integrity record admitted.
+    pub revision: String,
+    /// Task id verified.
+    pub task_id: String,
+}
+
+/// The settled benchmark record: one per native verification run, on every
+/// path.
+#[derive(Debug, Clone)]
+pub(crate) struct BenchmarkRecord {
+    pub identity: BenchmarkIdentity,
+    pub exit: ExitState,
+    pub stdout: OutputCapture,
+    pub stderr: OutputCapture,
+    pub cleanup: CleanupEvidence,
+    /// Wall-clock duration of the supervised verification run.
+    pub wall_time: Duration,
+    /// Native reward as a typed fact. Until the real native smoke captures
+    /// the harbor reward path it stays `Unknown` with a typed reason — it is
+    /// never computed from the summary counters (`P18-BMK-007`).
+    pub reward: Fact,
+    pub completion: BenchmarkCompletion,
+    pub provenance: BenchmarkProvenance,
+}
+
+impl BenchmarkRecord {
+    /// The failure boundary of a failed completion, or `None` when verified.
+    pub(crate) fn failure_boundary(&self) -> Option<FailureBoundaryCode> {
+        match &self.completion {
+            BenchmarkCompletion::Verified { .. } => None,
+            BenchmarkCompletion::Failed(failure) => Some(failure.boundary),
+        }
+    }
+}
+
+/// The benchmark-neutral benchmark-specific seam: one implementation per
+/// pinned benchmark revision. Crate-private because the only consumers are
+/// this crate's execution driver and the shared conformance suite.
+pub(crate) trait BenchmarkAdapter {
+    /// Exact identity declared by the declarative profile.
+    fn identity(&self) -> BenchmarkIdentity;
+
+    /// Revision-specific admission check run before any spawn: the request's
+    /// integrity admission, task id, and lock must bind to this adapter's
+    /// pinned revision.
+    fn admission(&self, request: &BenchmarkRunRequest) -> Result<(), ExecutionError>;
+
+    /// Structured spawn request for one verification run. Owns argv, cwd,
+    /// environment projection, and limits from the declarative profile.
+    fn spawn_spec(&self, request: &BenchmarkRunRequest) -> SpawnSpec;
+
+    /// Settle one supervised outcome into the native half of the record:
+    /// imported metrics, reward fact, artifacts, and the authoritative
+    /// completion verdict. Infallible: every observed verifier failure
+    /// settles inside the record.
+    fn settle(
+        &self,
+        outcome: &crate::process::SupervisedOutcome,
+        request: &BenchmarkRunRequest,
+    ) -> (Fact, BenchmarkCompletion);
+}
+
+/// Pre-spawn contract violation: the request itself cannot produce a legal
+/// verification. Static tokens only; request bytes are not echoed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ExecutionError {
+    pub token: &'static str,
+}
+
+impl std::fmt::Display for ExecutionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "benchmark execution rejected: {}", self.token)
+    }
+}
+
+impl std::error::Error for ExecutionError {}
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+/// The shared execution driver. One verification run, one settled record,
+/// every path.
+pub(crate) struct BenchmarkExecution;
+
+impl BenchmarkExecution {
+    /// Run `request` under `adapter` to settlement.
+    ///
+    /// Never panics and never returns an `Err` for an observed run: spawn
+    /// failures, non-zero exits, timeouts, cancellations, and invalid native
+    /// output all settle inside the [`BenchmarkRecord`]. `Err` means the
+    /// request was structurally unusable before any process existed: an
+    /// unadmitted revision, an invalid task classification, or a malformed
+    /// admitted lock digest.
+    pub(crate) async fn run(
+        request: &BenchmarkRunRequest,
+        adapter: &dyn BenchmarkAdapter,
+        cancel: &CancellationToken,
+    ) -> Result<BenchmarkRecord, ExecutionError> {
+        if request.task_id.trim().is_empty() {
+            return Err(ExecutionError {
+                token: "empty-task-id",
+            });
+        }
+        if !is_sha256_hex(&request.admitted_lock_digest) {
+            return Err(ExecutionError {
+                token: "lock-digest-malformed",
+            });
+        }
+        if !request.integrity.admitted() {
+            return Err(ExecutionError {
+                token: "revision-not-admitted",
+            });
+        }
+        if !request
+            .integrity
+            .task_classification(&request.task_id)
+            .is_some_and(|c| c.is_valid_agent_outcome())
+        {
+            return Err(ExecutionError {
+                token: "task-not-valid",
+            });
+        }
+        adapter.admission(request)?;
+        let identity = adapter.identity();
+        let spec = adapter.spawn_spec(request);
+        let started = Instant::now();
+        let outcome = ProcessSupervisor::run(&spec, cancel).await;
+        let wall_time = started.elapsed();
+        let (reward, completion) = adapter.settle(&outcome, request);
+        Ok(BenchmarkRecord {
+            identity,
+            exit: outcome.exit,
+            stdout: outcome.stdout,
+            stderr: outcome.stderr,
+            cleanup: outcome.cleanup,
+            wall_time,
+            reward,
+            completion,
+            provenance: BenchmarkProvenance {
+                admitted_lock_digest: request.admitted_lock_digest.clone(),
+                integrity_digest: request.integrity.identity_digest().to_owned(),
+                revision: request.integrity.revision().to_owned(),
+                task_id: request.task_id.clone(),
+            },
+        })
+    }
+}
+
+/// Failure kinds for settled records, kept as static tokens.
+pub(crate) mod failure_kinds {
+    use crate::failure::FailureBoundaryCode;
+
+    /// Map a verifier spawn failure to its settled token + boundary. Tool or
+    /// runner acquisition failures are infrastructure, not grader, failures.
+    pub(crate) fn spawn(reason: super::SpawnReason) -> super::BenchmarkFailure {
+        let token = match reason {
+            super::SpawnReason::NotFound => "spawn-not-found",
+            super::SpawnReason::PermissionDenied => "spawn-permission-denied",
+            super::SpawnReason::BadCwd => "spawn-bad-cwd",
+            super::SpawnReason::SpawnFailed => "spawn-failed",
+        };
+        super::BenchmarkFailure {
+            kind: token,
+            boundary: FailureBoundaryCode::Infrastructure,
+        }
+    }
+
+    /// Non-zero verifier exit (`P18-BMK-006`: authoritative, no fallback).
+    pub(crate) fn non_zero_exit(_code: i32) -> super::BenchmarkFailure {
+        super::BenchmarkFailure {
+            kind: "verifier-non-zero-exit",
+            boundary: FailureBoundaryCode::Grader,
+        }
+    }
+
+    /// Verifier timeout settled by the supervisor.
+    pub(crate) const TIMED_OUT: super::BenchmarkFailure = super::BenchmarkFailure {
+        kind: "verifier-timeout",
+        boundary: FailureBoundaryCode::Grader,
+    };
+
+    /// Verifier cancellation settled by the supervisor.
+    pub(crate) const CANCELLED: super::BenchmarkFailure = super::BenchmarkFailure {
+        kind: "verifier-cancelled",
+        boundary: FailureBoundaryCode::Grader,
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::integrity::{
+        IntegrityRecord, IntegrityReview, OraclePreflight, RevisionStatus, TaskClassification,
+    };
+    use std::collections::BTreeMap;
+
+    /// A helper adapter proving the shared driver without any benchmark
+    /// semantics: argv is a real process, settle maps exit 0 to Verified and
+    /// everything else to the shared failure kinds.
+    struct HelperAdapter;
+
+    impl BenchmarkAdapter for HelperAdapter {
+        fn identity(&self) -> BenchmarkIdentity {
+            BenchmarkIdentity {
+                benchmark: "helper".to_owned(),
+                revision: "helper-1".to_owned(),
+                adapter: "helper-adapter/0".to_owned(),
+            }
+        }
+
+        fn admission(&self, _request: &BenchmarkRunRequest) -> Result<(), ExecutionError> {
+            Ok(())
+        }
+
+        fn spawn_spec(&self, _request: &BenchmarkRunRequest) -> SpawnSpec {
+            SpawnSpec {
+                argv: vec!["/bin/true".into()],
+                cwd: None,
+                env: BTreeMap::new(),
+                stdout_cap: 1024,
+                stderr_cap: 1024,
+                timeout: Duration::from_secs(10),
+            }
+        }
+
+        fn settle(
+            &self,
+            outcome: &crate::process::SupervisedOutcome,
+            _request: &BenchmarkRunRequest,
+        ) -> (Fact, BenchmarkCompletion) {
+            let completion = match outcome.exit {
+                ExitState::Exited { code: 0 } => BenchmarkCompletion::Verified {
+                    metrics: NativeMetrics::default(),
+                    artifacts: vec![],
+                },
+                ExitState::Exited { code } => {
+                    BenchmarkCompletion::Failed(failure_kinds::non_zero_exit(code))
+                }
+                ExitState::TimedOut => BenchmarkCompletion::Failed(failure_kinds::TIMED_OUT),
+                ExitState::Cancelled => BenchmarkCompletion::Failed(failure_kinds::CANCELLED),
+                ExitState::FailedToSpawn { reason } => {
+                    BenchmarkCompletion::Failed(failure_kinds::spawn(reason))
+                }
+            };
+            (
+                Fact::Unknown {
+                    reason: "native-reward-pending-18-15-smoke".to_owned(),
+                },
+                completion,
+            )
+        }
+    }
+
+    fn integrity(status: RevisionStatus, task: TaskClassification) -> IntegrityRecord {
+        IntegrityRecord::review(IntegrityReview {
+            benchmark: "helper-bench".to_owned(),
+            revision: "helper-1".to_owned(),
+            dataset: "helper-dataset".to_owned(),
+            grader: "helper-grader".to_owned(),
+            environment: "helper-environment".to_owned(),
+            upstream_identity: "helper-upstream".to_owned(),
+            upstream_digest: "0".repeat(64),
+            oracle: Some(OraclePreflight::Passed("six tests passed".to_owned())),
+            status,
+            tasks: BTreeMap::from([("helper-task".to_owned(), task)]),
+            excluded_trials: BTreeMap::new(),
+            reviewer: "human-reviewer".to_owned(),
+        })
+        .unwrap()
+    }
+
+    fn request(integrity: IntegrityRecord) -> BenchmarkRunRequest {
+        BenchmarkRunRequest {
+            verifier_executable: "/nonexistent/uv".into(),
+            task_dir: "/nonexistent/task".into(),
+            task_id: "helper-task".to_owned(),
+            agent_output: "/nonexistent/agent-output".into(),
+            trace_root: std::env::temp_dir(),
+            admitted_lock_digest: "a".repeat(64),
+            integrity,
+            extra_env: BTreeMap::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn structurally_unusable_requests_reject_before_spawn() {
+        // Unadmitted revision (P18-INT-001).
+        let bad = request(integrity(
+            RevisionStatus::NotAdmitted,
+            TaskClassification::ValidAgentOutcome,
+        ));
+        assert_eq!(
+            BenchmarkExecution::run(&bad, &HelperAdapter, &CancellationToken::new())
+                .await
+                .unwrap_err(),
+            ExecutionError {
+                token: "revision-not-admitted"
+            }
+        );
+
+        // Task not classified as a valid agent outcome (P18-INT-002).
+        for task in [
+            TaskClassification::BrokenOrUnsatisfiable {
+                reason: "unsatisfiable".to_owned(),
+            },
+            TaskClassification::InfrastructureFailure {
+                reason: "flaky host".to_owned(),
+            },
+        ] {
+            let bad = request(integrity(RevisionStatus::Admitted, task));
+            assert_eq!(
+                BenchmarkExecution::run(&bad, &HelperAdapter, &CancellationToken::new())
+                    .await
+                    .unwrap_err(),
+                ExecutionError {
+                    token: "task-not-valid"
+                }
+            );
+        }
+
+        // Missing task classification entirely.
+        let mut unclassified = request(integrity(
+            RevisionStatus::Admitted,
+            TaskClassification::ValidAgentOutcome,
+        ));
+        unclassified.task_id = "not-in-record".to_owned();
+        assert_eq!(
+            BenchmarkExecution::run(&unclassified, &HelperAdapter, &CancellationToken::new())
+                .await
+                .unwrap_err(),
+            ExecutionError {
+                token: "task-not-valid"
+            }
+        );
+
+        // Empty task id and malformed lock digest.
+        let mut empty = request(integrity(
+            RevisionStatus::Admitted,
+            TaskClassification::ValidAgentOutcome,
+        ));
+        empty.task_id = "  ".to_owned();
+        assert_eq!(
+            BenchmarkExecution::run(&empty, &HelperAdapter, &CancellationToken::new())
+                .await
+                .unwrap_err(),
+            ExecutionError {
+                token: "empty-task-id"
+            }
+        );
+        let mut bad_digest = request(integrity(
+            RevisionStatus::Admitted,
+            TaskClassification::ValidAgentOutcome,
+        ));
+        bad_digest.admitted_lock_digest = "not-a-digest".to_owned();
+        assert_eq!(
+            BenchmarkExecution::run(&bad_digest, &HelperAdapter, &CancellationToken::new())
+                .await
+                .unwrap_err(),
+            ExecutionError {
+                token: "lock-digest-malformed"
+            }
+        );
+
+        // Adapter-owned admission runs after the shared gates.
+        struct RejectingAdapter(HelperAdapter);
+        impl BenchmarkAdapter for RejectingAdapter {
+            fn identity(&self) -> BenchmarkIdentity {
+                self.0.identity()
+            }
+            fn admission(&self, _request: &BenchmarkRunRequest) -> Result<(), ExecutionError> {
+                Err(ExecutionError {
+                    token: "revision-binding-mismatch",
+                })
+            }
+            fn spawn_spec(&self, r: &BenchmarkRunRequest) -> SpawnSpec {
+                self.0.spawn_spec(r)
+            }
+            fn settle(
+                &self,
+                o: &crate::process::SupervisedOutcome,
+                r: &BenchmarkRunRequest,
+            ) -> (Fact, BenchmarkCompletion) {
+                self.0.settle(o, r)
+            }
+        }
+        let good = request(integrity(
+            RevisionStatus::Admitted,
+            TaskClassification::ValidAgentOutcome,
+        ));
+        assert_eq!(
+            BenchmarkExecution::run(
+                &good,
+                &RejectingAdapter(HelperAdapter),
+                &CancellationToken::new()
+            )
+            .await
+            .unwrap_err(),
+            ExecutionError {
+                token: "revision-binding-mismatch"
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn helper_run_settles_a_verified_record_with_provenance() {
+        let record = integrity(
+            RevisionStatus::Admitted,
+            TaskClassification::ValidAgentOutcome,
+        );
+        let digest = record.identity_digest().to_owned();
+        let request = request(record);
+        let settled = BenchmarkExecution::run(&request, &HelperAdapter, &CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(settled.exit, ExitState::Exited { code: 0 });
+        assert_eq!(
+            settled.completion,
+            BenchmarkCompletion::Verified {
+                metrics: NativeMetrics::default(),
+                artifacts: vec![]
+            }
+        );
+        assert_eq!(settled.failure_boundary(), None);
+        assert_eq!(
+            settled.provenance,
+            BenchmarkProvenance {
+                admitted_lock_digest: "a".repeat(64),
+                integrity_digest: digest,
+                revision: "helper-1".to_owned(),
+                task_id: "helper-task".to_owned(),
+            }
+        );
+        // The reward fact stays a typed unknown until the real native smoke.
+        assert_eq!(
+            settled.reward,
+            Fact::Unknown {
+                reason: "native-reward-pending-18-15-smoke".to_owned()
+            }
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn helper_verifier_failures_settle_with_typed_boundaries() {
+        struct FailingHelper(HelperAdapter);
+        impl BenchmarkAdapter for FailingHelper {
+            fn identity(&self) -> BenchmarkIdentity {
+                self.0.identity()
+            }
+            fn admission(&self, r: &BenchmarkRunRequest) -> Result<(), ExecutionError> {
+                self.0.admission(r)
+            }
+            fn spawn_spec(&self, r: &BenchmarkRunRequest) -> SpawnSpec {
+                let mut spec = self.0.spawn_spec(r);
+                spec.argv = vec!["/bin/sh".into(), "-c".into(), "exit 4".into()];
+                spec
+            }
+            fn settle(
+                &self,
+                o: &crate::process::SupervisedOutcome,
+                r: &BenchmarkRunRequest,
+            ) -> (Fact, BenchmarkCompletion) {
+                self.0.settle(o, r)
+            }
+        }
+        let request = request(integrity(
+            RevisionStatus::Admitted,
+            TaskClassification::ValidAgentOutcome,
+        ));
+        let settled = BenchmarkExecution::run(
+            &request,
+            &FailingHelper(HelperAdapter),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(settled.exit, ExitState::Exited { code: 4 });
+        assert_eq!(
+            settled.completion,
+            BenchmarkCompletion::Failed(failure_kinds::non_zero_exit(4))
+        );
+        assert_eq!(
+            settled.failure_boundary(),
+            Some(FailureBoundaryCode::Grader)
+        );
+
+        struct SleepingHelper(HelperAdapter);
+        impl BenchmarkAdapter for SleepingHelper {
+            fn identity(&self) -> BenchmarkIdentity {
+                self.0.identity()
+            }
+            fn admission(&self, r: &BenchmarkRunRequest) -> Result<(), ExecutionError> {
+                self.0.admission(r)
+            }
+            fn spawn_spec(&self, r: &BenchmarkRunRequest) -> SpawnSpec {
+                let mut spec = self.0.spawn_spec(r);
+                spec.argv = vec!["/bin/sleep".into(), "15".into()];
+                spec.timeout = Duration::from_millis(200);
+                spec
+            }
+            fn settle(
+                &self,
+                o: &crate::process::SupervisedOutcome,
+                r: &BenchmarkRunRequest,
+            ) -> (Fact, BenchmarkCompletion) {
+                self.0.settle(o, r)
+            }
+        }
+        let settled = BenchmarkExecution::run(
+            &request,
+            &SleepingHelper(HelperAdapter),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(settled.exit, ExitState::TimedOut);
+        assert_eq!(
+            settled.completion,
+            BenchmarkCompletion::Failed(failure_kinds::TIMED_OUT)
+        );
+        assert_eq!(
+            settled.failure_boundary(),
+            Some(FailureBoundaryCode::Grader)
+        );
+
+        struct MissingHelper(HelperAdapter);
+        impl BenchmarkAdapter for MissingHelper {
+            fn identity(&self) -> BenchmarkIdentity {
+                self.0.identity()
+            }
+            fn admission(&self, r: &BenchmarkRunRequest) -> Result<(), ExecutionError> {
+                self.0.admission(r)
+            }
+            fn spawn_spec(&self, r: &BenchmarkRunRequest) -> SpawnSpec {
+                let mut spec = self.0.spawn_spec(r);
+                spec.argv = vec!["/nonexistent/verifier".into()];
+                spec
+            }
+            fn settle(
+                &self,
+                o: &crate::process::SupervisedOutcome,
+                r: &BenchmarkRunRequest,
+            ) -> (Fact, BenchmarkCompletion) {
+                self.0.settle(o, r)
+            }
+        }
+        let settled = BenchmarkExecution::run(
+            &request,
+            &MissingHelper(HelperAdapter),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            settled.completion,
+            BenchmarkCompletion::Failed(failure_kinds::spawn(SpawnReason::NotFound))
+        );
+        assert_eq!(
+            settled.failure_boundary(),
+            Some(FailureBoundaryCode::Infrastructure)
+        );
+    }
+}

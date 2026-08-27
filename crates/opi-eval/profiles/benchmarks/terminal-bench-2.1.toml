@@ -1,0 +1,88 @@
+# Declarative Terminal-Bench 2.1 benchmark profile for the Phase 18 eval seam.
+# Identity, complete pinned task-package file table, native verifier entry,
+# and limits only: no grading policy, no parser configuration, no credentials.
+# Pinned to harbor-framework/terminal-bench-2-1 commit
+# 7131e4375048a0e408a8fb404b5f499d726b695b (no tag exists; the full commit is
+# the version lock) exactly as admitted by the static external lock.
+
+schema = "phase18-benchmark-profile/1"
+benchmark = "terminal-bench"
+revision = "2.1"
+
+[identity]
+upstream = "https://github.com/harbor-framework/terminal-bench-2-1"
+source_commit = "7131e4375048a0e408a8fb404b5f499d726b695b"
+tasks_tree = "2f0f5fdc68f0befd9b4745386eb8698264b00d8a"
+task_id = "openssl-selfsigned-cert"
+task_tree = "4c5b1214db4b807f2bc4c1bff8803402e36b648b"
+package_manifest_sha256 = "3e51600d207758c47863f77d116dc934852340a0f2aeb29f52c37f050e6b48e1"
+adapter = "opi-eval-terminal-bench-21-adapter/1"
+
+[verifier]
+# Harbor v0.22.0 (commit 4407eb5227a2ff4f0d3f16b2eb48849382fdf276) driven
+# through uv --locked; the adapter spawns uv, never an ambient harbor.
+runner_kind = "harbor"
+runner_version = "v0.22.0"
+runner_commit = "4407eb5227a2ff4f0d3f16b2eb48849382fdf276"
+launch = ["run", "-p", "<task-dir>"]
+# TB 2.1 uses the older shared native-verifier lifecycle; its native output
+# is the pytest-json-ctrf report the verifier writes (CTRF JSON).
+output_kind = "ctrf-json"
+
+[resources]
+cpus = 1
+memory_gib = 2
+
+[limits]
+timeout_secs = 900
+stdout_cap_bytes = 1048576
+stderr_cap_bytes = 1048576
+
+# Complete pinned task package: exactly these files, no more, no fewer.
+[[package]]
+path = ".gitignore"
+mode = "100644"
+size = 177
+sha256 = "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953"
+
+[[package]]
+path = "README.md"
+mode = "100644"
+size = 2404
+sha256 = "5dfa88651890cda06fa2a25babd3b813818767635e88bbabecc8305d5bb3942f"
+
+[[package]]
+path = "environment/Dockerfile"
+mode = "100644"
+size = 259
+sha256 = "f590b523038be43afcaf5291d7b9e8ed1333c48d9994e77b8dee2f2c352f0f40"
+
+[[package]]
+path = "instruction.md"
+mode = "100644"
+size = 1381
+sha256 = "38054a3371f7c2c853478a2f9af0bff858437d5b28a9a07483238f06e566921f"
+
+[[package]]
+path = "solution/solve.sh"
+mode = "100644"
+size = 3135
+sha256 = "58cf3c844e907745cd81fb4bd75efb3d080e2f0e82b589c56c954ae6e1756510"
+
+[[package]]
+path = "task.toml"
+mode = "100644"
+size = 939
+sha256 = "75c8913f0fa15890786c11999cde920b8bfc10d4ce8a14edf1e76985a2ac5800"
+
+[[package]]
+path = "tests/test.sh"
+mode = "100644"
+size = 608
+sha256 = "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334"
+
+[[package]]
+path = "tests/test_outputs.py"
+mode = "100644"
+size = 5878
+sha256 = "90970bb3c372e8e7fb6bb9ac5f649ba73eb38e1a5ea2e922a9057a72b6b4192d"

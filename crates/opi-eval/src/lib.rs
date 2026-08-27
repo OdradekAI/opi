@@ -66,3 +66,8 @@ mod process;
 /// Crate-private Agent contract and per-product adapters (Phase 18 task 18.6).
 #[allow(dead_code)]
 mod agent;
+
+/// Crate-private benchmark execution contract and the Terminal-Bench 2.1
+/// adapter (Phase 18 task 18.8).
+#[allow(dead_code)]
+mod benchmark;

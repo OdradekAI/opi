@@ -1,0 +1,50 @@
+{
+ "results": {
+  "tool": {
+   "name": "pytest"
+  },
+  "summary": {
+   "tests": 6,
+   "passed": 6,
+   "failed": 0,
+   "skipped": 0,
+   "pending": 0,
+   "other": 0,
+   "start": 1760000000000,
+   "stop": 1760000012000,
+   "reward": 1.0
+  },
+  "tests": [
+   {
+    "name": "tests::test_certificate_installed",
+    "status": "passed",
+    "duration": 200
+   },
+   {
+    "name": "tests::test_certificate_valid",
+    "status": "passed",
+    "duration": 200
+   },
+   {
+    "name": "tests::test_key_matches",
+    "status": "passed",
+    "duration": 200
+   },
+   {
+    "name": "tests::test_tls_handshake",
+    "status": "passed",
+    "duration": 200
+   },
+   {
+    "name": "tests::test_subject_matches",
+    "status": "passed",
+    "duration": 200
+   },
+   {
+    "name": "tests::test_renewal_configured",
+    "status": "passed",
+    "duration": 200
+   }
+  ]
+ }
+}

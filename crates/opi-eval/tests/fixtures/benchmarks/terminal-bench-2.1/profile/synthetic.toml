@@ -1,0 +1,81 @@
+# Synthetic Terminal-Bench 2.1 profile fixture for unit tests.
+# Same schema as the production profile; hashes cover the synthetic
+# task-package bytes next to it, so package validation can run green
+# without shipping upstream task bytes.
+
+schema = "phase18-benchmark-profile/1"
+benchmark = "terminal-bench"
+revision = "2.1"
+
+[identity]
+upstream = "https://fixture.invalid/terminal-bench-2-1"
+source_commit = "0000000000000000000000000000000000000000"
+tasks_tree = "1111111111111111111111111111111111111111"
+task_id = "fixture-task"
+task_tree = "2222222222222222222222222222222222222222"
+package_manifest_sha256 = "caeae09d9c2e248f33a18c3733bdd23bb631a13fa3aa29a9db56314c7e2f71fc"
+adapter = "opi-eval-terminal-bench-21-adapter/1"
+
+[verifier]
+runner_kind = "harbor"
+runner_version = "v0.22.0"
+runner_commit = "3333333333333333333333333333333333333333"
+launch = ["run", "-p", "<task-dir>"]
+output_kind = "ctrf-json"
+
+[resources]
+cpus = 1
+memory_gib = 2
+
+[limits]
+timeout_secs = 900
+stdout_cap_bytes = 1048576
+stderr_cap_bytes = 1048576
+
+[[package]]
+path = ".gitignore"
+mode = "100644"
+size = 8
+sha256 = "b53ee26e6ff1da219b0563333a76d2c9ec19eec713d6ee54e11a1edacb0e9f3d"
+
+[[package]]
+path = "README.md"
+mode = "100644"
+size = 47
+sha256 = "6f84010d7a84ab04f8dea7c6b315cf270cf82998500f102decb2556902350789"
+
+[[package]]
+path = "environment/Dockerfile"
+mode = "100644"
+size = 22
+sha256 = "958cda0bb3c18626bfcb9a02667174e9d7fab6cc465e4245ca8e7fcdf3b37c3c"
+
+[[package]]
+path = "instruction.md"
+mode = "100644"
+size = 48
+sha256 = "0f5acd621f11425b31eacc59aa94aeaade38178561d648aa2d043a6f0aaba87f"
+
+[[package]]
+path = "solution/solve.sh"
+mode = "100644"
+size = 17
+sha256 = "306c6ca7407560340797866e077e053627ad409277d1b9da58106fce4cf717cb"
+
+[[package]]
+path = "task.toml"
+mode = "100644"
+size = 27
+sha256 = "a27d0bb2791c9a4e599b1d928d01946989243c389bd96aad33fbeb2b4b2558b0"
+
+[[package]]
+path = "tests/test.sh"
+mode = "100644"
+size = 17
+sha256 = "306c6ca7407560340797866e077e053627ad409277d1b9da58106fce4cf717cb"
+
+[[package]]
+path = "tests/test_outputs.py"
+mode = "100644"
+size = 36
+sha256 = "422ddd49cee4e2ce70f4a3332e412461439a46bbc939f9d62ff2f000ae7620e0"
