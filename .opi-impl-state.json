@@ -1945,7 +1945,7 @@
       "definition_of_done": "A DeepSWE v1.1-private importer and declarative profile admit the semantic anchor plus executable revision, pristine verifier environment, declared patch/commit collection, authoritative reward including zero, and typed failure ownership through BenchmarkExecution. Unit tests use pinned fixtures; real task, image, Agent, and pristine-verifier execution remains open for task 18.15.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "18.8"
       ],
@@ -2036,7 +2036,7 @@
         "scripts/phase18-native-smoke.sh"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "012f8cdc8344302508df003f6670202798da6e44",
       "baseline_dirty_files": [],
@@ -2046,10 +2046,45 @@
         "crates/opi-eval/profiles/benchmarks/deepswe-v1.1.toml",
         "crates/opi-eval/tests/fixtures/benchmarks/deepswe-v1.1/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "01af62f1b22ffc4a7dd7bba865e61600710d9e3f",
+      "evidence": {
+        "Opi-Task": "18.10",
+        "Opi-DoD-SHA256": "52a4f7e97b3643113a6e53955c356a950dff7e849a469b124fa65a48982cf233",
+        "Opi-Verification": "library; scripts/opi-impl-smoke.sh scoped --crate opi-eval PASS (fmt + all-target clippy + crate tests; proxies unset, RUST_TEST_THREADS=4) + cargo check -p opi-eval --target x86_64-pc-windows-msvc --all-targets PASS",
+        "Opi-Evaluator": "passed (0 must-fix; 4 flagged-for-human; 0 rejected)"
+      },
       "blocker": null,
-      "session_notes": [],
+      "session_notes": [
+        {
+          "timestamp": "2026-08-28T01:45:00+08:00",
+          "attempt": 1,
+          "summary": "18.10 passing. Pinned DeepSWE v1.1 facts verified from docs/research/2026-08-26-phase18-external-execution-locks.md sections 3.3-3.4 and the committed static lock subject deepswe-v1.1 (not re-guessed): repo datacurve-ai/deep-swe, NO v1.1 tag - profile records BOTH the semantic version anchor 8cae5984d5dd0ee37445beff0e928dc10c331116 (explicit DeepSWE V1.1) and executable revision 435ee89ec2f2e2289f33b0da4f992f0b7b7266b9 (adds [[verifier.collect]] patch handoff; neither presented as a tag); tasks tree 66df25a1b382017d0ae014d94cadb2698baaed48 (113 tasks); smoke task abs-module-cache-flags tree 8ee76a3e4a876a9bd24f34edabcdde4e47257db4 (collected binary patch, separate pristine NO-network verifier, 2 CPU / 8 GiB); runner = Pier v0.3.1 commit df89f994623a0a6a57229103b6fe910766693c30, uv.lock blob c479fa26584b198250f4ebba68aac8941ebe158d digest 6261c632e80ee65e327c23f450c7cc5c38e34f2ee941d3ebe96ff72fc91f6de9 (README requires Pier > 0.3.0; exact pin; uv run --locked); task image digest 3a4d47f5 is input-only, deepswe-verifier-image is an unresolved 18.15 slot; lock files table EMPTY -> production tree-identity pin, admission fails closed task-package-not-materialized until 18.15. Slices: (1) DeepSweProfile::parse in new benchmark/deepswe.rs - own strict schema (deny_unknown_fields; third revision-private parser per simplification ceiling trigger=none), required version_anchor + source_commit both 40-hex (no tag field), runner pier/v0.3.1 exact + runner_commit + runner_uv_lock_blob 40-hex + runner_uv_lock_sha256 64-hex, lifecycle exactly separate-pristine-verifier, network exactly none, artifact_policy exactly collected-patch, launch exactly one <task-dir> placeholder, PackagePin{TreeIdentity,ByteTable} + OutputKind{UnpinnedPending1815,PierReport}; pin-to-lock consistency test asserts version_anchor/commit/trees/task AND that the lock files table is empty; (2) DeepSweAdapter: identity deepswe/v1.1 (native naming retained); admission binds integrity revision v1.1 (a Terminal-Bench 3.0 record is rejected) + profile task + package admission, tokens task-package-not-materialized vs task-package-drift; spawn_spec = uv run --locked pier + launch, cwd = trace root; (3) settle: process verdicts authoritative first via shared failure_kinds; exit-0 under UnpinnedPending1815 settles Failed{native-output-schema-unpinned, Adapter} (test proves a byte-perfect pier-report-shaped file cannot rescue it); PierReport wiring (synthetic only): pier-report.json closed schema {reward: 0|1} -> reward Fact::Known{origin:pier-report} - ZERO IS EXPLICITLY A VERIFIED COMPLEMENT, never a failure, tested at unit and e2e level; metrics all None (resolved flag, not test counters - never guessed); artifact native/pier-report retained in place with sha256; corrupt -> import-parse-failure/Adapter, drift/extra-fields/non-0-1 -> import-unsupported-schema/Adapter, missing -> verifier-invalid-output/Grader; e2e through BenchmarkExecution::run: resolved(1) and zero(0) both Verified with native provenance, exit 5 typed, spawn redacted, production pin rejects before any spawn even with a runnable executable. Fixtures synthetic only (P18-BMK-009): synthetic profile + 3-file package (README.md, environment/Dockerfile, verifier/collect.sh) with real computed hashes, pier-report fixtures resolved/zero/drift/corrupt. Red-phase corrections: matches! does not accept a trailing format-message arm (replaced with plain assert); trace clone for borrow. Honest source-inferred surfaces flagged: Pier launch argv is a STRUCTURAL pin only (no Pier CLI text in committed evidence; production cannot spawn pre-18.15 since admission fails closed; 18.15 re-pins against pinned README/Pier CLI); pier-report {reward:0|1} schema is a wiring hypothesis (binary resolved-flag inferred from SWE-bench semantics, not committed bytes; 18.15 re-pins). Zero manifest changes; no network, no Hub login, no image pinning (input digest not claimed run-verified), no grader reimplementation (Pier supervised not reimplemented - P18-BMK-011 satisfied by independently owned verifier contracts: Harbor x2 + Pier), mutable worktree never graded (collected-patch pinned, in-place lifecycle rejected by test). D.1 scoped smoke PASS (119 lib tests x3 stable); D.3 windows --all-targets PASS; D.2 exec 7-lens (harness agent): must-fix 0, flagged 4 (Pier argv structural pin re-pin at 18.15; pier-report wiring hypothesis re-pin at 18.15; machinery duplication now 3rd occurrence - ceiling trigger=none, strengthen graph-review revisit; module-naming drift 4th occurrence), rejected 0.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval (library D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "18.10",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/benchmark/deepswe.rs",
+                  "interface": "DeepSweAdapter (consumer of BenchmarkExecution owner eval-benchmark-verifier-contract); also consumes eval-failure-boundary-contract, eval-benchmark-integrity-contract, eval-external-lock-contract",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "D.3 windows cross-check (cargo check x86_64-pc-windows-msvc --all-targets)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per 18.1-18.10 precedent)",
+              "result": "passed"
+            }
+          ]
+        }
+      ],
       "started_at": "2026-08-28T01:10:00+08:00"
     },
     {
@@ -4813,6 +4848,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 4 (21/30 machinery duplication revisit at 18.15; unpinned-schema boundary ratification; mechanical empty-table digest; module-naming drift 3rd occurrence); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.10",
+      "timestamp": "2026-08-28T01:45:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 4 (Pier argv structural pin + pier-report wiring hypothesis both re-pinned by 18.15; machinery duplication 3rd occurrence; module-naming drift 4th occurrence); rejected 0"
     }
   ]
 }
