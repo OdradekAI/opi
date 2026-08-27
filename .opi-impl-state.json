@@ -657,6 +657,11 @@
           "field": "graph_revision",
           "reason": "2026-08-27 user-authorized amendment after the first authorized dispatch (run 33047136460) failed at materializer stage 1: the 18.2-committed candidate-commit glob carried 39 [0-9a-f] groups and therefore rejected every valid 40-hex candidate (verified against git-show HEAD bytes: 39-group pattern accepts only 39-char values; the real candidate 838b6f2613f59aed91a37a15b1ac75253ea4bd8d was rejected). Repair adds the 40th group in scripts/phase18-materialize-locks.sh and rebinds its sha256 pin in crates/opi-eval/external-locks/static/linux-x86_64.json; no other producer, workflow, schema, or admission-contract field changed, and the 18.2 ExternalArtifactLock Rust contract is untouched (37/37 lib tests green against the rebound pin, including committed-artifact pin re-read). DoD candidate semantics for the re-dispatch: candidate_sha is the amendment commit that owns the repaired producer and rebound static lock, matching the workflow inputs.candidate_sha mechanical contract. This note records the repair as in-scope 18.3 work under the durable manual_handoff boundary; 18.2 remains passing because its verified admission contract and CI-verifier producer bytes did not change.",
           "source": "docs/research/2026-08-26-phase18-external-execution-locks.md#A.8 Placement and planning implication"
+        },
+        {
+          "field": "graph_revision",
+          "reason": "2026-08-27 second user-authorized amendment (option A) after run 33050681073 exposed stage-8 semantic gaps beyond the stage-2 mktemp mechanical defect. Repairs measured against pinned upstream sources (harbor 4407eb52, TB2.1 task tree 4c5b1214, research Appendix A): (1) stage 2 creates OUTPUT_DIR before mktemp; (2) stage 5 binds the task tag to the pulled digest so Harbor runs exactly the pinned image bytes; (3) stage 8 driver rewritten to the real harbor v0.22.0 API (Trial.create(TrialConfig(task=TaskConfig(path), agent=AgentConfig(name=oracle), trials_dir, trial_name)) + await run(); rewards read from result.verifier_result.rewards; result persisted via trial.paths.result_path; CTRF discovered under the trial dir); (4) receipt.network now records the ACTUAL effective verifier network mode derived from the pinned task.toml allow_internet plus the harbor shared-verifier baseline, and the artifact verifier enforces receipt/evidence mode consistency with vocabulary {none,public} instead of asserting none; (5) receipt oracle.reward is derived from observed rewards. DEFERRED with explicit revisit trigger: offline verifier enforcement (closure mount, apt offline service, curl shim PATH, no-network overlay) remains unproven because harbor v0.22.0 keeps the shared verifier public for this task and the overlay mechanism is not pinned by research; the deferral routes to the 18.15 native-smoke profile or a follow-up opi-research admission before any none-mode claim. The sealed closure remains a materialized pinned-provenance artifact and the closure-artifact resolved slot identity is unchanged. This amendment realizes the 18.2 flagged-for-human dispatch risk.",
+          "source": "docs/research/2026-08-26-phase18-external-execution-locks.md#A.8 Placement and planning implication"
         }
       ],
       "tier": "library",
@@ -726,6 +731,33 @@
             {
               "gate": "python scripts/test_verify_phase18_materialization_artifact.py",
               "result": "passed (49/49)"
+            },
+            {
+              "gate": "python scripts/opi-doc-check.py",
+              "result": "passed"
+            },
+            {
+              "gate": "cargo test -p opi-eval --lib",
+              "result": "passed (37/37)"
+            }
+          ]
+        },
+        {
+          "timestamp": "2026-08-27T16:20:00+08:00",
+          "attempt": 1,
+          "summary": "18.3 option-A amendment applied. After runs 33047136460 (39-group glob) and 33050681073 (OUTPUT_DIR mktemp), upstream-source diagnosis split defects into mechanical (mktemp ordering, nonexistent Trial.from_task_dir/results_file API, local find-based CTRF) and semantic (closure mount wiring, no-network enforcement absent while receipt hardcoded network.mode=none). User chose option A: oracle preflight runs under the pinned upstream configuration verbatim (public network per task.toml allow_internet=true and harbor 4407eb52 shared-verifier baseline), receipt records the truthful effective mode, offline enforcement is deferred with a recorded revisit trigger (18.15 native-smoke or follow-up research); no false none-mode claim remains anywhere. Materializer repaired (mkdir, digest-to-tag binding, rewritten stage-8 driver on the verified Trial.create/run API, mode recording, derived reward), producer pin rebound 102a0621da15. Artifact-verifier network check now enforces receipt/evidence consistency over {none,public}. Gates: ci-verifier real-repo PASS, ci tests 15/15, artifact tests 51/51 (network matrix: unknown-token reject, divergence reject, public-consistent accept), rust lib 37/37, doc-check PASS. Awaiting human push then re-dispatch with the amendment commit as candidate_sha.",
+          "gate_results": [
+            {
+              "gate": "python scripts/verify-phase18-materialization-ci.py (real repo)",
+              "result": "passed"
+            },
+            {
+              "gate": "python scripts/test_verify_phase18_materialization_ci.py",
+              "result": "passed (15/15)"
+            },
+            {
+              "gate": "python scripts/test_verify_phase18_materialization_artifact.py",
+              "result": "passed (51/51)"
             },
             {
               "gate": "python scripts/opi-doc-check.py",
