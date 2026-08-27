@@ -4,10 +4,12 @@
 # Executes the committed static external lock at
 # crates/opi-eval/external-locks/static/linux-x86_64.json on the manually
 # authorized Linux runner: verifies every pinned upstream identity, pulls the
-# pinned task image by digest, materializes the Terminal-Bench 2.1 verifier
-# dependency closure, runs one official upstream oracle preflight under a
-# no-network overlay with the sealed closure, and writes a receipt that task
-# 18.3 verifies and admits as the resolved Linux lock.
+# pinned task image by digest, materializes and seals the Terminal-Bench 2.1
+# verifier dependency closure, runs one official upstream oracle preflight
+# through the pinned Harbor revision under the task's own upstream network
+# configuration, and writes a receipt that task 18.3 verifies and admits as
+# the resolved Linux lock. Offline verifier enforcement is not claimed by
+# this run; the receipt records the actual effective network mode.
 #
 # The script is data-driven: every upstream URL, digest, Git identity, and
 # environment control is read from the static lock; nothing is resolved
@@ -166,6 +168,7 @@ RUN_ATTEMPT="${GITHUB_RUN_ATTEMPT:-1}"
 # Stage 2: fetch the Terminal-Bench 2.1 source and verify the task package.
 # ---------------------------------------------------------------------------
 info "stage 2: benchmark source identities"
+mkdir -p "$OUTPUT_DIR"
 WORK_ROOT="$(mktemp -d "$OUTPUT_DIR/work.XXXXXX")"
 TB21_COMMIT="$(lock_field subjects.1.commit)"
 TB21_URL="$(lock_field subjects.1.repository_url)"
@@ -288,6 +291,11 @@ docker pull --quiet "$TB21_IMAGE_REF@$TB21_IMAGE_MANIFEST" ||
   fail "cannot pull $TB21_IMAGE_REF by digest $TB21_IMAGE_MANIFEST"
 docker buildx imagetools inspect "$TB21_IMAGE_REF@$TB21_IMAGE_MANIFEST" --raw > "$OUTPUT_DIR/task-image-manifest.json" ||
   fail "cannot inspect the pulled task image manifest"
+# A digest pull leaves no local tag; bind the task tag to the pulled digest so
+# the Harbor environment uses exactly the pinned image bytes instead of
+# re-resolving the mutable tag.
+docker tag "$TB21_IMAGE_REF@$TB21_IMAGE_MANIFEST" "$TB21_IMAGE_REF" ||
+  fail "cannot bind the local task tag to the pulled digest"
 IMAGES_JSON="$OUTPUT_DIR/pulled-images.json"
 python3 - "$STATIC_LOCK_PATH" "$OUTPUT_DIR/task-image-manifest.json" > "$IMAGES_JSON" <<'PY' || fail "pulled image graph does not match the static lock"
 import hashlib, json, sys
@@ -432,67 +440,69 @@ CLOSURE_FILE_COUNT="$(python3 -c 'import json,sys; print(len(json.load(open(sys.
 info "closure sealed: $CLOSURE_FILE_COUNT files, manifest $CLOSURE_MANIFEST_SHA"
 
 # ---------------------------------------------------------------------------
-# Stage 8: upstream oracle preflight under the sealed closure.
+# Stage 8: upstream oracle preflight under the pinned upstream configuration.
 # ---------------------------------------------------------------------------
 info "stage 8: oracle preflight"
 ORACLE_DIR="$OUTPUT_DIR/oracle"
 mkdir -p "$ORACLE_DIR"
 cat > "$WORK_ROOT/oracle-driver.py" <<'DRIVER'
-"""Upstream oracle preflight driver.
+"""Upstream oracle preflight driver (harbor v0.22.0 API).
 
 Runs the official Terminal-Bench 2.1 solution for the pinned task through the
-pinned Harbor revision with the sealed closure mounted read-only into the
-shared verifier environment, and requires the native verifier to report a
-passing reward. Every identity is taken from the static lock and the staged
-closure; nothing is resolved dynamically.
+pinned Harbor revision and requires the native verifier to report a passing
+reward. The trial uses the task package's own upstream configuration
+verbatim: its declared docker_image, its declared network baseline, and the
+upstream oracle agent. The sealed closure stays a pinned provenance artifact
+and is not mounted into this run; offline verifier enforcement is deferred
+to the native-smoke profile per the phase18 option-A amendment.
 """
 
+import asyncio
 import json
 import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(sys.argv[2]).resolve()))
 
-from harbor.models.trial.config import VerifierConfig  # noqa: E402
+from harbor.models.trial.config import (  # noqa: E402
+    AgentConfig,
+    TaskConfig,
+    TrialConfig,
+)
 from harbor.trial.trial import Trial  # noqa: E402
 
 
-def main() -> int:
+async def main() -> int:
     task_dir = pathlib.Path(sys.argv[1]).resolve()
-    harbor_root = pathlib.Path(sys.argv[2]).resolve()
     work_dir = pathlib.Path(sys.argv[3]).resolve()
-    with open(sys.argv[4], encoding="utf-8") as handle:
-        environment = json.load(handle)["closures"][0]["environment"]
-
-    verifier_config = VerifierConfig(env=dict(environment))
-    trial = Trial.from_task_dir(
-        task_dir=task_dir,
-        work_dir=work_dir,
-        verifier_config=verifier_config,
+    config = TrialConfig(
+        task=TaskConfig(path=task_dir),
+        agent=AgentConfig(name="oracle"),
+        trials_dir=work_dir,
+        trial_name="phase18-oracle-preflight",
     )
-    trial.run()
-    report = trial.results_file.read_text(encoding="utf-8")
-    (work_dir / "harbor-results.json").write_text(report, encoding="utf-8")
-    results = json.loads(report)
-    rewards = [float(result.get("reward", 0.0)) for result in results]
-    if not rewards or any(reward <= 0.0 for reward in rewards):
+    trial = await Trial.create(config)
+    result = await trial.run()
+    verifier = result.verifier_result
+    rewards = dict(verifier.rewards) if verifier is not None and verifier.rewards else {}
+    if not rewards or any(float(value) <= 0.0 for value in rewards.values()):
         print(f"oracle preflight failed: rewards={rewards}", file=sys.stderr)
         return 1
+    report = trial.paths.result_path.read_text(encoding="utf-8")
+    (work_dir / "harbor-results.json").write_text(report, encoding="utf-8")
     print(json.dumps({"rewards": rewards}, sort_keys=True))
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(asyncio.run(main()))
 DRIVER
 
-docker network inspect bridge > "$ORACLE_DIR/network-baseline.json" 2>/dev/null || true
 if ! "$UV_BIN" run --locked --project "$WORK_ROOT/harbor" python "$WORK_ROOT/oracle-driver.py" \
     "$WORK_ROOT/terminal-bench-2-1/tasks/$TB21_TASK_ID" \
     "$WORK_ROOT/harbor" \
-    "$ORACLE_DIR" \
-    "$STATIC_LOCK_PATH" > "$ORACLE_DIR/oracle-summary.json"; then
-  fail "upstream oracle preflight did not pass with the sealed closure"
+    "$ORACLE_DIR" > "$ORACLE_DIR/oracle-summary.json"; then
+  fail "upstream oracle preflight did not pass"
 fi
 
 CTRF_PATH="$(find "$ORACLE_DIR" \( -name '*.ctrf' -o -name 'ctrf*.json' \) | head -n 1)"
@@ -500,16 +510,25 @@ CTRF_PATH="$(find "$ORACLE_DIR" \( -name '*.ctrf' -o -name 'ctrf*.json' \) | hea
 CTRF_SHA="$(sha256_bytes "$CTRF_PATH")"
 HARBOR_EFFECTIVE_SHA="$(lf_sha256_bytes "$ORACLE_DIR/harbor-results.json")"
 
-# Prove the verifier namespace had no route: the driver runs inside the
-# sealed no-egress environment; a successful probe is a contract failure.
-if docker run --rm --network none "$TB21_IMAGE_REF@$TB21_IMAGE_MANIFEST" \
-    sh -c 'command -v curl >/dev/null && curl -fsS --max-time 5 https://example.com/ >/dev/null 2>&1 && exit 0 || exit 1'; then
-  fail "no-network probe unexpectedly reached the public internet"
-fi
+# Record the verifier phase's actual effective network mode. The pinned task
+# declares environment.allow_internet = true and harbor v0.22.0 keeps the
+# shared verifier on that public baseline; this run applies no offline
+# overlay, so the receipt must not claim one.
+ACTUAL_NETWORK_MODE="$(python3 - "$WORK_ROOT/terminal-bench-2-1/tasks/$TB21_TASK_ID/task.toml" <<'PY'
+import sys, tomllib
+
+with open(sys.argv[1], "rb") as handle:
+    doc = tomllib.load(handle)
+if not doc.get("environment", {}).get("allow_internet", False):
+    raise SystemExit("pinned task is not public-network; revisit the network-mode recording")
+print("public")
+PY
+)"
+[ -n "$ACTUAL_NETWORK_MODE" ] || fail "cannot determine the effective verifier network mode"
 {
-  echo "network-mode: none"
-  echo "probe: docker run --network none curl https://example.com/ -> refused"
-  echo "baseline: $(lf_sha256_bytes "$ORACLE_DIR/network-baseline.json")"
+  echo "network-mode: $ACTUAL_NETWORK_MODE"
+  echo "source: pinned task.toml environment.allow_internet and harbor ${HARBOR_COMMIT} shared-verifier network baseline"
+  echo "offline-enforcement: not applied by this materialization run"
 } > "$ORACLE_DIR/network-inspection.txt"
 
 # ---------------------------------------------------------------------------
@@ -527,6 +546,8 @@ export PHASE18_RESOLVED_AT="$RESOLVED_AT"
 export PHASE18_EXPIRES_AT="$EXPIRES_AT"
 export PHASE18_CTRF_SHA="$CTRF_SHA"
 export PHASE18_HARBOR_EFFECTIVE_SHA="$HARBOR_EFFECTIVE_SHA"
+export PHASE18_NETWORK_MODE="$ACTUAL_NETWORK_MODE"
+export PHASE18_ORACLE_REWARD="$(python3 -c 'import json,sys; print(min(json.load(open(sys.argv[1]))["rewards"].values()))' "$ORACLE_DIR/oracle-summary.json")"
 python3 - "$STATIC_LOCK_PATH" "$OUTPUT_DIR" > "$OUTPUT_DIR/receipt.json" <<'PY'
 import hashlib, json, os, sys
 
@@ -574,12 +595,12 @@ receipt = {
     "images": [pulled],
     "oracle": {
         "status": "passed",
-        "reward": 1.0,
+        "reward": float(os.environ["PHASE18_ORACLE_REWARD"]),
         "ctrf_sha256": os.environ["PHASE18_CTRF_SHA"],
         "harbor_results_sha256": os.environ["PHASE18_HARBOR_EFFECTIVE_SHA"],
     },
     "network": {
-        "mode": "none",
+        "mode": os.environ["PHASE18_NETWORK_MODE"],
         "evidence": "oracle/network-inspection.txt",
     },
 }

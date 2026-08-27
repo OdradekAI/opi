@@ -13,7 +13,7 @@
       {
         "path": "scripts/phase18-materialize-locks.sh",
         "role": "materializer",
-        "sha256": "37a06bfb9f4125b1de175f25ed9a2642ee8eaeba53692c3ca0e175baa2fc7793"
+        "sha256": "102a0621da153faf5206a723cc3dab846c9e442ab0e166f3610535f1410eb19d"
       },
       {
         "path": "scripts/verify-phase18-materialization-ci.py",
