@@ -1794,7 +1794,7 @@
       "definition_of_done": "A Terminal-Bench 3.0-private importer and declarative profile admit only the pinned v3.0 task package, separate verifier container artifacts, native metric bytes, and typed failure owner through BenchmarkExecution. Unit tests use pinned fixtures; real task, image, Agent, and native-verifier execution remains open for task 18.15.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "18.8"
       ],
@@ -1885,7 +1885,7 @@
         "scripts/phase18-native-smoke.sh"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "2db684e80153620e019c3ff18e567d777578d25e",
       "baseline_dirty_files": [],
@@ -1895,10 +1895,45 @@
         "crates/opi-eval/profiles/benchmarks/terminal-bench-3.0.toml",
         "crates/opi-eval/tests/fixtures/benchmarks/terminal-bench-3.0/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "d7238123de8c814323ecc3466fcbaa7c7122b04b",
+      "evidence": {
+        "Opi-Task": "18.9",
+        "Opi-DoD-SHA256": "76a53a3788c716b6bc6d632a96c2119181ff3ac057ada4ee411b233ad6d4a31a",
+        "Opi-Verification": "library; scripts/opi-impl-smoke.sh scoped --crate opi-eval PASS (fmt + all-target clippy + crate tests; proxies unset, RUST_TEST_THREADS=4) + cargo check -p opi-eval --target x86_64-pc-windows-msvc --all-targets PASS",
+        "Opi-Evaluator": "passed (0 must-fix; 4 flagged-for-human; 0 rejected)"
+      },
       "blocker": null,
-      "session_notes": [],
+      "session_notes": [
+        {
+          "timestamp": "2026-08-28T00:35:00+08:00",
+          "attempt": 1,
+          "summary": "18.9 passing. Pinned TB 3.0 facts verified from docs/research/2026-08-26-phase18-external-execution-locks.md sections 3.3-3.6 and the committed static lock subject terminal-bench-3.0 (not re-guessed): canonical repo harbor-framework/terminal-bench, tag v3.0.0 + commit 2b0442c3c583b710ca8da14c8e601b99f2f1f244 (immutable tag exists, unlike 2.1), tasks tree a10dbfde7cd4d1c3ceaf22ed39b52a98dc775d54, 74 tasks, smoke task batched-eval-parity tree 729916599199dd1de6be0e0c543da9788d6129b5; separate verifier container declaring /app/evalbench with 1 CPU / 4 GiB; Harbor v0.22.0 via uv run --locked harbor run -p <task-dir>; lock files table EMPTY (no committed 3.0 byte table) and tb30-task-image/tb30-verifier-image/native-verifier-results are unresolved slots owned by 18.15 (images are build products, must not be pinned as run-verified). Slices: (1) Tb30Profile::parse in new benchmark/terminal_bench_30.rs - own strict schema (deny_unknown_fields everywhere; separate-revision parser per the not-a-data-revision forbidden scope and simplification ceiling), PackagePin {TreeIdentity, ByteTable} + OutputKind {UnpinnedPending1815, CtrfJson}; strict validation: schema family phase18-benchmark-profile/1, benchmark/revision terminal-bench/3.0, runner harbor, lifecycle exactly separate-container, verifier_workdir absolute, artifact_policy declared-original-paths, v-prefixed tag, 40-hex identities, 64-hex digests, exactly one <task-dir> launch placeholder; tree-identity requires empty table (canonical digest = sha256 of empty JSON array, pinning that no byte table is registered); byte-table requires complete closure with canonical digest self-check; admit_task_package: tree-identity -> NotMaterialized always, byte-table -> exact-set/exact-bytes (missing/extra/mismatch matrix); pin-to-lock consistency test asserts profile == lock subject INCLUDING that the lock files table is empty (no invented bytes); (2) TerminalBench30Adapter: identity terminal-bench/3.0; admission binds integrity revision 3.0 (a 2.1 record is rejected - not a data revision) + profile task id + package admission, tokens task-package-not-materialized (tree-identity) vs task-package-drift (byte-table drift); spawn_spec = uv run --locked harbor run -p <task-dir> with cwd = trace root, caps/timeout from profile; (3) settle: process verdicts authoritative first via shared failure_kinds (nonzero/timeout/cancelled Grader, spawn Infrastructure); exit-0 under UnpinnedPending1815 settles Failed{native-output-schema-unpinned, Adapter} - no 3.0 output schema is committed so nothing is guessed (test proves even a byte-perfect CTRF-shaped file cannot rescue it); ctrf-json wiring path (synthetic fixtures only): same closed 8-key summary vocabulary, Facts Known{ctrf-summary}, report retained in place as native/ctrf-report artifact, corrupt -> import-parse-failure/Adapter, missing -> verifier-invalid-output/Grader, failing tests still Verified; reward Unknown{native-reward-pending-18-15-smoke}; e2e through BenchmarkExecution::run: synthetic verified record with provenance, exit 5 typed, spawn redacted, and production tree-identity pin rejects before any spawn even handed a runnable executable. Fixtures synthetic only (P18-BMK-009): synthetic profile + 3-file package with real computed hashes, CTRF fixtures copied from the 21 set as wiring hypothesis. Red-phase corrections: str::find takes 1 arg (match_indices for package-row surgery); same-size tamper to prove the sha check not just size; fmt-reflowed unused-mut fixes (4). Zero manifest changes; no network, no Hub login, no image pinning, no verifier reimplementation, no cached reward. D.1 scoped smoke PASS (109 lib tests x3 stable); D.3 windows --all-targets PASS; D.2 exec 7-lens (harness agent): must-fix 0, flagged 4 (duplicated CTRF/profile machinery vs 21 module anticipated by simplification ceiling trigger=none - 18.15 confirms divergence or extracts shared machinery with a new shared-decision note; native-output-schema-unpinned/Adapter vs verifier-invalid-output/Grader split needs boundary ratification; empty-table manifest digest mechanical until 18.15 flips 3.0 to byte-table; inherited benchmark::execution vs benchmark::process module-naming drift now 3rd occurrence - reconcile at graph review), rejected 0.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval (library D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "18.9",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/benchmark/terminal_bench_30.rs",
+                  "interface": "TerminalBench30Adapter (consumer of BenchmarkExecution owner eval-benchmark-verifier-contract); also consumes eval-failure-boundary-contract, eval-benchmark-integrity-contract, eval-external-lock-contract",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "D.3 windows cross-check (cargo check x86_64-pc-windows-msvc --all-targets)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per 18.1-18.9 precedent)",
+              "result": "passed"
+            }
+          ]
+        }
+      ],
       "started_at": "2026-08-28T00:05:00+08:00"
     },
     {
@@ -4769,6 +4804,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 4 (module naming drift; CTRF shape/filename re-pin at 18.15; integrity benchmark-name binding accessor gap; reward typed-Unknown until native smoke); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.9",
+      "timestamp": "2026-08-28T00:35:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 4 (21/30 machinery duplication revisit at 18.15; unpinned-schema boundary ratification; mechanical empty-table digest; module-naming drift 3rd occurrence); rejected 0"
     }
   ]
 }
