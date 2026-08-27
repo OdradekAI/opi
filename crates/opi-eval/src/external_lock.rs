@@ -1350,9 +1350,8 @@ mod tests {
     }
 
     fn static_rejects(document: String) -> ExternalLockError {
-        ExternalArtifactLock::from_static_bytes(document.as_bytes())
-            .err()
-            .expect("static lock must be rejected")
+        // static lock must be rejected
+        ExternalArtifactLock::from_static_bytes(document.as_bytes()).unwrap_err()
     }
 
     #[test]
@@ -1801,8 +1800,8 @@ mod tests {
         fn admit_rejects(document: String) -> ExternalLockError {
             static_lock()
                 .admit(document.as_bytes(), CHECK_NOW)
-                .err()
-                .expect("resolved lock must be rejected")
+                // resolved lock must be rejected
+                .unwrap_err()
         }
 
         #[test]
@@ -1887,8 +1886,7 @@ mod tests {
         fn rejects_expired_artifact() {
             let error = static_lock()
                 .admit(bound_resolved().as_bytes(), "2031-06-01T00:00:00Z")
-                .err()
-                .expect("expired admission must be rejected");
+                .unwrap_err(); // expired admission must be rejected
             assert!(
                 matches!(error, ExternalLockError::Expired { .. }),
                 "{error}"
@@ -1927,8 +1925,7 @@ mod tests {
         fn rejects_invalid_now() {
             let error = static_lock()
                 .admit(bound_resolved().as_bytes(), "yesterday")
-                .err()
-                .expect("malformed now must be rejected");
+                .unwrap_err(); // malformed now must be rejected
             assert!(
                 matches!(error, ExternalLockError::MalformedTimestamp { .. }),
                 "{error}"

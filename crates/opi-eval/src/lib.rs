@@ -13,7 +13,12 @@
 //! for canonical experiment resolution and [`cli::validate`] for the
 //! `opi-eval validate` command.
 
-#![forbid(unsafe_code)]
+// `deny` (not `forbid`) because `process::tree` is this crate's single
+// documented unsafe-FFI home: the OS tree-termination primitives (Unix
+// process groups, Windows Job Objects) have no safe alternative. Every other
+// module stays unsafe-free; `process::tree` overrides the lint locally and
+// wraps each call in a safe API.
+#![deny(unsafe_code)]
 
 pub mod cli;
 pub mod experiment;
@@ -23,3 +28,9 @@ pub mod experiment;
 // modules inside this crate consume it.
 #[allow(dead_code)]
 mod external_lock;
+
+// Crate-private external-process supervision (Phase 18 task 18.4). Owns the
+// shared state machine used by the future AgentExecution and
+// BenchmarkExecution adapters; never exposes OS primitives outside the crate.
+#[allow(dead_code)]
+mod process;
