@@ -2128,6 +2128,55 @@ mod tests {
         }
 
         #[test]
+        fn committed_resolved_linux_lock_admits_against_the_static_contract() {
+            let static_lock = ExternalArtifactLock::from_static_bytes(&committed_static_bytes())
+                .expect("committed static lock validates");
+            let resolved_bytes = std::fs::read(
+                repo_root().join("crates/opi-eval/external-locks/resolved/linux-x86_64.json"),
+            )
+            .expect("committed resolved Linux lock exists");
+            // The check time is the receipt's own resolution timestamp: a
+            // deterministic instant strictly before the recorded artifact
+            // expiry, so admission never depends on wall-clock state.
+            let admitted = static_lock
+                .admit(&resolved_bytes, "2026-08-27T08:15:23Z")
+                .expect("committed resolved Linux lock admits");
+            assert_eq!(admitted.expires_at(), "2026-09-26T08:15:23Z");
+            assert_eq!(
+                admitted.digest(),
+                lf_sha256_hex(&resolved_bytes),
+                "admitted digest must be the LF-normalized digest of the committed bytes"
+            );
+
+            // The committed run-produced receipt is durable re-audit evidence:
+            // its recorded identities must agree with the admitted lock.
+            let receipt: serde_json::Value = serde_json::from_str(include_str!(
+                "../tests/fixtures/external-locks/materialization/receipt-linux-x86_64.json"
+            ))
+            .expect("materialization receipt fixture parses");
+            let lock: serde_json::Value =
+                serde_json::from_slice(&resolved_bytes).expect("resolved lock parses");
+            assert_eq!(receipt["run"]["id"], lock["run"]["id"]);
+            assert_eq!(
+                receipt["candidate_commit"],
+                serde_json::json!("f4648d90c5c2434cf825c0a0c615ebef9e757ed4")
+            );
+            assert_eq!(
+                receipt["closure"]["manifest_sha256"],
+                lock["closure"]["manifest_sha256"]
+            );
+            assert_eq!(
+                receipt["oracle"]["ctrf_sha256"],
+                lock["oracle"]["ctrf_sha256"]
+            );
+            assert_eq!(receipt["expires_at"], lock["artifact"]["expires_at"]);
+            assert_eq!(
+                receipt["images"][0]["manifest"],
+                lock["images"][0]["manifest"]
+            );
+        }
+
+        #[test]
         fn committed_workflow_and_producers_match_recorded_digests() {
             let lock = ExternalArtifactLock::from_static_bytes(&committed_static_bytes())
                 .expect("committed static lock validates");
