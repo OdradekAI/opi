@@ -1628,7 +1628,7 @@
       "definition_of_done": "A crate-private BenchmarkExecution interface consumes ProcessSupervisor, exact resolved locks, immutable integrity admission, and typed failure outcomes; the TerminalBench21Adapter owns only its exact task package, unchanged verifier outputs, offline closure projection, and revision-specific failure mapping. Unit tests use pinned fixtures and do not claim a real native-verifier run, which remains open for task 18.15.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "18.3",
         "18.4",
@@ -1733,7 +1733,7 @@
         "scripts/phase18-native-smoke.sh"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "11953e91b09daccfc99392c55404bc896ce24a3daace60bcb8ea56f8cf1f4a99",
       "baseline_dirty_files": [],
@@ -1745,10 +1745,45 @@
         "crates/opi-eval/profiles/benchmarks/terminal-bench-2.1.toml",
         "crates/opi-eval/tests/fixtures/benchmarks/terminal-bench-2.1/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "2d7988d81aa4b9ff5b7e032f142231366c9d1d97",
+      "evidence": {
+        "Opi-Task": "18.8",
+        "Opi-DoD-SHA256": "a27cc909226e9da86558dfdc1641d2bde1dd6d2627d72ae884840b7fbc1fb6be",
+        "Opi-Verification": "library; scripts/opi-impl-smoke.sh scoped --crate opi-eval PASS (fmt + all-target clippy + crate tests; proxies unset, RUST_TEST_THREADS=4) + cargo check -p opi-eval --target x86_64-pc-windows-msvc --all-targets PASS",
+        "Opi-Evaluator": "passed (0 must-fix; 4 flagged-for-human; 0 rejected)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-27T23:50:00+08:00",
+          "attempt": 1,
+          "summary": "18.8 passing. Pinned TB 2.1 facts verified from docs/research/2026-08-26-phase18-external-execution-locks.md sections 3.3-3.6/A.3 and the committed external-locks/static|resolved JSON (not re-guessed): repo harbor-framework/terminal-bench-2-1 commit 7131e4375048a0e408a8fb404b5f499d726b695b (no tag; full commit is the lock), tasks tree 2f0f5fdc, 89 tasks, smoke task openssl-selfsigned-cert tree 4c5b1214 with exact 8-file closure (.gitignore, environment/Dockerfile, instruction.md, README.md, solution/solve.sh, task.toml, tests/test.sh, tests/test_outputs.py) and per-file mode/size/sha256 already pinned in the static lock subject; native verifier output = CTRF via tests/test.sh -> uvx pytest==8.4.1 + pytest-json-ctrf==0.3.5 (default report file ctrf-report.json; oracle run 6/6 passed, CTRF sha256 c82e566e); runner Harbor v0.22.0 commit 4407eb5 driven through uv run --locked harbor run -p <task-dir>; task image OCI graph pinned; 1 CPU / 2 GiB; shared verifier lifecycle. Slices: (1) Tb21Profile::parse fail-closed (schema phase18-benchmark-profile/1, deny_unknown_fields at every table, pinned harbor/ctrf-json kinds, exactly one <task-dir> placeholder in launch, 40-hex Git identities, 64-hex digests, canonical package manifest digest self-check) + validate_task_package exact-set/exact-bytes matrix (missing/extra/hash-drift) + pin-to-lock consistency test comparing the production profile against the committed static lock JSON; (2) benchmark::process shared contract: BenchmarkExecution::run over ProcessSupervisor with pre-spawn Err tokens empty-task-id/lock-digest-malformed/revision-not-admitted/task-not-valid (P18-INT-001/002) + adapter admission hook; settled BenchmarkRecord carries identity, bounded captures, cleanup, wall time, reward Fact, completion, provenance(admitted_lock_digest+integrity digest+revision+task_id); failure kinds: verifier-non-zero-exit/verifier-timeout/verifier-cancelled at Grader boundary, spawn tokens at Infrastructure boundary; reused agent::process Fact + NativeArtifact instead of duplicating; (3) TerminalBench21Adapter: admission binds integrity revision 2.1 + profile task id + full package validation before spawn; argv = [uv, run, --locked, harbor, run, -p, task-dir] with cwd = trace root; settle: exit-0 -> read trace_root/ctrf-report.json, CTRF closed vocabulary (results keys tool/summary/tests/environment/extra; summary exactly tests/passed/failed/skipped/pending/other/start/stop all integers), metrics Facts Known{ctrf-summary} with native names, report retained in place as native/ctrf-report artifact, reward Unknown{native-reward-pending-18-15-smoke} (never computed from counters, P18-BMK-007); missing report -> verifier-invalid-output/Grader, corrupt -> import-parse-failure/Adapter, drift -> import-unsupported-schema/Adapter, failed tests still Verified (native counts authoritative); (4) e2e fake-verifier helper (cfg unix) through BenchmarkExecution::run: verified record with provenance; exit 5 typed; spawn-not-found redacted. Fixtures synthetic only (P18-BMK-009): synthetic profile/package with own hashes, 5 CTRF fixtures (ok-six-passed, one-failed, corrupt, unknown-schema, missing-summary). Red-phase corrections: toml has no from_slice in locked version (UTF-8 -> from_str); TaskPackageError Io carries String for Eq; Tb21Doc itself needed deny_unknown_fields; manifest-digest mutation test must flip the actual declared value; fixture CTRF summary includes start/stop timestamps so the closed vocabulary is 8 keys not 6; copy helper needed create_dir_all on target. Zero manifest changes; no network, no Hub login, no verifier reimplementation. D.1 scoped smoke PASS; D.3 windows --all-targets PASS; D.2 exec 7-lens (harness agent): must-fix 0, flagged 4 (module naming benchmark::execution vs shipped benchmark::process - same drift family as agent::execution/agent::process, reconcile at graph review; CTRF shape + report filename source-inferred from research evidence, 18.15 re-pins against real harbor capture; integrity binding checks revision+task only because IntegrityRecord has no benchmark() accessor - later integrity task can tighten; reward typed-Unknown until native smoke), rejected 0.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval (library D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "18.8",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/benchmark/process.rs; crates/opi-eval/src/benchmark/terminal_bench_21.rs",
+                  "interface": "crate-private BenchmarkExecution (owner) + TerminalBench21Adapter; consumers of eval-external-process-supervision, eval-failure-boundary-contract, eval-external-lock-contract, eval-benchmark-integrity-contract",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "D.3 windows cross-check (cargo check x86_64-pc-windows-msvc --all-targets)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per 18.1-18.7 precedent)",
+              "result": "must-fix 0; flagged-for-human 4; rejected 0"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "18.9",
@@ -4725,6 +4760,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 3 (module-name drift agent::execution vs agent::process; v0.84.3 event vocabulary re-pin at 18.15; boundary split ratification at 18.9); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.8",
+      "timestamp": "2026-08-27T23:50:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 4 (module naming drift; CTRF shape/filename re-pin at 18.15; integrity benchmark-name binding accessor gap; reward typed-Unknown until native smoke); rejected 0"
     }
   ]
 }
