@@ -426,7 +426,7 @@
       "definition_of_done": "One crate-private ExternalArtifactLock owns both committed static-candidate validation and resolved-lock admission without executing the remote workflow. Its schema, provenance, digest, expiry, producer-binding, authority, and fail-closed tests use static and resolved fixtures through the Independent Companion. The same task commits the Linux materializer producer; task 18.3 supplies and verifies the run-produced receipt and resolved data but does not introduce a second lock interface.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "18.1"
       ],
@@ -516,7 +516,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "9d5f0a55e39d5988db98bb4aa08bd065cc44fb15",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/lib.rs",
@@ -528,10 +528,61 @@
         "scripts/test_verify_phase18_materialization_ci.py",
         ".github/workflows/phase18-lock-materialization.yml"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "838b6f2613f59aed91a37a15b1ac75253ea4bd8d",
+      "evidence": {
+        "Opi-Task": "18.2",
+        "Opi-DoD-SHA256": "bcae69ec3626dc382216fe974f9f8acb0ec443e866485f57cf0089d7eabd8cd0",
+        "Opi-Verification": "library; scripts/opi-impl-smoke.sh scoped --crate opi-eval PASS (fmt + production clippy + rustdoc + 37/37 lib tests) + smoke addendum PASS (test_verify_phase18_materialization_ci.py 15/15, verify-phase18-materialization-ci.py PASS over the committed workflow/lock/producers, opi-doc-check.py PASS)",
+        "Opi-Evaluator": "passed"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-27T13:14:40+08:00",
+          "attempt": 1,
+          "summary": "18.2 passing. Red-green slices: (1) static-candidate validation matrix over deny-unknown-fields schema, digest/git-identity formats, digest-only admission, workflow-path pin, materializer-producer presence, duplicate/empty/vocabulary rejections (21 tests, fixture-driven mutants); (2) resolved-lock admission binding static digest, workflow path+bytes, exact producer set, run/artifact identity, canonical-UTC expiry and ordering, pulled-image graph, oracle closure, and resolved/future partition by resolving owner (14 tests); (3) committed-artifact binding tests validating the real static lock and every pinned workflow/producer byte on disk (2 tests); (4) Python CI-verifier contract with the six rejection families plus the real-repository acceptance path (15 tests). D.1 smoke scoped opi-eval PASS. D.2 exec 7-lens (runtime executed by harness agent per the 18.1 precedent; wf_ref unavailable): must-fix 1 accepted (workflow interpolated inputs.candidate_sha directly into run-bash; fixed via env indirection in attempt 2, static-lock workflow pin re-bound, all gates re-run green), flagged-for-human 1 (materializer oracle driver uses Harbor Trial.from_task_dir/VerifierConfig API shape pinned only partially by research section A.3; task 18.3 dispatch may require plan-path amendment), rejected 0. D.0a: no runtime/CLI/JSON/session/provider/browser or generated-artifact claim; no artifact directory produced (materialization artifact belongs to 18.3); contract claims verified via the deterministic Python gate and module suite.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval (library D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "eval-external-lock-contract",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/external_lock.rs",
+                  "interface": "crate-private ExternalArtifactLock::from_static_bytes/admit",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "materialization-ci-verifier-contract",
+                  "action": "add",
+                  "test": "scripts/test_verify_phase18_materialization_ci.py",
+                  "interface": "committed workflow/producer/action pin contract",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "repository-metadata-documents",
+                  "action": "retain",
+                  "test": "scripts/opi-doc-check.py",
+                  "interface": "repository documentation contracts",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "smoke addendum (python contract tests + committed-contract verifier + doc-check)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent)",
+              "result": "must-fix 1 (fixed in attempt 2); flagged-for-human 1; rejected 0"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "18.3",
@@ -4259,6 +4310,16 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "L-D1..L-D7 clean; flagged: baseline census orphan limitation (revisit in 18.4); rejected: helper-digest binding concern"
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 1,
+      "flagged_count": 1,
+      "rejected_count": 0,
+      "ran_at": "2026-08-27T13:14:40+08:00",
+      "task_id": "18.2",
+      "criterion_id": null
     }
   ]
 }
