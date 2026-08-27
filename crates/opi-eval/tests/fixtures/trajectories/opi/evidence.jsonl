@@ -1,0 +1,6 @@
+{"run":"0192d6c0-0000-7000-8000-000000000001","turn":1,"call":1,"parent":null,"sequence":1,"kind":"provider","payload":{"Provider":{"route":"local:scripted"}}}
+{"run":"0192d6c0-0000-7000-8000-000000000001","turn":1,"call":2,"parent":1,"sequence":2,"kind":"tool","payload":{"Tool":{"name":"read"}}}
+{"run":"0192d6c0-0000-7000-8000-000000000001","turn":1,"call":3,"parent":1,"sequence":3,"kind":"retry","payload":{"Provider":{"route":"local:scripted"}}}
+{"run":"0192d6c0-0000-7000-8000-000000000001","turn":2,"call":5,"parent":null,"sequence":4,"kind":"provider","payload":{"Provider":{"route":"local:scripted"}}}
+{"run":"0192d6c0-0000-7000-8000-000000000001","turn":2,"call":6,"parent":5,"sequence":5,"kind":"compaction","payload":{"Compaction":{"tokens":4096}}}
+{"run":"0192d6c0-0000-7000-8000-000000000001","turn":2,"call":7,"parent":null,"sequence":6,"kind":"diagnostic","payload":{"Diagnostic":{"terminal":true}}}

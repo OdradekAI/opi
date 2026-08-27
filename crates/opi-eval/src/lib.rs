@@ -71,3 +71,8 @@ mod agent;
 /// adapter (Phase 18 task 18.8).
 #[allow(dead_code)]
 mod benchmark;
+
+/// Crate-private provisional trajectory and causal-span projection
+/// (Phase 18 task 18.11).
+#[allow(dead_code)]
+mod trajectory;
