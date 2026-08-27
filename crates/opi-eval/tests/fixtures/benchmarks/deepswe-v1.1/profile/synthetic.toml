@@ -1,0 +1,57 @@
+# Synthetic DeepSWE v1.1 wiring fixture. Not a real official task package,
+# native verifier, or native run (P18-BMK-009): it exists only to exercise
+# the byte-table admission and pier-report import wiring through the shared
+# contract until task 18.15 registers real reviewed bytes.
+schema = "phase18-benchmark-profile/1"
+benchmark = "deepswe"
+revision = "v1.1"
+
+[identity]
+upstream = "https://github.com/datacurve-ai/deep-swe"
+version_anchor = "1111111111111111111111111111111111111111"
+source_commit = "2222222222222222222222222222222222222222"
+tasks_tree = "3333333333333333333333333333333333333333"
+task_id = "synthetic-fixture-task"
+task_tree = "4444444444444444444444444444444444444444"
+package_pin = "byte-table"
+package_manifest_sha256 = "13e94f44d464818873ba00931e66339db1a6249d94f1e1e17b9c8060726bd3ae"
+adapter = "opi-eval-deepswe-adapter/1"
+
+[verifier]
+runner_kind = "pier"
+runner_version = "v0.3.1"
+runner_commit = "df89f994623a0a6a57229103b6fe910766693c30"
+runner_uv_lock_blob = "c479fa26584b198250f4ebba68aac8941ebe158d"
+runner_uv_lock_sha256 = "6261c632e80ee65e327c23f450c7cc5c38e34f2ee941d3ebe96ff72fc91f6de9"
+launch = ["run", "<task-dir>"]
+lifecycle = "separate-pristine-verifier"
+network = "none"
+artifact_policy = "collected-patch"
+output_kind = "pier-report"
+
+[resources]
+cpus = 2
+memory_gib = 8
+
+[limits]
+timeout_secs = 1800
+stdout_cap_bytes = 1048576
+stderr_cap_bytes = 1048576
+
+[[package]]
+path = "README.md"
+mode = "100644"
+size = 39
+sha256 = "32d422827a7c66f68bf05d3c85073ce19f8d6f293949d4ef2f781918f8416d62"
+
+[[package]]
+path = "environment/Dockerfile"
+mode = "100644"
+size = 49
+sha256 = "345e3af5eab52c0c157f82ef7129062aea79b8465f882763e99c6a8fe7cb91e5"
+
+[[package]]
+path = "verifier/collect.sh"
+mode = "100755"
+size = 17
+sha256 = "306c6ca7407560340797866e077e053627ad409277d1b9da58106fce4cf717cb"
