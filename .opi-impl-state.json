@@ -2403,7 +2403,7 @@
       "definition_of_done": "The opi-eval run CLI and ExperimentRunner become the end-to-end Evaluation product owner for resolve, run, settle, grade, seal, and handoff to reporting, while reusing the already executable 18.10.1 conformance subcommand without redefining it. They assemble the frozen experiment, durable lifecycle, AgentExecution, BenchmarkExecution, all concrete adapters, IntegrityRecord, ComparisonSet, projection, RunBundle, authority policy, and failure ownership. Black-box tests cover malformed/unknown/missing-terminal/excess-output failures, timeout/cancellation races, effect-unknown recovery, invalid package/verifier failure, pairing mismatch, integrity exclusion, artifact collection, final workspace, grader lifecycles, and pre-seal records. The authority boundary suite additionally closes P18-FAL-002 mechanical verification: for every owning failure boundary it proves zero downstream authority-transition executions through call-count evidence recorded in the trial receipt and bundle, so a boundary failure stops all later transitions (no grade dispatch after an Agent-process or evidence failure, no sealing after a settlement failure, no report after a sealing or grader failure) instead of only leaving output files absent. Cross-platform wrappers preserve command, stdout, stderr, exit code, bundle/receipt bytes, and artifact-audit results; no test launches a paid provider or claims the later Linux native artifact.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "18.11"
       ],
@@ -2630,7 +2630,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "40af829ce3a6b8bd677e7670dce343e6a9bd67f7",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/lib.rs",
