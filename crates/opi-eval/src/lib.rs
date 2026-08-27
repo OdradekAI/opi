@@ -34,6 +34,19 @@ mod external_lock;
 #[allow(dead_code)]
 mod failure;
 
+// Crate-private benchmark integrity records (Phase 18 task 18.5.1). Owns
+// revision admission, per-task validity classification, and reclassification
+// identity; nothing an Agent, adapter, or LLM produces can reach it.
+#[allow(dead_code)]
+mod integrity;
+
+// Crate-private pairing and comparability assembly (Phase 18 task 18.5.1).
+// Consumes the frozen ResolvedExperiment and an admitted IntegrityRecord
+// read-only; assembles exactly one baseline/candidate pair per
+// edge-task-group only when every control fingerprint agrees.
+#[allow(dead_code)]
+mod comparison;
+
 // Crate-private durable trial bundle (Phase 18 task 18.5). Owns canonical
 // sealing, mutation rejection, and intent-before-effect persistence; the
 // runner lifecycle and later regrade/report consumers stay inside this crate.
