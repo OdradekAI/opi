@@ -2096,7 +2096,7 @@
       "definition_of_done": "Two parameterized integration binaries execute the production opi-eval conformance subcommand introduced by this task as the minimum provisional process facade over crate-private AgentExecution and BenchmarkExecution interfaces. The subcommand drives each concrete adapter with pinned saved native bytes, isolated directories, bounded deterministic helper processes, and the local provider fixture across identity, package closure, output, parse failure, non-zero exit, timeout, cancellation, isolation, and immutable-capture cases. The call chain is integration test or native script to opi-eval conformance to the selected crate-private adapter; task 18.12 reuses that entry beside run, and task 18.15 reruns the same suite through the committed exact executables. This task proves fixture-level hermetic conformance only and does not claim an exact built Opi/pi program, official task environment, or native verifier.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "18.7",
         "18.9",
@@ -2172,6 +2172,11 @@
           "field": "shared_decision",
           "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Privacy, authority, and supply-chain boundaries"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The conformance timeout case must drive the real AgentExecution with a bounded-timeout profile; the agent adapters only expose new() pinned to the checked-in 900s profile, so each needs an additive crate-private from_profile constructor mirroring the benchmark adapters. Append-only ownership extension per C.1a; no behavior change to existing paths.",
+          "source": ".agents/skills/opi-implement/SKILL.md#Phase C"
         }
       ],
       "tier": "cli-runtime",
@@ -2196,7 +2201,7 @@
         "scripts/phase18-native-smoke.sh -> opi-eval conformance"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "aa2eeae0e3320932985abecd693cdb40ba70c703",
       "baseline_dirty_files": [],
@@ -2208,12 +2213,57 @@
         "crates/opi-eval/tests/benchmark_integration_conformance.rs",
         "crates/opi-eval/tests/fixtures/conformance/**",
         "scripts/phase18-scripted-provider.py",
-        "scripts/test_phase18_scripted_provider.py"
+        "scripts/test_phase18_scripted_provider.py",
+        "crates/opi-eval/src/agent/opi.rs",
+        "crates/opi-eval/src/agent/pi.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "129ba58359fe3a15f5a34679a1016c3ba03b548f",
+      "evidence": {
+        "Opi-Task": "18.10.1",
+        "Opi-DoD-SHA256": "c4c30488cd2b386680bb3b3da5749a5d4af3b40c363550dc16b069d2baedd0b1",
+        "Opi-Verification": "cli-runtime; scripts/opi-impl-smoke.sh scoped --crate opi-eval --test agent_integration_conformance --test benchmark_integration_conformance PASS + python scripts/test_phase18_scripted_provider.py PASS + cargo test -p opi-eval all targets PASS + cargo check x86_64-pc-windows-msvc --all-targets PASS",
+        "Opi-Evaluator": "passed (0 must-fix; 5 flagged-for-human; 0 rejected)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-28T02:55:00+08:00",
+          "attempt": 1,
+          "summary": "18.10.1 passing. cli/conformance.rs (lib module, sees crate-private adapters; main.rs adds clap dispatch) is the minimum provisional process facade: one invocation = one (suite, adapter, case) staged and run through the REAL AgentExecution/BenchmarkExecution, single-line JSON report (schema phase18-conformance-report/1, incl. exit_state, outcome, failure kind+boundary, identity, usage/reward/metrics, artifact roles, truncation flags, notes, met), exit 0 iff pinned expectation met, 2 on unsupported selection. Two parameterized integration binaries spawn the real binary via CARGO_BIN_EXE_opi-eval: agent matrix 2 adapters x 11 cases (completed, identity, isolation markers incl. cwd+HOME/APPDATA/sessions+pi agent-dir env projection, provider-fixture round-trip through scripts/phase18-scripted-provider.py asserting exact deterministic response bytes, nonzero-exit, invalid-output, parse-failure, bounded-output with per-product stream routing: opi capped stderr settles Completed, pi capped stdout settles import-evidence-incomplete/Evidence, timeout, cancellation via pinned-future + 300ms cancel, spawn-failure with path redaction); benchmark matrix 3 adapters x 11 cases (verified-output, identity, immutable-capture with artifact sha-vs-disk + provenance digest checks, one-failed (TB, metrics 5 passed/1 failed) / zero-reward (DeepSWE reward Known 0, Verified), parse-failure, schema-drift (tb21 own fixture, tb30 new shared fixtures/conformance/benchmarks/ctrf-unknown-schema.json closed-summary drift, deepswe pier drift.json), nonzero-exit 5, timeout, cancellation, package-drift via staged copy + rogue file, spawn-failure redacted, production-pin family: tb21 production-pin-drift Rejected task-package-drift because committed fixture package bytes are synthetic while the production byte table pins real official bytes (arrive 18.15), tb30+deepswe package-not-materialized Rejected tree-identity). TB rewards asserted Unknown native-reward-pending-18-15-smoke; DeepSWE reward Known origin pier-report. Helpers generated at runtime under run root (0755, argv-guarded: opi expects --json first, pi --mode json), behavior via OPI_EVAL_CONFORMANCE_BEHAVIOR, sleep 30 bounded by lowered limits. C.1a append executed BEFORE edits: task_owned_paths += agent/opi.rs, agent/pi.rs with inference note; each got additive crate-private from_profile (mirrors benchmark adapters) used ONLY for timeout cases via include_str checked-in profile text patched timeout_secs 900->2 (patched_timeout_secs also covers benchmark 1800; fails closed when no pinned limit found); zero behavior change to existing paths. scripts/phase18-scripted-provider.py: stdio JSONL fixture schema phase18-scripted-provider/1, one fixed response per {prompt} request, cap 8, typed exit 2/3 errors, no network/credentials/env reads (asserted by test); scripts/test_phase18_scripted_provider.py = smoke addendum (7 tests incl. determinism x3, cap bound, no-network source scan, no-file-writes). fixtures/conformance/README.md documents the synthetic/honesty contract. Red-phase corrections: matches! trailing format arm invalid -> plain assert; format! inline-named captures make positional args redundant (driver + helper templates); tokio::task::spawn needs 'static -> Box::pin future + cancel; pi argv starts --mode json not --json (per-product argv guard); pi bounded-output junk must hit stdout not stderr; provider-fixture byte compare dropped closing brace; deepswe synthetic timeout is 1800 not 900 (generic patched_timeout_secs); rustdoc private intra-doc links -> plain code spans; tb21 production-admission was IMPOSSIBLE with committed synthetic bytes -> renamed production-pin-drift with uniform admission-Err -> rejected-report handling (no pre-spawn special case). D.1 scoped smoke PASS (fmt+clippy+2 binaries+rustdoc); provider addendum PASS; full crate all-targets 137 tests PASS; 119 lib x3 stable; D.3 windows --all-targets PASS; zero manifest changes. D.2 exec 7-lens (harness agent): must-fix 0, flagged 5: (1) admitted_lock_digest is a fixture value (sha256 of case id) labeled in report notes - the plan note for eval-external-lock-contract ('loads admitted locks') overstates what fixture conformance can do pre-18.15 since no resolved lock exists; 18.12/18.15 own resolved-lock assembly; graph-review reconcile; (2) helpers are runtime-generated templates, fixtures/conformance holds only drift bytes+README; (3) driver fixture-grade dataset/grader strings not re-verified against lock subjects this task; (4) agent timeout cases text-patch embedded profile lines (fails closed via parse on drift; 18.15 re-pins); (5) tb21 production-pin-drift documents synthetic fixture bytes - inherited not-materialized flag family. Rejected 0. Later consumers intact: 18.12 reuses the entry beside run; 18.15 reruns suites through exact executables.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval --test agent_integration_conformance --test benchmark_integration_conformance (cli-runtime D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "18.10.1",
+                  "action": "add",
+                  "test": "crates/opi-eval/tests/agent_integration_conformance.rs + crates/opi-eval/tests/benchmark_integration_conformance.rs + scripts/test_phase18_scripted_provider.py",
+                  "interface": "production opi-eval conformance CLI (consumer of AgentExecution owner eval-agent-process-contract and BenchmarkExecution owner eval-benchmark-verifier-contract; also consumes eval-failure-boundary-contract; eval-external-lock-contract only via carried provenance digest - see flag 1)",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "python scripts/test_phase18_scripted_provider.py (smoke addendum)",
+              "result": "passed"
+            },
+            {
+              "gate": "cargo test -p opi-eval (all targets)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.3 windows cross-check (cargo check x86_64-pc-windows-msvc --all-targets)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per 18.1-18.10.1 precedent)",
+              "result": "passed"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "18.11",
@@ -4856,6 +4906,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 4 (Pier argv structural pin + pier-report wiring hypothesis both re-pinned by 18.15; machinery duplication 3rd occurrence; module-naming drift 4th occurrence); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.10.1",
+      "timestamp": "2026-08-28T02:55:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 5 (fixture admitted-digest honesty + external-lock consumer-note overstatement; runtime-generated helpers; fixture-grade revision metadata strings; text-patched timeout profiles; tb21 synthetic-bytes production-pin-drift); rejected 0"
     }
   ]
 }
