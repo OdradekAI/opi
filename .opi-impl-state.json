@@ -1174,7 +1174,7 @@
       "definition_of_done": "Crate-private integrity and comparison modules admit immutable benchmark revisions and task classifications separately from Agent outcomes, and assemble exactly one baseline/candidate edge only when frozen experiment controls, benchmark revision, task, trial group, and control fingerprints agree. Reclassification creates a new identity; missing, duplicate, mismatched, unsupported-control, excluded, infrastructure, and grader states remain typed and visible. No Agent, adapter, or report can mutate admission or recreate pairing policy.",
       "definition_source": "draft-reviewed",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "18.1"
       ],
@@ -1256,9 +1256,9 @@
         "opi_eval::report::ReportBuilder::build"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "603c7ce1992bfe51c3f1b073a0fd52857836ba42",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/lib.rs",
@@ -1267,10 +1267,45 @@
         "crates/opi-eval/tests/fixtures/integrity/**",
         "crates/opi-eval/tests/fixtures/comparison/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "faaea14b7f847eb3090e52851b2b1964f488ef54",
+      "evidence": {
+        "Opi-Task": "18.5.1",
+        "Opi-DoD-SHA256": "d318df5ed6751fd967232c1ae4b5f8a8c00320aff4d4ca79269fa8fd438d5027",
+        "Opi-Verification": "library; scripts/opi-impl-smoke.sh scoped --crate opi-eval PASS (fmt + all-target clippy + crate tests; proxies unset, RUST_TEST_THREADS=4) + cargo check -p opi-eval --target x86_64-pc-windows-msvc --all-targets PASS",
+        "Opi-Evaluator": "passed (0 must-fix; 2 flagged-for-human; 0 rejected)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-27T20:20:00+08:00",
+          "attempt": 1,
+          "summary": "18.5.1 passing. Red-green slices: (1) IntegrityRecord::review builds a digest-addressed immutable record - determinism, any-bound-fact-change changes identity, fail-closed on empty identities and missing reviewed reasons (red via todo bodies); (2) reclassify_task/with_status return new records with new content-addressed identities, originals untouched, identical content re-digests to the same identity (honestly documented: identity addresses content, not review events); (3) comparison gating - not-admitted record, experiment digest absent/mismatched, unknown trial ids, fact/declared subject disagreement, duplicate fact ids, foreign manifest digests all fail closed with typed errors (red via todo); (4) per-pair assembly - exactly one pair per edge x task x group when manifest/revision/task/group/fingerprints agree, neutral subject ids (no Opi/pi hard-coding); (5) visibility states asserted by value - MissingBaseline/CandidateTrial, ControlMismatch, UnsupportedControl, Excluded with stable reason, InfrastructureFailure, GraderFailure, InvalidTaskClassification, TaskNotCovered; a frozen contract declaring two trials in one pairing slot fails as DuplicateRoleTrial even with zero settled facts. Model correction during red: repeated fact id = DuplicateTrialFact (assemble-time), declared slot ambiguity = DuplicateRoleTrial (contract-level). Zero manifest changes; toml/serde/serde_json/sha2 reused. D.1 scoped smoke PASS; D.3 windows --all-targets cross-check PASS; D.2 exec 7-lens (harness agent; wf_ref unavailable): must-fix 0, flagged 2 (EmptyField{canonical_body} unreachable defensive mapping would read misleadingly if ever hit; baseline_trial()/candidate_trial() return empty strings for missing trials - the typed fact lives in NonComparability and 18.15 must read comparability rather than infer from empty ids), rejected 0 (Option<&str> accessors = speculative API churn).",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval (library D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "18.5.1",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/integrity.rs + crates/opi-eval/src/comparison.rs",
+                  "interface": "crate-private IntegrityRecord / ComparisonSet (eval-benchmark-integrity-contract + eval-pairing-comparability owners; eval-resolved-experiment-identity consumer)",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "D.3 windows cross-check (cargo check x86_64-pc-windows-msvc --all-targets)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per 18.1-18.5 precedent)",
+              "result": "must-fix 0; flagged-for-human 2; rejected 0"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "18.6",
@@ -4594,6 +4629,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 2 (digest-assertion helper sharing; create() on non-empty root); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.5.1",
+      "timestamp": "2026-08-27T20:20:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 2 (canonical_body EmptyField mapping; empty-string trial ids on missing trials); rejected 0"
     }
   ]
 }
