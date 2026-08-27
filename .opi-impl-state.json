@@ -652,6 +652,11 @@
           "field": "test_impact",
           "reason": "subject=run-produced resolved lock admission; action=retain; test=crates/opi-eval/src/external_lock.rs; interface=task 18.2 ExternalArtifactLock::admit against the generated repository lock; replacement=null; slim_candidate=null",
           "source": ".agents/skills/_shared/references/shared-decision-and-test-stewardship.md#Test impact"
+        },
+        {
+          "field": "graph_revision",
+          "reason": "2026-08-27 user-authorized amendment after the first authorized dispatch (run 33047136460) failed at materializer stage 1: the 18.2-committed candidate-commit glob carried 39 [0-9a-f] groups and therefore rejected every valid 40-hex candidate (verified against git-show HEAD bytes: 39-group pattern accepts only 39-char values; the real candidate 838b6f2613f59aed91a37a15b1ac75253ea4bd8d was rejected). Repair adds the 40th group in scripts/phase18-materialize-locks.sh and rebinds its sha256 pin in crates/opi-eval/external-locks/static/linux-x86_64.json; no other producer, workflow, schema, or admission-contract field changed, and the 18.2 ExternalArtifactLock Rust contract is untouched (37/37 lib tests green against the rebound pin, including committed-artifact pin re-read). DoD candidate semantics for the re-dispatch: candidate_sha is the amendment commit that owns the repaired producer and rebound static lock, matching the workflow inputs.candidate_sha mechanical contract. This note records the repair as in-scope 18.3 work under the durable manual_handoff boundary; 18.2 remains passing because its verified admission contract and CI-verifier producer bytes did not change.",
+          "source": "docs/research/2026-08-26-phase18-external-execution-locks.md#A.8 Placement and planning implication"
         }
       ],
       "tier": "library",
@@ -682,7 +687,9 @@
         "crates/opi-eval/external-locks/resolved/linux-x86_64.json",
         "crates/opi-eval/tests/fixtures/external-locks/materialization/**",
         "scripts/verify-phase18-materialization-artifact.py",
-        "scripts/test_verify_phase18_materialization_artifact.py"
+        "scripts/test_verify_phase18_materialization_artifact.py",
+        "scripts/phase18-materialize-locks.sh",
+        "crates/opi-eval/external-locks/static/linux-x86_64.json"
       ],
       "verified_at_commit": null,
       "evidence": null,
@@ -700,6 +707,33 @@
             {
               "gate": "python scripts/opi-doc-check.py",
               "result": "passed"
+            }
+          ]
+        },
+        {
+          "timestamp": "2026-08-27T15:30:00+08:00",
+          "attempt": 1,
+          "summary": "18.3 graph amendment applied and re-verified. Dispatch 33047136460 (candidate 838b6f2) failed at materializer stage 1 with a 39-group [0-9a-f] case glob rejecting the 40-hex candidate; root cause confirmed against git-show HEAD bytes with a corrected local case reproduction (old: 39 groups accepts only 39-char; new: 40 groups accepts the real candidate, rejects 39-char). Repair = one glob group + rebound producer pin. Gates after repair: ci-verifier real-repo PASS (producers=2 actions=6), test_verify_phase18_materialization_ci.py 15/15, test_verify_phase18_materialization_artifact.py 49/49, opi-doc-check.py PASS, cargo test -p opi-eval --lib 37/37 including committed pin re-read. Awaiting human push of the amendment commit, then re-dispatch with the amendment commit as candidate_sha.",
+          "gate_results": [
+            {
+              "gate": "python scripts/verify-phase18-materialization-ci.py (real repo)",
+              "result": "passed"
+            },
+            {
+              "gate": "python scripts/test_verify_phase18_materialization_ci.py",
+              "result": "passed (15/15)"
+            },
+            {
+              "gate": "python scripts/test_verify_phase18_materialization_artifact.py",
+              "result": "passed (49/49)"
+            },
+            {
+              "gate": "python scripts/opi-doc-check.py",
+              "result": "passed"
+            },
+            {
+              "gate": "cargo test -p opi-eval --lib",
+              "result": "passed (37/37)"
             }
           ]
         }
