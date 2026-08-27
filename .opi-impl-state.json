@@ -1628,7 +1628,7 @@
       "definition_of_done": "A crate-private BenchmarkExecution interface consumes ProcessSupervisor, exact resolved locks, immutable integrity admission, and typed failure outcomes; the TerminalBench21Adapter owns only its exact task package, unchanged verifier outputs, offline closure projection, and revision-specific failure mapping. Unit tests use pinned fixtures and do not claim a real native-verifier run, which remains open for task 18.15.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "18.3",
         "18.4",
@@ -1735,7 +1735,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "11953e91b09daccfc99392c55404bc896ce24a3daace60bcb8ea56f8cf1f4a99",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/lib.rs",
