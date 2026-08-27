@@ -1,0 +1,26 @@
+# Declarative Opi agent profile for the Phase 18 eval seam.
+# Identity, launch policy, environment projection keys, and limits only:
+# no protocol behavior, no parser configuration, no credentials.
+
+schema = "phase18-agent-profile/1"
+product = "opi"
+
+[identity]
+package = "opi-coding-agent"
+adapter = "opi-eval-opi-adapter/1"
+
+[launch]
+one_shot_json = true
+non_interactive = true
+trace_capture = true
+no_trust = true
+
+[isolation]
+home_env = "HOME"
+app_data_env = "APPDATA"
+sessions_env = "OPI_SESSIONS_DIR"
+
+[limits]
+timeout_secs = 900
+stdout_cap_bytes = 1048576
+stderr_cap_bytes = 1048576

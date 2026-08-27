@@ -1,0 +1,2 @@
+{"run":"0192d6c0-0000-7000-8000-000000000001","turn":1,"call":1,"parent":null,"sequence":1,"kind":"provider","payload":{"Provider":{"route":"local:scripted"}}}
+{"run":"0192d6c0-0000-7000-8000-000000000001","turn":1,"call":5,"parent":null,"sequence":2,"kind":"diagnostic","payload":{"Diagnostic":{"terminal":true}}}

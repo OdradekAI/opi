@@ -62,3 +62,7 @@ mod runner;
 // BenchmarkExecution adapters; never exposes OS primitives outside the crate.
 #[allow(dead_code)]
 mod process;
+
+/// Crate-private Agent contract and per-product adapters (Phase 18 task 18.6).
+#[allow(dead_code)]
+mod agent;
