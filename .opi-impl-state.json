@@ -2274,7 +2274,7 @@
       "definition_of_done": "A crate-private ProjectionPipeline projects Opi/pi native events, all three benchmark grader lifecycles, artifact collection, final-workspace capture, verifier execution, and the pre-seal lifecycle into provisional trajectories and causal spans while retaining source-specific facts, typed unknowns, and source order. Unit tests require grader and artifact nodes/edges for every revision family and reject invented chronology, synthetic parity, or a self-referential seal-result node; ExperimentRunner is the sole later production caller and records the actual seal result only in the outer receipt.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "18.10.1"
       ],
@@ -2351,7 +2351,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "66598b9217a675d0b0ba8f3f9bf927f5603aa672",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/lib.rs",
