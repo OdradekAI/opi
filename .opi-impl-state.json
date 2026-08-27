@@ -1316,7 +1316,7 @@
       "definition_of_done": "A crate-private AgentExecution consumes ProcessSupervisor and produces a settled Agent record; OpiProcessAdapter owns only Opi argv/profile construction, exact NDJSON/evidence importing, completion predicates, finalized trace validation, typed unknowns, and failure mapping. Module unit tests use saved bytes and helper outcomes only; they do not claim real Opi acceptance, which remains open for task 18.15's exact built executable and scripted-provider artifact.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "18.3",
         "18.4",
@@ -1420,9 +1420,9 @@
         "scripts/phase18-native-smoke.sh"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "82a35d6",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/lib.rs",
@@ -1432,10 +1432,46 @@
         "crates/opi-eval/profiles/agents/opi.toml",
         "crates/opi-eval/tests/fixtures/agents/opi/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "95c12176fdea7119656476be4ddbd6e9fc79c182",
+      "evidence": {
+        "Opi-Task": "18.6",
+        "Opi-DoD-SHA256": "2bef24d5529db4b2712115edd832b596574fef20cb6ae49a0cfbd4f0165f2452",
+        "Opi-Verification": "library; scripts/opi-impl-smoke.sh scoped --crate opi-eval PASS (fmt + all-target clippy + crate tests; proxies unset, RUST_TEST_THREADS=4) + cargo check -p opi-eval --target x86_64-pc-windows-msvc --all-targets PASS",
+        "Opi-Evaluator": "passed (0 must-fix; 3 flagged-for-human; 0 rejected)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-27T21:40:00+08:00",
+          "attempt": 1,
+          "summary": "18.6 passing. Red-green slices: (1) declarative profile at profiles/agents/opi.toml parses with exact schema identity phase18-agent-profile/1, any other schema or disabled launch invariant fails closed; argv verified against the current production CLI surface (cli.rs): --json --non-interactive --trace <root> --no-trust --config <path> --model <provider:model> [opt-in --allow-mutating] prompt, executable comes from the request (never ambient PATH); env is exactly HOME/APPDATA/OPI_SESSIONS_DIR isolation + request extras, caps/timeout from profile; (2) private OpiImporter over saved fixture bytes under tests/fixtures/agents/opi - exact 12-field manifest top-level identity (unknown field fails import-unsupported-schema/Adapter), corrupt JSON fails parse, evidence lines exact 7-field shape with UUID-v7 run, known kind and single PascalCase payload channel, manifest correlation.sequence must equal terminal evidence sequence (import-evidence-mismatch/Evidence), usage projected as Known{value,origin}/Unknown{reason} Facts, artifacts content-addressed sha256; (3) completion predicate: exit 0 AND exactly one finalized run-* child AND completeness=complete AND outcome=success; zero manifest children=import-evidence-incomplete, manifest without records=import-evidence-missing, two children=import-ambiguous-trace; non-zero exit/timeout/cancel/spawn map through shared failure_kinds and evidence can never rescue them; (4) AgentExecution driver settles one AgentRecord per run (helper adapter: empty-prompt/non-exact provider:model reject pre-spawn; nonzero exit, timeout with verified tree cleanup settle typed); AgentIdentity Debug redacts the executable path; settle() made infallible during red (request validation at run() entry, observed failures settle in-record); e2e fake-opi helper scripts (cfg(unix)) copy fixture evidence via the real argv/env then exit 0 or 3; spawn-not-found settles redacted. No real Opi binary, no provider network, no credentials (P18-AGT-006); real acceptance stays open for 18.15. Zero manifest changes. Model corrections during red: fake script trace root is argv $4 not $5; local request bindings shadowed the request() fixture constructor. D.1 scoped smoke PASS; D.3 windows --all-targets PASS; D.2 exec 7-lens (harness agent; wf_ref unavailable): must-fix 0, flagged 3 (identity executable redaction is Debug-only and 18.12 must not forward it into model-visible reports; importer validates opaque manifest fields for presence only - deep parsing waits for fixture growth at conformance; non_zero_exit token drops the code by design, consumers read record.exit), rejected 0.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval (library D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "18.6",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/agent/process.rs + crates/opi-eval/src/agent/opi.rs",
+                  "interface": "crate-private AgentExecution / OpiProcessAdapter (eval-agent-process-contract owner; ProcessSupervisor + failure-boundary + lifecycle-vocabulary consumers)",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "D.3 windows cross-check (cargo check x86_64-pc-windows-msvc --all-targets)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per 18.1-18.5.1 precedent)",
+              "result": "must-fix 0; flagged-for-human 3; rejected 0"
+            }
+          ]
+        }
+      ],
+      "started_at": "2026-08-27T20:45:00+08:00"
     },
     {
       "id": "18.7",
@@ -4637,6 +4673,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 2 (canonical_body EmptyField mapping; empty-string trial ids on missing trials); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.6",
+      "timestamp": "2026-08-27T21:40:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 3 (Debug-only executable redaction; opaque manifest field ceiling; exit-code-in-token); rejected 0"
     }
   ]
 }
