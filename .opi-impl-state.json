@@ -1024,7 +1024,7 @@
       "definition_of_done": "Crate-private RunBundle, TrialLifecycle, and FailureBoundaryCode units own canonical sealing, mutation rejection, intent-before-effect persistence, effect-unknown recovery, and typed failure ownership. RunBundle exposes a crate-private typed insertion operation that requires every native, normalized, or derived artifact to carry its role, source identity, digest, and causal edges before sealing; sealing returns a result for an outer receipt and cannot insert that result into the already sealed content. Unit tests close those Interfaces without claiming a product acceptance path; ExperimentRunner and offline regrade/report tasks are the only later production callers.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "18.1"
       ],
@@ -1113,9 +1113,9 @@
         "crates/opi-eval/src/report.rs::render"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "f4bedac5b50fe9fac5dd4c0b1955ef57e5d47078",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/lib.rs",
@@ -1125,10 +1125,45 @@
         "crates/opi-eval/src/failure.rs",
         "crates/opi-eval/tests/fixtures/bundles/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "16dbbd978298e9d0d052af299f3ec120703305cf",
+      "evidence": {
+        "Opi-Task": "18.5",
+        "Opi-DoD-SHA256": "93233fa7c2b64c80713dd555f4ae37d67e3c26eb56bd44a885c280920e6d190c",
+        "Opi-Verification": "library; scripts/opi-impl-smoke.sh scoped --crate opi-eval PASS (fmt + all-target clippy + crate tests; proxies unset, RUST_TEST_THREADS=4) + cargo check -p opi-eval --target x86_64-pc-windows-msvc --all-targets PASS",
+        "Opi-Evaluator": "passed (0 must-fix; 2 flagged-for-human; 0 rejected)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-27T19:05:00+08:00",
+          "attempt": 1,
+          "summary": "18.5 passing. Red-green slices: (1) FailureBoundaryCode nine-boundary distinctness (red via missing module); (2) intent-before-effect + forward-only ladder (red; DurableIntentProof minted only after intent.json fsync+atomic-rename, so process-effect-pending is unreachable without a durable reservation; skips/backwards/duplicate-publish/identity-mismatch rejected); (3) effect-unknown recovery (red; recover() reads durable files only and classifies intent-without-settlement as EffectUnknown under TrialDurability, settlement-without-seal as SettledUnsealed, empty root as NotStarted); (4) typed insertion staging role/source/digest/classification/causal edges with artifacts under artifacts/ (red); (5) staging rejections - green-on-arrival, machinery shipped inside slice 4's implementation; (6) canonical sealing (red; ladder order intent->settlement->seal enforced at the bundle boundary, digest re-validation before publish, one atomic manifest.json, content-addressed identity proven deterministic across twin bundles, full mutation freeze after seal); (7) seal-time tamper -> Evidence vs post-seal mutation -> TrialDurability distinction, verify() never repairs/rehashes, tampered manifest identity rejected (red); symlink-escape rejection added with #[cfg(unix)] after the Windows --all-targets cross-check exposed the test-compile gap (behavior itself is std-only and cross-platform). D.1 scoped smoke PASS; D.2 exec 7-lens (harness agent; wf_ref unavailable): must-fix 0, flagged 2 (digest-value assertion shares the implementation sha256_hex helper - mitigated by twin-identity determinism plus tamper tests; RunBundle::create on a non-empty root starts from empty memory state - 18.6 runner must use fresh roots or recover()), rejected 0. Zero manifest changes; sha2/serde/serde_json/tempfile reused.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval (library D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "18.5",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/bundle/mod.rs + crates/opi-eval/src/runner/lifecycle.rs + crates/opi-eval/src/failure.rs",
+                  "interface": "crate-private RunBundle / TrialLifecycle / FailureBoundaryCode (eval-run-bundle-contract, eval-trial-lifecycle-contract, eval-failure-boundary-contract owners)",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "D.3 windows cross-check (cargo check x86_64-pc-windows-msvc --all-targets)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per 18.1-18.4 precedent)",
+              "result": "must-fix 0; flagged-for-human 2; rejected 0"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "18.5.1",
@@ -4551,6 +4586,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 2 remediated (empty-argv never-panic guard; Exited doc overclaim), flagged 2 (race-test intentionality; Windows Job Object compile-only), rejected 0; D.1 rerun green"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.5",
+      "timestamp": "2026-08-27T19:05:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 2 (digest-assertion helper sharing; create() on non-empty root); rejected 0"
     }
   ]
 }
