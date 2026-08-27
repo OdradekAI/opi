@@ -872,7 +872,7 @@
       "definition_of_done": "One crate-private ProcessSupervisor module accepts structured argv, cwd, environment, output bounds, timeout, and cancellation; its internal Unix process-group and Windows Job Object implementations settle bounded stdout/stderr, process exit, timeout/cancel races, descendant termination, and cleanup evidence without exposing OS primitives to Agent or benchmark adapters.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "18.1"
       ],
@@ -926,6 +926,11 @@
           "field": "shared_decision",
           "reason": "decision_id=eval-external-process-supervision; role=owner; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#End-to-end control model"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "D.1 workspace-tier clippy (--all-targets, first run since 18.2 landed) fails on four pre-existing err().expect() calls in external_lock.rs test helpers; the minimal unwrap_err() fix is required for the shared gate to pass and touches no lock semantics.",
+          "source": "scripts/opi-impl-smoke.sh full gate"
         }
       ],
       "tier": "workspace",
@@ -948,9 +953,9 @@
         "crates/opi-eval/src/benchmark/process.rs::BenchmarkExecution::run"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "129002325899d3ac407405fcc5ca5fae79a564a9",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/lib.rs",
@@ -959,12 +964,56 @@
         "Cargo.toml",
         "Cargo.lock",
         "crates/opi-eval/Cargo.toml",
-        "crates/opi-eval/src/process/**"
+        "crates/opi-eval/src/process/**",
+        "crates/opi-eval/src/external_lock.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "700bd299716d72a50e65d89bae68d240f0dc1f57",
+      "evidence": {
+        "Opi-Task": "18.4",
+        "Opi-DoD-SHA256": "55dcd00ec44e187c6e6d83d7d05956b2f4f9b9f0ccf7b02708e219a68acc73a8",
+        "Opi-Verification": "workspace; scripts/opi-impl-smoke.sh full PASS (fmt + all-target clippy + rustdoc + workspace tests; proxies unset, RUST_TEST_THREADS=4, rerun after D.2 remediation) + cargo check -p opi-eval --target x86_64-pc-windows-msvc PASS + cargo tree forward/invert boundary (no Opi crate dep, no reverse dep)",
+        "Opi-Evaluator": "passed (2 must-fix remediated in-attempt; 2 flagged-for-human; 0 rejected)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-27T17:35:00+08:00",
+          "attempt": 1,
+          "summary": "18.4 passing. Red-green slices: (1) happy-path settle (exact env projection via /usr/bin/env argv[0] probe, cwd, exit codes, stream capture, NotRequired cleanup); (2) output-bounds truncation+drain (green-on-arrival: the bounded reader shipped with slice 1, test pins the distinct drain/truncation observable); (3) timeout+group-kill+verified-cleanup+descendant side-effect marker (RED exposed a real design gap: reader settlement deadlocked on descendant-held stdout pipes; fixed with shared-accumulator readers, settle-decision biased race, tree terminate -> bounded direct-child reap -> group-emptiness verification ordering); (4) cancellation state + race consistency (state-distinction green-on-arrival; race test accepts Exited|Cancelled with consistent cleanup pairs); (5) typed redacted spawn failures (NotFound/BadCwd/PermissionDenied; Debug never echoes argv/cwd). tree.rs is the crate's single audited unsafe-FFI home (Unix killpg via libc; Windows kill-on-close Job Object via windows-sys incl. suspended-spawn assign/resume and active-process emptiness poll); crate root moved forbid->deny(unsafe_code) with scoped allow. D.1 smoke full PASS; Windows compile-only cross-check via x86_64-pc-windows-msvc PASS (runtime Job Object proof deferred, flagged); cargo tree boundary holds. D.2 exec 7-lens (runtime executed by harness agent; wf_ref unavailable): must-fix 2 (empty-argv panic violating the documented never-panic contract - fixed with red test + guard; Exited doc comment overclaiming raw wait encoding - reworded), flagged-for-human 2 (race test intentionally pins settle-consistency not a single outcome; Windows Job Object path compile-verified only on this host), rejected 0; D.1 rerun green after remediation. Cross-scope repair: four pre-existing err().expect() clippy failures in 18.2 external_lock test helpers (first workspace all-targets run since 18.2) fixed mechanically as unwrap_err() with task_owned_paths append + inference note recorded before edit.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh full (workspace D.1, rerun after D.2 remediation)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "18.4",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/process.rs",
+                  "interface": "crate-private opi_eval::process::ProcessSupervisor (SpawnSpec/SupervisedOutcome/ExitState/CleanupEvidence)",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "eval-external-lock-contract",
+                  "action": "retain",
+                  "test": "crates/opi-eval/src/external_lock.rs",
+                  "interface": "ExternalArtifactLock (assertions unchanged; err().expect() -> unwrap_err() mechanical clippy repair only)",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "D.3 gap checks (windows-msvc cargo check; cargo tree forward/invert boundary)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per 18.1-18.3 precedent)",
+              "result": "must-fix 2 (fixed in-attempt, D.1 rerun green); flagged-for-human 2; rejected 0"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "18.5",
@@ -4494,6 +4543,14 @@
       "ran_at": "2026-08-27T13:14:40+08:00",
       "task_id": "18.2",
       "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.4",
+      "timestamp": "2026-08-27T17:35:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 2 remediated (empty-argv never-panic guard; Exited doc overclaim), flagged 2 (race-test intentionality; Windows Job Object compile-only), rejected 0; D.1 rerun green"
     }
   ]
 }
