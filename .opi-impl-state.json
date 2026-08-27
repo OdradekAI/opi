@@ -1794,7 +1794,7 @@
       "definition_of_done": "A Terminal-Bench 3.0-private importer and declarative profile admit only the pinned v3.0 task package, separate verifier container artifacts, native metric bytes, and typed failure owner through BenchmarkExecution. Unit tests use pinned fixtures; real task, image, Agent, and native-verifier execution remains open for task 18.15.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "18.8"
       ],
@@ -1887,7 +1887,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "2db684e80153620e019c3ff18e567d777578d25e",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/benchmark/mod.rs",
@@ -1898,7 +1898,8 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [],
+      "started_at": "2026-08-28T00:05:00+08:00"
     },
     {
       "id": "18.10",
