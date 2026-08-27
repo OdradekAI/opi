@@ -1,0 +1,247 @@
+{
+  "schema": "phase18-external-lock/static/1",
+  "lock_id": "phase18-linux-x86_64",
+  "platform": "linux-x86_64",
+  "authority": {
+    "trigger": "workflow_dispatch",
+    "admission": "digest",
+    "workflow": {
+      "path": ".github/workflows/phase18-lock-materialization.yml",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "producers": [
+      {
+        "path": "scripts/phase18-materialize-locks.sh",
+        "role": "materializer",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "path": "scripts/verify-phase18-materialization-ci.py",
+        "role": "verifier",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    ],
+    "actions": [
+      {
+        "name": "actions/checkout",
+        "version": "v4.2.2",
+        "commit": "11bd71901bbe5b1630ceea73d27597364c9af683"
+      },
+      {
+        "name": "actions/upload-artifact",
+        "version": "v4.6.2",
+        "commit": "ea165f8d65b6e75b540449e92b4886f43607fa02"
+      }
+    ]
+  },
+  "subjects": [
+    {
+      "id": "pi",
+      "kind": "agent-source",
+      "repository_url": "https://github.com/earendil-works/pi",
+      "commit": "4e58f324fae8ebfa98a3d45181fb248072a2afac",
+      "blobs": [
+        {
+          "path": "package-lock.json",
+          "git_blob": "37842d14c45e87e34a19e0f79dbbed54a71cce23",
+          "sha256": "abd9982ce837df8e2775196cde3b5c5584c30e66b232c26b7c55aafd58ab2e1b"
+        }
+      ]
+    },
+    {
+      "id": "terminal-bench-2.1",
+      "kind": "benchmark-source",
+      "repository_url": "https://github.com/harbor-framework/terminal-bench-2-1",
+      "commit": "7131e4375048a0e408a8fb404b5f499d726b695b",
+      "tasks_tree": "2f0f5fdc68f0befd9b4745386eb8698264b00d8a",
+      "task": {
+        "id": "openssl-selfsigned-cert",
+        "tree": "4c5b1214db4b807f2bc4c1bff8803402e36b648b",
+        "files": [
+          {
+            "path": "task.toml",
+            "mode": "100644",
+            "size": 939,
+            "sha256": "75c8913f0fa15890786c11999cde920b8bfc10d4ce8a14edf1e76985a2ac5800",
+            "git_blob": "9860901f6ec77f8fef9bc0c6056d007339dfab57"
+          }
+        ]
+      }
+    },
+    {
+      "id": "terminal-bench-3.0",
+      "kind": "benchmark-source",
+      "repository_url": "https://github.com/harbor-framework/terminal-bench",
+      "tag": "v3.0.0",
+      "commit": "2b0442c3c583b710ca8da14c8e601b99f2f1f244",
+      "tasks_tree": "a10dbfde7cd4d1c3ceaf22ed39b52a98dc775d54",
+      "task": {
+        "id": "batched-eval-parity",
+        "tree": "729916599199dd1de6be0e0c543da9788d6129b5",
+        "files": []
+      }
+    },
+    {
+      "id": "deepswe-v1.1",
+      "kind": "benchmark-source",
+      "repository_url": "https://github.com/datacurve-ai/deep-swe",
+      "version_anchor": "8cae5984d5dd0ee37445beff0e928dc10c331116",
+      "commit": "435ee89ec2f2e2289f33b0da4f992f0b7b7266b9",
+      "tasks_tree": "66df25a1b382017d0ae014d94cadb2698baaed48",
+      "task": {
+        "id": "abs-module-cache-flags",
+        "tree": "8ee76a3e4a876a9bd24f34edabcdde4e47257db4",
+        "files": []
+      }
+    }
+  ],
+  "tools": [
+    {
+      "id": "node",
+      "kind": "node",
+      "version": "22.19.0",
+      "archive": {
+        "url": "https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.xz",
+        "sha256": "c0649af18e6a24f6fe5535a3e86b341dd49a8e71117c8b68bde973ef834f16f2"
+      }
+    },
+    {
+      "id": "uv",
+      "kind": "uv",
+      "version": "0.9.7",
+      "archive": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.9.7/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "b26fcc8dfa1c39b5a5613445af3be3eefda45d9a39359bee271eafe34913583e"
+      }
+    },
+    {
+      "id": "harbor",
+      "kind": "harbor",
+      "version": "v0.22.0",
+      "commit": "4407eb5227a2ff4f0d3f16b2eb48849382fdf276",
+      "uv_lock": {
+        "git_blob": "1c3995feda2d52cbf822a7d378294065bfd64e09",
+        "sha256": "bfc3b39202ec3a04a379a2ff9a8c887c1cd55a5cdf3e7ede7f0d657d35a4d95a"
+      }
+    },
+    {
+      "id": "pier",
+      "kind": "pier",
+      "version": "v0.3.1",
+      "commit": "df89f994623a0a6a57229103b6fe910766693c30",
+      "uv_lock": {
+        "git_blob": "c479fa26584b198250f4ebba68aac8941ebe158d",
+        "sha256": "6261c632e80ee65e327c23f450c7cc5c38e34f2ee941d3ebe96ff72fc91f6de9"
+      }
+    }
+  ],
+  "images": [
+    {
+      "id": "tb21-openssl-selfsigned-cert-task",
+      "role": "task",
+      "reference": "alexgshaw/openssl-selfsigned-cert:20251031",
+      "manifest": "sha256:4c948a4e630af2435ae0a19108fc0814a946ac2fa29a512469e0fc77b38c8c12",
+      "config": "sha256:7082de4dab44888b5b5e9c0f9de09b30bc8cd28b329edc6d153fb5ce3dca5f24",
+      "layers": [
+        "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+        "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3"
+      ]
+    },
+    {
+      "id": "tb30-python-base",
+      "role": "build-input",
+      "reference": "python:3.11-slim",
+      "manifest": "sha256:272efc3f94bec901e2bc7a5c9984b3d113c317839edca2714c6a388b9476f8fc"
+    },
+    {
+      "id": "deepswe-mars-base-provenance",
+      "role": "provenance-only",
+      "reference": "public.ecr.aws/x8v8d7g8/mars-base:latest",
+      "manifest": "sha256:9c024d5dc46f32cee946353232ef99d8f714841ed08bba9b8fb9bb237c77f1ba"
+    },
+    {
+      "id": "buildkit",
+      "role": "builder",
+      "reference": "moby/buildkit:buildx-stable-1",
+      "manifest": "sha256:040d34121c27906c4ff9ac152a30d52bf2c5d328d3bb748916bb3d2743c02528",
+      "observed_version": "v0.32.2"
+    }
+  ],
+  "closures": [
+    {
+      "id": "tb21-openssl-selfsigned-cert-verifier",
+      "task_id": "openssl-selfsigned-cert",
+      "apt_epoch": "20250822T180000Z",
+      "indexes": [
+        {
+          "suite": "bookworm",
+          "archive": "debian",
+          "path": "dists/bookworm/main/binary-amd64/Packages.xz",
+          "sha256": "c9bb33f1dc3e679fead4b8c53cac7a1ef99a26b06f48f56ba84510b9c4bc6625"
+        }
+      ],
+      "packages": [
+        {
+          "name": "curl",
+          "version": "7.88.1-10+deb12u12",
+          "path": "pool/main/c/curl/curl_7.88.1-10+deb12u12_amd64.deb",
+          "sha256": "fa9e0c7bb1e00607c060ce533844c3a465105d7db13685b75508514aa8a2c999"
+        },
+        {
+          "name": "libcurl4",
+          "version": "7.88.1-10+deb12u12",
+          "path": "pool/main/c/curl/libcurl4_7.88.1-10+deb12u12_amd64.deb",
+          "sha256": "deeae4b7dd7235c88376b2f5ad08c22b225c5112133ee0d9bff8412cb29dd104"
+        }
+      ],
+      "uv": {
+        "installer": {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.9.5/uv-installer.sh",
+          "sha256": "8402ab80d2ef54d7044a71ea4e4e1e8db3b20c87c7bffbc30bff59f1e80ebbd5"
+        },
+        "archive": {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.9.5/uv-x86_64-unknown-linux-gnu.tar.gz",
+          "sha256": "2cf10babba653310606f8b49876cfb679928669e7ddaa1fb41fb00ce73e64f66"
+        },
+        "uv_sha256": "d3dc3ca8e29337dd602a9a4df9e6edb15ebc52aed91461debeedb96939dc4ce0",
+        "uvx_sha256": "421b1bb58429180a04ade98da066b5a5b6763e8ed74edef97359701c4cb42db8",
+        "source_commit": "d5f39331a73d5042e70ab770463dff632e20c127"
+      },
+      "wheels": [
+        {
+          "distribution": "pytest",
+          "version": "8.4.1",
+          "url": "https://files.pythonhosted.org/packages/29/16/c8a903f4c4dffe7a12843191437d7cd8e32751d5de349d45d3fe69544e87/pytest-8.4.1-py3-none-any.whl",
+          "sha256": "539c70ba6fcead8e78eebbf1115e8b589e7565830d7d006a8723f19ac8a0afb7"
+        },
+        {
+          "distribution": "iniconfig",
+          "version": "2.3.0",
+          "url": "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl",
+          "sha256": "f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12"
+        }
+      ],
+      "environment": {
+        "UV_DOWNLOAD_URL": "file:///opt/uv",
+        "UV_FIND_LINKS": "file:///opt/wheels",
+        "UV_OFFLINE": "1",
+        "UV_PYTHON_DOWNLOADS": "never"
+      }
+    }
+  ],
+  "adapter_policy": [
+    {
+      "id": "curl-shim",
+      "producer": "scripts/phase18-materialize-locks.sh",
+      "identity": "receipt-recorded"
+    }
+  ],
+  "workspace_input": {
+    "cargo_lock_sha256": "d19619f4c05b0bb00f324345f8103d615be6bcae0462cff5b9b8dbf3cce0cd2a"
+  },
+  "unresolved": [
+    { "id": "materializer-tools", "owner_task": "18.3" },
+    { "id": "closure-artifact", "owner_task": "18.3" },
+    { "id": "opi-executable", "owner_task": "18.15" }
+  ]
+}

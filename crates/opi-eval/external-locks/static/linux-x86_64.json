@@ -1,0 +1,531 @@
+{
+  "schema": "phase18-external-lock/static/1",
+  "lock_id": "phase18-linux-x86_64",
+  "platform": "linux-x86_64",
+  "authority": {
+    "trigger": "workflow_dispatch",
+    "admission": "digest",
+    "workflow": {
+      "path": ".github/workflows/phase18-lock-materialization.yml",
+      "sha256": "e986410e45543a69d8723b796a9932c2a3a45862b5f535915edd6b17162671c1"
+    },
+    "producers": [
+      {
+        "path": "scripts/phase18-materialize-locks.sh",
+        "role": "materializer",
+        "sha256": "0062bdd5c82b34abc6f29e52aab8b97efcbc1f89e0abd1d5455b23709ea49acc"
+      },
+      {
+        "path": "scripts/verify-phase18-materialization-ci.py",
+        "role": "verifier",
+        "sha256": "70750cc9d59c34d8ace8a0cf311d42fd9e9a1eb3884891d85bd0b7c0be439b92"
+      }
+    ],
+    "actions": [
+      {
+        "name": "actions/checkout",
+        "version": "v4.2.2",
+        "commit": "11bd71901bbe5b1630ceea73d27597364c9af683"
+      },
+      {
+        "name": "dtolnay/rust-toolchain",
+        "version": "1.97.0",
+        "commit": "889fac408b4da0905346410f253f0c55fbcb6613"
+      },
+      {
+        "name": "actions/setup-node",
+        "version": "v4.4.0",
+        "commit": "49933ea5288caeca8642d1e84afbd3f7d6820020"
+      },
+      {
+        "name": "astral-sh/setup-uv",
+        "version": "v6.7.0",
+        "commit": "b75a909f75acd358c2196fb9a5f1299a9a8868a4"
+      },
+      {
+        "name": "docker/setup-buildx-action",
+        "version": "v3.11.1",
+        "commit": "e468171a9de216ec08956ac3ada2f0791b6bd435"
+      },
+      {
+        "name": "actions/upload-artifact",
+        "version": "v4.6.2",
+        "commit": "ea165f8d65b6e75b540449e92b4886f43607fa02"
+      }
+    ]
+  },
+  "subjects": [
+    {
+      "id": "pi",
+      "kind": "agent-source",
+      "repository_url": "https://github.com/earendil-works/pi",
+      "commit": "4e58f324fae8ebfa98a3d45181fb248072a2afac",
+      "blobs": [
+        {
+          "path": "package-lock.json",
+          "git_blob": "37842d14c45e87e34a19e0f79dbbed54a71cce23",
+          "sha256": "abd9982ce837df8e2775196cde3b5c5584c30e66b232c26b7c55aafd58ab2e1b"
+        },
+        {
+          "path": "packages/coding-agent/npm-shrinkwrap.json",
+          "git_blob": "f65c23df9a50204b11484d91ccbb4d2618534acf",
+          "sha256": "df18751951cef578a1e5d809b33774bb385f69539f197bade0e70f1944aa3de7"
+        },
+        {
+          "path": "packages/coding-agent/package.json",
+          "git_blob": "02f45a37b3aa707af5bf7c99e8c3dc041c88cba5",
+          "sha256": "6c0bfa4558a0de32fb54fa97ca73397753ec7d4ad7d0ba607790920168de751f"
+        }
+      ]
+    },
+    {
+      "id": "terminal-bench-2.1",
+      "kind": "benchmark-source",
+      "repository_url": "https://github.com/harbor-framework/terminal-bench-2-1",
+      "commit": "7131e4375048a0e408a8fb404b5f499d726b695b",
+      "tasks_tree": "2f0f5fdc68f0befd9b4745386eb8698264b00d8a",
+      "task": {
+        "id": "openssl-selfsigned-cert",
+        "tree": "4c5b1214db4b807f2bc4c1bff8803402e36b648b",
+        "files": [
+          {
+            "path": ".gitignore",
+            "mode": "100644",
+            "size": 177,
+            "sha256": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+            "git_blob": "ecd089e8ac7767b9bdb6f3ac247c8d033f7565ab"
+          },
+          {
+            "path": "environment/Dockerfile",
+            "mode": "100644",
+            "size": 259,
+            "sha256": "f590b523038be43afcaf5291d7b9e8ed1333c48d9994e77b8dee2f2c352f0f40",
+            "git_blob": "96e6c9aeca68d196bea1f3b66d485e941abf13e2"
+          },
+          {
+            "path": "instruction.md",
+            "mode": "100644",
+            "size": 1381,
+            "sha256": "38054a3371f7c2c853478a2f9af0bff858437d5b28a9a07483238f06e566921f",
+            "git_blob": "8ed50b24d2b05ab1516f539891def9abed8c54a3"
+          },
+          {
+            "path": "README.md",
+            "mode": "100644",
+            "size": 2404,
+            "sha256": "5dfa88651890cda06fa2a25babd3b813818767635e88bbabecc8305d5bb3942f",
+            "git_blob": "dca818c6e9d00792adfd293e58c58f2c633cb0da"
+          },
+          {
+            "path": "solution/solve.sh",
+            "mode": "100644",
+            "size": 3135,
+            "sha256": "58cf3c844e907745cd81fb4bd75efb3d080e2f0e82b589c56c954ae6e1756510",
+            "git_blob": "8058f1efb55ce83e8be4f8e8a40a4baa5ac3c361"
+          },
+          {
+            "path": "task.toml",
+            "mode": "100644",
+            "size": 939,
+            "sha256": "75c8913f0fa15890786c11999cde920b8bfc10d4ce8a14edf1e76985a2ac5800",
+            "git_blob": "9860901f6ec77f8fef9bc0c6056d007339dfab57"
+          },
+          {
+            "path": "tests/test.sh",
+            "mode": "100644",
+            "size": 608,
+            "sha256": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334",
+            "git_blob": "cb4a41a45e4b23f4d1f1392fd68f6e47c5dbbf57"
+          },
+          {
+            "path": "tests/test_outputs.py",
+            "mode": "100644",
+            "size": 5878,
+            "sha256": "90970bb3c372e8e7fb6bb9ac5f649ba73eb38e1a5ea2e922a9057a72b6b4192d",
+            "git_blob": "e81aaade16184e40e7e3543b404222a723464613"
+          }
+        ]
+      }
+    },
+    {
+      "id": "terminal-bench-3.0",
+      "kind": "benchmark-source",
+      "repository_url": "https://github.com/harbor-framework/terminal-bench",
+      "tag": "v3.0.0",
+      "commit": "2b0442c3c583b710ca8da14c8e601b99f2f1f244",
+      "tasks_tree": "a10dbfde7cd4d1c3ceaf22ed39b52a98dc775d54",
+      "task": {
+        "id": "batched-eval-parity",
+        "tree": "729916599199dd1de6be0e0c543da9788d6129b5",
+        "files": []
+      }
+    },
+    {
+      "id": "deepswe-v1.1",
+      "kind": "benchmark-source",
+      "repository_url": "https://github.com/datacurve-ai/deep-swe",
+      "version_anchor": "8cae5984d5dd0ee37445beff0e928dc10c331116",
+      "commit": "435ee89ec2f2e2289f33b0da4f992f0b7b7266b9",
+      "tasks_tree": "66df25a1b382017d0ae014d94cadb2698baaed48",
+      "task": {
+        "id": "abs-module-cache-flags",
+        "tree": "8ee76a3e4a876a9bd24f34edabcdde4e47257db4",
+        "files": []
+      }
+    }
+  ],
+  "tools": [
+    {
+      "id": "node",
+      "kind": "node",
+      "version": "22.19.0",
+      "archive": {
+        "url": "https://nodejs.org/dist/v22.19.0/node-v22.19.0-linux-x64.tar.xz",
+        "sha256": "c0649af18e6a24f6fe5535a3e86b341dd49a8e71117c8b68bde973ef834f16f2"
+      }
+    },
+    {
+      "id": "uv",
+      "kind": "uv",
+      "version": "0.9.7",
+      "archive": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.9.7/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "b26fcc8dfa1c39b5a5613445af3be3eefda45d9a39359bee271eafe34913583e"
+      }
+    },
+    {
+      "id": "harbor",
+      "kind": "harbor",
+      "version": "v0.22.0",
+      "commit": "4407eb5227a2ff4f0d3f16b2eb48849382fdf276",
+      "uv_lock": {
+        "git_blob": "1c3995feda2d52cbf822a7d378294065bfd64e09",
+        "sha256": "bfc3b39202ec3a04a379a2ff9a8c887c1cd55a5cdf3e7ede7f0d657d35a4d95a"
+      }
+    },
+    {
+      "id": "pier",
+      "kind": "pier",
+      "version": "v0.3.1",
+      "commit": "df89f994623a0a6a57229103b6fe910766693c30",
+      "uv_lock": {
+        "git_blob": "c479fa26584b198250f4ebba68aac8941ebe158d",
+        "sha256": "6261c632e80ee65e327c23f450c7cc5c38e34f2ee941d3ebe96ff72fc91f6de9"
+      }
+    }
+  ],
+  "images": [
+    {
+      "id": "tb21-openssl-selfsigned-cert-task",
+      "role": "task",
+      "reference": "alexgshaw/openssl-selfsigned-cert:20251031",
+      "manifest": "sha256:4c948a4e630af2435ae0a19108fc0814a946ac2fa29a512469e0fc77b38c8c12",
+      "config": "sha256:7082de4dab44888b5b5e9c0f9de09b30bc8cd28b329edc6d153fb5ce3dca5f24",
+      "layers": [
+        "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+        "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+        "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+        "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+        "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+        "sha256:0d61612c452df55617b5222f791e20a624942b2476f92af02c613054f80bb17e"
+      ]
+    },
+    {
+      "id": "tb30-python-base",
+      "role": "build-input",
+      "reference": "python:3.11-slim",
+      "manifest": "sha256:272efc3f94bec901e2bc7a5c9984b3d113c317839edca2714c6a388b9476f8fc"
+    },
+    {
+      "id": "deepswe-task",
+      "role": "task",
+      "reference": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh75679ajj3b8dtd7se3h7z0a1833y6r-v1.1",
+      "manifest": "sha256:3a4d47f5281269305343c83729836ac2f3172811aee72681e472a4196178eda1"
+    },
+    {
+      "id": "deepswe-mars-base-provenance",
+      "role": "provenance-only",
+      "reference": "public.ecr.aws/x8v8d7g8/mars-base:latest",
+      "manifest": "sha256:9c024d5dc46f32cee946353232ef99d8f714841ed08bba9b8fb9bb237c77f1ba"
+    },
+    {
+      "id": "buildkit",
+      "role": "builder",
+      "reference": "moby/buildkit:buildx-stable-1",
+      "manifest": "sha256:040d34121c27906c4ff9ac152a30d52bf2c5d328d3bb748916bb3d2743c02528",
+      "observed_version": "v0.32.2"
+    }
+  ],
+  "closures": [
+    {
+      "id": "tb21-openssl-selfsigned-cert-verifier",
+      "task_id": "openssl-selfsigned-cert",
+      "apt_epoch": "20250822T180000Z",
+      "indexes": [
+        {
+          "suite": "bookworm",
+          "archive": "debian",
+          "path": "dists/bookworm/main/binary-amd64/Packages.xz",
+          "sha256": "c9bb33f1dc3e679fead4b8c53cac7a1ef99a26b06f48f56ba84510b9c4bc6625"
+        },
+        {
+          "suite": "bookworm-updates",
+          "archive": "debian",
+          "path": "dists/bookworm-updates/main/binary-amd64/Packages.xz",
+          "sha256": "87e7e94047fb7fb6f4ceecc7022d4bee55b66031cc2a7666d3196f3e0aabb846"
+        },
+        {
+          "suite": "bookworm-security",
+          "archive": "debian-security",
+          "path": "dists/bookworm-security/main/binary-amd64/Packages.xz",
+          "sha256": "1b348f05bbc69c5daf572a9e7a7c59e904759066d148bfd8f256a2138373dcaf"
+        }
+      ],
+      "packages": [
+        {
+          "name": "curl",
+          "version": "7.88.1-10+deb12u12",
+          "path": "pool/main/c/curl/curl_7.88.1-10+deb12u12_amd64.deb",
+          "sha256": "fa9e0c7bb1e00607c060ce533844c3a465105d7db13685b75508514aa8a2c999"
+        },
+        {
+          "name": "krb5-locales",
+          "version": "1.20.1-2+deb12u3",
+          "path": "pool/main/k/krb5/krb5-locales_1.20.1-2+deb12u3_all.deb",
+          "sha256": "59d13f7dda06638202011a5ec740dad591a663b3f68df1e2349662dc9efdacc5"
+        },
+        {
+          "name": "libbrotli1",
+          "version": "1.0.9-2+b6",
+          "path": "pool/main/b/brotli/libbrotli1_1.0.9-2+b6_amd64.deb",
+          "sha256": "563b4caec1aa5e876bd3355b36e7a38e1484baf5a293b48d1e8bd22db786e4d7"
+        },
+        {
+          "name": "libcurl4",
+          "version": "7.88.1-10+deb12u12",
+          "path": "pool/main/c/curl/libcurl4_7.88.1-10+deb12u12_amd64.deb",
+          "sha256": "deeae4b7dd7235c88376b2f5ad08c22b225c5112133ee0d9bff8412cb29dd104"
+        },
+        {
+          "name": "libgssapi-krb5-2",
+          "version": "1.20.1-2+deb12u3",
+          "path": "pool/main/k/krb5/libgssapi-krb5-2_1.20.1-2+deb12u3_amd64.deb",
+          "sha256": "34a3fcd0e5aeeb01e895b8ce563b06b12b0d763f1b5943b97feffed07a3f56f1"
+        },
+        {
+          "name": "libk5crypto3",
+          "version": "1.20.1-2+deb12u3",
+          "path": "pool/main/k/krb5/libk5crypto3_1.20.1-2+deb12u3_amd64.deb",
+          "sha256": "6aff44ea189ad062eb7a83b9fac99861f1efa35bf66bc7605c2ade644a08bb94"
+        },
+        {
+          "name": "libkeyutils1",
+          "version": "1.6.3-2",
+          "path": "pool/main/k/keyutils/libkeyutils1_1.6.3-2_amd64.deb",
+          "sha256": "cfac89e6a7a54ff3c6a4f843310e25efeddaa771baeae470bd98bd588c373563"
+        },
+        {
+          "name": "libkrb5-3",
+          "version": "1.20.1-2+deb12u3",
+          "path": "pool/main/k/krb5/libkrb5-3_1.20.1-2+deb12u3_amd64.deb",
+          "sha256": "e3c228ea202bf5a278329f5a96cbe3ca48927e0ed7fea849680b0996fece4879"
+        },
+        {
+          "name": "libkrb5support0",
+          "version": "1.20.1-2+deb12u3",
+          "path": "pool/main/k/krb5/libkrb5support0_1.20.1-2+deb12u3_amd64.deb",
+          "sha256": "8862ae9677f2361d888fcefb2734e4ddfb2678f82535d21c4c0cc77d8e406e9f"
+        },
+        {
+          "name": "libldap-2.5-0",
+          "version": "2.5.13+dfsg-5",
+          "path": "pool/main/o/openldap/libldap-2.5-0_2.5.13+dfsg-5_amd64.deb",
+          "sha256": "4b6c30f6554149c594628d945edc6003f0eea8d0cc1341638c0e71375db147ed"
+        },
+        {
+          "name": "libldap-common",
+          "version": "2.5.13+dfsg-5",
+          "path": "pool/main/o/openldap/libldap-common_2.5.13+dfsg-5_all.deb",
+          "sha256": "72a6c113801a0f307f3a9ab9fe7a7f9559d9164af990494ed2c50617a1e20452"
+        },
+        {
+          "name": "libnghttp2-14",
+          "version": "1.52.0-1+deb12u2",
+          "path": "pool/main/n/nghttp2/libnghttp2-14_1.52.0-1+deb12u2_amd64.deb",
+          "sha256": "dbe3eb8c831e654ac7d5cf045d605d53fd763e8ebc238607c25f301996103bb9"
+        },
+        {
+          "name": "libpsl5",
+          "version": "0.21.2-1",
+          "path": "pool/main/libp/libpsl/libpsl5_0.21.2-1_amd64.deb",
+          "sha256": "4f0d35610204e4e754b057748719744114621f2f6f4202d846c314860a981afb"
+        },
+        {
+          "name": "librtmp1",
+          "version": "2.4+20151223.gitfa8646d.1-2+b2",
+          "path": "pool/main/r/rtmpdump/librtmp1_2.4+20151223.gitfa8646d.1-2+b2_amd64.deb",
+          "sha256": "e1f69020dc2c466e421ec6a58406b643be8b5c382abf0f8989011c1d3df91c87"
+        },
+        {
+          "name": "libsasl2-2",
+          "version": "2.1.28+dfsg-10",
+          "path": "pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28+dfsg-10_amd64.deb",
+          "sha256": "11ee190ad39f8d7af441d2c8347388b9449434c73acc67b4b372445ac4152efa"
+        },
+        {
+          "name": "libsasl2-modules",
+          "version": "2.1.28+dfsg-10",
+          "path": "pool/main/c/cyrus-sasl2/libsasl2-modules_2.1.28+dfsg-10_amd64.deb",
+          "sha256": "b1966bea9832686a0fd5ddba9787dce5816ebe02218a4a8f7472a1628d73451b"
+        },
+        {
+          "name": "libsasl2-modules-db",
+          "version": "2.1.28+dfsg-10",
+          "path": "pool/main/c/cyrus-sasl2/libsasl2-modules-db_2.1.28+dfsg-10_amd64.deb",
+          "sha256": "3ac4fd6cbe3b3b06e68d24b931bf3eb938b842f15604a37ed25310e948ca0ee6"
+        },
+        {
+          "name": "libssh2-1",
+          "version": "1.10.0-3+b1",
+          "path": "pool/main/libs/libssh2/libssh2-1_1.10.0-3+b1_amd64.deb",
+          "sha256": "d20a3ee34fa84ad8bd381e8be6e9c2c2ea32347cff5e1169c10e978d43f54f24"
+        },
+        {
+          "name": "publicsuffix",
+          "version": "20230209.2326-1",
+          "path": "pool/main/p/publicsuffix/publicsuffix_20230209.2326-1_all.deb",
+          "sha256": "791c92c681a3cefcc9721445dc8a301a1a3cb3eef40ac2c16a4d9dd9ad5a42d7"
+        }
+      ],
+      "uv": {
+        "installer": {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.9.5/uv-installer.sh",
+          "sha256": "8402ab80d2ef54d7044a71ea4e4e1e8db3b20c87c7bffbc30bff59f1e80ebbd5"
+        },
+        "archive": {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.9.5/uv-x86_64-unknown-linux-gnu.tar.gz",
+          "sha256": "2cf10babba653310606f8b49876cfb679928669e7ddaa1fb41fb00ce73e64f66"
+        },
+        "uv_sha256": "d3dc3ca8e29337dd602a9a4df9e6edb15ebc52aed91461debeedb96939dc4ce0",
+        "uvx_sha256": "421b1bb58429180a04ade98da066b5a5b6763e8ed74edef97359701c4cb42db8",
+        "source_commit": "d5f39331a73d5042e70ab770463dff632e20c127"
+      },
+      "wheels": [
+        {
+          "distribution": "pytest",
+          "version": "8.4.1",
+          "url": "https://files.pythonhosted.org/packages/29/16/c8a903f4c4dffe7a12843191437d7cd8e32751d5de349d45d3fe69544e87/pytest-8.4.1-py3-none-any.whl",
+          "sha256": "539c70ba6fcead8e78eebbf1115e8b589e7565830d7d006a8723f19ac8a0afb7"
+        },
+        {
+          "distribution": "pytest-json-ctrf",
+          "version": "0.3.5",
+          "url": "https://files.pythonhosted.org/packages/51/a8/d58637d10f70ae14a1ad18cb37f4aa32d5593510213d5f929892cb1c9c6d/pytest_json_ctrf-0.3.5-py3-none-any.whl",
+          "sha256": "e82fd1d69be2f92385bc33540063e5ad7b17b36de67764c84f3ceb9815a895e9"
+        },
+        {
+          "distribution": "iniconfig",
+          "version": "2.3.0",
+          "url": "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl",
+          "sha256": "f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12"
+        },
+        {
+          "distribution": "packaging",
+          "version": "26.3",
+          "url": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+          "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+        },
+        {
+          "distribution": "pluggy",
+          "version": "1.6.0",
+          "url": "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl",
+          "sha256": "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746"
+        },
+        {
+          "distribution": "pygments",
+          "version": "2.21.0",
+          "url": "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl",
+          "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9"
+        }
+      ],
+      "environment": {
+        "UV_DOWNLOAD_URL": "file:///opt/uv",
+        "UV_FIND_LINKS": "file:///opt/wheels",
+        "UV_OFFLINE": "1",
+        "UV_PYTHON_DOWNLOADS": "never"
+      }
+    }
+  ],
+  "adapter_policy": [
+    {
+      "id": "curl-shim",
+      "producer": "scripts/phase18-materialize-locks.sh",
+      "identity": "receipt-recorded"
+    }
+  ],
+  "workspace_input": {
+    "cargo_lock_sha256": "d19619f4c05b0bb00f324345f8103d615be6bcae0462cff5b9b8dbf3cce0cd2a"
+  },
+  "unresolved": [
+    {
+      "id": "materializer-tools",
+      "owner_task": "18.3"
+    },
+    {
+      "id": "closure-artifact",
+      "owner_task": "18.3"
+    },
+    {
+      "id": "pulled-image-graphs",
+      "owner_task": "18.3"
+    },
+    {
+      "id": "harbor-effective-config",
+      "owner_task": "18.3"
+    },
+    {
+      "id": "docker-network-evidence",
+      "owner_task": "18.3"
+    },
+    {
+      "id": "oracle-preflight",
+      "owner_task": "18.3"
+    },
+    {
+      "id": "opi-executable",
+      "owner_task": "18.15"
+    },
+    {
+      "id": "pi-node-executable",
+      "owner_task": "18.15"
+    },
+    {
+      "id": "pi-bundle",
+      "owner_task": "18.15"
+    },
+    {
+      "id": "tb30-task-image",
+      "owner_task": "18.15"
+    },
+    {
+      "id": "tb30-verifier-image",
+      "owner_task": "18.15"
+    },
+    {
+      "id": "deepswe-verifier-image",
+      "owner_task": "18.15"
+    },
+    {
+      "id": "native-verifier-results",
+      "owner_task": "18.15"
+    },
+    {
+      "id": "sealed-artifact",
+      "owner_task": "18.15"
+    },
+    {
+      "id": "upload-receipt",
+      "owner_task": "18.15"
+    }
+  ]
+}

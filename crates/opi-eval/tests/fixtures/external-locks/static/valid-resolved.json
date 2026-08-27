@@ -1,0 +1,77 @@
+{
+  "schema": "phase18-external-lock/resolved/1",
+  "lock_id": "phase18-linux-x86_64",
+  "platform": "linux-x86_64",
+  "resolved_by_task": "18.3",
+  "static_lock": {
+    "path": "crates/opi-eval/external-locks/static/linux-x86_64.json",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "workflow": {
+    "ref": "refs/heads/main",
+    "sha": "92855f7a1915b92c0369a8a72cd0dd6ced8830ae",
+    "path": ".github/workflows/phase18-lock-materialization.yml",
+    "bytes_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "producers": [
+    {
+      "path": "scripts/phase18-materialize-locks.sh",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "path": "scripts/verify-phase18-materialization-ci.py",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ],
+  "run": {
+    "id": 1234567890,
+    "attempt": 1
+  },
+  "artifact": {
+    "name": "phase18-linux-lock-materialization",
+    "id": 987654321,
+    "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "url": "https://github.com/example/opi/actions/runs/1234567890/artifacts/987654321",
+    "expires_at": "2031-01-01T00:00:00Z"
+  },
+  "resolved_at": "2030-01-01T00:00:00Z",
+  "images": [
+    {
+      "id": "tb21-openssl-selfsigned-cert-task",
+      "manifest": "sha256:4c948a4e630af2435ae0a19108fc0814a946ac2fa29a512469e0fc77b38c8c12",
+      "config": "sha256:7082de4dab44888b5b5e9c0f9de09b30bc8cd28b329edc6d153fb5ce3dca5f24",
+      "layers": [
+        "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+        "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3"
+      ]
+    }
+  ],
+  "closure": {
+    "manifest_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "file_count": 31
+  },
+  "oracle": {
+    "status": "passed",
+    "reward": 1.0,
+    "ctrf_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "resolved": [
+    {
+      "id": "materializer-tools",
+      "identity": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "id": "closure-artifact",
+      "identity": "2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  ],
+  "future": [
+    {
+      "id": "opi-executable",
+      "owner_task": "18.15"
+    }
+  ],
+  "authority": {
+    "admission": "digest"
+  }
+}

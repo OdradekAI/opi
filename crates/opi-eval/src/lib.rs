@@ -17,3 +17,9 @@
 
 pub mod cli;
 pub mod experiment;
+
+// Crate-private admission contract for Phase 18 external execution locks. It
+// is deliberately not part of the provisional entry seam; runner and adapter
+// modules inside this crate consume it.
+#[allow(dead_code)]
+mod external_lock;
