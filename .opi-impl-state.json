@@ -1945,7 +1945,7 @@
       "definition_of_done": "A DeepSWE v1.1-private importer and declarative profile admit the semantic anchor plus executable revision, pristine verifier environment, declared patch/commit collection, authoritative reward including zero, and typed failure ownership through BenchmarkExecution. Unit tests use pinned fixtures; real task, image, Agent, and pristine-verifier execution remains open for task 18.15.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "18.8"
       ],
@@ -2038,7 +2038,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "012f8cdc8344302508df003f6670202798da6e44",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/benchmark/mod.rs",
@@ -2049,7 +2049,8 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [],
+      "started_at": "2026-08-28T01:10:00+08:00"
     },
     {
       "id": "18.10.1",
