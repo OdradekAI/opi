@@ -662,6 +662,11 @@
           "field": "graph_revision",
           "reason": "2026-08-27 second user-authorized amendment (option A) after run 33050681073 exposed stage-8 semantic gaps beyond the stage-2 mktemp mechanical defect. Repairs measured against pinned upstream sources (harbor 4407eb52, TB2.1 task tree 4c5b1214, research Appendix A): (1) stage 2 creates OUTPUT_DIR before mktemp; (2) stage 5 binds the task tag to the pulled digest so Harbor runs exactly the pinned image bytes; (3) stage 8 driver rewritten to the real harbor v0.22.0 API (Trial.create(TrialConfig(task=TaskConfig(path), agent=AgentConfig(name=oracle), trials_dir, trial_name)) + await run(); rewards read from result.verifier_result.rewards; result persisted via trial.paths.result_path; CTRF discovered under the trial dir); (4) receipt.network now records the ACTUAL effective verifier network mode derived from the pinned task.toml allow_internet plus the harbor shared-verifier baseline, and the artifact verifier enforces receipt/evidence mode consistency with vocabulary {none,public} instead of asserting none; (5) receipt oracle.reward is derived from observed rewards. DEFERRED with explicit revisit trigger: offline verifier enforcement (closure mount, apt offline service, curl shim PATH, no-network overlay) remains unproven because harbor v0.22.0 keeps the shared verifier public for this task and the overlay mechanism is not pinned by research; the deferral routes to the 18.15 native-smoke profile or a follow-up opi-research admission before any none-mode claim. The sealed closure remains a materialized pinned-provenance artifact and the closure-artifact resolved slot identity is unchanged. This amendment realizes the 18.2 flagged-for-human dispatch risk.",
           "source": "docs/research/2026-08-26-phase18-external-execution-locks.md#A.8 Placement and planning implication"
+        },
+        {
+          "field": "graph_revision",
+          "reason": "2026-08-27 third amendment (static-lock data correction, no code change). Run 33052214794 passed stages 0-2 and failed stage 3 on libldap-common: downloaded bytes hashed 72a6c113801a0f307f3a9ab9fe7a7f9559d9164af990494ed2c50617a0e20452 while the pin recorded ...17a1e20452. Arbitration against the closure's own pinned (and independently digest-verified) snapshot Packages indexes - the admitted authority inside the same static lock - proved exactly two transcription typos: libldap-common (one hex digit) and libsasl2-modules-db (b842f -> 85b42f). Both corrected to the index-authoritative values. Full pre-dispatch local verification sweep of every remaining runner-verifiable pin: 3 apt indexes OK, 19 packages now all matching, uv installer+archive OK against live bytes and the official checksum asset, uv/uvx in-archive binary digests OK, 6 wheels OK against the PyPI JSON API, task image manifest+config+layers OK against the Docker Hub registry API, harbor 4407eb52 and pier df89f994 uv.lock git_blob+sha256 both OK against live clones, TB21 trees/blobs already proven by the run's stage 2. Stage-8 semantics re-verified against harbor source: default no-filter verifier runs download the entire verifier dir (CTRF lands inside the trial dir), reward parses from reward.txt via _parse_reward_text, and result_path is written in the run() finally before return. This correction changes only two data characters inside an already-admitted contract whose admitted authority (the pinned indexes) dictated the values; no producer, workflow, schema, or admission semantics changed.",
+          "source": "docs/research/2026-08-26-phase18-external-execution-locks.md#A.3 Primary-source findings"
         }
       ],
       "tier": "library",
@@ -754,6 +759,29 @@
             {
               "gate": "python scripts/test_verify_phase18_materialization_ci.py",
               "result": "passed (15/15)"
+            },
+            {
+              "gate": "python scripts/test_verify_phase18_materialization_artifact.py",
+              "result": "passed (51/51)"
+            },
+            {
+              "gate": "python scripts/opi-doc-check.py",
+              "result": "passed"
+            },
+            {
+              "gate": "cargo test -p opi-eval --lib",
+              "result": "passed (37/37)"
+            }
+          ]
+        },
+        {
+          "timestamp": "2026-08-27T16:55:00+08:00",
+          "attempt": 1,
+          "summary": "18.3 static-lock digest correction after run 33052214794 (stages 0-2 green, stage 3 fail on a one-hex-digit libldap-common pin typo). Index-arbitrated fix of exactly two transcription typos (libldap-common, libsasl2-modules-db). Full local pre-verification sweep of every remaining runner-verifiable pin family (apt indexes/packages, uv assets and in-archive binaries, wheels vs PyPI API, task image manifest/config/layers vs registry API, harbor/pier uv.lock blobs, stage-8 harbor download/CTRF/reward/result-path semantics vs source). Gates: ci-verifier PASS, artifact tests 51/51, rust lib 37/37, doc-check PASS. Awaiting push + re-dispatch.",
+          "gate_results": [
+            {
+              "gate": "python scripts/verify-phase18-materialization-ci.py (real repo)",
+              "result": "passed"
             },
             {
               "gate": "python scripts/test_verify_phase18_materialization_artifact.py",
