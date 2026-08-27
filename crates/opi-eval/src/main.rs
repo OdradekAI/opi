@@ -27,6 +27,28 @@ enum Command {
     },
     /// Run one fixture-level conformance case against a concrete adapter
     /// through the shared execution seams (task 18.10.1).
+    /// Run one assembled hermetic experiment end to end through the
+    /// paired evaluation runner (task 18.12).
+    Run {
+        /// Path to the experiment document.
+        #[arg(long)]
+        config: std::path::PathBuf,
+        /// Fresh run root for trial directories and receipts.
+        #[arg(long)]
+        root: std::path::PathBuf,
+        /// Repository `crates/opi-eval/tests/fixtures` root.
+        #[arg(long)]
+        fixtures: std::path::PathBuf,
+        /// Hermetic staging behavior (helper-process selection).
+        #[arg(long, default_value = "happy")]
+        behavior: String,
+        /// Classify durable trial states instead of running.
+        #[arg(long)]
+        recover: bool,
+        /// Re-run one crashed trial's whole group under fresh identities.
+        #[arg(long)]
+        replacement_for: Option<String>,
+    },
     Conformance {
         /// `agent` or `benchmark`.
         #[arg(long)]
@@ -62,6 +84,36 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Command::Run {
+            config,
+            root,
+            fixtures,
+            behavior,
+            recover,
+            replacement_for,
+        } => {
+            let args = cli::run::RunArgs {
+                config,
+                root,
+                fixtures,
+                behavior,
+                recover,
+                replacement_for,
+            };
+            match cli::run::run(&args) {
+                Ok(report) => {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&report).expect("run report serializes")
+                    );
+                    ExitCode::from(cli::run::report_exit_code(&report) as u8)
+                }
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Command::Conformance {
             suite,
             adapter,

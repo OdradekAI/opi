@@ -1,0 +1,57 @@
+# Hermetic local experiment contract for the assembled run path
+# (Phase 18 task 18.12). Fixture-grade only: every executable resolved by
+# the runner is a runtime-generated deterministic helper; no real agent,
+# verifier, provider, or network is involved.
+
+schema = "phase18-experiment/1"
+experiment_id = "phase18-local-hermetic"
+
+[benchmark]
+name = "terminal-bench"
+revision = "2.1"
+dataset = "terminal-bench-2.1-fixture"
+# Content-addressed identity of the fixture integrity review the runner
+# builds for this document (pinned by a unit test in runner::experiment).
+integrity_digest = "baaafd5e9bd00f147a2f9cb2bfb338855243ea23524cce98af0d11bf1fb38539"
+
+[[subjects]]
+id = "baseline-pi"
+product = "pi"
+version = "0.84.3"
+
+[[subjects]]
+id = "candidate-opi"
+product = "opi"
+version = "0.1.0"
+
+[[edges]]
+id = "edge-1"
+baseline = "baseline-pi"
+candidate = "candidate-opi"
+
+[model_controls]
+provider = "local"
+model = "scripted"
+endpoint_class = "local"
+temperature = 0.0
+max_output_tokens = 4096
+# Omitted: neither pinned profile expresses a reasoning control for this
+# experiment, so no subject is asked to realize one.
+reasoning = "omitted"
+
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "isolated"
+
+[[trials]]
+id = "trial-pi-1"
+subject = "baseline-pi"
+task = "fixture-task"
+group = "group-hello"
+
+[[trials]]
+id = "trial-opi-1"
+subject = "candidate-opi"
+task = "fixture-task"
+group = "group-hello"

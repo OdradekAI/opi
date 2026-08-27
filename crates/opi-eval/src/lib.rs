@@ -21,6 +21,9 @@
 #![deny(unsafe_code)]
 
 pub mod cli;
+
+#[allow(dead_code)]
+pub(crate) mod authority;
 pub mod experiment;
 
 // Crate-private admission contract for Phase 18 external execution locks. It

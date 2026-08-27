@@ -2,6 +2,7 @@
 //! `opi-eval conformance` command (task 18.10.1): see [`conformance`].
 
 pub mod conformance;
+pub mod run;
 
 use std::fmt;
 use std::path::Path;
