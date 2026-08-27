@@ -29,6 +29,21 @@ pub mod experiment;
 #[allow(dead_code)]
 mod external_lock;
 
+// Crate-private failure-boundary codes (Phase 18 task 18.5). One stable
+// owning-boundary code per failure table row; typed failures carry it.
+#[allow(dead_code)]
+mod failure;
+
+// Crate-private durable trial bundle (Phase 18 task 18.5). Owns canonical
+// sealing, mutation rejection, and intent-before-effect persistence; the
+// runner lifecycle and later regrade/report consumers stay inside this crate.
+#[allow(dead_code)]
+mod bundle;
+
+// Crate-private trial runner substrate (Phase 18 task 18.5).
+#[allow(dead_code)]
+mod runner;
+
 // Crate-private external-process supervision (Phase 18 task 18.4). Owns the
 // shared state machine used by the future AgentExecution and
 // BenchmarkExecution adapters; never exposes OS primitives outside the crate.
