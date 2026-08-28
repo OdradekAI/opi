@@ -51,7 +51,9 @@ git_identity() {
   commit=$(git -C "$dir" rev-parse HEAD)
   if [ -n "$(git -C "$dir" status --porcelain)" ]; then dirty=true; else dirty=false; fi
   dirty_files=$(git -C "$dir" status --porcelain | wc -l | tr -d ' ')
-  printf '%s\n%s\n%s\n' "$commit" "$dirty" "$dirty_files"
+  # One space-separated line: `read -r a b c` consumes a single line,
+  # so a multi-line layout would leave every later field empty.
+  printf '%s %s %s\n' "$commit" "$dirty" "$dirty_files"
 }
 
 tree_digest() {
