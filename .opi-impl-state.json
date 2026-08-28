@@ -2764,7 +2764,7 @@
       "definition_of_done": "The regrade/report CLI consumes sealed assembled outputs and labels paired results conformance-only. The report path explicitly invokes ReportBuilder::recompute_from_bundle before rendering, so repeated regrade, recompute, and render start no Agent/provider, preserve the sealed bundle and earlier derived results, and produce byte-stable normalized outputs for identical tool identities. Cross-platform evidence wrappers save command/stdout/stderr/exit/artifacts for audit; asymmetric facts remain measured values or typed unknowns, and all interfaces remain provisional until tasks 18.15 and 18.16.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "18.12"
       ],
@@ -2934,7 +2934,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "2e68783",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/lib.rs",
