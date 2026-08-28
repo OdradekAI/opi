@@ -1092,10 +1092,6 @@ MATEOF
 # Stage: conformance-rerun
 # ---------------------------------------------------------------------------
 cmd_conformance_rerun() {
-  # Temporary dispatch-time trace: the runner exits this stage within
-  # 0.2s with no diagnostics while the identical chain succeeds locally.
-  echo "conformance-rerun: entry: $*" >&2
-  set -x
   material=""; out=""
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -1132,11 +1128,18 @@ cmd_conformance_rerun() {
     case_id=${rest#* }
     root="$out/reports/$suite-$adapter-$case_id"
     mkdir -p "$root"
-    "$OPI_EVAL_EXECUTABLE" conformance --suite "$suite" --adapter "$adapter" \
+    # A native case that does not meet its contract exits 1 with the
+    # details only in the JSON report, so a failure surfaces the report
+    # instead of a bare exit status.
+    if ! "$OPI_EVAL_EXECUTABLE" conformance --suite "$suite" --adapter "$adapter" \
       --case "$case_id" --root "$root" \
       --fixtures "$REPO_ROOT/crates/opi-eval/tests/fixtures" \
       --provider "$REPO_ROOT/scripts/phase18-scripted-provider.py" \
-      --native-material "$material" > "$root/report.json"
+      --native-material "$material" > "$root/report.json"; then
+      echo "conformance-rerun: case $suite-$adapter-$case_id failed; report:" >&2
+      cat "$root/report.json" >&2 || true
+      die "conformance-rerun: case $suite-$adapter-$case_id did not meet its contract"
+    fi
   done
   write_receipt "$out" conformance-rerun \
     "$(python3 -c 'import json; print(json.dumps({"cases_run": 12, "mode": "native-material"}))')"
