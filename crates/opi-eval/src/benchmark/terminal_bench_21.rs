@@ -841,14 +841,23 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
                                 super::process::HarborResultError::Invalid("json-parse") => {
                                     "verifier-output-invalid-json-parse"
                                 }
-                                super::process::HarborResultError::Invalid("no-trial-list") => {
-                                    "verifier-output-invalid-no-trial-list"
+                                super::process::HarborResultError::Invalid("no-eval-stats") => {
+                                    "verifier-output-invalid-no-eval-stats"
+                                }
+                                super::process::HarborResultError::Invalid("eval-count") => {
+                                    "verifier-output-invalid-eval-count"
+                                }
+                                super::process::HarborResultError::Invalid("no-reward-stats") => {
+                                    "verifier-output-invalid-no-reward-stats"
+                                }
+                                super::process::HarborResultError::Invalid("reward-count") => {
+                                    "verifier-output-invalid-reward-count"
+                                }
+                                super::process::HarborResultError::Invalid("reward-trials") => {
+                                    "verifier-output-invalid-reward-trials"
                                 }
                                 super::process::HarborResultError::Invalid("trial-count") => {
                                     "verifier-output-invalid-trial-count"
-                                }
-                                super::process::HarborResultError::Invalid("no-reward-chain") => {
-                                    "verifier-output-invalid-no-reward-chain"
                                 }
                                 super::process::HarborResultError::Invalid("bad-reward-values") => {
                                     "verifier-output-invalid-bad-reward-values"
