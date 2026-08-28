@@ -3439,7 +3439,7 @@
       "definition_of_done": "After task 18.14.1 and its ledger checkpoint are committed and a human publishes the workflow producer to the repository default branch so workflow_dispatch is available, a human-authorized dispatch checks out exactly the 18.14.1 candidate_sha and produces one successful unexpired artifact. Before either Agent starts, the receipt verifies github.workflow_ref/github.workflow_sha, the workflow path and bytes loaded from that SHA against the candidate_sha workflow, every invoked script/action/provider/adapter-source digest, the compiled opi-eval executable, complete Opi canonical-path/SHA-256/file/ldd/checkout/dirty/Cargo.lock/toolchain/target/profile/features provenance, complete pi canonical Node-path/SHA-256/file/ldd/version/npm/checkout/dirty/package/lock/archive/installed-tree/bundle provenance, both adapters' exact argv/cwd/allowlisted environment/configuration projections, and the provider's source/Python path+digest+version/isolated argv/cwd/closed environment/stdlib dependency/listener/socket/Docker-network/reachability/request-log identities, plus the canary-oracle preflight result proving oracle and reference-solution material never entered either Agent-phase environment. The producer reruns the task 18.10.1 shared AgentExecution and BenchmarkExecution conformance suites through those exact built Opi/pi programs and all three exact native revisions before accepting the artifact. The sealed manifest binds three exact task packages, passing oracle preflights, exactly six paired trials, completed authoritative Terminal-Bench 2.1/3.0 and DeepSWE verifiers, comparison edges, and typed trajectory/span artifacts with native-source edges covering Agent activity, all three grader lifecycles, artifact collection, final workspaces, verifiers, and the pre-seal lifecycle; an outer receipt binds the seal result, sealed manifest digest, artifact id/url/digest, and expiry without self-reference. Opi/pi reward zero is accepted as an integration result but never as Agent task success, while ambient provider credentials/configuration, an undeclared or overbroad listener/network, verifier access to the provider, a positive canary-oracle probe, a missing or non-completing verifier, or any mismatch, fallback, cached result, edited verifier, paid-provider path, missing trial, or missing causal artifact rejects the task.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "18.14.1"
       ],
@@ -3672,7 +3672,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "84a5cc1e6db1d8d20f01c25f8fbe97a61564d1d2",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "scripts/verify-phase18-native-artifact.py",
