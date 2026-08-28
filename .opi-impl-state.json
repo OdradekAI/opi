@@ -2764,7 +2764,7 @@
       "definition_of_done": "The regrade/report CLI consumes sealed assembled outputs and labels paired results conformance-only. The report path explicitly invokes ReportBuilder::recompute_from_bundle before rendering, so repeated regrade, recompute, and render start no Agent/provider, preserve the sealed bundle and earlier derived results, and produce byte-stable normalized outputs for identical tool identities. Cross-platform evidence wrappers save command/stdout/stderr/exit/artifacts for audit; asymmetric facts remain measured values or typed unknowns, and all interfaces remain provisional until tasks 18.15 and 18.16.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "18.12"
       ],
@@ -2848,6 +2848,10 @@
           "field": "shared_decision",
           "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark revision integrity"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The assembled runner (task 18.12) is the production seal call site and the producer of the run root this task must consume: the pre-seal redaction gate that makes canary leakage block sealing has to run immediately before RunBundle::seal in run_trial, and the run path must persist run-report.json so the offline regrade/report commands consume sealed assembled outputs without re-running anything. Appended before the file was edited."
         }
       ],
       "tier": "cli-runtime",
@@ -2879,7 +2883,7 @@
             "opi_eval::cli::regrade",
             "opi_eval::bundle::RunBundle::verify"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "P18-A16",
@@ -2891,7 +2895,7 @@
           "production_call_sites": [
             "opi_eval::report::ReportBuilder::build"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "P18-A17",
@@ -2907,7 +2911,7 @@
             "opi_eval::report::ReportBuilder::build",
             "opi_eval::report::ReportBuilder::recompute_from_bundle"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "P18-A18",
@@ -2920,7 +2924,7 @@
             "opi_eval::bundle::RunBundle::seal",
             "opi_eval::report::ReportBuilder::build"
           ],
-          "status": "open"
+          "status": "closed"
         }
       ],
       "production_call_sites": [
@@ -2932,7 +2936,7 @@
         "scripts/phase18-eval-smoke.sh"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "2e68783",
       "baseline_dirty_files": [],
@@ -2950,12 +2954,93 @@
         "crates/opi-eval/tests/fixtures/reports/**",
         "scripts/phase18-eval-smoke.ps1",
         "scripts/phase18-eval-smoke.sh",
-        "scripts/test_phase18_eval_smoke.py"
+        "scripts/test_phase18_eval_smoke.py",
+        "crates/opi-eval/src/runner/experiment.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "ea37f3957e1d851c620eba4a61a45386a8fff4f8",
+      "evidence": {
+        "Opi-Task": "18.13",
+        "Opi-DoD-SHA256": "87b6b010af42b7a512e3f339a9e39dcac389940e89ddf97f26791fb4d782ab1c",
+        "Opi-Verification": "library; smoke scoped (end_to_end_report/bundle_recompute/report_contract) + python addendum + windows check + 168 crate tests",
+        "Opi-Evaluator": "passed (0 must-fix; 7 flagged-for-human; 0 rejected)",
+        "Opi-Acceptance": "P18-A15,A16,A17,A18 closed through the production regrade/report binary"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-28T09:20:00+08:00",
+          "attempt": 1,
+          "summary": "18.13 passing. New regrade.rs (OfflineRegrader::regrade - sorted verify-only walk over trials/*/bundle via RunBundle::verify, typed failures digest-mismatch/symlink-escape/manifest-invalid/io/lifecycle-invalid, denominator keeps unsealed trials visible, no machine-local paths), report.rs (ReportBuilder::recompute_from_bundle = persisted run-report.json + receipts + re-verified manifests; build() = recompute -> RedactionGuard -> render; REPORTER_VERSION phase18-reporter/1 pinned; classification conformance-evidence; headline only from native grader artifact with provenance artifact+digest+bundle identity, diagnostics separately labelled; native_facts table usage/cost/retry/compaction - opi usage measured via native/evidence/records digest-cited, everything else typed unknown:<product>-<family>-not-native, no fabricated parity; coverage copied from durable run report with run_outcome surfaced; no composite/score/winner keys; blocked report = publication-blocked + trial/artifact/reason, never echoes the canary), cli/regrade.rs + cli/report.rs (exit 0 verified|published / 1 mutation|blocked / 2 rejected; --out writes the same canonical bytes as stdout; --canaries declaration file must hold >=1 secret). Runner (C.1a-appended BEFORE edit): run persists run-report.json at run root for offline-only consumption; run/report accept --canaries; pre-seal redaction gate scans staged bundle files for declared canaries -> attempt_failed(Seal,Evidence), no manifest published; canary-leak behavior writes the pinned HERMETIC_CANARY into answer.txt (staged for both products without corrupting native streams) and the verifier helper accepts it like happy. Tests: bundle_recompute (A15: intact regrade verified with 2 bundle identities, tamper agent-answer.txt byte -> exit 1 typed digest-mismatch, manifest+bytes identical after - no repair; A17: regrade x2 identical stdout, report x2 to outputs OUTSIDE the root identical stdout+file bytes == stdout claim, second run same root refused exit 2 typed 'already', run-root tree digest unchanged across all offline ops, report still reproducible), report_contract (A16: opi usage measured 64-hex digest-cited vs pi typed unknown, no digest/value on unknowns, cost/retry/compaction typed unknown both sides, never equal serialization; A18: run --canaries -> status failed, authority seal failed:at-evidence, NO bundle manifest on disk for either trial; undeclared canary-leak seals, report --canaries -> exit 1 publication-blocked, leak names trial+artifact+reason, stdout contains neither the canary nor the absolute root path, no normalized content), end_to_end_report (byte-stable across two independent fresh runs - content-addressed bundles; conformance-evidence + forbidden wording leaderboards/superiority/official; headline native_source native/...+64-hex; diagnostics label; no score/composite/winner/best_trial/verdict fields; exclusion run: run_outcome incomplete, coverage non-empty and never silently comparable, surviving trials visible). Python addendum: offline evidence preserved (regrade/report commands, exit codes, byte-stable renders, audit offline section sha256) + explicit report mode over caller-provided root (sh 'report --bundle --artifact-dir' / ps1 '-Mode report'). Rustdoc trap fixed (private intra-doc link reworded); clippy collapsed if-let; ReportCliError carries rendered strings at the public seam; windows(0) panics on empty artifacts fixed in both scanners (empty content can never contain a non-empty canary). Red-phase catches: --out inside run root broke tree-digest invariance (test bug); pi canary in stdout corrupted the native stream (moved to answer.txt); stale multi-target-dir confusion while debugging (cargo config target-dir wsl-direct vs smoke cache dir vs stale ./target from an old Windows build). D.1 scoped smoke PASS (168 crate tests); python addendum 3/3 PASS; D.3 windows check 0 errors; D.2 exec 7-lens: must-fix 0, flagged 7: (1) pre-seal canary gate lives in the runner before RunBundle::seal - the bundle primitive itself has no redaction policy, future seal callers must apply their own guard (18.15/18.16 ratification); (2) report parses sealed manifest.json generically as wire format instead of a typed bundle accessor - revisit when the bundle format gains a reader; (3) coverage states are copied from the persisted durable run report rather than independently recomputed from bundle contents - full recompute arrives with 18.16 seam contraction; (4) bundle manifests label the verifier's native report source 'agent-<product>' (18.12 staging quirk) so the report identifies grader artifacts by Native role suffix - source-identity cleanup flagged for 18.15; (5) the native-fact family table is pinned to the hermetic profiles (real per-product families with the native rerun, 18.15); (6) the drafted smoke addendum referenced tests/fixtures/bundles/comparison-set - implemented with runtime-sealed roots plus owned fixtures/reports/canaries/hermetic.txt, divergence recorded; (7) run-report.json persistence (normal + recovery reports) widens the run-root contract for offline consumption. Rejected 0. Test disposition: add.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh scoped --crate opi-eval --test end_to_end_report --test bundle_recompute --test report_contract (D.1)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "P18-A15",
+                  "action": "add",
+                  "test": "crates/opi-eval/tests/bundle_recompute.rs::p18_a15_mutation_rejected",
+                  "interface": "production opi-eval regrade binary (cli::regrade -> OfflineRegrader::regrade -> RunBundle::verify)",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "P18-A16",
+                  "action": "add",
+                  "test": "crates/opi-eval/tests/report_contract.rs::p18_a16_asymmetric_native_facts",
+                  "interface": "production opi-eval report binary (cli::report -> ReportBuilder::build)",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "P18-A17",
+                  "action": "add",
+                  "test": "tests/bundle_recompute.rs::p18_a17_repeated_offline_operations_are_stable",
+                  "interface": "production regrade+report binaries",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "P18-A18",
+                  "action": "add",
+                  "test": "tests/report_contract.rs::p18_a18_canary_leakage_blocks_bundle_and_report",
+                  "interface": "production run seal call site + report binary",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "RPT-002..006/EXP-006",
+                  "action": "add",
+                  "test": "tests/end_to_end_report.rs (3)",
+                  "interface": "production report binary",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "wrapper evidence",
+                  "action": "update",
+                  "test": "scripts/test_phase18_eval_smoke.py (3, incl. report mode)",
+                  "interface": "scripts/phase18-eval-smoke.{sh,ps1} offline + report mode",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "python scripts/test_phase18_eval_smoke.py (smoke addendum)",
+              "result": "passed"
+            },
+            {
+              "gate": "cargo check -p opi-eval --target x86_64-pc-windows-msvc --all-targets (D.3)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per precedent)",
+              "result": "passed"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "18.14",
@@ -5062,6 +5147,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 7 (late C.1a glob append; unused assembled/ owned path; fixture admitted_lock_digest; A13 control-mismatch arm schema-impossible until 18.15; line-scoped replace_group editor; sealed ledger scope ends at sealing; --behavior is hermetic staging); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.13",
+      "timestamp": "2026-08-28T09:20:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 7 (runner-side seal gate placement; generic manifest parse; coverage copied from durable run report; mislabeled verifier source labels; hermetic fact-family table; addendum path divergence; run-root contract widened by run-report.json); rejected 0"
     }
   ]
 }
