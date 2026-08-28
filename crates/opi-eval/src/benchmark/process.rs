@@ -111,32 +111,47 @@ pub(crate) fn import_harbor_result(
         std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
     let value: serde_json::Value = serde_json::from_slice(&bytes)
         .map_err(|_| HarborResultError::Invalid("json-parse"))?;
-    let trials = value
-        .get("trial_results")
-        .and_then(|t| t.as_array())
-        .ok_or(HarborResultError::Invalid("no-trial-list"))?;
-    if trials.len() != 1 {
+    // Harbor's completion path writes the job-level result with the
+    // trial list excluded (per-trial results live in the trial
+    // directories); the aggregate authority here is
+    // stats.evals.<eval>.reward_stats, a map from reward value to the
+    // trial names that earned it. One job, one eval, one trial: any
+    // broader shape is drift and fails closed.
+    if value.get("n_total_trials").and_then(|n| n.as_u64()) != Some(1) {
         return Err(HarborResultError::Invalid("trial-count"));
     }
-    let rewards = trials[0]
-        .get("verifier_result")
-        .and_then(|v| v.get("rewards"))
+    let evals = value
+        .get("stats")
+        .and_then(|s| s.get("evals"))
+        .and_then(|e| e.as_object())
+        .ok_or(HarborResultError::Invalid("no-eval-stats"))?;
+    if evals.len() != 1 {
+        return Err(HarborResultError::Invalid("eval-count"));
+    }
+    let reward_stats = evals
+        .values()
+        .next()
+        .and_then(|stats| stats.get("reward_stats"))
         .and_then(|r| r.as_object())
-        .ok_or(HarborResultError::Invalid("no-reward-chain"))?;
-    if rewards.is_empty()
-        || rewards
-            .values()
-            .any(|v| !v.as_f64().is_some_and(|n| n.is_finite()))
-    {
+        .ok_or(HarborResultError::Invalid("no-reward-stats"))?;
+    if reward_stats.len() != 1 {
+        return Err(HarborResultError::Invalid("reward-count"));
+    }
+    let (reward_key, trials) = reward_stats.iter().next().expect("len checked");
+    let trial_names = trials.as_array().ok_or(HarborResultError::Invalid("reward-trials"))?;
+    if trial_names.len() != 1 {
+        return Err(HarborResultError::Invalid("reward-trials"));
+    }
+    let reward: f64 = reward_key
+        .parse()
+        .map_err(|_| HarborResultError::Invalid("bad-reward-values"))?;
+    if !reward.is_finite() {
         return Err(HarborResultError::Invalid("bad-reward-values"));
     }
-    // The Terminal-Bench aggregate convention: the `reward` key is the
+    // The Terminal-Bench aggregate convention: the reward value is the
     // zero-or-one indicator of every test passing. That is the only
     // counter the aggregate can honestly carry; the rest stay unknown.
-    let all_passed = rewards
-        .get("reward")
-        .and_then(|v| v.as_f64())
-        .is_some_and(|n| n > 0.0);
+    let all_passed = reward > 0.0;
     let metrics = NativeMetrics {
         tests: None,
         passed: Some(Fact::Known {
@@ -750,3 +765,44 @@ mod tests {
         );
     }
 }
+
+    #[test]
+    fn harbor_result_import_reads_the_completion_aggregate() {
+        let dir = tempfile::tempdir().unwrap();
+        let jobs = dir.path().join("jobs").join("2026-08-28__12-33-17");
+        std::fs::create_dir_all(&jobs).unwrap();
+        std::fs::write(
+            jobs.join("result.json"),
+            br#"{"id": "0b0a", "started_at": "2026-08-28T12:33:17Z",
+                "finished_at": "2026-08-28T12:33:50Z", "n_total_trials": 1,
+                "stats": {"evals": {"adhoc/terminal-bench-2-1/oracle": {
+                    "reward_stats": {"1.0": ["openssl-selfsigned-cert"]}}}}}"#,
+        )
+        .unwrap();
+        let (metrics, path, _value) = import_harbor_result(dir.path()).unwrap();
+        assert!(path.ends_with("result.json"));
+        assert_eq!(
+            metrics.passed,
+            Some(Fact::Known {
+                value: 1,
+                origin: "harbor-reward".to_owned()
+            })
+        );
+        assert_eq!(metrics.tests, None);
+    }
+
+    #[test]
+    fn harbor_result_import_fails_closed_on_trial_count_drift() {
+        let dir = tempfile::tempdir().unwrap();
+        let jobs = dir.path().join("jobs").join("2026-08-28__12-33-17");
+        std::fs::create_dir_all(&jobs).unwrap();
+        std::fs::write(
+            jobs.join("result.json"),
+            br#"{"n_total_trials": 2, "stats": {"evals": {}}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            import_harbor_result(dir.path()),
+            Err(HarborResultError::Invalid("trial-count"))
+        ));
+    }
