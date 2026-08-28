@@ -539,7 +539,8 @@ cmd_provider_up() {
   mkdir -p "$out"
   env -i PATH="/usr/bin:/bin" HOME="$out" \
     "$(readlink -f "$(command -v python3)")" -I -S "$provider" \
-    --listen "$endpoint" > "$provider_log" 2>&1 &
+    --listen "$endpoint" --request-log "$out/requests.jsonl" \
+    > "$provider_log" 2>&1 &
   echo $! > "$out/provider.pid"
   python3 - "$endpoint" "$provider" "$out" <<'PYEOF'
 import json, socket, sys, time
@@ -562,7 +563,8 @@ print(json.dumps({
     "network": "phase18-provider-net",
     "network_internal": True,
     "argv": ["<canonical-python3>", "-I", "-S", provider,
-             "--listen", endpoint],
+             "--listen", endpoint,
+             "--request-log", f"{out}/requests.jsonl"],
     "cwd": "<repo-root>",
     "environment_allowlist": ["PATH", "HOME"],
     "stdlib_only": True,
