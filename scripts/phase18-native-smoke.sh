@@ -694,7 +694,8 @@ cmd_preflight_canaries() {
 import hashlib, json, sys
 from pathlib import Path
 
-lock, external, provider, repo, out = sys.argv[1:6]
+lock_path, external, provider, repo, out = sys.argv[1:6]
+lock = json.load(open(lock_path, encoding="utf-8"))
 clone_index = {"terminal-bench-2.1": "terminal-bench-2-1",
                "terminal-bench-3.0": "terminal-bench",
                "deepswe-v1.1": "deep-swe"}
