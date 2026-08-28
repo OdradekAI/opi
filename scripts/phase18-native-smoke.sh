@@ -912,9 +912,11 @@ for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
     if not uv:
         raise SystemExit("materialize-configs: uv was not resolved on PATH")
     uv = str(Path(uv).resolve())
-    # `uv run --locked harbor|pier` resolves the locked environment from
-    # the verifier checkout's own pyproject/uv.lock: the wrappers enter
-    # the fetched, blob-verified runner source before exec-ing uv.
+    # `uv --project <runner-home> run --locked harbor|pier` resolves the
+    # locked environment from the fetched, blob-verified runner source
+    # while the working directory stays wherever the runner set it, so
+    # the verifier's own outputs (harbor's jobs/ tree) land in the run's
+    # trace root where the adapter reads them.
     runner = "harbor" if benchmark.startswith("terminal-bench") else "pier"
     runner_home = Path(external) / runner
     if not (runner_home / "uv.lock").is_file():
@@ -923,9 +925,9 @@ for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
     verifier = write_exec(out / "wrappers" / f"verifier-{benchmark}.sh",
         f"""#!/bin/sh
 # phase18 verifier wrapper (task 18.14.1): the pinned uv entrypoint drives
-# the unchanged {benchmark} native verifier from its locked runner source.
-cd "{runner_home}"
-exec "{uv}" "$@"
+# the unchanged {benchmark} native verifier from its locked runner source
+# without moving the working directory.
+exec "{uv}" --project "{runner_home}" "$@"
 """)
     oracle = write_exec(out / "wrappers" / f"oracle-{benchmark}.sh",
         f"""#!/bin/sh
@@ -933,8 +935,7 @@ exec "{uv}" "$@"
 # the official reference solution of {benchmark} {task_ids[benchmark]} and
 # grades it with the unchanged native verifier through the same launch
 # surface the agent trials use.
-cd "{runner_home}"
-exec "{uv}" "$@"
+exec "{uv}" --project "{runner_home}" "$@"
 """)
     # The runner spawns verifiers and oracles with a cleared environment:
     # the projection is declared here, not inherited. The runner-side
