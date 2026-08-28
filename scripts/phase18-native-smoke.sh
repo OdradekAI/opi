@@ -334,7 +334,8 @@ PYEOF
 import json, subprocess, sys
 from pathlib import Path
 
-lock, external, repo = sys.argv[1:4]
+lock_path, external, repo = sys.argv[1:4]
+lock = json.load(open(lock_path, encoding="utf-8"))
 def git(*argv, cwd=None):
     p = subprocess.run(["git", "-C", str(cwd or "."), *argv],
                        capture_output=True, text=True)
