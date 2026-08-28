@@ -922,12 +922,27 @@ for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
     if not (runner_home / "uv.lock").is_file():
         raise SystemExit(
             f"materialize-configs: {runner} checkout is missing uv.lock")
+    # uv resolves the locked environment from the runner checkout, and
+    # its --project/--directory handling moves the working directory
+    # there; harbor then writes its jobs tree relative to that cwd. The
+    # wrapper runs the verifier inside the checkout and mirrors the
+    # newest job directory, byte for byte, back into the working
+    # directory the runner chose, which is where the adapter reads it.
     verifier = write_exec(out / "wrappers" / f"verifier-{benchmark}.sh",
         f"""#!/bin/sh
 # phase18 verifier wrapper (task 18.14.1): the pinned uv entrypoint drives
-# the unchanged {benchmark} native verifier from its locked runner source
-# without moving the working directory.
-exec "{uv}" --project "{runner_home}" "$@"
+# the unchanged {benchmark} native verifier from its locked runner source.
+orig="$PWD"
+cd "{runner_home}"
+"{uv}" "$@"
+rc=$?
+newest=$(ls -1d jobs/*/ 2>/dev/null | LC_ALL=C sort | tail -1)
+if [ -n "$newest" ]; then
+  mkdir -p "$orig/jobs"
+  rm -rf "$orig/jobs/$(basename "$newest")"
+  cp -r "$newest" "$orig/jobs/"
+fi
+exit $rc
 """)
     oracle = write_exec(out / "wrappers" / f"oracle-{benchmark}.sh",
         f"""#!/bin/sh
@@ -935,7 +950,17 @@ exec "{uv}" --project "{runner_home}" "$@"
 # the official reference solution of {benchmark} {task_ids[benchmark]} and
 # grades it with the unchanged native verifier through the same launch
 # surface the agent trials use.
-exec "{uv}" --project "{runner_home}" "$@"
+orig="$PWD"
+cd "{runner_home}"
+"{uv}" "$@"
+rc=$?
+newest=$(ls -1d jobs/*/ 2>/dev/null | LC_ALL=C sort | tail -1)
+if [ -n "$newest" ]; then
+  mkdir -p "$orig/jobs"
+  rm -rf "$orig/jobs/$(basename "$newest")"
+  cp -r "$newest" "$orig/jobs/"
+fi
+exit $rc
 """)
     # The runner spawns verifiers and oracles with a cleared environment:
     # the projection is declared here, not inherited. The runner-side
