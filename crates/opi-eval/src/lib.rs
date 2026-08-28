@@ -79,3 +79,16 @@ mod benchmark;
 /// (Phase 18 task 18.11).
 #[allow(dead_code)]
 mod trajectory;
+
+// Crate-private offline recomputation contract (task 18.13). The regrade
+// and report paths consume sealed assembled outputs only and stay behind
+// the provisional CLI seam; they are deliberately not part of the public
+// library surface until tasks 18.15 and 18.16.
+#[allow(dead_code)]
+pub(crate) mod regrade;
+
+// Crate-private normalized report contract (task 18.13): the offline
+// report path consumes sealed assembled outputs only, recomputes before
+// rendering, and stays behind the provisional CLI seam.
+#[allow(dead_code)]
+pub(crate) mod report;

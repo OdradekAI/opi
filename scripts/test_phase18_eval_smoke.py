@@ -4,9 +4,11 @@
 Executes the platform wrapper for ``scripts/phase18-eval-smoke`` and
 asserts the preserved evidence: exact command, stdout report bytes, stderr,
 exit codes, receipt bytes, sealed manifests, the content-addressed bundle
-identity stability across two identical runs, and the artifact audit.
-This is the smoke-addendum gate for task 18.12
-(``python scripts/test_phase18_eval_smoke.py``).
+identity stability across two identical runs, the artifact audit, and the
+offline regrade/report evidence of task 18.13 (command preservation,
+byte-stable renders, and the explicit ``report`` mode over a caller
+provided run root). This is the smoke-addendum gate for tasks 18.12 and
+18.13 (``python scripts/test_phase18_eval_smoke.py``).
 """
 
 from __future__ import annotations
@@ -102,6 +104,74 @@ class Phase18EvalSmokeWrapper(unittest.TestCase):
                 ).hexdigest()
                 self.assertEqual(row["receipt_sha256"], observed)
             self.assertFalse(audit["verifier_failure"]["receipt_written"])
+
+            # Offline evidence (task 18.13): the regrade/report commands,
+            # streams, exit codes, and byte-stable renders are preserved.
+            offline = out / "offline"
+            self.assertIn(
+                "regrade --root",
+                (offline / "regrade-command.txt").read_text(),
+            )
+            self.assertEqual(
+                int((offline / "regrade-exit_code").read_text().strip()), 0
+            )
+            regrade = json.loads((offline / "regrade-stdout.json").read_text())
+            self.assertEqual(regrade["schema"], "phase18-regrade-report/1")
+            self.assertEqual(regrade["outcome"], "verified")
+            self.assertIn(
+                "report --root",
+                (offline / "report-command.txt").read_text(),
+            )
+            self.assertEqual(
+                int((offline / "report-exit_code").read_text().strip()), 0
+            )
+            report = json.loads((offline / "report-1.json").read_text())
+            self.assertEqual(report["schema"], "phase18-normalized-report/1")
+            self.assertEqual(report["classification"], "conformance-evidence")
+            self.assertEqual(
+                (offline / "report-1.json").read_bytes(),
+                (offline / "report-2.json").read_bytes(),
+                "repeated offline renders must be byte-stable",
+            )
+            self.assertEqual(audit["offline"]["regrade_exit"], 0)
+            self.assertTrue(audit["offline"]["byte_stable"])
+            observed_sha = hashlib.sha256(
+                (offline / "report-1.json").read_bytes()
+            ).hexdigest()
+            self.assertEqual(audit["offline"]["report_sha256"], observed_sha)
+
+    def test_report_mode_operates_on_a_caller_provided_run_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = run_wrapper(Path(tmp))
+            bundle = out / "happy" / "root"
+            artifacts = Path(tmp) / "report-mode"
+            if sys.platform == "win32":
+                completed = subprocess.run(
+                    ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                     "-File", str(PS1_WRAPPER), "-Mode", "report",
+                     "-Bundle", str(bundle), "-ArtifactDir", str(artifacts)],
+                    capture_output=True,
+                    text=True,
+                    cwd=REPO_ROOT,
+                )
+            else:
+                completed = subprocess.run(
+                    ["sh", str(SH_WRAPPER), "report",
+                     "--bundle", str(bundle), "--artifact-dir", str(artifacts)],
+                    capture_output=True,
+                    text=True,
+                    cwd=REPO_ROOT,
+                )
+            self.assertEqual(
+                completed.returncode, 0, f"report mode failed: {completed.stderr}"
+            )
+            self.assertTrue((artifacts / "regrade-stdout.json").exists())
+            report = json.loads((artifacts / "report-1.json").read_text())
+            self.assertEqual(report["outcome"], "published")
+            self.assertEqual(
+                (artifacts / "report-1.json").read_bytes(),
+                (artifacts / "report-2.json").read_bytes(),
+            )
 
     def test_bundle_identity_is_content_addressed_across_runs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

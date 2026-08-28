@@ -62,7 +62,16 @@ pub(crate) struct RunRequest {
     /// Re-run one crashed trial's whole group under fresh trial identities
     /// and a new paired trial group (P18-DUR-002, P18-EXP-005).
     pub(crate) replacement_for: Option<String>,
+    /// Declared canary secrets (one per line from the request). Any
+    /// canary found in staged exportable content blocks sealing
+    /// (`P18-A18`, `P18-SEC-005`).
+    pub(crate) canaries: Vec<String>,
 }
+
+/// The pinned hermetic canary the `canary-leak` fixture behavior emits
+/// into agent output. It is a fixture fact, not a real secret; sealing
+/// blocks only when it is declared to the run.
+const HERMETIC_CANARY: &str = "OPZ-EVAL-CANARY-7f3a9c";
 
 /// Typed run-path failures that abort before any report is rendered.
 #[derive(Debug, Error)]
@@ -205,6 +214,9 @@ echo answer > answer.txt\n\
 case \"$OPI_EVAL_RUN_BEHAVIOR\" in\n\
   happy|prompt-only-package|verifier-failure|seal-failure|agent-unknown-schema|agent-malformed-stream|agent-missing-terminal)\n\
 {trace_copy} ;;\n\
+  canary-leak)\n\
+  printf '%s\n' \"$OPI_EVAL_CANARY_SECRET\" > answer.txt\n\
+{trace_copy} ;;\n\
   agent-excess-output)\n\
 {excess_output} ;;\n\
   agent-timeout|agent-cancelled)\n\
@@ -220,7 +232,7 @@ fn verifier_helper_script(report_name: &str) -> String {
         "#!/bin/sh\n\
 # assembled-run fixture helper standing in for the native verifier (never the real grader)\n\
 case \"$OPI_EVAL_RUN_BEHAVIOR\" in\n\
-  happy)\n\
+  happy|canary-leak)\n\
     cp \"$OPI_EVAL_NATIVE_SOURCE\" ./{report_name} ;;\n\
   verifier-failure)\n\
     cp \"$OPI_EVAL_NATIVE_SOURCE\" ./{report_name}\n\
@@ -228,6 +240,31 @@ case \"$OPI_EVAL_RUN_BEHAVIOR\" in\n\
   *) echo \"unknown behavior\" >&2; exit 9 ;;\nesac\n\
 exit 0\n"
     )
+}
+
+/// Scans the staged bundle files for declared canaries. Reads exactly the
+/// bytes sealing would cover; returns the first leaking logical key.
+fn scan_staged_for_canaries(
+    bundle_root: &Path,
+    staged_keys: &[ArtifactKey],
+    canaries: &[String],
+) -> Option<ArtifactKey> {
+    for canary in canaries {
+        for key in staged_keys {
+            let Ok(bytes) = std::fs::read(bundle_root.join("artifacts").join(key.as_str())) else {
+                continue;
+            };
+            if !bytes.is_empty()
+                && !canary.is_empty()
+                && bytes
+                    .windows(canary.len())
+                    .any(|window| window == canary.as_bytes())
+            {
+                return Some(key.clone());
+            }
+        }
+    }
+    None
 }
 
 fn make_executable(path: &Path) {
@@ -275,7 +312,9 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
     }
     let experiment = ResolvedExperiment::resolve(&source)?;
     if request.recover {
-        return Ok(recovery_report(&experiment, &request.root));
+        let report = recovery_report(&experiment, &request.root);
+        persist_run_report(&request.root, &report)?;
+        return Ok(report);
     }
     let integrity =
         IntegrityRecord::review(fixture_integrity_review(&experiment, &request.behavior))
@@ -361,7 +400,20 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
     if let Some(reason) = comparison_error {
         report["comparison_error"] = json!(reason);
     }
+    // The offline report path (task 18.13) recomputes from sealed
+    // assembled outputs only: persist the run report at the run root so
+    // regrade/report never re-run anything to rebuild the denominator.
+    persist_run_report(&request.root, &report)?;
     Ok(report)
+}
+
+/// Persists the run report under the run root as one canonical JSON file.
+/// Writing it is part of the run itself; offline commands only read it.
+fn persist_run_report(root: &Path, report: &serde_json::Value) -> Result<(), RunError> {
+    let bytes = serde_json::to_vec(report).map_err(|error| RunError::Staging(error.to_string()))?;
+    std::fs::create_dir_all(root).map_err(|error| RunError::Staging(error.to_string()))?;
+    std::fs::write(root.join("run-report.json"), &bytes)
+        .map_err(|error| RunError::Staging(error.to_string()))
 }
 
 /// The concrete benchmark revision an experiment declares, with the staging
@@ -806,8 +858,16 @@ async fn run_trial(
         )?);
     }
 
-    // Sealing and the trial receipt.
-    let seal_outcome = if ledger.attempt(AuthorityTransition::Seal) {
+    // Pre-seal redaction gate (`P18-A18`, `P18-SEC-005`): a declared
+    // canary anywhere in the staged exportable content blocks sealing, so
+    // the leak never enters a published manifest. The refusal is the
+    // evidence boundary and the bundle stays unsealed on disk.
+    let canary_leak =
+        scan_staged_for_canaries(&trial_root.join("bundle"), &staged_keys, &request.canaries);
+    let seal_outcome = if canary_leak.is_some() {
+        ledger.attempt_failed(AuthorityTransition::Seal, FailureBoundaryCode::Evidence);
+        None
+    } else if ledger.attempt(AuthorityTransition::Seal) {
         if request.behavior == "seal-failure" {
             // Hermetic seal-failure simulation: a staged artifact is
             // tampered between staging and sealing, so canonical sealing
@@ -1051,6 +1111,9 @@ fn agent_env(
         "agent-missing-terminal" => "no-agent-end.jsonl",
         _ => "stream-ok.jsonl",
     };
+    if behavior == "canary-leak" {
+        env.insert("OPI_EVAL_CANARY_SECRET".into(), HERMETIC_CANARY.into());
+    }
     if product == "opi" {
         env.insert(
             "OPI_EVAL_TRACE_SOURCE".into(),

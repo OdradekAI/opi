@@ -41,6 +41,9 @@ pub struct RunArgs {
     pub recover: bool,
     /// Re-run one crashed trial's whole group under fresh identities.
     pub replacement_for: Option<String>,
+    /// Optional file of declared canary secrets (one per line); any
+    /// canary found in staged exportable content blocks sealing.
+    pub canaries: Option<PathBuf>,
 }
 
 /// Run one assembled experiment and return its JSON report.
@@ -61,9 +64,33 @@ pub fn run(args: &RunArgs) -> Result<serde_json::Value, RunCliError> {
             behavior: args.behavior.clone(),
             recover: args.recover,
             replacement_for: args.replacement_for.clone(),
+            canaries: read_canaries(args.canaries.as_deref())
+                .map_err(|error| RunCliError::Rejected(error.to_string()))?,
         }))
         .map_err(|error| RunCliError::Rejected(error.to_string()))?;
     Ok(report)
+}
+
+/// Reads the declared canary file (one secret per line, blank lines
+/// ignored). An unreadable declaration is rejected, never silently empty.
+fn read_canaries(path: Option<&std::path::Path>) -> Result<Vec<String>, std::io::Error> {
+    let Some(path) = path else {
+        return Ok(Vec::new());
+    };
+    let text = std::fs::read_to_string(path)?;
+    let canaries: Vec<String> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if canaries.is_empty() {
+        return Err(std::io::Error::other(format!(
+            "canary declaration {} holds no secrets",
+            path.display()
+        )));
+    }
+    Ok(canaries)
 }
 
 /// Whether a run report warrants a non-success process exit.

@@ -1,7 +1,11 @@
 //! `opi-eval validate` command (provisional Phase 18 seam).
 //! `opi-eval conformance` command (task 18.10.1): see [`conformance`].
+//! `opi-eval regrade` and `opi-eval report` commands (task 18.13): see
+//! [`regrade`] and [`report`].
 
 pub mod conformance;
+pub mod regrade;
+pub mod report;
 pub mod run;
 
 use std::fmt;

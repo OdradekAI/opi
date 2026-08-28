@@ -48,6 +48,32 @@ enum Command {
         /// Re-run one crashed trial's whole group under fresh identities.
         #[arg(long)]
         replacement_for: Option<String>,
+        /// Optional file of declared canary secrets (one per line); any
+        /// canary found in staged exportable content blocks sealing.
+        #[arg(long)]
+        canaries: Option<std::path::PathBuf>,
+    },
+    /// Re-verify every sealed trial bundle under a run root without
+    /// starting an Agent or mutating anything (task 18.13).
+    Regrade {
+        /// Run root holding `trials/<id>/bundle` sealed bundles.
+        #[arg(long)]
+        root: std::path::PathBuf,
+    },
+    /// Recompute and render the offline normalized report from sealed
+    /// assembled outputs (task 18.13).
+    Report {
+        /// Run root holding sealed bundles, receipts, and the persisted
+        /// run report.
+        #[arg(long)]
+        root: std::path::PathBuf,
+        /// Optional output path for the normalized report bytes.
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+        /// Optional file of declared canary secrets (one per line); any
+        /// canary found in exportable bundle content blocks publication.
+        #[arg(long)]
+        canaries: Option<std::path::PathBuf>,
     },
     Conformance {
         /// `agent` or `benchmark`.
@@ -91,6 +117,7 @@ fn main() -> ExitCode {
             behavior,
             recover,
             replacement_for,
+            canaries,
         } => {
             let args = cli::run::RunArgs {
                 config,
@@ -99,6 +126,7 @@ fn main() -> ExitCode {
                 behavior,
                 recover,
                 replacement_for,
+                canaries,
             };
             match cli::run::run(&args) {
                 Ok(report) => {
@@ -107,6 +135,46 @@ fn main() -> ExitCode {
                         serde_json::to_string(&report).expect("run report serializes")
                     );
                     ExitCode::from(cli::run::report_exit_code(&report) as u8)
+                }
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Command::Regrade { root } => {
+            let args = cli::regrade::RegradeArgs { root };
+            match cli::regrade::regrade(&args) {
+                Ok(report) => {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&report).expect("regrade report serializes")
+                    );
+                    ExitCode::from(cli::regrade::regrade_exit_code(&report) as u8)
+                }
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Command::Report {
+            root,
+            out,
+            canaries,
+        } => {
+            let args = cli::report::ReportArgs {
+                root,
+                out,
+                canaries,
+            };
+            match cli::report::report(&args) {
+                Ok(report) => {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&report).expect("report serializes")
+                    );
+                    ExitCode::from(cli::report::report_exit_code(&report) as u8)
                 }
                 Err(error) => {
                     eprintln!("error: {error}");
