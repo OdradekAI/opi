@@ -912,10 +912,19 @@ for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
     if not uv:
         raise SystemExit("materialize-configs: uv was not resolved on PATH")
     uv = str(Path(uv).resolve())
+    # `uv run --locked harbor|pier` resolves the locked environment from
+    # the verifier checkout's own pyproject/uv.lock: the wrappers enter
+    # the fetched, blob-verified runner source before exec-ing uv.
+    runner = "harbor" if benchmark.startswith("terminal-bench") else "pier"
+    runner_home = Path(external) / runner
+    if not (runner_home / "uv.lock").is_file():
+        raise SystemExit(
+            f"materialize-configs: {runner} checkout is missing uv.lock")
     verifier = write_exec(out / "wrappers" / f"verifier-{benchmark}.sh",
         f"""#!/bin/sh
 # phase18 verifier wrapper (task 18.14.1): the pinned uv entrypoint drives
-# the unchanged {benchmark} native verifier with its locked environment.
+# the unchanged {benchmark} native verifier from its locked runner source.
+cd "{runner_home}"
 exec "{uv}" "$@"
 """)
     oracle = write_exec(out / "wrappers" / f"oracle-{benchmark}.sh",
@@ -924,6 +933,7 @@ exec "{uv}" "$@"
 # the official reference solution of {benchmark} {task_ids[benchmark]} and
 # grades it with the unchanged native verifier through the same launch
 # surface the agent trials use.
+cd "{runner_home}"
 exec "{uv}" "$@"
 """)
     benchmarks[adapter] = {
