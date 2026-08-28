@@ -729,9 +729,10 @@ fn benchmark_expect(revision: &BenchmarkRevision, case: &str) -> Option<Expect> 
         "production-pin-drift" if revision.adapter == TB21.adapter => {
             Some(Expect::Rejected("task-package-drift"))
         }
-        "package-not-materialized" if revision.adapter != TB21.adapter => {
-            Some(Expect::Rejected("task-package-not-materialized"))
-        }
+        // The case name predates task 18.15's byte-table registration:
+        // every production pin now rejects the synthetic fixture bytes
+        // as drift instead of failing as not materialized.
+        "package-not-materialized" => Some(Expect::Rejected("task-package-drift")),
         _ => None,
     }
 }

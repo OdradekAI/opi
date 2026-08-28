@@ -162,8 +162,9 @@ fn rows() -> Vec<Row> {
         boundary: None,
         exit_state: "rejected:task-package-drift",
     });
-    // Terminal-Bench 3.0 and DeepSWE only: production tree-identity pins
-    // fail closed until reviewed byte tables are registered (task 18.15).
+    // Terminal-Bench 3.0 and DeepSWE: since task 18.15 registered the
+    // reviewed byte tables, the production pins reject the synthetic
+    // fixture bytes as drift (the case name is historical).
     for adapter in ["terminal-bench-3.0", "deepswe"] {
         rows.push(Row {
             adapter,
@@ -171,7 +172,7 @@ fn rows() -> Vec<Row> {
             outcome: "rejected",
             kind: None,
             boundary: None,
-            exit_state: "rejected:task-package-not-materialized",
+            exit_state: "rejected:task-package-drift",
         });
     }
     // DeepSWE: synthetic Pier wiring; zero is an authoritative Verified

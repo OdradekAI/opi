@@ -17,8 +17,8 @@ task_tree = "8ee76a3e4a876a9bd24f34edabcdde4e47257db4"
 # empty files table. No byte-level task-package table is committed, so the
 # production pin is tree-identity only and admission fails closed until
 # task 18.15 registers reviewed bytes.
-package_pin = "tree-identity"
-package_manifest_sha256 = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+package_pin = "byte-table"
+package_manifest_sha256 = "a21f63f43013fed09a930473d10e51a7f419954554b1bf759733d5f0ba0df095"
 adapter = "opi-eval-deepswe-adapter/1"
 
 [verifier]
@@ -52,3 +52,63 @@ memory_gib = 8
 timeout_secs = 1800
 stdout_cap_bytes = 1048576
 stderr_cap_bytes = 1048576
+
+[[package]]
+path = "environment/Dockerfile"
+mode = "100644"
+size = 1575
+sha256 = "69f10920ca0e9d9aa53d0bdb5e2d1ddff39f7eefc0b2d29b96dba9032ddbdbd8"
+
+[[package]]
+path = "instruction.md"
+mode = "100644"
+size = 2624
+sha256 = "cffcaa70386408363b090b563943fd63fdcc322ed44b8c76cc3e56cfd76b7ed8"
+
+[[package]]
+path = "solution/solution.patch"
+mode = "100644"
+size = 23719
+sha256 = "dbb0bc5ce090de7c6f1c172a620f400070714846e93b54943d981b7b496fc069"
+
+[[package]]
+path = "solution/solve.sh"
+mode = "100644"
+size = 364
+sha256 = "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198"
+
+[[package]]
+path = "task.toml"
+mode = "100644"
+size = 1469
+sha256 = "b8bc8e72b5ff44d165651fad7164c4e0fce3a226c3a38dd395764091ff905834"
+
+[[package]]
+path = "tests/Dockerfile"
+mode = "100644"
+size = 383
+sha256 = "184c20de1b4d9fa4532be3345050de006670de023aaae508bcb7f0711f80fd71"
+
+[[package]]
+path = "tests/config.json"
+mode = "100644"
+size = 2197
+sha256 = "18ae10bb40d545220bc46690d2ab749911b5bb12bfba870e3679ab3750684014"
+
+[[package]]
+path = "tests/grader.py"
+mode = "100644"
+size = 13468
+sha256 = "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c"
+
+[[package]]
+path = "tests/test.patch"
+mode = "100644"
+size = 30643
+sha256 = "1f14443b836ad75b66975d9c8b6e735f675250136661dfc0a370d018ba4a97f9"
+
+[[package]]
+path = "tests/test.sh"
+mode = "100755"
+size = 5114
+sha256 = "dfecfd863824f3d9780fb1bdb13de5415d831a7c452a41f39202dd29e4454b81"

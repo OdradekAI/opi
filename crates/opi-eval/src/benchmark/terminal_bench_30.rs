@@ -567,8 +567,10 @@ mod tests {
             profile.task_tree,
             "729916599199dd1de6be0e0c543da9788d6129b5"
         );
-        assert_eq!(profile.package_pin, PackagePin::TreeIdentity);
-        assert!(profile.package.is_empty());
+        // Task 18.15 registered the reviewed official byte table: 47
+        // pinned files with their canonical digest declared.
+        assert_eq!(profile.package_pin, PackagePin::ByteTable);
+        assert_eq!(profile.package.len(), 47);
         assert_eq!(
             profile.canonical_package_digest(),
             profile.package_manifest_sha256
@@ -658,16 +660,16 @@ mod tests {
             })
         );
 
-        // A tree-identity pin is never materializable: no committed byte
-        // table exists to validate against, so nothing admits.
+        // The registered byte table (task 18.15) rejects the synthetic
+        // fixture bytes with the first drift it meets, never silently.
         let production = Tb30Profile::parse(&read(
             &crate_root().join("profiles/benchmarks/terminal-bench-3.0.toml"),
         ))
         .unwrap();
-        assert_eq!(
+        assert!(matches!(
             production.admit_task_package(&fixture("task-package")),
-            Err(TaskPackageError::NotMaterialized)
-        );
+            Err(TaskPackageError::Mismatch { .. })
+        ));
     }
 
     fn copy_package(source: &Path, target: &Path) {
@@ -1205,15 +1207,14 @@ mod adapter_tests {
         let trace = dir.path().join("trace");
         std::fs::create_dir_all(&trace).unwrap();
 
-        // The production 3.0 pin is tree-identity only: admission fails
-        // closed as not materialized even for a byte-perfect directory,
-        // because no committed byte table exists to validate against
-        // (P18-BMK-002; the real table arrives with task 18.15).
+        // The production 3.0 pin is the task-18.15 registered byte table:
+        // the synthetic fixture directory drifts against the real official
+        // package bytes and admission fails closed as drift.
         let mut request = request_with(&production, fixture_path("task-package"), trace.clone());
         assert_eq!(
             production.admission(&request),
             Err(ExecutionError {
-                token: "task-package-not-materialized"
+                token: "task-package-drift"
             })
         );
 
@@ -1467,14 +1468,15 @@ mod adapter_tests {
         let mut request = request_with(&adapter, fixture_path("task-package"), trace);
         request.verifier_executable = script;
 
-        // The tree-identity production pin rejects before any verifier
-        // process exists, even with a runnable executable handed to it.
+        // The registered byte table rejects the synthetic fixture bytes
+        // before any verifier process exists, even with a runnable
+        // executable handed to it.
         assert_eq!(
             BenchmarkExecution::run(&request, &adapter, &CancellationToken::new())
                 .await
                 .unwrap_err(),
             ExecutionError {
-                token: "task-package-not-materialized"
+                token: "task-package-drift"
             }
         );
     }
