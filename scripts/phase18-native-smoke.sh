@@ -602,10 +602,15 @@ cmd_provider_probe() {
   positive=$?
   # Negative: the provider must not answer on any non-loopback host
   # interface, so no off-host or cross-bridge phase can reach it.
+  # UDP connect only picks a route; no packet leaves the host.
   host_ip=$(python3 -c '
 import socket
-print(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-      .connect(("8.8.8.8", 80)) and "" or socket.getsockname()[0])')
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    print(s.getsockname()[0])
+except OSError:
+    pass')
   if [ -n "$host_ip" ] && [ "$host_ip" != "$host" ]; then
     if python3 -c "import socket; socket.create_connection(('$host_ip', $port), timeout=5).close()"; then
       die "provider-probe: the endpoint answers on a non-loopback interface"
