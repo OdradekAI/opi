@@ -145,12 +145,27 @@ mkdir -p "$npm_cache"
   cd "$PI_SOURCE"
   HOME="$OUT/npm-home" npm_config_cache="$npm_cache" \
     npm ci --ignore-scripts
-    # build:offline compiles from the checked-in model data (the exact
-    # pinned-tree state); the default build regenerates the model tables
-    # from live upstream catalogs, whose drift breaks the pinned source.
-    npm run build:offline
+  # The model-data directory is generated, never checked in: hydrate it
+  # from the same-version official registry tarball of @earendil-works/
+  # pi-ai so the pinned source compiles exactly as released. The default
+  # build regenerates the tables from live upstream catalogs, whose drift
+  # breaks this pinned commit (TS2353 on cloudflare-ai-gateway).
+  pi_ai_version=$(python3 -c 'import json; print(json.load(open("packages/ai/package.json"))["version"])')
   HOME="$OUT/npm-home" npm_config_cache="$npm_cache" \
-    npm run build
+    npm pack "@earendil-works/pi-ai@${pi_ai_version}" \
+    --pack-destination "$npm_cache" >&2
+  pi_ai_tarball=$(ls "$npm_cache"/earendil-works-pi-ai-"${pi_ai_version}".tgz)
+  pi_ai_tarball_sha=$(sha256sum "$pi_ai_tarball" | cut -d' ' -f1)
+  mkdir -p "$npm_cache/pi-ai-data"
+  tar -xzf "$pi_ai_tarball" -C "$npm_cache/pi-ai-data" \
+    package/dist/providers/data
+  rm -rf packages/ai/src/providers/data
+  cp -r "$npm_cache/pi-ai-data/package/dist/providers/data" \
+    packages/ai/src/providers/data
+  # build:offline type-checks against the hydrated pinned-release data.
+  HOME="$OUT/npm-home" npm_config_cache="$npm_cache" \
+    npm run build:offline
+  printf '%s\n' "$pi_ai_tarball_sha" > "$OUT/pi-ai-data-tarball-sha256.txt"
   test -f packages/coding-agent/dist/bundle/cli.js
 )
 read -r PI_COMMIT PI_DIRTY PI_DIRTY_FILES <<EOF
