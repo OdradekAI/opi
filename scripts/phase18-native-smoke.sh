@@ -869,9 +869,13 @@ def agent_wrapper(product, benchmark, real_argv0, env_keys):
     # the dedicated internal provider network only. The workspace cwd is
     # preserved; the enclosing trial root is mounted at its own path so
     # isolation, trace, and config directories survive verbatim.
-    prefix = {"terminal-bench-2.1": "tb21", "terminal-bench-3.0": "tb30",
-              "deepswe-v1.1": "deepswe"}[benchmark]
-    image = images[f"{prefix}-{task_ids[benchmark]}-task"]
+    # The static lock names each benchmark's environment image by its
+    # own id; the ids do not share one naming scheme.
+    image = images[{
+        "terminal-bench-2.1": "tb21-openssl-selfsigned-cert-task",
+        "terminal-bench-3.0": "tb30-python-base",
+        "deepswe-v1.1": "deepswe-task",
+    }[benchmark]]
     image_ref = f"{image['reference']}@{image['manifest']}"
     forward = " ".join(f"-e {key}" for key in env_keys)
     body = f"""#!/bin/sh
