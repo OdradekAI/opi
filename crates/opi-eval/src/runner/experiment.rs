@@ -756,13 +756,27 @@ pub(crate) fn native_agent_env(
         // identity, declared dummy credential, no ambient fallback.
         let agent_dir = isolation.app_data.join("pi-agent");
         std::fs::create_dir_all(&agent_dir).map_err(|error| error.to_string())?;
+        // The pinned pi models.json schema (docs/models.md at the pinned
+        // commit): one provider entry per provider id with baseUrl, api,
+        // apiKey, and a models array; the provider id comes from the
+        // shared provider:model selection, the model id from the config.
+        let provider_id = config
+            .model_id
+            .split('/')
+            .next()
+            .unwrap_or("scripted")
+            .to_owned();
         let models = json!({
-            config.model_id.clone(): {
-                "provider": "openai-completions",
-                "baseURL": config.base_url,
-                "model": config.model_id,
-                "apiKey": config.api_key,
-            }
+            "providers": {
+                provider_id.clone(): {
+                    "baseUrl": config.base_url,
+                    "api": "openai-completions",
+                    "apiKey": config.api_key,
+                    "models": [
+                        { "id": config.model_id.clone() }
+                    ],
+                },
+            },
         });
         let bytes = serde_json::to_vec(&models).map_err(|error| error.to_string())?;
         std::fs::write(agent_dir.join("models.json"), &bytes).map_err(|error| error.to_string())?;
