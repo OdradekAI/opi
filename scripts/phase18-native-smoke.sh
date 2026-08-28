@@ -102,13 +102,18 @@ cmd_verify_dispatch() {
   # The workflow bytes are hashed from the pinned workflow SHA and from the
   # candidate commit, then compared with the checked-out bytes: a drift in
   # either direction refuses the dispatch before anything runs.
+  # Digests stream straight from git into sha256sum: command
+  # substitution would strip the trailing newline and the byte-drift
+  # gate would then reject every newline-terminated workflow file.
   disk_digest=$(sha256sum "$workflow_path" | cut -d' ' -f1)
-  sha_bytes=$(git -C "$REPO_ROOT" show "${workflow_sha}:${workflow_path}" 2>/dev/null) \
+  sha_digest=$(git -C "$REPO_ROOT" show "${workflow_sha}:${workflow_path}" \
+    2>/dev/null | sha256sum | cut -d' ' -f1)
+  [ -n "$sha_digest" ] \
     || die "verify-dispatch: cannot read workflow bytes at $workflow_sha"
-  sha_digest=$(printf '%s' "$sha_bytes" | sha256sum | cut -d' ' -f1)
-  cand_bytes=$(git -C "$REPO_ROOT" show "${candidate}:${workflow_path}" 2>/dev/null) \
+  cand_digest=$(git -C "$REPO_ROOT" show "${candidate}:${workflow_path}" \
+    2>/dev/null | sha256sum | cut -d' ' -f1)
+  [ -n "$cand_digest" ] \
     || die "verify-dispatch: cannot read workflow bytes at $candidate"
-  cand_digest=$(printf '%s' "$cand_bytes" | sha256sum | cut -d' ' -f1)
   [ "$disk_digest" = "$sha_digest" ] \
     || die "verify-dispatch: workflow bytes drift between the checkout and github.workflow_sha"
   [ "$disk_digest" = "$cand_digest" ] \
