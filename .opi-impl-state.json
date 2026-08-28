@@ -75,7 +75,7 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-resolved-experiment-identity; role=owner; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "reason": "decision_id=eval-resolved-experiment-identity; role=owner; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.14.1,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
         }
       ],
@@ -488,7 +488,7 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-lock-contract; role=owner; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-lock-contract; role=owner; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Privacy, authority, and supply-chain boundaries"
         }
       ],
@@ -924,7 +924,7 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-process-supervision; role=owner; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-process-supervision; role=owner; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#End-to-end control model"
         },
         {
@@ -1086,7 +1086,7 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-failure-boundary-contract; role=owner; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-failure-boundary-contract; role=owner; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
         }
       ],
@@ -1221,17 +1221,17 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-resolved-experiment-identity; role=consumer; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "reason": "decision_id=eval-resolved-experiment-identity; role=consumer; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.14.1,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-pairing-comparability; role=owner; owner_task=18.5.1; module=comparison; interface=ComparisonSet; representation=fallible value; consumer_tasks=18.12,18.13,18.15; criterion_ids=P18-A12,P18-A13,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-pairing-comparability; role=owner; owner_task=18.5.1; module=comparison; interface=ComparisonSet; representation=fallible value; consumer_tasks=18.12,18.13,18.14.1,18.15; criterion_ids=P18-A12,P18-A13,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-integrity-contract; role=owner; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-integrity-contract; role=owner; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark revision integrity"
         }
       ],
@@ -1375,7 +1375,7 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-process-supervision; role=consumer; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-process-supervision; role=consumer; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#End-to-end control model"
         },
         {
@@ -1385,17 +1385,17 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Privacy, authority, and supply-chain boundaries"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-agent-process-contract; role=owner; owner_task=18.6; module=agent::execution; interface=AgentExecution; representation=fallible value; consumer_tasks=18.7,18.10.1,18.12,18.15; criterion_ids=P18-A02,P18-A03,P18-A04,P18-A05; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-agent-process-contract; role=owner; owner_task=18.6; module=agent::execution; interface=AgentExecution; representation=fallible value; consumer_tasks=18.7,18.10.1,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A03,P18-A04,P18-A05; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Agent harness process integrations"
         }
       ],
@@ -1539,12 +1539,12 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-agent-process-contract; role=consumer; owner_task=18.6; module=agent::execution; interface=AgentExecution; representation=fallible value; consumer_tasks=18.7,18.10.1,18.12,18.15; criterion_ids=P18-A02,P18-A03,P18-A04,P18-A05; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-agent-process-contract; role=consumer; owner_task=18.6; module=agent::execution; interface=AgentExecution; representation=fallible value; consumer_tasks=18.7,18.10.1,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A03,P18-A04,P18-A05; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Agent harness process integrations"
         }
       ],
@@ -1688,27 +1688,27 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-process-supervision; role=consumer; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-process-supervision; role=consumer; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#End-to-end control model"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Privacy, authority, and supply-chain boundaries"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-verifier-contract; role=owner; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-verifier-contract; role=owner; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark task-package and native-verifier integrations"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark revision integrity"
         }
       ],
@@ -1851,17 +1851,17 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark task-package and native-verifier integrations"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark revision integrity"
         }
       ],
@@ -2002,17 +2002,17 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark task-package and native-verifier integrations"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark revision integrity"
         }
       ],
@@ -2155,22 +2155,22 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-agent-process-contract; role=consumer; owner_task=18.6; module=agent::execution; interface=AgentExecution; representation=fallible value; consumer_tasks=18.7,18.10.1,18.12,18.15; criterion_ids=P18-A02,P18-A03,P18-A04,P18-A05; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-agent-process-contract; role=consumer; owner_task=18.6; module=agent::execution; interface=AgentExecution; representation=fallible value; consumer_tasks=18.7,18.10.1,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A03,P18-A04,P18-A05; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Agent harness process integrations"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark task-package and native-verifier integrations"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Privacy, authority, and supply-chain boundaries"
         },
         {
@@ -2460,7 +2460,7 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-process-supervision; role=consumer; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-process-supervision; role=consumer; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#End-to-end control model"
         },
         {
@@ -2475,7 +2475,7 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
         },
         {
@@ -2485,32 +2485,32 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-resolved-experiment-identity; role=consumer; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "reason": "decision_id=eval-resolved-experiment-identity; role=consumer; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.14.1,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-pairing-comparability; role=consumer; owner_task=18.5.1; module=comparison; interface=ComparisonSet; representation=fallible value; consumer_tasks=18.12,18.13,18.15; criterion_ids=P18-A12,P18-A13,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-pairing-comparability; role=consumer; owner_task=18.5.1; module=comparison; interface=ComparisonSet; representation=fallible value; consumer_tasks=18.12,18.13,18.14.1,18.15; criterion_ids=P18-A12,P18-A13,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Privacy, authority, and supply-chain boundaries"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-agent-process-contract; role=consumer; owner_task=18.6; module=agent::execution; interface=AgentExecution; representation=fallible value; consumer_tasks=18.7,18.10.1,18.12,18.15; criterion_ids=P18-A02,P18-A03,P18-A04,P18-A05; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-agent-process-contract; role=consumer; owner_task=18.6; module=agent::execution; interface=AgentExecution; representation=fallible value; consumer_tasks=18.7,18.10.1,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A03,P18-A04,P18-A05; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Agent harness process integrations"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark task-package and native-verifier integrations"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark revision integrity"
         },
         {
@@ -2821,32 +2821,32 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-resolved-experiment-identity; role=consumer; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "reason": "decision_id=eval-resolved-experiment-identity; role=consumer; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.14.1,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-pairing-comparability; role=consumer; owner_task=18.5.1; module=comparison; interface=ComparisonSet; representation=fallible value; consumer_tasks=18.12,18.13,18.15; criterion_ids=P18-A12,P18-A13,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-pairing-comparability; role=consumer; owner_task=18.5.1; module=comparison; interface=ComparisonSet; representation=fallible value; consumer_tasks=18.12,18.13,18.14.1,18.15; criterion_ids=P18-A12,P18-A13,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Privacy, authority, and supply-chain boundaries"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark task-package and native-verifier integrations"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark revision integrity"
         },
         {
@@ -3206,17 +3206,163 @@
       ]
     },
     {
+      "id": "18.14.1",
+      "phase": 18,
+      "title": "Own the native execution driver over resolved material",
+      "status": "in_progress",
+      "depends_on": [
+        "18.14"
+      ],
+      "crate": "opi-eval",
+      "commit_type": "feat",
+      "tier": "workspace",
+      "parallelize": [],
+      "evaluator_required": true,
+      "substrate_only": true,
+      "parent_spec_row": null,
+      "definition_source": "inferred",
+      "definition_of_done": "Extends the committed 18.14 producer into a dispatchable native execution driver without any live dispatch. (1) opi-eval gains one native driving entry on the existing provisional CLI seam that consumes a resolved-material manifest binding the fetched external clones at their verified commits, the exact built Opi and pi executables with their recorded identities, the pre-resolved provider endpoint, and the admitted static-lock digest; without synthesizing helper executables or reading the hermetic fixtures tree for native bytes, it reruns the shared AgentExecution and BenchmarkExecution conformance suites through those exact executables and all three exact native revisions, runs one passing upstream oracle preflight per selected task through the unchanged native verifier (reference solution graded natively, reward recorded in the stage receipt), and runs exactly six paired trials producing the same sealed-bundle, run-report, comparison-edge, and typed trajectory/span artifact shapes as the assembled hermetic runner, with native-source provenance on every projected fact. (2) The checked-in scripted provider gains the pinned listener surface: --listen <host:port> serves both agents' exact expected request shapes deterministically, stdlib-only, no credentials, one bounded request log whose digest enters the stage receipt, while stdin/stdout fixture mode stays byte-identical for the hermetic suites. (3) The workflow and producer gain the missing dispatch stages in contract form: experiment-config materialization bound to the resolved material, the conformance rerun, the passing oracle preflights before any agent trial, and a post-upload identity receipt binding artifact id, url, digest, and expiry without self-reference; scripts/verify-phase18-native-ci.py stays green in lockstep with every producer change. (4) Everything is verified hermetically: deterministic local stand-ins for the docker, harbor, and pier layers, the real provider listener on a loopback endpoint, and typed negative paths (material digest drift, missing executable, unreachable provider, non-passing oracle, verifier fallback) prove fail-closed behavior; no live dispatch, paid provider, ambient credential, or mutable identity is claimed or used. Task 18.15 owns the actual dispatch and artifact binding.",
+      "task_owned_paths": [
+        "crates/opi-eval/src/**",
+        "crates/opi-eval/tests/**",
+        "crates/opi-eval/profiles/**",
+        "scripts/phase18-native-smoke.sh",
+        "scripts/phase18-build-agent-artifacts.sh",
+        "scripts/phase18-scripted-provider.py",
+        "scripts/test_phase18_scripted_provider.py",
+        "scripts/verify-phase18-native-ci.py",
+        "scripts/test_verify_phase18_native_ci.py",
+        ".github/workflows/phase18-native-smoke.yml"
+      ],
+      "acceptance_scenarios": [],
+      "production_call_sites": [
+        "crates/opi-eval/src/main.rs",
+        "crates/opi-eval/src/cli/run.rs::run",
+        "scripts/phase18-native-smoke.sh -> opi-eval native driving entry",
+        "scripts/phase18-scripted-provider.py --listen",
+        ".github/workflows/phase18-native-smoke.yml::native_smoke"
+      ],
+      "verification": {
+        "library_gates": [
+          "scripts/opi-impl-smoke.ps1 full"
+        ],
+        "behavioral_tests": [
+          "scripts/test_phase18_scripted_provider.py",
+          "scripts/test_verify_phase18_native_ci.py"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "python scripts/test_phase18_scripted_provider.py && python scripts/test_verify_phase18_native_ci.py && python scripts/verify-phase18-native-ci.py --workflow .github/workflows/phase18-native-smoke.yml --script scripts/phase18-native-smoke.sh --build-script scripts/phase18-build-agent-artifacts.sh --provider scripts/phase18-scripted-provider.py"
+      },
+      "inference_notes": [
+        {
+          "field": "definition_of_done",
+          "reason": "Closes the gap found at the 18.15 B.1a stop: the run and conformance facades are hermetic-by-construction and no carded task owned the native driving surface, so 18.15's carded scope could not produce its DoD outcome. This task makes the producer dispatchable; 18.15 executes it.",
+          "source": "docs/research/2026-08-26-phase18-external-execution-locks.md#3.7 Linux x86_64 native-smoke CI contract"
+        },
+        {
+          "field": "criterion_mapping",
+          "reason": "owns=native-driving, listener-provider, oracle-preflight, config-materialization, and upload-identity producer substrate with no acceptance scenario; later_scenario_owner=18.15(P18-A02..P18-A04,P18-A08..P18-A10,P18-A12, P18-BMK-003 recorded in-dispatch); verification=hermetic native-driver tests plus the static CI contract verifier in lockstep",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No live dispatch (18.15 owns it), no paid or ambient provider, no credentials, no every-PR workflow triggers, no mutable identities or tags, no docker/harbor/pier execution in local gates (deterministic stand-ins only), no fixture-only native claim in the producer path, no Agent Core or Opi product change, no leaderboard claim, no second native-smoke owner.",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Non-goals"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=runner/experiment.rs, cli/{run,conformance}.rs, agent/{opi,pi,process}.rs, benchmark/{process,terminal_bench_21,terminal_bench_30,deepswe}.rs, bundle, integrity, authority, trajectories, scripts/phase18-*.sh|py, profiles, static external lock; reused=AgentExecution, BenchmarkExecution, both agent adapters, all three benchmark adapters, bundle sealing, comparison, trajectory projection, producer stage receipts, static lock, CI verifier; gap=native resolution of real executables, task packages, and verifier launches over resolved material plus the provider listener surface",
+          "source": "repository: crates/opi-eval/src/** and scripts/phase18-*.{sh,py} as committed at 347c907"
+        },
+        {
+          "field": "placement",
+          "reason": "target=independent-companion; existing_home=opi-eval crate plus phase18 producer scripts; cannot_fit_fully=the native driver is optional evaluation-only execution inside the unpublished companion, never ordinary Opi startup, Agent Core, or product behavior",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Architecture placement case"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=one native driving entry on the existing provisional CLI seam of the publish=false crate, no new public crate surface; config=one resolved-material manifest plus three materialized experiment configs are required runtime inputs; state=native run roots extend the existing run-root contract with the same bundle, run-report, and receipt shapes; dependency_edge=producer stage invokes the CLI entry and the provider listener, no new cross-crate edge",
+          "source": "repository: crates/opi-eval/src/lib.rs entry-seam declaration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=one native driving entry, one listener provider mode, one config-materialization stage, one upload-identity receipt; revisit_when=any admitted agent, benchmark, task, runner, image, provider, adapter, authority, or host lock changes; simplification_trigger=none",
+          "source": "docs/research/2026-08-26-phase18-external-execution-locks.md#3.7 Linux x86_64 native-smoke CI contract"
+        },
+        {
+          "field": "graph_revision",
+          "reason": "2026-08-28 user-authorized insertion (option A) after the 18.15 B.1a scope stop; inserts this task between 18.14 and 18.15 and repoints 18.15's dispatch candidate to the 18.14.1 commit, before any 18.15 work started",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Delivery dependency order and implementation-plan handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=eval-external-process-supervision; role=consumer; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#End-to-end control model"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=eval-resolved-experiment-identity; role=consumer; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.14.1,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=eval-pairing-comparability; role=consumer; owner_task=18.5.1; module=comparison; interface=ComparisonSet; representation=fallible value; consumer_tasks=18.12,18.13,18.14.1,18.15; criterion_ids=P18-A12,P18-A13,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Privacy, authority, and supply-chain boundaries"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=eval-agent-process-contract; role=consumer; owner_task=18.6; module=agent::execution; interface=AgentExecution; representation=fallible value; consumer_tasks=18.7,18.10.1,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A03,P18-A04,P18-A05; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Agent harness process integrations"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark task-package and native-verifier integrations"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark revision integrity"
+        }
+      ],
+      "session_notes": [
+        {
+          "timestamp": "2026-08-28T12:05:00+08:00",
+          "attempt": 1,
+          "summary": "marked in_progress at 8ddced529cc4 after user-confirmed B.2 gate; graph-revision insertion confirmed at P.4 (confirm-all, write-only)"
+        }
+      ],
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "baseline_dirty_files": [],
+      "blocker": null,
+      "start_commit": "8ddced529cc49c041057cf71bbc105a291cc61cb",
+      "verified_at_commit": null,
+      "evidence": null,
+      "replaces": null
+    },
+    {
       "id": "18.15",
       "phase": 18,
       "title": "Execute the sole Linux x86_64 native smoke and bind its artifact",
       "crate": "opi-eval",
       "parent_spec_row": null,
-      "definition_of_done": "After task 18.14 and its ledger checkpoint are committed and a human publishes the workflow producer to the repository default branch so workflow_dispatch is available, a human-authorized dispatch checks out exactly the 18.14 candidate_sha and produces one successful unexpired artifact. Before either Agent starts, the receipt verifies github.workflow_ref/github.workflow_sha, the workflow path and bytes loaded from that SHA against the candidate_sha workflow, every invoked script/action/provider/adapter-source digest, the compiled opi-eval executable, complete Opi canonical-path/SHA-256/file/ldd/checkout/dirty/Cargo.lock/toolchain/target/profile/features provenance, complete pi canonical Node-path/SHA-256/file/ldd/version/npm/checkout/dirty/package/lock/archive/installed-tree/bundle provenance, both adapters' exact argv/cwd/allowlisted environment/configuration projections, and the provider's source/Python path+digest+version/isolated argv/cwd/closed environment/stdlib dependency/listener/socket/Docker-network/reachability/request-log identities, plus the canary-oracle preflight result proving oracle and reference-solution material never entered either Agent-phase environment. The producer reruns the task 18.10.1 shared AgentExecution and BenchmarkExecution conformance suites through those exact built Opi/pi programs and all three exact native revisions before accepting the artifact. The sealed manifest binds three exact task packages, passing oracle preflights, exactly six paired trials, completed authoritative Terminal-Bench 2.1/3.0 and DeepSWE verifiers, comparison edges, and typed trajectory/span artifacts with native-source edges covering Agent activity, all three grader lifecycles, artifact collection, final workspaces, verifiers, and the pre-seal lifecycle; an outer receipt binds the seal result, sealed manifest digest, artifact id/url/digest, and expiry without self-reference. Opi/pi reward zero is accepted as an integration result but never as Agent task success, while ambient provider credentials/configuration, an undeclared or overbroad listener/network, verifier access to the provider, a positive canary-oracle probe, a missing or non-completing verifier, or any mismatch, fallback, cached result, edited verifier, paid-provider path, missing trial, or missing causal artifact rejects the task.",
+      "definition_of_done": "After task 18.14.1 and its ledger checkpoint are committed and a human publishes the workflow producer to the repository default branch so workflow_dispatch is available, a human-authorized dispatch checks out exactly the 18.14.1 candidate_sha and produces one successful unexpired artifact. Before either Agent starts, the receipt verifies github.workflow_ref/github.workflow_sha, the workflow path and bytes loaded from that SHA against the candidate_sha workflow, every invoked script/action/provider/adapter-source digest, the compiled opi-eval executable, complete Opi canonical-path/SHA-256/file/ldd/checkout/dirty/Cargo.lock/toolchain/target/profile/features provenance, complete pi canonical Node-path/SHA-256/file/ldd/version/npm/checkout/dirty/package/lock/archive/installed-tree/bundle provenance, both adapters' exact argv/cwd/allowlisted environment/configuration projections, and the provider's source/Python path+digest+version/isolated argv/cwd/closed environment/stdlib dependency/listener/socket/Docker-network/reachability/request-log identities, plus the canary-oracle preflight result proving oracle and reference-solution material never entered either Agent-phase environment. The producer reruns the task 18.10.1 shared AgentExecution and BenchmarkExecution conformance suites through those exact built Opi/pi programs and all three exact native revisions before accepting the artifact. The sealed manifest binds three exact task packages, passing oracle preflights, exactly six paired trials, completed authoritative Terminal-Bench 2.1/3.0 and DeepSWE verifiers, comparison edges, and typed trajectory/span artifacts with native-source edges covering Agent activity, all three grader lifecycles, artifact collection, final workspaces, verifiers, and the pre-seal lifecycle; an outer receipt binds the seal result, sealed manifest digest, artifact id/url/digest, and expiry without self-reference. Opi/pi reward zero is accepted as an integration result but never as Agent task success, while ambient provider credentials/configuration, an undeclared or overbroad listener/network, verifier access to the provider, a positive canary-oracle probe, a missing or non-completing verifier, or any mismatch, fallback, cached result, edited verifier, paid-provider path, missing trial, or missing causal artifact rejects the task.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
       "depends_on": [
-        "18.14"
+        "18.14.1"
       ],
       "inference_notes": [
         {
@@ -3276,48 +3422,53 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-process-supervision; role=consumer; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-process-supervision; role=consumer; owner_task=18.4; module=process; interface=ProcessSupervisor; representation=state machine; consumer_tasks=18.6,18.8,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A05,P18-A06,P18-A08,P18-A09,P18-A10; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#End-to-end control model"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-failure-boundary-contract; role=consumer; owner_task=18.5; module=failure; interface=FailureBoundaryCode; representation=enum; consumer_tasks=18.6,18.7,18.8,18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A05,P18-A06,P18-A07,P18-A11,P18-A13,P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Failure, cancellation, and classification"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-resolved-experiment-identity; role=consumer; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "reason": "decision_id=eval-resolved-experiment-identity; role=consumer; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.14.1,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-pairing-comparability; role=consumer; owner_task=18.5.1; module=comparison; interface=ComparisonSet; representation=fallible value; consumer_tasks=18.12,18.13,18.15; criterion_ids=P18-A12,P18-A13,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-pairing-comparability; role=consumer; owner_task=18.5.1; module=comparison; interface=ComparisonSet; representation=fallible value; consumer_tasks=18.12,18.13,18.14.1,18.15; criterion_ids=P18-A12,P18-A13,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-external-lock-contract; role=consumer; owner_task=18.2; module=external_lock; interface=ExternalArtifactLock; representation=fallible value; consumer_tasks=18.6,18.8,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A02,P18-A08,P18-A09,P18-A10,P18-A11,P18-A12,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Privacy, authority, and supply-chain boundaries"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-agent-process-contract; role=consumer; owner_task=18.6; module=agent::execution; interface=AgentExecution; representation=fallible value; consumer_tasks=18.7,18.10.1,18.12,18.15; criterion_ids=P18-A02,P18-A03,P18-A04,P18-A05; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-agent-process-contract; role=consumer; owner_task=18.6; module=agent::execution; interface=AgentExecution; representation=fallible value; consumer_tasks=18.7,18.10.1,18.12,18.14.1,18.15; criterion_ids=P18-A02,P18-A03,P18-A04,P18-A05; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Agent harness process integrations"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-verifier-contract; role=consumer; owner_task=18.8; module=benchmark::execution; interface=BenchmarkExecution; representation=fallible value; consumer_tasks=18.9,18.10,18.10.1,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A08,P18-A09,P18-A10,P18-A11,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark task-package and native-verifier integrations"
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
+          "reason": "decision_id=eval-benchmark-integrity-contract; role=consumer; owner_task=18.5.1; module=integrity; interface=IntegrityRecord; representation=state machine; consumer_tasks=18.8,18.9,18.10,18.12,18.13,18.14.1,18.15; criterion_ids=P18-A14,P18-A17; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 scoped --crate opi-eval; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark revision integrity"
         },
         {
           "field": "graph_revision",
           "reason": "2026-08-27 user-authorized amendment after external graph review, applied before any task started; binds the P18-BMK-003 canary-oracle preflight evidence into the native receipt and its rejection contract",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Benchmark task-package and native-verifier integrations"
+        },
+        {
+          "field": "graph_revision",
+          "reason": "2026-08-28 user-authorized amendment (option A) after the B.1a scope stop: depends_on moves from [18.14] to [18.14.1] and the dispatch candidate becomes the 18.14.1 producer-completing commit; no runtime history existed to preserve",
+          "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Delivery dependency order and implementation-plan handoff"
         }
       ],
       "tier": "cli-runtime",
@@ -3332,7 +3483,7 @@
           "scripts/test_verify_phase18_native_artifact.py"
         ],
         "snapshot_tests": [],
-        "smoke_addendum": "python scripts/test_verify_phase18_native_artifact.py && python scripts/verify-phase18-native-artifact.py --criterion all-native --expected-commit <18.14-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
+        "smoke_addendum": "python scripts/test_verify_phase18_native_artifact.py && python scripts/verify-phase18-native-artifact.py --criterion all-native --expected-commit <18.14.1-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
       },
       "acceptance_scenarios": [
         {
@@ -3340,7 +3491,7 @@
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Acceptance scenarios and verification",
           "scenario": "The same bounded workspace task runs through real Opi and pi processes using the deterministic local provider; both pass one shared process conformance while retaining distinct native identities and final workspaces.",
           "verification": [
-            "python scripts/verify-phase18-native-artifact.py --criterion P18-A02 --expected-commit <18.14-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
+            "python scripts/verify-phase18-native-artifact.py --criterion P18-A02 --expected-commit <18.14.1-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
           ],
           "production_call_sites": [
             ".github/workflows/phase18-native-smoke.yml::native_smoke",
@@ -3354,7 +3505,7 @@
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Acceptance scenarios and verification",
           "scenario": "Opi runs with explicit trace capture; exactly one completed trace child contains native evidence and a finalized manifest, while incomplete, missing, or corrupt evidence fails the integration.",
           "verification": [
-            "python scripts/verify-phase18-native-artifact.py --criterion P18-A03 --expected-commit <18.14-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
+            "python scripts/verify-phase18-native-artifact.py --criterion P18-A03 --expected-commit <18.14.1-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
           ],
           "production_call_sites": [
             ".github/workflows/phase18-native-smoke.yml::native_smoke",
@@ -3368,7 +3519,7 @@
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Acceptance scenarios and verification",
           "scenario": "pi runs through the current coding-agent JSON path; documented terminal and process facts are captured, unavailable Harness v2 or telemetry facts remain typed unknowns, and no scaffold behavior is claimed.",
           "verification": [
-            "python scripts/verify-phase18-native-artifact.py --criterion P18-A04 --expected-commit <18.14-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
+            "python scripts/verify-phase18-native-artifact.py --criterion P18-A04 --expected-commit <18.14.1-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
           ],
           "production_call_sites": [
             ".github/workflows/phase18-native-smoke.yml::native_smoke",
@@ -3382,7 +3533,7 @@
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Acceptance scenarios and verification",
           "scenario": "The sole Linux artifact proves that the admitted official Terminal-Bench 2.1 openssl-selfsigned-cert package grades both Opi and pi outputs with its complete exact offline closure, unchanged native verifier, and task/environment/output/digest provenance.",
           "verification": [
-            "python scripts/verify-phase18-native-artifact.py --criterion P18-A08 --expected-commit <18.14-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
+            "python scripts/verify-phase18-native-artifact.py --criterion P18-A08 --expected-commit <18.14.1-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
           ],
           "production_call_sites": [
             ".github/workflows/phase18-native-smoke.yml::native_smoke",
@@ -3396,7 +3547,7 @@
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Acceptance scenarios and verification",
           "scenario": "The same sole Linux artifact proves that Terminal-Bench 3.0 batched-eval-parity runs each Agent in the official task environment, transfers only declared artifacts to the separate verifier container, and retains the native metric as authority.",
           "verification": [
-            "python scripts/verify-phase18-native-artifact.py --criterion P18-A09 --expected-commit <18.14-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
+            "python scripts/verify-phase18-native-artifact.py --criterion P18-A09 --expected-commit <18.14.1-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
           ],
           "production_call_sites": [
             ".github/workflows/phase18-native-smoke.yml::native_smoke",
@@ -3410,7 +3561,7 @@
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Acceptance scenarios and verification",
           "scenario": "The same sole Linux artifact proves that DeepSWE v1.1 abs-module-cache-flags collects each Agent's declared patch or commit and grades it in a pristine no-network verifier environment with complete native provenance.",
           "verification": [
-            "python scripts/verify-phase18-native-artifact.py --criterion P18-A10 --expected-commit <18.14-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
+            "python scripts/verify-phase18-native-artifact.py --criterion P18-A10 --expected-commit <18.14.1-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
           ],
           "production_call_sites": [
             ".github/workflows/phase18-native-smoke.yml::native_smoke",
@@ -3424,7 +3575,7 @@
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Acceptance scenarios and verification",
           "scenario": "Across all three selected official tasks, the sole Linux artifact contains exactly one declared Opi/pi comparison edge under identical shared model controls and a report that labels every result conformance-only.",
           "verification": [
-            "python scripts/verify-phase18-native-artifact.py --criterion P18-A12 --expected-commit <18.14-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
+            "python scripts/verify-phase18-native-artifact.py --criterion P18-A12 --expected-commit <18.14.1-task-commit> --receipt <downloaded-receipt.json> --artifact <downloaded-artifact>"
           ],
           "production_call_sites": [
             ".github/workflows/phase18-native-smoke.yml::native_smoke",
@@ -3530,7 +3681,7 @@
         },
         {
           "field": "shared_decision",
-          "reason": "decision_id=eval-resolved-experiment-identity; role=consumer; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
+          "reason": "decision_id=eval-resolved-experiment-identity; role=consumer; owner_task=18.1; module=experiment; interface=ResolvedExperiment; representation=fallible value; consumer_tasks=18.5.1,18.12,18.13,18.14.1,18.15,18.16; criterion_ids=P18-A12,P18-A13,P18-A20; legacy_paths=none; closure_test=scripts/opi-impl-smoke.ps1 full; trigger=multiple-consumers",
           "source": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md#Resolved experiment identity and pairing"
         }
       ],
