@@ -932,7 +932,9 @@ for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
         f"""#!/bin/sh
 # phase18 verifier wrapper (task 18.14.1): the pinned uv entrypoint drives
 # the unchanged {benchmark} native verifier from its locked runner source.
-orig="$PWD"
+# The child runs with a cleared environment: $PWD is not exported, so
+# resolve the working directory through pwd before entering the checkout.
+orig=$(pwd)
 cd "{runner_home}"
 "{uv}" "$@"
 rc=$?
@@ -950,7 +952,9 @@ exit $rc
 # the official reference solution of {benchmark} {task_ids[benchmark]} and
 # grades it with the unchanged native verifier through the same launch
 # surface the agent trials use.
-orig="$PWD"
+# The child runs with a cleared environment: $PWD is not exported, so
+# resolve the working directory through pwd before entering the checkout.
+orig=$(pwd)
 cd "{runner_home}"
 "{uv}" "$@"
 rc=$?
