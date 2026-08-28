@@ -1092,6 +1092,10 @@ MATEOF
 # Stage: conformance-rerun
 # ---------------------------------------------------------------------------
 cmd_conformance_rerun() {
+  # Temporary dispatch-time trace: the runner exits this stage within
+  # 0.2s with no diagnostics while the identical chain succeeds locally.
+  echo "conformance-rerun: entry: $*" >&2
+  set -x
   material=""; out=""
   while [ $# -gt 0 ]; do
     case "$1" in
