@@ -3051,7 +3051,7 @@
       "definition_of_done": "A dedicated manually authorized ubuntu-24.04 workflow, native-smoke script, exact Agent build/locator script, and checked-in deterministic Python previously conformance-proved deterministic provider executable are committed before any native run. The producer contract records github.workflow_ref and github.workflow_sha, hashes the workflow bytes read from that workflow SHA, and binds them to the candidate_sha version together with every invoked script, immutable action, provider, adapter-source manifest, and compiled opi-eval executable digest. Before Agent dispatch it records Opi's canonical resolved executable path, SHA-256, file/ldd metadata, checkout/dirty/Cargo.lock/rustc -Vv/cargo/target/profile/features identities; pi's canonical Node executable path and SHA-256 plus file/ldd/version, npm identity, checkout/dirty/package/lock/archive/installed-tree identities, and canonical bundle path/digest; and each adapter's exact argv, cwd, allowlisted environment, and configuration projection. The provider runs through the canonical Python executable in isolated no-site mode with an exact argv/cwd, closed environment allowlist, explicit standard-library-only dependency closure, one pre-resolved listener endpoint, and one dedicated Docker-network identity; reachability probes must prove that only the admitted Opi/pi Agent-phase task containers can reach that endpoint and that verifier phases, ambient credentials/configuration, undeclared listeners, default routes, and outbound fallback are absent. The producer also runs a canary-oracle preflight closing P18-BMK-003: before any Agent trial it probes the projected Agent-phase environments, mounts, configuration, and scripted-provider response paths for the pinned oracle and reference-solution material by digest and canary markers, and records the required negative result in the outer receipt. It then runs the existing opi-eval conformance CLI for the three exact task packages, preserves native verifier authority and typed trajectory/span source edges, and uploads only a sealed audited artifact plus an outer seal/upload receipt. Static/unit verification proves the producer schema and negative checks; this task does not claim that the six trials have run.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "18.13"
       ],
@@ -3139,7 +3139,7 @@
         "opi_eval::cli::conformance"
       ],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "4031beb00168e678744daa4a34f6e0c0f7df3931",
       "baseline_dirty_files": [],
@@ -3151,14 +3151,57 @@
         "scripts/test_verify_phase18_native_ci.py",
         "scripts/fixtures/phase18-native-ci/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "347c907e78d1a801a63a2b81aa059432ee9d7f26",
+      "evidence": {
+        "Opi-Task": "18.14",
+        "Opi-DoD-SHA256": "f5afa8a3a782f8ae90d97957e0c850669845dccbda72d3aec7862ac405c0c55e",
+        "Opi-Verification": "workspace; smoke full + python addendum (31 tests) + real-file verifier run",
+        "Opi-Evaluator": "passed (0 must-fix; 7 flagged-for-human; 0 rejected)",
+        "Opi-Acceptance": "none owned; producer substrate for 18.15"
+      },
       "blocker": null,
       "session_notes": [
         {
           "timestamp": "2026-08-28T09:40:00+08:00",
           "attempt": 1,
           "summary": "18.14 in_progress; B.2 gate confirmed (one workflow, three scripts, one test file, fixtures; full workspace smoke at D.1)."
+        },
+        {
+          "timestamp": "2026-08-28T11:10:00+08:00",
+          "attempt": 1,
+          "summary": "18.14 passing. Committed producer contract: .github/workflows/phase18-native-smoke.yml (manual workflow_dispatch + candidate_sha input, OdradekAI/opi guard, ubuntu-24.04, timeout 360, concurrency no-cancel, contents:read, 6 immutable full-commit actions, 12 sequential stage steps from verify-dispatch through digest-bound upload of 08-seal/sealed-artifact.tar with if-no-files-found:error); scripts/phase18-native-smoke.sh (11 stages: verify-dispatch binds workflow_ref/workflow_sha + bytes read from the workflow SHA + candidate + checkout HEAD equality + 4 bound script digests + 6 action pins + static lock; host-identity captures ImageOS/Version/uname/os-release/cpu/mem/disk/cgroup/docker/buildx/python; record-tools canonical executable digests incl. rustc/cargo -Vv and the stdlib-only provider closure statement; fetch-external consumes the 18.2 static lock - clones pi/tb21/tb30/deepswe/harbor/pier at full commits, verifies HEAD, tasks_tree, task tree, pi blob ids, harbor/pier uv.lock blob ids, emits the adapter-source manifest; build-agents delegates to the build script and emits the per-adapter argv/cwd/env-allowlist/config-projection manifest; provider-up pre-resolves ONE endpoint from the fixed 48127-48130 list, creates ONE --internal docker network, launches the provider under env -i with canonical python3 -I -S and waits for listener readiness; provider-probe positive on-network + negatives off-network/default-route/ss-listeners/credentials/outbound; provider-down always; preflight-canaries pins solution/+tests/ oracle material by digest + <=8 verbatim markers (>24 bytes) per file from the static lock and scans the agent-phase-visible committed surfaces, required negative recorded, any hit exits nonzero; run-trials builds opi-eval locked release via compiler-artifact selection, binds its digest, runs each dispatch-supplied experiment config sequentially through the existing run CLI; seal-upload requires the canary negative, writes the sorted phase18-native-artifact-manifest/1, outer phase18-native-outer-receipt/1 (dispatch + all stage receipt digests + conformance-evidence-only/leaderboard none), tars deterministic (sort=name, mtime @0)); scripts/phase18-build-agent-artifacts.sh (opi: locked release build, compiler-artifact target opi with non-null executable, readlink -f/sha256/file/ldd/rustc -Vv host triple/cargo -V/checkout commit+dirty/Cargo.lock sha, target/profile/features; pi: isolated HOME+cache npm ci --ignore-scripts, npm run build, bundle existence, node/npm canonical paths+sha256+file+ldd+version, checkout identity, package/lock/shrinkwrap digests, installed node_modules tree digest, npm cache archive digest, bundle path+digest; phase18-agent-identity/1 JSONs). scripts/verify-phase18-native-ci.py (stdlib-only static verifier, 8 families x workflow/producer/builder/provider: trigger, action pins + admitted table, runner, timeout, permissions, concurrency, candidate binding incl. workflow_sha/ref, stage invocation incl. canary-preflight family, builder+provider binding, upload path+if-no-files-found, workflow-SHA byte hashing, -I -S no-site python, env -i closed environment, exactly one endpoint candidate loop + one --listen launch, --internal network, off-network/default-route/ss negative probes, no --branch/mutable main, locked builds incl. invocation form $(cargo build --locked + recorded printf, compiler-artifact selection + no target/release assumption, file/ldd/rustc -Vv/cargo -V/Cargo.lock/shrinkwrap/installed-tree/bundle identity tokens, npm ci --ignore-scripts + npm install forbidden, stdlib-only provider imports + schema token, credential regex allowing only =<dummy/=<redacted-dummy projections). Tests scripts/test_verify_phase18_native_ci.py 31 tests: argument contract, real-files accept, per-family mutations (schedule/push triggers, floating tag, unrecorded action, wrong runner, missing timeout, missing candidate binding, missing canary-preflight step, upload-before-seal, HEAD-not-workflow-sha hashing, missing -I -S, ambient env, duplicated endpoint loop, non-internal network, removed negative probe, --branch clone, unlocked opi-eval build, flipped oracle prefix, os.environ credential, unlocked builder (both call sites), compiler-artifact 'never', missing file identity, npm install, missing bundle check, provider requests import, provider schema, 2 standalone fixtures workflow-floating-action.yml + producer-second-listener.sh). Red-phase: 29 failures before the verifier existed; fixed en route: PY var casing, host-triple from rustc -Vv host line, regex (?!=<(?:dummy|redacted-dummy)) for declared projections, canary-preflight family name, compiler-artifact inverted-form check, locked invocation-form tightening after the recorded printf masked a mutation. D.1 smoke full PASS; addendum 31/31 + real-file verifier PASS; D.2 7-lens: must-fix 0, flagged 7: (1) opi features field is the declarative 'workspace-default-features' statement, enumeration arrives at a real dispatch (18.15); (2) --buildx-image input is a placeholder, actual buildx/BuildKit digest captured at dispatch via host-identity/record-tools outputs; (3) YAML verified by regex not schema parse (no stdlib YAML); GitHub dispatch-time validation backstops at 18.15; (4) probes+preflight are committed contract code not yet executed on a runner - receipts materialize at 18.15, DoD claims no runs; (5) provider --listen capability itself is re-pinned by 18.15 per the provider docstring, dispatch today fails closed by design; (6) adapter manifest argv/cwd/env use <placeholder> tokens realized per-trial at dispatch; (7) harbor/pier repository URLs are reconstructed in the fetch plan (lock pins commit+uv_lock only); commit verification catches URL drift. Rejected 0. Test disposition: add (31) + retain provider suite per inference note.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh full (D.1 workspace tier)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "native-ci contract",
+                  "action": "add",
+                  "test": "scripts/test_verify_phase18_native_ci.py (31)",
+                  "interface": "scripts/verify-phase18-native-ci.py over the committed workflow/producer/builder/provider",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "scripted provider suite",
+                  "action": "retain",
+                  "test": "scripts/test_phase18_scripted_provider.py",
+                  "interface": "scripts/phase18-scripted-provider.py",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "python scripts/test_verify_phase18_native_ci.py && python scripts/verify-phase18-native-ci.py --workflow .github/workflows/phase18-native-smoke.yml --script scripts/phase18-native-smoke.sh --build-script scripts/phase18-build-agent-artifacts.sh --provider scripts/phase18-scripted-provider.py (smoke addendum)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per precedent)",
+              "result": "passed"
+            }
+          ]
         }
       ]
     },
@@ -5161,6 +5204,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 7 (runner-side seal gate placement; generic manifest parse; coverage copied from durable run report; mislabeled verifier source labels; hermetic fact-family table; addendum path divergence; run-root contract widened by run-report.json); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.14",
+      "timestamp": "2026-08-28T11:10:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 7 (features placeholder; buildx digest placeholder; regex-not-schema YAML; probes committed-not-executed; provider --listen arrives at 18.15; placeholder argv tokens; harbor/pier URL reconstruction); rejected 0"
     }
   ]
 }
