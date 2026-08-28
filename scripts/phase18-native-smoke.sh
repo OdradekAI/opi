@@ -981,6 +981,11 @@ manifest["agents"]["pi"]["executable"]["sha256"] = write_exec(
 exec "{pi_identity['node_executable']}" "{pi_identity['bundle_path']}" "$@"
 """)
 
+# The wrapper launch surfaces are stage evidence, not manifest fields:
+# the crate-private material schema denies unknown fields, so they are
+# popped before the manifest is written and recorded in the receipt only.
+agent_wrappers = {adapter: entry.pop("_agent_wrappers")
+                  for adapter, entry in benchmarks.items()}
 material_path = out / "material.json"
 material_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n",
                          encoding="utf-8")
@@ -1062,9 +1067,7 @@ receipt_extra = {
     "opi_eval_executable": opi_eval,
     "opi_eval_executable_sha256": sha(opi_eval),
     "configs": configs,
-    "per_benchmark_agent_wrappers": {
-        adapter: entry.pop("_agent_wrappers") for adapter, entry in benchmarks.items()
-    },
+    "per_benchmark_agent_wrappers": agent_wrappers,
 }
 (out / "materialize-receipt.json").write_text(
     json.dumps(receipt_extra, indent=2, sort_keys=True) + "\n", encoding="utf-8")
