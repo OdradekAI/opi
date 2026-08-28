@@ -24,6 +24,10 @@ enum Command {
         /// Path to the experiment document.
         #[arg(long)]
         config: std::path::PathBuf,
+        /// Resolved native material manifest (task 18.14.1): derives and
+        /// appends the native integrity identity for config pinning.
+        #[arg(long)]
+        native_material: Option<std::path::PathBuf>,
     },
     /// Run one fixture-level conformance case against a concrete adapter
     /// through the shared execution seams (task 18.10.1).
@@ -52,6 +56,14 @@ enum Command {
         /// canary found in staged exportable content blocks sealing.
         #[arg(long)]
         canaries: Option<std::path::PathBuf>,
+        /// Resolved native material manifest (task 18.14.1): exact built
+        /// agents, materialized task packages, pinned verifier and oracle
+        /// entrypoints, and the scripted-provider listener endpoint.
+        #[arg(long)]
+        native_material: Option<std::path::PathBuf>,
+        /// Run only the upstream oracle preflight, then stop (native mode).
+        #[arg(long)]
+        preflight_only: bool,
     },
     /// Re-verify every sealed trial bundle under a run root without
     /// starting an Agent or mutating anything (task 18.13).
@@ -94,22 +106,39 @@ enum Command {
         /// `scripts/phase18-scripted-provider.py`.
         #[arg(long)]
         provider: std::path::PathBuf,
+        /// Resolved native material manifest (task 18.14.1): reruns the
+        /// admitted case subset through the exact built executables.
+        #[arg(long)]
+        native_material: Option<std::path::PathBuf>,
     },
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
-        Command::Validate { config } => match cli::validate(&config) {
-            Ok(summary) => {
-                println!("{summary}");
-                ExitCode::SUCCESS
+        Command::Validate {
+            config,
+            native_material,
+        } => {
+            let result: Result<String, String> = match &native_material {
+                Some(material_path) => cli::validate_native(&config, material_path)
+                    .map(|summary| summary.to_string())
+                    .map_err(|error| error.to_string()),
+                None => cli::validate(&config)
+                    .map(|summary| summary.to_string())
+                    .map_err(|error| error.to_string()),
+            };
+            match result {
+                Ok(summary) => {
+                    println!("{summary}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    ExitCode::FAILURE
+                }
             }
-            Err(error) => {
-                eprintln!("error: {error}");
-                ExitCode::FAILURE
-            }
-        },
+        }
         Command::Run {
             config,
             root,
@@ -118,6 +147,8 @@ fn main() -> ExitCode {
             recover,
             replacement_for,
             canaries,
+            native_material,
+            preflight_only,
         } => {
             let args = cli::run::RunArgs {
                 config,
@@ -127,6 +158,8 @@ fn main() -> ExitCode {
                 recover,
                 replacement_for,
                 canaries,
+                native_material,
+                preflight_only,
             };
             match cli::run::run(&args) {
                 Ok(report) => {
@@ -189,6 +222,7 @@ fn main() -> ExitCode {
             root,
             fixtures,
             provider,
+            native_material,
         } => {
             let args = cli::conformance::ConformanceArgs {
                 suite,
@@ -197,6 +231,7 @@ fn main() -> ExitCode {
                 root,
                 fixtures,
                 provider,
+                native_material,
             };
             match cli::conformance::run(&args) {
                 Ok(report) => {

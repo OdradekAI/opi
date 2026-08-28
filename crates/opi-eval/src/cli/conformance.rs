@@ -1,6 +1,9 @@
-//! `opi-eval conformance` command (task 18.10.1): the minimum provisional
-//! process facade over the crate-private `AgentExecution` and
-//! `BenchmarkExecution` seams.
+//! `opi-eval conformance` command (tasks 18.10.1, 18.14.1): the minimum
+//! provisional process facade over the crate-private `AgentExecution` and
+//! `BenchmarkExecution` seams, with an optional native rerun mode that
+//! drives the admitted case subset through the exact built executables,
+//! the materialized official task packages, and the pinned verifier
+//! entrypoints of a resolved native material manifest.
 //!
 //! One invocation stages and runs exactly one conformance case against one
 //! concrete adapter through the real shared execution driver, then prints a
@@ -81,7 +84,18 @@ pub struct ConformanceArgs {
     pub fixtures: PathBuf,
     /// `scripts/phase18-scripted-provider.py`.
     pub provider: PathBuf,
+    /// Resolved native material manifest (task 18.14.1): when present,
+    /// the admitted native case subset runs through the exact built
+    /// executables, the material task package, and the pinned verifier
+    /// entrypoint instead of fixture helpers.
+    pub native_material: Option<PathBuf>,
 }
+
+/// The conformance cases admitted in native mode: only cases whose
+/// expectation is a real settled Completed/Verified verdict. Failure
+/// injection, fixture-replay, and helper-marker cases are hermetic-only.
+const NATIVE_AGENT_CASES: &[&str] = &["completed", "identity"];
+const NATIVE_BENCHMARK_CASES: &[&str] = &["completed", "identity", "immutable-capture"];
 
 /// The settled one-line report printed by the binary. `met` is the
 /// conformance verdict: the pinned expectation for this (adapter, case).
@@ -377,20 +391,56 @@ async fn run_agent_case(args: &ConformanceArgs) -> Result<ConformanceReport, Con
         std::fs::create_dir_all(dir)?;
     }
     let config_path = run.join("bench.toml");
-    std::fs::write(
-        &config_path,
-        "# conformance fixture config (never a user config)\n",
-    )?;
-
-    // The helper (or a deliberately missing path for the spawn-failure
-    // case) is the resolved executable: never an ambient PATH lookup.
-    let executable = if args.case == "spawn-failure" {
-        run.join("no-such-agent")
-    } else {
-        let helper = run.join("helper-agent.sh");
-        std::fs::write(&helper, agent_helper_script(product))?;
-        make_executable(&helper);
-        helper
+    let (executable, provider_model, extra_env) = match &args.native_material {
+        Some(material_path) => {
+            if !NATIVE_AGENT_CASES.contains(&args.case.as_str()) {
+                return Err(ConformanceError::Unsupported(format!(
+                    "agent case {:?} is hermetic-only; native mode admits {NATIVE_AGENT_CASES:?}",
+                    args.case
+                )));
+            }
+            let material = crate::runner::material::NativeMaterial::load(material_path)
+                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
+            let agent = material
+                .agent(product.product)
+                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
+            std::fs::write(
+                &config_path,
+                crate::runner::experiment::native_opi_config(&agent.config, &agent.model),
+            )?;
+            let mut env = crate::runner::experiment::native_agent_env(
+                product.product,
+                &agent.config,
+                &isolation,
+            )
+            .map_err(ConformanceError::Unsupported)?;
+            for (key, value) in &agent.provider_env {
+                env.insert(key.clone().into(), value.clone().into());
+            }
+            (agent.executable.path.clone(), agent.model.clone(), env)
+        }
+        None => {
+            std::fs::write(
+                &config_path,
+                "# conformance fixture config (never a user config)\n",
+            )?;
+            // The helper (or a deliberately missing path for the
+            // spawn-failure case) is the resolved executable: never an
+            // ambient PATH lookup.
+            let executable = if args.case == "spawn-failure" {
+                run.join("no-such-agent")
+            } else {
+                let helper = run.join("helper-agent.sh");
+                std::fs::write(&helper, agent_helper_script(product))?;
+                make_executable(&helper);
+                helper
+            };
+            (
+                executable,
+                "local:scripted".to_owned(),
+                agent_case_env(args, product, &args.case),
+            )
+        }
     };
 
     let request = AgentRunRequest {
@@ -399,10 +449,10 @@ async fn run_agent_case(args: &ConformanceArgs) -> Result<ConformanceReport, Con
         workspace: workspace.clone(),
         trace_root: trace_root.clone(),
         config_path,
-        provider_model: "local:scripted".to_owned(),
+        provider_model,
         allow_mutating: false,
         isolation: isolation.clone(),
-        extra_env: agent_case_env(args, product, &args.case),
+        extra_env,
     };
 
     // The adapter for the timeout case carries the bounded-timeout variant
@@ -742,18 +792,41 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
 
     // Stage the isolated run: a staged copy of the pinned fixture task
     // package (tamperable for the drift case), a fresh trace root the fake
-    // verifier writes into, and the collected-patch placeholder.
+    // verifier writes into, and the collected-patch placeholder. Native
+    // mode stages the materialized official package instead.
     let run = args.root.join("benchmark");
     let trace_root = run.join("trace");
     let agent_output = run.join("agent-output");
     let task_dir = run.join("task-package");
     std::fs::create_dir_all(&trace_root)?;
     std::fs::create_dir_all(&agent_output)?;
-    let fixture_package = args
-        .fixtures
-        .join("benchmarks")
-        .join(revision.fixture_dir)
-        .join("task-package");
+    let native_material = match &args.native_material {
+        Some(material_path) => {
+            if !NATIVE_BENCHMARK_CASES.contains(&args.case.as_str()) {
+                return Err(ConformanceError::Unsupported(format!(
+                    "benchmark case {:?} is hermetic-only; native mode admits                      {NATIVE_BENCHMARK_CASES:?}",
+                    args.case
+                )));
+            }
+            Some(
+                crate::runner::material::NativeMaterial::load(material_path)
+                    .map_err(|error| ConformanceError::Unsupported(error.to_string()))?,
+            )
+        }
+        None => None,
+    };
+    let fixture_package = match &native_material {
+        Some(material) => material
+            .benchmark(revision.adapter)
+            .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
+            .task_package
+            .clone(),
+        None => args
+            .fixtures
+            .join("benchmarks")
+            .join(revision.fixture_dir)
+            .join("task-package"),
+    };
     copy_dir_recursive(&fixture_package, &task_dir)?;
     if args.case == "package-drift" {
         std::fs::write(task_dir.join("rogue-fixture.txt"), b"unregistered")?;
@@ -768,49 +841,76 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
         .join("benchmarks")
         .join(revision.fixture_dir)
         .join("profile/synthetic.toml");
-    let profile_text: String = match args.case.as_str() {
-        "production-pin-drift" | "package-not-materialized" => match revision.adapter {
-            "terminal-bench-2.1" => {
-                include_str!("../../profiles/benchmarks/terminal-bench-2.1.toml").to_owned()
-            }
-            "terminal-bench-3.0" => {
-                include_str!("../../profiles/benchmarks/terminal-bench-3.0.toml").to_owned()
-            }
-            _ => include_str!("../../profiles/benchmarks/deepswe-v1.1.toml").to_owned(),
+    let profile_text: String = match &native_material {
+        Some(material) => std::fs::read_to_string(
+            material
+                .benchmark(revision.adapter)
+                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
+                .profile
+                .clone(),
+        )?,
+        None => match args.case.as_str() {
+            "production-pin-drift" | "package-not-materialized" => match revision.adapter {
+                "terminal-bench-2.1" => {
+                    include_str!("../../profiles/benchmarks/terminal-bench-2.1.toml").to_owned()
+                }
+                "terminal-bench-3.0" => {
+                    include_str!("../../profiles/benchmarks/terminal-bench-3.0.toml").to_owned()
+                }
+                _ => include_str!("../../profiles/benchmarks/deepswe-v1.1.toml").to_owned(),
+            },
+            "timeout" => patched_timeout_secs(&std::fs::read_to_string(&synthetic_path)?)
+                .ok_or_else(|| {
+                    ConformanceError::Unsupported(format!(
+                        "no pinned timeout_secs limit found to lower for {}",
+                        revision.adapter
+                    ))
+                })?,
+            _ => std::fs::read_to_string(&synthetic_path)?,
         },
-        "timeout" => {
-            patched_timeout_secs(&std::fs::read_to_string(&synthetic_path)?).ok_or_else(|| {
-                ConformanceError::Unsupported(format!(
-                    "no pinned timeout_secs limit found to lower for {}",
-                    revision.adapter
-                ))
-            })?
-        }
-        _ => std::fs::read_to_string(&synthetic_path)?,
     };
 
-    let native_source = args
-        .fixtures
-        .join("benchmarks")
-        .join(revision.fixture_dir)
-        .join(native_fixture(revision, &args.case));
     let mut extra_env: BTreeMap<OsString, OsString> = BTreeMap::new();
-    extra_env.insert(
-        OsString::from("OPI_EVAL_CONFORMANCE_BEHAVIOR"),
-        OsString::from(args.case.clone()),
-    );
-    extra_env.insert(
-        OsString::from("OPI_EVAL_NATIVE_SOURCE"),
-        native_source.into_os_string(),
-    );
+    match &native_material {
+        Some(material) => {
+            let benchmark = material
+                .benchmark(revision.adapter)
+                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
+            for (key, value) in &benchmark.verifier_env {
+                extra_env.insert(key.clone().into(), value.clone().into());
+            }
+        }
+        None => {
+            let native_source = args
+                .fixtures
+                .join("benchmarks")
+                .join(revision.fixture_dir)
+                .join(native_fixture(revision, &args.case));
+            extra_env.insert(
+                OsString::from("OPI_EVAL_CONFORMANCE_BEHAVIOR"),
+                OsString::from(args.case.clone()),
+            );
+            extra_env.insert(
+                OsString::from("OPI_EVAL_NATIVE_SOURCE"),
+                native_source.into_os_string(),
+            );
+        }
+    }
 
-    let verifier_executable = if args.case == "spawn-failure" {
-        run.join("no-such-verifier")
-    } else {
-        let helper = run.join("helper-verifier.sh");
-        std::fs::write(&helper, benchmark_helper_script(revision))?;
-        make_executable(&helper);
-        helper
+    let verifier_executable = match &native_material {
+        Some(material) => material
+            .benchmark(revision.adapter)
+            .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
+            .verifier_executable
+            .path
+            .clone(),
+        None if args.case == "spawn-failure" => run.join("no-such-verifier"),
+        None => {
+            let helper = run.join("helper-verifier.sh");
+            std::fs::write(&helper, benchmark_helper_script(revision))?;
+            make_executable(&helper);
+            helper
+        }
     };
 
     let report_for_record = |record: crate::benchmark::process::BenchmarkRecord,
@@ -982,8 +1082,16 @@ async fn finish_benchmark_case<A: BenchmarkAdapter>(
     ) -> ConformanceReport,
 ) -> Result<ConformanceReport, ConformanceError> {
     // The staged fixture digest stands in for the admitted resolved lock
-    // digest: honest fixture plumbing, not a resolved-lock claim.
-    let admitted_lock_digest = sha256_hex(args.case.as_bytes());
+    // digest: honest fixture plumbing, not a resolved-lock claim. Native
+    // mode binds the material's admitted static lock instead.
+    let admitted_lock_digest = match &args.native_material {
+        Some(material_path) => crate::runner::material::NativeMaterial::load(material_path)
+            .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
+            .static_lock
+            .sha256
+            .clone(),
+        None => sha256_hex(args.case.as_bytes()),
+    };
     let integrity = IntegrityRecord::review(IntegrityReview {
         benchmark: revision.benchmark.to_owned(),
         revision: revision.revision.to_owned(),

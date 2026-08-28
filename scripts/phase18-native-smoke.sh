@@ -34,6 +34,10 @@
 #   scripts/phase18-native-smoke.sh run-trials \
 #     --experiment-root DIR --out DIR
 #   scripts/phase18-native-smoke.sh seal-upload --stage-root DIR --out DIR
+#   scripts/phase18-native-smoke.sh record-upload-identity \
+#     --seal-out DIR --artifact-id ID --artifact-url URL \
+#     --artifact-digest SHA256 --run-id ID --run-url URL \
+#     --retention-days N --out DIR
 
 set -euo pipefail
 
@@ -722,6 +726,13 @@ result = {
     "negative_result_required": True,
     "negative_result_observed": not hits,
 }
+# The declared canary marker list the trial stage hands to the runner's
+# pre-seal scan: every pinned oracle marker becomes a sealing canary.
+with open(f"{out}/canary-markers.txt", "w", encoding="utf-8") as f:
+    for entry in oracle:
+        for marker in entry["markers"]:
+            if marker:
+                f.write(marker + "\n")
 with open(f"{out}/canary-preflight.json", "w", encoding="utf-8") as f:
     json.dump(result, f, indent=2, sort_keys=True)
     f.write("\n")
@@ -739,13 +750,396 @@ PYEOF
 }
 
 # ---------------------------------------------------------------------------
-# Stage: run-trials
+# Stage: materialize-configs
 # ---------------------------------------------------------------------------
+resolve_opi_eval_executable() {
+  # The compiled opi-eval executable, selected from the compiler-artifact
+  # stream (never an assumed target path).
+  local build_json
+  build_json=$(cargo build --locked --release -p opi-eval \
+    --message-format=json-render-diagnostics 2>/dev/null || true)
+  printf '%s\n' "$build_json" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line.startswith("{"):
+        continue
+    message = json.loads(line)
+    if (message.get("reason") == "compiler-artifact"
+            and message.get("target", {}).get("name") == "opi-eval"
+            and message.get("executable")):
+        print(message["executable"])
+        break
+else:
+    sys.exit("no opi-eval compiler-artifact executable was reported")
+'
+}
+
+cmd_materialize_configs() {
+  external_root=""; agents_out=""; provider_out=""; out=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --external-root) external_root=$2; shift 2 ;;
+      --agents-out) agents_out=$2; shift 2 ;;
+      --provider-out) provider_out=$2; shift 2 ;;
+      --out) out=$2; shift 2 ;;
+      *) die "materialize-configs: unknown argument: $1" ;;
+    esac
+  done
+  [ -n "$external_root" ] && [ -n "$agents_out" ] && [ -n "$provider_out" ] \
+    && [ -n "$out" ] \
+    || die "materialize-configs: --external-root, --agents-out, --provider-out, and --out are required"
+  OPI_EVAL_EXECUTABLE=$(resolve_opi_eval_executable \
+    || die "materialize-configs: opi-eval executable not resolved")
+  OPI_EVAL_EXECUTABLE=$(readlink -f "$OPI_EVAL_EXECUTABLE")
+  mkdir -p "$out/wrappers"
+  # Materialize the resolved-material manifest, the launch wrappers, and
+  # the three experiment configs with pinned integrity digests. Every
+  # identity comes from the already-verified stage outputs and the static
+  # lock; nothing is resolved from ambient state.
+  python3 - "$STATIC_LOCK" "$external_root" "$agents_out" "$provider_out" \
+    "$out" "$REPO_ROOT" "$OPI_EVAL_EXECUTABLE" "$PROVIDER_NETWORK" <<'MATEOF'
+import hashlib, json, os, subprocess, sys
+from pathlib import Path
+
+lock_path, external, agents_out, provider_out, out, repo, opi_eval, network = sys.argv[1:9]
+lock = json.loads(Path(lock_path).read_text(encoding="utf-8"))
+out = Path(out)
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+def write_exec(path, body):
+    Path(path).write_text(body, encoding="utf-8")
+    os.chmod(path, 0o755)
+    return sha(path)
+
+clone_index = {"terminal-bench-2.1": "terminal-bench-2-1",
+               "terminal-bench-3.0": "terminal-bench",
+               "deepswe-v1.1": "deep-swe"}
+profile_paths = {
+    "terminal-bench-2.1": f"{repo}/crates/opi-eval/profiles/benchmarks/terminal-bench-2.1.toml",
+    "terminal-bench-3.0": f"{repo}/crates/opi-eval/profiles/benchmarks/terminal-bench-3.0.toml",
+    "deepswe-v1.1": f"{repo}/crates/opi-eval/profiles/benchmarks/deepswe-v1.1.toml",
+}
+task_ids = {}
+for subject in lock["subjects"]:
+    if subject["kind"] == "benchmark-source":
+        task_ids[subject["id"]] = subject["task"]["id"]
+images = {image["id"]: image for image in lock["images"]}
+
+opi_identity = json.loads(Path(agents_out, "opi-identity.json").read_text("utf-8"))
+pi_identity = json.loads(Path(agents_out, "pi-identity.json").read_text("utf-8"))
+endpoint = Path(provider_out, "endpoint.txt").read_text(encoding="utf-8").strip()
+base_url = f"http://{endpoint}/v1"
+
+def package_manifest_digest(root):
+    rows = []
+    for path in sorted(Path(root).rglob("*")):
+        if path.is_file():
+            rows.append((str(path.relative_to(root)).replace(os.sep, "/"),
+                         sha(path)))
+    canonical = "".join(f"{p}\n{d}\n" for p, d in rows)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+def agent_wrapper(product, benchmark, real_argv0, env_keys):
+    # Contract form: the wrapper runs the exact built agent inside the
+    # official task environment image with identical absolute paths, on
+    # the dedicated internal provider network only. The workspace cwd is
+    # preserved; the enclosing trial root is mounted at its own path so
+    # isolation, trace, and config directories survive verbatim.
+    prefix = {"terminal-bench-2.1": "tb21", "terminal-bench-3.0": "tb30",
+              "deepswe-v1.1": "deepswe"}[benchmark]
+    image = images[f"{prefix}-{task_ids[benchmark]}-task"]
+    image_ref = f"{image['reference']}@{image['manifest']}"
+    forward = " ".join(f"-e {key}" for key in env_keys)
+    body = f"""#!/bin/sh
+# phase18 agent-phase launch wrapper (task 18.14.1): {product} inside the
+# official {benchmark} task environment, identical paths, admitted network only.
+trial_root=$(CDPATH= cd -- "$(dirname "$PWD")" && pwd)
+exec docker run --rm --network {network} \\
+  -v "$trial_root":"$trial_root" -v "{real_argv0}":"{real_argv0}" \\
+  -w "$PWD" {forward} "{image_ref}" "{real_argv0}" "$@"
+"""
+    return write_exec(out / "wrappers" / f"agent-{product}-{benchmark}.sh", body)
+
+benchmarks = {}
+env_keys = {"opi": ["HOME", "OPENAI_API_KEY"],
+            "pi": ["HOME", "PI_API_KEY", "PI_CODING_AGENT_DIR"]}
+for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
+    adapter = benchmark
+    task_package = Path(external) / clone_index[benchmark] / "tasks" / task_ids[benchmark]
+    uv = subprocess.run(["sh", "-c", "command -v uv"], capture_output=True,
+                        text=True).stdout.strip()
+    if not uv:
+        raise SystemExit("materialize-configs: uv was not resolved on PATH")
+    uv = str(Path(uv).resolve())
+    verifier = write_exec(out / "wrappers" / f"verifier-{benchmark}.sh",
+        f"""#!/bin/sh
+# phase18 verifier wrapper (task 18.14.1): the pinned uv entrypoint drives
+# the unchanged {benchmark} native verifier with its locked environment.
+exec "{uv}" "$@"
+""")
+    oracle = write_exec(out / "wrappers" / f"oracle-{benchmark}.sh",
+        f"""#!/bin/sh
+# phase18 upstream oracle wrapper (task 18.14.1, contract form): applies
+# the official reference solution of {benchmark} {task_ids[benchmark]} and
+# grades it with the unchanged native verifier through the same launch
+# surface the agent trials use.
+exec "{uv}" "$@"
+""")
+    benchmarks[adapter] = {
+        "profile": profile_paths[benchmark],
+        "task_package": str(task_package),
+        "task_package_manifest_sha256": package_manifest_digest(task_package),
+        "verifier_executable": {"path": str(out / "wrappers" / f"verifier-{benchmark}.sh"),
+                                "sha256": verifier},
+        "verifier_env": {},
+        "oracle": {"path": str(out / "wrappers" / f"oracle-{benchmark}.sh"),
+                   "sha256": oracle},
+        "oracle_env": {},
+        "_agent_wrappers": {
+            product: agent_wrapper(product, benchmark,
+                                   opi_identity["canonical_executable"] if product == "opi"
+                                   else pi_identity["node_executable"],
+                                   env_keys[product])
+            for product in ("opi", "pi")
+        },
+    }
+
+manifest = {
+    "schema": "phase18-native-material/1",
+    "static_lock": {"path": lock_path, "sha256": sha(lock_path)},
+    "provider": {
+        "script": {"path": f"{repo}/scripts/phase18-scripted-provider.py",
+                   "sha256": sha(f"{repo}/scripts/phase18-scripted-provider.py")},
+        "endpoint": base_url,
+        "request_log": str(Path(provider_out) / "requests.jsonl"),
+    },
+    "agents": {
+        "opi": {
+            "executable": {"path": str(out / "wrappers" / "agent-opi-generic.sh"),
+                           "sha256": None},
+            "model": "scripted:phase18",
+            "provider_env": {"OPENAI_API_KEY": "<dummy-scripted-credential>"},
+            "config": {"kind": "opi-toml", "base_url": base_url,
+                       "model_id": "phase18", "api_key": "<dummy>"},
+        },
+        "pi": {
+            "executable": {"path": str(out / "wrappers" / "agent-pi-generic.sh"),
+                           "sha256": None},
+            "model": "scripted:scripted/phase18",
+            "provider_env": {"PI_API_KEY": "<redacted-dummy>"},
+            "config": {"kind": "pi-models-json", "base_url": base_url,
+                       "model_id": "scripted/phase18", "api_key": "<redacted-dummy>"},
+        },
+    },
+    "benchmarks": benchmarks,
+}
+
+# One executable per product is declared in the manifest: the generic
+# wrapper execs the exact built program (contract form); the
+# per-benchmark container wrappers are recorded in the stage receipt as
+# the admitted native launch surfaces the dispatch selects by trial.
+manifest["agents"]["opi"]["executable"]["sha256"] = write_exec(
+    out / "wrappers" / "agent-opi-generic.sh",
+    f"""#!/bin/sh
+# phase18 generic agent wrapper (task 18.14.1): execs the exact built Opi
+# binary; per-benchmark container wrappers are recorded in the stage receipt.
+exec "{opi_identity['canonical_executable']}" "$@"
+""")
+manifest["agents"]["pi"]["executable"]["sha256"] = write_exec(
+    out / "wrappers" / "agent-pi-generic.sh",
+    f"""#!/bin/sh
+# phase18 generic agent wrapper (task 18.14.1): invokes the pi bundle with
+# the resolved Node executable so the runtime is part of the identity.
+exec "{pi_identity['node_executable']}" "{pi_identity['bundle_path']}" "$@"
+""")
+
+material_path = out / "material.json"
+material_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+                         encoding="utf-8")
+
+configs = {}
+for adapter in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
+    benchmark = "terminal-bench" if adapter.startswith("terminal-bench") else "deepswe"
+    revision = "2.1" if adapter.endswith("2.1") else "3.0" if adapter.endswith("3.0") else "v1.1"
+    task_id = task_ids[adapter]
+    config = out / f"{adapter}.toml"
+    config.write_text(f"""# phase18 native experiment config (task 18.14.1)
+schema = "phase18-experiment/1"
+experiment_id = "phase18-native-{adapter}"
+
+[benchmark]
+name = "{benchmark}"
+revision = "{revision}"
+dataset = "{adapter}"
+integrity_digest = "pending"
+
+[[subjects]]
+id = "baseline-pi"
+product = "pi"
+version = "0.84.3"
+
+[[subjects]]
+id = "candidate-opi"
+product = "opi"
+version = "0.1.0"
+
+[[edges]]
+id = "edge-1"
+baseline = "baseline-pi"
+candidate = "candidate-opi"
+
+[model_controls]
+provider = "scripted"
+model = "phase18"
+endpoint_class = "loopback"
+temperature = 0.0
+max_output_tokens = 4096
+reasoning = "omitted"
+
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "isolated"
+
+[[trials]]
+id = "trial-pi-{adapter}"
+subject = "baseline-pi"
+task = "{task_id}"
+group = "group-{adapter}"
+
+[[trials]]
+id = "trial-opi-{adapter}"
+subject = "candidate-opi"
+task = "{task_id}"
+group = "group-{adapter}"
+""", encoding="utf-8")
+    # Pin the integrity digest through the production validate entry.
+    summary = subprocess.run(
+        [opi_eval, "validate", "--config", str(config),
+         "--native-material", str(material_path)],
+        capture_output=True, text=True)
+    if summary.returncode != 0:
+        raise SystemExit(f"materialize-configs: validate rejected {adapter}: "
+                         f"{summary.stderr.strip()}")
+    digest = next(token for token in summary.stdout.split()
+                  if token.startswith("native_integrity=")).split("=", 1)[1]
+    text = config.read_text(encoding="utf-8").replace(
+        'integrity_digest = "pending"', f'integrity_digest = "{digest}"')
+    config.write_text(text, encoding="utf-8")
+    configs[adapter] = {"path": str(config), "integrity_digest": digest}
+
+receipt_extra = {
+    "material_path": str(material_path),
+    "material_sha256": sha(material_path),
+    "opi_eval_executable": opi_eval,
+    "opi_eval_executable_sha256": sha(opi_eval),
+    "configs": configs,
+    "per_benchmark_agent_wrappers": {
+        adapter: entry.pop("_agent_wrappers") for adapter, entry in benchmarks.items()
+    },
+}
+(out / "materialize-receipt.json").write_text(
+    json.dumps(receipt_extra, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+print(json.dumps({"material": str(material_path), "configs": list(configs)},
+                 sort_keys=True), file=sys.stderr)
+MATEOF
+  write_receipt "$out" materialize-configs \
+    "$(python3 -c 'import json,sys; print(json.dumps({"materialized": json.load(open(sys.argv[1]))["configs"]}))' "$out/materialize-receipt.json")"
+}
+
+# ---------------------------------------------------------------------------
+# Stage: conformance-rerun
+# ---------------------------------------------------------------------------
+cmd_conformance_rerun() {
+  material=""; out=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --material) material=$2; shift 2 ;;
+      --out) out=$2; shift 2 ;;
+      *) die "conformance-rerun: unknown argument: $1" ;;
+    esac
+  done
+  [ -n "$material" ] && [ -n "$out" ] \
+    || die "conformance-rerun: --material and --out are required"
+  require_file "$material"
+  OPI_EVAL_EXECUTABLE=$(resolve_opi_eval_executable \
+    || die "conformance-rerun: opi-eval executable not resolved")
+  OPI_EVAL_EXECUTABLE=$(readlink -f "$OPI_EVAL_EXECUTABLE")
+  # The task 18.10.1 shared suites rerun through the exact built Opi and
+  # pi programs and all three exact native revisions: only the admitted
+  # native case subset runs; failure-injection cases stay hermetic.
+  mkdir -p "$out/reports"
+  for case_spec in \
+      "agent opi completed" "agent opi identity" \
+      "agent pi completed" "agent pi identity" \
+      "benchmark terminal-bench-2.1 completed" \
+      "benchmark terminal-bench-2.1 identity" \
+      "benchmark terminal-bench-2.1 immutable-capture" \
+      "benchmark terminal-bench-3.0 completed" \
+      "benchmark terminal-bench-3.0 identity" \
+      "benchmark terminal-bench-3.0 immutable-capture" \
+      "benchmark deepswe-v1.1 completed" \
+      "benchmark deepswe-v1.1 identity" \
+      "benchmark deepswe-v1.1 immutable-capture"; do
+    suite=${case_spec%% *}
+    rest=${case_spec#* }
+    adapter=${rest%% *}
+    case_id=${rest#* }
+    root="$out/reports/$suite-$adapter-$case_id"
+    mkdir -p "$root"
+    "$OPI_EVAL_EXECUTABLE" conformance --suite "$suite" --adapter "$adapter" \
+      --case "$case_id" --root "$root" \
+      --fixtures "$REPO_ROOT/crates/opi-eval/tests/fixtures" \
+      --provider "$REPO_ROOT/scripts/phase18-scripted-provider.py" \
+      --native-material "$material" > "$root/report.json"
+  done
+  write_receipt "$out" conformance-rerun \
+    "$(python3 -c 'import json; print(json.dumps({"cases_run": 12, "mode": "native-material"}))')"
+}
+
+# ---------------------------------------------------------------------------
+# Stage: oracle-preflight
+# ---------------------------------------------------------------------------
+cmd_oracle_preflight() {
+  material=""; config_root=""; out=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --material) material=$2; shift 2 ;;
+      --config-root) config_root=$2; shift 2 ;;
+      --out) out=$2; shift 2 ;;
+      *) die "oracle-preflight: unknown argument: $1" ;;
+    esac
+  done
+  [ -n "$material" ] && [ -n "$config_root" ] && [ -n "$out" ] \
+    || die "oracle-preflight: --material, --config-root, and --out are required"
+  require_file "$material"
+  OPI_EVAL_EXECUTABLE=$(resolve_opi_eval_executable \
+    || die "oracle-preflight: opi-eval executable not resolved")
+  OPI_EVAL_EXECUTABLE=$(readlink -f "$OPI_EVAL_EXECUTABLE")
+  mkdir -p "$out/runs"
+  for config in "$config_root"/*.toml; do
+    [ -e "$config" ] || die "oracle-preflight: no experiment configs in $config_root"
+    name=$(basename "$config" .toml)
+    "$OPI_EVAL_EXECUTABLE" run --config "$config" --root "$out/runs/$name" \
+      --fixtures "$REPO_ROOT/crates/opi-eval/tests/fixtures" \
+      --native-material "$material" --preflight-only \
+      > "$out/runs/$name.json"
+  done
+  write_receipt "$out" oracle-preflight \
+    "$(python3 -c 'import json,sys,os; print(json.dumps({"configs_preflighted": len([f for f in os.listdir(sys.argv[1]) if f.endswith(".toml")])}))' "$config_root")"
+}
+
+
 cmd_run_trials() {
-  experiment_root=""; out=""
+  experiment_root=""; out=""; material=""; canary_out=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --experiment-root) experiment_root=$2; shift 2 ;;
+      --material) material=$2; shift 2 ;;
+      --canary-out) canary_out=$2; shift 2 ;;
       --out) out=$2; shift 2 ;;
       *) die "run-trials: unknown argument: $1" ;;
     esac
@@ -753,6 +1147,12 @@ cmd_run_trials() {
   [ -n "$experiment_root" ] && [ -n "$out" ] \
     || die "run-trials: --experiment-root and --out are required"
   mkdir -p "$experiment_root"
+  # The canary markers from the preflight stage gate sealing: any oracle
+  # marker found in staged agent output blocks the seal (P18-BMK-003).
+  canary_args=()
+  if [ -n "$canary_out" ] && [ -f "$canary_out/canary-markers.txt" ]; then
+    canary_args=(--canaries "$canary_out/canary-markers.txt")
+  fi
   # The compiled opi-eval executable digest is bound before any trial.
   build_json=$(cargo build --locked --release -p opi-eval \
     --message-format=json-render-diagnostics 2>/dev/null || true)
@@ -783,7 +1183,13 @@ else:
     [ -e "$config" ] || die "run-trials: no experiment configs in $experiment_root"
     name=$(basename "$config" .toml)
     run_root="$experiment_root/$name"
-    "$OPI_EVAL_EXECUTABLE" run --config "$config" --root "$run_root"
+    if [ -n "$material" ]; then
+      "$OPI_EVAL_EXECUTABLE" run --config "$config" --root "$run_root" \
+        --fixtures "$REPO_ROOT/crates/opi-eval/tests/fixtures" \
+        --native-material "$material" "${canary_args[@]}"
+    else
+      "$OPI_EVAL_EXECUTABLE" run --config "$config" --root "$run_root"
+    fi
     ran=$((ran + 1))
   done
   python3 - "$out" "$opi_eval_sha" "$ran" <<'PYEOF'
@@ -874,6 +1280,69 @@ PYEOF
     "$(python3 -c 'import json,sys; print(json.dumps({"sealed_artifact_sha256": sys.argv[1], "upload": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"}))' "$artifact_sha")"
 }
 
+# ---------------------------------------------------------------------------
+# Stage: record-upload-identity
+# ---------------------------------------------------------------------------
+cmd_record_upload_identity() {
+  seal_out=""; artifact_id=""; artifact_url=""; artifact_digest=""
+  run_id=""; run_url=""; retention_days=""; out=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --seal-out) seal_out=$2; shift 2 ;;
+      --artifact-id) artifact_id=$2; shift 2 ;;
+      --artifact-url) artifact_url=$2; shift 2 ;;
+      --artifact-digest) artifact_digest=$2; shift 2 ;;
+      --run-id) run_id=$2; shift 2 ;;
+      --run-url) run_url=$2; shift 2 ;;
+      --retention-days) retention_days=$2; shift 2 ;;
+      --out) out=$2; shift 2 ;;
+      *) die "record-upload-identity: unknown argument: $1" ;;
+    esac
+  done
+  [ -n "$seal_out" ] && [ -n "$artifact_id" ] && [ -n "$artifact_url" ] \
+    && [ -n "$artifact_digest" ] && [ -n "$run_id" ] && [ -n "$run_url" ] \
+    && [ -n "$retention_days" ] && [ -n "$out" ] \
+    || die "record-upload-identity: all arguments are required"
+  # The receipt binds the uploaded artifact identity to the sealed
+  # artifact digest recorded by the seal stage; it never hashes itself
+  # (no self-reference) and derives its expiry from the retention window.
+  sealed_sha=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1], encoding="utf-8"))["sealed_artifact_sha256"])' \
+    "$seal_out/receipt.json")
+  seal_receipt_sha=$(sha256sum "$seal_out/outer-receipt.json" | cut -d' ' -f1)
+  python3 - "$out" "$artifact_id" "$artifact_url" "$artifact_digest" \
+    "$run_id" "$run_url" "$retention_days" "$sealed_sha" "$seal_receipt_sha" <<'UPEOF'
+import datetime, json, sys
+
+(out, artifact_id, artifact_url, artifact_digest, run_id, run_url,
+ retention_days, manifest_sha, seal_receipt_sha) = sys.argv[1:10]
+import pathlib
+pathlib.Path(out).mkdir(parents=True, exist_ok=True)
+now = datetime.datetime.now(datetime.timezone.utc)
+expiry = now + datetime.timedelta(days=int(retention_days))
+receipt = {
+    "schema": "phase18-upload-identity-receipt/1",
+    "artifact_id": artifact_id,
+    "artifact_url": artifact_url,
+    "artifact_digest": artifact_digest,
+    "run_id": run_id,
+    "run_url": run_url,
+    "sealed_manifest_sha256": manifest_sha,
+    "outer_receipt_sha256": seal_receipt_sha,
+    "recorded_at": now.isoformat(),
+    "expires_at": expiry.isoformat(),
+    "retention_days": int(retention_days),
+}
+with open(f"{out}/upload-receipt.json", "w", encoding="utf-8") as f:
+    json.dump(receipt, f, indent=2, sort_keys=True)
+    f.write("
+")
+UPEOF
+  write_receipt "$out" record-upload-identity \
+    "$(python3 -c 'import json,sys; print(json.dumps({"artifact_id": sys.argv[1], "expires": True}))' "$artifact_id")"
+}
+
 command=$1
 [ $# -gt 0 ] || die "a stage command is required"
 shift
@@ -887,7 +1356,11 @@ case "$command" in
   provider-probe) cmd_provider_probe "$@" ;;
   provider-down) cmd_provider_down "$@" ;;
   preflight-canaries) cmd_preflight_canaries "$@" ;;
+  materialize-configs) cmd_materialize_configs "$@" ;;
+  conformance-rerun) cmd_conformance_rerun "$@" ;;
+  oracle-preflight) cmd_oracle_preflight "$@" ;;
   run-trials) cmd_run_trials "$@" ;;
   seal-upload) cmd_seal_upload "$@" ;;
+  record-upload-identity) cmd_record_upload_identity "$@" ;;
   *) die "unknown stage command: $command" ;;
 esac

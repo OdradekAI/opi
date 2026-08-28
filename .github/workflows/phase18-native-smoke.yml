@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       candidate_sha:
-        description: "Exact task 18.14 commit that owns this producer contract"
+        description: "Exact producer-contract commit (task 18.14.1 lineage) this dispatch runs"
         required: true
         type: string
 
@@ -150,14 +150,51 @@ jobs:
             --provider scripts/phase18-scripted-provider.py \
             --out "$PHASE18_NATIVE_STAGE/06-canaries"
 
+      # Materializes the resolved-material manifest, the launch wrappers,
+      # and the three experiment configs with pinned integrity digests
+      # bound to the fetched sources, built agents, and provider endpoint.
+      - name: Materialize the native material and experiment configs
+        run: |
+          set -euo pipefail
+          scripts/phase18-native-smoke.sh materialize-configs \
+            --external-root "$PHASE18_NATIVE_STAGE/03-external" \
+            --agents-out "$PHASE18_NATIVE_STAGE/04-agents" \
+            --provider-out "$PHASE18_NATIVE_STAGE/05-provider" \
+            --out "$PHASE18_NATIVE_STAGE/06-material"
+
+      # Reruns the task 18.10.1 shared AgentExecution and
+      # BenchmarkExecution conformance suites through the exact built
+      # Opi/pi programs and all three exact native revisions (admitted
+      # native case subset; failure-injection cases stay hermetic).
+      - name: Rerun the conformance suites through the exact programs
+        run: |
+          set -euo pipefail
+          scripts/phase18-native-smoke.sh conformance-rerun \
+            --material "$PHASE18_NATIVE_STAGE/06-material/material.json" \
+            --out "$PHASE18_NATIVE_STAGE/06-material/conformance"
+
+      # One upstream oracle preflight per selected task: the official
+      # reference solution must pass through the unchanged native verifier
+      # before any agent trial starts.
+      - name: Run the upstream oracle preflights
+        run: |
+          set -euo pipefail
+          scripts/phase18-native-smoke.sh oracle-preflight \
+            --material "$PHASE18_NATIVE_STAGE/06-material/material.json" \
+            --config-root "$PHASE18_NATIVE_STAGE/06-material" \
+            --out "$PHASE18_NATIVE_STAGE/06-material/oracle"
+
       # Six paired trials (Opi and pi for each of the three pinned task
-      # packages) through the existing opi-eval run CLI, preserving native
-      # verifier authority and typed trajectory/span source edges.
+      # packages) through the native driving mode of the opi-eval run CLI,
+      # preserving native verifier authority and typed trajectory/span
+      # source edges, with the canary markers gating the seal.
       - name: Run the six paired agent trials
         run: |
           set -euo pipefail
           scripts/phase18-native-smoke.sh run-trials \
             --experiment-root "$PHASE18_NATIVE_STAGE/07-trials" \
+            --material "$PHASE18_NATIVE_STAGE/06-material/material.json" \
+            --canary-out "$PHASE18_NATIVE_STAGE/06-canaries" \
             --out "$PHASE18_NATIVE_STAGE/07-trials"
 
       - name: Stop the provider and network
@@ -181,10 +218,42 @@ jobs:
             --out "$PHASE18_NATIVE_STAGE/08-seal"
 
       - name: Upload the sealed native artifact
+        id: upload
         if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: phase18-native-smoke
           path: ${{ runner.temp }}/phase18-native/08-seal/sealed-artifact.tar
+          if-no-files-found: error
+          retention-days: 90
+
+      # The post-upload identity receipt binds the artifact id, url,
+      # digest, run identity, and expiry without self-reference; it is
+      # uploaded as its own small artifact for the 18.15 verifier.
+      - name: Record and upload the upload-identity receipt
+        if: success()
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          scripts/phase18-native-smoke.sh record-upload-identity \
+            --seal-out "$PHASE18_NATIVE_STAGE/08-seal" \
+            --artifact-id "$ARTIFACT_ID" \
+            --artifact-url "$ARTIFACT_URL" \
+            --artifact-digest "$ARTIFACT_DIGEST" \
+            --run-id "$RUN_ID" \
+            --run-url "$RUN_URL" \
+            --retention-days 90 \
+            --out "$PHASE18_NATIVE_STAGE/09-upload"
+      - name: Upload the upload-identity receipt
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: phase18-native-smoke-upload-receipt
+          path: ${{ runner.temp }}/phase18-native/09-upload/upload-receipt.json
           if-no-files-found: error
           retention-days: 90

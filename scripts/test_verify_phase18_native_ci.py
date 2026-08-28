@@ -260,6 +260,20 @@ class Phase18NativeCiVerifier(unittest.TestCase):
                 'if pinned["path"].startswith(("solution/", "tests/")):')),
             "oracle")
 
+    def test_missing_materialize_stage_rejects(self) -> None:
+        self.assert_rejects(
+            self.ws(workflow_text=WORKFLOW.read_text(encoding="utf-8").replace(
+                "scripts/phase18-native-smoke.sh materialize-configs",
+                "scripts/phase18-native-smoke.sh verify-dispatch")),
+            "materialize")
+
+    def test_missing_oracle_preflight_stage_rejects(self) -> None:
+        self.assert_rejects(
+            self.ws(workflow_text=WORKFLOW.read_text(encoding="utf-8").replace(
+                "scripts/phase18-native-smoke.sh oracle-preflight",
+                "scripts/phase18-native-smoke.sh verify-dispatch")),
+            "stage")
+
     def test_ambient_credential_usage_rejects(self) -> None:
         self.assert_rejects(
             self.ws(producer_text=PRODUCER.read_text(encoding="utf-8").replace(

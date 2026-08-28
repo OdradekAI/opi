@@ -1,4 +1,4 @@
-//! `opi-eval run` command (task 18.12): the assembled hermetic run path.
+//! `opi-eval run` command (tasks 18.12, 18.14.1): the assembled run path.
 //!
 //! One invocation resolves the experiment document, drives the paired
 //! trials end to end through the crate-private runner (durable intent,
@@ -44,6 +44,11 @@ pub struct RunArgs {
     /// Optional file of declared canary secrets (one per line); any
     /// canary found in staged exportable content blocks sealing.
     pub canaries: Option<PathBuf>,
+    /// Resolved native material manifest (task 18.14.1); when present
+    /// the run takes the native driving mode.
+    pub native_material: Option<PathBuf>,
+    /// Run only the upstream oracle preflight, then stop.
+    pub preflight_only: bool,
 }
 
 /// Run one assembled experiment and return its JSON report.
@@ -66,6 +71,14 @@ pub fn run(args: &RunArgs) -> Result<serde_json::Value, RunCliError> {
             replacement_for: args.replacement_for.clone(),
             canaries: read_canaries(args.canaries.as_deref())
                 .map_err(|error| RunCliError::Rejected(error.to_string()))?,
+            material: match &args.native_material {
+                Some(path) => Some(
+                    crate::runner::material::NativeMaterial::load(path)
+                        .map_err(|error| RunCliError::Rejected(error.to_string()))?,
+                ),
+                None => None,
+            },
+            preflight_only: args.preflight_only,
         }))
         .map_err(|error| RunCliError::Rejected(error.to_string()))?;
     Ok(report)
@@ -95,9 +108,10 @@ fn read_canaries(path: Option<&std::path::Path>) -> Result<Vec<String>, std::io:
 
 /// Whether a run report warrants a non-success process exit.
 pub fn report_exit_code(report: &serde_json::Value) -> i32 {
-    if report["outcome"] == "completed" {
-        0
-    } else {
-        1
+    match report["outcome"].as_str() {
+        // A passing oracle preflight without trials is a successful
+        // native preflight-only invocation (task 18.14.1).
+        Some("completed") | Some("preflight-only") => 0,
+        _ => 1,
     }
 }

@@ -58,6 +58,55 @@ impl fmt::Display for ValidationSummary {
     }
 }
 
+/// Failures reported by [`validate_native`].
+#[derive(Debug, Error)]
+pub enum NativeValidateError {
+    /// The experiment document or manifest could not be read.
+    #[error(transparent)]
+    Validate(#[from] ValidateError),
+    /// The resolved native material was rejected.
+    #[error("native material rejected: {0}")]
+    Material(String),
+}
+
+/// Human-readable summary of one native experiment contract: everything
+/// [`ValidationSummary`] carries plus the derived native integrity
+/// identity the experiment document must pin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeValidationSummary {
+    /// The hermetic-resolution fields of the same document.
+    pub base: ValidationSummary,
+    /// The derived native integrity digest (`phase18-native-material/1`).
+    pub integrity_digest: String,
+}
+
+impl fmt::Display for NativeValidationSummary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} native_integrity={}",
+            self.base, self.integrity_digest
+        )
+    }
+}
+
+/// Validates one experiment document against one resolved native
+/// material manifest and derives the native integrity identity (task
+/// 18.14.1). The producer uses this to pin `benchmark.integrity_digest`
+/// before materializing dispatch configs; no process runs.
+pub fn validate_native(
+    config_path: &Path,
+    material_path: &Path,
+) -> Result<NativeValidationSummary, NativeValidateError> {
+    let base = validate(config_path)?;
+    let digest = crate::runner::experiment::native_integrity_identity(config_path, material_path)
+        .map_err(NativeValidateError::Material)?;
+    Ok(NativeValidationSummary {
+        base,
+        integrity_digest: digest,
+    })
+}
+
 /// Validate an experiment document at `config_path` and return its summary.
 ///
 /// This is the production entry seam of the `opi-eval validate` command; the

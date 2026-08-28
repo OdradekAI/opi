@@ -5,11 +5,15 @@
 //! dispatch, pre-seal trajectory projection, bundle sealing, receipt
 //! emission, and comparison/coverage assembly - every later authority
 //! transition mechanically gated by [`crate::authority::AuthorityLedger`]
-//! (`P18-FAL-002`). This runner is the hermetic fixture-grade path: the
-//! resolved executables are runtime-generated deterministic helpers, native
-//! bytes come from the pinned fixtures tree, and no real agent product,
-//! provider, or official task package is claimed (task 18.15 owns the
-//! native rerun). Executables are never resolved from ambient PATH.
+//! (`P18-FAL-002`). Two driving modes share this flow. The hermetic
+//! fixture-grade path resolves runtime-generated deterministic helpers and
+//! pinned fixtures-tree native bytes. The native driving mode (task
+//! 18.14.1) consumes the resolved-material manifest: exact built agent
+//! executables, the materialized official task package, the pinned uv
+//! verifier entrypoint, one upstream oracle preflight per task, and the
+//! scripted-provider listener endpoint - never synthesized helpers and
+//! never fixture native bytes. Executables are never resolved from ambient
+//! PATH.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -40,6 +44,7 @@ use crate::integrity::{
 };
 use crate::process::ExitState;
 use crate::runner::lifecycle::{CancellationSource, ObservedOutcome, TrialLifecycle};
+use crate::runner::material::{NativeMaterial, task_package_manifest_digest};
 use crate::trajectory::{ProjectionPipeline, TrialInputs};
 
 /// Run report schema identity.
@@ -66,6 +71,12 @@ pub(crate) struct RunRequest {
     /// canary found in staged exportable content blocks sealing
     /// (`P18-A18`, `P18-SEC-005`).
     pub(crate) canaries: Vec<String>,
+    /// Resolved native material (task 18.14.1): when present the runner
+    /// takes the native driving mode over the hermetic fixture path.
+    pub(crate) material: Option<crate::runner::material::NativeMaterial>,
+    /// Run only the upstream oracle preflight, then stop before any agent
+    /// trial (native mode).
+    pub(crate) preflight_only: bool,
 }
 
 /// The pinned hermetic canary the `canary-leak` fixture behavior emits
@@ -96,6 +107,10 @@ pub(crate) enum RunError {
     /// Hermetic staging failed (helper generation, package copy).
     #[error("hermetic staging failed: {0}")]
     Staging(String),
+    /// The resolved native material was rejected (drift, missing
+    /// identity, or a failed upstream oracle preflight).
+    #[error("native material rejected: {0}")]
+    Native(String),
     /// A durable bundle operation failed outside the per-trial failure
     /// paths.
     #[error("bundle operation failed: {0}")]
@@ -316,9 +331,27 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
         persist_run_report(&request.root, &report)?;
         return Ok(report);
     }
-    let integrity =
-        IntegrityRecord::review(fixture_integrity_review(&experiment, &request.behavior))
-            .map_err(|error| RunError::Staging(format!("fixture integrity rejected: {error}")))?;
+    if request.material.is_some() && request.behavior != "happy" {
+        return Err(RunError::Native(
+            "the native driving mode admits only the default staging behavior".to_owned(),
+        ));
+    }
+    let native = match &request.material {
+        Some(material) => Some(prepare_native(material, &experiment)?),
+        None => None,
+    };
+    let integrity = match &native {
+        Some(inputs) => IntegrityRecord::review(native_integrity_review(
+            &experiment,
+            request.material.as_ref().expect("checked above"),
+            inputs,
+        ))
+        .map_err(|error| RunError::Native(format!("native integrity rejected: {error}")))?,
+        None => IntegrityRecord::review(fixture_integrity_review(&experiment, &request.behavior))
+            .map_err(|error| {
+            RunError::Staging(format!("fixture integrity rejected: {error}"))
+        })?,
+    };
     match experiment.benchmark().integrity_digest.as_deref() {
         Some(pinned) if pinned == integrity.identity_digest() => {}
         other => {
@@ -328,7 +361,35 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
             });
         }
     }
-    let benchmark_revision = BenchmarkRevision::from_experiment(&experiment, &request.fixtures)?;
+    if let Some(inputs) = &native {
+        // One upstream oracle preflight per selected task through the
+        // unchanged native verifier: the reference solution must pass
+        // natively before any agent trial starts (task 18.14.1).
+        let preflight = run_oracle_preflight(
+            &experiment,
+            request.material.as_ref().expect("checked above"),
+            inputs,
+            &integrity,
+            request,
+        )
+        .await?;
+        if request.preflight_only {
+            let report = json!({
+                "schema": RUN_REPORT_SCHEMA,
+                "experiment": experiment.experiment_id(),
+                "manifest_digest": experiment.manifest_digest(),
+                "integrity_digest": integrity.identity_digest(),
+                "outcome": "preflight-only",
+                "preflight": preflight,
+            });
+            persist_run_report(&request.root, &report)?;
+            return Ok(report);
+        }
+    }
+    let benchmark_revision = match &native {
+        Some(inputs) => BenchmarkRevision::from_native(inputs),
+        None => BenchmarkRevision::from_experiment(&experiment, &request.fixtures)?,
+    };
 
     let mut trials_out: Vec<serde_json::Value> = Vec::new();
     let mut facts: Vec<TrialFact> = Vec::new();
@@ -345,6 +406,7 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
             &benchmark_revision,
             declared,
             &subject.product,
+            native.as_ref(),
             request,
         )
         .await?;
@@ -422,17 +484,19 @@ enum BenchmarkRevision {
     TerminalBench21 {
         profile_bytes: Vec<u8>,
         task_package: PathBuf,
-        native_report: PathBuf,
+        /// Hermetic-only saved fixture bytes the helper replays; `None`
+        /// in native mode, where the real verifier writes the report.
+        fixture_report: Option<PathBuf>,
     },
     TerminalBench30 {
         profile_bytes: Vec<u8>,
         task_package: PathBuf,
-        native_report: PathBuf,
+        fixture_report: Option<PathBuf>,
     },
     DeepSwe {
         profile_bytes: Vec<u8>,
         task_package: PathBuf,
-        native_report: PathBuf,
+        fixture_report: Option<PathBuf>,
     },
 }
 
@@ -462,7 +526,7 @@ impl BenchmarkRevision {
                 profile_bytes: std::fs::read(tb21.join("profile/synthetic.toml"))
                     .map_err(|error| RunError::Staging(error.to_string()))?,
                 task_package: tb21.join("task-package"),
-                native_report: tb21.join("ctrf/ok-six-passed.json"),
+                fixture_report: Some(tb21.join("ctrf/ok-six-passed.json")),
             });
         }
         if benchmark.name == "terminal-bench" && benchmark.revision == "3.0" {
@@ -471,7 +535,7 @@ impl BenchmarkRevision {
                 profile_bytes: std::fs::read(tb30.join("profile/synthetic.toml"))
                     .map_err(|error| RunError::Staging(error.to_string()))?,
                 task_package: tb30.join("task-package"),
-                native_report: tb30.join("ctrf/ok-six-passed.json"),
+                fixture_report: Some(tb30.join("ctrf/ok-six-passed.json")),
             });
         }
         if benchmark.name == "deepswe" && benchmark.revision == "v1.1" {
@@ -480,13 +544,348 @@ impl BenchmarkRevision {
                 profile_bytes: std::fs::read(deepswe.join("profile/synthetic.toml"))
                     .map_err(|error| RunError::Staging(error.to_string()))?,
                 task_package: deepswe.join("task-package"),
-                native_report: deepswe.join("pier-report/resolved.json"),
+                fixture_report: Some(deepswe.join("pier-report/resolved.json")),
             });
         }
         Err(RunError::UnsupportedBenchmark {
             benchmark: benchmark.name.clone(),
             revision: benchmark.revision.clone(),
         })
+    }
+
+    /// The native construction: the materialized official task package,
+    /// the production profile bytes, and no fixture report - the real
+    /// verifier writes the native report into its trace root.
+    fn from_native(inputs: &NativeInputs) -> Self {
+        match inputs.adapter_key.as_str() {
+            "terminal-bench-2.1" => BenchmarkRevision::TerminalBench21 {
+                profile_bytes: inputs.profile_bytes.clone(),
+                task_package: inputs.task_package.clone(),
+                fixture_report: None,
+            },
+            "terminal-bench-3.0" => BenchmarkRevision::TerminalBench30 {
+                profile_bytes: inputs.profile_bytes.clone(),
+                task_package: inputs.task_package.clone(),
+                fixture_report: None,
+            },
+            _ => BenchmarkRevision::DeepSwe {
+                profile_bytes: inputs.profile_bytes.clone(),
+                task_package: inputs.task_package.clone(),
+                fixture_report: None,
+            },
+        }
+    }
+}
+
+/// The CLI adapter id for an experiment's declared benchmark revision.
+fn adapter_key_for(experiment: &ResolvedExperiment) -> Result<String, RunError> {
+    let benchmark = experiment.benchmark();
+    match (benchmark.name.as_str(), benchmark.revision.as_str()) {
+        ("terminal-bench", "2.1") => Ok("terminal-bench-2.1".to_owned()),
+        ("terminal-bench", "3.0") => Ok("terminal-bench-3.0".to_owned()),
+        ("deepswe", "v1.1") => Ok("deepswe-v1.1".to_owned()),
+        _ => Err(RunError::UnsupportedBenchmark {
+            benchmark: benchmark.name.clone(),
+            revision: benchmark.revision.clone(),
+        }),
+    }
+}
+
+/// Everything the native driving mode resolves from the manifest before
+/// any process runs: the concrete benchmark revision inputs, the official
+/// prompt, and the fail-closed package verification.
+struct NativeInputs {
+    adapter_key: String,
+    profile_bytes: Vec<u8>,
+    task_package: PathBuf,
+    task_id: String,
+    verifier_executable: PathBuf,
+    verifier_env: std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
+    oracle_executable: PathBuf,
+    oracle_env: std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
+    prompt: String,
+}
+
+/// Resolves and verifies the native material for one experiment.
+fn prepare_native(
+    material: &NativeMaterial,
+    experiment: &ResolvedExperiment,
+) -> Result<NativeInputs, RunError> {
+    let adapter_key = adapter_key_for(experiment)?;
+    let benchmark = material
+        .benchmark(&adapter_key)
+        .map_err(|error| RunError::Native(error.to_string()))?;
+    let profile_bytes = std::fs::read(&benchmark.profile)
+        .map_err(|error| RunError::Native(format!("profile unreadable: {error}")))?;
+    let task_id = match adapter_key.as_str() {
+        "terminal-bench-2.1" => {
+            Tb21Profile::parse(profile_bytes.as_slice())
+                .map_err(|error| RunError::Native(error.to_string()))?
+                .task_id
+        }
+        "terminal-bench-3.0" => {
+            crate::benchmark::terminal_bench_30::Tb30Profile::parse(profile_bytes.as_slice())
+                .map_err(|error| RunError::Native(error.to_string()))?
+                .task_id
+        }
+        _ => {
+            crate::benchmark::deepswe::DeepSweProfile::parse(profile_bytes.as_slice())
+                .map_err(|error| RunError::Native(error.to_string()))?
+                .task_id
+        }
+    };
+    // Fail-closed package verification: the runner recomputes the sorted
+    // package manifest and compares it with the pinned digest.
+    let observed = task_package_manifest_digest(&benchmark.task_package)
+        .map_err(|error| RunError::Native(error.to_string()))?;
+    if observed != benchmark.task_package_manifest_sha256 {
+        return Err(RunError::Native(format!(
+            "task package manifest drift for {adapter_key}: pinned {}, observed {}",
+            benchmark.task_package_manifest_sha256, observed
+        )));
+    }
+    for declared in experiment.trials() {
+        if declared.task != task_id {
+            return Err(RunError::Native(format!(
+                "trial {} declares task {:?}, material resolves {:?}",
+                declared.id, declared.task, task_id
+            )));
+        }
+    }
+    let instruction = std::fs::read_to_string(benchmark.task_package.join("instruction.md"))
+        .map_err(|error| RunError::Native(format!("instruction unreadable: {error}")))?;
+    let prompt = format!(
+        "{instruction}\n\nWhen you are finished, write your final answer to a file named          answer.txt in the working directory."
+    );
+    let to_env = |map: &std::collections::BTreeMap<String, String>| {
+        map.iter()
+            .map(|(key, value)| (key.clone().into(), value.clone().into()))
+            .collect::<std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>>()
+    };
+    Ok(NativeInputs {
+        adapter_key,
+        profile_bytes,
+        task_package: benchmark.task_package.clone(),
+        task_id,
+        verifier_executable: benchmark.verifier_executable.path.clone(),
+        verifier_env: to_env(&benchmark.verifier_env),
+        oracle_executable: benchmark.oracle.path.clone(),
+        oracle_env: to_env(&benchmark.oracle_env),
+        prompt,
+    })
+}
+
+/// The native integrity review: every identity derives from the verified
+/// material, and the oracle entry records the preflight this run performs
+/// before any agent trial.
+fn native_integrity_review(
+    experiment: &ResolvedExperiment,
+    material: &NativeMaterial,
+    inputs: &NativeInputs,
+) -> IntegrityReview {
+    let benchmark = experiment.benchmark();
+    let (grader, environment) = match inputs.adapter_key.as_str() {
+        "terminal-bench-2.1" => ("harbor-v0.22.0", "separate-container"),
+        "terminal-bench-3.0" => ("harbor-v0.22.0", "separate-verifier-container"),
+        _ => ("pier-v0.3.1", "separate-pristine-verifier"),
+    };
+    IntegrityReview {
+        benchmark: benchmark.name.clone(),
+        revision: benchmark.revision.clone(),
+        dataset: benchmark.dataset.clone(),
+        grader: grader.to_owned(),
+        environment: environment.to_owned(),
+        upstream_identity: format!("{}@{}", inputs.adapter_key, material.static_lock.sha256),
+        upstream_digest: material
+            .benchmark(&inputs.adapter_key)
+            .map(|entry| entry.task_package_manifest_sha256.clone())
+            .unwrap_or_default(),
+        oracle: Some(crate::integrity::OraclePreflight::Passed(
+            "native oracle preflight".to_owned(),
+        )),
+        status: crate::integrity::RevisionStatus::Admitted,
+        tasks: std::collections::BTreeMap::from([(
+            inputs.task_id.clone(),
+            crate::integrity::TaskClassification::ValidAgentOutcome,
+        )]),
+        excluded_trials: std::collections::BTreeMap::new(),
+        reviewer: "phase18-native-material".to_owned(),
+    }
+}
+
+/// The deterministic Opi configuration for one native trial: one mapped
+/// custom provider whose base URL is the pre-resolved scripted-provider
+/// listener and whose credential source is the declared dummy environment
+/// projection. Written verbatim into the isolated `--config` path.
+pub(crate) fn native_opi_config(
+    config: &crate::runner::material::AgentConfigMaterial,
+    model: &str,
+) -> String {
+    let provider_id = model.split(':').next().unwrap_or("scripted");
+    format!(
+        "# Phase 18 native run: deterministic scripted-provider projection.\n\
+[providers.custom.{provider_id}]\n\
+name = \"Phase 18 scripted provider\"\n\
+base_url = \"{base_url}\"\n\
+api_key_env = \"OPENAI_API_KEY\"\n\
+auth_scheme = \"bearer\"\n\
+api = \"openai-completions\"\n\
+\n\
+[[providers.custom.{provider_id}.models]]\n\
+id = \"{model_id}\"\n\
+display_name = \"Phase 18 scripted\"\n\
+context_window = 8192\n\
+max_output_tokens = 4096\n",
+        base_url = config.base_url,
+        model_id = config.model_id,
+    )
+}
+
+/// Materializes the per-product deterministic configuration projection
+/// into the isolated agent directories and returns the environment
+/// additions beyond the profile isolation (the caller merges the
+/// manifest's closed credential projection).
+pub(crate) fn native_agent_env(
+    product: &str,
+    config: &crate::runner::material::AgentConfigMaterial,
+    isolation: &IsolationDirs,
+) -> Result<BTreeMap<std::ffi::OsString, std::ffi::OsString>, String> {
+    if product == "pi" {
+        // pi selects its model through the isolated agent-dir models.json
+        // (the pinned custom-model contract): same endpoint, same model
+        // identity, declared dummy credential, no ambient fallback.
+        let agent_dir = isolation.app_data.join("pi-agent");
+        std::fs::create_dir_all(&agent_dir).map_err(|error| error.to_string())?;
+        let models = json!({
+            config.model_id.clone(): {
+                "provider": "openai-completions",
+                "baseURL": config.base_url,
+                "model": config.model_id,
+                "apiKey": config.api_key,
+            }
+        });
+        let bytes = serde_json::to_vec(&models).map_err(|error| error.to_string())?;
+        std::fs::write(agent_dir.join("models.json"), &bytes).map_err(|error| error.to_string())?;
+    }
+    Ok(BTreeMap::new())
+}
+
+/// Derives the native integrity identity for one experiment document plus
+/// material manifest without running anything (the producer's config
+/// materialization tool, task 18.14.1).
+pub(crate) fn native_integrity_identity(
+    config_path: &Path,
+    material_path: &Path,
+) -> Result<String, String> {
+    let source = std::fs::read_to_string(config_path)
+        .map_err(|error| format!("cannot read experiment document: {error}"))?;
+    let experiment = ResolvedExperiment::resolve(&source)
+        .map_err(|error| format!("experiment document rejected: {error}"))?;
+    let material = NativeMaterial::load(material_path).map_err(|error| error.to_string())?;
+    let inputs = prepare_native(&material, &experiment).map_err(|error| error.to_string())?;
+    let review = IntegrityRecord::review(native_integrity_review(&experiment, &material, &inputs))
+        .map_err(|error| format!("native integrity rejected: {error}"))?;
+    Ok(review.identity_digest().to_owned())
+}
+
+/// Runs the upstream oracle preflight through the unchanged native
+/// verifier wrapper and requires a passing native reward before trials.
+async fn run_oracle_preflight(
+    experiment: &ResolvedExperiment,
+    material: &NativeMaterial,
+    inputs: &NativeInputs,
+    integrity: &IntegrityRecord,
+    request: &RunRequest,
+) -> Result<serde_json::Value, RunError> {
+    let root = request.root.join("preflight").join(&inputs.adapter_key);
+    let trace_root = root.join("trace");
+    let task_dir = root.join("task-package");
+    std::fs::create_dir_all(&trace_root).map_err(|error| RunError::Native(error.to_string()))?;
+    copy_dir_recursive(&inputs.task_package, &task_dir)
+        .map_err(|error| RunError::Native(error.to_string()))?;
+    let revision = BenchmarkRevision::from_native(inputs);
+    let adapter = benchmark_adapter_for(&revision)?;
+    let benchmark_request = BenchmarkRunRequest {
+        verifier_executable: inputs.oracle_executable.clone(),
+        task_dir,
+        task_id: inputs.task_id.clone(),
+        agent_output: root.join("oracle-reference-output"),
+        trace_root: trace_root.clone(),
+        admitted_lock_digest: material.static_lock.sha256.clone(),
+        integrity: integrity.clone(),
+        extra_env: inputs.oracle_env.clone(),
+    };
+    let record = BenchmarkExecution::run(
+        &benchmark_request,
+        adapter.as_ref(),
+        &CancellationToken::new(),
+    )
+    .await
+    .map_err(|rejection| RunError::Native(rejection.to_string()))?;
+    let passing = match &record.completion {
+        BenchmarkCompletion::Verified { metrics, .. } => {
+            matches!(&metrics.passed, Some(Fact::Known { value, .. }) if *value > 0)
+        }
+        _ => false,
+    };
+    if !passing {
+        return Err(RunError::Native(format!(
+            "oracle preflight for {} did not pass natively",
+            inputs.adapter_key
+        )));
+    }
+    let receipt = json!({
+        "schema": "phase18-oracle-preflight/1",
+        "experiment": experiment.experiment_id(),
+        "benchmark": inputs.adapter_key,
+        "task": inputs.task_id,
+        "oracle_executable_sha256": material
+            .benchmark(&inputs.adapter_key)
+            .map(|entry| entry.oracle.sha256.clone())
+            .unwrap_or_default(),
+        "outcome": "passed",
+    });
+    let bytes =
+        serde_json::to_vec(&receipt).map_err(|error| RunError::Native(error.to_string()))?;
+    std::fs::create_dir_all(&root).map_err(|error| RunError::Native(error.to_string()))?;
+    std::fs::write(root.join("preflight-receipt.json"), &bytes)
+        .map_err(|error| RunError::Native(error.to_string()))?;
+    let _ = &record.exit;
+    Ok(receipt)
+}
+
+/// The concrete adapter for one resolved revision (shared by trials and
+/// the oracle preflight).
+fn benchmark_adapter_for(
+    revision: &BenchmarkRevision,
+) -> Result<Box<dyn BenchmarkAdapter>, RunError> {
+    let profile_bytes = match revision {
+        BenchmarkRevision::TerminalBench21 { profile_bytes, .. }
+        | BenchmarkRevision::TerminalBench30 { profile_bytes, .. }
+        | BenchmarkRevision::DeepSwe { profile_bytes, .. } => profile_bytes.clone(),
+    };
+    match revision {
+        BenchmarkRevision::TerminalBench21 { .. } => {
+            let profile = Tb21Profile::parse(profile_bytes.as_slice())
+                .map_err(|error| RunError::Staging(error.to_string()))?;
+            Ok(Box::new(TerminalBench21Adapter::from_profile(profile)))
+        }
+        BenchmarkRevision::TerminalBench30 { .. } => {
+            let profile =
+                crate::benchmark::terminal_bench_30::Tb30Profile::parse(profile_bytes.as_slice())
+                    .map_err(|error| RunError::Staging(error.to_string()))?;
+            Ok(Box::new(
+                crate::benchmark::terminal_bench_30::TerminalBench30Adapter::from_profile(profile),
+            ))
+        }
+        BenchmarkRevision::DeepSwe { .. } => {
+            let profile =
+                crate::benchmark::deepswe::DeepSweProfile::parse(profile_bytes.as_slice())
+                    .map_err(|error| RunError::Staging(error.to_string()))?;
+            Ok(Box::new(
+                crate::benchmark::deepswe::DeepSweAdapter::from_profile(profile),
+            ))
+        }
     }
 }
 
@@ -497,6 +896,7 @@ async fn run_trial(
     revision: &BenchmarkRevision,
     declared: &crate::experiment::DeclaredTrial,
     product: &str,
+    native: Option<&NativeInputs>,
     request: &RunRequest,
 ) -> Result<TrialResult, RunError> {
     let trial_root = request.root.join("trials").join(&declared.id);
@@ -519,11 +919,30 @@ async fn run_trial(
         std::fs::create_dir_all(dir).map_err(|error| RunError::Staging(error.to_string()))?;
     }
     let config_path = trial_root.join("bench.toml");
-    std::fs::write(
-        &config_path,
-        "# assembled-run fixture config (never a user config)\n",
-    )
-    .map_err(|error| RunError::Staging(error.to_string()))?;
+    match native {
+        Some(_) if product == "opi" => {
+            let material = request.material.as_ref().expect("native implies material");
+            let agent = material
+                .agent(product)
+                .map_err(|error| RunError::Native(error.to_string()))?;
+            std::fs::write(&config_path, native_opi_config(&agent.config, &agent.model))
+                .map_err(|error| RunError::Native(error.to_string()))?;
+        }
+        Some(_) => {
+            std::fs::write(
+                &config_path,
+                "# native run: pi reads its configuration from the isolated agent dir\n",
+            )
+            .map_err(|error| RunError::Native(error.to_string()))?;
+        }
+        None => {
+            std::fs::write(
+                &config_path,
+                "# assembled-run fixture config (never a user config)\n",
+            )
+            .map_err(|error| RunError::Staging(error.to_string()))?;
+        }
+    }
 
     // A trial identity is never reused: an existing durable reservation
     // refuses the run before any staging (P18-EXP-005). Retries and
@@ -574,22 +993,55 @@ async fn run_trial(
 
     let mut ledger = AuthorityLedger::new();
 
-    // Agent dispatch through the shared execution driver.
-    let helper = trial_root.join("helper-agent.sh");
-    write_helper(&helper, &agent_helper_script(product))?;
-    let request_env = agent_env(product, &request.fixtures, &request.behavior)?;
+    // Agent dispatch through the shared execution driver. Hermetic mode
+    // synthesizes the deterministic helper and replays fixture bytes;
+    // native mode spawns the exact built executable from the material
+    // with the deterministic configuration projection and the official
+    // instruction as the prompt.
+    let (agent_executable, request_env, provider_model, allow_mutating, prompt) = match native {
+        Some(inputs) => {
+            let material = request.material.as_ref().expect("native implies material");
+            let agent = material
+                .agent(product)
+                .map_err(|error| RunError::Native(error.to_string()))?;
+            let env = native_agent_env(product, &agent.config, &isolation)
+                .map_err(|error| RunError::Native(error.to_string()))?;
+            let mut env: BTreeMap<std::ffi::OsString, std::ffi::OsString> = env;
+            for (key, value) in &agent.provider_env {
+                env.insert(key.clone().into(), value.clone().into());
+            }
+            (
+                agent.executable.path.clone(),
+                env,
+                agent.model.clone(),
+                true,
+                inputs.prompt.clone(),
+            )
+        }
+        None => {
+            let helper = trial_root.join("helper-agent.sh");
+            write_helper(&helper, &agent_helper_script(product))?;
+            (
+                helper,
+                agent_env(product, &request.fixtures, &request.behavior)?,
+                format!(
+                    "{}:{}",
+                    experiment.model_controls().provider,
+                    experiment.model_controls().model
+                ),
+                false,
+                format!("assembled run: solve task {}", declared.task),
+            )
+        }
+    };
     let agent_request = AgentRunRequest {
-        executable: helper,
-        prompt: format!("assembled run: solve task {}", declared.task),
+        executable: agent_executable,
+        prompt,
         workspace: workspace.clone(),
         trace_root: agent_trace.clone(),
         config_path,
-        provider_model: format!(
-            "{}:{}",
-            experiment.model_controls().provider,
-            experiment.model_controls().model
-        ),
-        allow_mutating: false,
+        provider_model,
+        allow_mutating,
         isolation,
         extra_env: request_env,
     };
@@ -700,11 +1152,14 @@ async fn run_trial(
     let mut verifier_record = None;
     let mut verifier_rejection: Option<String> = None;
     if ledger.attempt(AuthorityTransition::GradeDispatch) {
-        let verifier_helper = trial_root.join("helper-verifier.sh");
-        write_helper(
-            &verifier_helper,
-            &verifier_helper_script(revision.report_name()),
-        )?;
+        let verifier_helper = match native {
+            Some(inputs) => inputs.verifier_executable.clone(),
+            None => {
+                let helper = trial_root.join("helper-verifier.sh");
+                write_helper(&helper, &verifier_helper_script(revision.report_name()))?;
+                helper
+            }
+        };
         let task_package = match revision {
             BenchmarkRevision::TerminalBench21 { task_package, .. }
             | BenchmarkRevision::TerminalBench30 { task_package, .. }
@@ -725,10 +1180,10 @@ async fn run_trial(
             copy_dir_recursive(&task_package, &task_dir)
                 .map_err(|error| RunError::Staging(error.to_string()))?;
         }
-        let native_report = match revision {
-            BenchmarkRevision::TerminalBench21 { native_report, .. }
-            | BenchmarkRevision::TerminalBench30 { native_report, .. }
-            | BenchmarkRevision::DeepSwe { native_report, .. } => native_report.clone(),
+        let fixture_report = match revision {
+            BenchmarkRevision::TerminalBench21 { fixture_report, .. }
+            | BenchmarkRevision::TerminalBench30 { fixture_report, .. }
+            | BenchmarkRevision::DeepSwe { fixture_report, .. } => fixture_report.clone(),
         };
         let benchmark_request_adapter: Box<dyn BenchmarkAdapter> = match revision {
             BenchmarkRevision::TerminalBench21 { profile_bytes, .. } => {
@@ -756,22 +1211,38 @@ async fn run_trial(
                 ))
             }
         };
-        let mut env: BTreeMap<std::ffi::OsString, std::ffi::OsString> = BTreeMap::new();
-        env.insert(
-            "OPI_EVAL_NATIVE_SOURCE".into(),
-            native_report.clone().into_os_string(),
-        );
-        env.insert(
-            "OPI_EVAL_RUN_BEHAVIOR".into(),
-            request.behavior.clone().into(),
-        );
+        let mut env: BTreeMap<std::ffi::OsString, std::ffi::OsString> = match native {
+            Some(inputs) => inputs.verifier_env.clone(),
+            None => BTreeMap::new(),
+        };
+        if let Some(report) = &fixture_report {
+            env.insert(
+                "OPI_EVAL_NATIVE_SOURCE".into(),
+                report.clone().into_os_string(),
+            );
+            env.insert(
+                "OPI_EVAL_RUN_BEHAVIOR".into(),
+                request.behavior.clone().into(),
+            );
+        }
         let benchmark_request = BenchmarkRunRequest {
             verifier_executable: verifier_helper,
             task_dir,
             task_id: declared.task.clone(),
             agent_output: answer_path,
             trace_root: verifier_trace.clone(),
-            admitted_lock_digest: crate::agent::opi::sha256_hex(declared.id.as_bytes()),
+            // Hermetic staging pins a per-trial fixture digest; the native
+            // mode binds the admitted static external lock instead.
+            admitted_lock_digest: match native {
+                Some(_) => request
+                    .material
+                    .as_ref()
+                    .expect("native implies material")
+                    .static_lock
+                    .sha256
+                    .clone(),
+                None => crate::agent::opi::sha256_hex(declared.id.as_bytes()),
+            },
             integrity: integrity.clone(),
             extra_env: env,
         };

@@ -41,17 +41,23 @@ ALLOWED_ACTIONS = {
 }
 
 STDLIB_MODULES = {
-    "argparse", "datetime", "hashlib", "json", "os", "socket", "subprocess",
-    "sys", "time", "platform", "pathlib", "__future__",
+    "argparse", "datetime", "hashlib", "http", "json", "os", "socket",
+    "subprocess", "sys", "threading", "time", "platform", "pathlib",
+    "__future__",
 }
 
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 USES_RE = re.compile(r"^\s*uses:\s*(\S+)@(\S+)", re.MULTILINE)
 FORBIDDEN_TRIGGERS_RE = re.compile(r"^  (push|pull_request|schedule|workflow_call):",
                                    re.MULTILINE)
+# Ambient credential reads: assignments that do not project the declared
+# dummy values, plus any environment/credential-file read primitive. The
+# declared dummy projections and forwarded isolation names are admitted.
 CREDENTIAL_ENV_RE = re.compile(
-    r"\b(OPENAI_API_KEY|ANTHROPIC_API_KEY|PI_API_KEY)"
-    r"(?!=<(?:dummy|redacted-dummy))")
+    r"\b(OPENAI_API_KEY|ANTHROPIC_API_KEY|PI_API_KEY)=(?!<(?:dummy|redacted-dummy))")
+CREDENTIAL_READ_RE = re.compile(
+    r"(?:os\.environ(?:\.get)?|getenv\(|printenv[ \t]+)[\[(]?\s*[\"']?"
+    r"(OPENAI_API_KEY|ANTHROPIC_API_KEY|PI_API_KEY)")
 IMPORT_RE = re.compile(r"^\s*(?:import|from)\s+([A-Za-z_][A-Za-z0-9_.]*)",
                        re.MULTILINE)
 
@@ -107,8 +113,10 @@ def verify_workflow(text: str, f: Findings) -> None:
             f.reject("action", f"{name}@{ref} is not in the admitted table")
     for stage in ("verify-dispatch", "host-identity", "record-tools",
                   "fetch-external", "build-agents", "provider-up",
-                  "provider-probe", "preflight-canaries", "run-trials",
-                  "seal-upload"):
+                  "provider-probe", "preflight-canaries",
+                  "materialize-configs", "conformance-rerun",
+                  "oracle-preflight", "run-trials", "seal-upload",
+                  "record-upload-identity"):
         if f"scripts/phase18-native-smoke.sh {stage}" not in text:
             family = ("canary-preflight" if stage == "preflight-canaries"
                       else "stage")
@@ -125,6 +133,24 @@ def verify_workflow(text: str, f: Findings) -> None:
 
 
 def verify_producer(text: str, f: Findings) -> None:
+    # The native driving stages must consume the materialized manifest:
+    # configs are pinned through the production validate entry, the
+    # conformance rerun drives the exact executables, the oracle
+    # preflight precedes trials, and trials carry the material plus the
+    # declared canary markers into the pre-seal scan.
+    f.require("materialize", text,
+              '"--native-material", str(material_path)',
+              "config materialization must pin digests via validate")
+    f.require("materialize", text, "--preflight-only",
+              "the oracle preflight must use the preflight-only entry")
+    f.require("materialize", text, "--native-material \"$material\"",
+              "the trial stage must consume the materialized manifest")
+    f.require("canary-preflight", text, "--canaries",
+              "trials must gate sealing on the declared canary markers")
+    f.require("upload", text, "phase18-upload-identity-receipt/1",
+              "the upload identity receipt schema must be pinned")
+    f.require("upload", text, '"artifact_digest"',
+              "the upload receipt must bind the artifact digest")
     # Workflow-byte binding: bytes are read from github.workflow_sha, not
     # from the mutable working tree or HEAD.
     f.require("workflow-sha", text,
@@ -163,11 +189,16 @@ def verify_producer(text: str, f: Findings) -> None:
               "the preflight must pin solution/ and tests/ oracle material")
     f.require("oracle", text, '"markers"',
               "the preflight must probe verbatim canary markers")
-    # No ambient credential reads anywhere in the producer.
+    # No ambient credential reads anywhere in the producer; only the
+    # declared dummy projections and forwarded isolation names appear.
     credential = CREDENTIAL_ENV_RE.search(text)
-    if credential and "<dummy" not in text.split(credential.group(0))[1][:4]:
+    if credential:
         f.reject("credential",
                  f"ambient credential '{credential.group(1)}' is read")
+    ambient_read = CREDENTIAL_READ_RE.search(text)
+    if ambient_read:
+        f.reject("credential",
+                 f"ambient environment read '{ambient_read.group(0)}'")
 
 
 def verify_builder(text: str, f: Findings) -> None:
@@ -213,9 +244,13 @@ def verify_builder(text: str, f: Findings) -> None:
     f.require("identity", text, '"bundle_sha256"',
               "the bundle digest must be recorded")
     credential = CREDENTIAL_ENV_RE.search(text)
-    if credential and "<dummy" not in text.split(credential.group(0))[1][:4]:
+    if credential:
         f.reject("credential",
                  f"ambient credential '{credential.group(1)}' is read")
+    ambient_read = CREDENTIAL_READ_RE.search(text)
+    if ambient_read:
+        f.reject("credential",
+                 f"ambient environment read '{ambient_read.group(0)}'")
 
 
 def verify_provider(text: str, f: Findings) -> None:
