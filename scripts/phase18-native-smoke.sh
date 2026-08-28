@@ -936,16 +936,27 @@ exec "{uv}" "$@"
 cd "{runner_home}"
 exec "{uv}" "$@"
 """)
+    # The runner spawns verifiers and oracles with a cleared environment:
+    # the projection is declared here, not inherited. The runner-side
+    # tools (docker for the task containers, the uv cache) live in the
+    # standard paths; each phase gets its own home under the material.
+    (out / "verifier-home").mkdir(parents=True, exist_ok=True)
+    verifier_env = {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": str(out / "verifier-home"),
+        "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR",
+                                       str(out / "uv-cache")),
+    }
     benchmarks[adapter] = {
         "profile": profile_paths[benchmark],
         "task_package": str(task_package),
         "task_package_manifest_sha256": package_manifest_digest(task_package),
         "verifier_executable": {"path": str(out / "wrappers" / f"verifier-{benchmark}.sh"),
                                 "sha256": verifier},
-        "verifier_env": {},
+        "verifier_env": verifier_env,
         "oracle": {"path": str(out / "wrappers" / f"oracle-{benchmark}.sh"),
                    "sha256": oracle},
-        "oracle_env": {},
+        "oracle_env": dict(verifier_env),
         "_agent_wrappers": {
             product: agent_wrapper(product, benchmark,
                                    opi_identity["canonical_executable"] if product == "opi"
