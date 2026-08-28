@@ -96,6 +96,7 @@ cmd_verify_dispatch() {
   [ -n "$candidate" ] && [ -n "$workflow_path" ] && [ -n "$workflow_sha" ] \
     && [ -n "$workflow_ref" ] && [ -n "$out" ] \
     || die "verify-dispatch: --candidate-sha, --workflow-path, --workflow-sha, --workflow-ref, and --out are required"
+  mkdir -p "$out"
   require_file "$workflow_path"
   require_file "$STATIC_LOCK"
 
@@ -196,6 +197,7 @@ cmd_host_identity() {
     esac
   done
   [ -n "$out" ] || die "host-identity: --out is required"
+  mkdir -p "$out"
   python3 - "$out" <<'PYEOF' > "$out/host.json"
 import json, os, platform, subprocess, sys
 
@@ -243,6 +245,7 @@ cmd_record_tools() {
     esac
   done
   [ -n "$out" ] || die "record-tools: --out is required"
+  mkdir -p "$out"
   python3 - "$out" "$buildx_image" <<'PYEOF' > "$out/tools.json"
 import hashlib, json, shutil, subprocess, sys
 
@@ -671,6 +674,7 @@ cmd_preflight_canaries() {
   done
   [ -n "$external_root" ] && [ -n "$provider" ] && [ -n "$out" ] \
     || die "preflight-canaries: --external-root, --provider, and --out are required"
+  mkdir -p "$out"
   # P18-BMK-003 canary-oracle preflight: pin the oracle and reference
   # material by digest, then probe every Agent-phase-visible surface for it
   # by whole-file digest and verbatim canary markers. A single hit stops
