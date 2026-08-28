@@ -181,8 +181,8 @@ class Phase18NativeCiVerifier(unittest.TestCase):
     def test_missing_canary_preflight_step_rejects(self) -> None:
         self.assert_rejects(
             self.ws(workflow_text=WORKFLOW.read_text(encoding="utf-8").replace(
-                "          scripts/phase18-native-smoke.sh preflight-canaries",
-                "          scripts/phase18-native-smoke.sh host-identity")),
+                "          bash scripts/phase18-native-smoke.sh preflight-canaries",
+                "          bash scripts/phase18-native-smoke.sh host-identity")),
             "canary-preflight")
 
     def test_upload_before_seal_rejects(self) -> None:

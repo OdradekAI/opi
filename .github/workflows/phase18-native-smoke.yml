@@ -57,7 +57,7 @@ jobs:
           WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh verify-dispatch \
+          bash scripts/phase18-native-smoke.sh verify-dispatch \
             --candidate-sha "$CANDIDATE" \
             --workflow-path .github/workflows/phase18-native-smoke.yml \
             --workflow-sha "$WORKFLOW_SHA" \
@@ -70,7 +70,7 @@ jobs:
       - name: Record the host identity
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh host-identity \
+          bash scripts/phase18-native-smoke.sh host-identity \
             --out "$PHASE18_NATIVE_STAGE/01-host"
 
       - name: Install the pinned Rust toolchain
@@ -95,7 +95,7 @@ jobs:
       - name: Record the resolved tool identities
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh record-tools \
+          bash scripts/phase18-native-smoke.sh record-tools \
             --out "$PHASE18_NATIVE_STAGE/02-tools" \
             --buildx-image digest-pinned-by-setup-buildx
 
@@ -106,7 +106,7 @@ jobs:
       - name: Fetch and verify the pinned external sources
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh fetch-external \
+          bash scripts/phase18-native-smoke.sh fetch-external \
             --external-root "$PHASE18_NATIVE_STAGE/03-external" \
             --out "$PHASE18_NATIVE_STAGE/03-external"
 
@@ -117,7 +117,7 @@ jobs:
       - name: Build and locate both agents
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh build-agents \
+          bash scripts/phase18-native-smoke.sh build-agents \
             --build-script scripts/phase18-build-agent-artifacts.sh \
             --pi-source "$PHASE18_NATIVE_STAGE/03-external/pi" \
             --out "$PHASE18_NATIVE_STAGE/04-agents"
@@ -131,7 +131,7 @@ jobs:
       - name: Start the isolated scripted provider
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh provider-up \
+          bash scripts/phase18-native-smoke.sh provider-up \
             --provider scripts/phase18-scripted-provider.py \
             --network phase18-provider-net \
             --out "$PHASE18_NATIVE_STAGE/05-provider"
@@ -139,7 +139,7 @@ jobs:
       - name: Probe the provider reachability boundary
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh provider-probe \
+          bash scripts/phase18-native-smoke.sh provider-probe \
             --network phase18-provider-net \
             --out "$PHASE18_NATIVE_STAGE/05-provider"
 
@@ -152,7 +152,7 @@ jobs:
       - name: Run the canary-oracle preflight
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh preflight-canaries \
+          bash scripts/phase18-native-smoke.sh preflight-canaries \
             --external-root "$PHASE18_NATIVE_STAGE/03-external" \
             --provider scripts/phase18-scripted-provider.py \
             --out "$PHASE18_NATIVE_STAGE/06-canaries"
@@ -163,7 +163,7 @@ jobs:
       - name: Materialize the native material and experiment configs
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh materialize-configs \
+          bash scripts/phase18-native-smoke.sh materialize-configs \
             --external-root "$PHASE18_NATIVE_STAGE/03-external" \
             --agents-out "$PHASE18_NATIVE_STAGE/04-agents" \
             --provider-out "$PHASE18_NATIVE_STAGE/05-provider" \
@@ -176,7 +176,7 @@ jobs:
       - name: Rerun the conformance suites through the exact programs
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh conformance-rerun \
+          bash scripts/phase18-native-smoke.sh conformance-rerun \
             --material "$PHASE18_NATIVE_STAGE/06-material/material.json" \
             --out "$PHASE18_NATIVE_STAGE/06-material/conformance"
 
@@ -186,7 +186,7 @@ jobs:
       - name: Run the upstream oracle preflights
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh oracle-preflight \
+          bash scripts/phase18-native-smoke.sh oracle-preflight \
             --material "$PHASE18_NATIVE_STAGE/06-material/material.json" \
             --config-root "$PHASE18_NATIVE_STAGE/06-material" \
             --out "$PHASE18_NATIVE_STAGE/06-material/oracle"
@@ -198,7 +198,7 @@ jobs:
       - name: Run the six paired agent trials
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh run-trials \
+          bash scripts/phase18-native-smoke.sh run-trials \
             --experiment-root "$PHASE18_NATIVE_STAGE/07-trials" \
             --material "$PHASE18_NATIVE_STAGE/06-material/material.json" \
             --canary-out "$PHASE18_NATIVE_STAGE/06-canaries" \
@@ -208,7 +208,7 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh provider-down \
+          bash scripts/phase18-native-smoke.sh provider-down \
             --network phase18-provider-net \
             --out "$PHASE18_NATIVE_STAGE/05-provider"
 
@@ -220,7 +220,7 @@ jobs:
       - name: Seal and audit the native artifact
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh seal-upload \
+          bash scripts/phase18-native-smoke.sh seal-upload \
             --stage-root "$PHASE18_NATIVE_STAGE" \
             --out "$PHASE18_NATIVE_STAGE/08-seal"
 
@@ -247,7 +247,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          scripts/phase18-native-smoke.sh record-upload-identity \
+          bash scripts/phase18-native-smoke.sh record-upload-identity \
             --seal-out "$PHASE18_NATIVE_STAGE/08-seal" \
             --artifact-id "$ARTIFACT_ID" \
             --artifact-url "$ARTIFACT_URL" \
