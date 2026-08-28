@@ -426,10 +426,16 @@ impl PiImporter {
                             );
                         }
                     };
-                    if let Err(kind) = validate_terminal_message(message) {
-                        return failed(kind, FailureBoundaryCode::Adapter);
+                    // Only assistant turns are validated and tracked as
+                    // terminal candidates; the pinned stream also emits
+                    // user and toolResult message_end events whose shapes
+                    // differ by design.
+                    if message.get("role").and_then(|v| v.as_str()) == Some("assistant") {
+                        if let Err(kind) = validate_terminal_message(message) {
+                            return failed(kind, FailureBoundaryCode::Adapter);
+                        }
+                        terminal = Some(message.clone());
                     }
-                    terminal = Some(message.clone());
                 }
                 "agent_end" => {
                     if !fields.get("messages").is_some_and(|m| m.is_array()) {
