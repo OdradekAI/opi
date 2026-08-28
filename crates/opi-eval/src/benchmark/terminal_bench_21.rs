@@ -805,20 +805,37 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
                 );
             }
         }
-        // Exit 0: the native authority is the CTRF report the verifier
-        // wrote. Bounded stdout is retained on the record but is not the
-        // authority; a missing report is a grader-side invalid output.
+        // Exit 0: the native authority is the verifier's own output. Two
+        // admitted layouts: the direct CTRF report in the trace root, or
+        // - the dispatch reality of task 18.15 - harbor's
+        // `jobs/<timestamp>/result.json` aggregate from `harbor run -p`.
+        // Bounded stdout is retained on the record but is not the
+        // authority; neither layout being present is a grader-side
+        // invalid output.
         let report = request.trace_root.join(CTRF_REPORT_NAME);
         let bytes = match std::fs::read(&report) {
             Ok(bytes) => bytes,
             Err(_) => {
-                return (
-                    reward_unknown(),
-                    BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
-                        kind: "verifier-invalid-output",
-                        boundary: FailureBoundaryCode::Grader,
-                    }),
-                );
+                return match super::process::import_harbor_result(&request.trace_root) {
+                    Ok((metrics, path, _value)) => (
+                        reward_unknown(),
+                        BenchmarkCompletion::Verified {
+                            metrics,
+                            artifacts: vec![NativeArtifact {
+                                role: "native/harbor-result".to_owned(),
+                                sha256: sha256_hex(&std::fs::read(&path).unwrap_or_default()),
+                                path,
+                            }],
+                        },
+                    ),
+                    Err(_) => (
+                        reward_unknown(),
+                        BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
+                            kind: "verifier-invalid-output",
+                            boundary: FailureBoundaryCode::Grader,
+                        }),
+                    ),
+                };
             }
         };
         let metrics = match Self::import_ctrf(&bytes) {

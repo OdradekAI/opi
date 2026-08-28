@@ -76,6 +76,79 @@ pub(crate) struct NativeMetrics {
     pub other: Option<Fact>,
 }
 
+/// Typed rejections of the harbor `jobs/<timestamp>/result.json` layout
+/// (`harbor run -p`, task 18.15 pin): the newest job directory is the
+/// authority and the single trial's verifier rewards are the aggregate.
+#[derive(Debug)]
+pub(crate) enum HarborResultError {
+    /// No `jobs/*/result.json` exists under the trace root.
+    Missing,
+    /// The file exists but is not the pinned schema.
+    Invalid,
+}
+
+/// Locates the newest `jobs/<timestamp>/result.json` under `trace_root`
+/// and derives the aggregate metrics from the single trial's verifier
+/// rewards. Per-test counters stay typed unknowns: the harbor result
+/// exposes only the reward aggregate, and nothing is inferred beyond it.
+pub(crate) fn import_harbor_result(
+    trace_root: &std::path::Path,
+) -> Result<(NativeMetrics, PathBuf, serde_json::Value), HarborResultError> {
+    let jobs = trace_root.join("jobs");
+    let entries = std::fs::read_dir(&jobs).map_err(|_| HarborResultError::Missing)?;
+    let mut newest: Option<(std::path::PathBuf, std::ffi::OsString)> = None;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if entry.path().join("result.json").is_file()
+            && newest.as_ref().is_none_or(|(_, best)| name > *best)
+        {
+            newest = Some((entry.path().join("result.json"), name));
+        }
+    }
+    let (path, _) = newest.ok_or(HarborResultError::Missing)?;
+    let bytes = std::fs::read(&path).map_err(|_| HarborResultError::Invalid)?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| HarborResultError::Invalid)?;
+    let trials = value
+        .get("trial_results")
+        .and_then(|t| t.as_array())
+        .ok_or(HarborResultError::Invalid)?;
+    if trials.len() != 1 {
+        return Err(HarborResultError::Invalid);
+    }
+    let rewards = trials[0]
+        .get("verifier_result")
+        .and_then(|v| v.get("rewards"))
+        .and_then(|r| r.as_object())
+        .ok_or(HarborResultError::Invalid)?;
+    if rewards.is_empty()
+        || rewards
+            .values()
+            .any(|v| !v.as_f64().is_some_and(|n| n.is_finite()))
+    {
+        return Err(HarborResultError::Invalid);
+    }
+    // The Terminal-Bench aggregate convention: the `all` reward is the
+    // zero-or-one indicator of every test passing. That is the only
+    // counter the aggregate can honestly carry; the rest stay unknown.
+    let all_passed = rewards
+        .get("all")
+        .and_then(|v| v.as_f64())
+        .is_some_and(|n| n > 0.0);
+    let metrics = NativeMetrics {
+        tests: None,
+        passed: Some(Fact::Known {
+            value: u64::from(all_passed),
+            origin: "harbor-reward-all".to_owned(),
+        }),
+        failed: None,
+        skipped: None,
+        pending: None,
+        other: None,
+    };
+    Ok((metrics, path, value))
+}
+
 /// Typed failure carried on a settled record. A failed verification run is
 /// settled evidence, not an unsettable error (`P18-BMK-006`: no fallback to
 /// another revision, grader, cached score, heuristic, or LLM judgment).

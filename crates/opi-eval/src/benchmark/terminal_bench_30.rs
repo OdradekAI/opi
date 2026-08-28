@@ -1009,17 +1009,33 @@ impl BenchmarkAdapter for TerminalBench30Adapter {
                 );
             }
         }
-        // Exit 0 under an unpinned output schema settles fail-closed: no
-        // 3.0 native-output schema is committed, so nothing is guessed,
-        // normalized, or fabricated until task 18.15 pins one.
+        // Exit 0 under an unpinned output schema settles fail-closed
+        // unless task 18.15's pinned harbor layout is present: the 3.0
+        // native-output schema this task pins is harbor's
+        // `jobs/<timestamp>/result.json` aggregate from `harbor run -p`,
+        // exactly as verified at the dispatch. Nothing is guessed or
+        // normalized beyond that aggregate.
         if self.profile.output_kind == OutputKind::UnpinnedPending1815 {
-            return (
-                reward_unknown(),
-                BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
-                    kind: "native-output-schema-unpinned",
-                    boundary: FailureBoundaryCode::Adapter,
-                }),
-            );
+            return match super::process::import_harbor_result(&request.trace_root) {
+                Ok((metrics, path, _value)) => (
+                    reward_unknown(),
+                    BenchmarkCompletion::Verified {
+                        metrics,
+                        artifacts: vec![NativeArtifact {
+                            role: "native/harbor-result".to_owned(),
+                            sha256: sha256_hex(&std::fs::read(&path).unwrap_or_default()),
+                            path,
+                        }],
+                    },
+                ),
+                Err(_) => (
+                    reward_unknown(),
+                    BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
+                        kind: "native-output-schema-unpinned",
+                        boundary: FailureBoundaryCode::Adapter,
+                    }),
+                ),
+            };
         }
         // Synthetic wiring path only: import the CTRF report the fixture
         // verifier wrote into the run's trace root.
