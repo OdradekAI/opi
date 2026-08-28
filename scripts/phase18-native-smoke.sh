@@ -862,7 +862,10 @@ images = {image["id"]: image for image in lock["images"]}
 opi_identity = json.loads(Path(agents_out, "opi-identity.json").read_text("utf-8"))
 pi_identity = json.loads(Path(agents_out, "pi-identity.json").read_text("utf-8"))
 endpoint = Path(provider_out, "endpoint.txt").read_text(encoding="utf-8").strip()
-base_url = f"http://{endpoint}/v1"
+# Bare endpoint: opi-ai's openai-completions wire joins /v1 itself and
+# pi's OpenAI SDK appends /chat/completions directly, so both products
+# reach an admitted path from one base.
+base_url = f"http://{endpoint}"
 
 def package_manifest_digest(root):
     rows = []
