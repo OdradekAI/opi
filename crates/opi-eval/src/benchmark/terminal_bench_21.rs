@@ -828,10 +828,17 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
                             }],
                         },
                     ),
-                    Err(_) => (
+                    Err(error) => (
                         reward_unknown(),
                         BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
-                            kind: "verifier-invalid-output",
+                            kind: match error {
+                                super::process::HarborResultError::Missing => {
+                                    "verifier-output-missing"
+                                }
+                                super::process::HarborResultError::Invalid => {
+                                    "verifier-output-invalid-schema"
+                                }
+                            },
                             boundary: FailureBoundaryCode::Grader,
                         }),
                     ),
@@ -1132,10 +1139,10 @@ mod adapter_tests {
             BenchmarkCompletion::Failed(super::super::process::BenchmarkFailure { kind, boundary })
         };
 
-        // Missing report on exit 0: grader-side invalid output.
+        // Missing report on exit 0: neither admitted layout exists.
         assert_eq!(
             adapter.settle(&outcome_exit_zero(), &request).1,
-            failed("verifier-invalid-output", FailureBoundaryCode::Grader)
+            failed("verifier-output-missing", FailureBoundaryCode::Grader)
         );
         // Corrupt JSON.
         write_ctrf(&trace, "corrupt.json");
