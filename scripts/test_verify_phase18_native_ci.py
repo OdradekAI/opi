@@ -233,10 +233,8 @@ class Phase18NativeCiVerifier(unittest.TestCase):
     def test_missing_negative_reachability_probe_rejects(self) -> None:
         self.assert_rejects(
             self.ws(producer_text=PRODUCER.read_text(encoding="utf-8").replace(
-                "  # Negative: a container on the default bridge must NOT reach the endpoint.\n"
-                "  docker run --rm \"$probe_image\" \\\n"
-                "    python3 -c \"import socket; socket.create_connection(('$host', $port), timeout=5).close()\"\n"
-                "  negative=$?\n", "")),
+                'die "provider-probe: the endpoint answers on a non-loopback interface"',
+                'die "provider-probe: unreachable"')),
             "negative-probe")
 
     def test_mutable_external_ref_rejects(self) -> None:

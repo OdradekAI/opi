@@ -168,10 +168,12 @@ def verify_producer(text: str, f: Findings) -> None:
                     "exactly one listener endpoint may be launched")
     f.require("network", text, 'docker network create --internal "$network"',
               "the provider network must be internal (no egress)")
-    f.require("negative-probe", text, 'docker run --rm "$probe_image"',
-              "an off-network container must fail to reach the endpoint")
-    f.require("negative-probe", text, "grep -c '^default'",
-              "the default route must be probed absent")
+    f.require("negative-probe", text,
+              "provider-probe: the endpoint answers on a non-loopback interface",
+              "the provider must refuse every non-loopback surface")
+    f.require("negative-probe", text,
+              "docker network inspect \"$network\" --format '{{.Internal}}'",
+              "the dedicated network must be verified internal")
     f.require("negative-probe", text, "ss -ltn",
               "undeclared host listeners must be probed absent")
     # External identities: commits only, never mutable refs.

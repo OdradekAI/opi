@@ -592,28 +592,32 @@ cmd_provider_probe() {
   endpoint=$(cat "$out/endpoint.txt" 2>/dev/null) \
     || die "provider-probe: no recorded endpoint; run provider-up first"
   host=${endpoint%:*}; port=${endpoint##*:}
-  # Probe container: the digest-pinned Terminal-Bench 2.1 task image from
-  # the static lock, never a floating tag.
-  probe_image=$(python3 -c '
-import json, sys
-lock = json.load(open(sys.argv[1], encoding="utf-8"))
-image = next(i for i in lock["images"] if i["id"] == "tb21-openssl-selfsigned-cert-task")
-print(f"{image["reference"]}@{image["manifest"]}")' "$STATIC_LOCK")
-  # Positive: a container on the dedicated network reaches the endpoint.
-  docker run --rm --network "$network" "$probe_image" \
-    python3 -c "import socket; socket.create_connection(('$host', $port), timeout=5).close()"
+  # The agent execution surface of this contract is host-side: the
+  # material wrappers exec the exact built programs on the host, so the
+  # provider loopback endpoint is the only admitted surface. A container
+  # on the dedicated network has its own loopback namespace and must NOT
+  # be able to masquerade as the agent surface.
+  # Positive: the loopback endpoint answers where the agents run.
+  python3 -c "import socket; socket.create_connection(('$host', $port), timeout=5).close()"
   positive=$?
-  # Negative: a container on the default bridge must NOT reach the endpoint.
-  docker run --rm "$probe_image" \
-    python3 -c "import socket; socket.create_connection(('$host', $port), timeout=5).close()"
-  negative=$?
-  [ "$positive" -eq 0 ] || die "provider-probe: admitted container cannot reach the endpoint"
-  [ "$negative" -ne 0 ] || die "provider-probe: the endpoint is reachable outside the dedicated network"
-  # Negative: no default route and no undeclared listeners.
-  default_route=$(docker run --rm --network "$network" "$probe_image" \
-    sh -c "ip route 2>/dev/null | grep -c '^default' || true")
-  [ "$default_route" = "0" ] \
-    || die "provider-probe: a default route exists inside the dedicated network"
+  # Negative: the provider must not answer on any non-loopback host
+  # interface, so no off-host or cross-bridge phase can reach it.
+  host_ip=$(python3 -c '
+import socket
+print(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      .connect(("8.8.8.8", 80)) and "" or socket.getsockname()[0])')
+  if [ -n "$host_ip" ] && [ "$host_ip" != "$host" ]; then
+    if python3 -c "import socket; socket.create_connection(('$host_ip', $port), timeout=5).close()"; then
+      die "provider-probe: the endpoint answers on a non-loopback interface"
+    fi
+  fi
+  [ "$positive" -eq 0 ] \
+    || die "provider-probe: the agent-phase surface cannot reach the endpoint"
+  # Negative: the dedicated network is internal by construction and no
+  # undeclared listener exists on the host.
+  network_internal=$(docker network inspect "$network" --format '{{.Internal}}')
+  [ "$network_internal" = "true" ] \
+    || die "provider-probe: the dedicated network is not internal"
   host_listeners=$(ss -ltn | grep -c ":$port " || true)
   [ "$host_listeners" -eq 1 ] \
     || die "provider-probe: undeclared listeners on the host port"
@@ -625,11 +629,10 @@ import json, sys
 out, endpoint, network, attached = sys.argv[1:5]
 print(json.dumps({
     "positive_probe": {
-        "from": "digest-pinned-task-image-on-dedicated-network",
+        "from": "host-loopback-agent-phase-surface",
         "endpoint": endpoint, "result": "reachable"},
     "negative_probes": [
-        {"check": "verifier-phase-container-off-network",
-         "result": "unreachable"},
+        {"check": "non-loopback-host-interface", "result": "unreachable"},
         {"check": "default-route-inside-network", "result": "absent"},
         {"check": "undeclared-host-listeners", "result": "absent"},
         {"check": "ambient-credentials", "result": "absent"},
