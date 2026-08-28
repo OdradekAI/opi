@@ -3209,7 +3209,7 @@
       "id": "18.14.1",
       "phase": 18,
       "title": "Own the native execution driver over resolved material",
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "18.14"
       ],
@@ -3340,15 +3340,94 @@
           "timestamp": "2026-08-28T12:05:00+08:00",
           "attempt": 1,
           "summary": "marked in_progress at 8ddced529cc4 after user-confirmed B.2 gate; graph-revision insertion confirmed at P.4 (confirm-all, write-only)"
+        },
+        {
+          "timestamp": "2026-08-28T14:30:00+08:00",
+          "attempt": 1,
+          "summary": "18.14.1 passing. Rust: runner/material.rs (phase18-native-material/1 manifest, fail-closed pinned-digest load, task-package sorted-manifest recomputation, exact agent/benchmark identity sets, 5 unit tests); runner/experiment.rs native mode (prepare_native adapter-key resolution + production profile parse + task-id pin + package digest verify + instruction prompt; native_integrity_review deriving upstream identity from static lock + package digest with oracle Passed recorded; run_oracle_preflight through BenchmarkExecution with the oracle wrapper requiring Verified + passed>0 and persisting phase18-oracle-preflight/1 receipt; native trial inputs - exact executable, deterministic config projection via native_opi_config (opi custom-provider TOML at the isolated --config path) and native_agent_env (pi models.json in the isolated agent dir), closed provider_env, allow_mutating, material static-lock admitted digest; fixture_report Option unification so the real verifier writes the report into the trace root); cli/run.rs + main.rs --native-material/--preflight-only (preflight-only exit 0); cli/mod.rs validate_native deriving the pinned integrity identity; conformance.rs --native-material admitted native case subsets (agent completed/identity, benchmark completed/identity/immutable-capture) through exact executables with material profile/package/verifier/lock, hermetic-only refusal; tests/native_driver.rs 7 integration tests (unix-gated, TempDir guard owned, stand-in opi/pi/uv/oracle with real argv+env contract assertions incl. OPENAI_API_KEY/PI_API_KEY/models.json/config grep, stream model rewrite, full paired run completed+sealed bundles+native evidence, preflight-only no trials, failing oracle rejection before trials, package manifest drift, executable digest drift, native conformance admitted + hermetic-only refusal). Provider listener: --listen host:port + required --request-log, stdlib http.server ThreadingHTTPServer, deterministic scripted-turn-plan/1 (tool-call turn then final turn keyed on any tool-role message), SSE chunk stream + non-stream completion, canonical JSON digest log lines phase18-scripted-provider-log/1 (no prompt text), 404 undeclared paths/methods, 400 non-JSON, 64-cap 429, readiness line with port-0 support, stdin/stdout byte-identical (15 tests incl. strengthened credential/token surface tests + no-listener-in-fixture-mode). Producer: materialize-configs stage (opi-eval compiler-artifact resolution shared helper, wrappers: per-(product,benchmark) docker task-container launch wrappers from static-lock image digests + generic exec wrappers + uv verifier/oracle wrappers, material.json with all pinned digests, 3 experiment TOMLs with integrity pinned via validate --native-material), conformance-rerun stage (12 admitted cases), oracle-preflight stage (--preflight-only per config), run-trials gains --material/--canary-out (canary-markers.txt now emitted by preflight-canaries), record-upload-identity stage (phase18-upload-identity-receipt/1, no self-reference, expiry from retention). Workflow: input description retargeted to the 18.14.1 lineage, four new sequential steps before run-trials, upload gains id + post-upload receipt step + second artifact. CI verifier: 14-stage invocation list, materialize/preflight-only/material/canary/upload-receipt token checks, credential guard tightened to (KEY)=(?!<dummy) assignments + credential-named environment reads (os.environ/getenv/printenv against credential names) admitting declared dummies and forwarded isolation names, stdlib whitelist +http/+threading; 33 tests incl. missing-materialize/oracle-preflight-stage negatives. D.1 smoke full PASS (after fmt + env clean: config_tests proxy failure was ambient NO_PROXY leakage, not a code change; no opi-coding-agent files touched); addendum provider 15/15 + CI-verifier 33/33 + real-file verifier PASS; rustdoc clean. D.2 7-lens: must-fix 0, flagged 7: (1) per-benchmark container agent wrappers are generated and recorded in the materialize receipt but the manifest declares the generic host-exec wrapper per product - trial-level container selection wiring belongs to the 18.15 dispatch (manifest extension or dispatch-side selection); (2) oracle wrapper is contract form (exec uv) - the official reference-solution application semantics per benchmark realize at dispatch; (3) uv resolves from PATH at materialize time (setup-uv installed) and is digest-pinned then; (4) --fixtures stays a required-but-unused compatibility argument in native run; (5) pi models.json key names follow the pinned docs/models.md shape, validated by real pi at dispatch; (6) the opi config template (context_window 8192, max_output 4096) is not hermetically parsed by a real config parser (stand-ins grep only); (7) SSE chunk compatibility with the real opi/pi clients verifies at dispatch. Rejected 0. Test disposition: add (5 material unit + 7 native_driver + 2 provider surface/listener split + 2 CI-verifier stage negatives + native conformance within native_driver), update (provider surface test strengthened to credential-only forbids + no-listener test; CI-verifier credential regex), retain all hermetic suites.",
+          "gate_results": [
+            {
+              "gate": "scripts/opi-impl-smoke.sh full (D.1 workspace tier)",
+              "result": "passed",
+              "test_disposition": [
+                {
+                  "subject": "native material manifest",
+                  "action": "add",
+                  "test": "crates/opi-eval/src/runner/material.rs unit tests (5)",
+                  "interface": "NativeMaterial::load/task_package_manifest_digest",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "native driving mode",
+                  "action": "add",
+                  "test": "crates/opi-eval/tests/native_driver.rs (7)",
+                  "interface": "opi-eval run/validate/conformance --native-material",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "provider listener",
+                  "action": "add",
+                  "test": "scripts/test_phase18_scripted_provider.py listener class (7)",
+                  "interface": "scripts/phase18-scripted-provider.py --listen",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "CI verifier stage set",
+                  "action": "add",
+                  "test": "scripts/test_verify_phase18_native_ci.py stage negatives (2)",
+                  "interface": "scripts/verify-phase18-native-ci.py",
+                  "replacement": null,
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "provider surface test",
+                  "action": "update",
+                  "test": "test_no_credential_or_third_party_surface + test_stdin_mode_has_no_listener",
+                  "interface": "credential/token forbids scoped to real dangers",
+                  "replacement": "equal-or-stronger split of the old no-network token test",
+                  "slim_candidate": null
+                },
+                {
+                  "subject": "hermetic suites",
+                  "action": "retain",
+                  "test": "agent/benchmark conformance, assembled smoke, report/regrade, CI-verifier originals",
+                  "interface": "unchanged hermetic seams",
+                  "replacement": null,
+                  "slim_candidate": null
+                }
+              ]
+            },
+            {
+              "gate": "python scripts/test_phase18_scripted_provider.py && python scripts/test_verify_phase18_native_ci.py && python scripts/verify-phase18-native-ci.py --workflow .github/workflows/phase18-native-smoke.yml --script scripts/phase18-native-smoke.sh --build-script scripts/phase18-build-agent-artifacts.sh --provider scripts/phase18-scripted-provider.py (smoke addendum)",
+              "result": "passed"
+            },
+            {
+              "gate": "RUSTDOCFLAGS=-D warnings cargo doc -p opi-eval --no-deps (D.3)",
+              "result": "passed"
+            },
+            {
+              "gate": "D.2 exec.workflow.js 7-lens (runtime executed by harness agent per precedent)",
+              "result": "passed"
+            }
+          ]
         }
       ],
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "baseline_dirty_files": [],
       "blocker": null,
       "start_commit": "8ddced529cc49c041057cf71bbc105a291cc61cb",
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "1aafb8ad33516aff532a4da18c72dacda6e6d8ab",
+      "evidence": {
+        "Opi-Task": "18.14.1",
+        "Opi-DoD-SHA256": "22ee8c6174f393dd95b3fe1efaa28a5f4264569487edfcb6215c10e6cccd3e5c",
+        "Opi-Verification": "workspace; smoke full + provider 15/15 + CI-verifier 33/33 + real-file verifier + rustdoc clean",
+        "Opi-Evaluator": "passed (0 must-fix; 7 flagged-for-human; 0 rejected)",
+        "Opi-Acceptance": "none owned; producer substrate for 18.15"
+      },
       "replaces": null
     },
     {
@@ -5363,6 +5442,14 @@
       "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
       "result": "passed",
       "report_summary": "must-fix 0; flagged 7 (features placeholder; buildx digest placeholder; regex-not-schema YAML; probes committed-not-executed; provider --listen arrives at 18.15; placeholder argv tokens; harbor/pier URL reconstruction); rejected 0"
+    },
+    {
+      "stage": "exec",
+      "task_id": "18.14.1",
+      "timestamp": "2026-08-28T14:30:00+08:00",
+      "command": ".claude/skills/opi-implement/scripts/exec.workflow.js (7-lens protocol executed by the harness agent; Workflow runtime primitives unavailable standalone)",
+      "result": "passed",
+      "report_summary": "must-fix 0; flagged 7 (container-wrapper selection, oracle semantics, uv PATH resolution, dead --fixtures arg, models.json key names, opi config template unparsed, SSE client compatibility - all dispatch-time materialization points owned by 18.15); rejected 0"
     }
   ]
 }
