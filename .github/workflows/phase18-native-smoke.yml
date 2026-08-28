@@ -23,8 +23,10 @@ concurrency:
   group: phase18-linux-native-smoke
   cancel-in-progress: false
 
-env:
-  PHASE18_NATIVE_STAGE: ${{ runner.temp }}/phase18-native
+# The stage root is exported from the first step through GITHUB_ENV:
+# the runner context is not available in a workflow-level env block,
+# and every later step (run blocks and upload paths) reads the variable
+# from the step environment instead.
 
 jobs:
   native_smoke:
@@ -32,6 +34,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
+      - name: Prepare the isolated stage root
+        run: |
+          set -euo pipefail
+          echo "PHASE18_NATIVE_STAGE=$RUNNER_TEMP/phase18-native" >> "$GITHUB_ENV"
+
       - name: Check out the candidate commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
