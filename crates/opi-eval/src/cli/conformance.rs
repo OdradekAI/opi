@@ -977,6 +977,20 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
                 }
                 _ => false,
             };
+        // A failed native verifier keeps its captured output tails in the
+        // report notes: the process verdict is authoritative, but the
+        // upstream tool's own diagnostics are the only way to see why it
+        // refused. Tails only, never full logs.
+        if !matches!(&record.completion, BenchmarkCompletion::Verified { .. }) {
+            let tail = |bytes: &[u8]| -> String {
+                let text = String::from_utf8_lossy(bytes);
+                let kept: Vec<char> = text.chars().collect();
+                let start = kept.len().saturating_sub(1200);
+                kept[start..].iter().collect()
+            };
+            notes.push(format!("verifier-stdout-tail: {}", tail(&record.stdout.bytes)));
+            notes.push(format!("verifier-stderr-tail: {}", tail(&record.stderr.bytes)));
+        }
         ConformanceReport {
             schema: "phase18-conformance-report/1",
             suite: "benchmark".to_owned(),
