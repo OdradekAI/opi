@@ -137,8 +137,16 @@ pub(crate) fn import_harbor_result(
     if reward_stats.len() != 1 {
         return Err(HarborResultError::Invalid("reward-count"));
     }
-    let (reward_key, trials) = reward_stats.iter().next().expect("len checked");
-    let trial_names = trials.as_array().ok_or(HarborResultError::Invalid("reward-trials"))?;
+    // reward_stats nests twice: metric name -> { reward value -> trial
+    // names }. One metric, one value, one trial; anything else is drift.
+    let (_metric, by_value) = reward_stats.iter().next().expect("len checked");
+    let by_value = by_value.as_object().ok_or(HarborResultError::Invalid("reward-values"))?;
+    if by_value.len() != 1 {
+        return Err(HarborResultError::Invalid("reward-count"));
+    }
+    let (reward_key, trial_names) = by_value.iter().next().expect("len checked");
+    let trial_names =
+        trial_names.as_array().ok_or(HarborResultError::Invalid("reward-trials"))?;
     if trial_names.len() != 1 {
         return Err(HarborResultError::Invalid("reward-trials"));
     }
@@ -776,7 +784,7 @@ mod tests {
             br#"{"id": "0b0a", "started_at": "2026-08-28T12:33:17Z",
                 "finished_at": "2026-08-28T12:33:50Z", "n_total_trials": 1,
                 "stats": {"evals": {"adhoc/terminal-bench-2-1/oracle": {
-                    "reward_stats": {"1.0": ["openssl-selfsigned-cert"]}}}}}"#,
+                    "reward_stats": {"reward": {"1.0": ["openssl-selfsigned-cert"]}}}}}}"#,
         )
         .unwrap();
         let (metrics, path, _value) = import_harbor_result(dir.path()).unwrap();
