@@ -11,7 +11,8 @@
 #   records readlink -f, SHA-256, file(1), ldd, rustc -Vv, cargo -V, the
 #   checkout commit and dirty state, target triple, profile, feature set,
 #   and the Cargo.lock SHA-256 recomputed from the checkout.
-# - pi: locked source build (`npm ci --ignore-scripts`, `npm run build`,
+# - pi: locked source build (`npm ci --ignore-scripts`,
+#   `npm run build:offline` over the checked-in model data),
 #   bundle existence check). The identity records the canonical Node
 #   executable path, SHA-256, file(1), ldd, --version, the npm identity,
 #   the checkout commit and dirty state, the package manifest, package
@@ -144,6 +145,10 @@ mkdir -p "$npm_cache"
   cd "$PI_SOURCE"
   HOME="$OUT/npm-home" npm_config_cache="$npm_cache" \
     npm ci --ignore-scripts
+    # build:offline compiles from the checked-in model data (the exact
+    # pinned-tree state); the default build regenerates the model tables
+    # from live upstream catalogs, whose drift breaks the pinned source.
+    npm run build:offline
   HOME="$OUT/npm-home" npm_config_cache="$npm_cache" \
     npm run build
   test -f packages/coding-agent/dist/bundle/cli.js
@@ -154,7 +159,7 @@ EOF
 BUNDLE_PATH="$PI_SOURCE/packages/coding-agent/dist/bundle/cli.js"
 BUNDLE_PATH=$(readlink -f "$BUNDLE_PATH")
 {
-  printf 'npm ci --ignore-scripts && npm run build && '
+  printf 'npm ci --ignore-scripts && npm run build:offline && '
   printf 'test -f packages/coding-agent/dist/bundle/cli.js\n'
 } > "$OUT/pi-build-command.txt"
 python3 - "$NODE_EXECUTABLE" "$NPM_EXECUTABLE" "$PI_COMMIT" "$PI_DIRTY" \
