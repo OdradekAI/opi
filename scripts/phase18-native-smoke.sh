@@ -1173,9 +1173,9 @@ cmd_conformance_rerun() {
       "benchmark terminal-bench-3.0 completed" \
       "benchmark terminal-bench-3.0 identity" \
       "benchmark terminal-bench-3.0 immutable-capture" \
-      "benchmark deepswe-v1.1 completed" \
-      "benchmark deepswe-v1.1 identity" \
-      "benchmark deepswe-v1.1 immutable-capture"; do
+      "benchmark deepswe completed" \
+      "benchmark deepswe identity" \
+      "benchmark deepswe immutable-capture"; do
     suite=${case_spec%% *}
     rest=${case_spec#* }
     adapter=${rest%% *}
