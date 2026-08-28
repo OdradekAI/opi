@@ -775,12 +775,15 @@ PYEOF
 # ---------------------------------------------------------------------------
 resolve_opi_eval_executable() {
   # The compiled opi-eval executable, selected from the compiler-artifact
-  # stream (never an assumed target path).
-  local build_json
+  # stream (never an assumed target path). A cargo failure is surfaced,
+  # never swallowed silently: the exit status and the stderr tail ride
+  # along with the rejection.
+  local build_json cargo_rc
   build_json=$(cargo build --locked --release -p opi-eval \
-    --message-format=json-render-diagnostics 2>/dev/null || true)
-  printf '%s\n' "$build_json" | python3 -c '
-import json, sys
+    --message-format=json-render-diagnostics 2>/tmp/phase18-opi-eval-build.err) \
+    && cargo_rc=0 || cargo_rc=$?
+  printf '%s\n' "$build_json" | CARGO_RC="$cargo_rc" python3 -c '
+import json, os, sys
 for line in sys.stdin:
     line = line.strip()
     if not line.startswith("{"):
@@ -792,7 +795,14 @@ for line in sys.stdin:
         print(message["executable"])
         break
 else:
-    sys.exit("no opi-eval compiler-artifact executable was reported")
+    tail = ""
+    try:
+        tail = open("/tmp/phase18-opi-eval-build.err", encoding="utf-8"
+                    ).read().strip()[-1500:]
+    except OSError:
+        pass
+    sys.exit(f"no opi-eval compiler-artifact executable was reported "
+             f"(cargo rc={os.environ.get('CARGO_RC')}); stderr tail: {tail}")
 '
 }
 
