@@ -835,7 +835,25 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
                                 super::process::HarborResultError::Missing => {
                                     "verifier-output-missing"
                                 }
-                                super::process::HarborResultError::Invalid => {
+                                super::process::HarborResultError::Invalid("read") => {
+                                    "verifier-output-invalid-read"
+                                }
+                                super::process::HarborResultError::Invalid("json-parse") => {
+                                    "verifier-output-invalid-json-parse"
+                                }
+                                super::process::HarborResultError::Invalid("no-trial-list") => {
+                                    "verifier-output-invalid-no-trial-list"
+                                }
+                                super::process::HarborResultError::Invalid("trial-count") => {
+                                    "verifier-output-invalid-trial-count"
+                                }
+                                super::process::HarborResultError::Invalid("no-reward-chain") => {
+                                    "verifier-output-invalid-no-reward-chain"
+                                }
+                                super::process::HarborResultError::Invalid("bad-reward-values") => {
+                                    "verifier-output-invalid-bad-reward-values"
+                                }
+                                super::process::HarborResultError::Invalid(_) => {
                                     "verifier-output-invalid-schema"
                                 }
                             },

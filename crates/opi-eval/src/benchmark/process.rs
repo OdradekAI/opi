@@ -83,8 +83,9 @@ pub(crate) struct NativeMetrics {
 pub(crate) enum HarborResultError {
     /// No `jobs/*/result.json` exists under the trace root.
     Missing,
-    /// The file exists but is not the pinned schema.
-    Invalid,
+    /// The file exists but is not the pinned schema; the token names the
+    /// drift precisely (read, parse, trial list, reward chain, values).
+    Invalid(&'static str),
 }
 
 /// Locates the newest `jobs/<timestamp>/result.json` under `trace_root`
@@ -106,40 +107,41 @@ pub(crate) fn import_harbor_result(
         }
     }
     let (path, _) = newest.ok_or(HarborResultError::Missing)?;
-    let bytes = std::fs::read(&path).map_err(|_| HarborResultError::Invalid)?;
-    let value: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|_| HarborResultError::Invalid)?;
+    let bytes =
+        std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|_| HarborResultError::Invalid("json-parse"))?;
     let trials = value
         .get("trial_results")
         .and_then(|t| t.as_array())
-        .ok_or(HarborResultError::Invalid)?;
+        .ok_or(HarborResultError::Invalid("no-trial-list"))?;
     if trials.len() != 1 {
-        return Err(HarborResultError::Invalid);
+        return Err(HarborResultError::Invalid("trial-count"));
     }
     let rewards = trials[0]
         .get("verifier_result")
         .and_then(|v| v.get("rewards"))
         .and_then(|r| r.as_object())
-        .ok_or(HarborResultError::Invalid)?;
+        .ok_or(HarborResultError::Invalid("no-reward-chain"))?;
     if rewards.is_empty()
         || rewards
             .values()
             .any(|v| !v.as_f64().is_some_and(|n| n.is_finite()))
     {
-        return Err(HarborResultError::Invalid);
+        return Err(HarborResultError::Invalid("bad-reward-values"));
     }
-    // The Terminal-Bench aggregate convention: the `all` reward is the
+    // The Terminal-Bench aggregate convention: the `reward` key is the
     // zero-or-one indicator of every test passing. That is the only
     // counter the aggregate can honestly carry; the rest stay unknown.
     let all_passed = rewards
-        .get("all")
+        .get("reward")
         .and_then(|v| v.as_f64())
         .is_some_and(|n| n > 0.0);
     let metrics = NativeMetrics {
         tests: None,
         passed: Some(Fact::Known {
             value: u64::from(all_passed),
-            origin: "harbor-reward-all".to_owned(),
+            origin: "harbor-reward".to_owned(),
         }),
         failed: None,
         skipped: None,
