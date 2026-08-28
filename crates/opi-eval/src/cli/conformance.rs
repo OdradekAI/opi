@@ -35,6 +35,15 @@ use crate::agent::process::{
     UsageProjection,
 };
 use crate::benchmark::deepswe::{DeepSweAdapter, DeepSweProfile};
+
+/// The conformance adapter id for DeepSWE differs from the material
+/// manifest key the runner resolves (`deepswe` vs `deepswe-v1.1`).
+fn material_key(adapter: &str) -> &str {
+    match adapter {
+        "deepswe" => "deepswe-v1.1",
+        other => other,
+    }
+}
 use crate::benchmark::process::{
     BenchmarkAdapter, BenchmarkCompletion, BenchmarkExecution, BenchmarkRunRequest,
 };
@@ -818,7 +827,7 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
     };
     let fixture_package = match &native_material {
         Some(material) => material
-            .benchmark(revision.adapter)
+            .benchmark(material_key(revision.adapter))
             .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
             .task_package
             .clone(),
@@ -845,7 +854,7 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
     let profile_text: String = match &native_material {
         Some(material) => std::fs::read_to_string(
             material
-                .benchmark(revision.adapter)
+                .benchmark(material_key(revision.adapter))
                 .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
                 .profile
                 .clone(),
@@ -875,7 +884,7 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
     match &native_material {
         Some(material) => {
             let benchmark = material
-                .benchmark(revision.adapter)
+                .benchmark(material_key(revision.adapter))
                 .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
             for (key, value) in &benchmark.verifier_env {
                 extra_env.insert(key.clone().into(), value.clone().into());
@@ -900,7 +909,7 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
 
     let verifier_executable = match &native_material {
         Some(material) => material
-            .benchmark(revision.adapter)
+            .benchmark(material_key(revision.adapter))
             .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
             .verifier_executable
             .path
