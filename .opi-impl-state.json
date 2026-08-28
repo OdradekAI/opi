@@ -3051,7 +3051,7 @@
       "definition_of_done": "A dedicated manually authorized ubuntu-24.04 workflow, native-smoke script, exact Agent build/locator script, and checked-in deterministic Python previously conformance-proved deterministic provider executable are committed before any native run. The producer contract records github.workflow_ref and github.workflow_sha, hashes the workflow bytes read from that workflow SHA, and binds them to the candidate_sha version together with every invoked script, immutable action, provider, adapter-source manifest, and compiled opi-eval executable digest. Before Agent dispatch it records Opi's canonical resolved executable path, SHA-256, file/ldd metadata, checkout/dirty/Cargo.lock/rustc -Vv/cargo/target/profile/features identities; pi's canonical Node executable path and SHA-256 plus file/ldd/version, npm identity, checkout/dirty/package/lock/archive/installed-tree identities, and canonical bundle path/digest; and each adapter's exact argv, cwd, allowlisted environment, and configuration projection. The provider runs through the canonical Python executable in isolated no-site mode with an exact argv/cwd, closed environment allowlist, explicit standard-library-only dependency closure, one pre-resolved listener endpoint, and one dedicated Docker-network identity; reachability probes must prove that only the admitted Opi/pi Agent-phase task containers can reach that endpoint and that verifier phases, ambient credentials/configuration, undeclared listeners, default routes, and outbound fallback are absent. The producer also runs a canary-oracle preflight closing P18-BMK-003: before any Agent trial it probes the projected Agent-phase environments, mounts, configuration, and scripted-provider response paths for the pinned oracle and reference-solution material by digest and canary markers, and records the required negative result in the outer receipt. It then runs the existing opi-eval conformance CLI for the three exact task packages, preserves native verifier authority and typed trajectory/span source edges, and uploads only a sealed audited artifact plus an outer seal/upload receipt. Static/unit verification proves the producer schema and negative checks; this task does not claim that the six trials have run.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "18.13"
       ],
@@ -3141,7 +3141,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "4031beb00168e678744daa4a34f6e0c0f7df3931",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         ".github/workflows/phase18-native-smoke.yml",
@@ -3154,7 +3154,13 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-08-28T09:40:00+08:00",
+          "attempt": 1,
+          "summary": "18.14 in_progress; B.2 gate confirmed (one workflow, three scripts, one test file, fixtures; full workspace smoke at D.1)."
+        }
+      ]
     },
     {
       "id": "18.15",
