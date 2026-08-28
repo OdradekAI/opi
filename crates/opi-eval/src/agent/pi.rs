@@ -327,8 +327,10 @@ impl PiImporter {
         };
         let mut lines = text.lines().filter(|l| !l.trim().is_empty());
 
-        // Line 1 must be the current session header: exact field identity
-        // with the v2 version marker (older or drifted shapes fail closed).
+        // Line 1 must be the current session header: exact field identity.
+        // The hermetic fixtures pin the v2 sample shape and the pinned pi
+        // 0.84.3 stream emits v3 with the same event vocabulary; both
+        // admitted, anything older or drifted fails closed.
         let header: serde_json::Value = match lines.next().map(serde_json::from_str) {
             Some(Ok(value)) => value,
             _ => return failed("import-evidence-missing", FailureBoundaryCode::Evidence),
@@ -338,7 +340,7 @@ impl PiImporter {
             Some(fields)
                 if fields.len() == 5
                     && fields["type"].as_str() == Some("session")
-                    && fields["version"].as_u64() == Some(2)
+                    && matches!(fields["version"].as_u64(), Some(2 | 3))
                     && fields["id"].is_string()
                     && fields["timestamp"].is_string()
                     && fields["cwd"].is_string()
@@ -393,7 +395,8 @@ impl PiImporter {
                 | "text"
                 | "summarization_retry_attempt_start"
                 | "summarization_retry_finished"
-                | "summarization_retry_scheduled" => {}
+                | "summarization_retry_scheduled"
+                | "agent_settled" => {}
                 "message_update" => {
                     // Strip-partial wire shape: cumulative usage plus one
                     // assistant message event.
@@ -500,19 +503,27 @@ fn validate_terminal_message(message: &serde_json::Value) -> Result<(), &'static
     if fields.get("role").and_then(|v| v.as_str()) != Some("assistant") {
         return Err("import-unsupported-schema");
     }
-    for key in ["id", "content", "api", "timestamp"] {
+    for key in ["content", "api", "timestamp"] {
         if !fields.contains_key(key) {
             return Err("import-unsupported-schema");
         }
+    }
+    // Correlation identity: v2 samples carry `id`, the pinned 0.84.3
+    // stream carries `responseId`; one of the two must be present.
+    if !(fields.contains_key("id") || fields.contains_key("responseId")) {
+        return Err("import-unsupported-schema");
     }
     if !fields.get("provider").is_some_and(|v| v.is_string())
         || !fields.get("model").is_some_and(|v| v.is_string())
     {
         return Err("import-unsupported-schema");
     }
+    // `toolUse` is the tool-call termination the pinned stream emits on
+    // intermediate assistant turns; the terminal turn still carries one
+    // of the text terminations.
     if !matches!(
         fields.get("stopReason").and_then(|v| v.as_str()),
-        Some("stop" | "length" | "error" | "aborted")
+        Some("stop" | "length" | "error" | "aborted" | "toolUse")
     ) {
         return Err("import-unsupported-schema");
     }
