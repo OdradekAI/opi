@@ -1443,8 +1443,7 @@ receipt = {
 }
 with open(f"{out}/upload-receipt.json", "w", encoding="utf-8") as f:
     json.dump(receipt, f, indent=2, sort_keys=True)
-    f.write("
-")
+    f.write("\n")
 UPEOF
   write_receipt "$out" record-upload-identity \
     "$(python3 -c 'import json,sys; print(json.dumps({"artifact_id": sys.argv[1], "expires": True}))' "$artifact_id")"
