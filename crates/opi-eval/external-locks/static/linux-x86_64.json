@@ -207,10 +207,10 @@
       "id": "pier",
       "kind": "pier",
       "version": "v0.3.1",
-      "commit": "df89f994623a0a6a57229103b6fe910766693c30",
+      "commit": "c1ebc6d145b40fae8425215e3fca528945065124",
       "uv_lock": {
-        "git_blob": "c479fa26584b198250f4ebba68aac8941ebe158d",
-        "sha256": "6261c632e80ee65e327c23f450c7cc5c38e34f2ee941d3ebe96ff72fc91f6de9"
+        "git_blob": "762c6e2c3410021edefe50ce93d9a5d341821b50",
+        "sha256": "0983c4376bb818a984b80badd28886c204c78875e0112387efb03af401ad86c0"
       }
     }
   ],

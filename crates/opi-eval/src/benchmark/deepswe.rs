@@ -648,6 +648,29 @@ mod tests {
             Some(0),
             "the lock pins DeepSWE by tree identity; a byte table would be unregistered bytes"
         );
+
+        // The Pier runner pin lives in the lock's tools table while the
+        // profile restates it; both sources must agree exactly, or the
+        // producer fetches a different runner than admission pinned.
+        let tool = &lock["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == "pier")
+            .unwrap();
+        assert_eq!(
+            tool["commit"].as_str().unwrap(),
+            profile.runner_commit,
+            "the static lock and the profile pin different Pier commits"
+        );
+        assert_eq!(
+            tool["uv_lock"]["git_blob"].as_str().unwrap(),
+            profile.runner_uv_lock_blob
+        );
+        assert_eq!(
+            tool["uv_lock"]["sha256"].as_str().unwrap(),
+            profile.runner_uv_lock_sha256
+        );
     }
 
     #[test]
