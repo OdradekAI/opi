@@ -925,7 +925,9 @@ for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
     # Pier's lock resolves under CPython 3.12 (>=3.12 declared, but the
     # locked resolution drifts under 3.13 and --locked refuses); uv
     # provisions the pinned interpreter itself.
-    python_pin = "--python 3.12" if runner == "pier" else ""
+    # UV_PYTHON is a global uv setting, so the adapter's exact argv
+    # stays untouched while the pinned interpreter still resolves.
+    python_pin = "UV_PYTHON=3.12" if runner == "pier" else "UV_PYTHON="
     # uv resolves the locked environment from the runner checkout, and
     # its --project/--directory handling moves the working directory
     # there; harbor then writes its jobs tree relative to that cwd. The
@@ -940,7 +942,8 @@ for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
 # resolve the working directory through pwd before entering the checkout.
 orig=$(pwd)
 cd "{runner_home}"
-{uv} {python_pin} "$@"
+export {python_pin}
+"{uv}" "$@"
 rc=$?
 newest=$(ls -1d jobs/*/ 2>/dev/null | LC_ALL=C sort | tail -1)
 if [ -n "$newest" ]; then
@@ -960,7 +963,8 @@ exit $rc
 # resolve the working directory through pwd before entering the checkout.
 orig=$(pwd)
 cd "{runner_home}"
-{uv} {python_pin} "$@"
+export {python_pin}
+"{uv}" "$@"
 rc=$?
 newest=$(ls -1d jobs/*/ 2>/dev/null | LC_ALL=C sort | tail -1)
 if [ -n "$newest" ]; then
