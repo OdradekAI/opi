@@ -20,9 +20,9 @@ adapter = "opi-eval-deepswe-adapter/1"
 [verifier]
 runner_kind = "pier"
 runner_version = "v0.3.1"
-runner_commit = "df89f994623a0a6a57229103b6fe910766693c30"
-runner_uv_lock_blob = "c479fa26584b198250f4ebba68aac8941ebe158d"
-runner_uv_lock_sha256 = "6261c632e80ee65e327c23f450c7cc5c38e34f2ee941d3ebe96ff72fc91f6de9"
+runner_commit = "c1ebc6d145b40fae8425215e3fca528945065124"
+runner_uv_lock_blob = "762c6e2c3410021edefe50ce93d9a5d341821b50"
+runner_uv_lock_sha256 = "0983c4376bb818a984b80badd28886c204c78875e0112387efb03af401ad86c0"
 launch = ["run", "<task-dir>"]
 lifecycle = "separate-pristine-verifier"
 network = "none"

@@ -243,7 +243,7 @@ and pristine verifier path.
 | Runner | Source/version | Source commit | Lock input | SHA-256 |
 |---|---|---|---|---|
 | Harbor | `v0.22.0` | [`4407eb5227a2ff4f0d3f16b2eb48849382fdf276`](https://github.com/harbor-framework/harbor/releases/tag/v0.22.0) | `uv.lock` Git blob `1c3995feda2d52cbf822a7d378294065bfd64e09` | `bfc3b39202ec3a04a379a2ff9a8c887c1cd55a5cdf3e7ede7f0d657d35a4d95a` |
-| Pier | `v0.3.1` | [`df89f994623a0a6a57229103b6fe910766693c30`](https://github.com/datacurve-ai/pier/commit/df89f994623a0a6a57229103b6fe910766693c30) | `uv.lock` Git blob `c479fa26584b198250f4ebba68aac8941ebe158d` | `6261c632e80ee65e327c23f450c7cc5c38e34f2ee941d3ebe96ff72fc91f6de9` |
+| Pier | `v0.3.1` | [`c1ebc6d145b40fae8425215e3fca528945065124`](https://github.com/datacurve-ai/pier/commit/c1ebc6d145b40fae8425215e3fca528945065124) | `uv.lock` Git blob `762c6e2c3410021edefe50ce93d9a5d341821b50` | `0983c4376bb818a984b80badd28886c204c78875e0112387efb03af401ad86c0` |
 
 Run each tool from an exact checkout with `uv run --locked`; do not install
 `harbor`, `datacurve-pier`, or their transitive dependencies from unconstrained
@@ -251,6 +251,15 @@ PyPI resolution. Pin uv `0.9.7`; its official Linux x86_64 GNU archive digest is
 `b26fcc8dfa1c39b5a5613445af3be3eefda45d9a39359bee271eafe34913583e`
 ([official release](https://github.com/astral-sh/uv/releases/tag/0.9.7)).
 
+Pier's `v0.3.1` release commit (`df89f994623a0a6a57229103b6fe910766693c30`,
+the tag target) ships a stale `uv.lock`: its `pyproject.toml` declares
+`0.3.1` while the lock still records `datacurve-pier 0.3.0`, so
+`uv run --locked` refuses to resolve it under any uv version. The pin is
+therefore `c1ebc6d145b40fae8425215e3fca528945065124` — the first
+self-consistent descendant, which regenerates the root package to `0.3.1`
+— while the source version stays `v0.3.1` (task 18.15 revision, reproduced
+against the exact checkout under uv 0.9.7 and 0.12.7 with a closed
+environment).
 Harbor's immutable 0.22 documentation confirms local execution with
 `harbor run -p <path>` and that separate verifiers receive only declared
 artifacts at their original paths. See
@@ -258,7 +267,7 @@ artifacts at their original paths. See
 and
 [`tasks/index.mdx`](https://github.com/harbor-framework/harbor/blob/4407eb5227a2ff4f0d3f16b2eb48849382fdf276/docs/content/docs/tasks/index.mdx).
 Pier 0.3.1 documents local task paths and Docker execution in its immutable
-[`README.md`](https://github.com/datacurve-ai/pier/blob/df89f994623a0a6a57229103b6fe910766693c30/README.md).
+[`README.md`](https://github.com/datacurve-ai/pier/blob/c1ebc6d145b40fae8425215e3fca528945065124/README.md).
 
 ### 3.5 Image locks and build-produced images
 

@@ -922,9 +922,9 @@ for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
     if not (runner_home / "uv.lock").is_file():
         raise SystemExit(
             f"materialize-configs: {runner} checkout is missing uv.lock")
-    # Pier's lock resolves under CPython 3.12 (>=3.12 declared, but the
-    # locked resolution drifts under 3.13 and --locked refuses); uv
-    # provisions the pinned interpreter itself.
+    # Pin the interpreter deterministically: every green run of the
+    # locked Pier environment resolved under CPython 3.12, and the
+    # runner's default selection drifted to 3.13 without a pin.
     # UV_PYTHON is a global uv setting, so the adapter's exact argv
     # stays untouched while the pinned interpreter still resolves.
     python_pin = "UV_PYTHON=3.12" if runner == "pier" else "UV_PYTHON="

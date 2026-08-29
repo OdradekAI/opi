@@ -86,11 +86,7 @@ jobs:
       - name: Install the pinned uv
         uses: astral-sh/setup-uv@b75a909f75acd358c2196fb9a5f1299a9a8868a4 # v6.7.0
         with:
-          # The pinned runner sources carry revision-3 uv locks; uv 0.9.7
-          # cannot resolve pier's and newer uv re-resolves both. 0.12.7
-          # resolves harbor and pier exactly as locked (verified locally
-          # against both checkouts).
-          version: 0.12.7
+          version: 0.9.7
           enable-cache: false
 
       - name: Set up the pinned Docker Buildx

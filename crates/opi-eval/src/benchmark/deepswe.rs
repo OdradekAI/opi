@@ -604,20 +604,22 @@ mod tests {
             profile.package_manifest_sha256
         );
         assert_eq!(profile.output_kind, OutputKind::UnpinnedPending1815);
-        // The pinned Pier closure: v0.3.1 exact, with its committed
-        // uv.lock blob and digest.
+        // The pinned Pier closure: v0.3.1 source with its committed
+        // uv.lock blob and digest, taken at the first self-consistent
+        // descendant of the v0.3.1 release commit (whose shipped lock
+        // still recorded the previous root package version).
         assert_eq!(profile.runner_version, "v0.3.1");
         assert_eq!(
             profile.runner_commit,
-            "df89f994623a0a6a57229103b6fe910766693c30"
+            "c1ebc6d145b40fae8425215e3fca528945065124"
         );
         assert_eq!(
             profile.runner_uv_lock_blob,
-            "c479fa26584b198250f4ebba68aac8941ebe158d"
+            "762c6e2c3410021edefe50ce93d9a5d341821b50"
         );
         assert_eq!(
             profile.runner_uv_lock_sha256,
-            "6261c632e80ee65e327c23f450c7cc5c38e34f2ee941d3ebe96ff72fc91f6de9"
+            "0983c4376bb818a984b80badd28886c204c78875e0112387efb03af401ad86c0"
         );
         assert_eq!(profile.launch, vec!["run", "<task-dir>"]);
         assert_eq!((profile.cpus, profile.memory_gib), (2, 8));
