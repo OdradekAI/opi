@@ -621,7 +621,7 @@ mod tests {
             profile.runner_uv_lock_sha256,
             "0983c4376bb818a984b80badd28886c204c78875e0112387efb03af401ad86c0"
         );
-        assert_eq!(profile.launch, vec!["run", "<task-dir>"]);
+        assert_eq!(profile.launch, vec!["run", "-p", "<task-dir>"]);
         assert_eq!((profile.cpus, profile.memory_gib), (2, 8));
 
         let lock: serde_json::Value = serde_json::from_slice(&read(
@@ -859,8 +859,8 @@ mod tests {
         // Launch template drift: two placeholders, or none.
         assert!(matches!(
             reparse(&text.replace(
-                "launch = [\"run\", \"<task-dir>\"]",
-                "launch = [\"run\", \"<task-dir>\", \"<extra>\"]"
+                "launch = [\"run\", \"-p\", \"<task-dir>\"]",
+                "launch = [\"run\", \"-p\", \"<task-dir>\", \"<extra>\"]"
             )),
             Err(TbProfileError::Drift(_))
         ));
@@ -997,8 +997,8 @@ impl BenchmarkAdapter for DeepSweAdapter {
         // unconstrained PyPI; argv[0] is the resolved uv executable, never
         // an ambient PATH lookup. The pristine no-network collected-patch
         // lifecycle is Pier's own, pinned in the profile and not normalized
-        // away here. The launch argv itself is a structural pin pending
-        // task 18.15's re-pin against the pinned README and Pier CLI.
+        // away here. The launch argv is re-pinned against the pinned Pier
+        // CLI: `pier run --path/-p <dir>`, no positional task path.
         let mut argv: Vec<std::ffi::OsString> = vec![
             request.verifier_executable.clone().into(),
             "run".into(),
@@ -1311,6 +1311,7 @@ mod adapter_tests {
                 "--locked".into(),
                 "pier".into(),
                 "run".into(),
+                "-p".into(),
                 fixture_path("task-package"),
             ]
         );

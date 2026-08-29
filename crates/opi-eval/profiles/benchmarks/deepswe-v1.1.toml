@@ -25,15 +25,15 @@ adapter = "opi-eval-deepswe-adapter/1"
 # DeepSWE's pinned instruction selects Pier (newer than 0.3.0) for patch
 # collection and the pristine separate verifier; the lock records the exact
 # Pier uv.lock blob and digest so `uv run --locked` resolves only that
-# closure. The launch argv below is a structural pin: no Pier CLI text is
-# committed as evidence yet, and production admission fails closed before
-# any spawn; task 18.15 re-pins it against the pinned README and Pier CLI.
+# closure. The launch argv is re-pinned against the pinned Pier CLI
+# (`pier run --path/-p <dir>`; the CLI takes no positional task path),
+# verified against the pinned checkout's own --help output.
 runner_kind = "pier"
 runner_version = "v0.3.1"
 runner_commit = "c1ebc6d145b40fae8425215e3fca528945065124"
 runner_uv_lock_blob = "762c6e2c3410021edefe50ce93d9a5d341821b50"
 runner_uv_lock_sha256 = "0983c4376bb818a984b80badd28886c204c78875e0112387efb03af401ad86c0"
-launch = ["run", "<task-dir>"]
+launch = ["run", "-p", "<task-dir>"]
 # The mutable agent worktree is never graded directly: the declared
 # collected patch is graded in a pristine verifier environment with no
 # network. The final verifier image is a run-produced 18.15 slot.
