@@ -1350,10 +1350,14 @@ canary = json.loads(
     (stage / "06-canaries" / "canary-preflight.json").read_text("utf-8"))
 if not canary["negative_result_observed"]:
     raise SystemExit("seal-upload: canary preflight was not negative")
-# Sorted SHA-256 manifest over the sealed stage content.
+# Sorted SHA-256 manifest over the sealed stage content. Symbolic
+# links (the runner venv's python shims) are sealed as tar link
+# entries, not byte payloads: hashing their targets here would pin
+# bytes the archive cannot carry, and an offline reader would see
+# every link as a missing file.
 manifest = {}
 for path in sorted(stage.rglob("*")):
-    if path.is_file():
+    if path.is_file() and not path.is_symlink():
         manifest[str(path.relative_to(stage))] = hashlib.sha256(
             path.read_bytes()).hexdigest()
 with open(out / "artifact-manifest.json", "w", encoding="utf-8") as f:
@@ -1411,15 +1415,13 @@ cmd_record_upload_identity() {
     && [ -n "$retention_days" ] && [ -n "$out" ] \
     || die "record-upload-identity: all arguments are required"
   # The receipt binds the uploaded artifact identity to the sealed
-  # artifact digest recorded by the seal stage; it never hashes itself
+  # manifest digest recorded by the seal stage; it never hashes itself
   # (no self-reference) and derives its expiry from the retention window.
-  sealed_sha=$(python3 -c '
-import json, sys
-print(json.load(open(sys.argv[1], encoding="utf-8"))["sealed_artifact_sha256"])' \
-    "$seal_out/receipt.json")
+  sealed_manifest_sha=$(sha256sum "$seal_out/artifact-manifest.json" | cut -d' ' -f1)
   seal_receipt_sha=$(sha256sum "$seal_out/outer-receipt.json" | cut -d' ' -f1)
   python3 - "$out" "$artifact_id" "$artifact_url" "$artifact_digest" \
-    "$run_id" "$run_url" "$retention_days" "$sealed_sha" "$seal_receipt_sha" <<'UPEOF'
+    "$run_id" "$run_url" "$retention_days" "$sealed_manifest_sha" \
+    "$seal_receipt_sha" <<'UPEOF'
 import datetime, json, sys
 
 (out, artifact_id, artifact_url, artifact_digest, run_id, run_url,
