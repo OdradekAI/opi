@@ -88,15 +88,10 @@ pub(crate) enum HarborResultError {
     Invalid(&'static str),
 }
 
-/// Locates the newest `jobs/<timestamp>/result.json` under `trace_root`
-/// and derives the aggregate metrics from the single trial's verifier
-/// rewards. Per-test counters stay typed unknowns: the harbor result
-/// exposes only the reward aggregate, and nothing is inferred beyond it.
-pub(crate) fn import_harbor_result(
-    trace_root: &std::path::Path,
-) -> Result<(NativeMetrics, PathBuf, serde_json::Value), HarborResultError> {
+/// Locates the newest `jobs/<timestamp>/result.json` under `trace_root`.
+fn newest_job_result(trace_root: &std::path::Path) -> Option<PathBuf> {
     let jobs = trace_root.join("jobs");
-    let entries = std::fs::read_dir(&jobs).map_err(|_| HarborResultError::Missing)?;
+    let entries = std::fs::read_dir(&jobs).ok()?;
     let mut newest: Option<(std::path::PathBuf, std::ffi::OsString)> = None;
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -106,7 +101,17 @@ pub(crate) fn import_harbor_result(
             newest = Some((entry.path().join("result.json"), name));
         }
     }
-    let (path, _) = newest.ok_or(HarborResultError::Missing)?;
+    newest.map(|(path, _)| path)
+}
+
+/// Locates the newest `jobs/<timestamp>/result.json` under `trace_root`
+/// and derives the aggregate metrics from the single trial's verifier
+/// rewards. Per-test counters stay typed unknowns: the harbor result
+/// exposes only the reward aggregate, and nothing is inferred beyond it.
+pub(crate) fn import_harbor_result(
+    trace_root: &std::path::Path,
+) -> Result<(NativeMetrics, PathBuf, serde_json::Value), HarborResultError> {
+    let path = newest_job_result(trace_root).ok_or(HarborResultError::Missing)?;
     let bytes =
         std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
     let value: serde_json::Value = serde_json::from_slice(&bytes)
@@ -172,6 +177,68 @@ pub(crate) fn import_harbor_result(
         other: None,
     };
     Ok((metrics, path, value))
+}
+
+/// Locates the newest `jobs/<timestamp>/result.json` under `trace_root`
+/// and validates it as Pier's job-result aggregate (`pier run -p`, task
+/// 18.15 pin). Unlike the Terminal-Bench aggregate, a DeepSWE job scores
+/// multiple verifier metrics per trial (F2P, P2P, partial, ...), so the
+/// structural contract is validated - one trial, at least one eval,
+/// every metric awarding exactly one reward to exactly that one trial -
+/// while no metric is translated into a test counter; callers keep the
+/// reward semantics unknown instead of guessing an aggregate.
+pub(crate) fn import_pier_job_result(
+    trace_root: &std::path::Path,
+) -> Result<(PathBuf, serde_json::Value), HarborResultError> {
+    let path = newest_job_result(trace_root).ok_or(HarborResultError::Missing)?;
+    let bytes =
+        std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|_| HarborResultError::Invalid("json-parse"))?;
+    if value.get("n_total_trials").and_then(|n| n.as_u64()) != Some(1) {
+        return Err(HarborResultError::Invalid("trial-count"));
+    }
+    let evals = value
+        .get("stats")
+        .and_then(|s| s.get("evals"))
+        .and_then(|e| e.as_object())
+        .ok_or(HarborResultError::Invalid("no-eval-stats"))?;
+    if evals.is_empty() {
+        return Err(HarborResultError::Invalid("eval-count"));
+    }
+    for stats in evals.values() {
+        let reward_stats = stats
+            .get("reward_stats")
+            .and_then(|r| r.as_object())
+            .ok_or(HarborResultError::Invalid("no-reward-stats"))?;
+        if reward_stats.is_empty() {
+            return Err(HarborResultError::Invalid("reward-count"));
+        }
+        // reward_stats nests twice: metric name -> { reward value ->
+        // trial names }. Every metric awards exactly one finite reward
+        // to exactly the one trial; anything else is drift.
+        for by_value in reward_stats.values() {
+            let by_value =
+                by_value.as_object().ok_or(HarborResultError::Invalid("reward-values"))?;
+            if by_value.len() != 1 {
+                return Err(HarborResultError::Invalid("reward-count"));
+            }
+            let (reward_key, trial_names) = by_value.iter().next().expect("len checked");
+            let trial_names = trial_names
+                .as_array()
+                .ok_or(HarborResultError::Invalid("reward-trials"))?;
+            if trial_names.len() != 1 {
+                return Err(HarborResultError::Invalid("reward-trials"));
+            }
+            let reward: f64 = reward_key
+                .parse()
+                .map_err(|_| HarborResultError::Invalid("bad-reward-values"))?;
+            if !reward.is_finite() {
+                return Err(HarborResultError::Invalid("bad-reward-values"));
+            }
+        }
+    }
+    Ok((path, value))
 }
 
 /// Typed failure carried on a settled record. A failed verification run is

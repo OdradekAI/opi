@@ -1060,17 +1060,41 @@ impl BenchmarkAdapter for DeepSweAdapter {
                 );
             }
         }
-        // Exit 0 under an unpinned output schema settles fail-closed: no
-        // DeepSWE native-output schema is committed, so nothing is guessed,
-        // normalized, or fabricated until task 18.15 pins one.
+        // Exit 0: the native-output schema this task pins is Pier's own
+        // `jobs/<timestamp>/result.json` aggregate from
+        // `pier run -p`, exactly as verified at the dispatch. The
+        // aggregate's structure is validated (one trial, per-metric
+        // single reward per trial); the multi-metric DeepSWE reward
+        // semantics are not translated into test counters - every metric
+        // stays unknown rather than guessed.
         if self.profile.output_kind == OutputKind::UnpinnedPending1815 {
-            return (
-                reward_unknown(),
-                BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
-                    kind: "native-output-schema-unpinned",
-                    boundary: FailureBoundaryCode::Adapter,
-                }),
-            );
+            return match super::process::import_pier_job_result(&request.trace_root) {
+                Ok((path, _value)) => (
+                    reward_unknown(),
+                    BenchmarkCompletion::Verified {
+                        metrics: super::process::NativeMetrics {
+                            tests: None,
+                            passed: None,
+                            failed: None,
+                            skipped: None,
+                            pending: None,
+                            other: None,
+                        },
+                        artifacts: vec![NativeArtifact {
+                            role: "native/pier-result".to_owned(),
+                            sha256: sha256_hex(&std::fs::read(&path).unwrap_or_default()),
+                            path,
+                        }],
+                    },
+                ),
+                Err(_) => (
+                    reward_unknown(),
+                    BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
+                        kind: "native-output-invalid",
+                        boundary: FailureBoundaryCode::Adapter,
+                    }),
+                ),
+            };
         }
         // Synthetic wiring path only: import the Pier report the fixture
         // verifier wrote into the run's trace root. The reward is the
@@ -1206,6 +1230,38 @@ mod adapter_tests {
             cleanup: CleanupEvidence::NotRequired,
         }
     }
+
+/// Writes a minimal Pier `jobs/<timestamp>/result.json` aggregate with
+/// the multi-metric reward shape a DeepSWE verifier produces (F2P, P2P,
+/// partial): one trial, one eval, every metric awarding exactly one
+/// reward to exactly that trial.
+fn write_pier_job_result(trace_root: &std::path::Path) {
+    let jobs = trace_root.join("jobs/2026-08-29__07-25-13");
+    std::fs::create_dir_all(&jobs).unwrap();
+    let result = serde_json::json!({
+        "id": "0b6f6c1e-0000-4000-8000-000000000000",
+        "started_at": "2026-08-29T07:23:30Z",
+        "finished_at": "2026-08-29T07:25:13Z",
+        "n_total_trials": 1,
+        "stats": {
+            "n_completed_trials": 1,
+            "evals": {
+                "adhoc": {
+                    "n_trials": 1,
+                    "reward_stats": {
+                        "F2P": { "1.0": ["abs-module-cache-flags"] },
+                        "P2P": { "1.0": ["abs-module-cache-flags"] }
+                    }
+                }
+            }
+        }
+    });
+    std::fs::write(
+        jobs.join("result.json"),
+        serde_json::to_vec_pretty(&result).unwrap(),
+    )
+    .unwrap();
+}
 
     fn write_pier_report(trace_root: &std::path::Path, name: &str) {
         std::fs::copy(
@@ -1395,23 +1451,46 @@ mod adapter_tests {
         let bytes = std::fs::read(&artifacts[0].path).unwrap();
         assert_eq!(artifacts[0].sha256, sha256_hex(&bytes));
 
-        // The production DeepSWE profile has no pinned output schema: even
-        // a byte-perfect pier-report-shaped file settles fail-closed
-        // instead of being guessed at (boundary Adapter: the importer
-        // lacks an admitted schema).
+        // The production DeepSWE profile pins Pier's own job-result
+        // aggregate: a structurally valid multi-metric result settles
+        // Verified with the result file as the content-addressed
+        // artifact, and every metric stays unknown - the multi-metric
+        // reward semantics are never guessed into test counters.
         let production = DeepSweAdapter::from_profile(production_profile());
-        let mut production_request =
-            request_with(&production, fixture_path("task-package"), trace.clone());
+        let native_trace = tempfile::tempdir().unwrap();
+        write_pier_job_result(native_trace.path());
+        let mut production_request = request_with(
+            &production,
+            fixture_path("task-package"),
+            native_trace.path().to_path_buf(),
+        );
         production_request.integrity = integrity_for("v1.1", &production.profile().task_id);
         production_request.task_id = production.profile().task_id.clone();
+        let (reward, completion) =
+            production.settle(&outcome_exit_zero(), &production_request);
+        assert!(matches!(reward, Fact::Unknown { .. }));
+        let BenchmarkCompletion::Verified { metrics, artifacts } = completion else {
+            unreachable!()
+        };
+        assert_eq!(metrics, super::super::process::NativeMetrics::default());
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].role, "native/pier-result");
+        let bytes = std::fs::read(&artifacts[0].path).unwrap();
+        assert_eq!(artifacts[0].sha256, sha256_hex(&bytes));
+
+        // No pier job result anywhere under the trace root: fail closed
+        // (boundary Adapter: the importer cannot admit an output shape).
+        let empty_trace = tempfile::tempdir().unwrap();
+        let mut missing_request = request_with(
+            &production,
+            fixture_path("task-package"),
+            empty_trace.path().to_path_buf(),
+        );
+        missing_request.integrity = integrity_for("v1.1", &production.profile().task_id);
+        missing_request.task_id = production.profile().task_id.clone();
         assert_eq!(
-            production
-                .settle(&outcome_exit_zero(), &production_request)
-                .1,
-            failed(
-                "native-output-schema-unpinned",
-                FailureBoundaryCode::Adapter
-            )
+            production.settle(&outcome_exit_zero(), &missing_request).1,
+            failed("native-output-invalid", FailureBoundaryCode::Adapter)
         );
 
         // Process-level verdicts are authoritative and never rescued.
