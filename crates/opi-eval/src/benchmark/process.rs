@@ -110,7 +110,7 @@ fn newest_job_result(trace_root: &std::path::Path) -> Option<PathBuf> {
 /// exposes only the reward aggregate, and nothing is inferred beyond it.
 pub(crate) fn import_harbor_result(
     trace_root: &std::path::Path,
-) -> Result<(NativeMetrics, PathBuf, serde_json::Value), HarborResultError> {
+) -> Result<(NativeMetrics, Fact, PathBuf, serde_json::Value), HarborResultError> {
     let path = newest_job_result(trace_root).ok_or(HarborResultError::Missing)?;
     let bytes =
         std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
@@ -161,14 +161,21 @@ pub(crate) fn import_harbor_result(
     if !reward.is_finite() {
         return Err(HarborResultError::Invalid("bad-reward-values"));
     }
-    // The Terminal-Bench aggregate convention: the reward value is the
-    // zero-or-one indicator of every test passing. That is the only
-    // counter the aggregate can honestly carry; the rest stay unknown.
-    let all_passed = reward > 0.0;
+    // The aggregate convention: the single `reward` metric is the
+    // verifier-reported integration reward, a zero-or-one value. That
+    // is the only counter the aggregate can honestly carry; the rest
+    // stay unknown.
+    if reward.fract() != 0.0 || !(0.0..=1.0).contains(&reward) {
+        return Err(HarborResultError::Invalid("bad-reward-values"));
+    }
+    let reward_fact = Fact::Known {
+        value: reward as u64,
+        origin: "harbor-result".to_owned(),
+    };
     let metrics = NativeMetrics {
         tests: None,
         passed: Some(Fact::Known {
-            value: u64::from(all_passed),
+            value: reward as u64,
             origin: "harbor-reward".to_owned(),
         }),
         failed: None,
@@ -176,7 +183,7 @@ pub(crate) fn import_harbor_result(
         pending: None,
         other: None,
     };
-    Ok((metrics, path, value))
+    Ok((metrics, reward_fact, path, value))
 }
 
 /// Locates the newest `jobs/<timestamp>/result.json` under `trace_root`
@@ -189,7 +196,7 @@ pub(crate) fn import_harbor_result(
 /// reward semantics unknown instead of guessing an aggregate.
 pub(crate) fn import_pier_job_result(
     trace_root: &std::path::Path,
-) -> Result<(PathBuf, serde_json::Value), HarborResultError> {
+) -> Result<(PathBuf, Fact, serde_json::Value), HarborResultError> {
     let path = newest_job_result(trace_root).ok_or(HarborResultError::Missing)?;
     let bytes =
         std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
@@ -206,18 +213,20 @@ pub(crate) fn import_pier_job_result(
     if evals.is_empty() {
         return Err(HarborResultError::Invalid("eval-count"));
     }
+    // The first eval's aggregate carries the authoritative `reward`
+    // metric (the verifier-reported zero-or-one integration reward);
+    // the remaining keys are score breakdowns the adapter never
+    // translates into test counters.
+    let mut reward_fact: Option<Fact> = None;
     for stats in evals.values() {
         let reward_stats = stats
             .get("reward_stats")
             .and_then(|r| r.as_object())
             .ok_or(HarborResultError::Invalid("no-reward-stats"))?;
-        if reward_stats.is_empty() {
-            return Err(HarborResultError::Invalid("reward-count"));
-        }
         // reward_stats nests twice: metric name -> { reward value ->
         // trial names }. Every metric awards exactly one finite reward
         // to exactly the one trial; anything else is drift.
-        for by_value in reward_stats.values() {
+        for (metric, by_value) in reward_stats {
             let by_value =
                 by_value.as_object().ok_or(HarborResultError::Invalid("reward-values"))?;
             if by_value.len() != 1 {
@@ -233,12 +242,20 @@ pub(crate) fn import_pier_job_result(
             let reward: f64 = reward_key
                 .parse()
                 .map_err(|_| HarborResultError::Invalid("bad-reward-values"))?;
-            if !reward.is_finite() {
+            if !reward.is_finite() || reward.fract() != 0.0 {
                 return Err(HarborResultError::Invalid("bad-reward-values"));
+            }
+            if metric == "reward" {
+                reward_fact = Some(Fact::Known {
+                    value: reward as u64,
+                    origin: "pier-result".to_owned(),
+                });
             }
         }
     }
-    Ok((path, value))
+    let reward_fact = reward_fact
+        .ok_or(HarborResultError::Invalid("no-reward-key"))?;
+    Ok((path, reward_fact, value))
 }
 
 /// Typed failure carried on a settled record. A failed verification run is
@@ -854,7 +871,7 @@ mod tests {
                     "reward_stats": {"reward": {"1.0": ["openssl-selfsigned-cert"]}}}}}}"#,
         )
         .unwrap();
-        let (metrics, path, _value) = import_harbor_result(dir.path()).unwrap();
+        let (metrics, reward, path, _value) = import_harbor_result(dir.path()).unwrap();
         assert!(path.ends_with("result.json"));
         assert_eq!(
             metrics.passed,
@@ -862,6 +879,13 @@ mod tests {
                 value: 1,
                 origin: "harbor-reward".to_owned()
             })
+        );
+        assert_eq!(
+            reward,
+            Fact::Known {
+                value: 1,
+                origin: "harbor-result".to_owned()
+            }
         );
         assert_eq!(metrics.tests, None);
     }

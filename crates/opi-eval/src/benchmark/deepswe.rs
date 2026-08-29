@@ -1069,8 +1069,8 @@ impl BenchmarkAdapter for DeepSweAdapter {
         // stays unknown rather than guessed.
         if self.profile.output_kind == OutputKind::UnpinnedPending1815 {
             return match super::process::import_pier_job_result(&request.trace_root) {
-                Ok((path, _value)) => (
-                    reward_unknown(),
+                Ok((path, reward, _value)) => (
+                    reward,
                     BenchmarkCompletion::Verified {
                         metrics: super::process::NativeMetrics {
                             tests: None,
@@ -1249,6 +1249,7 @@ fn write_pier_job_result(trace_root: &std::path::Path) {
                 "adhoc": {
                     "n_trials": 1,
                     "reward_stats": {
+                        "reward": { "1": ["abs-module-cache-flags"] },
                         "F2P": { "1.0": ["abs-module-cache-flags"] },
                         "P2P": { "1.0": ["abs-module-cache-flags"] }
                     }
@@ -1468,7 +1469,13 @@ fn write_pier_job_result(trace_root: &std::path::Path) {
         production_request.task_id = production.profile().task_id.clone();
         let (reward, completion) =
             production.settle(&outcome_exit_zero(), &production_request);
-        assert!(matches!(reward, Fact::Unknown { .. }));
+        assert_eq!(
+            reward,
+            Fact::Known {
+                value: 1,
+                origin: "pier-result".to_owned()
+            }
+        );
         let BenchmarkCompletion::Verified { metrics, artifacts } = completion else {
             unreachable!()
         };

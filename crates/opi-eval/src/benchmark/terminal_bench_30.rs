@@ -1019,8 +1019,8 @@ impl BenchmarkAdapter for TerminalBench30Adapter {
         // normalized beyond that aggregate.
         if self.profile.output_kind == OutputKind::UnpinnedPending1815 {
             return match super::process::import_harbor_result(&request.trace_root) {
-                Ok((metrics, path, _value)) => (
-                    reward_unknown(),
+                Ok((metrics, reward, path, _value)) => (
+                    reward,
                     BenchmarkCompletion::Verified {
                         metrics,
                         artifacts: vec![NativeArtifact {
