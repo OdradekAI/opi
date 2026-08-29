@@ -1241,19 +1241,19 @@ cmd_oracle_preflight() {
 
 
 cmd_run_trials() {
-  experiment_root=""; out=""; material=""; canary_out=""
+  config_root=""; out=""; material=""; canary_out=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --experiment-root) experiment_root=$2; shift 2 ;;
+      --config-root) config_root=$2; shift 2 ;;
       --material) material=$2; shift 2 ;;
       --canary-out) canary_out=$2; shift 2 ;;
       --out) out=$2; shift 2 ;;
       *) die "run-trials: unknown argument: $1" ;;
     esac
   done
-  [ -n "$experiment_root" ] && [ -n "$out" ] \
-    || die "run-trials: --experiment-root and --out are required"
-  mkdir -p "$experiment_root"
+  [ -n "$config_root" ] && [ -n "$out" ] \
+    || die "run-trials: --config-root and --out are required"
+  mkdir -p "$out"
   # The canary markers from the preflight stage gate sealing: any oracle
   # marker found in staged agent output blocks the seal (P18-BMK-003).
   canary_args=()
@@ -1286,10 +1286,10 @@ else:
   # experiment config is supplied by the dispatch (task 18.15) and must
   # cover exactly one benchmark with its paired product matrix.
   ran=0
-  for config in "$experiment_root"/*.toml; do
-    [ -e "$config" ] || die "run-trials: no experiment configs in $experiment_root"
+  for config in "$config_root"/*.toml; do
+    [ -e "$config" ] || die "run-trials: no experiment configs in $config_root"
     name=$(basename "$config" .toml)
-    run_root="$experiment_root/$name"
+    run_root="$out/$name"
     if [ -n "$material" ]; then
       "$OPI_EVAL_EXECUTABLE" run --config "$config" --root "$run_root" \
         --fixtures "$REPO_ROOT/crates/opi-eval/tests/fixtures" \

@@ -199,7 +199,7 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/phase18-native-smoke.sh run-trials \
-            --experiment-root "$PHASE18_NATIVE_STAGE/07-trials" \
+            --config-root "$PHASE18_NATIVE_STAGE/06-material" \
             --material "$PHASE18_NATIVE_STAGE/06-material/material.json" \
             --canary-out "$PHASE18_NATIVE_STAGE/06-canaries" \
             --out "$PHASE18_NATIVE_STAGE/07-trials"
