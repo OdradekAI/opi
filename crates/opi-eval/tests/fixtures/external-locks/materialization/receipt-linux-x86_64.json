@@ -1,12 +1,12 @@
 {
   "artifact_name": "phase18-linux-lock-materialization",
-  "candidate_commit": "f4648d90c5c2434cf825c0a0c615ebef9e757ed4",
+  "candidate_commit": "29fb4fdf612a58925e6d36f0c84cfea0c64f8a02",
   "closure": {
     "file_count": 33,
     "manifest_sha256": "f981bb43025cfea4e4c9d65c5ef96c33bc1f50e0c700ab4b682b5b0c11564c3c",
     "total_bytes": 34781256
   },
-  "expires_at": "2026-09-26T08:15:23Z",
+  "expires_at": "2026-09-28T06:04:23Z",
   "images": [
     {
       "config": "sha256:7082de4dab44888b5b5e9c0f9de09b30bc8cd28b329edc6d153fb5ce3dca5f24",
@@ -29,8 +29,8 @@
     "mode": "public"
   },
   "oracle": {
-    "ctrf_sha256": "de0eea3b31a92064821f98ad9741bcbc4b8ea4c5d92019b35bd653b34160318b",
-    "harbor_results_sha256": "6a24333d6ab4c9041d68787c3adfbb77831ce8cf59d6a5ed40fee02a3fe61f86",
+    "ctrf_sha256": "af728868d7b46fe23c5a9f9233eeea4a7ac8b0f2c27b463e68578e4f41c11513",
+    "harbor_results_sha256": "358d5d4875200cd21bcc435c3dc294402606d4bde67455d968bc6cc43a1ac597",
     "reward": 1.0,
     "status": "passed"
   },
@@ -45,20 +45,20 @@
       "sha256": "70750cc9d59c34d8ace8a0cf311d42fd9e9a1eb3884891d85bd0b7c0be439b92"
     }
   ],
-  "resolved_at": "2026-08-27T08:15:23Z",
+  "resolved_at": "2026-08-29T06:04:23Z",
   "run": {
     "attempt": 1,
-    "id": 33053090976
+    "id": 33237527520
   },
   "schema": "phase18-materialization-receipt/1",
   "static_lock": {
     "path": "crates/opi-eval/external-locks/static/linux-x86_64.json",
-    "sha256": "95b7dd29db75f4341bc4530248518021cdb1765a88e9c3c0c4d2f551b8bdcb86"
+    "sha256": "a52e90daa3985c85175de6fdd70f054d8cde0ae81070d3a648c3c2236cb12855"
   },
   "workflow": {
     "bytes_sha256": "e986410e45543a69d8723b796a9932c2a3a45862b5f535915edd6b17162671c1",
     "path": ".github/workflows/phase18-lock-materialization.yml",
-    "ref": "OdradekAI/opi/.github/workflows/phase18-lock-materialization.yml@refs/heads/main",
-    "sha": "825e0d036859cb0258869569719b54a8beb729f6"
+    "ref": "OdradekAI/opi/.github/workflows/phase18-lock-materialization.yml@refs/heads/codex/phase18-pier-repin",
+    "sha": "29fb4fdf612a58925e6d36f0c84cfea0c64f8a02"
   }
 }

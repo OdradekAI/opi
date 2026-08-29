@@ -2136,9 +2136,9 @@ mod tests {
             // deterministic instant strictly before the recorded artifact
             // expiry, so admission never depends on wall-clock state.
             let admitted = static_lock
-                .admit(&resolved_bytes, "2026-08-27T08:15:23Z")
+                .admit(&resolved_bytes, "2026-08-29T06:04:23Z")
                 .expect("committed resolved Linux lock admits");
-            assert_eq!(admitted.expires_at(), "2026-09-26T08:15:23Z");
+            assert_eq!(admitted.expires_at(), "2026-09-28T06:04:23Z");
             assert_eq!(
                 admitted.digest(),
                 lf_sha256_hex(&resolved_bytes),
@@ -2156,7 +2156,7 @@ mod tests {
             assert_eq!(receipt["run"]["id"], lock["run"]["id"]);
             assert_eq!(
                 receipt["candidate_commit"],
-                serde_json::json!("f4648d90c5c2434cf825c0a0c615ebef9e757ed4")
+                serde_json::json!("29fb4fdf612a58925e6d36f0c84cfea0c64f8a02")
             );
             assert_eq!(
                 receipt["closure"]["manifest_sha256"],

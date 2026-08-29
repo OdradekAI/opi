@@ -1,10 +1,10 @@
 {
   "artifact": {
-    "digest": "sha256:7b07baba586d289cff2e6f517b5fa852cfeb981ccf7c47981527cae633a7f173",
-    "expires_at": "2026-09-26T08:15:23Z",
-    "id": 9638477224,
+    "digest": "sha256:2fa4ab29523bb236778909589e87a64edc49b68dd59e415a2f65844d05756b8b",
+    "expires_at": "2026-09-28T06:04:23Z",
+    "id": 9710374304,
     "name": "phase18-linux-lock-materialization",
-    "url": "https://api.github.com/repos/OdradekAI/opi/actions/artifacts/9638477224/zip"
+    "url": "https://api.github.com/repos/OdradekAI/opi/actions/artifacts/9710374304/zip"
   },
   "authority": {
     "admission": "digest"
@@ -68,7 +68,7 @@
   ],
   "lock_id": "phase18-linux-x86_64",
   "oracle": {
-    "ctrf_sha256": "de0eea3b31a92064821f98ad9741bcbc4b8ea4c5d92019b35bd653b34160318b",
+    "ctrf_sha256": "af728868d7b46fe23c5a9f9233eeea4a7ac8b0f2c27b463e68578e4f41c11513",
     "reward": 1.0,
     "status": "passed"
   },
@@ -98,7 +98,7 @@
     },
     {
       "id": "harbor-effective-config",
-      "identity": "6a24333d6ab4c9041d68787c3adfbb77831ce8cf59d6a5ed40fee02a3fe61f86"
+      "identity": "358d5d4875200cd21bcc435c3dc294402606d4bde67455d968bc6cc43a1ac597"
     },
     {
       "id": "docker-network-evidence",
@@ -106,24 +106,24 @@
     },
     {
       "id": "oracle-preflight",
-      "identity": "de0eea3b31a92064821f98ad9741bcbc4b8ea4c5d92019b35bd653b34160318b"
+      "identity": "af728868d7b46fe23c5a9f9233eeea4a7ac8b0f2c27b463e68578e4f41c11513"
     }
   ],
-  "resolved_at": "2026-08-27T08:15:23Z",
+  "resolved_at": "2026-08-29T06:04:23Z",
   "resolved_by_task": "18.3",
   "run": {
     "attempt": 1,
-    "id": 33053090976
+    "id": 33237527520
   },
   "schema": "phase18-external-lock/resolved/1",
   "static_lock": {
     "path": "crates/opi-eval/external-locks/static/linux-x86_64.json",
-    "sha256": "95b7dd29db75f4341bc4530248518021cdb1765a88e9c3c0c4d2f551b8bdcb86"
+    "sha256": "a52e90daa3985c85175de6fdd70f054d8cde0ae81070d3a648c3c2236cb12855"
   },
   "workflow": {
     "bytes_sha256": "e986410e45543a69d8723b796a9932c2a3a45862b5f535915edd6b17162671c1",
     "path": ".github/workflows/phase18-lock-materialization.yml",
-    "ref": "refs/heads/main",
-    "sha": "825e0d036859cb0258869569719b54a8beb729f6"
+    "ref": "refs/heads/codex/phase18-pier-repin",
+    "sha": "29fb4fdf612a58925e6d36f0c84cfea0c64f8a02"
   }
 }
