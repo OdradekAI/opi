@@ -9,6 +9,9 @@
 //! hermetic fixture-grade offline path only (task 18.15 owns the native
 //! rerun).
 
+// Hermetic Phase 18 runs stage posix-sh helpers; the native execution
+// surface is Linux (see the phase18 native smoke workflow).
+#![cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

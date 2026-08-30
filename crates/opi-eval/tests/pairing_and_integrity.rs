@@ -8,6 +8,9 @@
 //! the never-rewrite guarantees on prior evidence and trial identities.
 //! Hermetic fixture-grade only - no real agent, verifier, or provider.
 
+// Hermetic Phase 18 runs stage posix-sh helpers; the native execution
+// surface is Linux (see the phase18 native smoke workflow).
+#![cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

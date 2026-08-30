@@ -158,6 +158,7 @@ fn paired_report_contract_end_to_end() {
 /// `P18-EXP-006` / `P18-RPT-004`: exclusions and missing sides stay in the
 /// coverage denominator with their exact reason; the report still
 /// publishes with the run outcome visible.
+#[cfg(unix)]
 #[test]
 fn exclusions_stay_visible_in_the_coverage_denominator() {
     let root = tempfile::tempdir().unwrap();

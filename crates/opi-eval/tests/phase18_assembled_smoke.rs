@@ -11,6 +11,9 @@
 //! the native rerun). No paid provider, credential, or user-global resource
 //! is touched (`P18-AGT-002`, `P18-AGT-006`).
 
+// Hermetic Phase 18 runs stage posix-sh helpers; the native execution
+// surface is Linux (see the phase18 native smoke workflow).
+#![cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
