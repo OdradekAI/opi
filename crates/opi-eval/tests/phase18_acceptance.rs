@@ -11,7 +11,9 @@
 //! resolve structurally while the admitted set stays un-executed and
 //! provisional (P18-RDM-002).
 
-use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 
 use opi_eval::cli;
@@ -52,7 +54,6 @@ const PRODUCT_CRATES: [&str; 6] = [
     "opi-tui",
 ];
 
-#[cfg(unix)]
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
