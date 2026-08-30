@@ -279,5 +279,127 @@ class ReceiptContract(unittest.TestCase):
         )
 
 
+def terminal_inputs(**overrides) -> dict:
+    """A completed three-platform green run with its downloaded inner
+    receipt, shaped like the real GitHub run/jobs/artifact metadata."""
+    head = "0" * 40
+    merge = "8" * 40
+    run = {
+        "id": 1,
+        "status": "completed",
+        "conclusion": "success",
+        "event": "pull_request",
+        "head_sha": head,
+        "run_attempt": 1,
+        "updated_at": "2026-08-30T10:08:32Z",
+    }
+    jobs = {"jobs": [
+        {"name": display + " (ubuntu-latest)", "conclusion": "success",
+         "head_sha": head}
+        for display in (
+            "docs_contract", "fmt", "clippy", "test",
+            "execution_acceptance", "Phase 17 acceptance", "doctest", "doc",
+            "opi-sandbox package", "Target check", "Phase 18 attestation",
+        )
+    ]}
+    artifacts = {"artifacts": [
+        {"id": 7 + index,
+         "name": f"phase18-attestation-{os_name}-latest",
+         "expired": False, "digest": "sha256:" + "a" * 64,
+         "size_in_bytes": 10}
+        for index, os_name in enumerate(
+            ("ubuntu", "windows", "macos"))
+    ]}
+    inner = {
+        "schema": "phase18-ci-attestation/1",
+        "run_id": 1,
+        "run_attempt": 1,
+        "event": "pull_request",
+        "merge_commit": merge,
+        "pull_request_head": head,
+        "workflow_path": ".github/workflows/ci.yml",
+        "workflow_sha256": None,  # filled by the caller fixture
+        "runner_os": "Linux",
+        "required_jobs": list(verifier.REQUIRED_JOBS),
+        "attestation_commit": merge,
+        "_artifact_id": 7,
+        "_artifact_sha256": "sha256:" + "a" * 64,
+    }
+    values = {"run": run, "jobs": jobs, "artifacts": artifacts,
+              "inner": inner}
+    values.update(overrides)
+    return values
+
+
+class TerminalMode(unittest.TestCase):
+    """The post-terminal verifier binds or rejects, never self-claims."""
+
+    def run_terminal(self, values: dict, head: str = "0" * 40) -> list[str]:
+        """Run verify_terminal with the workflow bytes staged in a temp
+        repo; on success the bound receipt must be status=verified."""
+        import copy
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as repo:
+            workflow = Path(repo) / ".github" / "workflows" / "ci.yml"
+            workflow.parent.mkdir(parents=True)
+            workflow.write_bytes(b"workflow-bytes")
+            values["inner"]["workflow_sha256"] = hashlib.sha256(
+                b"workflow-bytes").hexdigest()
+            findings, receipt = verifier.verify_terminal(
+                head, values["run"], values["jobs"], values["artifacts"],
+                copy.deepcopy(values["inner"]), Path(repo),
+            )
+            if not findings:
+                self.assertIsNotNone(receipt)
+                self.assertEqual(receipt["status"], "verified")
+            return findings
+
+    def test_green_run_binds(self) -> None:
+        self.assertEqual([], self.run_terminal(terminal_inputs()))
+
+    def test_failed_job_is_rejected(self) -> None:
+        values = terminal_inputs()
+        values["jobs"]["jobs"][0]["conclusion"] = "failure"
+        self.assertTrue(any("not every job succeeded" in row
+                            for row in self.run_terminal(values)))
+
+    def test_skipped_job_is_rejected(self) -> None:
+        values = terminal_inputs()
+        values["jobs"]["jobs"][0]["conclusion"] = "skipped"
+        self.assertTrue(any("not every job succeeded" in row
+                            for row in self.run_terminal(values)))
+
+    def test_head_mismatch_is_rejected(self) -> None:
+        self.assertTrue(any("run head" in row
+                            for row in self.run_terminal(
+                                terminal_inputs(), head="1" * 40)))
+
+    def test_expired_artifact_is_rejected(self) -> None:
+        values = terminal_inputs()
+        values["artifacts"]["artifacts"][0]["expired"] = True
+        self.assertTrue(any("expired" in row
+                            for row in self.run_terminal(values)))
+
+    def test_digest_drift_is_rejected(self) -> None:
+        values = terminal_inputs()
+        values["inner"]["_artifact_sha256"] = "sha256:" + "0" * 64
+        self.assertTrue(any("downloaded artifact bytes" in row
+                            for row in self.run_terminal(values)))
+
+    def test_fork_only_push_event_is_rejected(self) -> None:
+        values = terminal_inputs()
+        values["run"]["event"] = "push"
+        self.assertTrue(any("pull_request event" in row
+                            for row in self.run_terminal(values)))
+
+    def test_head_only_merge_identity_is_rejected(self) -> None:
+        values = terminal_inputs()
+        values["inner"]["merge_commit"] = "0" * 40
+        values["inner"]["attestation_commit"] = "0" * 40
+        self.assertTrue(any("head-only semantics" in row
+                            for row in self.run_terminal(values)))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

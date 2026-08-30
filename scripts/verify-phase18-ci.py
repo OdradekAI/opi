@@ -22,6 +22,11 @@ same identity contract.
 Usage:
   python scripts/verify-phase18-ci.py --workflow .github/workflows/ci.yml
   python scripts/verify-phase18-ci.py --receipt <downloaded-receipt.json>
+  python scripts/verify-phase18-ci.py --terminal --expected-head <sha> \
+      --run-metadata <github-run.json> --jobs-metadata <github-jobs.json> \
+      --artifact-metadata <github-artifact.json> \
+      --inner-receipt <downloaded-inner-receipt.json> \
+      --output docs/snapshots/phase18/ci-receipt.json
 
 Exit 0 accepts; exit 1 prints one `finding <family>` line per violation.
 """
@@ -75,6 +80,23 @@ HEAD_ONLY_RE = re.compile(
 
 RUNNER_OSES = {"Linux", "Windows", "macOS"}
 EVENTS = {"push", "pull_request"}
+
+# The runner reports the workflow's display names; map them back to the
+# job keys whose set the receipt contract freezes. Sourced from
+# .github/workflows/ci.yml's `name:` fields.
+DISPLAY_TO_KEY = {
+    "docs_contract": "docs_contract",
+    "fmt": "fmt",
+    "clippy": "clippy",
+    "test": "test",
+    "execution_acceptance": "execution_acceptance",
+    "Phase 17 acceptance": "phase17_acceptance",
+    "doctest": "doctest",
+    "doc": "doc",
+    "opi-sandbox package": "sandbox_package",
+    "Target check": "target_check",
+    "Phase 18 attestation": "phase18_attestation",
+}
 
 
 def verify_workflow_static(text: str) -> list[str]:
@@ -229,11 +251,222 @@ def verify_receipt_file(path: Path) -> list[str]:
     return rows
 
 
+TERMINAL_SCHEMA = "phase18-ci-terminal-receipt/1"
+RUN_CONCLUSIONS_OK = {"success"}
+JOB_CONCLUSIONS_OK = {"success"}
+
+
+def verify_terminal(
+    expected_head: str,
+    run: dict,
+    jobs: dict,
+    artifacts: dict,
+    inner: dict,
+    workflow_root: Path,
+) -> tuple[list[str], dict | None]:
+    """Bind the completed three-platform run to one durable receipt.
+
+    Rejects missing, skipped, failed, cancelled, mismatched, expired,
+    fork-only, and self-claimed evidence. The returned receipt is
+    redacted: identities, digests, conclusions, and expiry only.
+    """
+    rows: list[str] = []
+
+    def reject(family: str, detail: str) -> None:
+        rows.append(f"finding {family}: {detail}")
+
+    if not COMMIT_RE.match(expected_head):
+        return [f"finding terminal: --expected-head must be a 40-hex commit: "
+                f"{expected_head!r}"], None
+
+    # Run metadata: completed, successful, same-event PR run bound to the
+    # expected candidate head. A fork-only or push run never qualifies.
+    if run.get("status") != "completed":
+        reject("run", f"the run is not completed: {run.get('status')!r}")
+    if run.get("conclusion") not in RUN_CONCLUSIONS_OK:
+        reject("run", f"the run conclusion is {run.get('conclusion')!r}")
+    event = run.get("event")
+    if event != "pull_request":
+        reject("run", f"a terminal receipt requires a pull_request event, "
+                      f"got {event!r}")
+    head_sha = run.get("head_sha", "")
+    if head_sha != expected_head:
+        reject("run", f"run head {head_sha[:12]} != expected "
+                      f"{expected_head[:12]}")
+
+    # Every job succeeded on its merge-ref checkout.
+    job_rows = jobs.get("jobs") or []
+    if not job_rows:
+        reject("jobs", "the jobs metadata carries no jobs")
+    bad: list[str] = []
+    for job in job_rows:
+        name = job.get("name", "<unnamed>")
+        conclusion = job.get("conclusion")
+        if conclusion not in JOB_CONCLUSIONS_OK:
+            bad.append(f"{name}={conclusion}")
+    if bad:
+        reject("jobs", "not every job succeeded: " + ", ".join(bad))
+    families = {DISPLAY_TO_KEY.get(str(row.get("name", "")).split(" (")[0])
+                 for row in job_rows}
+    missing = [job for job in REQUIRED_JOBS if job not in families]
+    if missing:
+        reject("jobs", f"required job families missing: {missing}")
+    # On pull_request events every job's head_sha is the pull-request head:
+    # one consistent identity, equal to the run's head_sha.
+    heads = {str(job.get("head_sha", "")) for job in job_rows}
+    checkout_identities = sorted(h for h in heads if COMMIT_RE.match(h))
+    if event == "pull_request":
+        if len(checkout_identities) != 1:
+            reject("jobs", "pull_request jobs must share one head identity, "
+                           f"found {checkout_identities}")
+        elif checkout_identities[0] != expected_head:
+            reject("jobs", "job head identity drifts from the expected head")
+
+    # Artifact metadata: the attestation uploads exist and none expired.
+    artifact_rows = artifacts.get("artifacts") or []
+    attestation_artifacts = [row for row in artifact_rows
+                             if str(row.get("name", "")).startswith(
+                                 "phase18-attestation-")]
+    if len(attestation_artifacts) != len(RUNNER_OSES):
+        reject("artifact", "expected one attestation artifact per platform, "
+                           f"found {len(attestation_artifacts)}")
+    for row in attestation_artifacts:
+        if row.get("expired"):
+            reject("artifact", f"attestation artifact {row.get('id')} expired")
+        digest = str(row.get("digest") or "")
+        if not SHA256_RE.match(digest.removeprefix("sha256:")):
+            reject("artifact", f"attestation artifact {row.get('id')} "
+                               f"carries no sha256 digest")
+
+    # The downloaded inner receipt: it must verify on its own and agree
+    # with the run metadata (no self-claimed identity drift).
+    inner_id = inner.get("_artifact_id")
+    matched = [row for row in attestation_artifacts
+               if row.get("id") == inner_id]
+    if not matched:
+        reject("inner", "the inner receipt's artifact is missing from the "
+                        "run's artifact metadata")
+    artifact = matched[0] if matched else {}
+    if inner.get("run_id") != run.get("id"):
+        reject("inner", "inner receipt run_id drifts from the run metadata")
+    if inner.get("event") != event:
+        reject("inner", "inner receipt event drifts from the run metadata")
+    inner_merge = str(inner.get("merge_commit") or "")
+    if not COMMIT_RE.match(inner_merge):
+        reject("inner", "inner receipt merge commit must be a 40-hex commit")
+    elif event == "pull_request" and inner_merge == expected_head:
+        reject("inner", "the inner merge commit equals the pull-request head "
+                        "(head-only semantics, not a merge-ref checkout)")
+    inner_head = inner.get("pull_request_head")
+    if event == "pull_request" and inner_head != expected_head:
+        reject("inner", "inner receipt head drifts from the expected head")
+    inner_digest = inner.get("workflow_sha256")
+    workflow_path = inner.get("workflow_path", ".github/workflows/ci.yml")
+    workflow_file = workflow_root / workflow_path
+    try:
+        actual_digest = __import__("hashlib").sha256(
+            workflow_file.read_bytes()).hexdigest()
+    except OSError as error:
+        actual_digest = ""
+        reject("inner", f"cannot read the workflow bytes: {error}")
+    if inner_digest != actual_digest:
+        reject("inner", "inner receipt workflow digest does not match the "
+                        "candidate workflow bytes")
+    if inner.get("required_jobs") != list(REQUIRED_JOBS):
+        reject("inner", "inner receipt required-job set drifted")
+    downloaded_digest = str(inner.get("_artifact_sha256") or "")
+    if downloaded_digest != str(artifact.get("digest") or ""):
+        reject("inner", "the downloaded artifact bytes do not match the "
+                        "uploaded digest (single-stream download required)")
+
+    if rows:
+        return rows, None
+
+    receipt = {
+        "schema": TERMINAL_SCHEMA,
+        "status": "verified",
+        "run_id": run.get("id"),
+        "run_attempt": run.get("run_attempt"),
+        "event": event,
+        "workflow_path": workflow_path,
+        "workflow_sha256": actual_digest,
+        "candidate_head": expected_head,
+        "pull_request_head": inner_head,
+        "checkout_identities": checkout_identities + [inner_merge],
+        "inner": {
+            "schema": inner.get("schema"),
+            "runner_os": inner.get("runner_os"),
+            "workflow_sha256": inner_digest,
+            "attestation_commit": inner.get("attestation_commit"),
+        },
+        "artifact": {
+            "id": artifact.get("id"),
+            "name": artifact.get("name"),
+            "digest": artifact.get("digest"),
+            "download_verified": downloaded_digest == str(
+                artifact.get("digest") or ""),
+            "size_in_bytes": artifact.get("size_in_bytes"),
+            "expires_at": artifact.get("expires_at"),
+        },
+        "conclusions": {
+            "run": run.get("conclusion"),
+            "jobs_total": len(job_rows),
+            "jobs_all_success": not bad,
+            "required_jobs": list(REQUIRED_JOBS),
+        },
+        "updated_at": run.get("updated_at"),
+    }
+    return [], receipt
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--workflow")
     parser.add_argument("--receipt")
+    parser.add_argument("--terminal", action="store_true")
+    parser.add_argument("--expected-head")
+    parser.add_argument("--run-metadata")
+    parser.add_argument("--jobs-metadata")
+    parser.add_argument("--artifact-metadata")
+    parser.add_argument("--inner-receipt")
+    parser.add_argument("--output")
+    parser.add_argument("--repo", default=".")
     args = parser.parse_args(argv)
+
+    if args.terminal:
+        wanted = [args.expected_head, args.run_metadata, args.jobs_metadata,
+                  args.artifact_metadata, args.inner_receipt, args.output]
+        if not all(wanted):
+            parser.error("--terminal requires --expected-head, --run-metadata,"
+                         " --jobs-metadata, --artifact-metadata, "
+                         "--inner-receipt, and --output")
+        try:
+            run = json.loads(Path(args.run_metadata).read_text(encoding="utf-8"))
+            jobs = json.loads(Path(args.jobs_metadata).read_text(encoding="utf-8"))
+            artifacts = json.loads(
+                Path(args.artifact_metadata).read_text(encoding="utf-8"))
+            inner = json.loads(
+                Path(args.inner_receipt).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            print(f"finding terminal: unreadable metadata: {error}",
+                  file=sys.stderr)
+            return 1
+        rows, receipt = verify_terminal(
+            args.expected_head, run, jobs, artifacts, inner,
+            Path(args.repo),
+        )
+        if rows or receipt is None:
+            for row in rows:
+                print(row, file=sys.stderr)
+            return 1
+        out = Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(f"phase18-ci terminal receipt: wrote {out}")
+        return 0
 
     if bool(args.workflow) == bool(args.receipt):
         parser.error("exactly one of --workflow or --receipt is required")
