@@ -738,7 +738,11 @@ mod tests {
             &crate_root().join("profiles/benchmarks/deepswe-v1.1.toml"),
         ))
         .unwrap();
-        assert!(production.admit_task_package(&fixture("task-package")).is_err());
+        assert!(
+            production
+                .admit_task_package(&fixture("task-package"))
+                .is_err()
+        );
     }
 
     fn copy_package(source: &Path, target: &Path) {
@@ -1231,38 +1235,38 @@ mod adapter_tests {
         }
     }
 
-/// Writes a minimal Pier `jobs/<timestamp>/result.json` aggregate with
-/// the multi-metric reward shape a DeepSWE verifier produces (F2P, P2P,
-/// partial): one trial, one eval, every metric awarding exactly one
-/// reward to exactly that trial.
-fn write_pier_job_result(trace_root: &std::path::Path) {
-    let jobs = trace_root.join("jobs/2026-08-29__07-25-13");
-    std::fs::create_dir_all(&jobs).unwrap();
-    let result = serde_json::json!({
-        "id": "0b6f6c1e-0000-4000-8000-000000000000",
-        "started_at": "2026-08-29T07:23:30Z",
-        "finished_at": "2026-08-29T07:25:13Z",
-        "n_total_trials": 1,
-        "stats": {
-            "n_completed_trials": 1,
-            "evals": {
-                "adhoc": {
-                    "n_trials": 1,
-                    "reward_stats": {
-                        "reward": { "1": ["abs-module-cache-flags"] },
-                        "F2P": { "1.0": ["abs-module-cache-flags"] },
-                        "P2P": { "1.0": ["abs-module-cache-flags"] }
+    /// Writes a minimal Pier `jobs/<timestamp>/result.json` aggregate with
+    /// the multi-metric reward shape a DeepSWE verifier produces (F2P, P2P,
+    /// partial): one trial, one eval, every metric awarding exactly one
+    /// reward to exactly that trial.
+    fn write_pier_job_result(trace_root: &std::path::Path) {
+        let jobs = trace_root.join("jobs/2026-08-29__07-25-13");
+        std::fs::create_dir_all(&jobs).unwrap();
+        let result = serde_json::json!({
+            "id": "0b6f6c1e-0000-4000-8000-000000000000",
+            "started_at": "2026-08-29T07:23:30Z",
+            "finished_at": "2026-08-29T07:25:13Z",
+            "n_total_trials": 1,
+            "stats": {
+                "n_completed_trials": 1,
+                "evals": {
+                    "adhoc": {
+                        "n_trials": 1,
+                        "reward_stats": {
+                            "reward": { "1": ["abs-module-cache-flags"] },
+                            "F2P": { "1.0": ["abs-module-cache-flags"] },
+                            "P2P": { "1.0": ["abs-module-cache-flags"] }
+                        }
                     }
                 }
             }
-        }
-    });
-    std::fs::write(
-        jobs.join("result.json"),
-        serde_json::to_vec_pretty(&result).unwrap(),
-    )
-    .unwrap();
-}
+        });
+        std::fs::write(
+            jobs.join("result.json"),
+            serde_json::to_vec_pretty(&result).unwrap(),
+        )
+        .unwrap();
+    }
 
     fn write_pier_report(trace_root: &std::path::Path, name: &str) {
         std::fs::copy(
@@ -1467,8 +1471,7 @@ fn write_pier_job_result(trace_root: &std::path::Path) {
         );
         production_request.integrity = integrity_for("v1.1", &production.profile().task_id);
         production_request.task_id = production.profile().task_id.clone();
-        let (reward, completion) =
-            production.settle(&outcome_exit_zero(), &production_request);
+        let (reward, completion) = production.settle(&outcome_exit_zero(), &production_request);
         assert_eq!(
             reward,
             Fact::Known {

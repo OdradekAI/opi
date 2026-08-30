@@ -810,7 +810,10 @@ fn failure_summary(record: &crate::benchmark::process::BenchmarkRecord) -> Strin
     let completion = match &record.completion {
         BenchmarkCompletion::Verified { .. } => "verified".to_owned(),
         BenchmarkCompletion::Failed(failure) => {
-            format!("failed(kind={}, boundary={:?})", failure.kind, failure.boundary)
+            format!(
+                "failed(kind={}, boundary={:?})",
+                failure.kind, failure.boundary
+            )
         }
     };
     let tail = |capture: &crate::process::OutputCapture| {
@@ -878,7 +881,8 @@ async fn run_oracle_preflight(
     if !passing {
         return Err(RunError::Native(format!(
             "oracle preflight for {} did not pass natively: {}",
-            inputs.adapter_key, failure_summary(&record),
+            inputs.adapter_key,
+            failure_summary(&record),
         )));
     }
     let receipt = json!({

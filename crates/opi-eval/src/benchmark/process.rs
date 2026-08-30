@@ -112,10 +112,9 @@ pub(crate) fn import_harbor_result(
     trace_root: &std::path::Path,
 ) -> Result<(NativeMetrics, Fact, PathBuf, serde_json::Value), HarborResultError> {
     let path = newest_job_result(trace_root).ok_or(HarborResultError::Missing)?;
-    let bytes =
-        std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|_| HarborResultError::Invalid("json-parse"))?;
+    let bytes = std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| HarborResultError::Invalid("json-parse"))?;
     // Harbor's completion path writes the job-level result with the
     // trial list excluded (per-trial results live in the trial
     // directories); the aggregate authority here is
@@ -145,13 +144,16 @@ pub(crate) fn import_harbor_result(
     // reward_stats nests twice: metric name -> { reward value -> trial
     // names }. One metric, one value, one trial; anything else is drift.
     let (_metric, by_value) = reward_stats.iter().next().expect("len checked");
-    let by_value = by_value.as_object().ok_or(HarborResultError::Invalid("reward-values"))?;
+    let by_value = by_value
+        .as_object()
+        .ok_or(HarborResultError::Invalid("reward-values"))?;
     if by_value.len() != 1 {
         return Err(HarborResultError::Invalid("reward-count"));
     }
     let (reward_key, trial_names) = by_value.iter().next().expect("len checked");
-    let trial_names =
-        trial_names.as_array().ok_or(HarborResultError::Invalid("reward-trials"))?;
+    let trial_names = trial_names
+        .as_array()
+        .ok_or(HarborResultError::Invalid("reward-trials"))?;
     if trial_names.len() != 1 {
         return Err(HarborResultError::Invalid("reward-trials"));
     }
@@ -198,10 +200,9 @@ pub(crate) fn import_pier_job_result(
     trace_root: &std::path::Path,
 ) -> Result<(PathBuf, Fact, serde_json::Value), HarborResultError> {
     let path = newest_job_result(trace_root).ok_or(HarborResultError::Missing)?;
-    let bytes =
-        std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|_| HarborResultError::Invalid("json-parse"))?;
+    let bytes = std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| HarborResultError::Invalid("json-parse"))?;
     if value.get("n_total_trials").and_then(|n| n.as_u64()) != Some(1) {
         return Err(HarborResultError::Invalid("trial-count"));
     }
@@ -227,8 +228,9 @@ pub(crate) fn import_pier_job_result(
         // trial names }. Every metric awards exactly one finite reward
         // to exactly the one trial; anything else is drift.
         for (metric, by_value) in reward_stats {
-            let by_value =
-                by_value.as_object().ok_or(HarborResultError::Invalid("reward-values"))?;
+            let by_value = by_value
+                .as_object()
+                .ok_or(HarborResultError::Invalid("reward-values"))?;
             if by_value.len() != 1 {
                 return Err(HarborResultError::Invalid("reward-count"));
             }
@@ -253,8 +255,7 @@ pub(crate) fn import_pier_job_result(
             }
         }
     }
-    let reward_fact = reward_fact
-        .ok_or(HarborResultError::Invalid("no-reward-key"))?;
+    let reward_fact = reward_fact.ok_or(HarborResultError::Invalid("no-reward-key"))?;
     Ok((path, reward_fact, value))
 }
 
@@ -858,50 +859,50 @@ mod tests {
     }
 }
 
-    #[test]
-    fn harbor_result_import_reads_the_completion_aggregate() {
-        let dir = tempfile::tempdir().unwrap();
-        let jobs = dir.path().join("jobs").join("2026-08-28__12-33-17");
-        std::fs::create_dir_all(&jobs).unwrap();
-        std::fs::write(
-            jobs.join("result.json"),
-            br#"{"id": "0b0a", "started_at": "2026-08-28T12:33:17Z",
+#[test]
+fn harbor_result_import_reads_the_completion_aggregate() {
+    let dir = tempfile::tempdir().unwrap();
+    let jobs = dir.path().join("jobs").join("2026-08-28__12-33-17");
+    std::fs::create_dir_all(&jobs).unwrap();
+    std::fs::write(
+        jobs.join("result.json"),
+        br#"{"id": "0b0a", "started_at": "2026-08-28T12:33:17Z",
                 "finished_at": "2026-08-28T12:33:50Z", "n_total_trials": 1,
                 "stats": {"evals": {"adhoc/terminal-bench-2-1/oracle": {
                     "reward_stats": {"reward": {"1.0": ["openssl-selfsigned-cert"]}}}}}}"#,
-        )
-        .unwrap();
-        let (metrics, reward, path, _value) = import_harbor_result(dir.path()).unwrap();
-        assert!(path.ends_with("result.json"));
-        assert_eq!(
-            metrics.passed,
-            Some(Fact::Known {
-                value: 1,
-                origin: "harbor-reward".to_owned()
-            })
-        );
-        assert_eq!(
-            reward,
-            Fact::Known {
-                value: 1,
-                origin: "harbor-result".to_owned()
-            }
-        );
-        assert_eq!(metrics.tests, None);
-    }
+    )
+    .unwrap();
+    let (metrics, reward, path, _value) = import_harbor_result(dir.path()).unwrap();
+    assert!(path.ends_with("result.json"));
+    assert_eq!(
+        metrics.passed,
+        Some(Fact::Known {
+            value: 1,
+            origin: "harbor-reward".to_owned()
+        })
+    );
+    assert_eq!(
+        reward,
+        Fact::Known {
+            value: 1,
+            origin: "harbor-result".to_owned()
+        }
+    );
+    assert_eq!(metrics.tests, None);
+}
 
-    #[test]
-    fn harbor_result_import_fails_closed_on_trial_count_drift() {
-        let dir = tempfile::tempdir().unwrap();
-        let jobs = dir.path().join("jobs").join("2026-08-28__12-33-17");
-        std::fs::create_dir_all(&jobs).unwrap();
-        std::fs::write(
-            jobs.join("result.json"),
-            br#"{"n_total_trials": 2, "stats": {"evals": {}}}"#,
-        )
-        .unwrap();
-        assert!(matches!(
-            import_harbor_result(dir.path()),
-            Err(HarborResultError::Invalid("trial-count"))
-        ));
-    }
+#[test]
+fn harbor_result_import_fails_closed_on_trial_count_drift() {
+    let dir = tempfile::tempdir().unwrap();
+    let jobs = dir.path().join("jobs").join("2026-08-28__12-33-17");
+    std::fs::create_dir_all(&jobs).unwrap();
+    std::fs::write(
+        jobs.join("result.json"),
+        br#"{"n_total_trials": 2, "stats": {"evals": {}}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        import_harbor_result(dir.path()),
+        Err(HarborResultError::Invalid("trial-count"))
+    ));
+}
