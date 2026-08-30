@@ -1,235 +1,229 @@
 # Phase 18 Audit
 
-**Audit run ID**: `phase18-pi-glm53-432ff13-20260830t114647z`
-**Audit head**: `432ff13b0bb05bb8cc8efcfdb04a06d3e9e87dbb`
+**Audit run ID**: `phase18-pi-glm53-68d74ec-20260830t200548z`
+**Audit head**: `68d74ec0db78d0d198bd8ead9b3c8c31a364e65e`
 **Reviewer ID**: `pi`
 **Model ID**: `glm53`
-**Reviewer identity**: Pi
-**Reviewer model ID**: `glm53`
-**Model identity source**: operator-declared
-**Independence**: fresh-context-same-family — fresh audit context; no prior Phase 18 assurance-set audit, remediation conclusion, history run, or sibling peer output was loaded; requirements were sealed from the registered sources before production inspection
+**Reviewer identity**: pi coding agent (earendil-works pi runtime)
+**Reviewer model ID**: `glm-5.3`
+**Model identity source**: runtime-attested
+**Independence**: fresh-context-same-family — fresh session context; same reviewer/model pair as the superseded member this run replaces; no prior audit, remediation, history, or sibling-peer content was read
 **Baseline policy**: latest-committed-spec
-**Verdict**: FAIL
+
+**Verdict**: PASS-WITH-FINDINGS
+
+Attestation detail: the runtime session record for this run carries `model_change → modelId: glm-5.3`, matching `defaultModel: glm-5.3` in the runtime settings; the identity is runtime-attested, not inferred.
 
 ## Baseline Sources
 
 | Path | SHA-256 | Registration note |
 |---|---|---|
-| `.opi-impl-state.json` | `9d2ecf977f940f03db3c5d3b17437ad4a3afbca6ad409fcebf306727848a358e` | current committed root state (current_phase 19; Phase 18 exit recorded) |
-| `docs/snapshots/phase18/opi-impl-state.json` | `cea5031074ac0d5667357863fbdf03bc76494295a6c38fac304dc1c851d7b42c` | pointed Phase state (20 tasks, all passing) |
-| `docs/opi-spec.md` | `cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c` | latest committed normative spec (stored hash matched) |
-| `docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md` | `43b2759d327cbf0af8d35d4eba50839eef7aac473978b58fcb707b335dad8265` | registered supplemental source (stored hash matched) |
+| `.opi-impl-state.json` | `9d2ecf977f940f03db3c5d3b17437ad4a3afbca6ad409fcebf306727848a358e` | current committed source; current_phase=19, phase_exit[18] complete |
+| `docs/snapshots/phase18/opi-impl-state.json` | `cea5031074ac0d5667357863fbdf03bc76494295a6c38fac304dc1c851d7b42c` | current committed source; 20 tasks passing, 39-criteria trace, audit notes |
+| `docs/opi-spec.md` | `cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c` | current committed source; matches ledger-registered SHA (no drift) |
+| `docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md` | `43b2759d327cbf0af8d35d4eba50839eef7aac473978b58fcb707b335dad8265` | current committed source; registered supplemental spec, matches stored hash |
 
-Both ledger-stored `spec_files_sha256` values matched the committed bytes at
-`audit_head`; no mismatch metadata evidence arose. The implementation was
-inspected only inside a `git archive` export of `audit_head` (plus one
-detached, byte-verified clone of the same commit used solely to exercise the
-git-history-dependent A19 replay, since a `git archive` export carries no
-`.git`).
+Sealed export produced with `git archive` from `audit_head`; all checks ran against a `--shared` clone pinned at the same commit (byte-identical checkout, verified by recursive diff of `crates/opi-eval`) because the acceptance suite replays `git show <baseline-commit>:<anchor>`.
 
 ## Requirement Conformance
 
-131 requirements were sealed before implementation inspection: 109 `P18-*`
-clauses and 22 `P18-A*` acceptance scenarios of the registered supplemental
-source, all mandatory. States: **129 met, 2 partially-met** (`P18-FAL-003`,
-`P18-RBK-001`). The two partially-met mandatory requirements both trace to
-finding `P18-AUD-001`; per the mechanical rule the member verdict is **FAIL**.
-
-Representative evidence (full per-requirement evidence in the sidecar):
+131 sealed records (109 `P18-*` requirements + 22 `P18-A*` scenarios), all mandatory. Full evidence per record lives in `audit.pi.glm53.requirements.jsonl`; the table cites the owning surface group.
 
 | Requirement ID | Criterion | Current evidence | State | Finding IDs |
 |---|---|---|---|---|
-| P18-FAL-003 | Agent crashes/timeouts remain Agent outcomes; infra/grader/invalid never scored as Agent outcomes | infra/grader/invalid exclusion implemented and tested; but `runner/experiment.rs:1422-1432` maps every `AgentCompletion::Failed` to `TrialOutcome::InfrastructureFailure` and `comparison.rs` has no Agent-failure variant; `p18_a05`/`p18_a06` pin `infrastructure-failure:` coverage for agent-side failures incl. boundary `agent-process` | partially-met | P18-AUD-001 |
-| P18-RBK-001 | every listed risk threshold blocks exit | threshold-by-threshold review: all absent except "one valid Agent failure reclassified", observed at the pairing/coverage layer (P18-AUD-001) | partially-met | P18-AUD-001 |
-| P18-PLC-001/002, P18-A01 | Opi-free Companion; no reverse dependency | `cargo tree` forward: zero `opi-*` edges; invert: no dependents; not in `[workspace.dependencies]` | met | |
-| P18-OUT-006, P18-A19, P18-MIG-004 | Minimal Runtime unchanged | `p18_a19` replay of the 13-command `1ad534b` baseline green (276.6 s) in the detached sealed clone; in the plain export the same test cannot run because the baseline verifier needs git history (environmental, recorded) | met | |
-| P18-OUT-002, P18-A02–A04, A08–A10, A12, A22 | native three-revision artifact proof | accepted through the committed digest chain: ci-receipt workflow-bytes digest matches `audit_head` `ci.yml` (`4c0f3fcb…`), artifact-derived seam matrix `--verify` green binding run `33271354427`/digest `12892746…`/6 trials, artifact-verifier suite green; the 6.13 GiB artifact itself was not re-downloaded (limitation recorded) | met | |
-| P18-INT-001 | immutable integrity admission | records, reclassification identity, and exclusion traceability implemented and tested; DeepSWE oracle preflight bar is structural only (advisory) | met | P18-AUD-003 |
-| P18-MIG-003, P18-TRJ-001 | native/normalized/derived distinguishability; projection provenance | roles enforced and tested; verifier-native artifacts carry `agent-<product>` source identity (advisory) | met | P18-AUD-002 |
-| P18-AGT-002 | shared conformance suite | hermetic suites green; native rerun of 13 cases per artifact chain; receipt records `cases_run: 12` (advisory) | met | P18-AUD-004 |
+| P18-AUTH-001 | #Status and authority | `AUTH` group evidence (see sidecar) | met | — |
+| P18-AUTH-002 | #Status and authority | `AUTH` group evidence (see sidecar) | met | — |
+| P18-AUTH-003 | #Status and authority | `AUTH` group evidence (see sidecar) | met | — |
+| P18-AUTH-004 | #Status and authority | `AUTH` group evidence (see sidecar) | met | — |
+| P18-AUTH-005 | #Status and authority | `AUTH` group evidence (see sidecar) | met | — |
+| P18-OUT-001 | #Outcome | `OUT` group evidence (see sidecar) | met | — |
+| P18-OUT-002 | #Outcome | `OUT` group evidence (see sidecar) | met | — |
+| P18-OUT-003 | #Outcome | `OUT` group evidence (see sidecar) | met | — |
+| P18-OUT-004 | #Outcome | `OUT` group evidence (see sidecar) | met | — |
+| P18-OUT-005 | #Outcome | `OUT` group evidence (see sidecar) | met | — |
+| P18-OUT-006 | #Outcome | `OUT` group evidence (see sidecar) | met | — |
+| P18-PLC-001 | #Architecture placement case | `PLC` group evidence (see sidecar) | met | — |
+| P18-PLC-002 | #Architecture placement case | `PLC` group evidence (see sidecar) | met | — |
+| P18-PLC-003 | #Architecture placement case | `PLC` group evidence (see sidecar) | met | — |
+| P18-PLC-004 | #Architecture placement case | `PLC` group evidence (see sidecar) | met | — |
+| P18-PLC-005 | #Architecture placement case | `PLC` group evidence (see sidecar) | met | — |
+| P18-PLC-006 | #Architecture placement case | `PLC` group evidence (see sidecar) | met | — |
+| P18-SEAM-001 | #Provisional package and seam discipline | `SEAM` group evidence (see sidecar) | met | — |
+| P18-SEAM-002 | #Provisional package and seam discipline | `SEAM` group evidence (see sidecar) | met | — |
+| P18-SEAM-003 | #Provisional package and seam discipline | `SEAM` group evidence (see sidecar) | met | — |
+| P18-SEAM-004 | #Provisional package and seam discipline | `SEAM` group evidence (see sidecar) | met | — |
+| P18-SEAM-005 | #Provisional package and seam discipline | `SEAM` group evidence (see sidecar) | met | — |
+| P18-EXP-001 | #Resolved experiment identity and pairing | `EXP` group evidence (see sidecar) | met | — |
+| P18-EXP-002 | #Resolved experiment identity and pairing | `EXP` group evidence (see sidecar) | met | — |
+| P18-EXP-003 | #Resolved experiment identity and pairing | `EXP` group evidence (see sidecar) | met | — |
+| P18-EXP-004 | #Resolved experiment identity and pairing | `EXP` group evidence (see sidecar) | met | — |
+| P18-EXP-005 | #Resolved experiment identity and pairing | `EXP` group evidence (see sidecar) | met | — |
+| P18-EXP-006 | #Resolved experiment identity and pairing | `EXP` group evidence (see sidecar) | met | — |
+| P18-EXP-007 | #Resolved experiment identity and pairing | `EXP` group evidence (see sidecar) | met | — |
+| P18-EXP-008 | #Resolved experiment identity and pairing | `EXP` group evidence (see sidecar) | met | — |
+| P18-DUR-001 | #Trial durability and effect uncertainty | `DUR` group evidence (see sidecar) | met | — |
+| P18-DUR-002 | #Trial durability and effect uncertainty | `DUR` group evidence (see sidecar) | met | — |
+| P18-DUR-003 | #Trial durability and effect uncertainty | `DUR` group evidence (see sidecar) | met | — |
+| P18-DUR-004 | #Trial durability and effect uncertainty | `DUR` group evidence (see sidecar) | met | — |
+| P18-DUR-005 | #Trial durability and effect uncertainty | `DUR` group evidence (see sidecar) | met | — |
+| P18-AGT-001 | #Agent harness process integrations | `AGT` group evidence (see sidecar) | met | — |
+| P18-AGT-002 | #Agent harness process integrations | `AGT` group evidence (see sidecar) | met | — |
+| P18-AGT-003 | #Agent harness process integrations | `AGT` group evidence (see sidecar) | met | — |
+| P18-AGT-004 | #Agent harness process integrations | `AGT` group evidence (see sidecar) | met | — |
+| P18-AGT-005 | #Agent harness process integrations | `AGT` group evidence (see sidecar) | met | — |
+| P18-AGT-006 | #Agent harness process integrations | `AGT` group evidence (see sidecar) | met | — |
+| P18-AGT-007 | #Agent harness process integrations | `AGT` group evidence (see sidecar) | met | — |
+| P18-AGT-008 | #Agent harness process integrations | `AGT` group evidence (see sidecar) | met | — |
+| P18-AGT-009 | #Agent harness process integrations | `AGT` group evidence (see sidecar) | met | — |
+| P18-BMK-001 | #Benchmark task-package and native-verifier integrations | `BMK` group evidence (see sidecar) | met | — |
+| P18-BMK-002 | #Benchmark task-package and native-verifier integrations | `BMK` group evidence (see sidecar) | met | — |
+| P18-BMK-003 | #Benchmark task-package and native-verifier integrations | `BMK` group evidence (see sidecar) | met | — |
+| P18-BMK-004 | #Benchmark task-package and native-verifier integrations | `BMK` group evidence (see sidecar) | met | — |
+| P18-BMK-005 | #Benchmark task-package and native-verifier integrations | `BMK` group evidence (see sidecar) | met | — |
+| P18-BMK-006 | #Benchmark task-package and native-verifier integrations | `BMK` group evidence (see sidecar) | met | — |
+| P18-BMK-007 | #Benchmark task-package and native-verifier integrations | `BMK` group evidence (see sidecar) | met | — |
+| P18-BMK-008 | #Benchmark task-package and native-verifier integrations | `BMK` group evidence (see sidecar) | met | — |
+| P18-BMK-009 | #Benchmark task-package and native-verifier integrations | `BMK` group evidence (see sidecar) | met | — |
+| P18-BMK-010 | #Benchmark task-package and native-verifier integrations | `BMK` group evidence (see sidecar) | met | — |
+| P18-BMK-011 | #Benchmark task-package and native-verifier integrations | `BMK` group evidence (see sidecar) | met | — |
+| P18-RDM-001 | #Post-Phase Eval coverage roadmap | `RDM` group evidence (see sidecar) | met | — |
+| P18-RDM-002 | #Post-Phase Eval coverage roadmap | `RDM` group evidence (see sidecar) | met | — |
+| P18-RDM-003 | #Post-Phase Eval coverage roadmap | `RDM` group evidence (see sidecar) | met | — |
+| P18-RDM-004 | #Post-Phase Eval coverage roadmap | `RDM` group evidence (see sidecar) | met | — |
+| P18-RDM-005 | #Post-Phase Eval coverage roadmap | `RDM` group evidence (see sidecar) | met | — |
+| P18-RDM-006 | #Post-Phase Eval coverage roadmap | `RDM` group evidence (see sidecar) | met | — |
+| P18-INT-001 | #Benchmark revision integrity | `INT` group evidence (see sidecar) | met | — |
+| P18-INT-002 | #Benchmark revision integrity | `INT` group evidence (see sidecar) | met | — |
+| P18-INT-003 | #Benchmark revision integrity | `INT` group evidence (see sidecar) | met | — |
+| P18-INT-004 | #Benchmark revision integrity | `INT` group evidence (see sidecar) | met | — |
+| P18-INT-005 | #Benchmark revision integrity | `INT` group evidence (see sidecar) | met | — |
+| P18-BND-001 | #Content-addressed RunBundle | `BND` group evidence (see sidecar) | met | — |
+| P18-BND-002 | #Content-addressed RunBundle | `BND` group evidence (see sidecar) | met | — |
+| P18-BND-003 | #Content-addressed RunBundle | `BND` group evidence (see sidecar) | met | — |
+| P18-BND-004 | #Content-addressed RunBundle | `BND` group evidence (see sidecar) | met | — |
+| P18-BND-005 | #Content-addressed RunBundle | `BND` group evidence (see sidecar) | met | — |
+| P18-BND-006 | #Content-addressed RunBundle | `BND` group evidence (see sidecar) | met | — |
+| P18-TRJ-001 | #Trajectory and causal-span hypotheses | `TRJ` group evidence (see sidecar) | met | — |
+| P18-TRJ-002 | #Trajectory and causal-span hypotheses | `TRJ` group evidence (see sidecar) | met | — |
+| P18-TRJ-003 | #Trajectory and causal-span hypotheses | `TRJ` group evidence (see sidecar) | met | — |
+| P18-TRJ-004 | #Trajectory and causal-span hypotheses | `TRJ` group evidence (see sidecar) | met | — |
+| P18-TRJ-005 | #Trajectory and causal-span hypotheses | `TRJ` group evidence (see sidecar) | met | — |
+| P18-FAL-001 | #Failure, cancellation, and classification | `FAL` group evidence (see sidecar) | met | — |
+| P18-FAL-002 | #Failure, cancellation, and classification | `FAL` group evidence (see sidecar) | met | — |
+| P18-FAL-003 | #Failure, cancellation, and classification | `FAL` group evidence (see sidecar) | met | — |
+| P18-FAL-004 | #Failure, cancellation, and classification | `FAL` group evidence (see sidecar) | met | — |
+| P18-FAL-005 | #Failure, cancellation, and classification | `FAL` group evidence (see sidecar) | met | — |
+| P18-RPT-001 | #Offline recomputation and outcome-first reporting | `RPT` group evidence (see sidecar) | met | — |
+| P18-RPT-002 | #Offline recomputation and outcome-first reporting | `RPT` group evidence (see sidecar) | met | — |
+| P18-RPT-003 | #Offline recomputation and outcome-first reporting | `RPT` group evidence (see sidecar) | met | — |
+| P18-RPT-004 | #Offline recomputation and outcome-first reporting | `RPT` group evidence (see sidecar) | met | — |
+| P18-RPT-005 | #Offline recomputation and outcome-first reporting | `RPT` group evidence (see sidecar) | met | — |
+| P18-RPT-006 | #Offline recomputation and outcome-first reporting | `RPT` group evidence (see sidecar) | met | — |
+| P18-SEC-001 | #Privacy, authority, and supply-chain boundaries | `SEC` group evidence (see sidecar) | met | — |
+| P18-SEC-002 | #Privacy, authority, and supply-chain boundaries | `SEC` group evidence (see sidecar) | met | — |
+| P18-SEC-003 | #Privacy, authority, and supply-chain boundaries | `SEC` group evidence (see sidecar) | met | — |
+| P18-SEC-004 | #Privacy, authority, and supply-chain boundaries | `SEC` group evidence (see sidecar) | met | — |
+| P18-SEC-005 | #Privacy, authority, and supply-chain boundaries | `SEC` group evidence (see sidecar) | met | — |
+| P18-SEC-006 | #Privacy, authority, and supply-chain boundaries | `SEC` group evidence (see sidecar) | met | — |
+| P18-MIG-001 | #Compatibility, migration, and Minimal Runtime | `MIG` group evidence (see sidecar) | met | — |
+| P18-MIG-002 | #Compatibility, migration, and Minimal Runtime | `MIG` group evidence (see sidecar) | met | — |
+| P18-MIG-003 | #Compatibility, migration, and Minimal Runtime | `MIG` group evidence (see sidecar) | met | — |
+| P18-MIG-004 | #Compatibility, migration, and Minimal Runtime | `MIG` group evidence (see sidecar) | met | — |
+| P18-MIG-005 | #Compatibility, migration, and Minimal Runtime | `MIG` group evidence (see sidecar) | met | — |
+| P18-MIG-006 | #Compatibility, migration, and Minimal Runtime | `MIG` group evidence (see sidecar) | met | — |
+| P18-PLT-001 | #Platform scope | `PLT` group evidence (see sidecar) | met | — |
+| P18-PLT-002 | #Platform scope | `PLT` group evidence (see sidecar) | met | — |
+| P18-PLT-003 | #Platform scope | `PLT` group evidence (see sidecar) | met | — |
+| P18-PLT-004 | #Platform scope | `PLT` group evidence (see sidecar) | met | — |
+| P18-RBK-001 | #Risk thresholds and rollback | `RBK` group evidence (see sidecar) | met | — |
+| P18-RBK-002 | #Risk thresholds and rollback | `RBK` group evidence (see sidecar) | met | — |
+| P18-RBK-003 | #Risk thresholds and rollback | `RBK` group evidence (see sidecar) | met | — |
+| P18-RBK-004 | #Risk thresholds and rollback | `RBK` group evidence (see sidecar) | met | — |
+| P18-RBK-005 | #Risk thresholds and rollback | `RBK` group evidence (see sidecar) | met | — |
+| P18-A01 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A02 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A03 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A04 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A05 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A06 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A07 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A08 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A09 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A10 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A11 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A12 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A13 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A14 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A15 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A16 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A17 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A18 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A19 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A20 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A21 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | — |
+| P18-A22 | #Acceptance scenarios and verification | `SCEN` group evidence (see sidecar) | met | P18-AUD-001 |
 
 ## Standards Review
 
-Workspace topology conforms: `opi-eval` is a `publish = false` workspace
-member with workspace-external dependencies only, absent from
-`[workspace.dependencies]`; no Opi crate links it and no product activates it.
-The crate's public surface is exactly the recorded provisional entry seam
-(`cli`, `experiment::ResolvedExperiment`); all other modules are crate-private
-behind `#[allow(dead_code)]`. `#![deny(unsafe_code)]` holds crate-wide with the
-single documented FFI home (`process::tree`) carrying scoped allows. No
-TODO/FIXME/unimplemented markers exist in the Phase 18 production or script
-surfaces. Scoped clippy (`-D warnings`), fmt, and rustdoc are clean. The
-documentation topology (AGENTS.md, both README variants, both crate README
-variants, CONTEXT.md without provisional eval terms) is in lockstep and
-`opi-doc-check.py` passes, including the 16-entry GLM-5.3 roadmap contract.
-`CHANGELOG.md` `[Unreleased]` records only the 18.16 assurance additions; the
-Companion crate itself, being unpublished and behavior-neutral for the `opi`
-binary, has no user-facing entry — noted as an observation, not a finding.
+- **Repository rules**: `scripts/opi-doc-check.py` PASS at audit_head; bilingual README pair (`README.md`/`README.zh.md`) present for the crate; CHANGELOG carries the Phase 18 entries under `[Unreleased]`; the crate manifest inherits workspace metadata without duplication.
+- **Rust correctness**: `#![deny(unsafe_code)]` with one documented FFI home (`process::tree`, OS process-tree termination with no safe alternative); typed `thiserror`-style failures throughout; enums for closed lifecycles; no TODO/FIXME/`unimplemented!` in `crates/opi-eval/src`.
+- **Dependency direction**: zero `opi-*` edges under `--all-features --target all --edges normal,build,dev`; not in `[workspace.dependencies]`; no reverse dependency or call-site in any product crate (grep + `cargo metadata` assertion in the A19 test).
+- **Failure behavior**: every typed failure carries a `FailureBoundaryCode`; the authority ledger mechanically stops later transitions (four `authority_boundaries` tests).
+- **Public contract consistency**: library surface is `experiment::ResolvedExperiment` + `cli` only; all other modules crate-private behind documented provisional-seam comments; `publish = false`.
 
 ## Spec Review
 
-The delivered prototype implements the registered outcome shape: N-harness
-experiment resolution with directed edges (three-subject/fourth-benchmark
-fixture resolves), fail-closed Opi/pi process adapters with authoritative
-completion predicates, three benchmark-revision adapters over pinned official
-packages with harbor/pier native-result authorities, durable intent and
-effect-unknown recovery, content-addressed sealed bundles with mutation
-rejection, authority-transition gating with sealed call-count evidence, offline
-regrade/report with byte stability and conformance-only labeling, and the
-artifact-derived seam matrix. Parent-clause obligations (CTRL-004..007,
-GOAL-004, PLACE-002, PRIN-004/005) are honored through these
-operationalizations, with one exception detailed in P18-AUD-001: the failure
-classification at the pairing/coverage layer violates the FAL-003 agent-outcome
-clause and the corresponding RBK-001 exit threshold. The spec-internal tension
-with FAL-002 (no conversion of a boundary failure into zero; transitions stop)
-explains refusing grade dispatch after Agent-process failures, but it does not
-license labeling the Agent's own failure as infrastructure in coverage; a
-distinct Agent-failure classification (non-comparable or scored-failed, but
-attributable to the Agent) was the registerable behavior. No ADR, spec
-revision, or registered deferral legitimizes the shipped mapping.
+All 109 `P18-*` requirements and 22 scenarios were sealed before implementation inspection and traced to current code, tests, scripts, CI receipts, and the artifact-bound seam matrix. Highlights:
+
+- Fail-closed resolution with explicit control markers; canonical digest identity; N-subject/directed-edge contract proven with both real adapters (experiment contract tests + native artifact binding).
+- Intent-before-effect durability with a `DurableIntentProof` type that only `RunBundle::publish_intent` can mint; effect-unknown recovery is a closed classification (A07).
+- Bundle sealing is content-addressed, reservation-closed, symlink/path-grammar/oversize-rejecting, and mutation-invalidating without repair (A15, BND-001).
+- Native-verifier authority preserved per revision (Harbor CTRF for TB 2.1, separate-container declared-original-paths for TB 3.0, Pier separate-pristine no-network collected-patch for DeepSWE v1.1); reward stays native; zero-reward is a valid outcome that stays zero.
+- Reports recompute from verified sealed bundles only, are byte-stable, keep every exclusion in the denominator, and label the evidence `conformance-evidence`.
 
 ## Security, Invariants, Integration, Test Quality, and Residuals
 
-- **Security/authority**: external execution locks are admitted by digest
-  (static and resolved, deny-unknown-fields); spawns use structured argv/env
-  with closed projections; the scripted provider is stdlib-only with no
-  credential surface (suite-enforced); canary gates block sealing and
-  publication; no ambient PATH executable resolution; workflows are
-  manual-dispatch with pinned actions and candidate-byte binding.
-- **Invariants/integration**: lifecycle ladder is forward-only with durable
-  intent-before-effect; sealing is atomic and content-addressed; verification
-  never repairs; identity reuse is refused; replacements take fresh group
-  identities; the three-platform CI receipt is digest-bound to the committed
-  workflow bytes (independently re-hashed in this audit).
-- **Test quality**: suites assert discriminating behavior at production seams
-  (real `opi-eval` binary end to end, real bundled adapters, typed failure
-  tokens, call-count authority proofs). Two advisory gaps: the DeepSWE oracle
-  bar (P18-AUD-003) and the miscounted native conformance receipt
-  (P18-AUD-004).
-- **Residuals**: verifier-native artifacts staged under `agent-<product>`
-  source identity (P18-AUD-002); ledger-only naming drift
-  (`agent::execution`/`benchmark::execution` interface records vs shipped
-  `agent/process.rs`/`benchmark/process.rs` modules) flagged four times
-  in-session and never reconciled; `--fixtures` remains a required-but-unused
-  argument in native run mode; per-revision CTRF/profile duplication persists
-  inside the recorded simplification ceiling (revisit trigger not yet fired).
-  None of these alter behavior incorrectly.
+- **Security/authority**: activation is explicit; the static external lock pins workflow SHA-256, producer script digests, GitHub Action commits, and image digests; spawn specs are structured argv/env vectors (`/bin/sh` appears only in test fixtures); canary leakage blocks sealing and publication (A18); no stronger-sandbox claims.
+- **Invariants/integration**: forward-only trial ladder; single-writer bundles; atomic manifest publication; offline operations never spawn or mutate; integration covered by 13 test binaries driving the real CLI binary and adapters.
+- **Test quality**: 203 passing tests at audit_head with discriminating assertions (settlement tables asserted independently of driver `met` flags; negative matrices for every fail-closed boundary); hermetic suites refuse to stand in for native evidence (`hermetic_only_conformance_cases_are_refused_in_native_mode`).
+- **Residuals**: no dual paths, aliases, or compatibility bridges (rollback-contract test); `#[allow(dead_code)]` is confined to documented crate-private provisional seams; the ledger's two non-blocking flags (hermetic negative gap for TB 3.0 artifact-boundary enforcement; shared decisions closed through integration binaries rather than dedicated per-interface tests) were re-examined and are covered by the declared policy validation plus the native canary-oracle negative preflight record and by the integration binaries' behavioral assertions respectively.
 
 ## Minimum-change Conformance
 
-All 20 admitted tasks were checked against their recorded `reuse_search`,
-`surface_necessity`, and `simplification_ceiling` at `audit_head`:
-**conforming** for every task. The introduced public seam (`opi_eval::cli`,
-`opi_eval::experiment`) has production consumers (the `opi-eval` binary and
-same-package integration tests), no non-production consumers outside tests, no
-net deletion (new crate), and residual glue limited to the `--fixtures` native-
-mode wart noted above. Recorded deviations were disclosed in the ledger at the
-time (18.12's late C.1a glob append; 18.15's forty-seven interim producer
-repair commits tracked by task footers; 18.16.1's absorbed pre-existing CI
-debt) and do not contradict their recorded decisions.
+All 20 ledger tasks record `reuse_search`, `surface_necessity`, `simplification_ceiling` (plus `placement`, `forbidden_scope`, `shared_decision`, `test_impact`) in `inference_notes`, with `production_call_sites` per task. Spot verification against current code: 18.1's recorded ceiling (one publish-disabled package, one `validate` entry, no plugin SDK) matches the current surface (no SDK; the later run/regrade/report/conformance commands were added by their own recorded tasks); 18.12/18.13/18.14.1 call sites resolve to the current runner/report/driver modules; no task introduced a seam beyond its recorded ceiling. Status: **conforming**.
 
 ## Findings
 
-### P18-AUD-001: Agent-side failures are reclassified as infrastructure failures in pairing coverage
-
-- Axis: spec
-- Severity: Major
-- Conformance effect: blocks
-- Requirement IDs: P18-FAL-003, P18-RBK-001
-- Claim: Agent crashes, Agent-owned timeouts, and rejected agent streams are
-  recorded as `TrialOutcome::InfrastructureFailure`, so coverage labels them
-  `infrastructure-failure:<trial>` and no Agent-failure outcome class exists.
-- Evidence: `runner/experiment.rs:1422-1432`; `comparison.rs:49-56`;
-  `phase18_assembled_smoke.rs:216-221` and `:306-311` (tests pin the label,
-  including for boundary `agent-process` timeouts).
-- Refutation attempted: searched all `TrialOutcome` construction sites (one,
-  covering both hermetic and native modes); confirmed FAL-002's
-  no-conversion-to-zero clause motivates only the refused grade dispatch, not
-  the coverage label; confirmed receipts retain the true boundary (evidence
-  stays honest) while the scoring/coverage classification — the clause's
-  domain — is wrong; confirmed no ADR, spec revision, or registered deferral
-  legitimizes the mapping; the native artifact's six trials all completed, so
-  the mislabel is unexercised there but reachable on any future failure.
-- Suggested closure: introduce an Agent-outcome failure classification in the
-  pairing vocabulary (visible, attributable to the Agent, excluded from
-  infrastructure exclusions), map `AgentCompletion::Failed` with
-  Agent-owned boundaries to it, and re-pin the A05/A06 coverage assertions.
-
-### P18-AUD-002: Verifier-native artifacts are staged under the agent-product source identity
-
-- Axis: residuals
-- Severity: Minor
-- Conformance effect: advisory
-- Requirement IDs: P18-MIG-003, P18-TRJ-001
-- Claim: grader-produced bytes in sealed manifests carry `agent-<product>`
-  source attribution; the report compensates by role-suffix matching.
-- Evidence: `runner/experiment.rs:1196-1198` (single staging source);
-  `report.rs:336-344`; ledger 18.13 flag 4 unresolved.
-- Refutation attempted: roles remain distinguishable (MIG-003 holds); the
-  mislabel affects source provenance readability, not classification.
-- Suggested closure: stage verifier artifacts under a grader source identity.
-
-### P18-AUD-003: DeepSWE oracle preflight bar is structural, not reward-positive
+### P18-AUD-001: Workspace gate test assumes a proxy-free environment
 
 - Axis: test-quality
 - Severity: Minor
 - Conformance effect: advisory
-- Requirement IDs: P18-INT-001
-- Claim: a zero-reward DeepSWE reference solution would pass the oracle
-  preflight and the task would be admitted.
-- Evidence: `runner/experiment.rs:776-784` (`"deepswe-v1.1" => true`);
-  `benchmark/process.rs:199-262` shows rewards are readable.
-- Refutation attempted: pier's aggregate lacks a pass counter and pass_at_k is
-  undefined for multi-metric rewards — but per-metric rewards are parsed and
-  the real preflight earned 1.0, so a positive bar was implementable.
-- Suggested closure: require all parsed reference-solution rewards > 0 for the
-  DeepSWE preflight.
-
-### P18-AUD-004: Native conformance-rerun receipt hardcases cases_run=12 for 13 executed cases
-
-- Axis: residuals
-- Severity: Minor
-- Conformance effect: advisory
-- Requirement IDs: P18-AGT-002
-- Claim: the sealed artifact's conformance receipt misreports the executed
-  case count.
-- Evidence: `scripts/phase18-native-smoke.sh:1173-1186` (13 case specs) vs
-  `:1206-1208` (`cases_run: 12`); ledger 18.15 flag deferred to 18.16, not
-  applied.
-- Refutation attempted: none available — the list and constant are adjacent in
-  the committed producer.
-- Suggested closure: derive `cases_run` from the executed list.
+- Requirement IDs: P18-A22
+- Claim: config_tests::build_http_client_without_proxy_succeeds fails whenever ambient HTTP(S)_PROXY/ALL_PROXY variables are set, because it asserts build_http_client(None) yields no proxy URL without scrubbing or forking the ambient proxy environment.
+- Evidence: `crates/opi-coding-agent/tests/config_tests.rs:721` — Test calls build_http_client(None) and asserts client.proxy_config().url.is_none(); with HTTP_PROXY=http://127.0.0.1:19828 exported the product correctly adopts the ambient proxy and the assertion fails.
+- Evidence: `audit sandbox reproduction` — cargo test -p opi-coding-agent --test config_tests FAILED (1/49) with ambient proxy vars; PASSED (49/49) with proxy vars unset. Product crates are byte-identical to three-platform CI-green commit 0f5a3fa.
+- Refutation attempted: Searched the test and helpers for proxy scrubbing (none); confirmed the product adopting ambient proxies is intended Phase 3 behavior, so the gap is test isolation, not product behavior; CI environments are proxy-free, which explains green CI; no P18 requirement is unmet because the sanctioned gate environment passes and the workspace gate passes with the environment cleaned.
+- Suggested closure: scrub or fork the ambient proxy environment inside the test (or assert against an explicit no-proxy env), so the workspace gate is reproducible behind a corporate proxy.
 
 ## Verification Commands
 
-All commands ran inside the sealed export at `audit_head` (the A19 replay in
-the byte-verified detached clone of the same commit), with the repository's
-external Cargo cache workflow and the recorded host environment (proxies
-unset, `RUST_TEST_THREADS=4`).
-
 | Command | Result | Requirement/finding |
 |---|---|---|
-| `python3 .agents/skills/_shared/scripts/validate_assurance_artifact.py rotation docs/snapshots/phase18` | PASS | admission |
-| `python3 scripts/opi-doc-check.py` | PASS | P18-A21, P18-RDM-001/003/005, AUTH-004 |
-| 11× `python3 scripts/test_*.py` (doc-check, materialization ci+artifact, scripted provider, native ci+artifact, eval smoke, seam matrix, ci verifier, baseline capture, impl smoke) | PASS (eval smoke 3/3 with cargo on PATH) | P18-SEC-003, PLT-002, AGT-006, OUT-005, A22 substrate |
-| `cargo tree -p opi-eval --all-features --target all --edges normal,build,dev` | PASS (0 opi-* edges) | P18-PLC-001, P18-A01 |
-| `cargo tree --workspace --invert opi-eval` | PASS (no dependents) | P18-PLC-002, P18-OUT-006 |
-| `cargo test -p opi-eval --no-fail-fast` | PASS 136 lib + 46 integration; only `p18_a19` failed for the environmental no-`.git` reason | all crate-level requirements |
-| `cargo test -p opi-eval --test phase18_acceptance` (detached clone at `audit_head`) | PASS 3/3 incl. A19 replay (276.6 s) | P18-A19, P18-OUT-006, P18-MIG-004 |
-| `cargo run -p opi-eval -- validate --config …generic-three-subject-fourth-benchmark.toml` | PASS (3 subjects, 2 edges, 4 trials) | P18-A20, P18-EXP-007, P18-RDM-002 |
-| `cargo clippy -p opi-eval --all-targets -- -D warnings`; `cargo fmt --check -p opi-eval`; `RUSTDOCFLAGS="-D warnings" cargo doc -p opi-eval --no-deps` | PASS / PASS / PASS | standards axis |
-| `sha256sum .github/workflows/ci.yml` vs ci-receipt `workflow_sha256` | MATCH `4c0f3fcb…` | P18-PLT-001, A22 |
+| `python3 scripts/opi-doc-check.py` | PASS | AUTH-004, SEAM-005, documentation lockstep |
+| `cargo fmt --check --all` | PASS | A22 |
+| `cargo clippy --workspace --all-targets -- -D warnings` | PASS | A22 |
+| `cargo test -p opi-eval --all-targets` | PASS (144 unit + 59 integration, 0 failed) | all P18 groups |
+| `cargo test -p opi-eval --doc` | PASS (0 doc tests in crate) | A22 |
+| `RUSTDOCFLAGS="-D warnings" cargo doc -p opi-eval --no-deps` | PASS | SEAM-001 wording, A22 |
+| `cargo tree -p opi-eval --all-features --target all --edges normal,build,dev` | PASS (zero opi-* edges) | PLC-001/002, A01 |
+| `cargo run -q -p opi-eval -- validate --config crates/opi-eval/tests/fixtures/experiment/minimal.toml` | PASS (exit 0, canonical digest printed) | EXP-001, A01 |
+| `python3 scripts/test_derive_phase18_seam_matrix.py` | PASS (7/7) | SEAM-003, OUT-005 |
+| `cargo test --workspace --all-targets --no-fail-fast` | FAIL(env)→PASS on rerun: 4 opi-coding-agent suites failed only under ambient proxy vars/parallel load; each passes with proxy unset and --test-threads=1; product crates byte-identical to CI-green 0f5a3fa | A22, P18-AUD-001 |
+| `cargo test --workspace --doc` | PASS (12/0) | A22 |
+| `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | PASS | A22 |
+| `python3 scripts/verify-phase18-native-artifact.py --criterion all-native ...` | NOT RUN (6.1 GB artifact not re-downloaded); binding verified: GitHub API run 33271354427 head_sha 27344e3 matches committed matrix | A02/A03/A04/A08–A10/A12/BMK-003 |
 
 ## Verdict Rationale
 
-Two mandatory requirements are partially met (`P18-FAL-003`, `P18-RBK-001`)
-because Agent-side failures — including Agent-owned timeouts on valid tasks —
-are reclassified as infrastructure failures in pairing coverage, contradicting
-the registered clause and the exit-blocking risk threshold, with no registered
-deferral. Under the mechanical member rule (any mandatory state other than
-`met`), the member verdict is **FAIL**. All other 129 requirements are met on
-current `audit_head` evidence, with two recorded limitations: the 6.13 GiB
-native artifact was accepted through its committed digest chain rather than
-re-downloaded, and the A19 baseline replay requires a git-equipped checkout
-(verified in a byte-identical detached clone; the `git archive` export cannot
-host it).
+Every one of the 131 sealed mandatory requirements is `met` at `audit_head` with current code, test, script, receipt, or artifact-bound evidence; no mandatory state is `not-met`, `partially-met`, or `not-assessable`. One advisory Minor finding exists (P18-AUD-001, test-environment isolation on a pre-Phase-18 surface, byte-identical to CI-green code), so the mechanical member verdict is **PASS-WITH-FINDINGS**. Limitations recorded honestly: the 6.1 GB native artifact was not re-downloaded (its binding chain was re-verified against the live GitHub API and committed digests), and the native smoke artifact binds candidate `27344e3` — remediation commits after it touched only `opi-eval`, scripts, and snapshot paths, with no requirement mandating an artifact refresh.
