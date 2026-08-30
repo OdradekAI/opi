@@ -1,0 +1,22 @@
+{
+  "schema_version": 3,
+  "audit_run_id": "phase18-pi-glm53-432ff13-20260830t114647z",
+  "phase": 18,
+  "audit_head": "432ff13b0bb05bb8cc8efcfdb04a06d3e9e87dbb",
+  "reviewer_id": "pi",
+  "reviewer_identity": "Pi",
+  "model_id": "glm53",
+  "reviewer_model_id": "glm53",
+  "model_identity_source": "operator-declared",
+  "independence": "fresh-context-same-family",
+  "baseline_policy": "latest-committed-spec",
+  "baseline_sources": [
+    {"path": ".opi-impl-state.json", "sha256": "9d2ecf977f940f03db3c5d3b17437ad4a3afbca6ad409fcebf306727848a358e"},
+    {"path": "docs/snapshots/phase18/opi-impl-state.json", "sha256": "cea5031074ac0d5667357863fbdf03bc76494295a6c38fac304dc1c851d7b42c"},
+    {"path": "docs/opi-spec.md", "sha256": "cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c"},
+    {"path": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md", "sha256": "43b2759d327cbf0af8d35d4eba50839eef7aac473978b58fcb707b335dad8265"}
+  ],
+  "requirements_sha256": "19fbedadf3b29f461e44ed3915784b4429a06eb76f700002fa28512124b6fd8e",
+  "findings_sha256": "a4c66e4ed4c1465766d75e66bb271bc51042208981507e044e5c511c23046d5b",
+  "verdict": "FAIL"
+}

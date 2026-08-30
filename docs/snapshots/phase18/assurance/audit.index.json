@@ -1,0 +1,22 @@
+{
+  "aggregate_verdict": "FAIL",
+  "members": [
+    {
+      "artifact_stem": "audit.pi.glm53",
+      "audit_head": "432ff13b0bb05bb8cc8efcfdb04a06d3e9e87dbb",
+      "audit_run_id": "phase18-pi-glm53-432ff13-20260830t114647z",
+      "digests": {
+        "findings_sha256": "a4c66e4ed4c1465766d75e66bb271bc51042208981507e044e5c511c23046d5b",
+        "meta_sha256": "eef9ed2eab9de6be893f142f9f4feb34b38aa1945832c948028e1268ce3f8891",
+        "report_sha256": "b89ce1065cc364779cfcc57eb5f641b7c2bad9ce91a4265669f5db6dbb94333d",
+        "requirements_sha256": "19fbedadf3b29f461e44ed3915784b4429a06eb76f700002fa28512124b6fd8e"
+      },
+      "model_id": "glm53",
+      "reviewer_id": "pi",
+      "verdict": "FAIL"
+    }
+  ],
+  "phase": 18,
+  "revision": 1,
+  "schema_version": 2
+}
