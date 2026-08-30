@@ -58,6 +58,7 @@ fn run_case(suite: &str, adapter: &str, case: &str) -> (i32, serde_json::Value, 
 
 /// The pinned per-(adapter, case) settlement truth table. These
 /// expectations are asserted independently of the driver's own `met` flag.
+#[cfg(unix)]
 struct Row {
     adapter: &'static str,
     case: &'static str,
@@ -67,6 +68,7 @@ struct Row {
     exit_state: &'static str,
 }
 
+#[cfg(unix)]
 fn rows() -> Vec<Row> {
     let mut rows = Vec::new();
     for adapter in ["opi", "pi"] {

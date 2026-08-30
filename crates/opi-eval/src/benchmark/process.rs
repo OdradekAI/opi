@@ -511,7 +511,7 @@ mod tests {
 
         fn spawn_spec(&self, _request: &BenchmarkRunRequest) -> SpawnSpec {
             SpawnSpec {
-                argv: vec!["/bin/true".into()],
+                argv: vec!["/usr/bin/true".into()],
                 cwd: None,
                 env: BTreeMap::new(),
                 stdout_cap: 1024,

@@ -590,7 +590,7 @@ mod tests {
 
         // A failing child settles as a plain non-zero exit with captured stderr.
         let missing = dir.path().join("definitely-missing-file");
-        let fail_probe = make_spec(vec!["/usr/bin/cat".into(), missing.clone().into()]);
+        let fail_probe = make_spec(vec!["/bin/cat".into(), missing.clone().into()]);
         let outcome = ProcessSupervisor::run(&fail_probe, &CancellationToken::new()).await;
         assert_eq!(outcome.exit, ExitState::Exited { code: 1 });
         assert!(!outcome.stderr.bytes.is_empty());

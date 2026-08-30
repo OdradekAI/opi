@@ -330,7 +330,7 @@ mod tests {
 
         fn spawn_spec(&self, request: &AgentRunRequest) -> SpawnSpec {
             SpawnSpec {
-                argv: vec!["/bin/true".into()],
+                argv: vec!["/usr/bin/true".into()],
                 cwd: Some(request.workspace.clone()),
                 env: BTreeMap::new(),
                 stdout_cap: 1024,
