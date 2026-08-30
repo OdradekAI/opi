@@ -461,8 +461,22 @@ def census(temp_root: Path) -> list[dict]:
 
 def _read_tree(repo: Path, commit: str) -> dict[str, bytes]:
     """Materialize the commit tree through `git archive` without a checkout."""
+    # Disable line-ending conversion regardless of host config: the
+    # archived tree must reproduce the exact blob bytes the receipt
+    # digests, on every platform (Windows runners default to CRLF).
     proc = subprocess.run(
-        ["git", "-C", str(repo), "archive", "--format=tar", commit],
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "core.autocrlf=false",
+            "-c",
+            "core.eol=lf",
+            "archive",
+            "--format=tar",
+            commit,
+        ],
         capture_output=True,
         check=False,
     )

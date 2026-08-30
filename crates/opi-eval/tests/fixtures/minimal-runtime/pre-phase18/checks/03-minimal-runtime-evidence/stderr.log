@@ -1,2 +1,3 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.56s
-     Running tests/execution_runtime.rs (/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e/debug/deps/execution_runtime-4676eb374d4d31ae)
+   Compiling opi-coding-agent v0.8.1 (/home/luiz/p18-recapture/crates/opi-coding-agent)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.18s
+     Running tests/execution_runtime.rs (target/debug/deps/execution_runtime-4676eb374d4d31ae)

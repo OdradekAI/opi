@@ -2,15 +2,15 @@
   "artifact_audit": {
     "argv": [
       "/usr/bin/python3",
-      "/mnt/d/Luiz/Odradek/opi/scripts/opi-artifact-audit.py",
-      "crates/opi-eval/tests/fixtures/minimal-runtime/pre-phase18",
+      "/home/luiz/p18-recapture/scripts/opi-artifact-audit.py",
+      "/home/luiz/p18-recap-out/pre-phase18",
       "--workspace-root",
-      "/mnt/d/Luiz/Odradek/opi",
+      "/home/luiz/p18-recapture",
       "--json"
     ],
     "exit": 0
   },
-  "captured_at": "2026-08-26T18:38:18+00:00",
+  "captured_at": "2026-08-30T09:07:37+00:00",
   "checks": [
     {
       "argv": [
@@ -27,17 +27,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -48,7 +50,7 @@
       },
       "id": "01",
       "stderr_file": "checks/01-ordinary-cli-io/stderr.log",
-      "stderr_sha256": "a0ec4711331d7de6ab99590cc00843c86c240ac0063d75544a43f8b24dae602b",
+      "stderr_sha256": "36a4f62161cb4fde7d5d60022283ca8ace09c4cc43a0390c59522281a2ffa1d7",
       "stdout_file": "checks/01-ordinary-cli-io/stdout.log",
       "stdout_sha256": "ef6f8f1c36e8529d2f0d51b98f8387c96d3d37973df0a584edd909657958bf10",
       "temp_root_manifest_after": [],
@@ -68,17 +70,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -89,9 +93,9 @@
       },
       "id": "02",
       "stderr_file": "checks/02-minimal-runtime-evidence/stderr.log",
-      "stderr_sha256": "f4565f2b9b7e6c60b5fda010303e6c23215d55549b328db8b75fcb25e42d0dae",
+      "stderr_sha256": "bb4a64be14e3075cb87564e50ed29756da46ecafea95fb8fb769b4eb378fe1e7",
       "stdout_file": "checks/02-minimal-runtime-evidence/stdout.log",
-      "stdout_sha256": "a9177ad8f24a3e7ac10dc58b2f222b15ebae6d28c89e35973d4b69938983873a",
+      "stdout_sha256": "a89cd265435a2d297b32d2b0c3ec57e7cc22c4304642327a74a009680c74b9c1",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -110,17 +114,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -131,9 +137,9 @@
       },
       "id": "03",
       "stderr_file": "checks/03-minimal-runtime-evidence/stderr.log",
-      "stderr_sha256": "8ec3f187466d66da2dce0fc882e5ea61981292d28e3d7376d8fbcd42c4233fae",
+      "stderr_sha256": "deb1ef0ebfbed8aac494acdc651ee94644e517bf03b9629feb505c2eb5be207f",
       "stdout_file": "checks/03-minimal-runtime-evidence/stdout.log",
-      "stdout_sha256": "968259e1a40b2ab86441d3cb4079039f5cc1f6725199e6815c0dd2679b67be3f",
+      "stdout_sha256": "6df5fd92fd25ca6aa2edf87033662a98d46892ebc8e9cdefae18e4fc9deb1308",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -152,17 +158,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -173,9 +181,9 @@
       },
       "id": "04",
       "stderr_file": "checks/04-user-policy/stderr.log",
-      "stderr_sha256": "a57479990cafb84cbba9d458154b64225a99ac28f6436ca9abc7be1b01a5f7a5",
+      "stderr_sha256": "ccab38a32e9ed01aafb5b18ae4a37c47045c1f99581468747f3864895a0fce97",
       "stdout_file": "checks/04-user-policy/stdout.log",
-      "stdout_sha256": "f55d16ef3469abee6d56aa72c1e31b69d6cbc5ee2a10be80c5c109cda41473f9",
+      "stdout_sha256": "c53c01352f99b4a06ba511ee68be60c958d7eb67660016c8b1df42dd9c4cbb9a",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -194,17 +202,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -215,9 +225,9 @@
       },
       "id": "05",
       "stderr_file": "checks/05-minimal-runtime-evidence/stderr.log",
-      "stderr_sha256": "ad9c00171db8358bfaf30d81c49fd15ffd14c72f264d1e015de59029e52933a6",
+      "stderr_sha256": "8d57cb93440d9dc1aa1ab84cc31e0c95f0cede5db02baa0a6f17b7518d305ec7",
       "stdout_file": "checks/05-minimal-runtime-evidence/stdout.log",
-      "stdout_sha256": "50c4ce3b4a088c0a1691b4dc14d77656c1f9f621c4ca2ba27f77967cfcc25bef",
+      "stdout_sha256": "d50b5ceadf3050c16d9f1bd4219d3cbb93765ba012554f74786a4560e578548c",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -236,17 +246,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -257,9 +269,9 @@
       },
       "id": "06",
       "stderr_file": "checks/06-minimal-runtime-evidence/stderr.log",
-      "stderr_sha256": "ecfbea828ab96e6e6524d711c14e60db0e273c20e22ab110e5ec82ef92b63db9",
+      "stderr_sha256": "3b1212eaa37aeff5354aaf1163d8f08f342b347f6ffd6f62cee28af64a4dc4ad",
       "stdout_file": "checks/06-minimal-runtime-evidence/stdout.log",
-      "stdout_sha256": "4f83774e8d3482126f2d8e119b47b091f87ad537873c73348699ffce38602d53",
+      "stdout_sha256": "0e3d0d8d4df6d36c5a671d2b91817af77a7a6f89af5c6c04a33d2afec35a8346",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -278,17 +290,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -299,9 +313,9 @@
       },
       "id": "07",
       "stderr_file": "checks/07-user-policy/stderr.log",
-      "stderr_sha256": "e4819e028356bf107c27b2e2bb2ea535ca4aeaa2e2f647d970405fa2672c544d",
+      "stderr_sha256": "d16c8bb4ebfd6d691093bfa4b574d4891b9fdf6703261450602d465c1f3609b9",
       "stdout_file": "checks/07-user-policy/stdout.log",
-      "stdout_sha256": "35541b5ede5fb0323160e91b2843a77684175b9d914388d0f757bbf500113a80",
+      "stdout_sha256": "6dd7eb5dcfe5ecaa9d43f14d8d6c37b36bff74a639c79ea1838c1fd00cf0b4a1",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -320,17 +334,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -341,9 +357,9 @@
       },
       "id": "08",
       "stderr_file": "checks/08-provider-routing/stderr.log",
-      "stderr_sha256": "9ba8746b148848681c794953bca0ba05d30a41d6a2d19362d6a75f7deac37e55",
+      "stderr_sha256": "41d9b3ed8b866dbde0c7bc5c9b102484ac606ff8333fd657c46c86964e217d83",
       "stdout_file": "checks/08-provider-routing/stdout.log",
-      "stdout_sha256": "dda53f8d9e22f0da512fa66aa0e863379b512850848f8e7575cfd700e453a437",
+      "stdout_sha256": "02e328315a323c554c5c2eef9f1c8514bd32ab0367add78bdb89638ea60d81b1",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -362,17 +378,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -383,9 +401,9 @@
       },
       "id": "09",
       "stderr_file": "checks/09-provider-routing/stderr.log",
-      "stderr_sha256": "74d44c5373a6511c793611274106b86316090fb51f2d3522a5cf6fda2ebdccd9",
+      "stderr_sha256": "a0ce8fc3206c9ed5bfef6d81f1708cb28228e480a5a377ad324b10124f1a4f43",
       "stdout_file": "checks/09-provider-routing/stdout.log",
-      "stdout_sha256": "3ab46fd47d3e3a39a76dd6fc4d055839f57268f68b30193d45e231018b9625f1",
+      "stdout_sha256": "57c20bad235c99d47be7a795d9822fd73a15e944747d4bfcedd9565ae97fa462",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -404,17 +422,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -425,9 +445,9 @@
       },
       "id": "10",
       "stderr_file": "checks/10-tool-behavior/stderr.log",
-      "stderr_sha256": "40426076856eb54a620837fb6a4a4ccf40534eecf7ed84a1ce2732d6039594f3",
+      "stderr_sha256": "a0ce8fc3206c9ed5bfef6d81f1708cb28228e480a5a377ad324b10124f1a4f43",
       "stdout_file": "checks/10-tool-behavior/stdout.log",
-      "stdout_sha256": "673d7b75613fea5f07109082c74d7461b640d1b93d03cec501092fb247b88797",
+      "stdout_sha256": "663d6def0208baec3009fff7a45d19e827b5fdaa1c0ec4f70f5596b37b490f2f",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -446,17 +466,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -467,9 +489,9 @@
       },
       "id": "11",
       "stderr_file": "checks/11-session-persistence/stderr.log",
-      "stderr_sha256": "b29698104454e08894bbec472894ca4594550a7867a666415988a889ec224f2d",
+      "stderr_sha256": "a0ce8fc3206c9ed5bfef6d81f1708cb28228e480a5a377ad324b10124f1a4f43",
       "stdout_file": "checks/11-session-persistence/stdout.log",
-      "stdout_sha256": "12ee4381012d0bc1e9ed65555c5ec81f9a0062c4e14b007231de34cc8a90f363",
+      "stdout_sha256": "2f6dcd2d052cfa8cc21641e1d6a9a79dc9e7d903ced680ff6bba1ca3c3c33333",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -488,17 +510,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -509,9 +533,9 @@
       },
       "id": "12",
       "stderr_file": "checks/12-session-persistence/stderr.log",
-      "stderr_sha256": "d1821ec7d72728921fd4f64f3f124b033f01f597bd44f59fce01d63170ad69e0",
+      "stderr_sha256": "3a4c2149f9be4bfbef9c536fc7120f4934b1c02ef8f577281f726954e071c560",
       "stdout_file": "checks/12-session-persistence/stdout.log",
-      "stdout_sha256": "5a33ae60183a997396549590e16975f328d869f91d2fecaf3cc2db9cb867a572",
+      "stdout_sha256": "cf0a4ba4edc7011d96994195dadbca736b69a33a6276c60da86219448fa9e1b5",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -530,17 +554,19 @@
         "residual_processes": []
       },
       "classification": "pass",
-      "cwd": "/mnt/d/Luiz/Odradek/opi",
+      "cwd": "/home/luiz/p18-recapture",
       "env_projection": {
         "CARGO_HOME": null,
-        "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
         "CI_present": false,
         "HOME_present": true,
         "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
         "RUSTUP_HOME": null,
         "TMPDIR": null,
         "cargo_path": "/home/luiz/.cargo/bin/cargo",
-        "related_names_only": [],
+        "related_names_only": [
+          "RUST_TEST_THREADS"
+        ],
         "rustc_path": "/home/luiz/.cargo/bin/rustc"
       },
       "exit": 0,
@@ -551,9 +577,9 @@
       },
       "id": "13",
       "stderr_file": "checks/13-background-process-cleanup/stderr.log",
-      "stderr_sha256": "74693a2492c1ae24119a7fa82622f9a3a8a2810cb68e6417253acff1eef114f5",
+      "stderr_sha256": "c14c27d1bc56cf9e1f75d3143b36746c5114f6d9b8388bdd9594864f9d3ed4ae",
       "stdout_file": "checks/13-background-process-cleanup/stdout.log",
-      "stdout_sha256": "14a09855f213604d3cd7e5d48ab2217a7db6cb0b503cda702cb94bc6ddab2e4d",
+      "stdout_sha256": "12900acf8b058a3427533651aa262a73c0c12931b9c68860c8380b584a3a145f",
       "temp_root_manifest_after": [],
       "temp_root_manifest_before": [],
       "timed_out": false
@@ -562,19 +588,21 @@
   "commit": "1ad534b73864b7894929feabd7d48104aa0b0c05",
   "environment": {
     "CARGO_HOME": null,
-    "CARGO_TARGET_DIR": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+    "CARGO_TARGET_DIR": "/home/luiz/p18-recapture/target",
     "CI_present": false,
     "HOME_present": true,
     "OPI_CARGO_CACHE_ROOT": "/mnt/e/opi/cargo-targets",
     "RUSTUP_HOME": null,
     "TMPDIR": null,
     "cargo_path": "/home/luiz/.cargo/bin/cargo",
-    "related_names_only": [],
+    "related_names_only": [
+      "RUST_TEST_THREADS"
+    ],
     "rustc_path": "/home/luiz/.cargo/bin/rustc"
   },
   "helper": {
-    "path": "/mnt/d/Luiz/Odradek/opi/scripts/capture-phase18-minimal-runtime-baseline.py",
-    "sha256": "8181736732e5a9b365517567f47ec0c022ff1d178080346d9dc45c7f12688fac"
+    "path": "/home/luiz/p18-recapture/scripts/capture-phase18-minimal-runtime-baseline.py",
+    "sha256": "3580493953a85f875539aa70666a69f6f6c546e8589420847fe1bea89bafdeea"
   },
   "platform": {
     "python": "3.12.3",
@@ -588,7 +616,7 @@
   },
   "status": "ok",
   "test": {
-    "path": "/mnt/d/Luiz/Odradek/opi/scripts/test_capture_phase18_minimal_runtime_baseline.py",
+    "path": "/home/luiz/p18-recapture/scripts/test_capture_phase18_minimal_runtime_baseline.py",
     "sha256": "8c83ba3f343e1fa6fc2fe4af1471a28230b0277345f7531490e7685f4dd83e36"
   },
   "timeout_seconds": 1800,
