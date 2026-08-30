@@ -1162,11 +1162,13 @@ impl BenchmarkAdapter for DeepSweAdapter {
 #[cfg(test)]
 mod adapter_tests {
     use super::*;
+    #[cfg(unix)]
     use crate::benchmark::process::BenchmarkExecution;
     use crate::integrity::{
         IntegrityRecord, IntegrityReview, OraclePreflight, RevisionStatus, TaskClassification,
     };
     use crate::process::{CleanupEvidence, OutputCapture, SpawnReason, SupervisedOutcome};
+    #[cfg(unix)]
     use tokio_util::sync::CancellationToken;
 
     fn fixture_path(relative: &str) -> std::path::PathBuf {

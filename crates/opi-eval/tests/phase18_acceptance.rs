@@ -73,12 +73,34 @@ fn strip_cr(bytes: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Remove ANSI CSI escape sequences (CI-colored cargo progress).
+fn strip_ansi(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == 0x1b && i + 1 < bytes.len() && bytes[i + 1] == b'[' {
+            i += 2;
+            while i < bytes.len() && !(0x40..=0x7e).contains(&bytes[i]) {
+                i += 1;
+            }
+            i += 1;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
 fn normalize_cargo_noise(bytes: &[u8]) -> Vec<u8> {
     // Cargo build progress is environment noise (the baseline was captured
     // on a cold cache), not product behavior: strip status lines and blank
-    // lines so only real diagnostics are compared.
+    // lines so only real diagnostics are compared. CI runners set CI=true,
+    // which makes cargo emit ANSI colors even on a non-tty; strip those
+    // escape sequences first so the status-line filter still matches.
+    let ansi_free: Vec<u8> = strip_ansi(bytes);
     let mut out = Vec::new();
-    for line in bytes.split(|b| *b == b'\n') {
+    for line in ansi_free.split(|b| *b == b'\n') {
         let text = String::from_utf8_lossy(line);
         let trimmed = text.trim_start();
         if trimmed.starts_with("Compiling")
