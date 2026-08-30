@@ -329,9 +329,15 @@ fn p18_a19_ordinary_opi_minimal_runtime_before_after() {
         assert_eq!(
             output.status.code(),
             Some(check.exit),
-            "{} ({}): exit drifted",
+            "{} ({}): exit drifted; replayed stderr tail: {}",
             check.id,
-            check.family
+            check.family,
+            String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .rev()
+                .take(6)
+                .collect::<Vec<_>>()
+                .join(" | ")
         );
 
         // The isolated TMPDIR must be empty afterwards: no background

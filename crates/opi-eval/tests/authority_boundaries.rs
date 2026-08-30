@@ -83,6 +83,7 @@ fn bundle_executed(root: &Path, trial: &str, transition: &str) -> i64 {
 /// Agent-process and evidence failures stop the grade dispatch: zero
 /// verifier executions, while settlement, sealing, and the receipt stay
 /// executable so the failure itself is retained evidence.
+#[cfg(unix)]
 #[test]
 fn p18_fal002_agent_failures_stop_grade_dispatch() {
     for behavior in ["agent-timeout", "agent-missing-terminal"] {
@@ -123,6 +124,7 @@ fn p18_fal002_agent_failures_stop_grade_dispatch() {
 /// stops the report transition mechanically: the bundle never publishes a
 /// manifest and the receipt is never written, with the counts proving the
 /// stopped transitions rather than merely absent files.
+#[cfg(unix)]
 #[test]
 fn p18_fal002_seal_failure_stops_report() {
     let root = tempfile::tempdir().unwrap();
@@ -158,6 +160,7 @@ fn p18_fal002_seal_failure_stops_report() {
 
 /// A grader failure stops the report transition while the sealed bundle
 /// retains the verifier failure evidence.
+#[cfg(unix)]
 #[test]
 fn p18_fal002_grader_failure_stops_report() {
     let root = tempfile::tempdir().unwrap();
