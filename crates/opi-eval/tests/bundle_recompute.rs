@@ -9,18 +9,23 @@
 //! the hermetic fixture-grade offline path only: no real executable or
 //! provider is claimed (task 18.15 owns the native rerun).
 
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::Command;
 
+#[cfg(unix)]
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+#[cfg(unix)]
 fn fixtures_dir() -> PathBuf {
     manifest_dir().join("tests/fixtures")
 }
 
 /// Run one experiment through the real `opi-eval run` binary.
+#[cfg(unix)]
 fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json::Value, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
         .arg("run")
@@ -47,6 +52,7 @@ fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json
 }
 
 /// Invoke one offline subcommand (`regrade` or `report`) against a run root.
+#[cfg(unix)]
 fn invoke(command: &str, args: &[(&str, &std::ffi::OsStr)]) -> (i32, String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_opi-eval"));
     cmd.arg(command);
@@ -62,12 +68,14 @@ fn invoke(command: &str, args: &[(&str, &std::ffi::OsStr)]) -> (i32, String, Str
 }
 
 /// A sealed bundle directory under one run root: `trials/<id>/bundle`.
+#[cfg(unix)]
 fn bundle_dir(root: &Path, trial: &str) -> PathBuf {
     root.join("trials").join(trial).join("bundle")
 }
 
 /// `P18-A15`: a sealed artifact byte change is rejected by verification
 /// without repair, rehash, or manifest mutation.
+#[cfg(unix)]
 #[test]
 fn p18_a15_mutation_rejected() {
     let root = tempfile::tempdir().unwrap();
@@ -138,6 +146,7 @@ fn p18_a15_mutation_rejected() {
 /// Deterministic content digest of a directory tree: sorted relative
 /// paths plus file bytes, hashed in order. Used to prove offline
 /// operations never mutate the run root.
+#[cfg(unix)]
 fn tree_digest(root: &Path) -> String {
     use std::collections::BTreeMap;
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -153,6 +162,7 @@ fn tree_digest(root: &Path) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+#[cfg(unix)]
 fn collect_files(root: &Path, dir: &Path, files: &mut std::collections::BTreeMap<String, Vec<u8>>) {
     for entry in std::fs::read_dir(dir).expect("readable run root") {
         let entry = entry.expect("readable entry");
@@ -175,6 +185,7 @@ fn collect_files(root: &Path, dir: &Path, files: &mut std::collections::BTreeMap
 /// normalized outputs are byte-stable for the same tool identities.
 /// `P18-OUT-004`: a new real execution never reuses the sealed trial
 /// identities, while the report stays reproducible offline.
+#[cfg(unix)]
 #[test]
 fn p18_a17_repeated_offline_operations_are_stable() {
     let root = tempfile::tempdir().unwrap();
