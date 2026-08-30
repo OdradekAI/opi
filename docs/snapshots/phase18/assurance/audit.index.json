@@ -2,6 +2,20 @@
   "aggregate_verdict": "FAIL",
   "members": [
     {
+      "artifact_stem": "audit.codex.gpt56",
+      "audit_head": "dbd984e3b5274f70245707a4480554b92dade8a6",
+      "audit_run_id": "phase18-codex-gpt56-dbd984e-20260830t152407z",
+      "digests": {
+        "findings_sha256": "83e52033f3bd1eb534409ac144f502d5691e33f2d32e7ea282beec571bd06194",
+        "meta_sha256": "dbf9110bba5f29e2d6d6d1cad30a7c049b88520f0d7fcba6b6663b583c446560",
+        "report_sha256": "508dc703a9cc1156034887dbf87e7bc9bba8319605ac6219756f5969adb07719",
+        "requirements_sha256": "f4df7d583a654412a495f72c6b7eea56c68844c4aa544920d89e77f48e2c0bef"
+      },
+      "model_id": "gpt56",
+      "reviewer_id": "codex",
+      "verdict": "FAIL"
+    },
+    {
       "artifact_stem": "audit.pi.glm53",
       "audit_head": "432ff13b0bb05bb8cc8efcfdb04a06d3e9e87dbb",
       "audit_run_id": "phase18-pi-glm53-432ff13-20260830t114647z",
@@ -17,6 +31,6 @@
     }
   ],
   "phase": 18,
-  "revision": 1,
+  "revision": 2,
   "schema_version": 2
 }
