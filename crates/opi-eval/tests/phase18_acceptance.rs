@@ -55,7 +55,8 @@ const PRODUCT_CRATES: [&str; 6] = [
 ];
 
 fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest
         .ancestors()
         .nth(2)
         .expect("crates/opi-eval/tests -> workspace root")
