@@ -7,7 +7,9 @@
 //! evidence failure, no report after a sealing or grader failure. Hermetic
 //! fixture-grade only - no real agent, verifier, or provider.
 
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::Command;
 
 #[cfg(unix)]

@@ -1432,7 +1432,10 @@ async fn phase17_production_tui_targets_two_consecutive_armed_runs() {
     .expect("interactive cancellation driver installs");
 
     tokio::time::timeout(
-        Duration::from_secs(2),
+        // Bounded termination proof, sized for slow CI runners: the
+        // assertion is that two armed cancellations always terminate,
+        // not that they finish inside two seconds.
+        Duration::from_secs(10),
         run_interactive_tui(
             harness,
             MODEL_SPEC.to_owned(),
