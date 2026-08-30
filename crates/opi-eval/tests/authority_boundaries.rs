@@ -10,14 +10,17 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[cfg(unix)]
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+#[cfg(unix)]
 fn fixtures_dir() -> PathBuf {
     manifest_dir().join("tests/fixtures")
 }
 
+#[cfg(unix)]
 fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json::Value, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
         .arg("run")
@@ -43,6 +46,7 @@ fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json
 }
 
 /// Count `transition` executions in one trial's authority map.
+#[cfg(unix)]
 fn executed(trial: &serde_json::Value, transition: &str) -> i64 {
     match &trial["authority"][transition] {
         serde_json::Value::String(state) if state == "executed" => 1,
@@ -52,6 +56,7 @@ fn executed(trial: &serde_json::Value, transition: &str) -> i64 {
 
 /// Read the sealed bundle's authority-ledger artifact and count executions
 /// of `transition` (P18-FAL-002 durable call-count evidence).
+#[cfg(unix)]
 fn bundle_executed(root: &Path, trial: &str, transition: &str) -> i64 {
     let manifest: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(root.join("trials").join(trial).join("bundle/manifest.json"))
