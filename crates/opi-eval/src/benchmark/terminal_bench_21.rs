@@ -913,9 +913,9 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
 #[cfg(test)]
 mod adapter_tests {
     use super::*;
+    use crate::benchmark::process::NativeMetrics;
     #[cfg(unix)]
-    use crate::benchmark::process::BenchmarkExecution;
-    use crate::benchmark::process::{BenchmarkProvenance, NativeMetrics};
+    use crate::benchmark::process::{BenchmarkExecution, BenchmarkProvenance};
     use crate::integrity::{
         IntegrityRecord, IntegrityReview, OraclePreflight, RevisionStatus, TaskClassification,
     };
