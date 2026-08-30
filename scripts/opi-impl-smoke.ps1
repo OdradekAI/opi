@@ -35,20 +35,26 @@ switch ($mode) {
   }
 
   "full" {
+    Write-Host "Checking documentation contract..."
+    python scripts/opi-doc-check.py
+    if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: opi-doc-check"; exit 1 }
     Write-Host "Checking format..."
     cargo fmt --check --all
     if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: cargo fmt --check"; exit 1 }
     Write-Host "Checking clippy (all targets)..."
     cargo clippy --workspace --all-targets -- -D warnings
     if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: clippy"; exit 1 }
+    Write-Host "Running workspace tests..."
+    cargo test --workspace --all-targets
+    if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: cargo test"; exit 1 }
+    Write-Host "Running doc tests..."
+    cargo test --workspace --doc
+    if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: cargo test --doc"; exit 1 }
     Write-Host "Checking rustdoc..."
     $env:RUSTDOCFLAGS = "-D warnings"
     cargo doc --workspace --no-deps
     Remove-Item Env:RUSTDOCFLAGS
     if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: rustdoc"; exit 1 }
-    Write-Host "Running workspace tests..."
-    cargo test --workspace --all-targets
-    if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: cargo test"; exit 1 }
   }
 
   "scoped" {

@@ -4,7 +4,9 @@ set -euo pipefail
 # Parameterized opi-implement mechanical gates.
 #
 # boot:   A.3 format + production lib/bin clippy; no tests or standalone build.
-# full:   workspace-tier D.1; format, all-target clippy, rustdoc, workspace test.
+# full:   workspace-tier D.1 and the authoritative Phase-exit order:
+#         documentation contract, format, all-target clippy, workspace tests,
+#         doc tests, then rustdoc - each exactly once, in that order.
 # scoped: non-workspace D.1; one crate's production targets, rustdoc, and named
 #         test binaries (or lib tests when none are named).
 #
@@ -44,14 +46,18 @@ case "$mode" in
     ;;
 
   full)
+    echo "Checking documentation contract..."
+    python scripts/opi-doc-check.py 2>&1 || { echo "FAIL: opi-doc-check"; exit 1; }
     echo "Checking format..."
     cargo fmt --check --all 2>&1 || { echo "FAIL: cargo fmt --check"; exit 1; }
     echo "Checking clippy (all targets)..."
     cargo clippy --workspace --all-targets -- -D warnings 2>&1 || { echo "FAIL: clippy"; exit 1; }
-    echo "Checking rustdoc..."
-    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps 2>&1 || { echo "FAIL: rustdoc"; exit 1; }
     echo "Running workspace tests..."
     cargo test --workspace --all-targets 2>&1 || { echo "FAIL: cargo test"; exit 1; }
+    echo "Running doc tests..."
+    cargo test --workspace --doc 2>&1 || { echo "FAIL: cargo test --doc"; exit 1; }
+    echo "Checking rustdoc..."
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps 2>&1 || { echo "FAIL: rustdoc"; exit 1; }
     ;;
 
   scoped)

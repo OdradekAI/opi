@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Phase 18 task 18.16: offline seam-evidence derivation
+  (`scripts/derive-phase18-seam-matrix.py`) that consumes the verified
+  18.15 sealed artifact and commits the artifact-derived shared /
+  adapter-private / rejected matrix
+  (`crates/opi-eval/docs/seam-evidence-matrix.md`); local acceptance
+  suites locking ordinary `opi` to the 18.1 commit-bound Minimal Runtime
+  baseline and the generic three-subject/fourth-benchmark experiment
+  shape (`crates/opi-eval/tests/phase18_acceptance.rs`); the rollback
+  contract suite retaining the GLM-5.3 roadmap and Non-goal absence
+  checks (`crates/opi-eval/tests/rollback_contract.rs`); the
+  documentation contract for the retained roadmap
+  (`scripts/opi-doc-check.py`); the CI attestation contract verifier
+  (`scripts/verify-phase18-ci.py`) plus the minimal three-platform
+  pull-request attestation producer in CI that records the pull-request
+  head separately from the merge-ref checkout without replacing any
+  merge-ref integration check; and the single authoritative Phase-exit
+  gate order in the smoke wrappers (documentation contract first,
+  workspace doc tests added, rustdoc last).
+
 ## [0.8.1] - 2026-08-25
 
 ### Breaking Changes

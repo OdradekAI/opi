@@ -10,9 +10,15 @@ Cargo manifests, or generated build artifacts.
 Use for dependency graph changes, cross-crate integration harnesses, and tasks
 whose primary crate is `workspace` or `cross-crate`.
 
-Gate: `scripts/opi-impl-smoke.sh full` (or `.ps1 full` on Windows). It runs
-format, all-target clippy, rustdoc, and the workspace test exactly once. There
-is no preceding `cargo build --workspace` and no D.3 rerun.
+Gate: `scripts/opi-impl-smoke.sh full` (or `.ps1 full` on Windows). It is the
+single authoritative Phase-exit order and runs each gate exactly once in this
+order: `python scripts/opi-doc-check.py`, `cargo fmt --check --all`,
+`cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --all-targets`, `cargo test --workspace --doc`, then
+`RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`. Cross-platform
+parity, the exact order, and exactly-once occurrence are pinned by
+`python scripts/test_opi_impl_smoke.py`. There is no preceding
+`cargo build --workspace` and no D.3 rerun.
 
 ## `documentation` Tier
 
