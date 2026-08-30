@@ -20,15 +20,19 @@ use opi_eval::experiment::ResolvedExperiment;
 /// The 18.1 start commit that owns the pre-Phase Minimal Runtime capture.
 /// A baseline bound to any other commit is a late capture and must be
 /// rejected.
+#[cfg(unix)]
 const BASELINE_COMMIT: &str = "1ad534b73864b7894929feabd7d48104aa0b0c05";
 
+#[cfg(unix)]
 const BASELINE_DIR: &str = "crates/opi-eval/tests/fixtures/minimal-runtime/pre-phase18";
 
+#[cfg(unix)]
 const CAPTURE_SCRIPT: &str = "scripts/capture-phase18-minimal-runtime-baseline.py";
 
 /// Product source anchors whose bytes are digest-bound by the baseline
 /// receipt; identical bytes at the current tree prove the ordinary runtime
 /// paths were untouched by the Phase.
+#[cfg(unix)]
 const PRODUCT_ANCHORS: [&str; 5] = [
     "crates/opi-coding-agent/src/cli.rs",
     "crates/opi-coding-agent/src/main.rs",
@@ -38,6 +42,7 @@ const PRODUCT_ANCHORS: [&str; 5] = [
 ];
 
 /// Product crates that must never reference the Companion.
+#[cfg(unix)]
 const PRODUCT_CRATES: [&str; 6] = [
     "opi-agent",
     "opi-ai",
@@ -47,6 +52,7 @@ const PRODUCT_CRATES: [&str; 6] = [
     "opi-tui",
 ];
 
+#[cfg(unix)]
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -55,10 +61,12 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+#[cfg(unix)]
 fn python() -> &'static str {
     if cfg!(windows) { "python" } else { "python3" }
 }
 
+#[cfg(unix)]
 fn strip_cr(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -74,6 +82,7 @@ fn strip_cr(bytes: &[u8]) -> Vec<u8> {
 }
 
 /// Remove ANSI CSI escape sequences (CI-colored cargo progress).
+#[cfg(unix)]
 fn strip_ansi(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -92,6 +101,7 @@ fn strip_ansi(bytes: &[u8]) -> Vec<u8> {
     out
 }
 
+#[cfg(unix)]
 fn normalize_cargo_noise(bytes: &[u8]) -> Vec<u8> {
     // Cargo build progress is environment noise (the baseline was captured
     // on a cold cache), not product behavior: strip status lines and blank
@@ -243,6 +253,7 @@ group = "g"
 // P18-A19: ordinary opi before/after the Phase
 // ---------------------------------------------------------------------------
 
+#[cfg(unix)]
 struct BaselineCheck {
     id: String,
     family: String,
@@ -252,6 +263,7 @@ struct BaselineCheck {
     stderr_rel: PathBuf,
 }
 
+#[cfg(unix)]
 fn load_baseline_checks(dir: &Path) -> Vec<BaselineCheck> {
     let receipt: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(dir.join("receipt.json")).expect("baseline receipt"),
@@ -282,6 +294,7 @@ fn load_baseline_checks(dir: &Path) -> Vec<BaselineCheck> {
     checks
 }
 
+#[cfg(unix)]
 fn verify_baseline(dir: &Path) {
     let repo = workspace_root();
     let status = Command::new(python())
@@ -306,6 +319,7 @@ fn verify_baseline(dir: &Path) {
 /// every captured command behaves identically at the current tree, the
 /// captured CLI bytes are unchanged, and dependency/call-graph assertions
 /// prove the Companion never activates in the product.
+#[cfg(unix)]
 #[test]
 fn p18_a19_ordinary_opi_minimal_runtime_before_after() {
     let repo = workspace_root();
@@ -448,6 +462,7 @@ fn p18_a19_ordinary_opi_minimal_runtime_before_after() {
 /// recorded commit is rewritten (a late capture presented as the baseline)
 /// or whose raw evidence bytes are edited (hand-authored) cannot pass
 /// verification.
+#[cfg(unix)]
 #[test]
 fn p18_a19_rejects_hand_authored_or_late_baseline() {
     let repo = workspace_root();
@@ -497,6 +512,7 @@ fn p18_a19_rejects_hand_authored_or_late_baseline() {
     assert!(!status.success(), "hand-authored baseline must be rejected");
 }
 
+#[cfg(unix)]
 fn copy_dir(source: &Path, target: &Path) {
     for entry in std::fs::read_dir(source).expect("read baseline dir") {
         let entry = entry.expect("dir entry");
