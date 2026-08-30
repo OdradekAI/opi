@@ -279,6 +279,28 @@ class Phase18NativeCiVerifier(unittest.TestCase):
                 '"ambient_credentials": os.environ.get("OPENAI_API_KEY", "none"),')),
             "credential")
 
+    # -- conformance receipt count -------------------------------------------
+    def test_conformance_receipt_count_derives_from_the_case_list(self) -> None:
+        text = PRODUCER.read_text(encoding="utf-8")
+        # The declared case list is the single authority for the count.
+        case_list = text.split("for case_spec in", 1)[1].split("; do", 1)[0]
+        declared = case_list.count('"agent ') + case_list.count('"benchmark ')
+        self.assertGreater(declared, 0)
+        # The receipt serializes the loop counter, never an independent
+        # hand-maintained literal: the counter is initialized before the
+        # loop, incremented only after a successful case, and passed into
+        # the receipt serialization.
+        self.assertIn("cases_run=0", text)
+        self.assertIn("cases_run=$((cases_run + 1))", text)
+        self.assertIn(
+            '{"cases_run": int(sys.argv[1]), "mode": "native-material"}',
+            text,
+        )
+        self.assertIn('"$cases_run")', text)
+        # No independent count literal survives anywhere in the producer.
+        self.assertNotIn('"cases_run": 1', text)
+        self.assertNotIn('"cases_run": 2', text)
+
     # -- build/locator script contract families -------------------------------
     def test_build_without_locked_release_rejects(self) -> None:
         self.assert_rejects(

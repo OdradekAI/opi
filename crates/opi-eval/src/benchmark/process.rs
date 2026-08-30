@@ -79,7 +79,7 @@ pub(crate) struct NativeMetrics {
 /// Typed rejections of the harbor `jobs/<timestamp>/result.json` layout
 /// (`harbor run -p`, task 18.15 pin): the newest job directory is the
 /// authority and the single trial's verifier rewards are the aggregate.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum HarborResultError {
     /// No `jobs/*/result.json` exists under the trace root.
     Missing,
@@ -244,7 +244,10 @@ pub(crate) fn import_pier_job_result(
             let reward: f64 = reward_key
                 .parse()
                 .map_err(|_| HarborResultError::Invalid("bad-reward-values"))?;
-            if !reward.is_finite() || reward.fract() != 0.0 {
+            // Every Pier reward lives in the native zero-or-one domain and
+            // is validated before any conversion to `u64`: negative and
+            // above-one values are drift, never clamped or cast.
+            if !reward.is_finite() || reward.fract() != 0.0 || !(0.0..=1.0).contains(&reward) {
                 return Err(HarborResultError::Invalid("bad-reward-values"));
             }
             if metric == "reward" {
@@ -906,4 +909,62 @@ fn harbor_result_import_fails_closed_on_trial_count_drift() {
         import_harbor_result(dir.path()),
         Err(HarborResultError::Invalid("trial-count"))
     ));
+}
+
+/// Writes one Pier `jobs/<timestamp>/result.json` aggregate whose `reward`
+/// metric awards `reward_key` to the single trial.
+fn pier_job(dir: &std::path::Path, reward_key: &str) {
+    let jobs = dir.join("jobs").join("2026-08-29__07-25-13");
+    std::fs::create_dir_all(&jobs).unwrap();
+    std::fs::write(
+        jobs.join("result.json"),
+        format!(
+            r#"{{"n_total_trials": 1, "stats": {{"evals": {{"x": {{"reward_stats": {{"reward": {{"{reward_key}": ["t"]}}}}}}}}}}}}"#
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn pier_job_import_enforces_the_native_reward_domain() {
+    // Out-of-domain rewards are drift, never clamped or cast: negative,
+    // above-one, and fractional values fail the import before any `u64`
+    // conversion could silently wrap them.
+    for bad in ["-1.0", "2.0", "1.5", "NaN"] {
+        let dir = tempfile::tempdir().unwrap();
+        pier_job(dir.path(), bad);
+        assert_eq!(
+            import_pier_job_result(dir.path()),
+            Err(HarborResultError::Invalid("bad-reward-values")),
+            "{bad}"
+        );
+    }
+    // Zero and one are valid measured native rewards: zero may grade a
+    // trial, it just cannot admit an oracle preflight.
+    for good in ["0.0", "1.0"] {
+        let dir = tempfile::tempdir().unwrap();
+        pier_job(dir.path(), good);
+        let (_path, reward, _value) = import_pier_job_result(dir.path()).unwrap();
+        assert_eq!(
+            reward,
+            Fact::Known {
+                value: good.trim_end_matches(".0").parse::<u64>().unwrap(),
+                origin: "pier-result".to_owned()
+            },
+            "{good}"
+        );
+    }
+    // An aggregate with no `reward` metric at all stays a typed failure.
+    let dir = tempfile::tempdir().unwrap();
+    let jobs = dir.path().join("jobs").join("2026-08-29__07-25-13");
+    std::fs::create_dir_all(&jobs).unwrap();
+    std::fs::write(
+        jobs.join("result.json"),
+        br#"{"n_total_trials": 1, "stats": {"evals": {"x": {"reward_stats": {"f2p": {"1.0": ["t"]}}}}}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        import_pier_job_result(dir.path()),
+        Err(HarborResultError::Invalid("no-reward-key"))
+    );
 }

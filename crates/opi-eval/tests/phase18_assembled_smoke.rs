@@ -91,6 +91,48 @@ fn p18_exp001_hermetic_paired_group_runs_end_to_end() {
         let trial_root = root.path().join("trials").join(id);
         assert!(trial_root.join("receipt.json").is_file());
         assert!(trial_root.join("bundle").join("manifest.json").is_file());
+        // The sealed closure covers the complete retained set (P18-BND-001):
+        // the control evidence, the trajectory, the normalized expected
+        // output, and the native execution streams are all manifest
+        // entries reserved by the durable intent.
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(trial_root.join("bundle/manifest.json")).unwrap(),
+        )
+        .unwrap();
+        let intent: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(trial_root.join("bundle/intent.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            manifest["intent"], intent,
+            "the manifest and the durable sidecar agree: {trial}"
+        );
+        for key in [
+            "control/experiment.json",
+            "control/integrity.json",
+            "evidence/trajectory.json",
+            "native/agent-stdout.log",
+            "native/agent-stderr.log",
+            "native/agent-answer.txt",
+            "native/authority-ledger.json",
+            "normalized/expected-output",
+        ] {
+            assert!(
+                manifest["entries"][key].is_object(),
+                "trial {id} must seal {key}: {manifest}"
+            );
+            assert!(
+                intent["artifacts"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&serde_json::json!(key)),
+                "trial {id} must reserve {key}: {intent}"
+            );
+        }
+        assert_eq!(
+            intent["expected_output"], "normalized/expected-output",
+            "{trial}"
+        );
         // The final workspace capture retains the agent's answer.
         assert!(trial_root.join("workspace").join("answer.txt").is_file());
     }
@@ -234,37 +276,35 @@ fn p18_a05_agent_stream_contract_fails_closed() {
 
 /// `P18-A06`: timeout or cancellation racing a bounded process, workspace
 /// mutation, and process exit through `run` retains actual partial
-/// artifacts and cleanup status, reports a non-success outcome, and never
-/// infers replay safety (no replacement trial or second dispatch).
+/// artifacts and cleanup status, never infers replay safety (no replacement
+/// trial or second dispatch), and routes each failure to its owning class:
+/// an Agent-owned timeout is a scored Agent outcome under the native
+/// grader; a user cancellation stays a boundary failure.
 #[test]
 fn p18_a06_process_timeout_cancellation_race() {
-    for behavior in ["agent-timeout", "agent-cancelled"] {
+    // Agent-owned timeout: scored under the native grader. One grade
+    // dispatch over the settled workspace, graded outcome retained in the
+    // pairing denominator, exactly one agent dispatch.
+    {
+        let behavior = "agent-timeout";
         let root = tempfile::tempdir().unwrap();
         let (code, report, stderr) = run_experiment("phase18-local.toml", behavior, root.path());
-        assert_eq!(code, 1, "{behavior}: {stderr}");
-        assert_eq!(report["outcome"], "incomplete", "{behavior}: {report}");
-
-        let expected_failure = if behavior == "agent-timeout" {
-            "agent-timeout"
-        } else {
-            "agent-cancelled"
-        };
+        assert_eq!(
+            code, 0,
+            "{behavior}: the scored run completes: {stderr} {report}"
+        );
+        assert_eq!(report["outcome"], "completed", "{behavior}: {report}");
         let trials = report["trials"].as_array().unwrap();
         assert_eq!(trials.len(), 2, "{behavior}: no replacement trials");
         for trial in trials {
             let id = trial["id"].as_str().unwrap();
             assert_eq!(
-                trial["agent"]["failure_kind"], expected_failure,
+                trial["agent"]["failure_kind"], "agent-timeout",
                 "{behavior}: {trial}"
             );
             assert_eq!(trial["agent"]["boundary"], "agent-process");
             assert_eq!(
-                trial["agent"]["exit_state"],
-                if behavior == "agent-timeout" {
-                    "timed-out"
-                } else {
-                    "cancelled"
-                },
+                trial["agent"]["exit_state"], "timed-out",
                 "{behavior}: {trial}"
             );
             // Actual partial artifacts retained: bounded captures recorded
@@ -281,7 +321,61 @@ fn p18_a06_process_timeout_cancellation_race() {
                     || cleanup == "not-required",
                 "{behavior}: cleanup status must stay visible: {trial}"
             );
+            // The native grader dispatched exactly once and verified.
+            assert_eq!(
+                trial["authority"]["grade_dispatch"], "executed",
+                "{behavior}: {trial}"
+            );
+            assert_eq!(
+                trial["verifier"]["completion"], "verified",
+                "{behavior}: {trial}"
+            );
             // The raced workspace mutation is retained, not discarded.
+            let workspace = root.path().join("trials").join(id).join("workspace");
+            assert!(
+                workspace.join("answer.txt").is_file(),
+                "{behavior}: the mutated workspace must be retained"
+            );
+            // Replay safety is never inferred: exactly one dispatch.
+            assert_eq!(
+                trial["authority"]["agent_dispatch"], "executed",
+                "{behavior}: {trial}"
+            );
+        }
+        let pairs = report["pairs"].as_array().unwrap();
+        assert_eq!(pairs.len(), 1, "{behavior}");
+        assert_eq!(
+            pairs[0]["comparability"], "comparable",
+            "{behavior}: {report}"
+        );
+    }
+
+    // User cancellation: a boundary failure. The grade dispatch is
+    // mechanically refused and the pair stays visible as infrastructure.
+    {
+        let behavior = "agent-cancelled";
+        let root = tempfile::tempdir().unwrap();
+        let (code, report, stderr) = run_experiment("phase18-local.toml", behavior, root.path());
+        assert_eq!(code, 1, "{behavior}: {stderr}");
+        assert_eq!(report["outcome"], "incomplete", "{behavior}: {report}");
+        let trials = report["trials"].as_array().unwrap();
+        assert_eq!(trials.len(), 2, "{behavior}: no replacement trials");
+        for trial in trials {
+            let id = trial["id"].as_str().unwrap();
+            assert_eq!(
+                trial["agent"]["failure_kind"], "agent-cancelled",
+                "{behavior}: {trial}"
+            );
+            assert_eq!(trial["agent"]["boundary"], "agent-process");
+            assert_eq!(
+                trial["agent"]["exit_state"], "cancelled",
+                "{behavior}: {trial}"
+            );
+            assert!(
+                trial["agent"].get("stdout_bytes").is_some()
+                    && trial["agent"].get("stderr_bytes").is_some(),
+                "{behavior}: {trial}"
+            );
             let workspace = root.path().join("trials").join(id).join("workspace");
             assert!(
                 workspace.join("answer.txt").is_file(),
@@ -293,8 +387,6 @@ fn p18_a06_process_timeout_cancellation_race() {
                 "{behavior}: {trial}"
             );
             assert!(trial["verifier"].is_null(), "{behavior}: {trial}");
-            // Replay safety is never inferred: exactly one dispatch, no
-            // replacement identity.
             assert_eq!(
                 trial["authority"]["agent_dispatch"], "executed",
                 "{behavior}: {trial}"
@@ -583,6 +675,104 @@ fn p18_a14_integrity_exclusion_surfaces_through_run() {
         invalid_report["integrity_digest"].as_str().unwrap(),
     ];
     assert_ne!(digests[0], digests[1]);
+}
+
+/// The durable intent of every trial binds to the comparison edge that
+/// owns it (Phase 18 remediation): a multi-edge document seals each
+/// group's trials under their own edge identity, and no intent defaults
+/// to the first declared edge.
+#[test]
+fn p18_multi_edge_intents_bind_to_their_owning_edge() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, report, stderr) = run_experiment("phase18-multi-edge.toml", "happy", root.path());
+    assert_eq!(
+        code, 1,
+        "the cross-edge pairing universe keeps unpaired sides visible: {stderr} {report}"
+    );
+    // Every declared trial still settled and sealed.
+    assert_eq!(report["trials"].as_array().unwrap().len(), 4, "{report}");
+    for trial in report["trials"].as_array().unwrap() {
+        assert_eq!(trial["status"], "sealed", "{report}");
+    }
+
+    // Each group's trials seal under their own edge's pair identity.
+    let expected_pair = [
+        ("trial-pi-a", "edge-pi-vs-opi"),
+        ("trial-opi-a", "edge-pi-vs-opi"),
+        ("trial-opi-b", "edge-opi-vs-pi2"),
+        ("trial-pi2-b", "edge-opi-vs-pi2"),
+    ];
+    for (trial, edge) in expected_pair {
+        let intent: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                root.path()
+                    .join("trials")
+                    .join(trial)
+                    .join("bundle/intent.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(intent["pair"], edge, "{trial} must bind its owning edge");
+    }
+
+    // Both edges assemble their own pairing universe: the two real groups
+    // pair comparably under their owning edge, while the cross-edge
+    // (task, group) slots stay visible as missing sides.
+    let pairs = report["pairs"].as_array().unwrap();
+    assert_eq!(pairs.len(), 4, "{report}");
+    let by: std::collections::BTreeMap<(String, String), &serde_json::Value> = pairs
+        .iter()
+        .map(|pair| {
+            (
+                (
+                    pair["edge"].as_str().unwrap().to_owned(),
+                    pair["group"].as_str().unwrap().to_owned(),
+                ),
+                pair,
+            )
+        })
+        .collect();
+    assert_eq!(
+        by[&("edge-pi-vs-opi".to_owned(), "group-a".to_owned())]["baseline_trial"],
+        "trial-pi-a",
+        "{report}"
+    );
+    assert_eq!(
+        by[&("edge-pi-vs-opi".to_owned(), "group-a".to_owned())]["candidate_trial"],
+        "trial-opi-a",
+        "{report}"
+    );
+    assert_eq!(
+        by[&("edge-pi-vs-opi".to_owned(), "group-a".to_owned())]["comparability"],
+        "comparable",
+        "{report}"
+    );
+    assert_eq!(
+        by[&("edge-opi-vs-pi2".to_owned(), "group-b".to_owned())]["baseline_trial"],
+        "trial-opi-b",
+        "{report}"
+    );
+    assert_eq!(
+        by[&("edge-opi-vs-pi2".to_owned(), "group-b".to_owned())]["candidate_trial"],
+        "trial-pi2-b",
+        "{report}"
+    );
+    assert_eq!(
+        by[&("edge-opi-vs-pi2".to_owned(), "group-b".to_owned())]["comparability"],
+        "comparable",
+        "{report}"
+    );
+    assert_eq!(
+        by[&("edge-pi-vs-opi".to_owned(), "group-b".to_owned())]["comparability"],
+        "missing-baseline-trial",
+        "{report}"
+    );
+    assert_eq!(
+        by[&("edge-opi-vs-pi2".to_owned(), "group-a".to_owned())]["comparability"],
+        "missing-candidate-trial",
+        "{report}"
+    );
 }
 
 /// All three concrete grader families assemble and grade end to end

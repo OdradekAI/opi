@@ -1172,6 +1172,7 @@ cmd_conformance_rerun() {
   # pi programs and all three exact native revisions: only the admitted
   # native case subset runs; failure-injection cases stay hermetic.
   mkdir -p "$out/reports"
+  cases_run=0
   for case_spec in \
       "agent opi completed" "agent opi identity" \
       "agent pi completed" "agent pi identity" \
@@ -1202,9 +1203,12 @@ cmd_conformance_rerun() {
       cat "$root/report.json" >&2 || true
       die "conformance-rerun: case $suite-$adapter-$case_id did not meet its contract"
     fi
+    cases_run=$((cases_run + 1))
   done
+  # The receipt count derives from the loop counter, so adding or removing
+  # a case changes the receipt without a second hand-maintained literal.
   write_receipt "$out" conformance-rerun \
-    "$(python3 -c 'import json; print(json.dumps({"cases_run": 12, "mode": "native-material"}))')"
+    "$(python3 -c 'import json,sys; print(json.dumps({"cases_run": int(sys.argv[1]), "mode": "native-material"}))' "$cases_run")"
 }
 
 # ---------------------------------------------------------------------------

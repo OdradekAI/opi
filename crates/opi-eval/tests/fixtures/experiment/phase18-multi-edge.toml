@@ -1,0 +1,80 @@
+# Hermetic multi-edge experiment contract for the assembled run path
+# (Phase 18 remediation). Fixture-grade only: three subjects over two
+# directed edges, with two trial groups exercising distinct edges, so the
+# durable per-trial pair identity is proven to bind to the owning edge
+# rather than the first declared one.
+
+schema = "phase18-experiment/1"
+experiment_id = "phase18-multi-edge-hermetic"
+
+[benchmark]
+name = "terminal-bench"
+revision = "2.1"
+dataset = "terminal-bench-2.1-fixture"
+# Content-addressed identity of the fixture integrity review the runner
+# builds for this document (pinned by a unit test in runner::experiment;
+# the review derives from the benchmark revision and task set, which this
+# document shares with phase18-local.toml).
+integrity_digest = "baaafd5e9bd00f147a2f9cb2bfb338855243ea23524cce98af0d11bf1fb38539"
+
+[[subjects]]
+id = "baseline-pi"
+product = "pi"
+version = "0.84.3"
+
+[[subjects]]
+id = "candidate-opi"
+product = "opi"
+version = "0.1.0"
+
+[[subjects]]
+id = "second-pi"
+product = "pi"
+version = "0.84.3"
+
+[[edges]]
+id = "edge-pi-vs-opi"
+baseline = "baseline-pi"
+candidate = "candidate-opi"
+
+[[edges]]
+id = "edge-opi-vs-pi2"
+baseline = "candidate-opi"
+candidate = "second-pi"
+
+[model_controls]
+provider = "local"
+model = "scripted"
+endpoint_class = "local"
+temperature = 0.0
+max_output_tokens = 4096
+reasoning = "omitted"
+
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "isolated"
+
+[[trials]]
+id = "trial-pi-a"
+subject = "baseline-pi"
+task = "fixture-task"
+group = "group-a"
+
+[[trials]]
+id = "trial-opi-a"
+subject = "candidate-opi"
+task = "fixture-task"
+group = "group-a"
+
+[[trials]]
+id = "trial-opi-b"
+subject = "candidate-opi"
+task = "fixture-task"
+group = "group-b"
+
+[[trials]]
+id = "trial-pi2-b"
+subject = "second-pi"
+task = "fixture-task"
+group = "group-b"

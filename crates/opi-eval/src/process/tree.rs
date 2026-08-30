@@ -153,6 +153,14 @@ impl TreeGuard {
         }
     }
 
+    /// One immediate emptiness probe over the tree. Used after a natural
+    /// child exit: a non-empty group or a still-open inherited pipe means
+    /// descendants remain and cleanup must run instead of being reported
+    /// as not required.
+    pub(super) fn is_empty_now(&self) -> bool {
+        self.is_empty()
+    }
+
     #[cfg(unix)]
     fn is_empty(&self) -> bool {
         match &self.inner {

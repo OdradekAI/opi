@@ -49,6 +49,11 @@ pub(crate) struct TrialFact {
 pub(crate) enum TrialOutcome {
     /// The trial produced a graded Agent outcome.
     ValidAgentOutcome,
+    /// A scored Agent failure: the Agent's own non-zero exit, crash, or
+    /// Agent-owned timeout on a valid task, graded under the native
+    /// grader. It stays in the Agent success/failure denominator
+    /// (`P18-INT-002`) and is never reclassified as infrastructure.
+    AgentFailure,
     /// The trial settled as an infrastructure failure.
     InfrastructureFailure,
     /// The trial settled as a grader failure.
@@ -383,7 +388,12 @@ impl ComparisonSet {
                         [baseline, candidate]
                             .iter()
                             .find_map(|fact| match fact.outcome {
-                                TrialOutcome::ValidAgentOutcome => None,
+                                // A scored Agent failure is a graded Agent
+                                // outcome: the pair keeps its paired claim
+                                // and the trial stays in the denominator.
+                                TrialOutcome::ValidAgentOutcome | TrialOutcome::AgentFailure => {
+                                    None
+                                }
                                 TrialOutcome::InfrastructureFailure => {
                                     Some(NonComparability::InfrastructureFailure {
                                         trial: fact.id.clone(),
@@ -794,7 +804,9 @@ group = "g1"
             })
         );
 
-        // Infrastructure and grader trial outcomes.
+        // Infrastructure and grader trial outcomes; a scored Agent failure
+        // keeps the pair comparable - it is a graded Agent outcome that
+        // stays in the denominator.
         for (trial, outcome, expected) in [
             (
                 "t-b1",
@@ -829,6 +841,26 @@ group = "g1"
                 &Comparability::NonComparable(expected)
             );
         }
+
+        // A scored Agent failure on one side keeps the pair comparable:
+        // the Agent outcome stays in the graded denominator.
+        let record = IntegrityRecord::review(record_review(valid_tasks())).unwrap();
+        let mut scored = fact("t-b1", "subject-b", "task-1", "ctrl-1");
+        scored.outcome = TrialOutcome::AgentFailure;
+        let set = assemble_with(
+            &record,
+            vec![
+                fact("t-a1", "subject-a", "task-1", "ctrl-1"),
+                scored,
+                fact("t-a2", "subject-a", "task-2", "ctrl-1"),
+                fact("t-b2", "subject-b", "task-2", "ctrl-1"),
+            ],
+        )
+        .unwrap();
+        assert!(
+            set.pairs()[0].comparability().is_comparable(),
+            "a scored Agent failure stays a comparable graded outcome"
+        );
 
         // Non-valid task classification and uncovered task.
         let mut tasks = valid_tasks();

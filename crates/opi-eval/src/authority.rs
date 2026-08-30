@@ -30,6 +30,26 @@ pub(crate) enum AuthorityTransition {
     Report,
 }
 
+/// The observed Agent completion class, recorded with the authority
+/// evidence so a sealed bundle reconstructs the trial's outcome class from
+/// its own bytes. A scored Agent outcome (the Agent's own non-zero exit or
+/// budget timeout) is a graded Agent outcome, never a boundary failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AgentOutcomeObservation {
+    /// The Agent dispatch has not settled yet.
+    #[default]
+    Unobserved,
+    /// Completed with imported native evidence.
+    Completed,
+    /// A scored Agent outcome: the Agent's own non-zero exit or budget
+    /// timeout, graded under the native verifier.
+    ScoredFailure,
+    /// A boundary failure (spawn refusal, cancellation, adapter/evidence
+    /// rejection, or infrastructure) that stops later transitions.
+    BoundaryFailure,
+}
+
 impl AuthorityTransition {
     /// Stable receipt token for this transition.
     pub(crate) fn token(&self) -> &'static str {
@@ -69,17 +89,23 @@ pub(crate) struct TransitionRecord {
 
 /// The mechanical authority-stop ledger for one trial.
 ///
-/// Gating rules pinned by the task DoD: a boundary failure observed by the
-/// Agent process or evidence validation refuses `grade_dispatch`; a
-/// settlement-recording failure refuses `seal`; a sealing or grader failure
-/// refuses `report`. Every refusal is recorded and every later transition
-/// consults the same ledger, so downstream execution counts are provable
-/// from the receipt alone.
+/// Gating rules pinned by the task DoD: an authority-boundary failure
+/// observed by the Agent process or evidence validation refuses
+/// `grade_dispatch`; a scored Agent outcome (the Agent's own non-zero exit
+/// or budget timeout) is not a boundary failure and never stops the
+/// native grade; a settlement-recording failure refuses `seal`; a sealing
+/// or grader failure refuses `report`. Every refusal is recorded and every
+/// later transition consults the same ledger, so downstream execution
+/// counts are provable from the receipt alone. The observed Agent
+/// completion class is recorded alongside the transitions so sealed
+/// evidence reconstructs the trial's outcome class without side files.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
 pub(crate) struct AuthorityLedger {
     records: Vec<TransitionRecord>,
     /// First boundary failure observed, if any.
     failed_boundary: Option<&'static str>,
+    /// Observed Agent completion class for this trial.
+    agent_outcome: AgentOutcomeObservation,
 }
 
 impl AuthorityLedger {
@@ -93,6 +119,18 @@ impl AuthorityLedger {
         if self.failed_boundary.is_none() {
             self.failed_boundary = Some(boundary_token(boundary));
         }
+    }
+
+    /// Record the observed Agent completion class. A scored Agent outcome
+    /// never records a boundary failure; a boundary failure never becomes
+    /// a scored outcome.
+    pub(crate) fn observe_agent(&mut self, observation: AgentOutcomeObservation) {
+        self.agent_outcome = observation;
+    }
+
+    /// The observed Agent completion class, if any.
+    pub(crate) fn agent_outcome(&self) -> AgentOutcomeObservation {
+        self.agent_outcome
     }
 
     /// Ask whether `transition` may execute under the recorded failures;
@@ -188,14 +226,31 @@ mod tests {
     fn a_boundary_failure_mechanically_stops_later_transitions() {
         let mut ledger = AuthorityLedger::new();
         assert!(ledger.attempt(AuthorityTransition::AgentDispatch));
-        // The Agent process failed: grade dispatch is refused, recorded,
-        // and repeatable.
+        // The Agent process failed at a boundary: grade dispatch is
+        // refused, recorded, and repeatable.
         ledger.fail(FailureBoundaryCode::AgentProcess);
+        ledger.observe_agent(AgentOutcomeObservation::BoundaryFailure);
         assert!(!ledger.attempt(AuthorityTransition::GradeDispatch));
         assert!(!ledger.attempt(AuthorityTransition::GradeDispatch));
         // Refusals stay visible with the owning boundary token.
         assert_eq!(ledger.executed_count(AuthorityTransition::GradeDispatch), 0);
         assert_eq!(ledger.failed_boundary(), Some("agent-process"));
+        assert_eq!(
+            ledger.agent_outcome(),
+            AgentOutcomeObservation::BoundaryFailure
+        );
+
+        // A scored Agent outcome records no boundary failure: the native
+        // grade dispatch stays executable and the observation stays
+        // sealed with the transition evidence.
+        let mut scored = AuthorityLedger::new();
+        scored.observe_agent(AgentOutcomeObservation::ScoredFailure);
+        assert!(scored.attempt(AuthorityTransition::GradeDispatch));
+        assert_eq!(scored.failed_boundary(), None);
+        assert_eq!(
+            serde_json::to_value(&scored).unwrap()["agent_outcome"],
+            "scored_failure"
+        );
 
         // A fresh ledger: a grader failure refuses only the report.
         let mut grader = AuthorityLedger::new();

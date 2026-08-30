@@ -25,9 +25,12 @@ use tokio_util::sync::CancellationToken;
 use crate::agent::opi::OpiProcessAdapter;
 use crate::agent::pi::PiProcessAdapter;
 use crate::agent::process::{
-    AgentAdapter, AgentCompletion, AgentExecution, AgentRunRequest, Fact, IsolationDirs,
+    AgentAdapter, AgentCompletion, AgentExecution, AgentFailureClass, AgentRunRequest, Fact,
+    IsolationDirs,
 };
-use crate::authority::{AuthorityLedger, AuthorityTransition, boundary_token};
+use crate::authority::{
+    AgentOutcomeObservation, AuthorityLedger, AuthorityTransition, boundary_token,
+};
 use crate::benchmark::process::{
     BenchmarkAdapter, BenchmarkCompletion, BenchmarkExecution, BenchmarkRunRequest,
 };
@@ -53,6 +56,43 @@ const RUN_REPORT_SCHEMA: &str = "phase18-run-report/1";
 const TRIAL_RECEIPT_SCHEMA: &str = "phase18-trial-receipt/1";
 /// Bundle-internal key reserved for the normalized expected output.
 const EXPECTED_OUTPUT_KEY: &str = "normalized/expected-output";
+/// Bundle-internal key of the sealed resolved-experiment control evidence.
+const CONTROL_EXPERIMENT_KEY: &str = "control/experiment.json";
+/// Bundle-internal key of the sealed integrity-record control evidence.
+const CONTROL_INTEGRITY_KEY: &str = "control/integrity.json";
+/// Bundle-internal key of the sealed provisional trajectory evidence.
+const TRAJECTORY_KEY: &str = "evidence/trajectory.json";
+/// Bundle-internal keys of the native agent execution evidence every
+/// sealed trial covers on every path.
+const AGENT_STDOUT_KEY: &str = "native/agent-stdout.log";
+const AGENT_STDERR_KEY: &str = "native/agent-stderr.log";
+const AGENT_ANSWER_KEY: &str = "native/agent-answer.txt";
+/// Bundle-internal key of the sealed authority-ledger evidence.
+const AUTHORITY_LEDGER_KEY: &str = "native/authority-ledger.json";
+
+/// The complete pre-effect artifact reservation of one trial: every
+/// artifact identity the sealed bundle must cover on every path (P18-DUR-001,
+/// P18-BND-001). Adapter-produced native evidence - agent completion
+/// artifacts and native grader evidence - is not reserved here because it
+/// materializes only with its producing record; the runner declares it as
+/// produced native evidence at sealing.
+fn reserved_artifact_keys() -> Vec<ArtifactKey> {
+    let mut keys: Vec<ArtifactKey> = [
+        EXPECTED_OUTPUT_KEY,
+        AGENT_ANSWER_KEY,
+        AGENT_STDERR_KEY,
+        AGENT_STDOUT_KEY,
+        AUTHORITY_LEDGER_KEY,
+        CONTROL_EXPERIMENT_KEY,
+        CONTROL_INTEGRITY_KEY,
+        TRAJECTORY_KEY,
+    ]
+    .iter()
+    .map(|key| ArtifactKey::new(key).expect("reserved keys are canonical"))
+    .collect();
+    keys.sort();
+    keys
+}
 
 /// One assembled run request. `behavior` is a hermetic staging knob that
 /// selects helper-process behavior (never a production claim).
@@ -234,6 +274,8 @@ case \"$OPI_EVAL_RUN_BEHAVIOR\" in\n\
 {trace_copy} ;;\n\
   agent-excess-output)\n\
 {excess_output} ;;\n\
+  agent-crash)\n\
+  echo \"simulated agent crash\" >&2; exit 3 ;;\n\
   agent-timeout|agent-cancelled)\n\
   sleep 30 ;;\n\
   *) echo \"unknown behavior\" >&2; exit 9 ;;\nesac\n\
@@ -247,7 +289,7 @@ fn verifier_helper_script(report_name: &str) -> String {
         "#!/bin/sh\n\
 # assembled-run fixture helper standing in for the native verifier (never the real grader)\n\
 case \"$OPI_EVAL_RUN_BEHAVIOR\" in\n\
-  happy|canary-leak)\n\
+  happy|canary-leak|agent-crash|agent-timeout)\n\
     cp \"$OPI_EVAL_NATIVE_SOURCE\" ./{report_name} ;;\n\
   verifier-failure)\n\
     cp \"$OPI_EVAL_NATIVE_SOURCE\" ./{report_name}\n\
@@ -861,17 +903,16 @@ async fn run_oracle_preflight(
     )
     .await
     .map_err(|rejection| RunError::Native(rejection.to_string()))?;
-    // The oracle bar is family-specific. Terminal-Bench's aggregate is a
-    // single zero-or-one reward per trial, so a known positive `passed`
-    // counter proves the reference solution. A DeepSWE job scores
-    // multiple verifier metrics whose maxima are not carried by the
-    // aggregate (`pass_at_k` is only defined for single 0/1 rewards), so
-    // its bar is the structurally valid verified completion: the
-    // content-addressed result file is retained as the evidence a human
-    // or a later vertical slice can audit metric-by-metric.
     let passing = match &record.completion {
         BenchmarkCompletion::Verified { metrics, .. } => match inputs.adapter_key.as_str() {
-            "deepswe-v1.1" => true,
+            // Terminal-Bench's aggregate is a single zero-or-one reward
+            // counter, so a known positive `passed` proves the reference
+            // solution. DeepSWE's Pier aggregate carries the native
+            // `reward` metric directly: the bar is an explicitly known
+            // positive native reward - a zero-reward reference solution is
+            // the signature of a broken or mis-collected task and must not
+            // admit it.
+            "deepswe-v1.1" => matches!(&record.reward, Fact::Known { value, .. } if *value > 0),
             _ => {
                 matches!(&metrics.passed, Some(Fact::Known { value, .. }) if *value > 0)
             }
@@ -1005,22 +1046,19 @@ async fn run_trial(
         )));
     }
 
-    // Durable intent before any process effect (P18-DUR-001).
+    // Durable intent before any process effect (P18-DUR-001). The
+    // reservation covers every artifact identity the sealed bundle must
+    // retain, including the normalized expected output, and the pair
+    // identity is the unique comparison edge that owns this trial.
     let trial_id =
         TrialIdentity::new(&declared.id).map_err(|error| RunError::Staging(error.to_string()))?;
     let mut bundle = RunBundle::create(&trial_root.join("bundle"))
         .map_err(|error| RunError::Bundle(error.to_string()))?;
     let intent = IntentRecord {
         trial: trial_id.clone(),
-        pair: PairIdentity::new(
-            experiment
-                .edges()
-                .first()
-                .map(|edge| edge.id.as_str())
-                .unwrap_or("pair-1"),
-        )
-        .map_err(|error| RunError::Staging(error.to_string()))?,
-        artifacts: Vec::new(),
+        pair: PairIdentity::new(owning_edge(experiment, declared)?.id.as_str())
+            .map_err(|error| RunError::Staging(error.to_string()))?,
+        artifacts: reserved_artifact_keys(),
         expected_output: ArtifactKey::new(EXPECTED_OUTPUT_KEY)
             .map_err(|error| RunError::Staging(error.to_string()))?,
     };
@@ -1043,6 +1081,29 @@ async fn run_trial(
     }
 
     let mut ledger = AuthorityLedger::new();
+
+    // Sealed control evidence: the resolved experiment contract and the
+    // integrity record enter the bundle itself, so the sealed identity
+    // commits to the exact admission inputs the trial ran under
+    // (P18-BND-001).
+    let runner_source =
+        SourceIdentity::new("runner").map_err(|error| RunError::Staging(error.to_string()))?;
+    let mut staged_keys: Vec<ArtifactKey> = Vec::new();
+    let mut produced_keys: Vec<ArtifactKey> = Vec::new();
+    staged_keys.push(stage(
+        &mut bundle,
+        &runner_source,
+        ArtifactRole::Derived,
+        CONTROL_EXPERIMENT_KEY,
+        &serde_json::to_vec(experiment).map_err(|error| RunError::Staging(error.to_string()))?,
+    )?);
+    staged_keys.push(stage(
+        &mut bundle,
+        &runner_source,
+        ArtifactRole::Derived,
+        CONTROL_INTEGRITY_KEY,
+        &integrity.canonical_bytes(),
+    )?);
 
     // Agent dispatch through the shared execution driver. Hermetic mode
     // synthesizes the deterministic helper and replays fixture bytes;
@@ -1143,11 +1204,29 @@ async fn run_trial(
         ));
     };
 
-    // Settlement of the observed outcome, durably (P18-DUR-003).
+    // Settlement of the observed outcome, durably (P18-DUR-003). The
+    // failure classification decides authority: a scored Agent outcome
+    // (the Agent's own non-zero exit or budget timeout) never fails the
+    // ledger, so the native grader stays authorized over the settled
+    // workspace; every boundary failure (spawn, cancellation, adapter or
+    // evidence rejection, infrastructure) keeps its mechanical stop.
     let settlement_kind = agent_record.settlement_kind(CancellationSource::Infrastructure);
-    if let AgentCompletion::Failed(failure) = &agent_record.completion {
+    let agent_failure_class = match &agent_record.completion {
+        AgentCompletion::Failed(failure) => Some(failure.class()),
+        AgentCompletion::Completed { .. } => None,
+    };
+    if agent_failure_class == Some(AgentFailureClass::AuthorityBoundary)
+        && let AgentCompletion::Failed(failure) = &agent_record.completion
+    {
         ledger.fail(failure.boundary);
     }
+    ledger.observe_agent(match &agent_record.completion {
+        AgentCompletion::Completed { .. } => AgentOutcomeObservation::Completed,
+        AgentCompletion::Failed(failure) => match failure.class() {
+            AgentFailureClass::ScoredAgentOutcome => AgentOutcomeObservation::ScoredFailure,
+            AgentFailureClass::AuthorityBoundary => AgentOutcomeObservation::BoundaryFailure,
+        },
+    });
     let settle_executed = ledger.attempt(AuthorityTransition::Settle);
     debug_assert!(settle_executed, "settle follows only a dispatch attempt");
     lifecycle
@@ -1159,38 +1238,62 @@ async fn run_trial(
     // Native agent evidence into the staging bundle.
     let source = SourceIdentity::new(&format!("agent-{product}"))
         .map_err(|error| RunError::Staging(error.to_string()))?;
-    let mut staged_keys: Vec<ArtifactKey> = Vec::new();
     staged_keys.push(stage(
         &mut bundle,
         &source,
-        "native/agent-stdout.log",
+        ArtifactRole::Native,
+        AGENT_STDOUT_KEY,
         &agent_record.stdout.bytes,
     )?);
     staged_keys.push(stage(
         &mut bundle,
         &source,
-        "native/agent-stderr.log",
+        ArtifactRole::Native,
+        AGENT_STDERR_KEY,
         &agent_record.stderr.bytes,
     )?);
     let answer_path = workspace.join("answer.txt");
-    if let Ok(answer) = std::fs::read(&answer_path) {
-        staged_keys.push(stage(
-            &mut bundle,
-            &source,
-            "native/agent-answer.txt",
-            &answer,
-        )?);
-    }
+    // The expected Agent output is reserved, promised evidence: a vanished
+    // or unreadable answer is a typed staging failure, never a silently
+    // skipped artifact.
+    let answer = std::fs::read(&answer_path).map_err(|error| {
+        RunError::Staging(format!(
+            "trial {}: expected agent output is unreadable: {error}",
+            declared.id
+        ))
+    })?;
+    staged_keys.push(stage(
+        &mut bundle,
+        &source,
+        ArtifactRole::Native,
+        AGENT_ANSWER_KEY,
+        &answer,
+    )?);
+    // The normalized settled output: the same retained bytes under the
+    // reserved normalized key, so the sealed expected output exists.
+    staged_keys.push(stage(
+        &mut bundle,
+        &runner_source,
+        ArtifactRole::Normalized,
+        EXPECTED_OUTPUT_KEY,
+        &answer,
+    )?);
     if let AgentCompletion::Completed { artifacts } = &agent_record.completion {
         for artifact in artifacts {
-            if let Ok(bytes) = std::fs::read(&artifact.path) {
-                staged_keys.push(stage(
-                    &mut bundle,
-                    &source,
-                    &format!("native/{}", artifact.role),
-                    &bytes,
-                )?);
-            }
+            let bytes = std::fs::read(&artifact.path).map_err(|error| {
+                RunError::Staging(format!(
+                    "trial {}: agent artifact {} is unreadable: {error}",
+                    declared.id, artifact.role
+                ))
+            })?;
+            produced_keys.push(stage(
+                &mut bundle,
+                &source,
+                ArtifactRole::Native,
+                &format!("native/{}", artifact.role),
+                &bytes,
+            )?);
+            staged_keys.push(produced_keys.last().cloned().expect("just pushed"));
         }
     }
     bundle
@@ -1199,7 +1302,12 @@ async fn run_trial(
         })
         .map_err(|error| RunError::Bundle(error.to_string()))?;
 
-    // Native verifier dispatch through the shared execution driver.
+    // Native verifier dispatch through the shared execution driver. All
+    // verifier-produced bytes - the bounded stream captures and the
+    // imported native report - carry the pinned grader's source identity,
+    // never the Agent's, so sealed provenance names the byte producer.
+    let grader_source = SourceIdentity::new(&format!("grader-{}", integrity.grader()))
+        .map_err(|error| RunError::Staging(error.to_string()))?;
     let mut verifier_record = None;
     let mut verifier_rejection: Option<String> = None;
     if ledger.attempt(AuthorityTransition::GradeDispatch) {
@@ -1308,29 +1416,39 @@ async fn run_trial(
                 if let BenchmarkCompletion::Failed(failure) = &record.completion {
                     ledger.fail(failure.boundary);
                 }
-                // Native verifier evidence into the staging bundle.
-                staged_keys.push(stage(
+                // Native verifier evidence into the staging bundle, under
+                // the grader's source identity.
+                produced_keys.push(stage(
                     &mut bundle,
-                    &source,
+                    &grader_source,
+                    ArtifactRole::Native,
                     "native/verifier-stdout.log",
                     &record.stdout.bytes,
                 )?);
-                staged_keys.push(stage(
+                produced_keys.push(stage(
                     &mut bundle,
-                    &source,
+                    &grader_source,
+                    ArtifactRole::Native,
                     "native/verifier-stderr.log",
                     &record.stderr.bytes,
                 )?);
+                staged_keys.extend(produced_keys[produced_keys.len() - 2..].to_vec());
                 if let BenchmarkCompletion::Verified { artifacts, .. } = &record.completion {
                     for artifact in artifacts {
-                        if let Ok(bytes) = std::fs::read(&artifact.path) {
-                            staged_keys.push(stage(
-                                &mut bundle,
-                                &source,
-                                &format!("native/{}", artifact.role),
-                                &bytes,
-                            )?);
-                        }
+                        let bytes = std::fs::read(&artifact.path).map_err(|error| {
+                            RunError::Staging(format!(
+                                "trial {}: verifier artifact {} is unreadable: {error}",
+                                declared.id, artifact.role
+                            ))
+                        })?;
+                        produced_keys.push(stage(
+                            &mut bundle,
+                            &grader_source,
+                            ArtifactRole::Native,
+                            &format!("native/{}", artifact.role),
+                            &bytes,
+                        )?);
+                        staged_keys.push(produced_keys.last().cloned().expect("just pushed"));
                     }
                 }
                 verifier_record = Some(record);
@@ -1365,6 +1483,25 @@ async fn run_trial(
         .ok(),
     };
 
+    // Pre-seal redaction gate (`P18-A18`, `P18-SEC-005`): a declared
+    // canary anywhere in the staged exportable content blocks sealing, so
+    // the leak never enters a published manifest. The refusal is the
+    // evidence boundary and the bundle stays unsealed on disk.
+    //
+    // The projection is sealed trial evidence: the provisional trajectory
+    // itself enters the bundle under the reserved evidence key. A failed
+    // projection leaves the key unstaged, so sealing refuses the broken
+    // reservation instead of sealing without the trajectory.
+    if let Some(trajectory) = &projection {
+        staged_keys.push(stage(
+            &mut bundle,
+            &runner_source,
+            ArtifactRole::Derived,
+            TRAJECTORY_KEY,
+            &trajectory.canonical_bytes(),
+        )?);
+    }
+
     // The authority ledger itself is durable evidence: its execution
     // counts enter the sealed bundle (P18-FAL-002 call-count proof). The
     // sealed copy honestly covers every transition up to sealing; the
@@ -1374,16 +1511,13 @@ async fn run_trial(
             serde_json::to_vec(&ledger).map_err(|error| RunError::Staging(error.to_string()))?;
         staged_keys.push(stage(
             &mut bundle,
-            &source,
-            "native/authority-ledger.json",
+            &runner_source,
+            ArtifactRole::Native,
+            AUTHORITY_LEDGER_KEY,
             &ledger_json,
         )?);
     }
 
-    // Pre-seal redaction gate (`P18-A18`, `P18-SEC-005`): a declared
-    // canary anywhere in the staged exportable content blocks sealing, so
-    // the leak never enters a published manifest. The refusal is the
-    // evidence boundary and the bundle stays unsealed on disk.
     let canary_leak =
         scan_staged_for_canaries(&trial_root.join("bundle"), &staged_keys, &request.canaries);
     let seal_outcome = if canary_leak.is_some() {
@@ -1398,7 +1532,7 @@ async fn run_trial(
             std::fs::write(&tamper, b"tampered\n")
                 .map_err(|error| RunError::Staging(error.to_string()))?;
         }
-        match bundle.seal() {
+        match bundle.seal(&produced_keys) {
             Ok(receipt) => {
                 lifecycle
                     .mark_sealed()
@@ -1418,15 +1552,20 @@ async fn run_trial(
     // outcome class; failures contribute their failure class so coverage
     // shows the exact reason instead of hiding the trial.
     let agent_failed = matches!(agent_record.completion, AgentCompletion::Failed(_));
+    let scored_agent_failure = agent_failure_class == Some(AgentFailureClass::ScoredAgentOutcome);
     let verifier_failed = verifier_rejection.is_some()
         || verifier_record
             .as_ref()
             .is_some_and(|record| matches!(record.completion, BenchmarkCompletion::Failed(_)));
     let fact = if seal_outcome.is_some() {
-        let outcome = if agent_failed {
+        let outcome = if agent_failed && !scored_agent_failure {
             TrialOutcome::InfrastructureFailure
         } else if verifier_failed {
             TrialOutcome::GraderFailure
+        } else if agent_failed {
+            // A scored Agent failure whose native grade verified stays an
+            // Agent outcome in the graded denominator.
+            TrialOutcome::AgentFailure
         } else {
             TrialOutcome::ValidAgentOutcome
         };
@@ -1539,18 +1678,19 @@ async fn run_trial(
     })
 }
 
-/// Stage one native artifact into `bundle` and return its key.
+/// Stage one artifact into `bundle` and return its key.
 fn stage(
     bundle: &mut RunBundle,
     source: &SourceIdentity,
-    role: &str,
+    role: ArtifactRole,
+    key: &str,
     bytes: &[u8],
 ) -> Result<ArtifactKey, RunError> {
-    let key = ArtifactKey::new(role).map_err(|error| RunError::Staging(error.to_string()))?;
+    let key = ArtifactKey::new(key).map_err(|error| RunError::Staging(error.to_string()))?;
     bundle
         .insert(
             ArtifactSpec {
-                role: ArtifactRole::Native,
+                role,
                 source: source.clone(),
                 path: key.clone(),
                 bytes: bytes.to_vec(),
@@ -1742,6 +1882,44 @@ fn non_comparability_token(reason: &crate::comparison::NonComparability) -> Stri
     }
 }
 
+/// Resolve the unique comparison edge owning one declared trial: the edge
+/// over the trial's subject whose counterpart subject declares a trial in
+/// the same task and group (`P18-EXP-002`). Zero or multiple owners reject
+/// the trial before any process effect or intent publication, so no
+/// durable pair identity can default to an unrelated edge.
+fn owning_edge<'a>(
+    experiment: &'a ResolvedExperiment,
+    declared: &crate::experiment::DeclaredTrial,
+) -> Result<&'a crate::experiment::ComparisonEdge, RunError> {
+    let mut owners = experiment.edges().iter().filter(|edge| {
+        let counterpart = if edge.baseline == declared.subject {
+            &edge.candidate
+        } else if edge.candidate == declared.subject {
+            &edge.baseline
+        } else {
+            return false;
+        };
+        experiment.trials().iter().any(|trial| {
+            trial.subject == *counterpart
+                && trial.task == declared.task
+                && trial.group == declared.group
+        })
+    });
+    let Some(first) = owners.next() else {
+        return Err(RunError::Staging(format!(
+            "trial {} (subject {}, task {}, group {}) has no owning comparison edge",
+            declared.id, declared.subject, declared.task, declared.group
+        )));
+    };
+    if owners.next().is_some() {
+        return Err(RunError::Staging(format!(
+            "trial {} matches multiple comparison edges for one task and group",
+            declared.id
+        )));
+    }
+    Ok(first)
+}
+
 /// Rewrite the experiment document so every trial of the group owning
 /// `crashed_trial` gets a fresh identity and the group gets a new paired
 /// id. Line-scoped: only `id =` and `group =` lines inside the affected
@@ -1892,6 +2070,7 @@ mod tests {
             ("phase18-unsupported-control.toml", "happy"),
             ("phase18-tb30.toml", "happy"),
             ("phase18-deepswe.toml", "happy"),
+            ("phase18-multi-edge.toml", "happy"),
             ("phase18-integrity-exclusion.toml", "integrity-exclusion"),
             ("phase18-invalid-task.toml", "invalid-task"),
         ];
@@ -1907,5 +2086,59 @@ mod tests {
                 "{name} must pin the digest of its derived fixture review"
             );
         }
+    }
+
+    #[test]
+    fn owning_edge_resolution_rejects_ambiguous_and_unpaired_trials() {
+        let text =
+            std::fs::read_to_string("tests/fixtures/experiment/phase18-multi-edge.toml").unwrap();
+        let experiment = ResolvedExperiment::resolve(&text).unwrap();
+        // Every declared trial resolves exactly one owning edge: group A
+        // binds to the pi-vs-opi edge, group B to the opi-vs-pi2 edge.
+        for (trial, expected_edge) in [
+            ("trial-pi-a", "edge-pi-vs-opi"),
+            ("trial-opi-a", "edge-pi-vs-opi"),
+            ("trial-opi-b", "edge-opi-vs-pi2"),
+            ("trial-pi2-b", "edge-opi-vs-pi2"),
+        ] {
+            let declared = experiment.trials().iter().find(|t| t.id == trial).unwrap();
+            assert_eq!(
+                owning_edge(&experiment, declared).unwrap().id,
+                expected_edge
+            );
+        }
+
+        // A trial whose group has no counterpart trial on any of its
+        // subject's edges is unpaired and must reject before dispatch.
+        let unpaired = text.replace(
+            "group = \"group-b\"\n\n[[trials]]\nid = \"trial-pi2-b\"",
+            "group = \"group-c\"\n\n[[trials]]\nid = \"trial-pi2-b\"",
+        );
+        let experiment = ResolvedExperiment::resolve(&unpaired).unwrap();
+        for trial in ["trial-opi-b", "trial-pi2-b"] {
+            let declared = experiment.trials().iter().find(|t| t.id == trial).unwrap();
+            let error = owning_edge(&experiment, declared).unwrap_err();
+            assert!(
+                error.to_string().contains("no owning comparison edge"),
+                "{trial}: {error}"
+            );
+        }
+
+        // Two edges whose counterparts both declare a trial in the same
+        // task and group make every trial of that group ambiguous:
+        // rejected before dispatch.
+        let ambiguous = text.clone().trim_end().to_owned()
+            + "\n\n[[trials]]\nid = \"trial-pi-b\"\nsubject = \"baseline-pi\"\ntask = \"fixture-task\"\ngroup = \"group-b\"\n";
+        let experiment = ResolvedExperiment::resolve(&ambiguous).unwrap();
+        let declared = experiment
+            .trials()
+            .iter()
+            .find(|t| t.id == "trial-opi-b")
+            .unwrap();
+        let error = owning_edge(&experiment, declared).unwrap_err();
+        assert!(
+            error.to_string().contains("multiple comparison edges"),
+            "{error}"
+        );
     }
 }

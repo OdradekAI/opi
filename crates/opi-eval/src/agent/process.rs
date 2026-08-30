@@ -130,6 +130,33 @@ pub(crate) struct AgentFailure {
     pub boundary: FailureBoundaryCode,
 }
 
+/// Closed classification of a settled Agent failure for downstream
+/// authority decisions. A scored Agent outcome is the Agent's own non-zero
+/// exit, crash, or supervisor-budget timeout on a valid task: it stays in
+/// the graded Agent outcome class and never stops the native grade
+/// dispatch. Every other failure - spawn refusal, cancellation, adapter or
+/// evidence rejection, and infrastructure - is an authority-boundary
+/// failure that must stop later transitions mechanically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AgentFailureClass {
+    /// The Agent's own non-zero exit or budget timeout: graded natively as
+    /// an Agent outcome.
+    ScoredAgentOutcome,
+    /// Spawn refusal, cancellation, adapter/evidence rejection, or
+    /// infrastructure failure.
+    AuthorityBoundary,
+}
+
+impl AgentFailure {
+    /// The closed classification of this failure from its settled kind.
+    pub(crate) fn class(&self) -> AgentFailureClass {
+        match self.kind {
+            "agent-non-zero-exit" | "agent-timeout" => AgentFailureClass::ScoredAgentOutcome,
+            _ => AgentFailureClass::AuthorityBoundary,
+        }
+    }
+}
+
 /// Authoritative completion verdict of one run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AgentCompletion {
@@ -303,6 +330,41 @@ pub(crate) mod failure_kinds {
         kind: "agent-cancelled",
         boundary: FailureBoundaryCode::AgentProcess,
     };
+}
+
+#[cfg(test)]
+mod class_tests {
+    use super::*;
+
+    #[test]
+    fn failure_classification_separates_scored_outcomes_from_boundaries() {
+        // The Agent's own non-zero exit and budget timeout are scored Agent
+        // outcomes: the native grader owns them.
+        for kind in ["agent-non-zero-exit", "agent-timeout"] {
+            assert_eq!(
+                AgentFailure {
+                    kind,
+                    boundary: FailureBoundaryCode::AgentProcess,
+                }
+                .class(),
+                AgentFailureClass::ScoredAgentOutcome
+            );
+        }
+        // Spawn refusal, cancellation, adapter/evidence rejection, and
+        // infrastructure are authority-boundary failures.
+        for (kind, boundary) in [
+            ("spawn-not-found", FailureBoundaryCode::AgentProcess),
+            ("agent-cancelled", FailureBoundaryCode::AgentProcess),
+            ("import-unsupported-schema", FailureBoundaryCode::Adapter),
+            ("import-evidence-missing", FailureBoundaryCode::Evidence),
+        ] {
+            assert_eq!(
+                AgentFailure { kind, boundary }.class(),
+                AgentFailureClass::AuthorityBoundary,
+                "{kind}"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

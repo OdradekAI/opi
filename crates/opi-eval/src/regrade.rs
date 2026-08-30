@@ -128,6 +128,31 @@ fn classify(trial: &str, error: BundleError) -> VerificationFailure {
             kind: "manifest-invalid",
             artifact: None,
         },
+        BundleError::SidecarDrift { which, .. } => VerificationFailure {
+            trial: trial.to_owned(),
+            kind: "sidecar-drift",
+            artifact: Some(which.to_owned()),
+        },
+        BundleError::UnmanifestedFile { path, .. } => VerificationFailure {
+            trial: trial.to_owned(),
+            kind: "unmanifested-file",
+            artifact: Some(path),
+        },
+        BundleError::MissingArtifact { key, .. } => VerificationFailure {
+            trial: trial.to_owned(),
+            kind: "missing-artifact",
+            artifact: Some(key.as_str().to_owned()),
+        },
+        BundleError::ReservationBroken { key, .. } => VerificationFailure {
+            trial: trial.to_owned(),
+            kind: "reservation-broken",
+            artifact: Some(key.as_str().to_owned()),
+        },
+        BundleError::UnreservedArtifact { key, .. } => VerificationFailure {
+            trial: trial.to_owned(),
+            kind: "unreserved-artifact",
+            artifact: Some(key.as_str().to_owned()),
+        },
         BundleError::Io { .. } => VerificationFailure {
             trial: trial.to_owned(),
             kind: "io",

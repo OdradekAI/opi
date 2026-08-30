@@ -217,15 +217,34 @@ impl ProcessSupervisor {
         };
 
         match decided {
-            ExitState::Exited { code } => SupervisedOutcome {
-                exit: ExitState::Exited { code },
-                // Readers may be held open by descendants that inherited the
-                // pipes: settle them within a bounded EOF grace, then keep the
-                // prefix captured so far instead of blocking forever.
-                stdout: settle_reader(stdout_reader, EOF_GRACE).await,
-                stderr: settle_reader(stderr_reader, EOF_GRACE).await,
-                cleanup: CleanupEvidence::NotRequired,
-            },
+            ExitState::Exited { code } => {
+                // A natural exit is not proof of an empty tree: descendants
+                // may still hold the inherited pipes open or remain in the
+                // process group. Settle the readers within the bounded EOF
+                // grace, then query the tree guard: cleanup is required
+                // unless tree emptiness is actually observed, and the same
+                // terminate/verify sequence runs when descendants or
+                // pipe holders remain.
+                let (stdout, stdout_eof) = settle_reader(stdout_reader, EOF_GRACE).await;
+                let (stderr, stderr_eof) = settle_reader(stderr_reader, EOF_GRACE).await;
+                let cleanup = if stdout_eof && stderr_eof && guard.is_empty_now() {
+                    CleanupEvidence::NotRequired
+                } else if guard.terminate() {
+                    let verified = guard.verify_terminated(VERIFY_WINDOW).await;
+                    CleanupEvidence::TreeTerminated {
+                        layer: tree::LAYER,
+                        verified,
+                    }
+                } else {
+                    CleanupEvidence::TreeTerminationFailed { layer: tree::LAYER }
+                };
+                SupervisedOutcome {
+                    exit: ExitState::Exited { code },
+                    stdout,
+                    stderr,
+                    cleanup,
+                }
+            }
             kill_decision => {
                 // The supervisor decided: terminate the tree first so held
                 // pipes close and streams settle, reap the direct child (it
@@ -244,8 +263,8 @@ impl ProcessSupervisor {
                 // kill_on_drop remains the backstop if even the reap is refused.
                 SupervisedOutcome {
                     exit: kill_decision,
-                    stdout: settle_reader(stdout_reader, EOF_GRACE).await,
-                    stderr: settle_reader(stderr_reader, EOF_GRACE).await,
+                    stdout: settle_reader(stdout_reader, EOF_GRACE).await.0,
+                    stderr: settle_reader(stderr_reader, EOF_GRACE).await.0,
                     cleanup,
                 }
             }
@@ -312,20 +331,22 @@ fn bounded_reader<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
 }
 
 /// Settle a reader: await EOF within `grace`; on expiry abort the drain and
-/// snapshot the prefix captured so far.
-async fn settle_reader(reader: Option<StreamReader>, grace: Duration) -> OutputCapture {
+/// snapshot the prefix captured so far. Returns the capture and whether
+/// EOF was actually reached - a drain abandoned mid-stream proves some
+/// descendant still holds the pipe.
+async fn settle_reader(reader: Option<StreamReader>, grace: Duration) -> (OutputCapture, bool) {
     let Some(reader) = reader else {
-        return OutputCapture::default();
+        return (OutputCapture::default(), true);
     };
-    if tokio::time::timeout(grace, reader.task).await.is_err() {
-        // The drain is abandoned mid-stream (a descendant still holds the
-        // pipe); whatever arrived so far is the settled capture.
-    }
-    reader
-        .capture
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .clone()
+    let eof = tokio::time::timeout(grace, reader.task).await.is_ok();
+    (
+        reader
+            .capture
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone(),
+        eof,
+    )
 }
 
 #[cfg(test)]
@@ -341,6 +362,36 @@ mod tests {
             stderr_cap: 4096,
             timeout,
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn natural_exit_terminates_inherited_pipe_descendant() {
+        let start = std::time::Instant::now();
+        // The direct child exits naturally while a backgrounded descendant
+        // that inherited stdout outlives it: the supervisor must not return
+        // while the descendant holds the pipe and the process group.
+        let spec = shell_spec(
+            "/bin/sleep 15 & exec /bin/echo done",
+            Duration::from_secs(20),
+        );
+        let outcome = ProcessSupervisor::run(&spec, &CancellationToken::new()).await;
+
+        assert_eq!(outcome.exit, ExitState::Exited { code: 0 });
+        assert_eq!(outcome.stdout.bytes, b"done\n");
+        // Cleanup is verified, never silently claimed as not required.
+        assert_eq!(
+            outcome.cleanup,
+            CleanupEvidence::TreeTerminated {
+                layer: "unix-pgroup",
+                verified: true
+            }
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "settlement took {}s",
+            start.elapsed().as_secs()
+        );
     }
 
     #[cfg(unix)]

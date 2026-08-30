@@ -64,6 +64,60 @@ fn invoke(command: &str, args: &[(&str, &std::ffi::OsStr)]) -> (i32, String, Str
     )
 }
 
+/// The report output is isolated from the run root (Phase 18 remediation):
+/// an `--out` target inside the run root is rejected outright, and an
+/// existing target is never replaced.
+#[test]
+fn output_isolation_rejects_in_root_and_existing_targets() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, report, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
+    let root_arg = root.path().canonicalize().unwrap();
+
+    // A target inside the run root is rejected: sealed bytes and outer
+    // run artifacts can never be replaced by report output.
+    let inside = root
+        .path()
+        .join("trials")
+        .join("trial-opi-1")
+        .join("report.json");
+    let (code, stdout, stderr) = invoke(
+        "report",
+        &[
+            ("--root", root_arg.as_os_str()),
+            ("--out", inside.as_os_str()),
+        ],
+    );
+    assert_eq!(code, 2, "in-root --out must be rejected: {stderr} {stdout}");
+    assert!(stderr.contains("inside the run root"), "{stderr}");
+    assert!(
+        !inside.exists(),
+        "no bytes may be written to the rejected target"
+    );
+
+    // An existing target outside the run root is never replaced.
+    let outputs = tempfile::tempdir().unwrap();
+    let existing = outputs.path().join("report.json");
+    std::fs::write(&existing, b"prior evidence\n").unwrap();
+    let (code, stdout, stderr) = invoke(
+        "report",
+        &[
+            ("--root", root_arg.as_os_str()),
+            ("--out", existing.as_os_str()),
+        ],
+    );
+    assert_eq!(
+        code, 2,
+        "existing --out must be rejected: {stderr} {stdout}"
+    );
+    assert!(stderr.contains("already exists"), "{stderr}");
+    assert_eq!(
+        std::fs::read(&existing).unwrap(),
+        b"prior evidence\n",
+        "a prior report is never replaced"
+    );
+}
+
 /// `P18-A16`: Opi and pi expose asymmetric call, usage, cost, retry, and
 /// compaction facts. Native facts remain retained; the common report uses
 /// measured values or typed unknowns and never fabricates parity.
