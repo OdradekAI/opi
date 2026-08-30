@@ -661,7 +661,9 @@ mod tests {
         );
         assert_eq!(
             env[&OsString::from("PI_CODING_AGENT_DIR")],
-            OsString::from("/tmp/iso/appdata/pi-agent")
+            std::path::Path::new("/tmp/iso/appdata")
+                .join("pi-agent")
+                .into_os_string()
         );
         assert_eq!(
             env[&OsString::from("PI_EVAL_PROVIDER")],

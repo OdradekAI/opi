@@ -699,6 +699,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(unix)]
     async fn helper_run_settles_a_verified_record_with_provenance() {
         let record = integrity(
             RevisionStatus::Admitted,

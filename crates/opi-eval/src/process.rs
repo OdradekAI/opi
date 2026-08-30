@@ -343,6 +343,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn supervised_output_beyond_cap_is_truncated_and_drained_to_eof() {
         // 200_000 bytes against a 4_096 cap: the child can only exit 0 if the
@@ -440,6 +441,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn supervised_cancel_racing_natural_exit_never_corrupts_settlement() {
         // Both futures ready at once: either settlement is legal, but the run
@@ -556,6 +558,7 @@ mod tests {
         assert_eq!(outcome.cleanup, CleanupEvidence::NotRequired);
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn supervised_run_settles_exit_cwd_exact_env_and_captured_streams() {
         let dir = tempfile::tempdir().unwrap();

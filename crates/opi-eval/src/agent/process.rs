@@ -405,6 +405,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(unix)]
     async fn helper_run_settles_a_completed_record_with_identity() {
         let record = AgentExecution::run(&request(), &HelperAdapter, &CancellationToken::new())
             .await
