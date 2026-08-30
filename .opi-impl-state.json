@@ -3774,7 +3774,7 @@
       "definition_of_done": "Repository assurance consumes the successful unexpired 18.15 outer receipt and sealed artifact without rerunning native work, verifies their binding and causal records, and derives the final shared/private/rejected seam-evidence matrix from those exact records. It compares ordinary Opi against the complete 18.1 commit/digest-bound baseline, proves the source-derived GLM-5.3 roadmap and rollback contract, and keeps broader seam shaping stopped. A source/package absence check proves that Continual Learning, Candidate Production, Promotion, Active Snapshots, behavioral activation, and automatic remediation remain unimplemented. The existing smoke wrappers and verification reference define one authoritative Phase-exit order. The CI workflow gains only the minimum attestation producer needed by task 18.16.1, preserves every existing pull-request merge-ref integration check, records the pull-request head separately, and never substitutes head-only checkout semantics. This task adds no Rust runtime module or ordinary-Opi capability.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "18.15"
       ],
@@ -3918,7 +3918,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "3ea900cf0fea17f1c631da351edb3ac4fc48365b",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/docs/seam-evidence-matrix.md",
@@ -3941,7 +3941,13 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "ts": "2026-08-30T04:36:29Z",
+          "event": "started",
+          "summary": "Task 18.16 started after 18.15 closed green; artifact-derived seam review, local assurance suites, and the minimal CI attestation producer. Closed green in one session: smoke wrappers now run the single authoritative Phase-exit order (pinned by test_opi_impl_smoke 6/6), phase18_acceptance replays all 13 baseline commands (A19, 302s, byte-identical --help, no Companion edge, negative baselines rejected), the generic three-subject fourth-benchmark fixture resolves through validate and ResolvedExperiment (A20), rollback_contract keeps the GLM-5.3 roadmap and the six Non-goal capabilities unimplemented, doc-check gains the 16+1 roadmap contract (25/25), the seam matrix is derived from the verified run-33271354427 artifact (derive --verify byte-stable; shared 15 fields + 5 evidence, adapter-private evidence per product, verifier-forked aggregates rejected), and CI carries only the minimal attestation producer with verify-phase18-ci green (18/18 static and receipt tests). D.1 full gate passed once; smoke addendum suites green. D.2 seven-lens: must-fix 0; flagged: A19 replay adds ~5min to each CI platform's test job, REQUIRED_JOBS is a frozen contract table that future CI evolution must update deliberately, the A19 stderr comparison normalizes cargo build progress as environment noise, and the receipt-level adapter-private field set is empty by fact (privacy lives in the staged-evidence layer). Test disposition: add phase18_acceptance (3), rollback_contract (3), test_opi_impl_smoke (6), test_verify_phase18_ci (18), test_derive_phase18_seam_matrix (7); update test_opi_doc_check (+2 roadmap tests); retain execution_minimal_runtime and phase17_* suites."
+        }
+      ]
     },
     {
       "id": "18.16.1",
