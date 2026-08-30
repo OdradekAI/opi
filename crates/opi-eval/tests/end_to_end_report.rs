@@ -9,18 +9,23 @@
 //! conformance-only (`P18-RPT-003..006`, `P18-EXP-006`). Hermetic
 //! fixture-grade only; task 18.15 owns the native rerun.
 
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::Command;
 
+#[cfg(unix)]
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+#[cfg(unix)]
 fn fixtures_dir() -> PathBuf {
     manifest_dir().join("tests/fixtures")
 }
 
 /// Run one experiment through the real `opi-eval run` binary.
+#[cfg(unix)]
 fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json::Value, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
         .arg("run")
@@ -47,6 +52,7 @@ fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json
 }
 
 /// Invoke the offline report command over one run root.
+#[cfg(unix)]
 fn report(root: &Path) -> (i32, serde_json::Value, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
         .arg("report")
@@ -65,6 +71,7 @@ fn report(root: &Path) -> (i32, serde_json::Value, String) {
 /// `P18-RPT-002`: the same sealed bundle, integrity record, grader
 /// identity, and reporter version produce byte-stable normalized results -
 /// across independent fresh runs, not just repeated renders.
+#[cfg(unix)]
 #[test]
 fn normalized_report_is_byte_stable_across_independent_runs() {
     let first = tempfile::tempdir().unwrap();
@@ -88,6 +95,7 @@ fn normalized_report_is_byte_stable_across_independent_runs() {
 /// The paired report contract end to end: native-only headlines with
 /// provenance, visible diagnostics, full coverage denominator, no
 /// composite score, conformance-only labeling.
+#[cfg(unix)]
 #[test]
 fn paired_report_contract_end_to_end() {
     let root = tempfile::tempdir().unwrap();
