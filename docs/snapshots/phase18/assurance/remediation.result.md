@@ -2,42 +2,49 @@
 
 **Status**: COMPLETE
 **Audit index SHA-256**: `60931e9889c2ee28896758522ca2073dcb48b2fc92e15dde510d6cdf71e9e815`
-**Plan SHA-256**: `e779477af9d61528ff71d0195f02478f12e1a28eaa7353ec2fe80ff85506fb49`
-**Changed paths**: ["crates/opi-eval/docs/seam-evidence-matrix.md", "crates/opi-eval/src/agent/opi.rs", "crates/opi-eval/src/agent/process.rs", "crates/opi-eval/src/authority.rs", "crates/opi-eval/src/benchmark/deepswe.rs", "crates/opi-eval/src/benchmark/process.rs", "crates/opi-eval/src/benchmark/terminal_bench_21.rs", "crates/opi-eval/src/benchmark/terminal_bench_30.rs", "crates/opi-eval/src/bundle/mod.rs", "crates/opi-eval/src/external_lock.rs", "crates/opi-eval/src/failure.rs", "crates/opi-eval/src/integrity.rs", "crates/opi-eval/src/lib.rs", "crates/opi-eval/src/runner/experiment.rs", "crates/opi-eval/src/runner/lifecycle.rs", "crates/opi-eval/src/runner/material.rs", "crates/opi-eval/src/trajectory/mod.rs", "docs/snapshots/phase18/ci-receipt.json"]
+**Plan SHA-256**: `dc7779cbb7d531672fb661f43f89d82956180d7f501c8eeefc60fef45606f36f`
+**Changed paths**: ["crates/opi-eval/src/cli/conformance.rs", "crates/opi-eval/tests/native_driver.rs", "docs/snapshots/phase18/ci-receipt.json", "scripts/phase18-scripted-provider.py", "scripts/test_phase18_scripted_provider.py"]
 
 ## Outcome
 
-- B1 is closed. The blanket dead-code masks and unused Rust lock module were removed, intentional retained contract fields use narrow reasoned expectations, and the focused Rust/Python checks pass.
-- B2 is closed. The crate documentation now describes the provisional `cli` and `experiment` module seam without an incomplete item enumeration, and rustdoc passes with warnings denied.
-- B3 is not closed. Pull request CI run `33423008524` passed all 27 jobs for candidate `e2e225fa0665c737542f71aefa27c963daf2bf73`, and the fixed terminal receipt was refreshed from that run. Native-smoke run `33423005233` failed before artifact sealing because `trial-opi-deepswe-v1.1` did not produce the required `answer.txt`; no fresh native artifact exists and the seam matrix was therefore not regenerated.
+- B1 is closed. The scripted provider now emits the terminal SSE finish separately, its bash arguments are valid JSON, and native Opi conformance enables the mutating tool required to create the promised final-workspace output.
+- Native conformance refuses a successful process that omits or empties `answer.txt`; the focused negative and positive native-driver cases pass.
+- The two current pi/GLM findings remain Refuted exactly as planned: focused clippy and rustdoc checks pass without restoring either cited condition.
+- Incidental repair I1 is closed. The first repaired native run exposed malformed scripted bash arguments inside the already-owned provider surface; a focused JSON-decoding test reproduced the failure before the one-character escaping repair and passed afterward.
 
-## Materialization
+## Materialization and Remote Evidence
 
-The approved B1/B2 candidate was published as commits `23d20837830a1062d15fb486b5aca0b7db26b0b9` and the bounded follow-up `e2e225fa0665c737542f71aefa27c963daf2bf73` on `codex/phase18-remediation-e779477`. Pull request #6 targets that exact final candidate.
+The implementation candidate is `3b4a39d92338f8cf159296f43c4b8e60809aacc7` on `codex/phase18-remediation-e779477` and pull request #6.
 
-The first pull-request CI run exposed a Unix library-test dead-code diagnostic for the retained benchmark cleanup evidence. Incidental repair I1 made its existing item-local expectation unconditional; replacement CI then passed on Ubuntu, macOS, and Windows.
-
-## Scope Stop
-
-The native failure is not caused by B1/B2: the same `expected agent output is unreadable` failure occurred in native run `33388338497` at pre-remediation commit `96f4429c094d5c69034bad1f456c55af58537cd7`, while the B1 change to `runner/experiment.rs` only deleted an unused cancellation constant. Repairing the failure would require changing native Agent/output behavior or the reserved trial-evidence contract. That is outside the approved causal scope and may change durable-format or authority semantics, so the bounded-incidental guardrails reject an in-place repair. A new `mode=plan` invocation is required before B3 can be closed.
+- Pull-request CI run `33441533936` completed successfully with 27/27 jobs. Terminal receipt generation verified the single-stream Ubuntu attestation download and wrote `docs/snapshots/phase18/ci-receipt.json` for the same candidate.
+- Linux native-smoke run `33441557309` completed successfully. The downloaded 11.26 GB sealed artifact and upload-identity receipt passed `all-native` verification for P18-A02, P18-A03, P18-A04, P18-A08, P18-A09, P18-A10, P18-A12, and BMK-003, with the evidence classified as conformance-only.
+- Relative to the implementation candidate, the evidence commit changes only `docs/snapshots/phase18/ci-receipt.json`, `docs/snapshots/phase18/assurance/remediation.result.md`, and `docs/snapshots/phase18/assurance/remediation.result.dispositions.jsonl`. It contains no Phase 18 runtime, provider, adapter, verifier, workflow, or test change.
 
 ## Verification
 
-Passed before materialization:
+Focused and producer/verifier checks passed:
+
+- `python -m unittest scripts.test_phase18_scripted_provider.ScriptedProviderListenerTest.test_streaming_tool_call_turn_is_deterministic`
+- `python scripts/test_phase18_scripted_provider.py` (15 tests)
+- `cargo test -p opi-eval --test native_driver native_conformance_reruns_the_admitted_cases_through_the_material -- --exact` under WSL (1 passed)
+- `cargo test -p opi-eval --test native_driver` under WSL (10 passed)
+- `cargo test -p opi-eval --test agent_integration_conformance` (1 passed)
+- `cargo clippy -p opi-eval --all-targets -- -D warnings`
+- `RUSTDOCFLAGS="-D warnings" cargo doc -p opi-eval --no-deps`
+- `python scripts/test_verify_phase18_native_ci.py` (34 tests)
+- `python scripts/test_verify_phase18_native_artifact.py` (15 tests)
+- `python scripts/test_verify_phase18_ci.py` (26 tests)
+
+The workspace verification union passed:
 
 - `cargo fmt --check --all`
-- `cargo clippy -p opi-eval --all-targets -- -D warnings`
-- `cargo test -p opi-eval --all-targets`
-- Phase 18 native/CI verifier and seam-matrix Python unit suites
-- `RUSTDOCFLAGS="-D warnings" cargo doc -p opi-eval --no-deps`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --all-targets`
+- `cargo test --workspace --doc`
+- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`
 - `python scripts/opi-doc-check.py`
 - `git diff --check`
 
-External evidence:
+The first all-targets attempt encountered one unrelated timing-test timeout; that exact test then passed five consecutive focused reruns, and the complete all-targets command passed on rerun. The Windows native-artifact invocation could not unpack one deeply nested Linux virtual-environment path; the same repository verifier and downloaded artifact then passed under WSL/Linux path semantics.
 
-- Pull request CI `33423008524`: PASS, 27/27 jobs, candidate `e2e225fa0665c737542f71aefa27c963daf2bf73`.
-- Terminal receipt generation: PASS for the same candidate.
-- Native smoke `33423005233`: FAIL in `Run the six paired agent trials`; no sealed artifact or upload receipt.
-- Earlier native smoke `33388338497`: the same failure at pre-remediation commit `96f4429c094d5c69034bad1f456c55af58537cd7`.
-
-The final full repository union and exact-candidate `all-native`/seam-matrix checks were not run to completion because B3 stopped at the native producer failure. No Phase PASS or implementation-ledger handoff is claimed.
+No Phase PASS or implementation-ledger update is claimed. A fresh audit or owning-workflow return remains a separate explicit action.
