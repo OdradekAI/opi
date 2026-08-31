@@ -317,12 +317,9 @@ pub(crate) struct BenchmarkRecord {
     pub exit: ExitState,
     pub stdout: OutputCapture,
     pub stderr: OutputCapture,
-    #[cfg_attr(
-        not(all(test, unix)),
-        expect(
-            dead_code,
-            reason = "settled benchmark record retains process-cleanup evidence"
-        )
+    #[expect(
+        dead_code,
+        reason = "settled benchmark record retains process-cleanup evidence"
     )]
     pub cleanup: CleanupEvidence,
     /// Wall-clock duration of the supervised verification run.
