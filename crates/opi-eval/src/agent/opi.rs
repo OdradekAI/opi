@@ -390,18 +390,20 @@ impl OpiImporter {
             Ok(bytes) => bytes,
             Err(_) => return failed("import-evidence-missing", FailureBoundaryCode::Evidence),
         };
-        let terminal_sequence = match validate_evidence_records(&evidence_bytes) {
-            Ok(sequence) => sequence,
-            Err(kind) => {
-                return failed(kind, FailureBoundaryCode::Adapter);
-            }
+        let correlation = match parse_manifest_correlation(fields.get("correlation")) {
+            Ok(correlation) => correlation,
+            Err(kind) => return failed(kind, FailureBoundaryCode::Adapter),
         };
-        let manifest_sequence = fields
-            .get("correlation")
-            .and_then(|c| c.get("sequence"))
-            .and_then(|s| s.as_u64());
-        if manifest_sequence != Some(terminal_sequence) {
-            return failed("import-evidence-mismatch", FailureBoundaryCode::Evidence);
+        match validate_evidence_records(&evidence_bytes, &correlation) {
+            Ok(()) => {}
+            Err(kind) => {
+                let boundary = if kind == "import-evidence-mismatch" {
+                    FailureBoundaryCode::Evidence
+                } else {
+                    FailureBoundaryCode::Adapter
+                };
+                return failed(kind, boundary);
+            }
         }
 
         let artifacts = vec![
@@ -449,14 +451,74 @@ fn parse_measurement(value: Option<&serde_json::Value>) -> Option<Option<Fact>> 
     None
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceCorrelationView {
+    run: String,
+    turn: Option<u64>,
+    call: Option<u64>,
+    parent: Option<u64>,
+    sequence: u64,
+}
+
+#[derive(Deserialize)]
+struct EvidenceRecordView {
+    run: String,
+    turn: Option<u64>,
+    call: u64,
+    parent: Option<u64>,
+    sequence: u64,
+    kind: String,
+    payload: BTreeMap<String, serde_json::Value>,
+}
+
+fn parse_manifest_correlation(
+    value: Option<&serde_json::Value>,
+) -> Result<EvidenceCorrelationView, &'static str> {
+    let value = value.ok_or("import-unsupported-schema")?;
+    let object = value.as_object().ok_or("import-parse-failure")?;
+    const FIELDS: [&str; 5] = ["run", "turn", "call", "parent", "sequence"];
+    if object.len() != FIELDS.len() || FIELDS.iter().any(|key| !object.contains_key(*key)) {
+        return Err("import-unsupported-schema");
+    }
+    serde_json::from_value(value.clone()).map_err(|_| "import-unsupported-schema")
+}
+
+fn valid_run_id(run: &str) -> bool {
+    let bytes = run.as_bytes();
+    bytes.len() == 36
+        && bytes.iter().filter(|byte| **byte == b'-').count() == 4
+        && bytes[14] == b'7'
+        && matches!(bytes[19], b'8'..=b'b')
+}
+
+fn kind_matches_payload(kind: &str, payload: &BTreeMap<String, serde_json::Value>) -> bool {
+    if payload.len() != 1 {
+        return false;
+    }
+    let tag = payload.keys().next().map(String::as_str);
+    matches!(
+        (kind, tag),
+        ("provider", Some("Provider"))
+            | ("tool", Some("Tool"))
+            | ("compaction", Some("Compaction"))
+            | ("retry", Some("Structured"))
+            | (
+                "diagnostic",
+                Some("Structured" | "Digest" | "Diagnostic" | "Artifact")
+            )
+    )
+}
+
 /// Validate every NDJSON evidence line against the exact record shape and
-/// return the terminal (last) sequence number.
-fn validate_evidence_records(bytes: &[u8]) -> Result<u64, &'static str> {
+/// the producer's closed graph-correlation invariants.
+fn validate_evidence_records(
+    bytes: &[u8],
+    correlation: &EvidenceCorrelationView,
+) -> Result<(), &'static str> {
     let text = std::str::from_utf8(bytes).map_err(|_| "import-parse-failure")?;
-    let mut terminal: Option<u64> = None;
-    let mut lines = 0;
+    let mut records = Vec::new();
     for line in text.lines().filter(|l| !l.trim().is_empty()) {
-        lines += 1;
         let value: serde_json::Value =
             serde_json::from_str(line).map_err(|_| "import-parse-failure")?;
         let record = value.as_object().ok_or("import-parse-failure")?;
@@ -468,46 +530,57 @@ fn validate_evidence_records(bytes: &[u8]) -> Result<u64, &'static str> {
         {
             return Err("import-unsupported-schema");
         }
-        // run must be a UUID-shaped string (version/variant nibbles checked).
-        let run = record["run"].as_str().ok_or("import-unsupported-schema")?;
-        let bytes = run.as_bytes();
-        if bytes.len() != 36
-            || bytes.iter().filter(|b| **b == b'-').count() != 4
-            || bytes[14] != b'7'
-            || !matches!(bytes[19], b'8'..=b'b')
-        {
+        let record: EvidenceRecordView =
+            serde_json::from_value(value).map_err(|_| "import-unsupported-schema")?;
+        if !valid_run_id(&record.run) {
             return Err("import-unsupported-schema");
         }
-        if !matches!(
-            record["kind"].as_str(),
-            Some("provider" | "tool" | "retry" | "compaction" | "diagnostic")
-        ) {
+        if !kind_matches_payload(&record.kind, &record.payload) {
             return Err("import-unsupported-schema");
         }
-        // Payload is externally tagged with exactly one PascalCase channel.
-        let payload = record["payload"]
-            .as_object()
-            .ok_or("import-parse-failure")?;
-        if payload.len() != 1
-            || !payload.keys().all(|k| {
-                matches!(
-                    k.as_str(),
-                    "Provider" | "Tool" | "Compaction" | "Structured" | "Digest" | "Diagnostic"
-                )
-            })
-        {
-            return Err("import-unsupported-schema");
-        }
-        terminal = Some(
-            record["sequence"]
-                .as_u64()
-                .ok_or("import-unsupported-schema")?,
-        );
+        records.push(record);
     }
-    if lines == 0 {
+    let Some(terminal) = records.last() else {
         return Err("import-evidence-missing");
+    };
+    if !valid_run_id(&correlation.run)
+        || records.iter().any(|record| record.run != correlation.run)
+        || records
+            .windows(2)
+            .any(|records| records[0].sequence >= records[1].sequence)
+    {
+        return Err("import-evidence-mismatch");
     }
-    terminal.ok_or("import-evidence-missing")
+    let mut calls: BTreeMap<u64, (&str, Option<u64>, Option<u64>)> = BTreeMap::new();
+    for (index, record) in records.iter().enumerate() {
+        if record.parent == Some(record.call) {
+            return Err("import-evidence-mismatch");
+        }
+        let identity = (record.kind.as_str(), record.turn, record.parent);
+        if calls
+            .get(&record.call)
+            .is_some_and(|prior| *prior != identity)
+        {
+            return Err("import-evidence-mismatch");
+        }
+        calls.entry(record.call).or_insert(identity);
+        if let Some(parent) = record.parent
+            && !records[..index]
+                .iter()
+                .any(|prior| prior.run == record.run && prior.call == parent)
+        {
+            return Err("import-evidence-mismatch");
+        }
+    }
+    if correlation.run != terminal.run
+        || correlation.turn != terminal.turn
+        || correlation.call != Some(terminal.call)
+        || correlation.parent != terminal.parent
+        || correlation.sequence != terminal.sequence
+    {
+        return Err("import-evidence-mismatch");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -736,6 +809,91 @@ mod tests {
                 boundary: FailureBoundaryCode::Adapter,
             })
         );
+    }
+
+    #[test]
+    fn importer_rejects_phase17_invalid_evidence_graphs() {
+        let fixture = fixture("trace-complete").join("run-0001");
+        let original_manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(fixture.join("manifest.json")).unwrap()).unwrap();
+        let original_records: Vec<serde_json::Value> =
+            std::fs::read_to_string(fixture.join("evidence.jsonl"))
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+
+        for case in [
+            "mixed-run",
+            "non-increasing-sequence",
+            "unstable-call",
+            "missing-parent",
+            "late-parent",
+            "self-parent",
+            "kind-payload-mismatch",
+            "terminal-run",
+            "terminal-turn",
+            "terminal-call",
+            "terminal-parent",
+        ] {
+            let mut manifest = original_manifest.clone();
+            let mut records = original_records.clone();
+            match case {
+                "mixed-run" => {
+                    records[0]["run"] = serde_json::json!("0192d6c0-0000-7000-8000-000000000002");
+                }
+                "non-increasing-sequence" => {
+                    records[1]["sequence"] = serde_json::json!(1);
+                    manifest["correlation"]["sequence"] = serde_json::json!(1);
+                }
+                "unstable-call" => {
+                    records[1]["call"] = serde_json::json!(1);
+                    manifest["correlation"]["call"] = serde_json::json!(1);
+                }
+                "missing-parent" => {
+                    records[1]["parent"] = serde_json::json!(99);
+                    manifest["correlation"]["parent"] = serde_json::json!(99);
+                }
+                "late-parent" => records[0]["parent"] = serde_json::json!(5),
+                "self-parent" => {
+                    records[1]["parent"] = serde_json::json!(5);
+                    manifest["correlation"]["parent"] = serde_json::json!(5);
+                }
+                "kind-payload-mismatch" => records[1]["kind"] = serde_json::json!("provider"),
+                "terminal-run" => {
+                    manifest["correlation"]["run"] =
+                        serde_json::json!("0192d6c0-0000-7000-8000-000000000002");
+                }
+                "terminal-turn" => manifest["correlation"]["turn"] = serde_json::json!(2),
+                "terminal-call" => manifest["correlation"]["call"] = serde_json::json!(99),
+                "terminal-parent" => manifest["correlation"]["parent"] = serde_json::json!(1),
+                _ => unreachable!(),
+            }
+
+            let trace = tempfile::tempdir().unwrap();
+            let child = trace.path().join("run-0001");
+            std::fs::create_dir(&child).unwrap();
+            std::fs::write(
+                child.join("manifest.json"),
+                serde_json::to_vec(&manifest).unwrap(),
+            )
+            .unwrap();
+            let mut evidence = records
+                .iter()
+                .map(|record| serde_json::to_string(record).unwrap())
+                .collect::<Vec<_>>()
+                .join("\n");
+            evidence.push('\n');
+            std::fs::write(child.join("evidence.jsonl"), evidence).unwrap();
+
+            assert!(
+                matches!(
+                    OpiImporter.import_trace(trace.path()).completion,
+                    AgentCompletion::Failed(_)
+                ),
+                "{case} must fail closed"
+            );
+        }
     }
 
     fn settled_outcome(code: i32) -> crate::process::SupervisedOutcome {

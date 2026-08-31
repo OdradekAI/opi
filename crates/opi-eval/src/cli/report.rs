@@ -47,8 +47,7 @@ pub struct ReportArgs {
     pub canaries: Option<PathBuf>,
 }
 
-/// Whether `out` lies inside `root` (both absolutized lexically without
-/// requiring the target to exist).
+/// Absolutize a path lexically without requiring the target to exist.
 fn absolute(path: &Path) -> std::borrow::Cow<'_, Path> {
     if path.is_absolute() {
         std::borrow::Cow::Borrowed(path)
@@ -67,29 +66,44 @@ fn is_inside(root: &Path, out: &Path) -> bool {
 /// live outside the run root and must not exist, so sealed bytes and
 /// prior reports can never be replaced.
 fn open_output(root: &Path, out: &Path, bytes: &[u8]) -> Result<(), ReportCliError> {
-    let root_lexical = absolute(root);
-    let root_abs = root_lexical
-        .canonicalize()
-        .unwrap_or(root_lexical.into_owned());
+    let root_abs = absolute(root).canonicalize().map_err(|error| {
+        ReportCliError::OutRejected(format!(
+            "cannot resolve run root {}: {error}",
+            root.display()
+        ))
+    })?;
     let out_abs = absolute(out).into_owned();
-    if is_inside(&root_abs, &out_abs) {
+    let parent = out_abs.parent().ok_or_else(|| {
+        ReportCliError::OutRejected(format!("{} has no containing directory", out_abs.display()))
+    })?;
+    let file_name = out_abs.file_name().ok_or_else(|| {
+        ReportCliError::OutRejected(format!("{} has no output filename", out_abs.display()))
+    })?;
+    let resolved_parent = parent.canonicalize().map_err(|error| {
+        ReportCliError::OutRejected(format!(
+            "cannot resolve output parent {}: {error}",
+            parent.display()
+        ))
+    })?;
+    let resolved_out = resolved_parent.join(file_name);
+    if is_inside(&root_abs, &resolved_out) {
         return Err(ReportCliError::OutRejected(format!(
             "{} lies inside the run root {}",
-            out_abs.display(),
+            resolved_out.display(),
             root_abs.display()
         )));
     }
-    if out_abs.exists() {
+    if resolved_out.exists() {
         return Err(ReportCliError::OutRejected(format!(
             "{} already exists; a prior report is never replaced",
-            out_abs.display()
+            resolved_out.display()
         )));
     }
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&out_abs)?;
+        .open(&resolved_out)?;
     file.write_all(bytes)?;
     Ok(())
 }

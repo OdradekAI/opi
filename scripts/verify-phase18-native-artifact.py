@@ -249,7 +249,7 @@ def verify_seal(stage: Path, upload: dict, f: Findings) -> dict | None:
     # Symmetric with the producer's manifest: symbolic links are sealed
     # as tar link entries, never as byte payloads, so a link whose
     # target exists is not a manifestable file.
-    present = {str(p.relative_to(stage)) for p in stage.rglob("*")
+    present = {p.relative_to(stage).as_posix() for p in stage.rglob("*")
                if p.is_file() and not p.is_symlink()}
     allowed_extra = {"08-seal/artifact-manifest.json",
                      "08-seal/outer-receipt.json"}

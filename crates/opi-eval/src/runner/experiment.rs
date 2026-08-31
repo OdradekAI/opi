@@ -240,6 +240,7 @@ fn control_fingerprint(experiment: &ResolvedExperiment) -> String {
 /// The deterministic helper standing in for one agent product. Behavior is
 /// selected via `OPI_EVAL_RUN_BEHAVIOR`; every branch is bounded and emits
 /// only pinned fixture bytes into the isolated workspace/trace roots.
+#[cfg(unix)]
 fn agent_helper_script(product: &str) -> String {
     let trace_copy = if product == "opi" {
         // Opi receives the fresh trace root as the `--trace` argv slot ($4).
@@ -283,9 +284,64 @@ exit 0\n"
     )
 }
 
-/// The deterministic helper standing in for the native verifier.
-fn verifier_helper_script(report_name: &str) -> String {
+#[cfg(windows)]
+fn agent_helper_script(product: &str) -> String {
+    let trace_copy = if product == "opi" {
+        r#"if not exist "%~4\run-0001" mkdir "%~4\run-0001"
+if exist "%OPI_EVAL_TRACE_SOURCE%\run-0001\manifest.json" copy /Y "%OPI_EVAL_TRACE_SOURCE%\run-0001\manifest.json" "%~4\run-0001\manifest.json" >nul
+if exist "%OPI_EVAL_TRACE_SOURCE%\run-0001\evidence.jsonl" copy /Y "%OPI_EVAL_TRACE_SOURCE%\run-0001\evidence.jsonl" "%~4\run-0001\evidence.jsonl" >nul"#
+    } else {
+        r#"type "%PI_EVAL_STREAM_SOURCE%""#
+    };
+    let argv_guard = if product == "opi" {
+        r#"if /I not "%~1"=="--json" echo argv drift: expected --json first 1>&2 & exit /b 9"#
+    } else {
+        r#"if /I not "%~1"=="--mode" echo argv drift: expected --mode json 1>&2 & exit /b 9
+if /I not "%~2"=="json" echo argv drift: expected --mode json 1>&2 & exit /b 9"#
+    };
+    let excess_chunk = "a".repeat(1024);
     format!(
+        "@echo off\r\n\
+rem assembled-run fixture helper standing in for the {product} agent (never the real binary)\r\n\
+{argv_guard}\r\n\
+>answer.txt echo answer\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"happy\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"prompt-only-package\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"verifier-failure\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"seal-failure\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-unknown-schema\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-malformed-stream\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-missing-terminal\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"canary-leak\" goto canary\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-excess-output\" goto excess\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-crash\" goto crash\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-timeout\" goto wait_forever\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-cancelled\" goto wait_forever\r\n\
+echo unknown behavior 1>&2\r\n\
+exit /b 9\r\n\
+:success\r\n\
+{trace_copy}\r\n\
+exit /b 0\r\n\
+:canary\r\n\
+>answer.txt <nul set /p \"=%OPI_EVAL_CANARY_SECRET%\"\r\n\
+{trace_copy}\r\n\
+exit /b 0\r\n\
+:excess\r\n\
+{trace_copy}\r\n\
+for /L %%i in (1,1,2048) do <nul set /p \"={excess_chunk}\" 1>&2\r\n\
+exit /b 0\r\n\
+:crash\r\n\
+echo simulated agent crash 1>&2\r\n\
+exit /b 3\r\n\
+:wait_forever\r\n\
+goto wait_forever\r\n"
+    )
+}
+
+/// The deterministic helper standing in for the native verifier.
+#[cfg(unix)]
+fn verifier_helper_script(report_name: &str, _native_source: &Path) -> Result<String, RunError> {
+    Ok(format!(
         "#!/bin/sh\n\
 # assembled-run fixture helper standing in for the native verifier (never the real grader)\n\
 case \"$OPI_EVAL_RUN_BEHAVIOR\" in\n\
@@ -296,7 +352,42 @@ case \"$OPI_EVAL_RUN_BEHAVIOR\" in\n\
     exit 5 ;;\n\
   *) echo \"unknown behavior\" >&2; exit 9 ;;\nesac\n\
 exit 0\n"
-    )
+    ))
+}
+
+#[cfg(windows)]
+fn verifier_helper_script(report_name: &str, native_source: &Path) -> Result<String, RunError> {
+    let native_source = std::fs::canonicalize(native_source)
+        .map_err(|error| RunError::Staging(error.to_string()))?;
+    Ok(format!(
+        "@echo off\r\n\
+rem assembled-run fixture helper standing in for the native verifier (never the real grader)\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"happy\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"canary-leak\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-crash\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-timeout\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"verifier-failure\" goto failure\r\n\
+echo unknown behavior 1>&2\r\n\
+exit /b 9\r\n\
+:success\r\n\
+copy /Y \"{}\" \".\\{report_name}\" >nul\r\n\
+if errorlevel 1 exit /b 9\r\n\
+exit /b 0\r\n\
+:failure\r\n\
+copy /Y \"{}\" \".\\{report_name}\" >nul\r\n\
+if errorlevel 1 exit /b 9\r\n\
+exit /b 5\r\n",
+        native_source.display(),
+        native_source.display(),
+    ))
+}
+
+fn helper_path(root: &Path, stem: &str) -> PathBuf {
+    #[cfg(unix)]
+    let extension = "sh";
+    #[cfg(windows)]
+    let extension = "cmd";
+    root.join(format!("{stem}.{extension}"))
 }
 
 /// Scans the staged bundle files for declared canaries. Reads exactly the
@@ -1131,7 +1222,7 @@ async fn run_trial(
             )
         }
         None => {
-            let helper = trial_root.join("helper-agent.sh");
+            let helper = helper_path(&trial_root, "helper-agent");
             write_helper(&helper, &agent_helper_script(product))?;
             (
                 helper,
@@ -1311,11 +1402,22 @@ async fn run_trial(
     let mut verifier_record = None;
     let mut verifier_rejection: Option<String> = None;
     if ledger.attempt(AuthorityTransition::GradeDispatch) {
+        let fixture_report = match revision {
+            BenchmarkRevision::TerminalBench21 { fixture_report, .. }
+            | BenchmarkRevision::TerminalBench30 { fixture_report, .. }
+            | BenchmarkRevision::DeepSwe { fixture_report, .. } => fixture_report.clone(),
+        };
         let verifier_helper = match native {
             Some(inputs) => inputs.verifier_executable.clone(),
             None => {
-                let helper = trial_root.join("helper-verifier.sh");
-                write_helper(&helper, &verifier_helper_script(revision.report_name()))?;
+                let native_source = fixture_report
+                    .as_deref()
+                    .expect("hermetic benchmark revisions carry fixture reports");
+                let helper = helper_path(&trial_root, "helper-verifier");
+                write_helper(
+                    &helper,
+                    &verifier_helper_script(revision.report_name(), native_source)?,
+                )?;
                 helper
             }
         };
@@ -1339,11 +1441,6 @@ async fn run_trial(
             copy_dir_recursive(&task_package, &task_dir)
                 .map_err(|error| RunError::Staging(error.to_string()))?;
         }
-        let fixture_report = match revision {
-            BenchmarkRevision::TerminalBench21 { fixture_report, .. }
-            | BenchmarkRevision::TerminalBench30 { fixture_report, .. }
-            | BenchmarkRevision::DeepSwe { fixture_report, .. } => fixture_report.clone(),
-        };
         let benchmark_request_adapter: Box<dyn BenchmarkAdapter> = match revision {
             BenchmarkRevision::TerminalBench21 { profile_bytes, .. } => {
                 let profile = Tb21Profile::parse(profile_bytes.as_slice())

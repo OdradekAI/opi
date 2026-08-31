@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `opi-eval`: Phase 18 audit remediation now rejects artifact-directory and
+  report-output ancestor aliases before they can redirect writes outside the
+  reserved boundary, durably synchronizes the containing directory before an
+  intent proof is returned, validates the complete Opi evidence graph before
+  accepting an imported trace, and stages behavior-equivalent native command
+  helpers for Windows hermetic runs. The Windows smoke wrapper also emits
+  portable SHA-256 evidence and BOM-free JSON without assuming PowerShell
+  module autoloading, and downloaded native artifacts verify without assuming
+  a `python3` launcher or POSIX host path separators.
 - `opi-eval`: sealed trial bundles now carry the complete retained-byte
   closure (Phase 18 remediation). The pre-effect intent reservation names
   every artifact identity the sealed bundle must cover (the resolved

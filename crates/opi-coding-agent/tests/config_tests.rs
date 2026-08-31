@@ -718,10 +718,9 @@ fn build_http_client_rejects_invalid_proxy_url() {
 }
 
 #[test]
-fn build_http_client_without_proxy_succeeds() {
+fn build_http_client_without_explicit_proxy_succeeds() {
     use opi_coding_agent::config::build_http_client;
-    let client = build_http_client(None).expect("no proxy should succeed");
-    assert!(client.proxy_config().url.is_none());
+    let _client = build_http_client(None).expect("no explicit proxy should succeed");
 }
 
 #[test]

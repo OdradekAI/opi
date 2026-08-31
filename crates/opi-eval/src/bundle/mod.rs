@@ -9,7 +9,34 @@
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
     use std::fs;
+
+    thread_local! {
+        static ATOMIC_WRITE_TRACE: RefCell<Option<Vec<&'static str>>> = const { RefCell::new(None) };
+        static FAIL_PARENT_SYNC: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub(super) fn begin_atomic_write_trace(fail_parent_sync: bool) {
+        ATOMIC_WRITE_TRACE.with(|trace| *trace.borrow_mut() = Some(Vec::new()));
+        FAIL_PARENT_SYNC.with(|fail| fail.set(fail_parent_sync));
+    }
+
+    pub(super) fn record_atomic_write_event(event: &'static str) {
+        ATOMIC_WRITE_TRACE.with(|trace| {
+            if let Some(events) = trace.borrow_mut().as_mut() {
+                events.push(event);
+            }
+        });
+    }
+
+    pub(super) fn parent_sync_should_fail() -> bool {
+        FAIL_PARENT_SYNC.with(Cell::get)
+    }
+
+    fn take_atomic_write_trace() -> Vec<&'static str> {
+        ATOMIC_WRITE_TRACE.with(|trace| trace.borrow_mut().take().unwrap_or_default())
+    }
 
     fn spec(role: ArtifactRole, source: &str, path: &str, bytes: &[u8]) -> ArtifactSpec {
         ArtifactSpec {
@@ -131,6 +158,87 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, BundleError::ArtifactTooLarge { .. }));
         assert_eq!(err.boundary(), FailureBoundaryCode::Evidence);
+    }
+
+    #[cfg(windows)]
+    fn create_directory_alias(link: &Path, target: &Path) {
+        let output = std::process::Command::new("cmd")
+            .args([
+                "/D",
+                "/C",
+                "mklink",
+                "/J",
+                &link.to_string_lossy(),
+                &target.to_string_lossy(),
+            ])
+            .output()
+            .expect("spawn mklink for bundle ancestor regression");
+        assert!(
+            output.status.success(),
+            "create bundle ancestor junction: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(unix)]
+    fn create_directory_alias(link: &Path, target: &Path) {
+        std::os::unix::fs::symlink(target, link).expect("create bundle ancestor symlink");
+    }
+
+    #[test]
+    fn insertion_rejects_ancestor_directory_alias() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let mut bundle = RunBundle::create(tmp.path()).unwrap();
+        fs::create_dir(tmp.path().join("artifacts")).unwrap();
+        create_directory_alias(&tmp.path().join("artifacts").join("native"), outside.path());
+
+        let err = bundle
+            .insert(
+                spec(
+                    ArtifactRole::Native,
+                    "agent-opi",
+                    "native/stdout.log",
+                    b"must stay contained\n",
+                ),
+                vec![],
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, BundleError::SymlinkEscape { .. }));
+        assert_eq!(err.boundary(), FailureBoundaryCode::Evidence);
+        assert!(!outside.path().join("stdout.log").exists());
+    }
+
+    #[test]
+    fn intent_publication_requires_parent_directory_durability() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut bundle = RunBundle::create(tmp.path()).unwrap();
+        let intent = IntentRecord {
+            trial: TrialIdentity::new("trial-1").unwrap(),
+            pair: PairIdentity::new("pair-1").unwrap(),
+            artifacts: vec![ArtifactKey::new("normalized/expected").unwrap()],
+            expected_output: ArtifactKey::new("normalized/expected").unwrap(),
+        };
+
+        begin_atomic_write_trace(false);
+        bundle.publish_intent(&intent).unwrap();
+        assert_eq!(
+            take_atomic_write_trace(),
+            vec!["write", "file-sync", "rename", "parent-sync"]
+        );
+
+        let failed_root = tempfile::tempdir().unwrap();
+        let mut failed = RunBundle::create(failed_root.path()).unwrap();
+        begin_atomic_write_trace(true);
+        let err = failed.publish_intent(&intent).unwrap_err();
+        assert!(matches!(err, BundleError::Io { .. }));
+        assert_eq!(err.boundary(), FailureBoundaryCode::TrialDurability);
+        assert_eq!(
+            take_atomic_write_trace(),
+            vec!["write", "file-sync", "rename", "parent-sync"]
+        );
     }
 
     #[test]
@@ -1100,7 +1208,7 @@ impl RunBundle {
             }
         }
         let digest = sha256_hex(&spec.bytes);
-        let target = self.artifact_path(&spec.path)?;
+        let target = self.artifact_path(&spec.path, FailureBoundaryCode::Evidence, true)?;
         let BundleState::Staging { entries, .. } = &mut self.state else {
             unreachable!("sealed state rejected above")
         };
@@ -1335,7 +1443,7 @@ impl RunBundle {
         key: &ArtifactKey,
         boundary: FailureBoundaryCode,
     ) -> Result<Vec<u8>, BundleError> {
-        let path = self.artifact_path(key)?;
+        let path = self.artifact_path(key, boundary, false)?;
         let meta = fs::symlink_metadata(&path).map_err(BundleError::from)?;
         if !meta.is_file() {
             return Err(BundleError::SymlinkEscape {
@@ -1349,13 +1457,20 @@ impl RunBundle {
     /// Absolute on-disk location of one logical artifact path. The key
     /// grammar already excludes escapes; this returns the nested location
     /// under the reserved `artifacts` directory.
-    fn artifact_path(&self, key: &ArtifactKey) -> io::Result<PathBuf> {
+    fn artifact_path(
+        &self,
+        key: &ArtifactKey,
+        boundary: FailureBoundaryCode,
+        create_missing: bool,
+    ) -> Result<PathBuf, BundleError> {
+        let mut components = key.as_str().split('/').peekable();
         let mut path = self.root.join("artifacts");
-        for segment in key.as_str().split('/') {
+        ensure_artifact_directory(&path, key, boundary, create_missing)?;
+        while let Some(segment) = components.next() {
             path.push(segment);
-        }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            if components.peek().is_some() {
+                ensure_artifact_directory(&path, key, boundary, create_missing)?;
+            }
         }
         Ok(path)
     }
@@ -1516,6 +1631,61 @@ fn collect_artifact_files(
     Ok(())
 }
 
+/// Validate one artifact ancestor without following an alias. Missing
+/// directories are created one component at a time only while staging; sealed
+/// reads remain read-only. Windows junctions are reparse points even when the
+/// standard symlink bit is not set, so both forms are rejected.
+fn ensure_artifact_directory(
+    path: &Path,
+    key: &ArtifactKey,
+    boundary: FailureBoundaryCode,
+    create_missing: bool,
+) -> Result<(), BundleError> {
+    let inspect = || -> Result<bool, io::Error> {
+        let metadata = fs::symlink_metadata(path)?;
+        if metadata.file_type().is_symlink() || metadata_is_windows_reparse_point(&metadata) {
+            return Ok(false);
+        }
+        Ok(metadata.is_dir())
+    };
+
+    match inspect() {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(BundleError::SymlinkEscape {
+            boundary,
+            key: key.clone(),
+        }),
+        Err(error) if error.kind() == io::ErrorKind::NotFound && create_missing => {
+            match fs::create_dir(path) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => match inspect() {
+                    Ok(true) => Ok(()),
+                    Ok(false) => Err(BundleError::SymlinkEscape {
+                        boundary,
+                        key: key.clone(),
+                    }),
+                    Err(source) => Err(BundleError::Io { boundary, source }),
+                },
+                Err(source) => Err(BundleError::Io { boundary, source }),
+            }
+        }
+        Err(source) => Err(BundleError::Io { boundary, source }),
+    }
+}
+
+#[cfg(windows)]
+fn metadata_is_windows_reparse_point(metadata: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    metadata.file_attributes()
+        & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+        != 0
+}
+
+#[cfg(not(windows))]
+fn metadata_is_windows_reparse_point(_metadata: &fs::Metadata) -> bool {
+    false
+}
+
 /// Writes `bytes` to a temporary sibling and atomically renames it over
 /// `path`, fsyncing the file first so a crash never leaves a partial
 /// publication visible under the final name.
@@ -1527,7 +1697,47 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     {
         let mut file = fs::File::create(&tmp)?;
         file.write_all(bytes)?;
+        #[cfg(test)]
+        tests::record_atomic_write_event("write");
         file.sync_all()?;
+        #[cfg(test)]
+        tests::record_atomic_write_event("file-sync");
     }
-    fs::rename(&tmp, path)
+    fs::rename(&tmp, path)?;
+    #[cfg(test)]
+    tests::record_atomic_write_event("rename");
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "atomic publication requires a containing directory",
+        )
+    })?;
+    #[cfg(test)]
+    tests::record_atomic_write_event("parent-sync");
+    sync_parent_directory(parent)
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(parent: &Path) -> io::Result<()> {
+    #[cfg(test)]
+    if tests::parent_sync_should_fail() {
+        return Err(io::Error::other("injected parent-directory sync failure"));
+    }
+    fs::File::open(parent)?.sync_all()
+}
+
+#[cfg(windows)]
+fn sync_parent_directory(parent: &Path) -> io::Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    #[cfg(test)]
+    if tests::parent_sync_should_fail() {
+        return Err(io::Error::other("injected parent-directory sync failure"));
+    }
+    fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS)
+        .open(parent)?
+        .sync_all()
 }

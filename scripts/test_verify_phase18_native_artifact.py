@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -332,7 +333,7 @@ def seal(stage: Path, tmp: Path, expires_in_days: int = 90) -> dict:
     manifest: dict = {}
     for path in sorted(stage.rglob("*")):
         if path.is_file() and seal_out not in path.parents:
-            manifest[str(path.relative_to(stage))] = sha(path.read_bytes())
+            manifest[path.relative_to(stage).as_posix()] = sha(path.read_bytes())
     write_json(seal_out / "artifact-manifest.json",
                {"schema": "phase18-native-artifact-manifest/1", "files": manifest})
     outer = {
@@ -355,7 +356,7 @@ def seal(stage: Path, tmp: Path, expires_in_days: int = 90) -> dict:
     with tarfile.open(tar_path, "w") as archive:
         for path in sorted(stage.rglob("*")):
             if path.is_file():
-                archive.add(path, arcname=str(path.relative_to(stage)),
+                archive.add(path, arcname=path.relative_to(stage).as_posix(),
                             recursive=False)
 
     import datetime
@@ -383,7 +384,7 @@ def re_tar(stage: Path, tmp: Path) -> Path:
     with tarfile.open(tar_path, "w") as archive:
         for path in sorted(stage.rglob("*")):
             if path.is_file():
-                archive.add(path, arcname=str(path.relative_to(stage)),
+                archive.add(path, arcname=path.relative_to(stage).as_posix(),
                             recursive=False)
     return tar_path
 
@@ -427,7 +428,7 @@ def build_git_repo(tmp: Path) -> tuple[Path, str]:
 class ArtifactVerifier(unittest.TestCase):
     def run_verifier(self, *args) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["python3", str(VERIFIER), *map(str, args)],
+            [sys.executable, str(VERIFIER), *map(str, args)],
             capture_output=True, text=True)
 
     def setUp(self) -> None:
