@@ -48,11 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not required only after observed tree emptiness, otherwise as verified
   tree termination or a typed termination failure.
 - `opi-eval`: the DeepSWE native reward contract is enforced (Phase 18
-  remediation). Pier job-aggregate import rejects every reward outside the
-  native zero-or-one domain (negative, above-one, and fractional values)
-  before any `u64` conversion, and the DeepSWE upstream oracle preflight
-  now requires an explicitly known positive native `reward` metric: a
-  zero-reward reference solution no longer admits a task.
+  remediation). Pier job-aggregate import accepts finite benchmark-defined
+  score breakdowns such as F2P and P2P while rejecting authoritative
+  `reward` values outside the native zero-or-one domain (negative, above-one,
+  and fractional values) before any `u64` conversion. The DeepSWE upstream
+  oracle preflight now requires an explicitly known positive native `reward`
+  metric: a zero-reward reference solution no longer admits a task.
 - `opi-eval`: every durable trial intent binds to the comparison edge
   that owns it (Phase 18 remediation). The runner resolves each trial's
   unique owning edge from its subject and the counterpart trial declared

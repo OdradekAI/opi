@@ -244,13 +244,17 @@ pub(crate) fn import_pier_job_result(
             let reward: f64 = reward_key
                 .parse()
                 .map_err(|_| HarborResultError::Invalid("bad-reward-values"))?;
-            // Every Pier reward lives in the native zero-or-one domain and
-            // is validated before any conversion to `u64`: negative and
-            // above-one values are drift, never clamped or cast.
-            if !reward.is_finite() || reward.fract() != 0.0 || !(0.0..=1.0).contains(&reward) {
+            if !reward.is_finite() {
                 return Err(HarborResultError::Invalid("bad-reward-values"));
             }
             if metric == "reward" {
+                // Only the authoritative aggregate reward lives in the
+                // zero-or-one domain. Native score breakdowns retain their
+                // benchmark-defined finite numeric values without being
+                // translated into shared counters.
+                if reward.fract() != 0.0 || !(0.0..=1.0).contains(&reward) {
+                    return Err(HarborResultError::Invalid("bad-reward-values"));
+                }
                 reward_fact = Some(Fact::Known {
                     value: reward as u64,
                     origin: "pier-result".to_owned(),
@@ -966,5 +970,29 @@ fn pier_job_import_enforces_the_native_reward_domain() {
     assert_eq!(
         import_pier_job_result(dir.path()),
         Err(HarborResultError::Invalid("no-reward-key"))
+    );
+}
+
+#[test]
+fn pier_job_import_accepts_native_multi_metric_breakdowns() {
+    let dir = tempfile::tempdir().unwrap();
+    let jobs = dir.path().join("jobs").join("2026-08-29__07-25-13");
+    std::fs::create_dir_all(&jobs).unwrap();
+    std::fs::write(
+        jobs.join("result.json"),
+        br#"{"n_total_trials": 1, "stats": {"evals": {"x": {"reward_stats": {
+            "F2P": {"20.0": ["t"]}, "P2P": {"3.0": ["t"]},
+            "partial": {"1.0": ["t"]}, "reward": {"1.0": ["t"]}
+        }}}}}"#,
+    )
+    .unwrap();
+
+    let (_path, reward, _value) = import_pier_job_result(dir.path()).unwrap();
+    assert_eq!(
+        reward,
+        Fact::Known {
+            value: 1,
+            origin: "pier-result".to_owned()
+        }
     );
 }
