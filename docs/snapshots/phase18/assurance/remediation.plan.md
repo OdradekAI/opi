@@ -1,207 +1,166 @@
 # Phase 18 Remediation Plan
 
-**Status**: READY-FOR-APPLY
-**Audit index SHA-256**: `e10b49f77361516f750166624f02ec0bb508be4018ac93efaef30297d871baa0`
-**Remediation head**: `b9af27fd7944b00566d8dd7443936d9a5031f0e2`
+**Status**: DRAFT-UNRESOLVED
+**Audit index SHA-256**: `325a4665c863139394767d3ce3454e79528b77d0301a2dad621c7330761c987c`
+**Remediation head**: `5c0642a7e5af51529c18be47311fa17679d44c8b`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
-**Dirty-worktree baseline**: staged: none; unstaged: none; untracked: none
-**Unresolved decisions**: none
-
-The red-before observations below are bound to the remediation head by an empty
-diff across every affected production and test path from both indexed audit
-heads. Focused current-head tests were also run from an isolated `git archive`;
-where an existing test encodes the defect, the plan records that inverse
-expectation and requires the apply run to make the same behavioral check red
-before changing production code.
+**Dirty-worktree baseline**: staged=[]; unstaged=[]; untracked=[]
+**Unresolved decisions**: D1
 
 ## Current Finding Verification
 
 | Source run / Finding ID | Verification | Source and final severity + rationale | Closure key/family | Batch | Decision |
 |---|---|---|---|---|---|
-| `phase18-codex-gpt56-dbd984e-20260830t152407z` / `P18-AUD-001` | Confirmed | Major -> Major: incomplete retained-byte closure still verifies after unreserved-file or sidecar mutation. | `bundle.retained-byte-closure` / `bundle.durability` | B1 | `fix:seal-complete-trial-closure` |
-| `phase18-codex-gpt56-dbd984e-20260830t152407z` / `P18-AUD-002` | Confirmed | Major -> Major: reporting still trusts mutable side files, publishes after verification failure, and can overwrite sealed output. | `report.sealed-input-and-output-isolation` / `report.offline-integrity` | B2 | `fix:derive-report-from-sealed-inputs` |
-| `phase18-codex-gpt56-dbd984e-20260830t152407z` / `P18-AUD-003` | Confirmed | Major -> Major: valid Agent non-zero exits and timeouts still stop native grading and become infrastructure failures. | `agent-failure.native-graded-outcome` / `failure.classification` | B3 | `fix:score-agent-owned-failures` |
-| `phase18-codex-gpt56-dbd984e-20260830t152407z` / `P18-AUD-004` | Confirmed | Major -> Major: the natural-exit branch still abandons inherited pipes and records cleanup as not required without tree verification. | `process.natural-exit-tree-cleanup` / `process.supervision` | B4 | `fix:verify-natural-exit-tree-cleanup` |
-| `phase18-codex-gpt56-dbd984e-20260830t152407z` / `P18-AUD-005` | Confirmed | Major -> Major: Pier rewards still lack the native 0..=1 domain check and DeepSWE accepts any structurally verified oracle result. | `deepswe.reward-domain-and-positive-oracle` / `benchmark.oracle-integrity` | B5 | `fix:enforce-deepswe-reward-contract` |
-| `phase18-codex-gpt56-dbd984e-20260830t152407z` / `P18-AUD-006` | Confirmed | Major -> Major: trial intents still select the first declared edge instead of the unique owning pair. | `trial.intent-edge-identity` / `experiment.pairing` | B6 | `fix:bind-intent-to-owning-edge` |
-| `phase18-pi-glm53-432ff13-20260830t114647z` / `P18-AUD-001` | Confirmed | Major -> Major: the comparison vocabulary and runner still reclassify Agent-owned failure as infrastructure. | `agent-failure.native-graded-outcome` / `failure.classification` | B3 | `fix:score-agent-owned-failures` |
-| `phase18-pi-glm53-432ff13-20260830t114647z` / `P18-AUD-002` | Confirmed | Minor -> Minor: verifier stdout, stderr, and native reports still reuse the Agent source identity. | `verifier-artifact.source-identity` / `bundle.provenance` | B7 | `fix:attribute-verifier-artifacts-to-grader` |
-| `phase18-pi-glm53-432ff13-20260830t114647z` / `P18-AUD-003` | Confirmed | Minor -> Minor: the zero-reward DeepSWE oracle path is still accepted. | `deepswe.reward-domain-and-positive-oracle` / `benchmark.oracle-integrity` | B5 | `fix:enforce-deepswe-reward-contract` |
-| `phase18-pi-glm53-432ff13-20260830t114647z` / `P18-AUD-004` | Confirmed | Minor -> Minor: the producer still executes 13 cases and writes `cases_run=12`. | `native-conformance.receipt-count` / `native-smoke.metadata` | B8 | `fix:derive-conformance-case-count` |
+| `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 / P18-AUD-001` | Confirmed by a Windows junction probe in the committed archive: `RunBundle::insert` returned success and wrote through `artifacts/native` to an external directory. | Major -> Major. Artifact staging can escape the reserved bundle tree through an existing ancestor alias, widening artifact authority. | `bundle.artifact-ancestor-containment` / `bundle.filesystem-boundary` | B1 | `fix:reject-bundle-ancestor-aliases` |
+| `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 / P18-AUD-002` | Confirmed by current-source proof: `atomic_write` synchronizes the temporary file and returns directly from `fs::rename` without a containing-directory durability barrier. | Major -> Major. `DurableIntentProof` can be returned before the renamed directory entry is crash-durable. | `bundle.intent-directory-durability` / `bundle.durability` | B2 | `fix:durably-sync-parent-after-publication` |
+| `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 / P18-AUD-003` | Confirmed by a saved-trace mutation probe in the committed archive: replacing the first record's run with a different valid UUID still settled as complete. Current source also omits strict sequence, call, parent, and kind/payload correlation. | Major -> Major. Phase 17-invalid evidence graphs cross the Opi adapter boundary as complete evidence. | `agent.opi-phase17-evidence-graph` / `agent.opi-import` | B3 | `fix:validate-complete-phase17-evidence-graph` |
+| `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 / P18-AUD-004` | Confirmed on Windows by the production CLI: the happy hermetic run exits 1 with `expected agent output is unreadable` / OS error 2 after staging `helper-agent.sh`. | Major -> Major. The committed cross-platform wrapper cannot execute its Windows happy path. | `runner.hermetic-windows-execution` / `runner.cross-platform-hermetic` | B4 | `fix:generate-native-windows-hermetic-helpers` |
+| `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 / P18-AUD-005` | Confirmed by a Windows junction probe in the committed archive: a lexical `--out` outside the run root resolved through the junction and created `report.json` inside the run root. | Major -> Major. Report publication can add an unmanifested file under sealed input through an ancestor alias. | `report.output-resolved-containment` / `report.filesystem-boundary` | B5 | `fix:resolve-report-output-parent-before-containment` |
+| `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 / P18-AUD-006` | Confirmed: the native artifact is bound to `27344e3aaf03d38eaa53c7af19c777efbe9be213`, the terminal CI receipt to `0f5a3fa152b12d7be4036b2a08ae7a195f8c2107`, and the remediation head changes twenty native-exercised runtime/producer paths relative to the artifact candidate. | Major -> Major. Current-head real-runtime and three-platform claims are not supported by the recorded artifacts. | `phase18.current-head-runtime-evidence` / `phase18.assurance-binding` | pending D1 | `pending:D1-current-head-evidence-authority` |
+| `phase18-pi-glm53-68d74ec-20260830t200548z / P18-AUD-001` | Confirmed: with ambient `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY`, the focused test fails because the client correctly adopts the ambient proxy while the test asserts no proxy URL. | Minor -> Minor. This is an environment-isolation defect in the test, not a product proxy defect. | `config-test.proxy-environment-isolation` / `tests.environment-isolation` | B6 | `fix:remove-proxy-free-assumption-from-test` |
 
 ## Unresolved Decisions
 
 | ID | Required decision | Why evidence cannot decide | Alternatives | Authority needed |
 |---|---|---|---|---|
-| none | none | All closure predicates follow from the registered Phase 18 specification and current crate contracts. | none | none |
+| D1 | Select the registered authority path for current-head Phase 18 native and terminal-CI evidence after B1-B6 are materialized. | The live evidence is stale, but the registered task 18.15 source requires one sole human-authorized native dispatch, task 18.16 consumes it without rerunning native work, and task 18.16.1 owns a terminal receipt with no runtime/test implementation. A remediation run cannot silently revise those authority and execution boundaries. | (A) Revise the registered supplemental source and owning task authority to admit one post-remediation replacement native dispatch plus replacement three-platform terminal receipt, then derive the matrix from those exact artifacts. (B) Retain the sole/no-rerun boundary, return this finding to shaping, and explicitly withdraw current-head Phase-conformance claims while retaining the old artifacts only as historical evidence. | Human owner of the registered Phase 18 supplemental source and implementation-state workflow; use the owning shaping/`opi-implement` route for any source or ledger revision. |
+
+The decision determines the closure predicate and changed paths for
+`P18-AUD-006`; no placeholder fix is planned before D1 is resolved.
 
 ## Closure Batches
 
-### Batch B1: Seal the complete retained trial closure
+### Batch B1: Keep staged bundle artifacts inside the reserved tree
 
-**Closure predicate**: A sealed trial covers exactly its reserved artifacts and canonical control evidence; verification rejects missing, additional, mutated, or sidecar-divergent bytes.
+**Closure predicate**: Every existing ancestor of a logical artifact path is a real directory inside the canonical bundle artifact root; a symlink, Windows junction/reparse alias, non-directory, or resolved escape is rejected before any byte is written.
 **Dependencies**: none
-**Verification union**: `cargo test -p opi-eval --lib bundle`; `cargo test -p opi-eval --test bundle_recompute`; `cargo test -p opi-eval --test phase18_assembled_smoke`
+**Verification union**: focused bundle ancestor-alias tests on Unix and Windows; `cargo test -p opi-eval bundle::tests`; affected-target clippy; documentation check; `git diff --check`.
 
-#### Fix B1.1: Make the bundle identity own all authoritative trial inputs and outputs
+#### Fix B1.1: Reject artifact ancestor aliases before staging
 
-- **Finding source(s)**: `phase18-codex-gpt56-dbd984e-20260830t152407z` + `83e52033f3bd1eb534409ac144f502d5691e33f2d32e7ea282beec571bd06194` + `P18-AUD-001`
-- **Decision**: `fix:seal-complete-trial-closure`
+- **Finding source(s)**: `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 + 099fa8c019f1af3f6362c726895a67b45e83691b9d48b75d4a3e8466724b842b + P18-AUD-001`
+- **Decision**: `fix:reject-bundle-ancestor-aliases`
 - **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/bundle/mod.rs`, `crates/opi-eval/src/integrity.rs`, `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/src/trajectory/mod.rs`, `crates/opi-eval/tests/bundle_recompute.rs`, `crates/opi-eval/tests/phase18_assembled_smoke.rs`
+- **File(s)**: `crates/opi-eval/src/bundle/mod.rs`, `CHANGELOG.md`
 - **Change kind**: behavioral
-- **Change**: Add canonical byte accessors for the integrity record and provisional trajectory; reserve and stage the resolved experiment, integrity record, trajectory, normalized settled output, authority evidence, and all expected native artifacts before sealing. Make sealing require the staged-key set to equal the intent reservation and require the expected output to exist. Make verification read-only, compare manifest intent/settlement with their durable sidecars, enumerate the artifact tree, and reject any unmanifested, missing, non-file, or digest-mismatched entry. Treat the post-seal receipt as derived convenience data, not an input to bundle identity.
-- **Closure predicate**: Adding `artifacts/native/rogue.txt`, corrupting `intent.json` or `settlement.json`, omitting the expected output, or leaving any intended artifact unstaged makes `RunBundle::verify` fail at `TrialDurability`; an unchanged complete bundle verifies byte-stably.
-- **Red-before**: `python -c 'from pathlib import Path; s=Path("crates/opi-eval/src/bundle/mod.rs").read_text(encoding="utf-8"); v=s[s.index("pub(crate) fn verify"):s.index("fn read_covered",s.index("pub(crate) fn verify"))]; missing=[x for x in ("read_dir","intent.json","settlement.json") if x not in v]; assert not missing, missing'` -> FAIL with `['read_dir', 'intent.json', 'settlement.json']`; the indexed mutation reproductions also remain current because the affected-path diff is empty.
-- **Green-after**: Run the same predicate plus `cargo test -p opi-eval --test bundle_recompute`; expect PASS with explicit rogue-file, sidecar-drift, reservation-equality, expected-output, and stable re-verification cases.
+- **Change**: Make artifact-path preparation walk and validate each component without following an alias outside the canonical artifact root, fail closed before `atomic_write`, and add Unix-symlink plus Windows-junction negative tests that prove no external byte is created.
+- **Closure predicate**: Insertion and later covered reads reject every ancestor alias/escape and leave both the external target and bundle entry map unchanged.
+- **Red-before**: `cargo test -p opi-eval insertion_rejects_ancestor_directory_alias -- --nocapture` -> FAIL in the test-only archived probe: insertion returned success through the junction.
+- **Green-after**: The same focused ancestor-alias test passes on Windows, its Unix symlink counterpart passes, and `cargo test -p opi-eval bundle::tests` passes.
 
-### Batch B2: Derive reports only from verified sealed inputs
+### Batch B2: Make durable publication include the directory entry
 
-**Closure predicate**: Reporting publishes only when every contributing bundle verifies, derives all headline and coverage facts from sealed content, and never overwrites a run artifact or prior output.
-**Dependencies**: B1, B7
-**Verification union**: `cargo test -p opi-eval --test bundle_recompute`; `cargo test -p opi-eval --test end_to_end_report`; `cargo test -p opi-eval --test report_contract`
-
-#### Fix B2.1: Fail closed on mutation and isolate report output
-
-- **Finding source(s)**: `phase18-codex-gpt56-dbd984e-20260830t152407z` + `83e52033f3bd1eb534409ac144f502d5691e33f2d32e7ea282beec571bd06194` + `P18-AUD-002`
-- **Decision**: `fix:derive-report-from-sealed-inputs`
-- **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/cli/report.rs`, `crates/opi-eval/src/report.rs`, `crates/opi-eval/tests/bundle_recompute.rs`, `crates/opi-eval/tests/end_to_end_report.rs`, `crates/opi-eval/tests/report_contract.rs`
-- **Change kind**: behavioral
-- **Change**: Reconstruct trials, pair coverage, integrity provenance, rewards, and diagnostics from B1's verified bundle artifacts and manifest identities only. Return a typed non-published outcome and non-zero CLI exit on any bundle verification or sealed-input parse failure. Reject `--out` inside the run root and open external output with create-new semantics so neither sealed bytes nor prior reports can be replaced.
-- **Closure predicate**: A covered-byte mutation prevents publication and exits non-zero; mutations of outer `run-report.json` or `receipt.json` cannot affect output; an in-run-root or existing `--out` target is rejected without changing its bytes.
-- **Red-before**: `python -c 'from pathlib import Path; s=Path("crates/opi-eval/src/report.rs").read_text(encoding="utf-8"); bad=[x for x in ("run-report.json","receipt.json") if x in s]; assert not bad,bad'` -> FAIL with `['run-report.json', 'receipt.json']`; the indexed CLI mutation and overwrite reproductions remain current by empty affected-path diff.
-- **Green-after**: Run the same predicate plus `cargo test -p opi-eval --test end_to_end_report` and `cargo test -p opi-eval --test report_contract`; expect PASS for mutation refusal, sealed-only derivation, output isolation, byte stability, and valid publication.
-
-### Batch B3: Keep Agent-owned failures in the native-graded outcome class
-
-**Closure predicate**: On a valid task, Agent non-zero exit/crash and Agent-owned timeout dispatch the pinned native grader and remain Agent outcomes; spawn, cancellation, adapter, evidence, integrity, grader, and infrastructure failures retain their distinct boundary behavior.
+**Closure predicate**: `publish_intent` cannot return `DurableIntentProof` until the temporary bytes, rename, and containing-directory durability barrier (or a fail-closed platform equivalent) have all succeeded.
 **Dependencies**: none
-**Verification union**: `cargo test -p opi-eval --lib agent::process`; `cargo test -p opi-eval --test authority_boundaries`; `cargo test -p opi-eval --test phase18_assembled_smoke`
+**Verification union**: focused publication-order/failure tests; `cargo test -p opi-eval bundle::tests`; affected-target clippy; documentation check; `git diff --check`.
 
-#### Fix B3.1: Separate scored Agent failure from authority-boundary failure
+#### Fix B2.1: Synchronize the parent after atomic rename
 
-- **Finding source(s)**: `phase18-codex-gpt56-dbd984e-20260830t152407z` + `83e52033f3bd1eb534409ac144f502d5691e33f2d32e7ea282beec571bd06194` + `P18-AUD-003`; `phase18-pi-glm53-432ff13-20260830t114647z` + `a4c66e4ed4c1465766d75e66bb271bc51042208981507e044e5c511c23046d5b` + `P18-AUD-001`
-- **Decision**: `fix:score-agent-owned-failures`
+- **Finding source(s)**: `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 + 099fa8c019f1af3f6362c726895a67b45e83691b9d48b75d4a3e8466724b842b + P18-AUD-002`
+- **Decision**: `fix:durably-sync-parent-after-publication`
 - **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/agent/process.rs`, `crates/opi-eval/src/authority.rs`, `crates/opi-eval/src/comparison.rs`, `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/tests/authority_boundaries.rs`, `crates/opi-eval/tests/phase18_assembled_smoke.rs`
+- **File(s)**: `crates/opi-eval/src/bundle/mod.rs`, `CHANGELOG.md`
 - **Change kind**: behavioral
-- **Change**: Introduce an internal closed classification that distinguishes scored Agent outcomes (non-zero exit/crash and Agent-owned timeout) from actual authority-boundary failures (spawn refusal, cancellation source, adapter/evidence rejection, and infrastructure). Do not fail the authority ledger for scored Agent outcomes; dispatch the native verifier over the settled workspace, retain the Agent completion in the trial fact, and include the native reward in the Agent success/failure denominator. Preserve fail-closed refusal for every non-Agent boundary.
-- **Closure predicate**: Non-zero and timeout cases each execute one native grade dispatch and pair as Agent outcomes, while adapter/evidence/spawn/cancellation cases execute zero unauthorized downstream grades and retain their exact boundary label.
-- **Red-before**: `python -c 'from pathlib import Path; s=Path("crates/opi-eval/src/runner/experiment.rs").read_text(encoding="utf-8"); assert "ledger.fail(failure.boundary);" not in s,"all AgentCompletion::Failed values stop grade dispatch"'` -> FAIL; current `authority_boundaries` and `phase18_assembled_smoke` tests pass only because they assert the inverse infrastructure classification.
-- **Green-after**: Run the same predicate plus `cargo test -p opi-eval --test authority_boundaries` and `cargo test -p opi-eval --test phase18_assembled_smoke`; expect PASS for scored non-zero/timeout and refused adapter/evidence/spawn/cancellation paths.
+- **Change**: Extend the existing private atomic-publication helper with the narrow platform-specific parent-directory durability operation after rename; propagate failure so no durable proof/state transition is issued when directory durability is unproved. Add an instrumented ordering/failure test without adding a public seam or dependency.
+- **Closure predicate**: A successful intent publication proves write -> file sync -> rename -> parent durability in order; an injected parent-durability failure returns an error and withholds `DurableIntentProof`.
+- **Red-before**: `rg -n -A 18 "fn atomic_write" crates/opi-eval/src/bundle/mod.rs` -> FAIL: the current helper syncs only the temporary file and returns directly from `fs::rename`.
+- **Green-after**: `cargo test -p opi-eval intent_publication_requires_parent_directory_durability -- --nocapture` passes and `cargo test -p opi-eval bundle::tests` passes.
 
-### Batch B4: Verify descendant cleanup after natural child exit
+### Batch B3: Enforce the complete Phase 17 Opi evidence graph
 
-**Closure predicate**: A direct child's natural exit cannot return until its process tree is empty or cleanup failure is reported; descendants holding inherited pipes are terminated and verified within bounds.
+**Closure predicate**: An imported Opi trace is complete only when every record has one manifest-bound run, strictly increasing sequence, stable call identity, valid earlier parent, non-self-parent, producer-equivalent kind/payload pairing, and exact terminal run/turn/call/parent/sequence correlation.
 **Dependencies**: none
-**Verification union**: `cargo test -p opi-eval --lib process::tests`; `cargo test -p opi-eval --test phase18_assembled_smoke`
+**Verification union**: table-driven saved-trace adversaries; Opi adapter unit tests; `cargo test -p opi-eval --test agent_integration_conformance`; affected-target clippy; documentation check; `git diff --check`.
 
-#### Fix B4.1: Apply the tree-cleanup state machine to natural exit
+#### Fix B3.1: Validate graph correlation before accepting completion
 
-- **Finding source(s)**: `phase18-codex-gpt56-dbd984e-20260830t152407z` + `83e52033f3bd1eb534409ac144f502d5691e33f2d32e7ea282beec571bd06194` + `P18-AUD-004`
-- **Decision**: `fix:verify-natural-exit-tree-cleanup`
+- **Finding source(s)**: `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 + 099fa8c019f1af3f6362c726895a67b45e83691b9d48b75d4a3e8466724b842b + P18-AUD-003`
+- **Decision**: `fix:validate-complete-phase17-evidence-graph`
 - **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/process.rs`, `crates/opi-eval/src/process/tree.rs`
+- **File(s)**: `crates/opi-eval/src/agent/opi.rs`, `CHANGELOG.md`
 - **Change kind**: behavioral
-- **Change**: Retain whether bounded stream settlement reached EOF, query the process-tree guard after the direct child exits, and run the same terminate/reap/verify sequence when descendants or inherited-pipe holders remain. Report `NotRequired` only after observed tree emptiness; otherwise emit verified `TreeTerminated` or `TreeTerminationFailed`. Add Unix coverage using a background descendant that inherits stdout and outlives its parent.
-- **Closure predicate**: The background descendant is gone before return and cleanup is verified; ordinary no-descendant exits remain bounded and report no cleanup work.
-- **Red-before**: `python -c 'from pathlib import Path; s=Path("crates/opi-eval/src/process.rs").read_text(encoding="utf-8"); b=s[s.index("match decided"):s.index("kill_decision =>")]; assert "guard.terminate()" in b,"natural-exit branch never terminates/verifies descendants"'` -> FAIL; the indexed live-descendant reproduction remains current by empty affected-path diff.
-- **Green-after**: Run the same predicate plus `cargo test -p opi-eval --lib process::tests`; expect PASS including `natural_exit_terminates_inherited_pipe_descendant` on Unix.
+- **Change**: Parse the private saved schema into the minimum typed correlation view, mirror the current producer's closed graph invariants (including retry/diagnostic payload rules and Artifact payload admission), compare the complete terminal correlation with the manifest, and add one table-driven adversary for every rejected graph class.
+- **Closure predicate**: Each mixed-run, non-increasing-sequence, unstable-call, missing/late/self-parent, kind/payload mismatch, or terminal-correlation mutation settles as a typed import failure; the exact complete fixture still settles successfully.
+- **Red-before**: `cargo test -p opi-eval importer_rejects_phase17_invalid_evidence_graphs -- --nocapture` -> FAIL in the test-only archived probe: a mixed-run trace was accepted.
+- **Green-after**: The same table-driven graph test passes, all Opi importer tests pass, and `cargo test -p opi-eval --test agent_integration_conformance` passes.
 
-### Batch B5: Enforce the DeepSWE native reward and oracle bar
+### Batch B4: Execute hermetic helpers natively on Windows
 
-**Closure predicate**: Pier import accepts only finite integral rewards in the native 0..=1 domain, and DeepSWE oracle preflight passes only with an explicitly known positive native reward.
-**Dependencies**: none
-**Verification union**: `cargo test -p opi-eval --lib benchmark::process`; `cargo test -p opi-eval --test native_driver`
+**Closure predicate**: The production hermetic runner stages and executes behavior-equivalent agent and verifier helpers for the host platform, and the committed PowerShell smoke happy/failure/offline paths complete with their declared exits and artifacts.
+**Dependencies**: B1, B2, B3
+**Verification union**: direct Windows happy run; `python scripts/test_phase18_eval_smoke.py`; assembled-run focused tests on supported hosts; affected-target clippy; documentation check; `git diff --check`.
 
-#### Fix B5.1: Reject invalid Pier rewards and zero-reward oracle results
+#### Fix B4.1: Generate host-native bounded helper programs
 
-- **Finding source(s)**: `phase18-codex-gpt56-dbd984e-20260830t152407z` + `83e52033f3bd1eb534409ac144f502d5691e33f2d32e7ea282beec571bd06194` + `P18-AUD-005`; `phase18-pi-glm53-432ff13-20260830t114647z` + `a4c66e4ed4c1465766d75e66bb271bc51042208981507e044e5c511c23046d5b` + `P18-AUD-003`
-- **Decision**: `fix:enforce-deepswe-reward-contract`
+- **Finding source(s)**: `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 + 099fa8c019f1af3f6362c726895a67b45e83691b9d48b75d4a3e8466724b842b + P18-AUD-004`
+- **Decision**: `fix:generate-native-windows-hermetic-helpers`
 - **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/benchmark/process.rs`, `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/tests/native_driver.rs`
+- **File(s)**: `crates/opi-eval/src/runner/experiment.rs`, `CHANGELOG.md`
 - **Change kind**: behavioral
-- **Change**: Apply the existing native reward-domain predicate to every Pier reward before conversion to `u64`; retain the native reward fact and require a `Known` value greater than zero for DeepSWE oracle admission. Add focused negative, above-one, fractional, unknown, zero-oracle, and positive-oracle cases.
-- **Closure predicate**: `-1`, values above `1`, fractional values, and unknown reward fail import or preflight; `0` may be a valid measured trial reward but fails oracle admission; `1` passes.
-- **Red-before**: `python -c 'from pathlib import Path; b=Path("crates/opi-eval/src/benchmark/process.rs").read_text(encoding="utf-8"); e=Path("crates/opi-eval/src/runner/experiment.rs").read_text(encoding="utf-8"); d=e[e.index("match inputs.adapter_key.as_str()"):e.index("};",e.index("match inputs.adapter_key.as_str()"))]; assert b.count("!(0.0..=1.0).contains(&reward)")>=2 and "=> true" not in d,"Pier lacks 0..=1 validation or DeepSWE preflight accepts any Verified result"'` -> FAIL.
-- **Green-after**: Run the same predicate plus `cargo test -p opi-eval --lib benchmark::process` and `cargo test -p opi-eval --test native_driver`; expect PASS for the complete domain and oracle matrix.
+- **Change**: Keep the Unix shell helpers, add exact Windows command helpers for the same pinned behaviors and argv guards, select the host-native suffix/content at staging, and cover both agent products plus verifier success/failure without introducing a new public CLI, dependency, or live provider path.
+- **Closure predicate**: A Windows `happy` run produces readable `answer.txt`, complete Opi/pi native evidence, sealed bundles, and a published report; declared crash/timeout/verifier-failure behaviors retain their existing typed outcomes.
+- **Red-before**: `cargo run -q -p opi-eval -- run --config crates/opi-eval/tests/fixtures/experiment/phase18-local.toml --root <unique-temp> --fixtures crates/opi-eval/tests/fixtures --behavior happy` -> FAIL: `expected agent output is unreadable` with OS error 2.
+- **Green-after**: `python scripts/test_phase18_eval_smoke.py` passes on Windows and the existing Unix smoke path remains green.
 
-### Batch B6: Bind each durable intent to its owning comparison edge
+### Batch B5: Resolve report-output containment before creation
 
-**Closure predicate**: Every trial has exactly one edge determined by its subject/task/group pairing, and its durable `PairIdentity` equals that edge; ambiguous or unpaired trial shapes are rejected before process effects.
-**Dependencies**: none
-**Verification union**: `cargo test -p opi-eval --test experiment_contract`; `cargo test -p opi-eval --test phase18_assembled_smoke`
+**Closure predicate**: The existing output parent is resolved to its canonical location before containment is checked, and the final create-new target cannot land within the canonical run root through a symlink, junction, or other ancestor alias.
+**Dependencies**: B4
+**Verification union**: cross-platform subprocess containment test; report contract suite; Windows smoke; affected-target clippy; documentation check; `git diff --check`.
 
-#### Fix B6.1: Resolve the unique owning edge before intent publication
+#### Fix B5.1: Canonicalize the output parent and reject aliases into the run
 
-- **Finding source(s)**: `phase18-codex-gpt56-dbd984e-20260830t152407z` + `83e52033f3bd1eb534409ac144f502d5691e33f2d32e7ea282beec571bd06194` + `P18-AUD-006`
-- **Decision**: `fix:bind-intent-to-owning-edge`
+- **Finding source(s)**: `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 + 099fa8c019f1af3f6362c726895a67b45e83691b9d48b75d4a3e8466724b842b + P18-AUD-005`
+- **Decision**: `fix:resolve-report-output-parent-before-containment`
 - **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/tests/fixtures/experiment/phase18-multi-edge.toml`, `crates/opi-eval/tests/phase18_assembled_smoke.rs`
+- **File(s)**: `crates/opi-eval/src/cli/report.rs`, `crates/opi-eval/tests/report_output_containment.rs`, `CHANGELOG.md`
 - **Change kind**: behavioral
-- **Change**: Resolve a trial's owning edge from the declared endpoint subject plus the matching counterpart trial in the same task/group; require exactly one match before intent publication and use that edge ID as `PairIdentity`. Add a fully admitted multi-edge fixture whose two groups exercise distinct edges and inspect every sealed intent.
-- **Closure predicate**: Each multi-edge fixture intent names its own edge, no intent defaults to the first edge, and zero/multiple owner matches fail before Agent dispatch.
-- **Red-before**: `python -c 'import re; from pathlib import Path; s=Path("crates/opi-eval/src/runner/experiment.rs").read_text(encoding="utf-8"); assert re.search(r"\.edges\(\)\s*\.first\(\)",s) is None,"trial intent always selects first edge"'` -> FAIL.
-- **Green-after**: Run the same predicate plus `cargo test -p opi-eval --test phase18_assembled_smoke multi_edge`; expect PASS with distinct sealed pair identities and pre-dispatch ambiguity refusal.
+- **Change**: Require and canonicalize the existing output parent, join only the final absent filename to that resolved parent, compare the resolved target against the canonical run root, preserve create-new behavior, and add a real-binary Unix-symlink/Windows-junction regression that proves no in-root file appears.
+- **Closure predicate**: Direct, relative, symlinked, and junction-aliased paths that resolve inside the run root exit 2 without creating bytes; a fresh target under a resolved external parent remains append-only and succeeds once.
+- **Red-before**: `cargo test -p opi-eval output_rejects_ancestor_alias_into_run_root -- --nocapture` -> FAIL in the test-only archived probe: `open_output` created the file through the junction.
+- **Green-after**: `cargo test -p opi-eval --test report_output_containment` passes on Unix and Windows and `cargo test -p opi-eval --test report_contract` passes on its supported hosts.
 
-### Batch B7: Attribute verifier artifacts to the grader
+### Batch B6: Remove the proxy-free assumption from the config test
 
-**Closure predicate**: Every sealed manifest entry identifies the component that produced its bytes; verifier stdout, stderr, and native report entries carry a grader/verifier source, never the Agent source.
+**Closure predicate**: The no-explicit-proxy test verifies successful client construction without asserting that ambient proxy policy is absent, and it passes with or without ambient proxy variables.
 **Dependencies**: none
-**Verification union**: `cargo test -p opi-eval --test bundle_recompute`; `cargo test -p opi-eval --test report_contract`
+**Verification union**: focused test with ambient proxy variables; complete `config_tests` binary; affected test-target clippy; `git diff --check`.
 
-#### Fix B7.1: Split Agent and verifier source identities
+#### Fix B6.1: Assert the product contract instead of ambient state
 
-- **Finding source(s)**: `phase18-pi-glm53-432ff13-20260830t114647z` + `a4c66e4ed4c1465766d75e66bb271bc51042208981507e044e5c511c23046d5b` + `P18-AUD-002`
-- **Decision**: `fix:attribute-verifier-artifacts-to-grader`
+- **Finding source(s)**: `phase18-pi-glm53-68d74ec-20260830t200548z + 7ea0bd6518d4169f1e597a6d52588038bae9fc1d74a64c5f4d4600c30570da37 + P18-AUD-001`
+- **Decision**: `fix:remove-proxy-free-assumption-from-test`
 - **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/report.rs`, `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/tests/bundle_recompute.rs`, `crates/opi-eval/tests/report_contract.rs`
-- **Change kind**: behavioral
-- **Change**: Create a distinct source identity from the pinned benchmark adapter/grader identity and use it for verifier streams and imported native reports. Make report artifact selection require the native grader role and grader source together instead of role-suffix recovery.
-- **Closure predicate**: Manifest provenance assigns all Agent artifacts to `agent-<product>` and all verifier/native grader artifacts to the exact grader source; source-role mismatches fail sealed report reconstruction.
-- **Red-before**: `python -c 'from pathlib import Path; s=Path("crates/opi-eval/src/runner/experiment.rs").read_text(encoding="utf-8"); assert "SourceIdentity::new(&format!(\"grader-" in s,"no grader-owned SourceIdentity exists"'` -> FAIL.
-- **Green-after**: Run the same predicate plus `cargo test -p opi-eval --test bundle_recompute` and `cargo test -p opi-eval --test report_contract`; expect PASS for source attribution and source-sensitive native report selection.
-
-### Batch B8: Emit the actual conformance case count
-
-**Closure predicate**: The conformance-rerun receipt's `cases_run` equals the number of cases actually executed successfully in that invocation.
-**Dependencies**: none
-**Verification union**: `python scripts/test_verify_phase18_native_ci.py`; `python scripts/test_verify_phase18_native_artifact.py`
-
-#### Fix B8.1: Count successful cases instead of hardcoding receipt metadata
-
-- **Finding source(s)**: `phase18-pi-glm53-432ff13-20260830t114647z` + `a4c66e4ed4c1465766d75e66bb271bc51042208981507e044e5c511c23046d5b` + `P18-AUD-004`
-- **Decision**: `fix:derive-conformance-case-count`
-- **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `scripts/phase18-native-smoke.sh`, `scripts/test_verify_phase18_native_ci.py`
-- **Change kind**: metadata
-- **Change**: Initialize a counter before the conformance loop, increment it only after each successful case, and serialize that value into the stage receipt. Extend the script contract test to compare the declared case list with the emitted counter path rather than pinning a second independent literal.
-- **Closure predicate**: The present 13-case list emits `cases_run=13`, and adding or removing a case changes the receipt without another constant edit.
-- **Red-before**: `python -c 'import pathlib,re; s=pathlib.Path("scripts/phase18-native-smoke.sh").read_text(encoding="utf-8"); b=s.split("for case_spec in",1)[1].split("; do",1)[0]; actual=b.count("\"agent ")+b.count("\"benchmark "); claimed=int(re.search(r"cases_run\": (\d+)",s).group(1)); assert actual==claimed,(actual,claimed)'` -> FAIL with `(13, 12)`.
-- **Green-after**: Run the same predicate plus `python scripts/test_verify_phase18_native_ci.py`; expect PASS and receipt count 13.
+- **File(s)**: `crates/opi-coding-agent/tests/config_tests.rs`
+- **Change kind**: test-only
+- **Change**: Rename the test to distinguish absence of explicit configuration from absence of ambient proxy policy and remove only the invalid `proxy_config().url.is_none()` assertion; retain product behavior and all explicit-proxy tests.
+- **Closure predicate**: Client construction without an explicit proxy succeeds under both clean and proxy-populated environments, while explicit invalid proxy configuration remains rejected.
+- **Red-before**: `$env:HTTP_PROXY='http://127.0.0.1:19828'; $env:HTTPS_PROXY='http://127.0.0.1:19828'; $env:ALL_PROXY='http://127.0.0.1:19828'; cargo test -p opi-coding-agent --test config_tests build_http_client_without_proxy_succeeds -- --exact --nocapture` -> FAIL at the assertion that the proxy URL is none.
+- **Green-after**: The renamed focused test passes with the same ambient variables and `cargo test -p opi-coding-agent --test config_tests` passes.
 
 ## Final Verification
 
-    cargo test -p opi-eval --lib
-    cargo test -p opi-eval --test bundle_recompute
-    cargo test -p opi-eval --test end_to_end_report
+After B1-B6, run the deduplicated local union:
+
+    cargo test -p opi-eval bundle::tests
+    cargo test -p opi-eval importer
+    cargo test -p opi-eval --test agent_integration_conformance
+    cargo test -p opi-eval --test report_output_containment
     cargo test -p opi-eval --test report_contract
-    cargo test -p opi-eval --test authority_boundaries
-    cargo test -p opi-eval --test phase18_assembled_smoke
-    cargo test -p opi-eval --test experiment_contract
-    cargo test -p opi-eval --test native_driver
-    python scripts/test_verify_phase18_native_ci.py
-    python scripts/test_verify_phase18_native_artifact.py
+    python scripts/test_phase18_eval_smoke.py
+    cargo test -p opi-coding-agent --test config_tests
+    cargo clippy -p opi-eval --all-targets -- -D warnings
+    cargo clippy -p opi-coding-agent --test config_tests -- -D warnings
     python scripts/opi-doc-check.py
-    cargo fmt --check --all
-    cargo clippy --workspace --all-targets -- -D warnings
-    cargo test --workspace --all-targets
-    cargo test --workspace --doc
-    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+    git diff --check
+
+If D1 authorizes replacement evidence, a revised fixed plan must name the
+exact materialized commit, native dispatch/verification commands, derived
+matrix paths, terminal three-platform receipt path, and the required workspace
+gates. This draft does not authorize or pre-approve those external writes.
 
 ## Exclusions
 
 | Finding ID | Disposition | Current evidence/authority |
 |---|---|---|
-| none | none | All 10 current source findings are confirmed and assigned to a closure batch. |
+| `phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710 / P18-AUD-006` | Returned to shaping pending D1 | The current evidence mismatch is confirmed. The live registered source does not admit a second native run or replacement terminal receipt, so `opi-remediate` cannot choose or execute an authority revision. Current run/digest admission controls; title similarity cannot substitute for identity; no older source or history run was consulted. |
