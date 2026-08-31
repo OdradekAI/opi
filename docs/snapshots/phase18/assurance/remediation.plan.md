@@ -2,125 +2,74 @@
 
 **Status**: READY-FOR-APPLY
 **Audit index SHA-256**: `60931e9889c2ee28896758522ca2073dcb48b2fc92e15dde510d6cdf71e9e815`
-**Remediation head**: `916153a487105cdcc98336841512fbd09897188e`
+**Remediation head**: `b8877443444056cbb183515cfdad5bfb9b99c0d5`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
-**Dirty-worktree baseline**: staged `[]`; unstaged `[]`; untracked `[]`
+**Dirty-worktree baseline**: staged=`[]`; unstaged=`[]`; untracked=`[]`
 **Unresolved decisions**: none
 
 ## Current Finding Verification
 
 | Source run / Finding ID | Verification | Source and final severity + rationale | Closure key/family | Batch | Decision |
 |---|---|---|---|---|---|
-| `phase18-codex-gpt56-dd7eda7-20260831t135641z` / `P18-AUD-001` | Confirmed at `916153a487105cdcc98336841512fbd09897188e`. The retained Linux artifact binds candidate `27344e3aaf03d38eaa53c7af19c777efbe9be213`; the retained three-platform receipt binds candidate `0f5a3fa152b12d7be4036b2a08ae7a195f8c2107`. The native-evidence comparison to the remediation head still spans 62 scoped files, 5,885 insertions, and 742 deletions. | Major → Major. The registered Phase requires real-Agent, three-native-revision, artifact-derived seam, and three-platform evidence after the material implementation state being accepted. Local Windows tests and stored older receipts do not establish that closure. | `phase18.post-change-terminal-evidence` / `phase18.exit-evidence` | B3 | `fix:materialize-post-cleanup-candidate-and-refresh-terminal-evidence` |
-| `phase18-pi-glm53-25d0e68-20260831t124752z` / `P18-AUD-001` | Confirmed at `916153a487105cdcc98336841512fbd09897188e`. Removing the fourteen blanket `#[allow(dead_code)]` attributes in the sealed archive makes affected-target clippy fail with 100 library dead-code errors and 36 library-test dead-code errors. The complete 2,238-line `external_lock.rs` module has no in-crate consumer; its only outside reference is a rustdoc link. | Minor → Minor. The behavior remains green only because broad module-level suppression hides an extensive unconsumed surface. The finding is advisory but current and reproducible. | `opi-eval.dead-code-mask` / `opi-eval.surface-discipline` | B1 | `fix:remove-blanket-mask-delete-redundant-lock-module-and-localize-intentional-exceptions` |
-| `phase18-pi-glm53-25d0e68-20260831t124752z` / `P18-AUD-002` | Confirmed at `916153a487105cdcc98336841512fbd09897188e`. The crate-level documentation enumerates only `ResolvedExperiment` and `cli::validate`, while `pub mod cli`, `pub mod experiment`, the same-package binary, and integration tests consume the wider provisional module surfaces. | Minor → Minor. The inaccurate enumeration understates the current unpublished entry seam and can mislead reviewers even though it changes no runtime behavior. | `opi-eval.crate-entry-doc` / `opi-eval.surface-discipline` | B2 | `fix:document-provisional-cli-and-experiment-module-seam-without-item-enumeration` |
+| `phase18-codex-gpt56-dd7eda7-20260831t135641z` / `P18-AUD-001` | Confirmed | Major -> Major. Current `ci-receipt.json` binds `e2e225fa0665c737542f71aefa27c963daf2bf73`, not the remediation head. Native run `33423005233` at that behaviorally identical implementation failed at `trial-opi-deepswe-v1.1` because `answer.txt` was absent. An independent Linux process reproduction showed Opi exited 0 after one provider request with `stop_reason=tool_use`, empty assistant content, zero tool results, and no `answer.txt`. The scripted provider places `finish_reason=tool_calls` on the same SSE chunk as the tool-call delta, while the repository's OpenAI fixtures require the tool delta to precede a separate terminal finish chunk. | `phase18.exact-candidate-native-agent-evidence` / `phase18.exit-evidence` | B1 | `fix:separate-stream-finish-require-final-workspace-and-refresh-evidence` |
+| `phase18-pi-glm53-25d0e68-20260831t124752z` / `P18-AUD-001` | Refuted | Minor retained as source severity. At the remediation head there are no blanket `#[allow(dead_code)]` declarations in the cited files, `external_lock.rs` and its module declaration are absent, and `cargo clippy -p opi-eval --all-targets -- -D warnings` passes in the committed archive. | `opi-eval.no-masked-dead-surface` / `opi-eval.seam-hygiene` | none | `no-action:refuted-current-head` |
+| `phase18-pi-glm53-25d0e68-20260831t124752z` / `P18-AUD-002` | Refuted | Minor retained as source severity. The current crate documentation describes the public entry surface by module rather than enumerating only two items, and `RUSTDOCFLAGS="-D warnings" cargo doc -p opi-eval --no-deps` passes in the committed archive. | `opi-eval.accurate-entry-surface-docs` / `opi-eval.seam-hygiene` | none | `no-action:refuted-current-head` |
 
 ## Unresolved Decisions
 
-None. The user explicitly authorized the existing Phase 18 materialization path:
-commit and publish the post-B1/B2 candidate, run the Linux native-smoke and
-three-platform pull-request CI against that exact candidate, verify and retain
-the resulting evidence, and hand the validated result to the separately owned
-implementation-ledger refresh. This plan does not revise the registered Phase
-source or treat tree equivalence as a substitute for committed-candidate
-evidence.
+none
 
 ## Closure Batches
 
-### Batch B1: Remove blanket dead-code masking and redundant Rust lock validation
+### Batch B1: Make deterministic native tool execution observable and refresh exact-candidate evidence
 
-**Closure predicate**: `opi-eval` contains no blanket `#[allow(dead_code)]` module suppression, the unconsumed Rust `external_lock` implementation is absent, every remaining intentionally compile-time-unused contract item has a narrow reasoned annotation at that item, and affected-target clippy plus the authoritative external-lock verifier suites pass.
-**Dependencies**: none
-**Verification union**: blanket-suppression/module-declaration source scan; `cargo fmt --check --all`; `cargo clippy -p opi-eval --all-targets -- -D warnings`; `cargo test -p opi-eval --all-targets`; Phase 18 materialization/native artifact verifier unit suites; `git diff --check`.
+**Closure predicate**: The scripted provider emits tool-call data before a separate terminal SSE finish chunk; native Opi and pi conformance refuse success unless the real process leaves a non-empty `answer.txt` in the final workspace; the same committed implementation candidate then passes the repository's three-platform CI and the Phase 18 Linux native smoke for both Agents across all three registered benchmark revisions, with the downloaded artifacts verified against that candidate.
+**Dependencies**: none for local repair; commit, push, CI dispatch, native dispatch, and receipt refresh occur only after separate user authorization at the materialization boundary.
+**Verification union**: scripted-provider unit and subprocess tests; native-driver conformance test; `opi-eval` clippy; native producer/verifier tests; documentation and diff checks; Phase-exit workspace gates; exact-candidate PR CI receipt; exact-candidate Linux native artifact verification.
 
-#### Fix B1.1: Expose and dispose the actual dead surface
-
-- **Finding source(s)**: `phase18-pi-glm53-25d0e68-20260831t124752z` + `6e88c9234110dd5341bf8b4ea37ddc3157e6db0d67129be33c519e5141f60841` + `P18-AUD-001`
-- **Decision**: `fix:remove-blanket-mask-delete-redundant-lock-module-and-localize-intentional-exceptions`
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-eval/src/lib.rs`, `crates/opi-eval/src/external_lock.rs` (delete), `crates/opi-eval/src/benchmark/process.rs`, and the clippy-reported residual files `authority.rs`, `failure.rs`, `integrity.rs`, `bundle/mod.rs`, `runner/experiment.rs`, `runner/lifecycle.rs`, `runner/material.rs`, `agent/opi.rs`, `agent/process.rs`, `benchmark/deepswe.rs`, `benchmark/terminal_bench_21.rs`, `benchmark/terminal_bench_30.rs`, and `trajectory/mod.rs`.
-- **Change kind**: behavioral
-- **Change**: Remove the fourteen module-level suppressions. Delete the wholly unconsumed Rust `external_lock` module and replace its stale rustdoc reference with the actual external-lock ownership in `crates/opi-eval/external-locks/` and the Phase 18 verifier scripts. Delete unused private helpers/getters/constants that add no contract value. Keep specification-required closed states and schema-presence fields only with item-local `#[expect(dead_code, reason = "...")]` or underscore/serde-renamed validation-only fields, so each intentional exception names its current contract instead of masking a module. Do not add a public seam, feature flag, compatibility path, dependency, or second lock authority.
-- **Closure predicate**: The source scan finds no `#[allow(dead_code)]` in `lib.rs` or `failure.rs` and no `mod external_lock`; clippy reports no warning; Rust and Python verifier tests retain the existing lock, failure, integrity, bundle, runner, adapter, and report behavior.
-- **Red-before**: In the sealed archive, mechanically remove every `#[allow(dead_code)]` line from `crates/opi-eval/src/lib.rs` and `failure.rs`, then run `cargo clippy -p opi-eval --all-targets -- -D warnings`; observed FAIL with 100 library errors and 36 library-test errors, including the entire `external_lock.rs` surface.
-- **Green-after**: Run the same source scan and `cargo clippy -p opi-eval --all-targets -- -D warnings`; expected no blanket mask/module declaration and PASS, followed by the focused Rust and Python verifier suites.
-
-### Batch B2: Make the provisional library-entry documentation accurate
-
-**Closure predicate**: The crate-level documentation describes `cli` and `experiment` as the provisional unpublished module entry seam used by the same-package binary and integration tests, without claiming that two selected items are the complete surface.
-**Dependencies**: B1, because both batches edit `crates/opi-eval/src/lib.rs`
-**Verification union**: source/declaration review; `RUSTDOCFLAGS="-D warnings" cargo doc -p opi-eval --no-deps`; `python scripts/opi-doc-check.py`; `git diff --check`.
-
-#### Fix B2.1: Replace the stale item enumeration with module-level wording
-
-- **Finding source(s)**: `phase18-pi-glm53-25d0e68-20260831t124752z` + `6e88c9234110dd5341bf8b4ea37ddc3157e6db0d67129be33c519e5141f60841` + `P18-AUD-002`
-- **Decision**: `fix:document-provisional-cli-and-experiment-module-seam-without-item-enumeration`
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-eval/src/lib.rs`
-- **Change kind**: documentation
-- **Change**: Replace the two-item enumeration with stable module-level wording that names the provisional `cli` and `experiment` entry modules, their same-package consumers, unpublished status, and lack of compatibility promise. Do not enumerate individual public functions or types.
-- **Closure predicate**: The crate docs no longer state that `ResolvedExperiment` and `cli::validate` are the complete entry seam, and rustdoc resolves without warnings.
-- **Red-before**: Compare `crates/opi-eval/src/lib.rs:11-14` with public declarations in `cli/`, `experiment.rs`, and consumers in `main.rs`/integration tests; observed FAIL because the prose lists two items while the public provisional module surface is wider.
-- **Green-after**: Run `RUSTDOCFLAGS="-D warnings" cargo doc -p opi-eval --no-deps` and review the module-level wording against the public declarations; expected PASS and no exhaustive item claim.
-
-### Batch B3: Materialize and attest the post-cleanup candidate
-
-**Closure predicate**: One committed candidate containing B1/B2 is the exact
-`expected-commit` accepted by a fresh Phase 18 `all-native` artifact
-verification and the exact `expected-head` accepted by a fresh three-platform
-terminal CI receipt; the seam-evidence matrix is regenerated from that same
-native artifact, and neither evidence path substitutes stored output, a
-fixture, tree equivalence, or an older candidate.
-**Dependencies**: B1 and B2
-**Verification union**: static native/CI producer checks; native and terminal
-verifier unit suites; exact-candidate `all-native` artifact verification;
-artifact-derived seam-matrix verification; exact-candidate terminal receipt
-generation; documentation check; full workspace gates; `git diff --check`.
-
-#### Fix B3.1: Produce fresh native and three-platform terminal evidence
+#### Fix B1.1: Separate streamed tool data from completion and require final-workspace proof
 
 - **Finding source(s)**: `phase18-codex-gpt56-dd7eda7-20260831t135641z` + `dfb38314eca4a05e99e10a42bbbd594a91c413caafd90226a0ab2375ca9788ef` + `P18-AUD-001`
-- **Decision**: `fix:materialize-post-cleanup-candidate-and-refresh-terminal-evidence`
+- **Decision**: Change the deterministic provider's streaming sequence so the role chunk and tool-call/content chunk carry `finish_reason=null`, followed by one empty terminal chunk carrying `tool_calls` or `stop`. Extend the provider test to assert that order. In native Agent conformance, require a non-empty final-workspace `answer.txt` and report an explicit verification note; update the native-driver test to prove the gate. Do not weaken the runner's fail-closed handling of a successfully completed Agent that omits its promised output. After local green, stop for commit/push authorization, then run and verify exact-candidate CI/native evidence and refresh `ci-receipt.json`.
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-eval/docs/seam-evidence-matrix.md`, `docs/snapshots/phase18/ci-receipt.json`
-- **Change kind**: metadata
-- **Change**: After B1/B2 and their local gates pass, create one explicit remediation commit and publish it on an authorized branch. Dispatch `.github/workflows/phase18-native-smoke.yml` with that full commit as `candidate_sha`; download the workflow's receipt and sealed artifact through one verified stream; require `verify-phase18-native-artifact.py --criterion all-native` to accept that exact commit; and regenerate `crates/opi-eval/docs/seam-evidence-matrix.md` from those bytes with `derive-phase18-seam-matrix.py --verify`. Open the authorized pull request for the same candidate, require every ordinary and attestation job to succeed, download the run/job/artifact/inner-receipt metadata, and let `verify-phase18-ci.py --terminal` write the fixed terminal receipt with that exact candidate as `--expected-head`. Keep downloaded multi-gigabyte artifacts outside the repository. After result validation, report the separately authorized `opi-implement` ledger/snapshot refresh as the materialization handoff; do not invoke that skill or edit its ledger in remediation apply.
-- **Closure predicate**: The fresh `all-native` verification, regenerated seam matrix, and terminal receipt all name and validate the identical committed B1/B2 candidate, and all full repository gates pass over the resulting repository state.
-- **Red-before**: `git diff --shortstat 27344e3..916153a487105cdcc98336841512fbd09897188e -- crates/opi-eval/src crates/opi-eval/tests scripts/phase18-native-smoke.sh scripts/verify-phase18-native-artifact.py .github/workflows/phase18-native-smoke.yml crates/opi-eval/external-locks` plus inspection of `docs/snapshots/phase18/ci-receipt.json`; observed FAIL because the native comparison contains 62 changed files (5,885 insertions, 742 deletions) and the terminal receipt binds `0f5a3fa152b12d7be4036b2a08ae7a195f8c2107`, not the remediation state.
-- **Green-after**: With `candidate` set to the full authorized B1/B2 remediation commit and `native_receipt`, `native_artifact`, `run_metadata`, `jobs_metadata`, `artifact_metadata`, and `inner_receipt` set to the single-stream downloaded workflow outputs, run `python scripts/verify-phase18-native-artifact.py --criterion all-native --expected-commit $candidate --receipt $native_receipt --artifact $native_artifact --repo .`, `python scripts/derive-phase18-seam-matrix.py --receipt $native_receipt --artifact $native_artifact --require-trajectory-spans --output crates/opi-eval/docs/seam-evidence-matrix.md --verify --repo . --expected-commit $candidate`, and `python scripts/verify-phase18-ci.py --terminal --expected-head $candidate --run-metadata $run_metadata --jobs-metadata $jobs_metadata --artifact-metadata $artifact_metadata --inner-receipt $inner_receipt --output docs/snapshots/phase18/ci-receipt.json --repo .`; expected PASS with identical candidate identity throughout.
+- **File(s)**: `scripts/phase18-scripted-provider.py`, `scripts/test_phase18_scripted_provider.py`, `crates/opi-eval/src/cli/conformance.rs`, `crates/opi-eval/tests/native_driver.rs`, `docs/snapshots/phase18/ci-receipt.json`
+- **Change kind**: behavioral
+- **Change**: Make the fixture emit OpenAI-compatible streaming boundaries, add a regression assertion for the boundary, make native conformance validate the promised final-workspace output, retain that proof in its report, and bind refreshed CI/native evidence to the materialized implementation candidate.
+- **Closure predicate**: A provider tool-call stream is consumed as one real `bash` call followed by a final assistant turn; native conformance fails if the answer is absent; the exact implementation candidate's verified native artifact covers Opi/pi on Terminal-Bench 2.1, Terminal-Bench 3.0, and DeepSWE v1.1, and its three-platform CI receipt is successful.
+- **Red-before**: In a unique `git archive` of `b8877443444056cbb183515cfdad5bfb9b99c0d5`, adding the protocol-order assertion and running `python -m unittest scripts.test_phase18_scripted_provider.ScriptedProviderListenerTest.test_streaming_tool_call_turn_is_deterministic` failed with `AssertionError: 'tool_calls' is not None`. A direct Linux Opi subprocess against the current listener exited 0 with `answer=absent`, one request, empty assistant content, and no tool result. GitHub run `33423005233` allowed native conformance to pass before the six-trial stage failed with `expected agent output is unreadable`.
+- **Green-after**: `python -m unittest scripts.test_phase18_scripted_provider.ScriptedProviderListenerTest.test_streaming_tool_call_turn_is_deterministic` and `cargo test -p opi-eval --test native_driver native_conformance_reruns_the_admitted_cases_through_the_material -- --exact` pass; after authorized materialization, the exact-candidate PR CI receipt and `python scripts/verify-phase18-native-artifact.py --criterion all-native --expected-commit <candidate> --receipt <downloaded-upload-receipt> --artifact <downloaded-native-artifact> --repo .` pass.
 
 ## Final Verification
 
-Run the local checks before materializing B3:
-
-    rg -n '^\s*#\[allow\(dead_code\)\]|^mod external_lock;' crates/opi-eval/src/lib.rs crates/opi-eval/src/failure.rs
-    cargo fmt --check --all
-    cargo clippy -p opi-eval --all-targets -- -D warnings
-    cargo test -p opi-eval --all-targets
+    python scripts/test_phase18_scripted_provider.py
     python scripts/test_verify_phase18_native_ci.py
-    python scripts/test_verify_phase18_materialization_artifact.py
     python scripts/test_verify_phase18_native_artifact.py
-    python scripts/test_derive_phase18_seam_matrix.py
     python scripts/test_verify_phase18_ci.py
-    RUSTDOCFLAGS="-D warnings" cargo doc -p opi-eval --no-deps
+    cargo test -p opi-eval --test native_driver native_conformance_reruns_the_admitted_cases_through_the_material -- --exact
+    cargo test -p opi-eval --test agent_integration_conformance
+    cargo clippy -p opi-eval --all-targets -- -D warnings
     python scripts/opi-doc-check.py
     git diff --check
-
-The first `rg` command is expected to return no matches. After the exact B3
-commands above accept the materialized candidate, run the full repository
-union against the resulting state:
-
-    python scripts/opi-doc-check.py
     cargo fmt --check --all
     cargo clippy --workspace --all-targets -- -D warnings
     cargo test --workspace --all-targets
     cargo test --workspace --doc
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
-    git diff --check
+
+After the local union is green, stop and obtain explicit authorization before committing or pushing. Bind both remote runs to that implementation commit, not to an uncommitted worktree:
+
+    $candidate = git rev-parse HEAD
+    gh workflow run .github/workflows/phase18-native-smoke.yml --ref codex/phase18-remediation-e779477 -f "candidate_sha=$candidate"
+    gh run watch <native-run-id> --exit-status
+    gh run download <native-run-id> -n phase18-native-smoke -D <native-artifact-dir>
+    gh run download <native-run-id> -n phase18-native-smoke-upload-receipt -D <native-receipt-dir>
+    python scripts/verify-phase18-native-artifact.py --criterion all-native --expected-commit $candidate --receipt <downloaded-upload-receipt> --artifact <downloaded-native-artifact> --repo .
+
+Use the successful PR CI run for the same candidate to regenerate and verify `docs/snapshots/phase18/ci-receipt.json` with `scripts/verify-phase18-ci.py --terminal`. A later receipt/remediation-result commit must contain no Phase 18 runtime, provider, adapter, verifier, workflow, or test changes relative to `$candidate`; record that diff explicitly in the result.
 
 ## Exclusions
 
-None. All three current source keys are retained in closure batches. Textual ID
-similarity and the other peer's `met` states do not substitute for any current
-`(audit_run_id, findings_sha256, id)` identity, and no history source was
-consulted.
+| Finding ID | Disposition | Current evidence/authority |
+|---|---|---|
+| `phase18-pi-glm53-25d0e68-20260831t124752z` / `P18-AUD-001` | Refuted | Current run/digest controls admission; title similarity cannot substitute for identity; no older source was consulted. Current committed-archive scan found no blanket dead-code allow, no `external_lock` module/file, and focused clippy passed. |
+| `phase18-pi-glm53-25d0e68-20260831t124752z` / `P18-AUD-002` | Refuted | Current run/digest controls admission; title similarity cannot substitute for identity; no older source was consulted. Current `lib.rs` module-level entry-surface wording and focused rustdoc check contradict the claim at the remediation head. |

@@ -892,6 +892,29 @@ fn run_conformance_native(
     )
 }
 
+fn remove_agent_answer_output(staged: &Staged, agent: &str) {
+    let executable = staged.root.join("material/agents").join(agent);
+    let source = fs::read_to_string(&executable).unwrap();
+    let answer_line = match agent {
+        "opi" => "printf 'native stand-in answer\\n' > answer.txt\n",
+        "pi" => "printf 'pi stand-in answer\\n' > answer.txt\n",
+        other => panic!("unsupported staged agent {other}"),
+    };
+    let without_answer = source.replace(answer_line, "");
+    assert_ne!(without_answer, source, "staged {agent} writes answer.txt");
+    fs::write(&executable, without_answer).unwrap();
+
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+    material["agents"][agent]["executable"]["sha256"] =
+        serde_json::Value::String(sha256_hex(&fs::read(&executable).unwrap()));
+    fs::write(
+        &staged.material,
+        serde_json::to_vec_pretty(&material).unwrap(),
+    )
+    .unwrap();
+}
+
 #[test]
 fn native_conformance_reruns_the_admitted_cases_through_the_material() {
     let staged = stage(&passing_oracle());
@@ -903,6 +926,14 @@ fn native_conformance_reruns_the_admitted_cases_through_the_material() {
         let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
         assert_eq!(report["met"], true, "{adapter}: {stdout}");
         assert_eq!(report["outcome"], "completed");
+        assert!(
+            report["notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|note| note == "final-workspace-answer-verified"),
+            "{adapter}: {stdout}"
+        );
     }
     // Benchmark cases: the pinned verifier entrypoint grades the
     // materialized official package through the real adapter contract.
@@ -920,6 +951,25 @@ fn native_conformance_reruns_the_admitted_cases_through_the_material() {
             );
         }
     }
+}
+
+#[test]
+fn native_agent_conformance_requires_final_workspace_answer() {
+    let staged = stage(&passing_oracle());
+    remove_agent_answer_output(&staged, "opi");
+    let (code, stdout, stderr) = run_conformance_native(&staged, "agent", "opi", "completed");
+    assert_eq!(code, 1, "stderr: {stderr}\nstdout: {stdout}");
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["outcome"], "completed");
+    assert_eq!(report["met"], false);
+    assert!(
+        report["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|note| note == "final-workspace-answer-missing-or-empty"),
+        "{stdout}"
+    );
 }
 
 #[test]

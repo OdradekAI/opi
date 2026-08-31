@@ -174,6 +174,20 @@ class ScriptedProviderListenerTest(unittest.TestCase):
         self.assertTrue(body_a.endswith(LISTENER_DONE))
         self.assertIn("tool_calls", body_a)
         self.assertIn("chat.completion.chunk", body_a)
+        chunks = [
+            json.loads(line.removeprefix(LISTENER_TURN_ONE_PREFIX))
+            for line in body_a.splitlines()
+            if line.startswith(LISTENER_TURN_ONE_PREFIX)
+            and line != "data: [DONE]"
+        ]
+        choices = [chunk["choices"][0] for chunk in chunks]
+        self.assertEqual(len(choices), 3)
+        self.assertEqual(choices[0]["delta"], {"role": "assistant"})
+        self.assertIsNone(choices[0]["finish_reason"])
+        self.assertIn("tool_calls", choices[1]["delta"])
+        self.assertIsNone(choices[1]["finish_reason"])
+        self.assertEqual(choices[2]["delta"], {})
+        self.assertEqual(choices[2]["finish_reason"], "tool_calls")
 
     def test_non_stream_turn_is_deterministic_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
