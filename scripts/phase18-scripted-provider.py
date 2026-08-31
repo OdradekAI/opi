@@ -38,7 +38,7 @@ CREATED = 1750000000
 FINAL_CONTENT = "scripted-provider: integration turn complete"
 TOOL_NAME = "bash"
 TOOL_ARGUMENTS = (
-    "{\"command\": \"printf 'scripted-integration-result\\\n' > answer.txt\"}"
+    "{\"command\": \"printf 'scripted-integration-result\\\\n' > answer.txt\"}"
 )
 
 

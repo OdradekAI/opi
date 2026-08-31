@@ -186,6 +186,12 @@ class ScriptedProviderListenerTest(unittest.TestCase):
         self.assertIsNone(choices[0]["finish_reason"])
         self.assertIn("tool_calls", choices[1]["delta"])
         self.assertIsNone(choices[1]["finish_reason"])
+        tool_call = choices[1]["delta"]["tool_calls"][0]
+        arguments = json.loads(tool_call["function"]["arguments"])
+        self.assertEqual(
+            arguments,
+            {"command": "printf 'scripted-integration-result\\n' > answer.txt"},
+        )
         self.assertEqual(choices[2]["delta"], {})
         self.assertEqual(choices[2]["finish_reason"], "tool_calls")
 
