@@ -459,7 +459,7 @@ async fn run_agent_case(args: &ConformanceArgs) -> Result<ConformanceReport, Con
         trace_root: trace_root.clone(),
         config_path,
         provider_model,
-        allow_mutating: false,
+        allow_mutating: args.native_material.is_some(),
         isolation: isolation.clone(),
         extra_env,
     };

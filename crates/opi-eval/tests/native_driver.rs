@@ -128,6 +128,7 @@ fn stage(oracle_body: &str) -> Staged {
             r#"#!/bin/sh
 # native stand-in for the exact built opi binary (test staging)
 [ "$1" = "--json" ] || {{ echo "argv drift: expected --json first" >&2; exit 9; }}
+printf '%s\n' "$@" > opi-argv.txt
 trace=""; config=""
 prev=""
 for arg in "$@"; do
@@ -951,6 +952,24 @@ fn native_conformance_reruns_the_admitted_cases_through_the_material() {
             );
         }
     }
+}
+
+#[test]
+fn native_opi_conformance_enables_mutating_tool_for_promised_output() {
+    let staged = stage(&passing_oracle());
+    let (code, stdout, stderr) = run_conformance_native(&staged, "agent", "opi", "completed");
+    assert_eq!(code, 0, "stderr: {stderr}\nstdout: {stdout}");
+
+    let argv = fs::read_to_string(
+        staged
+            .root
+            .join("conf-agent-opi-completed/agent/ws/opi-argv.txt"),
+    )
+    .unwrap();
+    assert!(
+        argv.lines().any(|argument| argument == "--allow-mutating"),
+        "native Opi argv must enable the bash tool that produces answer.txt: {argv:?}"
+    );
 }
 
 #[test]
