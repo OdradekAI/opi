@@ -58,6 +58,7 @@ fn run_case(adapter: &str, case: &str) -> (i32, serde_json::Value, String) {
 
 /// The pinned per-(adapter, case) settlement truth table, asserted
 /// independently of the driver's own `met` flag.
+#[cfg(unix)]
 struct Row {
     adapter: &'static str,
     case: &'static str,
@@ -67,10 +68,14 @@ struct Row {
     exit_state: &'static str,
 }
 
+#[cfg(unix)]
 const GRADER: &str = "Grader";
+#[cfg(unix)]
 const ADAPTER: &str = "Adapter";
+#[cfg(unix)]
 const INFRA: &str = "Infrastructure";
 
+#[cfg(unix)]
 fn rows() -> Vec<Row> {
     let mut rows = Vec::new();
     // Terminal-Bench 2.1: synthetic byte-table pin plus the production

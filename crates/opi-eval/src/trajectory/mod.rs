@@ -212,6 +212,21 @@ impl ProvisionalTrajectory {
     /// BTreeMap facts and stable node ids keep the serialized form canonical
     /// for identical inputs.
     pub(crate) fn content_digest(&self) -> String {
+        sha256_hex(&serde_json::to_vec(&self.digest_value()).expect("canonical JSON serializes"))
+    }
+
+    /// Canonical byte form of the whole pre-seal projection: nodes with
+    /// their kinds, provenance, and facts, edges, and spans. Deterministic
+    /// for identical inputs; staged as sealed trial evidence so a sealed
+    /// bundle retains the trajectory itself, not only its digest
+    /// (`P18-BND-001`).
+    pub(crate) fn canonical_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(&self.canonical_value()).expect("canonical JSON serializes")
+    }
+
+    /// The digest payload: schema, product, node identities and facts, and
+    /// edges.
+    fn digest_value(&self) -> serde_json::Value {
         let nodes: Vec<serde_json::Value> = self
             .nodes
             .iter()
@@ -235,13 +250,55 @@ impl ProvisionalTrajectory {
                 })
             })
             .collect();
-        let payload = serde_json::json!({
+        serde_json::json!({
             "schema": self.schema,
             "product": self.product,
             "nodes": nodes,
             "edges": edges,
-        });
-        sha256_hex(&serde_json::to_vec(&payload).expect("canonical JSON serializes"))
+        })
+    }
+
+    /// The canonical retention form: the digest payload plus every node's
+    /// provenance and the span layer.
+    fn canonical_value(&self) -> serde_json::Value {
+        let mut value = self.digest_value();
+        let nodes: Vec<serde_json::Value> = self
+            .nodes
+            .iter()
+            .map(|n| {
+                serde_json::json!({
+                    "id": n.id.0,
+                    "kind": n.kind.tag(),
+                    "source": format!("{:?}", n.source),
+                    "source_order": n.source_order,
+                    "provenance": {
+                        "artifact_role": n.provenance.artifact_role,
+                        "artifact_sha256": n.provenance.artifact_sha256,
+                        "rule": n.provenance.rule,
+                    },
+                    "facts": facts_json(&n.facts),
+                })
+            })
+            .collect();
+        let spans: Vec<serde_json::Value> = self
+            .spans
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "kind": format!("{:?}", s.kind),
+                    "covers": s.covers.iter().map(|id| id.0).collect::<Vec<_>>(),
+                    "provenance": {
+                        "artifact_role": s.provenance.artifact_role,
+                        "artifact_sha256": s.provenance.artifact_sha256,
+                        "rule": s.provenance.rule,
+                    },
+                    "facts": facts_json(&s.facts),
+                })
+            })
+            .collect();
+        value["nodes"] = serde_json::json!(nodes);
+        value["spans"] = serde_json::json!(spans);
+        value
     }
 
     /// Validate the invariants this module owns. `project` runs this before

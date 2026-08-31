@@ -7,6 +7,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `opi-eval`: Phase 18 audit remediation now rejects artifact-directory and
+  report-output ancestor aliases before they can redirect writes outside the
+  reserved boundary, durably synchronizes the containing directory before an
+  intent proof is returned, validates the complete Opi evidence graph before
+  accepting an imported trace, and stages behavior-equivalent native command
+  helpers for Windows hermetic runs. The Windows smoke wrapper also emits
+  portable SHA-256 evidence and BOM-free JSON without assuming PowerShell
+  module autoloading, and downloaded native artifacts verify without assuming
+  a `python3` launcher or POSIX host path separators.
+- `opi-eval`: sealed trial bundles now carry the complete retained-byte
+  closure (Phase 18 remediation). The pre-effect intent reservation names
+  every artifact identity the sealed bundle must cover (the resolved
+  experiment, the integrity record, the provisional trajectory, the
+  normalized expected output, the agent execution streams, and the
+  authority ledger), sealing enforces reservation equality against the
+  staged set plus exactly the declared produced native evidence and
+  requires the expected output to exist, and verification additionally
+  compares the manifest's intent/settlement with the durable sidecars,
+  rejects unmanifested or missing files under the sealed artifact tree,
+  and keeps re-verification read-only and byte-stable. Promised agent and
+  verifier artifact reads fail closed instead of being silently skipped.
+- `opi-eval`: Agent-owned failures stay in the graded Agent outcome
+  class (Phase 18 remediation). A closed failure classification now
+  separates the Agent's own non-zero exit, crash, and supervisor-budget
+  timeout (scored Agent outcomes that dispatch the native verifier over
+  the settled workspace and pair as comparable graded outcomes in the
+  Agent success/failure denominator) from actual authority-boundary
+  failures (spawn refusal, cancellation, adapter/evidence rejection, and
+  infrastructure), which keep their mechanical transition stops. The
+  authority ledger seals the observed Agent completion class with the
+  transition evidence.
+- `opi-eval`: a natural child exit no longer abandons descendant
+  processes (Phase 18 remediation). The supervisor retains whether each
+  bounded stream reached EOF, probes the process-tree guard after the
+  direct child exits, and runs the same terminate/verify sequence when
+  descendants or inherited-pipe holders remain; cleanup is reported as
+  not required only after observed tree emptiness, otherwise as verified
+  tree termination or a typed termination failure.
+- `opi-eval`: the DeepSWE native reward contract is enforced (Phase 18
+  remediation). Pier job-aggregate import accepts finite benchmark-defined
+  score breakdowns such as F2P and P2P while rejecting authoritative
+  `reward` values outside the native zero-or-one domain (negative, above-one,
+  and fractional values) before any `u64` conversion. The DeepSWE upstream
+  oracle preflight now requires an explicitly known positive native `reward`
+  metric: a zero-reward reference solution no longer admits a task.
+- `opi-eval`: every durable trial intent binds to the comparison edge
+  that owns it (Phase 18 remediation). The runner resolves each trial's
+  unique owning edge from its subject and the counterpart trial declared
+  in the same task and group before any process effect, uses that edge as
+  the durable `PairIdentity`, and rejects zero or ambiguous owners before
+  Agent dispatch instead of defaulting every intent to the first declared
+  edge.
+- `opi-eval`: sealed provenance names the producer of every retained
+  byte (Phase 18 remediation). Verifier stdout/stderr and the imported
+  native grader reports are staged under a distinct grader source
+  identity derived from the pinned benchmark adapter identity instead of
+  the Agent's, and the offline headline selection requires the native
+  grader role and grader source together instead of recovering the report
+  by key suffix; source-role mismatches yield no headline.
+- `scripts/phase18-native-smoke.sh`: the conformance-rerun stage receipt
+  reports the actual executed case count (Phase 18 remediation). The
+  count derives from a loop counter incremented after each successful
+  case instead of a hardcoded literal, and the CI contract test compares
+  the declared case list with the counter path so the receipt can never
+  drift from the executed set.
+- `opi-eval`: offline reports derive only from verified sealed inputs
+  (Phase 18 remediation). `opi-eval report` reconstructs trial views,
+  pair coverage, integrity provenance, native rewards, and diagnostics
+  from the sealed control evidence, trajectory, authority ledger, and
+  manifest identities inside verified bundles - never from the mutable
+  outer run report or trial receipts. A covered-byte mutation or a
+  sealed-input parse failure returns a typed non-published outcome with
+  a non-zero exit instead of publishing, and the `--out` path is opened
+  with create-new semantics outside the run root so neither sealed
+  bytes nor a prior report can be replaced.
+
+### Added
+
+- Phase 18 task 18.16: offline seam-evidence derivation
+  (`scripts/derive-phase18-seam-matrix.py`) that consumes the verified
+  18.15 sealed artifact and commits the artifact-derived shared /
+  adapter-private / rejected matrix
+  (`crates/opi-eval/docs/seam-evidence-matrix.md`); local acceptance
+  suites locking ordinary `opi` to the 18.1 commit-bound Minimal Runtime
+  baseline and the generic three-subject/fourth-benchmark experiment
+  shape (`crates/opi-eval/tests/phase18_acceptance.rs`); the rollback
+  contract suite retaining the GLM-5.3 roadmap and Non-goal absence
+  checks (`crates/opi-eval/tests/rollback_contract.rs`); the
+  documentation contract for the retained roadmap
+  (`scripts/opi-doc-check.py`); the CI attestation contract verifier
+  (`scripts/verify-phase18-ci.py`) plus the minimal three-platform
+  pull-request attestation producer in CI that records the pull-request
+  head separately from the merge-ref checkout without replacing any
+  merge-ref integration check; and the single authoritative Phase-exit
+  gate order in the smoke wrappers (documentation contract first,
+  workspace doc tests added, rustdoc last).
+
 ## [0.8.1] - 2026-08-25
 
 ### Breaking Changes

@@ -294,6 +294,345 @@ exit 5
     .to_owned()
 }
 
+/// Writes one Pier `jobs/<timestamp>/result.json` aggregate whose `metric`
+/// awards `reward_key` to the single trial (test staging).
+fn pier_oracle(metric: &str, reward_key: &str) -> String {
+    format!(
+        r#"#!/bin/sh
+# native stand-in writing a crafted Pier job aggregate (test staging)
+[ "$1" = "run" ] && [ "$2" = "--locked" ] || {{ echo "argv drift" >&2; exit 9; }}
+mkdir -p ./jobs/2026-08-30__00-00-00
+cat > ./jobs/2026-08-30__00-00-00/result.json <<'JSON'
+{{"n_total_trials": 1, "stats": {{"evals": {{"x": {{"reward_stats": {{"{metric}": {{"{reward_key}": ["t"]}}}}}}}}}}}}
+JSON
+exit 0
+"#
+    )
+}
+
+/// Stages DeepSWE native material whose profile drives the real Pier
+/// job-aggregate import (the native dispatch surface) with the fixture
+/// task package and the same agent stand-ins.
+fn stage_deepswe(oracle_body: &str) -> Staged {
+    let root = tempfile::tempdir().unwrap();
+    let root_path = root.path().to_path_buf();
+    let mat = root_path.join("material");
+    fs::create_dir_all(&mat).unwrap();
+
+    let profile = mat.join("profile.toml");
+    // Stage the DeepSWE profile for the native Pier job-aggregate surface,
+    // with the official instruction file added to the pinned byte table
+    // (the native driving contract reads it as the task prompt) and the
+    // package manifest digest recomputed over the same pinned-table
+    // scheme the profile parser enforces.
+    let instruction = "solve the synthetic task\n";
+    let pinned = [
+        ("README.md", "100644"),
+        ("environment/Dockerfile", "100644"),
+        ("verifier/collect.sh", "100755"),
+    ];
+    let mut table: Vec<serde_json::Value> = pinned
+        .iter()
+        .map(|(path, mode)| {
+            let bytes = fs::read(
+                fixtures()
+                    .join("benchmarks/deepswe-v1.1/task-package")
+                    .join(path),
+            )
+            .unwrap();
+            serde_json::json!({
+                "mode": mode,
+                "path": path,
+                "sha256": sha256_hex(&bytes),
+                "size": bytes.len(),
+            })
+        })
+        .collect();
+    table.push(serde_json::json!({
+        "mode": "100644",
+        "path": "instruction.md",
+        "sha256": sha256_hex(instruction.as_bytes()),
+        "size": instruction.len(),
+    }));
+    table.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+    let package_digest = sha256_hex(serde_json::to_string(&table).unwrap().as_bytes());
+    let profile_text = fs::read_to_string(
+        fixtures().join("benchmarks/deepswe-v1.1/profile/synthetic.toml"),
+    )
+    .unwrap()
+    .replace(
+        "output_kind = \"pier-report\"",
+        "output_kind = \"unpinned-pending-18-15\"",
+    )
+    .replace(
+        "package_manifest_sha256 = \"13e94f44d464818873ba00931e66339db1a6249d94f1e1e17b9c8060726bd3ae\"",
+        &format!("package_manifest_sha256 = \"{package_digest}\""),
+    )
+    + &format!(
+        "\n[[package]]\npath = \"instruction.md\"\nmode = \"100644\"\nsize = {}\nsha256 = \"{}\"\n",
+        instruction.len(),
+        sha256_hex(instruction.as_bytes())
+    );
+    fs::write(&profile, profile_text).unwrap();
+    let task = mat.join("task-package");
+    copy_dir(
+        &fixtures().join("benchmarks/deepswe-v1.1/task-package"),
+        &task,
+    );
+    fs::write(task.join("instruction.md"), instruction).unwrap();
+
+    write_exec(
+        &mat.join("agents/opi"),
+        r#"#!/bin/sh
+# native stand-in for the exact built opi binary (test staging)
+[ "$1" = "--json" ] || { echo "argv drift" >&2; exit 9; }
+printf 'native stand-in answer\n' > answer.txt
+exit 0
+"#,
+    );
+    write_exec(
+        &mat.join("agents/pi"),
+        r#"#!/bin/sh
+# native stand-in for the exact built pi bundle (test staging)
+[ "$1" = "--mode" ] && [ "$2" = "json" ] || { echo "argv drift" >&2; exit 9; }
+printf 'pi stand-in answer\n' > answer.txt
+exit 0
+"#,
+    );
+    write_exec(&mat.join("oracle-uv.sh"), oracle_body);
+    write_exec(
+        &mat.join("verifier-uv.sh"),
+        r#"#!/bin/sh
+# native stand-in for the pinned uv verifier entrypoint (test staging)
+[ "$1" = "run" ] && [ "$2" = "--locked" ] || { echo "argv drift" >&2; exit 9; }
+exit 0
+"#,
+    );
+
+    let provider = mat.join("phase18-scripted-provider.py");
+    fs::copy(
+        manifest_dir().join("../../scripts/phase18-scripted-provider.py"),
+        &provider,
+    )
+    .unwrap();
+    let static_lock = mat.join("static-lock.json");
+    fs::write(&static_lock, b"{\"schema\": \"fixture-lock\"}\n").unwrap();
+
+    let digest_of = |path: &Path| sha256_hex(&fs::read(path).unwrap());
+    let material = mat.join("material.json");
+    fs::write(
+        &material,
+        format!(
+            r#"{{
+  "schema": "phase18-native-material/1",
+  "static_lock": {{"path": {:?}, "sha256": {:?}}},
+  "provider": {{
+    "script": {{"path": {:?}, "sha256": {:?}}},
+    "endpoint": "http://127.0.0.1:48127/v1",
+    "request_log": {:?}
+  }},
+  "agents": {{
+    "opi": {{
+      "executable": {{"path": {:?}, "sha256": {:?}}},
+      "model": "scripted:phase18",
+      "provider_env": {{"OPENAI_API_KEY": "<dummy-scripted-credential>"}},
+      "config": {{"kind": "opi-toml", "base_url": "http://127.0.0.1:48127/v1",
+                  "model_id": "phase18", "api_key": "<dummy>"}}
+    }},
+    "pi": {{
+      "executable": {{"path": {:?}, "sha256": {:?}}},
+      "model": "scripted:scripted/phase18",
+      "provider_env": {{"PI_API_KEY": "<redacted-dummy>"}},
+      "config": {{"kind": "pi-models-json", "base_url": "http://127.0.0.1:48127/v1",
+                  "model_id": "scripted/phase18", "api_key": "<redacted-dummy>"}}
+    }}
+  }},
+  "benchmarks": {{
+    "deepswe-v1.1": {{
+      "profile": {:?},
+      "task_package": {:?},
+      "task_package_manifest_sha256": {:?},
+      "verifier_executable": {{"path": {:?}, "sha256": {:?}}},
+      "verifier_env": {{}},
+      "oracle": {{"path": {:?}, "sha256": {:?}}},
+      "oracle_env": {{}}
+    }}
+  }}
+}}"#,
+            static_lock.to_string_lossy(),
+            digest_of(&static_lock),
+            provider.to_string_lossy(),
+            digest_of(&provider),
+            mat.join("requests.jsonl").to_string_lossy(),
+            mat.join("agents/opi").to_string_lossy(),
+            digest_of(&mat.join("agents/opi")),
+            mat.join("agents/pi").to_string_lossy(),
+            digest_of(&mat.join("agents/pi")),
+            profile.to_string_lossy(),
+            task.to_string_lossy(),
+            package_manifest_digest(&task),
+            mat.join("verifier-uv.sh").to_string_lossy(),
+            digest_of(&mat.join("verifier-uv.sh")),
+            mat.join("oracle-uv.sh").to_string_lossy(),
+            digest_of(&mat.join("oracle-uv.sh")),
+        ),
+    )
+    .unwrap();
+
+    Staged {
+        _guard: root,
+        root: root_path,
+        material,
+    }
+}
+
+fn deepswe_experiment_text(integrity_digest: &str) -> String {
+    format!(
+        r#"schema = "phase18-experiment/1"
+experiment_id = "native-deepswe-oracle-test"
+
+[benchmark]
+name = "deepswe"
+revision = "v1.1"
+dataset = "native-deepswe-oracle-test"
+integrity_digest = "{integrity_digest}"
+
+[[subjects]]
+id = "baseline-pi"
+product = "pi"
+version = "0.84.3"
+
+[[subjects]]
+id = "candidate-opi"
+product = "opi"
+version = "0.1.0"
+
+[[edges]]
+id = "edge-1"
+baseline = "baseline-pi"
+candidate = "candidate-opi"
+
+[model_controls]
+provider = "scripted"
+model = "phase18"
+endpoint_class = "loopback"
+temperature = 0.0
+max_output_tokens = 4096
+reasoning = "omitted"
+
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "isolated"
+
+[[trials]]
+id = "trial-pi-native"
+subject = "baseline-pi"
+task = "synthetic-fixture-task"
+group = "group-native"
+
+[[trials]]
+id = "trial-opi-native"
+subject = "candidate-opi"
+task = "synthetic-fixture-task"
+group = "group-native"
+"#,
+    )
+}
+
+#[test]
+fn deepswe_oracle_preflight_enforces_the_positive_native_reward_bar() {
+    // A known positive native reward passes the DeepSWE oracle preflight.
+    let staged = stage_deepswe(&pier_oracle("reward", "1.0"));
+    let config = staged.root.join("config.toml");
+    let zero = "0".repeat(64);
+    fs::write(&config, deepswe_experiment_text(&zero)).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("validate")
+        .arg("--config")
+        .arg(&config)
+        .arg("--native-material")
+        .arg(&staged.material)
+        .output()
+        .expect("validate runs");
+    assert!(
+        output.status.success(),
+        "validate rejected the deepswe material: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let digest = stdout
+        .split_whitespace()
+        .find(|token| token.starts_with("native_integrity="))
+        .unwrap()
+        .trim_start_matches("native_integrity=")
+        .to_owned();
+    fs::write(&config, deepswe_experiment_text(&digest)).unwrap();
+    let run_root = staged.root.join("preflight-positive");
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--config")
+        .arg(&config)
+        .arg("--root")
+        .arg(&run_root)
+        .arg("--fixtures")
+        .arg(fixtures())
+        .arg("--native-material")
+        .arg(&staged.material)
+        .arg("--preflight-only")
+        .output()
+        .expect("preflight-only executes");
+    assert!(
+        output.status.success(),
+        "positive native reward must pass: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
+    assert_eq!(report["outcome"], "preflight-only");
+    assert_eq!(report["preflight"]["outcome"], "passed");
+
+    // Every non-passing shape rejects the run before any trial: a zero
+    // native reward (broken or mis-collected reference solution),
+    // out-of-domain rewards (negative, above one, fractional), and an
+    // aggregate without any `reward` metric at all.
+    for (metric, reward_key) in [
+        ("reward", "0.0"),
+        ("reward", "-1.0"),
+        ("reward", "2.0"),
+        ("reward", "0.5"),
+        ("f2p", "1.0"),
+    ] {
+        let staged = stage_deepswe(&pier_oracle(metric, reward_key));
+        fs::write(&config, deepswe_experiment_text(&digest)).unwrap();
+        let run_root = staged.root.join("preflight-rejected");
+        let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("run")
+            .arg("--config")
+            .arg(&config)
+            .arg("--root")
+            .arg(&run_root)
+            .arg("--fixtures")
+            .arg(fixtures())
+            .arg("--native-material")
+            .arg(&staged.material)
+            .arg("--preflight-only")
+            .output()
+            .expect("preflight-only executes");
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "{metric}={reward_key} must not admit the task"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("oracle preflight"),
+            "{metric}={reward_key}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!run_root.join("trials").exists());
+    }
+}
+
 fn experiment_text(_staged: &Staged, integrity_digest: &str) -> String {
     format!(
         r#"schema = "phase18-experiment/1"

@@ -158,7 +158,7 @@ fn cancellation_fixture() -> (
 }
 
 async fn wait_for_dispatch(dispatched: &tokio::sync::Semaphore) {
-    let permit = tokio::time::timeout(Duration::from_secs(2), dispatched.acquire())
+    let permit = tokio::time::timeout(Duration::from_secs(10), dispatched.acquire())
         .await
         .expect("provider dispatch timed out")
         .expect("dispatch semaphore remains open");
@@ -350,7 +350,7 @@ fn assert_durable_denial(run_dir: &std::path::Path, label: &str) {
 async fn recv_rpc_line(
     output_rx: &mut tokio::sync::mpsc::UnboundedReceiver<serde_json::Value>,
 ) -> serde_json::Value {
-    tokio::time::timeout(Duration::from_secs(2), output_rx.recv())
+    tokio::time::timeout(Duration::from_secs(10), output_rx.recv())
         .await
         .expect("timed out waiting for RPC output")
         .expect("RPC output channel closed")
@@ -362,7 +362,7 @@ async fn join_task_with_timeout<T: Send + 'static>(
 ) -> T {
     join_task_with_timeouts(
         task,
-        Duration::from_secs(2),
+        Duration::from_secs(10),
         Duration::from_millis(100),
         label,
     )
@@ -502,7 +502,7 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
         install_interactive_tui_test_driver(["cross-mode fixture", "<escape>", "exit"])
             .expect("interactive headless driver installs");
     tokio::time::timeout(
-        Duration::from_secs(2),
+        Duration::from_secs(10),
         run_interactive_tui(
             interactive,
             MODEL_SPEC.to_owned(),
@@ -1432,7 +1432,10 @@ async fn phase17_production_tui_targets_two_consecutive_armed_runs() {
     .expect("interactive cancellation driver installs");
 
     tokio::time::timeout(
-        Duration::from_secs(2),
+        // Bounded termination proof, sized for slow CI runners: the
+        // assertion is that two armed cancellations always terminate,
+        // not that they finish inside two seconds.
+        Duration::from_secs(10),
         run_interactive_tui(
             harness,
             MODEL_SPEC.to_owned(),

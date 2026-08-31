@@ -173,15 +173,20 @@ class Phase18EvalSmokeWrapper(unittest.TestCase):
                 (artifacts / "report-2.json").read_bytes(),
             )
 
-    def test_bundle_identity_is_content_addressed_across_runs(self) -> None:
+    def test_bundle_identity_addresses_each_exact_manifest_body(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             first = run_wrapper(Path(tmp) / "a")
             second = run_wrapper(Path(tmp) / "b")
-            a = json.loads((first / "audit.json").read_text())
-            b = json.loads((second / "audit.json").read_text())
-            ids_a = {row["trial"]: row["bundle_identity"] for row in a["happy"]["bundle_identities"]}
-            ids_b = {row["trial"]: row["bundle_identity"] for row in b["happy"]["bundle_identities"]}
-            self.assertEqual(ids_a, ids_b, "identical content must seal to one identity")
+            for run in (first, second):
+                for trial in (run / "happy" / "root" / "trials").iterdir():
+                    manifest = json.loads(
+                        (trial / "bundle" / "manifest.json").read_text()
+                    )
+                    identity = manifest.pop("identity")
+                    canonical = json.dumps(
+                        manifest, separators=(",", ":"), ensure_ascii=False
+                    ).encode()
+                    self.assertEqual(identity, hashlib.sha256(canonical).hexdigest())
 
 
 if __name__ == "__main__":

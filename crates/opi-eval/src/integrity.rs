@@ -170,6 +170,19 @@ impl IntegrityRecord {
         &self.identity
     }
 
+    /// The canonical bytes this record's identity addresses: the exact
+    /// serialization the digest covers, staged as sealed control evidence
+    /// so a sealed bundle retains the admission record itself
+    /// (`P18-BND-001`).
+    pub(crate) fn canonical_bytes(&self) -> Vec<u8> {
+        canonical_body(&self.parts).expect("a reviewed record canonicalizes")
+    }
+
+    /// Native grader identity admitted by this record.
+    pub(crate) fn grader(&self) -> &str {
+        &self.parts.grader
+    }
+
     /// Admission status of the revision.
     pub(crate) fn status(&self) -> RevisionStatus {
         self.parts.status
@@ -255,24 +268,7 @@ impl IntegrityRecord {
                 });
             }
         }
-        let body = IntegrityBody {
-            format: "opi-eval-integrity",
-            benchmark: &parts.benchmark,
-            revision: &parts.revision,
-            dataset: &parts.dataset,
-            grader: &parts.grader,
-            environment: &parts.environment,
-            upstream_identity: &parts.upstream_identity,
-            upstream_digest: &parts.upstream_digest,
-            oracle: &parts.oracle,
-            status: &parts.status,
-            tasks: &parts.tasks,
-            excluded_trials: &parts.excluded_trials,
-            reviewer: &parts.reviewer,
-        };
-        let canonical = serde_json::to_vec(&body).map_err(|_| IntegrityError::EmptyField {
-            field: "canonical_body",
-        })?;
+        let canonical = canonical_body(&parts)?;
         let identity = {
             use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
@@ -286,6 +282,28 @@ impl IntegrityRecord {
         };
         Ok(IntegrityRecord { parts, identity })
     }
+}
+
+/// The canonical serialization the record identity addresses.
+fn canonical_body(parts: &IntegrityReview) -> Result<Vec<u8>, IntegrityError> {
+    let body = IntegrityBody {
+        format: "opi-eval-integrity",
+        benchmark: &parts.benchmark,
+        revision: &parts.revision,
+        dataset: &parts.dataset,
+        grader: &parts.grader,
+        environment: &parts.environment,
+        upstream_identity: &parts.upstream_identity,
+        upstream_digest: &parts.upstream_digest,
+        oracle: &parts.oracle,
+        status: &parts.status,
+        tasks: &parts.tasks,
+        excluded_trials: &parts.excluded_trials,
+        reviewer: &parts.reviewer,
+    };
+    serde_json::to_vec(&body).map_err(|_| IntegrityError::EmptyField {
+        field: "canonical_body",
+    })
 }
 
 #[cfg(test)]
@@ -327,6 +345,16 @@ mod tests {
         assert!(record.admitted());
         assert_eq!(record.revision(), "0.9.2");
         assert_eq!(record.identity_digest().len(), 64);
+        assert_eq!(record.grader(), "tb-native");
+        // The canonical bytes address the identity: hashing them reproduces
+        // it exactly, so staged control evidence carries the admission
+        // record itself.
+        {
+            use sha2::{Digest, Sha256};
+            let digest = Sha256::digest(record.canonical_bytes());
+            let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+            assert_eq!(hex, record.identity_digest());
+        }
         assert!(matches!(
             record.task_classification("task-2"),
             Some(TaskClassification::PromptTestMismatch { .. })

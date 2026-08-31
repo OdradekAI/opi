@@ -349,6 +349,36 @@ REMEDIATION_APPLY_ONLY_REFERENCES = (
 )
 
 
+PHASE18_ROADMAP_CONTRACT = {
+    "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md": (
+        "Terminal Bench 2.1",
+        "Terminal Bench 3.0",
+        "DeepSWE v1.1",
+        "NL2Repo",
+        "ProgramBench (Almost Solved)",
+        "FrontierSWE",
+        "SWE-Marathon v1.1",
+        "PostTrainBench",
+        "CyberGym",
+        "ExploitGym (2h / 6h)",
+        "ExploitBench",
+        "Toolathlon Verified",
+        "AutomationBench v1.0.6",
+        "Agents' Last Exam (ALE-CLI)",
+        "HLE w/ Tools",
+        "GDPval-AA v2",
+        "Z.ai Code Bench",
+        "Not admitted",
+        "Phase 18 coding foundation",
+        "Remaining coding",
+        "| Cyber |",
+        "| Agentic |",
+        "Private evidence",
+        "experiment class",
+        "separately approved gate",
+    ),
+}
+
 EVAL_BEHAVIOR_BASELINE_CONTRACT = {
     ".claude/skills/opi-eval/SKILL.md": (
         "sole deterministic acceptance baseline",
@@ -590,6 +620,15 @@ def check_remediation_reference_scope() -> None:
             )
         if token not in apply:
             ERRORS.append(f"{rel}: apply branch missing reference {[token]!r}")
+
+
+def check_phase18_roadmap_contract() -> None:
+    for rel, tokens in PHASE18_ROADMAP_CONTRACT.items():
+        require_tokens(
+            rel,
+            "phase18 GLM-5.3 roadmap contract",
+            tokens,
+        )
 
 
 def check_eval_behavior_baseline_contract() -> None:
@@ -1118,6 +1157,7 @@ def main() -> int:
     check_minimum_change_trace_contract()
     check_assurance_workflow_contract()
     check_eval_behavior_baseline_contract()
+    check_phase18_roadmap_contract()
     check_root_guidance_lockstep()
     check_workspace_graph()
     phase15_safety_sandbox_docs()

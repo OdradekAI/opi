@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "audit_run_id": "phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710",
+  "phase": 18,
+  "audit_head": "08bc61d87146a83ae6e00dc9638a8b8c89fae8d7",
+  "reviewer_id": "codex",
+  "reviewer_identity": "Codex",
+  "model_id": "gpt56",
+  "reviewer_model_id": "gpt56",
+  "model_identity_source": "operator-declared",
+  "independence": "fresh-context-same-family",
+  "baseline_policy": "latest-committed-spec",
+  "baseline_sources": [
+    {
+      "path": ".opi-impl-state.json",
+      "sha256": "9d2ecf977f940f03db3c5d3b17437ad4a3afbca6ad409fcebf306727848a358e"
+    },
+    {
+      "path": "docs/snapshots/phase18/opi-impl-state.json",
+      "sha256": "cea5031074ac0d5667357863fbdf03bc76494295a6c38fac304dc1c851d7b42c"
+    },
+    {
+      "path": "docs/opi-spec.md",
+      "sha256": "cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md",
+      "sha256": "43b2759d327cbf0af8d35d4eba50839eef7aac473978b58fcb707b335dad8265"
+    }
+  ],
+  "requirements_sha256": "aabbd4c340b540e40b6e09df405b0907b4522aca6023063702216bdd9e3c9198",
+  "findings_sha256": "099fa8c019f1af3f6362c726895a67b45e83691b9d48b75d4a3e8466724b842b",
+  "verdict": "FAIL"
+}

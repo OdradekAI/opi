@@ -13,6 +13,11 @@ doc_check = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(doc_check)
 
 
+PHASE18_ROADMAP_REQUIRED = {
+    rel: tokens
+    for rel, tokens in doc_check.PHASE18_ROADMAP_CONTRACT.items()
+}
+
 MINIMUM_CHANGE_TRACE_REQUIRED = {
     ".claude/skills/opi-implement/SKILL.md": (
         "**Minimum-change trace rule:**",
@@ -569,6 +574,10 @@ class SkillContractTests(unittest.TestCase):
                 + "\n",
             )
 
+    def write_phase18_roadmap_docs(self) -> None:
+        for rel, tokens in PHASE18_ROADMAP_REQUIRED.items():
+            self.write(rel, "\n".join(tokens) + "\n")
+
     def write_eval_behavior_baseline_docs(self) -> None:
         for rel, tokens in EVAL_BEHAVIOR_BASELINE_REQUIRED.items():
             self.write(rel, "\n".join(tokens) + "\n")
@@ -769,6 +778,37 @@ class SkillContractTests(unittest.TestCase):
 
                     self.assertIn(
                         f"{rel}: eval behavior-baseline contract "
+                        f"missing semantic tokens {[token]!r}",
+                        doc_check.ERRORS,
+                    )
+
+    def test_phase18_roadmap_contract_passes(self) -> None:
+        self.write_phase18_roadmap_docs()
+
+        checker = getattr(doc_check, "check_phase18_roadmap_contract", None)
+        self.assertIsNotNone(checker, "phase18 roadmap checker must exist")
+        checker()
+
+        self.assertEqual([], doc_check.ERRORS)
+
+    def test_phase18_roadmap_contract_requires_every_token(self) -> None:
+        checker = getattr(doc_check, "check_phase18_roadmap_contract", None)
+        self.assertIsNotNone(checker, "phase18 roadmap checker must exist")
+
+        for rel, tokens in PHASE18_ROADMAP_REQUIRED.items():
+            for token in tokens:
+                with self.subTest(rel=rel, token=token):
+                    doc_check.ERRORS = []
+                    self.write_phase18_roadmap_docs()
+                    self.write(
+                        rel,
+                        "\n".join(item for item in tokens if item != token) + "\n",
+                    )
+
+                    checker()
+
+                    self.assertIn(
+                        f"{rel}: phase18 GLM-5.3 roadmap contract "
                         f"missing semantic tokens {[token]!r}",
                         doc_check.ERRORS,
                     )

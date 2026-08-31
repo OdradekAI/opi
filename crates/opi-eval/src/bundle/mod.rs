@@ -9,7 +9,34 @@
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
     use std::fs;
+
+    thread_local! {
+        static ATOMIC_WRITE_TRACE: RefCell<Option<Vec<&'static str>>> = const { RefCell::new(None) };
+        static FAIL_PARENT_SYNC: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub(super) fn begin_atomic_write_trace(fail_parent_sync: bool) {
+        ATOMIC_WRITE_TRACE.with(|trace| *trace.borrow_mut() = Some(Vec::new()));
+        FAIL_PARENT_SYNC.with(|fail| fail.set(fail_parent_sync));
+    }
+
+    pub(super) fn record_atomic_write_event(event: &'static str) {
+        ATOMIC_WRITE_TRACE.with(|trace| {
+            if let Some(events) = trace.borrow_mut().as_mut() {
+                events.push(event);
+            }
+        });
+    }
+
+    pub(super) fn parent_sync_should_fail() -> bool {
+        FAIL_PARENT_SYNC.with(Cell::get)
+    }
+
+    fn take_atomic_write_trace() -> Vec<&'static str> {
+        ATOMIC_WRITE_TRACE.with(|trace| trace.borrow_mut().take().unwrap_or_default())
+    }
 
     fn spec(role: ArtifactRole, source: &str, path: &str, bytes: &[u8]) -> ArtifactSpec {
         ArtifactSpec {
@@ -133,6 +160,87 @@ mod tests {
         assert_eq!(err.boundary(), FailureBoundaryCode::Evidence);
     }
 
+    #[cfg(windows)]
+    fn create_directory_alias(link: &Path, target: &Path) {
+        let output = std::process::Command::new("cmd")
+            .args([
+                "/D",
+                "/C",
+                "mklink",
+                "/J",
+                &link.to_string_lossy(),
+                &target.to_string_lossy(),
+            ])
+            .output()
+            .expect("spawn mklink for bundle ancestor regression");
+        assert!(
+            output.status.success(),
+            "create bundle ancestor junction: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(unix)]
+    fn create_directory_alias(link: &Path, target: &Path) {
+        std::os::unix::fs::symlink(target, link).expect("create bundle ancestor symlink");
+    }
+
+    #[test]
+    fn insertion_rejects_ancestor_directory_alias() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let mut bundle = RunBundle::create(tmp.path()).unwrap();
+        fs::create_dir(tmp.path().join("artifacts")).unwrap();
+        create_directory_alias(&tmp.path().join("artifacts").join("native"), outside.path());
+
+        let err = bundle
+            .insert(
+                spec(
+                    ArtifactRole::Native,
+                    "agent-opi",
+                    "native/stdout.log",
+                    b"must stay contained\n",
+                ),
+                vec![],
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, BundleError::SymlinkEscape { .. }));
+        assert_eq!(err.boundary(), FailureBoundaryCode::Evidence);
+        assert!(!outside.path().join("stdout.log").exists());
+    }
+
+    #[test]
+    fn intent_publication_requires_parent_directory_durability() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut bundle = RunBundle::create(tmp.path()).unwrap();
+        let intent = IntentRecord {
+            trial: TrialIdentity::new("trial-1").unwrap(),
+            pair: PairIdentity::new("pair-1").unwrap(),
+            artifacts: vec![ArtifactKey::new("normalized/expected").unwrap()],
+            expected_output: ArtifactKey::new("normalized/expected").unwrap(),
+        };
+
+        begin_atomic_write_trace(false);
+        bundle.publish_intent(&intent).unwrap();
+        assert_eq!(
+            take_atomic_write_trace(),
+            vec!["write", "file-sync", "rename", "parent-sync"]
+        );
+
+        let failed_root = tempfile::tempdir().unwrap();
+        let mut failed = RunBundle::create(failed_root.path()).unwrap();
+        begin_atomic_write_trace(true);
+        let err = failed.publish_intent(&intent).unwrap_err();
+        assert!(matches!(err, BundleError::Io { .. }));
+        assert_eq!(err.boundary(), FailureBoundaryCode::TrialDurability);
+        assert_eq!(
+            take_atomic_write_trace(),
+            vec!["write", "file-sync", "rename", "parent-sync"]
+        );
+    }
+
     #[test]
     fn sealing_publishes_one_complete_manifest_and_freezes_the_bundle() {
         let tmp = tempfile::tempdir().unwrap();
@@ -140,18 +248,22 @@ mod tests {
 
         // Sealing before a durable settlement is rejected: the ladder order
         // is intent -> settlement -> seal.
-        let err = bundle.seal().unwrap_err();
+        let err = bundle.seal(&[]).unwrap_err();
         assert_eq!(err.boundary(), FailureBoundaryCode::TrialDurability);
 
         bundle
             .publish_intent(&IntentRecord {
                 trial: TrialIdentity::new("trial-1").unwrap(),
                 pair: PairIdentity::new("pair-1").unwrap(),
-                artifacts: vec![ArtifactKey::new("native/stdout.log").unwrap()],
+                artifacts: vec![
+                    ArtifactKey::new("derived/report.md").unwrap(),
+                    ArtifactKey::new("native/stdout.log").unwrap(),
+                    ArtifactKey::new("normalized/expected").unwrap(),
+                ],
                 expected_output: ArtifactKey::new("normalized/expected").unwrap(),
             })
             .unwrap();
-        let err = bundle.seal().unwrap_err();
+        let err = bundle.seal(&[]).unwrap_err();
         assert!(matches!(err, BundleError::SealWithoutSettlement { .. }));
 
         let stdout = bundle
@@ -173,12 +285,23 @@ mod tests {
             )
             .unwrap();
         bundle
+            .insert(
+                spec(
+                    ArtifactRole::Normalized,
+                    "agent-opi",
+                    "normalized/expected",
+                    b"observed\n",
+                ),
+                vec![stdout_key],
+            )
+            .unwrap();
+        bundle
             .record_settlement(&SettlementMarker {
                 trial: TrialIdentity::new("trial-1").unwrap(),
             })
             .unwrap();
 
-        let receipt = bundle.seal().unwrap();
+        let receipt = bundle.seal(&[]).unwrap();
         assert!(!receipt.bundle_identity().is_empty());
 
         // One complete manifest is atomically visible under the final name.
@@ -197,30 +320,45 @@ mod tests {
         twin.publish_intent(&IntentRecord {
             trial: TrialIdentity::new("trial-1").unwrap(),
             pair: PairIdentity::new("pair-1").unwrap(),
-            artifacts: vec![ArtifactKey::new("native/stdout.log").unwrap()],
+            artifacts: vec![
+                ArtifactKey::new("derived/report.md").unwrap(),
+                ArtifactKey::new("native/stdout.log").unwrap(),
+                ArtifactKey::new("normalized/expected").unwrap(),
+            ],
             expected_output: ArtifactKey::new("normalized/expected").unwrap(),
         })
         .unwrap();
+        let twin_stdout = twin
+            .insert(
+                spec(
+                    ArtifactRole::Native,
+                    "agent-opi",
+                    "native/stdout.log",
+                    b"observed\n",
+                ),
+                vec![],
+            )
+            .unwrap();
         twin.insert(
-            spec(
-                ArtifactRole::Native,
-                "agent-opi",
-                "native/stdout.log",
-                b"observed\n",
-            ),
-            vec![],
+            spec(ArtifactRole::Derived, "report", "derived/report.md", b"# r"),
+            vec![twin_stdout.clone()],
         )
         .unwrap();
         twin.insert(
-            spec(ArtifactRole::Derived, "report", "derived/report.md", b"# r"),
-            vec![stdout_key],
+            spec(
+                ArtifactRole::Normalized,
+                "agent-opi",
+                "normalized/expected",
+                b"observed\n",
+            ),
+            vec![twin_stdout],
         )
         .unwrap();
         twin.record_settlement(&SettlementMarker {
             trial: TrialIdentity::new("trial-1").unwrap(),
         })
         .unwrap();
-        let twin_receipt = twin.seal().unwrap();
+        let twin_receipt = twin.seal(&[]).unwrap();
         assert_eq!(receipt.bundle_identity(), twin_receipt.bundle_identity());
 
         // After sealing every mutation is rejected.
@@ -250,7 +388,67 @@ mod tests {
             .publish_intent(&IntentRecord {
                 trial: TrialIdentity::new("trial-1").unwrap(),
                 pair: PairIdentity::new("pair-1").unwrap(),
-                artifacts: vec![],
+                artifacts: vec![
+                    ArtifactKey::new("native/stdout.log").unwrap(),
+                    ArtifactKey::new("normalized/expected").unwrap(),
+                ],
+                expected_output: ArtifactKey::new("normalized/expected").unwrap(),
+            })
+            .unwrap();
+        bundle
+            .insert(
+                spec(
+                    ArtifactRole::Native,
+                    "agent-opi",
+                    "native/stdout.log",
+                    b"observed\n",
+                ),
+                vec![],
+            )
+            .unwrap();
+        bundle
+            .insert(
+                spec(
+                    ArtifactRole::Normalized,
+                    "agent-opi",
+                    "normalized/expected",
+                    b"observed\n",
+                ),
+                vec![],
+            )
+            .unwrap();
+        bundle
+            .record_settlement(&SettlementMarker {
+                trial: TrialIdentity::new("trial-1").unwrap(),
+            })
+            .unwrap();
+
+        // Tamper a staged byte between insertion and sealing: sealing is
+        // artifact validation and owns the Evidence boundary.
+        fs::write(
+            tmp.path().join("artifacts/native/stdout.log"),
+            b"tampered\n",
+        )
+        .unwrap();
+        let err = bundle.seal(&[]).unwrap_err();
+        assert!(matches!(err, BundleError::DigestMismatch { .. }));
+        assert_eq!(err.boundary(), FailureBoundaryCode::Evidence);
+        // The partial bundle never published a manifest.
+        assert!(!tmp.path().join("manifest.json").is_file());
+    }
+
+    #[test]
+    fn sealing_enforces_reservation_equality_and_the_expected_output() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut bundle = RunBundle::create(tmp.path()).unwrap();
+        bundle
+            .publish_intent(&IntentRecord {
+                trial: TrialIdentity::new("trial-1").unwrap(),
+                pair: PairIdentity::new("pair-1").unwrap(),
+                artifacts: vec![
+                    ArtifactKey::new("native/stdout.log").unwrap(),
+                    ArtifactKey::new("normalized/expected").unwrap(),
+                ],
                 expected_output: ArtifactKey::new("normalized/expected").unwrap(),
             })
             .unwrap();
@@ -271,18 +469,87 @@ mod tests {
             })
             .unwrap();
 
-        // Tamper a staged byte between insertion and sealing: sealing is
-        // artifact validation and owns the Evidence boundary.
-        fs::write(
-            tmp.path().join("artifacts/native/stdout.log"),
-            b"tampered\n",
-        )
-        .unwrap();
-        let err = bundle.seal().unwrap_err();
-        assert!(matches!(err, BundleError::DigestMismatch { .. }));
-        assert_eq!(err.boundary(), FailureBoundaryCode::Evidence);
-        // The partial bundle never published a manifest.
-        assert!(!tmp.path().join("manifest.json").is_file());
+        // The reserved expected output was never staged: sealing refuses
+        // the incomplete reservation (P18-BND-001).
+        let err = bundle.seal(&[]).unwrap_err();
+        assert!(matches!(err, BundleError::ReservationBroken { .. }));
+        assert_eq!(err.boundary(), FailureBoundaryCode::TrialDurability);
+
+        // Staging the expected output completes the reservation.
+        bundle
+            .insert(
+                spec(
+                    ArtifactRole::Normalized,
+                    "agent-opi",
+                    "normalized/expected",
+                    b"observed\n",
+                ),
+                vec![],
+            )
+            .unwrap();
+        assert!(bundle.seal(&[]).is_ok());
+
+        // A staged key outside the reservation and the declared produced
+        // native evidence refuses sealing even when the rest is complete.
+        let tmp2 = tempfile::tempdir().unwrap();
+        let mut rogue = RunBundle::create(tmp2.path()).unwrap();
+        rogue
+            .publish_intent(&IntentRecord {
+                trial: TrialIdentity::new("trial-1").unwrap(),
+                pair: PairIdentity::new("pair-1").unwrap(),
+                artifacts: vec![
+                    ArtifactKey::new("native/stdout.log").unwrap(),
+                    ArtifactKey::new("normalized/expected").unwrap(),
+                ],
+                expected_output: ArtifactKey::new("normalized/expected").unwrap(),
+            })
+            .unwrap();
+        rogue
+            .insert(
+                spec(
+                    ArtifactRole::Native,
+                    "agent-opi",
+                    "native/stdout.log",
+                    b"observed\n",
+                ),
+                vec![],
+            )
+            .unwrap();
+        rogue
+            .insert(
+                spec(
+                    ArtifactRole::Normalized,
+                    "agent-opi",
+                    "normalized/expected",
+                    b"observed\n",
+                ),
+                vec![],
+            )
+            .unwrap();
+        rogue
+            .insert(
+                spec(
+                    ArtifactRole::Native,
+                    "agent-opi",
+                    "native/undeclared.log",
+                    b"x\n",
+                ),
+                vec![],
+            )
+            .unwrap();
+        rogue
+            .record_settlement(&SettlementMarker {
+                trial: TrialIdentity::new("trial-1").unwrap(),
+            })
+            .unwrap();
+        let err = rogue.seal(&[]).unwrap_err();
+        assert!(matches!(err, BundleError::UnreservedArtifact { .. }));
+        // Declaring the extra key as produced native evidence admits it.
+        assert!(
+            rogue
+                .seal(&[ArtifactKey::new("native/undeclared.log").unwrap()])
+                .is_ok()
+        );
     }
 
     #[test]
@@ -326,6 +593,73 @@ mod tests {
         assert!(bundle.entry(&stdout_key).is_none());
     }
 
+    #[test]
+    fn verify_rejects_unmanifested_files_sidecar_drift_and_missing_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (receipt, _bundle, stdout_key) = sealed_bundle(tmp.path());
+        assert_eq!(RunBundle::verify(tmp.path()).unwrap(), receipt);
+
+        // An unmanifested file under the sealed artifact tree fails
+        // verification as a retained-byte closure break.
+        fs::write(tmp.path().join("artifacts/native/rogue.txt"), b"rogue\n").unwrap();
+        let err = RunBundle::verify(tmp.path()).unwrap_err();
+        assert!(matches!(err, BundleError::UnmanifestedFile { .. }));
+        assert_eq!(err.boundary(), FailureBoundaryCode::TrialDurability);
+        fs::remove_file(tmp.path().join("artifacts/native/rogue.txt")).unwrap();
+        assert_eq!(RunBundle::verify(tmp.path()).unwrap(), receipt);
+
+        // Durable sidecar drift: unparsable, semantically divergent, or
+        // absent control sidecars break the sealed record even though the
+        // manifest bytes are untouched.
+        let manifest_bytes = fs::read(tmp.path().join("manifest.json")).unwrap();
+        let intent_bytes = fs::read(tmp.path().join("intent.json")).unwrap();
+        fs::write(tmp.path().join("intent.json"), b"not json").unwrap();
+        let err = RunBundle::verify(tmp.path()).unwrap_err();
+        assert!(matches!(
+            err,
+            BundleError::SidecarDrift {
+                which: "intent",
+                ..
+            }
+        ));
+        let mut intent: serde_json::Value = serde_json::from_slice(&intent_bytes).unwrap();
+        intent["artifacts"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!("native/extra.log"));
+        fs::write(
+            tmp.path().join("intent.json"),
+            serde_json::to_vec(&intent).unwrap(),
+        )
+        .unwrap();
+        let err = RunBundle::verify(tmp.path()).unwrap_err();
+        assert!(matches!(
+            err,
+            BundleError::SidecarDrift {
+                which: "intent",
+                ..
+            }
+        ));
+        fs::write(tmp.path().join("intent.json"), &intent_bytes).unwrap();
+        fs::remove_file(tmp.path().join("settlement.json")).unwrap();
+        let err = RunBundle::verify(tmp.path()).unwrap_err();
+        assert!(matches!(
+            err,
+            BundleError::SidecarDrift {
+                which: "settlement",
+                ..
+            }
+        ));
+        assert_eq!(
+            manifest_bytes,
+            fs::read(tmp.path().join("manifest.json")).unwrap()
+        );
+
+        // A manifest entry whose artifact vanished fails verification.
+        fs::remove_file(tmp.path().join("artifacts").join(stdout_key.as_str())).unwrap();
+        assert!(RunBundle::verify(tmp.path()).is_err());
+    }
+
     #[cfg(unix)]
     #[test]
     fn verify_rejects_symlinked_covered_artifacts() {
@@ -350,7 +684,10 @@ mod tests {
             .publish_intent(&IntentRecord {
                 trial: TrialIdentity::new("trial-1").unwrap(),
                 pair: PairIdentity::new("pair-1").unwrap(),
-                artifacts: vec![],
+                artifacts: vec![
+                    ArtifactKey::new("native/stdout.log").unwrap(),
+                    ArtifactKey::new("normalized/expected").unwrap(),
+                ],
                 expected_output: ArtifactKey::new("normalized/expected").unwrap(),
             })
             .unwrap();
@@ -366,11 +703,22 @@ mod tests {
             )
             .unwrap();
         bundle
+            .insert(
+                spec(
+                    ArtifactRole::Normalized,
+                    "agent-opi",
+                    "normalized/expected",
+                    b"observed\n",
+                ),
+                vec![],
+            )
+            .unwrap();
+        bundle
             .record_settlement(&SettlementMarker {
                 trial: TrialIdentity::new("trial-1").unwrap(),
             })
             .unwrap();
-        let receipt = bundle.seal().unwrap();
+        let receipt = bundle.seal(&[]).unwrap();
         (receipt, bundle, key)
     }
 }
@@ -378,7 +726,7 @@ mod tests {
 use crate::failure::FailureBoundaryCode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
 use std::io;
@@ -638,6 +986,37 @@ pub(crate) enum BundleError {
     /// The sealed manifest is unparsable or its identity does not cover its
     /// own body.
     ManifestInvalid { boundary: FailureBoundaryCode },
+    /// A reserved artifact identity was not staged at sealing time, or the
+    /// reserved expected output is absent: the pre-effect reservation and
+    /// the staged set disagree.
+    ReservationBroken {
+        boundary: FailureBoundaryCode,
+        key: ArtifactKey,
+    },
+    /// A staged artifact is covered by neither the reservation nor the
+    /// declared produced native evidence.
+    UnreservedArtifact {
+        boundary: FailureBoundaryCode,
+        key: ArtifactKey,
+    },
+    /// A manifest entry has no artifact on disk, or a reserved artifact
+    /// entry is absent from the manifest.
+    MissingArtifact {
+        boundary: FailureBoundaryCode,
+        key: ArtifactKey,
+    },
+    /// A durable intent or settlement sidecar diverges from the sealed
+    /// manifest's own record.
+    SidecarDrift {
+        boundary: FailureBoundaryCode,
+        which: &'static str,
+    },
+    /// A file exists under the sealed artifact tree without a manifest
+    /// entry.
+    UnmanifestedFile {
+        boundary: FailureBoundaryCode,
+        path: String,
+    },
     /// The bundle is sealed and immutable.
     SealedMutation { boundary: FailureBoundaryCode },
     /// An artifact exceeded the staging size bound.
@@ -675,6 +1054,11 @@ impl BundleError {
             | BundleError::DigestMismatch { boundary, .. }
             | BundleError::SymlinkEscape { boundary, .. }
             | BundleError::ManifestInvalid { boundary }
+            | BundleError::ReservationBroken { boundary, .. }
+            | BundleError::UnreservedArtifact { boundary, .. }
+            | BundleError::MissingArtifact { boundary, .. }
+            | BundleError::SidecarDrift { boundary, .. }
+            | BundleError::UnmanifestedFile { boundary, .. }
             | BundleError::Io { boundary, .. } => *boundary,
         }
     }
@@ -706,6 +1090,35 @@ impl fmt::Display for BundleError {
             }
             BundleError::ManifestInvalid { .. } => {
                 write!(f, "sealed manifest is invalid or does not cover its body")
+            }
+            BundleError::ReservationBroken { key, .. } => {
+                write!(
+                    f,
+                    "reserved artifact {} was not staged before sealing",
+                    key.as_str()
+                )
+            }
+            BundleError::UnreservedArtifact { key, .. } => {
+                write!(
+                    f,
+                    "staged artifact {} is not covered by the reservation",
+                    key.as_str()
+                )
+            }
+            BundleError::MissingArtifact { key, .. } => {
+                write!(f, "manifest artifact {} is missing on disk", key.as_str())
+            }
+            BundleError::SidecarDrift { which, .. } => {
+                write!(
+                    f,
+                    "durable {which} sidecar diverges from the sealed manifest"
+                )
+            }
+            BundleError::UnmanifestedFile { path, .. } => {
+                write!(
+                    f,
+                    "unmanifested file {path} inside the sealed artifact tree"
+                )
             }
             BundleError::SealedMutation { .. } => {
                 write!(f, "bundle is sealed and rejects mutation")
@@ -795,7 +1208,7 @@ impl RunBundle {
             }
         }
         let digest = sha256_hex(&spec.bytes);
-        let target = self.artifact_path(&spec.path)?;
+        let target = self.artifact_path(&spec.path, FailureBoundaryCode::Evidence, true)?;
         let BundleState::Staging { entries, .. } = &mut self.state else {
             unreachable!("sealed state rejected above")
         };
@@ -829,13 +1242,19 @@ impl RunBundle {
     }
 
     /// Seals the bundle: re-reads every staged artifact and rejects any
-    /// digest mismatch or symlink, then atomically publishes one complete
-    /// manifest carrying the content-addressed bundle identity
-    /// (P18-DUR-004). Requires a published intent and a recorded
-    /// settlement. After sealing, every mutation is rejected and the
-    /// returned receipt is for an outer record only — it cannot enter the
-    /// sealed content.
-    pub(crate) fn seal(&mut self) -> Result<SealReceipt, BundleError> {
+    /// digest mismatch or symlink, then enforces the reservation closure —
+    /// the staged key set must equal the reserved artifact identities plus
+    /// exactly the declared produced native evidence, and the reserved
+    /// expected output must be staged — and finally atomically publishes
+    /// one complete manifest carrying the content-addressed bundle
+    /// identity (P18-DUR-004, P18-BND-001). `produced` names the
+    /// adapter-produced native evidence keys that materialized with their
+    /// records (agent completion artifacts, verifier streams, and the
+    /// native grader report); every other staged key must be reserved.
+    /// Requires a published intent and a recorded settlement. After
+    /// sealing, every mutation is rejected and the returned receipt is for
+    /// an outer record only — it cannot enter the sealed content.
+    pub(crate) fn seal(&mut self, produced: &[ArtifactKey]) -> Result<SealReceipt, BundleError> {
         let BundleState::Staging {
             intent,
             settlement,
@@ -865,6 +1284,34 @@ impl RunBundle {
                 });
             }
         }
+        // Reservation equality: staged == reserved + declared produced
+        // native evidence, and the expected output exists among them.
+        let staged: BTreeSet<&ArtifactKey> = entries.keys().collect();
+        let allowed: BTreeSet<&ArtifactKey> = intent.artifacts.iter().chain(produced).collect();
+        if let Some(key) = staged.difference(&allowed).next() {
+            return Err(BundleError::UnreservedArtifact {
+                boundary: FailureBoundaryCode::TrialDurability,
+                key: (*key).clone(),
+            });
+        }
+        if let Some(key) = intent.artifacts.iter().find(|key| !staged.contains(key)) {
+            return Err(BundleError::ReservationBroken {
+                boundary: FailureBoundaryCode::TrialDurability,
+                key: key.clone(),
+            });
+        }
+        if let Some(key) = produced.iter().find(|key| !staged.contains(key)) {
+            return Err(BundleError::ReservationBroken {
+                boundary: FailureBoundaryCode::TrialDurability,
+                key: key.clone(),
+            });
+        }
+        if !staged.contains(&intent.expected_output) {
+            return Err(BundleError::ReservationBroken {
+                boundary: FailureBoundaryCode::TrialDurability,
+                key: intent.expected_output.clone(),
+            });
+        }
         let body = ManifestBody {
             format: "opi-eval-bundle".to_owned(),
             version: 1,
@@ -888,9 +1335,14 @@ impl RunBundle {
     }
 
     /// Re-verifies a sealed bundle root without mutating it. Recomputes
-    /// the manifest identity from the covered body, re-reads every covered
-    /// artifact, and fails on any mutation. It never repairs, rehashes, or
-    /// rewrites (P18-BND-003); post-seal mutations own the TrialDurability
+    /// the manifest identity from the covered body, compares the
+    /// manifest's intent and settlement with the durable sidecars
+    /// (`intent.json`, `settlement.json`), requires the reserved artifacts
+    /// and the expected output among the entries, enumerates the artifact
+    /// tree so every retained byte is manifest-covered (rejecting
+    /// unmanifested, missing, non-file, or digest-mismatched entries), and
+    /// fails on any mutation. It never repairs, rehashes, or rewrites
+    /// (P18-BND-003); post-seal mutations own the TrialDurability
     /// boundary.
     pub(crate) fn verify(root: &Path) -> Result<SealReceipt, BundleError> {
         let text =
@@ -910,6 +1362,59 @@ impl RunBundle {
             return Err(BundleError::ManifestInvalid {
                 boundary: FailureBoundaryCode::TrialDurability,
             });
+        }
+        // Durable sidecar equality: the sealed manifest must agree with the
+        // reservations on disk, byte-for-byte in semantics.
+        let sidecar_intent = read_sidecar::<IntentRecord>(root, "intent.json")?;
+        if sidecar_intent != manifest.body.intent {
+            return Err(BundleError::SidecarDrift {
+                boundary: FailureBoundaryCode::TrialDurability,
+                which: "intent",
+            });
+        }
+        let sidecar_settlement = read_sidecar::<SettlementMarker>(root, "settlement.json")?;
+        if sidecar_settlement != manifest.body.settlement {
+            return Err(BundleError::SidecarDrift {
+                boundary: FailureBoundaryCode::TrialDurability,
+                which: "settlement",
+            });
+        }
+        let entries = &manifest.body.entries;
+        if !entries.contains_key(&manifest.body.intent.expected_output) {
+            return Err(BundleError::MissingArtifact {
+                boundary: FailureBoundaryCode::TrialDurability,
+                key: manifest.body.intent.expected_output.clone(),
+            });
+        }
+        for key in &manifest.body.intent.artifacts {
+            if !entries.contains_key(key) {
+                return Err(BundleError::MissingArtifact {
+                    boundary: FailureBoundaryCode::TrialDurability,
+                    key: key.clone(),
+                });
+            }
+        }
+        // Retained-byte closure: every file under the artifact tree is a
+        // manifest entry, and every manifest entry has its file.
+        let mut present: Vec<String> = Vec::new();
+        collect_artifact_files(&root.join("artifacts"), Path::new(""), &mut present)?;
+        present.sort();
+        present.dedup();
+        for path in &present {
+            if !entries.keys().any(|key| key.as_str() == *path) {
+                return Err(BundleError::UnmanifestedFile {
+                    boundary: FailureBoundaryCode::TrialDurability,
+                    path: path.clone(),
+                });
+            }
+        }
+        for key in entries.keys() {
+            if !present.iter().any(|path| path == key.as_str()) {
+                return Err(BundleError::MissingArtifact {
+                    boundary: FailureBoundaryCode::TrialDurability,
+                    key: key.clone(),
+                });
+            }
         }
         let bundle = RunBundle {
             root: root.to_path_buf(),
@@ -938,7 +1443,7 @@ impl RunBundle {
         key: &ArtifactKey,
         boundary: FailureBoundaryCode,
     ) -> Result<Vec<u8>, BundleError> {
-        let path = self.artifact_path(key)?;
+        let path = self.artifact_path(key, boundary, false)?;
         let meta = fs::symlink_metadata(&path).map_err(BundleError::from)?;
         if !meta.is_file() {
             return Err(BundleError::SymlinkEscape {
@@ -952,13 +1457,20 @@ impl RunBundle {
     /// Absolute on-disk location of one logical artifact path. The key
     /// grammar already excludes escapes; this returns the nested location
     /// under the reserved `artifacts` directory.
-    fn artifact_path(&self, key: &ArtifactKey) -> io::Result<PathBuf> {
+    fn artifact_path(
+        &self,
+        key: &ArtifactKey,
+        boundary: FailureBoundaryCode,
+        create_missing: bool,
+    ) -> Result<PathBuf, BundleError> {
+        let mut components = key.as_str().split('/').peekable();
         let mut path = self.root.join("artifacts");
-        for segment in key.as_str().split('/') {
+        ensure_artifact_directory(&path, key, boundary, create_missing)?;
+        while let Some(segment) = components.next() {
             path.push(segment);
-        }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            if components.peek().is_some() {
+                ensure_artifact_directory(&path, key, boundary, create_missing)?;
+            }
         }
         Ok(path)
     }
@@ -1066,6 +1578,114 @@ impl From<io::Error> for BundleError {
     }
 }
 
+/// Reads one durable control sidecar (`intent.json`, `settlement.json`)
+/// for verification. Absent or unparsable bytes are sidecar drift: the
+/// sealed manifest can never be verified against a side file it cannot
+/// read back.
+fn read_sidecar<T: serde::de::DeserializeOwned>(root: &Path, name: &str) -> Result<T, BundleError> {
+    let bytes = fs::read(root.join(name)).map_err(|_| BundleError::SidecarDrift {
+        boundary: FailureBoundaryCode::TrialDurability,
+        which: match name {
+            "intent.json" => "intent",
+            _ => "settlement",
+        },
+    })?;
+    serde_json::from_slice(&bytes).map_err(|_| BundleError::SidecarDrift {
+        boundary: FailureBoundaryCode::TrialDurability,
+        which: match name {
+            "intent.json" => "intent",
+            _ => "settlement",
+        },
+    })
+}
+
+/// Collects every file under the sealed artifact tree, by logical key.
+/// Symlinked entries are reported as their own path so the per-entry read
+/// rejects them; directories are walked without following symlinks.
+fn collect_artifact_files(
+    dir: &Path,
+    prefix: &Path,
+    files: &mut Vec<String>,
+) -> Result<(), BundleError> {
+    let entries = fs::read_dir(dir).map_err(|source| BundleError::Io {
+        boundary: FailureBoundaryCode::TrialDurability,
+        source,
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|source| BundleError::Io {
+            boundary: FailureBoundaryCode::TrialDurability,
+            source,
+        })?;
+        let file_type = entry.file_type().map_err(|source| BundleError::Io {
+            boundary: FailureBoundaryCode::TrialDurability,
+            source,
+        })?;
+        let key = prefix.join(entry.file_name());
+        let key = key.to_string_lossy().replace('\\', "/");
+        if file_type.is_dir() {
+            collect_artifact_files(&entry.path(), Path::new(&key), files)?;
+        } else {
+            files.push(key);
+        }
+    }
+    Ok(())
+}
+
+/// Validate one artifact ancestor without following an alias. Missing
+/// directories are created one component at a time only while staging; sealed
+/// reads remain read-only. Windows junctions are reparse points even when the
+/// standard symlink bit is not set, so both forms are rejected.
+fn ensure_artifact_directory(
+    path: &Path,
+    key: &ArtifactKey,
+    boundary: FailureBoundaryCode,
+    create_missing: bool,
+) -> Result<(), BundleError> {
+    let inspect = || -> Result<bool, io::Error> {
+        let metadata = fs::symlink_metadata(path)?;
+        if metadata.file_type().is_symlink() || metadata_is_windows_reparse_point(&metadata) {
+            return Ok(false);
+        }
+        Ok(metadata.is_dir())
+    };
+
+    match inspect() {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(BundleError::SymlinkEscape {
+            boundary,
+            key: key.clone(),
+        }),
+        Err(error) if error.kind() == io::ErrorKind::NotFound && create_missing => {
+            match fs::create_dir(path) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => match inspect() {
+                    Ok(true) => Ok(()),
+                    Ok(false) => Err(BundleError::SymlinkEscape {
+                        boundary,
+                        key: key.clone(),
+                    }),
+                    Err(source) => Err(BundleError::Io { boundary, source }),
+                },
+                Err(source) => Err(BundleError::Io { boundary, source }),
+            }
+        }
+        Err(source) => Err(BundleError::Io { boundary, source }),
+    }
+}
+
+#[cfg(windows)]
+fn metadata_is_windows_reparse_point(metadata: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    metadata.file_attributes()
+        & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+        != 0
+}
+
+#[cfg(not(windows))]
+fn metadata_is_windows_reparse_point(_metadata: &fs::Metadata) -> bool {
+    false
+}
+
 /// Writes `bytes` to a temporary sibling and atomically renames it over
 /// `path`, fsyncing the file first so a crash never leaves a partial
 /// publication visible under the final name.
@@ -1077,7 +1697,47 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     {
         let mut file = fs::File::create(&tmp)?;
         file.write_all(bytes)?;
+        #[cfg(test)]
+        tests::record_atomic_write_event("write");
         file.sync_all()?;
+        #[cfg(test)]
+        tests::record_atomic_write_event("file-sync");
     }
-    fs::rename(&tmp, path)
+    fs::rename(&tmp, path)?;
+    #[cfg(test)]
+    tests::record_atomic_write_event("rename");
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "atomic publication requires a containing directory",
+        )
+    })?;
+    #[cfg(test)]
+    tests::record_atomic_write_event("parent-sync");
+    sync_parent_directory(parent)
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(parent: &Path) -> io::Result<()> {
+    #[cfg(test)]
+    if tests::parent_sync_should_fail() {
+        return Err(io::Error::other("injected parent-directory sync failure"));
+    }
+    fs::File::open(parent)?.sync_all()
+}
+
+#[cfg(windows)]
+fn sync_parent_directory(parent: &Path) -> io::Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    #[cfg(test)]
+    if tests::parent_sync_should_fail() {
+        return Err(io::Error::other("injected parent-directory sync failure"));
+    }
+    fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS)
+        .open(parent)?
+        .sync_all()
 }

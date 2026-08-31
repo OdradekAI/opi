@@ -9,18 +9,23 @@
 //! the hermetic fixture-grade offline path only: no real executable or
 //! provider is claimed (task 18.15 owns the native rerun).
 
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::Command;
 
+#[cfg(unix)]
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+#[cfg(unix)]
 fn fixtures_dir() -> PathBuf {
     manifest_dir().join("tests/fixtures")
 }
 
 /// Run one experiment through the real `opi-eval run` binary.
+#[cfg(unix)]
 fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json::Value, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
         .arg("run")
@@ -47,6 +52,7 @@ fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json
 }
 
 /// Invoke one offline subcommand (`regrade` or `report`) against a run root.
+#[cfg(unix)]
 fn invoke(command: &str, args: &[(&str, &std::ffi::OsStr)]) -> (i32, String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_opi-eval"));
     cmd.arg(command);
@@ -62,12 +68,14 @@ fn invoke(command: &str, args: &[(&str, &std::ffi::OsStr)]) -> (i32, String, Str
 }
 
 /// A sealed bundle directory under one run root: `trials/<id>/bundle`.
+#[cfg(unix)]
 fn bundle_dir(root: &Path, trial: &str) -> PathBuf {
     root.join("trials").join(trial).join("bundle")
 }
 
 /// `P18-A15`: a sealed artifact byte change is rejected by verification
 /// without repair, rehash, or manifest mutation.
+#[cfg(unix)]
 #[test]
 fn p18_a15_mutation_rejected() {
     let root = tempfile::tempdir().unwrap();
@@ -135,9 +143,139 @@ fn p18_a15_mutation_rejected() {
     );
 }
 
+/// `P18-BND-001` closure: an unmanifested file added to a sealed bundle's
+/// artifact tree, a corrupted durable intent sidecar, and a deleted
+/// expected-output artifact each fail re-verification with the typed
+/// reason, without repair or rewrite.
+#[cfg(unix)]
+#[test]
+fn p18_bnd001_retained_byte_closure_rejects_drift() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, report, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
+    let root_arg = root.path().canonicalize().unwrap();
+    let bundle = bundle_dir(root.path(), "trial-opi-1");
+
+    // An unmanifested rogue file inside the sealed artifact tree.
+    let rogue = bundle.join("artifacts/native/rogue.txt");
+    std::fs::write(&rogue, b"rogue\n").unwrap();
+    let (code, stdout, stderr) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 1, "{stderr} {stdout}");
+    let failed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(failed["outcome"], "mutation-detected", "{failed}");
+    let failure = failed["failures"][0].as_object().unwrap().clone();
+    assert_eq!(failure["trial"], "trial-opi-1", "{failed}");
+    assert_eq!(failure["kind"], "unmanifested-file", "{failed}");
+    assert_eq!(failure["artifact"], "native/rogue.txt", "{failed}");
+    assert_eq!(std::fs::read(&rogue).unwrap(), b"rogue\n");
+    std::fs::remove_file(&rogue).unwrap();
+    let (code, _, _) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "removing the rogue file restores verification");
+
+    // A corrupted durable intent sidecar diverges from the manifest even
+    // though the manifest bytes are untouched.
+    let manifest_before = std::fs::read(bundle.join("manifest.json")).unwrap();
+    std::fs::write(bundle.join("intent.json"), b"not json").unwrap();
+    let (code, stdout, stderr) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 1, "{stderr} {stdout}");
+    let failed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(failed["failures"][0]["kind"], "sidecar-drift", "{failed}");
+    assert_eq!(failed["failures"][0]["artifact"], "intent", "{failed}");
+    assert_eq!(
+        std::fs::read(bundle.join("manifest.json")).unwrap(),
+        manifest_before,
+        "no repair or rewrite"
+    );
+    // Restore the durable sidecar so the next phase isolates one drift.
+    let intent_bytes = {
+        let manifest: serde_json::Value = serde_json::from_slice(&manifest_before).unwrap();
+        serde_json::to_vec(&manifest["intent"]).unwrap()
+    };
+    std::fs::write(bundle.join("intent.json"), &intent_bytes).unwrap();
+    let (code, _, _) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "the restored sidecar matches the manifest");
+
+    // A missing sealed expected output fails as a missing artifact.
+    let expected = bundle.join("artifacts/normalized/expected-output");
+    assert!(expected.is_file(), "the sealed expected output exists");
+    std::fs::remove_file(&expected).unwrap();
+    let (code, stdout, stderr) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 1, "{stderr} {stdout}");
+    let failed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        failed["failures"][0]["kind"], "missing-artifact",
+        "{failed}"
+    );
+    assert_eq!(
+        failed["failures"][0]["artifact"], "normalized/expected-output",
+        "{failed}"
+    );
+}
+
+/// `P18-BND`-adjacent provenance: the sealed manifest names the producer of
+/// every retained byte - agent-executed artifacts under `agent-<product>`,
+/// verifier streams and the native grader report under the pinned grader
+/// identity - and the offline headline selects the grader-sourced native
+/// report (Phase 18 remediation).
+#[cfg(unix)]
+#[test]
+fn sealed_manifest_attributes_artifacts_to_their_producers() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, report, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
+
+    for (trial, product) in [("trial-opi-1", "agent-opi"), ("trial-pi-1", "agent-pi")] {
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(bundle_dir(root.path(), trial).join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        let entries = manifest["entries"].as_object().unwrap();
+        // Agent-executed evidence carries the agent source.
+        for key in [
+            "native/agent-stdout.log",
+            "native/agent-stderr.log",
+            "native/agent-answer.txt",
+        ] {
+            assert_eq!(entries[key]["source"], product, "{trial} {key}");
+        }
+        // Verifier streams and the imported native report carry the pinned
+        // grader identity, never the agent's.
+        let grader = "grader-harbor-v0.22.0-fixture";
+        for key in [
+            "native/verifier-stdout.log",
+            "native/verifier-stderr.log",
+            "native/native/ctrf-report",
+        ] {
+            assert!(entries.contains_key(key), "{trial} {key}: {manifest}");
+            assert_eq!(entries[key]["source"], grader, "{trial} {key}");
+        }
+    }
+
+    // The offline headline derives from the grader-sourced native report.
+    let root_arg = root.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "{stderr} {stdout}");
+    let published: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    for trial in published["trials"].as_array().unwrap() {
+        assert_eq!(
+            trial["headline"]["native_source"]["artifact"], "native/native/ctrf-report",
+            "{trial}"
+        );
+        assert_eq!(
+            trial["headline"]["native_source"]["digest"]
+                .as_str()
+                .unwrap()
+                .len(),
+            64,
+            "{trial}"
+        );
+    }
+}
+
 /// Deterministic content digest of a directory tree: sorted relative
 /// paths plus file bytes, hashed in order. Used to prove offline
 /// operations never mutate the run root.
+#[cfg(unix)]
 fn tree_digest(root: &Path) -> String {
     use std::collections::BTreeMap;
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -153,6 +291,7 @@ fn tree_digest(root: &Path) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+#[cfg(unix)]
 fn collect_files(root: &Path, dir: &Path, files: &mut std::collections::BTreeMap<String, Vec<u8>>) {
     for entry in std::fs::read_dir(dir).expect("readable run root") {
         let entry = entry.expect("readable entry");
@@ -175,6 +314,7 @@ fn collect_files(root: &Path, dir: &Path, files: &mut std::collections::BTreeMap
 /// normalized outputs are byte-stable for the same tool identities.
 /// `P18-OUT-004`: a new real execution never reuses the sealed trial
 /// identities, while the report stays reproducible offline.
+#[cfg(unix)]
 #[test]
 fn p18_a17_repeated_offline_operations_are_stable() {
     let root = tempfile::tempdir().unwrap();

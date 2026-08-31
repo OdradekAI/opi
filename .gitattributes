@@ -1,2 +1,15 @@
+# Blob bytes are evidence: this repository's receipts, fixtures, profiles,
+# and source anchors are digest-bound, so no checkout or archive may
+# rewrite line endings anywhere. (Scripts that need a guaranteed LF form
+# pin it explicitly below.)
+* -text
 *.sh text eol=lf
 docs/snapshots/**/assurance/** text eol=lf
+# Phase 18 evidence bytes: benchmark task packages, profiles, and saved
+# native bytes are digest-pinned; any checkout must reproduce them byte for
+# byte, so no CRLF normalization may touch them.
+crates/opi-eval/tests/fixtures/** -text
+crates/opi-eval/profiles/** -text
+scripts/fixtures/** -text
+# Capture helpers and their tests are digest-bound evidence inputs.
+*.py -text

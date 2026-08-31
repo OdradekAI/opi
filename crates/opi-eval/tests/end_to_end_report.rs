@@ -9,18 +9,23 @@
 //! conformance-only (`P18-RPT-003..006`, `P18-EXP-006`). Hermetic
 //! fixture-grade only; task 18.15 owns the native rerun.
 
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::Command;
 
+#[cfg(unix)]
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+#[cfg(unix)]
 fn fixtures_dir() -> PathBuf {
     manifest_dir().join("tests/fixtures")
 }
 
 /// Run one experiment through the real `opi-eval run` binary.
+#[cfg(unix)]
 fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json::Value, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
         .arg("run")
@@ -47,6 +52,7 @@ fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json
 }
 
 /// Invoke the offline report command over one run root.
+#[cfg(unix)]
 fn report(root: &Path) -> (i32, serde_json::Value, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
         .arg("report")
@@ -65,6 +71,7 @@ fn report(root: &Path) -> (i32, serde_json::Value, String) {
 /// `P18-RPT-002`: the same sealed bundle, integrity record, grader
 /// identity, and reporter version produce byte-stable normalized results -
 /// across independent fresh runs, not just repeated renders.
+#[cfg(unix)]
 #[test]
 fn normalized_report_is_byte_stable_across_independent_runs() {
     let first = tempfile::tempdir().unwrap();
@@ -88,6 +95,7 @@ fn normalized_report_is_byte_stable_across_independent_runs() {
 /// The paired report contract end to end: native-only headlines with
 /// provenance, visible diagnostics, full coverage denominator, no
 /// composite score, conformance-only labeling.
+#[cfg(unix)]
 #[test]
 fn paired_report_contract_end_to_end() {
     let root = tempfile::tempdir().unwrap();
@@ -147,9 +155,72 @@ fn paired_report_contract_end_to_end() {
     );
 }
 
+/// `P18-A15`/`P18-RPT`: a covered-byte mutation prevents publication -
+/// the report returns a typed non-published outcome with a non-zero exit
+/// and never repairs or rewrites the run root.
+#[cfg(unix)]
+#[test]
+fn covered_byte_mutation_prevents_publication() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, _, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    assert_eq!(code, 0, "{stderr}");
+
+    // Mutate one covered artifact byte in the first sealed bundle.
+    let tampered = root
+        .path()
+        .join("trials/trial-opi-1/bundle/artifacts/native/agent-answer.txt");
+    let original = std::fs::read(&tampered).unwrap();
+    let mut mutated = original.clone();
+    mutated[0] = mutated[0].wrapping_add(1);
+    std::fs::write(&tampered, &mutated).unwrap();
+
+    let (code, failed, stderr) = report(root.path());
+    assert_eq!(code, 1, "mutated publication must fail: {stderr} {failed}");
+    assert_eq!(failed["outcome"], "verification-failed", "{failed}");
+    let failures = failed["failures"].as_array().unwrap();
+    assert_eq!(failures.len(), 1, "{failed}");
+    assert_eq!(failures[0]["trial"], "trial-opi-1", "{failed}");
+    assert_eq!(failures[0]["kind"], "digest-mismatch", "{failed}");
+    // No normalized content is published.
+    assert!(
+        failed["trials"].is_null() && failed["coverage"].is_null(),
+        "{failed}"
+    );
+    // No repair: the mutated bytes stay exactly as they are.
+    assert_eq!(std::fs::read(&tampered).unwrap(), mutated);
+}
+
+/// The normalized view derives only from sealed bundles: mutating the
+/// outer run artifacts cannot change the published report.
+#[cfg(unix)]
+#[test]
+fn outer_run_artifact_mutations_cannot_affect_output() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, _, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    assert_eq!(code, 0, "{stderr}");
+    let (code, first, stderr) = report(root.path());
+    assert_eq!(code, 0, "{stderr} {first}");
+
+    // Corrupt the mutable outer run artifacts the report must never read.
+    std::fs::write(root.path().join("run-report.json"), b"garbage").unwrap();
+    for trial in ["trial-opi-1", "trial-pi-1"] {
+        let receipt = root.path().join("trials").join(trial).join("receipt.json");
+        std::fs::write(&receipt, b"garbage").unwrap();
+    }
+
+    let (code, second, stderr) = report(root.path());
+    assert_eq!(code, 0, "{stderr} {second}");
+    assert_eq!(
+        serde_json::to_string(&first).unwrap(),
+        serde_json::to_string(&second).unwrap(),
+        "outer run artifacts must never enter the normalized view"
+    );
+}
+
 /// `P18-EXP-006` / `P18-RPT-004`: exclusions and missing sides stay in the
 /// coverage denominator with their exact reason; the report still
 /// publishes with the run outcome visible.
+#[cfg(unix)]
 #[test]
 fn exclusions_stay_visible_in_the_coverage_denominator() {
     let root = tempfile::tempdir().unwrap();

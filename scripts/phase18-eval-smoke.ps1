@@ -22,6 +22,19 @@ param(
 $ErrorActionPreference = 'Stop'
 $Config = Join-Path $Fixtures "experiment\phase18-local.toml"
 
+function Get-Sha256 {
+    param([string]$Path)
+    $stream = [System.IO.File]::OpenRead($Path)
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([System.BitConverter]::ToString($sha256.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $sha256.Dispose()
+        $stream.Dispose()
+    }
+}
+
 function Invoke-Case {
     param([string]$Behavior, [int]$Expected)
     $caseDir = Join-Path $Out $Behavior
@@ -110,13 +123,13 @@ Get-ChildItem (Join-Path $Out "happy\root\trials") -Directory | Sort-Object Name
     $rows += [ordered]@{
         trial            = $_.Name
         bundle_identity  = $receiptJson.bundle_identity
-        receipt_sha256   = (Get-FileHash $receipt -Algorithm SHA256).Hash.ToLowerInvariant()
+        receipt_sha256   = Get-Sha256 -Path $receipt
         sealed           = $sealed
     }
 }
 $receiptWritten = Test-Path (Join-Path $Out "verifier-failure\root\trials\trial-opi-1\receipt.json")
 $regradeExit = (Get-Content (Join-Path $Out "offline\regrade-exit_code") -Raw -Encoding UTF8).Trim()
-$reportSha = (Get-FileHash (Join-Path $Out "offline\report-1.json") -Algorithm SHA256).Hash.ToLowerInvariant()
+$reportSha = Get-Sha256 -Path (Join-Path $Out "offline\report-1.json")
 $byteStable = ((Get-Content (Join-Path $Out "offline\report-1.json") -Raw -Encoding UTF8) -ceq `
     (Get-Content (Join-Path $Out "offline\report-2.json") -Raw -Encoding UTF8))
 $audit = [ordered]@{
@@ -129,6 +142,8 @@ $audit = [ordered]@{
         byte_stable   = $byteStable
     }
 }
-$audit | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $Out "audit.json")
+$auditJson = $audit | ConvertTo-Json -Depth 5
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[System.IO.File]::WriteAllText((Join-Path $Out "audit.json"), $auditJson, $utf8NoBom)
 Write-Output $Out
 exit 0

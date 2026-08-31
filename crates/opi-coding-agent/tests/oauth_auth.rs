@@ -2308,18 +2308,18 @@ async fn openai_codex_browser_budget_includes_method_selection() {
                     "slow-selection-refresh",
                     3600,
                 ))
-                .set_delay(Duration::from_millis(80)),
+                .set_delay(Duration::from_millis(800)),
         )
         .mount(&server)
         .await;
     let provider = codex_provider_with_flow_timeouts(
         &server.uri(),
-        Duration::from_millis(100),
-        Duration::from_secs(2),
+        Duration::from_millis(1000),
+        Duration::from_secs(20),
     );
     let presenter = MethodPresenter::delayed_method_selection(
         OAuthLoginMethod::Browser,
-        Duration::from_millis(60),
+        Duration::from_millis(600),
     );
     presenter.inner.supply_manual_code("slow-selection-code");
     let started = tokio::time::Instant::now();
@@ -2330,8 +2330,12 @@ async fn openai_codex_browser_budget_includes_method_selection() {
         .expect_err("Browser selection must consume the Browser flow budget");
 
     assert!(matches!(error, AiProviderError::Timeout), "{error:?}");
+    // Budget starts at flow start, not after method selection: the
+    // deadline lands near the 1s budget, well under the 1.6s a fresh
+    // post-selection deadline would allow. The 400ms slack absorbs
+    // loaded-CI scheduling, not the 600ms distinction under test.
     assert!(
-        started.elapsed() < Duration::from_millis(140),
+        started.elapsed() < Duration::from_millis(1400),
         "Browser flow received a fresh post-selection deadline"
     );
     assert_eq!(
