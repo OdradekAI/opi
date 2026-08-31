@@ -1,10 +1,10 @@
 {
   "schema_version": 3,
-  "audit_run_id": "phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710",
+  "audit_run_id": "phase18-codex-gpt56-dbd984e-20260830t152407z",
   "phase": 18,
-  "audit_head": "08bc61d87146a83ae6e00dc9638a8b8c89fae8d7",
+  "audit_head": "dbd984e3b5274f70245707a4480554b92dade8a6",
   "reviewer_id": "codex",
-  "reviewer_identity": "Codex",
+  "reviewer_identity": "Codex audit runtime",
   "model_id": "gpt56",
   "reviewer_model_id": "gpt56",
   "model_identity_source": "operator-declared",
@@ -28,7 +28,7 @@
       "sha256": "43b2759d327cbf0af8d35d4eba50839eef7aac473978b58fcb707b335dad8265"
     }
   ],
-  "requirements_sha256": "aabbd4c340b540e40b6e09df405b0907b4522aca6023063702216bdd9e3c9198",
-  "findings_sha256": "099fa8c019f1af3f6362c726895a67b45e83691b9d48b75d4a3e8466724b842b",
+  "requirements_sha256": "f4df7d583a654412a495f72c6b7eea56c68844c4aa544920d89e77f48e2c0bef",
+  "findings_sha256": "83e52033f3bd1eb534409ac144f502d5691e33f2d32e7ea282beec571bd06194",
   "verdict": "FAIL"
 }
