@@ -1,16 +1,16 @@
 {
   "artifact": {
-    "digest": "sha256:9666f87e04f7cdacd702abf0cc456c981782ff95a093262c916bbd967047ca33",
+    "digest": "sha256:7fb2158505f38a7bfa16a0fef33f691a878de4cdc4e93030d1eb4d36c613cc5d",
     "download_verified": true,
-    "expires_at": "2026-11-28T09:54:27Z",
-    "id": 9730217718,
+    "expires_at": "2026-11-29T18:04:37Z",
+    "id": 9769649309,
     "name": "phase18-attestation-ubuntu-latest",
-    "size_in_bytes": 563
+    "size_in_bytes": 564
   },
-  "candidate_head": "0f5a3fa152b12d7be4036b2a08ae7a195f8c2107",
+  "candidate_head": "e2e225fa0665c737542f71aefa27c963daf2bf73",
   "checkout_identities": [
-    "0f5a3fa152b12d7be4036b2a08ae7a195f8c2107",
-    "871b67a5e96cbaf24aae5d1b5d3d95788177767a"
+    "e2e225fa0665c737542f71aefa27c963daf2bf73",
+    "98d8ec079b70212100e1af0d911082da6a9d8e8c"
   ],
   "conclusions": {
     "jobs_all_success": true,
@@ -32,17 +32,17 @@
   },
   "event": "pull_request",
   "inner": {
-    "attestation_commit": "871b67a5e96cbaf24aae5d1b5d3d95788177767a",
+    "attestation_commit": "98d8ec079b70212100e1af0d911082da6a9d8e8c",
     "runner_os": "Linux",
     "schema": "phase18-ci-attestation/1",
     "workflow_sha256": "4c0f3fcbf9cce2cb5cfa0bfae541c5a017002eb3d216acb35d4660d355a5084e"
   },
-  "pull_request_head": "0f5a3fa152b12d7be4036b2a08ae7a195f8c2107",
+  "pull_request_head": "e2e225fa0665c737542f71aefa27c963daf2bf73",
   "run_attempt": 1,
-  "run_id": 33305179715,
+  "run_id": 33423008524,
   "schema": "phase18-ci-terminal-receipt/1",
   "status": "verified",
-  "updated_at": "2026-08-30T10:08:32Z",
+  "updated_at": "2026-08-31T18:17:00Z",
   "workflow_path": ".github/workflows/ci.yml",
   "workflow_sha256": "4c0f3fcbf9cce2cb5cfa0bfae541c5a017002eb3d216acb35d4660d355a5084e"
 }
