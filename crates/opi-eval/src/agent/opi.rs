@@ -277,10 +277,24 @@ pub(crate) struct ImportedTrace {
     /// Manifest terminal outcome label (empty when import failed).
     pub manifest_outcome: String,
     /// Whether the manifest declared itself complete.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "importer conformance tests inspect the retained completeness projection"
+        )
+    )]
     pub complete: bool,
     /// Usage projection with typed unknown reasons.
     pub usage: UsageProjection,
     /// Content-addressed native artifacts for the imported files.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "importer conformance tests inspect the retained artifact projection"
+        )
+    )]
     pub artifacts: Vec<NativeArtifact>,
 }
 

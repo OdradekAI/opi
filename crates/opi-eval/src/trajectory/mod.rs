@@ -198,16 +198,6 @@ impl ProvisionalTrajectory {
         self.nodes.iter().find(|n| n.id == id)
     }
 
-    /// Nodes of one kind tag prefix, in stable id order.
-    pub(crate) fn nodes_matching<'a>(
-        &'a self,
-        prefix: &'a str,
-    ) -> impl Iterator<Item = &'a Node> + 'a {
-        self.nodes
-            .iter()
-            .filter(move |n| n.kind.tag().starts_with(prefix))
-    }
-
     /// Canonical content digest of the pre-seal projection. Deterministic:
     /// BTreeMap facts and stable node ids keep the serialized form canonical
     /// for identical inputs.
@@ -388,8 +378,16 @@ pub(crate) struct TrajectoryReceipt {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SealOutcome {
-    Sealed { bundle_digest: String },
-    SealFailed { reason: String },
+    Sealed {
+        bundle_digest: String,
+    },
+    #[expect(
+        dead_code,
+        reason = "required closed post-seal receipt outcome for failed sealing"
+    )]
+    SealFailed {
+        reason: String,
+    },
 }
 
 impl TrajectoryReceipt {

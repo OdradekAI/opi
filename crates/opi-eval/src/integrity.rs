@@ -31,10 +31,18 @@ use std::collections::BTreeMap;
 pub(crate) enum RevisionStatus {
     /// The revision has not been admitted; its outcomes cannot appear as
     /// headline results.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "required closed revision-admission state")
+    )]
     NotAdmitted,
     /// A reviewed record admits the revision.
     Admitted,
     /// A previously admitted revision has been retired by a newer record.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "required closed revision-admission state")
+    )]
     Retired,
 }
 
@@ -46,14 +54,30 @@ pub(crate) enum TaskClassification {
     /// A valid Agent outcome; may enter Agent success/failure.
     ValidAgentOutcome,
     /// The task is broken or unsatisfiable.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "required closed task-validity classification")
+    )]
     BrokenOrUnsatisfiable { reason: String },
     /// The requirement is ambiguous.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "required closed task-validity classification")
+    )]
     AmbiguousRequirement { reason: String },
     /// The prompt and the test disagree.
     PromptTestMismatch { reason: String },
     /// Adjudicated infrastructure failure.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "required closed task-validity classification")
+    )]
     InfrastructureFailure { reason: String },
     /// Adjudicated grader failure.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "required closed task-validity classification")
+    )]
     GraderFailure { reason: String },
 }
 
@@ -70,6 +94,10 @@ pub(crate) enum OraclePreflight {
     /// The upstream oracle/gold preflight passed with this detail.
     Passed(String),
     /// The upstream oracle/gold preflight failed with this detail.
+    #[expect(
+        dead_code,
+        reason = "required closed oracle-preflight outcome retained in integrity records"
+    )]
     Failed(String),
 }
 
@@ -208,13 +236,15 @@ impl IntegrityRecord {
         self.parts.excluded_trials.get(trial).map(String::as_str)
     }
 
-    /// Oracle/gold preflight result bound by this record.
-    pub(crate) fn oracle(&self) -> Option<&OraclePreflight> {
-        self.parts.oracle.as_ref()
-    }
-
     /// Reclassify one task, returning a **new** record with a **new**
     /// identity (`P18-INT-004`). The original record is unchanged.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "immutable reclassification contract is exercised by conformance tests"
+        )
+    )]
     pub(crate) fn reclassify_task(
         &self,
         task: &str,
@@ -227,6 +257,13 @@ impl IntegrityRecord {
 
     /// Replace the admission status, returning a **new** record with a
     /// **new** identity (`P18-INT-004`). The original record is unchanged.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "immutable status-transition contract is exercised by conformance tests"
+        )
+    )]
     pub(crate) fn with_status(&self, status: RevisionStatus) -> Result<Self, IntegrityError> {
         let mut parts = self.parts.clone();
         parts.status = status;

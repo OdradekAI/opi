@@ -49,6 +49,13 @@ impl std::fmt::Debug for AgentIdentity {
 /// A capability an adapter declares. A missing capability stays visible: the
 /// shared contract never requires pi Harness v2 or Opi evidence vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "adapter capability declarations are exercised by conformance tests"
+    )
+)]
 pub(crate) enum AgentCapability {
     /// Native NDJSON event stream on stdout.
     JsonEvents,
@@ -170,6 +177,13 @@ pub(crate) enum AgentCompletion {
 #[derive(Debug, Clone)]
 pub(crate) struct AgentRecord {
     pub identity: AgentIdentity,
+    #[cfg_attr(
+        not(all(test, unix)),
+        expect(
+            dead_code,
+            reason = "settled record retains the isolated workspace identity"
+        )
+    )]
     pub workspace: PathBuf,
     pub exit: ExitState,
     pub stdout: OutputCapture,
@@ -197,6 +211,13 @@ impl AgentRecord {
     }
 
     /// The failure boundary of a failed completion, or `None` when completed.
+    #[cfg_attr(
+        not(all(test, unix)),
+        expect(
+            dead_code,
+            reason = "failure-boundary projection is exercised by Unix process tests"
+        )
+    )]
     pub(crate) fn failure_boundary(&self) -> Option<FailureBoundaryCode> {
         match &self.completion {
             AgentCompletion::Completed { .. } => None,
@@ -213,6 +234,13 @@ pub(crate) trait AgentAdapter {
     fn identity(&self, request: &AgentRunRequest) -> AgentIdentity;
 
     /// Capabilities this adapter declares.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "adapter capability declarations are exercised by conformance tests"
+        )
+    )]
     fn capabilities(&self) -> &'static [AgentCapability];
 
     /// Structured spawn request for one run. Owns argv, cwd, environment

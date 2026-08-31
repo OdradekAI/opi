@@ -82,7 +82,6 @@ pub(crate) struct Tb30Profile {
 /// Typed profile failures. Fail-closed on any drift from the pinned surface.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum TbProfileError {
-    Io(String),
     Parse(String),
     UnsupportedSchema(String),
     /// A pinned invariant drifted (unknown runner/lifecycle/output kind,
@@ -94,7 +93,6 @@ pub(crate) enum TbProfileError {
 impl std::fmt::Display for TbProfileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TbProfileError::Io(message) => write!(f, "profile io failure: {message}"),
             TbProfileError::Parse(message) => write!(f, "profile parse failure: {message}"),
             TbProfileError::UnsupportedSchema(schema) => {
                 write!(f, "unsupported benchmark profile schema: {schema}")
@@ -130,7 +128,8 @@ struct Tb30Doc {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IdentityDoc {
-    upstream: String,
+    #[serde(rename = "upstream")]
+    _upstream: String,
     tag: String,
     source_commit: String,
     tasks_tree: String,
@@ -145,8 +144,10 @@ struct IdentityDoc {
 #[serde(deny_unknown_fields)]
 struct VerifierDoc {
     runner_kind: String,
-    runner_version: String,
-    runner_commit: String,
+    #[serde(rename = "runner_version")]
+    _runner_version: String,
+    #[serde(rename = "runner_commit")]
+    _runner_commit: String,
     launch: Vec<String>,
     lifecycle: String,
     verifier_workdir: String,
@@ -837,6 +838,7 @@ impl TerminalBench30Adapter {
     }
 
     /// The profile this adapter pins.
+    #[cfg(test)]
     pub(crate) fn profile(&self) -> &Tb30Profile {
         &self.profile
     }
