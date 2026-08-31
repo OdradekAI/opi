@@ -128,11 +128,6 @@ impl AuthorityLedger {
         self.agent_outcome = observation;
     }
 
-    /// The observed Agent completion class, if any.
-    pub(crate) fn agent_outcome(&self) -> AgentOutcomeObservation {
-        self.agent_outcome
-    }
-
     /// Ask whether `transition` may execute under the recorded failures;
     /// the attempt is recorded either way.
     pub(crate) fn attempt(&mut self, transition: AuthorityTransition) -> bool {
@@ -203,19 +198,6 @@ impl AuthorityLedger {
     pub(crate) fn records(&self) -> &[TransitionRecord] {
         &self.records
     }
-
-    /// First recorded failure boundary token, if any.
-    pub(crate) fn failed_boundary(&self) -> Option<&'static str> {
-        self.failed_boundary
-    }
-
-    /// How often `transition` executed.
-    pub(crate) fn executed_count(&self, transition: AuthorityTransition) -> usize {
-        self.records
-            .iter()
-            .filter(|record| record.transition == transition && record.state == "executed")
-            .count()
-    }
 }
 
 #[cfg(test)]
@@ -233,12 +215,20 @@ mod tests {
         assert!(!ledger.attempt(AuthorityTransition::GradeDispatch));
         assert!(!ledger.attempt(AuthorityTransition::GradeDispatch));
         // Refusals stay visible with the owning boundary token.
-        assert_eq!(ledger.executed_count(AuthorityTransition::GradeDispatch), 0);
-        assert_eq!(ledger.failed_boundary(), Some("agent-process"));
         assert_eq!(
-            ledger.agent_outcome(),
-            AgentOutcomeObservation::BoundaryFailure
+            ledger
+                .records()
+                .iter()
+                .filter(|record| {
+                    record.transition == AuthorityTransition::GradeDispatch
+                        && record.state == "executed"
+                })
+                .count(),
+            0
         );
+        let receipt = serde_json::to_value(&ledger).unwrap();
+        assert_eq!(receipt["failed_boundary"], "agent-process");
+        assert_eq!(receipt["agent_outcome"], "boundary_failure");
 
         // A scored Agent outcome records no boundary failure: the native
         // grade dispatch stays executable and the observation stays
@@ -246,11 +236,9 @@ mod tests {
         let mut scored = AuthorityLedger::new();
         scored.observe_agent(AgentOutcomeObservation::ScoredFailure);
         assert!(scored.attempt(AuthorityTransition::GradeDispatch));
-        assert_eq!(scored.failed_boundary(), None);
-        assert_eq!(
-            serde_json::to_value(&scored).unwrap()["agent_outcome"],
-            "scored_failure"
-        );
+        let receipt = serde_json::to_value(&scored).unwrap();
+        assert_eq!(receipt["failed_boundary"], serde_json::Value::Null);
+        assert_eq!(receipt["agent_outcome"], "scored_failure");
 
         // A fresh ledger: a grader failure refuses only the report.
         let mut grader = AuthorityLedger::new();
@@ -282,6 +270,9 @@ mod tests {
         let mut first = AuthorityLedger::new();
         first.fail(FailureBoundaryCode::Evidence);
         first.fail(FailureBoundaryCode::Grader);
-        assert_eq!(first.failed_boundary(), Some("evidence"));
+        assert_eq!(
+            serde_json::to_value(&first).unwrap()["failed_boundary"],
+            "evidence"
+        );
     }
 }

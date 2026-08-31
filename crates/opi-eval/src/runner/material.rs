@@ -46,8 +46,19 @@ pub(crate) struct PinnedFile {
 pub(crate) struct ProviderMaterial {
     pub(crate) script: PinnedFile,
     /// The pre-resolved listener endpoint both agents project.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "required native-material manifest field validated on load"
+        )
+    )]
     pub(crate) endpoint: String,
     /// Where the provider writes its normalized request log.
+    #[expect(
+        dead_code,
+        reason = "required native-material manifest field validated on load"
+    )]
     pub(crate) request_log: PathBuf,
 }
 
@@ -72,6 +83,10 @@ pub(crate) struct AgentMaterial {
 #[serde(deny_unknown_fields)]
 pub(crate) struct AgentConfigMaterial {
     /// `opi-toml` or `pi-models-json`.
+    #[expect(
+        dead_code,
+        reason = "required native-material configuration discriminator validated on load"
+    )]
     pub(crate) kind: String,
     /// The OpenAI-compatible base URL (the provider endpoint).
     pub(crate) base_url: String,

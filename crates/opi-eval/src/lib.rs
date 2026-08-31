@@ -8,10 +8,10 @@
 //! on it, and it registers no provider, tool, package, command, extension,
 //! startup hook, or default capture path in `opi`.
 //!
-//! The library currently exposes the minimum entry seam required by the
-//! same-package CLI and integration tests: [`experiment::ResolvedExperiment`]
-//! for canonical experiment resolution and [`cli::validate`] for the
-//! `opi-eval validate` command.
+//! The library entry surface consists of the provisional [`cli`] and
+//! [`experiment`] modules used by the same-package binary and integration
+//! tests. This crate is unpublished, and those module APIs carry no
+//! compatibility promise.
 
 // `deny` (not `forbid`) because `process::tree` is this crate's single
 // documented unsafe-FFI home: the OS tree-termination primitives (Unix
@@ -22,73 +22,55 @@
 
 pub mod cli;
 
-#[allow(dead_code)]
 pub(crate) mod authority;
 pub mod experiment;
 
-// Crate-private admission contract for Phase 18 external execution locks. It
-// is deliberately not part of the provisional entry seam; runner and adapter
-// modules inside this crate consume it.
-#[allow(dead_code)]
-mod external_lock;
-
 // Crate-private failure-boundary codes (Phase 18 task 18.5). One stable
 // owning-boundary code per failure table row; typed failures carry it.
-#[allow(dead_code)]
 mod failure;
 
 // Crate-private benchmark integrity records (Phase 18 task 18.5.1). Owns
 // revision admission, per-task validity classification, and reclassification
 // identity; nothing an Agent, adapter, or LLM produces can reach it.
-#[allow(dead_code)]
 mod integrity;
 
 // Crate-private pairing and comparability assembly (Phase 18 task 18.5.1).
 // Consumes the frozen ResolvedExperiment and an admitted IntegrityRecord
 // read-only; assembles exactly one baseline/candidate pair per
 // edge-task-group only when every control fingerprint agrees.
-#[allow(dead_code)]
 mod comparison;
 
 // Crate-private durable trial bundle (Phase 18 task 18.5). Owns canonical
 // sealing, mutation rejection, and intent-before-effect persistence; the
 // runner lifecycle and later regrade/report consumers stay inside this crate.
-#[allow(dead_code)]
 mod bundle;
 
 // Crate-private trial runner substrate (Phase 18 task 18.5).
-#[allow(dead_code)]
 mod runner;
 
 // Crate-private external-process supervision (Phase 18 task 18.4). Owns the
 // shared state machine used by the future AgentExecution and
 // BenchmarkExecution adapters; never exposes OS primitives outside the crate.
-#[allow(dead_code)]
 mod process;
 
 /// Crate-private Agent contract and per-product adapters (Phase 18 task 18.6).
-#[allow(dead_code)]
 mod agent;
 
 /// Crate-private benchmark execution contract and the Terminal-Bench 2.1
 /// adapter (Phase 18 task 18.8).
-#[allow(dead_code)]
 mod benchmark;
 
 /// Crate-private provisional trajectory and causal-span projection
 /// (Phase 18 task 18.11).
-#[allow(dead_code)]
 mod trajectory;
 
 // Crate-private offline recomputation contract (task 18.13). The regrade
 // and report paths consume sealed assembled outputs only and stay behind
 // the provisional CLI seam; they are deliberately not part of the public
 // library surface until tasks 18.15 and 18.16.
-#[allow(dead_code)]
 pub(crate) mod regrade;
 
 // Crate-private normalized report contract (task 18.13): the offline
 // report path consumes sealed assembled outputs only, recomputes before
 // rendering, and stays behind the provisional CLI seam.
-#[allow(dead_code)]
 pub(crate) mod report;

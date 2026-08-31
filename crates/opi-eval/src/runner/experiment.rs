@@ -1846,9 +1846,6 @@ fn timeout_patched_adapter(product: &str) -> Result<Box<dyn AgentAdapter>, RunEr
     }
 }
 
-/// Delay before the runner cancels a running trial (cancellation race).
-const CANCEL_AFTER_MS: u64 = 300;
-
 /// Native-source environment for the agent helper.
 fn agent_env(
     product: &str,

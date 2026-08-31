@@ -3,13 +3,13 @@
   "members": [
     {
       "artifact_stem": "audit.codex.gpt56",
-      "audit_head": "08bc61d87146a83ae6e00dc9638a8b8c89fae8d7",
-      "audit_run_id": "phase18-codex-gpt56-08bc61d-20260830t201731z-b59d9710",
+      "audit_head": "dd7eda70aa138ea02931068b5f69ceb31148682b",
+      "audit_run_id": "phase18-codex-gpt56-dd7eda7-20260831t135641z",
       "digests": {
-        "findings_sha256": "099fa8c019f1af3f6362c726895a67b45e83691b9d48b75d4a3e8466724b842b",
-        "meta_sha256": "ced9dfeb9e4d151bd0c0d8ff43a2c579088400305f707b64dfce920e9a4434c7",
-        "report_sha256": "9624ac63594024f8a47f46349374f9ec1ff644aafeb9d526d6125ef701309008",
-        "requirements_sha256": "aabbd4c340b540e40b6e09df405b0907b4522aca6023063702216bdd9e3c9198"
+        "findings_sha256": "dfb38314eca4a05e99e10a42bbbd594a91c413caafd90226a0ab2375ca9788ef",
+        "meta_sha256": "0176239813ba48f181be43f94ff578ebb4cab9a55e524a16a46c87f5a4ee4dad",
+        "report_sha256": "f1254ae9ca326cad844203cf730622d42328f1ec29915d0b964189cceb2ac8fe",
+        "requirements_sha256": "7b7c3263c94fd982126b84a747b3a6e9b7804f56361b32dcdafd7eee05aabafb"
       },
       "model_id": "gpt56",
       "reviewer_id": "codex",
@@ -17,13 +17,13 @@
     },
     {
       "artifact_stem": "audit.pi.glm53",
-      "audit_head": "68d74ec0db78d0d198bd8ead9b3c8c31a364e65e",
-      "audit_run_id": "phase18-pi-glm53-68d74ec-20260830t200548z",
+      "audit_head": "25d0e6823ea13537702e79bd3c94064bd7c67197",
+      "audit_run_id": "phase18-pi-glm53-25d0e68-20260831t124752z",
       "digests": {
-        "findings_sha256": "7ea0bd6518d4169f1e597a6d52588038bae9fc1d74a64c5f4d4600c30570da37",
-        "meta_sha256": "59cb4f657a968517d82e68679a117b4c474e1c00fa7089d9eda51105befa6296",
-        "report_sha256": "bc415798084bc941e0b6621e1feb7c417cd4a3e06932931c8e2a2c46d7b2c87e",
-        "requirements_sha256": "a70fcb99cc575a5aa0ee0577df693cbd84433207ba5ad5701d4862afc1658029"
+        "findings_sha256": "6e88c9234110dd5341bf8b4ea37ddc3157e6db0d67129be33c519e5141f60841",
+        "meta_sha256": "d25b2d768b8006c0c81490fe9ce78d1f50af8773c9b696541f00b8be48435f79",
+        "report_sha256": "4a5f23b001d6b768f6455f16ca50e261a75f2768a1e6629e817a08f766de90ca",
+        "requirements_sha256": "3a32d56b14ac4612198c346a325a3e4f109ae00e047cdb3492435f986e3f443c"
       },
       "model_id": "glm53",
       "reviewer_id": "pi",
@@ -31,6 +31,6 @@
     }
   ],
   "phase": 18,
-  "revision": 4,
+  "revision": 6,
   "schema_version": 2
 }

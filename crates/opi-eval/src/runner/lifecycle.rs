@@ -63,12 +63,23 @@ pub(crate) enum SettlementKind {
 /// Distinct cancellation sources retained through settlement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CancellationSource {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "required distinct user-cancellation settlement source"
+        )
+    )]
     User,
     Infrastructure,
 }
 
 /// The observed process outcome recorded at settlement (P18-DUR-003).
 pub(crate) struct ObservedOutcome {
+    #[expect(
+        dead_code,
+        reason = "typed settlement observation required by the Phase 18 lifecycle contract"
+    )]
     pub(crate) kind: SettlementKind,
 }
 
@@ -80,18 +91,30 @@ pub(crate) enum LifecycleError {
     InvalidTransition {
         from: TrialPhase,
         to: &'static str,
+        #[expect(
+            dead_code,
+            reason = "typed lifecycle errors retain their owning failure boundary"
+        )]
         boundary: FailureBoundaryCode,
     },
     /// The published intent reserves a different trial than planned.
     IdentityMismatch {
         planned: TrialIdentity,
         published: TrialIdentity,
+        #[expect(
+            dead_code,
+            reason = "typed lifecycle errors retain their owning failure boundary"
+        )]
         boundary: FailureBoundaryCode,
     },
 }
 
 impl LifecycleError {
     /// The owning failure boundary for this error.
+    #[expect(
+        dead_code,
+        reason = "crate-private lifecycle boundary accessor is retained for typed error consumers"
+    )]
     pub(crate) fn boundary(&self) -> FailureBoundaryCode {
         match self {
             LifecycleError::InvalidTransition { boundary, .. }

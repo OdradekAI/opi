@@ -10,10 +10,13 @@
 /// names who owns classification and downstream authority stopping, not how
 /// severe the failure is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
 pub(crate) enum FailureBoundaryCode {
     /// Invalid experiment schema, unresolved identity, control mismatch,
     /// budget rejection, unsupported capability.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "required closed Phase 18 failure-table boundary")
+    )]
     Experiment,
     /// Not started, effect unknown, settlement failure, sealing failure,
     /// post-seal mutation.
@@ -38,6 +41,10 @@ pub(crate) enum FailureBoundaryCode {
     Infrastructure,
     /// Missing/duplicate pair, control mismatch, incomplete coverage,
     /// offline recomputation mismatch.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "required closed Phase 18 failure-table boundary")
+    )]
     PairReport,
 }
 

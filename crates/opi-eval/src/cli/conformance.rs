@@ -459,7 +459,7 @@ async fn run_agent_case(args: &ConformanceArgs) -> Result<ConformanceReport, Con
         trace_root: trace_root.clone(),
         config_path,
         provider_model,
-        allow_mutating: false,
+        allow_mutating: args.native_material.is_some(),
         isolation: isolation.clone(),
         extra_env,
     };
@@ -503,6 +503,19 @@ async fn run_agent_case(args: &ConformanceArgs) -> Result<ConformanceReport, Con
 
     let mut notes = Vec::new();
     let mut extra_ok = true;
+
+    // Native conformance requires the promised final-workspace output,
+    // independently of whether the Agent process and evidence importer
+    // otherwise settled successfully.
+    if args.native_material.is_some() {
+        let answer = std::fs::read(workspace.join("answer.txt"));
+        if answer.is_ok_and(|bytes| !bytes.is_empty()) {
+            notes.push("final-workspace-answer-verified".to_owned());
+        } else {
+            extra_ok = false;
+            notes.push("final-workspace-answer-missing-or-empty".to_owned());
+        }
+    }
 
     // Isolation case: the helper proved the projected environment and cwd
     // by dropping markers only the isolated projection could receive.

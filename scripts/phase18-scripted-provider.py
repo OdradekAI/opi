@@ -38,7 +38,7 @@ CREATED = 1750000000
 FINAL_CONTENT = "scripted-provider: integration turn complete"
 TOOL_NAME = "bash"
 TOOL_ARGUMENTS = (
-    "{\"command\": \"printf 'scripted-integration-result\\\n' > answer.txt\"}"
+    "{\"command\": \"printf 'scripted-integration-result\\\\n' > answer.txt\"}"
 )
 
 
@@ -83,7 +83,7 @@ def stream_chunks(final: bool) -> list[bytes]:
         payload = {"tool_calls": [dict(tool_call_json(), index=0)]}
         finish = "tool_calls"
     chunks = []
-    for delta, finish_reason in ((first, None), (payload, finish), ({}, finish)):
+    for delta, finish_reason in ((first, None), (payload, None), ({}, finish)):
         chunk = {
             "id": COMPLETION_ID,
             "object": "chat.completion.chunk",

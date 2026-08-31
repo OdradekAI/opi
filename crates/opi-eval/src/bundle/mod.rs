@@ -761,11 +761,6 @@ macro_rules! identity_newtype {
                 }
                 Ok(Self(trimmed.to_owned()))
             }
-
-            /// The canonical identity string.
-            pub(crate) fn as_str(&self) -> &str {
-                &self.0
-            }
         }
     };
 }
@@ -773,6 +768,21 @@ macro_rules! identity_newtype {
 identity_newtype!(TrialIdentity, "trial identity");
 identity_newtype!(PairIdentity, "pair identity");
 identity_newtype!(SourceIdentity, "source identity");
+
+impl TrialIdentity {
+    /// The canonical identity string.
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+impl SourceIdentity {
+    /// The canonical identity string exposed only to bundle unit tests.
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl ArtifactKey {
     /// Creates a logical artifact key from a workspace-relative path. The
@@ -885,6 +895,7 @@ pub(crate) struct ArtifactSpec {
 
 /// The recorded view of one staged artifact.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub(crate) struct ArtifactEntryView {
     pub(crate) role: ArtifactRole,
     pub(crate) source: SourceIdentity,
@@ -1228,6 +1239,7 @@ impl RunBundle {
 
     /// The recorded role, source, digest, classification, and causal edges
     /// of one staged artifact.
+    #[cfg(test)]
     pub(crate) fn entry(&self, key: &ArtifactKey) -> Option<ArtifactEntryView> {
         match &self.state {
             BundleState::Staging { entries, .. } => entries.get(key).map(|e| ArtifactEntryView {

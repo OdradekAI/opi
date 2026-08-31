@@ -89,7 +89,6 @@ pub(crate) struct DeepSweProfile {
 /// Typed profile failures. Fail-closed on any drift from the pinned surface.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum TbProfileError {
-    Io(String),
     Parse(String),
     UnsupportedSchema(String),
     /// A pinned invariant drifted (unknown runner/lifecycle/network/output
@@ -101,7 +100,6 @@ pub(crate) enum TbProfileError {
 impl std::fmt::Display for TbProfileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TbProfileError::Io(message) => write!(f, "profile io failure: {message}"),
             TbProfileError::Parse(message) => write!(f, "profile parse failure: {message}"),
             TbProfileError::UnsupportedSchema(schema) => {
                 write!(f, "unsupported benchmark profile schema: {schema}")
@@ -137,7 +135,8 @@ struct DeepSweDoc {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IdentityDoc {
-    upstream: String,
+    #[serde(rename = "upstream")]
+    _upstream: String,
     version_anchor: String,
     source_commit: String,
     tasks_tree: String,
@@ -924,6 +923,7 @@ impl DeepSweAdapter {
     }
 
     /// The profile this adapter pins.
+    #[cfg(test)]
     pub(crate) fn profile(&self) -> &DeepSweProfile {
         &self.profile
     }

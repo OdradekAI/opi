@@ -49,11 +49,16 @@ pub(crate) struct BenchmarkRunRequest {
     /// Task id inside the admitted revision.
     pub task_id: String,
     /// Sealed final Agent output the verifier grades.
+    #[expect(
+        dead_code,
+        reason = "benchmark request retains the sealed Agent-output identity required by the contract"
+    )]
     pub agent_output: PathBuf,
     /// Fresh capture root for native verifier outputs.
     pub trace_root: PathBuf,
-    /// Digest of the admitted resolved external lock
-    /// ([`crate::external_lock::AdmittedLock::digest`]).
+    /// Digest of the admitted resolved external lock.
+    /// The external-lock verifier scripts bind this digest to the admitted
+    /// lock under `crates/opi-eval/external-locks/`.
     pub admitted_lock_digest: String,
     /// Immutable integrity record admitting the revision and classifying the
     /// task. Consumed read-only; no adapter or Agent path can mutate it
@@ -312,6 +317,10 @@ pub(crate) struct BenchmarkRecord {
     pub exit: ExitState,
     pub stdout: OutputCapture,
     pub stderr: OutputCapture,
+    #[expect(
+        dead_code,
+        reason = "settled benchmark record retains process-cleanup evidence"
+    )]
     pub cleanup: CleanupEvidence,
     /// Wall-clock duration of the supervised verification run.
     pub wall_time: Duration,
@@ -325,6 +334,13 @@ pub(crate) struct BenchmarkRecord {
 
 impl BenchmarkRecord {
     /// The failure boundary of a failed completion, or `None` when verified.
+    #[cfg_attr(
+        not(all(test, unix)),
+        expect(
+            dead_code,
+            reason = "failure-boundary projection is exercised by Unix process tests"
+        )
+    )]
     pub(crate) fn failure_boundary(&self) -> Option<FailureBoundaryCode> {
         match &self.completion {
             BenchmarkCompletion::Verified { .. } => None,
@@ -917,6 +933,7 @@ fn harbor_result_import_fails_closed_on_trial_count_drift() {
 
 /// Writes one Pier `jobs/<timestamp>/result.json` aggregate whose `reward`
 /// metric awards `reward_key` to the single trial.
+#[cfg(test)]
 fn pier_job(dir: &std::path::Path, reward_key: &str) {
     let jobs = dir.join("jobs").join("2026-08-29__07-25-13");
     std::fs::create_dir_all(&jobs).unwrap();
