@@ -1,112 +1,122 @@
+# Phase 18 Remediation Result
+
 **Status**: COMPLETE
-**Audit index SHA-256**: `e10b49f77361516f750166624f02ec0bb508be4018ac93efaef30297d871baa0`
-**Plan SHA-256**: `40120473d670dc437082d655c989058fb5da70393da8bbe872920e4b50045779`
-**Changed paths**: ["CHANGELOG.md", "crates/opi-eval/src/agent/process.rs", "crates/opi-eval/src/authority.rs", "crates/opi-eval/src/benchmark/process.rs", "crates/opi-eval/src/bundle/mod.rs", "crates/opi-eval/src/cli/report.rs", "crates/opi-eval/src/comparison.rs", "crates/opi-eval/src/integrity.rs", "crates/opi-eval/src/process.rs", "crates/opi-eval/src/process/tree.rs", "crates/opi-eval/src/regrade.rs", "crates/opi-eval/src/report.rs", "crates/opi-eval/src/runner/experiment.rs", "crates/opi-eval/src/trajectory/mod.rs", "crates/opi-eval/tests/authority_boundaries.rs", "crates/opi-eval/tests/bundle_recompute.rs", "crates/opi-eval/tests/end_to_end_report.rs", "crates/opi-eval/tests/fixtures/experiment/phase18-multi-edge.toml", "crates/opi-eval/tests/native_driver.rs", "crates/opi-eval/tests/phase18_assembled_smoke.rs", "crates/opi-eval/tests/report_contract.rs", "scripts/phase18-native-smoke.sh", "scripts/test_verify_phase18_native_ci.py"]
+**Audit index SHA-256**: `325a4665c863139394767d3ce3454e79528b77d0301a2dad621c7330761c987c`
+**Plan SHA-256**: `bf5df80cfa4c974996aa569d298534aa0915e9ec468ca189f7d2edf04c364ce1`
+**Changed paths**: ["CHANGELOG.md", "crates/opi-coding-agent/tests/config_tests.rs", "crates/opi-eval/docs/seam-evidence-matrix.md", "crates/opi-eval/src/agent/opi.rs", "crates/opi-eval/src/bundle/mod.rs", "crates/opi-eval/src/cli/report.rs", "crates/opi-eval/src/runner/experiment.rs", "crates/opi-eval/tests/report_output_containment.rs", "docs/snapshots/phase18/ci-receipt.json", "scripts/phase18-eval-smoke.ps1", "scripts/test_phase18_eval_smoke.py", "scripts/test_verify_phase18_native_artifact.py", "scripts/verify-phase18-native-artifact.py"]
 
-Apply bound to remediation head `b9af27fd7944b00566d8dd7443936d9a5031f0e2`,
-approved plan digest `40120473d670dc437082d655c989058fb5da70393da8bbe872920e4b50045779`,
-and index digest `e10b49f77361516f750166624f02ec0bb508be4018ac93efaef30297d871baa0`.
-Every red-before predicate was re-observed failing in this apply run before
-production edits. All ten source findings are Closed; one bounded
-incidental repair (I1) was accepted under batch B1.
+`COMPLETE` means this apply execution and its machine dispositions are fully
+recorded. It does not mean every finding is closed or that Phase 18 conforms.
+The apply remained bound to remediation head
+`fe6501a389031aa15252f1931b6dbcfe86c4434a`, the approved plan digest above,
+and the current audit-index digest above.
 
-## Closure batch outcomes
+## Closure outcomes
 
-- **B1 `bundle.retained-byte-closure` - Closed.** The pre-effect intent
-  reservation now names the complete artifact closure (control evidence,
-  trajectory, normalized expected output, agent streams, answer, authority
-  ledger); sealing enforces staged == reserved plus the declared produced
-  native evidence and requires the expected output; verification compares
-  the manifest intent/settlement with the durable sidecars, requires every
-  reserved artifact among the entries, enumerates the artifact tree so
-  unmanifested, missing, non-file, and digest-mismatched entries all fail
-  at `TrialDurability`, and stays read-only and byte-stable. Agent and
-  verifier artifact reads fail closed.
-- **B2 `report.sealed-input-and-output-isolation` - Closed.** The offline
-  report reconstructs trial views, coverage, integrity provenance,
-  rewards, and diagnostics from verified sealed bundles only; a covered
-  byte mutation or sealed-input parse failure returns the typed
-  `verification-failed` outcome with a non-zero exit; `--out` is opened
-  create-new outside the run root.
-- **B3 `agent-failure.native-graded-outcome` - Closed.** A closed failure
-  classification keeps the Agent's own non-zero exit and budget timeout in
-  the graded Agent outcome class (one native grade dispatch, comparable
-  `AgentFailure` pairing in the denominator) while spawn, cancellation,
-  adapter/evidence, and infrastructure failures retain their mechanical
-  stops; the ledger seals the observed completion class.
-- **B4 `process.natural-exit-tree-cleanup` - Closed.** Natural exit tracks
-  per-stream EOF, probes the tree guard, and terminates/verifies
-  descendants and inherited-pipe holders; `NotRequired` is reported only
-  after observed tree emptiness.
-- **B5 `deepswe.reward-domain-and-positive-oracle` - Closed.** Every Pier
-  reward is domain-checked in `0..=1` before any `u64` conversion, and the
-  DeepSWE oracle preflight requires an explicitly known positive native
-  reward.
-- **B6 `trial.intent-edge-identity` - Closed.** Each trial's durable
-  `PairIdentity` is its unique owning edge; zero or multiple owners reject
-  before any process effect.
-- **B7 `verifier-artifact.source-identity` - Closed.** Verifier streams
-  and native reports carry the pinned grader source; the offline headline
-  requires the grader source and Native role together.
-- **B8 `native-conformance.receipt-count` - Closed.** The conformance
-  receipt count derives from the successful-case loop counter (13 at
-  runtime), and the CI contract test binds the declared case list to the
-  counter path.
+- **B1 `bundle.artifact-ancestor-containment` — Closed.** Bundle insertion now
+  rejects an existing symlink, Windows junction/reparse point, or non-directory
+  ancestor before any target file is created.
+- **B2 `bundle.intent-directory-durability` — Closed.** Atomic publication
+  syncs the containing directory after rename and propagates an injected
+  directory-durability failure before returning durable proof.
+- **B3 `agent.opi-phase17-evidence-graph` — Closed.** The Opi importer now
+  validates the complete Phase 17 graph, including run, sequence, call,
+  parent, kind/payload, and terminal correlations.
+- **B4 `runner.hermetic-windows-execution` — Closed.** Windows smoke helpers
+  are generated as native PowerShell/Python paths, and the happy, declared
+  failure, and offline-report cases pass hermetically.
+- **B5 `report.output-ancestor-containment` — Closed.** Report output parents
+  are resolved before containment enforcement, so aliases into the run root
+  reject before create-new publication.
+- **B6 `config-test.ambient-proxy-independence` — Closed.** The no-explicit-
+  proxy test no longer asserts that the host environment is proxy-free, while
+  the explicit-proxy contract remains covered.
+- **B7 `phase18.current-candidate-external-evidence` — Not closed.** The one
+  authorized native dispatch failed before artifact upload, so the required
+  same-candidate native artifact does not exist and the matrix/terminal-receipt
+  pair was not installed.
 
-## Incidental repairs
+## B7 external evidence
 
-- **I1 (B1)**: the planned `BundleError` extension made the shared offline
-  regrade classifier in `crates/opi-eval/src/regrade.rs` non-exhaustive,
-  failing compilation of B1's verification command. The minimal repair
-  maps the five new variants to typed regrade tokens; all guardrails hold
-  (no public API, durable format, dependency, spec, authority, manifest,
-  ledger, or schema change).
+The immutable remediation candidate is
+`1aadfae6589c038954ffec8639fe94e559337fa6` on
+`codex/phase18-remediation` and PR #5.
+
+- Same-repository PR CI run `33380387075` completed successfully with 27 jobs.
+  Its head, merge-ref checkout, three platform attestation artifacts, downloaded
+  Ubuntu artifact digest, and inner receipt passed
+  `scripts/verify-phase18-ci.py --terminal` in a temporary output location.
+- The sole authorized Linux native-smoke dispatch was run `33380446360`, bound
+  to the same candidate. It failed in `Rerun the conformance suites through the
+  exact programs` at `benchmark-deepswe-completed`; no artifacts were uploaded.
+  The native process exited 0, but `import_pier_job_result` rejected the output
+  as `native-output-invalid`. The fixed output exposed valid DeepSWE breakdown
+  counts `20` and `3`, while the importer currently applies the aggregate
+  zero-or-one reward domain to every metric before selecting the `reward`
+  metric. This path was unchanged by B1-B6.
+- The one-run ceiling is exhausted. No retry, production repair, matrix update,
+  or terminal-receipt installation was performed. The existing matrix and
+  committed CI receipt remain historical evidence and do not support a
+  current-candidate claim.
+
+Closing B7 now requires a newly approved remediation plan that owns the Pier
+multi-metric import defect and separately authorizes another external evidence
+cycle. This apply does not grant that authority.
+
+## Bounded incidental repairs
+
+- **I1 (B4)** replaced `Get-FileHash` with the .NET SHA-256 API because the
+  Python-launched Windows PowerShell environment did not expose that cmdlet.
+- **I2 (B4)** writes JSON with BOM-free UTF-8 so Python can parse smoke output.
+- **I3 (B4)** corrected the smoke assertion to derive each bundle identity from
+  its own exact manifest bytes; distinct executions retain real time facts.
+- **I4 (B7)** uses `sys.executable` for native-artifact verifier subprocesses,
+  avoiding a nonexistent `python3` command on Windows.
+- **I5 (B7)** normalizes manifest/tar member names to POSIX-relative paths in
+  the native-artifact verifier and its tests.
+
+All five incidentals satisfy the bounded-repair guardrails and have focused
+FAIL/PASS observations in the machine result dispositions.
 
 ## Verification
 
-Applied in dependency order with each batch's verification union green at
-its boundary (B1 -> B3 -> B4 -> B5 -> B6 -> B7 -> B8 -> B2). Final union,
-all run at the final tree:
+The approved final union was run at the candidate tree:
 
-    cargo test -p opi-eval --lib                          # 144 passed
-    cargo test -p opi-eval --test bundle_recompute        # 4 passed
-    cargo test -p opi-eval --test end_to_end_report       # 5 passed
-    cargo test -p opi-eval --test report_contract         # 3 passed
-    cargo test -p opi-eval --test authority_boundaries    # 4 passed
-    cargo test -p opi-eval --test phase18_assembled_smoke # 9 passed
-    cargo test -p opi-eval --test experiment_contract     # 14 passed
-    cargo test -p opi-eval --test native_driver           # 8 passed
-    python scripts/test_verify_phase18_native_ci.py       # 34 tests OK
-    python scripts/test_verify_phase18_native_artifact.py # 15 tests OK
-    python scripts/opi-doc-check.py                       # PASS
-    cargo fmt --check --all                               # clean
-    cargo clippy --workspace --all-targets -- -D warnings # 0 errors
-    cargo test --workspace --all-targets                  # see note
-    cargo test --workspace --doc                          # 8 suites OK
-    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps # PASS
+```text
+cargo test -p opi-eval insertion_rejects_ancestor_directory_alias -- --nocapture             PASS
+cargo test -p opi-eval intent_publication_requires_parent_directory_durability -- --nocapture PASS
+cargo test -p opi-eval importer_rejects_phase17_invalid_evidence_graphs -- --nocapture         PASS
+cargo test -p opi-eval bundle::tests                                                           PASS (9)
+cargo test -p opi-eval importer                                                                PASS (6)
+cargo test -p opi-eval --test agent_integration_conformance                                    PASS (1)
+cargo test -p opi-eval --test report_output_containment                                        PASS (3)
+cargo test -p opi-eval --test report_contract                                                  PASS
+python scripts/test_phase18_eval_smoke.py                                                      PASS (3)
+cargo test -p opi-coding-agent --test config_tests                                              PASS (49)
+python scripts/test_verify_phase18_native_artifact.py                                           PASS (15)
+python scripts/test_derive_phase18_seam_matrix.py                                               PASS (7)
+python scripts/test_verify_phase18_ci.py                                                       PASS (26)
+cargo fmt --check --all                                                                        PASS
+cargo clippy --workspace --all-targets -- -D warnings                                          PASS
+cargo test --workspace --all-targets                                                           PASS
+cargo test --workspace --doc                                                                   PASS
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps                                     PASS
+python scripts/opi-doc-check.py                                                                PASS
+git diff --check                                                                               PASS
+```
 
-Notes:
+The first workspace-test attempt observed one two-second RPC receive timeout in
+an unchanged test. The exact test passed immediately, the full `rpc_jsonl`
+binary passed three consecutive times, and the required full workspace command
+then passed; no out-of-scope change was made.
 
-- `cargo test --workspace --all-targets`: 131 suites pass. One
-  `opi-coding-agent` failure (`build_http_client_without_proxy_succeeds`)
-  is environmental - this session exports `HTTP_PROXY`/`HTTPS_PROXY`, and
-  the test passes with the proxy variables cleared. Two to three
-  `opi-coding-agent` `oauth_auth` PKCE deadline tests fail
-  non-deterministically run-to-run on this host; the changed surface of
-  this remediation contains no `opi-coding-agent` file or any crate it
-  depends on, and the failing set varies between identical runs. Both are
-  reported as non-blocking observations outside the approved scope and
-  were not fixed.
-- The original B8 red-before command compared the executed case list with
-  a `cases_run` literal in the script text; the approved change removes
-  that second independent literal by design, so the literal-regex form no
-  longer matches. The green observation is carried by the extended script
-  contract test plus the derived counter path, per the approved change.
+Test impact: `add` and `update`. One report-containment integration test binary
+was added; existing bundle, importer, smoke, native-artifact, and configuration
+tests were updated. No test uses a paid provider or live credential.
 
 ## Materialization boundary
 
-Fixes plus the current live audit set are not yet committed. A fresh audit
-or reviewer re-run may be requested only after the fixes, the fixed
-remediation plan/result group, and the current live set are committed and
-the assurance directory is clean. No Phase conformance is claimed and no
-other skill was invoked.
+The B1-B6 fixes and approved plan are committed and pushed as candidate
+`1aadfae6589c038954ffec8639fe94e559337fa6`. This result is evidence-only and
+does not change a runtime, producer, verifier, or workflow input path. The pull
+request remains open; nothing was merged and no Phase PASS is claimed.
