@@ -15,11 +15,11 @@
   },
   "producers": [
     {
-      "path": "scripts/phase18-materialize-locks.sh",
+      "path": "crates/opi-eval/scripts/phase18-materialize-locks.sh",
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     {
-      "path": "scripts/verify-phase18-materialization-ci.py",
+      "path": "crates/opi-eval/scripts/verify-phase18-materialization-ci.py",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     }
   ],

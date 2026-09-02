@@ -16,9 +16,9 @@ Rules for everything under this directory:
   and native verifiers are generated at runtime inside the run root; their
   behavior is selected by `OPI_EVAL_CONFORMANCE_BEHAVIOR` and is bounded by
   construction.
-- The local scripted provider fixture is `scripts/phase18-scripted-provider.py`
+- The local scripted provider fixture is `crates/opi-eval/scripts/phase18-scripted-provider.py`
   (schema `phase18-scripted-provider/1`), tested by
-  `scripts/test_phase18_scripted_provider.py`.
+  `crates/opi-eval/scripts/test_phase18_scripted_provider.py`.
 
 ## Contents
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Behavioral tests for scripts/verify-phase18-native-artifact.py.
+"""Behavioral tests for crates/opi-eval/scripts/verify-phase18-native-artifact.py.
 
 The verifier is the sole owner of the downloaded native-smoke evidence:
 it consumes the upload-identity receipt plus the downloaded artifact
@@ -22,8 +22,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-VERIFIER = REPO / "scripts" / "verify-phase18-native-artifact.py"
+REPO = Path(__file__).resolve().parents[3]
+VERIFIER = REPO / "crates" / "opi-eval" / "scripts" / "verify-phase18-native-artifact.py"
 
 WORKFLOW_PATH = ".github/workflows/phase18-native-smoke.yml"
 
@@ -150,13 +150,13 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
         "workflow_sha256_read_from_workflow_sha": sha(b"workflow-bytes\n"),
         "checkout_head": candidate,
         "bound_scripts": {
-            "producer": {"path": "scripts/phase18-native-smoke.sh",
+            "producer": {"path": "crates/opi-eval/scripts/phase18-native-smoke.sh",
                          "role": "producer", "sha256": sha(b"producer\n")},
-            "agent-builder": {"path": "scripts/phase18-build-agent-artifacts.sh",
+            "agent-builder": {"path": "crates/opi-eval/scripts/phase18-build-agent-artifacts.sh",
                               "role": "builder", "sha256": sha(b"builder\n")},
-            "provider": {"path": "scripts/phase18-scripted-provider.py",
+            "provider": {"path": "crates/opi-eval/scripts/phase18-scripted-provider.py",
                          "role": "provider", "sha256": sha(b"provider\n")},
-            "verifier": {"path": "scripts/verify-phase18-native-ci.py",
+            "verifier": {"path": "crates/opi-eval/scripts/verify-phase18-native-ci.py",
                          "role": "verifier", "sha256": sha(b"ci-verifier\n")},
         },
         "immutable_actions": [
@@ -207,7 +207,7 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
         "static_lock": {"path": str(material / "external-lock.json"),
                         "sha256": sha(lock_bytes)},
         "provider": {
-            "script": {"path": "scripts/phase18-scripted-provider.py",
+            "script": {"path": "crates/opi-eval/scripts/phase18-scripted-provider.py",
                        "sha256": sha(b"provider\n")},
             "endpoint": "http://127.0.0.1:48127/v1",
             "request_log": str(stage / "05-provider" / "requests.jsonl"),
@@ -408,10 +408,10 @@ def build_git_repo(tmp: Path) -> tuple[Path, str]:
     run("init", "-q")
     # The digest-to-bytes mapping is fixed by the fixture.
     bodies = {
-        "scripts/phase18-native-smoke.sh": b"producer\n",
-        "scripts/phase18-build-agent-artifacts.sh": b"builder\n",
-        "scripts/phase18-scripted-provider.py": b"provider\n",
-        "scripts/verify-phase18-native-ci.py": b"ci-verifier\n",
+        "crates/opi-eval/scripts/phase18-native-smoke.sh": b"producer\n",
+        "crates/opi-eval/scripts/phase18-build-agent-artifacts.sh": b"builder\n",
+        "crates/opi-eval/scripts/phase18-scripted-provider.py": b"provider\n",
+        "crates/opi-eval/scripts/verify-phase18-native-ci.py": b"ci-verifier\n",
         WORKFLOW_PATH: b"workflow-bytes\n",
     }
     for rel, body in bodies.items():

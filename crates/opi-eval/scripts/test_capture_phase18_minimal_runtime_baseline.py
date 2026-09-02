@@ -174,6 +174,44 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(stray, ["stray.txt"])
 
 
+class ReceiptSourceDigestTests(unittest.TestCase):
+    def test_relocated_verifier_uses_the_receipt_bound_historical_blob(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            init_repo(repo)
+            historical_path = "scripts/capture-baseline.py"
+            historical = repo / historical_path
+            historical.parent.mkdir()
+            historical.write_bytes(b"# receipt-bound verifier\n")
+            git(repo, "add", historical_path)
+            git(
+                repo,
+                "-c",
+                "user.email=t@example.invalid",
+                "-c",
+                "user.name=t",
+                "commit",
+                "--quiet",
+                "-m",
+                "bind verifier",
+            )
+            verifier_commit = git(repo, "rev-parse", "HEAD").strip()
+            active = repo / "crates" / "opi-eval" / "scripts" / historical.name
+            active.parent.mkdir(parents=True)
+            active.write_bytes(b"# relocated verifier\n")
+            expected = helper.sha256_bytes(historical.read_bytes())
+
+            actual = helper._receipt_bound_source_digest(
+                repo,
+                active,
+                expected,
+                historical_revision=verifier_commit,
+                historical_path=historical_path,
+            )
+
+            self.assertEqual(actual, expected)
+
+
 class CensusTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform.startswith("linux"), "requires /proc")
     def test_census_detects_and_clears_residual_child(self) -> None:

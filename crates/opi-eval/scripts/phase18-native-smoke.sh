@@ -17,31 +17,31 @@
 # default routes, no outbound fallback, no fallback grader.
 #
 # Usage (one stage per sequential workflow step):
-#   scripts/phase18-native-smoke.sh verify-dispatch \
+#   crates/opi-eval/scripts/phase18-native-smoke.sh verify-dispatch \
 #     --candidate-sha SHA --workflow-path PATH --workflow-sha SHA \
 #     --workflow-ref REF --out DIR
-#   scripts/phase18-native-smoke.sh host-identity --out DIR
-#   scripts/phase18-native-smoke.sh record-tools --out DIR [--buildx-image DESC]
-#   scripts/phase18-native-smoke.sh fetch-external --external-root DIR --out DIR
-#   scripts/phase18-native-smoke.sh build-agents \
+#   crates/opi-eval/scripts/phase18-native-smoke.sh host-identity --out DIR
+#   crates/opi-eval/scripts/phase18-native-smoke.sh record-tools --out DIR [--buildx-image DESC]
+#   crates/opi-eval/scripts/phase18-native-smoke.sh fetch-external --external-root DIR --out DIR
+#   crates/opi-eval/scripts/phase18-native-smoke.sh build-agents \
 #     --build-script PATH --pi-source DIR --out DIR
-#   scripts/phase18-native-smoke.sh provider-up \
+#   crates/opi-eval/scripts/phase18-native-smoke.sh provider-up \
 #     --provider PATH --network NAME --out DIR
-#   scripts/phase18-native-smoke.sh provider-probe --network NAME --out DIR
-#   scripts/phase18-native-smoke.sh provider-down --network NAME --out DIR
-#   scripts/phase18-native-smoke.sh preflight-canaries \
+#   crates/opi-eval/scripts/phase18-native-smoke.sh provider-probe --network NAME --out DIR
+#   crates/opi-eval/scripts/phase18-native-smoke.sh provider-down --network NAME --out DIR
+#   crates/opi-eval/scripts/phase18-native-smoke.sh preflight-canaries \
 #     --external-root DIR --provider PATH --out DIR
-#   scripts/phase18-native-smoke.sh run-trials \
+#   crates/opi-eval/scripts/phase18-native-smoke.sh run-trials \
 #     --experiment-root DIR --out DIR
-#   scripts/phase18-native-smoke.sh seal-upload --stage-root DIR --out DIR
-#   scripts/phase18-native-smoke.sh record-upload-identity \
+#   crates/opi-eval/scripts/phase18-native-smoke.sh seal-upload --stage-root DIR --out DIR
+#   crates/opi-eval/scripts/phase18-native-smoke.sh record-upload-identity \
 #     --seal-out DIR --artifact-id ID --artifact-url URL \
 #     --artifact-digest SHA256 --run-id ID --run-url URL \
 #     --retention-days N --out DIR
 
 set -euo pipefail
 
-REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 STATIC_LOCK="$REPO_ROOT/crates/opi-eval/external-locks/static/linux-x86_64.json"
 SCHEMA="phase18-native-stage-receipt/1"
 PROVIDER_NETWORK="phase18-provider-net"
@@ -64,8 +64,8 @@ def sha(path):
 receipt = {
     "schema": "phase18-native-stage-receipt/1",
     "stage": stage,
-    "producer": "scripts/phase18-native-smoke.sh",
-    "producer_sha256": sha(f"{repo}/scripts/phase18-native-smoke.sh"),
+    "producer": "crates/opi-eval/scripts/phase18-native-smoke.sh",
+    "producer_sha256": sha(f"{repo}/crates/opi-eval/scripts/phase18-native-smoke.sh"),
     "static_lock_sha256": sha(lock),
     "produced_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
 }
@@ -142,24 +142,24 @@ receipt = {
     "checkout_head": candidate,
     "bound_scripts": {
         "producer": {
-            "path": "scripts/phase18-native-smoke.sh",
+            "path": "crates/opi-eval/scripts/phase18-native-smoke.sh",
             "role": "producer",
-            "sha256": sha(f"{repo}/scripts/phase18-native-smoke.sh"),
+            "sha256": sha(f"{repo}/crates/opi-eval/scripts/phase18-native-smoke.sh"),
         },
         "agent-builder": {
-            "path": "scripts/phase18-build-agent-artifacts.sh",
+            "path": "crates/opi-eval/scripts/phase18-build-agent-artifacts.sh",
             "role": "builder",
-            "sha256": sha(f"{repo}/scripts/phase18-build-agent-artifacts.sh"),
+            "sha256": sha(f"{repo}/crates/opi-eval/scripts/phase18-build-agent-artifacts.sh"),
         },
         "provider": {
-            "path": "scripts/phase18-scripted-provider.py",
+            "path": "crates/opi-eval/scripts/phase18-scripted-provider.py",
             "role": "provider",
-            "sha256": sha(f"{repo}/scripts/phase18-scripted-provider.py"),
+            "sha256": sha(f"{repo}/crates/opi-eval/scripts/phase18-scripted-provider.py"),
         },
         "verifier": {
-            "path": "scripts/verify-phase18-native-ci.py",
+            "path": "crates/opi-eval/scripts/verify-phase18-native-ci.py",
             "role": "verifier",
-            "sha256": sha(f"{repo}/scripts/verify-phase18-native-ci.py"),
+            "sha256": sha(f"{repo}/crates/opi-eval/scripts/verify-phase18-native-ci.py"),
         },
     },
     "immutable_actions": [
@@ -273,7 +273,7 @@ print(json.dumps({
     "tools": tools,
     "buildx_image": buildx_image,
     "python_stdlib_only_closure": {
-        "provider_invocation": "python3 -I -S scripts/phase18-scripted-provider.py",
+        "provider_invocation": "python3 -I -S crates/opi-eval/scripts/phase18-scripted-provider.py",
         "third_party_imports": "none",
     },
 }, indent=2, sort_keys=True))
@@ -477,7 +477,7 @@ PYEOF
 import json, sys
 out = sys.argv[1]
 print(json.dumps({
-    "build_script_invocation": ["bash", "scripts/phase18-build-agent-artifacts.sh",
+    "build_script_invocation": ["bash", "crates/opi-eval/scripts/phase18-build-agent-artifacts.sh",
         "--opi-source", "<repo>", "--pi-source", "<pi>", "--out", "<out>"],
     "opi_identity_sha256": __import__("hashlib").sha256(
         open(f"{out}/opi-identity.json", "rb").read()).hexdigest(),
@@ -727,7 +727,7 @@ for subject in lock["subjects"]:
 # rule; here the committed projection is the surface under test.
 surfaces = {
     "provider": Path(provider).read_bytes(),
-    "producer": Path(f"{repo}/scripts/phase18-native-smoke.sh").read_bytes(),
+    "producer": Path(f"{repo}/crates/opi-eval/scripts/phase18-native-smoke.sh").read_bytes(),
 }
 hits = []
 for name, blob in surfaces.items():
@@ -1008,8 +1008,8 @@ manifest = {
     "schema": "phase18-native-material/1",
     "static_lock": {"path": lock_path, "sha256": sha(lock_path)},
     "provider": {
-        "script": {"path": f"{repo}/scripts/phase18-scripted-provider.py",
-                   "sha256": sha(f"{repo}/scripts/phase18-scripted-provider.py")},
+        "script": {"path": f"{repo}/crates/opi-eval/scripts/phase18-scripted-provider.py",
+                   "sha256": sha(f"{repo}/crates/opi-eval/scripts/phase18-scripted-provider.py")},
         "endpoint": base_url,
         "request_log": str(Path(provider_out) / "requests.jsonl"),
     },
@@ -1197,7 +1197,7 @@ cmd_conformance_rerun() {
     if ! "$OPI_EVAL_EXECUTABLE" conformance --suite "$suite" --adapter "$adapter" \
       --case "$case_id" --root "$root" \
       --fixtures "$REPO_ROOT/crates/opi-eval/tests/fixtures" \
-      --provider "$REPO_ROOT/scripts/phase18-scripted-provider.py" \
+      --provider "$REPO_ROOT/crates/opi-eval/scripts/phase18-scripted-provider.py" \
       --native-material "$material" > "$root/report.json"; then
       echo "conformance-rerun: case $suite-$adapter-$case_id failed; report:" >&2
       cat "$root/report.json" >&2 || true

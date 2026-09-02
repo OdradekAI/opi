@@ -22,12 +22,12 @@ import zipfile
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("verify-phase18-materialization-artifact.py")
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 STATIC_LOCK = "crates/opi-eval/external-locks/static/linux-x86_64.json"
 WORKFLOW_PATH = ".github/workflows/phase18-lock-materialization.yml"
-MATERIALIZER = "scripts/phase18-materialize-locks.sh"
-CI_VERIFIER = "scripts/verify-phase18-materialization-ci.py"
+MATERIALIZER = "crates/opi-eval/scripts/phase18-materialize-locks.sh"
+CI_VERIFIER = "crates/opi-eval/scripts/verify-phase18-materialization-ci.py"
 RESOLVED_LOCK = "crates/opi-eval/external-locks/resolved/linux-x86_64.json"
 
 EXPECTED_COMMIT = "a" * 40

@@ -11,12 +11,12 @@
     },
     "producers": [
       {
-        "path": "scripts/phase18-materialize-locks.sh",
+        "path": "crates/opi-eval/scripts/phase18-materialize-locks.sh",
         "role": "materializer",
         "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       },
       {
-        "path": "scripts/verify-phase18-materialization-ci.py",
+        "path": "crates/opi-eval/scripts/verify-phase18-materialization-ci.py",
         "role": "verifier",
         "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
       }
@@ -232,7 +232,7 @@
   "adapter_policy": [
     {
       "id": "curl-shim",
-      "producer": "scripts/phase18-materialize-locks.sh",
+      "producer": "crates/opi-eval/scripts/phase18-materialize-locks.sh",
       "identity": "receipt-recorded"
     }
   ],

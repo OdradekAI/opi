@@ -150,21 +150,21 @@ jobs:
       - name: Package native archive
         shell: bash
         run: |
-          bash scripts/package-opi-sandbox.sh \
+          bash crates/opi-sandbox/scripts/package-opi-sandbox.sh \
             --binary target/${{ matrix.target }}/release/opi-sandbox \
             --artifact-dir target/opi-artifacts/${{ matrix.target }}
 
       - name: Verify native archive
         shell: bash
         run: |
-          bash scripts/package-opi-sandbox.sh \
+          bash crates/opi-sandbox/scripts/package-opi-sandbox.sh \
             --artifact-dir target/opi-artifacts/${{ matrix.target }} \
             --verify
 
       - name: Standalone smoke (extracted archive, no opi on PATH)
         shell: bash
         run: |
-          bash scripts/opi-sandbox-smoke.sh \
+          bash crates/opi-sandbox/scripts/opi-sandbox-smoke.sh \
             --binary target/opi-artifacts/${{ matrix.target }}/extracted/bin/opi-sandbox \
             --artifact-dir target/opi-artifacts/${{ matrix.target }}/smoke \
             --archive target/opi-artifacts/${{ matrix.target }}/opi-sandbox-${{ matrix.target }}.tar.gz

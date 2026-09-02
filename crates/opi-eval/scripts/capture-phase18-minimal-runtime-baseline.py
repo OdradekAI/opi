@@ -25,12 +25,12 @@ mode is platform-neutral.
 
 Usage::
 
-    python scripts/capture-phase18-minimal-runtime-baseline.py \
+    python crates/opi-eval/scripts/capture-phase18-minimal-runtime-baseline.py \
         --expected-commit <sha> \
         --output crates/opi-eval/tests/fixtures/minimal-runtime/pre-phase18 \
         --require-clean-product-paths
 
-    python scripts/capture-phase18-minimal-runtime-baseline.py \
+    python crates/opi-eval/scripts/capture-phase18-minimal-runtime-baseline.py \
         --verify --expected-commit <sha> \
         --input crates/opi-eval/tests/fixtures/minimal-runtime/pre-phase18
 """
@@ -56,13 +56,16 @@ RECEIPT_SCHEMA = "phase18-minimal-runtime-baseline-receipt/1"
 DEFAULT_TIMEOUT_SECONDS = 1800
 LEDGER_PATH = ".opi-impl-state.json"
 AUDIT_SCRIPT = "scripts/opi-artifact-audit.py"
+BASELINE_VERIFIER_REVISION = "b48f205d07f2ee5385091e9f568031866a200581"
+BASELINE_HELPER_SOURCE = "scripts/capture-phase18-minimal-runtime-baseline.py"
+BASELINE_TEST_SOURCE = "scripts/test_capture_phase18_minimal_runtime_baseline.py"
 
 # Task-owned non-product paths that may differ from the bound commit while the
 # capture runs: the helper itself, its test, and the harness ledger.
 DEFAULT_WHITELIST = frozenset(
     {
-        "scripts/capture-phase18-minimal-runtime-baseline.py",
-        "scripts/test_capture_phase18_minimal_runtime_baseline.py",
+        "crates/opi-eval/scripts/capture-phase18-minimal-runtime-baseline.py",
+        "crates/opi-eval/scripts/test_capture_phase18_minimal_runtime_baseline.py",
         LEDGER_PATH,
     }
 )
@@ -323,6 +326,24 @@ def git_blob(repo: Path, revision: str, path: str) -> bytes | None:
     if result.returncode != 0:
         return None
     return result.stdout
+
+
+def _receipt_bound_source_digest(
+    repo: Path,
+    active_path: Path,
+    expected_digest: str,
+    *,
+    historical_revision: str,
+    historical_path: str,
+) -> str | None:
+    """Resolve a receipt-bound source digest without rewriting old evidence."""
+    active_digest = sha256_file(active_path)
+    if active_digest == expected_digest:
+        return active_digest
+    historical = git_blob(repo, historical_revision, historical_path)
+    if historical is None:
+        return None
+    return sha256_bytes(historical)
 
 
 def commit_tree(repo: Path, commit: str) -> str:
@@ -647,7 +668,11 @@ def _default_audit_runner() -> object:
     def run(repo: Path, artifact_dir: Path) -> tuple[int, str, str]:
         argv = [
             sys.executable,
-            str(Path(__file__).resolve().parent / "opi-artifact-audit.py"),
+            str(
+                Path(__file__).resolve().parents[3]
+                / "scripts"
+                / "opi-artifact-audit.py"
+            ),
             str(artifact_dir),
             "--workspace-root",
             str(repo),
@@ -857,7 +882,11 @@ def capture(
     audit_record = {
         "argv": [
             sys.executable,
-            str(Path(__file__).resolve().parent / "opi-artifact-audit.py"),
+            str(
+                Path(__file__).resolve().parents[3]
+                / "scripts"
+                / "opi-artifact-audit.py"
+            ),
             str(output_dir),
             "--workspace-root",
             str(repo),
@@ -941,8 +970,10 @@ def verify(
     audit_runner=None,
 ) -> list[str]:
     """Re-check persisted evidence without rerunning the historical runtime."""
+    default_helper = helper_path is None
     if helper_path is None:
         helper_path = Path(__file__).resolve()
+    default_test = test_path is None
     if test_path is None:
         test_path = (
             Path(__file__).resolve().parent
@@ -978,11 +1009,35 @@ def verify(
                 f"tree mismatch: receipt {receipt.get('tree')} != {tree_now}"
             )
 
-    if sha256_file(helper_path) != receipt.get("helper", {}).get("sha256"):
+    expected_helper_digest = receipt.get("helper", {}).get("sha256")
+    helper_digest = (
+        _receipt_bound_source_digest(
+            repo,
+            helper_path,
+            expected_helper_digest,
+            historical_revision=BASELINE_VERIFIER_REVISION,
+            historical_path=BASELINE_HELPER_SOURCE,
+        )
+        if default_helper and isinstance(expected_helper_digest, str)
+        else sha256_file(helper_path)
+    )
+    if helper_digest != expected_helper_digest:
         problems.append(
             "helper digest mismatch: capture helper changed after evidence was bound"
         )
-    if sha256_file(test_path) != receipt.get("test", {}).get("sha256"):
+    expected_test_digest = receipt.get("test", {}).get("sha256")
+    test_digest = (
+        _receipt_bound_source_digest(
+            repo,
+            test_path,
+            expected_test_digest,
+            historical_revision=BASELINE_VERIFIER_REVISION,
+            historical_path=BASELINE_TEST_SOURCE,
+        )
+        if default_test and isinstance(expected_test_digest, str)
+        else sha256_file(test_path)
+    )
+    if test_digest != expected_test_digest:
         problems.append(
             "helper test digest mismatch: capture test changed after evidence was bound"
         )

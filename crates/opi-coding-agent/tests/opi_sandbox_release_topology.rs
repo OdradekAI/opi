@@ -1114,7 +1114,7 @@ fn release_opi_sandbox_smokes_extracted_binary() {
 
 #[test]
 fn unix_smoke_names_every_complete_native_acceptance_sentinel() {
-    let smoke = read_repo_file("scripts/opi-sandbox-smoke.sh");
+    let smoke = read_repo_file("crates/opi-sandbox/scripts/opi-sandbox-smoke.sh");
     for marker in [
         "empty-cwd-smoke-result.txt",
         "setup-failure-smoke-result.txt",

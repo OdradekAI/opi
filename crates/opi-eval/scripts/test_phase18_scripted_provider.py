@@ -8,7 +8,7 @@ malformed requests, and the bounded request cap. The listener mode
 (18.14.1) binds exactly one declared endpoint and serves deterministic
 OpenAI-compatible Chat Completions responses with a normalized request log.
 This is the smoke-addendum gate (``python
-scripts/test_phase18_scripted_provider.py``).
+crates/opi-eval/scripts/test_phase18_scripted_provider.py``).
 """
 
 from __future__ import annotations

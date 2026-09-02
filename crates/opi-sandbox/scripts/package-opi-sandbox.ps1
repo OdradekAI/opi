@@ -64,10 +64,10 @@ function Get-Sha256Path([string]$Path) {
 $ScriptDir = $PSScriptRoot
 if (-not $ScriptDir) { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $PackageHelper = Join-Path $ScriptDir 'opi-sandbox-package.py'
-$Template = Join-Path $ScriptDir '..\packaging\opi-sandbox\package.toml.template'
-$WorkspaceManifest = Join-Path $ScriptDir '..\Cargo.toml'
-$SchemaSnapshot = Join-Path $ScriptDir '..\crates\opi-protocol\tests\snapshots\execution_v1_schema__schema_v1.snap'
-$LicenseFile = Join-Path $ScriptDir '..\LICENSE'
+$Template = Join-Path $ScriptDir '..\packaging\package.toml.template'
+$WorkspaceManifest = Join-Path $ScriptDir '..\..\..\Cargo.toml'
+$SchemaSnapshot = Join-Path $ScriptDir '..\..\opi-protocol\tests\snapshots\execution_v1_schema__schema_v1.snap'
+$LicenseFile = Join-Path $ScriptDir '..\..\..\LICENSE'
 
 if ($Verify) {
     & python $PackageHelper verify --artifact-dir $ArtifactDir --archive-suffix '.zip' --workspace-license $LicenseFile --schema-snapshot $SchemaSnapshot

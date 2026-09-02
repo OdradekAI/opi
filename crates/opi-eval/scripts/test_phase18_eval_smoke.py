@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Tests for the Phase 18 assembled-run smoke wrappers (task 18.12).
 
-Executes the platform wrapper for ``scripts/phase18-eval-smoke`` and
+Executes the platform wrapper for ``crates/opi-eval/scripts/phase18-eval-smoke`` and
 asserts the preserved evidence: exact command, stdout report bytes, stderr,
 exit codes, receipt bytes, sealed manifests, the content-addressed bundle
 identity stability across two identical runs, the artifact audit, and the
 offline regrade/report evidence of task 18.13 (command preservation,
 byte-stable renders, and the explicit ``report`` mode over a caller
 provided run root). This is the smoke-addendum gate for tasks 18.12 and
-18.13 (``python scripts/test_phase18_eval_smoke.py``).
+18.13 (``python crates/opi-eval/scripts/test_phase18_eval_smoke.py``).
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SH_WRAPPER = Path(__file__).with_name("phase18-eval-smoke.sh")
 PS1_WRAPPER = Path(__file__).with_name("phase18-eval-smoke.ps1")
 

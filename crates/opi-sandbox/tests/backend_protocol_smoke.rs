@@ -8,7 +8,8 @@
 //!
 //! This mirrors the repo precedent (`opi-coding-agent/tests/artifact_audit_script.rs`)
 //! of a dedicated Rust test invoking a Python fixture directly, so the
-//! Python-free isolation smoke (`scripts/opi-sandbox-smoke.{sh,ps1}`) stays pure.
+//! Python-free isolation smoke
+//! (`crates/opi-sandbox/scripts/opi-sandbox-smoke.{sh,ps1}`) stays pure.
 
 #![forbid(unsafe_code)]
 

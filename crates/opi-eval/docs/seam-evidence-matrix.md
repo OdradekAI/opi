@@ -1,6 +1,6 @@
 # Phase 18 seam-evidence matrix
 
-Derived by `scripts/derive-phase18-seam-matrix.py` from the
+Derived by `crates/opi-eval/scripts/derive-phase18-seam-matrix.py` from the
 sealed Phase 18 native artifact. Conformance-only evidence:
 no score, leaderboard, or product claim is made here.
 
@@ -90,4 +90,3 @@ to translate them into parity.
 | terminal-bench-2.1 | Terminal-Bench (harbor aggregate) |
 | terminal-bench-3.0 | Terminal-Bench (harbor aggregate) |
 | deepswe-v1.1 | DeepSWE (pier job result) |
-

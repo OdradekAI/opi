@@ -1779,7 +1779,7 @@ fn release_audit_accepts_a_real_packager_produced_archive() {
     let pack = tempfile::tempdir().expect("real packager artifact tempdir");
     let fixture = std::env::current_exe().expect("current native test executable");
     let output = Command::new("bash")
-        .arg(workspace_root().join("scripts/package-opi-sandbox.sh"))
+        .arg(workspace_root().join("crates/opi-sandbox/scripts/package-opi-sandbox.sh"))
         .arg("--binary")
         .arg(&fixture)
         .arg("--artifact-dir")
@@ -1846,7 +1846,7 @@ fn release_audit_accepts_real_native_smoke_output_without_traceback() {
     let binary = target_dir.join("debug/opi-sandbox");
     let packaged = work.path().join("packaged");
     let pack = Command::new("bash")
-        .arg(workspace_root().join("scripts/package-opi-sandbox.sh"))
+        .arg(workspace_root().join("crates/opi-sandbox/scripts/package-opi-sandbox.sh"))
         .arg("--binary")
         .arg(&binary)
         .arg("--artifact-dir")
@@ -1880,7 +1880,7 @@ fn release_audit_accepts_real_native_smoke_output_without_traceback() {
 
     let smoke_dir = bundle.join("smoke");
     let smoke = Command::new("bash")
-        .arg(workspace_root().join("scripts/opi-sandbox-smoke.sh"))
+        .arg(workspace_root().join("crates/opi-sandbox/scripts/opi-sandbox-smoke.sh"))
         .arg("--binary")
         .arg(packaged.join("extracted/bin/opi-sandbox"))
         .arg("--artifact-dir")

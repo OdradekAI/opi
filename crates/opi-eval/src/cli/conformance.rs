@@ -91,7 +91,7 @@ pub struct ConformanceArgs {
     pub root: PathBuf,
     /// Repository `crates/opi-eval/tests/fixtures` root.
     pub fixtures: PathBuf,
-    /// `scripts/phase18-scripted-provider.py`.
+    /// `crates/opi-eval/scripts/phase18-scripted-provider.py`.
     pub provider: PathBuf,
     /// Resolved native material manifest (task 18.14.1): when present,
     /// the admitted native case subset runs through the exact built

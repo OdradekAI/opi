@@ -9,12 +9,12 @@
 # the pinned expectations.
 #
 # Usage:
-#   scripts/phase18-eval-smoke.sh [--fixtures DIR] [--out DIR]
-#   scripts/phase18-eval-smoke.sh report --bundle RUN_ROOT --artifact-dir DIR
+#   crates/opi-eval/scripts/phase18-eval-smoke.sh [--fixtures DIR] [--out DIR]
+#   crates/opi-eval/scripts/phase18-eval-smoke.sh report --bundle RUN_ROOT --artifact-dir DIR
 
 set -u
 
-REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 FIXTURES="${REPO_ROOT}/crates/opi-eval/tests/fixtures"
 OUT=$(mktemp -d)
 MODE=all

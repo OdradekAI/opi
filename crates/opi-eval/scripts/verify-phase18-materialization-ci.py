@@ -26,7 +26,7 @@ PLATFORM = "linux-x86_64"
 DEFAULT_STATIC_LOCK = "crates/opi-eval/external-locks/static/linux-x86_64.json"
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 USES_RE = re.compile(r"^\s*(?:-\s+)?uses:\s*(\S+)", re.MULTILINE)
-SCRIPT_REF_RE = re.compile(r"scripts/[A-Za-z0-9_.\-/""]+")
+SCRIPT_REF_RE = re.compile(r"(?:[A-Za-z0-9_.-]+/)*scripts/[A-Za-z0-9_.\-/]+")
 
 
 class Rejection(Exception):

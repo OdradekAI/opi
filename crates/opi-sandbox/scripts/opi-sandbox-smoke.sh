@@ -264,7 +264,7 @@ sys.stdout.write("BIND_OK\n")'
     grep -q '^BIND_OK$' "$ARTIFACT_DIR/network-allow-stdout.txt"
     write_result "network-allow-smoke-result.txt" "network-allow"
 
-    PROTOCOL_CLIENT="$SCRIPT_DIR/../crates/opi-sandbox/tests/fixtures/protocol_client.py"
+    PROTOCOL_CLIENT="$SCRIPT_DIR/../tests/fixtures/protocol_client.py"
     [ -f "$PROTOCOL_CLIENT" ] || {
         echo "opi-sandbox-smoke: protocol client not found: $PROTOCOL_CLIENT" >&2; exit 2; }
     if [ -n "$ARCHIVE_SHA" ]; then

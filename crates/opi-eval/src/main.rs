@@ -103,7 +103,7 @@ enum Command {
         /// Repository `crates/opi-eval/tests/fixtures` root.
         #[arg(long)]
         fixtures: std::path::PathBuf,
-        /// `scripts/phase18-scripted-provider.py`.
+        /// `crates/opi-eval/scripts/phase18-scripted-provider.py`.
         #[arg(long)]
         provider: std::path::PathBuf,
         /// Resolved native material manifest (task 18.14.1): reruns the

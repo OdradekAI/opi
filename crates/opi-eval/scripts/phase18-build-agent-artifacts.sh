@@ -20,7 +20,7 @@
 #   and the canonical bundle path and digest.
 #
 # Usage:
-#   scripts/phase18-build-agent-artifacts.sh --opi-source DIR --pi-source DIR --out DIR
+#   crates/opi-eval/scripts/phase18-build-agent-artifacts.sh --opi-source DIR --pi-source DIR --out DIR
 #
 # Emits <out>/opi-identity.json and <out>/pi-identity.json
 # (schema `phase18-agent-identity/1`). Fails closed on any drift.

@@ -21,11 +21,11 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("verify-phase18-materialization-ci.py")
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 WORKFLOW_PATH = ".github/workflows/phase18-lock-materialization.yml"
-MATERIALIZER = "scripts/phase18-materialize-locks.sh"
-CI_VERIFIER = "scripts/verify-phase18-materialization-ci.py"
+MATERIALIZER = "crates/opi-eval/scripts/phase18-materialize-locks.sh"
+CI_VERIFIER = "crates/opi-eval/scripts/verify-phase18-materialization-ci.py"
 STATIC_LOCK = "crates/opi-eval/external-locks/static/linux-x86_64.json"
 
 ACTION_COMMIT = "a" * 40
@@ -212,7 +212,7 @@ class RejectsWorkflowDrift(unittest.TestCase):
 class RejectsUnhashedInvokedProducer(unittest.TestCase):
     def test_unpinned_script_argument_rejects(self) -> None:
         ws = Workspace()
-        rogue = ws.root / "scripts/rogue-producer.sh"
+        rogue = ws.root / "crates/opi-eval/scripts/rogue-producer.sh"
         rogue.write_bytes(b"#!/usr/bin/env bash\n")
         result = subprocess.run(
             [

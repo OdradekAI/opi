@@ -196,7 +196,7 @@ exit 0
     // stand-in agents never contact a listener in local gates.
     let provider = mat.join("phase18-scripted-provider.py");
     fs::copy(
-        manifest_dir().join("../../scripts/phase18-scripted-provider.py"),
+        manifest_dir().join("scripts/phase18-scripted-provider.py"),
         &provider,
     )
     .unwrap();
@@ -412,7 +412,7 @@ exit 0
 
     let provider = mat.join("phase18-scripted-provider.py");
     fs::copy(
-        manifest_dir().join("../../scripts/phase18-scripted-provider.py"),
+        manifest_dir().join("scripts/phase18-scripted-provider.py"),
         &provider,
     )
     .unwrap();
@@ -881,7 +881,7 @@ fn run_conformance_native(
         .arg("--fixtures")
         .arg(fixtures())
         .arg("--provider")
-        .arg(manifest_dir().join("../../scripts/phase18-scripted-provider.py"))
+        .arg(manifest_dir().join("scripts/phase18-scripted-provider.py"))
         .arg("--native-material")
         .arg(&staged.material)
         .output()

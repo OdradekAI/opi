@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hermetic tests for scripts/verify-phase18-ci.py (task 18.16).
+"""Hermetic tests for crates/opi-eval/scripts/verify-phase18-ci.py.
 
 The CI verifier owns two contracts:
 
@@ -14,7 +14,7 @@ The CI verifier owns two contracts:
   bytes digest, runner, required-job set).
 
 Usage:
-    python scripts/test_verify_phase18_ci.py
+    python crates/opi-eval/scripts/test_verify_phase18_ci.py
 """
 
 from __future__ import annotations
@@ -144,7 +144,7 @@ class StaticWorkflowContract(unittest.TestCase):
         return verifier.verify_workflow_static(text)
 
     def test_repository_workflow_passes(self) -> None:
-        repo = Path(__file__).resolve().parents[1]
+        repo = Path(__file__).resolve().parents[3]
         text = (repo / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         self.assertEqual([], self.run_static(text))
 

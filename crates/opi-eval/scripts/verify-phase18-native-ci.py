@@ -15,11 +15,11 @@ material, builds both agents locked with compiler-artifact selection,
 and uploads only the sealed artifact after redaction.
 
 Usage:
-  python scripts/verify-phase18-native-ci.py \
+  python crates/opi-eval/scripts/verify-phase18-native-ci.py \
     --workflow .github/workflows/phase18-native-smoke.yml \
-    --script scripts/phase18-native-smoke.sh \
-    --build-script scripts/phase18-build-agent-artifacts.sh \
-    --provider scripts/phase18-scripted-provider.py
+    --script crates/opi-eval/scripts/phase18-native-smoke.sh \
+    --build-script crates/opi-eval/scripts/phase18-build-agent-artifacts.sh \
+    --provider crates/opi-eval/scripts/phase18-scripted-provider.py
 
 Exit 0 accepts; exit 1 prints one `finding <family>` line per violation.
 """
@@ -117,13 +117,13 @@ def verify_workflow(text: str, f: Findings) -> None:
                   "materialize-configs", "conformance-rerun",
                   "oracle-preflight", "run-trials", "seal-upload",
                   "record-upload-identity"):
-        if f"scripts/phase18-native-smoke.sh {stage}" not in text:
+        if f"crates/opi-eval/scripts/phase18-native-smoke.sh {stage}" not in text:
             family = ("canary-preflight" if stage == "preflight-canaries"
                       else "stage")
             f.reject(family, f"the workflow must invoke stage {stage}")
-    if "scripts/phase18-build-agent-artifacts.sh" not in text:
+    if "crates/opi-eval/scripts/phase18-build-agent-artifacts.sh" not in text:
         f.reject("binding", "the workflow must bind the agent builder script")
-    if "scripts/phase18-scripted-provider.py" not in text:
+    if "crates/opi-eval/scripts/phase18-scripted-provider.py" not in text:
         f.reject("binding", "the workflow must bind the checked-in provider")
     if ("path: ${{ runner.temp }}/phase18-native/08-seal/"
             "sealed-artifact.tar") not in text:

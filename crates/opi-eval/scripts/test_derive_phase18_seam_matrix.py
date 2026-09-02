@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hermetic tests for scripts/derive-phase18-seam-matrix.py (task 18.16).
+"""Hermetic tests for crates/opi-eval/scripts/derive-phase18-seam-matrix.py.
 
 The derivation is tested against synthetic sealed stages small enough to
 build in a temp directory: the field/evidence classification, the
@@ -7,7 +7,7 @@ lifecycle-edge rejections, and the fail-closed chain behavior (a stage
 without a sealed manifest never reaches derivation).
 
 Usage:
-    python scripts/test_derive_phase18_seam_matrix.py
+    python crates/opi-eval/scripts/test_derive_phase18_seam_matrix.py
 """
 
 from __future__ import annotations

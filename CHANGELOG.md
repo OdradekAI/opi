@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `opi-eval`: Phase 18 helper, verifier, smoke, contract-test, and CI fixture
+  scripts now live under `crates/opi-eval/scripts/`, so the Independent
+  Companion owns its project-specific tooling.
+- `opi-sandbox`: its package manifest template and package, smoke, and
+  package-helper scripts now live under `crates/opi-sandbox/`, so the
+  Independent Companion owns its project-specific tooling.
+
 ### Fixed
 
 - `opi-eval`: Phase 18 audit remediation now rejects artifact-directory and
@@ -68,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Agent's, and the offline headline selection requires the native
   grader role and grader source together instead of recovering the report
   by key suffix; source-role mismatches yield no headline.
-- `scripts/phase18-native-smoke.sh`: the conformance-rerun stage receipt
+- `crates/opi-eval/scripts/phase18-native-smoke.sh`: the conformance-rerun stage receipt
   reports the actual executed case count (Phase 18 remediation). The
   count derives from a loop counter incremented after each successful
   case instead of a hardcoded literal, and the CI contract test compares
@@ -88,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Phase 18 task 18.16: offline seam-evidence derivation
-  (`scripts/derive-phase18-seam-matrix.py`) that consumes the verified
+  (`crates/opi-eval/scripts/derive-phase18-seam-matrix.py`) that consumes the verified
   18.15 sealed artifact and commits the artifact-derived shared /
   adapter-private / rejected matrix
   (`crates/opi-eval/docs/seam-evidence-matrix.md`); local acceptance
@@ -99,7 +108,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checks (`crates/opi-eval/tests/rollback_contract.rs`); the
   documentation contract for the retained roadmap
   (`scripts/opi-doc-check.py`); the CI attestation contract verifier
-  (`scripts/verify-phase18-ci.py`) plus the minimal three-platform
+  (`crates/opi-eval/scripts/verify-phase18-ci.py`) plus the minimal three-platform
   pull-request attestation producer in CI that records the pull-request
   head separately from the merge-ref checkout without replacing any
   merge-ref integration check; and the single authoritative Phase-exit

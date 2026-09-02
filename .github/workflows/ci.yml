@@ -152,19 +152,19 @@ jobs:
       - name: Package native archive
         shell: bash
         run: |
-          bash scripts/package-opi-sandbox.sh \
+          bash crates/opi-sandbox/scripts/package-opi-sandbox.sh \
             --binary target/release/opi-sandbox \
             --artifact-dir target/opi-artifacts/ci-${{ matrix.os }}
       - name: Verify native archive
         shell: bash
         run: |
-          bash scripts/package-opi-sandbox.sh \
+          bash crates/opi-sandbox/scripts/package-opi-sandbox.sh \
             --artifact-dir target/opi-artifacts/ci-${{ matrix.os }} \
             --verify
       - name: Standalone smoke (extracted archive, no opi on PATH)
         shell: bash
         run: |
-          bash scripts/opi-sandbox-smoke.sh \
+          bash crates/opi-sandbox/scripts/opi-sandbox-smoke.sh \
             --binary target/opi-artifacts/ci-${{ matrix.os }}/extracted/bin/opi-sandbox \
             --artifact-dir target/opi-artifacts/ci-${{ matrix.os }}/smoke \
             --archive target/opi-artifacts/ci-${{ matrix.os }}/opi-sandbox-*.tar.gz
@@ -223,7 +223,7 @@ jobs:
   # every ordinary job uses, adds evidence without replacing any merge-ref
   # integration check with head-only validation, and never checks the head
   # out. The receipt is the input contract of
-  # scripts/verify-phase18-ci.py (task 18.16.1). Job and matrix shape are
+  # crates/opi-eval/scripts/verify-phase18-ci.py (task 18.16.1). Job and matrix shape are
   # pinned by that verifier's static mode.
   phase18_attestation:
     name: Phase 18 attestation (${{ matrix.os }})

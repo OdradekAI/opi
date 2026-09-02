@@ -5,7 +5,7 @@ Task 18.16. This is assurance, not runtime: the script consumes the
 successful, unexpired 18.15 outer upload receipt plus the downloaded
 sealed artifact (zip, tar, or an already-unpacked stage directory) and
 NEVER reruns native work. It re-verifies the binding and causal records
-through the same fail-closed machinery `scripts/verify-phase18-native-
+through the same fail-closed machinery `crates/opi-eval/scripts/verify-phase18-native-
 artifact.py` owns (identity, seal, dispatch, trials, provider, canary,
 conformance rerun, oracle preflights, material, agent evidence), then
 requires the typed trajectory/span records and native-source edges for
@@ -24,7 +24,7 @@ native values the contract refuses to fabricate into parity).
 matrix with the committed document.
 
 Usage:
-  python scripts/derive-phase18-seam-matrix.py \
+  python crates/opi-eval/scripts/derive-phase18-seam-matrix.py \
       --receipt <upload-receipt.json> --artifact <sealed.zip|tar|stage> \
       --require-trajectory-spans \
       --output crates/opi-eval/docs/seam-evidence-matrix.md [--verify] \
@@ -231,7 +231,7 @@ def render_matrix(matrix: dict, binding: dict) -> str:
     lines: list[str] = []
     lines.append("# Phase 18 seam-evidence matrix")
     lines.append("")
-    lines.append("Derived by `scripts/derive-phase18-seam-matrix.py` from the")
+    lines.append("Derived by `crates/opi-eval/scripts/derive-phase18-seam-matrix.py` from the")
     lines.append("sealed Phase 18 native artifact. Conformance-only evidence:")
     lines.append("no score, leaderboard, or product claim is made here.")
     lines.append("")

@@ -8,14 +8,14 @@
 # the pinned expectations.
 #
 # Usage:
-#   powershell -File scripts\phase18-eval-smoke.ps1 [-Fixtures DIR] [-Out DIR]
-#   powershell -File scripts\phase18-eval-smoke.ps1 -Mode report -Bundle RUN_ROOT -ArtifactDir DIR
+#   powershell -File crates\opi-eval\scripts\phase18-eval-smoke.ps1 [-Fixtures DIR] [-Out DIR]
+#   powershell -File crates\opi-eval\scripts\phase18-eval-smoke.ps1 -Mode report -Bundle RUN_ROOT -ArtifactDir DIR
 
 param(
     [string]$Mode = "all",
     [string]$Bundle = "",
     [string]$ArtifactDir = "",
-    [string]$Fixtures = (Join-Path $PSScriptRoot "..\crates\opi-eval\tests\fixtures"),
+    [string]$Fixtures = (Join-Path $PSScriptRoot "..\tests\fixtures"),
     [string]$Out = (Join-Path ([System.IO.Path]::GetTempPath()) ("phase18-eval-smoke-" + [System.IO.Path]::GetRandomFileName()))
 )
 

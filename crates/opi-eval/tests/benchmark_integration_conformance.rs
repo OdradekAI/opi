@@ -37,7 +37,7 @@ fn run_case(adapter: &str, case: &str) -> (i32, serde_json::Value, String) {
         .arg("--provider")
         .arg(
             manifest_dir()
-                .join("../../scripts/phase18-scripted-provider.py")
+                .join("scripts/phase18-scripted-provider.py")
                 .canonicalize()
                 .unwrap(),
         )

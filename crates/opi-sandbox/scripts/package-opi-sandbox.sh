@@ -51,11 +51,11 @@ if [ "$MODE" = "pack" ] && [ -z "$BINARY" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TEMPLATE="$SCRIPT_DIR/../packaging/opi-sandbox/package.toml.template"
+TEMPLATE="$SCRIPT_DIR/../packaging/package.toml.template"
 PACKAGE_HELPER="$SCRIPT_DIR/opi-sandbox-package.py"
-WORKSPACE_MANIFEST="$SCRIPT_DIR/../Cargo.toml"
-SCHEMA_SNAPSHOT="$SCRIPT_DIR/../crates/opi-protocol/tests/snapshots/execution_v1_schema__schema_v1.snap"
-LICENSE_FILE="$SCRIPT_DIR/../LICENSE"
+WORKSPACE_MANIFEST="$SCRIPT_DIR/../../../Cargo.toml"
+SCHEMA_SNAPSHOT="$SCRIPT_DIR/../../opi-protocol/tests/snapshots/execution_v1_schema__schema_v1.snap"
+LICENSE_FILE="$SCRIPT_DIR/../../../LICENSE"
 
 # Portable SHA-256: macOS ships `shasum -a 256`; Linux and git-bash ship
 # `sha256sum`. Both emit lowercase hex. The stream form reads raw stdin bytes.

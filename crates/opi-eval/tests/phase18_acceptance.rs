@@ -29,7 +29,7 @@ const BASELINE_COMMIT: &str = "1ad534b73864b7894929feabd7d48104aa0b0c05";
 const BASELINE_DIR: &str = "crates/opi-eval/tests/fixtures/minimal-runtime/pre-phase18";
 
 #[cfg(unix)]
-const CAPTURE_SCRIPT: &str = "scripts/capture-phase18-minimal-runtime-baseline.py";
+const CAPTURE_SCRIPT: &str = "crates/opi-eval/scripts/capture-phase18-minimal-runtime-baseline.py";
 
 /// Product source anchors whose bytes are digest-bound by the baseline
 /// receipt; identical bytes at the current tree prove the ordinary runtime

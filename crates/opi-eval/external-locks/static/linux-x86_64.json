@@ -7,18 +7,18 @@
     "admission": "digest",
     "workflow": {
       "path": ".github/workflows/phase18-lock-materialization.yml",
-      "sha256": "e986410e45543a69d8723b796a9932c2a3a45862b5f535915edd6b17162671c1"
+      "sha256": "b0dc1d51dbac32c52ead7758d98cd2e8ddff26a7c6e73dd5835ec8aa83bdc20b"
     },
     "producers": [
       {
-        "path": "scripts/phase18-materialize-locks.sh",
+        "path": "crates/opi-eval/scripts/phase18-materialize-locks.sh",
         "role": "materializer",
         "sha256": "102a0621da153faf5206a723cc3dab846c9e442ab0e166f3610535f1410eb19d"
       },
       {
-        "path": "scripts/verify-phase18-materialization-ci.py",
+        "path": "crates/opi-eval/scripts/verify-phase18-materialization-ci.py",
         "role": "verifier",
-        "sha256": "70750cc9d59c34d8ace8a0cf311d42fd9e9a1eb3884891d85bd0b7c0be439b92"
+        "sha256": "e240982f81494e2ab0ef7f805cb2c4843249000bef311eaf31746e78dd5f6393"
       }
     ],
     "actions": [
@@ -459,7 +459,7 @@
   "adapter_policy": [
     {
       "id": "curl-shim",
-      "producer": "scripts/phase18-materialize-locks.sh",
+      "producer": "crates/opi-eval/scripts/phase18-materialize-locks.sh",
       "identity": "receipt-recorded"
     }
   ],

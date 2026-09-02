@@ -1,8 +1,8 @@
 # Phase 18 native-ci verifier fixtures (task 18.14)
 
-Standalone negative fixtures for `scripts/verify-phase18-native-ci.py`.
+Standalone negative fixtures for `crates/opi-eval/scripts/verify-phase18-native-ci.py`.
 Most rejection families are exercised by mutating copies of the real
-committed producer files inside `scripts/test_verify_phase18_native_ci.py`;
+committed producer files inside `crates/opi-eval/scripts/test_verify_phase18_native_ci.py`;
 the files here are independent negatives that keep rejecting even if the
 real files drift, so a regression in the real contract cannot silently
 mask a verifier gap.

@@ -20,9 +20,9 @@ Receipt mode validates one downloaded attestation receipt against the
 same identity contract.
 
 Usage:
-  python scripts/verify-phase18-ci.py --workflow .github/workflows/ci.yml
-  python scripts/verify-phase18-ci.py --receipt <downloaded-receipt.json>
-  python scripts/verify-phase18-ci.py --terminal --expected-head <sha> \
+  python crates/opi-eval/scripts/verify-phase18-ci.py --workflow .github/workflows/ci.yml
+  python crates/opi-eval/scripts/verify-phase18-ci.py --receipt <downloaded-receipt.json>
+  python crates/opi-eval/scripts/verify-phase18-ci.py --terminal --expected-head <sha> \
       --run-metadata <github-run.json> --jobs-metadata <github-jobs.json> \
       --artifact-metadata <github-artifact.json> \
       --inner-receipt <downloaded-inner-receipt.json> \

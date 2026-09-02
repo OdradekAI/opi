@@ -54,14 +54,14 @@ jobs:
             echo "FAIL: workflow bytes at $GITHUB_WORKFLOW_SHA drifted from the candidate commit"
             exit 1
           fi
-          python3 scripts/verify-phase18-materialization-ci.py --workflow "$workflow_path" --script scripts/phase18-materialize-locks.sh
+          python3 crates/opi-eval/scripts/verify-phase18-materialization-ci.py --workflow "$workflow_path" --script crates/opi-eval/scripts/phase18-materialize-locks.sh
 
       - name: Run the Linux lock materializer
         env:
           CANDIDATE: ${{ inputs.candidate_sha }}
         run: |
           set -euo pipefail
-          bash scripts/phase18-materialize-locks.sh \
+          bash crates/opi-eval/scripts/phase18-materialize-locks.sh \
             --candidate-commit "$CANDIDATE" \
             --static-lock crates/opi-eval/external-locks/static/linux-x86_64.json \
             --output-dir "${RUNNER_TEMP}/phase18-materialization"

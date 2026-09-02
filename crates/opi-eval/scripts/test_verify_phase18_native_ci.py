@@ -14,7 +14,7 @@ and negative reachability probes, the canary-oracle preflight, no mutable
 external identities, no ambient credentials, and seal-before-upload.
 
 This is the smoke-addendum gate for task 18.14
-(``python scripts/test_verify_phase18_native_ci.py``).
+(``python crates/opi-eval/scripts/test_verify_phase18_native_ci.py``).
 """
 
 from __future__ import annotations
@@ -26,12 +26,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[3]
 VERIFIER = Path(__file__).with_name("verify-phase18-native-ci.py")
 WORKFLOW = REPO_ROOT / ".github/workflows/phase18-native-smoke.yml"
-PRODUCER = REPO_ROOT / "scripts/phase18-native-smoke.sh"
-BUILDER = REPO_ROOT / "scripts/phase18-build-agent-artifacts.sh"
-PROVIDER = REPO_ROOT / "scripts/phase18-scripted-provider.py"
+PRODUCER = REPO_ROOT / "crates/opi-eval/scripts/phase18-native-smoke.sh"
+BUILDER = REPO_ROOT / "crates/opi-eval/scripts/phase18-build-agent-artifacts.sh"
+PROVIDER = REPO_ROOT / "crates/opi-eval/scripts/phase18-scripted-provider.py"
 FIXTURES = Path(__file__).parent / "fixtures/phase18-native-ci"
 
 
@@ -181,8 +181,8 @@ class Phase18NativeCiVerifier(unittest.TestCase):
     def test_missing_canary_preflight_step_rejects(self) -> None:
         self.assert_rejects(
             self.ws(workflow_text=WORKFLOW.read_text(encoding="utf-8").replace(
-                "          bash scripts/phase18-native-smoke.sh preflight-canaries",
-                "          bash scripts/phase18-native-smoke.sh host-identity")),
+                "          bash crates/opi-eval/scripts/phase18-native-smoke.sh preflight-canaries",
+                "          bash crates/opi-eval/scripts/phase18-native-smoke.sh host-identity")),
             "canary-preflight")
 
     def test_upload_before_seal_rejects(self) -> None:
@@ -261,15 +261,15 @@ class Phase18NativeCiVerifier(unittest.TestCase):
     def test_missing_materialize_stage_rejects(self) -> None:
         self.assert_rejects(
             self.ws(workflow_text=WORKFLOW.read_text(encoding="utf-8").replace(
-                "scripts/phase18-native-smoke.sh materialize-configs",
-                "scripts/phase18-native-smoke.sh verify-dispatch")),
+                "crates/opi-eval/scripts/phase18-native-smoke.sh materialize-configs",
+                "crates/opi-eval/scripts/phase18-native-smoke.sh verify-dispatch")),
             "materialize")
 
     def test_missing_oracle_preflight_stage_rejects(self) -> None:
         self.assert_rejects(
             self.ws(workflow_text=WORKFLOW.read_text(encoding="utf-8").replace(
-                "scripts/phase18-native-smoke.sh oracle-preflight",
-                "scripts/phase18-native-smoke.sh verify-dispatch")),
+                "crates/opi-eval/scripts/phase18-native-smoke.sh oracle-preflight",
+                "crates/opi-eval/scripts/phase18-native-smoke.sh verify-dispatch")),
             "stage")
 
     def test_ambient_credential_usage_rejects(self) -> None:
