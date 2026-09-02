@@ -114,6 +114,12 @@ class ScriptedProviderListenerTest(unittest.TestCase):
     OpenAI-compatible Chat Completions serving, normalized request log."""
 
     @staticmethod
+    def stop_listener(process: subprocess.Popen[str]) -> None:
+        if process.poll() is None:
+            process.kill()
+        process.communicate(timeout=10)
+
+    @staticmethod
     def start_listener(request_log: Path):
         import socket
 
@@ -130,7 +136,7 @@ class ScriptedProviderListenerTest(unittest.TestCase):
         )
         readiness = process.stdout.readline().strip()
         if not readiness.startswith("listening "):
-            process.kill()
+            ScriptedProviderListenerTest.stop_listener(process)
             raise AssertionError(f"no readiness line: {readiness!r}")
         host, ready_port = readiness.split(" ", 1)[1].rsplit(":", 1)
         return process, f"http://{host}:{ready_port}"
@@ -168,7 +174,7 @@ class ScriptedProviderListenerTest(unittest.TestCase):
                 status_a, body_a = self.post(base, self.chat_body(stream=True))
                 status_b, body_b = self.post(base, self.chat_body(stream=True))
             finally:
-                process.kill()
+                self.stop_listener(process)
         self.assertEqual(status_a, 200)
         self.assertEqual(body_a, body_b)
         self.assertTrue(body_a.endswith(LISTENER_DONE))
@@ -202,7 +208,7 @@ class ScriptedProviderListenerTest(unittest.TestCase):
             try:
                 status, body = self.post(base, self.chat_body(stream=False))
             finally:
-                process.kill()
+                self.stop_listener(process)
         self.assertEqual(status, 200)
         decoded = json.loads(body)
         self.assertEqual(decoded["object"], "chat.completion")
@@ -219,7 +225,7 @@ class ScriptedProviderListenerTest(unittest.TestCase):
                 self.post(base, body)
                 self.post(base, body)
             finally:
-                process.kill()
+                self.stop_listener(process)
             log_text = log.read_text(encoding="utf-8")
         lines = [json.loads(line) for line in log_text.splitlines() if line]
         self.assertEqual(len(lines), 2)
@@ -244,7 +250,7 @@ class ScriptedProviderListenerTest(unittest.TestCase):
                 except urllib.error.HTTPError as error:
                     get_status = error.code
             finally:
-                process.kill()
+                self.stop_listener(process)
         self.assertEqual(status, 404)
         self.assertEqual(get_status, 404)
 
@@ -257,7 +263,7 @@ class ScriptedProviderListenerTest(unittest.TestCase):
                 for _ in range(66):
                     statuses.append(self.post(base, self.chat_body(stream=False))[0])
             finally:
-                process.kill()
+                self.stop_listener(process)
         self.assertEqual(statuses[:64], [200] * 64)
         self.assertEqual(set(statuses[64:]), {429})
 
