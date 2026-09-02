@@ -1,0 +1,31 @@
+name: opi-eval Linux native smoke (negative fixture)
+
+# Negative fixture: floating action tag. Every action must be pinned by a
+# full 40-hex commit SHA; `v4` is a mutable ref and must be rejected.
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: "Exact the native-smoke producer contract commit that owns this producer contract"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opi-eval-linux-native-smoke
+  cancel-in-progress: false
+
+jobs:
+  native_smoke:
+    if: github.repository == 'OdradekAI/opi'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Check out the candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0

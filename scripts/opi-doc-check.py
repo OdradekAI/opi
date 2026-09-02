@@ -12,6 +12,13 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent.parent
 ERRORS: list[str] = []
+OPI_EVAL_ACTIVE_NAMING_ROOTS = (
+    "crates/opi-eval",
+    ".github/workflows/opi-eval-external-lock-materialization.yml",
+    ".github/workflows/opi-eval-native-smoke.yml",
+    ".github/workflows/ci.yml",
+)
+OPI_EVAL_PROJECT_PHASE_RE = re.compile(r"(?:phase[-_ ]?18|p18[-_])", re.IGNORECASE)
 MINIMUM_CHANGE_TRACE_CONTRACT = {
     ".claude/skills/opi-implement/SKILL.md": (
         "**Minimum-change trace rule:**",
@@ -349,36 +356,6 @@ REMEDIATION_APPLY_ONLY_REFERENCES = (
 )
 
 
-PHASE18_ROADMAP_CONTRACT = {
-    "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md": (
-        "Terminal Bench 2.1",
-        "Terminal Bench 3.0",
-        "DeepSWE v1.1",
-        "NL2Repo",
-        "ProgramBench (Almost Solved)",
-        "FrontierSWE",
-        "SWE-Marathon v1.1",
-        "PostTrainBench",
-        "CyberGym",
-        "ExploitGym (2h / 6h)",
-        "ExploitBench",
-        "Toolathlon Verified",
-        "AutomationBench v1.0.6",
-        "Agents' Last Exam (ALE-CLI)",
-        "HLE w/ Tools",
-        "GDPval-AA v2",
-        "Z.ai Code Bench",
-        "Not admitted",
-        "Phase 18 coding foundation",
-        "Remaining coding",
-        "| Cyber |",
-        "| Agentic |",
-        "Private evidence",
-        "experiment class",
-        "separately approved gate",
-    ),
-}
-
 EVAL_BEHAVIOR_BASELINE_CONTRACT = {
     ".claude/skills/opi-eval/SKILL.md": (
         "sole deterministic acceptance baseline",
@@ -622,15 +599,6 @@ def check_remediation_reference_scope() -> None:
             ERRORS.append(f"{rel}: apply branch missing reference {[token]!r}")
 
 
-def check_phase18_roadmap_contract() -> None:
-    for rel, tokens in PHASE18_ROADMAP_CONTRACT.items():
-        require_tokens(
-            rel,
-            "phase18 GLM-5.3 roadmap contract",
-            tokens,
-        )
-
-
 def check_eval_behavior_baseline_contract() -> None:
     for rel, tokens in EVAL_BEHAVIOR_BASELINE_CONTRACT.items():
         require_tokens(
@@ -661,6 +629,33 @@ def check_change_scope_check_selection_contract() -> None:
             "change-scope and check-selection contract",
             tokens,
         )
+
+
+def check_opi_eval_active_naming() -> None:
+    for root_rel in OPI_EVAL_ACTIVE_NAMING_ROOTS:
+        root = ROOT / root_rel
+        if not root.exists():
+            ERRORS.append(f"missing active opi-eval naming root: {root_rel}")
+            continue
+        paths = sorted(root.rglob("*")) if root.is_dir() else [root]
+        for path in paths:
+            rel = path.relative_to(ROOT).as_posix()
+            if OPI_EVAL_PROJECT_PHASE_RE.search(rel):
+                ERRORS.append(
+                    f"{rel}: active opi-eval path contains project-phase naming"
+                )
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            for line_number, line in enumerate(text.splitlines(), start=1):
+                if OPI_EVAL_PROJECT_PHASE_RE.search(line):
+                    ERRORS.append(
+                        f"{rel}:{line_number}: active opi-eval content "
+                        "contains project-phase naming"
+                    )
 
 
 def workspace_version() -> str:
@@ -1157,7 +1152,6 @@ def main() -> int:
     check_minimum_change_trace_contract()
     check_assurance_workflow_contract()
     check_eval_behavior_baseline_contract()
-    check_phase18_roadmap_contract()
     check_root_guidance_lockstep()
     check_workspace_graph()
     phase15_safety_sandbox_docs()
@@ -1165,6 +1159,7 @@ def main() -> int:
     check_opi_spec_evidence_refinement_contract()
     check_opi_document_prose_contract()
     check_change_scope_check_selection_contract()
+    check_opi_eval_active_naming()
     check_top_level_spec()
     check_current_contracts(docs)
     for rel in [*docs, *skill_docs, "AGENTS.md", "CLAUDE.md"]:

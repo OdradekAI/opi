@@ -1,8 +1,8 @@
 # Synthetic DeepSWE v1.1 wiring fixture. Not a real official task package,
-# native verifier, or native run (P18-BMK-009): it exists only to exercise
+# native verifier, or native run (EVAL-BMK-009): it exists only to exercise
 # the byte-table admission and pier-report import wiring through the shared
-# contract until task 18.15 registers real reviewed bytes.
-schema = "phase18-benchmark-profile/1"
+# contract until the native smoke registers real reviewed bytes.
+schema = "opi-eval-benchmark-profile/1"
 benchmark = "deepswe"
 revision = "v1.1"
 

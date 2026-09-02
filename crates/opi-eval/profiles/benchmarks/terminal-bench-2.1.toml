@@ -1,11 +1,11 @@
-# Declarative Terminal-Bench 2.1 benchmark profile for the Phase 18 eval seam.
+# Declarative Terminal-Bench 2.1 benchmark profile for opi-eval.
 # Identity, complete pinned task-package file table, native verifier entry,
 # and limits only: no grading policy, no parser configuration, no credentials.
 # Pinned to harbor-framework/terminal-bench-2-1 commit
 # 7131e4375048a0e408a8fb404b5f499d726b695b (no tag exists; the full commit is
 # the version lock) exactly as admitted by the static external lock.
 
-schema = "phase18-benchmark-profile/1"
+schema = "opi-eval-benchmark-profile/1"
 benchmark = "terminal-bench"
 revision = "2.1"
 

@@ -1,4 +1,4 @@
-//! `opi-eval` binary entry point (provisional Phase 18 seam).
+//! `opi-eval` binary entry point.
 
 use std::process::ExitCode;
 
@@ -9,7 +9,7 @@ use opi_eval::cli;
 #[derive(Debug, Parser)]
 #[command(
     name = "opi-eval",
-    about = "Unpublished Independent Companion for cross-agent evaluation experiments (provisional Phase 18 seam)",
+    about = "Unpublished Independent Companion for agent-neutral cross-agent evaluation",
     disable_version_flag = true
 )]
 struct Cli {
@@ -24,15 +24,13 @@ enum Command {
         /// Path to the experiment document.
         #[arg(long)]
         config: std::path::PathBuf,
-        /// Resolved native material manifest (task 18.14.1): derives and
+        /// Resolved native material manifest (native mode): derives and
         /// appends the native integrity identity for config pinning.
         #[arg(long)]
         native_material: Option<std::path::PathBuf>,
     },
-    /// Run one fixture-level conformance case against a concrete adapter
-    /// through the shared execution seams (task 18.10.1).
     /// Run one assembled hermetic experiment end to end through the
-    /// paired evaluation runner (task 18.12).
+    /// paired evaluation runner.
     Run {
         /// Path to the experiment document.
         #[arg(long)]
@@ -56,7 +54,7 @@ enum Command {
         /// canary found in staged exportable content blocks sealing.
         #[arg(long)]
         canaries: Option<std::path::PathBuf>,
-        /// Resolved native material manifest (task 18.14.1): exact built
+        /// Resolved native material manifest (native mode): exact built
         /// agents, materialized task packages, pinned verifier and oracle
         /// entrypoints, and the scripted-provider listener endpoint.
         #[arg(long)]
@@ -66,14 +64,14 @@ enum Command {
         preflight_only: bool,
     },
     /// Re-verify every sealed trial bundle under a run root without
-    /// starting an Agent or mutating anything (task 18.13).
+    /// starting an Agent or mutating anything.
     Regrade {
         /// Run root holding `trials/<id>/bundle` sealed bundles.
         #[arg(long)]
         root: std::path::PathBuf,
     },
     /// Recompute and render the offline normalized report from sealed
-    /// assembled outputs (task 18.13).
+    /// assembled outputs.
     Report {
         /// Run root holding sealed bundles, receipts, and the persisted
         /// run report.
@@ -103,10 +101,10 @@ enum Command {
         /// Repository `crates/opi-eval/tests/fixtures` root.
         #[arg(long)]
         fixtures: std::path::PathBuf,
-        /// `crates/opi-eval/scripts/phase18-scripted-provider.py`.
+        /// `crates/opi-eval/scripts/scripted-provider.py`.
         #[arg(long)]
         provider: std::path::PathBuf,
-        /// Resolved native material manifest (task 18.14.1): reruns the
+        /// Resolved native material manifest (native mode): reruns the
         /// admitted case subset through the exact built executables.
         #[arg(long)]
         native_material: Option<std::path::PathBuf>,

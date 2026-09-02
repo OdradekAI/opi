@@ -1,5 +1,5 @@
-//! Crate-private authority-transition ledger (Phase 18 task 18.12,
-//! `P18-FAL-002`).
+//! Crate-private authority-transition ledger (the assembled runner,
+//! `EVAL-FAL-002`).
 //!
 //! The assembled runner performs five authority transitions per trial:
 //! dispatching the Agent process, recording settlement, dispatching the

@@ -1,9 +1,9 @@
-# Conformance fixtures (task 18.10.1)
+# Conformance fixtures
 
 Synthetic, self-authored fixtures for the `opi-eval conformance` suites.
 These are **not** official benchmark or agent bytes: they exist so the two
 integration binaries can drive the production conformance facade
-hermetically (`P18-BMK-009`, `P18-AGT-006`).
+hermetically (`EVAL-BMK-009`, `EVAL-AGT-006`).
 
 Rules for everything under this directory:
 
@@ -16,9 +16,9 @@ Rules for everything under this directory:
   and native verifiers are generated at runtime inside the run root; their
   behavior is selected by `OPI_EVAL_CONFORMANCE_BEHAVIOR` and is bounded by
   construction.
-- The local scripted provider fixture is `crates/opi-eval/scripts/phase18-scripted-provider.py`
-  (schema `phase18-scripted-provider/1`), tested by
-  `crates/opi-eval/scripts/test_phase18_scripted_provider.py`.
+- The local scripted provider fixture is `crates/opi-eval/scripts/scripted-provider.py`
+  (schema `opi-eval-scripted-provider/1`), tested by
+  `crates/opi-eval/scripts/test_scripted_provider.py`.
 
 ## Contents
 
@@ -29,5 +29,5 @@ Rules for everything under this directory:
   has its own revision-local `ctrf/unknown-schema.json`; DeepSWE uses
   `pier-report/drift.json`.)
 
-Task 18.15 reruns these suites through the committed exact executables and
+The native smoke reruns these suites through the committed exact executables and
 replaces stand-ins where real pinned bytes are admitted.

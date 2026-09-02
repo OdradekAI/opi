@@ -1,3 +1,0 @@
-   Compiling opi-coding-agent v0.8.1 (/home/luiz/p18-recapture/crates/opi-coding-agent)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.39s
-     Running tests/phase17_cross_mode.rs (target/debug/deps/phase17_cross_mode-998cc69aeb4b3176)

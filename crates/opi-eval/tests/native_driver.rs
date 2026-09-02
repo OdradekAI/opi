@@ -1,4 +1,4 @@
-//! Native driving-mode integration tests (task 18.14.1).
+//! Native driving-mode integration tests (native mode).
 //!
 //! Each test stages a resolved-material manifest whose agent, verifier,
 //! and oracle entries are deterministic local stand-in executables and
@@ -10,7 +10,7 @@
 //! verifier reports written into the trace root, sealing, and the
 //! comparison report. This proves the native driver plumbing only; the
 //! real built Opi/pi programs, official task environments, and unchanged
-//! upstream verifiers run at the task 18.15 dispatch. No paid provider,
+//! upstream verifiers run at the native smoke dispatch. No paid provider,
 //! credential, network listener, or user-global resource is touched.
 
 #![cfg(unix)]
@@ -164,7 +164,7 @@ exit 0
 # The stream is replayed with the native model identity projected into it,
 # exactly as the real pi emits its selected model on every event.
 sed -e 's/"provider":"local"/"provider":"scripted"/' \
-    -e 's/"model":"scripted"/"model":"scripted\/phase18"/' "{stream}"
+    -e 's/"model":"scripted"/"model":"scripted\/eval"/' "{stream}"
 printf 'pi stand-in answer\n' > answer.txt
 exit 0
 "#,
@@ -194,9 +194,9 @@ exit 0
 
     // The provider script copy is digest-pinned identity only here; the
     // stand-in agents never contact a listener in local gates.
-    let provider = mat.join("phase18-scripted-provider.py");
+    let provider = mat.join("scripted-provider.py");
     fs::copy(
-        manifest_dir().join("scripts/phase18-scripted-provider.py"),
+        manifest_dir().join("scripts/scripted-provider.py"),
         &provider,
     )
     .unwrap();
@@ -209,7 +209,7 @@ exit 0
         &material,
         format!(
             r#"{{
-  "schema": "phase18-native-material/1",
+  "schema": "opi-eval-native-material/1",
   "static_lock": {{"path": {:?}, "sha256": {:?}}},
   "provider": {{
     "script": {{"path": {:?}, "sha256": {:?}}},
@@ -219,17 +219,17 @@ exit 0
   "agents": {{
     "opi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "model": "scripted:phase18",
+      "model": "scripted:eval",
       "provider_env": {{"OPENAI_API_KEY": "<dummy-scripted-credential>"}},
       "config": {{"kind": "opi-toml", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "phase18", "api_key": "<dummy>"}}
+                  "model_id": "eval", "api_key": "<dummy>"}}
     }},
     "pi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "model": "scripted:scripted/phase18",
+      "model": "scripted:scripted/eval",
       "provider_env": {{"PI_API_KEY": "<redacted-dummy>"}},
       "config": {{"kind": "pi-models-json", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "scripted/phase18", "api_key": "<redacted-dummy>"}}
+                  "model_id": "scripted/eval", "api_key": "<redacted-dummy>"}}
     }}
   }},
   "benchmarks": {{
@@ -410,9 +410,9 @@ exit 0
 "#,
     );
 
-    let provider = mat.join("phase18-scripted-provider.py");
+    let provider = mat.join("scripted-provider.py");
     fs::copy(
-        manifest_dir().join("scripts/phase18-scripted-provider.py"),
+        manifest_dir().join("scripts/scripted-provider.py"),
         &provider,
     )
     .unwrap();
@@ -425,7 +425,7 @@ exit 0
         &material,
         format!(
             r#"{{
-  "schema": "phase18-native-material/1",
+  "schema": "opi-eval-native-material/1",
   "static_lock": {{"path": {:?}, "sha256": {:?}}},
   "provider": {{
     "script": {{"path": {:?}, "sha256": {:?}}},
@@ -435,17 +435,17 @@ exit 0
   "agents": {{
     "opi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "model": "scripted:phase18",
+      "model": "scripted:eval",
       "provider_env": {{"OPENAI_API_KEY": "<dummy-scripted-credential>"}},
       "config": {{"kind": "opi-toml", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "phase18", "api_key": "<dummy>"}}
+                  "model_id": "eval", "api_key": "<dummy>"}}
     }},
     "pi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "model": "scripted:scripted/phase18",
+      "model": "scripted:scripted/eval",
       "provider_env": {{"PI_API_KEY": "<redacted-dummy>"}},
       "config": {{"kind": "pi-models-json", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "scripted/phase18", "api_key": "<redacted-dummy>"}}
+                  "model_id": "scripted/eval", "api_key": "<redacted-dummy>"}}
     }}
   }},
   "benchmarks": {{
@@ -489,7 +489,7 @@ exit 0
 
 fn deepswe_experiment_text(integrity_digest: &str) -> String {
     format!(
-        r#"schema = "phase18-experiment/1"
+        r#"schema = "opi-eval-experiment/1"
 experiment_id = "native-deepswe-oracle-test"
 
 [benchmark]
@@ -515,7 +515,7 @@ candidate = "candidate-opi"
 
 [model_controls]
 provider = "scripted"
-model = "phase18"
+model = "eval"
 endpoint_class = "loopback"
 temperature = 0.0
 max_output_tokens = 4096
@@ -636,7 +636,7 @@ fn deepswe_oracle_preflight_enforces_the_positive_native_reward_bar() {
 
 fn experiment_text(_staged: &Staged, integrity_digest: &str) -> String {
     format!(
-        r#"schema = "phase18-experiment/1"
+        r#"schema = "opi-eval-experiment/1"
 experiment_id = "native-driver-test"
 
 [benchmark]
@@ -662,7 +662,7 @@ candidate = "candidate-opi"
 
 [model_controls]
 provider = "scripted"
-model = "phase18"
+model = "eval"
 endpoint_class = "loopback"
 temperature = 0.0
 max_output_tokens = 4096
@@ -765,7 +765,7 @@ fn native_run_drives_paired_trials_through_the_declared_executables() {
     let preflight = run_root.join("preflight/terminal-bench-2.1/preflight-receipt.json");
     let receipt: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&preflight).unwrap()).unwrap();
-    assert_eq!(receipt["schema"], "phase18-oracle-preflight/1");
+    assert_eq!(receipt["schema"], "opi-eval-oracle-preflight/1");
     assert_eq!(receipt["outcome"], "passed");
 
     // Both trials sealed with native agent and verifier evidence.
@@ -881,7 +881,7 @@ fn run_conformance_native(
         .arg("--fixtures")
         .arg(fixtures())
         .arg("--provider")
-        .arg(manifest_dir().join("scripts/phase18-scripted-provider.py"))
+        .arg(manifest_dir().join("scripts/scripted-provider.py"))
         .arg("--native-material")
         .arg(&staged.material)
         .output()

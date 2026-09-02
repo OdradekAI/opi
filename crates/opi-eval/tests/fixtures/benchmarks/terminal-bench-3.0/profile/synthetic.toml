@@ -3,9 +3,9 @@
 # exists to exercise the byte-table admission and CTRF import wiring through
 # the shared BenchmarkExecution contract with pinned fixture bytes. It is not
 # an upstream identity and its CTRF output kind is a wiring hypothesis, not a
-# pinned 3.0 native-output schema (that remains open for task 18.15).
+# pinned 3.0 native-output schema (that remains open for the native smoke).
 
-schema = "phase18-benchmark-profile/1"
+schema = "opi-eval-benchmark-profile/1"
 benchmark = "terminal-bench"
 revision = "3.0"
 

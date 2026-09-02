@@ -1,4 +1,4 @@
-//! Crate-private shared benchmark execution contract (Phase 18 task 18.8).
+//! Crate-private shared benchmark execution contract.
 //!
 //! [`BenchmarkExecution`] consumes [`crate::process::ProcessSupervisor`], an
 //! admitted external lock digest, a read-only [`crate::integrity::IntegrityRecord`],
@@ -9,7 +9,7 @@
 //! verdict mapped into [`crate::failure::FailureBoundaryCode`]. The contract
 //! is benchmark-neutral: task-package shape, verifier argv, native schemas,
 //! and failure mapping are owned by each adapter, never by this module
-//! (`P18-BMK-005`, `P18-BMK-007`).
+//! (`EVAL-BMK-005`, `EVAL-BMK-007`).
 
 use crate::agent::process::{Fact, NativeArtifact};
 use crate::failure::FailureBoundaryCode;
@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 /// Exact benchmark-verifier identity retained on every settled record
-/// (`P18-BMK-001`).
+/// (`EVAL-BMK-001`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BenchmarkIdentity {
     /// Benchmark family, e.g. `terminal-bench`.
@@ -62,14 +62,14 @@ pub(crate) struct BenchmarkRunRequest {
     pub admitted_lock_digest: String,
     /// Immutable integrity record admitting the revision and classifying the
     /// task. Consumed read-only; no adapter or Agent path can mutate it
-    /// (`P18-INT-003`).
+    /// (`EVAL-INT-003`).
     pub integrity: IntegrityRecord,
     /// Additional exact environment entries.
     pub extra_env: BTreeMap<OsString, OsString>,
 }
 
 /// Native metrics with their benchmark-defined names retained verbatim
-/// (`P18-BMK-007`): one fact per CTRF summary counter, never a composite
+/// (`EVAL-BMK-007`): one fact per CTRF summary counter, never a composite
 /// score, never renamed.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct NativeMetrics {
@@ -82,7 +82,7 @@ pub(crate) struct NativeMetrics {
 }
 
 /// Typed rejections of the harbor `jobs/<timestamp>/result.json` layout
-/// (`harbor run -p`, task 18.15 pin): the newest job directory is the
+/// (`harbor run -p`, the native smoke pin): the newest job directory is the
 /// authority and the single trial's verifier rewards are the aggregate.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum HarborResultError {
@@ -194,8 +194,8 @@ pub(crate) fn import_harbor_result(
 }
 
 /// Locates the newest `jobs/<timestamp>/result.json` under `trace_root`
-/// and validates it as Pier's job-result aggregate (`pier run -p`, task
-/// 18.15 pin). Unlike the Terminal-Bench aggregate, a DeepSWE job scores
+/// and validates it as Pier's job-result aggregate (`pier run -p`, native-smoke
+/// pin). Unlike the Terminal-Bench aggregate, a DeepSWE job scores
 /// multiple verifier metrics per trial (F2P, P2P, partial, ...), so the
 /// structural contract is validated - one trial, at least one eval,
 /// every metric awarding exactly one reward to exactly that one trial -
@@ -272,7 +272,7 @@ pub(crate) fn import_pier_job_result(
 }
 
 /// Typed failure carried on a settled record. A failed verification run is
-/// settled evidence, not an unsettable error (`P18-BMK-006`: no fallback to
+/// settled evidence, not an unsettable error (`EVAL-BMK-006`: no fallback to
 /// another revision, grader, cached score, heuristic, or LLM judgment).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BenchmarkFailure {
@@ -326,7 +326,7 @@ pub(crate) struct BenchmarkRecord {
     pub wall_time: Duration,
     /// Native reward as a typed fact. Until the real native smoke captures
     /// the harbor reward path it stays `Unknown` with a typed reason — it is
-    /// never computed from the summary counters (`P18-BMK-007`).
+    /// never computed from the summary counters (`EVAL-BMK-007`).
     pub reward: Fact,
     pub completion: BenchmarkCompletion,
     pub provenance: BenchmarkProvenance,
@@ -485,7 +485,7 @@ pub(crate) mod failure_kinds {
         }
     }
 
-    /// Non-zero verifier exit (`P18-BMK-006`: authoritative, no fallback).
+    /// Non-zero verifier exit (`EVAL-BMK-006`: authoritative, no fallback).
     pub(crate) fn non_zero_exit(_code: i32) -> super::BenchmarkFailure {
         super::BenchmarkFailure {
             kind: "verifier-non-zero-exit",
@@ -604,7 +604,7 @@ mod tests {
 
     #[tokio::test]
     async fn structurally_unusable_requests_reject_before_spawn() {
-        // Unadmitted revision (P18-INT-001).
+        // Unadmitted revision (EVAL-INT-001).
         let bad = request(integrity(
             RevisionStatus::NotAdmitted,
             TaskClassification::ValidAgentOutcome,
@@ -618,7 +618,7 @@ mod tests {
             }
         );
 
-        // Task not classified as a valid agent outcome (P18-INT-002).
+        // Task not classified as a valid agent outcome (EVAL-INT-002).
         for task in [
             TaskClassification::BrokenOrUnsatisfiable {
                 reason: "unsatisfiable".to_owned(),

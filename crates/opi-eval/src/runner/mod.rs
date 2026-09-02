@@ -1,4 +1,4 @@
-//! Crate-private trial runner substrate (Phase 18 task 18.5).
+//! Crate-private trial runner substrate.
 
 pub(crate) mod experiment;
 pub(crate) mod lifecycle;

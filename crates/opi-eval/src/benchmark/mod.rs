@@ -1,4 +1,4 @@
-//! Crate-private benchmark integration module (Phase 18 task 18.8).
+//! Crate-private benchmark integration module.
 //!
 //! `benchmark::process` owns the shared, benchmark-neutral execution
 //! contract; `benchmark::terminal_bench_21` owns the Terminal-Bench 2.1

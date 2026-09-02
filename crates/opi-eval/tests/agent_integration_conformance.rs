@@ -1,13 +1,13 @@
-//! Parameterized Agent-adapter conformance suite (task 18.10.1).
+//! Parameterized Agent-adapter conformance suite.
 //!
 //! Each case spawns the production `opi-eval conformance` binary — the
-//! minimum provisional process facade over the crate-private
+//! minimal process facade over the crate-private
 //! `AgentExecution` seam — with a bounded deterministic helper process
 //! standing in for the real agent product and pinned saved native bytes.
 //! This proves fixture-level hermetic conformance only: it never claims an
 //! exact built Opi/pi program, a real provider call, or an official task
-//! environment (those remain task 18.15). No paid provider, credential, or
-//! user-global resource is touched (`P18-AGT-002`, `P18-AGT-006`).
+//! environment (those remain the native smoke). No paid provider, credential, or
+//! user-global resource is touched (`EVAL-AGT-002`, `EVAL-AGT-006`).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -37,7 +37,7 @@ fn run_case(suite: &str, adapter: &str, case: &str) -> (i32, serde_json::Value, 
         .arg("--provider")
         .arg(
             manifest_dir()
-                .join("scripts/phase18-scripted-provider.py")
+                .join("scripts/scripted-provider.py")
                 .canonicalize()
                 .unwrap(),
         )
@@ -177,7 +177,7 @@ fn agent_conformance_matrix_settles_every_pinned_case() {
             "case {} {} failed: {stderr}",
             row.adapter, row.case
         );
-        assert_eq!(report["schema"], "phase18-conformance-report/1");
+        assert_eq!(report["schema"], "opi-eval-conformance-report/1");
         assert_eq!(report["suite"], "agent");
         assert_eq!(report["adapter"], row.adapter);
         assert_eq!(report["case"], row.case);
@@ -203,7 +203,7 @@ fn agent_conformance_matrix_settles_every_pinned_case() {
                 assert_eq!(report["identity"]["package"], "opi-coding-agent");
                 assert_eq!(
                     report["identity"]["adapter"],
-                    "opi-eval-opi-adapter/1 (phase18-agent-profile/1)"
+                    "opi-eval-opi-adapter/1 (opi-eval-agent-profile/1)"
                 );
             }
             ("pi", "identity") => {
@@ -213,7 +213,7 @@ fn agent_conformance_matrix_settles_every_pinned_case() {
                 );
                 assert_eq!(
                     report["identity"]["adapter"],
-                    "opi-eval-pi-adapter/1 (phase18-agent-profile/1)"
+                    "opi-eval-pi-adapter/1 (opi-eval-agent-profile/1)"
                 );
             }
             ("opi", "completed") => {

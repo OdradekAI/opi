@@ -1,14 +1,13 @@
 //! Unpublished Independent Companion for cross-agent evaluation experiments.
 //!
-//! Every type, module, and command in this crate is a **provisional Phase 18
-//! seam**: nothing here is a durable public promise until the complete Phase 18
-//! integration matrix proves the seam, and the crate is `publish = false`.
-//! The crate is an Agent-neutral workspace member: it depends on no Opi crate
+//! The crate is `publish = false` and remains a `0.x` workspace member; its
+//! CLI, schemas, durable formats, and library entry points may change without
+//! a compatibility shim. It is an Agent-neutral workspace member: it depends on no Opi crate
 //! (normal, dev, build, optional, or target-specific), no Opi product depends
 //! on it, and it registers no provider, tool, package, command, extension,
 //! startup hook, or default capture path in `opi`.
 //!
-//! The library entry surface consists of the provisional [`cli`] and
+//! The library entry surface consists of the [`cli`] and
 //! [`experiment`] modules used by the same-package binary and integration
 //! tests. This crate is unpublished, and those module APIs carry no
 //! compatibility promise.
@@ -25,52 +24,51 @@ pub mod cli;
 pub(crate) mod authority;
 pub mod experiment;
 
-// Crate-private failure-boundary codes (Phase 18 task 18.5). One stable
+// Crate-private failure-boundary codes. One stable
 // owning-boundary code per failure table row; typed failures carry it.
 mod failure;
 
-// Crate-private benchmark integrity records (Phase 18 task 18.5.1). Owns
+// Crate-private benchmark integrity records. Owns
 // revision admission, per-task validity classification, and reclassification
 // identity; nothing an Agent, adapter, or LLM produces can reach it.
 mod integrity;
 
-// Crate-private pairing and comparability assembly (Phase 18 task 18.5.1).
+// Crate-private pairing and comparability assembly.
 // Consumes the frozen ResolvedExperiment and an admitted IntegrityRecord
 // read-only; assembles exactly one baseline/candidate pair per
 // edge-task-group only when every control fingerprint agrees.
 mod comparison;
 
-// Crate-private durable trial bundle (Phase 18 task 18.5). Owns canonical
+// Crate-private durable trial bundle. Owns canonical
 // sealing, mutation rejection, and intent-before-effect persistence; the
 // runner lifecycle and later regrade/report consumers stay inside this crate.
 mod bundle;
 
-// Crate-private trial runner substrate (Phase 18 task 18.5).
+// Crate-private trial runner substrate.
 mod runner;
 
-// Crate-private external-process supervision (Phase 18 task 18.4). Owns the
+// Crate-private external-process supervision. Owns the
 // shared state machine used by the future AgentExecution and
 // BenchmarkExecution adapters; never exposes OS primitives outside the crate.
 mod process;
 
-/// Crate-private Agent contract and per-product adapters (Phase 18 task 18.6).
+/// Crate-private Agent contract and per-product adapters.
 mod agent;
 
 /// Crate-private benchmark execution contract and the Terminal-Bench 2.1
-/// adapter (Phase 18 task 18.8).
+/// adapter.
 mod benchmark;
 
-/// Crate-private provisional trajectory and causal-span projection
-/// (Phase 18 task 18.11).
+/// Crate-private trajectory projection and causal-span projection
+/// and report projection.
 mod trajectory;
 
-// Crate-private offline recomputation contract (task 18.13). The regrade
+// Crate-private offline recomputation contract. The regrade
 // and report paths consume sealed assembled outputs only and stay behind
-// the provisional CLI seam; they are deliberately not part of the public
-// library surface until tasks 18.15 and 18.16.
+// the CLI seam; they are deliberately not part of the public library surface.
 pub(crate) mod regrade;
 
-// Crate-private normalized report contract (task 18.13): the offline
+// Crate-private normalized report contract: the offline
 // report path consumes sealed assembled outputs only, recomputes before
-// rendering, and stays behind the provisional CLI seam.
+// rendering, and stays behind the CLI seam.
 pub(crate) mod report;

@@ -1,6 +1,6 @@
-//! `opi-eval validate` command (provisional Phase 18 seam).
-//! `opi-eval conformance` command (task 18.10.1): see [`conformance`].
-//! `opi-eval regrade` and `opi-eval report` commands (task 18.13): see
+//! `opi-eval validate` command.
+//! `opi-eval conformance` command: see [`conformance`].
+//! `opi-eval regrade` and `opi-eval report` commands: see
 //! [`regrade`] and [`report`].
 
 pub mod conformance;
@@ -76,7 +76,7 @@ pub enum NativeValidateError {
 pub struct NativeValidationSummary {
     /// The hermetic-resolution fields of the same document.
     pub base: ValidationSummary,
-    /// The derived native integrity digest (`phase18-native-material/1`).
+    /// The derived native integrity digest (`opi-eval-native-material/1`).
     pub integrity_digest: String,
 }
 
@@ -92,7 +92,7 @@ impl fmt::Display for NativeValidationSummary {
 
 /// Validates one experiment document against one resolved native
 /// material manifest and derives the native integrity identity (task
-/// 18.14.1). The producer uses this to pin `benchmark.integrity_digest`
+/// native-material). The producer uses this to pin `benchmark.integrity_digest`
 /// before materializing dispatch configs; no process runs.
 pub fn validate_native(
     config_path: &Path,

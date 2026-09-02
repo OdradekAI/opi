@@ -1,4 +1,4 @@
-//! Crate-private trial lifecycle state machine (Phase 18 task 18.5).
+//! Crate-private trial lifecycle state machine.
 //!
 //! Owns the intent/settlement distinction at the eval process boundary:
 //! `planned -> intent-published -> process-effect-pending -> settled ->
@@ -18,7 +18,7 @@ pub(crate) enum RecoveryClassification {
     /// Durable intent exists without settlement. The Agent may have consumed
     /// credits or mutated its workspace; the trial must not be inferred as
     /// not-started, successful, or retryable under the same identity
-    /// (P18-DUR-002). Replacement work needs a new paired trial group.
+    /// (EVAL-DUR-002). Replacement work needs a new paired trial group.
     EffectUnknown {
         trial: TrialIdentity,
         boundary: FailureBoundaryCode,
@@ -35,10 +35,10 @@ pub(crate) enum TrialPhase {
     /// Fresh reservation; no durable intent yet.
     Planned,
     /// Trial, pair, artifact, and expected-output identities are durably
-    /// reserved before any process effect can start (P18-DUR-001).
+    /// reserved before any process effect can start (EVAL-DUR-001).
     IntentPublished,
     /// The Agent process may have consumed credits or mutated its isolated
-    /// workspace; a crash here is effect-unknown (P18-DUR-002).
+    /// workspace; a crash here is effect-unknown (EVAL-DUR-002).
     ProcessEffectPending,
     /// Observed exit/cancellation/timeout and evidence retention recorded.
     Settled,
@@ -52,7 +52,7 @@ pub(crate) enum TrialPhase {
 
 /// Whether the observed settle was an exit, timeout, or cancellation, and
 /// who cancelled. Cancellation is never success; user and infrastructure
-/// sources stay distinct (P18-FAL-004).
+/// sources stay distinct (EVAL-FAL-004).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettlementKind {
     Exited { code: i32 },
@@ -74,11 +74,11 @@ pub(crate) enum CancellationSource {
     Infrastructure,
 }
 
-/// The observed process outcome recorded at settlement (P18-DUR-003).
+/// The observed process outcome recorded at settlement (EVAL-DUR-003).
 pub(crate) struct ObservedOutcome {
     #[expect(
         dead_code,
-        reason = "typed settlement observation required by the Phase 18 lifecycle contract"
+        reason = "typed settlement observation required by the opi-eval lifecycle contract"
     )]
     pub(crate) kind: SettlementKind,
 }
@@ -224,7 +224,7 @@ impl TrialLifecycle {
 
     /// Classifies a recovered bundle root. A durable intent without a
     /// settlement record is effect-unknown and is never classified as
-    /// not-started (P18-DUR-002).
+    /// not-started (EVAL-DUR-002).
     pub(crate) fn recover(observed: &RecoveryObservation) -> RecoveryClassification {
         let Some(intent) = observed.intent.as_ref() else {
             return RecoveryClassification::NotStarted;
@@ -331,7 +331,7 @@ mod tests {
 
         // A crash here leaves durable intent without settlement: the trial is
         // effect-unknown, never not-started, successful, or same-identity
-        // retryable (P18-DUR-002).
+        // retryable (EVAL-DUR-002).
         let crashed = RunBundle::recover(tmp.path()).unwrap();
         assert_eq!(
             TrialLifecycle::recover(&crashed),

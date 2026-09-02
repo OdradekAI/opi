@@ -1,5 +1,5 @@
-//! `opi-eval conformance` command (tasks 18.10.1, 18.14.1): the minimum
-//! provisional process facade over the crate-private `AgentExecution` and
+//! `opi-eval conformance` command: the minimum
+//! process facade over the crate-private `AgentExecution` and
 //! `BenchmarkExecution` seams, with an optional native rerun mode that
 //! drives the admitted case subset through the exact built executables,
 //! the materialized official task packages, and the pinned verifier
@@ -14,9 +14,9 @@
 //! fixtures, and the local scripted-provider fixture carries the
 //! provider-plumbing case. This facade never claims an exact built
 //! Opi/pi program, a real provider call, or an official task environment
-//! (task 18.15 reruns the same suites through exact executables); it never
-//! calls a paid provider or loads user resources (`P18-AGT-002`,
-//! `P18-AGT-006`).
+//! (the native smoke reruns the same suites through exact executables); it never
+//! calls a paid provider or loads user resources (`EVAL-AGT-002`,
+//! `EVAL-AGT-006`).
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -91,9 +91,9 @@ pub struct ConformanceArgs {
     pub root: PathBuf,
     /// Repository `crates/opi-eval/tests/fixtures` root.
     pub fixtures: PathBuf,
-    /// `crates/opi-eval/scripts/phase18-scripted-provider.py`.
+    /// `crates/opi-eval/scripts/scripted-provider.py`.
     pub provider: PathBuf,
-    /// Resolved native material manifest (task 18.14.1): when present,
+    /// Resolved native material manifest (native mode): when present,
     /// the admitted native case subset runs through the exact built
     /// executables, the material task package, and the pinned verifier
     /// entrypoint instead of fixture helpers.
@@ -546,7 +546,7 @@ async fn run_agent_case(args: &ConformanceArgs) -> Result<ConformanceReport, Con
         let response = std::fs::read_to_string(workspace.join("conformance-provider-response"))
             .unwrap_or_default();
         if response.trim_end()
-            == "{\"content\":\"scripted-provider: acknowledged\",\"schema\":\"phase18-scripted-provider/1\"}"
+            == "{\"content\":\"scripted-provider: acknowledged\",\"schema\":\"opi-eval-scripted-provider/1\"}"
         {
             notes.push("provider-fixture-verified".to_owned());
         } else {
@@ -589,7 +589,7 @@ async fn run_agent_case(args: &ConformanceArgs) -> Result<ConformanceReport, Con
     }
 
     Ok(ConformanceReport {
-        schema: "phase18-conformance-report/1",
+        schema: "opi-eval-conformance-report/1",
         suite: "agent".to_owned(),
         adapter: args.adapter.clone(),
         case: args.case.clone(),
@@ -747,11 +747,11 @@ fn benchmark_expect(revision: &BenchmarkRevision, case: &str) -> Option<Expect> 
         // Production pins fail closed against fixture bytes: Terminal-Bench
         // 2.1's production byte table pins the real official package (the
         // synthetic fixture bytes drift), while 3.0 and DeepSWE pin
-        // task-tree identity only. Real bytes arrive with task 18.15.
+        // task-tree identity only. Real bytes arrive with the native smoke.
         "production-pin-drift" if revision.adapter == TB21.adapter => {
             Some(Expect::Rejected("task-package-drift"))
         }
-        // The case name predates task 18.15's byte-table registration:
+        // The case name predates the native smoke's byte-table registration:
         // every production pin now rejects the synthetic fixture bytes
         // as drift instead of failing as not materialized.
         "package-not-materialized" => Some(Expect::Rejected("task-package-drift")),
@@ -978,9 +978,9 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
             }
             // Honesty: this digest is the staged fixture value, not an
             // admitted resolved external lock (that arrives with
-            // 18.12/18.15, which own resolved-lock assembly).
+            // assembled-runner/native-smoke, which own resolved-lock assembly).
             notes.push(
-                "admitted-digest-is-fixture-value: resolved external locks arrive with 18.12/18.15"
+                "admitted-digest-is-fixture-value: resolved external locks arrive with assembled-runner/native-smoke"
                     .to_owned(),
             );
         }
@@ -1021,7 +1021,7 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
             ));
         }
         ConformanceReport {
-            schema: "phase18-conformance-report/1",
+            schema: "opi-eval-conformance-report/1",
             suite: "benchmark".to_owned(),
             adapter: args.adapter.clone(),
             case: args.case.clone(),
@@ -1185,7 +1185,7 @@ async fn finish_benchmark_case<A: BenchmarkAdapter>(
             let token = rejection.token;
             let met = matches!(expect, Expect::Rejected(expected) if *expected == token);
             Ok(ConformanceReport {
-                schema: "phase18-conformance-report/1",
+                schema: "opi-eval-conformance-report/1",
                 suite: "benchmark".to_owned(),
                 adapter: args.adapter.clone(),
                 case: args.case.clone(),

@@ -1,5 +1,4 @@
-//! Crate-private Opi process adapter and evidence importer (Phase 18 task
-//! 18.6).
+//! Crate-private Opi process adapter and evidence importer.
 //!
 //! [`OpiProcessAdapter`] owns ONLY Opi-specific launch and evidence rules:
 //! argv/profile construction for the real built `opi` binary in one-shot JSON
@@ -9,8 +8,8 @@
 //! Phase 17 `evidence.jsonl` + finalized `manifest.json`. It never links the
 //! Opi runtime: the importer accepts only the exact schema identities covered
 //! by `tests/fixtures/agents/opi` and fails closed on unknown required
-//! evidence (P18-AGT-003/004). Final workspace capture and RunBundle
-//! association belong to the Companion runner (18.12).
+//! evidence (EVAL-AGT-003/004). Final workspace capture and RunBundle
+//! association belong to the Companion runner (assembled-runner).
 
 use super::process::{
     AgentAdapter, AgentCapability, AgentCompletion, AgentFailure, AgentIdentity, AgentRunRequest,
@@ -74,10 +73,10 @@ struct IdentityBody {
 
 impl OpiProfile {
     /// Parse the checked-in declarative profile. Fails closed on any schema
-    /// identity other than the one this adapter implements (P18-AGT-003).
+    /// identity other than the one this adapter implements (EVAL-AGT-003).
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
         let body: ProfileBody = toml::from_str(text).map_err(|e| format!("profile: {e}"))?;
-        if body.schema != "phase18-agent-profile/1" {
+        if body.schema != "opi-eval-agent-profile/1" {
             return Err(format!("profile schema {} is not supported", body.schema));
         }
         if !body.launch.one_shot_json
@@ -151,7 +150,7 @@ impl AgentAdapter for OpiProcessAdapter {
 
     /// Exact argv for the real production CLI — one-shot JSON mode, explicit
     /// trace capture, no project trust, explicit benchmark configuration, and
-    /// the exact `provider:model` with no fallback (P18-AGT-001). Mutating
+    /// the exact `provider:model` with no fallback (EVAL-AGT-001). Mutating
     /// tools are opt-in per request. No eval-only entry point exists.
     fn spawn_spec(&self, request: &AgentRunRequest) -> SpawnSpec {
         let mut argv: Vec<OsString> = vec![
@@ -208,7 +207,7 @@ impl AgentAdapter for OpiProcessAdapter {
     ) -> (UsageProjection, AgentCompletion) {
         // The process-level verdict is authoritative first: a non-zero exit,
         // timeout, cancellation, or spawn failure can never be rescued by
-        // evidence, and no fallback exists (P18-AGT-003).
+        // evidence, and no fallback exists (EVAL-AGT-003).
         let process_failed = |failure: super::process::AgentFailure| {
             (UsageProjection::default(), AgentCompletion::Failed(failure))
         };
@@ -265,7 +264,7 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 /// presence but not re-moded — Opi's records are serialize-oriented and define
 /// no public reader, so this importer never claims more than the fixture
 /// identity proves. Unknown required evidence fails closed; no fallback
-/// parser exists (P18-AGT-003/004).
+/// parser exists (EVAL-AGT-003/004).
 pub(crate) struct OpiImporter;
 
 /// What one import settled to. Import failures are settled values, not
@@ -634,14 +633,14 @@ mod tests {
     #[test]
     fn checked_in_profile_parses_with_exact_schema_identity() {
         let profile = OpiProfile::checked_in();
-        assert_eq!(profile.schema, "phase18-agent-profile/1");
+        assert_eq!(profile.schema, "opi-eval-agent-profile/1");
         assert_eq!(profile.product, "opi");
         assert_eq!(profile.package, "opi-coding-agent");
         assert_eq!(profile.adapter, "opi-eval-opi-adapter/1");
 
         // Any other schema identity fails closed.
         let mutated = include_str!("../../profiles/agents/opi.toml")
-            .replace("phase18-agent-profile/1", "phase18-agent-profile/2");
+            .replace("opi-eval-agent-profile/1", "opi-eval-agent-profile/2");
         assert!(OpiProfile::parse(&mutated).is_err());
         // Disabling a required launch invariant fails closed.
         let disabled = include_str!("../../profiles/agents/opi.toml")
@@ -715,7 +714,7 @@ mod tests {
         assert_eq!(identity.package, "opi-coding-agent");
         assert_eq!(
             identity.adapter,
-            "opi-eval-opi-adapter/1 (phase18-agent-profile/1)"
+            "opi-eval-opi-adapter/1 (opi-eval-agent-profile/1)"
         );
         assert_eq!(
             adapter.capabilities(),
@@ -799,7 +798,7 @@ mod tests {
     #[test]
     fn importer_fails_closed_on_incomplete_missing_and_ambiguous_traces() {
         // Evidence without a finalized manifest: never represented as complete
-        // (P18-AGT-004).
+        // (EVAL-AGT-004).
         assert_eq!(
             settled_completion(&fixture("trace-incomplete")),
             AgentCompletion::Failed(AgentFailure {

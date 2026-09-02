@@ -1,14 +1,14 @@
-//! Crate-private assembled evaluation runner (Phase 18 task 18.12).
+//! Crate-private assembled evaluation runner.
 //!
 //! [`run_experiment`] is the end-to-end owner of one resolved experiment:
 //! durable intent reservation, Agent dispatch, settlement, native verifier
 //! dispatch, pre-seal trajectory projection, bundle sealing, receipt
 //! emission, and comparison/coverage assembly - every later authority
 //! transition mechanically gated by [`crate::authority::AuthorityLedger`]
-//! (`P18-FAL-002`). Two driving modes share this flow. The hermetic
+//! (`EVAL-FAL-002`). Two driving modes share this flow. The hermetic
 //! fixture-grade path resolves runtime-generated deterministic helpers and
-//! pinned fixtures-tree native bytes. The native driving mode (task
-//! 18.14.1) consumes the resolved-material manifest: exact built agent
+//! pinned fixtures-tree native bytes. The native driving mode consumes the
+//! resolved-material manifest: exact built agent
 //! executables, the materialized official task package, the pinned uv
 //! verifier entrypoint, one upstream oracle preflight per task, and the
 //! scripted-provider listener endpoint - never synthesized helpers and
@@ -51,16 +51,16 @@ use crate::runner::material::{NativeMaterial, task_package_manifest_digest};
 use crate::trajectory::{ProjectionPipeline, TrialInputs};
 
 /// Run report schema identity.
-const RUN_REPORT_SCHEMA: &str = "phase18-run-report/1";
+const RUN_REPORT_SCHEMA: &str = "opi-eval-run-report/1";
 /// Per-trial receipt schema identity.
-const TRIAL_RECEIPT_SCHEMA: &str = "phase18-trial-receipt/1";
+const TRIAL_RECEIPT_SCHEMA: &str = "opi-eval-trial-receipt/1";
 /// Bundle-internal key reserved for the normalized expected output.
 const EXPECTED_OUTPUT_KEY: &str = "normalized/expected-output";
 /// Bundle-internal key of the sealed resolved-experiment control evidence.
 const CONTROL_EXPERIMENT_KEY: &str = "control/experiment.json";
 /// Bundle-internal key of the sealed integrity-record control evidence.
 const CONTROL_INTEGRITY_KEY: &str = "control/integrity.json";
-/// Bundle-internal key of the sealed provisional trajectory evidence.
+/// Bundle-internal key of the sealed trajectory projection evidence.
 const TRAJECTORY_KEY: &str = "evidence/trajectory.json";
 /// Bundle-internal keys of the native agent execution evidence every
 /// sealed trial covers on every path.
@@ -71,8 +71,8 @@ const AGENT_ANSWER_KEY: &str = "native/agent-answer.txt";
 const AUTHORITY_LEDGER_KEY: &str = "native/authority-ledger.json";
 
 /// The complete pre-effect artifact reservation of one trial: every
-/// artifact identity the sealed bundle must cover on every path (P18-DUR-001,
-/// P18-BND-001). Adapter-produced native evidence - agent completion
+/// artifact identity the sealed bundle must cover on every path (EVAL-DUR-001,
+/// EVAL-BND-001). Adapter-produced native evidence - agent completion
 /// artifacts and native grader evidence - is not reserved here because it
 /// materializes only with its producing record; the runner declares it as
 /// produced native evidence at sealing.
@@ -105,13 +105,13 @@ pub(crate) struct RunRequest {
     /// root instead of running anything.
     pub(crate) recover: bool,
     /// Re-run one crashed trial's whole group under fresh trial identities
-    /// and a new paired trial group (P18-DUR-002, P18-EXP-005).
+    /// and a new paired trial group (EVAL-DUR-002, EVAL-EXP-005).
     pub(crate) replacement_for: Option<String>,
     /// Declared canary secrets (one per line from the request). Any
     /// canary found in staged exportable content blocks sealing
-    /// (`P18-A18`, `P18-SEC-005`).
+    /// (`EVAL-A18`, `EVAL-SEC-005`).
     pub(crate) canaries: Vec<String>,
-    /// Resolved native material (task 18.14.1): when present the runner
+    /// Resolved native material (native mode): when present the runner
     /// takes the native driving mode over the hermetic fixture path.
     pub(crate) material: Option<crate::runner::material::NativeMaterial>,
     /// Run only the upstream oracle preflight, then stop before any agent
@@ -226,7 +226,7 @@ fn fixture_integrity_review(experiment: &ResolvedExperiment, behavior: &str) -> 
         status: RevisionStatus::Admitted,
         tasks,
         excluded_trials,
-        reviewer: "phase18-fixture".to_owned(),
+        reviewer: "opi-eval-fixture".to_owned(),
     }
 }
 
@@ -497,7 +497,7 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
     if let Some(inputs) = &native {
         // One upstream oracle preflight per selected task through the
         // unchanged native verifier: the reference solution must pass
-        // natively before any agent trial starts (task 18.14.1).
+        // natively before any agent trial starts (native mode).
         let preflight = run_oracle_preflight(
             &experiment,
             request.material.as_ref().expect("checked above"),
@@ -595,7 +595,7 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
     if let Some(reason) = comparison_error {
         report["comparison_error"] = json!(reason);
     }
-    // The offline report path (task 18.13) recomputes from sealed
+    // The offline report path recomputes from sealed
     // assembled outputs only: persist the run report at the run root so
     // regrade/report never re-run anything to rebuild the denominator.
     persist_run_report(&request.root, &report)?;
@@ -842,7 +842,7 @@ fn native_integrity_review(
             crate::integrity::TaskClassification::ValidAgentOutcome,
         )]),
         excluded_trials: std::collections::BTreeMap::new(),
-        reviewer: "phase18-native-material".to_owned(),
+        reviewer: "opi-eval-native-material".to_owned(),
     }
 }
 
@@ -856,9 +856,9 @@ pub(crate) fn native_opi_config(
 ) -> String {
     let provider_id = model.split(':').next().unwrap_or("scripted");
     format!(
-        "# Phase 18 native run: deterministic scripted-provider projection.\n\
+        "# opi-eval native run: deterministic scripted-provider projection.\n\
 [providers.custom.{provider_id}]\n\
-name = \"Phase 18 scripted provider\"\n\
+name = \"opi-eval scripted provider\"\n\
 base_url = \"{base_url}\"\n\
 api_key_env = \"OPENAI_API_KEY\"\n\
 auth_scheme = \"bearer\"\n\
@@ -866,7 +866,7 @@ api = \"openai-completions\"\n\
 \n\
 [[providers.custom.{provider_id}.models]]\n\
 id = \"{model_id}\"\n\
-display_name = \"Phase 18 scripted\"\n\
+display_name = \"opi-eval scripted\"\n\
 context_window = 8192\n\
 max_output_tokens = 4096\n",
         base_url = config.base_url,
@@ -919,7 +919,7 @@ pub(crate) fn native_agent_env(
 
 /// Derives the native integrity identity for one experiment document plus
 /// material manifest without running anything (the producer's config
-/// materialization tool, task 18.14.1).
+/// materialization tool, the native material contract).
 pub(crate) fn native_integrity_identity(
     config_path: &Path,
     material_path: &Path,
@@ -1018,7 +1018,7 @@ async fn run_oracle_preflight(
         )));
     }
     let receipt = json!({
-        "schema": "phase18-oracle-preflight/1",
+        "schema": "opi-eval-oracle-preflight/1",
         "experiment": experiment.experiment_id(),
         "benchmark": inputs.adapter_key,
         "task": inputs.task_id,
@@ -1128,7 +1128,7 @@ async fn run_trial(
     }
 
     // A trial identity is never reused: an existing durable reservation
-    // refuses the run before any staging (P18-EXP-005). Retries and
+    // refuses the run before any staging (EVAL-EXP-005). Retries and
     // replacements take fresh identities.
     if trial_root.join("bundle/intent.json").is_file() {
         return Err(RunError::Bundle(format!(
@@ -1137,7 +1137,7 @@ async fn run_trial(
         )));
     }
 
-    // Durable intent before any process effect (P18-DUR-001). The
+    // Durable intent before any process effect (EVAL-DUR-001). The
     // reservation covers every artifact identity the sealed bundle must
     // retain, including the normalized expected output, and the pair
     // identity is the unique comparison edge that owns this trial.
@@ -1176,7 +1176,7 @@ async fn run_trial(
     // Sealed control evidence: the resolved experiment contract and the
     // integrity record enter the bundle itself, so the sealed identity
     // commits to the exact admission inputs the trial ran under
-    // (P18-BND-001).
+    // (EVAL-BND-001).
     let runner_source =
         SourceIdentity::new("runner").map_err(|error| RunError::Staging(error.to_string()))?;
     let mut staged_keys: Vec<ArtifactKey> = Vec::new();
@@ -1295,7 +1295,7 @@ async fn run_trial(
         ));
     };
 
-    // Settlement of the observed outcome, durably (P18-DUR-003). The
+    // Settlement of the observed outcome, durably (EVAL-DUR-003). The
     // failure classification decides authority: a scored Agent outcome
     // (the Agent's own non-zero exit or budget timeout) never fails the
     // ledger, so the native grader stays authorized over the settled
@@ -1429,7 +1429,7 @@ async fn run_trial(
         let task_dir = trial_root.join("task-package");
         if request.behavior == "prompt-only-package" {
             // The incomplete package: the prompt alone, without the
-            // image/resource/verifier contract (P18-BMK-002).
+            // image/resource/verifier contract (EVAL-BMK-002).
             std::fs::create_dir_all(&task_dir)
                 .map_err(|error| RunError::Staging(error.to_string()))?;
             std::fs::copy(
@@ -1560,7 +1560,7 @@ async fn run_trial(
         }
     }
 
-    // Pre-seal projection over the settled facts (task 18.11). The
+    // Pre-seal projection over the settled facts. The
     // projection itself fails closed if the ladder ever passed settlement,
     // so no phase guard is needed here.
     let projection = match &verifier_record {
@@ -1580,12 +1580,12 @@ async fn run_trial(
         .ok(),
     };
 
-    // Pre-seal redaction gate (`P18-A18`, `P18-SEC-005`): a declared
+    // Pre-seal redaction gate (`EVAL-A18`, `EVAL-SEC-005`): a declared
     // canary anywhere in the staged exportable content blocks sealing, so
     // the leak never enters a published manifest. The refusal is the
     // evidence boundary and the bundle stays unsealed on disk.
     //
-    // The projection is sealed trial evidence: the provisional trajectory
+    // The projection is sealed trial evidence: the trajectory projection
     // itself enters the bundle under the reserved evidence key. A failed
     // projection leaves the key unstaged, so sealing refuses the broken
     // reservation instead of sealing without the trajectory.
@@ -1600,7 +1600,7 @@ async fn run_trial(
     }
 
     // The authority ledger itself is durable evidence: its execution
-    // counts enter the sealed bundle (P18-FAL-002 call-count proof). The
+    // counts enter the sealed bundle (EVAL-FAL-002 call-count proof). The
     // sealed copy honestly covers every transition up to sealing; the
     // seal and report states live only in the outer receipt.
     {
@@ -1669,7 +1669,7 @@ async fn run_trial(
         // Honest per-profile control realization: neither pinned agent
         // profile expresses a reasoning launch control, so a shared
         // reasoning value is unsupported by every subject and the pair
-        // must stay non-comparable (P18-EXP-008).
+        // must stay non-comparable (EVAL-EXP-008).
         let unsupported_controls = match experiment.model_controls().reasoning {
             crate::experiment::ControlValue::Value(_) => vec!["reasoning".to_owned()],
             _ => Vec::new(),
@@ -1978,7 +1978,7 @@ fn non_comparability_token(reason: &crate::comparison::NonComparability) -> Stri
 
 /// Resolve the unique comparison edge owning one declared trial: the edge
 /// over the trial's subject whose counterpart subject declares a trial in
-/// the same task and group (`P18-EXP-002`). Zero or multiple owners reject
+/// the same task and group (`EVAL-EXP-002`). Zero or multiple owners reject
 /// the trial before any process effect or intent publication, so no
 /// durable pair identity can default to an unrelated edge.
 fn owning_edge<'a>(
@@ -2060,7 +2060,7 @@ fn replace_group(source: &str, crashed_trial: &str) -> Result<String, RunError> 
 
 /// Classify every existing trial root under `root` from its durable files
 /// only. Effect-unknown trials keep their original identity and boundary
-/// and are never reclassified as not-started (P18-DUR-002).
+/// and are never reclassified as not-started (EVAL-DUR-002).
 fn recovery_report(experiment: &ResolvedExperiment, root: &Path) -> serde_json::Value {
     let mut recovery = Vec::new();
     let mut effect_unknown = 0;
@@ -2159,14 +2159,14 @@ mod tests {
     fn fixture_experiment_pins_the_derived_integrity_identity() {
         // (document, staging behavior) pairs and the review they derive.
         let cases: &[(&str, &str)] = &[
-            ("phase18-local.toml", "happy"),
-            ("phase18-duplicate-pair.toml", "happy"),
-            ("phase18-unsupported-control.toml", "happy"),
-            ("phase18-tb30.toml", "happy"),
-            ("phase18-deepswe.toml", "happy"),
-            ("phase18-multi-edge.toml", "happy"),
-            ("phase18-integrity-exclusion.toml", "integrity-exclusion"),
-            ("phase18-invalid-task.toml", "invalid-task"),
+            ("local-paired.toml", "happy"),
+            ("duplicate-pair.toml", "happy"),
+            ("unsupported-control.toml", "happy"),
+            ("terminal-bench-3.0.toml", "happy"),
+            ("deepswe.toml", "happy"),
+            ("multi-edge.toml", "happy"),
+            ("integrity-exclusion.toml", "integrity-exclusion"),
+            ("invalid-task.toml", "invalid-task"),
         ];
         for (name, behavior) in cases {
             let text =
@@ -2184,8 +2184,7 @@ mod tests {
 
     #[test]
     fn owning_edge_resolution_rejects_ambiguous_and_unpaired_trials() {
-        let text =
-            std::fs::read_to_string("tests/fixtures/experiment/phase18-multi-edge.toml").unwrap();
+        let text = std::fs::read_to_string("tests/fixtures/experiment/multi-edge.toml").unwrap();
         let experiment = ResolvedExperiment::resolve(&text).unwrap();
         // Every declared trial resolves exactly one owning edge: group A
         // binds to the pi-vs-opi edge, group B to the opi-vs-pi2 edge.

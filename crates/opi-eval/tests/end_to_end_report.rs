@@ -1,4 +1,4 @@
-//! End-to-end offline report suite (task 18.13).
+//! End-to-end offline report suite.
 //!
 //! Runs the production `opi-eval run` binary, then exercises the offline
 //! `regrade` and `report` commands over the sealed assembled outputs. The
@@ -6,8 +6,9 @@
 //! grader artifacts with provenance, keep every declared pair visible in
 //! the coverage denominator, never collapse quality/cost/safety/
 //! efficiency/authority into one score, and label everything
-//! conformance-only (`P18-RPT-003..006`, `P18-EXP-006`). Hermetic
-//! fixture-grade only; task 18.15 owns the native rerun.
+//! conformance-only (`EVAL-RPT-003..006`, `EVAL-EXP-006`). Hermetic
+//! fixture-grade only; native execution is verified separately by the
+//! native-smoke workflow.
 
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
@@ -68,17 +69,17 @@ fn report(root: &Path) -> (i32, serde_json::Value, String) {
     (code, value, stderr)
 }
 
-/// `P18-RPT-002`: the same sealed bundle, integrity record, grader
+/// `EVAL-RPT-002`: the same sealed bundle, integrity record, grader
 /// identity, and reporter version produce byte-stable normalized results -
 /// across independent fresh runs, not just repeated renders.
 #[cfg(unix)]
 #[test]
 fn normalized_report_is_byte_stable_across_independent_runs() {
     let first = tempfile::tempdir().unwrap();
-    let (code, _, stderr) = run_experiment("phase18-local.toml", "happy", first.path());
+    let (code, _, stderr) = run_experiment("local-paired.toml", "happy", first.path());
     assert_eq!(code, 0, "{stderr}");
     let second = tempfile::tempdir().unwrap();
-    let (code, _, stderr) = run_experiment("phase18-local.toml", "happy", second.path());
+    let (code, _, stderr) = run_experiment("local-paired.toml", "happy", second.path());
     assert_eq!(code, 0, "{stderr}");
 
     let (c1, r1, stderr) = report(first.path());
@@ -99,12 +100,12 @@ fn normalized_report_is_byte_stable_across_independent_runs() {
 #[test]
 fn paired_report_contract_end_to_end() {
     let root = tempfile::tempdir().unwrap();
-    let (code, _, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    let (code, _, stderr) = run_experiment("local-paired.toml", "happy", root.path());
     assert_eq!(code, 0, "{stderr}");
     let (code, paired, stderr) = report(root.path());
     assert_eq!(code, 0, "{stderr}");
 
-    // Conformance-only labeling (`P18-RPT-006`).
+    // Conformance-only labeling (`EVAL-RPT-006`).
     assert_eq!(paired["classification"], "conformance-evidence", "{paired}");
     let bytes = serde_json::to_string(&paired).unwrap();
     for forbidden in ["leaderboard", "superiority", "official verification"] {
@@ -116,7 +117,7 @@ fn paired_report_contract_end_to_end() {
 
     for trial in paired["trials"].as_array().unwrap() {
         // Headlines come only from the admitted native grader artifact with
-        // provenance (`P18-RPT-003`).
+        // provenance (`EVAL-RPT-003`).
         let headline = &trial["headline"];
         assert!(
             headline["native_source"]["artifact"]
@@ -135,7 +136,7 @@ fn paired_report_contract_end_to_end() {
         assert_eq!(trial["diagnostics"]["label"], "diagnostic", "{trial}");
     }
 
-    // No composite score or best-trial verdict anywhere (`P18-RPT-005`).
+    // No composite score or best-trial verdict anywhere (`EVAL-RPT-005`).
     for forbidden in [
         "score",
         "composite",
@@ -155,14 +156,14 @@ fn paired_report_contract_end_to_end() {
     );
 }
 
-/// `P18-A15`/`P18-RPT`: a covered-byte mutation prevents publication -
+/// `EVAL-A15`/`EVAL-RPT`: a covered-byte mutation prevents publication -
 /// the report returns a typed non-published outcome with a non-zero exit
 /// and never repairs or rewrites the run root.
 #[cfg(unix)]
 #[test]
 fn covered_byte_mutation_prevents_publication() {
     let root = tempfile::tempdir().unwrap();
-    let (code, _, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    let (code, _, stderr) = run_experiment("local-paired.toml", "happy", root.path());
     assert_eq!(code, 0, "{stderr}");
 
     // Mutate one covered artifact byte in the first sealed bundle.
@@ -196,7 +197,7 @@ fn covered_byte_mutation_prevents_publication() {
 #[test]
 fn outer_run_artifact_mutations_cannot_affect_output() {
     let root = tempfile::tempdir().unwrap();
-    let (code, _, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    let (code, _, stderr) = run_experiment("local-paired.toml", "happy", root.path());
     assert_eq!(code, 0, "{stderr}");
     let (code, first, stderr) = report(root.path());
     assert_eq!(code, 0, "{stderr} {first}");
@@ -217,7 +218,7 @@ fn outer_run_artifact_mutations_cannot_affect_output() {
     );
 }
 
-/// `P18-EXP-006` / `P18-RPT-004`: exclusions and missing sides stay in the
+/// `EVAL-EXP-006` / `EVAL-RPT-004`: exclusions and missing sides stay in the
 /// coverage denominator with their exact reason; the report still
 /// publishes with the run outcome visible.
 #[cfg(unix)]
@@ -225,7 +226,7 @@ fn outer_run_artifact_mutations_cannot_affect_output() {
 fn exclusions_stay_visible_in_the_coverage_denominator() {
     let root = tempfile::tempdir().unwrap();
     let (code, run_report, stderr) = run_experiment(
-        "phase18-integrity-exclusion.toml",
+        "integrity-exclusion.toml",
         "integrity-exclusion",
         root.path(),
     );

@@ -1,4 +1,4 @@
-//! Canonical resolved-experiment identity (provisional Phase 18 seam).
+//! Canonical resolved-experiment identity.
 //!
 //! [`ResolvedExperiment::resolve`] freezes the experiment contract - schema
 //! identity, experiment id and manifest digest, benchmark descriptor,
@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 /// Schema identity accepted by [`ResolvedExperiment::resolve`].
-pub const EXPERIMENT_SCHEMA: &str = "phase18-experiment/1";
+pub const EXPERIMENT_SCHEMA: &str = "opi-eval-experiment/1";
 
 /// Fail-closed resolution failures for an experiment document.
 #[derive(Debug, Error)]
@@ -136,8 +136,8 @@ pub struct ResolvedBenchmark {
     pub revision: String,
     /// Dataset reference owned by the benchmark revision.
     pub dataset: String,
-    /// Integrity-record digest once the revision is admitted; admission is
-    /// owned by a later Phase 18 task, so it may be absent at resolution.
+    /// Integrity-record digest once the revision is admitted. It may be
+    /// absent for fixture-only or otherwise unadmitted revisions.
     pub integrity_digest: Option<String>,
 }
 

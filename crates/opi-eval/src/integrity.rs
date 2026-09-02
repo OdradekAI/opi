@@ -1,4 +1,4 @@
-//! Crate-private benchmark integrity records (Phase 18, `P18-INT-001..005`).
+//! Crate-private benchmark integrity records (opi-eval, `EVAL-INT-001..005`).
 //!
 //! An [`IntegrityRecord`] is the immutable, digest-addressed admission
 //! decision for one measured benchmark revision. It binds the benchmark and
@@ -7,26 +7,26 @@
 //! when provided, the revision's admission status, and the per-task validity
 //! classifications with stable reviewed reasons.
 //!
-//! Authority boundary (`P18-INT-003`): a record is created only through
+//! Authority boundary (`EVAL-INT-003`): a record is created only through
 //! [`IntegrityRecord::review`] with explicit reviewer evidence. There is no
 //! mutating method and no field access for the evaluated Agent, its adapter,
 //! a report builder, or an LLM diagnostic to admit, retire, or reclassify
 //! anything. Reclassification ([`IntegrityRecord::reclassify_task`]) and
 //! status changes ([`IntegrityRecord::with_status`]) return a **new** record
-//! with a **new** content-addressed identity (`P18-INT-004`); the original is
+//! with a **new** content-addressed identity (`EVAL-INT-004`); the original is
 //! never rewritten.
 //!
 //! Task validity classes stay distinct from Agent outcomes
-//! (`P18-INT-002`): only
+//! (`EVAL-INT-002`): only
 //! [`TaskClassification::ValidAgentOutcome`] may enter Agent success/failure
 //! denominators. Infrastructure and grader failures are adjudicated
 //! classifications here, and every excluded trial carries a stable reason
-//! traceable from coverage back to this record (`P18-INT-005`).
+//! traceable from coverage back to this record (`EVAL-INT-005`).
 
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-/// Admission status of one benchmark revision (`P18-INT-001`).
+/// Admission status of one benchmark revision (`EVAL-INT-001`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub(crate) enum RevisionStatus {
     /// The revision has not been admitted; its outcomes cannot appear as
@@ -46,7 +46,7 @@ pub(crate) enum RevisionStatus {
     Retired,
 }
 
-/// Per-task validity classification (`P18-INT-002`). Every class except
+/// Per-task validity classification (`EVAL-INT-002`). Every class except
 /// [`TaskClassification::ValidAgentOutcome`] carries a stable, reviewed
 /// reason and is excluded from Agent success/failure denominators.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -124,7 +124,7 @@ pub(crate) struct IntegrityReview {
     pub(crate) status: RevisionStatus,
     /// Per-task validity classifications.
     pub(crate) tasks: BTreeMap<String, TaskClassification>,
-    /// Excluded trials with stable reasons (`P18-INT-005`).
+    /// Excluded trials with stable reasons (`EVAL-INT-005`).
     pub(crate) excluded_trials: BTreeMap<String, String>,
     /// Human reviewer identity owning this admission decision.
     pub(crate) reviewer: String,
@@ -193,7 +193,7 @@ impl IntegrityRecord {
     }
 
     /// Content-addressed identity of this record. Any change to any bound
-    /// fact produces a different identity (`P18-INT-004`).
+    /// fact produces a different identity (`EVAL-INT-004`).
     pub(crate) fn identity_digest(&self) -> &str {
         &self.identity
     }
@@ -201,7 +201,7 @@ impl IntegrityRecord {
     /// The canonical bytes this record's identity addresses: the exact
     /// serialization the digest covers, staged as sealed control evidence
     /// so a sealed bundle retains the admission record itself
-    /// (`P18-BND-001`).
+    /// (`EVAL-BND-001`).
     pub(crate) fn canonical_bytes(&self) -> Vec<u8> {
         canonical_body(&self.parts).expect("a reviewed record canonicalizes")
     }
@@ -216,7 +216,7 @@ impl IntegrityRecord {
         self.parts.status
     }
 
-    /// True only when this record admits the revision (`P18-INT-001`).
+    /// True only when this record admits the revision (`EVAL-INT-001`).
     pub(crate) fn admitted(&self) -> bool {
         self.parts.status == RevisionStatus::Admitted
     }
@@ -237,7 +237,7 @@ impl IntegrityRecord {
     }
 
     /// Reclassify one task, returning a **new** record with a **new**
-    /// identity (`P18-INT-004`). The original record is unchanged.
+    /// identity (`EVAL-INT-004`). The original record is unchanged.
     #[cfg_attr(
         not(test),
         expect(
@@ -256,7 +256,7 @@ impl IntegrityRecord {
     }
 
     /// Replace the admission status, returning a **new** record with a
-    /// **new** identity (`P18-INT-004`). The original record is unchanged.
+    /// **new** identity (`EVAL-INT-004`). The original record is unchanged.
     #[cfg_attr(
         not(test),
         expect(

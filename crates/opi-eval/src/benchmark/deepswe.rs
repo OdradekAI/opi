@@ -1,4 +1,4 @@
-//! Crate-private DeepSWE v1.1 benchmark adapter (Phase 18 task 18.10).
+//! Crate-private DeepSWE v1.1 benchmark adapter.
 //!
 //! Owns only what is DeepSWE-v1.1-specific: the pinned declarative profile
 //! for `datacurve-ai/deep-swe` (which has no `v1.1` Git tag, so the profile
@@ -12,7 +12,7 @@
 //! selects Pier for that lifecycle, so the runner surface is Pier
 //! (`v0.3.1`, newer than the 0.3.0 the pinned README requires), not
 //! Harbor. Task-package byte tables, the final verifier image, and the
-//! native-output schema are unresolved slots owned by task 18.15, so the
+//! native-output schema are unresolved slots owned by the native smoke, so the
 //! production profile pins the task-tree identity only and the adapter
 //! fails closed until reviewed bytes are registered.
 
@@ -39,7 +39,7 @@ pub(crate) struct PinnedFile {
 /// lock pins DeepSWE v1.1 by task-tree identity with an empty files table
 /// (`tree-identity`); a `byte-table` pin requires a registered complete
 /// file closure, which today exists only for synthetic fixtures and
-/// arrives for the production task with task 18.15.
+/// arrives for the production task with the native smoke.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PackagePin {
     /// Task-tree identity only: admission fails closed as not materialized.
@@ -50,7 +50,7 @@ pub(crate) enum PackagePin {
 
 /// The pinned native-output surface. No DeepSWE native-output schema is
 /// committed; `pier-report` is admitted only for synthetic wiring fixtures
-/// (a minimal resolved-flag report) until task 18.15 pins the real schema.
+/// (a minimal resolved-flag report) until the native smoke pins the real schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputKind {
     UnpinnedPending1815,
@@ -206,7 +206,7 @@ impl DeepSweProfile {
             .map_err(|_| TbProfileError::Parse("profile is not valid UTF-8".to_owned()))?;
         let doc: DeepSweDoc =
             toml::from_str(&text).map_err(|e| TbProfileError::Parse(e.to_string()))?;
-        if doc.schema != "phase18-benchmark-profile/1" {
+        if doc.schema != "opi-eval-benchmark-profile/1" {
             return Err(TbProfileError::UnsupportedSchema(doc.schema));
         }
         if doc.benchmark != "deepswe" || doc.revision != "v1.1" {
@@ -424,9 +424,9 @@ impl DeepSweProfile {
     }
 
     /// Admit a materialized task package against the pin
-    /// (`P18-BMK-002`). A `tree-identity` pin fails closed as not
+    /// (`EVAL-BMK-002`). A `tree-identity` pin fails closed as not
     /// materialized: no committed byte table exists to validate against, so
-    /// no DeepSWE verifier invocation is admitted until task 18.15
+    /// no DeepSWE verifier invocation is admitted until the native smoke
     /// registers one. A `byte-table` pin requires exactly the pinned files,
     /// byte-identical digests.
     pub(crate) fn admit_task_package(&self, root: &Path) -> Result<(), TaskPackageError> {
@@ -501,7 +501,7 @@ fn walk_files(
     Ok(())
 }
 
-/// Typed task-package admission failures (`P18-BMK-002`).
+/// Typed task-package admission failures (`EVAL-BMK-002`).
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum TaskPackageError {
     Io(String),
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn production_profile_is_pinned_to_the_static_external_lock() {
-        // P18-BMK-001/P18-BMK-008: the profile must restate exactly the
+        // EVAL-BMK-001/EVAL-BMK-008: the profile must restate exactly the
         // identity pins the committed static lock already admits for
         // DeepSWE v1.1 — and only those. The lock has no tag for DeepSWE:
         // the semantic version anchor and the executable revision are both
@@ -594,7 +594,7 @@ mod tests {
             profile.task_tree,
             "8ee76a3e4a876a9bd24f34edabcdde4e47257db4"
         );
-        // Task 18.15 registered the reviewed official byte table: 10
+        // The native smoke registered the reviewed official byte table: 10
         // pinned files with their canonical digest declared.
         assert_eq!(profile.package_pin, PackagePin::ByteTable);
         assert_eq!(profile.package.len(), 10);
@@ -730,7 +730,7 @@ mod tests {
             })
         );
 
-        // The registered byte table (task 18.15) rejects the synthetic
+        // The registered byte table (native smoke) rejects the synthetic
         // fixture bytes with the first drift it meets - missing, extra,
         // or content - never silently.
         let production = DeepSweProfile::parse(&read(
@@ -768,7 +768,10 @@ mod tests {
 
         // Wrong schema family.
         assert!(matches!(
-            reparse(&text.replace("phase18-benchmark-profile/1", "phase18-benchmark-profile/2")),
+            reparse(&text.replace(
+                "opi-eval-benchmark-profile/1",
+                "opi-eval-benchmark-profile/2"
+            )),
             Err(TbProfileError::UnsupportedSchema(_))
         ));
 
@@ -901,7 +904,7 @@ use std::time::Duration;
 
 /// Where a synthetic `pier-report` wiring fixture expects the native
 /// report. The production DeepSWE profile pins no output schema, so no
-/// filename is claimed for real DeepSWE runs until task 18.15 registers
+/// filename is claimed for real DeepSWE runs until the native smoke registers
 /// one.
 const PIER_REPORT_NAME: &str = "pier-report.json";
 
@@ -932,7 +935,7 @@ impl DeepSweAdapter {
     /// fixtures: a single object with exactly a `reward` resolved flag
     /// (0 = not resolved, 1 = resolved; zero is valid, never an error).
     /// This is a wiring hypothesis, not a pinned DeepSWE native-output
-    /// schema: the real importer shape is registered by task 18.15.
+    /// schema: the real importer shape is registered by the native smoke.
     /// Fails closed on drift.
     fn import_pier_report(bytes: &[u8]) -> Result<u64, PierReportError> {
         let value: serde_json::Value =
@@ -980,9 +983,9 @@ impl BenchmarkAdapter for DeepSweAdapter {
             });
         }
         // Task-package admission before any verifier invocation
-        // (P18-BMK-002). A tree-identity pin fails closed as not
-        // materialized: DeepSWE verifier runs are not admitted until task
-        // 18.15 registers a reviewed byte table.
+        // (EVAL-BMK-002). A tree-identity pin fails closed as not
+        // materialized: DeepSWE verifier runs are not admitted until the
+        // native smoke registers a reviewed byte table.
         self.profile
             .admit_task_package(&request.task_dir)
             .map_err(|e| ExecutionError {
@@ -1036,7 +1039,7 @@ impl BenchmarkAdapter for DeepSweAdapter {
         };
         // The process-level verdict is authoritative first: a non-zero exit,
         // timeout, cancellation, or spawn failure can never be rescued by
-        // evidence, and no fallback grader exists (P18-BMK-006).
+        // evidence, and no fallback grader exists (EVAL-BMK-006).
         match outcome.exit {
             ExitState::Exited { code: 0 } => {}
             ExitState::Exited { code } => {
@@ -1310,7 +1313,7 @@ mod adapter_tests {
         let trace = dir.path().join("trace");
         std::fs::create_dir_all(&trace).unwrap();
 
-        // The production DeepSWE pin is the task-18.15 registered byte
+        // The production DeepSWE pin is the native-smoke registered byte
         // table: the synthetic fixture directory drifts against the real
         // official package bytes and admission fails closed as drift.
         let mut request = request_with(&production, fixture_path("task-package"), trace.clone());

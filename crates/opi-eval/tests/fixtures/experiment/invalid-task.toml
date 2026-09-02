@@ -1,0 +1,59 @@
+# Hermetic local experiment contract for the assembled run path
+#. Fixture-grade only: every executable resolved by
+# the runner is a runtime-generated deterministic helper; no real agent,
+# verifier, provider, or network is involved.
+
+schema = "opi-eval-experiment/1"
+experiment_id = "invalid-task"
+
+[benchmark]
+name = "terminal-bench"
+revision = "2.1"
+dataset = "terminal-bench-2.1-fixture"
+# Classifies the task as prompt/test-misaligned: excluded from scoring.
+# Content-addressed identity of the fixture integrity review the runner
+# builds for this document under the behavior `invalid-task`
+# (pinned by a unit test in runner::experiment).
+integrity_digest = "1874e9f4c520728dc7f9a1cc9a5d28635970f6c3ba96ffdea5e3703c9eecd11f"
+
+[[subjects]]
+id = "baseline-pi"
+product = "pi"
+version = "0.84.3"
+
+[[subjects]]
+id = "candidate-opi"
+product = "opi"
+version = "0.1.0"
+
+[[edges]]
+id = "edge-1"
+baseline = "baseline-pi"
+candidate = "candidate-opi"
+
+[model_controls]
+provider = "local"
+model = "scripted"
+endpoint_class = "local"
+temperature = 0.0
+max_output_tokens = 4096
+# Omitted: neither pinned profile expresses a reasoning control for this
+# experiment, so no subject is asked to realize one.
+reasoning = "omitted"
+
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "isolated"
+
+[[trials]]
+id = "trial-pi-1"
+subject = "baseline-pi"
+task = "fixture-task"
+group = "group-hello"
+
+[[trials]]
+id = "trial-opi-1"
+subject = "candidate-opi"
+task = "fixture-task"
+group = "group-hello"

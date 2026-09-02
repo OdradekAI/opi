@@ -1,3 +1,0 @@
-   Compiling opi-coding-agent v0.8.1 (/home/luiz/p18-recapture/crates/opi-coding-agent)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.06s
-     Running tests/phase17_product_evidence.rs (target/debug/deps/phase17_product_evidence-a4ea39468ac84ff0)

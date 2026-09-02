@@ -1,8 +1,8 @@
-# Declarative Opi agent profile for the Phase 18 eval seam.
+# Declarative Opi agent profile for opi-eval.
 # Identity, launch policy, environment projection keys, and limits only:
 # no protocol behavior, no parser configuration, no credentials.
 
-schema = "phase18-agent-profile/1"
+schema = "opi-eval-agent-profile/1"
 product = "opi"
 
 [identity]

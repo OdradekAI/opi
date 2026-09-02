@@ -1,4 +1,4 @@
-//! Crate-private shared Agent execution contract (Phase 18 task 18.6).
+//! Crate-private shared Agent execution contract.
 //!
 //! [`AgentExecution`] consumes [`crate::process::ProcessSupervisor`] and one
 //! [`AgentAdapter`] and produces a single settled [`AgentRecord`]: exit state,
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
-/// Exact Agent identity retained on every settled record (P18-AGT-001).
+/// Exact Agent identity retained on every settled record (EVAL-AGT-001).
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct AgentIdentity {
     /// Product name, e.g. `opi` or `pi`.
@@ -91,7 +91,7 @@ pub(crate) struct AgentRunRequest {
     pub extra_env: BTreeMap<OsString, OsString>,
 }
 
-/// Fresh per-trial isolation directories (P18-AGT-006).
+/// Fresh per-trial isolation directories (EVAL-AGT-006).
 #[derive(Debug, Clone)]
 pub(crate) struct IsolationDirs {
     pub home: PathBuf,
@@ -128,7 +128,7 @@ pub(crate) struct NativeArtifact {
 
 /// Typed failure carried on a settled record. A failed run is settled
 /// evidence, not an unsettable error: the run happened and the verdict is
-/// authoritative (P18-AGT-003 fail-closed, no fallback).
+/// authoritative (EVAL-AGT-003 fail-closed, no fallback).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentFailure {
     /// Static redacted token describing the failure kind.
@@ -196,7 +196,7 @@ pub(crate) struct AgentRecord {
 }
 
 impl AgentRecord {
-    /// The lifecycle settlement observation for this record (P18-DUR-003).
+    /// The lifecycle settlement observation for this record (EVAL-DUR-003).
     /// The cancellation source is caller-owned: only the caller knows whether
     /// the token fired for a user or infrastructure reason.
     pub(crate) fn settlement_kind(&self, cancel_source: CancellationSource) -> SettlementKind {
@@ -228,7 +228,7 @@ impl AgentRecord {
 
 /// The product-neutral product-specific seam: one implementation per Agent.
 /// Crate-private because the only consumers are this crate's execution driver
-/// and the shared conformance suite (18.7 pi adapter, 18.10.1 conformance).
+/// and the shared conformance suite (pi-adapter pi adapter, hermetic-conformance conformance).
 pub(crate) trait AgentAdapter {
     /// Exact identity declared by the declarative profile + resolved request.
     fn identity(&self, request: &AgentRunRequest) -> AgentIdentity;

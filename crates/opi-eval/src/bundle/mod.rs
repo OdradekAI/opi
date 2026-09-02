@@ -1,4 +1,4 @@
-//! Crate-private sealed trial bundle (Phase 18 task 18.5).
+//! Crate-private sealed trial bundle.
 //!
 //! A [`RunBundle`] is a staged, then sealed, artifact graph — never a shared
 //! mutable database. It owns canonical sealing, mutation rejection, and
@@ -470,7 +470,7 @@ mod tests {
             .unwrap();
 
         // The reserved expected output was never staged: sealing refuses
-        // the incomplete reservation (P18-BND-001).
+        // the incomplete reservation (EVAL-BND-001).
         let err = bundle.seal(&[]).unwrap_err();
         assert!(matches!(err, BundleError::ReservationBroken { .. }));
         assert_eq!(err.boundary(), FailureBoundaryCode::TrialDurability);
@@ -561,7 +561,7 @@ mod tests {
         assert_eq!(RunBundle::verify(tmp.path()).unwrap(), receipt);
 
         // Mutating any covered byte after sealing invalidates verification
-        // (P18-BND-003) as a post-seal mutation owned by TrialDurability.
+        // (EVAL-BND-003) as a post-seal mutation owned by TrialDurability.
         let artifact = tmp
             .path()
             .join(format!("artifacts/{}", stdout_key.as_str()));
@@ -835,7 +835,7 @@ impl fmt::Display for IdentityError {
 }
 
 /// The durable pre-effect reservation of trial, pair, artifact, and expected
-/// output identities (P18-DUR-001).
+/// output identities (EVAL-DUR-001).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct IntentRecord {
     pub(crate) trial: TrialIdentity,
@@ -844,7 +844,7 @@ pub(crate) struct IntentRecord {
     pub(crate) expected_output: ArtifactKey,
 }
 
-/// Durable marker that the observed outcome was recorded (P18-DUR-003).
+/// Durable marker that the observed outcome was recorded (EVAL-DUR-003).
 /// Full evidence retention is written as bundle artifacts; this marker only
 /// separates effect-unknown from settled during recovery.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -874,7 +874,7 @@ pub(crate) enum ArtifactRole {
 
 /// Required sensitivity classification of one artifact. Raw credentials,
 /// unrestricted environment values, and private raw reasoning must never be
-/// classified exportable (P18-BND-006).
+/// classified exportable (EVAL-BND-006).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Sensitivity {
     /// Safe to enter an exportable sealed bundle.
@@ -1259,7 +1259,7 @@ impl RunBundle {
     /// exactly the declared produced native evidence, and the reserved
     /// expected output must be staged — and finally atomically publishes
     /// one complete manifest carrying the content-addressed bundle
-    /// identity (P18-DUR-004, P18-BND-001). `produced` names the
+    /// identity (EVAL-DUR-004, EVAL-BND-001). `produced` names the
     /// adapter-produced native evidence keys that materialized with their
     /// records (agent completion artifacts, verifier streams, and the
     /// native grader report); every other staged key must be reserved.
@@ -1354,7 +1354,7 @@ impl RunBundle {
     /// tree so every retained byte is manifest-covered (rejecting
     /// unmanifested, missing, non-file, or digest-mismatched entries), and
     /// fails on any mutation. It never repairs, rehashes, or rewrites
-    /// (P18-BND-003); post-seal mutations own the TrialDurability
+    /// (EVAL-BND-003); post-seal mutations own the TrialDurability
     /// boundary.
     pub(crate) fn verify(root: &Path) -> Result<SealReceipt, BundleError> {
         let text =
@@ -1514,7 +1514,7 @@ impl RunBundle {
     }
 
     /// Durably reserves the intent identities before any process effect can
-    /// start (P18-DUR-001). The record is fsynced to `intent.json` before
+    /// start (EVAL-DUR-001). The record is fsynced to `intent.json` before
     /// the returned proof exists; calling twice or after sealing fails.
     pub(crate) fn publish_intent(
         &mut self,

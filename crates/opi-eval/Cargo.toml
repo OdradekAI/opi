@@ -1,6 +1,6 @@
 [package]
 name = "opi-eval"
-description = "Unpublished Independent Companion for cross-agent evaluation experiments (provisional Phase 18 seam)"
+description = "Unpublished Independent Companion for agent-neutral cross-agent evaluation"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -19,8 +19,8 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 toml = { workspace = true }
 
-# Phase 18 external-process supervision (task 18.4): process groups (Unix)
-# and Job Objects (Windows) for the crate-private ProcessSupervisor.
+# External-process supervision uses process groups on Unix and Job Objects on
+# Windows for the crate-private ProcessSupervisor.
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 

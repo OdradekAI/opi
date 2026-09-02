@@ -253,13 +253,13 @@ adapter。外部 adapter 一旦被选中，任何 adapter 或协议失败都会 
 | [`opi-coding-agent`](crates/opi-coding-agent) | `opi` CLI、内置工具、package/config/session 装配和 `CodingHarness` |
 | [`opi-protocol`](crates/opi-protocol) | 版本化 `command-execution-jsonl-v1` 协议类型、schema、codec 和 fixture |
 | [`opi-sandbox`](crates/opi-sandbox) | 独立命令限制 SDK/CLI 和协议后端 |
-| [`opi-eval`](crates/opi-eval) | 未发布的 Independent Companion，用于跨 Agent 评测实验（临时 Phase 18 seam） |
+| [`opi-eval`](crates/opi-eval) | 未发布的 Independent Companion，用于 Agent 中立的跨 Agent 评测 |
 
 `opi-eval` 是未发布的 Independent Companion：作为 Agent 中立的 workspace 成员
-用于跨 Agent 评测实验，不依赖任何 Opi crate，也没有任何 Opi 产品链接、注册
-或激活它。它是临时的 Phase 18 seam，不在 `opi` 中注册 provider、tool、
-package、command、extension、启动 hook 或默认捕获路径，普通 `opi` 运行时
-行为不因它的存在而改变。
+用于 Agent 中立的跨 Agent 评测，不依赖任何 Opi crate，也没有任何 Opi 产品
+链接、注册或激活它。它不在 `opi` 中注册 provider、tool、package、command、
+extension、启动 hook 或默认捕获路径，普通 `opi` 运行时行为不因它的存在而
+改变。
 
 面向机器的表面仍是不稳定 0.x 契约：
 

@@ -1,6 +1,6 @@
-//! Crate-private external-process supervision (Phase 18 task 18.4).
+//! Crate-private external-process supervision.
 //!
-//! [`ProcessSupervisor`] is the one shared state machine the Phase 18 Agent and
+//! [`ProcessSupervisor`] is the one shared state machine the opi-eval Agent and
 //! benchmark adapters use to run external processes. It accepts only structured
 //! inputs — argv, cwd, an exact environment projection, output caps, a timeout,
 //! and a cancellation token — and settles, on every path, the child exit state,

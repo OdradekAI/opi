@@ -1,30 +1,30 @@
-//! Normalized offline report over sealed assembled outputs (task 18.13).
+//! Normalized offline report over sealed assembled outputs.
 //!
 //! [`ReportBuilder::recompute_from_bundle`] rebuilds the normalized view
 //! purely from verified sealed bundles: every trial view, the pair
 //! coverage, the integrity provenance, the native rewards, and the
 //! diagnostics are reconstructed from the sealed control evidence (the
 //! resolved experiment contract and the integrity record), the sealed
-//! provisional trajectory, the sealed authority ledger, and the sealed
+//! trajectory projection, the sealed authority ledger, and the sealed
 //! manifest identities. No mutable side file of the run root is read, so
 //! mutating outer run artifacts can never change a published report
-//! (`P18-RPT-001`, `P18-OUT-004`). Both paths are effect-free: no Agent,
+//! (`EVAL-RPT-001`, `EVAL-OUT-004`). Both paths are effect-free: no Agent,
 //! no provider, no spawn, no mutation of sealed bytes.
 //!
 //! Report contract enforced here: headline outcomes come only from the
 //! admitted grader-sourced native report artifact with per-headline
-//! provenance (`P18-RPT-003`); pair coverage keeps every declared pair
+//! provenance (`EVAL-RPT-003`); pair coverage keeps every declared pair
 //! visible with its exact state, so exclusions, failures, and unknowns
-//! never leave the denominator silently (`P18-RPT-004`, `P18-EXP-006`);
+//! never leave the denominator silently (`EVAL-RPT-004`, `EVAL-EXP-006`);
 //! quality, cost, safety, efficiency, and authority are never collapsed
-//! into one composite score or best-trial verdict (`P18-RPT-005`); the
+//! into one composite score or best-trial verdict (`EVAL-RPT-005`); the
 //! report labels its evidence `conformance-evidence` and claims no
-//! official leaderboard verification (`P18-RPT-006`). Asymmetric native
+//! official leaderboard verification (`EVAL-RPT-006`). Asymmetric native
 //! facts stay measured values (cited by sealed artifact digest) or typed
-//! unknowns - never fabricated parity (`P18-A16`). Declared canary
-//! secrets in exportable bundle content block publication (`P18-A18`,
-//! `P18-SEC-005`). Identical sealed inputs and tool identities serialize
-//! to byte-identical output (`P18-RPT-002`).
+//! unknowns - never fabricated parity (`EVAL-A16`). Declared canary
+//! secrets in exportable bundle content block publication (`EVAL-A18`,
+//! `EVAL-SEC-005`). Identical sealed inputs and tool identities serialize
+//! to byte-identical output (`EVAL-RPT-002`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -34,13 +34,13 @@ use serde::Serialize;
 use crate::bundle::RunBundle;
 
 /// Normalized report schema identity.
-const REPORT_SCHEMA: &str = "phase18-normalized-report/1";
+const REPORT_SCHEMA: &str = "opi-eval-normalized-report/1";
 /// Pinned reporter identity: part of every byte-stability contract
-/// (`P18-RPT-002` - same sealed inputs, grader identity, and reporter
+/// (`EVAL-RPT-002` - same sealed inputs, grader identity, and reporter
 /// version).
-pub(crate) const REPORTER_VERSION: &str = "phase18-reporter/1";
-/// The single classification wording of Phase 18 paired results
-/// (`P18-RPT-006`): conformance evidence only, never leaderboard
+pub(crate) const REPORTER_VERSION: &str = "opi-eval-reporter/1";
+/// The single classification wording of opi-eval paired results
+/// (`EVAL-RPT-006`): conformance evidence only, never leaderboard
 /// verification or superiority.
 const CLASSIFICATION: &str = "conformance-evidence";
 /// Outcome token when publication succeeded.
@@ -54,7 +54,7 @@ const OUTCOME_UNVERIFIED: &str = "verification-failed";
 /// The asymmetric native fact families the common report tracks. A family
 /// is `measured` for a product only when the product's own sealed native
 /// artifact carries it; otherwise it stays a typed unknown
-/// (`P18-A16`).
+/// (`EVAL-A16`).
 const NATIVE_FACT_FAMILIES: [&str; 4] = ["usage", "cost", "retry", "compaction"];
 
 /// Which sealed native artifact carries one fact family for one product.
@@ -90,7 +90,7 @@ struct SealedTrial {
     group: String,
     /// The manifest's artifact entries (logical key to entry).
     entries: BTreeMap<String, serde_json::Value>,
-    /// The sealed provisional trajectory.
+    /// The sealed trajectory projection.
     trajectory: serde_json::Value,
     /// The sealed authority ledger.
     ledger: serde_json::Value,
@@ -122,11 +122,11 @@ struct TrialView {
     group: String,
     status: String,
     /// Outcome headline: only from the grader-sourced admitted native
-    /// report artifact (`P18-RPT-003`). Absent when the grader never
+    /// report artifact (`EVAL-RPT-003`). Absent when the grader never
     /// admitted.
     #[serde(skip_serializing_if = "Option::is_none")]
     headline: Option<HeadlineView>,
-    /// Asymmetric native facts: measured or typed unknown (`P18-A16`).
+    /// Asymmetric native facts: measured or typed unknown (`EVAL-A16`).
     native_facts: BTreeMap<String, serde_json::Value>,
     /// Separately labelled diagnostics: sealed agent and verifier
     /// observations and the sealed authority transition states, never
@@ -161,7 +161,7 @@ impl std::fmt::Display for ReportError {
     }
 }
 
-/// The declared canary-secret guard (`P18-A18`, `P18-SEC-005`).
+/// The declared canary-secret guard (`EVAL-A18`, `EVAL-SEC-005`).
 pub(crate) struct RedactionGuard {
     tokens: Vec<String>,
 }
@@ -609,7 +609,7 @@ fn headline(trial: &SealedTrial) -> Option<HeadlineView> {
 /// The asymmetric native facts of one product over one sealed bundle: a
 /// family is measured only when the product's own native artifact carries
 /// it; otherwise it stays the typed unknown `<product>-<family>-not-native`
-/// (`P18-A16`). Measured facts cite the sealed artifact digest; unknown
+/// (`EVAL-A16`). Measured facts cite the sealed artifact digest; unknown
 /// facts carry no value and no digest.
 fn native_facts(
     product: &str,
@@ -708,8 +708,8 @@ fn declared_trial_count(normalized: &NormalizedReport) -> usize {
         .unwrap_or(0)
 }
 
-/// Pair coverage derived from sealed content only (`P18-RPT-004`,
-/// `P18-EXP-006`): every edge's pairing universe over the sealed
+/// Pair coverage derived from sealed content only (`EVAL-RPT-004`,
+/// `EVAL-EXP-006`): every edge's pairing universe over the sealed
 /// experiment's declared (task, group) slots, with the exact visible state
 /// of each side derived from the sealed bundles and the sealed integrity
 /// record. A scored Agent failure stays a comparable graded Agent outcome.

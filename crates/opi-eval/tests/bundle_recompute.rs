@@ -1,13 +1,14 @@
-//! Offline bundle recomputation suite (task 18.13).
+//! Offline bundle recomputation suite.
 //!
 //! Every case drives the production `opi-eval` binary: the offline
 //! `regrade`/`report` commands consume sealed assembled outputs produced by
-//! `opi-eval run` (task 18.12) and must never start an Agent, call a
+//! `opi-eval run` and must never start an Agent, call a
 //! provider, mutate a sealed bundle, or repair drifted bytes. All offline
 //! operations are effect-free by construction: they only read the run root
 //! and write outside it (stdout or an explicit output path). This proves
 //! the hermetic fixture-grade offline path only: no real executable or
-//! provider is claimed (task 18.15 owns the native rerun).
+//! provider is claimed; native execution is verified separately by the
+//! native-smoke workflow.
 
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
@@ -73,13 +74,13 @@ fn bundle_dir(root: &Path, trial: &str) -> PathBuf {
     root.join("trials").join(trial).join("bundle")
 }
 
-/// `P18-A15`: a sealed artifact byte change is rejected by verification
+/// `EVAL-A15`: a sealed artifact byte change is rejected by verification
 /// without repair, rehash, or manifest mutation.
 #[cfg(unix)]
 #[test]
-fn p18_a15_mutation_rejected() {
+fn covered_byte_mutation_is_rejected() {
     let root = tempfile::tempdir().unwrap();
-    let (code, report, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    let (code, report, stderr) = run_experiment("local-paired.toml", "happy", root.path());
     assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
 
     // Regrade over the intact run root verifies every sealed bundle.
@@ -143,15 +144,15 @@ fn p18_a15_mutation_rejected() {
     );
 }
 
-/// `P18-BND-001` closure: an unmanifested file added to a sealed bundle's
+/// `EVAL-BND-001` closure: an unmanifested file added to a sealed bundle's
 /// artifact tree, a corrupted durable intent sidecar, and a deleted
 /// expected-output artifact each fail re-verification with the typed
 /// reason, without repair or rewrite.
 #[cfg(unix)]
 #[test]
-fn p18_bnd001_retained_byte_closure_rejects_drift() {
+fn bnd001_retained_byte_closure_rejects_drift() {
     let root = tempfile::tempdir().unwrap();
-    let (code, report, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    let (code, report, stderr) = run_experiment("local-paired.toml", "happy", root.path());
     assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
     let root_arg = root.path().canonicalize().unwrap();
     let bundle = bundle_dir(root.path(), "trial-opi-1");
@@ -212,16 +213,16 @@ fn p18_bnd001_retained_byte_closure_rejects_drift() {
     );
 }
 
-/// `P18-BND`-adjacent provenance: the sealed manifest names the producer of
+/// `EVAL-BND`-adjacent provenance: the sealed manifest names the producer of
 /// every retained byte - agent-executed artifacts under `agent-<product>`,
 /// verifier streams and the native grader report under the pinned grader
 /// identity - and the offline headline selects the grader-sourced native
-/// report (Phase 18 remediation).
+/// report .
 #[cfg(unix)]
 #[test]
 fn sealed_manifest_attributes_artifacts_to_their_producers() {
     let root = tempfile::tempdir().unwrap();
-    let (code, report, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    let (code, report, stderr) = run_experiment("local-paired.toml", "happy", root.path());
     assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
 
     for (trial, product) in [("trial-opi-1", "agent-opi"), ("trial-pi-1", "agent-pi")] {
@@ -309,16 +310,16 @@ fn collect_files(root: &Path, dir: &Path, files: &mut std::collections::BTreeMap
     }
 }
 
-/// `P18-A17`: regrade, recompute, and render run repeatedly over the same
+/// `EVAL-A17`: regrade, recompute, and render run repeatedly over the same
 /// sealed bundle. No Agent/provider starts, the bundle is unchanged, and
 /// normalized outputs are byte-stable for the same tool identities.
-/// `P18-OUT-004`: a new real execution never reuses the sealed trial
+/// `EVAL-OUT-004`: a new real execution never reuses the sealed trial
 /// identities, while the report stays reproducible offline.
 #[cfg(unix)]
 #[test]
-fn p18_a17_repeated_offline_operations_are_stable() {
+fn repeated_offline_operations_are_stable() {
     let root = tempfile::tempdir().unwrap();
-    let (code, report, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    let (code, report, stderr) = run_experiment("local-paired.toml", "happy", root.path());
     assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
     let before = tree_digest(root.path());
     let root_arg = root.path().canonicalize().unwrap();
@@ -366,8 +367,8 @@ fn p18_a17_repeated_offline_operations_are_stable() {
     );
 
     // A new real execution never reuses sealed trial identities
-    // (`P18-OUT-004`): the same run root is refused outright.
-    let (code, _, refusal) = run_experiment("phase18-local.toml", "happy", root.path());
+    // (`EVAL-OUT-004`): the same run root is refused outright.
+    let (code, _, refusal) = run_experiment("local-paired.toml", "happy", root.path());
     assert_eq!(code, 2, "identity reuse must be refused: {refusal}");
     assert!(refusal.contains("already"), "typed refusal: {refusal}");
 

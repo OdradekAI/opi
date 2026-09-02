@@ -1,16 +1,16 @@
-//! Offline report contract suite (task 18.13).
+//! Offline report contract suite.
 //!
 //! Every case drives the production `opi-eval` binary: `report` consumes
-//! the sealed assembled outputs of `opi-eval run` (task 18.12), recomputes
+//! the sealed assembled outputs of `opi-eval run`, recomputes
 //! the normalized view through `ReportBuilder::recompute_from_bundle`
 //! before rendering, and publishes one conformance-only report. Asymmetric
 //! native facts stay measured values or typed unknowns - never fabricated
 //! parity - and canary leakage blocks publication. This proves the
-//! hermetic fixture-grade offline path only (task 18.15 owns the native
-//! rerun).
+//! hermetic fixture-grade offline path only; native execution is verified
+//! separately by the native-smoke workflow.
 
-// Hermetic Phase 18 runs stage posix-sh helpers; the native execution
-// surface is Linux (see the phase18 native smoke workflow).
+// Hermetic opi-eval runs stage posix-sh helpers; the native execution
+// surface is Linux (see the eval native smoke workflow).
 #![cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -64,13 +64,13 @@ fn invoke(command: &str, args: &[(&str, &std::ffi::OsStr)]) -> (i32, String, Str
     )
 }
 
-/// The report output is isolated from the run root (Phase 18 remediation):
+/// The report output is isolated from the run root :
 /// an `--out` target inside the run root is rejected outright, and an
 /// existing target is never replaced.
 #[test]
 fn output_isolation_rejects_in_root_and_existing_targets() {
     let root = tempfile::tempdir().unwrap();
-    let (code, report, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    let (code, report, stderr) = run_experiment("local-paired.toml", "happy", root.path());
     assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
     let root_arg = root.path().canonicalize().unwrap();
 
@@ -118,13 +118,13 @@ fn output_isolation_rejects_in_root_and_existing_targets() {
     );
 }
 
-/// `P18-A16`: Opi and pi expose asymmetric call, usage, cost, retry, and
+/// `EVAL-A16`: Opi and pi expose asymmetric call, usage, cost, retry, and
 /// compaction facts. Native facts remain retained; the common report uses
 /// measured values or typed unknowns and never fabricates parity.
 #[test]
-fn p18_a16_asymmetric_native_facts() {
+fn asymmetric_native_facts() {
     let root = tempfile::tempdir().unwrap();
-    let (code, report, stderr) = run_experiment("phase18-local.toml", "happy", root.path());
+    let (code, report, stderr) = run_experiment("local-paired.toml", "happy", root.path());
     assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
 
     let root_arg = root.path().canonicalize().unwrap();
@@ -179,11 +179,11 @@ fn p18_a16_asymmetric_native_facts() {
     );
 }
 
-/// `P18-A18` / `P18-SEC-005`: canary secrets in sealed content block
+/// `EVAL-A18` / `EVAL-SEC-005`: canary secrets in sealed content block
 /// bundle sealing and report publication. The blocked report never echoes
 /// the canary itself.
 #[test]
-fn p18_a18_canary_leakage_blocks_bundle_and_report() {
+fn canary_leakage_blocks_bundle_and_report() {
     let canaries = fixtures_dir().join("reports/canaries/hermetic.txt");
     assert!(canaries.is_file(), "pinned hermetic canary fixture");
 
@@ -194,7 +194,7 @@ fn p18_a18_canary_leakage_blocks_bundle_and_report() {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
         .arg("run")
         .arg("--config")
-        .arg(fixtures_dir().join("experiment/phase18-local.toml"))
+        .arg(fixtures_dir().join("experiment/local-paired.toml"))
         .arg("--root")
         .arg(root.path().canonicalize().unwrap())
         .arg("--fixtures")
@@ -228,7 +228,7 @@ fn p18_a18_canary_leakage_blocks_bundle_and_report() {
     // the moment the canary is declared to the report command.
     let leaky = tempfile::tempdir().unwrap();
     let (code, run_report, stderr) =
-        run_experiment("phase18-local.toml", "canary-leak", leaky.path());
+        run_experiment("local-paired.toml", "canary-leak", leaky.path());
     assert_eq!(
         code, 0,
         "undeclared leak seals for the report-side test: {stderr} {run_report}"
