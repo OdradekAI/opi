@@ -64,10 +64,10 @@ impl OfflineRegrader {
     /// reported as unsealed (a crashed or seal-blocked trial), not skipped
     /// silently: the denominator keeps every durable trial visible
     /// (`EVAL-EXP-006`).
-    pub(crate) fn regrade(run_root: &Path) -> RegradeReport {
+    pub(crate) fn regrade(run_root: &Path) -> Result<RegradeReport, std::io::Error> {
         let mut bundles = Vec::new();
         let mut failures = Vec::new();
-        let mut trials = read_trial_ids(run_root);
+        let mut trials = read_trial_ids(run_root)?;
         for trial in trials.drain(..) {
             let bundle_root = run_root.join("trials").join(&trial).join("bundle");
             match RunBundle::verify(&bundle_root) {
@@ -83,29 +83,29 @@ impl OfflineRegrader {
         } else {
             "mutation-detected"
         };
-        RegradeReport {
+        Ok(RegradeReport {
             schema: REGRADE_SCHEMA,
             outcome,
             bundles,
             failures,
-        }
+        })
     }
 }
 
 /// Sorted durable trial ids under one run root. Ordering is by sorted id so
 /// the report never depends on directory iteration order.
-fn read_trial_ids(run_root: &Path) -> Vec<String> {
-    let mut ids: Vec<String> = std::fs::read_dir(run_root.join("trials"))
-        .map(|entries| {
-            entries
-                .filter_map(|entry| entry.ok())
-                .filter(|entry| entry.path().is_dir())
-                .filter_map(|entry| entry.file_name().into_string().ok())
-                .collect()
-        })
-        .unwrap_or_default();
+fn read_trial_ids(run_root: &Path) -> Result<Vec<String>, std::io::Error> {
+    let mut ids = Vec::new();
+    for entry in std::fs::read_dir(run_root.join("trials"))? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir()
+            && let Ok(id) = entry.file_name().into_string()
+        {
+            ids.push(id);
+        }
+    }
     ids.sort();
-    ids
+    Ok(ids)
 }
 
 /// Maps one typed bundle failure to its report token. Symlinks and manifest

@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `opi-eval`: regrading now fails closed when the run's trials directory
+  cannot be enumerated instead of publishing an empty verified report.
+- `opi-eval`: reused trial identities are now rejected from their durable
+  intent reservation before staging can change the existing trial tree.
 - `opi-eval`: artifact-directory and
   report-output ancestor aliases before they can redirect writes outside the
   reserved boundary, durably synchronizes the containing directory before an

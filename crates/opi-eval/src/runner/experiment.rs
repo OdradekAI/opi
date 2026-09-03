@@ -1083,6 +1083,17 @@ async fn run_trial(
     request: &RunRequest,
 ) -> Result<TrialResult, RunError> {
     let trial_root = request.root.join("trials").join(&declared.id);
+
+    // A trial identity is never reused: an existing durable reservation
+    // refuses the run before any staging (EVAL-EXP-005). Retries and
+    // replacements take fresh identities.
+    if trial_root.join("bundle/intent.json").is_file() {
+        return Err(RunError::Bundle(format!(
+            "trial {} already has a durable intent reservation",
+            declared.id
+        )));
+    }
+
     let workspace = trial_root.join("workspace");
     let agent_trace = trial_root.join("agent-trace");
     let verifier_trace = trial_root.join("verifier-trace");
@@ -1125,16 +1136,6 @@ async fn run_trial(
             )
             .map_err(|error| RunError::Staging(error.to_string()))?;
         }
-    }
-
-    // A trial identity is never reused: an existing durable reservation
-    // refuses the run before any staging (EVAL-EXP-005). Retries and
-    // replacements take fresh identities.
-    if trial_root.join("bundle/intent.json").is_file() {
-        return Err(RunError::Bundle(format!(
-            "trial {} already has a durable intent reservation",
-            declared.id
-        )));
     }
 
     // Durable intent before any process effect (EVAL-DUR-001). The

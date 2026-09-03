@@ -35,7 +35,7 @@ pub struct RegradeArgs {
 /// binary prints the returned report and derives its exit code from the
 /// outcome.
 pub fn regrade(args: &RegradeArgs) -> Result<serde_json::Value, RegradeCliError> {
-    let report = OfflineRegrader::regrade(&args.root);
+    let report = OfflineRegrader::regrade(&args.root)?;
     Ok(report.to_json())
 }
 

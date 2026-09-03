@@ -1,22 +1,36 @@
 # Phase 18 Remediation Result
 
 **Status**: COMPLETE
-**Audit index SHA-256**: `4a3b08e37620f26f5f2420dd35f027ec829c620d4cdd92206b1b96e561b3cab6`
-**Plan SHA-256**: `1e9609291f9f32de8622a2a7f4bc762e69150bba2ed7638f9ac12b5cc4d319e1`
-**Changed paths**: ["scripts/test_phase18_scripted_provider.py"]
+**Audit index SHA-256**: `480a0535bd2a90fa94b4a8ea13f0030c4b1de4a8546f2ae4e3800eea2d81e6cf`
+**Plan SHA-256**: `28527db2fa4ba63221640ec2bacfb244b873cbee356abf4fe4d356e1217e06b5`
+**Changed paths**: ["CHANGELOG.md","crates/opi-eval/src/cli/regrade.rs","crates/opi-eval/src/regrade.rs","crates/opi-eval/src/runner/experiment.rs","crates/opi-eval/tests/fail_closed_cli.rs"]
 
-## Closure Result
+## Closure Batches
 
-Batch B1 is closed. `scripts/test_phase18_scripted_provider.py` now uses one listener cleanup helper that kills a still-running child and calls `communicate(timeout=10)` to reap it and close captured stdout and stderr. The readiness-failure path and all five listener-test `finally` blocks use that helper.
+### B1: Fail closed when the regrade trial root cannot be enumerated
+
+**Status**: Closed
+
+The offline regrader now propagates trial-directory enumeration errors through
+the existing `RegradeCliError::Io` boundary. The production CLI returns exit 2
+with `cannot read run root` and does not publish a verified JSON report.
+
+### B2: Reject an existing trial identity before staging
+
+**Status**: Closed
+
+The runner now checks the durable intent reservation immediately after deriving
+the trial root. A refused retry returns exit 2 without changing any path or byte
+under the existing trial tree.
 
 ## Verification
 
-- `python -X tracemalloc=5 -W always::ResourceWarning -m unittest scripts/test_phase18_scripted_provider.py` -> PASS: 15 tests ran in 2.933 seconds and reported `OK` with no `ResourceWarning` output.
-- `python scripts/opi-doc-check.py` -> PASS: `opi documentation contracts: PASS`.
-- `git diff --check` -> PASS with no output.
+    cargo test -p opi-eval --test fail_closed_cli unreadable_regrade_root_fails_closed -- --exact
+    cargo test -p opi-eval --test fail_closed_cli reused_trial_identity_is_rejected_before_staging -- --exact
+    cargo fmt --check --all
+    cargo clippy -p opi-eval --all-targets -- -D warnings
+    cargo test -p opi-eval --all-targets
+    python scripts/opi-doc-check.py
+    git diff --check -- CHANGELOG.md crates/opi-eval/src/cli/regrade.rs crates/opi-eval/src/regrade.rs crates/opi-eval/src/runner/experiment.rs crates/opi-eval/tests/fail_closed_cli.rs docs/snapshots/phase18/assurance/remediation.plan.md docs/snapshots/phase18/assurance/remediation.plan.dispositions.jsonl
 
-No incidental repair was required.
-
-## Materialization Boundary
-
-The planned test change and this result evidence remain uncommitted. A fresh audit or reviewer re-run is not admitted until the fix and current live assurance set are committed and the assurance directory is clean.
+No incidental repairs were required.
