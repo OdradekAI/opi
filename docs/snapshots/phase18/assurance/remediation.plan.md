@@ -2,71 +2,147 @@
 
 **Status**: READY-FOR-APPLY
 **Audit index SHA-256**: `305624349f650309f374ff8556114d5572c21b02fa30c48ee1ea2eaa95d78195`
-**Remediation head**: `a8bb45426daf960d9e60024ce34542995c4dd2d1`
+**Remediation head**: `102d30bd861c0ce48e79f07a723e6e14d4224cb9`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
-**Dirty-worktree baseline**: staged=[]; unstaged=[docs/snapshots/phase18/assurance/audit.codex.gpt56.findings.jsonl, docs/snapshots/phase18/assurance/audit.codex.gpt56.md, docs/snapshots/phase18/assurance/audit.codex.gpt56.meta.json, docs/snapshots/phase18/assurance/audit.codex.gpt56.requirements.jsonl, docs/snapshots/phase18/assurance/audit.index.json]; untracked=[docs/snapshots/phase18/assurance/history/phase18-codex-gpt56-c8d6dea-20260902t181312z/audit.codex.gpt56.findings.jsonl, docs/snapshots/phase18/assurance/history/phase18-codex-gpt56-c8d6dea-20260902t181312z/audit.codex.gpt56.md, docs/snapshots/phase18/assurance/history/phase18-codex-gpt56-c8d6dea-20260902t181312z/audit.codex.gpt56.meta.json, docs/snapshots/phase18/assurance/history/phase18-codex-gpt56-c8d6dea-20260902t181312z/audit.codex.gpt56.requirements.jsonl]; fixed remediation outputs were tracked and clean
+**Dirty-worktree baseline**: staged `[]`; unstaged `[]`; untracked `[]`
 **Unresolved decisions**: none
 
 ## Current Finding Verification
 
 | Source run / Finding ID | Verification | Source and final severity + rationale | Closure key/family | Batch | Decision |
 |---|---|---|---|---|---|
-| `phase18-codex-gpt56-a8bb454-20260903t021838z` / `P18-AUD-002` | Confirmed: GitHub has no run for the remediation head, the commit is not present on the remote, and no remote branch contains it. | Major -> Major: current local tests cannot substitute for the required real Opi/pi, native-verifier, and three-platform execution at the current code identity. | `phase18.current-head-native-and-platform-evidence` / `phase18.conformance-evidence` | B1 | `fix:publish-and-execute-current-head-evidence` |
-| `phase18-codex-gpt56-a8bb454-20260903t021838z` / `P18-AUD-001` | Confirmed: the clean archive has no `crates/opi-eval/docs/seam-evidence-matrix.md`; the generic N-subject experiment resolves, so the missing derived result is the discriminating gap. | Major -> Major: the registered Phase source requires an artifact-derived shared/private/provisional classification across both Agents, all three revisions, and two verifier owners. | `phase18.artifact-derived-seam-matrix` / `phase18.conformance-evidence` | B2 | `fix:derive-and-check-current-head-seam-matrix` |
+| `phase18-codex-gpt56-a8bb454-20260903t021838z` / `P18-AUD-001` | **Confirmed.** In the committed archive, `crates/opi-eval/docs/seam-evidence-matrix.md` is absent and `verify-native-smoke-artifact.py --help` exposes no `--matrix-output` derivation surface. | Source Major; final Major. `P18-OUT-005` and `P18-A20` require an inspectable, artifact-derived minimum-seam result and a guard that keeps unproved choices provisional. | `phase18.seam-evidence-matrix` / `phase18.evidence-closure` | B2 | `fix:derive-and-retain-native-seam-matrix` |
+| `phase18-codex-gpt56-a8bb454-20260903t021838z` / `P18-AUD-002` | **Confirmed.** `gh run list --commit 102d30bd...` returns `[]` for the remediation head. The current Agent and benchmark code equals the audited code, and the only current-audit-head PR CI run, `33783810402`, is red: the Unix Agent conformance test directly executes a Git-mode `100644` provider script, and macOS runtime acceptance lets a cleanup race mask the error-mapping assertion. No native-smoke run exists for either the audit or remediation head. | Source Major; final Major. Local fixture success cannot replace passing, commit-bound Opi/pi, three-native-verifier, paired-outcome, and three-platform evidence. | `phase18.current-native-and-ci-proof` / `phase18.evidence-closure` | B1 | `fix:stabilize-gates-and-produce-current-evidence` |
 
 ## Unresolved Decisions
 
-none
+None. On 2026-09-04 the repository operator authorized the required sequence of
+fresh plan/apply/materialization cycles, including the explicit commit/push
+boundaries and manually dispatched GitHub Actions native smoke. Each new HEAD
+still requires a fresh fixed plan and approval; this plan does not bypass the
+remediation protocol's no-commit apply boundary.
 
 ## Closure Batches
 
-### Batch B1: Produce exact-head native and platform evidence
+### Batch B1: Stabilize the current evidence gates and obtain commit-bound execution
 
-**Closure predicate**: Commit `a8bb45426daf960d9e60024ce34542995c4dd2d1` is remotely resolvable; one successful manual `opi-eval-native-smoke.yml` run binds that exact candidate and verifies both real Agents, all three benchmark revisions, paired conformance-only outcomes, and at least two native-verifier owners; one same-repository pull-request CI run binds the same pull-request head and passes the required Linux, macOS, and Windows jobs.
-**Dependencies**: none
-**Verification union**: remote commit identity, pull-request head identity, required CI checks, native-smoke run metadata, downloaded artifact/upload-receipt identities, and `verify-native-smoke-artifact.py --criterion all-native`.
+**Closure predicate**: A reviewed producer commit containing the current Eval/workflow bytes passes the pinned Linux native-smoke verifier for real Opi and pi across Terminal-Bench 2.1, Terminal-Bench 3.0, and DeepSWE v1.1 with six paired sealed trials, and the later matrix commit passes the ordinary PR CI merge-ref checks on Ubuntu, macOS, and Windows; the only scoped difference from the native producer commit is the generated matrix and remediation evidence.
 
-#### Fix B1.1: Publish and execute the sealed remediation head
+**Dependencies**: Operator-authorized multi-materialization sequence; source fixes must be materialized before native dispatch; B2's generated matrix must be materialized before final PR CI.
+
+**Verification union**: Unix permission-faithful Agent conformance; execution-runtime mapping acceptance; all `opi-eval` verifier tests; local workspace gates; exact-commit native artifact verification; final PR merge-ref CI identity and conclusions.
+
+#### Fix B1.1: Make the scripted-provider conformance case independent of repository execute bits
 
 - **Finding source(s)**: `phase18-codex-gpt56-a8bb454-20260903t021838z` + `3193940b79737046d5b977a0ad4670d17e1e6ae5fd7d2a133f68743f37986897` + `P18-AUD-002`
-- **Decision**: `fix:publish-and-execute-current-head-evidence`
+- **Decision**: invoke the explicitly supplied Python fixture through `python3` in the generated Unix helper; do not chmod or mutate the repository source and do not broaden PATH/provider fallback.
 - **Verification status**: Confirmed
-- **File(s)**: none; this batch creates external execution evidence only
+- **File(s)**: `crates/opi-eval/src/cli/conformance.rs`
+- **Change kind**: behavioral
+- **Change**: replace the direct execution of `$OPI_EVAL_SCRIPTED_PROVIDER` in the `provider-fixture` helper branch with an explicit `python3 "$OPI_EVAL_SCRIPTED_PROVIDER"` invocation. Retain the existing exact response-byte check and process settlement.
+- **Closure predicate**: The checked-in provider remains Git mode `100644`, while the Agent conformance matrix passes from an ext4 `git archive` extraction on Unix.
+- **Red-before**: `git archive --format=tar 102d30bd861c0ce48e79f07a723e6e14d4224cb9`, extract on WSL ext4, confirm `stat` reports `644`, then run `cargo test -p opi-eval --test agent_integration_conformance agent_conformance_matrix_settles_every_pinned_case -- --nocapture`; observed FAIL at `case opi provider-fixture`, conformance exit `1`.
+- **Green-after**: Repeat the same permission-faithful archive command; expect Git mode `644` and PASS for both Opi and pi provider-fixture rows.
+
+#### Fix B1.2: Make the runtime-layer mapping test exercise a typed terminal failure
+
+- **Finding source(s)**: `phase18-codex-gpt56-a8bb454-20260903t021838z` + `3193940b79737046d5b977a0ad4670d17e1e6ae5fd7d2a133f68743f37986897` + `P18-AUD-002`
+- **Decision**: keep malformed-frame teardown coverage in `execution_protocol_host`; make the runtime test use the mock peer's legal post-started `Failed{code: protocol_violation}` mode so it tests only `ProcessCommandAdapter` error lifting. Do not weaken cleanup dominance or accept multiple stable codes.
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-coding-agent/tests/execution_runtime.rs`
+- **Change kind**: test-only
+- **Change**: add the minimum canned-argument mapping for the existing `failed_post_started protocol_violation` mock mode and use it in `process_command_adapter_protocol_violation_lifts_stable_code`.
+- **Closure predicate**: The focused runtime test deterministically reports `protocol_violation` on Ubuntu, macOS, and Windows, while protocol-host malformed-frame and cleanup-unconfirmed tests remain unchanged and green.
+- **Red-before**: GitHub Actions run `33783810402`, job `100743619935`, command `cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_runtime`; observed macOS FAIL with `cleanup_unconfirmed` instead of `protocol_violation`.
+- **Green-after**: Run the same focused runtime command locally, then require the identically named `execution_acceptance` job to pass on all three CI platforms.
+
+#### Fix B1.3: Materialize and prove the current native/CI execution chain
+
+- **Finding source(s)**: `phase18-codex-gpt56-a8bb454-20260903t021838z` + `3193940b79737046d5b977a0ad4670d17e1e6ae5fd7d2a133f68743f37986897` + `P18-AUD-002`
+- **Decision**: under the operator-authorized sequence, materialize B1.1/B1.2 plus B2.1, dispatch the sole pinned native-smoke workflow with that exact commit as `candidate_sha`, download both artifacts, run the offline `all-native` verifier, and retain the exact run/artifact/commit identities. After B2.2 is materialized, use ordinary PR merge-ref CI; do not substitute a head-only workflow.
+- **Verification status**: Confirmed
+- **File(s)**: external GitHub Actions run/artifact identities recorded in the eventual remediation result; no production path beyond B1.1/B1.2.
 - **Change kind**: metadata
-- **Change**: After revalidating the audit-index digest, remediation head, and non-overlapping dirty inventory, push only the existing commit to `refs/heads/codex/phase18-remediation-evidence-a8bb454`, open one same-repository pull request to `main` without merging it, wait for its required CI checks, dispatch `.github/workflows/opi-eval-native-smoke.yml` with `candidate_sha=a8bb45426daf960d9e60024ce34542995c4dd2d1`, download both native-smoke artifacts into a unique temporary directory, and retain the resulting run, PR, artifact, digest, and platform evidence in the remediation result. Approval of this fixed plan authorizes only those named external writes; it does not authorize merging the PR, updating `main`, or deleting the evidence branch.
-- **Closure predicate**: The exact remediation head has successful current native-smoke and same-repository three-platform CI evidence with independently verified artifact bytes and no paid provider.
-- **Red-before**: `gh run list --repo OdradekAI/opi --commit a8bb45426daf960d9e60024ce34542995c4dd2d1 --limit 20 --json databaseId,workflowName,status,conclusion,headSha,event,url,createdAt; gh api repos/OdradekAI/opi/commits/a8bb45426daf960d9e60024ce34542995c4dd2d1` -> observed `FAIL: []`; the commit lookup returned HTTP 422 and `git branch -r --contains` returned no branch.
-- **Green-after**: `gh pr view codex/phase18-remediation-evidence-a8bb454 --repo OdradekAI/opi --json headRefOid,url; gh pr checks codex/phase18-remediation-evidence-a8bb454 --repo OdradekAI/opi --required; python crates/opi-eval/scripts/verify-native-smoke-artifact.py --criterion all-native --expected-commit a8bb45426daf960d9e60024ce34542995c4dd2d1 --receipt <downloaded-upload-receipt> --artifact <downloaded-native-artifact>` -> expect matching head, all required CI checks successful across the declared platforms, every all-native criterion verified, and `evidence is conformance-only`.
+- **Change**: produce new evidence only; no paid provider, alternate grader, cached score, or fixture substitution.
+- **Closure predicate**: The native verifier exits zero for `all-native`, the producer receipt binds the exact producer commit, and every ordinary PR CI check is successful with the PR head and checked-out merge commit recorded.
+- **Red-before**: `gh run list --repo OdradekAI/opi --commit 102d30bd861c0ce48e79f07a723e6e14d4224cb9 --json databaseId,workflowName,status,conclusion,headSha` returned `[]`; the current-audit-head CI run is red and no native run exists.
+- **Green-after**: Exact commands in Final Verification must return a successful native run and successful final PR CI bound to their recorded full SHAs.
 
-### Batch B2: Restore the artifact-derived seam result
+### Batch B2: Derive and retain the minimum seam matrix from verified native evidence
 
-**Closure predicate**: The verified current-head native artifact deterministically yields an inspectable matrix that distinguishes the minimum shared Agent and benchmark contract, adapter-private evidence, and rejected or still-provisional hypotheses, while proving two real Agents, three benchmark revisions, and at least two independently owned native-verifier contracts.
-**Dependencies**: B1
-**Verification union**: artifact-verifier unit and negative CLI tests, current artifact generation/check mode, generic three-subject/fourth-benchmark validation, documentation contract, and whitespace check.
+**Closure predicate**: `crates/opi-eval/docs/seam-evidence-matrix.md` is deterministically generated only after full native-artifact acceptance, binds the producer/run/artifact identities, separates shared fields and behavior from adapter-private facts and provisional hypotheses, covers both Agents, all three benchmark revisions, and Harbor/Pier verifier ownership, and is protected by positive and fail-closed tests.
 
-#### Fix B2.1: Derive and verify the current seam matrix
+**Dependencies**: B1 source fixes and a successful exact-producer-commit native artifact; operator-authorized materialization sequence.
+
+**Verification union**: native-artifact verifier behavioral tests; rejected-artifact no-output test; deterministic matrix comparison; documentation check; scoped native-to-final diff guard; final three-platform PR CI.
+
+#### Fix B2.1: Add a fail-closed matrix derivation output to the native-artifact verifier
 
 - **Finding source(s)**: `phase18-codex-gpt56-a8bb454-20260903t021838z` + `3193940b79737046d5b977a0ad4670d17e1e6ae5fd7d2a133f68743f37986897` + `P18-AUD-001`
-- **Decision**: `fix:derive-and-check-current-head-seam-matrix`
+- **Decision**: extend the existing sole native-artifact verifier rather than add another evidence parser. Permit `--matrix-output` only with `--criterion all-native`; write nothing unless every existing verification passes; derive inventories, common fields/behaviors, adapter-private evidence, verifier ownership, provisional hypotheses, and provenance from the accepted artifact plus its commit-bound profiles.
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-eval/scripts/verify-native-smoke-artifact.py`, `crates/opi-eval/scripts/test_verify_native_smoke_artifact.py`, `crates/opi-eval/docs/seam-evidence-matrix.md`
+- **File(s)**: `crates/opi-eval/scripts/verify-native-smoke-artifact.py`, `crates/opi-eval/scripts/test_verify_native_smoke_artifact.py`
 - **Change kind**: behavioral
-- **Change**: Extend the existing artifact verifier rather than add a parallel parser. Add deterministic `--matrix-output <path>` generation and `--check-matrix <path>` verification after all-native validation succeeds. Derive shared fields only from evidence present for both Opi and pi and all three benchmark reports; classify product-only evidence as adapter-private; preserve verifier-owner-specific native result shapes; require Terminal-Bench and DeepSWE ownership coverage; and list unproved package, Rust type, process-envelope, trajectory, span, and directory-layout choices as rejected or provisional. Add focused tests for deterministic generation, drift rejection, missing-Agent/revision/second-owner rejection, and no output on failed artifact validation. Generate the checked-in matrix only from B1's verified artifact and bind its candidate SHA, run/artifact identities, and digests. No Chinese counterpart exists for this artifact-derived conformance record, so bilingual synchronization is not applicable.
-- **Closure predicate**: Generation and check mode agree byte-for-byte on a matrix whose source identities bind B1 and whose classifications meet `P18-OUT-005` and `P18-A20` without promoting an unproved seam.
-- **Red-before**: `python crates/opi-eval/scripts/verify-native-smoke-artifact.py --criterion all-native --expected-commit a8bb45426daf960d9e60024ce34542995c4dd2d1 --receipt __not_used_before_parser_closure__.json --artifact __not_used_before_parser_closure__.tar --matrix-output crates/opi-eval/docs/seam-evidence-matrix.md` -> observed `FAIL: unrecognized arguments: --matrix-output ...`; `Test-Path crates/opi-eval/docs/seam-evidence-matrix.md` also returned `False` in the clean archive.
-- **Green-after**: `python crates/opi-eval/scripts/test_verify_native_smoke_artifact.py; python crates/opi-eval/scripts/verify-native-smoke-artifact.py --criterion all-native --expected-commit a8bb45426daf960d9e60024ce34542995c4dd2d1 --receipt <downloaded-upload-receipt> --artifact <downloaded-native-artifact> --matrix-output crates/opi-eval/docs/seam-evidence-matrix.md; python crates/opi-eval/scripts/verify-native-smoke-artifact.py --criterion all-native --expected-commit a8bb45426daf960d9e60024ce34542995c4dd2d1 --receipt <downloaded-upload-receipt> --artifact <downloaded-native-artifact> --check-matrix crates/opi-eval/docs/seam-evidence-matrix.md` -> expect focused tests PASS, all-native verification PASS, matrix written, and byte-exact check PASS.
+- **Change**: add deterministic Markdown rendering and atomic output replacement after successful verification. Tests must prove exact stable output, dynamic inventory coverage, two verifier owners, rejection without output, and refusal outside `all-native`.
+- **Closure predicate**: A valid synthetic native artifact produces a byte-stable matrix with the three required evidence sets; any invalid artifact or partial criterion leaves the output absent.
+- **Red-before**: In the committed archive, `python crates/opi-eval/scripts/verify-native-smoke-artifact.py --help` contains no `--matrix-output`; `Test-Path crates/opi-eval/docs/seam-evidence-matrix.md` is `False`.
+- **Green-after**: `python crates/opi-eval/scripts/test_verify_native_smoke_artifact.py` passes the new positive, deterministic, ownership, and no-output negative cases.
+
+#### Fix B2.2: Generate the checked-in conformance result from the real artifact
+
+- **Finding source(s)**: `phase18-codex-gpt56-a8bb454-20260903t021838z` + `3193940b79737046d5b977a0ad4670d17e1e6ae5fd7d2a133f68743f37986897` + `P18-AUD-001`
+- **Decision**: generate the fixed matrix path by passing the downloaded, successfully verified native artifact to B2.1. Do not reconstruct historical conclusions, hand-author rows, or mark Rust traits, exact process envelopes, ATIF/span canonicality, directory layout, packaging, or publication stable.
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-eval/docs/seam-evidence-matrix.md`
+- **Change kind**: documentation
+- **Change**: retain the generated artifact-derived matrix and its provenance; review the generated diff for only evidence-supported settlement.
+- **Closure predicate**: The tracked matrix exactly matches a fresh derivation from the retained native artifact, and the only scoped native-producer-to-final-head change is the matrix plus assurance evidence.
+- **Red-before**: `Test-Path -LiteralPath crates/opi-eval/docs/seam-evidence-matrix.md` returned `False` at the remediation head.
+- **Green-after**: Re-run the verifier with the same receipt/artifact into a temporary path and compare bytes with the tracked matrix; expect no difference, then pass `python scripts/opi-doc-check.py`.
 
 ## Final Verification
 
+Before the first materialization boundary:
+
+    # From a fresh ext4 extraction of `git archive <candidate>` with the repository cache.
+    stat -c '%a %n' crates/opi-eval/scripts/scripted-provider.py
+    cargo test -p opi-eval --test agent_integration_conformance agent_conformance_matrix_settles_every_pinned_case -- --nocapture
+    cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_backend_mock --no-run
+    cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_runtime fixture::process_command_adapter_protocol_violation_lifts_stable_code -- --exact
+    cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_protocol_host
     python crates/opi-eval/scripts/test_verify_native_smoke_artifact.py
-    python crates/opi-eval/scripts/verify-native-smoke-artifact.py --criterion all-native --expected-commit a8bb45426daf960d9e60024ce34542995c4dd2d1 --receipt <downloaded-upload-receipt> --artifact <downloaded-native-artifact> --matrix-output crates/opi-eval/docs/seam-evidence-matrix.md
-    python crates/opi-eval/scripts/verify-native-smoke-artifact.py --criterion all-native --expected-commit a8bb45426daf960d9e60024ce34542995c4dd2d1 --receipt <downloaded-upload-receipt> --artifact <downloaded-native-artifact> --check-matrix crates/opi-eval/docs/seam-evidence-matrix.md
-    cargo run -p opi-eval -- validate --config crates/opi-eval/tests/fixtures/experiment/generic-three-subject-fourth-benchmark.toml
+    cargo test -p opi-eval --all-targets
     python scripts/opi-doc-check.py
-    git diff --check
-    gh pr view codex/phase18-remediation-evidence-a8bb454 --repo OdradekAI/opi --json headRefOid,url
-    gh pr checks codex/phase18-remediation-evidence-a8bb454 --repo OdradekAI/opi --required
+    cargo fmt --check --all
+    cargo clippy --workspace --all-targets -- -D warnings
+    cargo test --workspace --all-targets
+    cargo test --workspace --doc
+    RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps
+
+After the source/tooling commit is explicitly authorized, committed, and pushed:
+
+    PRODUCER_SHA=$(git rev-parse HEAD)
+    gh workflow run 344412365 --repo OdradekAI/opi --ref codex/phase18-remediation-evidence-a8bb454 -f candidate_sha="$PRODUCER_SHA"
+    gh run watch <native-run-id> --repo OdradekAI/opi --exit-status
+    gh run download <native-run-id> --repo OdradekAI/opi -n opi-eval-native-smoke-upload-receipt -D <receipt-dir>
+    gh run download <native-run-id> --repo OdradekAI/opi -n opi-eval-native-smoke -D <artifact-dir>
+    python crates/opi-eval/scripts/verify-native-smoke-artifact.py --criterion all-native --expected-commit "$PRODUCER_SHA" --receipt <receipt-dir>/upload-receipt.json --artifact <artifact-dir>/sealed-artifact.tar --repo . --matrix-output crates/opi-eval/docs/seam-evidence-matrix.md
+    python crates/opi-eval/scripts/verify-native-smoke-artifact.py --criterion all-native --expected-commit "$PRODUCER_SHA" --receipt <receipt-dir>/upload-receipt.json --artifact <artifact-dir>/sealed-artifact.tar --repo . --matrix-output <temporary-matrix>
+    cmp crates/opi-eval/docs/seam-evidence-matrix.md <temporary-matrix>
+
+After the generated matrix is explicitly authorized, committed, and pushed:
+
+    FINAL_SHA=$(git rev-parse HEAD)
+    git diff --name-only "$PRODUCER_SHA" "$FINAL_SHA" -- .github/workflows crates/opi-eval Cargo.toml Cargo.lock
+    # Expected scoped output: crates/opi-eval/docs/seam-evidence-matrix.md only.
+    gh pr view 7 --repo OdradekAI/opi --json headRefOid,baseRefOid,statusCheckRollup
+    gh pr checks 7 --repo OdradekAI/opi --watch --fail-fast
+    gh api repos/OdradekAI/opi/pulls/7 --jq '{head:.head.sha,base:.base.sha,merge_commit_sha,mergeable_state}'
+    gh api repos/OdradekAI/opi/actions/runs/<ci-run-id>/jobs --paginate
+    gh run view <ci-run-id> --repo OdradekAI/opi --job <one-successful-three-platform-job-id> --log
+
+The final evidence must show the PR head equals `FINAL_SHA`, the pull-request run checked out the reported merge commit, and all Ubuntu/macOS/Windows `test`, `execution_acceptance`, and retained workspace gates succeeded. Any additional scoped source/workflow/manifest difference after `PRODUCER_SHA`, failed native criterion, missing pair, missing verifier owner, or non-successful CI conclusion keeps the finding open and requires a fresh plan.
 
 ## Exclusions
 
-none
+None. Both current findings are blocking, confirmed, and assigned exactly once.

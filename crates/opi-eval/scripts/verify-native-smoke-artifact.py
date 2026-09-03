@@ -34,10 +34,12 @@ import argparse
 import datetime
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -56,6 +58,10 @@ BENCHMARKS = ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1")
 CONFIG_FOR = {"terminal-bench-2.1": "terminal-bench-2.1",
               "terminal-bench-3.0": "terminal-bench-3.0",
               "deepswe-v1.1": "deepswe-v1.1"}
+AGENT_PROFILE_PATHS = {
+    "opi": "crates/opi-eval/profiles/agents/opi.toml",
+    "pi": "crates/opi-eval/profiles/agents/pi.toml",
+}
 # The admitted native rerun matrix: four agent cases (completed and
 # identity for both products) plus three benchmark cases (completed,
 # identity, immutable-capture) for each of the three revisions.
@@ -541,6 +547,383 @@ def verify_material(stage: Path, f: Findings) -> dict | None:
     return material
 
 
+def repository_profile_path(value, benchmark: str,
+                            f: Findings) -> str | None:
+    """Normalizes a material profile path to its candidate-repository path."""
+    if not isinstance(value, str):
+        f.reject("matrix", f"{benchmark}: material profile path is missing")
+        return None
+    normalized = value.replace("\\", "/")
+    marker = "crates/opi-eval/profiles/benchmarks/"
+    index = normalized.find(marker)
+    if index < 0:
+        f.reject("matrix", f"{benchmark}: profile is not under {marker}")
+        return None
+    return normalized[index:]
+
+
+def load_commit_profile(repo: Path, commit: str, rel_path: str,
+                        schema: str, f: Findings) -> dict | None:
+    """Loads TOML profile bytes from the exact accepted producer commit."""
+    data = git_bytes(repo, commit, rel_path)
+    if data is None:
+        f.reject("matrix", f"cannot read commit-bound profile {rel_path}")
+        return None
+    try:
+        doc = tomllib.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        f.reject("matrix", f"cannot parse commit-bound profile {rel_path}: {error}")
+        return None
+    if doc.get("schema") != schema:
+        f.reject("matrix", f"{rel_path}: profile schema is {doc.get('schema')!r}")
+        return None
+    return {"path": rel_path, "sha256": sha(data), "doc": doc}
+
+
+def flatten_profile_fields(doc: dict) -> dict[str, object]:
+    """Flattens scalar profile evidence while excluding package file tables."""
+    fields: dict[str, object] = {}
+
+    def visit(prefix: str, value) -> None:
+        if isinstance(value, dict):
+            for key in sorted(value):
+                if not prefix and key == "package":
+                    continue
+                visit(f"{prefix}.{key}" if prefix else key, value[key])
+        elif isinstance(value, list):
+            if all(isinstance(item, (str, int, float, bool)) for item in value):
+                fields[prefix] = value
+        elif isinstance(value, (str, int, float, bool)):
+            fields[prefix] = value
+
+    visit("", doc)
+    return fields
+
+
+def markdown_code(value) -> str:
+    if isinstance(value, str):
+        rendered = value
+    else:
+        rendered = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return "`" + rendered.replace("`", "\\`").replace("|", "\\|") + "`"
+
+
+def markdown_join(values) -> str:
+    values = list(values)
+    return ", ".join(markdown_code(value) for value in values) if values else "—"
+
+
+def native_roles(stage: Path, reports: list[dict],
+                 f: Findings) -> dict[str, set[str]]:
+    roles = {"opi": set(), "pi": set()}
+    for entry in reports:
+        for trial in entry["report"].get("trials", []):
+            product = trial.get("agent", {}).get("product")
+            if product not in roles:
+                f.reject("matrix", f"unknown Agent product in trial {trial.get('id')!r}")
+                continue
+            root = (stage / "07-trials" / entry["cfg"] / "trials" /
+                    str(trial.get("id")) / "bundle" / "artifacts")
+            if not root.is_dir():
+                f.reject("matrix", f"{trial.get('id')}: artifact directory is missing")
+                continue
+            for path in sorted(root.rglob("*")):
+                if path.is_file():
+                    role = path.relative_to(root).as_posix()
+                    if role.startswith("native/"):
+                        roles[product].add(role)
+    for product, product_roles in roles.items():
+        if not product_roles:
+            f.reject("matrix", f"{product}: no native artifact roles were retained")
+    return roles
+
+
+def render_seam_matrix(stage: Path, upload: dict, outer: dict,
+                       material: dict, reports: list[dict],
+                       expected_commit: str, repo: Path,
+                       f: Findings) -> bytes | None:
+    """Derives the minimum seam record from accepted native evidence."""
+    agent_profiles = {}
+    for product, rel_path in sorted(AGENT_PROFILE_PATHS.items()):
+        profile = load_commit_profile(
+            repo, expected_commit, rel_path, "opi-eval-agent-profile/1", f)
+        if profile is None:
+            continue
+        if profile["doc"].get("product") != product:
+            f.reject("matrix", f"{rel_path}: product identity does not match {product}")
+        agent_profiles[product] = profile
+
+    benchmark_profiles = {}
+    for benchmark in sorted(BENCHMARKS):
+        entry = material.get("benchmarks", {}).get(benchmark, {})
+        rel_path = repository_profile_path(entry.get("profile"), benchmark, f)
+        if rel_path is None:
+            continue
+        profile = load_commit_profile(
+            repo, expected_commit, rel_path, "opi-eval-benchmark-profile/1", f)
+        if profile is None:
+            continue
+        doc = profile["doc"]
+        identity = f"{doc.get('benchmark')}-{doc.get('revision')}"
+        if identity != benchmark:
+            f.reject("matrix", f"{rel_path}: identity {identity!r} does not match {benchmark}")
+        profile_digest = (doc.get("identity") or {}).get("package_manifest_sha256")
+        if profile_digest != entry.get("task_package_manifest_sha256"):
+            f.reject("matrix", f"{benchmark}: material/profile package digest drift")
+        benchmark_profiles[benchmark] = profile
+
+    if len(agent_profiles) != 2 or len(benchmark_profiles) != 3:
+        return None
+
+    report_for = {entry["cfg"]: entry["report"] for entry in reports}
+    task_for = {}
+    verified_trials = {}
+    for benchmark in sorted(BENCHMARKS):
+        report = report_for.get(CONFIG_FOR[benchmark])
+        if report is None:
+            f.reject("matrix", f"{benchmark}: accepted run report is missing")
+            continue
+        tasks = sorted({str(trial.get("task")) for trial in report.get("trials", [])})
+        expected_task = benchmark_profiles[benchmark]["doc"]["identity"].get("task_id")
+        if tasks != [expected_task]:
+            f.reject("matrix", f"{benchmark}: report tasks {tasks!r} do not match profile task {expected_task!r}")
+        task_for[benchmark] = expected_task
+        verified_trials[benchmark] = sum(
+            trial.get("verifier", {}).get("completion") == "verified"
+            for trial in report.get("trials", []))
+
+    roles = native_roles(stage, reports, f)
+    owners: dict[str, list[str]] = {}
+    for benchmark, profile in sorted(benchmark_profiles.items()):
+        owner = str(profile["doc"].get("verifier", {}).get("runner_kind", ""))
+        if not owner:
+            f.reject("matrix", f"{benchmark}: verifier owner is missing")
+        owners.setdefault(owner, []).append(benchmark)
+    if len(owners) < 2:
+        f.reject("matrix", "fewer than two native-verifier owners are proved")
+    if not f.ok():
+        return None
+
+    agent_fields = {
+        product: flatten_profile_fields(profile["doc"])
+        for product, profile in agent_profiles.items()
+    }
+    common_agent_fields = sorted(set.intersection(
+        *(set(fields) for fields in agent_fields.values())))
+    benchmark_fields = {
+        benchmark: flatten_profile_fields(profile["doc"])
+        for benchmark, profile in benchmark_profiles.items()
+    }
+    common_benchmark_fields = sorted(set.intersection(
+        *(set(fields) for fields in benchmark_fields.values())))
+    shared_roles = sorted(set.intersection(*(set(value) for value in roles.values())))
+
+    dispatch = outer["dispatch"]
+    lines = [
+        "# Native Seam Evidence Matrix",
+        "",
+        "This file is generated only after the complete `all-native` artifact "
+        "verifies. It records conformance evidence, not a leaderboard result, "
+        "stable public API, package commitment, or publication decision.",
+        "",
+        "## Verified inventory",
+        "",
+        "### Agent harnesses",
+        "",
+        "| Product | Commit-bound profile | Profile SHA-256 | Adapter | Package | Executable SHA-256 | Model identity |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for product in sorted(agent_profiles):
+        profile = agent_profiles[product]
+        doc = profile["doc"]
+        agent = material["agents"][product]
+        lines.append("| " + " | ".join([
+            markdown_code(product), markdown_code(profile["path"]),
+            markdown_code(profile["sha256"]),
+            markdown_code(doc["identity"]["adapter"]),
+            markdown_code(doc["identity"]["package"]),
+            markdown_code(agent["executable"]["sha256"]),
+            markdown_code(agent["model"]),
+        ]) + " |")
+
+    lines.extend([
+        "",
+        "### Benchmark revisions",
+        "",
+        "| Revision integration | Task | Commit-bound profile | Profile SHA-256 | Package-manifest SHA-256 | Adapter | Native-verifier owner | Verified paired trials |",
+        "|---|---|---|---|---|---|---|---|",
+    ])
+    for benchmark in sorted(benchmark_profiles):
+        profile = benchmark_profiles[benchmark]
+        doc = profile["doc"]
+        entry = material["benchmarks"][benchmark]
+        lines.append("| " + " | ".join([
+            markdown_code(benchmark), markdown_code(task_for[benchmark]),
+            markdown_code(profile["path"]), markdown_code(profile["sha256"]),
+            markdown_code(entry["task_package_manifest_sha256"]),
+            markdown_code(doc["identity"]["adapter"]),
+            markdown_code(doc["verifier"]["runner_kind"]),
+            markdown_code(verified_trials[benchmark]),
+        ]) + " |")
+
+    lines.extend([
+        "",
+        "## Minimum proved shared seam",
+        "",
+        "Only the observable meanings below are common. Profile keys and "
+        "artifact paths are cited as evidence and are not promoted to a public schema.",
+        "",
+        "### Shared behaviors",
+        "",
+        "| Behavior | Artifact-derived proof |",
+        "|---|---|",
+        f"| Exact Agent identity at a process boundary | {markdown_code(len(agent_profiles))} distinct products are bound to separate executable and profile digests. |",
+        f"| Bounded Agent execution | Both profiles carry launch, isolation, timeout, stdout-cap, and stderr-cap evidence; {markdown_code(sum(verified_trials.values()))} settled native trials completed. |",
+        f"| Native artifact retention | Every Agent retained the shared roles {markdown_join(shared_roles)} while product-only roles remain namespaced. |",
+        f"| Exact benchmark admission | {markdown_code(len(benchmark_profiles))} revision/task/profile/package-manifest identities are bound before grading. |",
+        f"| Benchmark-owned grading | All {markdown_code(sum(verified_trials.values()))} trials were verified by the selected external native verifier and retained a known native reward. |",
+        f"| Paired comparison | {markdown_code(len(reports))} task groups each contain Opi and pi plus one comparable edge. |",
+        "| Fail-closed evidence chain | Dispatch, receipt, sealed manifest, canary, provider log, native rerun, oracle preflight, trial seal, and artifact bytes all verified before this matrix was rendered. |",
+        "",
+        "### Common Agent profile evidence fields",
+        "",
+        "| Field | Opi evidence | pi evidence |",
+        "|---|---|---|",
+    ])
+    for field in common_agent_fields:
+        lines.append(f"| {markdown_code(field)} | "
+                     f"{markdown_code(agent_fields['opi'][field])} | "
+                     f"{markdown_code(agent_fields['pi'][field])} |")
+
+    lines.extend([
+        "",
+        "### Common benchmark profile evidence fields",
+        "",
+        "| Field | Terminal-Bench 2.1 | Terminal-Bench 3.0 | DeepSWE v1.1 |",
+        "|---|---|---|---|",
+    ])
+    for field in common_benchmark_fields:
+        lines.append(f"| {markdown_code(field)} | "
+                     f"{markdown_code(benchmark_fields['terminal-bench-2.1'][field])} | "
+                     f"{markdown_code(benchmark_fields['terminal-bench-3.0'][field])} | "
+                     f"{markdown_code(benchmark_fields['deepswe-v1.1'][field])} |")
+
+    lines.extend([
+        "",
+        "## Adapter-private evidence",
+        "",
+        "### Native Agent artifact roles",
+        "",
+        "| Product | Shared roles | Product-only roles |",
+        "|---|---|---|",
+    ])
+    for product in sorted(roles):
+        private = sorted(roles[product] - set(shared_roles))
+        lines.append(f"| {markdown_code(product)} | {markdown_join(shared_roles)} | "
+                     f"{markdown_join(private)} |")
+
+    agent_all_fields = set.union(*(set(fields) for fields in agent_fields.values()))
+    lines.extend([
+        "",
+        "### Agent-only profile fields",
+        "",
+        "| Product | Fields absent from the peer profile |",
+        "|---|---|",
+    ])
+    for product in sorted(agent_fields):
+        peer_fields = set.union(*(set(fields) for name, fields in agent_fields.items()
+                                  if name != product))
+        private = sorted((agent_all_fields - peer_fields) & set(agent_fields[product]))
+        lines.append(f"| {markdown_code(product)} | {markdown_join(private)} |")
+
+    benchmark_all_fields = set.union(
+        *(set(fields) for fields in benchmark_fields.values()))
+    lines.extend([
+        "",
+        "### Revision-only profile fields",
+        "",
+        "| Revision integration | Fields absent from at least one peer profile |",
+        "|---|---|",
+    ])
+    for benchmark in sorted(benchmark_fields):
+        private = sorted(set(benchmark_fields[benchmark]) &
+                         (benchmark_all_fields - set(common_benchmark_fields)))
+        lines.append(f"| {markdown_code(benchmark)} | {markdown_join(private)} |")
+
+    lines.extend([
+        "",
+        "## Native-verifier ownership",
+        "",
+        "| Owner | Revision integration | Runner version | Runner commit | Verifier executable SHA-256 |",
+        "|---|---|---|---|---|",
+    ])
+    for benchmark in sorted(benchmark_profiles):
+        verifier = benchmark_profiles[benchmark]["doc"]["verifier"]
+        executable = material["benchmarks"][benchmark]["verifier_executable"]
+        lines.append("| " + " | ".join([
+            markdown_code(verifier["runner_kind"]), markdown_code(benchmark),
+            markdown_code(verifier["runner_version"]),
+            markdown_code(verifier["runner_commit"]),
+            markdown_code(executable["sha256"]),
+        ]) + " |")
+    lines.extend([
+        "",
+        "| Measure | Value |",
+        "|---|---|",
+        f"| Distinct native-verifier owners | {markdown_code(len(owners))} |",
+        "",
+        "## Rejected or still-provisional hypotheses",
+        "",
+        "| Hypothesis | Disposition |",
+        "|---|---|",
+        "| Package name, repository placement, and module boundaries | Provisional; the artifact proves behavior, not permanent packaging. |",
+        "| Rust trait names (`AgentAdapter`, `BenchmarkAdapter`) | Provisional implementation detail, not an admitted public seam. |",
+        "| JSON process envelope or exact CLI argv/environment convention | Provisional encoding; only the bounded process semantics above are proved common. |",
+        "| Opi evidence JSONL and pi event JSON as one shared native schema | Rejected as a shared seam; they remain adapter-private evidence. |",
+        "| ATIF, span graph, or either as the canonical trajectory | Provisional; the artifact does not prove canonicality. |",
+        "| Directory layout and artifact role path spelling | Provisional evidence locations, not a compatibility contract. |",
+        "| Stable SDK, public schema, publication, or compatibility promise | Provisional and requires a later Placement Review. |",
+        "",
+        "## Provenance",
+        "",
+        "| Binding | Value |",
+        "|---|---|",
+        f"| Native producer commit | {markdown_code(expected_commit)} |",
+        f"| Workflow ref | {markdown_code(dispatch.get('github_workflow_ref'))} |",
+        f"| Workflow commit | {markdown_code(dispatch.get('github_workflow_sha'))} |",
+        f"| Workflow path | {markdown_code(dispatch.get('workflow_path'))} |",
+        f"| Workflow SHA-256 | {markdown_code(dispatch.get('workflow_sha256_read_from_workflow_sha'))} |",
+        f"| GitHub Actions run id | {markdown_code(upload.get('run_id'))} |",
+        f"| GitHub Actions run URL | {markdown_code(upload.get('run_url'))} |",
+        f"| Artifact id | {markdown_code(upload.get('artifact_id'))} |",
+        f"| Artifact URL | {markdown_code(upload.get('artifact_url'))} |",
+        f"| Artifact envelope SHA-256 | {markdown_code(upload.get('artifact_digest'))} |",
+        f"| Sealed manifest SHA-256 | {markdown_code(upload.get('sealed_manifest_sha256'))} |",
+        f"| Outer receipt SHA-256 | {markdown_code(upload.get('outer_receipt_sha256'))} |",
+        "",
+    ])
+    return "\n".join(lines).encode("utf-8")
+
+
+def write_atomic(path: Path, data: bytes, f: Findings) -> None:
+    """Atomically replaces the requested matrix without partial output."""
+    temporary = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+                mode="wb", dir=path.parent, prefix=f".{path.name}.",
+                delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except OSError as error:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        f.reject("matrix", f"cannot atomically write {path}: {error}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="verify a downloaded eval native-smoke artifact")
@@ -555,9 +938,15 @@ def main() -> int:
                         help="downloaded artifact (GitHub zip or sealed tar)")
     parser.add_argument("--repo", default=".",
                         help="local git repository holding the expected commit")
+    parser.add_argument(
+        "--matrix-output",
+        help="write the derived seam-evidence matrix after all-native acceptance")
     args = parser.parse_args()
 
     criterion = args.criterion
+    if args.matrix_output is not None and criterion != "all-native":
+        print("--matrix-output requires --criterion all-native", file=sys.stderr)
+        return 2
     selected = list(CRITERIA) if criterion == "all-native" else [criterion]
     if criterion == "all-native":
         selected.append("BMK-003")
@@ -597,12 +986,13 @@ def main() -> int:
     if outer is not None and f.ok():
         verify_dispatch(outer, args.expected_commit, Path(args.repo), f)
     reports: list[dict] = []
+    material: dict | None = None
     if f.ok():
         reports = verify_shared(stage, outer, f)
     if f.ok():
         verify_canary(stage, f)
         verify_provider(stage, f)
-        verify_material(stage, f)
+        material = verify_material(stage, f)
         verify_conformance_rerun(stage, f)
         verify_oracle_preflights(stage, f)
 
@@ -634,11 +1024,27 @@ def main() -> int:
         elif item == "BMK-003":
             verify_canary(stage, f)
 
+    matrix = None
+    if f.ok() and args.matrix_output is not None:
+        if material is None or outer is None:
+            f.reject("matrix", "accepted material or outer receipt is unavailable")
+        else:
+            matrix = render_seam_matrix(
+                stage, upload, outer, material, reports,
+                args.expected_commit, Path(args.repo), f)
+
     if not f.ok():
         print(f.report(), file=sys.stderr)
         return 1
+    if matrix is not None:
+        write_atomic(Path(args.matrix_output), matrix, f)
+        if not f.ok():
+            print(f.report(), file=sys.stderr)
+            return 1
     for item in selected:
         print(f"opi-eval-native-artifact: {item} verified")
+    if matrix is not None:
+        print(f"opi-eval-native-artifact: matrix written to {args.matrix_output}")
     print("opi-eval-native-artifact: evidence is conformance-only")
     return 0
 
