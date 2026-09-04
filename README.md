@@ -49,8 +49,9 @@ cargo install opi-coding-agent
 opi --version
 ```
 
-Pre-built `opi` archives for Linux, macOS, and Windows on x64 and arm64 are
-available from [GitHub Releases](https://github.com/OdradekAI/opi/releases).
+[GitHub Releases](https://github.com/OdradekAI/opi/releases) provides pre-built
+`opi` archives for Linux and macOS on x64 and arm64, plus Windows x64. Windows
+arm64 is a tier-2 target, so its archive may be omitted when that build fails.
 Download the archive for your platform and place the `opi` executable on your
 `PATH`.
 

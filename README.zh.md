@@ -42,9 +42,10 @@ cargo install opi-coding-agent
 opi --version
 ```
 
-[GitHub Releases](https://github.com/OdradekAI/opi/releases) 提供 Linux、macOS 和
-Windows 的 x64/arm64 预编译 `opi` 压缩包。下载对应平台的压缩包，并将 `opi`
-可执行文件放入 `PATH`。
+[GitHub Releases](https://github.com/OdradekAI/opi/releases) 为 Linux 和 macOS
+的 x64/arm64 以及 Windows x64 提供预编译 `opi` 压缩包。Windows arm64 是
+tier-2 目标，其构建失败时可能不发布对应压缩包。下载对应平台的压缩包，并将
+`opi` 可执行文件放入 `PATH`。
 
 `opi-sandbox` 是独立的可选产品，不会随 `opi-coding-agent` 安装，也不会链接进
 `opi`。
