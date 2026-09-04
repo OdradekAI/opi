@@ -413,138 +413,6 @@ def build_git_repo(tmp: Path) -> tuple[Path, str]:
         "crates/opi-eval/scripts/scripted-provider.py": b"provider\n",
         "crates/opi-eval/scripts/verify-native-smoke-ci.py": b"ci-verifier\n",
         WORKFLOW_PATH: b"workflow-bytes\n",
-        "crates/opi-eval/profiles/agents/opi.toml": b'''\
-schema = "opi-eval-agent-profile/1"
-product = "opi"
-[identity]
-package = "opi-coding-agent"
-adapter = "opi-eval-opi-adapter/1"
-[launch]
-one_shot_json = true
-non_interactive = true
-trace_capture = true
-no_trust = true
-[isolation]
-home_env = "HOME"
-app_data_env = "APPDATA"
-sessions_env = "OPI_SESSIONS_DIR"
-[limits]
-timeout_secs = 900
-stdout_cap_bytes = 1048576
-stderr_cap_bytes = 1048576
-''',
-        "crates/opi-eval/profiles/agents/pi.toml": b'''\
-schema = "opi-eval-agent-profile/1"
-product = "pi"
-[identity]
-package = "@earendil-works/pi-coding-agent"
-adapter = "opi-eval-pi-adapter/1"
-[launch]
-one_shot_json = true
-non_interactive = true
-trace_capture = true
-no_trust = true
-thinking_level = "off"
-[isolation]
-home_env = "HOME"
-app_data_env = "USERPROFILE"
-sessions_env = "PI_CODING_AGENT_SESSION_DIR"
-agent_dir_env = "PI_CODING_AGENT_DIR"
-[limits]
-timeout_secs = 900
-stdout_cap_bytes = 1048576
-stderr_cap_bytes = 1048576
-''',
-        "crates/opi-eval/profiles/benchmarks/terminal-bench-2.1.toml": f'''\
-schema = "opi-eval-benchmark-profile/1"
-benchmark = "terminal-bench"
-revision = "2.1"
-[identity]
-upstream = "https://example.test/terminal-bench-2-1"
-source_commit = "{'1' * 40}"
-tasks_tree = "{'2' * 40}"
-task_id = "terminal-bench-2.1-official-task"
-task_tree = "{'3' * 40}"
-package_manifest_sha256 = "{sha(b'task-package:terminal-bench-2.1')}"
-adapter = "opi-eval-terminal-bench-21-adapter/1"
-[verifier]
-runner_kind = "harbor"
-runner_version = "v0.22.0"
-runner_commit = "{'4' * 40}"
-launch = ["run", "-p", "<task-dir>"]
-output_kind = "ctrf-json"
-[resources]
-cpus = 1
-memory_gib = 2
-[limits]
-timeout_secs = 900
-stdout_cap_bytes = 1048576
-stderr_cap_bytes = 1048576
-'''.encode(),
-        "crates/opi-eval/profiles/benchmarks/terminal-bench-3.0.toml": f'''\
-schema = "opi-eval-benchmark-profile/1"
-benchmark = "terminal-bench"
-revision = "3.0"
-[identity]
-upstream = "https://example.test/terminal-bench"
-tag = "v3.0.0"
-source_commit = "{'5' * 40}"
-tasks_tree = "{'6' * 40}"
-task_id = "terminal-bench-3.0-official-task"
-task_tree = "{'7' * 40}"
-package_pin = "byte-table"
-package_manifest_sha256 = "{sha(b'task-package:terminal-bench-3.0')}"
-adapter = "opi-eval-terminal-bench-30-adapter/1"
-[verifier]
-runner_kind = "harbor"
-runner_version = "v0.22.0"
-runner_commit = "{'4' * 40}"
-launch = ["run", "-p", "<task-dir>"]
-lifecycle = "separate-container"
-verifier_workdir = "/app/evalbench"
-artifact_policy = "declared-original-paths"
-output_kind = "harbor-result"
-[resources]
-cpus = 1
-memory_gib = 4
-[limits]
-timeout_secs = 900
-stdout_cap_bytes = 1048576
-stderr_cap_bytes = 1048576
-'''.encode(),
-        "crates/opi-eval/profiles/benchmarks/deepswe-v1.1.toml": f'''\
-schema = "opi-eval-benchmark-profile/1"
-benchmark = "deepswe"
-revision = "v1.1"
-[identity]
-upstream = "https://example.test/deep-swe"
-version_anchor = "{'8' * 40}"
-source_commit = "{'9' * 40}"
-tasks_tree = "{'a' * 40}"
-task_id = "deepswe-v1.1-official-task"
-task_tree = "{'b' * 40}"
-package_pin = "byte-table"
-package_manifest_sha256 = "{sha(b'task-package:deepswe-v1.1')}"
-adapter = "opi-eval-deepswe-adapter/1"
-[verifier]
-runner_kind = "pier"
-runner_version = "v0.3.1"
-runner_commit = "{'c' * 40}"
-runner_uv_lock_blob = "{'d' * 40}"
-runner_uv_lock_sha256 = "{'e' * 64}"
-launch = ["run", "-p", "<task-dir>"]
-lifecycle = "separate-pristine-verifier"
-network = "none"
-artifact_policy = "collected-patch"
-output_kind = "pier-report"
-[resources]
-cpus = 2
-memory_gib = 8
-[limits]
-timeout_secs = 1800
-stdout_cap_bytes = 1048576
-stderr_cap_bytes = 1048576
-'''.encode(),
     }
     for rel, body in bodies.items():
         target = repo / rel
@@ -577,73 +445,20 @@ class ArtifactVerifier(unittest.TestCase):
         self._tmp.cleanup()
 
     def verify(self, criterion: str = "all-native", **kw) -> subprocess.CompletedProcess:
-        args = [
+        return self.run_verifier(
             "--criterion", criterion,
             "--expected-commit",
             kw.get("commit", self.candidate),
             "--receipt", kw.get("receipt", self.receipt_path),
             "--artifact", kw.get("artifact", self.zip_path),
             "--repo", kw.get("repo", self.repo),
-        ]
-        if kw.get("matrix_output") is not None:
-            args.extend(["--matrix-output", kw["matrix_output"]])
-        return self.run_verifier(*args)
+        )
 
     def test_all_native_accepts(self) -> None:
         result = self.verify()
         self.assertEqual(result.returncode, 0, result.stderr)
         for criterion in CRITERIA[:-1]:
             self.assertIn(f"{criterion} verified", result.stdout)
-
-    def test_all_native_matrix_is_deterministic_and_covers_dynamic_evidence(self) -> None:
-        dynamic_roles = []
-        for cfg in BENCHMARKS.values():
-            for product in ("opi", "pi"):
-                role = f"native/{product}-dynamic-proof"
-                dynamic_roles.append(role)
-                target = (self.stage / "07-trials" / cfg / "trials" /
-                          f"{cfg}-{product}" / "bundle" / "artifacts" / role)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(f"{cfg} {product}\n", encoding="utf-8")
-        sealed = seal(self.stage, self.tmp)
-        zip_path, upload = package_zip(sealed["tar"], dict(sealed["upload"]))
-
-        first = self.tmp / "matrix-1.md"
-        second = self.tmp / "matrix-2.md"
-        result = self.verify(artifact=zip_path, matrix_output=first)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        result = self.verify(artifact=zip_path, matrix_output=second)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(first.read_bytes(), second.read_bytes())
-
-        matrix = first.read_text(encoding="utf-8")
-        self.assertTrue(matrix.endswith("\n"))
-        for heading in ("Verified inventory", "Minimum proved shared seam",
-                        "Adapter-private evidence", "Native-verifier ownership",
-                        "Rejected or still-provisional hypotheses", "Provenance"):
-            self.assertIn(heading, matrix)
-        for product in ("opi", "pi"):
-            self.assertIn(f"`{product}`", matrix)
-            profile = self.repo / "crates" / "opi-eval" / "profiles" / "agents" / f"{product}.toml"
-            self.assertIn(sha(profile.read_bytes()), matrix)
-        for benchmark, cfg in BENCHMARKS.items():
-            self.assertIn(f"`{benchmark}`", matrix)
-            self.assertIn(f"`{cfg}-official-task`", matrix)
-        for role in sorted(set(dynamic_roles)):
-            self.assertIn(f"`{role}`", matrix)
-        self.assertIn("`harbor`", matrix)
-        self.assertIn("`pier`", matrix)
-        self.assertIn("Distinct native-verifier owners | `2`", matrix)
-        for hypothesis in ("Rust trait names", "JSON process envelope", "ATIF",
-                           "Directory layout", "Stable SDK"):
-            self.assertIn(hypothesis, matrix)
-
-    def test_matrix_output_is_refused_outside_all_native(self) -> None:
-        matrix = self.tmp / "matrix.md"
-        result = self.verify("EVAL-A02", matrix_output=matrix)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("--matrix-output requires --criterion all-native", result.stderr)
-        self.assertFalse(matrix.exists())
 
     def test_bare_tar_accepted(self) -> None:
         result = self.verify(
@@ -693,11 +508,9 @@ class ArtifactVerifier(unittest.TestCase):
         target.write_text("tampered\n", encoding="utf-8")
         tar_path = re_tar(self.stage, self.tmp)
         zip_path, upload = package_zip(tar_path, dict(self.sealed["upload"]))
-        matrix = self.tmp / "matrix.md"
-        result = self.verify(artifact=zip_path, matrix_output=matrix)
+        result = self.verify(artifact=zip_path)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("manifest", result.stderr)
-        self.assertFalse(matrix.exists())
 
     def test_missing_trial_rejects(self) -> None:
         report_path = self.stage / "07-trials" / "deepswe-v1.1" / "run-report.json"

@@ -556,8 +556,6 @@ mod fixture {
                 "mock-1.0.0".to_string(),
                 "mock-target".to_string(),
             ]
-        } else if mode == "failed_post_started" {
-            vec![mode.to_string(), "protocol_violation".to_string()]
         } else {
             vec![mode.to_string()]
         };
@@ -811,10 +809,10 @@ mod fixture {
 
     #[tokio::test]
     async fn process_command_adapter_protocol_violation_lifts_stable_code() {
-        // The mock peer publishes Started and then a legal Failed terminal
-        // carrying protocol_violation. This isolates ProcessCommandAdapter's
-        // stable-code lift from malformed-frame teardown and cleanup races.
-        let ops = routed_with(canned("opi-sandbox", "mock-pkg", "failed_post_started"));
+        // The mock peer produces a malformed frame -> host returns
+        // ProtocolViolation -> ProcessCommandAdapter maps it to a BashOpError
+        // whose diagnostic carries the stable code.
+        let ops = routed_with(canned("opi-sandbox", "mock-pkg", "malformed_frame"));
         let err = ops.exec(request("echo hi")).await.unwrap_err();
         assert_eq!(
             err.root_cause().to_string(),

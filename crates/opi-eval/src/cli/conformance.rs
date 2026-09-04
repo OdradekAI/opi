@@ -297,7 +297,7 @@ case \"$OPI_EVAL_CONFORMANCE_BEHAVIOR\" in\n\
     {native_output}\n\
     {isolation_markers} ;;\n\
   provider-fixture)\n\
-    printf '%s\\n' '{{\"prompt\":\"conformance\"}}' | python3 \"$OPI_EVAL_SCRIPTED_PROVIDER\" > conformance-provider-response\n\
+    printf '%s\\n' '{{\"prompt\":\"conformance\"}}' | \"$OPI_EVAL_SCRIPTED_PROVIDER\" > conformance-provider-response\n\
     {native_output} ;;\n\
   nonzero-exit)\n\
     {native_output}\n\
