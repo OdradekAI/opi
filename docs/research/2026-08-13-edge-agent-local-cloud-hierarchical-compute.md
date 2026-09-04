@@ -394,7 +394,7 @@ Phase 17 semantic closure
 ## 一手来源索引
 
 - Opi normative direction: [`docs/opi-spec.md`](../opi-spec.md)、[`docs/CONTEXT.md`](../CONTEXT.md)
-- Opi Phase 17: [`2026-08-12-phase17-deep-agent-core-semantic-closure-design.md`](../superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md)
+- Opi Phase 17: [`2026-08-12-phase17-deep-agent-core-semantic-closure-design.md`](../snapshots/phase17/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md)
 - pi pinned source: [`.repo/pi-0.84.1`](../../.repo/pi-0.84.1)
 - Apple: [Private Cloud Compute Security Guide](https://security.apple.com/documentation/private-cloud-compute/)、[PCC architecture introduction](https://security.apple.com/blog/private-cloud-compute/)
 - Google: [Google AI Edge](https://developers.google.com/edge)、[LiteRT-LM Overview](https://developers.google.com/edge/litert-lm/overview)

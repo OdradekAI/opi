@@ -38,11 +38,10 @@ Frozen copies under `docs/snapshots/phaseN/` are never edited.
 
 **Reviewed supplemental sources:** Supplemental tasks come only from this
 registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
-
-| Phase | Source files |
-|---:|---|
-| 17 | `docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md` |
-| 18 | `docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md` |
+No supplemental Phase source is currently registered. Completed Phase 17 and
+Phase 18 delivery specifications are frozen under `docs/snapshots/phase17/`
+and `docs/snapshots/phase18/`; they are historical evidence and MUST NOT enter
+the live `spec_files` set.
 
 When a ledger is initialized or reconciled for a supplemental phase, the
 phase's registered source files MUST be included in `spec_files` and hashed in

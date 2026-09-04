@@ -1,12 +1,10 @@
 {
   "schema_version": 2,
   "spec_files": [
-    "docs/opi-spec.md",
-    "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md"
+    "docs/opi-spec.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c",
-    "docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md": "43b2759d327cbf0af8d35d4eba50839eef7aac473978b58fcb707b335dad8265"
+    "docs/opi-spec.md": "cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c"
   },
   "task_graph_confirmed_at": "2026-08-27T02:08:48+08:00",
   "current_phase": 19,

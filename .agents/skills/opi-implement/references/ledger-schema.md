@@ -10,11 +10,11 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
   "schema_version": 2,
   "spec_files": [
     "docs/opi-spec.md",
-    "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md"
+    "docs/superpowers/specs/<registered-phase-source>.md"
   ],
   "spec_files_sha256": {
     "docs/opi-spec.md": "<hash at last init/reinit>",
-    "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md": "<hash at last init/reinit>"
+    "docs/superpowers/specs/<registered-phase-source>.md": "<hash at last init/reinit>"
   },
   "current_phase": 17,
   "task_graph_confirmed_at": "2026-08-12T13:10:55+08:00",
@@ -33,7 +33,7 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
         {
           "field": "definition_of_done",
           "reason": "Expanded the registered delivery outcome into an observable Reference Product path.",
-          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification"
+          "source": "docs/superpowers/specs/<registered-phase-source>.md#Acceptance scenarios and verification"
         }
       ],
       "tier": "workspace",
@@ -53,7 +53,7 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
       "acceptance_scenarios": [
         {
           "id": "P17-A02",
-          "source": "docs/superpowers/specs/2026-08-12-phase17-deep-agent-core-semantic-closure-design.md#Acceptance scenarios and verification",
+          "source": "docs/superpowers/specs/<registered-phase-source>.md#Acceptance scenarios and verification",
           "scenario": "An invalid registered provider route returns its owning typed failure before model HTTP dispatch.",
           "verification": [
             "cargo test -p opi-coding-agent --test phase17_provider_runtime phase17_route_and_auth_failures_do_not_dispatch_model_http"

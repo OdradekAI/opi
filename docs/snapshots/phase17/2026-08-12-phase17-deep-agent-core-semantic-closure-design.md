@@ -93,7 +93,7 @@ Those are useful ownership patterns, not compatibility requirements. Opi
 deliberately requires complete Rust state replacement rather than pi's optional
 field patch, adds a mandatory authority boundary that pi does not provide, and
 does not adopt pi's still-partial `AgentHarness` surface. The
-[local Eval foundation design](2026-08-11-opi-local-eval-foundation-design.md)
+[local Eval foundation design](../../superpowers/specs/2026-08-11-opi-local-eval-foundation-design.md)
 and benchmark research are non-normative evidence and remain outside this
 Phase.
 
