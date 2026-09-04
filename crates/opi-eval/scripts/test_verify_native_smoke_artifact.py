@@ -144,7 +144,8 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
     stage = tmp / "stage"
     dispatch = {
         "candidate_sha": candidate,
-        "github_workflow_ref": "refs/heads/main",
+        "github_workflow_ref":
+            f"OdradekAI/opi/{WORKFLOW_PATH}@refs/heads/main",
         "github_workflow_sha": candidate,
         "workflow_path": WORKFLOW_PATH,
         "workflow_sha256_read_from_workflow_sha": sha(b"workflow-bytes\n"),
@@ -398,7 +399,9 @@ def package_zip(tar_path: Path, upload: dict) -> tuple[Path, dict]:
     return zip_path, upload
 
 
-def build_git_repo(tmp: Path) -> tuple[Path, str]:
+def build_git_repo(tmp: Path, registered_workflow_path: str = WORKFLOW_PATH,
+                   registered_workflow_bytes: bytes = b"workflow-bytes\n") \
+        -> tuple[Path, str]:
     """Mini git repository holding the bound bytes at the candidate."""
     repo = tmp / "repo"
     repo.mkdir(parents=True, exist_ok=True)
@@ -546,6 +549,7 @@ stdout_cap_bytes = 1048576
 stderr_cap_bytes = 1048576
 '''.encode(),
     }
+    bodies[registered_workflow_path] = registered_workflow_bytes
     for rel, body in bodies.items():
         target = repo / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -589,11 +593,59 @@ class ArtifactVerifier(unittest.TestCase):
             args.extend(["--matrix-output", kw["matrix_output"]])
         return self.run_verifier(*args)
 
+    def verify_registered_workflow(
+            self, workflow_path: str, workflow_bytes: bytes,
+            ref_path: str | None = None) -> subprocess.CompletedProcess:
+        case = self.tmp / f"registered-{len(list(self.tmp.glob('registered-*')))}"
+        case.mkdir()
+        repo, candidate = build_git_repo(
+            case, workflow_path, workflow_bytes)
+        stage, _, dispatch = build_stage(case, candidate)
+        dispatch["github_workflow_ref"] = (
+            f"OdradekAI/opi/{ref_path or workflow_path}@refs/heads/main")
+        dispatch["workflow_path"] = workflow_path
+        dispatch["workflow_sha256_read_from_workflow_sha"] = sha(workflow_bytes)
+        write_json(stage / "00-dispatch" / "dispatch.json", dispatch)
+        sealed = seal(stage, case)
+        zip_path, _ = package_zip(sealed["tar"], dict(sealed["upload"]))
+        return self.run_verifier(
+            "--criterion", "all-native",
+            "--expected-commit", candidate,
+            "--receipt", case / "upload-receipt.json",
+            "--artifact", zip_path,
+            "--repo", repo,
+        )
+
     def test_all_native_accepts(self) -> None:
         result = self.verify()
         self.assertEqual(result.returncode, 0, result.stderr)
         for criterion in CRITERIA[:-1]:
             self.assertIn(f"{criterion} verified", result.stdout)
+
+    def test_byte_identical_registered_workflow_accepts(self) -> None:
+        result = self.verify_registered_workflow(
+            ".github/workflows/registered-native-smoke.yml",
+            b"workflow-bytes\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_workflow_ref_path_mismatch_rejects(self) -> None:
+        dispatch = json.loads(
+            (self.stage / "00-dispatch" / "dispatch.json").read_text("utf-8"))
+        dispatch["github_workflow_ref"] = (
+            "OdradekAI/opi/.github/workflows/other.yml@refs/heads/main")
+        write_json(self.stage / "00-dispatch" / "dispatch.json", dispatch)
+        sealed = seal(self.stage, self.tmp)
+        zip_path, _ = package_zip(sealed["tar"], dict(sealed["upload"]))
+        result = self.verify(artifact=zip_path)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("workflow ref/path mismatch", result.stderr)
+
+    def test_registered_workflow_byte_drift_rejects(self) -> None:
+        result = self.verify_registered_workflow(
+            ".github/workflows/registered-native-smoke.yml",
+            b"different-workflow-bytes\n")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("registered workflow bytes differ", result.stderr)
 
     def test_all_native_matrix_is_deterministic_and_covers_dynamic_evidence(self) -> None:
         dynamic_roles = []

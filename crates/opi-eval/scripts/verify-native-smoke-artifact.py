@@ -35,6 +35,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -77,6 +78,8 @@ IMMUTABLE_ACTIONS = {
 }
 
 HEX64 = set("0123456789abcdef")
+WORKFLOW_PATH_RE = re.compile(
+    r"^\.github/workflows/[A-Za-z0-9][A-Za-z0-9_.-]*\.ya?ml$")
 
 
 class Findings:
@@ -288,22 +291,35 @@ def verify_dispatch(outer: dict, expected_commit: str, repo: Path,
                  f"dispatch candidate {candidate!r} is not the expected "
                  f"commit {expected_commit!r}")
         return
-    ref = dispatch.get("github_workflow_ref")
-    if isinstance(ref, str) and "@" in ref and not ref.startswith("refs/"):
-        # GitHub records the qualified "<repo>/<path>@<ref>" form; the
-        # bare ref is what a dispatch can be pinned to (same
-        # normalization as the materialization verifier).
-        ref = ref.rsplit("@", 1)[1]
-    if not isinstance(ref, str) or not ref.startswith("refs/"):
-        f.reject("dispatch", f"github.workflow_ref is not a ref: {ref!r}")
-    if dispatch.get("workflow_path") != WORKFLOW_PATH:
-        f.reject("dispatch",
-                 f"workflow path drift: {dispatch.get('workflow_path')!r}")
+    workflow_path = dispatch.get("workflow_path")
+    if not isinstance(workflow_path, str) or \
+            WORKFLOW_PATH_RE.fullmatch(workflow_path) is None:
+        f.reject("dispatch", f"workflow path is not an admitted repository "
+                 f"workflow: {workflow_path!r}")
+        return
+    workflow_ref = dispatch.get("github_workflow_ref")
+    if not isinstance(workflow_ref, str) or "@" not in workflow_ref:
+        f.reject("dispatch", "github.workflow_ref is not a qualified "
+                 f"workflow ref: {workflow_ref!r}")
+        return
+    qualified_path, ref = workflow_ref.rsplit("@", 1)
+    repository_parts = qualified_path.split("/", 2)
+    if len(repository_parts) != 3 or not all(repository_parts[:2]) or \
+            WORKFLOW_PATH_RE.fullmatch(repository_parts[2]) is None:
+        f.reject("dispatch", "github.workflow_ref does not name an admitted "
+                 f"repository workflow: {workflow_ref!r}")
+        return
+    if not ref.startswith("refs/"):
+        f.reject("dispatch", f"github.workflow_ref is not pinned to a ref: "
+                 f"{workflow_ref!r}")
+    if repository_parts[2] != workflow_path:
+        f.reject("dispatch", "workflow ref/path mismatch: "
+                 f"{repository_parts[2]!r} != {workflow_path!r}")
     recorded = dispatch.get("workflow_sha256_read_from_workflow_sha")
     if not is_hex64(recorded):
         f.reject("dispatch", "workflow digest is not a sha256 hex digest")
         return
-    local = git_bytes(repo, expected_commit, WORKFLOW_PATH)
+    local = git_bytes(repo, expected_commit, workflow_path)
     if local is None:
         f.reject("dispatch",
                  f"cannot read workflow bytes at {expected_commit} from "
@@ -312,6 +328,14 @@ def verify_dispatch(outer: dict, expected_commit: str, repo: Path,
         f.reject("dispatch",
                  "workflow bytes at the expected commit do not match the "
                  "dispatch-recorded digest")
+    if workflow_path != WORKFLOW_PATH:
+        canonical = git_bytes(repo, expected_commit, WORKFLOW_PATH)
+        if canonical is None:
+            f.reject("dispatch", "cannot read canonical workflow bytes at "
+                     f"{expected_commit} from {repo}")
+        elif local is not None and local != canonical:
+            f.reject("dispatch", "registered workflow bytes differ from the "
+                     "canonical workflow at the expected commit")
     scripts = dispatch.get("bound_scripts")
     if not isinstance(scripts, dict) or not scripts:
         f.reject("dispatch", "dispatch binds no invoked scripts")
