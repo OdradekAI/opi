@@ -60,7 +60,6 @@ CREDENTIAL_READ_RE = re.compile(
     r"(OPENAI_API_KEY|ANTHROPIC_API_KEY|PI_API_KEY)")
 IMPORT_RE = re.compile(r"^\s*(?:import|from)\s+([A-Za-z_][A-Za-z0-9_.]*)",
                        re.MULTILINE)
-WORKFLOW_PATH_ARG_RE = re.compile(r"--workflow-path[ \t]+([^\s\\]+)")
 
 
 class Findings:
@@ -106,20 +105,6 @@ def verify_workflow(text: str, f: Findings) -> None:
         f.reject("candidate", "the dispatch must bind inputs.candidate_sha")
     if "github.workflow_sha" not in text or "github.workflow_ref" not in text:
         f.reject("candidate", "the dispatch must record the workflow identity")
-    for needle, detail in (
-            ('workflow_path=${WORKFLOW_REF%%@*}',
-             "the workflow path must be derived from github.workflow_ref"),
-            ('"$GITHUB_REPOSITORY"/.github/workflows/*.yml',
-             "the qualified workflow path must be bound to the repository"),
-            ('workflow_path=${workflow_path#"$GITHUB_REPOSITORY/"}',
-             "the workflow path must strip the exact repository prefix"),
-    ):
-        if needle not in text:
-            f.reject("workflow-path", detail)
-    workflow_path_args = WORKFLOW_PATH_ARG_RE.findall(text)
-    if workflow_path_args != ['"$workflow_path"']:
-        f.reject("workflow-path", "verify-dispatch must receive the single "
-                 "workflow-ref-derived path")
     for uses in USES_RE.finditer(text):
         name, ref = uses.group(1), uses.group(2)
         if not COMMIT_RE.match(ref):

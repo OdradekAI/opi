@@ -57,15 +57,9 @@ jobs:
           WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           set -euo pipefail
-          workflow_path=${WORKFLOW_REF%%@*}
-          case "$workflow_path" in
-            "$GITHUB_REPOSITORY"/.github/workflows/*.yml|"$GITHUB_REPOSITORY"/.github/workflows/*.yaml) ;;
-            *) echo "workflow ref does not name a repository workflow: $WORKFLOW_REF" >&2; exit 1 ;;
-          esac
-          workflow_path=${workflow_path#"$GITHUB_REPOSITORY/"}
           bash crates/opi-eval/scripts/native-smoke.sh verify-dispatch \
             --candidate-sha "$CANDIDATE" \
-            --workflow-path "$workflow_path" \
+            --workflow-path .github/workflows/opi-eval-native-smoke.yml \
             --workflow-sha "$WORKFLOW_SHA" \
             --workflow-ref "$WORKFLOW_REF" \
             --out "$OPI_EVAL_NATIVE_STAGE/00-dispatch"

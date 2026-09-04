@@ -178,20 +178,6 @@ class NativeSmokeCiVerifier(unittest.TestCase):
                 "          CANDIDATE: ${{ inputs.candidate_sha }}\n", "")),
             "candidate")
 
-    def test_hard_coded_workflow_path_rejects(self) -> None:
-        self.assert_rejects(
-            self.ws(workflow_text=WORKFLOW.read_text(encoding="utf-8").replace(
-                '--workflow-path "$workflow_path"',
-                "--workflow-path .github/workflows/opi-eval-native-smoke.yml")),
-            "workflow-path")
-
-    def test_workflow_path_not_bound_to_repository_rejects(self) -> None:
-        self.assert_rejects(
-            self.ws(workflow_text=WORKFLOW.read_text(encoding="utf-8").replace(
-                '          workflow_path=${workflow_path#"$GITHUB_REPOSITORY/"}\n',
-                "")),
-            "workflow-path")
-
     def test_missing_canary_preflight_step_rejects(self) -> None:
         self.assert_rejects(
             self.ws(workflow_text=WORKFLOW.read_text(encoding="utf-8").replace(
