@@ -1,7 +1,6 @@
 # opi-eval
 
-> Unpublished Independent Companion for cross-agent evaluation experiments
-> (provisional Phase 18 seam).
+> Unpublished Independent Companion for agent-neutral cross-agent evaluation.
 
 [简体中文](README.zh.md) | [opi workspace](../../README.md)
 
@@ -22,12 +21,12 @@ behavior is unchanged by its presence, and existing sessions, native
 evidence, local Eval reports, configuration, credentials, and user artifacts
 are never read, rewritten, or migrated by this crate.
 
-## Provisional seam
+## Stability
 
-Every type, module, and command here is provisional and unpublished
-(P18-SEAM-001): nothing is a durable public promise until the complete
-Phase 18 integration matrix proves the seam. Internal traits, envelopes,
-modules, and command names may be renamed while the phase is active.
+The crate is unpublished and remains a `0.x` workspace member. Its CLI,
+schemas, on-disk formats, and library entry points may change deliberately;
+breaking changes are recorded under `CHANGELOG.md`'s Unreleased section.
+No compatibility shim is implied by an older experiment or report schema.
 
 ## Usage
 

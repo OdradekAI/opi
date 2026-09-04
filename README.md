@@ -271,14 +271,13 @@ defense-in-depth for its target process tree, not a complete security boundary.
 | [`opi-coding-agent`](crates/opi-coding-agent) | The `opi` CLI, built-in tools, package/config/session assembly, and `CodingHarness` |
 | [`opi-protocol`](crates/opi-protocol) | Versioned `command-execution-jsonl-v1` protocol types, schemas, codecs, and fixtures |
 | [`opi-sandbox`](crates/opi-sandbox) | Standalone command restriction SDK/CLI and protocol backend |
-| [`opi-eval`](crates/opi-eval) | Unpublished Independent Companion for cross-agent evaluation experiments (provisional Phase 18 seam) |
+| [`opi-eval`](crates/opi-eval) | Unpublished Independent Companion for agent-neutral cross-agent evaluation |
 
 `opi-eval` is an unpublished Independent Companion: an Agent-neutral workspace
-member for cross-agent evaluation experiments that depends on no Opi crate,
-while no Opi product links, registers, or activates it. It is a provisional
-Phase 18 seam; it registers no provider, tool, package, command, extension,
-startup hook, or default capture path in `opi`, and ordinary `opi` runtime
-behavior is unchanged by its presence.
+member for cross-agent evaluation that depends on no Opi crate, while no Opi
+product links, registers, or activates it. It registers no provider, tool,
+package, command, extension, startup hook, or default capture path in `opi`,
+and ordinary `opi` runtime behavior is unchanged by its presence.
 
 Machine-facing surfaces remain unstable 0.x contracts:
 

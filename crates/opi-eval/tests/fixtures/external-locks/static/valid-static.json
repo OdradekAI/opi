@@ -1,22 +1,22 @@
 {
-  "schema": "phase18-external-lock/static/1",
-  "lock_id": "phase18-linux-x86_64",
+  "schema": "opi-eval-external-lock/static/1",
+  "lock_id": "opi-eval-linux-x86_64",
   "platform": "linux-x86_64",
   "authority": {
     "trigger": "workflow_dispatch",
     "admission": "digest",
     "workflow": {
-      "path": ".github/workflows/phase18-lock-materialization.yml",
+      "path": ".github/workflows/opi-eval-external-lock-materialization.yml",
       "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     "producers": [
       {
-        "path": "scripts/phase18-materialize-locks.sh",
+        "path": "crates/opi-eval/scripts/materialize-external-locks.sh",
         "role": "materializer",
         "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       },
       {
-        "path": "scripts/verify-phase18-materialization-ci.py",
+        "path": "crates/opi-eval/scripts/verify-external-lock-ci.py",
         "role": "verifier",
         "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
       }
@@ -232,7 +232,7 @@
   "adapter_policy": [
     {
       "id": "curl-shim",
-      "producer": "scripts/phase18-materialize-locks.sh",
+      "producer": "crates/opi-eval/scripts/materialize-external-locks.sh",
       "identity": "receipt-recorded"
     }
   ],
@@ -240,8 +240,8 @@
     "cargo_lock_sha256": "d19619f4c05b0bb00f324345f8103d615be6bcae0462cff5b9b8dbf3cce0cd2a"
   },
   "unresolved": [
-    { "id": "materializer-tools", "owner_task": "18.3" },
-    { "id": "closure-artifact", "owner_task": "18.3" },
-    { "id": "opi-executable", "owner_task": "18.15" }
+    { "id": "materializer-tools", "owner_stage": "external-lock-materialization" },
+    { "id": "closure-artifact", "owner_stage": "external-lock-materialization" },
+    { "id": "opi-executable", "owner_stage": "native-smoke" }
   ]
 }

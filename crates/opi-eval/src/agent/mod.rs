@@ -1,5 +1,5 @@
-//! Crate-private Agent contract and per-product process adapters (Phase 18
-//! task 18.6).
+//! Crate-private Agent contract and per-product process adapters (opi-eval
+//! the Agent adapter contract).
 //!
 //! [`process::AgentExecution`] is the one shared N-harness contract: it drives
 //! [`crate::process::ProcessSupervisor`] under the trial's limits and settles

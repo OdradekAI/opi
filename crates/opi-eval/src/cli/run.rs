@@ -1,4 +1,4 @@
-//! `opi-eval run` command (tasks 18.12, 18.14.1): the assembled run path.
+//! `opi-eval run` command: assembled run path.
 //!
 //! One invocation resolves the experiment document, drives the paired
 //! trials end to end through the crate-private runner (durable intent,
@@ -9,7 +9,7 @@
 //! explicitly incomplete outcome, 2 for a rejected request. The resolved
 //! executables are runtime-generated deterministic helpers over the pinned
 //! fixtures tree: this facade never claims a real Opi/pi program, provider
-//! call, or official task environment (task 18.15 owns the native rerun),
+//! call, or official task environment (native smoke owns that execution),
 //! and never touches paid providers or user-global resources.
 
 use std::path::PathBuf;
@@ -44,7 +44,7 @@ pub struct RunArgs {
     /// Optional file of declared canary secrets (one per line); any
     /// canary found in staged exportable content blocks sealing.
     pub canaries: Option<PathBuf>,
-    /// Resolved native material manifest (task 18.14.1); when present
+    /// Resolved native material manifest (native mode); when present
     /// the run takes the native driving mode.
     pub native_material: Option<PathBuf>,
     /// Run only the upstream oracle preflight, then stop.
@@ -110,7 +110,7 @@ fn read_canaries(path: Option<&std::path::Path>) -> Result<Vec<String>, std::io:
 pub fn report_exit_code(report: &serde_json::Value) -> i32 {
     match report["outcome"].as_str() {
         // A passing oracle preflight without trials is a successful
-        // native preflight-only invocation (task 18.14.1).
+        // native preflight-only invocation (native mode).
         Some("completed") | Some("preflight-only") => 0,
         _ => 1,
     }

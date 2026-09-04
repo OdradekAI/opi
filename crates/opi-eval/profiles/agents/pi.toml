@@ -1,9 +1,9 @@
-# Declarative pi agent profile for the Phase 18 eval seam.
+# Declarative pi agent profile for opi-eval.
 # Identity, launch policy, environment projection keys, and limits only:
 # no protocol behavior, no parser configuration, no credentials.
 # Pinned to the earendil-works coding-agent v0.84.3 CLI surface.
 
-schema = "phase18-agent-profile/1"
+schema = "opi-eval-agent-profile/1"
 product = "pi"
 
 [identity]

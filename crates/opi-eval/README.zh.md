@@ -1,7 +1,6 @@
 # opi-eval
 
-> 未发布的 Independent Companion，用于跨 Agent 评测实验（临时 Phase 18
-> seam）。
+> 未发布的 Independent Companion，用于 Agent 中立的跨 Agent 评测。
 
 [English](README.md) | [opi workspace](../../README.zh.md)
 
@@ -19,11 +18,11 @@ hook 或默认捕获路径。普通 `opi` 运行时行为不因它的存在而�
 session、原生 evidence、本地 Eval 报告、配置、凭据和用户工件永远不会被本
 crate 读取、改写或迁移。
 
-## 临时 seam
+## 稳定性
 
-这里的每个类型、模块和命令都是临时且未发布的（P18-SEAM-001）：在完整的
-Phase 18 集成矩阵证明该 seam 之前，没有任何内容是持久的公开承诺。内部的
-trait、envelope、模块和命令名在阶段进行期间都可能被重命名。
+本 crate 尚未发布，仍是 `0.x` workspace 成员。其 CLI、schema、磁盘格式和
+库入口可以被有意调整；破坏性变更记录在 `CHANGELOG.md` 的 Unreleased 部分。
+旧版实验或报告 schema 不隐含任何兼容层。
 
 ## 用法
 

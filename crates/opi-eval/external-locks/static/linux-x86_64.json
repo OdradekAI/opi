@@ -1,24 +1,24 @@
 {
-  "schema": "phase18-external-lock/static/1",
-  "lock_id": "phase18-linux-x86_64",
+  "schema": "opi-eval-external-lock/static/1",
+  "lock_id": "opi-eval-linux-x86_64",
   "platform": "linux-x86_64",
   "authority": {
     "trigger": "workflow_dispatch",
     "admission": "digest",
     "workflow": {
-      "path": ".github/workflows/phase18-lock-materialization.yml",
-      "sha256": "e986410e45543a69d8723b796a9932c2a3a45862b5f535915edd6b17162671c1"
+      "path": ".github/workflows/opi-eval-external-lock-materialization.yml",
+      "sha256": "94e33a3c0a737380b14346eee772030362529e74f0fce5f60e6ef57109e5e86a"
     },
     "producers": [
       {
-        "path": "scripts/phase18-materialize-locks.sh",
+        "path": "crates/opi-eval/scripts/materialize-external-locks.sh",
         "role": "materializer",
-        "sha256": "102a0621da153faf5206a723cc3dab846c9e442ab0e166f3610535f1410eb19d"
+        "sha256": "7d6928d2f2f126aa77c22e7b75aafb5f4ec32174302d3bd75df74ebf57b0134b"
       },
       {
-        "path": "scripts/verify-phase18-materialization-ci.py",
+        "path": "crates/opi-eval/scripts/verify-external-lock-ci.py",
         "role": "verifier",
-        "sha256": "70750cc9d59c34d8ace8a0cf311d42fd9e9a1eb3884891d85bd0b7c0be439b92"
+        "sha256": "000adfa0669dc5ec4abe53fc5789c2400e3b1cc556f2fdf2ff56bea445ea6ce2"
       }
     ],
     "actions": [
@@ -459,7 +459,7 @@
   "adapter_policy": [
     {
       "id": "curl-shim",
-      "producer": "scripts/phase18-materialize-locks.sh",
+      "producer": "crates/opi-eval/scripts/materialize-external-locks.sh",
       "identity": "receipt-recorded"
     }
   ],
@@ -469,63 +469,63 @@
   "unresolved": [
     {
       "id": "materializer-tools",
-      "owner_task": "18.3"
+      "owner_stage": "external-lock-materialization"
     },
     {
       "id": "closure-artifact",
-      "owner_task": "18.3"
+      "owner_stage": "external-lock-materialization"
     },
     {
       "id": "pulled-image-graphs",
-      "owner_task": "18.3"
+      "owner_stage": "external-lock-materialization"
     },
     {
       "id": "harbor-effective-config",
-      "owner_task": "18.3"
+      "owner_stage": "external-lock-materialization"
     },
     {
       "id": "docker-network-evidence",
-      "owner_task": "18.3"
+      "owner_stage": "external-lock-materialization"
     },
     {
       "id": "oracle-preflight",
-      "owner_task": "18.3"
+      "owner_stage": "external-lock-materialization"
     },
     {
       "id": "opi-executable",
-      "owner_task": "18.15"
+      "owner_stage": "native-smoke"
     },
     {
       "id": "pi-node-executable",
-      "owner_task": "18.15"
+      "owner_stage": "native-smoke"
     },
     {
       "id": "pi-bundle",
-      "owner_task": "18.15"
+      "owner_stage": "native-smoke"
     },
     {
       "id": "tb30-task-image",
-      "owner_task": "18.15"
+      "owner_stage": "native-smoke"
     },
     {
       "id": "tb30-verifier-image",
-      "owner_task": "18.15"
+      "owner_stage": "native-smoke"
     },
     {
       "id": "deepswe-verifier-image",
-      "owner_task": "18.15"
+      "owner_stage": "native-smoke"
     },
     {
       "id": "native-verifier-results",
-      "owner_task": "18.15"
+      "owner_stage": "native-smoke"
     },
     {
       "id": "sealed-artifact",
-      "owner_task": "18.15"
+      "owner_stage": "native-smoke"
     },
     {
       "id": "upload-receipt",
-      "owner_task": "18.15"
+      "owner_stage": "native-smoke"
     }
   ]
 }

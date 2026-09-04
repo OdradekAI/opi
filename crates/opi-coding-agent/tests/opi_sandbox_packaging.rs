@@ -85,20 +85,20 @@ fn package_target() -> &'static str {
 
 fn script_path() -> PathBuf {
     // CARGO_MANIFEST_DIR is the opi-coding-agent crate dir
-    // (<workspace>/crates/opi-coding-agent); the packaging scripts live at the
-    // workspace root. Canonicalize, then strip the \\?\ verbatim prefix, which
-    // breaks PowerShell $PSScriptRoot under -File.
+    // (<workspace>/crates/opi-coding-agent); the packaging scripts live in the
+    // sibling opi-sandbox crate. Canonicalize, then strip the \\?\ verbatim
+    // prefix, which breaks PowerShell $PSScriptRoot under -File.
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let script = if cfg!(windows) {
         crate_dir
             .join("..")
-            .join("..")
+            .join("opi-sandbox")
             .join("scripts")
             .join("package-opi-sandbox.ps1")
     } else {
         crate_dir
             .join("..")
-            .join("..")
+            .join("opi-sandbox")
             .join("scripts")
             .join("package-opi-sandbox.sh")
     };
@@ -112,7 +112,7 @@ fn script_path() -> PathBuf {
 
 fn package_helper_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
+        .join("../opi-sandbox")
         .join("scripts")
         .join("opi-sandbox-package.py")
 }
@@ -677,8 +677,8 @@ fn platform_packagers_share_strict_literal_semver_renderer() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let helper_name = "opi-sandbox-package.py";
     for wrapper in [
-        root.join("scripts/package-opi-sandbox.sh"),
-        root.join("scripts/package-opi-sandbox.ps1"),
+        root.join("crates/opi-sandbox/scripts/package-opi-sandbox.sh"),
+        root.join("crates/opi-sandbox/scripts/package-opi-sandbox.ps1"),
     ] {
         let source = fs::read_to_string(&wrapper).unwrap();
         assert!(
@@ -693,8 +693,7 @@ fn platform_packagers_share_strict_literal_semver_renderer() {
 fn shared_renderer_accepts_strict_semver_and_rejects_malformed_or_metacharacters() {
     let tmp = tempfile::tempdir().unwrap();
     let template = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("packaging/opi-sandbox/package.toml.template");
+        .join("../opi-sandbox/packaging/package.toml.template");
     let cases = [
         ("1.2.3", true),
         ("1.2.3-rc.1", true),
@@ -762,8 +761,7 @@ fn shared_renderer_rejects_non_release_target() {
         .arg("--template")
         .arg(
             Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../..")
-                .join("packaging/opi-sandbox/package.toml.template"),
+                .join("../opi-sandbox/packaging/package.toml.template"),
         )
         .arg("--target")
         .arg("x86_64-pc-windows-msvc")

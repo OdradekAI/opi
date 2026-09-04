@@ -1,4 +1,4 @@
-//! Authority-boundary call-count suite (task 18.12, `P18-FAL-002`).
+//! Authority-boundary call-count suite (the assembled runner, `EVAL-FAL-002`).
 //!
 //! For every owning failure boundary, these black-box runs prove ZERO
 //! downstream authority-transition executions from the execution counts
@@ -57,7 +57,7 @@ fn executed(trial: &serde_json::Value, transition: &str) -> i64 {
 }
 
 /// Read the sealed bundle's authority-ledger artifact and count executions
-/// of `transition` (P18-FAL-002 durable call-count evidence).
+/// of `transition` (EVAL-FAL-002 durable call-count evidence).
 #[cfg(unix)]
 fn bundle_executed(root: &Path, trial: &str, transition: &str) -> i64 {
     let manifest: serde_json::Value = serde_json::from_str(
@@ -87,16 +87,16 @@ fn bundle_executed(root: &Path, trial: &str, transition: &str) -> i64 {
         .count() as i64
 }
 
-/// `P18-FAL-002`: scored Agent outcomes - the Agent's own non-zero exit
+/// `EVAL-FAL-002`: scored Agent outcomes - the Agent's own non-zero exit
 /// and its supervisor-budget timeout - stay in the graded Agent class: the
 /// native verifier dispatches exactly once over the settled workspace, the
 /// graded reward is retained, and no authority transition is refused.
 #[cfg(unix)]
 #[test]
-fn p18_fal002_scored_agent_failures_dispatch_the_native_grader() {
+fn fal002_scored_agent_failures_dispatch_the_native_grader() {
     for behavior in ["agent-crash", "agent-timeout"] {
         let root = tempfile::tempdir().unwrap();
-        let (code, report, stderr) = run_experiment("phase18-local.toml", behavior, root.path());
+        let (code, report, stderr) = run_experiment("local-paired.toml", behavior, root.path());
         assert_eq!(
             code, 0,
             "{behavior}: a fully graded scored-failure run completes: {stderr} {report}"
@@ -157,7 +157,7 @@ fn p18_fal002_scored_agent_failures_dispatch_the_native_grader() {
     }
 }
 
-/// `P18-FAL-002`: actual authority-boundary failures - evidence rejection
+/// `EVAL-FAL-002`: actual authority-boundary failures - evidence rejection
 /// and cancellation - stop the grade dispatch: zero verifier executions
 /// proven from both the receipt and the sealed bundle, while settlement,
 /// sealing, and the receipt stay executable so the failure itself is
@@ -167,13 +167,13 @@ fn p18_fal002_scored_agent_failures_dispatch_the_native_grader() {
 /// exist.)
 #[cfg(unix)]
 #[test]
-fn p18_fal002_boundary_failures_stop_grade_dispatch() {
+fn fal002_boundary_failures_stop_grade_dispatch() {
     for (behavior, refused_at) in [
         ("agent-missing-terminal", "refused:stopped-at-evidence"),
         ("agent-cancelled", "refused:stopped-at-agent-process"),
     ] {
         let root = tempfile::tempdir().unwrap();
-        let (code, report, stderr) = run_experiment("phase18-local.toml", behavior, root.path());
+        let (code, report, stderr) = run_experiment("local-paired.toml", behavior, root.path());
         assert_eq!(code, 1, "{behavior}: {stderr}");
         for trial in report["trials"].as_array().unwrap() {
             let id = trial["id"].as_str().unwrap();
@@ -229,9 +229,9 @@ fn p18_fal002_boundary_failures_stop_grade_dispatch() {
 /// stopped transitions rather than merely absent files.
 #[cfg(unix)]
 #[test]
-fn p18_fal002_seal_failure_stops_report() {
+fn fal002_seal_failure_stops_report() {
     let root = tempfile::tempdir().unwrap();
-    let (code, report, stderr) = run_experiment("phase18-local.toml", "seal-failure", root.path());
+    let (code, report, stderr) = run_experiment("local-paired.toml", "seal-failure", root.path());
     assert_eq!(code, 1, "{stderr}");
     for trial in report["trials"].as_array().unwrap() {
         let id = trial["id"].as_str().unwrap();
@@ -265,10 +265,10 @@ fn p18_fal002_seal_failure_stops_report() {
 /// retains the verifier failure evidence.
 #[cfg(unix)]
 #[test]
-fn p18_fal002_grader_failure_stops_report() {
+fn fal002_grader_failure_stops_report() {
     let root = tempfile::tempdir().unwrap();
     let (code, report, stderr) =
-        run_experiment("phase18-local.toml", "verifier-failure", root.path());
+        run_experiment("local-paired.toml", "verifier-failure", root.path());
     assert_eq!(code, 1, "{stderr}");
     for trial in report["trials"].as_array().unwrap() {
         let id = trial["id"].as_str().unwrap();

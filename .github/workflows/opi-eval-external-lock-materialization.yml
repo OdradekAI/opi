@@ -1,0 +1,75 @@
+name: opi-eval external-lock materialization
+
+# Manually authorized producer for the resolved Linux x86_64 external lock.
+# Dispatching requires the exact candidate commit that owns the
+# pinned static lock; the dispatch fails closed when the running workflow
+# bytes, any invoked producer script, or the static lock have drifted.
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: "Exact commit that owns the pinned static lock"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opi-eval-lock-materialization
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.repository == 'OdradekAI/opi'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out the candidate commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Verify the dispatch contract
+        env:
+          CANDIDATE: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          candidate="$CANDIDATE"
+          workflow_path=".github/workflows/opi-eval-external-lock-materialization.yml"
+          if [ "$(git rev-parse HEAD)" != "$candidate" ]; then
+            echo "FAIL: HEAD $(git rev-parse HEAD) is not the candidate commit $candidate"
+            exit 1
+          fi
+          if [ -z "${GITHUB_WORKFLOW_SHA:-}" ]; then
+            echo "FAIL: GITHUB_WORKFLOW_SHA is not set; cannot bind the running workflow bytes"
+            exit 1
+          fi
+          git fetch --quiet origin "$GITHUB_WORKFLOW_SHA"
+          running_sha="$(git show "$GITHUB_WORKFLOW_SHA:$workflow_path" | sed 's/\r$//' | sha256sum | cut -d' ' -f1)"
+          checked_out_sha="$(sed 's/\r$//' "$workflow_path" | sha256sum | cut -d' ' -f1)"
+          if [ "$running_sha" != "$checked_out_sha" ]; then
+            echo "FAIL: workflow bytes at $GITHUB_WORKFLOW_SHA drifted from the candidate commit"
+            exit 1
+          fi
+          python3 crates/opi-eval/scripts/verify-external-lock-ci.py --workflow "$workflow_path" --script crates/opi-eval/scripts/materialize-external-locks.sh
+
+      - name: Run the Linux lock materializer
+        env:
+          CANDIDATE: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          bash crates/opi-eval/scripts/materialize-external-locks.sh \
+            --candidate-commit "$CANDIDATE" \
+            --static-lock crates/opi-eval/external-locks/static/linux-x86_64.json \
+            --output-dir "${RUNNER_TEMP}/opi-eval-materialization"
+
+      - name: Upload the materialization artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opi-eval-linux-lock-materialization
+          path: ${{ runner.temp }}/opi-eval-materialization/
+          retention-days: 30
+          if-no-files-found: error

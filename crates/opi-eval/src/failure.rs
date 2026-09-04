@@ -1,12 +1,12 @@
-//! Crate-private failure-boundary codes (Phase 18 task 18.5).
+//! Crate-private failure-boundary codes.
 //!
 //! Failures are owned at the narrowest boundary that observed them. This enum
 //! is the stable owning-boundary code every typed eval failure carries; it
-//! stays crate-private until the Phase 18 integration matrix fixes the seam.
+//! stays crate-private until the opi-eval integration matrix fixes the seam.
 
 /// Stable owning-boundary code for every typed eval failure.
 ///
-/// One variant per boundary row of the Phase 18 failure table. A variant
+/// One variant per boundary row of the opi-eval failure table. A variant
 /// names who owns classification and downstream authority stopping, not how
 /// severe the failure is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -15,7 +15,7 @@ pub(crate) enum FailureBoundaryCode {
     /// budget rejection, unsupported capability.
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "required closed Phase 18 failure-table boundary")
+        expect(dead_code, reason = "required closed opi-eval failure-table boundary")
     )]
     Experiment,
     /// Not started, effect unknown, settlement failure, sealing failure,
@@ -43,7 +43,7 @@ pub(crate) enum FailureBoundaryCode {
     /// offline recomputation mismatch.
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "required closed Phase 18 failure-table boundary")
+        expect(dead_code, reason = "required closed opi-eval failure-table boundary")
     )]
     PairReport,
 }

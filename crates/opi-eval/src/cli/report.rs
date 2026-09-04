@@ -1,4 +1,4 @@
-//! `opi-eval report` command (task 18.13): offline normalized reporting.
+//! `opi-eval report` command: offline normalized reporting.
 //!
 //! One invocation recomputes the normalized report from the verified
 //! sealed bundles of a run root through the report builder's
@@ -6,12 +6,12 @@
 //! against declared canaries, and writes the byte-stable
 //! conformance-only report (stdout or an explicit output path). It never
 //! starts an Agent or provider and never mutates the run root
-//! (`P18-RPT-001`). Exit codes: 0 when published, 1 when publication is
+//! (`EVAL-RPT-001`). Exit codes: 0 when published, 1 when publication is
 //! blocked (typed canary leak) or a contributing bundle failed
 //! verification or sealed-input parsing, 2 for a rejected request. The
 //! output path is opened with create-new semantics outside the run root,
 //! so neither sealed bytes nor a prior report can ever be replaced.
-//! Hermetic fixture-grade only; task 18.15 owns the native rerun.
+//! Hermetic fixture-grade only; native smoke owns native execution.
 
 use std::path::{Path, PathBuf};
 

@@ -1,8 +1,8 @@
-# Phase 18 minimal pairing fixture: two real harness subjects, one directed
+# opi-eval minimal pairing fixture: two real harness subjects, one directed
 # comparison edge, fully explicit shared model controls. Data only; the
 # resolution contract is Agent-neutral and no harness name is hard-coded.
-schema = "phase18-experiment/1"
-experiment_id = "phase18-minimal-pairing"
+schema = "opi-eval-experiment/1"
+experiment_id = "minimal-pairing"
 
 [benchmark]
 name = "terminal-bench"

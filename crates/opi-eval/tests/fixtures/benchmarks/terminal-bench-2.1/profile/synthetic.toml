@@ -3,7 +3,7 @@
 # task-package bytes next to it, so package validation can run green
 # without shipping upstream task bytes.
 
-schema = "phase18-benchmark-profile/1"
+schema = "opi-eval-benchmark-profile/1"
 benchmark = "terminal-bench"
 revision = "2.1"
 

@@ -1,13 +1,13 @@
-//! Parameterized benchmark-revision conformance suite (task 18.10.1).
+//! Parameterized benchmark-revision conformance suite.
 //!
 //! Each case spawns the production `opi-eval conformance` binary — the
-//! minimum provisional process facade over the crate-private
+//! minimal process facade over the crate-private
 //! `BenchmarkExecution` seam — with a bounded deterministic helper process
 //! standing in for the native verifier and pinned saved native bytes.
 //! This proves fixture-level hermetic conformance only: it never claims an
 //! official task environment, a real native verifier, or a real graded run
-//! (those remain task 18.15). No network, no Hub login, no cached-score
-//! fallback (`P18-BMK-002`, `P18-BMK-005`, `P18-BMK-006`, `P18-BMK-009`).
+//! (those remain the native smoke). No network, no Hub login, no cached-score
+//! fallback (`EVAL-BMK-002`, `EVAL-BMK-005`, `EVAL-BMK-006`, `EVAL-BMK-009`).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -37,7 +37,7 @@ fn run_case(adapter: &str, case: &str) -> (i32, serde_json::Value, String) {
         .arg("--provider")
         .arg(
             manifest_dir()
-                .join("../../scripts/phase18-scripted-provider.py")
+                .join("scripts/scripted-provider.py")
                 .canonicalize()
                 .unwrap(),
         )
@@ -158,7 +158,7 @@ fn rows() -> Vec<Row> {
     }
     // Terminal-Bench 2.1 only: the production byte-table pin pins the real
     // official package bytes, so it refuses the synthetic fixture bytes
-    // (real bytes arrive with task 18.15).
+    // (real bytes arrive with the native smoke).
     rows.push(Row {
         adapter: "terminal-bench-2.1",
         case: "production-pin-drift",
@@ -167,7 +167,7 @@ fn rows() -> Vec<Row> {
         boundary: None,
         exit_state: "rejected:task-package-drift",
     });
-    // Terminal-Bench 3.0 and DeepSWE: since task 18.15 registered the
+    // Terminal-Bench 3.0 and DeepSWE: since the native smoke registered the
     // reviewed byte tables, the production pins reject the synthetic
     // fixture bytes as drift (the case name is historical).
     for adapter in ["terminal-bench-3.0", "deepswe"] {
@@ -256,7 +256,7 @@ fn benchmark_conformance_matrix_settles_every_pinned_case() {
             "case {} {} failed: {stderr}",
             row.adapter, row.case
         );
-        assert_eq!(report["schema"], "phase18-conformance-report/1");
+        assert_eq!(report["schema"], "opi-eval-conformance-report/1");
         assert_eq!(report["suite"], "benchmark");
         assert_eq!(report["adapter"], row.adapter);
         assert_eq!(report["case"], row.case);
@@ -294,7 +294,7 @@ fn benchmark_conformance_matrix_settles_every_pinned_case() {
             }
             ("terminal-bench-2.1", "completed") => {
                 // Terminal-Bench rewards stay authoritative-native: the
-                // resolved reward is pending the 18.15 native smoke.
+                // resolved reward is pending the native smoke.
                 assert_eq!(report["reward"]["state"], "unknown");
                 assert_eq!(
                     report["reward"]["reason"],

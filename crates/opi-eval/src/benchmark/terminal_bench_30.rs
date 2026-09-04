@@ -1,16 +1,16 @@
-//! Crate-private Terminal-Bench 3.0 benchmark adapter (Phase 18 task 18.9).
+//! Crate-private Terminal-Bench 3.0 benchmark adapter.
 //!
 //! Owns only what is Terminal-Bench-3.0-specific: the pinned declarative
 //! profile (tag `v3.0.0` of canonical `harbor-framework/terminal-bench`),
 //! the separate-verifier-container semantics that must not be normalized
-//! away (`P18-BMK-003`), task-package admission for the two pin modes the
+//! away (`EVAL-BMK-003`), task-package admission for the two pin modes the
 //! committed evidence supports, and the revision-specific native-result
 //! settlement through the shared contract in [`super::process`]. 3.0 is a
 //! separate revision, not a data revision of 2.1: byte-level task-package
 //! tables, task/verifier images, and the native-output schema are
-//! unresolved slots owned by task 18.15, so the production profile pins the
+//! unresolved slots owned by the native smoke, so the production profile pins the
 //! task-tree identity only and the adapter fails closed until reviewed
-//! bytes are registered (`P18-BMK-001`, `P18-BMK-002`, `P18-BMK-008`).
+//! bytes are registered (`EVAL-BMK-001`, `EVAL-BMK-002`, `EVAL-BMK-008`).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -35,7 +35,7 @@ pub(crate) struct PinnedFile {
 /// lock pins Terminal-Bench 3.0 by task-tree identity with an empty files
 /// table (`tree-identity`); a `byte-table` pin requires a registered
 /// complete file closure, which today exists only for synthetic fixtures
-/// and arrives for the production task with task 18.15.
+/// and arrives for the production task with the native smoke.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PackagePin {
     /// Task-tree identity only: admission fails closed as not materialized.
@@ -46,7 +46,7 @@ pub(crate) enum PackagePin {
 
 /// The pinned native-output surface. No 3.0 native-output schema is
 /// committed; `ctrf-json` is admitted only for synthetic wiring fixtures
-/// until task 18.15 pins the real schema.
+/// until the native smoke pins the real schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputKind {
     UnpinnedPending1815,
@@ -198,7 +198,7 @@ impl Tb30Profile {
             .map_err(|_| TbProfileError::Parse("profile is not valid UTF-8".to_owned()))?;
         let doc: Tb30Doc =
             toml::from_str(&text).map_err(|e| TbProfileError::Parse(e.to_string()))?;
-        if doc.schema != "phase18-benchmark-profile/1" {
+        if doc.schema != "opi-eval-benchmark-profile/1" {
             return Err(TbProfileError::UnsupportedSchema(doc.schema));
         }
         if doc.benchmark != "terminal-bench" || doc.revision != "3.0" {
@@ -403,9 +403,9 @@ impl Tb30Profile {
     }
 
     /// Admit a materialized task package against the pin
-    /// (`P18-BMK-002`). A `tree-identity` pin fails closed as not
+    /// (`EVAL-BMK-002`). A `tree-identity` pin fails closed as not
     /// materialized: no committed byte table exists to validate against, so
-    /// no 3.0 verifier invocation is admitted until task 18.15 registers
+    /// no 3.0 verifier invocation is admitted until the native smoke registers
     /// one. A `byte-table` pin requires exactly the pinned files,
     /// byte-identical digests.
     pub(crate) fn admit_task_package(&self, root: &Path) -> Result<(), TaskPackageError> {
@@ -480,7 +480,7 @@ fn walk_files(
     Ok(())
 }
 
-/// Typed task-package admission failures (`P18-BMK-002`).
+/// Typed task-package admission failures (`EVAL-BMK-002`).
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum TaskPackageError {
     Io(String),
@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn production_profile_is_pinned_to_the_static_external_lock() {
-        // P18-BMK-001/P18-BMK-008: the profile must restate exactly the
+        // EVAL-BMK-001/EVAL-BMK-008: the profile must restate exactly the
         // identity pins the committed static lock already admits for 3.0 —
         // and only those: the lock's files table is empty, so the profile
         // must pin the task-tree identity without inventing bytes.
@@ -568,7 +568,7 @@ mod tests {
             profile.task_tree,
             "729916599199dd1de6be0e0c543da9788d6129b5"
         );
-        // Task 18.15 registered the reviewed official byte table: 47
+        // The native smoke registered the reviewed official byte table: 47
         // pinned files with their canonical digest declared.
         assert_eq!(profile.package_pin, PackagePin::ByteTable);
         assert_eq!(profile.package.len(), 47);
@@ -661,7 +661,7 @@ mod tests {
             })
         );
 
-        // The registered byte table (task 18.15) rejects the synthetic
+        // The registered byte table (native smoke) rejects the synthetic
         // fixture bytes with the first drift it meets, never silently.
         let production = Tb30Profile::parse(&read(
             &crate_root().join("profiles/benchmarks/terminal-bench-3.0.toml"),
@@ -697,7 +697,10 @@ mod tests {
 
         // Wrong schema family.
         assert!(matches!(
-            reparse(&text.replace("phase18-benchmark-profile/1", "phase18-benchmark-profile/2")),
+            reparse(&text.replace(
+                "opi-eval-benchmark-profile/1",
+                "opi-eval-benchmark-profile/2"
+            )),
             Err(TbProfileError::UnsupportedSchema(_))
         ));
 
@@ -820,7 +823,7 @@ use std::time::Duration;
 
 /// Where a synthetic `ctrf-json` wiring fixture expects the native report.
 /// The production 3.0 profile pins no output schema, so no filename is
-/// claimed for real 3.0 runs until task 18.15 registers one.
+/// claimed for real 3.0 runs until the native smoke registers one.
 const CTRF_REPORT_NAME: &str = "ctrf-report.json";
 
 /// The Terminal-Bench 3.0 benchmark adapter. Owns the pinned declarative
@@ -845,7 +848,7 @@ impl TerminalBench30Adapter {
 
     /// Import the CTRF schema used by synthetic wiring fixtures. This is a
     /// wiring hypothesis, not a pinned 3.0 native-output schema: the real
-    /// importer shape is registered by task 18.15. Fails closed on drift.
+    /// importer shape is registered by the native smoke. Fails closed on drift.
     fn import_ctrf(bytes: &[u8]) -> Result<super::process::NativeMetrics, CtrfError> {
         let value: serde_json::Value =
             serde_json::from_slice(bytes).map_err(|_| CtrfError::Parse)?;
@@ -932,9 +935,9 @@ impl BenchmarkAdapter for TerminalBench30Adapter {
             });
         }
         // Task-package admission before any verifier invocation
-        // (P18-BMK-002). A tree-identity pin fails closed as not
-        // materialized: 3.0 verifier runs are not admitted until task
-        // 18.15 registers a reviewed byte table.
+        // (EVAL-BMK-002). A tree-identity pin fails closed as not
+        // materialized: 3.0 verifier runs are not admitted until the native
+        // smoke registers a reviewed byte table.
         self.profile
             .admit_task_package(&request.task_dir)
             .map_err(|e| ExecutionError {
@@ -985,7 +988,7 @@ impl BenchmarkAdapter for TerminalBench30Adapter {
         };
         // The process-level verdict is authoritative first: a non-zero exit,
         // timeout, cancellation, or spawn failure can never be rescued by
-        // evidence, and no fallback grader exists (P18-BMK-006).
+        // evidence, and no fallback grader exists (EVAL-BMK-006).
         match outcome.exit {
             ExitState::Exited { code: 0 } => {}
             ExitState::Exited { code } => {
@@ -1014,7 +1017,7 @@ impl BenchmarkAdapter for TerminalBench30Adapter {
             }
         }
         // Exit 0 under an unpinned output schema settles fail-closed
-        // unless task 18.15's pinned harbor layout is present: the 3.0
+        // unless the native smoke's pinned harbor layout is present: the 3.0
         // native-output schema this task pins is harbor's
         // `jobs/<timestamp>/result.json` aggregate from `harbor run -p`,
         // exactly as verified at the dispatch. Nothing is guessed or
@@ -1212,7 +1215,7 @@ mod adapter_tests {
         let trace = dir.path().join("trace");
         std::fs::create_dir_all(&trace).unwrap();
 
-        // The production 3.0 pin is the task-18.15 registered byte table:
+        // The production 3.0 pin is the native-smoke registered byte table:
         // the synthetic fixture directory drifts against the real official
         // package bytes and admission fails closed as drift.
         let mut request = request_with(&production, fixture_path("task-package"), trace.clone());
@@ -1317,7 +1320,7 @@ mod adapter_tests {
             failed("import-parse-failure", FailureBoundaryCode::Adapter)
         );
         // Valid CTRF with failing tests is still a valid verification: the
-        // native counts stay authoritative (P18-BMK-007).
+        // native counts stay authoritative (EVAL-BMK-007).
         write_ctrf(&trace, "one-failed.json");
         let (reward, completion) = adapter.settle(&outcome_exit_zero(), &request);
         assert_eq!(

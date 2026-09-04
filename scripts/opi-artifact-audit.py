@@ -36,7 +36,13 @@ from collections import Counter
 
 
 def _load_package_helper():
-    helper_path = pathlib.Path(__file__).resolve().with_name("opi-sandbox-package.py")
+    helper_path = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "crates"
+        / "opi-sandbox"
+        / "scripts"
+        / "opi-sandbox-package.py"
+    )
     spec = importlib.util.spec_from_file_location("opi_sandbox_package_helper", helper_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load shared package helper: {helper_path}")

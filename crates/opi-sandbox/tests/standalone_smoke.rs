@@ -5,9 +5,10 @@
 //! The script (not this test) owns the isolation — PATH scrub, Opi sentinel env,
 //! and the canary — so CI/release jobs that invoke the script directly get the
 //! same no-Opi-access / no-durable-state proof this test asserts. This test runs
-//! `scripts/opi-sandbox-smoke.sh` on unix and `scripts/opi-sandbox-smoke.ps1` on
-//! Windows (the cfg(unix) arm compiles out on a Windows host; verified via
-//! WSL2/GHA Linux per the Phase 16 task 16.11.2 audit fold).
+//! `crates/opi-sandbox/scripts/opi-sandbox-smoke.sh` on unix and
+//! `crates/opi-sandbox/scripts/opi-sandbox-smoke.ps1` on Windows (the cfg(unix)
+//! arm compiles out on a Windows host; verified via WSL2/GHA Linux per the
+//! Phase 16 task 16.11.2 audit fold).
 
 #![cfg(test)]
 
@@ -16,15 +17,6 @@ use std::process::Command;
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-/// `crates/opi-sandbox` is two levels below the repo root.
-fn repo_root() -> PathBuf {
-    manifest_dir()
-        .ancestors()
-        .nth(2)
-        .expect("manifest is under crates/opi-sandbox")
-        .to_path_buf()
 }
 
 fn read_artifact(dir: &std::path::Path, name: &str) -> String {
@@ -138,7 +130,7 @@ fn standalone_smoke_script_unix() {
     let bin = env!("CARGO_BIN_EXE_opi-sandbox");
     let artifact_dir = tempfile::tempdir().expect("artifact temp dir");
     let status = Command::new("bash")
-        .arg(repo_root().join("scripts").join("opi-sandbox-smoke.sh"))
+        .arg(manifest_dir().join("scripts").join("opi-sandbox-smoke.sh"))
         .args(["--binary", bin])
         .args([
             "--artifact-dir",
@@ -164,7 +156,7 @@ fn standalone_smoke_script_windows() {
         std::fs::canonicalize(artifact_dir.path()).expect("canonicalize artifact dir");
     let artifact_lossy = artifact_canonical.to_string_lossy();
     let artifact_str = artifact_lossy.trim_start_matches(r"\\?\");
-    let script = repo_root()
+    let script = manifest_dir()
         .join("scripts")
         .join("opi-sandbox-smoke.ps1")
         .to_str()

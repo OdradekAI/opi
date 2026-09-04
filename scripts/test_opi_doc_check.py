@@ -13,11 +13,6 @@ doc_check = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(doc_check)
 
 
-PHASE18_ROADMAP_REQUIRED = {
-    rel: tokens
-    for rel, tokens in doc_check.PHASE18_ROADMAP_CONTRACT.items()
-}
-
 MINIMUM_CHANGE_TRACE_REQUIRED = {
     ".claude/skills/opi-implement/SKILL.md": (
         "**Minimum-change trace rule:**",
@@ -574,10 +569,6 @@ class SkillContractTests(unittest.TestCase):
                 + "\n",
             )
 
-    def write_phase18_roadmap_docs(self) -> None:
-        for rel, tokens in PHASE18_ROADMAP_REQUIRED.items():
-            self.write(rel, "\n".join(tokens) + "\n")
-
     def write_eval_behavior_baseline_docs(self) -> None:
         for rel, tokens in EVAL_BEHAVIOR_BASELINE_REQUIRED.items():
             self.write(rel, "\n".join(tokens) + "\n")
@@ -782,37 +773,6 @@ class SkillContractTests(unittest.TestCase):
                         doc_check.ERRORS,
                     )
 
-    def test_phase18_roadmap_contract_passes(self) -> None:
-        self.write_phase18_roadmap_docs()
-
-        checker = getattr(doc_check, "check_phase18_roadmap_contract", None)
-        self.assertIsNotNone(checker, "phase18 roadmap checker must exist")
-        checker()
-
-        self.assertEqual([], doc_check.ERRORS)
-
-    def test_phase18_roadmap_contract_requires_every_token(self) -> None:
-        checker = getattr(doc_check, "check_phase18_roadmap_contract", None)
-        self.assertIsNotNone(checker, "phase18 roadmap checker must exist")
-
-        for rel, tokens in PHASE18_ROADMAP_REQUIRED.items():
-            for token in tokens:
-                with self.subTest(rel=rel, token=token):
-                    doc_check.ERRORS = []
-                    self.write_phase18_roadmap_docs()
-                    self.write(
-                        rel,
-                        "\n".join(item for item in tokens if item != token) + "\n",
-                    )
-
-                    checker()
-
-                    self.assertIn(
-                        f"{rel}: phase18 GLM-5.3 roadmap contract "
-                        f"missing semantic tokens {[token]!r}",
-                        doc_check.ERRORS,
-                    )
-
     def test_opi_spec_evidence_refinement_contract_passes(self) -> None:
         self.write_opi_spec_evidence_refinement_docs()
         checker = getattr(
@@ -919,6 +879,57 @@ class SkillContractTests(unittest.TestCase):
                         f"missing semantic tokens {[token]!r}",
                         doc_check.ERRORS,
                     )
+
+    def write_clean_opi_eval_active_naming_surface(self) -> None:
+        self.write("crates/opi-eval/src/lib.rs", "//! Active eval contract.\n")
+        self.write(
+            ".github/workflows/opi-eval-external-lock-materialization.yml",
+            "name: opi-eval external-lock materialization\n",
+        )
+        self.write(
+            ".github/workflows/opi-eval-native-smoke.yml",
+            "name: opi-eval Linux native smoke\n",
+        )
+        self.write(".github/workflows/ci.yml", "name: CI\n")
+
+    def test_opi_eval_active_naming_surface_passes(self) -> None:
+        self.write_clean_opi_eval_active_naming_surface()
+
+        checker = getattr(doc_check, "check_opi_eval_active_naming", None)
+        self.assertIsNotNone(checker, "opi-eval active naming checker must exist")
+        checker()
+
+        self.assertEqual([], doc_check.ERRORS)
+
+    def test_opi_eval_active_naming_rejects_project_phase_in_content(self) -> None:
+        self.write_clean_opi_eval_active_naming_surface()
+        legacy = "phase" + str(18)
+        self.write("crates/opi-eval/src/legacy.rs", f"const SCHEMA: &str = \"{legacy}-run/1\";\n")
+
+        checker = getattr(doc_check, "check_opi_eval_active_naming", None)
+        self.assertIsNotNone(checker, "opi-eval active naming checker must exist")
+        checker()
+
+        self.assertIn(
+            "crates/opi-eval/src/legacy.rs:1: active opi-eval content "
+            "contains project-phase naming",
+            doc_check.ERRORS,
+        )
+
+    def test_opi_eval_active_naming_rejects_project_phase_in_path(self) -> None:
+        self.write_clean_opi_eval_active_naming_surface()
+        legacy = "phase" + str(18)
+        rel = f"crates/opi-eval/tests/{legacy}_contract.rs"
+        self.write(rel, "// legacy path\n")
+
+        checker = getattr(doc_check, "check_opi_eval_active_naming", None)
+        self.assertIsNotNone(checker, "opi-eval active naming checker must exist")
+        checker()
+
+        self.assertIn(
+            f"{rel}: active opi-eval path contains project-phase naming",
+            doc_check.ERRORS,
+        )
 
     def test_matching_skill_contract_passes(self) -> None:
         self.write_skill()

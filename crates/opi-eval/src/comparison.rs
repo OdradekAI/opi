@@ -1,5 +1,5 @@
-//! Crate-private pairing and comparability assembly (Phase 18,
-//! `P18-EXP-002`, `P18-EXP-004`, `P18-EXP-008`).
+//! Crate-private pairing and comparability assembly (opi-eval,
+//! `EVAL-EXP-002`, `EVAL-EXP-004`, `EVAL-EXP-008`).
 //!
 //! [`ComparisonSet::assemble`] consumes the frozen
 //! [`ResolvedExperiment`](crate::experiment::ResolvedExperiment) and an
@@ -15,7 +15,7 @@
 //! trials, control mismatches, unsupported controls, exclusions,
 //! infrastructure and grader failures, and invalid task classifications —
 //! are typed [`NonComparability`] values carried on the pair
-//! (`P18-EXP-006`, `P18-INT-002`), so they remain in the denominator and
+//! (`EVAL-EXP-006`, `EVAL-INT-002`), so they remain in the denominator and
 //! never silently disappear.
 
 use crate::experiment::ResolvedExperiment;
@@ -37,7 +37,7 @@ pub(crate) struct TrialFact {
     pub(crate) manifest_digest: String,
     /// Digest of the effective shared controls the trial ran under.
     pub(crate) control_fingerprint: String,
-    /// Shared controls this subject could not express (`P18-EXP-008`).
+    /// Shared controls this subject could not express (`EVAL-EXP-008`).
     pub(crate) unsupported_controls: Vec<String>,
     /// Settled outcome class of the trial.
     pub(crate) outcome: TrialOutcome,
@@ -52,7 +52,7 @@ pub(crate) enum TrialOutcome {
     /// A scored Agent failure: the Agent's own non-zero exit, crash, or
     /// Agent-owned timeout on a valid task, graded under the native
     /// grader. It stays in the Agent success/failure denominator
-    /// (`P18-INT-002`) and is never reclassified as infrastructure.
+    /// (`EVAL-INT-002`) and is never reclassified as infrastructure.
     AgentFailure,
     /// The trial settled as an infrastructure failure.
     InfrastructureFailure,
@@ -67,20 +67,20 @@ pub(crate) enum NonComparability {
     MissingBaselineTrial,
     /// The candidate-side trial for this pair never settled.
     MissingCandidateTrial,
-    /// The pair's control fingerprints disagree (`P18-EXP-004`).
+    /// The pair's control fingerprints disagree (`EVAL-EXP-004`).
     ControlMismatch { baseline: String, candidate: String },
     /// A required shared control could not be expressed by one subject
-    /// (`P18-EXP-008`).
+    /// (`EVAL-EXP-008`).
     UnsupportedControl { control: String },
     /// A trial of this pair is excluded by the integrity record with this
-    /// stable reason (`P18-INT-005`).
+    /// stable reason (`EVAL-INT-005`).
     Excluded { trial: String, reason: String },
     /// A trial of this pair settled as an infrastructure failure.
     InfrastructureFailure { trial: String },
     /// A trial of this pair settled as a grader failure.
     GraderFailure { trial: String },
     /// The task's validity classification is not a valid Agent outcome
-    /// (`P18-INT-002`).
+    /// (`EVAL-INT-002`).
     InvalidTaskClassification { classification: TaskClassification },
     /// The admitted record does not classify this task at all.
     TaskNotCovered,
@@ -145,7 +145,7 @@ impl PairedComparison {
 /// contract or the admission gate, not per-pair visibility states.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ComparisonError {
-    /// The integrity record does not admit the revision (`P18-INT-001`).
+    /// The integrity record does not admit the revision (`EVAL-INT-001`).
     NotAdmitted { status: RevisionStatus },
     /// The experiment's frozen integrity digest does not address this
     /// record.
@@ -315,7 +315,7 @@ impl ComparisonSet {
             keys.dedup();
             for (task, group) in keys {
                 // A frozen contract that declares two trials for one pairing
-                // slot is ambiguous (`P18-EXP-002`) and fails the assembly
+                // slot is ambiguous (`EVAL-EXP-002`) and fails the assembly
                 // regardless of which trials later settled.
                 for (role, subject) in
                     [("baseline", &edge.baseline), ("candidate", &edge.candidate)]
@@ -475,7 +475,7 @@ mod tests {
 
     fn experiment_toml(integrity_digest: &str) -> String {
         format!(
-            r#"schema = "phase18-experiment/1"
+            r#"schema = "opi-eval-experiment/1"
 experiment_id = "exp-1"
 
 [benchmark]

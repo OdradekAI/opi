@@ -1,4 +1,4 @@
-//! Cross-platform report-output containment regressions (Phase 18 remediation).
+//! Cross-platform report-output containment regressions .
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -15,7 +15,7 @@ fn seed_run(root: &Path) {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
         .arg("run")
         .arg("--config")
-        .arg(fixtures_dir().join("experiment/phase18-local.toml"))
+        .arg(fixtures_dir().join("experiment/local-paired.toml"))
         .arg("--root")
         .arg(root.canonicalize().unwrap())
         .arg("--fixtures")

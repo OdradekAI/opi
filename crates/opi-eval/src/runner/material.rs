@@ -1,4 +1,4 @@
-//! Crate-private native material manifest (Phase 18 task 18.14.1).
+//! Crate-private native material manifest (native mode).
 //!
 //! [`NativeMaterial`] is the resolved-material contract between the
 //! committed producer stages and the native driving entry: the producer
@@ -10,7 +10,7 @@
 //! reading the hermetic fixtures tree for native bytes. Loading is
 //! fail-closed: schema drift, digest drift, missing executables, and
 //! unknown benchmark or agent identities are typed rejections
-//! (`P18-BMK-001`, `P18-AGT-001`).
+//! (`EVAL-BMK-001`, `EVAL-AGT-001`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -19,7 +19,7 @@ use serde::Deserialize;
 use thiserror::Error;
 
 /// The one admitted manifest schema identity.
-pub(crate) const MATERIAL_SCHEMA: &str = "phase18-native-material/1";
+pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/1";
 
 /// Typed material rejections (exit-path failures, never settled outcomes).
 #[derive(Debug, Error)]
@@ -316,7 +316,7 @@ mod tests {
         write(&task.join("instruction.md"), b"instruction");
         format!(
             r#"{{
-  "schema": "phase18-native-material/1",
+  "schema": "opi-eval-native-material/1",
   "static_lock": {{"path": {:?}, "sha256": {:?}}},
   "provider": {{
     "script": {{"path": {:?}, "sha256": {:?}}},
@@ -326,17 +326,17 @@ mod tests {
   "agents": {{
     "opi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "model": "scripted:phase18",
+      "model": "scripted:eval",
       "provider_env": {{"OPENAI_API_KEY": "<dummy-scripted-credential>"}},
       "config": {{"kind": "opi-toml", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "phase18", "api_key": "<dummy>"}}
+                  "model_id": "eval", "api_key": "<dummy>"}}
     }},
     "pi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "model": "scripted:scripted/phase18",
+      "model": "scripted:scripted/eval",
       "provider_env": {{"PI_API_KEY": "<redacted-dummy>"}},
       "config": {{"kind": "pi-models-json", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "scripted/phase18", "api_key": "<redacted-dummy>"}}
+                  "model_id": "scripted/eval", "api_key": "<redacted-dummy>"}}
     }}
   }},
   "benchmarks": {{
@@ -401,7 +401,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("opi-material-schema-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let manifest = dir.join("material.json");
-        let text = minimal_manifest(&dir).replace("phase18-native-material/1", "other/1");
+        let text = minimal_manifest(&dir).replace("opi-eval-native-material/1", "other/1");
         write(&manifest, text.as_bytes());
         assert!(
             NativeMaterial::load(&manifest)

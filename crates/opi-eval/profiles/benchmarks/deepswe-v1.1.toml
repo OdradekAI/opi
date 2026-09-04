@@ -1,4 +1,4 @@
-schema = "phase18-benchmark-profile/1"
+schema = "opi-eval-benchmark-profile/1"
 benchmark = "deepswe"
 revision = "v1.1"
 
@@ -16,7 +16,7 @@ task_tree = "8ee76a3e4a876a9bd24f34edabcdde4e47257db4"
 # The static external lock pins DeepSWE v1.1 by task-tree identity with an
 # empty files table. No byte-level task-package table is committed, so the
 # production pin is tree-identity only and admission fails closed until
-# task 18.15 registers reviewed bytes.
+# the native smoke registers reviewed bytes.
 package_pin = "byte-table"
 package_manifest_sha256 = "a21f63f43013fed09a930473d10e51a7f419954554b1bf759733d5f0ba0df095"
 adapter = "opi-eval-deepswe-adapter/1"
@@ -36,12 +36,12 @@ runner_uv_lock_sha256 = "0983c4376bb818a984b80badd28886c204c78875e0112387efb03af
 launch = ["run", "-p", "<task-dir>"]
 # The mutable agent worktree is never graded directly: the declared
 # collected patch is graded in a pristine verifier environment with no
-# network. The final verifier image is a run-produced 18.15 slot.
+# network. The final verifier image is a run-produced native-smoke slot.
 lifecycle = "separate-pristine-verifier"
 network = "none"
 artifact_policy = "collected-patch"
 # No DeepSWE native-output schema is committed. Nothing is guessed or
-# normalized until task 18.15 registers the real schema.
+# normalized until the native smoke registers the real schema.
 output_kind = "unpinned-pending-18-15"
 
 [resources]

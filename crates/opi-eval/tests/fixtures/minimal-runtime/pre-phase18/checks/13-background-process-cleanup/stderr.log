@@ -1,3 +1,0 @@
-   Compiling opi-coding-agent v0.8.1 (/home/luiz/p18-recapture/crates/opi-coding-agent)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.40s
-     Running tests/sandbox_l0.rs (target/debug/deps/sandbox_l0-0b734f899a318fce)

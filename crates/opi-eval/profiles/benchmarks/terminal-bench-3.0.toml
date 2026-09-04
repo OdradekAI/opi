@@ -1,4 +1,4 @@
-# Declarative Terminal-Bench 3.0 benchmark profile for the Phase 18 eval seam.
+# Declarative Terminal-Bench 3.0 benchmark profile for opi-eval.
 # Identity, pinned task-tree identity, native verifier entry with the
 # separate-verifier semantics, and limits only: no grading policy, no parser
 # configuration, no credentials.
@@ -7,10 +7,10 @@
 # by the static external lock. Unlike 2.1, no byte-level task-package file
 # table is committed for 3.0 yet: the lock admits the task-tree identity only
 # (files table empty) and the task/verifier images and native results are
-# unresolved slots owned by task 18.15. The adapter therefore fails closed on
+# unresolved slots owned by the native smoke. The adapter therefore fails closed on
 # task-package admission until a reviewed byte table is registered.
 
-schema = "phase18-benchmark-profile/1"
+schema = "opi-eval-benchmark-profile/1"
 benchmark = "terminal-bench"
 revision = "3.0"
 
@@ -33,13 +33,13 @@ runner_version = "v0.22.0"
 runner_commit = "4407eb5227a2ff4f0d3f16b2eb48849382fdf276"
 launch = ["run", "-p", "<task-dir>"]
 # TB 3.0 verifier semantics that must not be normalized away: the verifier
-# runs as a separate container (P18-BMK-003) declaring /app/evalbench/, and
+# runs as a separate container (EVAL-BMK-003) declaring /app/evalbench/, and
 # Harbor v0.22 delivers only declared artifacts at their original paths.
 lifecycle = "separate-container"
 verifier_workdir = "/app/evalbench"
 artifact_policy = "declared-original-paths"
 # No 3.0 native-output schema is committed: the oracle preflight and native
-# verifier results are unresolved slots owned by task 18.15. Exit-0 runs
+# verifier results are unresolved slots owned by the native smoke. Exit-0 runs
 # therefore settle fail-closed until that schema is pinned.
 output_kind = "unpinned-pending-18-15"
 

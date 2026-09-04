@@ -1,11 +1,11 @@
-//! Offline regrade over sealed assembled outputs (task 18.13).
+//! Offline regrade over sealed assembled outputs.
 //!
 //! [`OfflineRegrader::regrade`] walks the sealed trial bundles under one
 //! run root and re-verifies each one through [`crate::bundle::RunBundle::verify`]:
 //! it recomputes the manifest identity, re-reads every covered artifact,
 //! and fails on any mutation. It never repairs, rehashes, or rewrites
-//! anything (`P18-A15`), never starts an Agent or provider, and never
-//! mutates a sealed bundle (`P18-RPT-001`): the walk only reads the run
+//! anything (`EVAL-A15`), never starts an Agent or provider, and never
+//! mutates a sealed bundle (`EVAL-RPT-001`): the walk only reads the run
 //! root and reports what the durable bytes prove. Machine-local absolute
 //! paths never enter the report; trials are identified by their durable
 //! ids only.
@@ -17,7 +17,7 @@ use serde::Serialize;
 use crate::bundle::{BundleError, RunBundle};
 
 /// Regrade report schema identity.
-const REGRADE_SCHEMA: &str = "phase18-regrade-report/1";
+const REGRADE_SCHEMA: &str = "opi-eval-regrade-report/1";
 
 /// One verified sealed bundle: trial id plus content-addressed identity.
 #[derive(Debug, Serialize)]
@@ -38,7 +38,7 @@ struct VerificationFailure {
 /// The full regrade report: every sealed bundle verified or the typed
 /// failures that blocked verification. Field order is fixed by serde and
 /// collections are ordered, so identical sealed inputs serialize to
-/// identical bytes (`P18-RPT-002`).
+/// identical bytes (`EVAL-RPT-002`).
 #[derive(Debug, Serialize)]
 pub(crate) struct RegradeReport {
     schema: &'static str,
@@ -63,11 +63,11 @@ impl OfflineRegrader {
     /// mutating anything. A bundle directory missing `manifest.json` is
     /// reported as unsealed (a crashed or seal-blocked trial), not skipped
     /// silently: the denominator keeps every durable trial visible
-    /// (`P18-EXP-006`).
-    pub(crate) fn regrade(run_root: &Path) -> RegradeReport {
+    /// (`EVAL-EXP-006`).
+    pub(crate) fn regrade(run_root: &Path) -> Result<RegradeReport, std::io::Error> {
         let mut bundles = Vec::new();
         let mut failures = Vec::new();
-        let mut trials = read_trial_ids(run_root);
+        let mut trials = read_trial_ids(run_root)?;
         for trial in trials.drain(..) {
             let bundle_root = run_root.join("trials").join(&trial).join("bundle");
             match RunBundle::verify(&bundle_root) {
@@ -83,29 +83,29 @@ impl OfflineRegrader {
         } else {
             "mutation-detected"
         };
-        RegradeReport {
+        Ok(RegradeReport {
             schema: REGRADE_SCHEMA,
             outcome,
             bundles,
             failures,
-        }
+        })
     }
 }
 
 /// Sorted durable trial ids under one run root. Ordering is by sorted id so
 /// the report never depends on directory iteration order.
-fn read_trial_ids(run_root: &Path) -> Vec<String> {
-    let mut ids: Vec<String> = std::fs::read_dir(run_root.join("trials"))
-        .map(|entries| {
-            entries
-                .filter_map(|entry| entry.ok())
-                .filter(|entry| entry.path().is_dir())
-                .filter_map(|entry| entry.file_name().into_string().ok())
-                .collect()
-        })
-        .unwrap_or_default();
+fn read_trial_ids(run_root: &Path) -> Result<Vec<String>, std::io::Error> {
+    let mut ids = Vec::new();
+    for entry in std::fs::read_dir(run_root.join("trials"))? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir()
+            && let Ok(id) = entry.file_name().into_string()
+        {
+            ids.push(id);
+        }
+    }
     ids.sort();
-    ids
+    Ok(ids)
 }
 
 /// Maps one typed bundle failure to its report token. Symlinks and manifest
@@ -196,7 +196,7 @@ mod tests {
         let second = serde_json::to_vec(&report).unwrap();
         assert_eq!(first, second);
         let value = report.to_json();
-        assert_eq!(value["schema"], "phase18-regrade-report/1");
+        assert_eq!(value["schema"], "opi-eval-regrade-report/1");
         assert_eq!(value["outcome"], "verified");
     }
 }

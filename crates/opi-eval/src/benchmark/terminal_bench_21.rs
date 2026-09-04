@@ -1,4 +1,4 @@
-//! Crate-private Terminal-Bench 2.1 benchmark adapter (Phase 18 task 18.8).
+//! Crate-private Terminal-Bench 2.1 benchmark adapter.
 //!
 //! Owns only what is Terminal-Bench-2.1-specific: the pinned declarative
 //! profile, the complete task-package admission matrix, the exact Harbor
@@ -7,7 +7,7 @@
 //! contract lives in [`super::process`]; grading policy, normalization, and
 //! reward fabrication never enter this module. The adapter is pinned to
 //! `harbor-framework/terminal-bench-2-1` commit `7131e437…` exactly as
-//! admitted by the static external lock (`P18-BMK-001`, `P18-BMK-008`).
+//! admitted by the static external lock (`EVAL-BMK-001`, `EVAL-BMK-008`).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -161,7 +161,7 @@ impl Tb21Profile {
             .map_err(|_| TbProfileError::Parse("profile is not valid UTF-8".to_owned()))?;
         let doc: Tb21Doc =
             toml::from_str(&text).map_err(|e| TbProfileError::Parse(e.to_string()))?;
-        if doc.schema != "phase18-benchmark-profile/1" {
+        if doc.schema != "opi-eval-benchmark-profile/1" {
             return Err(TbProfileError::UnsupportedSchema(doc.schema));
         }
         if doc.benchmark != "terminal-bench" || doc.revision != "2.1" {
@@ -307,7 +307,7 @@ impl Tb21Profile {
     }
 
     /// Validate a materialized task package against the pinned closure
-    /// (`P18-BMK-002`): exactly the pinned files, byte-identical digests.
+    /// (`EVAL-BMK-002`): exactly the pinned files, byte-identical digests.
     /// Prompt text alone, missing environment/verifier/oracle material, or
     /// any extra file fails closed.
     pub(crate) fn validate_task_package(&self, root: &Path) -> Result<(), TaskPackageError> {
@@ -373,7 +373,7 @@ fn walk_files(
     Ok(())
 }
 
-/// Typed task-package admission failures (`P18-BMK-002`).
+/// Typed task-package admission failures (`EVAL-BMK-002`).
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum TaskPackageError {
     Io(String),
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn production_profile_is_pinned_to_the_static_external_lock() {
-        // P18-BMK-001/P18-BMK-008: the profile must restate exactly the
+        // EVAL-BMK-001/EVAL-BMK-008: the profile must restate exactly the
         // task-package pins the committed static lock already admits.
         let profile = Tb21Profile::parse(&read(
             &crate_root().join("profiles/benchmarks/terminal-bench-2.1.toml"),
@@ -535,11 +535,11 @@ mod tests {
         // Wrong schema.
         assert_eq!(
             Tb21Profile::parse(&mutated(
-                "phase18-benchmark-profile/1",
-                "phase18-benchmark-profile/2"
+                "opi-eval-benchmark-profile/1",
+                "opi-eval-benchmark-profile/2"
             )),
             Err(TbProfileError::UnsupportedSchema(
-                "phase18-benchmark-profile/2".to_owned()
+                "opi-eval-benchmark-profile/2".to_owned()
             ))
         );
         // Wrong revision.
@@ -647,7 +647,7 @@ impl TerminalBench21Adapter {
     }
 
     /// Import the pinned CTRF schema and project its summary counters with
-    /// native names retained (`P18-BMK-007`). Fails closed on drift.
+    /// native names retained (`EVAL-BMK-007`). Fails closed on drift.
     fn import_ctrf(bytes: &[u8]) -> Result<super::process::NativeMetrics, CtrfError> {
         let value: serde_json::Value =
             serde_json::from_slice(bytes).map_err(|_| CtrfError::Parse)?;
@@ -734,7 +734,7 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
             });
         }
         // Complete task-package admission before any verifier invocation
-        // (P18-BMK-002): prompts alone never reach a spawn.
+        // (EVAL-BMK-002): prompts alone never reach a spawn.
         self.profile
             .validate_task_package(&request.task_dir)
             .map_err(|_| ExecutionError {
@@ -782,7 +782,7 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
         };
         // The process-level verdict is authoritative first: a non-zero exit,
         // timeout, cancellation, or spawn failure can never be rescued by
-        // evidence, and no fallback grader exists (P18-BMK-006).
+        // evidence, and no fallback grader exists (EVAL-BMK-006).
         match outcome.exit {
             ExitState::Exited { code: 0 } => {}
             ExitState::Exited { code } => {
@@ -812,7 +812,7 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
         }
         // Exit 0: the native authority is the verifier's own output. Two
         // admitted layouts: the direct CTRF report in the trace root, or
-        // - the dispatch reality of task 18.15 - harbor's
+        // - the dispatch reality of the native smoke - harbor's
         // `jobs/<timestamp>/result.json` aggregate from `harbor run -p`.
         // Bounded stdout is retained on the record but is not the
         // authority; neither layout being present is a grader-side
@@ -1052,7 +1052,7 @@ mod adapter_tests {
             })
         );
 
-        // Incomplete package never reaches a verifier spawn (P18-BMK-002).
+        // Incomplete package never reaches a verifier spawn (EVAL-BMK-002).
         let incomplete = dir.path().join("incomplete");
         copy_fixture_package(&fixture_path("task-package"), &incomplete);
         std::fs::remove_file(incomplete.join("tests/test.sh")).unwrap();
@@ -1146,7 +1146,7 @@ mod adapter_tests {
         assert_eq!(artifacts[0].sha256, sha256_hex(&bytes));
 
         // A verifier reporting failing tests is still a valid verification:
-        // the native counts stay authoritative (P18-BMK-007).
+        // the native counts stay authoritative (EVAL-BMK-007).
         write_ctrf(&trace, "one-failed.json");
         let (_, completion) = adapter.settle(&outcome_exit_zero(), &request);
         let BenchmarkCompletion::Verified { metrics, .. } = completion else {

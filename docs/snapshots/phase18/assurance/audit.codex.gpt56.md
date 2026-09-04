@@ -1,13 +1,13 @@
 # Phase 18 Audit
 
-**Audit run ID**: `phase18-codex-gpt56-dd7eda7-20260831t135641z`
-**Audit head**: `dd7eda70aa138ea02931068b5f69ceb31148682b`
+**Audit run ID**: `phase18-codex-gpt56-a8bb454-20260903t021838z`
+**Audit head**: `a8bb45426daf960d9e60024ce34542995c4dd2d1`
 **Reviewer ID**: `codex`
 **Model ID**: `gpt56`
 **Reviewer identity**: Codex
-**Reviewer model ID**: `gpt-5.6`
-**Model identity source**: request-config
-**Independence**: fresh-context-same-family; the current committed requirements and sealed export were inspected without reading a prior or sibling audit conclusion
+**Reviewer model ID**: `gpt56`
+**Model identity source**: operator-declared
+**Independence**: fresh-context-same-family; this run was sealed before production inspection and did not consume prior assurance conclusions
 **Baseline policy**: latest-committed-spec
 **Verdict**: FAIL
 
@@ -15,217 +15,146 @@
 
 | Path | SHA-256 | Registration note |
 |---|---|---|
-| `.opi-impl-state.json` | `9d2ecf977f940f03db3c5d3b17437ad4a3afbca6ad409fcebf306727848a358e` | current committed implementation ledger and Phase pointer |
-| `docs/snapshots/phase18/opi-impl-state.json` | `cea5031074ac0d5667357863fbdf03bc76494295a6c38fac304dc1c851d7b42c` | registered sealed Phase 18 delivery snapshot |
+| `.opi-impl-state.json` | `9d2ecf977f940f03db3c5d3b17437ad4a3afbca6ad409fcebf306727848a358e` | current committed implementation ledger; registered hashes matched |
+| `docs/snapshots/phase18/opi-impl-state.json` | `cea5031074ac0d5667357863fbdf03bc76494295a6c38fac304dc1c851d7b42c` | pointed sealed Phase state |
 | `docs/opi-spec.md` | `cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c` | current committed normative specification |
-| `docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md` | `43b2759d327cbf0af8d35d4eba50839eef7aac473978b58fcb707b335dad8265` | registered current supplemental Phase 18 design |
+| `docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md` | `43b2759d327cbf0af8d35d4eba50839eef7aac473978b58fcb707b335dad8265` | currently registered Phase 18 supplemental source |
+
+The audit sealed 39 mandatory requirements before production inspection. The stored registered-source hashes matched the current committed sources.
 
 ## Requirement Conformance
 
 | Requirement ID | Criterion | Current evidence | State | Finding IDs |
 |---|---|---|---|---|
-| `P18-AUTH-001` | Admission mapping and clause-by-clause design review. | docs/opi-spec.md, docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md; PASS in the sealed export with symlink semantics preserved. | met | — |
-| `P18-AUTH-002` | Source mapping to `STRAT-002` and blocked-handoff review. | docs/opi-spec.md, docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md; PASS in the sealed export with symlink semantics preserved. | met | — |
-| `P18-AUTH-003` | Source-classification review. | docs/opi-spec.md, docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md; PASS in the sealed export with symlink semantics preserved. | met | — |
-| `P18-AUTH-004` | Documentation diff review and `scripts/opi-doc-check.py`. | docs/opi-spec.md, docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md; PASS in the sealed export with symlink semantics preserved. | met | — |
-| `P18-AUTH-005` | Blocked handoff and route-revision review. | docs/opi-spec.md, docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md; PASS in the sealed export with symlink semantics preserved. | met | — |
-| `P18-OUT-001` | Dependency audit and real-process Agent integration conformance. | crates/opi-eval/Cargo.toml, crates/opi-eval/src; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | partially-met | P18-AUD-001 |
-| `P18-OUT-002` | Three-revision native smoke plus shared benchmark conformance. | crates/opi-eval/Cargo.toml, crates/opi-eval/src; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-OUT-003` | Bundle schema, digest, mutation, and provenance tests. | crates/opi-eval/Cargo.toml, crates/opi-eval/src; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-OUT-004` | Offline recompute/regrade/render and identity-reuse negative tests. | crates/opi-eval/Cargo.toml, crates/opi-eval/src; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-OUT-005` | Phase 18 integration matrix and seam-evidence review. | crates/opi-eval/Cargo.toml, crates/opi-eval/src; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | partially-met | P18-AUD-001 |
-| `P18-OUT-006` | Before/after Minimal Runtime acceptance and dependency/call-site review. | crates/opi-eval/Cargo.toml, crates/opi-eval/src; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-PLC-001` | `cargo tree`/metadata dependency audit and process-only integration review. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS; no opi-* dependency and no reverse dependency. | met | — |
-| `P18-PLC-002` | Reverse-dependency and production-call-site scan. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS; no opi-* dependency and no reverse dependency. | met | — |
-| `P18-PLC-003` | Selected-adapter failure and no-fallback tests. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS; no opi-* dependency and no reverse dependency. | met | — |
-| `P18-PLC-004` | Package-content, dependency, and artifact-size review. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS; no opi-* dependency and no reverse dependency. | met | — |
-| `P18-PLC-005` | Source ownership and call-graph review. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS; no opi-* dependency and no reverse dependency. | met | — |
-| `P18-PLC-006` | Manifest publication flags and Phase-exit wording review. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS; no opi-* dependency and no reverse dependency. | met | — |
-| `P18-SEAM-001` | Rustdoc/README/manifest wording and publication-flag review. | crates/opi-eval/src/agent, crates/opi-eval/src/trajectory; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-SEAM-002` | Cross-adapter fixture and expectation review. | crates/opi-eval/src/agent, crates/opi-eval/src/trajectory; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-SEAM-003` | Artifact-derived seam-evidence matrix and schema-diff review. | crates/opi-eval/src/agent, crates/opi-eval/src/trajectory; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | partially-met | P18-AUD-001 |
-| `P18-SEAM-004` | Asymmetric Opi/pi telemetry fixtures. | crates/opi-eval/src/agent, crates/opi-eval/src/trajectory; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-SEAM-005` | Glossary diff review and post-conformance placement record. | crates/opi-eval/src/agent, crates/opi-eval/src/trajectory; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-EXP-001` | Canonicalization, pre-dispatch write-order, and mutation tests. | crates/opi-eval/src/experiment.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-EXP-002` | Missing, duplicate, mismatched, and valid-pair fixtures. | crates/opi-eval/src/experiment.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-EXP-003` | Resolved-manifest and adapter-argv/config snapshot tests. | crates/opi-eval/src/experiment.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-EXP-004` | Control-fingerprint negative matrix. | crates/opi-eval/src/experiment.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-EXP-005` | Crash/retry/resume identity tests. | crates/opi-eval/src/experiment.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-EXP-006` | Coverage and exclusion report fixtures. | crates/opi-eval/src/experiment.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-EXP-007` | Three-subject schema fixture plus two-subject real-process conformance. | crates/opi-eval/src/experiment.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-EXP-008` | Unsupported reasoning/sampling/context control fixtures. | crates/opi-eval/src/experiment.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-DUR-001` | Instrumented write/process-start ordering test. | crates/opi-eval/src/bundle/mod.rs, crates/opi-eval/src/runner/lifecycle.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-DUR-002` | Crash-at-each-boundary fixtures. | crates/opi-eval/src/bundle/mod.rs, crates/opi-eval/src/runner/lifecycle.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-DUR-003` | Kill, timeout, partial-write, and incomplete-evidence tests. | crates/opi-eval/src/bundle/mod.rs, crates/opi-eval/src/runner/lifecycle.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-DUR-004` | Torn-write, failed-rename, and reopen validation tests. | crates/opi-eval/src/bundle/mod.rs, crates/opi-eval/src/runner/lifecycle.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-DUR-005` | Public documentation and source-surface review. | crates/opi-eval/src/bundle/mod.rs, crates/opi-eval/src/runner/lifecycle.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-AGT-001` | Real-binary/package conformance and resolved-manifest snapshots. | crates/opi-eval/src/agent/opi.rs, crates/opi-eval/src/agent/pi.rs; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | partially-met | P18-AUD-001 |
-| `P18-AGT-002` | Shared test binary against both real adapters. | crates/opi-eval/src/agent/opi.rs, crates/opi-eval/src/agent/pi.rs; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-AGT-003` | Schema-version, missing-terminal, and selected-adapter failure tests. | crates/opi-eval/src/agent/opi.rs, crates/opi-eval/src/agent/pi.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-AGT-004` | Fresh-trace-root, corrupt/missing manifest, and completeness tests. | crates/opi-eval/src/agent/opi.rs, crates/opi-eval/src/agent/pi.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-AGT-005` | Adapter source/argv review and native-output fixture assertions. | crates/opi-eval/src/agent/opi.rs, crates/opi-eval/src/agent/pi.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-AGT-006` | Local scripted-provider, environment-isolation, and secret-free CI review. | crates/opi-eval/src/agent/opi.rs, crates/opi-eval/src/agent/pi.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-AGT-007` | Asymmetric native-artifact and normalized-projection tests. | crates/opi-eval/src/agent/opi.rs, crates/opi-eval/src/agent/pi.rs; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | partially-met | P18-AUD-001 |
-| `P18-AGT-008` | Post-Phase admission suite and schema-diff review. | crates/opi-eval/src/agent/opi.rs, crates/opi-eval/src/agent/pi.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-AGT-009` | Acceptance and public-surface review. | crates/opi-eval/src/agent/opi.rs, crates/opi-eval/src/agent/pi.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BMK-001` | Three native task/oracle/Agent smoke profiles and provenance assertions. | crates/opi-eval/src/benchmark, crates/opi-eval/external-locks; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-BMK-002` | Incomplete-package negative matrix. | crates/opi-eval/src/benchmark, crates/opi-eval/external-locks; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BMK-003` | Canary-oracle, artifact-boundary, and separate-container tests. | crates/opi-eval/src/benchmark, crates/opi-eval/external-locks; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | partially-met | P18-AUD-001 |
-| `P18-BMK-004` | Offline/local smoke and network-call audit. | crates/opi-eval/src/benchmark, crates/opi-eval/external-locks; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BMK-005` | Shared benchmark conformance against all three revisions. | crates/opi-eval/src/benchmark, crates/opi-eval/external-locks; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-BMK-006` | Selected-verifier failure and no-fallback tests. | crates/opi-eval/src/benchmark, crates/opi-eval/external-locks; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BMK-007` | Native-result fixtures and report-schema tests. | crates/opi-eval/src/benchmark, crates/opi-eval/external-locks; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BMK-008` | Package-content and resolved-artifact review. | crates/opi-eval/src/benchmark, crates/opi-eval/external-locks; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BMK-009` | Native-smoke artifact and Phase-exit evidence review. | crates/opi-eval/src/benchmark, crates/opi-eval/external-locks; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-BMK-010` | Report classification and official-protocol diff. | crates/opi-eval/src/benchmark, crates/opi-eval/external-locks; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BMK-011` | Native-verifier ownership/provenance matrix and real-smoke artifacts. | crates/opi-eval/src/benchmark, crates/opi-eval/external-locks; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | partially-met | P18-AUD-001 |
-| `P18-RDM-001` | Catalog completeness review against the dated official release evidence. | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md, crates/opi-eval/tests/fixtures/experiment/generic-three-subject-fourth-benchmark.toml; PASS in the sealed export with symlink semantics preserved. | met | — |
-| `P18-RDM-002` | Three-subject and fourth-benchmark schema fixtures plus schema-diff review. | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md, crates/opi-eval/tests/fixtures/experiment/generic-three-subject-fourth-benchmark.toml; PASS in the sealed export with symlink semantics preserved. | met | — |
-| `P18-RDM-003` | Post-Phase admission record and conformance suite. | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md, crates/opi-eval/tests/fixtures/experiment/generic-three-subject-fourth-benchmark.toml; PASS in the sealed export with symlink semantics preserved. | met | — |
-| `P18-RDM-004` | Source-ownership, judge/service identity, and failure-path review. | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md, crates/opi-eval/tests/fixtures/experiment/generic-three-subject-fourth-benchmark.toml; PASS in the sealed export with symlink semantics preserved. | met | — |
-| `P18-RDM-005` | Access and reproducibility review. | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md, crates/opi-eval/tests/fixtures/experiment/generic-three-subject-fourth-benchmark.toml; PASS in the sealed export with symlink semantics preserved. | met | — |
-| `P18-RDM-006` | Method-projection diff and report wording tests. | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md, crates/opi-eval/tests/fixtures/experiment/generic-three-subject-fourth-benchmark.toml; PASS in the sealed export with symlink semantics preserved. | met | — |
-| `P18-INT-001` | Admission-state and missing-record tests. | crates/opi-eval/src/integrity.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-INT-002` | Failure-classification and denominator fixtures. | crates/opi-eval/src/integrity.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-INT-003` | Negative authorization and source-ownership review. | crates/opi-eval/src/integrity.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-INT-004` | Reclassification immutability tests. | crates/opi-eval/src/integrity.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-INT-005` | Bidirectional coverage/provenance tests. | crates/opi-eval/src/integrity.rs, crates/opi-eval/src/comparison.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BND-001` | Manifest closure and unreferenced/missing artifact tests. | crates/opi-eval/src/bundle/mod.rs, crates/opi-eval/src/integrity.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BND-002` | Adversarial filesystem and schema fixtures. | crates/opi-eval/src/bundle/mod.rs, crates/opi-eval/src/integrity.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BND-003` | Post-seal mutation tests. | crates/opi-eval/src/bundle/mod.rs, crates/opi-eval/src/integrity.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BND-004` | Before/after tree digest tests. | crates/opi-eval/src/bundle/mod.rs, crates/opi-eval/src/integrity.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BND-005` | Serialization and report coverage fixtures. | crates/opi-eval/src/bundle/mod.rs, crates/opi-eval/src/integrity.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-BND-006` | Canary-secret and classified-content boundary tests. | crates/opi-eval/src/bundle/mod.rs, crates/opi-eval/src/integrity.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-TRJ-001` | Projection provenance and round-trip lookup tests. | crates/opi-eval/src/trajectory/mod.rs, crates/opi-eval/src/runner/experiment.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-TRJ-002` | Sparse pi fixture and unsupported-fact tests. | crates/opi-eval/src/trajectory/mod.rs, crates/opi-eval/src/runner/experiment.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-TRJ-003` | Parallel-call and ambiguous-order fixtures. | crates/opi-eval/src/trajectory/mod.rs, crates/opi-eval/src/runner/experiment.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-TRJ-004` | Partial-telemetry report fixtures. | crates/opi-eval/src/trajectory/mod.rs, crates/opi-eval/src/runner/experiment.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-TRJ-005` | Schema status and seam-evidence review. | crates/opi-eval/src/trajectory/mod.rs, crates/opi-eval/src/runner/experiment.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-FAL-001` | Exhaustive mapping and fixture tests. | crates/opi-eval/src/failure.rs, crates/opi-eval/src/process.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-FAL-002` | Per-boundary downstream call-count tests. | crates/opi-eval/src/failure.rs, crates/opi-eval/src/process.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-FAL-003` | Classification/denominator matrix. | crates/opi-eval/src/failure.rs, crates/opi-eval/src/process.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-FAL-004` | Race and process-tree failure injection. | crates/opi-eval/src/failure.rs, crates/opi-eval/src/process.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-FAL-005` | Replacement-pair and history fixtures. | crates/opi-eval/src/failure.rs, crates/opi-eval/src/process.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-RPT-001` | Process-call spy and tree-digest tests. | crates/opi-eval/src/report.rs, crates/opi-eval/src/regrade.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-RPT-002` | Repeat-run deterministic fixture. | crates/opi-eval/src/report.rs, crates/opi-eval/src/regrade.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-RPT-003` | Report-source provenance tests. | crates/opi-eval/src/report.rs, crates/opi-eval/src/regrade.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-RPT-004` | Golden report and denominator fixtures. | crates/opi-eval/src/report.rs, crates/opi-eval/src/regrade.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-RPT-005` | Schema and snapshot guard. | crates/opi-eval/src/report.rs, crates/opi-eval/src/regrade.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-RPT-006` | Report wording and artifact-classification review. | crates/opi-eval/src/report.rs, crates/opi-eval/src/regrade.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-SEC-001` | Default-path and explicit-profile tests. | crates/opi-eval/src/authority.rs, crates/opi-eval/src/process.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-SEC-002` | Malicious-content source-to-sink matrix. | crates/opi-eval/src/authority.rs, crates/opi-eval/src/process.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-SEC-003` | Manifest/lock/digest and Cargo.lock review. | crates/opi-eval/src/authority.rs, crates/opi-eval/src/process.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-SEC-004` | Source review and metacharacter fixtures. | crates/opi-eval/src/authority.rs, crates/opi-eval/src/process.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-SEC-005` | Canary-secret and unsafe-summary tests. | crates/opi-eval/src/authority.rs, crates/opi-eval/src/process.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-SEC-006` | Documentation and diagnostic review. | crates/opi-eval/src/authority.rs, crates/opi-eval/src/process.rs; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-MIG-001` | Byte-immutability and filesystem-boundary tests. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS at the audited head; baseline CLI/runtime and rollback assertions remained discriminating. | met | — |
-| `P18-MIG-002` | Old/new/unknown schema fixtures. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS at the audited head; baseline CLI/runtime and rollback assertions remained discriminating. | met | — |
-| `P18-MIG-003` | Artifact-role and provenance tests. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS at the audited head; baseline CLI/runtime and rollback assertions remained discriminating. | met | — |
-| `P18-MIG-004` | Production-call-site, default CLI, and I/O acceptance. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS at the audited head; baseline CLI/runtime and rollback assertions remained discriminating. | met | — |
-| `P18-MIG-005` | Documentation and schema ownership review. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS at the audited head; baseline CLI/runtime and rollback assertions remained discriminating. | met | — |
-| `P18-MIG-006` | Public API and source-structure review. | Cargo.toml, crates/opi-eval/Cargo.toml; PASS at the audited head; baseline CLI/runtime and rollback assertions remained discriminating. | met | — |
-| `P18-PLT-001` | Three-platform workspace CI. | .github/workflows/ci.yml, .github/workflows/phase18-native-smoke.yml; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-PLT-002` | CI/job identity, image digest, and report metadata. | .github/workflows/ci.yml, .github/workflows/phase18-native-smoke.yml; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-PLT-003` | Platform-claim review. | .github/workflows/ci.yml, .github/workflows/phase18-native-smoke.yml; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | partially-met | P18-AUD-001 |
-| `P18-PLT-004` | Hermetic test source review and CI environment audit. | .github/workflows/ci.yml, .github/workflows/phase18-native-smoke.yml; PASS (26/26 verifier regression tests); this validates receipt rejection logic, not a current-head platform run. | met | — |
-| `P18-A01` | The package builds/tests, `cargo tree` contains no `opi-*` dependency, and no existing product has a reverse dependency. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A02` | Both adapters pass the same process conformance while retaining distinct product/native identities and final workspaces. | crates/opi-eval/src, crates/opi-eval/tests; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-A03` | Exactly one completed trace child contains native evidence and a finalized manifest; incomplete/missing/corrupt evidence fails the Opi integration. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A04` | Current documented terminal/process facts are captured; unavailable Harness v2/telemetry facts remain unknown and no scaffold behavior is claimed. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A05` | The selected adapter fails closed, no fallback Agent/parser runs, and the owning failure remains visible. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A06` | Actual partial artifacts and cleanup status are retained; cancellation/timeout is not success and replay safety is not inferred. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A07` | The trial reopens as effect-unknown, retains its identity and artifacts, and any replacement uses a new paired trial group. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A08` | The complete pinned task contract and native verifier run for both harnesses; exact task, environment, verifier, output, and digest provenance is retained. | crates/opi-eval/src, crates/opi-eval/tests; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-A09` | Each Agent runs in the official task environment and only declared artifacts reach the separate verifier container; the native metric remains authoritative. | crates/opi-eval/src, crates/opi-eval/tests; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-A10` | The pinned v1.1 task collects the declared patch/commit and grades it in a pristine verifier environment with full native provenance. | crates/opi-eval/src, crates/opi-eval/tests; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-A11` | Integration fails closed; no cached score, alternate revision, heuristic, or LLM fallback appears, and the owning package/verifier failure remains visible. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A12` | Every task/trial group has exactly one declared comparison edge under identical shared model controls; the report labels all results conformance-only. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A13` | The edge is incomplete or non-comparable, native facts remain visible, and coverage states the exact reason. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A14` | The integrity record excludes it from Agent scoring without hiding it from coverage or rewriting prior evidence. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A15` | Bundle verification fails without repair or silent rehash. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A16` | Native facts remain retained; the common report uses measured values or typed unknowns and never fabricates parity. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A17` | No Agent/provider starts, the bundle is unchanged, and normalized outputs are byte-stable for the same tool identities. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A18` | Exportable bundle and report contain no raw canary; leakage blocks sealing/publication. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A19` | CLI behavior, default I/O, evidence capture, User Policy, provider routing, tools, sessions, and background activity are unchanged. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head; baseline CLI/runtime and rollback assertions remained discriminating. | met | — |
-| `P18-A20` | The generic shapes accept them without Opi/pi or three-revision hard-coding; unsupported adapters remain unexecuted/provisional, and the matrix covers both real Agents, all three real benchmark revisions, and at least two independently owned native-verifier contracts. | crates/opi-eval/src, crates/opi-eval/tests; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | partially-met | P18-AUD-001 |
-| `P18-A21` | All 16 comparison-table benchmark entries and the private Z.ai Code Bench are present with implementation/admission status, experiment-class distinction, and future authority gates. | crates/opi-eval/src, crates/opi-eval/tests; PASS at the audited head: 123 unit tests plus current-platform integration tests; Unix-gated suites are not treated as universal evidence. | met | — |
-| `P18-A22` | Local/focused/workspace gates pass, and the pinned Linux artifact proves both real Agents against all three required benchmark revisions and at least two native-verifier contracts without a paid provider. | crates/opi-eval/src, crates/opi-eval/tests; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-RBK-001` | Exit audit against every threshold. | crates/opi-eval/tests/rollback_contract.rs, crates/opi-eval/tests/phase18_acceptance.rs; 62 files changed, 5885 insertions(+), 742 deletions(-) after the native artifact candidate; current-head native coverage is unavailable. | not-assessable | P18-AUD-001 |
-| `P18-RBK-002` | Revert review and source/call-graph scan. | crates/opi-eval/tests/rollback_contract.rs, crates/opi-eval/tests/phase18_acceptance.rs; PASS at the audited head; baseline CLI/runtime and rollback assertions remained discriminating. | met | — |
-| `P18-RBK-003` | Before/after runtime and filesystem acceptance. | crates/opi-eval/tests/rollback_contract.rs, crates/opi-eval/tests/phase18_acceptance.rs; PASS at the audited head; baseline CLI/runtime and rollback assertions remained discriminating. | met | — |
-| `P18-RBK-004` | Byte-immutability and artifact-classification tests. | crates/opi-eval/tests/rollback_contract.rs, crates/opi-eval/tests/phase18_acceptance.rs; PASS at the audited head; baseline CLI/runtime and rollback assertions remained discriminating. | met | — |
-| `P18-RBK-005` | Blocked handoff and route-revision review. | crates/opi-eval/tests/rollback_contract.rs, crates/opi-eval/tests/phase18_acceptance.rs; PASS at the audited head; baseline CLI/runtime and rollback assertions remained discriminating. | met | — |
+| P18-OUT-001 | outcome | crates/opi-eval/src/agent/mod.rs; crates/opi-eval/src/agent/opi.rs | partially-met | P18-AUD-002 |
+| P18-OUT-002 | outcome | crates/opi-eval/src/benchmark/mod.rs; crates/opi-eval/src/benchmark/process.rs | partially-met | P18-AUD-002 |
+| P18-OUT-003 | outcome | crates/opi-eval/src/bundle/mod.rs; crates/opi-eval/src/runner/material.rs | met | — |
+| P18-OUT-004 | outcome | crates/opi-eval/src/report.rs; crates/opi-eval/src/regrade.rs | met | — |
+| P18-OUT-005 | outcome | crates/opi-eval/src/experiment.rs; crates/opi-eval/docs/seam-evidence-matrix.md | not-met | P18-AUD-001 |
+| P18-OUT-006 | outcome | crates/opi-eval/Cargo.toml; Cargo.toml | met | — |
+| P18-A01 | acceptance-scenarios-and-verification | crates/opi-eval/Cargo.toml; Cargo.toml | met | — |
+| P18-A02 | acceptance-scenarios-and-verification | crates/opi-eval/src/agent/mod.rs; crates/opi-eval/src/agent/opi.rs | not-assessable | P18-AUD-002 |
+| P18-A03 | acceptance-scenarios-and-verification | crates/opi-eval/src/agent/mod.rs; crates/opi-eval/src/agent/opi.rs | not-assessable | P18-AUD-002 |
+| P18-A04 | acceptance-scenarios-and-verification | crates/opi-eval/src/agent/mod.rs; crates/opi-eval/src/agent/opi.rs | not-assessable | P18-AUD-002 |
+| P18-A05 | acceptance-scenarios-and-verification | crates/opi-eval/src/agent/process.rs; crates/opi-eval/src/process.rs | met | — |
+| P18-A06 | acceptance-scenarios-and-verification | crates/opi-eval/src/agent/process.rs; crates/opi-eval/src/process.rs | met | — |
+| P18-A07 | acceptance-scenarios-and-verification | crates/opi-eval/src/runner/lifecycle.rs; crates/opi-eval/src/runner/experiment.rs | met | — |
+| P18-A08 | acceptance-scenarios-and-verification | crates/opi-eval/src/benchmark/mod.rs; crates/opi-eval/src/benchmark/process.rs | not-assessable | P18-AUD-002 |
+| P18-A09 | acceptance-scenarios-and-verification | crates/opi-eval/src/benchmark/mod.rs; crates/opi-eval/src/benchmark/process.rs | not-assessable | P18-AUD-002 |
+| P18-A10 | acceptance-scenarios-and-verification | crates/opi-eval/src/benchmark/mod.rs; crates/opi-eval/src/benchmark/process.rs | not-assessable | P18-AUD-002 |
+| P18-A11 | acceptance-scenarios-and-verification | crates/opi-eval/src/benchmark/mod.rs; crates/opi-eval/src/benchmark/process.rs | met | — |
+| P18-A12 | acceptance-scenarios-and-verification | crates/opi-eval/src/experiment.rs; crates/opi-eval/src/comparison.rs | partially-met | P18-AUD-002 |
+| P18-A13 | acceptance-scenarios-and-verification | crates/opi-eval/src/comparison.rs; crates/opi-eval/src/integrity.rs | met | — |
+| P18-A14 | acceptance-scenarios-and-verification | crates/opi-eval/src/comparison.rs; crates/opi-eval/src/integrity.rs | met | — |
+| P18-A15 | acceptance-scenarios-and-verification | crates/opi-eval/src/bundle/mod.rs; crates/opi-eval/src/runner/material.rs | met | — |
+| P18-A16 | acceptance-scenarios-and-verification | crates/opi-eval/src/report.rs; crates/opi-eval/src/regrade.rs | met | — |
+| P18-A17 | acceptance-scenarios-and-verification | crates/opi-eval/src/report.rs; crates/opi-eval/src/regrade.rs | met | — |
+| P18-A18 | acceptance-scenarios-and-verification | crates/opi-eval/src/bundle/mod.rs; crates/opi-eval/src/report.rs | met | — |
+| P18-A19 | acceptance-scenarios-and-verification | crates/opi-eval/Cargo.toml; Cargo.toml | met | — |
+| P18-A20 | acceptance-scenarios-and-verification | crates/opi-eval/src/experiment.rs; crates/opi-eval/docs/seam-evidence-matrix.md | partially-met | P18-AUD-001 |
+| P18-A21 | acceptance-scenarios-and-verification | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md | met | — |
+| P18-A22 | acceptance-scenarios-and-verification | .github/workflows/ci.yml; .github/workflows/opi-eval-native-smoke.yml | partially-met | P18-AUD-002 |
+| P18-RBK-001 | risk-thresholds-and-rollback | crates/opi-eval/Cargo.toml; Cargo.toml | met | — |
+| P18-RBK-002 | risk-thresholds-and-rollback | crates/opi-eval/Cargo.toml; Cargo.toml | met | — |
+| P18-RBK-003 | risk-thresholds-and-rollback | crates/opi-eval/Cargo.toml; Cargo.toml | met | — |
+| P18-RBK-004 | risk-thresholds-and-rollback | crates/opi-eval/Cargo.toml; Cargo.toml | met | — |
+| P18-RBK-005 | risk-thresholds-and-rollback | crates/opi-eval/Cargo.toml; Cargo.toml | met | — |
+| P18-RDM-001 | post-phase-eval-coverage-roadmap | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md | met | — |
+| P18-RDM-002 | post-phase-eval-coverage-roadmap | crates/opi-eval/src/experiment.rs; crates/opi-eval/src/agent/mod.rs | met | — |
+| P18-RDM-003 | post-phase-eval-coverage-roadmap | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md | met | — |
+| P18-RDM-004 | post-phase-eval-coverage-roadmap | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md | met | — |
+| P18-RDM-005 | post-phase-eval-coverage-roadmap | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md | met | — |
+| P18-RDM-006 | post-phase-eval-coverage-roadmap | docs/superpowers/specs/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md | met | — |
 
 ## Standards Review
 
-The companion remains an unpublished workspace crate with inward-safe placement: `cargo tree` found no `opi-*` dependency and the reverse-dependency scan found no product consumer. The current head passes formatting, workspace clippy with warnings denied, doctests, rustdoc with warnings denied, the complete `opi-eval` all-target test command on the audit platform, and the documentation contract (the latter through WSL so the sealed export retains Git symlink semantics). Public surface remains limited to the companion CLI/experiment entry points; execution, adapters, benchmarks, authority, bundle, lifecycle, integrity, trajectory, and report machinery remain crate-private.
+The current Companion remains unpublished, crate-private at its adapter and process seams, and dependency-neutral. `cargo tree` proves no inward Opi dependency and no reverse product dependency. The implementation uses typed states and errors, bounded process supervision, content-addressed bundles, and fail-closed validation. The only unsafe boundary is the platform process-tree implementation and is narrowly scoped under the crate-level unsafe-code denial. No standards-axis finding was identified.
 
 ## Spec Review
 
-The sealed matrix contains 131 independently decidable obligations from the current registered design. Current source, local tests, negative fixtures, dependency scans, report containment, rollback acceptance, and verifier-regression suites demonstrate 109 obligations. Nine obligations are only partially demonstrated and thirteen are not assessable at the audited head because the only real-native and three-platform terminal receipts bind older commits. The resulting gap is `P18-AUD-001`.
+The generic experiment resolver, N-subject/edge shapes, Opi/pi importers, three benchmark adapters, immutable bundle machinery, integrity/comparison projection, and offline regrade/report paths remain present and pass their current local tests. The required artifact-derived minimum-seam result does not: `crates/opi-eval/docs/seam-evidence-matrix.md` and its current derivation/acceptance guard are absent. This is P18-AUD-001.
 
 ## Security, Invariants, Integration, Test Quality, and Residuals
 
-Authority and security checks are represented by the closed material/experiment inputs, explicit process environments, content-addressed bundles, canary-secret containment, separate verifier contracts, typed unknowns, and fail-closed adapters. Current negative and boundary suites exercise malformed manifests, unsupported controls, digest drift, partial process outcomes, pairing and integrity exclusion, report containment, and no-fallback behavior. The local all-target run is not universal evidence: Unix-gated assembled, bundle, authority, native-driver, and end-to-end suites execute zero cases on Windows. The stored artifact verifier and CI verifier regression suites pass, but they prove rejection logic and the older receipts, not the current production bytes. No alternate current-head native artifact, caller, or fallback route was found.
+Security and invariants: bundle recomputation, path/digest checks, output containment, typed unknowns, authority transitions, and failure preservation pass current tests. No raw-secret or machine-path exposure was observed in the inspected export.
+
+Integration and test quality: all current local gates pass, including 109 opi-eval tests and the complete workspace suite. Four material opi-eval integration binaries are Unix-only and therefore execute zero tests on this Windows host. Historical native run 33271354427 and the 27-job terminal receipt remain successful and unexpired, but their heads precede 120/121 scoped file changes respectively. GitHub reports no run for the audit head. Therefore the required current real-process/native proof is unavailable (P18-AUD-002). The downloaded 528-byte native upload receipt was inspected; the 6.1 GB sealed artifact was not downloaded or revalidated during this run.
+
+Residuals: the current CLI continues to label the crate unpublished/provisional and the roadmap keeps unsupported integrations not admitted. No advisory residual finding was added because the two evidence gaps are already blocking.
 
 ## Minimum-change Conformance
 
-| Task | Status | Current-head assessment |
-|---|---|---|
-| `18.1` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.2` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.3` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.4` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.5` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.5.1` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.6` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.7` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.8` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.9` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.10` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.10.1` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.11` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.12` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.13` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.14` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.14.1` | conforming | Recorded reuse search, surface necessity, and simplification ceiling remain consistent with the current crate-private implementation and focused tests. |
-| `18.15` | triggered | The native artifact remains valid for candidate `27344e3`, but later changes touched the owned production and verifier surfaces, so the recorded terminal proof no longer closes the current head. |
-| `18.16` | triggered | The artifact-derived seam matrix remains bound to run `33271354427`; current generic schema tests pass, but the real matrix was not regenerated after production changes. |
-| `18.16.1` | triggered | The three-platform receipt remains bound to candidate `0f5a3fa`; it does not attest the audited head. |
+Each Phase task was traced to its current consumer/call site and checked for reuse, placement, necessity, and simplification ceiling. Current code generally reuses one crate-private process, bundle, comparison, and report path; no duplicate public seam was found.
 
-The introduced companion seam has one production consumer (`crates/opi-eval/src/main.rs` through `cli`) and direct experiment consumption within the CLI; integration tests are the non-production consumers. No Opi product reverse dependency or compatibility shim exists. This Phase adds the independent companion rather than deleting a product seam, so net deletion is zero; residual adapter/benchmark glue remains crate-private and owned by the two real Agent and three benchmark consumers.
+| Task | Observable current consumer | Reuse / placement / necessity | Status |
+|---|---|---|---|
+| 18.1 | CLI/experiment resolver | `cli`, `experiment`, generic fixture | conforming |
+| 18.2 | external-lock verifier | `external_lock`, crate-local materializer/verifier scripts | conforming |
+| 18.3 | resolved Linux lock | resolved/static lock files and artifact verifier tests | conforming |
+| 18.4 | Agent/benchmark subprocess callers | one crate-private `process`/`process::tree` seam | conforming |
+| 18.5 | runner settlement/sealing | `bundle`, `runner::lifecycle`, `failure` | conforming |
+| 18.5.1 | pair/report projection | `integrity` and `comparison`; no duplicate scoring seam | conforming |
+| 18.6 | Opi adapter | current importer is exercised by fixtures, but current real Opi proof is absent | not-assessable: P18-AUD-002 |
+| 18.7 | pi adapter | current importer is exercised by fixtures, but current real pi proof is absent | not-assessable: P18-AUD-002 |
+| 18.8 | Terminal-Bench 2.1 adapter | single benchmark contract/profile; native proof is stale | not-assessable: P18-AUD-002 |
+| 18.9 | Terminal-Bench 3.0 adapter | separate profile over shared contract; native proof is stale | not-assessable: P18-AUD-002 |
+| 18.10 | DeepSWE v1.1 adapter | separate native adapter over shared contract; native proof is stale | not-assessable: P18-AUD-002 |
+| 18.10.1 | conformance CLI | current `cli::conformance` plus Agent/benchmark conformance tests | conforming |
+| 18.11 | bundle/report projection | single provisional `trajectory` module | conforming |
+| 18.12 | `cli::run` | one runner with shared authority/lifecycle/material seams | partially conforming: P18-AUD-002 |
+| 18.13 | regrade/report CLI | offline `regrade`, `report`, `comparison` paths | conforming |
+| 18.14 | native-smoke workflow | one current workflow/script producer; no current-head receipt | partially conforming: P18-AUD-002 |
+| 18.14.1 | runner/benchmark driver | current driver and verifier contract tests | conforming locally |
+| 18.15 | native artifact | historical successful artifact remains, but is not bound to current bytes | not-assessable: P18-AUD-002 |
+| 18.16 | seam review/CI contract | generic schema remains; required matrix and derivation guard are absent | nonconforming: P18-AUD-001 |
+| 18.16.1 | three-platform receipt | unexpired historical receipt; 121 scoped files changed afterward | not-assessable: P18-AUD-002 |
 
 ## Findings
 
-### P18-AUD-001: Native and cross-platform receipts predate the audited implementation
+### P18-AUD-001: The current conformance result has no inspectable seam-evidence matrix
 
 - Axis: spec
 - Severity: Major
 - Conformance effect: blocks
-- Requirement IDs: P18-OUT-001, P18-OUT-002, P18-OUT-005, P18-SEAM-003, P18-AGT-001, P18-AGT-002, P18-AGT-007, P18-BMK-001, P18-BMK-003, P18-BMK-005, P18-BMK-009, P18-BMK-011, P18-PLT-001, P18-PLT-002, P18-PLT-003, P18-A02, P18-A08, P18-A09, P18-A10, P18-A20, P18-A22, P18-RBK-001
-- Claim: The audited head has no exact-head native or three-platform evidence after material changes to the Phase 18 execution, adapter, bundle, verifier, trajectory, and report surfaces; the real-Agent, native-benchmark, seam-matrix, and platform exit obligations are therefore not currently demonstrated.
-- Evidence: `docs/snapshots/phase18/opi-impl-state.json:4587` binds artifact `9720758617`/run `33271354427` to candidate `27344e3`; `docs/snapshots/phase18/ci-receipt.json:10` binds run `33305179715` to candidate `0f5a3fa`. The scoped diff from `27344e3` to the audited head changes 62 files (5,885 insertions, 742 deletions), including 19 production `opi-eval` files across the attested paths.
-- Refutation attempted: current `opi-eval` tests, workspace clippy, documentation checks, native-artifact verifier tests, CI-receipt verifier tests, production-caller scans, and commit ancestry were inspected. They do not refute the claim because the real integration suites are partly Unix-gated and the verifier tests replay stored artifacts/fixtures rather than executing the current binaries and native graders.
-- Suggested closure: produce a fresh native smoke artifact and terminal three-platform receipt at a commit containing the current Phase 18 implementation, then regenerate and verify the seam-evidence matrix against that same evidence chain.
+- Requirement IDs: P18-OUT-005, P18-A20
+- Claim: the audit head lacks the result needed to identify what the real cross-agent/native evidence actually proved.
+- Evidence: the normative rows at lines 178 and 992 require the matrix; Test-Path and git-ls-tree prove it absent; the sealed Phase record at lines 3887, 3924, and 4269-4271 identifies the deleted path and historical derivation run.
+- Refutation attempted: the historical Phase record and successful native run were checked. They show that a matrix once existed, but neither retains an inspectable current matrix or its current derivation guard, so they do not refute the current-tree gap.
+- Suggested closure: restore or regenerate a current artifact-derived matrix, retain its derivation verifier and acceptance guard, and prove that only the evidence-supported seam is settled while the rest remains provisional.
+
+### P18-AUD-002: Real-process and native-verifier evidence does not bind the audit head
+
+- Axis: test-quality
+- Severity: Major
+- Conformance effect: blocks
+- Requirement IDs: P18-OUT-001, P18-OUT-002, P18-A02, P18-A03, P18-A04, P18-A08, P18-A09, P18-A10, P18-A12, P18-A22
+- Claim: current source and fixture tests cannot establish the required real Opi/pi and native benchmark outcomes after the retained receipts' evaluated bytes changed broadly.
+- Evidence: native run 33271354427 is successful at `27344e3a...`, the terminal receipt is successful at `3b4a39d9...`, 120/121 scoped files changed afterward, and exact-head run lookup returns `[]`.
+- Refutation attempted: current unit/integration tests, all verifier-script tests, the unexpired terminal receipt, native run metadata, and upload-receipt digest were checked. They establish local contract quality and historical execution, but not exact-head real-process/native behavior; four current Unix-only binaries also run zero tests on this host.
+- Suggested closure: run the sole pinned Linux native-smoke producer and the required three-platform gate against a commit containing the current Eval/workflow bytes, validate/download the resulting receipts and artifact as required, then bind them to the audited head or a reviewed descendant.
 
 ## Verification Commands
 
 | Command | Result | Requirement/finding |
 |---|---|---|
-| `python .agents/skills/_shared/scripts/validate_assurance_artifact.py rotation docs/snapshots/phase18` | PASS | Rotation admission |
-| `cargo tree -p opi-eval --all-features --target all --edges normal,build,dev` and `cargo tree --workspace --invert opi-eval` | PASS | P18-OUT-001, P18-PLC-001/002, P18-A01 |
-| `cargo fmt --check --all` | PASS | Standards |
-| `cargo clippy --workspace --all-targets -- -D warnings` | PASS | Standards/A22 local gate |
-| `cargo test -p opi-eval --all-targets` | PASS | Current local companion behavior; Unix-gated limitation recorded |
-| `cargo test --workspace --all-targets` in Git archive | FAIL, then focused environmental case PASS with the repository object database | The only failure was `artifact_audit_accepts_real_declared_commit_objects`, caused by the sealed export lacking `.git`; rerun with external `GIT_DIR` passed |
-| `cargo test --workspace --doc` | PASS | Documentation tests |
-| `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | PASS | Documentation/standards |
-| `python scripts/test_verify_phase18_native_artifact.py` | PASS (15/15) | Stored-artifact verifier behavior; not current native execution |
-| `python scripts/test_verify_phase18_ci.py` | PASS (26/26) | Stored-receipt verifier behavior; not current platform execution |
-| `python scripts/test_phase18_eval_smoke.py` | PASS (3/3) | Smoke command composition |
-| `wsl.exe sh -lc 'cd <sealed-export> && python3 scripts/opi-doc-check.py'` | PASS | Current documentation contract |
-| `git diff --shortstat 27344e3..dd7eda70 -- <Phase 18 surfaces>` | 62 files changed, 5,885 insertions, 742 deletions | P18-AUD-001 |
+| `python .agents/skills/_shared/scripts/validate_assurance_artifact.py rotation docs/snapshots/phase18` | PASS | independent admission |
+| `python scripts/opi-cargo-cache.py status` | PASS | cache contract |
+| `cargo test -p opi-eval --all-targets` | PASS: 109 executed, 0 failed | focused Companion surface |
+| five `crates/opi-eval/scripts/test_*.py` verifier suites | PASS: 132 tests | external-lock/native producer validation |
+| `cargo tree -p opi-eval --edges normal` | PASS: no opi-* dependency | P18-A01 |
+| `cargo tree --workspace --invert opi-eval` | PASS: no reverse dependency | P18-A01/P18-A19 |
+| `python3 scripts/opi-doc-check.py` in WSL over the same export | PASS | documentation and roadmap contracts |
+| `cargo fmt --check --all` | PASS | workspace format |
+| `cargo clippy --workspace --all-targets -- -D warnings` | PASS | workspace lint |
+| `cargo test --workspace --all-targets` | PASS | workspace runtime gates |
+| `cargo test --workspace --doc` | PASS | doctests |
+| `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | PASS | rustdoc |
+| generic three-subject/fourth-benchmark `opi-eval validate` | PASS | P18-A20 generic half |
+| `Test-Path .../seam-evidence-matrix.md` | FAIL: False | P18-AUD-001 |
+| exact-audit-head `gh run list` | NOT ASSESSABLE: `[]` | P18-AUD-002 |
+
+The first Windows documentation-check attempt failed because `git archive` could not materialize the `.claude/skills` symlink under the extracted path; WSL verified the same sealed export successfully. The first workspace-test attempt similarly exposed the archive's missing Git object database in one test that validates a hard-coded real commit; after attaching a read-only object database, that exact test and the full unchanged suite passed.
 
 ## Verdict Rationale
 
-The mechanical member verdict is **FAIL** because nine mandatory requirements are `partially-met` and thirteen are `not-assessable`; all are reciprocally linked to blocking Major finding `P18-AUD-001`. The current local implementation is broadly coherent and its focused gates pass, but current-head proof for the real-native and cross-platform exit boundary is absent.
+The verdict is mechanically **FAIL** because mandatory requirements have `not-met`, `partially-met`, or `not-assessable` states linked reciprocally to two Major blocking findings. Local code quality and workspace gates are green, but neither an absent required conformance result nor stale native/CI receipts can be treated as current proof.

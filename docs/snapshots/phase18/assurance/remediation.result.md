@@ -1,50 +1,43 @@
 # Phase 18 Remediation Result
 
 **Status**: COMPLETE
-**Audit index SHA-256**: `60931e9889c2ee28896758522ca2073dcb48b2fc92e15dde510d6cdf71e9e815`
-**Plan SHA-256**: `dc7779cbb7d531672fb661f43f89d82956180d7f501c8eeefc60fef45606f36f`
-**Changed paths**: ["crates/opi-eval/src/cli/conformance.rs", "crates/opi-eval/tests/native_driver.rs", "docs/snapshots/phase18/ci-receipt.json", "scripts/phase18-scripted-provider.py", "scripts/test_phase18_scripted_provider.py"]
+**Audit index SHA-256**: `305624349f650309f374ff8556114d5572c21b02fa30c48ee1ea2eaa95d78195`
+**Plan SHA-256**: `cf084ff086d0edb963878973feee9e56198bdf10f6e7c34973e210823066e533`
+**Changed paths**: ["crates/opi-eval/scripts/verify-native-smoke-artifact.py", "crates/opi-eval/scripts/test_verify_native_smoke_artifact.py", "crates/opi-eval/docs/seam-evidence-matrix.md"]
+**Disposition artifact**: `remediation.result.dispositions.jsonl`
 
 ## Outcome
 
-- B1 is closed. The scripted provider now emits the terminal SSE finish separately, its bash arguments are valid JSON, and native Opi conformance enables the mutating tool required to create the promised final-workspace output.
-- Native conformance refuses a successful process that omits or empties `answer.txt`; the focused negative and positive native-driver cases pass.
-- The two current pi/GLM findings remain Refuted exactly as planned: focused clippy and rustdoc checks pass without restoring either cited condition.
-- Incidental repair I1 is closed. The first repaired native run exposed malformed scripted bash arguments inside the already-owned provider surface; a focused JSON-decoding test reproduced the failure before the one-character escaping repair and passed afterward.
+The apply attempt stopped at Batch B1 after the approved same-repository CI run failed. Both current findings remain **Not closed**. Batch B2 was not started because its B1 dependency did not close, and no incidental repair was admitted.
 
-## Materialization and Remote Evidence
+The `Changed paths` header is the disposition-contract union of B2's approved path attribution. None of those three production paths was modified during this stopped apply attempt.
 
-The implementation candidate is `3b4a39d92338f8cf159296f43c4b8e60809aacc7` on `codex/phase18-remediation-e779477` and pull request #6.
+## Batch B1: Not closed
 
-- Pull-request CI run `33441533936` completed successfully with 27/27 jobs. Terminal receipt generation verified the single-stream Ubuntu attestation download and wrote `docs/snapshots/phase18/ci-receipt.json` for the same candidate.
-- Linux native-smoke run `33441557309` completed successfully. The downloaded 11.26 GB sealed artifact and upload-identity receipt passed `all-native` verification for P18-A02, P18-A03, P18-A04, P18-A08, P18-A09, P18-A10, P18-A12, and BMK-003, with the evidence classified as conformance-only.
-- Relative to the implementation candidate, the evidence commit changes only `docs/snapshots/phase18/ci-receipt.json`, `docs/snapshots/phase18/assurance/remediation.result.md`, and `docs/snapshots/phase18/assurance/remediation.result.dispositions.jsonl`. It contains no Phase 18 runtime, provider, adapter, verifier, workflow, or test change.
+- Pushed only commit `a8bb45426daf960d9e60024ce34542995c4dd2d1` to `refs/heads/codex/phase18-remediation-evidence-a8bb454`.
+- Opened same-repository PR [#7](https://github.com/OdradekAI/opi/pull/7) against `main`; its `headRefOid` is the exact remediation head. The PR remains open and was not merged.
+- CI run [33783810402](https://github.com/OdradekAI/opi/actions/runs/33783810402) completed with 21 passing and 3 failing jobs. Windows workspace tests passed.
+- Ubuntu and macOS workspace tests both failed `agent_conformance_matrix_settles_every_pinned_case`: the Opi `provider-fixture` case exited `1` instead of `0` at `crates/opi-eval/tests/agent_integration_conformance.rs:175`.
+- macOS execution acceptance failed `fixture::process_command_adapter_protocol_violation_lifts_stable_code`: it observed `bash backend error: cleanup_unconfirmed` instead of `bash backend error: protocol_violation` at `crates/opi-coding-agent/tests/execution_runtime.rs:817`.
+- `gh pr checks --required` reported that the branch has no configured required-check subset. The complete declared CI job set was therefore inspected directly.
+- The native-smoke workflow was not dispatched because the prerequisite CI evidence was not green.
+
+The failed jobs block B1. Repairing either code path would change the exact candidate head; the `opi-coding-agent` failure is also outside B1's empty production-path set. The bounded incidental-repair guardrails therefore do not permit a repair under this approved plan.
+
+## Batch B2: Not closed
+
+B2 depends on a verified native artifact from B1. Because B1 stopped before native-smoke dispatch, the verifier extension, focused tests, matrix generation, and matrix check were not run. The three approved B2 production paths remain unchanged.
 
 ## Verification
 
-Focused and producer/verifier checks passed:
+- `python .agents/skills/_shared/scripts/validate_assurance_artifact.py audit-set docs/snapshots/phase18/assurance` -> `PASS`
+- `python .agents/skills/_shared/scripts/validate_assurance_artifact.py plan docs/snapshots/phase18/assurance/remediation.plan.md` -> `PASS plan_sha256=cf084ff086d0edb963878973feee9e56198bdf10f6e7c34973e210823066e533`
+- `gh pr view codex/phase18-remediation-evidence-a8bb454 --repo OdradekAI/opi --json number,state,headRefOid,headRefName,baseRefName,url` -> PR `#7`, open, exact head, base `main`
+- `gh pr checks codex/phase18-remediation-evidence-a8bb454 --repo OdradekAI/opi` -> 21 pass, 3 fail
+- `gh run list --repo OdradekAI/opi --commit a8bb45426daf960d9e60024ce34542995c4dd2d1 --limit 20 --json databaseId,workflowName,status,conclusion,headSha,event,url,createdAt` -> only failed CI run `33783810402`; no native-smoke run
 
-- `python -m unittest scripts.test_phase18_scripted_provider.ScriptedProviderListenerTest.test_streaming_tool_call_turn_is_deterministic`
-- `python scripts/test_phase18_scripted_provider.py` (15 tests)
-- `cargo test -p opi-eval --test native_driver native_conformance_reruns_the_admitted_cases_through_the_material -- --exact` under WSL (1 passed)
-- `cargo test -p opi-eval --test native_driver` under WSL (10 passed)
-- `cargo test -p opi-eval --test agent_integration_conformance` (1 passed)
-- `cargo clippy -p opi-eval --all-targets -- -D warnings`
-- `RUSTDOCFLAGS="-D warnings" cargo doc -p opi-eval --no-deps`
-- `python scripts/test_verify_phase18_native_ci.py` (34 tests)
-- `python scripts/test_verify_phase18_native_artifact.py` (15 tests)
-- `python scripts/test_verify_phase18_ci.py` (26 tests)
+## Materialization Boundary
 
-The workspace verification union passed:
+The evidence branch and PR are external writes retained by the approved plan; the PR is unmerged. Locally, this apply attempt replaced only the two fixed remediation result artifacts. It preserved the carried-in live audit set, plan, and history inventory and made no production-code, test, documentation, manifest, lockfile, schema, specification, authority, or implementation-ledger edit.
 
-- `cargo fmt --check --all`
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace --all-targets`
-- `cargo test --workspace --doc`
-- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`
-- `python scripts/opi-doc-check.py`
-- `git diff --check`
-
-The first all-targets attempt encountered one unrelated timing-test timeout; that exact test then passed five consecutive focused reruns, and the complete all-targets command passed on rerun. The Windows native-artifact invocation could not unpack one deeply nested Linux virtual-environment path; the same repository verifier and downloaded artifact then passed under WSL/Linux path semantics.
-
-No Phase PASS or implementation-ledger update is claimed. A fresh audit or owning-workflow return remains a separate explicit action.
+A new remediation plan is required before any CI repair, candidate-head change, native-smoke dispatch for a different head, or B2 implementation. This result does not grant Phase 18 conformance.

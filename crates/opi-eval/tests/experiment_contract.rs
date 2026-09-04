@@ -1,10 +1,11 @@
-//! Integration contract tests for the provisional Phase 18 experiment seam.
+//! Integration contract tests for the opi-eval experiment seam.
 //!
-//! Covers the Independent Companion dependency boundary (P18-A01) and the
+//! Covers the Independent Companion dependency boundary (EVAL-A01) and the
 //! canonical, fail-closed resolution behavior of
 //! [`opi_eval::experiment::ResolvedExperiment`].
 
 use std::path::Path;
+use std::process::Command;
 
 use opi_eval::cli;
 use opi_eval::experiment::{ControlValue, EXPERIMENT_SCHEMA, ResolveError, ResolvedExperiment};
@@ -19,8 +20,12 @@ fn minimal_fixture_path() -> std::path::PathBuf {
     manifest_dir().join("tests/fixtures/experiment/minimal.toml")
 }
 
+fn generic_fixture_path() -> std::path::PathBuf {
+    manifest_dir().join("tests/fixtures/experiment/generic-three-subject-fourth-benchmark.toml")
+}
+
 const THREE_SUBJECT_DOC: &str = r#"
-schema = "phase18-experiment/1"
+schema = "opi-eval-experiment/1"
 experiment_id = "three-subject-generic"
 
 [benchmark]
@@ -85,13 +90,13 @@ task = "task-2"
 group = "g2"
 "#;
 
-/// P18-A01: with the Opi workspace present, the Companion has no Opi crate
+/// EVAL-A01: with the Opi workspace present, the Companion has no Opi crate
 /// dependency in any dependency table and nothing in the lock graph gives an
 /// Opi product a reverse edge to `opi-eval`. The scenario's `cargo tree`
 /// commands provide the full transitive proof; this test pins the local
 /// manifest and lockfile boundary the package itself owns.
 #[test]
-fn p18_a01_independent_companion_dependency_boundary() {
+fn independent_companion_dependency_boundary() {
     let manifest_text = std::fs::read_to_string(manifest_dir().join("Cargo.toml")).unwrap();
     let manifest: toml::Value = toml::from_str(&manifest_text).unwrap();
 
@@ -175,7 +180,7 @@ fn p18_a01_independent_companion_dependency_boundary() {
 fn resolve_minimal_fixture_freezes_identity() {
     let resolved = ResolvedExperiment::resolve(MINIMAL_FIXTURE).unwrap();
     assert_eq!(resolved.schema(), EXPERIMENT_SCHEMA);
-    assert_eq!(resolved.experiment_id(), "phase18-minimal-pairing");
+    assert_eq!(resolved.experiment_id(), "minimal-pairing");
     assert_eq!(resolved.manifest_digest().len(), 64);
 
     assert_eq!(resolved.benchmark().name, "terminal-bench");
@@ -238,6 +243,42 @@ fn resolve_supports_n_subjects_and_directed_edges() {
     assert_eq!(controls.reasoning, ControlValue::Value("high".to_owned()));
 }
 
+#[test]
+fn generic_schema_resolves_without_product_hard_coding() {
+    let path = generic_fixture_path();
+    let summary =
+        cli::validate(&path).expect("generic three-subject fourth-benchmark fixture must resolve");
+    assert_eq!(summary.subject_count, 3);
+    assert_eq!(summary.edge_count, 2);
+    assert_eq!(summary.trial_count, 4);
+
+    let source = std::fs::read_to_string(&path).unwrap();
+    let resolved = ResolvedExperiment::resolve(&source).unwrap();
+    let products: Vec<&str> = resolved
+        .subjects()
+        .iter()
+        .map(|subject| subject.product.as_str())
+        .collect();
+    assert!(products.contains(&"future-agent"));
+    assert_eq!(products.len(), 3);
+    assert_eq!(resolved.benchmark().integrity_digest, None);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("validate")
+        .arg("--config")
+        .arg(path)
+        .output()
+        .expect("run opi-eval validate");
+    assert!(
+        output.status.success(),
+        "validate CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("subjects=3"), "summary: {stdout}");
+    assert!(stdout.contains("edges=2"), "summary: {stdout}");
+}
+
 fn assert_rejected(source: &str) -> ResolveError {
     ResolvedExperiment::resolve(source).expect_err("document must be rejected")
 }
@@ -251,20 +292,28 @@ fn invalid_doc(tweak: fn(&mut String)) -> String {
 #[test]
 fn resolve_rejects_missing_or_unsupported_schema() {
     let error = assert_rejected(&invalid_doc(|s| {
-        *s = s.replace("schema = \"phase18-experiment/1\"\n", "");
+        *s = s.replace("schema = \"opi-eval-experiment/1\"\n", "");
     }));
     assert!(matches!(error, ResolveError::UnsupportedSchema(_)));
 
     let error = assert_rejected(&invalid_doc(|s| {
-        *s = s.replace("phase18-experiment/1", "phase18-experiment/2");
+        *s = s.replace("opi-eval-experiment/1", "opi-eval-experiment/2");
     }));
     assert!(matches!(error, ResolveError::UnsupportedSchema(_)));
 }
 
 #[test]
+fn legacy_experiment_schema_is_rejected() {
+    let legacy_schema = format!("{}{}{}", "phase", 18, "-experiment/1");
+    let legacy = MINIMAL_FIXTURE.replace(EXPERIMENT_SCHEMA, &legacy_schema);
+    let error = assert_rejected(&legacy);
+    assert!(matches!(error, ResolveError::UnsupportedSchema(found) if found == legacy_schema));
+}
+
+#[test]
 fn resolve_rejects_missing_experiment_id() {
     let error = assert_rejected(&invalid_doc(|s| {
-        *s = s.replace("experiment_id = \"phase18-minimal-pairing\"", "");
+        *s = s.replace("experiment_id = \"minimal-pairing\"", "");
     }));
     assert!(matches!(error, ResolveError::MissingField(f) if f.contains("experiment_id")));
 }
@@ -395,14 +444,14 @@ fn resolve_rejects_missing_benchmark_fields() {
 #[test]
 fn cli_validate_summarizes_the_minimal_fixture() {
     let summary = cli::validate(&minimal_fixture_path()).unwrap();
-    assert_eq!(summary.experiment_id, "phase18-minimal-pairing");
+    assert_eq!(summary.experiment_id, "minimal-pairing");
     assert_eq!(summary.schema, EXPERIMENT_SCHEMA);
     assert_eq!(summary.subject_count, 2);
     assert_eq!(summary.edge_count, 1);
     assert_eq!(summary.trial_count, 2);
     assert_eq!(summary.manifest_digest.len(), 64);
     let rendered = summary.to_string();
-    assert!(rendered.contains("phase18-minimal-pairing"));
+    assert!(rendered.contains("minimal-pairing"));
     assert!(rendered.contains("subjects=2"));
 }
 

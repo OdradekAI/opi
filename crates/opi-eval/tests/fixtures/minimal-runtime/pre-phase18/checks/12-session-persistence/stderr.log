@@ -1,3 +1,0 @@
-   Compiling opi-coding-agent v0.8.1 (/home/luiz/p18-recapture/crates/opi-coding-agent)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.08s
-     Running tests/session_runtime.rs (target/debug/deps/session_runtime-60283d12290005ce)

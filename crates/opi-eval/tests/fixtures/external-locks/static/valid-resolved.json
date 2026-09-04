@@ -1,8 +1,8 @@
 {
-  "schema": "phase18-external-lock/resolved/1",
-  "lock_id": "phase18-linux-x86_64",
+  "schema": "opi-eval-external-lock/resolved/1",
+  "lock_id": "opi-eval-linux-x86_64",
   "platform": "linux-x86_64",
-  "resolved_by_task": "18.3",
+  "resolved_by_stage": "external-lock-materialization",
   "static_lock": {
     "path": "crates/opi-eval/external-locks/static/linux-x86_64.json",
     "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
@@ -10,16 +10,16 @@
   "workflow": {
     "ref": "refs/heads/main",
     "sha": "92855f7a1915b92c0369a8a72cd0dd6ced8830ae",
-    "path": ".github/workflows/phase18-lock-materialization.yml",
+    "path": ".github/workflows/opi-eval-external-lock-materialization.yml",
     "bytes_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "producers": [
     {
-      "path": "scripts/phase18-materialize-locks.sh",
+      "path": "crates/opi-eval/scripts/materialize-external-locks.sh",
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     {
-      "path": "scripts/verify-phase18-materialization-ci.py",
+      "path": "crates/opi-eval/scripts/verify-external-lock-ci.py",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     }
   ],
@@ -28,7 +28,7 @@
     "attempt": 1
   },
   "artifact": {
-    "name": "phase18-linux-lock-materialization",
+    "name": "opi-eval-linux-lock-materialization",
     "id": 987654321,
     "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
     "url": "https://github.com/example/opi/actions/runs/1234567890/artifacts/987654321",
@@ -68,7 +68,7 @@
   "future": [
     {
       "id": "opi-executable",
-      "owner_task": "18.15"
+      "owner_stage": "native-smoke"
     }
   ],
   "authority": {

@@ -1,13 +1,13 @@
-//! Crate-private provisional trajectory and causal-span projection
-//! (Phase 18 task 18.11).
+//! Crate-private trajectory projection and causal-span projection
+//!.
 //!
 //! [`ProjectionPipeline`] projects the settled, pre-seal facts of one trial —
 //! the Agent's native events, the optional native verification lifecycle, the
 //! collected native artifacts, the final-workspace capture, and the trial
-//! lifecycle ladder — into one provisional trajectory of [`Node`]s connected
+//! lifecycle ladder — into one trajectory projection of [`Node`]s connected
 //! by causal [`Edge`]s and grouped into [`Span`]s.
 //!
-//! Invariants carried from `P18-TRJ-001..005`:
+//! Invariants carried from `EVAL-TRJ-001..005`:
 //!
 //! - every node and span retains the native artifact and adapter rule that
 //!   produced it ([`Provenance`]);
@@ -20,11 +20,10 @@
 //! - the trajectory is pre-seal by construction: sealing happens after
 //!   projection and its result is recorded only in the outer
 //!   [`TrajectoryReceipt`], never as a trajectory node;
-//! - everything here stays provisional and crate-private until the complete
-//!   Phase 18 conformance matrix passes.
+//! - the projection stays crate-private and is sealed as trial evidence.
 //!
 //! The sole later production caller is the crate's experiment runner
-//! (task 18.12); this module never links an Agent or benchmark runtime.
+//!; this module never links an Agent or benchmark runtime.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -35,10 +34,8 @@ use crate::benchmark::process::BenchmarkRecord;
 use crate::runner::lifecycle::{TrialLifecycle, TrialPhase};
 use thiserror::Error;
 
-/// Schema identity of the provisional projection (`P18-TRJ-005`: the
-/// trajectory hypothesis itself stays provisional until the conformance
-/// matrix passes).
-pub(crate) const TRAJECTORY_SCHEMA: &str = "phase18-provisional-trajectory/1";
+/// Schema identity of the trajectory projection (`EVAL-TRJ-005`).
+pub(crate) const TRAJECTORY_SCHEMA: &str = "opi-eval-trajectory/1";
 
 /// The settled pre-seal inputs of exactly one trial.
 pub(crate) struct TrialInputs<'a> {
@@ -57,7 +54,7 @@ pub(crate) struct TrialInputs<'a> {
 pub(crate) struct NodeId(pub(crate) u32);
 
 /// Which native source produced a node. Ordering claims are only ever made
-/// inside one source (`P18-TRJ-003`).
+/// inside one source (`EVAL-TRJ-003`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NodeSource {
     /// The durable trial lifecycle ladder.
@@ -110,7 +107,7 @@ impl NodeKind {
     }
 }
 
-/// `P18-TRJ-001`: every projected fact retains the native artifact and the
+/// `EVAL-TRJ-001`: every projected fact retains the native artifact and the
 /// adapter rule that produced it. Lifecycle facts have no native artifact;
 /// their reference is the durable trial reservation itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -181,9 +178,9 @@ pub(crate) struct Span {
     pub(crate) facts: BTreeMap<String, Fact>,
 }
 
-/// The provisional trajectory of one trial: nodes, causal edges, and spans.
+/// The trajectory projection of one trial: nodes, causal edges, and spans.
 #[derive(Debug, Clone)]
-pub(crate) struct ProvisionalTrajectory {
+pub(crate) struct TrialTrajectory {
     pub(crate) schema: &'static str,
     /// The Agent product whose native evidence this trajectory projects.
     pub(crate) product: String,
@@ -192,7 +189,7 @@ pub(crate) struct ProvisionalTrajectory {
     pub(crate) spans: Vec<Span>,
 }
 
-impl ProvisionalTrajectory {
+impl TrialTrajectory {
     /// The node with `id`, if present.
     pub(crate) fn node(&self, id: NodeId) -> Option<&Node> {
         self.nodes.iter().find(|n| n.id == id)
@@ -209,7 +206,7 @@ impl ProvisionalTrajectory {
     /// their kinds, provenance, and facts, edges, and spans. Deterministic
     /// for identical inputs; staged as sealed trial evidence so a sealed
     /// bundle retains the trajectory itself, not only its digest
-    /// (`P18-BND-001`).
+    /// (`EVAL-BND-001`).
     pub(crate) fn canonical_bytes(&self) -> Vec<u8> {
         serde_json::to_vec(&self.canonical_value()).expect("canonical JSON serializes")
     }
@@ -366,7 +363,7 @@ impl ProvisionalTrajectory {
 }
 
 /// The outer receipt: the later runner seals after projection and records
-/// the actual seal result only here (`P18-DUR` ladder: the trajectory itself
+/// the actual seal result only here (`EVAL-DUR` ladder: the trajectory itself
 /// is an input to sealing, so it cannot contain the seal result).
 #[derive(Debug, Clone)]
 pub(crate) struct TrajectoryReceipt {
@@ -392,7 +389,7 @@ pub(crate) enum SealOutcome {
 
 impl TrajectoryReceipt {
     /// Wraps a pre-seal trajectory digest.
-    pub(crate) fn for_trajectory(trajectory: &ProvisionalTrajectory) -> Self {
+    pub(crate) fn for_trajectory(trajectory: &TrialTrajectory) -> Self {
         Self {
             pre_seal_digest: trajectory.content_digest(),
             seal_result: None,
@@ -447,12 +444,10 @@ pub(crate) enum ProjectionError {
 pub(crate) struct ProjectionPipeline;
 
 impl ProjectionPipeline {
-    /// Project one trial's settled pre-seal facts into a provisional
-    /// trajectory. Fails closed on artifact drift, missing captures, and
+    /// Project one trial's settled pre-seal facts into a trajectory.
+    /// Fails closed on artifact drift, missing captures, and
     /// post-settlement lifecycles.
-    pub(crate) fn project(
-        inputs: &TrialInputs<'_>,
-    ) -> Result<ProvisionalTrajectory, ProjectionError> {
+    pub(crate) fn project(inputs: &TrialInputs<'_>) -> Result<TrialTrajectory, ProjectionError> {
         if !matches!(
             inputs.lifecycle.phase(),
             TrialPhase::Planned
@@ -950,8 +945,8 @@ impl TrajectoryBuilder {
         }
     }
 
-    fn finish(self) -> ProvisionalTrajectory {
-        ProvisionalTrajectory {
+    fn finish(self) -> TrialTrajectory {
+        TrialTrajectory {
             schema: TRAJECTORY_SCHEMA,
             product: self.product,
             nodes: self.nodes,
@@ -963,7 +958,7 @@ impl TrajectoryBuilder {
 
 /// Project Opi's native evidence records: one node per line, native
 /// `sequence` as per-source order, and native `parent` call correlation as
-/// Parent edges (P18-TRJ-003).
+/// Parent edges (EVAL-TRJ-003).
 fn project_opi_events(
     builder: &mut TrajectoryBuilder,
     agent: &AgentRecord,
@@ -1058,7 +1053,7 @@ fn project_opi_events(
 /// Project pi's native session stream: one node per line, line index as
 /// per-source order, and message pairing only where the native stream pairs
 /// it. Timing stays a typed unknown unless the native event carries a
-/// timestamp (P18-TRJ-002).
+/// timestamp (EVAL-TRJ-002).
 fn project_pi_events(
     builder: &mut TrajectoryBuilder,
     agent: &AgentRecord,
@@ -1370,7 +1365,7 @@ mod tests {
         );
 
         // Without native timestamps the same pairing stays a typed unknown
-        // (P18-TRJ-002/004: no invented timing).
+        // (EVAL-TRJ-002/004: no invented timing).
         let dir = tempfile::tempdir().unwrap();
         let sparse = dir.path().join("session.jsonl");
         std::fs::write(
@@ -1729,7 +1724,7 @@ mod tests {
         })
         .unwrap();
 
-        // A cross-source ordering edge invents chronology (P18-TRJ-003).
+        // A cross-source ordering edge invents chronology (EVAL-TRJ-003).
         let lifecycle_id = base
             .nodes
             .iter()
@@ -1979,7 +1974,7 @@ mod tests {
             .collect();
         assert_eq!(parent_edges.len(), 3);
 
-        // Native agent nodes retain their adapter rule (P18-TRJ-001).
+        // Native agent nodes retain their adapter rule (EVAL-TRJ-001).
         for node in &trajectory.nodes {
             if matches!(
                 node.source,

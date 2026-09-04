@@ -1,5 +1,5 @@
 //! Crate-private pi coding-agent process adapter and JSON importer
-//! (Phase 18 task 18.7).
+//!.
 //!
 //! [`PiProcessAdapter`] owns ONLY pi-specific launch and evidence rules:
 //! argv/profile construction for the pinned earendil-works coding-agent
@@ -9,8 +9,8 @@
 //! JSON event stream (session header + `AgentSessionEvent` lines) and the
 //! completion predicate over the terminal assistant message, `agent_end`, and
 //! process exit. It never links pi code and claims no Harness v2 semantics
-//! (P18-AGT-005). Final workspace capture and RunBundle association belong to
-//! the Companion runner (18.12).
+//! (EVAL-AGT-005). Final workspace capture and RunBundle association belong to
+//! the Companion runner (assembled-runner).
 
 use super::process::{
     AgentAdapter, AgentCapability, AgentCompletion, AgentFailure, AgentIdentity, AgentRunRequest,
@@ -78,10 +78,10 @@ struct IdentityBody {
 
 impl PiProfile {
     /// Parse the checked-in declarative profile. Fails closed on any schema
-    /// identity other than the one this adapter implements (P18-AGT-003).
+    /// identity other than the one this adapter implements (EVAL-AGT-003).
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
         let body: ProfileBody = toml::from_str(text).map_err(|e| format!("profile: {e}"))?;
-        if body.schema != "phase18-agent-profile/1" {
+        if body.schema != "opi-eval-agent-profile/1" {
             return Err(format!("profile schema {} is not supported", body.schema));
         }
         if !body.launch.one_shot_json
@@ -158,14 +158,14 @@ impl AgentAdapter for PiProcessAdapter {
     fn capabilities(&self) -> &'static [AgentCapability] {
         // pi has no Opi-equivalent finalized evidence manifest, so it does
         // not claim `EvidenceManifest`: its raw NDJSON stream is retained as
-        // a native artifact instead (P18-AGT-007).
+        // a native artifact instead (EVAL-AGT-007).
         &[AgentCapability::JsonEvents, AgentCapability::UsageFacts]
     }
 
     /// Exact argv for the pinned pi v0.84.3 production CLI — one-shot JSON
     /// print mode, no persistent session, no project trust or context files,
     /// no extension/skill discovery, explicit provider/model and deterministic
-    /// thinking (P18-AGT-001/005). `--` ends option parsing before the prompt.
+    /// thinking (EVAL-AGT-001/005). `--` ends option parsing before the prompt.
     fn spawn_spec(&self, request: &AgentRunRequest) -> SpawnSpec {
         // The shared request carries the exact selection as `provider:model`;
         // pi's CLI takes them as separate exact flags (no fuzzy resolution).
@@ -235,7 +235,7 @@ impl AgentAdapter for PiProcessAdapter {
     ) -> (UsageProjection, AgentCompletion) {
         // The process-level verdict is authoritative first: a non-zero exit,
         // timeout, cancellation, or spawn failure can never be rescued by
-        // evidence, and no fallback exists (P18-AGT-003).
+        // evidence, and no fallback exists (EVAL-AGT-003).
         let process_failed = |failure: super::process::AgentFailure| {
             (UsageProjection::default(), AgentCompletion::Failed(failure))
         };
@@ -257,7 +257,7 @@ impl AgentAdapter for PiProcessAdapter {
         // reports `error`/`aborted` (that mapping is text-mode-only), so the
         // stream itself — terminal message, `agent_end`, and requested-model
         // identity — carries the authoritative completion facts
-        // (P18-AGT-005). No mismatch is concealed.
+        // (EVAL-AGT-005). No mismatch is concealed.
         let (provider, model) = request
             .provider_model
             .split_once(':')
@@ -299,7 +299,7 @@ struct ImportedPi {
 /// Private importer for pi's documented stdout JSON protocol: one session
 /// header line followed by `AgentSessionEvent` NDJSON. Accepts only the
 /// pinned v0.84.3 shapes; anything older, unknown, corrupted, or ambiguous
-/// fails closed (P18-MIG-002). Never mutates anything outside the fresh
+/// fails closed (EVAL-MIG-002). Never mutates anything outside the fresh
 /// trace root.
 struct PiImporter;
 
@@ -475,7 +475,7 @@ impl PiImporter {
 
         // Terminal facts are complete; the requested-identity and stopReason
         // checks belong to the adapter's completion predicate. Retain the raw stream as a
-        // content-addressed native artifact (P18-AGT-007: native facts are
+        // content-addressed native artifact (EVAL-AGT-007: native facts are
         // kept, never dropped to make Agents look alike).
         let artifact_path = trace_root.join("pi-events.jsonl");
         if std::fs::create_dir_all(trace_root)
@@ -598,7 +598,7 @@ mod tests {
     #[test]
     fn checked_in_profile_parses_with_exact_schema_identity() {
         let profile = PiProfile::checked_in();
-        assert_eq!(profile.schema, "phase18-agent-profile/1");
+        assert_eq!(profile.schema, "opi-eval-agent-profile/1");
         assert_eq!(profile.product, "pi");
         assert_eq!(profile.package, "@earendil-works/pi-coding-agent");
         assert_eq!(profile.adapter, "opi-eval-pi-adapter/1");
@@ -606,7 +606,7 @@ mod tests {
 
         // Any other schema identity fails closed.
         let mutated = include_str!("../../profiles/agents/pi.toml")
-            .replace("phase18-agent-profile/1", "phase18-agent-profile/2");
+            .replace("opi-eval-agent-profile/1", "opi-eval-agent-profile/2");
         assert!(PiProfile::parse(&mutated).is_err());
         // Disabling a required launch invariant fails closed.
         let disabled = include_str!("../../profiles/agents/pi.toml")
@@ -683,7 +683,7 @@ mod tests {
         assert_eq!(identity.package, "@earendil-works/pi-coding-agent");
         assert_eq!(
             identity.adapter,
-            "opi-eval-pi-adapter/1 (phase18-agent-profile/1)"
+            "opi-eval-pi-adapter/1 (opi-eval-agent-profile/1)"
         );
         assert_eq!(identity.executable, PathBuf::from("/tmp/fake-pi"));
     }
@@ -798,7 +798,7 @@ mod tests {
     fn json_mode_exit_zero_never_conceals_a_failed_terminal_message() {
         // pi's JSON mode exits 0 even when the terminal assistant message
         // reports error/aborted/length; the predicate reads the message
-        // (P18-AGT-005).
+        // (EVAL-AGT-005).
         let adapter = PiProcessAdapter::new();
         let dir = tempfile::tempdir().unwrap();
         let mut request = request();
