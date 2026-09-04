@@ -1,22 +1,22 @@
 {
-  "aggregate_verdict": "FAIL",
+  "aggregate_verdict": "PASS",
   "members": [
     {
       "artifact_stem": "audit.codex.gpt56",
-      "audit_head": "a8bb45426daf960d9e60024ce34542995c4dd2d1",
-      "audit_run_id": "phase18-codex-gpt56-a8bb454-20260903t021838z",
+      "audit_head": "92ee1d9ddaa23bbc5b55455d3c76b0b4dd2e6995",
+      "audit_run_id": "phase18-codex-gpt56-92ee1d9-20260904t000000z",
       "digests": {
-        "findings_sha256": "3193940b79737046d5b977a0ad4670d17e1e6ae5fd7d2a133f68743f37986897",
-        "meta_sha256": "393901b1867ee54145dde855e5ebbe39f826f7dfb5f1eeb7d068cede611f461a",
-        "report_sha256": "feb34614d0e85aedaa3951df63497d8df835acd35f4c99ca36c7e731779b440a",
-        "requirements_sha256": "61946885482ac14fb36852d261269cdc137ace17a13645e89e3aa22fb6f80684"
+        "findings_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "meta_sha256": "d2d7f3c19e6854d1e40e07e891c6467f1d7a6c462d7515f6e7879b2001742870",
+        "report_sha256": "aa2e42a643c76f65f986e331fe51068ae3f54d70447976ae082cbf0c4ca26b04",
+        "requirements_sha256": "872ea09fd00eadd1f5429b1ff84151ed8f562633ed708daf3d541711684035a2"
       },
       "model_id": "gpt56",
       "reviewer_id": "codex",
-      "verdict": "FAIL"
+      "verdict": "PASS"
     }
   ],
   "phase": 18,
-  "revision": 10,
+  "revision": 11,
   "schema_version": 2
 }
