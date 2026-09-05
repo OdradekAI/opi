@@ -12,7 +12,7 @@
 
 ## 当前状态
 
-当前 crate 版本是 `0.8.1`，继承自 workspace 包版本。
+当前 crate 版本是 `0.8.2`，继承自 workspace 包版本。
 
 本 crate 把 `opi-ai`、`opi-agent`、`opi-protocol` 和 `opi-tui` 连接成终端编程
 Agent。它提供：
@@ -30,7 +30,7 @@ Agent。它提供：
 - 配置、上下文文件加载、会话持久化、压缩、重试、用量、费用摘要、package/资源发现、
   诊断、可选 trace、OS-keychain 凭据 store，以及交互式 OAuth 登录/登出。
 
-workspace 包版本是 `0.8.1`。当前 checkout 也可能包含未发布变更；delta 见
+workspace 包版本是 `0.8.2`。当前 checkout 也可能包含未发布变更；delta 见
 [CHANGELOG.md](../../CHANGELOG.md)。
 
 opi 加固既有表面，而非新增核心工作流：类型化文件系统工具失败、显式 read/bash 截断、

@@ -261,4 +261,4 @@ path in `opi`. Existing sessions, native evidence, local Eval reports,
 configuration, credentials, and user artifacts are not read, rewritten, or
 migrated by this crate.
 
-Current crate version: `0.8.1`, inherited from the workspace package version.
+Current crate version: `0.8.2`, inherited from the workspace package version.

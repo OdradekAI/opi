@@ -22,7 +22,7 @@ cargo add opi-sandbox
 
 ## 当前状态
 
-当前 crate 版本：`0.8.1`，继承自 workspace package 版本。
+当前 crate 版本：`0.8.2`，继承自 workspace package 版本。
 
 官方发布归档面向 Linux 与 macOS。没有官方 Windows `opi-sandbox` artifact；Windows
 构建只提供 L0 Job Object 监督，生产环境的 `run` 与 protocol backend 会在启动目标

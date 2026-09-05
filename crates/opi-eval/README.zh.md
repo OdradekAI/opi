@@ -248,4 +248,4 @@ experiment 或 report 格式不隐含兼容层。
 package、command、extension、启动 hook 或默认捕获路径。现有 session、native
 evidence、本地 Eval 报告、配置、凭据和用户工件不会被本 crate 读取、改写或迁移。
 
-当前 crate 版本：`0.8.1`，继承自 workspace package 版本。
+当前 crate 版本：`0.8.2`，继承自 workspace package 版本。

@@ -31,7 +31,7 @@ Rust APIs, TOML configuration, and append-only JSONL sessions.
 
 ## Status
 
-The workspace package version in `Cargo.toml` is `0.8.1`. This checkout may
+The workspace package version in `Cargo.toml` is `0.8.2`. This checkout may
 contain unreleased changes; see [CHANGELOG.md](CHANGELOG.md) before making a
 release or compatibility decision.
 
