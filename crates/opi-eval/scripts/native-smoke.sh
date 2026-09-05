@@ -901,6 +901,27 @@ exec docker run --rm --network {network} \\
 """
     return write_exec(out / "wrappers" / f"agent-{product}-{benchmark}.sh", body)
 
+    # The pinned integration module directory the selected import path
+    # resolves against, sealed by its sorted file-manifest digest.
+    integrations_dir = Path(repo) / "crates/opi-eval/integrations/harbor"
+    if not (integrations_dir / "opi_eval_harbor.py").is_file():
+        raise SystemExit(
+            "materialize-configs: pinned integration module is missing")
+    def integrations_digest():
+        rows = []
+        for path in sorted(integrations_dir.rglob("*")):
+            if path.is_file() and "__pycache__" not in path.parts:
+                rows.append((str(path.relative_to(integrations_dir))
+                             .replace(os.sep, "/"), sha(path)))
+        canonical = "".join(f"{p}\n{d}\n" for p, d in rows)
+        return hashlib.sha256(canonical.encode()).hexdigest()
+    integration_entry = lambda product: {
+        "module_dir": str(integrations_dir),
+        "module_manifest_sha256": integrations_digest(),
+        "import_path": f"opi_eval_harbor:{product.capitalize()}Agent",
+        "agent_name": f"opi-eval-{product}",
+    }
+
 benchmarks = {}
 env_keys = {"opi": ["HOME", "OPENAI_API_KEY"],
             "pi": ["HOME", "PI_API_KEY", "PI_CODING_AGENT_DIR"]}
@@ -1005,7 +1026,7 @@ exit $rc
     }
 
 manifest = {
-    "schema": "opi-eval-native-material/1",
+    "schema": "opi-eval-native-material/2",
     "static_lock": {"path": lock_path, "sha256": sha(lock_path)},
     "provider": {
         "script": {"path": f"{repo}/crates/opi-eval/scripts/scripted-provider.py",
@@ -1021,6 +1042,7 @@ manifest = {
             "provider_env": {"OPENAI_API_KEY": "<dummy-scripted-credential>"},
             "config": {"kind": "opi-toml", "base_url": base_url,
                        "model_id": "eval", "api_key": "<dummy>"},
+            "integration": integration_entry("opi"),
         },
         "pi": {
             "executable": {"path": str(out / "wrappers" / "agent-pi-generic.sh"),
@@ -1029,6 +1051,7 @@ manifest = {
             "provider_env": {"PI_API_KEY": "<redacted-dummy>"},
             "config": {"kind": "pi-models-json", "base_url": base_url,
                        "model_id": "scripted/eval", "api_key": "<redacted-dummy>"},
+            "integration": integration_entry("pi"),
         },
     },
     "benchmarks": benchmarks,
@@ -1063,7 +1086,10 @@ material_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n",
                          encoding="utf-8")
 
 configs = {}
-for adapter in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
+# Native scoring runs Terminal-Bench 2.1 only; the TB3 and DeepSWE
+# handoffs are explicitly unavailable until their declared delivery
+# lands (their former default-job path no longer emits Agent scores).
+for adapter in ("terminal-bench-2.1",):
     benchmark = "terminal-bench" if adapter.startswith("terminal-bench") else "deepswe"
     revision = "2.1" if adapter.endswith("2.1") else "3.0" if adapter.endswith("3.0") else "v1.1"
     task_id = task_ids[adapter]
@@ -1176,15 +1202,8 @@ cmd_conformance_rerun() {
   for case_spec in \
       "agent opi completed" "agent opi identity" \
       "agent pi completed" "agent pi identity" \
-      "benchmark terminal-bench-2.1 completed" \
-      "benchmark terminal-bench-2.1 identity" \
-      "benchmark terminal-bench-2.1 immutable-capture" \
-      "benchmark terminal-bench-3.0 completed" \
-      "benchmark terminal-bench-3.0 identity" \
-      "benchmark terminal-bench-3.0 immutable-capture" \
-      "benchmark deepswe completed" \
-      "benchmark deepswe identity" \
-      "benchmark deepswe immutable-capture"; do
+      "benchmark terminal-bench-2.1 oracle-witness" \
+      "benchmark terminal-bench-2.1 nop-witness"; do
     suite=${case_spec%% *}
     rest=${case_spec#* }
     adapter=${rest%% *}
@@ -1212,35 +1231,41 @@ cmd_conformance_rerun() {
 }
 
 # ---------------------------------------------------------------------------
-# Stage: oracle-preflight
+# Stage: oracle-preflight (explicitly selected TB2.1 artifact witnesses)
 # ---------------------------------------------------------------------------
 cmd_oracle_preflight() {
-  material=""; config_root=""; out=""
+  material=""; out=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --material) material=$2; shift 2 ;;
-      --config-root) config_root=$2; shift 2 ;;
       --out) out=$2; shift 2 ;;
       *) die "oracle-preflight: unknown argument: $1" ;;
     esac
   done
-  [ -n "$material" ] && [ -n "$config_root" ] && [ -n "$out" ] \
-    || die "oracle-preflight: --material, --config-root, and --out are required"
+  [ -n "$material" ] && [ -n "$out" ] \
+    || die "oracle-preflight: --material and --out are required"
   require_file "$material"
   OPI_EVAL_EXECUTABLE=$(resolve_opi_eval_executable \
     || die "oracle-preflight: opi-eval executable not resolved")
   OPI_EVAL_EXECUTABLE=$(readlink -f "$OPI_EVAL_EXECUTABLE")
-  mkdir -p "$out/runs"
-  for config in "$config_root"/*.toml; do
-    [ -e "$config" ] || die "oracle-preflight: no experiment configs in $config_root"
-    name=$(basename "$config" .toml)
-    "$OPI_EVAL_EXECUTABLE" run --config "$config" --root "$out/runs/$name" \
+  mkdir -p "$out/reports"
+  # The oracle is an explicitly selected conformance diagnostic, never a
+  # prerequisite silently run by `run` (P19-D01): the correct witness
+  # applies the official reference solution and must grade one; the nop
+  # witness delivers nothing and must grade zero. Both traverse the same
+  # production job handoff and binding.
+  for case_id in oracle-witness nop-witness; do
+    root="$out/reports/benchmark-terminal-bench-2.1-$case_id"
+    mkdir -p "$root"
+    "$OPI_EVAL_EXECUTABLE" conformance \
+      --suite benchmark --adapter terminal-bench-2.1 --case "$case_id" \
+      --root "$root" \
       --fixtures "$REPO_ROOT/crates/opi-eval/tests/fixtures" \
-      --native-material "$material" --preflight-only \
-      > "$out/runs/$name.json"
+      --provider "$REPO_ROOT/crates/opi-eval/scripts/scripted-provider.py" \
+      --native-material "$material" > "$root/report.json"
   done
   write_receipt "$out" oracle-preflight \
-    "$(python3 -c 'import json,sys,os; print(json.dumps({"configs_preflighted": len([f for f in os.listdir(sys.argv[1]) if f.endswith(".toml")])}))' "$config_root")"
+    "$(python3 -c 'import json; print(json.dumps({"witnesses": ["oracle-witness", "nop-witness"], "mode": "explicitly-selected-conformance"}))')"
 }
 
 

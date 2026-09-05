@@ -39,16 +39,10 @@ BENCHMARKS = {
 CONFORMANCE_CASES = [
     ("agent", "opi", "completed"), ("agent", "opi", "identity"),
     ("agent", "pi", "completed"), ("agent", "pi", "identity"),
-    ("benchmark", "terminal-bench-2.1", "completed"),
-    ("benchmark", "terminal-bench-2.1", "identity"),
-    ("benchmark", "terminal-bench-2.1", "immutable-capture"),
-    ("benchmark", "terminal-bench-3.0", "completed"),
-    ("benchmark", "terminal-bench-3.0", "identity"),
-    ("benchmark", "terminal-bench-3.0", "immutable-capture"),
-    ("benchmark", "deepswe-v1.1", "completed"),
-    ("benchmark", "deepswe-v1.1", "identity"),
-    ("benchmark", "deepswe-v1.1", "immutable-capture"),
+    ("benchmark", "terminal-bench-2.1", "oracle-witness"),
+    ("benchmark", "terminal-bench-2.1", "nop-witness"),
 ]
+TRIAL_CONFIGS = {"terminal-bench-2.1": "terminal-bench-2.1"}
 
 
 def sha(data: bytes) -> str:
@@ -67,7 +61,9 @@ def stage_receipt(stage: Path, name: str, detail) -> None:
 
 
 def trial_receipt(trial: str, product: str, task: str, group: str,
-                  reward: str = "known:1(verifier_reported)") -> dict:
+                  reward: str = "known:1(native-trial-result)",
+                  reward_value: int = 1) -> dict:
+    agent_name = f"opi-eval-{product}"
     native: dict = {
         "schema": "opi-eval-trial-receipt/1",
         "id": trial,
@@ -75,27 +71,36 @@ def trial_receipt(trial: str, product: str, task: str, group: str,
         "task": task,
         "group": group,
         "status": "sealed",
+        "mode": "native",
         "agent": {
             "product": product,
-            "exit_state": "exited:0",
-            "completion": "completed",
-            "failure_kind": None,
-            "boundary": None,
-            "stdout_truncated": False,
-            "stderr_truncated": False,
-            "cleanup": "not-required",
-            "stdout_bytes": 128,
-            "stderr_bytes": 4,
+            "name": agent_name,
+            "version": "1",
+            "model": "scripted/eval",
+            "exit_code": 0,
+            "timed_out": False,
+            "executable_sha256": sha(f"agent-{product}".encode()),
+            "exception_type": None,
+            "delivered": [{"source": "/root/answer.txt",
+                           "sha256": sha(b"answer\n")}],
         },
         "verifier": {
             "exit_state": "exited:0",
             "reward": reward,
-            "completion": "verified",
+            "completion": "verified-native",
             "failure_kind": None,
             "boundary": None,
+            "binding": {"job": "2026-09-05__12-00-00",
+                        "trial": f"{task}__bZZeEkw",
+                        "agent": agent_name,
+                        "task": task},
         },
-        "authority": {"dispatch": "attempted", "settle": "observed",
-                      "grade-dispatch": "attempted", "grade-settle": "observed"},
+        "classification": {"class": "graded-native", "reward": reward_value,
+                           "agent_failed": reward_value == 0,
+                           "timed_out": False},
+        "authority": {"agent_dispatch": "executed", "settle": "executed",
+                      "grade_dispatch": "executed", "seal": "executed",
+                      "report": "executed"},
         "bundle_identity": sha(f"bundle-{trial}".encode()),
         "pre_seal_digest": sha(f"preseal-{trial}".encode()),
         "seal_result": {"sealed": {"bundle_digest": sha(f"bundle-{trial}".encode())}},
@@ -112,26 +117,19 @@ def build_trial(stage: Path, cfg: str, trial: str, product: str, task: str,
     write_json(bundle / "intent.json",
                {"schema": "opi-eval-run-bundle-intent/1", "trial": trial})
     artifacts = bundle / "artifacts"
-    for key, body in (("native/agent-stdout.log", f"{trial} stdout\n"),
-                      ("native/agent-stderr.log", ""),
-                      ("native/agent-answer.txt", "answer\n")):
+    for key, body in (("native/job-stdout.log", f"{trial} stdout\n"),
+                      ("native/job-stderr.log", ""),
+                      ("native/trial-result.json", '{"agent_info": {}}'),
+                      ("native/trial-config.json", '{"agent": {}}'),
+                      ("native/agent-terminal",
+                       '{"schema": "opi-eval-native-agent-terminal/1"}'),
+                      ("normalized/expected-output", '{"trial": "%s"}' % trial)):
         target = artifacts / key
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(body, encoding="utf-8")
-    if product == "opi":
-        for key, payload in (
-                ("native/evidence/manifest",
-                 json.dumps({"schema": "phase17-manifest/1", "correlation":
-                             {"sequence": 1}, "outcome": "success"})),
-                ("native/evidence/records",
-                 json.dumps({"schema": "phase17-evidence/1", "records": 2}))):
-            target = artifacts / key
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(payload + "\n", encoding="utf-8")
-    else:
-        target = artifacts / "native/events/stdout"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('{"type":"agent_end"}\n', encoding="utf-8")
+    target = artifacts / "native/artifacts-manifest.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("[]\n", encoding="utf-8")
     write_json(root / "report.json",
                {"schema": "opi-eval-benchmark-report/1", "task": task,
                 "product": product, "verdict": "graded",
@@ -202,8 +200,13 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
     lock_bytes = b"static-lock\n"
     (material / "external-lock.json").write_bytes(lock_bytes)
     wrappers = material / "wrappers"
+    integrations = material / "integrations"
+    integrations.mkdir(parents=True, exist_ok=True)
+    module = integrations / "opi_eval_harbor.py"
+    module.write_text("# pinned integration module\n", encoding="utf-8")
+    module_digest = sha(module.read_bytes())
     material_json = {
-        "schema": "opi-eval-native-material/1",
+        "schema": "opi-eval-native-material/2",
         "static_lock": {"path": str(material / "external-lock.json"),
                         "sha256": sha(lock_bytes)},
         "provider": {
@@ -225,7 +228,13 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
                            "base_url": "http://127.0.0.1:48127/v1",
                            "model_id": "eval" if product == "opi"
                                        else "scripted/eval",
-                           "api_key": "<dummy-scripted-credential>"}
+                           "api_key": "<dummy-scripted-credential>"},
+                "integration": {
+                    "module_dir": str(integrations),
+                    "module_manifest_sha256": module_digest,
+                    "import_path": f"opi_eval_harbor:{product.capitalize()}Agent",
+                    "agent_name": f"opi-eval-{product}",
+                },
             }
             for product in ("opi", "pi")
         },
@@ -255,36 +264,19 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
     conformance = material / "conformance"
     for suite, adapter, case in CONFORMANCE_CASES:
         root = conformance / "reports" / f"{suite}-{adapter}-{case}"
-        write_json(root / "report.json", {"met": True, "case": case})
+        report = {"met": True, "case": case}
+        if case in ("oracle-witness", "nop-witness"):
+            report["outcome"] = "verified-native"
+            report["adapter"] = adapter
+        write_json(root / "report.json", report)
     write_json(conformance / "receipt.json",
                {"stage": "conformance-rerun",
                 "detail": {"cases_run": len(CONFORMANCE_CASES),
                            "mode": "native-material"}})
 
-    oracle = material / "oracle"
-    for bench, short in BENCHMARKS.items():
-        root = oracle / "runs" / short
-        write_json(root / "run-report.json", {
-            "schema": "opi-eval-run-report/1",
-            "experiment": f"opi-eval-native-{short}",
-            "outcome": "preflight-only",
-            "preflight": {
-                "schema": "opi-eval-oracle-preflight/1",
-                "benchmark": bench,
-                "task": f"{short}-official-task",
-                "oracle_executable_sha256": sha(f"oracle-{bench}\n".encode()),
-                "outcome": "passed",
-            },
-        })
-        write_json(root / "preflight" / bench / "preflight-receipt.json", {
-            "schema": "opi-eval-oracle-preflight/1",
-            "benchmark": bench, "task": f"{short}-official-task",
-            "oracle_executable_sha256": sha(f"oracle-{bench}\n".encode()),
-            "outcome": "passed",
-        })
-    write_json(oracle / "receipt.json",
-               {"stage": "oracle-preflight",
-                "detail": {"configs_preflighted": len(BENCHMARKS)}})
+    # The oracle preflight stage is gone: the oracle is now an
+    # explicitly selected witness through the same production handoff,
+    # recorded with the conformance reports above.
 
     provider_log = stage / "05-provider" / "requests.jsonl"
     provider_log.parent.mkdir(parents=True, exist_ok=True)
@@ -295,7 +287,7 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
                 for i in range(6)), encoding="utf-8")
 
     trials: list[dict] = []
-    for bench, short in BENCHMARKS.items():
+    for bench, short in TRIAL_CONFIGS.items():
         cfg = short
         receipts = [
             build_trial(stage, cfg, f"{short}-opi", "opi",
@@ -513,7 +505,7 @@ class ArtifactVerifier(unittest.TestCase):
         self.assertIn("manifest", result.stderr)
 
     def test_missing_trial_rejects(self) -> None:
-        report_path = self.stage / "07-trials" / "deepswe-v1.1" / "run-report.json"
+        report_path = self.stage / "07-trials" / "terminal-bench-2.1" / "run-report.json"
         report = json.loads(report_path.read_text("utf-8"))
         report["trials"] = report["trials"][:1]
         write_json(report_path, report)
@@ -536,17 +528,23 @@ class ArtifactVerifier(unittest.TestCase):
         self.assertIn("canary", result.stderr)
 
     def test_verifier_failed_rejects(self) -> None:
-        root = self.stage / "07-trials" / "terminal-bench-3.0" / "trials" / "terminal-bench-3.0-pi"
+        root = self.stage / "07-trials" / "terminal-bench-2.1" / "trials" / "terminal-bench-2.1-pi"
         receipt = json.loads((root / "receipt.json").read_text("utf-8"))
         receipt["verifier"]["completion"] = "failed"
         receipt["verifier"]["failure_kind"] = "verifier-noncompletion"
+        receipt["classification"] = {"class": "invalid-execution",
+                                     "reason": "verifier-noncompletion",
+                                     "boundary": "grader"}
         write_json(root / "receipt.json", receipt)
-        report_path = self.stage / "07-trials" / "terminal-bench-3.0" / "run-report.json"
+        report_path = self.stage / "07-trials" / "terminal-bench-2.1" / "run-report.json"
         report = json.loads(report_path.read_text("utf-8"))
         report["trials"] = [
             {**t, "verifier": dict(t["verifier"], completion="failed",
-                                   failure_kind="verifier-noncompletion")}
-            if t["id"] == "terminal-bench-3.0-pi" else t for t in report["trials"]]
+                                   failure_kind="verifier-noncompletion"),
+             "classification": {"class": "invalid-execution",
+                                "reason": "verifier-noncompletion",
+                                "boundary": "grader"}}
+            if t["id"] == "terminal-bench-2.1-pi" else t for t in report["trials"]]
         write_json(report_path, report)
         sealed = seal(self.stage, self.tmp)
         zip_path, upload = package_zip(sealed["tar"], dict(sealed["upload"]))
@@ -555,16 +553,23 @@ class ArtifactVerifier(unittest.TestCase):
         self.assertIn("verifier", result.stderr)
 
     def test_reward_zero_is_integration_result(self) -> None:
-        for cfg in BENCHMARKS.values():
+        for cfg in TRIAL_CONFIGS.values():
             report_path = self.stage / "07-trials" / cfg / "run-report.json"
             report = json.loads(report_path.read_text("utf-8"))
             for trial in report["trials"]:
-                trial["verifier"]["reward"] = "known:0(verifier_reported)"
+                trial["verifier"]["reward"] = "known:0(native-trial-result)"
+                trial["classification"] = {"class": "graded-native", "reward": 0,
+                                           "agent_failed": True,
+                                           "timed_out": False}
             write_json(report_path, report)
             for trial_id in (f"{cfg}-opi", f"{cfg}-pi"):
                 root = self.stage / "07-trials" / cfg / "trials" / trial_id
                 receipt = json.loads((root / "receipt.json").read_text("utf-8"))
-                receipt["verifier"]["reward"] = "known:0(verifier_reported)"
+                receipt["verifier"]["reward"] = "known:0(native-trial-result)"
+                receipt["classification"] = {"class": "graded-native",
+                                             "reward": 0,
+                                             "agent_failed": True,
+                                             "timed_out": False}
                 write_json(root / "receipt.json", receipt)
         sealed = seal(self.stage, self.tmp)
         zip_path, upload = package_zip(sealed["tar"], dict(sealed["upload"]))
@@ -581,14 +586,33 @@ class ArtifactVerifier(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("conformance", result.stderr)
 
-    def test_missing_oracle_preflight_rejects(self) -> None:
-        (self.stage / "06-material" / "oracle" / "runs" / "terminal-bench-3.0" /
-         "preflight" / "terminal-bench-3.0" / "preflight-receipt.json").unlink()
+    def test_missing_witness_rejects(self) -> None:
+        (self.stage / "06-material" / "conformance" / "reports" /
+         "benchmark-terminal-bench-2.1-oracle-witness" / "report.json").unlink()
         sealed = seal(self.stage, self.tmp)
         zip_path, upload = package_zip(sealed["tar"], dict(sealed["upload"]))
         result = self.verify(artifact=zip_path)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("oracle", result.stderr)
+        self.assertIn("witness", result.stderr)
+
+    def test_unbound_agent_identity_rejects(self) -> None:
+        # An oracle-attributed job must not seal as a selected-Agent
+        # score even when every other field looks healthy (P19-AC-002).
+        root = self.stage / "07-trials" / "terminal-bench-2.1" / "trials" / "terminal-bench-2.1-opi"
+        receipt = json.loads((root / "receipt.json").read_text("utf-8"))
+        receipt["agent"]["name"] = "oracle"
+        write_json(root / "receipt.json", receipt)
+        report_path = self.stage / "07-trials" / "terminal-bench-2.1" / "run-report.json"
+        report = json.loads(report_path.read_text("utf-8"))
+        report["trials"] = [
+            {**t, "agent": dict(t["agent"], name="oracle")}
+            if t["id"] == "terminal-bench-2.1-opi" else t for t in report["trials"]]
+        write_json(report_path, report)
+        sealed = seal(self.stage, self.tmp)
+        zip_path, upload = package_zip(sealed["tar"], dict(sealed["upload"]))
+        result = self.verify(artifact=zip_path)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("bound agent", result.stderr)
 
     def test_bound_script_drift_rejects(self) -> None:
         dispatch = json.loads(

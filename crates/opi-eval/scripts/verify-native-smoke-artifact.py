@@ -17,11 +17,12 @@ done requires before any acceptance criterion may close:
 - the sealed content (full sorted-manifest recomputation over the
   extracted stage tree, canary-oracle negative preflight, oracle
   preflights passing per task, twelve rerun conformance cases, six
-  paired sealed trials with completed agents and verified native
-  verifiers, native agent evidence, and one comparable cross-agent
+  paired sealed trials with bound selected-Agent identities
+  (verified-native bindings, graded-native classifications, native agent
+  evidence), and one comparable cross-agent
   comparison edge per task under conformance-only labeling).
 
-Reward zero is accepted as an integration result and never as agent
+Reward zero is accepted as a graded agent outcome and never as agent
 task success. Any mismatch, drift, missing trial, expired artifact, or
 positive canary rejects with a nonzero exit.
 
@@ -45,7 +46,6 @@ UPLOAD_SCHEMA = "opi-eval-upload-identity-receipt/1"
 OUTER_SCHEMA = "opi-eval-native-outer-receipt/1"
 MANIFEST_SCHEMA = "opi-eval-native-artifact-manifest/1"
 RUN_REPORT_SCHEMA = "opi-eval-run-report/1"
-PREFLIGHT_SCHEMA = "opi-eval-oracle-preflight/1"
 PROVIDER_LOG_SCHEMA = "opi-eval-scripted-provider-log/1"
 WORKFLOW_PATH = ".github/workflows/opi-eval-native-smoke.yml"
 
@@ -53,13 +53,25 @@ CRITERIA = ("EVAL-A02", "EVAL-A03", "EVAL-A04", "EVAL-A08", "EVAL-A09",
             "EVAL-A10", "EVAL-A12")
 
 BENCHMARKS = ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1")
+# Native scoring currently runs Terminal-Bench 2.1 only: the TB3 and
+# DeepSWE handoffs are explicitly unavailable until their declared
+# delivery lands (a selected-Agent job must not emit Agent scores
+# through any residual path).
+TRIAL_CONFIGS = {"terminal-bench-2.1": "terminal-bench-2.1"}
 CONFIG_FOR = {"terminal-bench-2.1": "terminal-bench-2.1",
               "terminal-bench-3.0": "terminal-bench-3.0",
               "deepswe-v1.1": "deepswe-v1.1"}
 # The admitted native rerun matrix: four agent cases (completed and
-# identity for both products) plus three benchmark cases (completed,
-# identity, immutable-capture) for each of the three revisions.
-CONFORMANCE_CASES = 13
+# identity for both products) plus the two explicitly selected TB2.1
+# artifact witnesses (oracle applies the reference solution, nop
+# delivers nothing).
+CONFORMANCE_CASES = 6
+# The selected integration agent name each product's trials must carry.
+AGENT_NAME_FOR = {"opi": "opi-eval-opi", "pi": "opi-eval-pi"}
+WITNESS_CASES = {
+    "benchmark-terminal-bench-2.1-oracle-witness": ("oracle", 1),
+    "benchmark-terminal-bench-2.1-nop-witness": ("nop", 0),
+}
 
 IMMUTABLE_ACTIONS = {
     "actions/checkout": "11bd71901bbe5b1630ceea73d27597364c9af683",
@@ -341,7 +353,7 @@ def verify_dispatch(outer: dict, expected_commit: str, repo: Path,
 
 def load_run_reports(stage: Path, f: Findings) -> list[dict]:
     reports = []
-    for cfg in sorted(CONFIG_FOR.values()):
+    for cfg in sorted(TRIAL_CONFIGS.values()):
         report = load_json(stage / "07-trials" / cfg / "run-report.json",
                            f, "trial")
         if report is None:
@@ -356,9 +368,9 @@ def load_run_reports(stage: Path, f: Findings) -> list[dict]:
 def verify_shared(stage: Path, outer: dict, f: Findings) -> list[dict]:
     """Bindings every criterion requires; returns the run reports."""
     reports = load_run_reports(stage, f)
-    if len(reports) != len(BENCHMARKS):
+    if len(reports) != len(TRIAL_CONFIGS):
         f.reject("trial", "the artifact does not carry one run report per "
-                          "admitted benchmark")
+                          "natively scored benchmark revision")
     trials_total = 0
     for entry in reports:
         report = entry["report"]
@@ -378,17 +390,41 @@ def verify_shared(stage: Path, outer: dict, f: Findings) -> list[dict]:
         for trial in trials:
             agent = trial.get("agent", {})
             verifier = trial.get("verifier", {})
+            product = agent.get("product")
             if trial.get("status") != "sealed":
                 f.reject("trial", f"{trial.get('id')}: trial is not sealed")
-            if agent.get("completion") != "completed":
-                f.reject("trial", f"{trial.get('id')}: agent did not complete")
-            if verifier.get("completion") != "verified":
+            if trial.get("mode") != "native":
+                f.reject("trial", f"{trial.get('id')}: trial is not a native "
+                                  f"selected-Agent trial")
+            # The bound identity: the trial reports the selected
+            # integration's agent name, and the verifier bound the same
+            # agent, task, and job (P19-AC-002).
+            expected_name = AGENT_NAME_FOR.get(product)
+            binding = verifier.get("binding") or {}
+            if agent.get("name") != expected_name:
+                f.reject("trial", f"{trial.get('id')}: bound agent is "
+                                  f"{agent.get('name')!r}, expected "
+                                  f"{expected_name!r}")
+            if binding.get("agent") != expected_name:
+                f.reject("verifier", f"{trial.get('id')}: the verified-native "
+                                     f"binding does not attribute the job to "
+                                     f"{expected_name!r}")
+            if verifier.get("completion") != "verified-native":
                 f.reject("verifier", f"{trial.get('id')}: native verifier did "
-                                     f"not complete ({verifier.get('completion')!r})")
+                                     f"not bind ({verifier.get('completion')!r})")
             reward = verifier.get("reward")
             if not (isinstance(reward, str) and reward.startswith("known:")):
                 f.reject("verifier", f"{trial.get('id')}: reward is not a "
                                      f"known integration result: {reward!r}")
+            classification = trial.get("classification") or {}
+            if classification.get("class") != "graded-native":
+                f.reject("verifier", f"{trial.get('id')}: trial classification "
+                                     f"is {classification.get('class')!r}, not "
+                                     f"a graded native outcome")
+            observed = classification.get("reward")
+            if observed not in (0, 1):
+                f.reject("verifier", f"{trial.get('id')}: the sealed "
+                                     f"classification reward is {observed!r}")
             # The pre-seal lifecycle binding: the receipt carries the
             # typed trajectory's pre-seal digest and the seal result
             # must bind the same bundle identity the receipt claims.
@@ -409,9 +445,9 @@ def verify_shared(stage: Path, outer: dict, f: Findings) -> list[dict]:
             if pair.get("comparability") != "comparable":
                 f.reject("comparison",
                          f"{entry['cfg']}: comparison edge is not comparable")
-    if trials_total != 6:
-        f.reject("trial", f"expected exactly six paired trials, found "
-                          f"{trials_total}")
+    if trials_total != 2 * len(TRIAL_CONFIGS):
+        f.reject("trial", f"expected exactly {2 * len(TRIAL_CONFIGS)} paired "
+                          f"trials, found {trials_total}")
     return reports
 
 
@@ -481,21 +517,24 @@ def verify_conformance_rerun(stage: Path, f: Findings) -> None:
             f.reject("conformance", f"rerun case did not pass: {path.parent.name}")
 
 
-def verify_oracle_preflights(stage: Path, f: Findings) -> None:
-    for bench, cfg in sorted(CONFIG_FOR.items()):
-        receipt_path = (stage / "06-material" / "oracle" / "runs" / cfg /
-                        "preflight" / bench / "preflight-receipt.json")
-        receipt = load_json(receipt_path, f, "oracle")
-        if receipt is None:
+def verify_witnesses(stage: Path, f: Findings) -> None:
+    """The explicitly selected TB2.1 artifact witnesses (P19-AC-003).
+
+    The oracle applies the official reference solution and must grade
+    one; the nop agent delivers nothing and must grade zero. Both pass
+    through the same production job handoff and binding; neither is an
+    Agent score.
+    """
+    conformance = stage / "06-material" / "conformance" / "reports"
+    for name, (agent, reward) in WITNESS_CASES.items():
+        report = load_json(conformance / name / "report.json", f, "witness")
+        if report is None:
             continue
-        if receipt.get("schema") != PREFLIGHT_SCHEMA:
-            f.reject("oracle", f"{bench}: unknown preflight schema")
-        if receipt.get("outcome") != "passed":
-            f.reject("oracle", f"{bench}: upstream oracle preflight did not "
-                               f"pass ({receipt.get('outcome')!r})")
-        if not is_hex64(receipt.get("oracle_executable_sha256")):
-            f.reject("oracle", f"{bench}: preflight does not bind the oracle "
-                               f"executable digest")
+        if report.get("met") is not True:
+            f.reject("witness", f"{name}: witness case did not pass")
+        if report.get("outcome") != "verified-native":
+            f.reject("witness", f"{name}: witness outcome is "
+                                f"{report.get('outcome')!r}, not verified-native")
 
 
 def verify_agent_evidence(stage: Path, reports: list[dict],
@@ -524,6 +563,9 @@ def verify_material(stage: Path, f: Findings) -> dict | None:
                          f, "material")
     if material is None:
         return None
+    if material.get("schema") != "opi-eval-native-material/2":
+        f.reject("material", "the material is not the admitted schema "
+                             f"{material.get('schema')!r}")
     agents = material.get("agents")
     if not isinstance(agents, dict) or sorted(agents) != ["opi", "pi"]:
         f.reject("material", "the material does not declare exactly opi and pi")
@@ -534,6 +576,17 @@ def verify_material(stage: Path, f: Findings) -> dict | None:
         f.reject("material", "both agents share one executable identity")
     if agents["opi"].get("model") == agents["pi"].get("model"):
         f.reject("material", "both agents share one model identity")
+    for product, agent in agents.items():
+        integration = agent.get("integration") or {}
+        if integration.get("agent_name") != AGENT_NAME_FOR.get(product):
+            f.reject("material", f"{product}: integration does not pin the "
+                                 f"selected agent name")
+        if ":" not in str(integration.get("import_path")):
+            f.reject("material", f"{product}: integration import path is "
+                                 f"not module:Class")
+        if not is_hex64(integration.get("module_manifest_sha256")):
+            f.reject("material", f"{product}: integration module manifest "
+                                 f"digest is missing")
     benchmarks = material.get("benchmarks")
     if not isinstance(benchmarks, dict) or sorted(benchmarks) != sorted(BENCHMARKS):
         f.reject("material", "the material does not declare the three "
@@ -604,7 +657,7 @@ def main() -> int:
         verify_provider(stage, f)
         verify_material(stage, f)
         verify_conformance_rerun(stage, f)
-        verify_oracle_preflights(stage, f)
+        verify_witnesses(stage, f)
 
     for item in selected:
         if not f.ok():
@@ -617,10 +670,10 @@ def main() -> int:
         if item == "EVAL-A03":
             verify_agent_evidence(
                 stage, reports, "opi",
-                ("native/evidence/manifest", "native/evidence/records"), f)
+                ("native/trial-result.json", "native/trial-config.json"), f)
         elif item == "EVAL-A04":
             verify_agent_evidence(
-                stage, reports, "pi", ("native/events/stdout",), f)
+                stage, reports, "pi", ("native/trial-result.json",), f)
         elif item in ("EVAL-A08", "EVAL-A09", "EVAL-A10"):
             # The native grader authority for each benchmark: covered by
             # the shared sealed-trial verifier bindings plus the passing

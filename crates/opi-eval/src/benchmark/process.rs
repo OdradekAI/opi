@@ -36,9 +36,10 @@ pub(crate) struct BenchmarkIdentity {
 }
 
 /// One frozen verification request: the exact resolved verifier executable,
-/// the materialized task package, the sealed Agent output, the admitted
-/// external lock digest, and the immutable integrity admission. Limits come
-/// from the adapter's declarative profile.
+/// the materialized task package, the admitted external lock digest, the
+/// immutable integrity admission, and - in native mode - the explicitly
+/// selected Agent integration the dispatched job must run and bind to.
+/// Limits come from the adapter's declarative profile.
 #[derive(Debug, Clone)]
 pub(crate) struct BenchmarkRunRequest {
     /// Resolved verifier entry executable (argv[0]; e.g. the pinned `uv`
@@ -48,12 +49,10 @@ pub(crate) struct BenchmarkRunRequest {
     pub task_dir: PathBuf,
     /// Task id inside the admitted revision.
     pub task_id: String,
-    /// Sealed final Agent output the verifier grades.
-    #[expect(
-        dead_code,
-        reason = "benchmark request retains the sealed Agent-output identity required by the contract"
-    )]
-    pub agent_output: PathBuf,
+    /// The explicitly selected native integration: when present, the
+    /// spawned upstream job runs this Agent inside the graded task
+    /// environment and the settled result must bind to it (P19-D01).
+    pub native_selection: Option<NativeSelection>,
     /// Fresh capture root for native verifier outputs.
     pub trace_root: PathBuf,
     /// Digest of the admitted resolved external lock.
@@ -81,194 +80,524 @@ pub(crate) struct NativeMetrics {
     pub other: Option<Fact>,
 }
 
-/// Typed rejections of the harbor `jobs/<timestamp>/result.json` layout
-/// (`harbor run -p`, the native smoke pin): the newest job directory is the
-/// authority and the single trial's verifier rewards are the aggregate.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum HarborResultError {
-    /// No `jobs/*/result.json` exists under the trace root.
-    Missing,
-    /// The file exists but is not the pinned schema; the token names the
-    /// drift precisely (read, parse, trial list, reward chain, values).
-    Invalid(&'static str),
+/// The explicitly selected native integration identity one dispatched
+/// upstream job must bind to, plus the per-dispatch staleness defense
+/// (P19-D01, P19-AC-002). Carried on [`BenchmarkRunRequest`] whenever the
+/// spawned job must run a selected Agent inside the graded task
+/// environment; hermetic requests carry `None`.
+#[derive(Debug, Clone)]
+pub(crate) struct NativeSelection {
+    /// Agent name the selected integration reports in the trial's
+    /// `agent_info.name` (the integration's `name()`); `oracle` or any
+    /// other name is a typed rejection even on job exit 0.
+    pub(crate) agent_name: String,
+    /// Import path selected on the upstream argv (`module:ClassName`) and
+    /// recorded in the trial config's agent selection.
+    pub(crate) agent_import_path: String,
+    /// The admitted task name every bound trial must report
+    /// (`task_name`).
+    pub(crate) task_name: String,
+    /// Model identity passed to the upstream job and reported in
+    /// `agent_info.model_info.name`.
+    pub(crate) model: String,
+    /// Reward metric name the bound trial's verifier result must carry
+    /// (Terminal-Bench: `reward`).
+    pub(crate) reward_metric: String,
+    /// Directory holding the pinned integration module; prepended to the
+    /// spawned job's `PYTHONPATH` so the import path resolves.
+    pub(crate) module_dir: PathBuf,
+    /// Host-side integration handoff file path, exported to the job as
+    /// `OPI_EVAL_NATIVE_HANDOFF` (never inside the task environment and
+    /// never sealed: it carries the projected credential material).
+    pub(crate) handoff_path: PathBuf,
+    /// Job directory names that already existed under the trace root
+    /// before this dispatch; the imported job must be a new one.
+    pub(crate) stale_job_names: Vec<OsString>,
 }
 
-/// Locates the newest `jobs/<timestamp>/result.json` under `trace_root`.
-fn newest_job_result(trace_root: &std::path::Path) -> Option<PathBuf> {
-    let jobs = trace_root.join("jobs");
-    let entries = std::fs::read_dir(&jobs).ok()?;
-    let mut newest: Option<(std::path::PathBuf, std::ffi::OsString)> = None;
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        if entry.path().join("result.json").is_file()
-            && newest.as_ref().is_none_or(|(_, best)| name > *best)
-        {
-            newest = Some((entry.path().join("result.json"), name));
+/// One file the selected Agent delivered inside the task environment, as
+/// observed by the integration after the Agent phase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DeliveredFile {
+    /// Absolute source path inside the task environment.
+    pub(crate) source: String,
+    /// sha256 of the observed bytes.
+    pub(crate) sha256: String,
+}
+
+/// The typed native Agent terminal observation the pinned integration
+/// records next to its Agent logs (host side, never inside the task
+/// environment). This is the integration's own contract, so it parses
+/// deterministically.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NativeTerminalObservation {
+    /// Selected Agent product (`opi` or `pi`).
+    pub(crate) product: String,
+    /// sha256 of the exact Agent executable the integration executed.
+    pub(crate) agent_executable_sha256: String,
+    /// Observed Agent process exit code.
+    pub(crate) exit_code: i64,
+    /// Whether the Agent phase hit the task's Agent timeout.
+    pub(crate) timed_out: bool,
+    /// Files the Agent delivered, with observed digests.
+    pub(crate) delivered: Vec<DeliveredFile>,
+}
+
+/// The bound identity of one imported native job: everything the sealed
+/// evidence needs to attribute the native grade to the selected Agent's
+/// same-trial work (P19-AC-002).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NativeTrialBinding {
+    /// The new `jobs/<name>` directory the dispatch produced.
+    pub(crate) job_name: OsString,
+    /// Trial name inside the job (`trials/<trial>`).
+    pub(crate) trial_name: String,
+    /// Actual Agent name reported by the trial (`agent_info.name`).
+    pub(crate) agent_name: String,
+    /// Agent version reported by the trial.
+    pub(crate) agent_version: String,
+    /// Model name reported by the trial, when present.
+    pub(crate) model_name: Option<String>,
+    /// Task name reported by the trial.
+    pub(crate) task_name: String,
+    /// The bound native reward for this exact trial.
+    pub(crate) reward: Fact,
+    /// Exception type the trial recorded, when present (typed terminal
+    /// classification input; e.g. `NonZeroAgentExitCodeError`,
+    /// `AgentTimeoutError`, `ApiError`).
+    pub(crate) exception_type: Option<String>,
+    /// The integration's terminal observation.
+    pub(crate) terminal: NativeTerminalObservation,
+    /// Per-trial `results.json` path (evidence reference).
+    pub(crate) results_path: PathBuf,
+    /// Per-trial `config.json` path (evidence reference).
+    pub(crate) config_path: PathBuf,
+    /// Collected-artifacts manifest path, when the trial collected any.
+    pub(crate) manifest_path: Option<PathBuf>,
+}
+
+/// Typed rejections of an imported native job (P19-AC-002: every
+/// substitution is rejected even when the job process exited 0).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum NativeBindingError {
+    /// No new job directory exists under the trace root.
+    NoNewJob,
+    /// More than one new job directory exists; the dispatch must own
+    /// exactly one.
+    MultipleNewJobs { count: usize },
+    /// The job-level `result.json` aggregate is missing or unreadable.
+    AggregateUnreadable,
+    /// The aggregate drifted from the pinned one-trial shape; the token
+    /// names the drift (json-parse, trial-count, eval-count,
+    /// no-reward-stats, reward-count, reward-trials, bad-reward-values,
+    /// agent-component).
+    AggregateInvalid(&'static str),
+    /// No `trials/<name>/results.json` exists in the new job.
+    TrialResultMissing,
+    /// The per-trial result drifted; the token names the drift
+    /// (json-parse, agent-info, agent-name, task-name, verifier-rewards,
+    /// terminal-observation).
+    TrialInvalid(&'static str),
+    /// The trial's reported Agent is not the selected integration.
+    AgentNameMismatch { expected: String, observed: String },
+    /// The trial config records no Agent selection at all.
+    AgentSelectionMissing,
+    /// The trial config's Agent selection is not the selected integration
+    /// import path.
+    AgentSelectionMismatch { expected: String, observed: String },
+    /// The trial's task is not the admitted task.
+    TaskNameMismatch { expected: String, observed: String },
+    /// The trial result carries no verifier reward for the expected
+    /// metric (errored or unverified trial).
+    RewardMissing,
+    /// The reward value left the admitted zero-or-one integral domain.
+    RewardInvalid(&'static str),
+    /// The aggregate does not attribute its reward to the bound trial.
+    AggregateRewardMismatch,
+    /// A delivered file was not collected into the trial artifacts.
+    DeliveredArtifactMissing { source: String },
+    /// A collected artifact's bytes differ from the delivered observation.
+    DeliveredArtifactSubstituted { source: String },
+}
+
+impl NativeBindingError {
+    /// Static redacted diagnostic token (receipts and stderr never echo
+    /// job-tree bytes).
+    pub(crate) fn token(&self) -> &'static str {
+        match self {
+            NativeBindingError::NoNewJob => "native-binding-no-new-job",
+            NativeBindingError::MultipleNewJobs { .. } => "native-binding-multiple-new-jobs",
+            NativeBindingError::AggregateUnreadable => "native-binding-aggregate-unreadable",
+            NativeBindingError::AggregateInvalid(_) => "native-binding-aggregate-invalid",
+            NativeBindingError::TrialResultMissing => "native-binding-trial-result-missing",
+            NativeBindingError::TrialInvalid(_) => "native-binding-trial-invalid",
+            NativeBindingError::AgentNameMismatch { .. } => "native-binding-agent-mismatch",
+            NativeBindingError::AgentSelectionMissing => "native-binding-agent-selection-missing",
+            NativeBindingError::AgentSelectionMismatch { .. } => {
+                "native-binding-agent-selection-mismatch"
+            }
+            NativeBindingError::TaskNameMismatch { .. } => "native-binding-task-mismatch",
+            NativeBindingError::RewardMissing => "native-binding-reward-missing",
+            NativeBindingError::RewardInvalid(_) => "native-binding-reward-invalid",
+            NativeBindingError::AggregateRewardMismatch => {
+                "native-binding-aggregate-reward-mismatch"
+            }
+            NativeBindingError::DeliveredArtifactMissing { .. } => {
+                "native-binding-delivered-artifact-missing"
+            }
+            NativeBindingError::DeliveredArtifactSubstituted { .. } => {
+                "native-binding-delivered-artifact-substituted"
+            }
         }
     }
-    newest.map(|(path, _)| path)
 }
 
-/// Locates the newest `jobs/<timestamp>/result.json` under `trace_root`
-/// and derives the aggregate metrics from the single trial's verifier
-/// rewards. Per-test counters stay typed unknowns: the harbor result
-/// exposes only the reward aggregate, and nothing is inferred beyond it.
-pub(crate) fn import_harbor_result(
-    trace_root: &std::path::Path,
-) -> Result<(NativeMetrics, Fact, PathBuf, serde_json::Value), HarborResultError> {
-    let path = newest_job_result(trace_root).ok_or(HarborResultError::Missing)?;
-    let bytes = std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
-    let value: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|_| HarborResultError::Invalid("json-parse"))?;
-    // Harbor's completion path writes the job-level result with the
-    // trial list excluded (per-trial results live in the trial
-    // directories); the aggregate authority here is
-    // stats.evals.<eval>.reward_stats, a map from reward value to the
-    // trial names that earned it. One job, one eval, one trial: any
-    // broader shape is drift and fails closed.
-    if value.get("n_total_trials").and_then(|n| n.as_u64()) != Some(1) {
-        return Err(HarborResultError::Invalid("trial-count"));
+impl std::fmt::Display for NativeBindingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "native result binding rejected: {}", self.token())
     }
-    let evals = value
+}
+
+impl std::error::Error for NativeBindingError {}
+
+/// The one new `jobs/<name>` directory this dispatch produced: every
+/// job directory holding a `result.json` that was not in the pre-dispatch
+/// set, and exactly one of them.
+fn new_job_dir(
+    trace_root: &std::path::Path,
+    stale: &[OsString],
+) -> Result<(OsString, PathBuf), NativeBindingError> {
+    let jobs = trace_root.join("jobs");
+    let mut fresh: Vec<(OsString, PathBuf)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&jobs) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            if !entry.path().join("result.json").is_file() {
+                continue;
+            }
+            if stale.contains(&name) {
+                continue;
+            }
+            fresh.push((name.clone(), entry.path()));
+        }
+    }
+    match fresh.len() {
+        0 => Err(NativeBindingError::NoNewJob),
+        1 => Ok(fresh.remove(0)),
+        count => Err(NativeBindingError::MultipleNewJobs { count }),
+    }
+}
+
+/// Imports and binds one dispatched native job against `selection`
+/// (P19-AC-002). The authority chain: the job aggregate proves the
+/// one-trial shape; the per-trial `results.json` proves the actual Agent,
+/// task, and native reward of that exact trial; the trial `config.json`
+/// proves the explicit Agent selection; the integration's terminal
+/// observation proves the delivered artifacts; the collected-artifacts
+/// manifest cross-checks the delivered bytes. Any drift is a typed
+/// rejection, never a silent score.
+pub(crate) fn import_bound_native_job(
+    trace_root: &std::path::Path,
+    selection: &NativeSelection,
+) -> Result<NativeTrialBinding, NativeBindingError> {
+    let (job_name, job_dir) = new_job_dir(trace_root, &selection.stale_job_names)?;
+
+    // Job aggregate: the pinned one-trial shape, attributing its single
+    // reward to the bound trial name.
+    let aggregate_path = job_dir.join("result.json");
+    let aggregate: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&aggregate_path).map_err(|_| NativeBindingError::AggregateUnreadable)?,
+    )
+    .map_err(|_| NativeBindingError::AggregateInvalid("json-parse"))?;
+    if aggregate.get("n_total_trials").and_then(|n| n.as_u64()) != Some(1) {
+        return Err(NativeBindingError::AggregateInvalid("trial-count"));
+    }
+    let evals = aggregate
         .get("stats")
         .and_then(|s| s.get("evals"))
         .and_then(|e| e.as_object())
-        .ok_or(HarborResultError::Invalid("no-eval-stats"))?;
+        .ok_or(NativeBindingError::AggregateInvalid("no-eval-stats"))?;
     if evals.len() != 1 {
-        return Err(HarborResultError::Invalid("eval-count"));
+        return Err(NativeBindingError::AggregateInvalid("eval-count"));
     }
+    let eval_key = evals.keys().next().expect("len checked").to_owned();
     let reward_stats = evals
         .values()
         .next()
-        .and_then(|stats| stats.get("reward_stats"))
+        .expect("len checked")
+        .get("reward_stats")
         .and_then(|r| r.as_object())
-        .ok_or(HarborResultError::Invalid("no-reward-stats"))?;
+        .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
     if reward_stats.len() != 1 {
-        return Err(HarborResultError::Invalid("reward-count"));
+        return Err(NativeBindingError::AggregateInvalid("reward-count"));
     }
-    // reward_stats nests twice: metric name -> { reward value -> trial
-    // names }. One metric, one value, one trial; anything else is drift.
     let (_metric, by_value) = reward_stats.iter().next().expect("len checked");
     let by_value = by_value
         .as_object()
-        .ok_or(HarborResultError::Invalid("reward-values"))?;
+        .ok_or(NativeBindingError::AggregateInvalid("reward-values"))?;
     if by_value.len() != 1 {
-        return Err(HarborResultError::Invalid("reward-count"));
+        return Err(NativeBindingError::AggregateInvalid("reward-count"));
     }
-    let (reward_key, trial_names) = by_value.iter().next().expect("len checked");
-    let trial_names = trial_names
-        .as_array()
-        .ok_or(HarborResultError::Invalid("reward-trials"))?;
-    if trial_names.len() != 1 {
-        return Err(HarborResultError::Invalid("reward-trials"));
-    }
-    let reward: f64 = reward_key
+    let (aggregate_reward_key, trial_names) = by_value.iter().next().expect("len checked");
+    let aggregate_reward: f64 = aggregate_reward_key
         .parse()
-        .map_err(|_| HarborResultError::Invalid("bad-reward-values"))?;
-    if !reward.is_finite() {
-        return Err(HarborResultError::Invalid("bad-reward-values"));
+        .map_err(|_| NativeBindingError::AggregateInvalid("bad-reward-values"))?;
+    if !aggregate_reward.is_finite()
+        || aggregate_reward.fract() != 0.0
+        || !(0.0..=1.0).contains(&aggregate_reward)
+    {
+        return Err(NativeBindingError::AggregateInvalid("bad-reward-values"));
     }
-    // The aggregate convention: the single `reward` metric is the
-    // verifier-reported integration reward, a zero-or-one value. That
-    // is the only counter the aggregate can honestly carry; the rest
-    // stay unknown.
-    if reward.fract() != 0.0 || !(0.0..=1.0).contains(&reward) {
-        return Err(HarborResultError::Invalid("bad-reward-values"));
-    }
-    let reward_fact = Fact::Known {
-        value: reward as u64,
-        origin: "harbor-result".to_owned(),
-    };
-    let metrics = NativeMetrics {
-        tests: None,
-        passed: Some(Fact::Known {
-            value: reward as u64,
-            origin: "harbor-reward".to_owned(),
-        }),
-        failed: None,
-        skipped: None,
-        pending: None,
-        other: None,
-    };
-    Ok((metrics, reward_fact, path, value))
-}
 
-/// Locates the newest `jobs/<timestamp>/result.json` under `trace_root`
-/// and validates it as Pier's job-result aggregate (`pier run -p`, native-smoke
-/// pin). Unlike the Terminal-Bench aggregate, a DeepSWE job scores
-/// multiple verifier metrics per trial (F2P, P2P, partial, ...), so the
-/// structural contract is validated - one trial, at least one eval,
-/// every metric awarding exactly one reward to exactly that one trial -
-/// while no metric is translated into a test counter; callers keep the
-/// reward semantics unknown instead of guessing an aggregate.
-pub(crate) fn import_pier_job_result(
-    trace_root: &std::path::Path,
-) -> Result<(PathBuf, Fact, serde_json::Value), HarborResultError> {
-    let path = newest_job_result(trace_root).ok_or(HarborResultError::Missing)?;
-    let bytes = std::fs::read(&path).map_err(|_| HarborResultError::Invalid("read"))?;
-    let value: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|_| HarborResultError::Invalid("json-parse"))?;
-    if value.get("n_total_trials").and_then(|n| n.as_u64()) != Some(1) {
-        return Err(HarborResultError::Invalid("trial-count"));
+    // The single per-trial result: the authoritative native identity.
+    let trials_dir = job_dir.join("trials");
+    let mut trial_dirs: Vec<PathBuf> = std::fs::read_dir(&trials_dir)
+        .map_err(|_| NativeBindingError::TrialResultMissing)?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.join("results.json").is_file())
+        .collect();
+    trial_dirs.sort();
+    let trial_dir = trial_dirs
+        .first()
+        .filter(|_| trial_dirs.len() == 1)
+        .cloned()
+        .ok_or(NativeBindingError::TrialResultMissing)?;
+    let results_path = trial_dir.join("results.json");
+    let results: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&results_path).map_err(|_| NativeBindingError::TrialResultMissing)?,
+    )
+    .map_err(|_| NativeBindingError::TrialInvalid("json-parse"))?;
+    let trial_name = results
+        .get("trial_name")
+        .and_then(|n| n.as_str())
+        .ok_or(NativeBindingError::TrialInvalid("trial-name"))?
+        .to_owned();
+    let agent_info = results
+        .get("agent_info")
+        .and_then(|a| a.as_object())
+        .ok_or(NativeBindingError::TrialInvalid("agent-info"))?;
+    let agent_name = agent_info
+        .get("name")
+        .and_then(|n| n.as_str())
+        .ok_or(NativeBindingError::TrialInvalid("agent-name"))?;
+    if agent_name != selection.agent_name {
+        return Err(NativeBindingError::AgentNameMismatch {
+            expected: selection.agent_name.clone(),
+            observed: agent_name.to_owned(),
+        });
     }
-    let evals = value
-        .get("stats")
-        .and_then(|s| s.get("evals"))
-        .and_then(|e| e.as_object())
-        .ok_or(HarborResultError::Invalid("no-eval-stats"))?;
-    if evals.is_empty() {
-        return Err(HarborResultError::Invalid("eval-count"));
+    // The eval key embeds the actual Agent name (`agent__model__dataset`
+    // or `agent__dataset` in the pinned runner): a job grouped under any
+    // other Agent - oracle included - is not this trial's score.
+    if eval_key.split("__").next().unwrap_or_default() != selection.agent_name {
+        return Err(NativeBindingError::AgentNameMismatch {
+            expected: selection.agent_name.clone(),
+            observed: eval_key,
+        });
     }
-    // The first eval's aggregate carries the authoritative `reward`
-    // metric (the verifier-reported zero-or-one integration reward);
-    // the remaining keys are score breakdowns the adapter never
-    // translates into test counters.
-    let mut reward_fact: Option<Fact> = None;
-    for stats in evals.values() {
-        let reward_stats = stats
-            .get("reward_stats")
-            .and_then(|r| r.as_object())
-            .ok_or(HarborResultError::Invalid("no-reward-stats"))?;
-        // reward_stats nests twice: metric name -> { reward value ->
-        // trial names }. Every metric awards exactly one finite reward
-        // to exactly the one trial; anything else is drift.
-        for (metric, by_value) in reward_stats {
-            let by_value = by_value
-                .as_object()
-                .ok_or(HarborResultError::Invalid("reward-values"))?;
-            if by_value.len() != 1 {
-                return Err(HarborResultError::Invalid("reward-count"));
+    let task_name = results
+        .get("task_name")
+        .and_then(|n| n.as_str())
+        .ok_or(NativeBindingError::TrialInvalid("task-name"))?;
+    if task_name != selection.task_name.as_str() {
+        return Err(NativeBindingError::TaskNameMismatch {
+            expected: selection.task_name.clone(),
+            observed: task_name.to_owned(),
+        });
+    }
+    let model_name = agent_info
+        .get("model_info")
+        .and_then(|m| m.get("name"))
+        .and_then(|n| n.as_str())
+        .map(str::to_owned);
+    let exception_type = results
+        .get("exception_info")
+        .and_then(|e| e.get("exception_type"))
+        .and_then(|t| t.as_str())
+        .map(str::to_owned);
+
+    // The trial config's explicit Agent selection: the import path this
+    // dispatch selected, never an implicit default or oracle.
+    let config_path = trial_dir.join("config.json");
+    let config: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&config_path).map_err(|_| NativeBindingError::TrialResultMissing)?,
+    )
+    .map_err(|_| NativeBindingError::TrialInvalid("json-parse"))?;
+    let agent_config = config.get("agent").and_then(|a| a.as_object());
+    let selected = agent_config.and_then(|a| {
+        a.get("import_path")
+            .and_then(|p| p.as_str())
+            .or_else(|| a.get("name").and_then(|n| n.as_str()))
+    });
+    match selected {
+        None => return Err(NativeBindingError::AgentSelectionMissing),
+        Some(observed) if observed == selection.agent_import_path => {}
+        Some(observed) => {
+            return Err(NativeBindingError::AgentSelectionMismatch {
+                expected: selection.agent_import_path.clone(),
+                observed: observed.to_owned(),
+            });
+        }
+    }
+
+    // The native reward of this exact trial.
+    let rewards = results
+        .get("verifier_result")
+        .and_then(|v| v.get("rewards"))
+        .and_then(|r| r.as_object())
+        .ok_or(NativeBindingError::RewardMissing)?;
+    let reward_value = rewards
+        .get(&selection.reward_metric)
+        .and_then(|v| v.as_f64())
+        .ok_or(NativeBindingError::RewardMissing)?;
+    if !reward_value.is_finite()
+        || reward_value.fract() != 0.0
+        || !(0.0..=1.0).contains(&reward_value)
+    {
+        return Err(NativeBindingError::RewardInvalid("bad-reward-values"));
+    }
+    if reward_value != aggregate_reward {
+        return Err(NativeBindingError::AggregateRewardMismatch);
+    }
+    // The aggregate must attribute its reward to exactly this trial.
+    let names = trial_names
+        .as_array()
+        .ok_or(NativeBindingError::AggregateInvalid("reward-trials"))?;
+    if names.len() != 1 || names[0].as_str() != Some(trial_name.as_str()) {
+        return Err(NativeBindingError::AggregateRewardMismatch);
+    }
+
+    // The integration's typed terminal observation.
+    let terminal_path = trial_dir.join("agent/opi-eval-terminal.json");
+    let terminal = parse_terminal_observation(
+        &std::fs::read(&terminal_path)
+            .map_err(|_| NativeBindingError::TrialInvalid("terminal-observation"))?,
+    )?;
+
+    // Collected artifacts: every delivered file the trial collected must
+    // still carry the bytes the integration observed in the task
+    // environment (P19-AC-002 substituted-artifact rejection).
+    let manifest_path = trial_dir.join("artifacts/manifest.json");
+    if manifest_path.is_file() {
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&manifest_path)
+                .map_err(|_| NativeBindingError::TrialInvalid("artifacts-manifest"))?,
+        )
+        .map_err(|_| NativeBindingError::TrialInvalid("artifacts-manifest"))?;
+        let empty: Vec<serde_json::Value> = Vec::new();
+        let entries = manifest.as_array().unwrap_or(&empty);
+        for delivered in &terminal.delivered {
+            let entry = entries.iter().find(|entry| {
+                entry.get("source").and_then(|s| s.as_str()) == Some(delivered.source.as_str())
+            });
+            let entry = entry.ok_or_else(|| NativeBindingError::DeliveredArtifactMissing {
+                source: delivered.source.clone(),
+            })?;
+            if entry.get("status").and_then(|s| s.as_str()) != Some("ok") {
+                return Err(NativeBindingError::DeliveredArtifactMissing {
+                    source: delivered.source.clone(),
+                });
             }
-            let (reward_key, trial_names) = by_value.iter().next().expect("len checked");
-            let trial_names = trial_names
-                .as_array()
-                .ok_or(HarborResultError::Invalid("reward-trials"))?;
-            if trial_names.len() != 1 {
-                return Err(HarborResultError::Invalid("reward-trials"));
-            }
-            let reward: f64 = reward_key
-                .parse()
-                .map_err(|_| HarborResultError::Invalid("bad-reward-values"))?;
-            if !reward.is_finite() {
-                return Err(HarborResultError::Invalid("bad-reward-values"));
-            }
-            if metric == "reward" {
-                // Only the authoritative aggregate reward lives in the
-                // zero-or-one domain. Native score breakdowns retain their
-                // benchmark-defined finite numeric values without being
-                // translated into shared counters.
-                if reward.fract() != 0.0 || !(0.0..=1.0).contains(&reward) {
-                    return Err(HarborResultError::Invalid("bad-reward-values"));
+            let destination = entry
+                .get("destination")
+                .and_then(|d| d.as_str())
+                .ok_or(NativeBindingError::TrialInvalid("artifacts-manifest"))?;
+            let collected = trial_dir.join(destination);
+            let bytes = std::fs::read(&collected).map_err(|_| {
+                NativeBindingError::DeliveredArtifactMissing {
+                    source: delivered.source.clone(),
                 }
-                reward_fact = Some(Fact::Known {
-                    value: reward as u64,
-                    origin: "pier-result".to_owned(),
+            })?;
+            if crate::runner::material::sha256_hex(&bytes) != delivered.sha256 {
+                return Err(NativeBindingError::DeliveredArtifactSubstituted {
+                    source: delivered.source.clone(),
                 });
             }
         }
+    } else if !terminal.delivered.is_empty() {
+        return Err(NativeBindingError::DeliveredArtifactMissing {
+            source: terminal.delivered[0].source.clone(),
+        });
     }
-    let reward_fact = reward_fact.ok_or(HarborResultError::Invalid("no-reward-key"))?;
-    Ok((path, reward_fact, value))
+
+    let agent_version = agent_info
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_owned();
+    Ok(NativeTrialBinding {
+        job_name,
+        trial_name,
+        agent_name: agent_name.to_owned(),
+        agent_version,
+        model_name,
+        task_name: task_name.to_owned(),
+        reward: Fact::Known {
+            value: reward_value as u64,
+            origin: "native-trial-result".to_owned(),
+        },
+        exception_type,
+        terminal,
+        results_path,
+        config_path,
+        manifest_path: manifest_path.is_file().then_some(manifest_path),
+    })
+}
+
+/// Parses the integration's typed terminal observation.
+fn parse_terminal_observation(
+    bytes: &[u8],
+) -> Result<NativeTerminalObservation, NativeBindingError> {
+    let value: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|_| NativeBindingError::TrialInvalid("terminal-observation"))?;
+    if value.get("schema").and_then(|s| s.as_str()) != Some("opi-eval-native-agent-terminal/1") {
+        return Err(NativeBindingError::TrialInvalid("terminal-observation"));
+    }
+    let product = value
+        .get("product")
+        .and_then(|p| p.as_str())
+        .ok_or(NativeBindingError::TrialInvalid("terminal-observation"))?
+        .to_owned();
+    let agent_executable_sha256 = value
+        .get("agent_executable_sha256")
+        .and_then(|p| p.as_str())
+        .ok_or(NativeBindingError::TrialInvalid("terminal-observation"))?
+        .to_owned();
+    let exit_code = value
+        .get("exit_code")
+        .and_then(|c| c.as_i64())
+        .ok_or(NativeBindingError::TrialInvalid("terminal-observation"))?;
+    let timed_out = value
+        .get("timed_out")
+        .and_then(|t| t.as_bool())
+        .unwrap_or(false);
+    let mut delivered = Vec::new();
+    for entry in value
+        .get("delivered")
+        .and_then(|d| d.as_array())
+        .unwrap_or(&Vec::new())
+    {
+        let source = entry
+            .get("source")
+            .and_then(|s| s.as_str())
+            .ok_or(NativeBindingError::TrialInvalid("terminal-observation"))?;
+        let sha256 = entry
+            .get("sha256")
+            .and_then(|s| s.as_str())
+            .ok_or(NativeBindingError::TrialInvalid("terminal-observation"))?;
+        delivered.push(DeliveredFile {
+            source: source.to_owned(),
+            sha256: sha256.to_owned(),
+        });
+    }
+    Ok(NativeTerminalObservation {
+        product,
+        agent_executable_sha256,
+        exit_code,
+        timed_out,
+        delivered,
+    })
 }
 
 /// Typed failure carried on a settled record. A failed verification run is
@@ -290,6 +619,17 @@ pub(crate) enum BenchmarkCompletion {
         /// Native summary counters with benchmark-defined names.
         metrics: NativeMetrics,
         /// Raw native outputs as content-addressed references.
+        artifacts: Vec<NativeArtifact>,
+    },
+    /// The dispatched upstream job ran the explicitly selected Agent
+    /// inside the graded task environment and its result was bound to
+    /// that exact trial (P19-D01): the reward is the bound native grade
+    /// of the selected Agent's same-trial work.
+    VerifiedNative {
+        /// The bound trial identity (agent, task, job, reward, delivered
+        /// artifacts).
+        binding: NativeTrialBinding,
+        /// Raw native job outputs as content-addressed references.
         artifacts: Vec<NativeArtifact>,
     },
     /// The run settled as a typed failure.
@@ -343,7 +683,9 @@ impl BenchmarkRecord {
     )]
     pub(crate) fn failure_boundary(&self) -> Option<FailureBoundaryCode> {
         match &self.completion {
-            BenchmarkCompletion::Verified { .. } => None,
+            BenchmarkCompletion::Verified { .. } | BenchmarkCompletion::VerifiedNative { .. } => {
+                None
+            }
             BenchmarkCompletion::Failed(failure) => Some(failure.boundary),
         }
     }
@@ -594,7 +936,7 @@ mod tests {
             verifier_executable: "/nonexistent/uv".into(),
             task_dir: "/nonexistent/task".into(),
             task_id: "helper-task".to_owned(),
-            agent_output: "/nonexistent/agent-output".into(),
+            native_selection: None,
             trace_root: std::env::temp_dir(),
             admitted_lock_digest: "a".repeat(64),
             integrity,
@@ -883,133 +1225,303 @@ mod tests {
     }
 }
 
-#[test]
-fn harbor_result_import_reads_the_completion_aggregate() {
-    let dir = tempfile::tempdir().unwrap();
-    let jobs = dir.path().join("jobs").join("2026-08-28__12-33-17");
-    std::fs::create_dir_all(&jobs).unwrap();
+/// Stages one complete bound native job tree under `root/jobs/<job>`
+/// and returns the selection the tree satisfies (test staging for the
+/// binding matrix).
+#[cfg(test)]
+fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> NativeSelection {
+    let trial = "fixture-task__bZZeEkw";
+    let trial_dir = root.join("jobs").join(job).join("trials").join(trial);
+    std::fs::create_dir_all(trial_dir.join("agent")).unwrap();
+    std::fs::create_dir_all(trial_dir.join("artifacts")).unwrap();
+    let answer = b"native stand-in answer\n";
+    let answer_digest = crate::runner::material::sha256_hex(answer);
+    // Job aggregate: one trial, eval key grouped under the agent name,
+    // the reward attributed to exactly the trial.
+    let aggregate = serde_json::json!({
+        "n_total_trials": 1,
+        "stats": {"evals": {format!("{agent_name}__adhoc"): {"reward_stats": {
+            "reward": {"1.0": [trial]}}}}},
+    });
     std::fs::write(
-        jobs.join("result.json"),
-        br#"{"id": "0b0a", "started_at": "2026-08-28T12:33:17Z",
-                "finished_at": "2026-08-28T12:33:50Z", "n_total_trials": 1,
-                "stats": {"evals": {"adhoc/terminal-bench-2-1/oracle": {
-                    "reward_stats": {"reward": {"1.0": ["openssl-selfsigned-cert"]}}}}}}"#,
+        root.join("jobs").join(job).join("result.json"),
+        serde_json::to_vec(&aggregate).unwrap(),
     )
     .unwrap();
-    let (metrics, reward, path, _value) = import_harbor_result(dir.path()).unwrap();
-    assert!(path.ends_with("result.json"));
+    // Per-trial result: the actual agent, task, and native reward.
+    let results = serde_json::json!({
+        "task_name": "fixture-task",
+        "trial_name": trial,
+        "agent_info": {"name": agent_name, "version": "1.0.0",
+            "model_info": {"name": "scripted/eval"}},
+        "verifier_result": {"rewards": {"reward": 1.0}},
+        "exception_info": null,
+    });
+    std::fs::write(
+        trial_dir.join("results.json"),
+        serde_json::to_vec(&results).unwrap(),
+    )
+    .unwrap();
+    // Explicit agent selection in the trial config.
+    let config = serde_json::json!({
+        "agent": {"name": "opi_eval_harbor:OpiAgent", "import_path": null},
+    });
+    std::fs::write(
+        trial_dir.join("config.json"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+    // The integration's typed terminal observation.
+    let terminal = serde_json::json!({
+        "schema": "opi-eval-native-agent-terminal/1",
+        "product": "opi",
+        "agent_executable_sha256": "a".repeat(64),
+        "exit_code": 0,
+        "timed_out": false,
+        "delivered": [{"source": "/root/answer.txt", "sha256": answer_digest}],
+    });
+    std::fs::write(
+        trial_dir.join("agent/opi-eval-terminal.json"),
+        serde_json::to_vec(&terminal).unwrap(),
+    )
+    .unwrap();
+    // Collected artifacts: the delivered file, byte-identical.
+    let manifest = serde_json::json!([
+        {"source": "/root/answer.txt", "destination": "artifacts/answer.txt",
+         "type": "file", "status": "ok", "service": null},
+    ]);
+    std::fs::write(
+        trial_dir.join("artifacts/manifest.json"),
+        serde_json::to_vec(&manifest).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(trial_dir.join("artifacts/answer.txt"), answer).unwrap();
+    NativeSelection {
+        agent_name: agent_name.to_owned(),
+        agent_import_path: "opi_eval_harbor:OpiAgent".to_owned(),
+        task_name: "fixture-task".to_owned(),
+        model: "scripted/eval".to_owned(),
+        reward_metric: "reward".to_owned(),
+        module_dir: "/nonexistent/integrations".into(),
+        handoff_path: "/nonexistent/handoff.json".into(),
+        stale_job_names: Vec::new(),
+    }
+}
+
+#[test]
+fn native_result_binding_admits_one_bound_job() {
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "2026-09-05__10-00-00", "opi-eval-opi");
+    let binding = import_bound_native_job(dir.path(), &selection).unwrap();
+    assert_eq!(binding.agent_name, "opi-eval-opi");
+    assert_eq!(binding.task_name, "fixture-task");
+    assert_eq!(binding.trial_name, "fixture-task__bZZeEkw");
     assert_eq!(
-        metrics.passed,
-        Some(Fact::Known {
-            value: 1,
-            origin: "harbor-reward".to_owned()
-        })
-    );
-    assert_eq!(
-        reward,
+        binding.reward,
         Fact::Known {
             value: 1,
-            origin: "harbor-result".to_owned()
+            origin: "native-trial-result".to_owned()
         }
     );
-    assert_eq!(metrics.tests, None);
+    assert_eq!(binding.terminal.exit_code, 0);
+    assert_eq!(binding.terminal.delivered.len(), 1);
+    assert_eq!(binding.model_name.as_deref(), Some("scripted/eval"));
+    assert!(binding.manifest_path.is_some());
+
+    // A pre-existing (stale) job is never the imported one: only the new
+    // job binds.
+    let stale = dir.path().join("jobs/2026-09-04__00-00-00");
+    std::fs::create_dir_all(stale.join("trials")).unwrap();
+    std::fs::write(
+        stale.join("result.json"),
+        br#"{"n_total_trials": 1, "stats": {"evals": {"oracle__adhoc": {"reward_stats": {"reward": {"1.0": ["x"]}}}}}}"#,
+    )
+    .unwrap();
+    let mut guarded = selection.clone();
+    guarded.stale_job_names = vec!["2026-09-04__00-00-00".into()];
+    let binding = import_bound_native_job(dir.path(), &guarded).unwrap();
+    assert_eq!(binding.job_name, "2026-09-05__10-00-00");
 }
 
 #[test]
-fn harbor_result_import_fails_closed_on_trial_count_drift() {
+fn native_result_binding_rejects_every_substitution() {
+    // Missing new job (only stale ones exist).
     let dir = tempfile::tempdir().unwrap();
-    let jobs = dir.path().join("jobs").join("2026-08-28__12-33-17");
-    std::fs::create_dir_all(&jobs).unwrap();
+    let selection = stage_bound_job(dir.path(), "2026-09-05__10-00-00", "opi-eval-opi");
+    let mut guarded = selection.clone();
+    guarded.stale_job_names = vec!["2026-09-05__10-00-00".into()];
+    assert_eq!(
+        import_bound_native_job(dir.path(), &guarded),
+        Err(NativeBindingError::NoNewJob)
+    );
+
+    // Oracle attribution: the trial ran under the oracle agent, so both
+    // the per-trial identity and the aggregate grouping reject it.
+    let dir = tempfile::tempdir().unwrap();
+    let mut oracle = stage_bound_job(dir.path(), "j1", "oracle");
+    oracle.agent_name = "opi-eval-opi".to_owned();
+    assert_eq!(
+        import_bound_native_job(dir.path(), &oracle),
+        Err(NativeBindingError::AgentNameMismatch {
+            expected: "opi-eval-opi".to_owned(),
+            observed: "oracle".to_owned(),
+        })
+    );
+    // Even when the per-trial identity is patched away, the aggregate is
+    // still grouped under the oracle agent: rejected.
+    let results = dir
+        .path()
+        .join("jobs/j1/trials/fixture-task__bZZeEkw/results.json");
     std::fs::write(
-        jobs.join("result.json"),
-        br#"{"n_total_trials": 2, "stats": {"evals": {}}}"#,
+        &results,
+        std::fs::read_to_string(&results)
+            .unwrap()
+            .replace("\"name\":\"oracle\"", "\"name\":\"opi-eval-opi\""),
     )
     .unwrap();
-    assert!(matches!(
-        import_harbor_result(dir.path()),
-        Err(HarborResultError::Invalid("trial-count"))
-    ));
-}
+    assert_eq!(
+        import_bound_native_job(dir.path(), &oracle),
+        Err(NativeBindingError::AgentNameMismatch {
+            expected: "opi-eval-opi".to_owned(),
+            observed: "oracle__adhoc".to_owned(),
+        })
+    );
 
-/// Writes one Pier `jobs/<timestamp>/result.json` aggregate whose `reward`
-/// metric awards `reward_key` to the single trial.
-#[cfg(test)]
-fn pier_job(dir: &std::path::Path, reward_key: &str) {
-    let jobs = dir.join("jobs").join("2026-08-29__07-25-13");
-    std::fs::create_dir_all(&jobs).unwrap();
+    // Wrong agent in the per-trial result.
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+    let results = dir
+        .path()
+        .join("jobs/j1/trials/fixture-task__bZZeEkw/results.json");
     std::fs::write(
-        jobs.join("result.json"),
-        format!(
-            r#"{{"n_total_trials": 1, "stats": {{"evals": {{"x": {{"reward_stats": {{"reward": {{"{reward_key}": ["t"]}}}}}}}}}}}}"#
+        &results,
+        std::fs::read_to_string(&results)
+            .unwrap()
+            .replace("\"name\":\"opi-eval-opi\"", "\"name\":\"opi-eval-pi\""),
+    )
+    .unwrap();
+    assert_eq!(
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::AgentNameMismatch {
+            expected: "opi-eval-opi".to_owned(),
+            observed: "opi-eval-pi".to_owned(),
+        })
+    );
+
+    // Substituted task.
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+    let results = dir
+        .path()
+        .join("jobs/j1/trials/fixture-task__bZZeEkw/results.json");
+    std::fs::write(
+        &results,
+        std::fs::read_to_string(&results).unwrap().replace(
+            "\"task_name\":\"fixture-task\"",
+            "\"task_name\":\"other-task\"",
         ),
     )
     .unwrap();
-}
-
-#[test]
-fn pier_job_import_enforces_the_native_reward_domain() {
-    // Out-of-domain rewards are drift, never clamped or cast: negative,
-    // above-one, and fractional values fail the import before any `u64`
-    // conversion could silently wrap them.
-    for bad in ["-1.0", "2.0", "1.5", "NaN"] {
-        let dir = tempfile::tempdir().unwrap();
-        pier_job(dir.path(), bad);
-        assert_eq!(
-            import_pier_job_result(dir.path()),
-            Err(HarborResultError::Invalid("bad-reward-values")),
-            "{bad}"
-        );
-    }
-    // Zero and one are valid measured native rewards: zero may grade a
-    // trial, it just cannot admit an oracle preflight.
-    for good in ["0.0", "1.0"] {
-        let dir = tempfile::tempdir().unwrap();
-        pier_job(dir.path(), good);
-        let (_path, reward, _value) = import_pier_job_result(dir.path()).unwrap();
-        assert_eq!(
-            reward,
-            Fact::Known {
-                value: good.trim_end_matches(".0").parse::<u64>().unwrap(),
-                origin: "pier-result".to_owned()
-            },
-            "{good}"
-        );
-    }
-    // An aggregate with no `reward` metric at all stays a typed failure.
-    let dir = tempfile::tempdir().unwrap();
-    let jobs = dir.path().join("jobs").join("2026-08-29__07-25-13");
-    std::fs::create_dir_all(&jobs).unwrap();
-    std::fs::write(
-        jobs.join("result.json"),
-        br#"{"n_total_trials": 1, "stats": {"evals": {"x": {"reward_stats": {"f2p": {"1.0": ["t"]}}}}}}"#,
-    )
-    .unwrap();
     assert_eq!(
-        import_pier_job_result(dir.path()),
-        Err(HarborResultError::Invalid("no-reward-key"))
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::TaskNameMismatch {
+            expected: "fixture-task".to_owned(),
+            observed: "other-task".to_owned(),
+        })
     );
-}
 
-#[test]
-fn pier_job_import_accepts_native_multi_metric_breakdowns() {
+    // Missing explicit agent selection (implicit default/oracle job).
     let dir = tempfile::tempdir().unwrap();
-    let jobs = dir.path().join("jobs").join("2026-08-29__07-25-13");
-    std::fs::create_dir_all(&jobs).unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+    let config = dir
+        .path()
+        .join("jobs/j1/trials/fixture-task__bZZeEkw/config.json");
+    std::fs::write(&config, r#"{"agent": {"name": null, "import_path": null}}"#).unwrap();
+    assert_eq!(
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::AgentSelectionMissing)
+    );
+
+    // Substituted artifact: collected bytes differ from the delivered
+    // observation.
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
     std::fs::write(
-        jobs.join("result.json"),
-        br#"{"n_total_trials": 1, "stats": {"evals": {"x": {"reward_stats": {
-            "F2P": {"20.0": ["t"]}, "P2P": {"3.0": ["t"]},
-            "partial": {"1.0": ["t"]}, "reward": {"1.0": ["t"]}
-        }}}}}"#,
+        dir.path()
+            .join("jobs/j1/trials/fixture-task__bZZeEkw/artifacts/answer.txt"),
+        b"substituted answer\n",
     )
     .unwrap();
-
-    let (_path, reward, _value) = import_pier_job_result(dir.path()).unwrap();
     assert_eq!(
-        reward,
-        Fact::Known {
-            value: 1,
-            origin: "pier-result".to_owned()
-        }
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::DeliveredArtifactSubstituted {
+            source: "/root/answer.txt".to_owned()
+        })
+    );
+
+    // Missing delivered artifact: the manifest dropped the entry.
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+    std::fs::write(
+        dir.path()
+            .join("jobs/j1/trials/fixture-task__bZZeEkw/artifacts/manifest.json"),
+        "[]",
+    )
+    .unwrap();
+    assert_eq!(
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::DeliveredArtifactMissing {
+            source: "/root/answer.txt".to_owned()
+        })
+    );
+
+    // Missing terminal observation: the identity chain cannot bind.
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+    std::fs::remove_file(
+        dir.path()
+            .join("jobs/j1/trials/fixture-task__bZZeEkw/agent/opi-eval-terminal.json"),
+    )
+    .unwrap();
+    assert_eq!(
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::TrialInvalid("terminal-observation"))
+    );
+
+    // Reward missing (errored trial, no verifier reward).
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+    let results = dir
+        .path()
+        .join("jobs/j1/trials/fixture-task__bZZeEkw/results.json");
+    std::fs::write(
+        &results,
+        std::fs::read_to_string(&results).unwrap().replace(
+            "\"verifier_result\":{\"rewards\":{\"reward\":1.0}}",
+            "\"verifier_result\":null",
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::RewardMissing)
+    );
+
+    // Stale job: two complete job trees; without the pre-dispatch set the
+    // import refuses the ambiguity, and with it only the new one binds.
+    let dir = tempfile::tempdir().unwrap();
+    stage_bound_job(dir.path(), "j-old", "opi-eval-opi");
+    let selection = stage_bound_job(dir.path(), "j-new", "opi-eval-opi");
+    assert_eq!(
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::MultipleNewJobs { count: 2 })
+    );
+    let mut guarded = selection;
+    guarded.stale_job_names = vec!["j-old".into()];
+    assert_eq!(
+        import_bound_native_job(dir.path(), &guarded)
+            .unwrap()
+            .job_name,
+        "j-new"
     );
 }

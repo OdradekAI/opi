@@ -19,7 +19,7 @@ use serde::Deserialize;
 use thiserror::Error;
 
 /// The one admitted manifest schema identity.
-pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/1";
+pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/2";
 
 /// Typed material rejections (exit-path failures, never settled outcomes).
 #[derive(Debug, Error)]
@@ -62,6 +62,26 @@ pub(crate) struct ProviderMaterial {
     pub(crate) request_log: PathBuf,
 }
 
+/// The pinned upstream integration that runs this Agent inside the
+/// graded task environment (P19-D01): the module Harbor imports, the
+/// name it reports, and the byte-pinned module directory.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct IntegrationMaterial {
+    /// Directory holding the pinned integration module; its sorted file
+    /// manifest must digest to `module_manifest_sha256`.
+    pub(crate) module_dir: PathBuf,
+    /// Sorted-manifest digest of the module directory (fail-closed
+    /// against producer-side drift).
+    pub(crate) module_manifest_sha256: String,
+    /// The Harbor agent import path (`module:ClassName`) the runner
+    /// selects on the upstream argv.
+    pub(crate) import_path: String,
+    /// The agent name the integration reports and every bound trial
+    /// must carry (`agent_info.name`).
+    pub(crate) agent_name: String,
+}
+
 /// The per-product agent projection.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -76,17 +96,17 @@ pub(crate) struct AgentMaterial {
     /// The deterministic configuration projection materialized into the
     /// isolated agent directories before dispatch.
     pub(crate) config: AgentConfigMaterial,
+    /// The pinned upstream integration selecting this Agent inside the
+    /// graded task environment (native mode; schema v2).
+    pub(crate) integration: IntegrationMaterial,
 }
 
 /// The deterministic configuration each product receives.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AgentConfigMaterial {
-    /// `opi-toml` or `pi-models-json`.
-    #[expect(
-        dead_code,
-        reason = "required native-material configuration discriminator validated on load"
-    )]
+    /// `opi-toml` or `pi-models-json`; consumed by the integration
+    /// handoff projection.
     pub(crate) kind: String,
     /// The OpenAI-compatible base URL (the provider endpoint).
     pub(crate) base_url: String,
@@ -178,6 +198,23 @@ impl NativeMaterial {
                     "agent {product} must declare a dummy credential"
                 )));
             }
+            // The pinned integration module directory must digest to its
+            // declared manifest and carry the import path it selects.
+            let observed = directory_manifest_digest(&agent.integration.module_dir)?;
+            if observed != agent.integration.module_manifest_sha256 {
+                return Err(MaterialError::Rejected(format!(
+                    "agent {product} integration module drift: pinned {}, observed {}",
+                    agent.integration.module_manifest_sha256, observed
+                )));
+            }
+            if agent.integration.import_path.split(':').count() != 2
+                || agent.integration.import_path.is_empty()
+                || agent.integration.agent_name.trim().is_empty()
+            {
+                return Err(MaterialError::Rejected(format!(
+                    "agent {product} integration must pin module:Class and the reported agent name"
+                )));
+            }
         }
         let admitted = ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"];
         for (benchmark, entry) in &material.benchmarks {
@@ -240,10 +277,10 @@ pub(crate) fn verify_pinned(pinned: &PinnedFile) -> Result<(), MaterialError> {
     Ok(())
 }
 
-/// Sorted-manifest digest over a task-package directory: every file's
-/// relative path and SHA-256, sorted, canonicalized into one digest. This
-/// is the runner-side recomputation the manifest pins.
-pub(crate) fn task_package_manifest_digest(root: &Path) -> Result<String, MaterialError> {
+/// Sorted-manifest digest over an arbitrary directory: every file's
+/// relative path and SHA-256, sorted, canonicalized into one digest.
+/// Shared by task packages and integration module directories.
+pub(crate) fn directory_manifest_digest(root: &Path) -> Result<String, MaterialError> {
     let mut rows: Vec<(String, String)> = Vec::new();
     visit_files(root, root, &mut rows)?;
     rows.sort();
@@ -255,6 +292,13 @@ pub(crate) fn task_package_manifest_digest(root: &Path) -> Result<String, Materi
         canonical.push('\n');
     }
     Ok(sha256_hex(canonical.as_bytes()))
+}
+
+/// Sorted-manifest digest over a task-package directory: every file's
+/// relative path and SHA-256, sorted, canonicalized into one digest. This
+/// is the runner-side recomputation the manifest pins.
+pub(crate) fn task_package_manifest_digest(root: &Path) -> Result<String, MaterialError> {
+    directory_manifest_digest(root)
 }
 
 fn visit_files(
@@ -302,6 +346,11 @@ mod tests {
         write(&lock, b"{}");
         let provider = dir.join("provider.py");
         write(&provider, b"provider");
+        let integrations = dir.join("integrations");
+        write(
+            &integrations.join("opi_eval_harbor.py"),
+            b"# pinned integration module\n",
+        );
         let opi = dir.join("opi");
         write(&opi, b"opi-bin");
         let pi = dir.join("pi.js");
@@ -316,7 +365,7 @@ mod tests {
         write(&task.join("instruction.md"), b"instruction");
         format!(
             r#"{{
-  "schema": "opi-eval-native-material/1",
+  "schema": "opi-eval-native-material/2",
   "static_lock": {{"path": {:?}, "sha256": {:?}}},
   "provider": {{
     "script": {{"path": {:?}, "sha256": {:?}}},
@@ -329,14 +378,20 @@ mod tests {
       "model": "scripted:eval",
       "provider_env": {{"OPENAI_API_KEY": "<dummy-scripted-credential>"}},
       "config": {{"kind": "opi-toml", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "eval", "api_key": "<dummy>"}}
+                  "model_id": "eval", "api_key": "<dummy>"}},
+      "integration": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
+                        "import_path": "opi_eval_harbor:OpiAgent",
+                        "agent_name": "opi-eval-opi"}}
     }},
     "pi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
       "model": "scripted:scripted/eval",
       "provider_env": {{"PI_API_KEY": "<redacted-dummy>"}},
       "config": {{"kind": "pi-models-json", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "scripted/eval", "api_key": "<redacted-dummy>"}}
+                  "model_id": "scripted/eval", "api_key": "<redacted-dummy>"}},
+      "integration": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
+                        "import_path": "opi_eval_harbor:PiAgent",
+                        "agent_name": "opi-eval-pi"}}
     }}
   }},
   "benchmarks": {{
@@ -358,8 +413,12 @@ mod tests {
             dir.join("requests.jsonl").to_string_lossy(),
             opi.to_string_lossy(),
             sha256_hex(b"opi-bin"),
+            integrations.to_string_lossy(),
+            directory_manifest_digest(&integrations).unwrap(),
             pi.to_string_lossy(),
             sha256_hex(b"pi-bin"),
+            integrations.to_string_lossy(),
+            directory_manifest_digest(&integrations).unwrap(),
             profile.to_string_lossy(),
             task.to_string_lossy(),
             task_package_manifest_digest(&task).unwrap(),
@@ -401,7 +460,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("opi-material-schema-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let manifest = dir.join("material.json");
-        let text = minimal_manifest(&dir).replace("opi-eval-native-material/1", "other/1");
+        let text = minimal_manifest(&dir).replace("opi-eval-native-material/2", "other/1");
         write(&manifest, text.as_bytes());
         assert!(
             NativeMaterial::load(&manifest)

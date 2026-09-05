@@ -791,6 +791,9 @@ impl TrajectoryBuilder {
                 }
                 "verified"
             }
+            crate::benchmark::process::BenchmarkCompletion::VerifiedNative { .. } => {
+                "verified-native"
+            }
             crate::benchmark::process::BenchmarkCompletion::Failed(_) => "failed",
         };
         grader_facts.insert(

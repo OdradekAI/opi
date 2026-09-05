@@ -1075,33 +1075,26 @@ impl BenchmarkAdapter for DeepSweAdapter {
         // semantics are not translated into test counters - every metric
         // stays unknown rather than guessed.
         if self.profile.output_kind == OutputKind::UnpinnedPending1815 {
-            return match super::process::import_pier_job_result(&request.trace_root) {
-                Ok((path, reward, _value)) => (
-                    reward,
-                    BenchmarkCompletion::Verified {
-                        metrics: super::process::NativeMetrics {
-                            tests: None,
-                            passed: None,
-                            failed: None,
-                            skipped: None,
-                            pending: None,
-                            other: None,
-                        },
-                        artifacts: vec![NativeArtifact {
-                            role: "native/pier-result".to_owned(),
-                            sha256: sha256_hex(&std::fs::read(&path).unwrap_or_default()),
-                            path,
-                        }],
-                    },
-                ),
-                Err(_) => (
+            // Native scoring for DeepSWE is explicitly unavailable until
+            // its committed-patch pristine-verifier handoff lands
+            // (P19-D04): a selected-Agent native job must not emit an
+            // Agent score through any residual path.
+            if request.native_selection.is_some() {
+                return (
                     reward_unknown(),
                     BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
-                        kind: "native-output-invalid",
-                        boundary: FailureBoundaryCode::Adapter,
+                        kind: "native-scoring-unavailable-deepswe",
+                        boundary: FailureBoundaryCode::Integrity,
                     }),
-                ),
-            };
+                );
+            }
+            return (
+                reward_unknown(),
+                BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
+                    kind: "native-output-invalid",
+                    boundary: FailureBoundaryCode::Adapter,
+                }),
+            );
         }
         // Synthetic wiring path only: import the Pier report the fixture
         // verifier wrote into the run's trace root. The reward is the
@@ -1223,7 +1216,7 @@ mod adapter_tests {
             verifier_executable: "/nonexistent/uv".into(),
             task_dir,
             task_id: adapter.profile().task_id.clone(),
-            agent_output: trace_root.join("agent-output"),
+            native_selection: None,
             trace_root,
             admitted_lock_digest: "a".repeat(64),
             integrity: integrity_for("v1.1", &adapter.profile().task_id),
@@ -1461,11 +1454,11 @@ mod adapter_tests {
         let bytes = std::fs::read(&artifacts[0].path).unwrap();
         assert_eq!(artifacts[0].sha256, sha256_hex(&bytes));
 
-        // The production DeepSWE profile pins Pier's own job-result
-        // aggregate: a structurally valid multi-metric result settles
-        // Verified with the result file as the content-addressed
-        // artifact, and every metric stays unknown - the multi-metric
-        // reward semantics are never guessed into test counters.
+        // The production DeepSWE profile is explicitly unavailable for
+        // native scoring until its committed-patch pristine-verifier
+        // handoff lands (P19-D04): a job result tree under the trace
+        // root never settles an Agent score, with or without a selected
+        // integration.
         let production = DeepSweAdapter::from_profile(production_profile());
         let native_trace = tempfile::tempdir().unwrap();
         write_pier_job_result(native_trace.path());
@@ -1479,19 +1472,32 @@ mod adapter_tests {
         let (reward, completion) = production.settle(&outcome_exit_zero(), &production_request);
         assert_eq!(
             reward,
-            Fact::Known {
-                value: 1,
-                origin: "pier-result".to_owned()
+            Fact::Unknown {
+                reason: "native-reward-pending-18-15-smoke".to_owned()
             }
         );
-        let BenchmarkCompletion::Verified { metrics, artifacts } = completion else {
-            unreachable!()
-        };
-        assert_eq!(metrics, super::super::process::NativeMetrics::default());
-        assert_eq!(artifacts.len(), 1);
-        assert_eq!(artifacts[0].role, "native/pier-result");
-        let bytes = std::fs::read(&artifacts[0].path).unwrap();
-        assert_eq!(artifacts[0].sha256, sha256_hex(&bytes));
+        assert_eq!(
+            completion,
+            failed("native-output-invalid", FailureBoundaryCode::Adapter)
+        );
+        let mut selected = production_request.clone();
+        selected.native_selection = Some(crate::benchmark::process::NativeSelection {
+            agent_name: "opi-eval-opi".to_owned(),
+            agent_import_path: "opi_eval_harbor:OpiAgent".to_owned(),
+            task_name: "fixture-task".to_owned(),
+            model: "scripted:eval".to_owned(),
+            reward_metric: "reward".to_owned(),
+            module_dir: "/nonexistent/integrations".into(),
+            handoff_path: "/nonexistent/handoff.json".into(),
+            stale_job_names: Vec::new(),
+        });
+        assert_eq!(
+            production.settle(&outcome_exit_zero(), &selected).1,
+            failed(
+                "native-scoring-unavailable-deepswe",
+                FailureBoundaryCode::Integrity
+            )
+        );
 
         // No pier job result anywhere under the trace root: fail closed
         // (boundary Adapter: the importer cannot admit an output shape).

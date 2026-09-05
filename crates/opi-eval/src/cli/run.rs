@@ -47,8 +47,6 @@ pub struct RunArgs {
     /// Resolved native material manifest (native mode); when present
     /// the run takes the native driving mode.
     pub native_material: Option<PathBuf>,
-    /// Run only the upstream oracle preflight, then stop.
-    pub preflight_only: bool,
 }
 
 /// Run one assembled experiment and return its JSON report.
@@ -78,7 +76,6 @@ pub fn run(args: &RunArgs) -> Result<serde_json::Value, RunCliError> {
                 ),
                 None => None,
             },
-            preflight_only: args.preflight_only,
         }))
         .map_err(|error| RunCliError::Rejected(error.to_string()))?;
     Ok(report)
@@ -109,9 +106,7 @@ fn read_canaries(path: Option<&std::path::Path>) -> Result<Vec<String>, std::io:
 /// Whether a run report warrants a non-success process exit.
 pub fn report_exit_code(report: &serde_json::Value) -> i32 {
     match report["outcome"].as_str() {
-        // A passing oracle preflight without trials is a successful
-        // native preflight-only invocation (native mode).
-        Some("completed") | Some("preflight-only") => 0,
+        Some("completed") => 0,
         _ => 1,
     }
 }

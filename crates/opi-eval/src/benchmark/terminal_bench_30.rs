@@ -1023,26 +1023,26 @@ impl BenchmarkAdapter for TerminalBench30Adapter {
         // exactly as verified at the dispatch. Nothing is guessed or
         // normalized beyond that aggregate.
         if self.profile.output_kind == OutputKind::UnpinnedPending1815 {
-            return match super::process::import_harbor_result(&request.trace_root) {
-                Ok((metrics, reward, path, _value)) => (
-                    reward,
-                    BenchmarkCompletion::Verified {
-                        metrics,
-                        artifacts: vec![NativeArtifact {
-                            role: "native/harbor-result".to_owned(),
-                            sha256: sha256_hex(&std::fs::read(&path).unwrap_or_default()),
-                            path,
-                        }],
-                    },
-                ),
-                Err(_) => (
+            // Native scoring for Terminal-Bench 3.0 is explicitly
+            // unavailable until its declared separate-verifier handoff
+            // lands (P19-D03): a selected-Agent native job must not emit
+            // an Agent score through any residual path.
+            if request.native_selection.is_some() {
+                return (
                     reward_unknown(),
                     BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
-                        kind: "native-output-schema-unpinned",
-                        boundary: FailureBoundaryCode::Adapter,
+                        kind: "native-scoring-unavailable-tb3",
+                        boundary: FailureBoundaryCode::Integrity,
                     }),
-                ),
-            };
+                );
+            }
+            return (
+                reward_unknown(),
+                BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
+                    kind: "native-output-schema-unpinned",
+                    boundary: FailureBoundaryCode::Adapter,
+                }),
+            );
         }
         // Synthetic wiring path only: import the CTRF report the fixture
         // verifier wrote into the run's trace root.
@@ -1158,7 +1158,7 @@ mod adapter_tests {
             verifier_executable: "/nonexistent/uv".into(),
             task_dir,
             task_id: adapter.profile().task_id.clone(),
-            agent_output: trace_root.join("agent-output"),
+            native_selection: None,
             trace_root,
             admitted_lock_digest: "a".repeat(64),
             integrity: integrity_for("3.0", &adapter.profile().task_id),

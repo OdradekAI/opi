@@ -135,14 +135,17 @@ def verify_workflow(text: str, f: Findings) -> None:
 def verify_producer(text: str, f: Findings) -> None:
     # The native driving stages must consume the materialized manifest:
     # configs are pinned through the production validate entry, the
-    # conformance rerun drives the exact executables, the oracle
-    # preflight precedes trials, and trials carry the material plus the
-    # declared canary markers into the pre-seal scan.
+    # conformance rerun drives the exact executables, the oracle is an
+    # explicitly selected witness (never a `run` prerequisite), and
+    # trials carry the material plus the declared canary markers into the
+    # pre-seal scan.
     f.require("materialize", text,
               '"--native-material", str(material_path)',
               "config materialization must pin digests via validate")
-    f.require("materialize", text, "--preflight-only",
-              "the oracle preflight must use the preflight-only entry")
+    f.require("witness", text, "oracle-witness",
+              "the oracle must run as an explicitly selected witness")
+    f.require("witness", text, "nop-witness",
+              "the incorrect artifact witness must grade zero")
     f.require("materialize", text, "--native-material \"$material\"",
               "the trial stage must consume the materialized manifest")
     f.require("canary-preflight", text, "--canaries",

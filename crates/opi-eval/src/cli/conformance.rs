@@ -104,7 +104,7 @@ pub struct ConformanceArgs {
 /// expectation is a real settled Completed/Verified verdict. Failure
 /// injection, fixture-replay, and helper-marker cases are hermetic-only.
 const NATIVE_AGENT_CASES: &[&str] = &["completed", "identity"];
-const NATIVE_BENCHMARK_CASES: &[&str] = &["completed", "identity", "immutable-capture"];
+const NATIVE_BENCHMARK_CASES: &[&str] = &["oracle-witness", "nop-witness"];
 
 /// The settled one-line report printed by the binary. `met` is the
 /// conformance verdict: the pinned expectation for this (adapter, case).
@@ -136,6 +136,13 @@ pub struct ConformanceReport {
 enum Expect {
     Completed,
     Verified,
+    /// A correct/incorrect artifact witness through the same production
+    /// native handoff: the bound agent must be `agent` and the native
+    /// reward must equal `reward` (P19-AC-003).
+    Witness {
+        agent: &'static str,
+        reward: u64,
+    },
     Failed(&'static str, &'static str),
     Rejected(&'static str),
 }
@@ -734,6 +741,20 @@ fn native_fixture(revision: &BenchmarkRevision, case: &str) -> String {
 
 fn benchmark_expect(revision: &BenchmarkRevision, case: &str) -> Option<Expect> {
     match case {
+        // Explicitly selected conformance diagnostics: the upstream
+        // oracle applies the official reference solution (correct
+        // witness, reward one) and the upstream nop agent delivers
+        // nothing (incorrect witness, reward zero). Both traverse the
+        // same production job handoff and binding; neither is an Agent
+        // score (P19-D01, P19-AC-003).
+        "oracle-witness" => Some(Expect::Witness {
+            agent: "oracle",
+            reward: 1,
+        }),
+        "nop-witness" if revision.adapter == TB21.adapter => Some(Expect::Witness {
+            agent: "nop",
+            reward: 0,
+        }),
         "completed" | "identity" | "immutable-capture" | "one-failed" | "zero-reward" => {
             Some(Expect::Verified)
         }
@@ -812,6 +833,12 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
             args.case, revision.adapter
         ))
     })?;
+    if matches!(expect, Expect::Witness { .. }) && args.native_material.is_none() {
+        return Err(ConformanceError::Unsupported(format!(
+            "benchmark case {:?} is native-only: the artifact witnesses run through the pinned upstream material",
+            args.case
+        )));
+    }
 
     // Stage the isolated run: a staged copy of the pinned fixture task
     // package (tamperable for the drift case), a fresh trace root the fake
@@ -819,10 +846,8 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
     // mode stages the materialized official package instead.
     let run = args.root.join("benchmark");
     let trace_root = run.join("trace");
-    let agent_output = run.join("agent-output");
     let task_dir = run.join("task-package");
     std::fs::create_dir_all(&trace_root)?;
-    std::fs::create_dir_all(&agent_output)?;
     let native_material = match &args.native_material {
         Some(material_path) => {
             if !NATIVE_BENCHMARK_CASES.contains(&args.case.as_str()) {
@@ -920,15 +945,74 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
         }
     }
 
-    let verifier_executable = match &native_material {
-        Some(material) => material
+    let mut witness_selection: Option<crate::benchmark::process::NativeSelection> = None;
+    let verifier_executable = match (&native_material, &expect) {
+        (Some(material), Expect::Witness { agent, .. }) => {
+            // The correct/incorrect artifact witnesses: the same
+            // production job handoff with the upstream oracle or nop
+            // agent explicitly selected, never an implicit default.
+            let benchmark = material
+                .benchmark(material_key(revision.adapter))
+                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
+            let handoff_path = run.join("integration/handoff.json");
+            std::fs::create_dir_all(run.join("integration"))?;
+            std::fs::write(
+                &handoff_path,
+                serde_json::to_vec(&serde_json::json!({
+                    "schema": "opi-eval-native-handoff/2",
+                    "trial": format!("conformance-{agent}-witness"),
+                    "product": agent,
+                    "integration_agent_name": agent,
+                    "diagnostic": "explicitly selected witness; no agent score",
+                }))
+                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?,
+            )?;
+            let integration = &material
+                .agent("opi")
+                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
+                .integration;
+            witness_selection = Some(crate::benchmark::process::NativeSelection {
+                agent_name: (*agent).to_owned(),
+                agent_import_path: if *agent == "oracle" {
+                    "harbor.agents.oracle:OracleAgent".to_owned()
+                } else {
+                    "harbor.agents.nop:NopAgent".to_owned()
+                },
+                task_name: Tb21Profile::parse(
+                    std::fs::read(&benchmark.profile)
+                        .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
+                        .as_slice(),
+                )
+                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
+                .declared_task_name(&task_dir)
+                .unwrap_or_default(),
+                model: "scripted:eval".to_owned(),
+                reward_metric: "reward".to_owned(),
+                module_dir: integration.module_dir.clone(),
+                handoff_path,
+                stale_job_names: Vec::new(),
+            });
+            // The oracle witness drives the material's oracle entry (the
+            // reference solution must be applied); the nop witness uses
+            // the unchanged verifier entry. The oracle entry consumes its
+            // own declared environment projection.
+            if *agent == "oracle" {
+                for (key, value) in &benchmark.oracle_env {
+                    extra_env.insert(key.clone().into(), value.clone().into());
+                }
+                benchmark.oracle.path.clone()
+            } else {
+                benchmark.verifier_executable.path.clone()
+            }
+        }
+        (Some(material), _) => material
             .benchmark(material_key(revision.adapter))
             .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
             .verifier_executable
             .path
             .clone(),
-        None if args.case == "spawn-failure" => run.join("no-such-verifier"),
-        None => {
+        (None, _) if args.case == "spawn-failure" => run.join("no-such-verifier"),
+        (None, _) => {
             let helper = run.join("helper-verifier.sh");
             std::fs::write(&helper, benchmark_helper_script(revision))?;
             make_executable(&helper);
@@ -986,6 +1070,7 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
         }
         let (outcome, failure_kind, boundary) = match &record.completion {
             BenchmarkCompletion::Verified { .. } => ("verified", None, None),
+            BenchmarkCompletion::VerifiedNative { .. } => ("verified-native", None, None),
             BenchmarkCompletion::Failed(failure) => (
                 "failed",
                 Some(failure.kind.to_owned()),
@@ -995,6 +1080,19 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
         let met = capture_ok
             && match (&expect, &record.completion) {
                 (Expect::Verified, BenchmarkCompletion::Verified { .. }) => true,
+                (
+                    Expect::Witness { agent, reward },
+                    BenchmarkCompletion::VerifiedNative { binding, .. },
+                ) => {
+                    // The witness bound to the explicitly selected agent
+                    // and the native reward responded to the submitted
+                    // artifact (P19-AC-003).
+                    &binding.agent_name == agent
+                        && matches!(
+                            &binding.reward,
+                            Fact::Known { value, .. } if value == reward
+                        )
+                }
                 (Expect::Failed(kind, boundary), BenchmarkCompletion::Failed(failure)) => {
                     failure.kind == *kind && format!("{:?}", failure.boundary) == *boundary
                 }
@@ -1054,8 +1152,8 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
                 profile.task_id.clone(),
                 task_dir,
                 trace_root,
-                agent_output,
                 verifier_executable,
+                witness_selection.clone(),
                 extra_env,
                 &expect,
                 report_for_record,
@@ -1074,8 +1172,8 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
                 profile.task_id.clone(),
                 task_dir,
                 trace_root,
-                agent_output,
                 verifier_executable,
+                witness_selection.clone(),
                 extra_env,
                 &expect,
                 report_for_record,
@@ -1094,8 +1192,8 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
                 profile.task_id.clone(),
                 task_dir,
                 trace_root,
-                agent_output,
                 verifier_executable,
+                witness_selection.clone(),
                 extra_env,
                 &expect,
                 report_for_record,
@@ -1113,8 +1211,8 @@ async fn finish_benchmark_case<A: BenchmarkAdapter>(
     task_id: String,
     task_dir: PathBuf,
     trace_root: PathBuf,
-    agent_output: PathBuf,
     verifier_executable: PathBuf,
+    witness_selection: Option<crate::benchmark::process::NativeSelection>,
     extra_env: BTreeMap<OsString, OsString>,
     expect: &Expect,
     report_for_record: impl Fn(
@@ -1154,7 +1252,7 @@ async fn finish_benchmark_case<A: BenchmarkAdapter>(
         verifier_executable,
         task_dir,
         task_id,
-        agent_output,
+        native_selection: witness_selection,
         trace_root,
         admitted_lock_digest,
         integrity,

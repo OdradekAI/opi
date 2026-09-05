@@ -165,7 +165,10 @@ conformance matrix 定义；不受支持的 suite、adapter 或 case 会 fail-cl
 | 模式 | 输入与行为 | 能够证明什么 |
 |------|------------|--------------|
 | Hermetic fixture 模式 | 默认模式。使用有界的确定性 helper 和仓库内固定 fixture。 | 能证明 adapter、lifecycle、sealing、reporting 和失败路径的 conformance；不能证明真实产品或真实 Provider 的 fidelity。 |
-| Native-material 模式 | 给 `validate`、`run` 或 `conformance` 添加 `--native-material <MANIFEST>`。manifest 会解析精确的 Agent executable、task package、verifier/oracle 入口和 scripted-provider endpoint。 | 能证明该 resolved material identity 所描述、且已获准的 native execution。`conformance` 只允许已注册的 native case 子集。 |
+| Native-material 模式 | 给 `validate`、`run` 或 `conformance` 添加 `--native-material <MANIFEST>`。manifest（schema `opi-eval-native-material/2`）会解析精确的 Agent executable、在任务环境内运行 Agent 的固定 Harbor integration module、task package、verifier/oracle 入口和 scripted-provider endpoint。 | 对 `run`：每个 trial 由一个显式选择的 upstream job 在被评分的任务环境内运行所选 Agent，并对同一个 trial 评分；导入的结果必须先绑定到所选 Agent、task 与 job 身份，之后才能 seal。Terminal-Bench 3.0 与 DeepSWE 的 native scoring 在其声明的 handoff 落地前显式不可用。`conformance` 只允许已注册的 native case 子集（含显式选择的 `oracle-witness`/`nop-witness` artifact witness）。 |
+
+上游 oracle 是显式选择的 conformance 诊断（`conformance --case oracle-witness` /
+`--case nop-witness`），绝不是被 `run` 静默执行的前置条件。
 
 CLI 只消费已经解析的 native-material manifest；它不会临时拼凑或静默替换缺失的
 native input。Native materialization 和 fidelity 验证由仓库的
@@ -179,7 +182,7 @@ hermetic CLI 示例相互独立。
 | 命令 | 必需输入 | 重要选项 | 输出与退出行为 |
 |------|----------|----------|----------------|
 | `validate` | `--config PATH` | `--native-material PATH` 会加入 native integrity identity。 | 一行摘要；解析成功为 0，无效为 1。 |
-| `run` | `--config PATH --root PATH --fixtures PATH` | `--recover`、`--replacement-for TRIAL`、`--canaries PATH`、`--native-material PATH`、`--preflight-only`；`--behavior` 用于选择 hermetic 故障 fixture。 | 单行 JSON；完成或 preflight 成功为 0，已落定但未成功为 1，请求被拒绝为 2。 |
+| `run` | `--config PATH --root PATH --fixtures PATH` | `--recover`、`--replacement-for TRIAL`、`--canaries PATH`、`--native-material PATH`；`--behavior` 用于选择 hermetic 故障 fixture。 | 单行 JSON；完成为 0，已落定但未成功为 1，请求被拒绝为 2。 |
 | `regrade` | `--root PATH` | 无。 | 单行 JSON；验证成功为 0，发现变更或未 seal 为 1，命令请求被拒绝为 2。 |
 | `report` | `--root PATH` | `--out PATH`、`--canaries PATH`。 | 单行 JSON；发布成功为 0，被阻止或未通过验证为 1，命令请求被拒绝为 2。 |
 | `conformance` | `--suite ID --adapter ID --case ID --root PATH --fixtures PATH --provider PATH` | `--native-material PATH`。 | 单行 JSON；满足预期为 0，未满足预期为 1，不受支持或被拒绝的请求为 2。 |

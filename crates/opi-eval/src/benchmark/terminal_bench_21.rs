@@ -283,6 +283,26 @@ impl Tb21Profile {
         Ok(profile)
     }
 
+    /// The task name an upstream trial of this package reports: the
+    /// package's own `task.toml` `[task] name` declaration, or - exactly
+    /// as the pinned runner resolves it - the package directory's own
+    /// name when the declaration is absent. Native binding compares the
+    /// observed trial's `task_name` against this value (P19-AC-002).
+    pub(crate) fn declared_task_name(&self, root: &Path) -> Option<String> {
+        if let Ok(text) = std::fs::read_to_string(root.join("task.toml"))
+            && let Ok(value) = toml::from_str::<toml::Value>(&text)
+            && let Some(name) = value
+                .get("task")
+                .and_then(|task| task.get("name"))
+                .and_then(toml::Value::as_str)
+            && !name.trim().is_empty()
+        {
+            return Some(name.to_owned());
+        }
+        root.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+    }
+
     /// Canonical digest of the pinned file table: sha256 over the compact
     /// JSON array of `{mode, path, sha256, size}` rows sorted by path
     /// (object keys serialize in sorted order).
@@ -746,7 +766,10 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
     fn spawn_spec(&self, request: &BenchmarkRunRequest) -> SpawnSpec {
         // Pinned evidence: Harbor v0.22.0 is driven through
         // `uv run --locked harbor run -p <task-dir>`; argv[0] is the
-        // resolved uv executable, never an ambient PATH lookup.
+        // resolved uv executable, never an ambient PATH lookup. In native
+        // mode the same job explicitly selects the Agent integration and
+        // model: one upstream trial runs the selected Agent inside the
+        // task environment and grades that same trial (P19-D01).
         let mut argv: Vec<std::ffi::OsString> = vec![
             request.verifier_executable.clone().into(),
             "run".into(),
@@ -760,12 +783,32 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
                 part.clone().into()
             });
         }
+        let mut env = request.extra_env.clone();
+        if let Some(selection) = &request.native_selection {
+            argv.push("--agent".into());
+            argv.push(selection.agent_import_path.clone().into());
+            argv.push("--model".into());
+            argv.push(selection.model.clone().into());
+            let module_dir = selection.module_dir.clone().into_os_string();
+            let handoff = selection.handoff_path.clone().into_os_string();
+            let pythonpath = match env.get(std::ffi::OsStr::new("PYTHONPATH")) {
+                Some(existing) => {
+                    let mut merged = module_dir.clone();
+                    merged.push(":");
+                    merged.push(existing);
+                    merged
+                }
+                None => module_dir,
+            };
+            env.insert("PYTHONPATH".into(), pythonpath);
+            env.insert("OPI_EVAL_NATIVE_HANDOFF".into(), handoff);
+        }
         SpawnSpec {
             argv,
             // The verifier working directory is the run's trace root so the
-            // native CTRF report lands inside the captured evidence.
+            // native job tree lands inside the captured evidence.
             cwd: Some(request.trace_root.clone()),
-            env: request.extra_env.clone(),
+            env,
             stdout_cap: self.profile.stdout_cap_bytes as usize,
             stderr_cap: self.profile.stderr_cap_bytes as usize,
             timeout: std::time::Duration::from_secs(self.profile.timeout_secs),
@@ -810,71 +853,60 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
                 );
             }
         }
-        // Exit 0: the native authority is the verifier's own output. Two
-        // admitted layouts: the direct CTRF report in the trace root, or
-        // - the dispatch reality of the native smoke - harbor's
-        // `jobs/<timestamp>/result.json` aggregate from `harbor run -p`.
-        // Bounded stdout is retained on the record but is not the
-        // authority; neither layout being present is a grader-side
-        // invalid output.
+        // Native mode: the authority is the bound upstream job tree - the
+        // selected Agent's same-trial identity, not any newest job (the
+        // unchecked newest-job admission is deleted with this cutover;
+        // P19-AC-002).
+        if let Some(selection) = &request.native_selection {
+            let completion =
+                match super::process::import_bound_native_job(&request.trace_root, selection) {
+                    Ok(binding) => {
+                        let reference = |path: &std::path::Path, role: &str| NativeArtifact {
+                            role: role.to_owned(),
+                            sha256: sha256_hex(&std::fs::read(path).unwrap_or_default()),
+                            path: path.to_path_buf(),
+                        };
+                        let artifacts = vec![
+                            reference(&binding.results_path, "native/trial-result"),
+                            reference(&binding.config_path, "native/trial-config"),
+                            reference(
+                                &binding
+                                    .config_path
+                                    .parent()
+                                    .expect("trial dir")
+                                    .join("agent/opi-eval-terminal.json"),
+                                "native/agent-terminal",
+                            ),
+                        ];
+                        let reward = binding.reward.clone();
+                        (
+                            reward,
+                            BenchmarkCompletion::VerifiedNative { binding, artifacts },
+                        )
+                    }
+                    Err(error) => (
+                        reward_unknown(),
+                        BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
+                            kind: error.token(),
+                            boundary: FailureBoundaryCode::Integrity,
+                        }),
+                    ),
+                };
+            return completion;
+        }
+        // Hermetic mode: the admitted layout is the direct CTRF report in
+        // the trace root; nothing else is authoritative.
         let report = request.trace_root.join(CTRF_REPORT_NAME);
         let bytes = match std::fs::read(&report) {
             Ok(bytes) => bytes,
             Err(_) => {
-                return match super::process::import_harbor_result(&request.trace_root) {
-                    Ok((metrics, reward, path, _value)) => (
-                        reward,
-                        BenchmarkCompletion::Verified {
-                            metrics,
-                            artifacts: vec![NativeArtifact {
-                                role: "native/harbor-result".to_owned(),
-                                sha256: sha256_hex(&std::fs::read(&path).unwrap_or_default()),
-                                path,
-                            }],
-                        },
-                    ),
-                    Err(error) => (
-                        reward_unknown(),
-                        BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
-                            kind: match error {
-                                super::process::HarborResultError::Missing => {
-                                    "verifier-output-missing"
-                                }
-                                super::process::HarborResultError::Invalid("read") => {
-                                    "verifier-output-invalid-read"
-                                }
-                                super::process::HarborResultError::Invalid("json-parse") => {
-                                    "verifier-output-invalid-json-parse"
-                                }
-                                super::process::HarborResultError::Invalid("no-eval-stats") => {
-                                    "verifier-output-invalid-no-eval-stats"
-                                }
-                                super::process::HarborResultError::Invalid("eval-count") => {
-                                    "verifier-output-invalid-eval-count"
-                                }
-                                super::process::HarborResultError::Invalid("no-reward-stats") => {
-                                    "verifier-output-invalid-no-reward-stats"
-                                }
-                                super::process::HarborResultError::Invalid("reward-count") => {
-                                    "verifier-output-invalid-reward-count"
-                                }
-                                super::process::HarborResultError::Invalid("reward-trials") => {
-                                    "verifier-output-invalid-reward-trials"
-                                }
-                                super::process::HarborResultError::Invalid("trial-count") => {
-                                    "verifier-output-invalid-trial-count"
-                                }
-                                super::process::HarborResultError::Invalid("bad-reward-values") => {
-                                    "verifier-output-invalid-bad-reward-values"
-                                }
-                                super::process::HarborResultError::Invalid(_) => {
-                                    "verifier-output-invalid-schema"
-                                }
-                            },
-                            boundary: FailureBoundaryCode::Grader,
-                        }),
-                    ),
-                };
+                return (
+                    reward_unknown(),
+                    BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
+                        kind: "verifier-output-missing",
+                        boundary: FailureBoundaryCode::Grader,
+                    }),
+                );
             }
         };
         let metrics = match Self::import_ctrf(&bytes) {
@@ -986,7 +1018,7 @@ mod adapter_tests {
             verifier_executable: "/nonexistent/uv".into(),
             task_dir,
             task_id: adapter.profile().task_id.clone(),
-            agent_output: trace_root.join("agent-output"),
+            native_selection: None,
             trace_root,
             admitted_lock_digest: "a".repeat(64),
             integrity: integrity_for("2.1", &adapter.profile().task_id),

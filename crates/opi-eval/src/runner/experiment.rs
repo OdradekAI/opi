@@ -46,7 +46,9 @@ use crate::integrity::{
     IntegrityRecord, IntegrityReview, OraclePreflight, RevisionStatus, TaskClassification,
 };
 use crate::process::ExitState;
-use crate::runner::lifecycle::{CancellationSource, ObservedOutcome, TrialLifecycle};
+use crate::runner::lifecycle::{
+    CancellationSource, ObservedOutcome, SettlementKind, TrialLifecycle,
+};
 use crate::runner::material::{NativeMaterial, task_package_manifest_digest};
 use crate::trajectory::{ProjectionPipeline, TrialInputs};
 
@@ -114,9 +116,6 @@ pub(crate) struct RunRequest {
     /// Resolved native material (native mode): when present the runner
     /// takes the native driving mode over the hermetic fixture path.
     pub(crate) material: Option<crate::runner::material::NativeMaterial>,
-    /// Run only the upstream oracle preflight, then stop before any agent
-    /// trial (native mode).
-    pub(crate) preflight_only: bool,
 }
 
 /// The pinned hermetic canary the `canary-leak` fixture behavior emits
@@ -494,31 +493,6 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
             });
         }
     }
-    if let Some(inputs) = &native {
-        // One upstream oracle preflight per selected task through the
-        // unchanged native verifier: the reference solution must pass
-        // natively before any agent trial starts (native mode).
-        let preflight = run_oracle_preflight(
-            &experiment,
-            request.material.as_ref().expect("checked above"),
-            inputs,
-            &integrity,
-            request,
-        )
-        .await?;
-        if request.preflight_only {
-            let report = json!({
-                "schema": RUN_REPORT_SCHEMA,
-                "experiment": experiment.experiment_id(),
-                "manifest_digest": experiment.manifest_digest(),
-                "integrity_digest": integrity.identity_digest(),
-                "outcome": "preflight-only",
-                "preflight": preflight,
-            });
-            persist_run_report(&request.root, &report)?;
-            return Ok(report);
-        }
-    }
     let benchmark_revision = match &native {
         Some(inputs) => BenchmarkRevision::from_native(inputs),
         None => BenchmarkRevision::from_experiment(&experiment, &request.fixtures)?,
@@ -725,8 +699,11 @@ fn adapter_key_for(experiment: &ResolvedExperiment) -> Result<String, RunError> 
 }
 
 /// Everything the native driving mode resolves from the manifest before
-/// any process runs: the concrete benchmark revision inputs, the official
-/// prompt, and the fail-closed package verification.
+/// any process runs: the concrete benchmark revision inputs and the
+/// fail-closed package verification. The official instruction reaches the
+/// selected Agent inside the task environment through the pinned runner's
+/// own lifecycle - the runner never rewrites it and never appends
+/// answer.txt instructions (P19-D01).
 struct NativeInputs {
     adapter_key: String,
     profile_bytes: Vec<u8>,
@@ -734,9 +711,6 @@ struct NativeInputs {
     task_id: String,
     verifier_executable: PathBuf,
     verifier_env: std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
-    oracle_executable: PathBuf,
-    oracle_env: std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
-    prompt: String,
 }
 
 /// Resolves and verifies the native material for one experiment.
@@ -745,6 +719,14 @@ fn prepare_native(
     experiment: &ResolvedExperiment,
 ) -> Result<NativeInputs, RunError> {
     let adapter_key = adapter_key_for(experiment)?;
+    // Native scoring for the sibling families is explicitly unavailable
+    // until their declared handoffs land (P19-D03, P19-D04): their former
+    // host-agent/default-job path must not keep emitting Agent scores.
+    if adapter_key != "terminal-bench-2.1" {
+        return Err(RunError::Native(format!(
+            "native scoring for {adapter_key} is unavailable until its declared handoff lands"
+        )));
+    }
     let benchmark = material
         .benchmark(&adapter_key)
         .map_err(|error| RunError::Native(error.to_string()))?;
@@ -785,11 +767,6 @@ fn prepare_native(
             )));
         }
     }
-    let instruction = std::fs::read_to_string(benchmark.task_package.join("instruction.md"))
-        .map_err(|error| RunError::Native(format!("instruction unreadable: {error}")))?;
-    let prompt = format!(
-        "{instruction}\n\nWhen you are finished, write your final answer to a file named          answer.txt in the working directory."
-    );
     let to_env = |map: &std::collections::BTreeMap<String, String>| {
         map.iter()
             .map(|(key, value)| (key.clone().into(), value.clone().into()))
@@ -802,9 +779,6 @@ fn prepare_native(
         task_id,
         verifier_executable: benchmark.verifier_executable.path.clone(),
         verifier_env: to_env(&benchmark.verifier_env),
-        oracle_executable: benchmark.oracle.path.clone(),
-        oracle_env: to_env(&benchmark.oracle_env),
-        prompt,
     })
 }
 
@@ -833,9 +807,10 @@ fn native_integrity_review(
             .benchmark(&inputs.adapter_key)
             .map(|entry| entry.task_package_manifest_sha256.clone())
             .unwrap_or_default(),
-        oracle: Some(crate::integrity::OraclePreflight::Passed(
-            "native oracle preflight".to_owned(),
-        )),
+        // The oracle is an explicitly selected conformance diagnostic,
+        // never a prerequisite silently run by `run` (P19-D01): the
+        // admission record carries no oracle claim.
+        oracle: None,
         status: crate::integrity::RevisionStatus::Admitted,
         tasks: std::collections::BTreeMap::from([(
             inputs.task_id.clone(),
@@ -935,108 +910,6 @@ pub(crate) fn native_integrity_identity(
     Ok(review.identity_digest().to_owned())
 }
 
-/// Runs the upstream oracle preflight through the unchanged native
-/// One-line failure anatomy for a settled benchmark record: the
-/// completion shape plus bounded output tails, for error paths that must
-/// stay diagnosable from the run log alone.
-fn failure_summary(record: &crate::benchmark::process::BenchmarkRecord) -> String {
-    let completion = match &record.completion {
-        BenchmarkCompletion::Verified { .. } => "verified".to_owned(),
-        BenchmarkCompletion::Failed(failure) => {
-            format!(
-                "failed(kind={}, boundary={:?})",
-                failure.kind, failure.boundary
-            )
-        }
-    };
-    let tail = |capture: &crate::process::OutputCapture| {
-        let bytes = &capture.bytes;
-        let start = bytes.len().saturating_sub(400);
-        String::from_utf8_lossy(&bytes[start..]).to_string()
-    };
-    format!(
-        "completion={completion}, stdout_tail={}, stderr_tail={}",
-        tail(&record.stdout),
-        tail(&record.stderr),
-    )
-}
-
-/// verifier wrapper and requires a passing native reward before trials.
-async fn run_oracle_preflight(
-    experiment: &ResolvedExperiment,
-    material: &NativeMaterial,
-    inputs: &NativeInputs,
-    integrity: &IntegrityRecord,
-    request: &RunRequest,
-) -> Result<serde_json::Value, RunError> {
-    let root = request.root.join("preflight").join(&inputs.adapter_key);
-    let trace_root = root.join("trace");
-    let task_dir = root.join("task-package");
-    std::fs::create_dir_all(&trace_root).map_err(|error| RunError::Native(error.to_string()))?;
-    copy_dir_recursive(&inputs.task_package, &task_dir)
-        .map_err(|error| RunError::Native(error.to_string()))?;
-    let revision = BenchmarkRevision::from_native(inputs);
-    let adapter = benchmark_adapter_for(&revision)?;
-    let benchmark_request = BenchmarkRunRequest {
-        verifier_executable: inputs.oracle_executable.clone(),
-        task_dir,
-        task_id: inputs.task_id.clone(),
-        agent_output: root.join("oracle-reference-output"),
-        trace_root: trace_root.clone(),
-        admitted_lock_digest: material.static_lock.sha256.clone(),
-        integrity: integrity.clone(),
-        extra_env: inputs.oracle_env.clone(),
-    };
-    let record = BenchmarkExecution::run(
-        &benchmark_request,
-        adapter.as_ref(),
-        &CancellationToken::new(),
-    )
-    .await
-    .map_err(|rejection| RunError::Native(rejection.to_string()))?;
-    let passing = match &record.completion {
-        BenchmarkCompletion::Verified { metrics, .. } => match inputs.adapter_key.as_str() {
-            // Terminal-Bench's aggregate is a single zero-or-one reward
-            // counter, so a known positive `passed` proves the reference
-            // solution. DeepSWE's Pier aggregate carries the native
-            // `reward` metric directly: the bar is an explicitly known
-            // positive native reward - a zero-reward reference solution is
-            // the signature of a broken or mis-collected task and must not
-            // admit it.
-            "deepswe-v1.1" => matches!(&record.reward, Fact::Known { value, .. } if *value > 0),
-            _ => {
-                matches!(&metrics.passed, Some(Fact::Known { value, .. }) if *value > 0)
-            }
-        },
-        _ => false,
-    };
-    if !passing {
-        return Err(RunError::Native(format!(
-            "oracle preflight for {} did not pass natively: {}",
-            inputs.adapter_key,
-            failure_summary(&record),
-        )));
-    }
-    let receipt = json!({
-        "schema": "opi-eval-oracle-preflight/1",
-        "experiment": experiment.experiment_id(),
-        "benchmark": inputs.adapter_key,
-        "task": inputs.task_id,
-        "oracle_executable_sha256": material
-            .benchmark(&inputs.adapter_key)
-            .map(|entry| entry.oracle.sha256.clone())
-            .unwrap_or_default(),
-        "outcome": "passed",
-    });
-    let bytes =
-        serde_json::to_vec(&receipt).map_err(|error| RunError::Native(error.to_string()))?;
-    std::fs::create_dir_all(&root).map_err(|error| RunError::Native(error.to_string()))?;
-    std::fs::write(root.join("preflight-receipt.json"), &bytes)
-        .map_err(|error| RunError::Native(error.to_string()))?;
-    let _ = &record.exit;
-    Ok(receipt)
-}
-
 /// The concrete adapter for one resolved revision (shared by trials and
 /// the oracle preflight).
 fn benchmark_adapter_for(
@@ -1082,6 +955,737 @@ async fn run_trial(
     native: Option<&NativeInputs>,
     request: &RunRequest,
 ) -> Result<TrialResult, RunError> {
+    match native {
+        Some(inputs) => {
+            run_native_trial(
+                experiment, integrity, revision, declared, product, inputs, request,
+            )
+            .await
+        }
+        None => {
+            run_fixture_trial(experiment, integrity, revision, declared, product, request).await
+        }
+    }
+}
+
+/// One final trial classification for a native trial (P19-D01): combines
+/// the typed native Agent terminal observation, the admitted task and
+/// artifact identity, the native grading, and the lifecycle into one
+/// sealed interpretation with evidence references. Neither the job exit
+/// code alone nor a [`FailureBoundaryCode`] alone determines score
+/// eligibility.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NativeTrialClass {
+    /// The bound native grade is preserved: Agent success, Agent task
+    /// failure (zero score), or a benchmark-valid Agent timeout.
+    GradedNative {
+        reward: u64,
+        agent_failed: bool,
+        timed_out: bool,
+    },
+    /// A terminal failure that preserves attempted coverage without an
+    /// Agent score: provider/access, adapter, identity, infrastructure,
+    /// or invalid grading.
+    InvalidExecution {
+        reason: String,
+        boundary: FailureBoundaryCode,
+    },
+    /// Cancelled, unstarted, or effect-unknown: no outcome is invented
+    /// (EVAL-DUR-002).
+    NoOutcome { reason: &'static str },
+}
+
+/// The one classifier from a settled native job record and its bound
+/// identity to the sealed trial interpretation. The exception taxonomy is
+/// the pinned runner's own: `NonZeroAgentExitCodeError` and
+/// `AgentTimeoutError` are graded Agent outcomes (the verifier still ran
+/// on the Agent's environment); the API-error family is a terminal
+/// provider/access failure that must never score; anything else is an
+/// infrastructure or grader-side terminal failure.
+fn classify_native_trial(
+    record: Option<&crate::benchmark::process::BenchmarkRecord>,
+    binding: Option<&crate::benchmark::process::NativeTrialBinding>,
+) -> NativeTrialClass {
+    let Some(record) = record else {
+        return NativeTrialClass::NoOutcome {
+            reason: "job-never-dispatched",
+        };
+    };
+    // Job-process-level verdicts come from the settled record.
+    let process_failure = match &record.completion {
+        BenchmarkCompletion::VerifiedNative { .. } => None,
+        BenchmarkCompletion::Verified { .. } => None,
+        BenchmarkCompletion::Failed(failure) => Some(failure),
+    };
+    if record.exit == ExitState::Cancelled {
+        return NativeTrialClass::NoOutcome {
+            reason: "job-cancelled",
+        };
+    }
+    if let Some(failure) = process_failure {
+        // A bound completion is impossible here: identity failures settle
+        // as `Failed` at the Integrity boundary with the binding token.
+        return NativeTrialClass::InvalidExecution {
+            reason: failure.kind.to_owned(),
+            boundary: failure.boundary,
+        };
+    }
+    let Some(binding) = binding else {
+        // A `Verified` (hermetic-shaped) completion on a native dispatch
+        // means the job never bound: no Agent score is possible.
+        return NativeTrialClass::InvalidExecution {
+            reason: "native-binding-absent".to_owned(),
+            boundary: FailureBoundaryCode::Integrity,
+        };
+    };
+    match binding.exception_type.as_deref() {
+        None => NativeTrialClass::GradedNative {
+            reward: fact_value(&binding.reward),
+            agent_failed: fact_value(&binding.reward) == 0,
+            timed_out: binding.terminal.timed_out,
+        },
+        Some("NonZeroAgentExitCodeError") => NativeTrialClass::GradedNative {
+            reward: fact_value(&binding.reward),
+            agent_failed: true,
+            timed_out: false,
+        },
+        Some("AgentTimeoutError") => NativeTrialClass::GradedNative {
+            reward: fact_value(&binding.reward),
+            agent_failed: true,
+            timed_out: true,
+        },
+        Some(
+            "ApiError"
+            | "ApiRateLimitError"
+            | "AgentAuthenticationError"
+            | "ModelNotFoundError"
+            | "NetworkConnectionError",
+        ) => NativeTrialClass::InvalidExecution {
+            reason: format!(
+                "agent-provider-failure:{}",
+                binding.exception_type.as_deref().unwrap_or("")
+            ),
+            boundary: FailureBoundaryCode::AgentProcess,
+        },
+        Some("VerifierTimeoutError") => NativeTrialClass::InvalidExecution {
+            reason: "verifier-timeout".to_owned(),
+            boundary: FailureBoundaryCode::Grader,
+        },
+        Some(other) => NativeTrialClass::InvalidExecution {
+            reason: format!("job-exception:{other}"),
+            boundary: FailureBoundaryCode::Infrastructure,
+        },
+    }
+}
+
+/// The known value of a fact, or zero when unknown (classification input
+/// only; the fact itself stays sealed evidence).
+fn fact_value(fact: &Fact) -> u64 {
+    match fact {
+        Fact::Known { value, .. } => *value,
+        Fact::Unknown { .. } => 0,
+    }
+}
+
+/// Snapshot of the job directories that already exist under a trace root
+/// before dispatch (the stale-job defense of the binding).
+fn snapshot_job_names(trace_root: &Path) -> Vec<std::ffi::OsString> {
+    std::fs::read_dir(trace_root.join("jobs"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| entry.file_name())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+/// The native reserved artifact keys: no host-Agent artifacts exist, the
+/// normalized expected output is the bound native trial result.
+fn reserved_artifact_keys_native() -> Vec<ArtifactKey> {
+    [
+        EXPECTED_OUTPUT_KEY,
+        AUTHORITY_LEDGER_KEY,
+        CONTROL_EXPERIMENT_KEY,
+        CONTROL_INTEGRITY_KEY,
+        TRAJECTORY_KEY,
+    ]
+    .iter()
+    .map(|key| ArtifactKey::new(key).expect("reserved keys are canonical"))
+    .collect()
+}
+
+/// Stages the per-trial integration handoff: the typed configuration the
+/// pinned Harbor integration reads (exact built executable, model,
+/// projected provider configuration, and credential material). The
+/// handoff lives outside the sealed bundle and outside the task
+/// environment; the integration applies and then removes its credential
+/// projection before the verifier phase (P19-D01).
+fn stage_native_handoff(
+    trial_root: &Path,
+    declared: &crate::experiment::DeclaredTrial,
+    product: &str,
+    agent: &crate::runner::material::AgentMaterial,
+) -> Result<PathBuf, RunError> {
+    let handoff_path = trial_root.join("integration/handoff.json");
+    let handoff = json!({
+        "schema": "opi-eval-native-handoff/2",
+        "trial": declared.id,
+        "product": product,
+        "integration_agent_name": agent.integration.agent_name,
+        "integration_import_path": agent.integration.import_path,
+        "agent_executable": agent.executable.path,
+        "agent_executable_sha256": agent.executable.sha256,
+        "model": agent.model,
+        "provider_env": agent.provider_env,
+        "config": {
+            "kind": agent.config.kind,
+            "base_url": agent.config.base_url,
+            "model_id": agent.config.model_id,
+        },
+    });
+    std::fs::create_dir_all(trial_root.join("integration"))
+        .map_err(|error| RunError::Native(error.to_string()))?;
+    std::fs::write(
+        &handoff_path,
+        serde_json::to_vec(&handoff).map_err(|error| RunError::Native(error.to_string()))?,
+    )
+    .map_err(|error| RunError::Native(error.to_string()))?;
+    Ok(handoff_path)
+}
+
+/// The synthetic observed Agent record for one bound native trial: every
+/// field derives from the integration's typed terminal observation and
+/// the bound identity, never from invented host-side execution. The
+/// native event streams stay sealed raw evidence (P19-D01: no new
+/// canonical trace format); observation coverage expands later.
+fn native_agent_record(
+    product: &str,
+    binding: &crate::benchmark::process::NativeTrialBinding,
+) -> crate::agent::process::AgentRecord {
+    let exit = if binding.terminal.timed_out {
+        ExitState::TimedOut
+    } else {
+        ExitState::Exited {
+            code: binding
+                .terminal
+                .exit_code
+                .clamp(i32::MIN as i64, i32::MAX as i64) as i32,
+        }
+    };
+    let completion = match binding.exception_type.as_deref() {
+        Some("NonZeroAgentExitCodeError") => {
+            crate::agent::process::AgentCompletion::Failed(crate::agent::process::AgentFailure {
+                kind: "agent-non-zero-exit",
+                boundary: FailureBoundaryCode::AgentProcess,
+            })
+        }
+        _ if binding.terminal.timed_out => {
+            crate::agent::process::AgentCompletion::Failed(crate::agent::process::AgentFailure {
+                kind: "agent-timeout",
+                boundary: FailureBoundaryCode::AgentProcess,
+            })
+        }
+        _ => crate::agent::process::AgentCompletion::Completed { artifacts: vec![] },
+    };
+    crate::agent::process::AgentRecord {
+        identity: crate::agent::process::AgentIdentity {
+            product: product.to_owned(),
+            package: format!("native-integration:{}", binding.agent_name),
+            adapter: format!("harbor-integration/{}", binding.agent_version),
+            executable: PathBuf::from("<native-task-environment>"),
+        },
+        workspace: PathBuf::new(),
+        exit,
+        stdout: crate::process::OutputCapture::default(),
+        stderr: crate::process::OutputCapture::default(),
+        cleanup: crate::process::CleanupEvidence::NotRequired,
+        wall_time: std::time::Duration::from_secs(0),
+        usage: crate::agent::process::UsageProjection::default(),
+        completion,
+    }
+}
+
+/// Run one declared native trial: one explicitly selected upstream job
+/// runs the selected Agent inside the graded task environment, grades
+/// that same trial after the integration's credential cleanup, and the
+/// imported result binds to the frozen identity before anything seals
+/// (P19-D01).
+#[allow(clippy::too_many_arguments)]
+async fn run_native_trial(
+    experiment: &ResolvedExperiment,
+    integrity: &IntegrityRecord,
+    revision: &BenchmarkRevision,
+    declared: &crate::experiment::DeclaredTrial,
+    product: &str,
+    inputs: &NativeInputs,
+    request: &RunRequest,
+) -> Result<TrialResult, RunError> {
+    let trial_root = request.root.join("trials").join(&declared.id);
+    if trial_root.join("bundle/intent.json").is_file() {
+        return Err(RunError::Bundle(format!(
+            "trial {} already has a durable intent reservation",
+            declared.id
+        )));
+    }
+    let verifier_trace = trial_root.join("verifier-trace");
+    let task_dir = trial_root.join("task-package");
+    for dir in [&verifier_trace, &task_dir] {
+        std::fs::create_dir_all(dir).map_err(|error| RunError::Staging(error.to_string()))?;
+    }
+    copy_dir_recursive(&inputs.task_package, &task_dir)
+        .map_err(|error| RunError::Native(error.to_string()))?;
+    let material = request.material.as_ref().expect("native implies material");
+    let agent = material
+        .agent(product)
+        .map_err(|error| RunError::Native(error.to_string()))?;
+    let handoff_path = stage_native_handoff(&trial_root, declared, product, agent)?;
+
+    // Durable intent before any process effect (EVAL-DUR-001): the native
+    // reservation covers the control, trajectory, authority, and bound
+    // native result identities; host-Agent artifacts do not exist.
+    let trial_id =
+        TrialIdentity::new(&declared.id).map_err(|error| RunError::Staging(error.to_string()))?;
+    let mut bundle = RunBundle::create(&trial_root.join("bundle"))
+        .map_err(|error| RunError::Bundle(error.to_string()))?;
+    let intent = IntentRecord {
+        trial: trial_id.clone(),
+        pair: PairIdentity::new(owning_edge(experiment, declared)?.id.as_str())
+            .map_err(|error| RunError::Staging(error.to_string()))?,
+        artifacts: reserved_artifact_keys_native(),
+        expected_output: ArtifactKey::new(EXPECTED_OUTPUT_KEY)
+            .map_err(|error| RunError::Staging(error.to_string()))?,
+    };
+    let mut lifecycle = TrialLifecycle::plan(trial_id.clone());
+    lifecycle
+        .publish_intent(intent.clone())
+        .map_err(|error| RunError::Bundle(error.to_string()))?;
+    let proof = bundle
+        .publish_intent(&intent)
+        .map_err(|error| RunError::Bundle(error.to_string()))?;
+    lifecycle
+        .enter_process_effect_pending(proof)
+        .map_err(|error| RunError::Bundle(error.to_string()))?;
+
+    let mut ledger = AuthorityLedger::new();
+    let runner_source =
+        SourceIdentity::new("runner").map_err(|error| RunError::Staging(error.to_string()))?;
+    let mut staged_keys: Vec<ArtifactKey> = Vec::new();
+    let mut produced_keys: Vec<ArtifactKey> = Vec::new();
+    staged_keys.push(stage(
+        &mut bundle,
+        &runner_source,
+        ArtifactRole::Derived,
+        CONTROL_EXPERIMENT_KEY,
+        &serde_json::to_vec(experiment).map_err(|error| RunError::Staging(error.to_string()))?,
+    )?);
+    staged_keys.push(stage(
+        &mut bundle,
+        &runner_source,
+        ArtifactRole::Derived,
+        CONTROL_INTEGRITY_KEY,
+        &integrity.canonical_bytes(),
+    )?);
+
+    // One upstream job: the selected integration runs inside the task
+    // environment and the same trial's verifier grades it. The
+    // pre-dispatch job snapshot backs the binding's stale-job defense.
+    let selection = crate::benchmark::process::NativeSelection {
+        agent_name: agent.integration.agent_name.clone(),
+        agent_import_path: agent.integration.import_path.clone(),
+        task_name: declared_task_name(revision, &task_dir),
+        model: agent.model.clone(),
+        reward_metric: "reward".to_owned(),
+        module_dir: agent.integration.module_dir.clone(),
+        handoff_path: handoff_path.clone(),
+        stale_job_names: snapshot_job_names(&verifier_trace),
+    };
+    let mut job_record = None;
+    let mut job_rejection: Option<String> = None;
+    if ledger.attempt(AuthorityTransition::AgentDispatch) {
+        let adapter = benchmark_adapter_for(revision)?;
+        let benchmark_request = BenchmarkRunRequest {
+            verifier_executable: inputs.verifier_executable.clone(),
+            task_dir: task_dir.clone(),
+            task_id: declared.task.clone(),
+            native_selection: Some(selection),
+            trace_root: verifier_trace.clone(),
+            admitted_lock_digest: material.static_lock.sha256.clone(),
+            integrity: integrity.clone(),
+            extra_env: inputs.verifier_env.clone(),
+        };
+        match BenchmarkExecution::run(
+            &benchmark_request,
+            adapter.as_ref(),
+            &CancellationToken::new(),
+        )
+        .await
+        {
+            Ok(record) => job_record = Some(record),
+            // Pre-spawn admission refusal: no job process ever existed.
+            Err(rejection) => {
+                ledger.fail(FailureBoundaryCode::Integrity);
+                job_rejection = Some(rejection.token.to_owned());
+            }
+        }
+    }
+
+    // Settlement and grade admission: the observed job outcome settles
+    // durably; the grade transition is the binding admission (import plus
+    // identity checks) over the job's own result tree.
+    let settlement_kind = match job_record.as_ref().map(|record| &record.exit) {
+        Some(ExitState::Exited { code }) => SettlementKind::Exited { code: *code },
+        Some(ExitState::TimedOut) => SettlementKind::TimedOut,
+        Some(ExitState::Cancelled) => SettlementKind::Cancelled {
+            source: CancellationSource::Infrastructure,
+        },
+        _ => SettlementKind::Exited { code: -1 },
+    };
+    let settle_executed = ledger.attempt(AuthorityTransition::Settle);
+    debug_assert!(settle_executed, "settle follows only a dispatch attempt");
+    lifecycle
+        .settle(ObservedOutcome {
+            kind: settlement_kind,
+        })
+        .map_err(|error| RunError::Bundle(error.to_string()))?;
+    bundle
+        .record_settlement(&SettlementMarker {
+            trial: trial_id.clone(),
+        })
+        .map_err(|error| RunError::Bundle(error.to_string()))?;
+
+    let binding = match job_record.as_ref().map(|record| &record.completion) {
+        Some(BenchmarkCompletion::VerifiedNative { binding, .. }) => Some(binding),
+        _ => None,
+    };
+    if job_record.is_some() && !ledger.attempt(AuthorityTransition::GradeDispatch) {
+        // A boundary failure already recorded mechanically stops the
+        // grade admission.
+    }
+    if job_record
+        .as_ref()
+        .is_some_and(|record| matches!(record.completion, BenchmarkCompletion::Failed(_)))
+        && binding.is_none()
+    {
+        let boundary = job_record
+            .as_ref()
+            .and_then(|record| match &record.completion {
+                BenchmarkCompletion::Failed(failure) => Some(failure.boundary),
+                _ => None,
+            })
+            .unwrap_or(FailureBoundaryCode::Grader);
+        ledger.attempt_failed(AuthorityTransition::GradeDispatch, boundary);
+    }
+
+    // Native job evidence into the staging bundle, under the grader's
+    // source identity: bounded stream captures on every path, and the
+    // bound identity references when admission succeeded.
+    let grader_source = SourceIdentity::new(&format!("grader-{}", integrity.grader()))
+        .map_err(|error| RunError::Staging(error.to_string()))?;
+    if let Some(record) = &job_record {
+        produced_keys.push(stage(
+            &mut bundle,
+            &grader_source,
+            ArtifactRole::Native,
+            "native/job-stdout.log",
+            &record.stdout.bytes,
+        )?);
+        produced_keys.push(stage(
+            &mut bundle,
+            &grader_source,
+            ArtifactRole::Native,
+            "native/job-stderr.log",
+            &record.stderr.bytes,
+        )?);
+        staged_keys.extend(produced_keys[produced_keys.len() - 2..].to_vec());
+        if let Some(binding) = binding {
+            for (role, path) in [
+                ("native/trial-result.json", binding.results_path.clone()),
+                ("native/trial-config.json", binding.config_path.clone()),
+            ] {
+                let bytes = std::fs::read(&path).map_err(|error| {
+                    RunError::Native(format!("bound evidence unreadable: {error}"))
+                })?;
+                produced_keys.push(stage(
+                    &mut bundle,
+                    &grader_source,
+                    ArtifactRole::Native,
+                    role,
+                    &bytes,
+                )?);
+                staged_keys.push(produced_keys.last().cloned().expect("just pushed"));
+            }
+            if let Some(manifest) = &binding.manifest_path {
+                let bytes = std::fs::read(manifest).map_err(|error| {
+                    RunError::Native(format!("bound evidence unreadable: {error}"))
+                })?;
+                produced_keys.push(stage(
+                    &mut bundle,
+                    &grader_source,
+                    ArtifactRole::Native,
+                    "native/artifacts-manifest.json",
+                    &bytes,
+                )?);
+                staged_keys.push(produced_keys.last().cloned().expect("just pushed"));
+            }
+            // The normalized expected output is the bound native result:
+            // the sealed interpretation source of this trial's grade.
+            staged_keys.push(stage(
+                &mut bundle,
+                &runner_source,
+                ArtifactRole::Normalized,
+                EXPECTED_OUTPUT_KEY,
+                &std::fs::read(&binding.results_path).map_err(|error| {
+                    RunError::Native(format!("bound result unreadable: {error}"))
+                })?,
+            )?);
+        }
+    }
+
+    // The one classification (P19-D01).
+    let class = classify_native_trial(job_record.as_ref(), binding);
+
+    // Pre-seal projection over the settled facts: the observed Agent
+    // record is the typed native terminal observation.
+    let projection = match (&job_record, binding) {
+        (Some(record), Some(binding)) => ProjectionPipeline::project(&TrialInputs {
+            agent: &native_agent_record(product, binding),
+            benchmark: Some(record),
+            lifecycle: &lifecycle,
+            workspace: None,
+        })
+        .ok(),
+        _ => None,
+    };
+    if let Some(trajectory) = &projection {
+        staged_keys.push(stage(
+            &mut bundle,
+            &runner_source,
+            ArtifactRole::Derived,
+            TRAJECTORY_KEY,
+            &trajectory.canonical_bytes(),
+        )?);
+    }
+    {
+        let ledger_json =
+            serde_json::to_vec(&ledger).map_err(|error| RunError::Staging(error.to_string()))?;
+        staged_keys.push(stage(
+            &mut bundle,
+            &runner_source,
+            ArtifactRole::Native,
+            AUTHORITY_LEDGER_KEY,
+            &ledger_json,
+        )?);
+    }
+
+    // Sealing happens only after evidence admission succeeded (a bound
+    // identity exists); a rejected admission retains truthful private
+    // diagnostics and rejects scoring/export instead.
+    let canary_leak =
+        scan_staged_for_canaries(&trial_root.join("bundle"), &staged_keys, &request.canaries);
+    let seal_outcome = if binding.is_none() {
+        // Evidence admission did not succeed: the seal transition is
+        // recorded as failed so the report (and every export derived from
+        // it) is refused mechanically, never silently skipped.
+        ledger.attempt_failed(AuthorityTransition::Seal, FailureBoundaryCode::Integrity);
+        None
+    } else if canary_leak.is_some() {
+        ledger.attempt_failed(AuthorityTransition::Seal, FailureBoundaryCode::Evidence);
+        None
+    } else if ledger.attempt(AuthorityTransition::Seal) {
+        match bundle.seal(&produced_keys) {
+            Ok(receipt) => {
+                lifecycle
+                    .mark_sealed()
+                    .map_err(|error| RunError::Bundle(error.to_string()))?;
+                Some(receipt)
+            }
+            Err(error) => {
+                ledger.attempt_failed(AuthorityTransition::Seal, error.boundary());
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Trial facts for pairing from the one classification.
+    let unsupported_controls = match experiment.model_controls().reasoning {
+        crate::experiment::ControlValue::Value(_) => vec!["reasoning".to_owned()],
+        _ => Vec::new(),
+    };
+    let fact = if seal_outcome.is_some() {
+        let outcome = match &class {
+            NativeTrialClass::GradedNative { agent_failed, .. } => {
+                if *agent_failed {
+                    TrialOutcome::AgentFailure
+                } else {
+                    TrialOutcome::ValidAgentOutcome
+                }
+            }
+            NativeTrialClass::InvalidExecution { boundary, .. } => match boundary {
+                FailureBoundaryCode::Grader => TrialOutcome::GraderFailure,
+                _ => TrialOutcome::InfrastructureFailure,
+            },
+            NativeTrialClass::NoOutcome { .. } => {
+                return Err(RunError::Bundle(format!(
+                    "trial {} sealed without a classification",
+                    declared.id
+                )));
+            }
+        };
+        Some(TrialFact {
+            id: declared.id.clone(),
+            subject: declared.subject.clone(),
+            task: declared.task.clone(),
+            group: declared.group.clone(),
+            manifest_digest: experiment.manifest_digest().to_owned(),
+            control_fingerprint: control_fingerprint(experiment),
+            unsupported_controls,
+            outcome,
+        })
+    } else {
+        None
+    };
+
+    let report_executed = ledger.attempt(AuthorityTransition::Report);
+    let mut receipt = json!({
+        "schema": TRIAL_RECEIPT_SCHEMA,
+        "id": declared.id,
+        "subject": declared.subject,
+        "task": declared.task,
+        "group": declared.group,
+        "status": if seal_outcome.is_some() { "sealed" } else { "failed" },
+        "mode": "native",
+        "agent": match binding {
+            Some(binding) => json!({
+                "product": product,
+                "name": binding.agent_name,
+                "version": binding.agent_version,
+                "model": binding.model_name,
+                "exit_code": binding.terminal.exit_code,
+                "timed_out": binding.terminal.timed_out,
+                "executable_sha256": binding.terminal.agent_executable_sha256,
+                "exception_type": binding.exception_type,
+                "delivered": binding.terminal.delivered.iter().map(|file| json!({
+                    "source": file.source,
+                    "sha256": file.sha256,
+                })).collect::<Vec<_>>(),
+            }),
+            None => json!({
+                "product": product,
+                "observed": false,
+            }),
+        },
+        "verifier": job_rejection.as_ref().map(|token| {
+            json!({"rejected": token, "boundary": "integrity"})
+        }).or_else(|| job_record.as_ref().map(|record| {
+            json!({
+                "exit_state": exit_state_token(&record.exit),
+                "reward": fact_token(&record.reward),
+                "completion": match &record.completion {
+                    BenchmarkCompletion::Verified { .. } => "verified",
+                    BenchmarkCompletion::VerifiedNative { .. } => "verified-native",
+                    BenchmarkCompletion::Failed(_) => "failed",
+                },
+                "failure_kind": benchmark_failure_kind(record),
+                "boundary": benchmark_failure_boundary(record),
+                "binding": binding.map(|binding| json!({
+                    "job": binding.job_name.to_string_lossy(),
+                    "trial": binding.trial_name,
+                    "agent": binding.agent_name,
+                    "task": binding.task_name,
+                })),
+            })
+        })),
+        "classification": match &class {
+            NativeTrialClass::GradedNative { reward, agent_failed, timed_out } => json!({
+                "class": "graded-native",
+                "reward": reward,
+                "agent_failed": agent_failed,
+                "timed_out": timed_out,
+            }),
+            NativeTrialClass::InvalidExecution { reason, boundary } => json!({
+                "class": "invalid-execution",
+                "reason": reason,
+                "boundary": boundary_token(*boundary),
+            }),
+            NativeTrialClass::NoOutcome { reason } => json!({
+                "class": "no-outcome",
+                "reason": reason,
+            }),
+        },
+        "authority": authority_json(&ledger),
+    });
+    if let Some(sealed) = &seal_outcome {
+        receipt["bundle_identity"] = json!(sealed.bundle_identity());
+    }
+    if let Some(trajectory) = &projection {
+        let mut trajectory_receipt =
+            crate::trajectory::TrajectoryReceipt::for_trajectory(trajectory);
+        if let Some(sealed) = &seal_outcome {
+            trajectory_receipt.record_seal(crate::trajectory::SealOutcome::Sealed {
+                bundle_digest: sealed.bundle_identity().to_owned(),
+            });
+        }
+        receipt["pre_seal_digest"] = json!(trajectory_receipt.pre_seal_digest);
+        receipt["seal_result"] = match &trajectory_receipt.seal_result {
+            Some(crate::trajectory::SealOutcome::Sealed { bundle_digest }) => {
+                json!({"sealed": {"bundle_digest": bundle_digest}})
+            }
+            Some(crate::trajectory::SealOutcome::SealFailed { reason }) => {
+                json!({"seal_failed": {"reason": reason}})
+            }
+            None => serde_json::Value::Null,
+        };
+    }
+    if report_executed {
+        let receipt_path = trial_root.join("receipt.json");
+        std::fs::write(
+            &receipt_path,
+            serde_json::to_vec(&receipt).map_err(|error| RunError::Staging(error.to_string()))?,
+        )
+        .map_err(|error| RunError::Staging(error.to_string()))?;
+        if seal_outcome.is_some() {
+            lifecycle
+                .mark_graded()
+                .and_then(|()| lifecycle.mark_reported())
+                .map_err(|error| RunError::Bundle(error.to_string()))?;
+        }
+    }
+
+    Ok(TrialResult {
+        receipt,
+        fact,
+        sealed: seal_outcome.is_some(),
+    })
+}
+
+/// The task name an upstream trial of this revision's staged package
+/// reports (the binding's expected task identity).
+fn declared_task_name(revision: &BenchmarkRevision, task_dir: &Path) -> String {
+    match revision {
+        BenchmarkRevision::TerminalBench21 { profile_bytes, .. } => {
+            Tb21Profile::parse(profile_bytes.as_slice())
+                .ok()
+                .and_then(|profile| profile.declared_task_name(task_dir))
+                .unwrap_or_default()
+        }
+        _ => String::new(),
+    }
+}
+/// Run one declared hermetic fixture trial end to end and persist its
+/// receipts: the deterministic host helper stands in for the Agent and
+/// the fixture verifier replays pinned native bytes (conformance-only,
+/// never an Agent score claim).
+async fn run_fixture_trial(
+    experiment: &ResolvedExperiment,
+    integrity: &IntegrityRecord,
+    revision: &BenchmarkRevision,
+    declared: &crate::experiment::DeclaredTrial,
+    product: &str,
+    request: &RunRequest,
+) -> Result<TrialResult, RunError> {
     let trial_root = request.root.join("trials").join(&declared.id);
 
     // A trial identity is never reused: an existing durable reservation
@@ -1113,30 +1717,11 @@ async fn run_trial(
         std::fs::create_dir_all(dir).map_err(|error| RunError::Staging(error.to_string()))?;
     }
     let config_path = trial_root.join("bench.toml");
-    match native {
-        Some(_) if product == "opi" => {
-            let material = request.material.as_ref().expect("native implies material");
-            let agent = material
-                .agent(product)
-                .map_err(|error| RunError::Native(error.to_string()))?;
-            std::fs::write(&config_path, native_opi_config(&agent.config, &agent.model))
-                .map_err(|error| RunError::Native(error.to_string()))?;
-        }
-        Some(_) => {
-            std::fs::write(
-                &config_path,
-                "# native run: pi reads its configuration from the isolated agent dir\n",
-            )
-            .map_err(|error| RunError::Native(error.to_string()))?;
-        }
-        None => {
-            std::fs::write(
-                &config_path,
-                "# assembled-run fixture config (never a user config)\n",
-            )
-            .map_err(|error| RunError::Staging(error.to_string()))?;
-        }
-    }
+    std::fs::write(
+        &config_path,
+        "# assembled-run fixture config (never a user config)\n",
+    )
+    .map_err(|error| RunError::Staging(error.to_string()))?;
 
     // Durable intent before any process effect (EVAL-DUR-001). The
     // reservation covers every artifact identity the sealed bundle must
@@ -1202,41 +1787,20 @@ async fn run_trial(
     // native mode spawns the exact built executable from the material
     // with the deterministic configuration projection and the official
     // instruction as the prompt.
-    let (agent_executable, request_env, provider_model, allow_mutating, prompt) = match native {
-        Some(inputs) => {
-            let material = request.material.as_ref().expect("native implies material");
-            let agent = material
-                .agent(product)
-                .map_err(|error| RunError::Native(error.to_string()))?;
-            let env = native_agent_env(product, &agent.config, &isolation)
-                .map_err(|error| RunError::Native(error.to_string()))?;
-            let mut env: BTreeMap<std::ffi::OsString, std::ffi::OsString> = env;
-            for (key, value) in &agent.provider_env {
-                env.insert(key.clone().into(), value.clone().into());
-            }
-            (
-                agent.executable.path.clone(),
-                env,
-                agent.model.clone(),
-                true,
-                inputs.prompt.clone(),
-            )
-        }
-        None => {
-            let helper = helper_path(&trial_root, "helper-agent");
-            write_helper(&helper, &agent_helper_script(product))?;
-            (
-                helper,
-                agent_env(product, &request.fixtures, &request.behavior)?,
-                format!(
-                    "{}:{}",
-                    experiment.model_controls().provider,
-                    experiment.model_controls().model
-                ),
-                false,
-                format!("assembled run: solve task {}", declared.task),
-            )
-        }
+    let (agent_executable, request_env, provider_model, allow_mutating, prompt) = {
+        let helper = helper_path(&trial_root, "helper-agent");
+        write_helper(&helper, &agent_helper_script(product))?;
+        (
+            helper,
+            agent_env(product, &request.fixtures, &request.behavior)?,
+            format!(
+                "{}:{}",
+                experiment.model_controls().provider,
+                experiment.model_controls().model
+            ),
+            false,
+            format!("assembled run: solve task {}", declared.task),
+        )
     };
     let agent_request = AgentRunRequest {
         executable: agent_executable,
@@ -1408,20 +1972,14 @@ async fn run_trial(
             | BenchmarkRevision::TerminalBench30 { fixture_report, .. }
             | BenchmarkRevision::DeepSwe { fixture_report, .. } => fixture_report.clone(),
         };
-        let verifier_helper = match native {
-            Some(inputs) => inputs.verifier_executable.clone(),
-            None => {
-                let native_source = fixture_report
-                    .as_deref()
-                    .expect("hermetic benchmark revisions carry fixture reports");
-                let helper = helper_path(&trial_root, "helper-verifier");
-                write_helper(
-                    &helper,
-                    &verifier_helper_script(revision.report_name(), native_source)?,
-                )?;
-                helper
-            }
-        };
+        let native_source = fixture_report
+            .as_deref()
+            .expect("hermetic benchmark revisions carry fixture reports");
+        let verifier_helper = helper_path(&trial_root, "helper-verifier");
+        write_helper(
+            &verifier_helper,
+            &verifier_helper_script(revision.report_name(), native_source)?,
+        )?;
         let task_package = match revision {
             BenchmarkRevision::TerminalBench21 { task_package, .. }
             | BenchmarkRevision::TerminalBench30 { task_package, .. }
@@ -1468,10 +2026,7 @@ async fn run_trial(
                 ))
             }
         };
-        let mut env: BTreeMap<std::ffi::OsString, std::ffi::OsString> = match native {
-            Some(inputs) => inputs.verifier_env.clone(),
-            None => BTreeMap::new(),
-        };
+        let mut env: BTreeMap<std::ffi::OsString, std::ffi::OsString> = BTreeMap::new();
         if let Some(report) = &fixture_report {
             env.insert(
                 "OPI_EVAL_NATIVE_SOURCE".into(),
@@ -1486,20 +2041,11 @@ async fn run_trial(
             verifier_executable: verifier_helper,
             task_dir,
             task_id: declared.task.clone(),
-            agent_output: answer_path,
+            native_selection: None,
             trace_root: verifier_trace.clone(),
             // Hermetic staging pins a per-trial fixture digest; the native
             // mode binds the admitted static external lock instead.
-            admitted_lock_digest: match native {
-                Some(_) => request
-                    .material
-                    .as_ref()
-                    .expect("native implies material")
-                    .static_lock
-                    .sha256
-                    .clone(),
-                None => crate::agent::opi::sha256_hex(declared.id.as_bytes()),
-            },
+            admitted_lock_digest: crate::agent::opi::sha256_hex(declared.id.as_bytes()),
             integrity: integrity.clone(),
             extra_env: env,
         };
@@ -1720,6 +2266,7 @@ async fn run_trial(
                 "reward": fact_token(&record.reward),
                 "completion": match &record.completion {
                     BenchmarkCompletion::Verified { .. } => "verified",
+                    BenchmarkCompletion::VerifiedNative { .. } => "verified-native",
                     BenchmarkCompletion::Failed(_) => "failed",
                 },
                 "failure_kind": benchmark_failure_kind(record),
@@ -1934,7 +2481,7 @@ fn agent_failure_boundary(completion: &AgentCompletion) -> Option<String> {
 fn benchmark_failure_kind(record: &crate::benchmark::process::BenchmarkRecord) -> Option<String> {
     match &record.completion {
         BenchmarkCompletion::Failed(failure) => Some(failure.kind.to_owned()),
-        BenchmarkCompletion::Verified { .. } => None,
+        BenchmarkCompletion::Verified { .. } | BenchmarkCompletion::VerifiedNative { .. } => None,
     }
 }
 
@@ -1943,7 +2490,7 @@ fn benchmark_failure_boundary(
 ) -> Option<String> {
     match &record.completion {
         BenchmarkCompletion::Failed(failure) => Some(boundary_token(failure.boundary).to_owned()),
-        BenchmarkCompletion::Verified { .. } => None,
+        BenchmarkCompletion::Verified { .. } | BenchmarkCompletion::VerifiedNative { .. } => None,
     }
 }
 

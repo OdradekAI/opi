@@ -55,13 +55,11 @@ enum Command {
         #[arg(long)]
         canaries: Option<std::path::PathBuf>,
         /// Resolved native material manifest (native mode): exact built
-        /// agents, materialized task packages, pinned verifier and oracle
-        /// entrypoints, and the scripted-provider listener endpoint.
+        /// agents, materialized task packages, pinned verifier
+        /// entrypoints, the selected integration module, and the
+        /// scripted-provider listener endpoint.
         #[arg(long)]
         native_material: Option<std::path::PathBuf>,
-        /// Run only the upstream oracle preflight, then stop (native mode).
-        #[arg(long)]
-        preflight_only: bool,
     },
     /// Re-verify every sealed trial bundle under a run root without
     /// starting an Agent or mutating anything.
@@ -146,7 +144,6 @@ fn main() -> ExitCode {
             replacement_for,
             canaries,
             native_material,
-            preflight_only,
         } => {
             let args = cli::run::RunArgs {
                 config,
@@ -157,7 +154,6 @@ fn main() -> ExitCode {
                 replacement_for,
                 canaries,
                 native_material,
-                preflight_only,
             };
             match cli::run::run(&args) {
                 Ok(report) => {

@@ -173,7 +173,11 @@ case fails closed.
 | Mode | Inputs and behavior | What it proves |
 |------|---------------------|----------------|
 | Hermetic fixture mode | Default. Uses bounded deterministic helpers and pinned repository fixtures. | Adapter, lifecycle, sealing, reporting, and failure-path conformance. It does not prove real-product or real-provider fidelity. |
-| Native-material mode | Add `--native-material <MANIFEST>` to `validate`, `run`, or `conformance`. The manifest resolves exact Agent executables, task packages, verifier/oracle entry points, and the scripted-provider endpoint. | The admitted native execution described by that resolved material identity. `conformance` restricts native mode to its registered native case subset. |
+| Native-material mode | Add `--native-material <MANIFEST>` to `validate`, `run`, or `conformance`. The manifest (schema `opi-eval-native-material/2`) resolves exact Agent executables, the pinned Harbor integration module that runs each Agent inside the task environment, task packages, verifier/oracle entry points, and the scripted-provider endpoint. | For `run`, one explicitly selected upstream job per trial runs the selected Agent inside the graded task environment and grades that same trial; the imported result must bind to the selected Agent, task, and job identity before anything seals. Terminal-Bench 3.0 and DeepSWE native scoring is explicitly unavailable until their declared handoffs land. `conformance` restricts native mode to its registered native case subset (including the explicitly selected `oracle-witness`/`nop-witness` artifact witnesses). |
+
+The upstream oracle is an explicitly selected conformance diagnostic
+(`conformance --case oracle-witness` / `--case nop-witness`), never a
+prerequisite silently run by `run`.
 
 The CLI consumes a resolved native-material manifest; it does not improvise or
 silently replace missing native inputs. Native materialization and fidelity
@@ -188,7 +192,7 @@ budget and evidence separately from the hermetic CLI examples.
 | Command | Required inputs | Important options | Output and exit behavior |
 |---------|-----------------|-------------------|--------------------------|
 | `validate` | `--config PATH` | `--native-material PATH` adds native integrity identity. | Summary line; 0 resolved, 1 invalid. |
-| `run` | `--config PATH --root PATH --fixtures PATH` | `--recover`, `--replacement-for TRIAL`, `--canaries PATH`, `--native-material PATH`, `--preflight-only`; `--behavior` selects hermetic fault fixtures. | One-line JSON; 0 completed or successful preflight, 1 settled non-success, 2 rejected request. |
+| `run` | `--config PATH --root PATH --fixtures PATH` | `--recover`, `--replacement-for TRIAL`, `--canaries PATH`, `--native-material PATH`; `--behavior` selects hermetic fault fixtures. | One-line JSON; 0 completed, 1 settled non-success, 2 rejected request. |
 | `regrade` | `--root PATH` | None. | One-line JSON; 0 verified, 1 mutation/unsealed failure, 2 rejected command request. |
 | `report` | `--root PATH` | `--out PATH`, `--canaries PATH`. | One-line JSON; 0 published, 1 blocked/unverified, 2 rejected command request. |
 | `conformance` | `--suite ID --adapter ID --case ID --root PATH --fixtures PATH --provider PATH` | `--native-material PATH`. | One-line JSON; 0 expectation met, 1 expectation missed, 2 unsupported/rejected request. |

@@ -180,22 +180,25 @@ jobs:
             --material "$OPI_EVAL_NATIVE_STAGE/06-material/material.json" \
             --out "$OPI_EVAL_NATIVE_STAGE/06-material/conformance"
 
-      # One upstream oracle preflight per selected task: the official
-      # reference solution must pass through the unchanged native verifier
-      # before any agent trial starts.
-      - name: Run the upstream oracle preflights
+      # The explicitly selected TB2.1 artifact witnesses: the oracle
+      # applies the official reference solution and must grade one, nop
+      # delivers nothing and must grade zero - both through the same
+      # production job handoff the selected-Agent trials use. The oracle
+      # is a diagnostic, never a prerequisite silently run by `run`.
+      - name: Run the TB2.1 artifact witnesses
         run: |
           set -euo pipefail
           bash crates/opi-eval/scripts/native-smoke.sh oracle-preflight \
             --material "$OPI_EVAL_NATIVE_STAGE/06-material/material.json" \
-            --config-root "$OPI_EVAL_NATIVE_STAGE/06-material" \
             --out "$OPI_EVAL_NATIVE_STAGE/06-material/oracle"
 
-      # Six paired trials (Opi and pi for each of the three pinned task
-      # packages) through the native driving mode of the opi-eval run CLI,
-      # preserving native verifier authority and typed trajectory/span
-      # source edges, with the canary markers gating the seal.
-      - name: Run the six paired agent trials
+      # The paired selected-Agent trials (Opi and pi on the pinned TB2.1
+      # task; the TB3 and DeepSWE handoffs are explicitly unavailable
+      # until their declared delivery lands) through one explicitly
+      # selected upstream job per trial, preserving native verifier
+      # authority and bound result identity, with the canary markers
+      # gating the seal.
+      - name: Run the paired agent trials
         run: |
           set -euo pipefail
           bash crates/opi-eval/scripts/native-smoke.sh run-trials \

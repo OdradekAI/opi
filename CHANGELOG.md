@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `opi-eval`: native mode now binds scores to the selected Agent's same-trial
+  work. `run --native-material` dispatches one explicitly selected upstream
+  job per trial that runs the Opi/pi integration inside the graded task
+  environment and grades that same trial; the imported result must bind to the
+  selected Agent, task, and job identity (schema
+  `opi-eval-native-material/2` carries the pinned integration module). The
+  former host-agent then independent default/oracle-job score path, the
+  unchecked newest-job result admission, the appended `answer.txt` prompt
+  glue, and `run --preflight-only` are removed. Terminal-Bench 3.0 and
+  DeepSWE native scoring is explicitly unavailable until their declared
+  handoffs land; their hermetic fixture conformance is unchanged.
+
+### Changed
+
+- `opi-eval`: the upstream oracle is now an explicitly selected conformance
+  diagnostic (`conformance --case oracle-witness`, the incorrect
+  `nop-witness` grades zero), never a prerequisite silently run by `run`.
+- `opi-eval`: native trials seal one interpretation per trial: valid native
+  grades (including zero scores and benchmark-valid timeouts) keep their
+  native metric, terminal provider/access/adapter/identity/infrastructure
+  failures preserve attempted coverage without an Agent score, and rejected
+  result admission keeps truthful private diagnostics while refusing
+  scoring and export.
+
 ## [0.8.2] - 2026-09-05
 
 ### Breaking Changes
