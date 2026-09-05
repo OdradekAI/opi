@@ -38,10 +38,20 @@ Frozen copies under `docs/snapshots/phaseN/` are never edited.
 
 **Reviewed supplemental sources:** Supplemental tasks come only from this
 registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
-No supplemental Phase source is currently registered. Completed Phase 17 and
-Phase 18 delivery specifications are frozen under `docs/snapshots/phase17/`
-and `docs/snapshots/phase18/`; they are historical evidence and MUST NOT enter
-the live `spec_files` set.
+
+| Phase | Reviewed source | Localized counterpart |
+|---|---|---|
+| 19 | [Local Native Agent Evaluation](../../../docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md) | [简体中文](../../../docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md) |
+
+For Phase 19, include both listed files alongside `docs/opi-spec.md` in
+`spec_files`; derive criteria and source outcomes once from the English source,
+and check the Chinese counterpart for equivalent meaning. Registration does
+not admit the graph or authorize live provider execution. The source's local
+operator acceptance handoff preserves this harness's provider/auth-file limits.
+
+Completed Phase 17 and Phase 18 delivery specifications are frozen under
+`docs/snapshots/phase17/` and `docs/snapshots/phase18/`; they are historical
+evidence and MUST NOT enter the live `spec_files` set.
 
 When a ledger is initialized or reconciled for a supplemental phase, the
 phase's registered source files MUST be included in `spec_files` and hashed in

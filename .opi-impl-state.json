@@ -1,14 +1,2034 @@
 {
   "schema_version": 2,
   "spec_files": [
-    "docs/opi-spec.md"
+    "docs/opi-spec.md",
+    "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md",
+    "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c"
+    "docs/opi-spec.md": "cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c",
+    "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md": "5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a",
+    "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
   },
-  "task_graph_confirmed_at": "2026-08-27T02:08:48+08:00",
+  "task_graph_confirmed_at": "2026-09-05T10:01:23.922768+00:00",
   "current_phase": 19,
-  "tasks": [],
+  "tasks": [
+    {
+      "id": "19.1",
+      "phase": 19,
+      "title": "Bind selected native Agent trials and TB2.1 grading",
+      "crate": "opi-eval",
+      "parent_spec_row": null,
+      "definition_of_done": "P19-D01: From opi-eval run --config C --root R --native-material M, one explicitly selected Opi/pi Harbor integration invokes the Agent inside the selected TB2.1 task environment and grades that same trial after temporary credential cleanup. Replace the host-agent then independent default/oracle-job score path in the same cutover; do not append answer.txt instructions or treat it as an official handoff. Bind expected/observed subject build, task, job, trial, actual Agent, task environment, delivered artifact digest and verifier input to native output and sealed evidence. The production result reader rejects absent/wrong/oracle Agent, substituted artifact and stale job even on exit 0. Correct/incorrect witnesses traverse the real pinned task lifecycle/grader without a live model. Oracle becomes only explicitly selected conformance diagnostic and never a prerequisite silently run by run. Unsupported TB3/DeepSWE native scoring remains explicitly unavailable until 19.3/19.4; their former path must not keep emitting Agent scores. Preserve generic fixture conformance. Update schema identifiers and all affected callers/docs/Unreleased for the deliberate 0.x cutover. At the existing run_trial join point, combine typed native Agent terminal observations, admitted task and artifact identity, native grading and lifecycle into one final trial classification with evidence references. Keep native result identity validation in benchmark::process and lifecycle effect ownership in the existing supervisor; neither exit code alone nor FailureBoundaryCode alone determines score eligibility. Valid native task failure/zero and benchmark-valid task timeout retain their native metric; terminal provider/access/adapter/identity/infra/invalid-grading failures preserve attempted coverage without an Agent score. Cancelled/unstarted/effect-unknown states do not invent outcomes. Preserve capturable redacted native evidence independently of Agent success and even when the delivered artifact is absent; seal the interpretation only after evidence admission succeeds, otherwise retain truthful private diagnostics and reject scoring/export. Adapt existing private state and all current callers in one compiling cutover; later tasks extend native observation coverage, reports and recovery without a second classifier.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [],
+      "inference_notes": [
+        {
+          "field": "source_outcome",
+          "reason": "P19-D01; source order 1; independently demonstrable delivery, all changed contracts/callers recorded in the owning task",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded P19-D01 into the exact public operations, persisted identities, failures and verification in this DoD; requires human graph confirmation.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "execution_metadata",
+          "reason": "tier=cli-runtime; commit_type=fix; evaluator_required=true due to identity, authority, provider, durable evidence or public CLI/schema semantics; dependencies follow source prerequisites and concrete consumed contracts; parallelize=[] because shared runner/CLI/schema files must be applied serially",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=runner::experiment::{run_trial,prepare_native,run_oracle_preflight},benchmark::process::{BenchmarkRunRequest,import_harbor_result,newest_job_result},TerminalBench21Adapter,RunBundle,native-smoke.sh,AgentCompletion,AgentFailure::class,AgentOutcomeObservation,TrialOutcome,trajectory::project_agent_artifacts,report::coverage; reused=runner::experiment::{run_trial,prepare_native,run_oracle_preflight},benchmark::process::{BenchmarkRunRequest,import_harbor_result,newest_job_result},TerminalBench21Adapter,RunBundle,native-smoke.sh,existing AgentRecord capture and typed outcome/authority/lifecycle state; gap=selected Agent runs inside the graded upstream trial and imported results match the frozen expected identity,one evidence-bound final classification that does not discard capturable failed-attempt artifacts; production_consumers=runner::experiment::run_trial,TerminalBench21Adapter,TerminalBench30Adapter,DeepSweAdapter,native-smoke.sh (configured native_material and dynamic verifier executable lookup),OpiAdapter::settle,PiAdapter::settle,trajectory::project_agent_artifacts,ReportBuilder and sealed bundle readers (private Rust APIs and versioned persistent evidence, no plugin lookup); nonproduction_consumers=native_driver.rs,benchmark_integration_conformance.rs,benchmark/process.rs tests,README.md and README.zh.md,agent_integration_conformance.rs,authority_boundaries.rs,end_to_end_report.rs",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "placement",
+          "reason": "target=independent-companion; existing_home=crates/opi-eval; cannot_fit_fully=not-applicable (fits existing Independent Companion, no new crate or Agent Core seam)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=retain CLI and private adapter contracts with strict native result binding; config=explicit native integration selection and separate conformance oracle case; state=typed NativeTrialBinding plus artifact and verifier provenance in revised bundle/material identities,refine existing private outcome and Agent evidence state to seal one interpretation and preserve capture status independently of success, no parallel trace schema; dependency_edge=none in Cargo (existing process boundary), pinned Harbor integration material only",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=TB2.1 native vertical slice and fail-closed sibling native paths; revisit_when=pinned Harbor cannot expose same-trial Agent identity/artifact boundary, or a sibling family needs different native semantics,native terminal evidence cannot distinguish valid task failure from invalid execution without inventing a cause; simplification_trigger=replace; net_deletion=remove host-agent/default-job score route and newest-job authority plus answer.txt glue,replace exit-token score eligibility and duplicate final classification with the existing runner settlement owner; retain fixture branch and family adapters, add one typed binding check and Harbor Agent entry; residual_glue=existing private adapters/lifecycle plus the explicitly stated local integration or verifier boundary only",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#9. Risk thresholds, rollback, and compatibility"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No Agent Core/provider seam, Opi crate dependency, Eval LLM client, embedded datasets/graders/images/sandbox engine, stable SDK, additional Agent/benchmark, Learning/Promotion, activation, hosted workers/scheduling, GUI, leaderboard, native PowerShell task execution, statistical-superiority claim, full TB3 completion guarantee, or 18 mandatory live trials. Harness execution uses deterministic fixtures/native witnesses only; real-provider evidence is supplied by a separately authorized local operator. Preserve historical bundles/snapshots and unrelated user files.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "test_seam",
+          "reason": "Highest practical seam: spawned opi-eval public CLI, stdout/stderr/exit and persisted artifacts. Update existing native_driver, benchmark_integration_conformance, assembled_run surfaces; add only distinct missing negative/native cases. Existing safety/seal/containment tests retained. Planned exact native filters are new cases in native_driver.rs, marked ignored and explicitly run on local WSL/Linux with pinned external material and loopback fixture provider, never remote inference. Inspect all affected test bodies before change; replace superseded task-local assertions only after stronger public-seam proof passes. Every touched Rust test binary/filter and Python test file must run.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification_platform",
+          "reason": "D.1 uses one scoped smoke on local WSL/Linux for Unix acceptance; PowerShell sibling may check Windows compile only and cannot substitute zero-executed Unix tests. Resolve and lease repository external Cargo cache; deduplicate scenario commands already covered by D.1. Native material paths/output locations are operator/test-runner supplied placeholders, not auth input. Run python scripts/opi-doc-check.py and git diff --check for each actual metadata/docs change.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=native-trial-artifact-binding; role=owner; owner_task=19.1; module=crates/opi-eval/src/benchmark/process.rs; interface=NativeTrialBinding::validate_result (planned private boundary replacing unchecked result admission); representation=fallible value NativeTrialBinding; consumer_tasks=19.3,19.4,19.7,19.8; criterion_ids=P19-AC-002,P19-AC-004-native,P19-AC-005-native,P19-AC-008,P19-AC-009-regrade; legacy_paths=runner::experiment::run_trial host-agent/default-job score branch,benchmark::process::newest_job_result authority; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: execute the owned Python regression scripts in this task before passing, independent of the later CI alignment gate.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=native-trial-outcome; role=owner; owner_task=19.1; module=crates/opi-eval/src/runner/experiment.rs; interface=runner::experiment::run_trial settlement into sealed trial interpretation (existing private boundary); representation=enum trial classification refining existing TrialOutcome and AgentCompletion, with evidence references and independent capture status; consumer_tasks=19.2,19.7,19.9; criterion_ids=P19-AC-008-outcome,P19-AC-006-fixture,P19-AC-008,P19-AC-010-lifecycle; legacy_paths=AgentFailure::class exit-token score eligibility,report::coverage independent Agent failure interpretation; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#6. Evidence, failure, and reporting"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The outcome cutover updates existing Agent producers, authority/trajectory/bundle projections and report consumers together so the task compiles and current reports consume the same sealed meaning. 19.2 owns protocol-specific terminal observation expansion; 19.7 owns the full new report format. Added paths are callers of the changed private state, not an adjacent refactor.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#6. Evidence, failure, and reporting"
+        },
+        {
+          "field": "test_seam_revision",
+          "reason": "Update existing public CLI native_driver cases and current authority/report assertions at the changed Interface. Add the planned non-ignored native_trial_outcome filter only for distinct settlement/evidence outcomes using deterministic native process fixtures. This does not duplicate the ignored real TB2.1 grader witness or claim real-client protocol coverage. Keep current containment/privacy/seal guards, and remove any superseded local assertions only after stronger Interface proof passes.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "fix",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test native_driver --test benchmark_integration_conformance --test assembled_run --test agent_integration_conformance --test authority_boundaries --test end_to_end_report"
+        ],
+        "behavioral_tests": [
+          "crates/opi-eval/tests/native_driver.rs",
+          "crates/opi-eval/tests/benchmark_integration_conformance.rs",
+          "crates/opi-eval/tests/assembled_run.rs",
+          "crates/opi-eval/tests/agent_integration_conformance.rs",
+          "crates/opi-eval/tests/authority_boundaries.rs",
+          "crates/opi-eval/tests/end_to_end_report.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "cargo test -p opi-eval --lib"
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P19-AC-002",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Real run result admission rejects identity/artifact substitution and oracle attribution. Source requirement P19-AC-002.",
+          "verification": [
+            "cargo test -p opi-eval --test native_driver native_result_binding",
+            "cargo test -p opi-eval --test benchmark_integration_conformance",
+            "python crates/opi-eval/scripts/test_verify_native_smoke_artifact.py"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-003-native",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "TB2.1 native positive/negative artifact witnesses use the same production trial handoff; live Opi/pi completion remains 19.11. Source requirement P19-AC-003.",
+          "verification": [
+            "cargo test -p opi-eval --test native_driver native_tb21_artifact_witness -- --ignored --exact"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-008-outcome",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Production run with deterministic native observations seals one interpretation for a valid zero/task failure, benchmark-valid timeout and terminal provider/adapter/identity/invalid-grader failure. Failed attempts retain capturable native evidence and attempted coverage without a fabricated delivered artifact or Agent score; capture/seal rejection remains explicit and cannot bypass privacy or integrity. Existing report consumers agree with the sealed interpretation. This closes the settlement prerequisite of P19-AC-008; full denominator reporting remains owned by 19.7.",
+          "verification": [
+            "cargo test -p opi-eval --test native_driver native_trial_outcome",
+            "cargo test -p opi-eval --test authority_boundaries",
+            "cargo test -p opi-eval --test end_to_end_report"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "AgentAdapter::settle",
+            "trajectory::project_agent_artifacts",
+            "RunBundle::seal",
+            "ReportBuilder"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-eval/src/main.rs::Command::Run",
+        "opi_eval::cli::run::run",
+        "runner::experiment::run_experiment",
+        "runner::experiment::run_trial",
+        "AgentAdapter::settle",
+        "trajectory::project_agent_artifacts",
+        "RunBundle::seal",
+        "ReportBuilder"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-eval/src/main.rs",
+        "crates/opi-eval/src/cli/run.rs",
+        "crates/opi-eval/src/runner/experiment.rs",
+        "crates/opi-eval/README.md",
+        "crates/opi-eval/README.zh.md",
+        "CHANGELOG.md",
+        "crates/opi-eval/src/runner/material.rs",
+        "crates/opi-eval/src/runner/mod.rs",
+        "crates/opi-eval/src/benchmark/process.rs",
+        "crates/opi-eval/src/benchmark/mod.rs",
+        "crates/opi-eval/src/benchmark/terminal_bench_21.rs",
+        "crates/opi-eval/src/benchmark/terminal_bench_30.rs",
+        "crates/opi-eval/src/benchmark/deepswe.rs",
+        "crates/opi-eval/src/agent/process.rs",
+        "crates/opi-eval/src/bundle/mod.rs",
+        "crates/opi-eval/src/integrity.rs",
+        "crates/opi-eval/src/cli/conformance.rs",
+        "crates/opi-eval/profiles/benchmarks/terminal-bench-2.1.toml",
+        "crates/opi-eval/integrations/harbor/**",
+        "crates/opi-eval/scripts/native-smoke.sh",
+        "crates/opi-eval/scripts/verify-native-smoke-artifact.py",
+        "crates/opi-eval/scripts/test_verify_native_smoke_artifact.py",
+        "crates/opi-eval/external-locks/static/linux-x86_64.json",
+        "crates/opi-eval/tests/fixtures/benchmarks/terminal-bench-2.1/**",
+        "crates/opi-eval/tests/fixtures/conformance/**",
+        "crates/opi-eval/tests/fixtures/external-locks/**",
+        "crates/opi-eval/tests/native_driver.rs",
+        "crates/opi-eval/tests/benchmark_integration_conformance.rs",
+        "crates/opi-eval/tests/assembled_run.rs",
+        "crates/opi-eval/src/agent/opi.rs",
+        "crates/opi-eval/src/agent/pi.rs",
+        "crates/opi-eval/src/authority.rs",
+        "crates/opi-eval/src/comparison.rs",
+        "crates/opi-eval/src/failure.rs",
+        "crates/opi-eval/src/trajectory/mod.rs",
+        "crates/opi-eval/src/report.rs",
+        "crates/opi-eval/tests/agent_integration_conformance.rs",
+        "crates/opi-eval/tests/authority_boundaries.rs",
+        "crates/opi-eval/tests/end_to_end_report.rs"
+      ],
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "19.2",
+      "phase": 19,
+      "title": "Project selected connections into both native Agent clients",
+      "crate": "opi-eval",
+      "parent_spec_row": null,
+      "definition_of_done": "P19-D02: Run both actual pinned Opi/pi clients against local fake servers for all three admitted APIs. Each request path, authentication, exact model, streamed tool call/result loop and effective controls follow the selected named connection without provider/protocol/model/billing fallback. Exact admitted connection spelling: top-level connection selects [[connections]].id; each entry has provider, api (anthropic-messages|openai-completions|openai-responses), base_url, model, and mutually exclusive credential_env/credential_file references. [execution].mode is hermetic|native-fixture|live, always explicit for live; [model_controls] retains temperature,max_output_tokens,reasoning and adds top_p,context_window,required controls. Effective values and origins are recorded, not inferred from requests. [storage] names cache,results,capture_policy. Default tests reject remote routes and never resolve real credentials. Resolve selected credential references only within the supervised Agent launch; isolate native config, reject missing credentials or required unsupported controls before model effects, redact canaries from logs/export and remove private temporary config before shared verification. Unknown service model/prices stay unknown with reasons. Before run, reject requested monetary/usage caps the native Agent/provider route cannot enforce; record explicitly enforceable time/output bounds and their limits. First remote acceptance is Zhipu glm-5.3-flash via https://open.bigmodel.cn/api/anthropic and belongs only to 19.11 evidence. Both optional connections receive deterministic client coverage only. Update experiment/material schema/callers, help, examples and bilingual docs in this task. Each Opi/pi Adapter supplies typed terminal observations and preserved capturable evidence to the 19.1 settlement owner; it does not decide final trial score eligibility. Extend the existing local real-client fixture route with terminal authentication failure, exhausted rate limiting and native protocol-error observations, plus retryable 429 followed by successful completion. Interpret the native terminal result and retry history, including JSON error at process exit 0; one intermediate HTTP error must not become the final trial result. No speculative parsing may claim a provider cause when native evidence leaves it unknown.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "19.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "source_outcome",
+          "reason": "P19-D02; source order 2; independently demonstrable delivery, all changed contracts/callers recorded in the owning task",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded P19-D02 into the exact public operations, persisted identities, failures and verification in this DoD; requires human graph confirmation.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "execution_metadata",
+          "reason": "tier=cli-runtime; commit_type=feat; evaluator_required=true due to identity, authority, provider, durable evidence or public CLI/schema semantics; dependencies follow source prerequisites and concrete consumed contracts; parallelize=[] because shared runner/CLI/schema files must be applied serially",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=experiment::ModelControls,runner::experiment::{native_opi_config,native_agent_env},AgentMaterial,AgentAdapter,OpiAdapter,PiAdapter,scripted-provider.py,OpiAdapter::settle,PiAdapter::settle,PiImporter::import_stream,AgentCompletion; reused=experiment::ModelControls,runner::experiment::{native_opi_config,native_agent_env},AgentMaterial,AgentAdapter,OpiAdapter,PiAdapter,scripted-provider.py; gap=named selected connection projected by each real Agent client with isolated credential lifetime and proven request identity,typed native terminal causes and failure evidence passed to the shared settlement owner; production_consumers=run_trial,native_opi_config,native_agent_env,NativeMaterial::load,cli::conformance (native_material dynamic configuration); nonproduction_consumers=native_driver.rs,agent_integration_conformance.rs,test_scripted_provider.py,agent profiles and READMEs",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "placement",
+          "reason": "target=independent-companion; existing_home=crates/opi-eval; cannot_fit_fully=not-applicable (fits existing Independent Companion, no new crate or Agent Core seam)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=existing run/validate and private AgentAdapter projection; config=named connections and explicit execution.mode plus effective controls and credential references as spelled in DoD; state=requested/effective connection-control identity and redacted origin metadata,reuse 19.1 terminal-observation and evidence representation instead of another trial classification; dependency_edge=none in Cargo, use each native Agent client",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=three fixed APIs and Opi/pi native config only,native observations and retry terminality within existing adapters, no second scoring policy; revisit_when=locked Agent cannot express a required requested control or selected protocol; simplification_trigger=replace; net_deletion=remove fixed scripted/OpenAI-only config and inline credential fields from exportable native material; retain scripted provider as explicit test input and add typed selected connection projection; residual_glue=existing private adapters/lifecycle plus the explicitly stated local integration or verifier boundary only",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#9. Risk thresholds, rollback, and compatibility"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No Agent Core/provider seam, Opi crate dependency, Eval LLM client, embedded datasets/graders/images/sandbox engine, stable SDK, additional Agent/benchmark, Learning/Promotion, activation, hosted workers/scheduling, GUI, leaderboard, native PowerShell task execution, statistical-superiority claim, full TB3 completion guarantee, or 18 mandatory live trials. Harness execution uses deterministic fixtures/native witnesses only; real-provider evidence is supplied by a separately authorized local operator. Preserve historical bundles/snapshots and unrelated user files.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "test_seam",
+          "reason": "Highest practical seam: spawned opi-eval public CLI, stdout/stderr/exit and persisted artifacts. Update existing experiment_contract, agent_integration_conformance, native_driver, authority_boundaries surfaces; add only distinct missing negative/native cases. Existing safety/seal/containment tests retained. Planned exact native filters are new cases in native_driver.rs, marked ignored and explicitly run on local WSL/Linux with pinned external material and loopback fixture provider, never remote inference. Inspect all affected test bodies before change; replace superseded task-local assertions only after stronger public-seam proof passes. Every touched Rust test binary/filter and Python test file must run.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification_platform",
+          "reason": "D.1 uses one scoped smoke on local WSL/Linux for Unix acceptance; PowerShell sibling may check Windows compile only and cannot substitute zero-executed Unix tests. Resolve and lease repository external Cargo cache; deduplicate scenario commands already covered by D.1. Native material paths/output locations are operator/test-runner supplied placeholders, not auth input. Run python scripts/opi-doc-check.py and git diff --check for each actual metadata/docs change.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=selected-connection-controls; role=owner; owner_task=19.2; module=crates/opi-eval/src/experiment.rs; interface=ResolvedExperiment selected connection and effective control projection; representation=enum protocol plus fallible resolved connection/control value; consumer_tasks=19.6,19.9; criterion_ids=P19-AC-006-fixture,P19-AC-007-selection,P19-AC-010-lifecycle; legacy_paths=runner::experiment::{native_opi_config,native_agent_env} fixed scripted projection; closure_test=crates/opi-eval/tests/agent_integration_conformance.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: execute the owned Python regression scripts in this task before passing, independent of the later CI alignment gate.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=native-trial-outcome; role=consumer; owner_task=19.1; module=crates/opi-eval/src/runner/experiment.rs; interface=runner::experiment::run_trial settlement into sealed trial interpretation (existing private boundary); representation=enum trial classification refining existing TrialOutcome and AgentCompletion, with evidence references and independent capture status; consumer_tasks=19.2,19.7,19.9; criterion_ids=P19-AC-008-outcome,P19-AC-006-fixture,P19-AC-008,P19-AC-010-lifecycle; legacy_paths=AgentFailure::class exit-token score eligibility,report::coverage independent Agent failure interpretation; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#6. Evidence, failure, and reporting"
+        },
+        {
+          "field": "test_seam_revision",
+          "reason": "Update the existing planned native_protocol_client_matrix fixture entry point and Agent conformance cases. Both actual pinned clients must supply terminal observations, including JSON-mode failure at exit 0 where applicable. Verify terminal failure and retry-then-success without live credentials or remote inference; report denominator integration is verified by 19.7 rather than duplicating report tests here.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test experiment_contract --test agent_integration_conformance --test native_driver --test authority_boundaries"
+        ],
+        "behavioral_tests": [
+          "crates/opi-eval/tests/experiment_contract.rs",
+          "crates/opi-eval/tests/agent_integration_conformance.rs",
+          "crates/opi-eval/tests/native_driver.rs",
+          "crates/opi-eval/tests/authority_boundaries.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "cargo test -p opi-eval --lib"
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P19-AC-006-fixture",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Two real native clients use three explicitly configured protocol paths and complete local fake-server tool loops; no remote service qualification. Source requirement P19-AC-006. Extend that fixture path with terminal auth/rate-limit/protocol failures and transient 429 followed by success for both clients, observing the native terminal state and returning facts to the 19.1 settlement owner. Keep the positive three-protocol matrix; negative cases need distinct client behavior, not a duplicated cross-product of equivalent protocol fixtures.",
+          "verification": [
+            "cargo test -p opi-eval --test native_driver native_protocol_client_matrix -- --ignored --exact",
+            "cargo test -p opi-eval --test agent_integration_conformance",
+            "cargo test -p opi-eval --test experiment_contract",
+            "python crates/opi-eval/scripts/test_scripted_provider.py"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "AgentAdapter::settle"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-010-credentials",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Agent-only canary inputs do not reach the grader or exported artifacts, and absent credentials/unenforceable required controls prevent effects. Source requirement P19-AC-010.",
+          "verification": [
+            "cargo test -p opi-eval --test authority_boundaries",
+            "cargo test -p opi-eval --test native_driver native_protocol_client_matrix -- --ignored --exact"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-eval/src/main.rs::Command::Run",
+        "opi_eval::cli::run::run",
+        "runner::experiment::run_experiment",
+        "runner::experiment::run_trial",
+        "AgentAdapter::settle"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-eval/src/main.rs",
+        "crates/opi-eval/src/cli/run.rs",
+        "crates/opi-eval/src/runner/experiment.rs",
+        "crates/opi-eval/README.md",
+        "crates/opi-eval/README.zh.md",
+        "CHANGELOG.md",
+        "crates/opi-eval/src/experiment.rs",
+        "crates/opi-eval/src/runner/material.rs",
+        "crates/opi-eval/src/agent/opi.rs",
+        "crates/opi-eval/src/agent/pi.rs",
+        "crates/opi-eval/src/agent/process.rs",
+        "crates/opi-eval/src/authority.rs",
+        "crates/opi-eval/profiles/agents/**",
+        "crates/opi-eval/integrations/harbor/**",
+        "crates/opi-eval/scripts/scripted-provider.py",
+        "crates/opi-eval/scripts/test_scripted_provider.py",
+        "crates/opi-eval/scripts/native-smoke.sh",
+        "crates/opi-eval/external-locks/static/linux-x86_64.json",
+        "crates/opi-eval/tests/fixtures/experiment/**",
+        "crates/opi-eval/tests/fixtures/agents/**",
+        "crates/opi-eval/tests/experiment_contract.rs",
+        "crates/opi-eval/tests/agent_integration_conformance.rs",
+        "crates/opi-eval/tests/native_driver.rs",
+        "crates/opi-eval/tests/authority_boundaries.rs"
+      ],
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "19.3",
+      "phase": 19,
+      "title": "Grade TB3 declared artifacts across the native verifier boundary",
+      "crate": "opi-eval",
+      "parent_spec_row": null,
+      "definition_of_done": "P19-D03: Extend the selected native trial path to pinned TB3 tasks. Parse the selected task's lifecycle and collect declarations; for separate-verifier tasks transfer only declared Agent artifacts into a fresh verifier and bind collected digests, source trial/Agent, environment/image and verifier input identities. Do not widen task/verification network policy for inference. Through opi-eval run and the native result reader, reject undeclared/substituted/missing artifacts, unsupported lifecycle and unbound results. A correct/incorrect native witness changes only a declared artifact and proves a changed grader outcome; an unrelated canary file stays outside the verifier. Keep sibling TB2.1 binding conformance. Real-provider Opi/pi handoff evidence belongs to 19.11.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "19.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "source_outcome",
+          "reason": "P19-D03; source order 3; independently demonstrable delivery, all changed contracts/callers recorded in the owning task",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded P19-D03 into the exact public operations, persisted identities, failures and verification in this DoD; requires human graph confirmation.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "execution_metadata",
+          "reason": "tier=cli-runtime; commit_type=feat; evaluator_required=true due to identity, authority, provider, durable evidence or public CLI/schema semantics; dependencies follow source prerequisites and concrete consumed contracts; parallelize=[] because shared runner/CLI/schema files must be applied serially",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=TerminalBench30Adapter,Tb30Profile,BenchmarkExecution,NativeTrialBinding from 19.1; reused=TerminalBench30Adapter,Tb30Profile,BenchmarkExecution,NativeTrialBinding from 19.1; gap=same-trial native collection and separate verifier input proof",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "placement",
+          "reason": "target=independent-companion; existing_home=crates/opi-eval; cannot_fit_fully=not-applicable (fits existing Independent Companion, no new crate or Agent Core seam)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=existing run/conformance and private benchmark adapter; config=task-declared collect and verifier lifecycle from pinned task package; state=collected-artifact/verifier-input digests in existing binding; dependency_edge=none in Cargo, pinned Harbor integration only",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=task-declared TB3 lifecycles only; revisit_when=a selected pinned task declares a lifecycle or resource requirement outside the proven runner path; simplification_trigger=none",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#9. Risk thresholds, rollback, and compatibility"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No Agent Core/provider seam, Opi crate dependency, Eval LLM client, embedded datasets/graders/images/sandbox engine, stable SDK, additional Agent/benchmark, Learning/Promotion, activation, hosted workers/scheduling, GUI, leaderboard, native PowerShell task execution, statistical-superiority claim, full TB3 completion guarantee, or 18 mandatory live trials. Harness execution uses deterministic fixtures/native witnesses only; real-provider evidence is supplied by a separately authorized local operator. Preserve historical bundles/snapshots and unrelated user files.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "test_seam",
+          "reason": "Highest practical seam: spawned opi-eval public CLI, stdout/stderr/exit and persisted artifacts. Update existing native_driver, benchmark_integration_conformance surfaces; add only distinct missing negative/native cases. Existing safety/seal/containment tests retained. Planned exact native filters are new cases in native_driver.rs, marked ignored and explicitly run on local WSL/Linux with pinned external material and loopback fixture provider, never remote inference. Inspect all affected test bodies before change; replace superseded task-local assertions only after stronger public-seam proof passes. Every touched Rust test binary/filter and Python test file must run.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification_platform",
+          "reason": "D.1 uses one scoped smoke on local WSL/Linux for Unix acceptance; PowerShell sibling may check Windows compile only and cannot substitute zero-executed Unix tests. Resolve and lease repository external Cargo cache; deduplicate scenario commands already covered by D.1. Native material paths/output locations are operator/test-runner supplied placeholders, not auth input. Run python scripts/opi-doc-check.py and git diff --check for each actual metadata/docs change.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=native-trial-artifact-binding; role=consumer; owner_task=19.1; module=crates/opi-eval/src/benchmark/process.rs; interface=NativeTrialBinding::validate_result (planned private boundary replacing unchecked result admission); representation=fallible value NativeTrialBinding; consumer_tasks=19.3,19.4,19.7,19.8; criterion_ids=P19-AC-002,P19-AC-004-native,P19-AC-005-native,P19-AC-008,P19-AC-009-regrade; legacy_paths=runner::experiment::run_trial host-agent/default-job score branch,benchmark::process::newest_job_result authority; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test native_driver --test benchmark_integration_conformance"
+        ],
+        "behavioral_tests": [
+          "crates/opi-eval/tests/native_driver.rs",
+          "crates/opi-eval/tests/benchmark_integration_conformance.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "cargo test -p opi-eval --lib"
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P19-AC-004-native",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "TB3 positive/negative witnesses cross the task-declared collection/verifier boundary and exclude unrelated files. Source requirement P19-AC-004.",
+          "verification": [
+            "cargo test -p opi-eval --test native_driver native_tb3_artifact_witness -- --ignored --exact",
+            "cargo test -p opi-eval --test benchmark_integration_conformance"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-eval/src/main.rs::Command::Run",
+        "opi_eval::cli::run::run",
+        "runner::experiment::run_experiment",
+        "runner::experiment::run_trial"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-eval/src/main.rs",
+        "crates/opi-eval/src/cli/run.rs",
+        "crates/opi-eval/src/runner/experiment.rs",
+        "crates/opi-eval/README.md",
+        "crates/opi-eval/README.zh.md",
+        "CHANGELOG.md",
+        "crates/opi-eval/src/runner/material.rs",
+        "crates/opi-eval/src/benchmark/process.rs",
+        "crates/opi-eval/src/benchmark/terminal_bench_30.rs",
+        "crates/opi-eval/src/cli/conformance.rs",
+        "crates/opi-eval/profiles/benchmarks/terminal-bench-3.0.toml",
+        "crates/opi-eval/integrations/harbor/**",
+        "crates/opi-eval/tests/fixtures/benchmarks/terminal-bench-3.0/**",
+        "crates/opi-eval/scripts/native-smoke.sh",
+        "crates/opi-eval/external-locks/static/linux-x86_64.json",
+        "crates/opi-eval/tests/native_driver.rs",
+        "crates/opi-eval/tests/benchmark_integration_conformance.rs"
+      ],
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "19.4",
+      "phase": 19,
+      "title": "Grade DeepSWE committed patches in pristine native verifiers",
+      "crate": "opi-eval",
+      "parent_spec_row": null,
+      "definition_of_done": "P19-D04: Through opi-eval run, the pinned Pier Opi/pi integration executes in the selected DeepSWE task environment, invokes its collect hook, collects the Agent's committed patch against the declared base and applies exactly that patch in a pristine separate verifier with the task's network policy. Bind base, commit/patch digest, upstream trial/Agent and verifier input to the result. Reject wrong base, substituted patch, mismatched identity or silent substitution of uncommitted changes. Correct/incorrect committed-patch witnesses traverse production handoff and real native grader without a live model. Preserve raw native metrics with their meanings; real Opi/pi provider traces remain 19.11.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "19.1"
+      ],
+      "inference_notes": [
+        {
+          "field": "source_outcome",
+          "reason": "P19-D04; source order 4; independently demonstrable delivery, all changed contracts/callers recorded in the owning task",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded P19-D04 into the exact public operations, persisted identities, failures and verification in this DoD; requires human graph confirmation.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "execution_metadata",
+          "reason": "tier=cli-runtime; commit_type=feat; evaluator_required=true due to identity, authority, provider, durable evidence or public CLI/schema semantics; dependencies follow source prerequisites and concrete consumed contracts; parallelize=[] because shared runner/CLI/schema files must be applied serially",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=DeepSweAdapter,DeepSweProfile,import_pier_job_result,BenchmarkExecution,NativeTrialBinding from 19.1; reused=DeepSweAdapter,DeepSweProfile,import_pier_job_result,BenchmarkExecution,NativeTrialBinding from 19.1; gap=official committed-patch collection feeds the same trial's pristine native verifier",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "placement",
+          "reason": "target=independent-companion; existing_home=crates/opi-eval; cannot_fit_fully=not-applicable (fits existing Independent Companion, no new crate or Agent Core seam)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=existing run/conformance and private benchmark adapter; config=declared base/collect/network policy from task material; state=base and patch identity in existing native binding; dependency_edge=none in Cargo, pinned Pier integration material only",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=pinned DeepSWE v1.1 lifecycle; revisit_when=collect hook or pristine verifier cannot be honored under the pinned runner; simplification_trigger=none",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#9. Risk thresholds, rollback, and compatibility"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No Agent Core/provider seam, Opi crate dependency, Eval LLM client, embedded datasets/graders/images/sandbox engine, stable SDK, additional Agent/benchmark, Learning/Promotion, activation, hosted workers/scheduling, GUI, leaderboard, native PowerShell task execution, statistical-superiority claim, full TB3 completion guarantee, or 18 mandatory live trials. Harness execution uses deterministic fixtures/native witnesses only; real-provider evidence is supplied by a separately authorized local operator. Preserve historical bundles/snapshots and unrelated user files.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "test_seam",
+          "reason": "Highest practical seam: spawned opi-eval public CLI, stdout/stderr/exit and persisted artifacts. Update existing native_driver, benchmark_integration_conformance surfaces; add only distinct missing negative/native cases. Existing safety/seal/containment tests retained. Planned exact native filters are new cases in native_driver.rs, marked ignored and explicitly run on local WSL/Linux with pinned external material and loopback fixture provider, never remote inference. Inspect all affected test bodies before change; replace superseded task-local assertions only after stronger public-seam proof passes. Every touched Rust test binary/filter and Python test file must run.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification_platform",
+          "reason": "D.1 uses one scoped smoke on local WSL/Linux for Unix acceptance; PowerShell sibling may check Windows compile only and cannot substitute zero-executed Unix tests. Resolve and lease repository external Cargo cache; deduplicate scenario commands already covered by D.1. Native material paths/output locations are operator/test-runner supplied placeholders, not auth input. Run python scripts/opi-doc-check.py and git diff --check for each actual metadata/docs change.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=native-trial-artifact-binding; role=consumer; owner_task=19.1; module=crates/opi-eval/src/benchmark/process.rs; interface=NativeTrialBinding::validate_result (planned private boundary replacing unchecked result admission); representation=fallible value NativeTrialBinding; consumer_tasks=19.3,19.4,19.7,19.8; criterion_ids=P19-AC-002,P19-AC-004-native,P19-AC-005-native,P19-AC-008,P19-AC-009-regrade; legacy_paths=runner::experiment::run_trial host-agent/default-job score branch,benchmark::process::newest_job_result authority; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test native_driver --test benchmark_integration_conformance"
+        ],
+        "behavioral_tests": [
+          "crates/opi-eval/tests/native_driver.rs",
+          "crates/opi-eval/tests/benchmark_integration_conformance.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "cargo test -p opi-eval --lib"
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P19-AC-005-native",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "DeepSWE positive/negative committed-patch witnesses bind base and fresh verifier and reject uncommitted substitution. Source requirement P19-AC-005.",
+          "verification": [
+            "cargo test -p opi-eval --test native_driver native_deepswe_patch_witness -- --ignored --exact",
+            "cargo test -p opi-eval --test benchmark_integration_conformance"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-eval/src/main.rs::Command::Run",
+        "opi_eval::cli::run::run",
+        "runner::experiment::run_experiment",
+        "runner::experiment::run_trial"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-eval/src/main.rs",
+        "crates/opi-eval/src/cli/run.rs",
+        "crates/opi-eval/src/runner/experiment.rs",
+        "crates/opi-eval/README.md",
+        "crates/opi-eval/README.zh.md",
+        "CHANGELOG.md",
+        "crates/opi-eval/src/runner/material.rs",
+        "crates/opi-eval/src/benchmark/process.rs",
+        "crates/opi-eval/src/benchmark/deepswe.rs",
+        "crates/opi-eval/src/cli/conformance.rs",
+        "crates/opi-eval/profiles/benchmarks/deepswe-v1.1.toml",
+        "crates/opi-eval/integrations/pier/**",
+        "crates/opi-eval/tests/fixtures/benchmarks/deepswe-v1.1/**",
+        "crates/opi-eval/scripts/native-smoke.sh",
+        "crates/opi-eval/external-locks/static/linux-x86_64.json",
+        "crates/opi-eval/tests/native_driver.rs",
+        "crates/opi-eval/tests/benchmark_integration_conformance.rs"
+      ],
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "19.5",
+      "phase": 19,
+      "title": "Prepare verified native materials from an independent local directory",
+      "crate": "opi-eval",
+      "parent_spec_row": "P19-D05",
+      "definition_of_done": "P19-D05: The built opi-eval and declared integration materials run from a fresh directory without repository fixtures or GitHub run/artifact metadata. Add doctor --config C and prepare --config C --out M; [storage].cache selects a local cache. doctor reports reachable Linux engine, x86_64 architecture, WSL/Docker-observed CPU/memory/GPU/disk, missing tools/materials and unknown observations with reasons. prepare uses current static corpus/Harbor/Pier pins, builds/resolves selected Agent executables (pi-only requires no Opi), verifies per-file inventories and selected image digests, and emits a local-origin native-material manifest consumable by validate/run. Source acquisition is pinned and supervised; downloads only public task/runner/build material, never calls a model or reads real credentials. Share producer byte/provenance verification with CI while GitHub upload receipt remains only a CI transport claim. Resolve all requested image identities before freeze, reuse verified cache, reject drift/missing material and leave shared caches/user directories intact. Update packaging inventories and affected script hash records without changing upstream revisions.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "19.2",
+        "19.3",
+        "19.4"
+      ],
+      "inference_notes": [
+        {
+          "field": "source_outcome",
+          "reason": "P19-D05; source order 5; independently demonstrable delivery, all changed contracts/callers recorded in the owning task",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded P19-D05 into the exact public operations, persisted identities, failures and verification in this DoD; requires human graph confirmation.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "execution_metadata",
+          "reason": "tier=cli-runtime; commit_type=feat; evaluator_required=true due to identity, authority, provider, durable evidence or public CLI/schema semantics; dependencies follow source prerequisites and concrete consumed contracts; parallelize=[] because shared runner/CLI/schema files must be applied serially",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=NativeMaterial::{load,agent,benchmark},verify_pinned,task_package_manifest_digest,materialize-external-locks.sh,build-agent-artifacts.sh,verify-external-lock-artifact.py; reused=NativeMaterial::{load,agent,benchmark},verify_pinned,task_package_manifest_digest,materialize-external-locks.sh,build-agent-artifacts.sh,verify-external-lock-artifact.py; gap=public local preparation entry and truthful local provenance for selected materials; production_consumers=NativeMaterial::load,run_experiment,materialize-external-locks.sh,build-agent-artifacts.sh and verify-external-lock artifact/CI scripts (static/resolved lock persistent formats); nonproduction_consumers=native_driver.rs,external-locks fixtures,README and workflow documentation",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "placement",
+          "reason": "target=independent-companion; existing_home=crates/opi-eval; cannot_fit_fully=not-applicable (fits existing Independent Companion, no new crate or Agent Core seam)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=doctor --config C and prepare --config C --out M CLI operations with private implementation; config=storage.cache and selected subject executable/runtime identities, no mandatory CI ids; state=verified local-origin material inventory and immutable image identities; dependency_edge=none in Cargo, reuse supervised pinned external tools",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=local Linux x86_64 preparation for admitted corpus/runners and selected subjects; revisit_when=local and CI material inventories or digest-admission decisions diverge; simplification_trigger=replace; net_deletion=remove mandatory upload-receipt prerequisite for local provenance and repository fixture requirement in local path; retain byte/provenance checks and CI transport wrapper; residual_glue=existing private adapters/lifecycle plus the explicitly stated local integration or verifier boundary only",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#9. Risk thresholds, rollback, and compatibility"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No Agent Core/provider seam, Opi crate dependency, Eval LLM client, embedded datasets/graders/images/sandbox engine, stable SDK, additional Agent/benchmark, Learning/Promotion, activation, hosted workers/scheduling, GUI, leaderboard, native PowerShell task execution, statistical-superiority claim, full TB3 completion guarantee, or 18 mandatory live trials. Harness execution uses deterministic fixtures/native witnesses only; real-provider evidence is supplied by a separately authorized local operator. Preserve historical bundles/snapshots and unrelated user files.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "test_seam",
+          "reason": "Highest practical seam: spawned opi-eval public CLI, stdout/stderr/exit and persisted artifacts. Update existing native_driver, fail_closed_cli, experiment_contract surfaces; add only distinct missing negative/native cases. Existing safety/seal/containment tests retained. Planned exact native filters are new cases in native_driver.rs, marked ignored and explicitly run on local WSL/Linux with pinned external material and loopback fixture provider, never remote inference. Inspect all affected test bodies before change; replace superseded task-local assertions only after stronger public-seam proof passes. Every touched Rust test binary/filter and Python test file must run.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification_platform",
+          "reason": "D.1 uses one scoped smoke on local WSL/Linux for Unix acceptance; PowerShell sibling may check Windows compile only and cannot substitute zero-executed Unix tests. Resolve and lease repository external Cargo cache; deduplicate scenario commands already covered by D.1. Native material paths/output locations are operator/test-runner supplied placeholders, not auth input. Run python scripts/opi-doc-check.py and git diff --check for each actual metadata/docs change.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "split",
+          "reason": "Split P19-D05 into separate observable CLI/assurance outcomes, preserve ordering and source-owner closure.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=verified-local-material-identity; role=owner; owner_task=19.5; module=crates/opi-eval/src/runner/material.rs; interface=NativeMaterial::load and verified selected material inventory; representation=fallible value verified material inventory; consumer_tasks=19.6,19.8,19.10; criterion_ids=P19-AC-001-prepare,P19-AC-007-selection,P19-AC-009-regrade,P19-AC-011; legacy_paths=mandatory GitHub receipt admission for local material; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: execute the owned Python regression scripts in this task before passing, independent of the later CI alignment gate.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test native_driver --test fail_closed_cli --test experiment_contract"
+        ],
+        "behavioral_tests": [
+          "crates/opi-eval/tests/native_driver.rs",
+          "crates/opi-eval/tests/fail_closed_cli.rs",
+          "crates/opi-eval/tests/experiment_contract.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "cargo test -p opi-eval --lib"
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P19-AC-001-prepare",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Independent-directory doctor/prepare/validate generate verified selected local materials without GitHub metadata, repository fixtures or a model. Source requirement P19-AC-001.",
+          "verification": [
+            "cargo test -p opi-eval --test native_driver independent_directory_prepare",
+            "cargo test -p opi-eval --test fail_closed_cli",
+            "python crates/opi-eval/scripts/test_verify_external_lock_artifact.py",
+            "python crates/opi-eval/scripts/test_verify_external_lock_ci.py"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "main::Command::Doctor (planned)",
+            "main::Command::Prepare (planned)",
+            "runner::material::NativeMaterial::load"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-007-material",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Local material verification freezes task/executable/image identities and rejects drift without silently fetching or replacing selected revisions. Source requirement P19-AC-007.",
+          "verification": [
+            "cargo test -p opi-eval --test native_driver local_material_integrity"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "main::Command::Doctor (planned)",
+            "main::Command::Prepare (planned)",
+            "runner::material::NativeMaterial::load"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-eval/src/main.rs::Command::Run",
+        "opi_eval::cli::run::run",
+        "runner::experiment::run_experiment",
+        "runner::experiment::run_trial",
+        "main::Command::Doctor (planned)",
+        "main::Command::Prepare (planned)",
+        "runner::material::NativeMaterial::load"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-eval/src/main.rs",
+        "crates/opi-eval/src/cli/run.rs",
+        "crates/opi-eval/src/runner/experiment.rs",
+        "crates/opi-eval/README.md",
+        "crates/opi-eval/README.zh.md",
+        "CHANGELOG.md",
+        "crates/opi-eval/src/cli/mod.rs",
+        "crates/opi-eval/src/cli/prepare.rs",
+        "crates/opi-eval/src/runner/material.rs",
+        "crates/opi-eval/src/runner/prepare.rs",
+        "crates/opi-eval/src/runner/mod.rs",
+        "crates/opi-eval/src/integrity.rs",
+        "crates/opi-eval/src/lib.rs",
+        "crates/opi-eval/scripts/materialize-external-locks.sh",
+        "crates/opi-eval/scripts/build-agent-artifacts.sh",
+        "crates/opi-eval/scripts/verify-external-lock-artifact.py",
+        "crates/opi-eval/scripts/test_verify_external_lock_artifact.py",
+        "crates/opi-eval/scripts/verify-external-lock-ci.py",
+        "crates/opi-eval/scripts/test_verify_external_lock_ci.py",
+        "crates/opi-eval/external-locks/static/linux-x86_64.json",
+        "crates/opi-eval/tests/fixtures/external-locks/**",
+        "crates/opi-eval/examples/local-evaluation/**",
+        "crates/opi-eval/tests/native_driver.rs",
+        "crates/opi-eval/tests/fail_closed_cli.rs",
+        "crates/opi-eval/tests/experiment_contract.rs"
+      ],
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "19.6",
+      "phase": 19,
+      "title": "Freeze full/subset task plans and expose resource failures",
+      "crate": "opi-eval",
+      "parent_spec_row": "P19-D05",
+      "definition_of_done": "P19-D05: Add plan --config C --native-material M --out P and run --plan P --root R; preserve run --config C as the same resolve/freeze path. Exact fields: [selection].scope=full|subset, task_ids, reason, repetitions and optional seeds; [execution].concurrency, max_trials, agent_timeout_seconds, verifier_timeout_seconds, optional max_output_tokens/max_total_tokens/max_cost with explicit enforceability; model_controls and declared task limits remain authoritative and combine by narrowing. Enumerate every pinned corpus task's instructions/lifecycle/network/CPU/memory/GPU/disk/time limits from metadata without pulling or starting all images. Preview subjects/connection/list/selection/repetitions/trial count/concurrency/bounds and unmet or unknown requirements. No implicit filtering; unmet/unsupported selected task requirements prevent freeze/run. Expand the exact selected tasks into a digest-bound immutable plan with per-task integrity/material identity; Opi-only/pi-only need no artificial comparison edge. A multi-task deterministic run executes exactly the plan, emits stage/settlement progress to stderr and a structured saved result; changed configuration/materials require new experiment/trial identities.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "19.5"
+      ],
+      "inference_notes": [
+        {
+          "field": "source_outcome",
+          "reason": "P19-D05; source order 6; independently demonstrable delivery, all changed contracts/callers recorded in the owning task",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded P19-D05 into the exact public operations, persisted identities, failures and verification in this DoD; requires human graph confirmation.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "execution_metadata",
+          "reason": "tier=cli-runtime; commit_type=feat; evaluator_required=true due to identity, authority, provider, durable evidence or public CLI/schema semantics; dependencies follow source prerequisites and concrete consumed contracts; parallelize=[] because shared runner/CLI/schema files must be applied serially",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=ResolvedExperiment,DeclaredTrial,ModelControls,ComparisonSet,NativeMaterial,prepare_native,run_experiment; reused=ResolvedExperiment,DeclaredTrial,ModelControls,ComparisonSet,NativeMaterial,prepare_native,run_experiment; gap=full pinned inventories, task-indexed material resolution, explicit selected scope and frozen run plan",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "placement",
+          "reason": "target=independent-companion; existing_home=crates/opi-eval; cannot_fit_fully=not-applicable (fits existing Independent Companion, no new crate or Agent Core seam)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=plan --config --native-material --out and run --plan entry through existing resolver; config=selection and execution bounds named in DoD; state=immutable task inventory/selection/plan with material and control identities; dependency_edge=none in Cargo (existing TOML/JSON and external runner tools)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=selection and scheduling of admitted tasks, no full TB3 execution promise; revisit_when=a selected task's unknown resource/lifecycle cannot be resolved, or requested bound has no enforceable route; simplification_trigger=none",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#9. Risk thresholds, rollback, and compatibility"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No Agent Core/provider seam, Opi crate dependency, Eval LLM client, embedded datasets/graders/images/sandbox engine, stable SDK, additional Agent/benchmark, Learning/Promotion, activation, hosted workers/scheduling, GUI, leaderboard, native PowerShell task execution, statistical-superiority claim, full TB3 completion guarantee, or 18 mandatory live trials. Harness execution uses deterministic fixtures/native witnesses only; real-provider evidence is supplied by a separately authorized local operator. Preserve historical bundles/snapshots and unrelated user files.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "test_seam",
+          "reason": "Highest practical seam: spawned opi-eval public CLI, stdout/stderr/exit and persisted artifacts. Update existing experiment_contract, assembled_run, native_driver, pairing_and_integrity surfaces; add only distinct missing negative/native cases. Existing safety/seal/containment tests retained. Planned exact native filters are new cases in native_driver.rs, marked ignored and explicitly run on local WSL/Linux with pinned external material and loopback fixture provider, never remote inference. Inspect all affected test bodies before change; replace superseded task-local assertions only after stronger public-seam proof passes. Every touched Rust test binary/filter and Python test file must run.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification_platform",
+          "reason": "D.1 uses one scoped smoke on local WSL/Linux for Unix acceptance; PowerShell sibling may check Windows compile only and cannot substitute zero-executed Unix tests. Resolve and lease repository external Cargo cache; deduplicate scenario commands already covered by D.1. Native material paths/output locations are operator/test-runner supplied placeholders, not auth input. Run python scripts/opi-doc-check.py and git diff --check for each actual metadata/docs change.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "split",
+          "reason": "Split P19-D05 into separate observable CLI/assurance outcomes, preserve ordering and source-owner closure.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=selected-connection-controls; role=consumer; owner_task=19.2; module=crates/opi-eval/src/experiment.rs; interface=ResolvedExperiment selected connection and effective control projection; representation=enum protocol plus fallible resolved connection/control value; consumer_tasks=19.6,19.9; criterion_ids=P19-AC-006-fixture,P19-AC-007-selection,P19-AC-010-lifecycle; legacy_paths=runner::experiment::{native_opi_config,native_agent_env} fixed scripted projection; closure_test=crates/opi-eval/tests/agent_integration_conformance.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=verified-local-material-identity; role=consumer; owner_task=19.5; module=crates/opi-eval/src/runner/material.rs; interface=NativeMaterial::load and verified selected material inventory; representation=fallible value verified material inventory; consumer_tasks=19.6,19.8,19.10; criterion_ids=P19-AC-001-prepare,P19-AC-007-selection,P19-AC-009-regrade,P19-AC-011; legacy_paths=mandatory GitHub receipt admission for local material; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=frozen-selection-coverage; role=owner; owner_task=19.6; module=crates/opi-eval/src/experiment.rs; interface=ResolvedExperiment::resolve and frozen plan inventory; representation=fallible value frozen task/trial selection; consumer_tasks=19.7,19.9; criterion_ids=P19-AC-007-selection,P19-AC-008,P19-AC-010-lifecycle; legacy_paths=none; closure_test=crates/opi-eval/tests/experiment_contract.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#6. Evidence, failure, and reporting"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test experiment_contract --test assembled_run --test native_driver --test pairing_and_integrity"
+        ],
+        "behavioral_tests": [
+          "crates/opi-eval/tests/experiment_contract.rs",
+          "crates/opi-eval/tests/assembled_run.rs",
+          "crates/opi-eval/tests/native_driver.rs",
+          "crates/opi-eval/tests/pairing_and_integrity.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "cargo test -p opi-eval --lib"
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P19-AC-007-selection",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Full inventories and resource failures remain visible; an explicit frozen subset executes exact tasks/repetitions with no widened bounds. Source requirement P19-AC-007.",
+          "verification": [
+            "cargo test -p opi-eval --test native_driver full_inventory_preflight",
+            "cargo test -p opi-eval --test assembled_run frozen_subset_execution",
+            "cargo test -p opi-eval --test experiment_contract"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "main::Command::Plan (planned)",
+            "experiment::ResolvedExperiment::resolve"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-001-plan",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Public plan/run path from a separate directory shows exact trial count and runs selected single/paired subjects with saved progress/results. Source requirement P19-AC-001.",
+          "verification": [
+            "cargo test -p opi-eval --test assembled_run independent_plan_run",
+            "cargo test -p opi-eval --test pairing_and_integrity"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "main::Command::Plan (planned)",
+            "experiment::ResolvedExperiment::resolve"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-eval/src/main.rs::Command::Run",
+        "opi_eval::cli::run::run",
+        "runner::experiment::run_experiment",
+        "runner::experiment::run_trial",
+        "main::Command::Plan (planned)",
+        "experiment::ResolvedExperiment::resolve"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-eval/src/main.rs",
+        "crates/opi-eval/src/cli/run.rs",
+        "crates/opi-eval/src/runner/experiment.rs",
+        "crates/opi-eval/README.md",
+        "crates/opi-eval/README.zh.md",
+        "CHANGELOG.md",
+        "crates/opi-eval/src/experiment.rs",
+        "crates/opi-eval/src/comparison.rs",
+        "crates/opi-eval/src/runner/material.rs",
+        "crates/opi-eval/src/runner/prepare.rs",
+        "crates/opi-eval/src/cli/mod.rs",
+        "crates/opi-eval/src/cli/prepare.rs",
+        "crates/opi-eval/src/integrity.rs",
+        "crates/opi-eval/profiles/benchmarks/**",
+        "crates/opi-eval/examples/local-evaluation/**",
+        "crates/opi-eval/tests/fixtures/experiment/**",
+        "crates/opi-eval/tests/experiment_contract.rs",
+        "crates/opi-eval/tests/assembled_run.rs",
+        "crates/opi-eval/tests/native_driver.rs",
+        "crates/opi-eval/tests/pairing_and_integrity.rs"
+      ],
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "19.7",
+      "phase": 19,
+      "title": "Report native outcomes and distinguish offline byte verification",
+      "crate": "opi-eval",
+      "parent_spec_row": "P19-D06",
+      "definition_of_done": "P19-D06: Expose verify --root R for original byte/seal checks; report --root R --out O remains deterministic offline reconstruction from verified evidence. Until 19.8 supplies real native regrading, regrade returns an explicit unavailable-operation diagnostic rather than performing byte verification under that name. Extend public reports with benchmark-native metric definitions/denominators, corpus/selected/planned/attempted/valid/Agent-failure/invalid/unexecuted counts, full/subset/incomplete labels, same-task/repetition/control pairs, missing pairs, exclusions and unknown telemetry reasons. Single-subject runs require no edge; protocol groups never pair. Valid native zero and benchmark-defined timeouts remain Agent outcomes; provider/access/identity/infra/invalid-grading errors never become Agent failure or success. No cross-benchmark headline average. Bind run-level planned coverage before any effect so recovery/recompute can preserve unstarted trials even if no trial seals. Repeated report reconstruction yields identical bytes without Agent/provider/network; tampered/unsealed or legacy conformance evidence never upgrades to native Agent scores, output never overwrites source or earlier report. Update affected CLI/schema/fixtures/callers and bilingual docs/Unreleased. Verify and consume the sealed 19.1 trial interpretation and its native evidence references for denominators and exclusions; do not infer a second failure class from stderr tokens or process exit. In the existing native_driver public run-to-report path, both actual pinned clients use local provider fixtures: final provider/access failure increases attempted/invalid coverage but not the valid graded denominator, valid native zero remains counted, and retryable 429 followed by a valid graded completion retains the final native outcome. Do not manufacture sealed success for capture/evidence failure.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "19.6"
+      ],
+      "inference_notes": [
+        {
+          "field": "source_outcome",
+          "reason": "P19-D06; source order 7; independently demonstrable delivery, all changed contracts/callers recorded in the owning task",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded P19-D06 into the exact public operations, persisted identities, failures and verification in this DoD; requires human graph confirmation.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "execution_metadata",
+          "reason": "tier=cli-runtime; commit_type=feat; evaluator_required=true due to identity, authority, provider, durable evidence or public CLI/schema semantics; dependencies follow source prerequisites and concrete consumed contracts; parallelize=[] because shared runner/CLI/schema files must be applied serially",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=cli::{regrade,report},OfflineRegrader,RunBundle::verify,ReportBuilder,ComparisonSet,coverage,runner::experiment::run_trial sealed interpretation; reused=cli::{regrade,report},OfflineRegrader,RunBundle::verify,ReportBuilder,ComparisonSet,coverage,19.1 sealed trial classification and bound native evidence; gap=native score classifications and honest denominator reporting plus accurately named byte-verification command,native-client failure-to-denominator closure through production run and offline report; production_consumers=main::Command::{Regrade,Report},cli::regrade::regrade,OfflineRegrader,ReportBuilder,runner receipts and run-report persistent data; nonproduction_consumers=end_to_end_report.rs,bundle_recompute.rs,report_contract.rs,README walkthroughs",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "placement",
+          "reason": "target=independent-companion; existing_home=crates/opi-eval; cannot_fit_fully=not-applicable (fits existing Independent Companion, no new crate or Agent Core seam)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=verify --root and existing report, regrade deliberately rejects until native implementation; config=none (uses frozen plan/control provenance); state=native result/report schemas and sealed run-level planned inventory,consume the 19.1 interpretation without a parallel outcome format; dependency_edge=none (existing bundle/serde/hash mechanisms)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=native metrics by family with verified coverage, no synthetic headline; revisit_when=a native metric cannot be represented without losing its meaning, or a report reconstructs coverage from unsealed mutable state; simplification_trigger=replace; net_deletion=rename byte-only regrade to verify and replace conformance-only interpretation for newly bound native evidence,remove independent report failure inference where the sealed owner interpretation is authoritative; retain legacy conformance read classification and one report builder; residual_glue=existing private adapters/lifecycle plus the explicitly stated local integration or verifier boundary only",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#9. Risk thresholds, rollback, and compatibility"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No Agent Core/provider seam, Opi crate dependency, Eval LLM client, embedded datasets/graders/images/sandbox engine, stable SDK, additional Agent/benchmark, Learning/Promotion, activation, hosted workers/scheduling, GUI, leaderboard, native PowerShell task execution, statistical-superiority claim, full TB3 completion guarantee, or 18 mandatory live trials. Harness execution uses deterministic fixtures/native witnesses only; real-provider evidence is supplied by a separately authorized local operator. Preserve historical bundles/snapshots and unrelated user files.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "test_seam",
+          "reason": "Highest practical seam: spawned opi-eval public CLI, stdout/stderr/exit and persisted artifacts. Update existing end_to_end_report, report_contract, bundle_recompute, report_output_containment, pairing_and_integrity surfaces; add only distinct missing negative/native cases. Existing safety/seal/containment tests retained. Planned exact native filters are new cases in native_driver.rs, marked ignored and explicitly run on local WSL/Linux with pinned external material and loopback fixture provider, never remote inference. Inspect all affected test bodies before change; replace superseded task-local assertions only after stronger public-seam proof passes. Every touched Rust test binary/filter and Python test file must run.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification_platform",
+          "reason": "D.1 uses one scoped smoke on local WSL/Linux for Unix acceptance; PowerShell sibling may check Windows compile only and cannot substitute zero-executed Unix tests. Resolve and lease repository external Cargo cache; deduplicate scenario commands already covered by D.1. Native material paths/output locations are operator/test-runner supplied placeholders, not auth input. Run python scripts/opi-doc-check.py and git diff --check for each actual metadata/docs change.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "split",
+          "reason": "Split P19-D06 into separate observable CLI/assurance outcomes, preserve ordering and source-owner closure.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=native-trial-artifact-binding; role=consumer; owner_task=19.1; module=crates/opi-eval/src/benchmark/process.rs; interface=NativeTrialBinding::validate_result (planned private boundary replacing unchecked result admission); representation=fallible value NativeTrialBinding; consumer_tasks=19.3,19.4,19.7,19.8; criterion_ids=P19-AC-002,P19-AC-004-native,P19-AC-005-native,P19-AC-008,P19-AC-009-regrade; legacy_paths=runner::experiment::run_trial host-agent/default-job score branch,benchmark::process::newest_job_result authority; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=frozen-selection-coverage; role=consumer; owner_task=19.6; module=crates/opi-eval/src/experiment.rs; interface=ResolvedExperiment::resolve and frozen plan inventory; representation=fallible value frozen task/trial selection; consumer_tasks=19.7,19.9; criterion_ids=P19-AC-007-selection,P19-AC-008,P19-AC-010-lifecycle; legacy_paths=none; closure_test=crates/opi-eval/tests/experiment_contract.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#6. Evidence, failure, and reporting"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=native-trial-outcome; role=consumer; owner_task=19.1; module=crates/opi-eval/src/runner/experiment.rs; interface=runner::experiment::run_trial settlement into sealed trial interpretation (existing private boundary); representation=enum trial classification refining existing TrialOutcome and AgentCompletion, with evidence references and independent capture status; consumer_tasks=19.2,19.7,19.9; criterion_ids=P19-AC-008-outcome,P19-AC-006-fixture,P19-AC-008,P19-AC-010-lifecycle; legacy_paths=AgentFailure::class exit-token score eligibility,report::coverage independent Agent failure interpretation; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#6. Evidence, failure, and reporting"
+        },
+        {
+          "field": "test_seam_revision",
+          "reason": "Add only the missing actual-client-to-sealed-result-to-report case in native_driver.rs (planned ignored native_provider_failure_report). Use pinned local material and loopback provider fixtures on WSL/Linux with explicit native invocation. It exercises both clients and distinct final-failure/retry-success/native-zero outcomes, not another three-protocol matrix. Existing end_to_end_report and bundle_recompute run calls are fixture setup; verify/report itself remains offline with zero Agent/provider launches. Update existing report cases at their Interface and retain tamper/output-containment guards.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test end_to_end_report --test report_contract --test bundle_recompute --test report_output_containment --test pairing_and_integrity --test native_driver"
+        ],
+        "behavioral_tests": [
+          "crates/opi-eval/tests/end_to_end_report.rs",
+          "crates/opi-eval/tests/report_contract.rs",
+          "crates/opi-eval/tests/bundle_recompute.rs",
+          "crates/opi-eval/tests/report_output_containment.rs",
+          "crates/opi-eval/tests/pairing_and_integrity.rs",
+          "crates/opi-eval/tests/native_driver.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "cargo test -p opi-eval --lib"
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P19-AC-008",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Public report path retains native zero/metric/failure/coverage semantics, single subjects and protocol-safe pairing. Source requirement P19-AC-008. The same public run-to-report path with actual Opi/pi clients and local fixture provider preserves final provider failures as attempted/invalid but unscored, preserves native zero, and reports the final valid outcome after a transient 429 retry succeeds; report verifies and consumes 19.1 sealed interpretation.",
+          "verification": [
+            "cargo test -p opi-eval --test end_to_end_report",
+            "cargo test -p opi-eval --test report_contract",
+            "cargo test -p opi-eval --test pairing_and_integrity",
+            "cargo test -p opi-eval --test native_driver native_provider_failure_report -- --ignored --exact"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "main::Command::Verify (planned)",
+            "cli::report::report",
+            "ReportBuilder",
+            "RunBundle::verify",
+            "AgentAdapter::settle"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-009-verify",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "verify checks seals and report reconstructs deterministically with no processes/network, rejects tamper and never overwrites source evidence. Source requirement P19-AC-009.",
+          "verification": [
+            "cargo test -p opi-eval --test bundle_recompute",
+            "cargo test -p opi-eval --test end_to_end_report",
+            "cargo test -p opi-eval --test report_output_containment"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "main::Command::Verify (planned)",
+            "cli::report::report",
+            "ReportBuilder",
+            "RunBundle::verify"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-eval/src/main.rs::Command::Run",
+        "opi_eval::cli::run::run",
+        "runner::experiment::run_experiment",
+        "runner::experiment::run_trial",
+        "main::Command::Verify (planned)",
+        "cli::report::report",
+        "ReportBuilder",
+        "RunBundle::verify",
+        "AgentAdapter::settle"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-eval/src/main.rs",
+        "crates/opi-eval/src/cli/run.rs",
+        "crates/opi-eval/src/runner/experiment.rs",
+        "crates/opi-eval/README.md",
+        "crates/opi-eval/README.zh.md",
+        "CHANGELOG.md",
+        "crates/opi-eval/src/cli/mod.rs",
+        "crates/opi-eval/src/cli/verify.rs",
+        "crates/opi-eval/src/cli/regrade.rs",
+        "crates/opi-eval/src/cli/report.rs",
+        "crates/opi-eval/src/regrade.rs",
+        "crates/opi-eval/src/report.rs",
+        "crates/opi-eval/src/comparison.rs",
+        "crates/opi-eval/src/experiment.rs",
+        "crates/opi-eval/src/bundle/mod.rs",
+        "crates/opi-eval/src/failure.rs",
+        "crates/opi-eval/src/runner/lifecycle.rs",
+        "crates/opi-eval/tests/fixtures/reports/**",
+        "crates/opi-eval/tests/fixtures/experiment/**",
+        "crates/opi-eval/tests/end_to_end_report.rs",
+        "crates/opi-eval/tests/report_contract.rs",
+        "crates/opi-eval/tests/bundle_recompute.rs",
+        "crates/opi-eval/tests/report_output_containment.rs",
+        "crates/opi-eval/tests/pairing_and_integrity.rs",
+        "crates/opi-eval/tests/native_driver.rs"
+      ],
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "19.8",
+      "phase": 19,
+      "title": "Regrade preserved real artifacts offline in fresh native verifiers",
+      "crate": "opi-eval",
+      "parent_spec_row": "P19-D06",
+      "definition_of_done": "P19-D06: Implement regrade --root R --native-material M --out D as actual native grading. Verify source bundles first, require all saved real Agent artifacts/patches and cached immutable task/verifier materials, then create fresh trial-owned verifier environments under each task's native lifecycle/network rules. Reuse the same binding/adapter readers as initial execution; no Agent executable, provider credential resolution or provider/network invocation. For a verifier requiring an external service, reject unless its declared offline equivalent and cached material are available; never silently relax policy. Persist a new derived grading record referencing source bundle, original trial/artifact and fresh verifier identities without rewriting original scores. Real native witnesses for all three families prove regrade consumes changed witness input and immutable source bytes; reject missing cache/artifacts, wrong patch base and tamper. Update regrade help/callers/docs; fake grader output alone cannot close this scenario.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "19.7"
+      ],
+      "inference_notes": [
+        {
+          "field": "source_outcome",
+          "reason": "P19-D06; source order 8; independently demonstrable delivery, all changed contracts/callers recorded in the owning task",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded P19-D06 into the exact public operations, persisted identities, failures and verification in this DoD; requires human graph confirmation.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "execution_metadata",
+          "reason": "tier=cli-runtime; commit_type=feat; evaluator_required=true due to identity, authority, provider, durable evidence or public CLI/schema semantics; dependencies follow source prerequisites and concrete consumed contracts; parallelize=[] because shared runner/CLI/schema files must be applied serially",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=RunBundle::verify,BenchmarkExecution,family adapters,ReportBuilder and typed NativeTrialBinding; reused=RunBundle::verify,BenchmarkExecution,family adapters,ReportBuilder and typed NativeTrialBinding; gap=fresh native grading of preserved handoff instead of byte-only replay",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "placement",
+          "reason": "target=independent-companion; existing_home=crates/opi-eval; cannot_fit_fully=not-applicable (fits existing Independent Companion, no new crate or Agent Core seam)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=regrade --root --native-material --out through existing CLI facade; config=cached verifier/material path only; state=derived grading identity referencing immutable source artifact and fresh verifier; dependency_edge=none in Cargo, existing pinned native grader processes",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=offline regrade only when saved materials and permitted offline verifier semantics suffice; revisit_when=a required verifier service has no task-permitted offline equivalent or a preserved bundle lacks reconstructible handoff; simplification_trigger=none",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#9. Risk thresholds, rollback, and compatibility"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No Agent Core/provider seam, Opi crate dependency, Eval LLM client, embedded datasets/graders/images/sandbox engine, stable SDK, additional Agent/benchmark, Learning/Promotion, activation, hosted workers/scheduling, GUI, leaderboard, native PowerShell task execution, statistical-superiority claim, full TB3 completion guarantee, or 18 mandatory live trials. Harness execution uses deterministic fixtures/native witnesses only; real-provider evidence is supplied by a separately authorized local operator. Preserve historical bundles/snapshots and unrelated user files.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "test_seam",
+          "reason": "Highest practical seam: spawned opi-eval public CLI, stdout/stderr/exit and persisted artifacts. Update existing native_driver, end_to_end_report, bundle_recompute, report_output_containment surfaces; add only distinct missing negative/native cases. Existing safety/seal/containment tests retained. Planned exact native filters are new cases in native_driver.rs, marked ignored and explicitly run on local WSL/Linux with pinned external material and loopback fixture provider, never remote inference. Inspect all affected test bodies before change; replace superseded task-local assertions only after stronger public-seam proof passes. Every touched Rust test binary/filter and Python test file must run.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification_platform",
+          "reason": "D.1 uses one scoped smoke on local WSL/Linux for Unix acceptance; PowerShell sibling may check Windows compile only and cannot substitute zero-executed Unix tests. Resolve and lease repository external Cargo cache; deduplicate scenario commands already covered by D.1. Native material paths/output locations are operator/test-runner supplied placeholders, not auth input. Run python scripts/opi-doc-check.py and git diff --check for each actual metadata/docs change.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "split",
+          "reason": "Split P19-D06 into separate observable CLI/assurance outcomes, preserve ordering and source-owner closure.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=native-trial-artifact-binding; role=consumer; owner_task=19.1; module=crates/opi-eval/src/benchmark/process.rs; interface=NativeTrialBinding::validate_result (planned private boundary replacing unchecked result admission); representation=fallible value NativeTrialBinding; consumer_tasks=19.3,19.4,19.7,19.8; criterion_ids=P19-AC-002,P19-AC-004-native,P19-AC-005-native,P19-AC-008,P19-AC-009-regrade; legacy_paths=runner::experiment::run_trial host-agent/default-job score branch,benchmark::process::newest_job_result authority; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=verified-local-material-identity; role=consumer; owner_task=19.5; module=crates/opi-eval/src/runner/material.rs; interface=NativeMaterial::load and verified selected material inventory; representation=fallible value verified material inventory; consumer_tasks=19.6,19.8,19.10; criterion_ids=P19-AC-001-prepare,P19-AC-007-selection,P19-AC-009-regrade,P19-AC-011; legacy_paths=mandatory GitHub receipt admission for local material; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "feat",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test native_driver --test end_to_end_report --test bundle_recompute --test report_output_containment"
+        ],
+        "behavioral_tests": [
+          "crates/opi-eval/tests/native_driver.rs",
+          "crates/opi-eval/tests/end_to_end_report.rs",
+          "crates/opi-eval/tests/bundle_recompute.rs",
+          "crates/opi-eval/tests/report_output_containment.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "cargo test -p opi-eval --lib"
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P19-AC-009-regrade",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Saved native Agent artifacts undergo fresh offline native grading with a derived record and zero Agent/provider invocations; missing dependencies fail closed. Source requirement P19-AC-009.",
+          "verification": [
+            "cargo test -p opi-eval --test native_driver native_offline_regrade -- --ignored --exact",
+            "cargo test -p opi-eval --test end_to_end_report offline_regrade",
+            "cargo test -p opi-eval --test bundle_recompute"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "cli::regrade::regrade",
+            "BenchmarkExecution::run"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-eval/src/main.rs::Command::Run",
+        "opi_eval::cli::run::run",
+        "runner::experiment::run_experiment",
+        "runner::experiment::run_trial",
+        "cli::regrade::regrade",
+        "BenchmarkExecution::run"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-eval/src/main.rs",
+        "crates/opi-eval/src/cli/run.rs",
+        "crates/opi-eval/src/runner/experiment.rs",
+        "crates/opi-eval/README.md",
+        "crates/opi-eval/README.zh.md",
+        "CHANGELOG.md",
+        "crates/opi-eval/src/cli/regrade.rs",
+        "crates/opi-eval/src/cli/verify.rs",
+        "crates/opi-eval/src/regrade.rs",
+        "crates/opi-eval/src/report.rs",
+        "crates/opi-eval/src/runner/material.rs",
+        "crates/opi-eval/src/benchmark/process.rs",
+        "crates/opi-eval/src/benchmark/terminal_bench_21.rs",
+        "crates/opi-eval/src/benchmark/terminal_bench_30.rs",
+        "crates/opi-eval/src/benchmark/deepswe.rs",
+        "crates/opi-eval/src/bundle/mod.rs",
+        "crates/opi-eval/integrations/harbor/**",
+        "crates/opi-eval/integrations/pier/**",
+        "crates/opi-eval/tests/fixtures/benchmarks/**",
+        "crates/opi-eval/tests/native_driver.rs",
+        "crates/opi-eval/tests/end_to_end_report.rs",
+        "crates/opi-eval/tests/bundle_recompute.rs",
+        "crates/opi-eval/tests/report_output_containment.rs"
+      ],
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "19.9",
+      "phase": 19,
+      "title": "Bound native execution, cancellation and recovery effects",
+      "crate": "opi-eval",
+      "parent_spec_row": "P19-D07",
+      "definition_of_done": "P19-D07: Use positive execution.concurrency and frozen authorized bounds through one run supervisor with a shared cancellation token. On timeout, cancellation, exhausted enforceable budget or authority/privacy/provenance breach, stop new affected dispatch, settle observed outcomes, cancel only owned process trees/runner job containers and remove only temporary credential material. Preserve shared cache, source bundles and unrelated files/resources. Emit resource cleanup evidence and forbid successful cancellation with orphan execution. run --recover classifies durable completed/cancelled/failed/effect-unknown/unstarted states without Agent/provider calls; run --replacement-for T uses a fresh root, fresh identities for the entire paired group and the same frozen scope, preserving prior attempted evidence and unknown effects. Reject unenforceable required bounds before effects instead of ignoring them; no promised currency cap from unknown prices. CLI signal and process-race tests preserve evidence under interrupted settlement. Native no-model cancellation witness verifies actual local Docker cleanup. Recovery/replacement consumes the 19.1 sealed interpretation for settled trials and the existing durable lifecycle journal for interrupted or unstarted effects; it does not reclassify settled scores from logs/exit codes. Cancelled/effect-unknown/unstarted entries remain explicit missing coverage without fabricated zero scores, and replacement never rewrites the prior attempt classification or evidence.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "19.2",
+        "19.6",
+        "19.8"
+      ],
+      "inference_notes": [
+        {
+          "field": "source_outcome",
+          "reason": "P19-D07; source order 9; independently demonstrable delivery, all changed contracts/callers recorded in the owning task",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded P19-D07 into the exact public operations, persisted identities, failures and verification in this DoD; requires human graph confirmation.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "execution_metadata",
+          "reason": "tier=cli-runtime; commit_type=fix; evaluator_required=true due to identity, authority, provider, durable evidence or public CLI/schema semantics; dependencies follow source prerequisites and concrete consumed contracts; parallelize=[] because shared runner/CLI/schema files must be applied serially",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=ProcessSupervisor,process::tree,TrialLifecycle,AuthorityLedger,run_experiment,replace_group,recovery_report; reused=ProcessSupervisor,process::tree,TrialLifecycle,AuthorityLedger,run_experiment,replace_group,recovery_report,19.1 sealed trial interpretation with existing lifecycle journal; gap=one cancellation/budget owner across native job resources with honest effect settlement",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "placement",
+          "reason": "target=independent-companion; existing_home=crates/opi-eval; cannot_fit_fully=not-applicable (fits existing Independent Companion, no new crate or Agent Core seam)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=existing run --recover/--replacement-for and signal cancellation; config=execution bounds already admitted by 19.2/19.6, no extra knobs; state=owned resource identities and lifecycle/cleanup evidence,consume existing sealed outcome facts and keep lifecycle status distinct from score eligibility; dependency_edge=none, existing tokio cancellation and OS supervision",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=bounded local WSL/Docker execution with known owned resources; revisit_when=runner leaks an owned resource after settlement or a required limit cannot be enforced; simplification_trigger=none",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#9. Risk thresholds, rollback, and compatibility"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No Agent Core/provider seam, Opi crate dependency, Eval LLM client, embedded datasets/graders/images/sandbox engine, stable SDK, additional Agent/benchmark, Learning/Promotion, activation, hosted workers/scheduling, GUI, leaderboard, native PowerShell task execution, statistical-superiority claim, full TB3 completion guarantee, or 18 mandatory live trials. Harness execution uses deterministic fixtures/native witnesses only; real-provider evidence is supplied by a separately authorized local operator. Preserve historical bundles/snapshots and unrelated user files.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "test_seam",
+          "reason": "Highest practical seam: spawned opi-eval public CLI, stdout/stderr/exit and persisted artifacts. Update existing assembled_run, authority_boundaries, native_driver, pairing_and_integrity surfaces; add only distinct missing negative/native cases. Existing safety/seal/containment tests retained. Planned exact native filters are new cases in native_driver.rs, marked ignored and explicitly run on local WSL/Linux with pinned external material and loopback fixture provider, never remote inference. Inspect all affected test bodies before change; replace superseded task-local assertions only after stronger public-seam proof passes. Every touched Rust test binary/filter and Python test file must run.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification_platform",
+          "reason": "D.1 uses one scoped smoke on local WSL/Linux for Unix acceptance; PowerShell sibling may check Windows compile only and cannot substitute zero-executed Unix tests. Resolve and lease repository external Cargo cache; deduplicate scenario commands already covered by D.1. Native material paths/output locations are operator/test-runner supplied placeholders, not auth input. Run python scripts/opi-doc-check.py and git diff --check for each actual metadata/docs change.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "split",
+          "reason": "Split P19-D07 into separate observable CLI/assurance outcomes, preserve ordering and source-owner closure.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=selected-connection-controls; role=consumer; owner_task=19.2; module=crates/opi-eval/src/experiment.rs; interface=ResolvedExperiment selected connection and effective control projection; representation=enum protocol plus fallible resolved connection/control value; consumer_tasks=19.6,19.9; criterion_ids=P19-AC-006-fixture,P19-AC-007-selection,P19-AC-010-lifecycle; legacy_paths=runner::experiment::{native_opi_config,native_agent_env} fixed scripted projection; closure_test=crates/opi-eval/tests/agent_integration_conformance.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=frozen-selection-coverage; role=consumer; owner_task=19.6; module=crates/opi-eval/src/experiment.rs; interface=ResolvedExperiment::resolve and frozen plan inventory; representation=fallible value frozen task/trial selection; consumer_tasks=19.7,19.9; criterion_ids=P19-AC-007-selection,P19-AC-008,P19-AC-010-lifecycle; legacy_paths=none; closure_test=crates/opi-eval/tests/experiment_contract.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#6. Evidence, failure, and reporting"
+        },
+        {
+          "field": "verification",
+          "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=native-trial-outcome; role=consumer; owner_task=19.1; module=crates/opi-eval/src/runner/experiment.rs; interface=runner::experiment::run_trial settlement into sealed trial interpretation (existing private boundary); representation=enum trial classification refining existing TrialOutcome and AgentCompletion, with evidence references and independent capture status; consumer_tasks=19.2,19.7,19.9; criterion_ids=P19-AC-008-outcome,P19-AC-006-fixture,P19-AC-008,P19-AC-010-lifecycle; legacy_paths=AgentFailure::class exit-token score eligibility,report::coverage independent Agent failure interpretation; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#6. Evidence, failure, and reporting"
+        },
+        {
+          "field": "test_seam_revision",
+          "reason": "Update the existing process_timeout_cancellation_race and effect_unknown_reopen CLI scenarios to verify immutable settled classifications and explicit missing coverage; retain owned-resource cancellation proof. No separate classifier or duplicate outcome matrix is introduced in recovery.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "fix",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test assembled_run --test authority_boundaries --test native_driver --test pairing_and_integrity"
+        ],
+        "behavioral_tests": [
+          "crates/opi-eval/tests/assembled_run.rs",
+          "crates/opi-eval/tests/authority_boundaries.rs",
+          "crates/opi-eval/tests/native_driver.rs",
+          "crates/opi-eval/tests/pairing_and_integrity.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": "cargo test -p opi-eval --lib"
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P19-AC-010-lifecycle",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Bounded concurrent CLI run/cancel/recover/replace preserves ownership, immutable effects and paired identities, rejects unenforceable bounds. Source requirement P19-AC-010. Recovery reuses sealed trial classification and preserves the durable lifecycle status for cancelled/effect-unknown/unstarted attempts without synthesizing zero scores; replacement retains the prior immutable attempt and uses fresh paired identities.",
+          "verification": [
+            "cargo test -p opi-eval --test assembled_run process_timeout_cancellation_race",
+            "cargo test -p opi-eval --test assembled_run effect_unknown_reopen",
+            "cargo test -p opi-eval --test authority_boundaries",
+            "cargo test -p opi-eval --test native_driver native_owned_resource_cancellation -- --ignored --exact"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "ProcessSupervisor",
+            "runner::experiment::recovery_report"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-eval/src/main.rs::Command::Run",
+        "opi_eval::cli::run::run",
+        "runner::experiment::run_experiment",
+        "runner::experiment::run_trial",
+        "ProcessSupervisor",
+        "runner::experiment::recovery_report"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-eval/src/main.rs",
+        "crates/opi-eval/src/cli/run.rs",
+        "crates/opi-eval/src/runner/experiment.rs",
+        "crates/opi-eval/README.md",
+        "crates/opi-eval/README.zh.md",
+        "CHANGELOG.md",
+        "crates/opi-eval/src/process.rs",
+        "crates/opi-eval/src/process/tree.rs",
+        "crates/opi-eval/src/runner/lifecycle.rs",
+        "crates/opi-eval/src/runner/mod.rs",
+        "crates/opi-eval/src/experiment.rs",
+        "crates/opi-eval/src/authority.rs",
+        "crates/opi-eval/src/bundle/mod.rs",
+        "crates/opi-eval/src/failure.rs",
+        "crates/opi-eval/src/runner/material.rs",
+        "crates/opi-eval/integrations/harbor/**",
+        "crates/opi-eval/integrations/pier/**",
+        "crates/opi-eval/tests/fixtures/experiment/**",
+        "crates/opi-eval/tests/assembled_run.rs",
+        "crates/opi-eval/tests/authority_boundaries.rs",
+        "crates/opi-eval/tests/native_driver.rs",
+        "crates/opi-eval/tests/pairing_and_integrity.rs"
+      ],
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "19.10",
+      "phase": 19,
+      "title": "Align deterministic CI, independent packaging and local acceptance handoff",
+      "crate": "opi-eval",
+      "parent_spec_row": "P19-D07",
+      "definition_of_done": "P19-D07: Make existing GitHub workflows thin callers of the same local prepare/conformance/run/verify/report policy, retaining CI transport verification without a second scoring/materialization policy. Add an offline verifier scripts/verify-local-acceptance.py --root E --out O with deterministic tests; validate supplied redacted operator manifest, six attributable trials, controls, source/build/material/bundle digests, command exits and preserved provider/tool/native artifacts, reject substituted/oracle/missing/fixture-only evidence, and invoke built Companion verify/report only against supplied artifacts. It must not launch an Agent, access credentials or run a provider. Document the independent WSL/Linux CLI path, first connection, budget/task freeze, no-live default tests, rollback and operator-only real-run handoff in bilingual README/examples. Confirm pi-only runtime without Opi, unchanged Minimal Runtime and package absence of Opi dependencies/task corpora/grader implementations/images. Dummy credential environment must not activate live tests. Update affected Python regression tests and producer hashes, synchronize actual 0.x changes/help/docs/Unreleased. This produces acceptance tooling and instructions, not six-trial success. The operator handoff defines <redacted-evidence-root>/opi-artifact-audit as an Opi-only capture surface containing the three preserved Opi trial captures and only Opi repository commit references. The local verifier checks that this surface is present, non-empty, byte-bound to the corresponding original Opi native captures, and exhaustive for those three trials; it must not treat an empty generic-auditor success as acceptance. Preserve pi/Harbor/Pier identities with repository URL and commit in their original source records outside that scoped view. Validate those records against the admitted external inventories and cached upstream repository identities offline, never by resolving every commit in the Opi checkout. Do not discard or rename upstream provenance to evade validation. Add fixtures proving valid upstream commits are accepted in their correct repository and mismatched repository/commit pairs fail.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "19.9"
+      ],
+      "inference_notes": [
+        {
+          "field": "source_outcome",
+          "reason": "P19-D07; source order 10; independently demonstrable delivery, all changed contracts/callers recorded in the owning task",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded P19-D07 into the exact public operations, persisted identities, failures and verification in this DoD; requires human graph confirmation.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "execution_metadata",
+          "reason": "tier=cli-runtime; commit_type=chore; evaluator_required=true due to identity, authority, provider, durable evidence or public CLI/schema semantics; dependencies follow source prerequisites and concrete consumed contracts; parallelize=[] because shared runner/CLI/schema files must be applied serially",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=existing two opi-eval workflows,native-smoke.sh,materializer/verifier scripts,authority_boundaries,Companion package manifest; reused=existing two opi-eval workflows,native-smoke.sh,materializer/verifier scripts,authority_boundaries,Companion package manifest; gap=one reproducible local CI policy and an offline operator-evidence verification handoff; production_consumers=native-smoke workflow/materialization workflow call producer and artifact-verifier scripts; static lock hashes bind their identities; nonproduction_consumers=Python script regression fixtures/tests,README.md and README.zh.md",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "placement",
+          "reason": "target=independent-companion; existing_home=crates/opi-eval; cannot_fit_fully=not-applicable (fits existing Independent Companion, no new crate or Agent Core seam)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=offline acceptance verifier script only, existing Companion commands reused; config=explicit local operator evidence directory and output, no credentials or spending defaults; state=redacted acceptance verification report only, no competing implementation ledger; dependency_edge=none, no Cargo or product activation changes",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=local deterministic assurance and operator handoff, no live harness execution; revisit_when=CI needs a material/scoring rule not expressible through the public local path; simplification_trigger=replace; net_deletion=remove duplicate CI-owned materialization/scoring orchestration after local CLI replacement proof; retain thin workflow transport wrappers and shared validators; residual_glue=existing private adapters/lifecycle plus the explicitly stated local integration or verifier boundary only",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#9. Risk thresholds, rollback, and compatibility"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No Agent Core/provider seam, Opi crate dependency, Eval LLM client, embedded datasets/graders/images/sandbox engine, stable SDK, additional Agent/benchmark, Learning/Promotion, activation, hosted workers/scheduling, GUI, leaderboard, native PowerShell task execution, statistical-superiority claim, full TB3 completion guarantee, or 18 mandatory live trials. Harness execution uses deterministic fixtures/native witnesses only; real-provider evidence is supplied by a separately authorized local operator. Preserve historical bundles/snapshots and unrelated user files.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "test_seam",
+          "reason": "Highest practical seam: spawned opi-eval public CLI, stdout/stderr/exit and persisted artifacts. Update existing authority_boundaries, fail_closed_cli, native_driver surfaces; add only distinct missing negative/native cases. Existing safety/seal/containment tests retained. Planned exact native filters are new cases in native_driver.rs, marked ignored and explicitly run on local WSL/Linux with pinned external material and loopback fixture provider, never remote inference. Inspect all affected test bodies before change; replace superseded task-local assertions only after stronger public-seam proof passes. Every touched Rust test binary/filter and Python test file must run.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification_platform",
+          "reason": "D.1 uses one scoped smoke on local WSL/Linux for Unix acceptance; PowerShell sibling may check Windows compile only and cannot substitute zero-executed Unix tests. Resolve and lease repository external Cargo cache; deduplicate scenario commands already covered by D.1. Native material paths/output locations are operator/test-runner supplied placeholders, not auth input. Run python scripts/opi-doc-check.py and git diff --check for each actual metadata/docs change.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "split",
+          "reason": "Split P19-D07 into separate observable CLI/assurance outcomes, preserve ordering and source-owner closure.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "shared_decision",
+          "reason": "decision_id=verified-local-material-identity; role=consumer; owner_task=19.5; module=crates/opi-eval/src/runner/material.rs; interface=NativeMaterial::load and verified selected material inventory; representation=fallible value verified material inventory; consumer_tasks=19.6,19.8,19.10; criterion_ids=P19-AC-001-prepare,P19-AC-007-selection,P19-AC-009-regrade,P19-AC-011; legacy_paths=mandatory GitHub receipt admission for local material; closure_test=crates/opi-eval/tests/native_driver.rs; trigger=multiple-consumers",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
+        },
+        {
+          "field": "artifact_audit_scope",
+          "reason": "P.2 revision: scripts/opi-artifact-audit.py assumes commit references belong to the Opi checkout. Its unchanged generic invocation receives only a declared Opi-only capture surface; repository-aware local acceptance verification checks all preserved cross-repository source identities and proves scoped-view completeness. No upstream record is removed.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        }
+      ],
+      "tier": "cli-runtime",
+      "commit_type": "chore",
+      "parallelize": [],
+      "evaluator_required": true,
+      "verification": {
+        "library_gates": [
+          "bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test authority_boundaries --test fail_closed_cli --test native_driver"
+        ],
+        "behavioral_tests": [
+          "crates/opi-eval/tests/authority_boundaries.rs",
+          "crates/opi-eval/tests/fail_closed_cli.rs",
+          "crates/opi-eval/tests/native_driver.rs"
+        ],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P19-AC-011",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Default/CI execution remains deterministic with dummy credentials present; local native conformance and separate redacted live-evidence verification need no dispatch. Source requirement P19-AC-011.",
+          "verification": [
+            "cargo test -p opi-eval --test fail_closed_cli",
+            "python -m unittest discover -s crates/opi-eval/scripts -p 'test_*.py'"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "crates/opi-eval/scripts/verify-local-acceptance.py (planned)",
+            "opi_eval::cli::conformance::run"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-013",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Independent pi-only CLI/package value without Opi runtime, synchronized changed help/contracts/bilingual docs and deliberate Unreleased records. Source requirement P19-AC-013.",
+          "verification": [
+            "cargo test -p opi-eval --test native_driver pi_only_without_opi",
+            "cargo test -p opi-eval --test authority_boundaries",
+            "cargo metadata --no-deps --format-version 1",
+            "cargo package -p opi-eval --list --allow-dirty",
+            "python scripts/opi-doc-check.py",
+            "git diff --check"
+          ],
+          "production_call_sites": [
+            "crates/opi-eval/src/main.rs::Command::Run",
+            "opi_eval::cli::run::run",
+            "runner::experiment::run_experiment",
+            "runner::experiment::run_trial",
+            "crates/opi-eval/scripts/verify-local-acceptance.py (planned)",
+            "opi_eval::cli::conformance::run"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "crates/opi-eval/src/main.rs::Command::Run",
+        "opi_eval::cli::run::run",
+        "runner::experiment::run_experiment",
+        "runner::experiment::run_trial",
+        "crates/opi-eval/scripts/verify-local-acceptance.py (planned)",
+        "opi_eval::cli::conformance::run"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "crates/opi-eval/src/main.rs",
+        "crates/opi-eval/src/cli/run.rs",
+        "crates/opi-eval/src/runner/experiment.rs",
+        "crates/opi-eval/README.md",
+        "crates/opi-eval/README.zh.md",
+        "CHANGELOG.md",
+        "crates/opi-eval/examples/local-evaluation/**",
+        "crates/opi-eval/scripts/native-smoke.sh",
+        "crates/opi-eval/scripts/materialize-external-locks.sh",
+        "crates/opi-eval/scripts/build-agent-artifacts.sh",
+        "crates/opi-eval/scripts/verify-native-smoke-ci.py",
+        "crates/opi-eval/scripts/test_verify_native_smoke_ci.py",
+        "crates/opi-eval/scripts/verify-native-smoke-artifact.py",
+        "crates/opi-eval/scripts/test_verify_native_smoke_artifact.py",
+        "crates/opi-eval/scripts/verify-external-lock-ci.py",
+        "crates/opi-eval/scripts/test_verify_external_lock_ci.py",
+        "crates/opi-eval/scripts/verify-external-lock-artifact.py",
+        "crates/opi-eval/scripts/test_verify_external_lock_artifact.py",
+        "crates/opi-eval/scripts/verify-local-acceptance.py",
+        "crates/opi-eval/scripts/test_verify_local_acceptance.py",
+        "crates/opi-eval/external-locks/static/linux-x86_64.json",
+        ".github/workflows/opi-eval-native-smoke.yml",
+        ".github/workflows/opi-eval-external-lock-materialization.yml",
+        "crates/opi-eval/tests/authority_boundaries.rs",
+        "crates/opi-eval/tests/fail_closed_cli.rs",
+        "crates/opi-eval/tests/native_driver.rs"
+      ],
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    },
+    {
+      "id": "19.11",
+      "phase": 19,
+      "title": "Verify local six-trial evidence and all Phase exit criteria",
+      "crate": "opi-eval",
+      "parent_spec_row": null,
+      "definition_of_done": "P19-D08: With separately authorized local-operator evidence already supplied, verify at least one feasible pinned task in each TB2.1/TB3/DeepSWE family, once by actual Opi and once by actual pi through Zhipu glm-5.3-flash over the selected Anthropic connection. Require frozen task/build/runner/material/model/control/concurrency/usage/time scope, redacted provider tool loops, task-side effects, official handoff and attributable native grading for all six trials; retain failed attempts and new replacement identities. Native zero can count; auth/infra/missing-tool-loop/invalid-handoff cannot. Verify independent-directory prepare/run/report, both real Agent paths for AC-003 through AC-006, all required artifacts/seals, deterministic offline reconstruction and criteria trace. Run required workspace verification union once on the final state plus actual WSL/Linux acceptance evidence and artifact audit. Record redacted findings in docs/audits/phase19-local-native-acceptance.md and .zh.md. Before any task execution, missing supplied evidence leaves this task failing with an explicit external prerequisite and all live scenarios open; no harness provider calls/auth reads, fabricated acceptance or uncited deferral. Passing this task does not auto-archive; Phase F independently reconstructs criteria and retains its human archive gate. Require the 19.10 local verifier to prove the Opi-only generic-audit view is non-empty, exhaustive for the three Opi trial captures and byte-bound to originals; audit it with scripts/opi-artifact-audit.py --workspace-root . . Validate full pi/Harbor/Pier repository-qualified provenance through the repository-aware local acceptance verifier. Generic auditor success cannot replace cross-Agent/native evidence verification.",
+      "definition_source": "inferred",
+      "replaces": null,
+      "status": "failing",
+      "depends_on": [
+        "19.10"
+      ],
+      "inference_notes": [
+        {
+          "field": "source_outcome",
+          "reason": "P19-D08; source order 11; independently demonstrable delivery, all changed contracts/callers recorded in the owning task",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "definition_of_done",
+          "reason": "Expanded P19-D08 into the exact public operations, persisted identities, failures and verification in this DoD; requires human graph confirmation.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "execution_metadata",
+          "reason": "tier=workspace; commit_type=chore; evaluator_required=false due to assurance-only supplied evidence and deterministic checks; independent Phase F audit still mandatory; dependencies follow source prerequisites and concrete consumed contracts; parallelize=[] because shared runner/CLI/schema files must be applied serially",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#10. Delivery decomposition and admission handoff"
+        },
+        {
+          "field": "reuse_search",
+          "reason": "searched=RunBundle::verify,cli::report::report,19.10 offline acceptance verifier,existing artifact audit and workspace smoke; reused=RunBundle::verify,cli::report::report,19.10 offline acceptance verifier,existing artifact audit and workspace smoke; gap=independently verified assembled live evidence and final criteria closure",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "placement",
+          "reason": "target=assurance; existing_home=crates/opi-eval; cannot_fit_fully=not-applicable (fits existing Independent Companion, no new crate or Agent Core seam)",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "surface_necessity",
+          "reason": "public_api=none, evidence review only; config=none, consume operator-frozen inputs; state=redacted audit artifacts and workflow-owned ledger evidence only; dependency_edge=none, assurance adds no runtime seam",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#4. Local workflow and configuration"
+        },
+        {
+          "field": "simplification_ceiling",
+          "reason": "ceiling=six minimum trials, no statistical or positive-score requirement; revisit_when=any required trial/evidence/control/attribution is missing or fails verification; simplification_trigger=none",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#9. Risk thresholds, rollback, and compatibility"
+        },
+        {
+          "field": "forbidden_scope",
+          "reason": "No Agent Core/provider seam, Opi crate dependency, Eval LLM client, embedded datasets/graders/images/sandbox engine, stable SDK, additional Agent/benchmark, Learning/Promotion, activation, hosted workers/scheduling, GUI, leaderboard, native PowerShell task execution, statistical-superiority claim, full TB3 completion guarantee, or 18 mandatory live trials. Harness execution uses deterministic fixtures/native witnesses only; real-provider evidence is supplied by a separately authorized local operator. Preserve historical bundles/snapshots and unrelated user files.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#3. Scope and placement"
+        },
+        {
+          "field": "test_seam",
+          "reason": "Highest practical seam: spawned opi-eval public CLI, stdout/stderr/exit and persisted artifacts. Update existing supplied-evidence audit surfaces; add only distinct missing negative/native cases. Existing safety/seal/containment tests retained. Planned exact native filters are new cases in native_driver.rs, marked ignored and explicitly run on local WSL/Linux with pinned external material and loopback fixture provider, never remote inference. Inspect all affected test bodies before change; replace superseded task-local assertions only after stronger public-seam proof passes. Every touched Rust test binary/filter and Python test file must run.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "verification_platform",
+          "reason": "D.1 uses one scoped smoke on local WSL/Linux for Unix acceptance; PowerShell sibling may check Windows compile only and cannot substitute zero-executed Unix tests. Resolve and lease repository external Cargo cache; deduplicate scenario commands already covered by D.1. Native material paths/output locations are operator/test-runner supplied placeholders, not auth input. Run python scripts/opi-doc-check.py and git diff --check for each actual metadata/docs change.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "external_evidence",
+          "reason": "Required before task execution: separately authorized local operator supplies redacted WSL/Linux evidence, no API key required for graph admission. Harness verifies offline only; absent evidence never changes status to passing or deferred.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "artifact_audit_scope",
+          "reason": "P.2 revision: generic artifact audit is limited to <redacted-evidence-root>/opi-artifact-audit with Opi-only commit references. The mandatory preceding local verifier proves view completeness and cross-repository provenance; upstream records remain preserved and cannot be relabelled as Opi commits.",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        }
+      ],
+      "tier": "workspace",
+      "commit_type": "chore",
+      "parallelize": [],
+      "evaluator_required": false,
+      "verification": {
+        "library_gates": [
+          "bash scripts/opi-impl-smoke.sh full"
+        ],
+        "behavioral_tests": [],
+        "snapshot_tests": [],
+        "smoke_addendum": null
+      },
+      "acceptance_scenarios": [
+        {
+          "id": "P19-AC-001-live",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Supplied operator evidence proves the assembled independent local prepare/run/report workflow. Source requirement P19-AC-001.",
+          "verification": [
+            "python crates/opi-eval/scripts/verify-local-acceptance.py --root <redacted-evidence-root> --out <new-audit-output>"
+          ],
+          "production_call_sites": [
+            "Supplied operator invocation: opi-eval doctor/prepare/plan/run",
+            "opi_eval::cli::verify (planned 19.7)",
+            "opi_eval::cli::report::report",
+            "crates/opi-eval/scripts/verify-local-acceptance.py (planned 19.10)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-003-live",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Both real Opi/pi TB2.1 traces/tool effects bind to the scored native environment. Source requirement P19-AC-003.",
+          "verification": [
+            "python crates/opi-eval/scripts/verify-local-acceptance.py --root <redacted-evidence-root> --out <new-audit-output>"
+          ],
+          "production_call_sites": [
+            "Supplied operator invocation: opi-eval doctor/prepare/plan/run",
+            "opi_eval::cli::verify (planned 19.7)",
+            "opi_eval::cli::report::report",
+            "crates/opi-eval/scripts/verify-local-acceptance.py (planned 19.10)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-004-live",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Both real Opi/pi TB3 trials cross the declared collected-artifact verifier boundary. Source requirement P19-AC-004.",
+          "verification": [
+            "python crates/opi-eval/scripts/verify-local-acceptance.py --root <redacted-evidence-root> --out <new-audit-output>"
+          ],
+          "production_call_sites": [
+            "Supplied operator invocation: opi-eval doctor/prepare/plan/run",
+            "opi_eval::cli::verify (planned 19.7)",
+            "opi_eval::cli::report::report",
+            "crates/opi-eval/scripts/verify-local-acceptance.py (planned 19.10)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-005-live",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Both real Opi/pi DeepSWE committed patches reach pristine native verifiers. Source requirement P19-AC-005.",
+          "verification": [
+            "python crates/opi-eval/scripts/verify-local-acceptance.py --root <redacted-evidence-root> --out <new-audit-output>"
+          ],
+          "production_call_sites": [
+            "Supplied operator invocation: opi-eval doctor/prepare/plan/run",
+            "opi_eval::cli::verify (planned 19.7)",
+            "opi_eval::cli::report::report",
+            "crates/opi-eval/scripts/verify-local-acceptance.py (planned 19.10)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-006-live",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "Both actual native Agent clients produce preserved first-connection request/tool-loop/effective-control evidence. Source requirement P19-AC-006.",
+          "verification": [
+            "python crates/opi-eval/scripts/verify-local-acceptance.py --root <redacted-evidence-root> --out <new-audit-output>"
+          ],
+          "production_call_sites": [
+            "Supplied operator invocation: opi-eval doctor/prepare/plan/run",
+            "opi_eval::cli::verify (planned 19.7)",
+            "opi_eval::cli::report::report",
+            "crates/opi-eval/scripts/verify-local-acceptance.py (planned 19.10)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P19-AC-012",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#7. Requirements and acceptance scenarios",
+          "scenario": "At least six valid real Agent trials plus all required criteria and platform/gate evidence pass offline verification; missing evidence blocks Phase exit. Source requirement P19-AC-012.",
+          "verification": [
+            "python crates/opi-eval/scripts/verify-local-acceptance.py --root <redacted-evidence-root> --out <new-audit-output>",
+            "python scripts/opi-artifact-audit.py <redacted-evidence-root>/opi-artifact-audit --workspace-root .",
+            "bash scripts/opi-impl-smoke.sh full",
+            "git diff --check"
+          ],
+          "production_call_sites": [
+            "Supplied operator invocation: opi-eval doctor/prepare/plan/run",
+            "opi_eval::cli::verify (planned 19.7)",
+            "opi_eval::cli::report::report",
+            "crates/opi-eval/scripts/verify-local-acceptance.py (planned 19.10)"
+          ],
+          "status": "open"
+        }
+      ],
+      "production_call_sites": [
+        "Supplied operator invocation: opi-eval doctor/prepare/plan/run",
+        "opi_eval::cli::verify (planned 19.7)",
+        "opi_eval::cli::report::report",
+        "crates/opi-eval/scripts/verify-local-acceptance.py (planned 19.10)"
+      ],
+      "substrate_only": false,
+      "iteration_count": 0,
+      "max_iterations": 5,
+      "start_commit": null,
+      "baseline_dirty_files": [],
+      "task_owned_paths": [
+        "docs/audits/phase19-local-native-acceptance.md",
+        "docs/audits/phase19-local-native-acceptance.zh.md"
+      ],
+      "verified_at_commit": null,
+      "evidence": null,
+      "blocker": null,
+      "session_notes": []
+    }
+  ],
   "phase_exit": {
     "1": {
       "completed_at": "2026-05-22T12:00:00Z",
@@ -1463,6 +3483,187 @@
       ]
     }
   },
-  "session_notes": [],
-  "verify_runs": []
+  "session_notes": [
+    {
+      "timestamp": "2026-09-05",
+      "summary": "Plan-only addition of registered Phase 19 sources to empty active graph. Parent hash unchanged. P.0 source reviewed: registered bilingual source aligns with STRAT-002 and Independent Companion placement. Evidence provenance is outward research plus current local implementation. English and Chinese meanings agree. No live-provider evidence claimed. Pending P.2 review and P.4 human confirmation."
+    },
+    {
+      "timestamp": "2026-09-05T08:16:48.772859+00:00",
+      "summary": "P.2 original verdict GRAPH_REVISION_REQUIRED: missing inline lib and Python task-local commands, plus generic-auditor cross-repository provenance incompatibility. Parent accepted all three with source/code evidence and revised draft only. Rejected findings: speculative unreadable-root test break, runtime-input requirement before admission, and treating planned native tests as missing shipped proof. Five lenses reviewed in one fresh-context same-family fallback; no Workflow runtime/id. No source/code/canonical edits. Revised graph requires a new P.2 review."
+    },
+    {
+      "timestamp": "2026-09-05T08:21:49.292157+00:00",
+      "summary": "P.2 revised verdict READY. Second fresh-context same-family reviewer reassessed all five charters, found no surviving design or execution blocker, and independently confirmed all three earlier findings corrected. No source or task meaning changed after this review. Two sequential fresh reviewers total, maximum parallel reviewers 1, Workflow runtime/id unavailable. Pending P.4 human confirmation; canonical ledger unchanged and no task or real-provider execution authorized.",
+      "gate_results": {
+        "plan_review": {
+          "verdict": "READY",
+          "design_findings": [],
+          "graph_findings": [],
+          "flagged_for_human": [],
+          "corrected_prior_findings": [
+            "Tasks 19.1-19.9 now explicitly run inline library tests outside named integration smoke.",
+            "19.1/19.2/19.5 now carry their exact task-local Python regression commands.",
+            "19.10/19.11 validate the exhaustive byte-bound Opi-only audit view and preserve repository-qualified upstream provenance for independent offline checks."
+          ],
+          "resource_summary": {
+            "independence": "fresh-context-same-family",
+            "review_rounds": 2,
+            "total_reviewers": 2,
+            "max_parallel_agents": 1,
+            "lenses_per_round": 5,
+            "workflow_id": null
+          },
+          "reviewed_draft_sha256": "36cefd09b15c95a6f5032020ddf8e1bf966ff2e2c00a8d4cf7d19880acd0e8b2",
+          "reviewed_task_array_sha256": "664a41337ace188d3cbd8d3cd5e6b6a010ed4f25a787018ae8ba0f5102ad09e1"
+        },
+        "checks_run": [
+          {
+            "command": "scripts/opi-impl-smoke.ps1 boot",
+            "result": "PASS: cargo fmt --check --all and cargo clippy --workspace --lib --bins -- -D warnings"
+          },
+          {
+            "command": "python .claude/skills/opi-implement/scripts/validate-plan.py .opi-impl-state.draft.json",
+            "result": "PASS tasks=11"
+          },
+          {
+            "command": "python scripts/opi-doc-check.py",
+            "result": "PASS"
+          },
+          {
+            "command": "git diff --check",
+            "result": "PASS"
+          }
+        ],
+        "test_disposition": [
+          {
+            "subject": "Phase 19 plan only",
+            "action": "none",
+            "test": "none",
+            "interface": "not-applicable",
+            "replacement": null,
+            "slim_candidate": null
+          }
+        ]
+      }
+    },
+    {
+      "timestamp": "2026-09-05T09:13:14.273767+00:00",
+      "summary": "Human confirmed the reviewed Phase 19 graph with confirm-all. Checkpoint choice: write-only (plan default stated in the confirmation request). Install the unchanged reviewed task array and source hashes in the canonical ledger; no Git commit or task execution authorized. 11 tasks and 22 acceptance scenarios remain unexecuted/open."
+    },
+    {
+      "timestamp": "2026-09-05T09:50:54.779423+00:00",
+      "summary": "Targeted Phase 19 graph revision after user confirmation of native-trial-outcome ownership: 19.1 settlement owner, 19.2 native observations, 19.7 sealed report consumer, 19.9 lifecycle consumer. Only these four task rows change; 11 task IDs/dependencies/tiers and all runtime history remain unchanged. Add one settlement acceptance scenario, 23 open scenarios total. Source meanings and hashes are unchanged. P.2 review and P.4 presentation are pending for this draft; this note does not claim whole-graph confirmation, task execution or provider evidence."
+    },
+    {
+      "timestamp": "2026-09-05T09:59:19.955759+00:00",
+      "summary": "P.2 targeted graph revision verdict READY. One fresh-context same-model reviewer applied all five lenses, checked all eleven tasks and rejected three unsupported candidate concerns. Only 19.1/19.2/19.7/19.9 task rows differ from the canonical graph. User-confirmed Module ownership is preserved; whole-graph P.4 confirmation remains pending. This append records review evidence only and does not modify the reviewed task array, source hashes or execution state.",
+      "gate_results": {
+        "plan_review": {
+          "summary": "Fresh-context reviewer applied all five plan.workflow.js lenses and all six minimum-change answers to all eleven tasks. The four revised rows faithfully implement the user-confirmed private runner settlement owner, native Adapter observations, sealed report consumption and immutable recovery. No blocking design or execution finding remains.",
+          "verdict": "READY",
+          "independence": "fresh-context-same-model",
+          "design_findings": [],
+          "graph_findings": [],
+          "flagged_for_human": [],
+          "rejected": [
+            {
+              "candidate": "A new dedicated Module or Adapter-owned final classifier is required.",
+              "reason": "Existing run_trial already joins Agent, native grading, evidence, authority and lifecycle. The source requires reuse; a new Module is unsupported."
+            },
+            {
+              "candidate": "Run-to-report fixture setup violates offline reporting.",
+              "reason": "Existing tests generate evidence with run, then separately invoke verify/report without effects. The revised graph makes that separation explicit."
+            },
+            {
+              "candidate": "Planned native client/report filters must exist before plan admission.",
+              "reason": "All task scenarios remain open. Explicit future tests have existing public CLI/process fixture entry points and must pass during implementation, not before admitting the plan."
+            }
+          ],
+          "reviewed_draft_sha256": "e21b3cd0e68fbb74cb139705feaebe0396beb0fa44d794bbab6c06a19f33d62e",
+          "reviewed_task_array_sha256": "2c064f8928f305731f25a6b7d923c69ecce3e92351595de8d977805e93a74ad3",
+          "hash_encoding": "sha256(sorted compact JSON, ensure_ascii=False, UTF-8)",
+          "resource_summary": {
+            "workflow_id": null,
+            "reviewer": "phase19_draft_admission",
+            "review_rounds": 1,
+            "total_reviewers": 1,
+            "max_parallel_agents": 1,
+            "lenses_per_round": 5,
+            "independence": "fresh-context-same-model"
+          },
+          "checks": [
+            "validate-plan PASS tasks=11",
+            "three registered source hashes match",
+            "13 source criteria mapped to 23 open scenarios",
+            "11 unique tasks with acyclic unchanged dependency graph",
+            "only task rows 19.1,19.2,19.7,19.9 changed",
+            "all runtime fields and historical phase_exit preserved",
+            "initial and final canonical/draft byte hashes unchanged during independent review"
+          ],
+          "limits": "Plan review only. No Rust/native/client/provider execution. Test impact none. Whole-graph confirmation is still required before canonical installation."
+        },
+        "checks_run": [
+          {
+            "command": "python .claude/skills/opi-implement/scripts/validate-plan.py .opi-impl-state.draft.json",
+            "result": "PASS tasks=11 on the independently reviewed task array"
+          },
+          {
+            "command": "python scripts/opi-doc-check.py",
+            "result": "PASS"
+          },
+          {
+            "command": "git diff --check",
+            "result": "PASS"
+          }
+        ],
+        "test_disposition": [
+          {
+            "subject": "Phase 19 graph ownership revision",
+            "action": "none",
+            "test": "none",
+            "interface": "not-applicable",
+            "replacement": null,
+            "slim_candidate": null
+          }
+        ]
+      }
+    },
+    {
+      "timestamp": "2026-09-05T10:01:23.922768+00:00",
+      "summary": "Human confirmed the displayed and independently reviewed Phase 19 graph revision. Checkpoint choice: write-only, as explicitly stated in the confirmation request. The admitted task array retains SHA256 2c064f8928f305731f25a6b7d923c69ecce3e92351595de8d977805e93a74ad3 (sorted compact JSON, ensure_ascii=False, UTF-8). Only tasks 19.1, 19.2, 19.7 and 19.9 change their planned fields; all 11 task IDs/dependencies/tiers and runtime history are preserved. All 23 acceptance scenarios remain open. Source files and hashes are unchanged. This confirmation authorizes canonical ledger installation only; no Git commit, implementation task or live-provider execution is authorized."
+    }
+  ],
+  "verify_runs": [
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 3,
+      "ran_at": "2026-09-05T08:16:48.772859+00:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 3,
+      "ran_at": "2026-09-05T08:21:49.292157+00:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 3,
+      "ran_at": "2026-09-05T09:59:19.955759+00:00",
+      "task_id": null,
+      "criterion_id": null
+    }
+  ]
 }

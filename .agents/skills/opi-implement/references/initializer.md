@@ -47,15 +47,17 @@ non-documentation tier.
 
 Phase delivery sources come only from the reviewed registry in `SKILL.md`.
 
-No supplemental Phase source is currently registered. Completed Phase 17 and
-Phase 18 delivery specifications are frozen under `docs/snapshots/phase17/`
-and `docs/snapshots/phase18/`; they are historical evidence and MUST NOT be
-admitted into the live `spec_files` set.
+Read the active source paths and counterpart rules from that registry rather
+than maintaining a second source list here. Completed Phase 17 and Phase 18
+delivery specifications are frozen under `docs/snapshots/phase17/` and
+`docs/snapshots/phase18/`; they are historical evidence and MUST NOT be admitted
+into the live `spec_files` set.
 
 For each active phase:
 
-- Include `docs/opi-spec.md` and the phase's registered source in `spec_files`.
-- Hash both files in `spec_files_sha256` using the CRLF-normalized SHA-256
+- Include `docs/opi-spec.md` and all source files required by the phase's
+  registry entry in `spec_files`.
+- Hash every included file in `spec_files_sha256` using the CRLF-normalized SHA-256
   (replace `\r\n` with `\n` before hashing; see `SKILL.md`).
 - Derive task IDs as `<phase>.<N>` in source order unless the reviewed source
   already names a stricter sequence.
