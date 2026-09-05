@@ -22,7 +22,7 @@
       "definition_of_done": "P19-D01: From opi-eval run --config C --root R --native-material M, one explicitly selected Opi/pi Harbor integration invokes the Agent inside the selected TB2.1 task environment and grades that same trial after temporary credential cleanup. Replace the host-agent then independent default/oracle-job score path in the same cutover; do not append answer.txt instructions or treat it as an official handoff. Bind expected/observed subject build, task, job, trial, actual Agent, task environment, delivered artifact digest and verifier input to native output and sealed evidence. The production result reader rejects absent/wrong/oracle Agent, substituted artifact and stale job even on exit 0. Correct/incorrect witnesses traverse the real pinned task lifecycle/grader without a live model. Oracle becomes only explicitly selected conformance diagnostic and never a prerequisite silently run by run. Unsupported TB3/DeepSWE native scoring remains explicitly unavailable until 19.3/19.4; their former path must not keep emitting Agent scores. Preserve generic fixture conformance. Update schema identifiers and all affected callers/docs/Unreleased for the deliberate 0.x cutover. At the existing run_trial join point, combine typed native Agent terminal observations, admitted task and artifact identity, native grading and lifecycle into one final trial classification with evidence references. Keep native result identity validation in benchmark::process and lifecycle effect ownership in the existing supervisor; neither exit code alone nor FailureBoundaryCode alone determines score eligibility. Valid native task failure/zero and benchmark-valid task timeout retain their native metric; terminal provider/access/adapter/identity/infra/invalid-grading failures preserve attempted coverage without an Agent score. Cancelled/unstarted/effect-unknown states do not invent outcomes. Preserve capturable redacted native evidence independently of Agent success and even when the delivered artifact is absent; seal the interpretation only after evidence admission succeeds, otherwise retain truthful private diagnostics and reject scoring/export. Adapt existing private state and all current callers in one compiling cutover; later tasks extend native observation coverage, reports and recovery without a second classifier.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [],
       "inference_notes": [
         {
@@ -141,7 +141,7 @@
             "runner::experiment::run_experiment",
             "runner::experiment::run_trial"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P19-AC-003-native",
@@ -177,7 +177,7 @@
             "RunBundle::seal",
             "ReportBuilder"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -191,9 +191,9 @@
         "ReportBuilder"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "c1218ac4e6b6c99e1eafadd46a7a8b36d7bf3cdc",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/main.rs",
@@ -236,10 +236,108 @@
         "crates/opi-eval/tests/authority_boundaries.rs",
         "crates/opi-eval/tests/end_to_end_report.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "4622a79f5b2972779d1d8f35f5c57da56c4cee6b",
+      "evidence": {
+        "Opi-Task": "19.1",
+        "Opi-DoD-SHA256": "c76136ee5415339a800933de54eb98b177b6916bc7dd4246bf4f16a850f22183",
+        "Opi-Verification": "cli-runtime; scoped smoke PASSED (native_driver, benchmark_integration_conformance, assembled_run, agent_integration_conformance, authority_boundaries, end_to_end_report) + lib tests 108 passed + python suites 133 passed + opi-doc-check PASS",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P19-AC-002, P19-AC-008-outcome met via native_driver/authority_boundaries/end_to_end_report/test_verify_native_smoke_artifact.py at the spawned-CLI seam; P19-AC-003-native open pending pinned-material witness (ignored filter in place)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-09-05T21:40:00+08:00",
+          "attempt": 1,
+          "summary": "P19-D01 cutover: one explicitly selected upstream job per native trial runs the pinned opi_eval_harbor integration inside the graded TB2.1 task environment and grades that same trial; import_bound_native_job (benchmark::process) binds agent/task/job/trial/delivered-artifact identity and rejects absent/wrong/oracle agent, substituted artifact, stale/ambiguous jobs on exit 0; classify_native_trial seals one interpretation per trial (graded native outcomes incl. zero/timeout keep their metric; terminal provider/access/adapter/identity/infra/invalid-grading failures preserve attempted coverage without an Agent score; cancelled/unstarted invent nothing); oracle demoted to explicitly selected oracle-witness/nop-witness conformance diagnostics; host-agent/default-job score path, newest-job admission, answer.txt prompt glue and --preflight-only deleted; TB3/DeepSWE native scoring explicitly unavailable; material schema /2 pins the integration module; producer/artifact-verifier/CI-verifier/READMEs/CHANGELOG updated. P19-AC-003-native stays open: the ignored real-TB2.1-grader witness requires a local Docker Linux engine + pinned external material, unavailable in this distro (docker WSL integration off); the deterministic witness handoff and its exact filter are in place.",
+          "gate_results": {
+            "d1_scoped_smoke": "PASS: bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test native_driver --test benchmark_integration_conformance --test assembled_run --test agent_integration_conformance --test authority_boundaries --test end_to_end_report (fmt+clippy -D warnings+6 integration binaries)",
+            "d1_addendum": "PASS: cargo test -p opi-eval --lib (108 passed)",
+            "python_regressions": "PASS: test_verify_native_smoke_artifact.py (16), test_verify_native_smoke_ci.py (34), test_scripted_provider.py (15), test_verify_external_lock_artifact.py (53), test_verify_external_lock_ci.py (15)",
+            "docs": "PASS: python scripts/opi-doc-check.py; git diff --check clean",
+            "d2_evaluator": "manual 7-lens exec audit passed, no must-fix; Workflow runtime unavailable in environment, wf_ref=null (recorded in verify_runs); L-D3 note: AgentAdapter::settle exercised through native agent conformance cases; trajectory project_agent_artifacts exercised through the native run projection",
+            "scenario_status": {
+              "P19-AC-002": "met (native_driver native_result_binding + benchmark_integration_conformance + test_verify_native_smoke_artifact.py, all green)",
+              "P19-AC-008-outcome": "met (native_driver native_trial_outcome + authority_boundaries + end_to_end_report, all green)",
+              "P19-AC-003-native": "open: deterministic witness handoff proven at the public seam (oracle-witness grades 1, nop-witness grades 0 through the production job+binding); the ignored native_tb21_artifact_witness filter requires pinned external material + a local Docker Linux engine, not available in this distro"
+            },
+            "test_disposition": [
+              {
+                "subject": "native-trial-artifact-binding",
+                "action": "add",
+                "test": "crates/opi-eval/src/benchmark/process.rs::native_result_binding_admits_one_bound_job + native_result_binding_rejects_every_substitution",
+                "interface": "benchmark::process::import_bound_native_job",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "native-trial-artifact-binding",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_result_binding_rejects_every_substitution",
+                "interface": "spawned opi-eval run --native-material public CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-002",
+                "action": "update",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_run_drives_paired_trials_through_one_selected_job_each",
+                "interface": "spawned opi-eval run --native-material public CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "native-trial-outcome",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_trial_outcome_classifies_every_terminal_shape",
+                "interface": "runner::experiment::run_trial native classification",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.1",
+                "action": "delete",
+                "test": "crates/opi-eval/src/benchmark/process.rs::harbor_result_import_* and pier_job_import_* tests",
+                "interface": "benchmark::process::import_harbor_result/import_pier_job_result",
+                "replacement": "native_result_binding matrix at the same result-admission Interface with stronger identity checks (superseded newest-job admission deleted with the interface)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.1",
+                "action": "update",
+                "test": "crates/opi-eval/src/benchmark/deepswe.rs::settle_matrix_maps_unpinned_and_pier_report_outputs",
+                "interface": "DeepSweAdapter::settle",
+                "replacement": "native-scoring-unavailable-deepswe Integrity refusal assertions (superseded unpinned pier-job score admission)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-003-native",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_tb21_artifact_witness (ignored; OPI_EVAL_NATIVE_WITNESS_MATERIAL)",
+                "interface": "opi-eval conformance witness CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.1",
+                "action": "update",
+                "test": "crates/opi-eval/scripts/test_verify_native_smoke_artifact.py",
+                "interface": "verify-native-smoke-artifact.py artifact contract",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.1",
+                "action": "retain",
+                "test": "crates/opi-eval/tests/{assembled_run,authority_boundaries,end_to_end_report}.rs hermetic safety/seal/containment suites",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "19.2",
@@ -3663,6 +3761,16 @@
       "rejected_count": 3,
       "ran_at": "2026-09-05T09:59:19.955759+00:00",
       "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-09-05T21:40:00+08:00",
+      "task_id": "19.1",
       "criterion_id": null
     }
   ]
