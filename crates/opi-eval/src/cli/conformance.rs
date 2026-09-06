@@ -233,7 +233,20 @@ const PI_PRODUCT: AgentProduct = AgentProduct {
 
 fn agent_expect(product: &AgentProduct, case: &str) -> Option<Expect> {
     match case {
-        "completed" | "identity" | "isolation" | "provider-fixture" => Some(Expect::Completed),
+        "completed" | "identity" | "isolation" | "provider-fixture" | "provider-retry-success" => {
+            Some(Expect::Completed)
+        }
+        // Typed provider terminal causes from the clients' own evidence
+        // (P19-D02): distinct pinned shapes per client, never a provider
+        // body cross-product.
+        "provider-auth-failure" => Some(Expect::Failed("provider-auth-failure", "AgentProcess")),
+        "provider-rate-limit" => Some(Expect::Failed(
+            "provider-rate-limit-exhausted",
+            "AgentProcess",
+        )),
+        "provider-protocol-error" => {
+            Some(Expect::Failed("provider-protocol-error", "AgentProcess"))
+        }
         "nonzero-exit" => Some(Expect::Failed("agent-non-zero-exit", "AgentProcess")),
         "invalid-output" => Some(Expect::Failed("import-unsupported-schema", "Adapter")),
         "parse-failure" => Some(Expect::Failed("import-parse-failure", "Adapter")),
@@ -286,6 +299,24 @@ fn agent_helper_script(product: &AgentProduct) -> String {
     } else {
         "echo m > \"$HOME/conformance-home-marker\"\n  echo m > \"$USERPROFILE/conformance-appdata-marker\"\n  echo m > \"$PI_CODING_AGENT_SESSION_DIR/conformance-sessions-marker\"\n  echo m > \"$PI_CODING_AGENT_DIR/conformance-agentdir-marker\"\n  pwd > conformance-cwd-marker"
     };
+    // The pinned provider-failure shapes per client (P19-D02): Opi exits
+    // 4 with its typed diagnostic summary on stderr; pi replays its
+    // pinned error stream and exits zero (the typed terminal evidence
+    // rules even at process exit zero).
+    let opi_stderr_exit = |summary: &str| format!("echo \"{summary}\" >&2\n  exit 4");
+    let (provider_auth_output, provider_rate_output, provider_protocol_output) =
+        if product.product == "opi" {
+            (
+                opi_stderr_exit("provider authentication failed"),
+                opi_stderr_exit("rate limited by provider"),
+                opi_stderr_exit("provider stream failed"),
+            )
+        } else {
+            // pi replays the case's pinned stream from the fixture source
+            // selected by the case environment and exits zero.
+            let replay = format!("{native_output}\n  exit 0");
+            (replay.clone(), replay.clone(), replay)
+        };
     format!(
         "#!/bin/sh\n\
 # conformance fixture helper standing in for the real {} binary (never the real product)\n\
@@ -306,15 +337,26 @@ case \"$OPI_EVAL_CONFORMANCE_BEHAVIOR\" in\n\
   provider-fixture)\n\
     printf '%s\\n' '{{\"prompt\":\"conformance\"}}' | \"$OPI_EVAL_SCRIPTED_PROVIDER\" > conformance-provider-response\n\
     {native_output} ;;\n\
+  provider-auth-failure)\n\
+    {provider_auth_output} ;;\n\
+  provider-rate-limit)\n\
+    {provider_rate_output} ;;\n\
+  provider-protocol-error)\n\
+    {provider_protocol_output} ;;\n\
+  provider-retry-success)\n\
+    {native_output} ;;\n\
   nonzero-exit)\n\
     {native_output}\n\
-    exit 3 ;;\n\
+    exit 5 ;;\n\
   timeout|cancellation)\n\
     sleep {HELPER_SLEEP_SECS} ;;\n\
   *) echo \"unknown behavior\" >&2; exit 9 ;;\n\
 esac\n\
 exit 0\n",
-        product.product
+        product.product,
+        provider_auth_output = provider_auth_output,
+        provider_rate_output = provider_rate_output,
+        provider_protocol_output = provider_protocol_output,
     )
 }
 
@@ -324,9 +366,13 @@ fn agent_case_env(
     product: &AgentProduct,
     case: &str,
 ) -> BTreeMap<OsString, OsString> {
-    let fixture_name = match case {
-        "invalid-output" => product.invalid,
-        "parse-failure" => product.corrupt,
+    let fixture_name = match (product.product, case) {
+        ("pi", "provider-auth-failure") => "stream-auth-error.jsonl",
+        ("pi", "provider-rate-limit") => "stream-rate-limit-error.jsonl",
+        ("pi", "provider-protocol-error") => "stream-protocol-error.jsonl",
+        ("pi", "provider-retry-success") => product.complete,
+        (_, "invalid-output") => product.invalid,
+        (_, "parse-failure") => product.corrupt,
         _ => product.complete,
     };
     let source = args
@@ -369,6 +415,29 @@ fn patched_timeout_secs(text: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// The per-product credential variable the conformance connection
+/// declares (a declared dummy; never an ambient user value).
+fn credential_variable(product: &str) -> &'static str {
+    match product {
+        "opi" => "OPENAI_API_KEY",
+        _ => "PI_API_KEY",
+    }
+}
+
+/// Fully explicit conformance controls: every control is an enforced
+/// marker pair so the projection shape stays connection-owned.
+fn conformance_controls() -> crate::experiment::ModelControls {
+    use crate::experiment::ControlValue;
+    crate::experiment::ModelControls {
+        temperature: ControlValue::Value(0.0),
+        top_p: ControlValue::Omitted,
+        max_output_tokens: ControlValue::Value(4096),
+        context_window: ControlValue::Value(8192),
+        reasoning: ControlValue::Omitted,
+        required: Vec::new(),
+    }
 }
 
 async fn run_agent_case(args: &ConformanceArgs) -> Result<ConformanceReport, ConformanceError> {
@@ -420,20 +489,52 @@ async fn run_agent_case(args: &ConformanceArgs) -> Result<ConformanceReport, Con
             let agent = material
                 .agent(product.product)
                 .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
-            std::fs::write(
-                &config_path,
-                crate::runner::experiment::native_opi_config(&agent.config, &agent.model),
-            )?;
-            let mut env = crate::runner::experiment::native_agent_env(
-                product.product,
-                &agent.config,
-                &isolation,
+            // The selected-connection projection is the single owner of
+            // request identity (P19-D02): this conformance connection is
+            // the material's loopback scripted endpoint with a declared
+            // dummy credential, never an ambient user value.
+            let connection = crate::experiment::Connection {
+                id: "conformance".to_owned(),
+                provider: "scripted".to_owned(),
+                api: crate::experiment::ConnectionApi::OpenAiCompletions,
+                base_url: material.provider.endpoint.clone(),
+                model: "eval".to_owned(),
+                credential: crate::experiment::CredentialReference::Env {
+                    variable: credential_variable(product.product).to_owned(),
+                },
+            };
+            let credential = crate::experiment::ResolvedCredential::FromEnv {
+                variable: credential_variable(product.product).to_owned(),
+                value: "<dummy-scripted-credential>".to_owned(),
+            };
+            let client = match product.product {
+                "opi" => crate::experiment::NativeClient::Opi,
+                _ => crate::experiment::NativeClient::Pi,
+            };
+            let projection = crate::experiment::project_connection(
+                &connection,
+                &conformance_controls(),
+                client,
+                credential,
             )
-            .map_err(ConformanceError::Unsupported)?;
-            for (key, value) in &agent.provider_env {
+            .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
+            std::fs::write(&config_path, &projection.config_bytes)?;
+            if client == crate::experiment::NativeClient::Pi {
+                // pi resolves its configuration from the isolated agent
+                // directory, not a CLI config path.
+                let agent_dir = isolation.app_data.join("pi-agent");
+                std::fs::create_dir_all(&agent_dir)?;
+                std::fs::write(agent_dir.join("models.json"), &projection.config_bytes)?;
+            }
+            let mut env: BTreeMap<std::ffi::OsString, std::ffi::OsString> = BTreeMap::new();
+            for (key, value) in &projection.agent_env {
                 env.insert(key.clone().into(), value.clone().into());
             }
-            (agent.executable.path.clone(), agent.model.clone(), env)
+            (
+                agent.executable.path.clone(),
+                format!("{}:{}", connection.provider, connection.model),
+                env,
+            )
         }
         None => {
             std::fs::write(

@@ -3,8 +3,9 @@
 # that is not materialized until the native smoke, so the honest assembled run
 # settles as the typed admission refusal below, never a fallback verifier.
 
-schema = "opi-eval-experiment/1"
+schema = "opi-eval-experiment/2"
 experiment_id = "terminal-bench-3.0-hermetic"
+connection = "fixture-local"
 
 [benchmark]
 name = "terminal-bench"
@@ -29,16 +30,25 @@ id = "edge-1"
 baseline = "baseline-pi"
 candidate = "candidate-opi"
 
-[model_controls]
+[[connections]]
+id = "fixture-local"
 provider = "local"
+api = "openai-completions"
+base_url = "http://127.0.0.1:48127/v1"
 model = "scripted"
-endpoint_class = "local"
+credential_env = "OPI_EVAL_FIXTURE_KEY"
+
+[model_controls]
 temperature = 0.0
+top_p = "omitted"
 max_output_tokens = 4096
-# Omitted: neither pinned profile expresses a reasoning control for this
-# experiment, so no subject is asked to realize one.
+context_window = 8192
 reasoning = "omitted"
 
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
 [environment]
 platform = "linux"
 architecture = "x86_64"

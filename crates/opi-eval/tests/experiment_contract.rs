@@ -8,7 +8,10 @@ use std::path::Path;
 use std::process::Command;
 
 use opi_eval::cli;
-use opi_eval::experiment::{ControlValue, EXPERIMENT_SCHEMA, ResolveError, ResolvedExperiment};
+use opi_eval::experiment::{
+    CapturePolicy, ConnectionApi, ControlValue, CredentialReference, EXPERIMENT_SCHEMA,
+    ExecutionMode, ResolveError, ResolvedExperiment,
+};
 
 const MINIMAL_FIXTURE: &str = include_str!("fixtures/experiment/minimal.toml");
 
@@ -25,8 +28,9 @@ fn generic_fixture_path() -> std::path::PathBuf {
 }
 
 const THREE_SUBJECT_DOC: &str = r#"
-schema = "opi-eval-experiment/1"
+schema = "opi-eval-experiment/2"
 experiment_id = "three-subject-generic"
+connection = "mock-local"
 
 [benchmark]
 name = "fourth-descriptor"
@@ -58,13 +62,25 @@ id = "beta-vs-gamma"
 baseline = "beta"
 candidate = "gamma"
 
-[model_controls]
+[[connections]]
+id = "mock-local"
 provider = "mock"
+api = "openai-completions"
+base_url = "http://127.0.0.1:48127/v1"
 model = "mock-model"
-endpoint_class = "local"
+credential_env = "OPI_EVAL_FIXTURE_KEY"
+
+[model_controls]
 temperature = "unknown"
+top_p = "omitted"
 max_output_tokens = "omitted"
+context_window = 8192
 reasoning = "high"
+
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
 
 [environment]
 platform = "linux"
@@ -196,12 +212,15 @@ fn resolve_minimal_fixture_freezes_identity() {
     assert_eq!(resolved.edges()[0].candidate, "pi");
 
     let controls = resolved.model_controls();
-    assert_eq!(controls.provider, "mock");
-    assert_eq!(controls.model, "mock-model");
-    assert_eq!(controls.endpoint_class, "local");
     assert_eq!(controls.temperature, ControlValue::Value(0.0));
+    assert_eq!(controls.top_p, ControlValue::Omitted);
     assert_eq!(controls.max_output_tokens, ControlValue::Value(4096));
+    assert_eq!(controls.context_window, ControlValue::Value(8192));
     assert_eq!(controls.reasoning, ControlValue::Omitted);
+    let connection = resolved.selected_connection();
+    assert_eq!(connection.provider, "mock");
+    assert_eq!(connection.model, "mock-model");
+    assert_eq!(connection.api, ConnectionApi::OpenAiCompletions);
 
     assert_eq!(resolved.environment().platform, "linux");
     assert_eq!(resolved.environment().architecture, "x86_64");
@@ -292,12 +311,18 @@ fn invalid_doc(tweak: fn(&mut String)) -> String {
 #[test]
 fn resolve_rejects_missing_or_unsupported_schema() {
     let error = assert_rejected(&invalid_doc(|s| {
-        *s = s.replace("schema = \"opi-eval-experiment/1\"\n", "");
+        *s = s.replace("schema = \"opi-eval-experiment/2\"\n", "");
     }));
     assert!(matches!(error, ResolveError::UnsupportedSchema(_)));
 
     let error = assert_rejected(&invalid_doc(|s| {
-        *s = s.replace("opi-eval-experiment/1", "opi-eval-experiment/2");
+        *s = s.replace("opi-eval-experiment/2", "opi-eval-experiment/3");
+    }));
+    assert!(matches!(error, ResolveError::UnsupportedSchema(_)));
+
+    // The pre-P19-D02 shape is rejected without a compatibility alias.
+    let error = assert_rejected(&invalid_doc(|s| {
+        *s = s.replace("opi-eval-experiment/2", "opi-eval-experiment/1");
     }));
     assert!(matches!(error, ResolveError::UnsupportedSchema(_)));
 }
@@ -466,4 +491,305 @@ fn cli_validate_fails_closed_on_invalid_documents() {
     let missing = dir.path().join("missing.toml");
     let error = cli::validate(&missing).unwrap_err();
     assert!(matches!(error, cli::ValidateError::Io(_)));
+}
+
+// --- P19-D02: selected named connections, execution mode, storage ------
+
+const CONNECTION_DOC: &str = r#"
+schema = "opi-eval-experiment/2"
+experiment_id = "connection-projection"
+connection = "primary"
+
+[benchmark]
+name = "terminal-bench"
+revision = "2.1"
+dataset = "laude-institute/terminal-bench-2.1"
+
+[[subjects]]
+id = "opi"
+product = "opi"
+version = "0.8.2"
+
+[[subjects]]
+id = "pi"
+product = "pi"
+version = "0.84.1"
+
+[[edges]]
+id = "opi-baseline-vs-pi-candidate"
+baseline = "opi"
+candidate = "pi"
+
+[[connections]]
+id = "primary"
+provider = "scripted"
+api = "anthropic-messages"
+base_url = "http://127.0.0.1:48127"
+model = "glm-5.3-flash"
+credential_env = "OPI_EVAL_SCRIPTED_KEY"
+
+[[connections]]
+id = "secondary"
+provider = "scripted"
+api = "openai-responses"
+base_url = "http://127.0.0.1:48128/v1"
+model = "eval-responses"
+credential_file = "/private/eval/credential.txt"
+
+[model_controls]
+temperature = 0.0
+top_p = "omitted"
+max_output_tokens = 4096
+context_window = 128000
+reasoning = "omitted"
+required = ["max_output_tokens", "context_window"]
+
+[execution]
+mode = "native-fixture"
+time_limit_seconds = 900
+max_output_bytes = 1048576
+
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
+
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "workspace-root"
+
+[[trials]]
+id = "trial-opi-hello"
+subject = "opi"
+task = "hello"
+group = "hello"
+
+[[trials]]
+id = "trial-pi-hello"
+subject = "pi"
+task = "hello"
+group = "hello"
+"#;
+
+#[test]
+fn connection_doc_resolves_and_freezes_the_selected_connection() {
+    let resolved = ResolvedExperiment::resolve(CONNECTION_DOC).unwrap();
+    assert_eq!(resolved.schema(), "opi-eval-experiment/2");
+    let connection = resolved.selected_connection();
+    assert_eq!(connection.id, "primary");
+    assert_eq!(connection.provider, "scripted");
+    assert_eq!(connection.api, ConnectionApi::AnthropicMessages);
+    assert_eq!(connection.base_url, "http://127.0.0.1:48127");
+    assert_eq!(connection.model, "glm-5.3-flash");
+    assert_eq!(
+        connection.credential,
+        CredentialReference::Env {
+            variable: "OPI_EVAL_SCRIPTED_KEY".to_owned()
+        }
+    );
+    // The unselected sibling stays declared but is not selected.
+    assert_eq!(resolved.connections().len(), 2);
+    assert!(
+        resolved
+            .connections()
+            .iter()
+            .any(|c| c.id == "secondary" && c.api == ConnectionApi::OpenAiResponses)
+    );
+    // Effective execution bounds and storage identity are frozen.
+    let execution = resolved.execution();
+    assert_eq!(execution.mode, ExecutionMode::NativeFixture);
+    assert_eq!(execution.time_limit_seconds, Some(900));
+    assert_eq!(execution.max_output_bytes, Some(1_048_576));
+    let storage = resolved.storage();
+    assert_eq!(storage.cache, "cache");
+    assert_eq!(storage.results, "results");
+    assert_eq!(storage.capture_policy, CapturePolicy::Full);
+    // Extended controls: every control explicit, required list recorded.
+    let controls = resolved.model_controls();
+    assert_eq!(controls.temperature, ControlValue::Value(0.0));
+    assert_eq!(controls.top_p, ControlValue::Omitted);
+    assert_eq!(controls.context_window, ControlValue::Value(128_000));
+    assert_eq!(
+        controls.required,
+        vec!["max_output_tokens", "context_window"]
+    );
+    // The same document resolves deterministically to one digest.
+    let again = ResolvedExperiment::resolve(CONNECTION_DOC).unwrap();
+    assert_eq!(resolved.manifest_digest(), again.manifest_digest());
+}
+
+#[test]
+fn connection_doc_passes_the_validate_cli() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("connection.toml");
+    std::fs::write(&path, CONNECTION_DOC).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("validate")
+        .arg("--config")
+        .arg(&path)
+        .output()
+        .expect("run opi-eval validate");
+    assert!(
+        output.status.success(),
+        "validate CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn connection_doc(tweak: fn(&mut String)) -> String {
+    let mut source = CONNECTION_DOC.to_owned();
+    tweak(&mut source);
+    source
+}
+
+#[test]
+fn resolve_rejects_unknown_or_duplicate_connection_selection() {
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace("connection = \"primary\"", "connection = \"missing\"");
+    }));
+    assert!(matches!(error, ResolveError::UnknownConnection(id) if id == "missing"));
+
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace(
+            "[[connections]]\nid = \"secondary\"",
+            "[[connections]]\nid = \"primary\"",
+        );
+    }));
+    assert!(matches!(error, ResolveError::DuplicateConnection(id) if id == "primary"));
+
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace("connection = \"primary\"\n", "");
+    }));
+    assert!(matches!(error, ResolveError::MissingConnectionSelection));
+}
+
+#[test]
+fn resolve_rejects_invalid_credential_references() {
+    // Both references at once.
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace(
+            "credential_env = \"OPI_EVAL_SCRIPTED_KEY\"",
+            "credential_env = \"OPI_EVAL_SCRIPTED_KEY\"\ncredential_file = \"/private/k.txt\"",
+        );
+    }));
+    assert!(matches!(
+        error,
+        ResolveError::InvalidCredentialReference { .. }
+    ));
+    // Neither reference.
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace("credential_env = \"OPI_EVAL_SCRIPTED_KEY\"\n", "");
+    }));
+    assert!(matches!(
+        error,
+        ResolveError::InvalidCredentialReference { .. }
+    ));
+}
+
+#[test]
+fn resolve_rejects_unknown_connection_api() {
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace("api = \"anthropic-messages\"", "api = \"grpc\"");
+    }));
+    assert!(matches!(error, ResolveError::InvalidConnectionApi(_)));
+}
+
+#[test]
+fn resolve_rejects_remote_routes_without_explicit_live_mode() {
+    for mode in ["hermetic", "native-fixture"] {
+        let doc = CONNECTION_DOC
+            .replace(
+                "base_url = \"http://127.0.0.1:48127\"",
+                "base_url = \"https://open.bigmodel.cn/api/anthropic\"",
+            )
+            .replace("mode = \"native-fixture\"", &format!("mode = \"{mode}\""));
+        let error = assert_rejected(&doc);
+        assert!(
+            matches!(error, ResolveError::RemoteRouteNotLive { .. }),
+            "mode {mode} must reject remote routes: {error:?}"
+        );
+    }
+    // The same remote route with explicit live mode resolves: real
+    // acceptance belongs only to the 19.11 operator evidence run.
+    let doc = CONNECTION_DOC
+        .replace(
+            "base_url = \"http://127.0.0.1:48127\"",
+            "base_url = \"https://open.bigmodel.cn/api/anthropic\"",
+        )
+        .replace("mode = \"native-fixture\"", "mode = \"live\"");
+    assert!(ResolvedExperiment::resolve(&doc).is_ok());
+}
+
+#[test]
+fn resolve_rejects_unknown_execution_mode_and_bad_capture_policy() {
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace("mode = \"native-fixture\"", "mode = \"remote\"");
+    }));
+    assert!(matches!(error, ResolveError::InvalidExecutionMode(m) if m == "remote"));
+
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace(
+            "capture_policy = \"full\"",
+            "capture_policy = \"sometimes\"",
+        );
+    }));
+    assert!(matches!(error, ResolveError::InvalidCapturePolicy(p) if p == "sometimes"));
+}
+
+#[test]
+fn resolve_rejects_requested_caps_the_native_route_cannot_enforce() {
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace(
+            "[storage]",
+            "[execution.caps]\nmonetary_usd = 10.0\n\n[storage]",
+        );
+    }));
+    assert!(matches!(error, ResolveError::UnenforceableCap { cap, .. } if cap == "monetary_usd"));
+
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace("[storage]", "[execution.caps]\nrequests = 100\n\n[storage]");
+    }));
+    assert!(matches!(error, ResolveError::UnenforceableCap { cap, .. } if cap == "requests"));
+}
+
+#[test]
+fn resolve_rejects_required_control_marked_unsupported() {
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace(
+            "required = [\"max_output_tokens\", \"context_window\"]",
+            "required = [\"reasoning\"]",
+        );
+    }));
+    assert!(
+        matches!(error, ResolveError::RequiredControlUnsupported { control, .. } if control == "reasoning")
+    );
+
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace(
+            "required = [\"max_output_tokens\", \"context_window\"]",
+            "required = [\"nonexistent\"]",
+        );
+    }));
+    assert!(
+        matches!(error, ResolveError::RequiredControlUnsupported { control, .. } if control == "nonexistent")
+    );
+}
+
+#[test]
+fn resolve_requires_every_extended_control_and_storage_identity() {
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace("top_p = \"omitted\"\n", "");
+    }));
+    assert!(matches!(error, ResolveError::MissingModelControl(c) if c == "top_p"));
+
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace("context_window = 128000\n", "");
+    }));
+    assert!(matches!(error, ResolveError::MissingModelControl(c) if c == "context_window"));
+
+    let error = assert_rejected(&connection_doc(|s| {
+        *s = s.replace("capture_policy = \"full\"\n", "");
+    }));
+    assert!(matches!(error, ResolveError::MissingField(f) if f.contains("capture_policy")));
 }

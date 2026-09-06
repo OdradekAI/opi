@@ -179,6 +179,30 @@ The upstream oracle is an explicitly selected conformance diagnostic
 (`conformance --case oracle-witness` / `--case nop-witness`), never a
 prerequisite silently run by `run`.
 
+Request identity comes from the experiment document's selected named
+connection (schema `opi-eval-experiment/2`): the top-level `connection`
+selects one `[[connections]]` id carrying `provider`,
+`api` (`anthropic-messages` | `openai-completions` | `openai-responses`),
+`base_url`, `model`, and exactly one `credential_env`/`credential_file`
+reference. There is no provider, protocol, model, or billing-product
+fallback: the credential resolves only inside the supervised Agent launch,
+absent credentials and required-but-unsupported `[model_controls]` reject
+before any model effect, and remote base URLs require the explicit
+`[execution].mode = "live"` (loopback routes only otherwise). Requested
+monetary/usage caps in `[execution.caps]` are rejected - the native route
+cannot enforce them - while the enforceable `time_limit_seconds` and
+`max_output_bytes` bounds are recorded with their limits. Both pinned
+clients (Opi and pi) are projected from the same connection for all three
+protocols by the local
+[scripted provider](scripts/scripted-provider.py) (deterministic tool
+loops plus model-keyed `auth-fail`, `rate-limit`, `retry`, and
+`protocol-error` scripts) through the ignored
+`native_protocol_client_matrix` filter with locally supplied client
+material. Each adapter classifies typed terminal provider causes
+(authentication failure, exhausted rate limiting, protocol error) from the
+client's own evidence - including a JSON error at process exit zero - and
+never speculates a provider cause the evidence leaves unknown.
+
 The CLI consumes a resolved native-material manifest; it does not improvise or
 silently replace missing native inputs. Native materialization and fidelity
 verification belong to the repository's

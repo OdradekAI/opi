@@ -275,7 +275,7 @@ case \"$OPI_EVAL_RUN_BEHAVIOR\" in\n\
   agent-excess-output)\n\
 {excess_output} ;;\n\
   agent-crash)\n\
-  echo \"simulated agent crash\" >&2; exit 3 ;;\n\
+  echo \"simulated agent crash\" >&2; exit 5 ;;\n\
   agent-timeout|agent-cancelled)\n\
   sleep 30 ;;\n\
   *) echo \"unknown behavior\" >&2; exit 9 ;;\nesac\n\
@@ -467,6 +467,26 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
         return Err(RunError::Native(
             "the native driving mode admits only the default staging behavior".to_owned(),
         ));
+    }
+    // Execution-mode gate (P19-D02): native material is consistent only
+    // with the declared native modes, and a declared native mode requires
+    // material. Hermetic fixture runs never mix with native material.
+    match (experiment.execution().mode, request.material.is_some()) {
+        (crate::experiment::ExecutionMode::Hermetic, true) => {
+            return Err(RunError::Native(
+                "native material requires execution mode native-fixture or live".to_owned(),
+            ));
+        }
+        (
+            crate::experiment::ExecutionMode::NativeFixture
+            | crate::experiment::ExecutionMode::Live,
+            false,
+        ) => {
+            return Err(RunError::Native(
+                "execution mode native-fixture/live requires --native-material".to_owned(),
+            ));
+        }
+        _ => {}
     }
     let native = match &request.material {
         Some(material) => Some(prepare_native(material, &experiment)?),
@@ -821,75 +841,45 @@ fn native_integrity_review(
     }
 }
 
-/// The deterministic Opi configuration for one native trial: one mapped
-/// custom provider whose base URL is the pre-resolved scripted-provider
-/// listener and whose credential source is the declared dummy environment
-/// projection. Written verbatim into the isolated `--config` path.
-pub(crate) fn native_opi_config(
-    config: &crate::runner::material::AgentConfigMaterial,
-    model: &str,
-) -> String {
-    let provider_id = model.split(':').next().unwrap_or("scripted");
-    format!(
-        "# opi-eval native run: deterministic scripted-provider projection.\n\
-[providers.custom.{provider_id}]\n\
-name = \"opi-eval scripted provider\"\n\
-base_url = \"{base_url}\"\n\
-api_key_env = \"OPENAI_API_KEY\"\n\
-auth_scheme = \"bearer\"\n\
-api = \"openai-completions\"\n\
-\n\
-[[providers.custom.{provider_id}.models]]\n\
-id = \"{model_id}\"\n\
-display_name = \"opi-eval scripted\"\n\
-context_window = 8192\n\
-max_output_tokens = 4096\n",
-        base_url = config.base_url,
-        model_id = config.model_id,
-    )
-}
-
-/// Materializes the per-product deterministic configuration projection
-/// into the isolated agent directories and returns the environment
-/// additions beyond the profile isolation (the caller merges the
-/// manifest's closed credential projection).
-pub(crate) fn native_agent_env(
-    product: &str,
-    config: &crate::runner::material::AgentConfigMaterial,
-    isolation: &IsolationDirs,
-) -> Result<BTreeMap<std::ffi::OsString, std::ffi::OsString>, String> {
-    if product == "pi" {
-        // pi selects its model through the isolated agent-dir models.json
-        // (the pinned custom-model contract): same endpoint, same model
-        // identity, declared dummy credential, no ambient fallback.
-        let agent_dir = isolation.app_data.join("pi-agent");
-        std::fs::create_dir_all(&agent_dir).map_err(|error| error.to_string())?;
-        // The pinned pi models.json schema (docs/models.md at the pinned
-        // commit): one provider entry per provider id with baseUrl, api,
-        // apiKey, and a models array; the provider id comes from the
-        // shared provider:model selection, the model id from the config.
-        let provider_id = config
-            .model_id
-            .split('/')
-            .next()
-            .unwrap_or("scripted")
-            .to_owned();
-        let models = json!({
-            "providers": {
-                provider_id.clone(): {
-                    "baseUrl": config.base_url,
-                    "api": "openai-completions",
-                    "apiKey": config.api_key,
-                    "models": [
-                        { "id": config.model_id.clone() }
-                    ],
-                },
-            },
-        });
-        let bytes = serde_json::to_vec(&models).map_err(|error| error.to_string())?;
-        std::fs::write(agent_dir.join("models.json"), &bytes).map_err(|error| error.to_string())?;
+/// Resolves the selected connection's credential reference inside the
+/// supervised Agent launch boundary (P19-D02). An absent or unreadable
+/// reference is a typed rejection before any model effect; the value
+/// never enters exportable artifacts.
+pub(crate) fn resolve_connection_credential(
+    connection: &crate::experiment::Connection,
+) -> Result<crate::experiment::ResolvedCredential, RunError> {
+    match &connection.credential {
+        crate::experiment::CredentialReference::Env { variable } => match std::env::var(variable) {
+            Ok(value) if !value.trim().is_empty() => {
+                Ok(crate::experiment::ResolvedCredential::FromEnv {
+                    variable: variable.clone(),
+                    value,
+                })
+            }
+            _ => Err(RunError::Native(format!(
+                "selected connection credential environment variable {variable:?} is not set"
+            ))),
+        },
+        crate::experiment::CredentialReference::File { path } => {
+            let value = std::fs::read_to_string(path)
+                .map_err(|error| {
+                    RunError::Native(format!(
+                        "selected connection credential file {path:?} is unreadable: {error}"
+                    ))
+                })?
+                .trim()
+                .to_owned();
+            if value.is_empty() {
+                return Err(RunError::Native(format!(
+                    "selected connection credential file {path:?} is empty"
+                )));
+            }
+            Ok(crate::experiment::ResolvedCredential::FromFile {
+                path: path.clone(),
+                value,
+            })
+        }
     }
-    Ok(BTreeMap::new())
 }
 
 /// Derives the native integrity identity for one experiment document plus
@@ -1115,19 +1105,31 @@ fn reserved_artifact_keys_native() -> Vec<ArtifactKey> {
     .collect()
 }
 
-/// Stages the per-trial integration handoff: the typed configuration the
-/// pinned Harbor integration reads (exact built executable, model,
-/// projected provider configuration, and credential material). The
-/// handoff lives outside the sealed bundle and outside the task
-/// environment; the integration applies and then removes its credential
-/// projection before the verifier phase (P19-D01).
+/// Stages the per-trial integration handoff (P19-D02): the typed identity
+/// the pinned Harbor integration reads - exact built executable, the
+/// projected selected connection (exact configuration bytes plus agent
+/// environment), and the model selector - all derived from the frozen
+/// experiment contract and its resolved credential. The handoff lives
+/// outside the sealed bundle and outside the task environment; the
+/// integration applies and then removes its credential projection before
+/// the verifier phase.
 fn stage_native_handoff(
     trial_root: &Path,
     declared: &crate::experiment::DeclaredTrial,
     product: &str,
     agent: &crate::runner::material::AgentMaterial,
+    projection: &crate::experiment::ConnectionProjection,
+    model: &str,
 ) -> Result<PathBuf, RunError> {
-    let handoff_path = trial_root.join("integration/handoff.json");
+    let integration_dir = trial_root.join("integration");
+    std::fs::create_dir_all(&integration_dir)
+        .map_err(|error| RunError::Native(error.to_string()))?;
+    std::fs::write(
+        integration_dir.join(projection.config_filename),
+        &projection.config_bytes,
+    )
+    .map_err(|error| RunError::Native(error.to_string()))?;
+    let handoff_path = integration_dir.join("handoff.json");
     let handoff = json!({
         "schema": "opi-eval-native-handoff/2",
         "trial": declared.id,
@@ -1136,16 +1138,10 @@ fn stage_native_handoff(
         "integration_import_path": agent.integration.import_path,
         "agent_executable": agent.executable.path,
         "agent_executable_sha256": agent.executable.sha256,
-        "model": agent.model,
-        "provider_env": agent.provider_env,
-        "config": {
-            "kind": agent.config.kind,
-            "base_url": agent.config.base_url,
-            "model_id": agent.config.model_id,
-        },
+        "model": model,
+        "config_path": projection.config_filename,
+        "agent_env": projection.agent_env,
     });
-    std::fs::create_dir_all(trial_root.join("integration"))
-        .map_err(|error| RunError::Native(error.to_string()))?;
     std::fs::write(
         &handoff_path,
         serde_json::to_vec(&handoff).map_err(|error| RunError::Native(error.to_string()))?,
@@ -1239,7 +1235,21 @@ async fn run_native_trial(
     let agent = material
         .agent(product)
         .map_err(|error| RunError::Native(error.to_string()))?;
-    let handoff_path = stage_native_handoff(&trial_root, declared, product, agent)?;
+    // The selected connection projection is the single owner of request
+    // identity (P19-D02): the credential resolves only here, inside the
+    // supervised Agent launch boundary, before any model effect.
+    let connection = experiment.selected_connection();
+    let credential = resolve_connection_credential(connection)?;
+    let client = match product {
+        "opi" => crate::experiment::NativeClient::Opi,
+        _ => crate::experiment::NativeClient::Pi,
+    };
+    let projection = experiment
+        .project_connection(client, credential)
+        .map_err(|error| RunError::Native(error.to_string()))?;
+    let model = format!("{}:{}", connection.provider, connection.model);
+    let handoff_path =
+        stage_native_handoff(&trial_root, declared, product, agent, &projection, &model)?;
 
     // Durable intent before any process effect (EVAL-DUR-001): the native
     // reservation covers the control, trajectory, authority, and bound
@@ -1294,7 +1304,7 @@ async fn run_native_trial(
         agent_name: agent.integration.agent_name.clone(),
         agent_import_path: agent.integration.import_path.clone(),
         task_name: declared_task_name(revision, &task_dir),
-        model: agent.model.clone(),
+        model,
         reward_metric: "reward".to_owned(),
         module_dir: agent.integration.module_dir.clone(),
         handoff_path: handoff_path.clone(),
@@ -1383,21 +1393,26 @@ async fn run_native_trial(
     let grader_source = SourceIdentity::new(&format!("grader-{}", integrity.grader()))
         .map_err(|error| RunError::Staging(error.to_string()))?;
     if let Some(record) = &job_record {
-        produced_keys.push(stage(
-            &mut bundle,
-            &grader_source,
-            ArtifactRole::Native,
-            "native/job-stdout.log",
-            &record.stdout.bytes,
-        )?);
-        produced_keys.push(stage(
-            &mut bundle,
-            &grader_source,
-            ArtifactRole::Native,
-            "native/job-stderr.log",
-            &record.stderr.bytes,
-        )?);
-        staged_keys.extend(produced_keys[produced_keys.len() - 2..].to_vec());
+        // The capture policy decides the non-terminal evidence streams:
+        // `terminal-only` keeps the binding-required artifacts and the
+        // terminal observation without the full job logs.
+        if experiment.storage().capture_policy == crate::experiment::CapturePolicy::Full {
+            produced_keys.push(stage(
+                &mut bundle,
+                &grader_source,
+                ArtifactRole::Native,
+                "native/job-stdout.log",
+                &record.stdout.bytes,
+            )?);
+            produced_keys.push(stage(
+                &mut bundle,
+                &grader_source,
+                ArtifactRole::Native,
+                "native/job-stderr.log",
+                &record.stderr.bytes,
+            )?);
+            staged_keys.extend(produced_keys[produced_keys.len() - 2..].to_vec());
+        }
         if let Some(binding) = binding {
             for (role, path) in [
                 ("native/trial-result.json", binding.results_path.clone()),
@@ -1795,8 +1810,8 @@ async fn run_fixture_trial(
             agent_env(product, &request.fixtures, &request.behavior)?,
             format!(
                 "{}:{}",
-                experiment.model_controls().provider,
-                experiment.model_controls().model
+                experiment.selected_connection().provider,
+                experiment.selected_connection().model
             ),
             false,
             format!("assembled run: solve task {}", declared.task),

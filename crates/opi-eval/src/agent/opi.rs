@@ -214,6 +214,17 @@ impl AgentAdapter for OpiProcessAdapter {
         match outcome.exit {
             ExitState::Exited { code: 0 } => {}
             ExitState::Exited { code } => {
+                // A typed provider terminal cause from the client's own
+                // exit codes and closed diagnostic vocabulary (P19-D02):
+                // 3 is the typed credential failure, 4 the typed provider
+                // failure whose stderr summary names the pinned cause.
+                // No other text is parsed; unknown causes stay unknown.
+                if let Some(kind) = opi_provider_failure_kind(code, &outcome.stderr.bytes) {
+                    return process_failed(AgentFailure {
+                        kind,
+                        boundary: FailureBoundaryCode::AgentProcess,
+                    });
+                }
                 return process_failed(super::process::failure_kinds::non_zero_exit(code));
             }
             ExitState::TimedOut => return process_failed(super::process::failure_kinds::TIMED_OUT),
@@ -240,6 +251,29 @@ impl AgentAdapter for OpiProcessAdapter {
             AgentCompletion::Failed(failure) => AgentCompletion::Failed(failure),
         };
         (usage, completion)
+    }
+}
+
+/// The typed provider terminal cause from the pinned Opi client's exit
+/// codes and its closed stderr diagnostic summaries (the `opi-agent`
+/// diagnostic taxonomy, not provider body text). Unknown shapes stay
+/// unknown.
+fn opi_provider_failure_kind(code: i32, stderr: &[u8]) -> Option<&'static str> {
+    let text = std::str::from_utf8(stderr).unwrap_or("");
+    match code {
+        3 => Some("provider-auth-failure"),
+        4 => {
+            if text.contains("provider authentication failed") {
+                Some("provider-auth-failure")
+            } else if text.contains("rate limited by provider") {
+                Some("provider-rate-limit-exhausted")
+            } else if text.contains("provider stream failed") {
+                Some("provider-protocol-error")
+            } else {
+                Some("provider-failure")
+            }
+        }
+        _ => None,
     }
 }
 
@@ -935,13 +969,23 @@ mod tests {
             })
         );
 
-        // Non-zero exit is authoritative regardless of present evidence.
-        let (usage, completion) = adapter.settle(&settled_outcome(3), &complete_request);
+        // A non-zero exit outside the typed provider exits is
+        // authoritative regardless of present evidence; exit 3 is the
+        // typed authentication failure (P19-D02).
+        let (usage, completion) = adapter.settle(&settled_outcome(5), &complete_request);
         assert_eq!(
             completion,
-            AgentCompletion::Failed(failure_kinds::non_zero_exit(3))
+            AgentCompletion::Failed(failure_kinds::non_zero_exit(5))
         );
         assert_eq!(usage.input_tokens, None);
+        let (_, completion) = adapter.settle(&settled_outcome(3), &complete_request);
+        assert_eq!(
+            completion,
+            AgentCompletion::Failed(AgentFailure {
+                kind: "provider-auth-failure",
+                boundary: FailureBoundaryCode::AgentProcess,
+            })
+        );
 
         // Exit 0 but incomplete evidence settles as an evidence failure.
         let mut incomplete = request();
@@ -1037,11 +1081,13 @@ mod tests {
         let mut request = request();
         request.executable = fake_opi_script(dir.path(), "echo planned-failure >&2");
         request.executable = {
-            // Overwrite with a failing variant: copy evidence then exit 3.
+            // Overwrite with a failing variant: copy evidence then exit
+            // with a code outside the client's typed provider exits
+            // (3 and 4 are typed provider failures now).
             let script = dir.path().join("fake-opi-fail");
             std::fs::write(
                 &script,
-                "#!/bin/sh\nmkdir -p \"$4\"\ncp -r \"$OPI_EVAL_TRACE_SOURCE/run-0001\" \"$4/\"\nexit 3\n",
+                "#!/bin/sh\nmkdir -p \"$4\"\ncp -r \"$OPI_EVAL_TRACE_SOURCE/run-0001\" \"$4/\"\nexit 5\n",
             )
             .unwrap();
             use std::os::unix::fs::PermissionsExt;
@@ -1063,7 +1109,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(record.exit, ExitState::Exited { code: 3 });
+        assert_eq!(record.exit, ExitState::Exited { code: 5 });
         assert_eq!(
             record.completion,
             AgentCompletion::Failed(failure_kinds::non_zero_exit(3))

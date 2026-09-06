@@ -45,14 +45,8 @@ pub(crate) struct PinnedFile {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ProviderMaterial {
     pub(crate) script: PinnedFile,
-    /// The pre-resolved listener endpoint both agents project.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "required native-material manifest field validated on load"
-        )
-    )]
+    /// The pre-resolved listener endpoint the conformance connection
+    /// projects.
     pub(crate) endpoint: String,
     /// Where the provider writes its normalized request log.
     #[expect(
@@ -88,32 +82,11 @@ pub(crate) struct IntegrationMaterial {
 pub(crate) struct AgentMaterial {
     /// The exact built executable the supervisor spawns verbatim.
     pub(crate) executable: PinnedFile,
-    /// The verbatim `provider_model` string for the shared request.
-    pub(crate) model: String,
-    /// The closed environment projection beyond the profile isolation
-    /// (dummy credential only; no ambient values).
-    pub(crate) provider_env: BTreeMap<String, String>,
-    /// The deterministic configuration projection materialized into the
-    /// isolated agent directories before dispatch.
-    pub(crate) config: AgentConfigMaterial,
     /// The pinned upstream integration selecting this Agent inside the
-    /// graded task environment (native mode; schema v2).
+    /// graded task environment (native mode; schema v2). Request identity
+    /// comes from the experiment's selected connection projection, never
+    /// from the exportable material (P19-D02).
     pub(crate) integration: IntegrationMaterial,
-}
-
-/// The deterministic configuration each product receives.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct AgentConfigMaterial {
-    /// `opi-toml` or `pi-models-json`; consumed by the integration
-    /// handoff projection.
-    pub(crate) kind: String,
-    /// The OpenAI-compatible base URL (the provider endpoint).
-    pub(crate) base_url: String,
-    /// The model identity inside the configuration.
-    pub(crate) model_id: String,
-    /// The declared dummy credential value.
-    pub(crate) api_key: String,
 }
 
 /// One benchmark revision's resolved native material.
@@ -180,24 +153,6 @@ impl NativeMaterial {
         }
         for (product, agent) in &material.agents {
             verify_pinned(&agent.executable)?;
-            if agent.model.split(':').count() != 2 || agent.model.is_empty() {
-                return Err(MaterialError::Rejected(format!(
-                    "agent {product} model must be provider:model, found {:?}",
-                    agent.model
-                )));
-            }
-            if agent.provider_env.values().any(|value| value.is_empty()) {
-                return Err(MaterialError::Rejected(format!(
-                    "agent {product} provider environment must be closed and non-empty"
-                )));
-            }
-            if agent.config.api_key.is_empty() {
-                // The dummy credential is required: an empty credential
-                // would silently widen into ambient fallback.
-                return Err(MaterialError::Rejected(format!(
-                    "agent {product} must declare a dummy credential"
-                )));
-            }
             // The pinned integration module directory must digest to its
             // declared manifest and carry the import path it selects.
             let observed = directory_manifest_digest(&agent.integration.module_dir)?;
@@ -375,20 +330,12 @@ mod tests {
   "agents": {{
     "opi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "model": "scripted:eval",
-      "provider_env": {{"OPENAI_API_KEY": "<dummy-scripted-credential>"}},
-      "config": {{"kind": "opi-toml", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "eval", "api_key": "<dummy>"}},
       "integration": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
                         "import_path": "opi_eval_harbor:OpiAgent",
                         "agent_name": "opi-eval-opi"}}
     }},
     "pi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "model": "scripted:scripted/eval",
-      "provider_env": {{"PI_API_KEY": "<redacted-dummy>"}},
-      "config": {{"kind": "pi-models-json", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "scripted/eval", "api_key": "<redacted-dummy>"}},
       "integration": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
                         "import_path": "opi_eval_harbor:PiAgent",
                         "agent_name": "opi-eval-pi"}}

@@ -4,8 +4,9 @@
 # durable per-trial pair identity is proven to bind to the owning edge
 # rather than the first declared one.
 
-schema = "opi-eval-experiment/1"
+schema = "opi-eval-experiment/2"
 experiment_id = "multi-edge-hermetic"
+connection = "fixture-local"
 
 [benchmark]
 name = "terminal-bench"
@@ -42,14 +43,25 @@ id = "edge-opi-vs-pi2"
 baseline = "candidate-opi"
 candidate = "second-pi"
 
-[model_controls]
+[[connections]]
+id = "fixture-local"
 provider = "local"
+api = "openai-completions"
+base_url = "http://127.0.0.1:48127/v1"
 model = "scripted"
-endpoint_class = "local"
+credential_env = "OPI_EVAL_FIXTURE_KEY"
+
+[model_controls]
 temperature = 0.0
+top_p = "omitted"
 max_output_tokens = 4096
+context_window = 8192
 reasoning = "omitted"
 
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
 [environment]
 platform = "linux"
 architecture = "x86_64"

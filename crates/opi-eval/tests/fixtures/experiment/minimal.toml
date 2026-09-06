@@ -1,8 +1,9 @@
 # opi-eval minimal pairing fixture: two real harness subjects, one directed
 # comparison edge, fully explicit shared model controls. Data only; the
 # resolution contract is Agent-neutral and no harness name is hard-coded.
-schema = "opi-eval-experiment/1"
+schema = "opi-eval-experiment/2"
 experiment_id = "minimal-pairing"
+connection = "fixture-local"
 
 [benchmark]
 name = "terminal-bench"
@@ -24,14 +25,25 @@ id = "opi-baseline-vs-pi-candidate"
 baseline = "opi"
 candidate = "pi"
 
-[model_controls]
+[[connections]]
+id = "fixture-local"
 provider = "mock"
+api = "openai-completions"
+base_url = "http://127.0.0.1:48127/v1"
 model = "mock-model"
-endpoint_class = "local"
+credential_env = "OPI_EVAL_FIXTURE_KEY"
+
+[model_controls]
 temperature = 0.0
+top_p = "omitted"
 max_output_tokens = 4096
+context_window = 8192
 reasoning = "omitted"
 
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
 [environment]
 platform = "linux"
 architecture = "x86_64"

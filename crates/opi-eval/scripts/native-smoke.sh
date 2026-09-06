@@ -438,12 +438,14 @@ manifest = {
         "environment_allowlist": [
             "HOME", "PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
             "XDG_STATE_HOME", "OPI_TRACE_ROOT",
-            "OPENAI_API_KEY=<dummy-scripted-credential>",
+            "OPI_EVAL_SCRIPTED_KEY=<dummy-scripted-credential>",
         ],
         "configuration_projection": {
-            "provider": "openai-completions",
+            "selected_connection": "scripted-local",
+            "api": "openai-completions",
             "base_url": "<pre-resolved-provider-endpoint>",
             "model": "scripted:eval",
+            "credential": "environment reference resolved at launch",
             "ambient_fallback": "none",
         },
     },
@@ -452,20 +454,20 @@ manifest = {
             pi["node_executable"],
             pi["bundle_path"],
             "--print", "--mode", "json", "--no-session", "--no-approve",
-            "--provider", "scripted", "--model", "scripted/eval",
-            "--api-key", "<redacted-dummy>",
+            "--provider", "scripted", "--model", "eval",
             "--thinking", "off", "--tools", "<reviewed-list>", "<prompt>",
         ],
         "cwd": "<fresh-task-dir>",
         "environment_allowlist": [
             "HOME", "PATH", "PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
             "XDG_DATA_HOME", "XDG_STATE_HOME",
-            "PI_API_KEY=<redacted-dummy>",
         ],
         "configuration_projection": {
-            "provider": "openai-completions",
+            "selected_connection": "scripted-local",
+            "api": "openai-completions",
             "base_url": "<pre-resolved-provider-endpoint>",
-            "model": "scripted/eval",
+            "model": "scripted:eval",
+            "credential": "inline models.json value projected at launch",
             "ambient_fallback": "none",
         },
     },
@@ -923,8 +925,8 @@ exec docker run --rm --network {network} \\
     }
 
 benchmarks = {}
-env_keys = {"opi": ["HOME", "OPENAI_API_KEY"],
-            "pi": ["HOME", "PI_API_KEY", "PI_CODING_AGENT_DIR"]}
+env_keys = {"opi": ["HOME", "OPI_EVAL_SCRIPTED_KEY"],
+            "pi": ["HOME", "PI_CODING_AGENT_DIR"]}
 for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
     adapter = benchmark
     task_package = Path(external) / clone_index[benchmark] / "tasks" / task_ids[benchmark]
@@ -1038,19 +1040,11 @@ manifest = {
         "opi": {
             "executable": {"path": str(out / "wrappers" / "agent-opi-generic.sh"),
                            "sha256": None},
-            "model": "scripted:eval",
-            "provider_env": {"OPENAI_API_KEY": "<dummy-scripted-credential>"},
-            "config": {"kind": "opi-toml", "base_url": base_url,
-                       "model_id": "eval", "api_key": "<dummy>"},
             "integration": integration_entry("opi"),
         },
         "pi": {
             "executable": {"path": str(out / "wrappers" / "agent-pi-generic.sh"),
                            "sha256": None},
-            "model": "scripted:scripted/eval",
-            "provider_env": {"PI_API_KEY": "<redacted-dummy>"},
-            "config": {"kind": "pi-models-json", "base_url": base_url,
-                       "model_id": "scripted/eval", "api_key": "<redacted-dummy>"},
             "integration": integration_entry("pi"),
         },
     },
@@ -1095,8 +1089,9 @@ for adapter in ("terminal-bench-2.1",):
     task_id = task_ids[adapter]
     config = out / f"{adapter}.toml"
     config.write_text(f"""# eval native experiment config (native mode)
-schema = "opi-eval-experiment/1"
+schema = "opi-eval-experiment/2"
 experiment_id = "opi-eval-native-{adapter}"
+connection = "scripted-local"
 
 [benchmark]
 name = "{benchmark}"
@@ -1119,13 +1114,28 @@ id = "edge-1"
 baseline = "baseline-pi"
 candidate = "candidate-opi"
 
-[model_controls]
+[[connections]]
+id = "scripted-local"
 provider = "scripted"
+api = "openai-completions"
+base_url = "{base_url}"
 model = "eval"
-endpoint_class = "loopback"
+credential_env = "OPI_EVAL_SCRIPTED_KEY"
+
+[model_controls]
 temperature = 0.0
+top_p = "omitted"
 max_output_tokens = 4096
+context_window = 128000
 reasoning = "omitted"
+
+[execution]
+mode = "native-fixture"
+
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
 
 [environment]
 platform = "linux"
@@ -1320,7 +1330,10 @@ else:
     name=$(basename "$config" .toml)
     run_root="$out/$name"
     if [ -n "$material" ]; then
-      "$OPI_EVAL_EXECUTABLE" run --config "$config" --root "$run_root" \
+      # The declared connection credential resolves from this exported
+      # dummy only for the supervised Agent launch inside the trial.
+      OPI_EVAL_SCRIPTED_KEY='<dummy-scripted-credential>' \
+        "$OPI_EVAL_EXECUTABLE" run --config "$config" --root "$run_root" \
         --fixtures "$REPO_ROOT/crates/opi-eval/tests/fixtures" \
         --native-material "$material" "${canary_args[@]}"
     else

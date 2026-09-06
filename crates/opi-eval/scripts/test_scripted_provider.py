@@ -287,5 +287,283 @@ class ScriptedProviderListenerTest(unittest.TestCase):
                 self.assertIn("scripted-provider:", result.stderr)
 
 
+
+
+class ScriptedProviderProtocolMatrixTest(unittest.TestCase):
+    """P19-D02: the listener serves all three admitted protocols with the
+    same deterministic tool loop, model-keyed terminal failure scripts,
+    and authentication evidence in the request log."""
+
+    @staticmethod
+    def stop(process):
+        if process.poll() is None:
+            process.kill()
+        process.communicate(timeout=10)
+
+    @staticmethod
+    def start(request_log: Path):
+        import socket
+
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        process = subprocess.Popen(
+            [sys.executable, str(SCRIPT),
+             "--listen", f"127.0.0.1:{port}",
+             "--request-log", str(request_log)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        readiness = process.stdout.readline().strip()
+        if not readiness.startswith("listening "):
+            ScriptedProviderProtocolMatrixTest.stop(process)
+            raise AssertionError(f"no readiness line: {readiness!r}")
+        host, ready_port = readiness.split(" ", 1)[1].rsplit(":", 1)
+        return process, f"http://{host}:{ready_port}"
+
+    def post(self, base, body, path, headers=None):
+        import urllib.request
+
+        request = urllib.request.Request(
+            base + path, data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json", **(headers or {})},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return response.status, response.read().decode("utf-8"), dict(response.headers)
+        except urllib.error.HTTPError as error:
+            return error.code, error.read().decode("utf-8"), dict(error.headers)
+
+    @staticmethod
+    def anthropic_body(stream: bool, tool_result: bool) -> dict:
+        content = (
+            [{"type": "tool_result", "tool_use_id": "toolu_scripted_0001",
+              "content": "scripted-integration-result"}]
+            if tool_result
+            else "solve the pinned task"
+        )
+        return {
+            "model": "scripted/eval",
+            "max_tokens": 512,
+            "stream": stream,
+            "messages": [{"role": "user", "content": content}],
+        }
+
+    @staticmethod
+    def responses_body(stream: bool, tool_result: bool) -> dict:
+        items = (
+            [{"type": "function_call", "call_id": "call-scripted-0001",
+              "name": "bash", "arguments": "{}"},
+             {"type": "function_call_output", "call_id": "call-scripted-0001",
+              "output": "scripted-integration-result"}]
+            if tool_result
+            else [{"role": "user",
+                   "content": [{"type": "input_text",
+                                "text": "solve the pinned task"}]}]
+        )
+        return {"model": "scripted/eval", "stream": stream, "input": items}
+
+    def test_anthropic_stream_tool_loop_is_deterministic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            process, base = self.start(Path(tmp) / "requests.jsonl")
+            try:
+                first = self.post(
+                    base, self.anthropic_body(True, False), "/v1/messages")
+                repeat = self.post(
+                    base, self.anthropic_body(True, False), "/v1/messages")
+                final = self.post(
+                    base, self.anthropic_body(True, True), "/v1/messages")
+            finally:
+                self.stop(process)
+        status, body, _ = first
+        self.assertEqual(status, 200)
+        self.assertEqual(body, repeat[1])
+        events = [
+            json.loads(line.removeprefix("data: "))
+            for line in body.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        types = [event["type"] for event in events]
+        self.assertEqual(types[0], "message_start")
+        self.assertIn("content_block_start", types)
+        self.assertIn("content_block_delta", types)
+        self.assertIn("message_delta", types)
+        self.assertEqual(types[-1], "message_stop")
+        tool_use = [
+            event for event in events
+            if event["type"] == "content_block_start"
+            and event["content_block"]["type"] == "tool_use"
+        ]
+        self.assertEqual(len(tool_use), 1)
+        self.assertEqual(tool_use[0]["content_block"]["name"], "bash")
+        arguments = json.loads(tool_use[0]["content_block"]["input"]["command_extra"]
+                               ) if False else tool_use[0]["content_block"]["input"]
+        self.assertEqual(
+            arguments,
+            {"command": "printf 'scripted-integration-result\\n' > answer.txt"},
+        )
+        stop = [event for event in events if event["type"] == "message_delta"]
+        self.assertEqual(stop[0]["delta"]["stop_reason"], "tool_use")
+        # The tool-result turn ends the loop deterministically.
+        self.assertEqual(final[0], 200)
+        self.assertIn('"stop_reason":"end_turn"', final[1].replace(" ", ""))
+
+    def test_anthropic_non_stream_shapes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            process, base = self.start(Path(tmp) / "requests.jsonl")
+            try:
+                first = self.post(
+                    base, self.anthropic_body(False, False), "/v1/messages")
+                final = self.post(
+                    base, self.anthropic_body(False, True), "/v1/messages")
+            finally:
+                self.stop(process)
+        self.assertEqual(first[0], 200)
+        message = json.loads(first[1])
+        self.assertEqual(message["stop_reason"], "tool_use")
+        self.assertEqual(
+            message["content"][0],
+            {"type": "tool_use", "id": "toolu_scripted_0001", "name": "bash",
+             "input": {"command":
+                       "printf 'scripted-integration-result\\n' > answer.txt"}},
+        )
+        self.assertEqual(final[0], 200)
+        self.assertEqual(json.loads(final[1])["stop_reason"], "end_turn")
+
+    def test_openai_responses_stream_tool_loop_is_deterministic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            process, base = self.start(Path(tmp) / "requests.jsonl")
+            try:
+                first = self.post(
+                    base, self.responses_body(True, False), "/v1/responses")
+                repeat = self.post(
+                    base, self.responses_body(True, False), "/v1/responses")
+                final = self.post(
+                    base, self.responses_body(True, True), "/v1/responses")
+            finally:
+                self.stop(process)
+        status, body, _ = first
+        self.assertEqual(status, 200)
+        self.assertEqual(body, repeat[1])
+        events = [
+            json.loads(line.removeprefix("data: "))
+            for line in body.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        ]
+        types = [event["type"] for event in events]
+        self.assertIn("response.created", types)
+        self.assertIn("response.output_item.added", types)
+        self.assertIn("response.function_call_arguments.delta", types)
+        self.assertIn("response.output_item.done", types)
+        self.assertEqual(types[-1], "response.completed")
+        call = [
+            event for event in events
+            if event["type"] == "response.output_item.added"
+            and event["item"]["type"] == "function_call"
+        ]
+        self.assertEqual(call[0]["item"]["name"], "bash")
+        done = [
+            event for event in events
+            if event["type"] == "response.output_item.done"
+            and event["item"]["type"] == "function_call"
+        ]
+        self.assertEqual(
+            json.loads(done[0]["item"]["arguments"]),
+            {"command": "printf 'scripted-integration-result\\n' > answer.txt"},
+        )
+        self.assertEqual(final[0], 200)
+        self.assertIn("response.completed", final[1])
+
+    def test_openai_responses_non_stream_shapes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            process, base = self.start(Path(tmp) / "requests.jsonl")
+            try:
+                first = self.post(
+                    base, self.responses_body(False, False), "/v1/responses")
+                final = self.post(
+                    base, self.responses_body(False, True), "/v1/responses")
+            finally:
+                self.stop(process)
+        self.assertEqual(first[0], 200)
+        response = json.loads(first[1])
+        self.assertEqual(response["status"], "completed")
+        self.assertEqual(response["output"][0]["type"], "function_call")
+        self.assertEqual(response["output"][0]["name"], "bash")
+        self.assertEqual(final[0], 200)
+        self.assertEqual(json.loads(final[1])["status"], "completed")
+
+    def test_model_keyed_failure_scripts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            process, base = self.start(Path(tmp) / "requests.jsonl")
+            try:
+                auth = self.post(
+                    base, self.anthropic_body(False, False)
+                    | {"model": "scripted/auth-fail"}, "/v1/messages")
+                limit = self.post(
+                    base, self.anthropic_body(False, False)
+                    | {"model": "scripted/rate-limit"}, "/v1/messages")
+                limit_again = self.post(
+                    base, self.anthropic_body(False, False)
+                    | {"model": "scripted/rate-limit"}, "/v1/messages")
+                retry_first = self.post(
+                    base, self.anthropic_body(False, False)
+                    | {"model": "scripted/retry"}, "/v1/messages")
+                retry_second = self.post(
+                    base, self.anthropic_body(False, False)
+                    | {"model": "scripted/retry"}, "/v1/messages")
+                broken = self.post(
+                    base, self.anthropic_body(False, False)
+                    | {"model": "scripted/protocol-error"}, "/v1/messages")
+            finally:
+                self.stop(process)
+        # Terminal authentication failure: 401, typed error body.
+        self.assertEqual(auth[0], 401)
+        self.assertIn("authentication", auth[1])
+        # Exhausted rate limiting: 429 on every request, never a success.
+        self.assertEqual(limit[0], 429)
+        self.assertEqual(limit_again[0], 429)
+        self.assertIn("rate_limit", limit[1])
+        # Retryable 429: exactly one failure, then the deterministic
+        # tool-loop turn succeeds.
+        self.assertEqual(retry_first[0], 429)
+        self.assertIn("Retry-After", retry_first[2])
+        self.assertEqual(retry_second[0], 200)
+        # Native protocol error: HTTP 200 with a body the protocol cannot
+        # parse (the failure belongs to the client's typed observations).
+        self.assertEqual(broken[0], 200)
+        with self.assertRaises(json.JSONDecodeError):
+            json.loads(broken[1])
+
+    def test_request_log_records_auth_and_model_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "requests.jsonl"
+            process, base = self.start(log)
+            try:
+                self.post(base, self.anthropic_body(False, False), "/v1/messages",
+                          headers={"x-api-key": "dummy-scripted-credential"})
+                self.post(base, self.chat_body(False),
+                          "/v1/chat/completions",
+                          headers={"Authorization": "Bearer dummy"})
+            finally:
+                self.stop(process)
+            log_text = log.read_text()
+            lines = [json.loads(line) for line in log_text.splitlines()]
+        self.assertEqual(len(lines), 2)
+        by_path = {line["path"]: line for line in lines}
+        self.assertEqual(by_path["/v1/messages"]["auth"], "x-api-key")
+        self.assertEqual(by_path["/v1/messages"]["model"], "scripted/eval")
+        self.assertEqual(by_path["/v1/chat/completions"]["auth"], "bearer")
+        # The credential value itself never enters the log.
+        self.assertNotIn("dummy-scripted-credential", log_text)
+
+    @staticmethod
+    def chat_body(stream: bool) -> dict:
+        return {
+            "model": "scripted/eval",
+            "stream": stream,
+            "messages": [{"role": "user", "content": "solve the pinned task"}],
+        }
+
+
 if __name__ == "__main__":
     unittest.main()

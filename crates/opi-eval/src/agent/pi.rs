@@ -267,7 +267,15 @@ impl AgentAdapter for PiProcessAdapter {
         let completion = match imported.completion {
             AgentCompletion::Failed(failure) => AgentCompletion::Failed(failure),
             AgentCompletion::Completed { artifacts } => {
-                if imported.stop_reason != "stop" {
+                if imported.stop_reason == "error" {
+                    // The client's own typed terminal evidence rules even
+                    // at process exit zero: no speculative provider cause
+                    // is claimed beyond the client's typed status prefixes.
+                    AgentCompletion::Failed(AgentFailure {
+                        kind: pi_provider_failure_kind(&imported.error_message),
+                        boundary: FailureBoundaryCode::AgentProcess,
+                    })
+                } else if imported.stop_reason != "stop" {
                     AgentCompletion::Failed(AgentFailure {
                         kind: "agent-outcome-not-success",
                         boundary: FailureBoundaryCode::AgentProcess,
@@ -289,6 +297,9 @@ impl AgentAdapter for PiProcessAdapter {
 /// One imported pi run: settled completion, terminal facts, and the usage
 /// projection. Owned by [`PiImporter`].
 struct ImportedPi {
+    /// The terminal assistant message's `errorMessage`, when the client
+    /// reported one (its own typed error evidence).
+    error_message: String,
     completion: AgentCompletion,
     stop_reason: String,
     provider: String,
@@ -301,6 +312,22 @@ struct ImportedPi {
 /// pinned v0.84.3 shapes; anything older, unknown, corrupted, or ambiguous
 /// fails closed (EVAL-MIG-002). Never mutates anything outside the fresh
 /// trace root.
+/// The typed terminal provider cause from the pinned pi client's own
+/// evidence: the client echoes the HTTP status it received and its own
+/// closed protocol diagnostics. Anything else stays an unknown provider
+/// failure - its cause is never guessed.
+fn pi_provider_failure_kind(error_message: &str) -> &'static str {
+    if error_message.starts_with("401") || error_message.starts_with("403") {
+        "provider-auth-failure"
+    } else if error_message.starts_with("429") {
+        "provider-rate-limit-exhausted"
+    } else if error_message == "Stream ended without finish_reason" {
+        "provider-protocol-error"
+    } else {
+        "provider-failure"
+    }
+}
+
 struct PiImporter;
 
 impl PiImporter {
@@ -312,6 +339,7 @@ impl PiImporter {
         let failed = |kind: &'static str, boundary| ImportedPi {
             completion: AgentCompletion::Failed(AgentFailure { kind, boundary }),
             stop_reason: String::new(),
+            error_message: String::new(),
             provider: String::new(),
             model: String::new(),
             usage: UsageProjection::default(),
@@ -459,6 +487,11 @@ impl PiImporter {
         };
         let fields = message.as_object().expect("validated terminal message");
         let stop_reason = fields["stopReason"].as_str().expect("validated").to_owned();
+        let error_message = fields
+            .get("errorMessage")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_owned();
         let provider = fields["provider"].as_str().expect("validated").to_owned();
         let model = fields["model"].as_str().expect("validated").to_owned();
         let usage_fields = fields["usage"].as_object().expect("validated");
@@ -493,6 +526,7 @@ impl PiImporter {
                 }],
             },
             stop_reason,
+            error_message,
             provider,
             model,
             usage,
@@ -803,11 +837,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut request = request();
         request.trace_root = dir.path().to_path_buf();
-        for name in [
-            "stream-error.jsonl",
-            "stream-abort.jsonl",
-            "stream-length.jsonl",
-        ] {
+        // A provider terminal cause is classified from the client's own
+        // typed evidence; unknown causes stay unknown (P19-D02).
+        let (_, completion) = adapter.settle(&settled_with("stream-error.jsonl"), &request);
+        assert_eq!(
+            completion,
+            AgentCompletion::Failed(AgentFailure {
+                kind: "provider-failure",
+                boundary: FailureBoundaryCode::AgentProcess,
+            })
+        );
+        for name in ["stream-abort.jsonl", "stream-length.jsonl"] {
             let (_, completion) = adapter.settle(&settled_with(name), &request);
             assert_eq!(
                 completion,

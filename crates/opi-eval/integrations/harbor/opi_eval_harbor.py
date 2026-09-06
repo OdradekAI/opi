@@ -11,11 +11,13 @@ job is not this contract.
 The integration is driven exclusively by the ``OPI_EVAL_NATIVE_HANDOFF``
 environment variable the opi-eval runner exports for the dispatched job.
 The handoff is a typed JSON document (schema ``opi-eval-native-handoff/2``)
-carrying the exact built Agent executable, its projected provider
-configuration, and the credential material; none of it is read from
-ambient user configuration. Credentials are applied only to the Agent
-process inside the task environment and removed before the verifier
-phase runs.
+carrying the exact built Agent executable, the projected selected
+connection (the exact configuration bytes and agent environment rendered
+by the runner from the frozen experiment contract), and the credential
+material; none of it is read from ambient user configuration, and the
+integration never improvises or falls back to another provider, protocol,
+or model. Credentials are applied only to the Agent process inside the
+task environment and removed before the verifier phase runs.
 
 After the Agent phase the integration writes a typed terminal observation
 (``opi-eval-terminal.json`` next to its Agent logs): the observed exit
@@ -82,16 +84,17 @@ class _OpiEvalAgent(BaseAgent):
             logger=logger,
             **kwargs,
         )
-        self._handoff = self._load_handoff()
+        self._handoff_path, self._handoff = self._load_handoff()
         self._timed_out = False
 
-    def _load_handoff(self) -> dict[str, Any]:
+    def _load_handoff(self) -> tuple[Path, dict[str, Any]]:
         path = os.environ.get(_HANDOFF_ENV)
         if not path:
             raise _OpiEvalAgentError(
                 "opi-eval integration requires OPI_EVAL_NATIVE_HANDOFF"
             )
-        handoff = json.loads(Path(path).read_text(encoding="utf-8"))
+        handoff_path = Path(path)
+        handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
         if handoff.get("schema") != _HANDOFF_SCHEMA:
             raise _OpiEvalAgentError("unknown opi-eval handoff schema")
         if handoff.get("product") != self._PRODUCT:
@@ -105,7 +108,7 @@ class _OpiEvalAgent(BaseAgent):
                 f"handoff integration identity {name!r} does not select "
                 f"{self.name()}"
             )
-        return handoff
+        return handoff_path, handoff
 
     @staticmethod
     def _digest_file(path: Path) -> str:
@@ -146,8 +149,9 @@ class _OpiEvalAgent(BaseAgent):
         raise NotImplementedError
 
     def _agent_env(self) -> dict[str, str]:
-        # Credentials from the handoff only: never ambient user values.
-        return dict(self._handoff.get("provider_env") or {})
+        # The projected agent environment from the handoff only: never
+        # ambient user values.
+        return dict(self._handoff.get("agent_env") or {})
 
     @override
     async def run(
@@ -262,27 +266,14 @@ class OpiAgent(_OpiEvalAgent):
     async def _project_configuration(
         self, environment: BaseEnvironment, stage: PurePosixPath
     ) -> None:
-        config = self._handoff.get("config") or {}
-        body = (
-            "# opi-eval native run: projected provider configuration.\n"
-            f"[providers.custom.scripted]\n"
-            'name = "opi-eval provider"\n'
-            f'base_url = "{config.get("base_url", "")}"\n'
-            'api_key_env = "OPENAI_API_KEY"\n'
-            'auth_scheme = "bearer"\n'
-            'api = "openai-completions"\n'
-            "\n"
-            "[[providers.custom.scripted.models]]\n"
-            f'id = "{config.get("model_id", "")}"\n'
-            'display_name = "opi-eval"\n'
-            "context_window = 8192\n"
-            "max_output_tokens = 4096\n"
+        # The runner's selected-connection projection owns every request
+        # identity byte (P19-D02); the integration uploads it verbatim.
+        config_path = self._handoff_path.parent.joinpath(
+            self._handoff.get("config_path") or "config.toml"
         )
-        with open(self.logs_dir / "projected-config.toml", "w", encoding="utf-8") as handle:
-            handle.write(body)
-        await environment.upload_file(
-            self.logs_dir / "projected-config.toml", f"{stage}/config.toml"
-        )
+        if not config_path.is_file():
+            raise _OpiEvalAgentError("handoff projected configuration is missing")
+        await environment.upload_file(config_path, f"{stage}/{config_path.name}")
 
     def _agent_command(self, instruction: str, stage: PurePosixPath) -> str:
         agent = f"{stage}/agent"
@@ -313,20 +304,14 @@ class PiAgent(_OpiEvalAgent):
     async def _project_configuration(
         self, environment: BaseEnvironment, stage: PurePosixPath
     ) -> None:
-        config = self._handoff.get("config") or {}
-        models = {
-            "providers": {
-                "scripted": {
-                    "baseUrl": config.get("base_url", ""),
-                    "api": "openai-completions",
-                    "apiKey": config.get("api_key", ""),
-                    "models": [{"id": config.get("model_id", "")}],
-                }
-            }
-        }
-        path = self.logs_dir / "models.json"
-        path.write_text(json.dumps(models, indent=2) + "\n", encoding="utf-8")
-        await environment.upload_file(path, f"{stage}/models.json")
+        # The runner's selected-connection projection owns every request
+        # identity byte (P19-D02); the integration uploads it verbatim.
+        config_path = self._handoff_path.parent.joinpath(
+            self._handoff.get("config_path") or "models.json"
+        )
+        if not config_path.is_file():
+            raise _OpiEvalAgentError("handoff projected configuration is missing")
+        await environment.upload_file(config_path, f"{stage}/{config_path.name}")
 
     def _agent_command(self, instruction: str, stage: PurePosixPath) -> str:
         agent = f"{stage}/agent"

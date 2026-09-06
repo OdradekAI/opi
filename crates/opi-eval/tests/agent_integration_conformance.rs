@@ -84,13 +84,16 @@ fn rows() -> Vec<Row> {
             });
         }
         // Typed failure family (process verdicts are authoritative).
+        // Exit 5 is outside the client's typed provider exit codes: a
+        // plain scored non-zero Agent exit (exit 3 is the typed
+        // authentication failure above).
         rows.push(Row {
             adapter,
             case: "nonzero-exit",
             outcome: "failed",
             kind: Some("agent-non-zero-exit"),
             boundary: Some("AgentProcess"),
-            exit_state: "exited:3",
+            exit_state: "exited:5",
         });
         // Importer fail-closed family.
         rows.push(Row {
@@ -130,6 +133,36 @@ fn rows() -> Vec<Row> {
                 exit_state: "exited:0",
             });
         }
+        // Typed provider terminal causes (P19-D02): distinct pinned
+        // shapes per client - Opi exits 4 with its typed stderr summary;
+        // pi replays its pinned error stream and exits zero.
+        for (case, kind) in [
+            ("provider-auth-failure", "provider-auth-failure"),
+            ("provider-rate-limit", "provider-rate-limit-exhausted"),
+            ("provider-protocol-error", "provider-protocol-error"),
+        ] {
+            let exit_state = if adapter == "opi" {
+                "exited:4"
+            } else {
+                "exited:0"
+            };
+            rows.push(Row {
+                adapter,
+                case,
+                outcome: "failed",
+                kind: Some(kind),
+                boundary: Some("AgentProcess"),
+                exit_state,
+            });
+        }
+        rows.push(Row {
+            adapter,
+            case: "provider-retry-success",
+            outcome: "completed",
+            kind: None,
+            boundary: None,
+            exit_state: "exited:0",
+        });
         // Supervisor-settled family.
         rows.push(Row {
             adapter,

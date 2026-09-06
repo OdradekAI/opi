@@ -475,8 +475,9 @@ mod tests {
 
     fn experiment_toml(integrity_digest: &str) -> String {
         format!(
-            r#"schema = "opi-eval-experiment/1"
+            r#"schema = "opi-eval-experiment/2"
 experiment_id = "exp-1"
+connection = "comparison-local"
 
 [benchmark]
 name = "terminal-bench"
@@ -499,13 +500,25 @@ id = "e1"
 baseline = "subject-a"
 candidate = "subject-b"
 
-[model_controls]
+[[connections]]
+id = "comparison-local"
 provider = "p"
+api = "openai-completions"
+base_url = "http://127.0.0.1:48127/v1"
 model = "m"
-endpoint_class = "local"
+credential_env = "OPI_EVAL_FIXTURE_KEY"
+
+[model_controls]
 temperature = 0.0
+top_p = "omitted"
 max_output_tokens = 4096
+context_window = 8192
 reasoning = "omitted"
+
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
 
 [environment]
 platform = "linux"

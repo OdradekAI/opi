@@ -170,6 +170,23 @@ conformance matrix 定义；不受支持的 suite、adapter 或 case 会 fail-cl
 上游 oracle 是显式选择的 conformance 诊断（`conformance --case oracle-witness` /
 `--case nop-witness`），绝不是被 `run` 静默执行的前置条件。
 
+请求身份来自 experiment 文档中选定的命名 connection（schema
+`opi-eval-experiment/2`）：顶层 `connection` 选择一个 `[[connections]]` id，
+条目携带 `provider`、`api`（`anthropic-messages` | `openai-completions` |
+`openai-responses`）、`base_url`、`model`，以及互斥的
+`credential_env`/`credential_file` 引用之一。不存在 provider、协议、模型或
+计费产品的回退：credential 只在受监督的 Agent 启动内解析；缺失的 credential
+与 required-but-unsupported 的 `[model_controls]` 控件在任何模型效果之前拒绝；
+远程 base URL 必须显式声明 `[execution].mode = "live"`（否则只允许回环地址）。
+`[execution.caps]` 中请求的货币/用量上限会被拒绝——native 路由无法强制执行——
+而可强制的 `time_limit_seconds` 与 `max_output_bytes` 边界会连同其限制一起记录。
+两个固定客户端（Opi 与 pi）由同一个 connection 对全部三种协议投影，本地
+[scripted provider](scripts/scripted-provider.py) 提供确定性工具循环以及按模型
+选择的 `auth-fail`、`rate-limit`、`retry`、`protocol-error` 脚本，通过
+`native_protocol_client_matrix`（ignored，需本地客户端物料）验证。每个 adapter
+只依据客户端自身证据分类类型化的终端 provider 原因（认证失败、限流耗尽、协议
+错误）——包括进程退出码为 0 时的 JSON 错误——绝不臆测证据未知的 provider 原因。
+
 CLI 只消费已经解析的 native-material manifest；它不会临时拼凑或静默替换缺失的
 native input。Native materialization 和 fidelity 验证由仓库的
 [native-smoke workflow](../../.github/workflows/opi-eval-native-smoke.yml) 负责。

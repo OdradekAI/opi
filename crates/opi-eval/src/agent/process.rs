@@ -159,6 +159,12 @@ impl AgentFailure {
     pub(crate) fn class(&self) -> AgentFailureClass {
         match self.kind {
             "agent-non-zero-exit" | "agent-timeout" => AgentFailureClass::ScoredAgentOutcome,
+            // Typed provider terminal causes preserve attempted coverage
+            // without an Agent score (P19-D02).
+            "provider-auth-failure"
+            | "provider-rate-limit-exhausted"
+            | "provider-protocol-error"
+            | "provider-failure" => AgentFailureClass::AuthorityBoundary,
             _ => AgentFailureClass::AuthorityBoundary,
         }
     }
@@ -378,11 +384,19 @@ mod class_tests {
                 AgentFailureClass::ScoredAgentOutcome
             );
         }
-        // Spawn refusal, cancellation, adapter/evidence rejection, and
-        // infrastructure are authority-boundary failures.
+        // Spawn refusal, cancellation, adapter/evidence rejection,
+        // infrastructure, and typed provider terminal causes are
+        // authority-boundary failures.
         for (kind, boundary) in [
             ("spawn-not-found", FailureBoundaryCode::AgentProcess),
             ("agent-cancelled", FailureBoundaryCode::AgentProcess),
+            ("provider-auth-failure", FailureBoundaryCode::AgentProcess),
+            (
+                "provider-rate-limit-exhausted",
+                FailureBoundaryCode::AgentProcess,
+            ),
+            ("provider-protocol-error", FailureBoundaryCode::AgentProcess),
+            ("provider-failure", FailureBoundaryCode::AgentProcess),
             ("import-unsupported-schema", FailureBoundaryCode::Adapter),
             ("import-evidence-missing", FailureBoundaryCode::Evidence),
         ] {

@@ -26,6 +26,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `opi-eval`: the upstream oracle is now an explicitly selected conformance
   diagnostic (`conformance --case oracle-witness`, the incorrect
   `nop-witness` grades zero), never a prerequisite silently run by `run`.
+- `opi-eval`: experiment documents move to schema
+  `opi-eval-experiment/2`: a top-level `connection` selects one named
+  `[[connections]]` entry (provider, `api`, base URL, exact model, one
+  credential reference), `[model_controls]` drops provider/model/endpoint
+  fields and adds `top_p`, `context_window`, and the `required` list, and
+  `[execution]`/`[storage]` carry the execution mode, enforceable bounds,
+  and capture policy. Remote routes need the explicit `live` mode,
+  requested monetary/usage caps are rejected as unenforceable, and
+  required-but-unsupported controls reject before any model effect. The
+  native-material manifest loses the agents' fixed scripted config and
+  inline credential fields: request identity is projected from the
+  selected connection (`project_connection`) into each pinned client's
+  exact configuration bytes.
+- `opi-eval`: the scripted provider serves all three admitted protocols
+  (Anthropic Messages, OpenAI Completions, OpenAI Responses) with the same
+  deterministic tool loop, model-keyed terminal failure scripts
+  (`auth-fail`, `rate-limit`, `retry`, `protocol-error`), and
+  authentication evidence in its request log. Agent adapters classify
+  typed terminal provider causes from each client's own evidence
+  (including a JSON error at exit zero for pi) without speculative
+  parsing; the ignored `native_protocol_client_matrix` drives both actual
+  pinned clients through every protocol and script against the loopback
+  provider.
 - `opi-eval`: native trials seal one interpretation per trial: valid native
   grades (including zero scores and benchmark-valid timeouts) keep their
   native metric, terminal provider/access/adapter/identity/infrastructure

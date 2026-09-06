@@ -135,6 +135,21 @@ done
 agent_name=$(sed -n 's/.*"integration_agent_name":"\([^"]*\)".*/\1/p' "$OPI_EVAL_NATIVE_HANDOFF")
 [ -n "$agent_name" ] || { echo "handoff carries no integration identity" >&2; exit 9; }
 product=$(sed -n 's/.*"product":"\([^"]*\)".*/\1/p' "$OPI_EVAL_NATIVE_HANDOFF")
+diagnostic=$(sed -n 's/.*"diagnostic":"\([^"]*\)".*/\1/p' "$OPI_EVAL_NATIVE_HANDOFF")
+if [ -z "$diagnostic" ]; then
+  # A real agent trial carries the projected selected connection.
+  [ "$model" = "scripted:eval" ] || { echo "model selector drift: $model" >&2; exit 9; }
+  handoff_dir=$(dirname "$OPI_EVAL_NATIVE_HANDOFF")
+  config_rel=$(sed -n 's/.*"config_path":"\([^"]*\)".*/\1/p' "$OPI_EVAL_NATIVE_HANDOFF")
+  [ -n "$config_rel" ] && [ -f "$handoff_dir/$config_rel" ] \
+    || { echo "handoff carries no projected configuration" >&2; exit 9; }
+  grep -q "http://127.0.0.1:48127/v1" "$handoff_dir/$config_rel" \
+    || { echo "projected configuration lost the selected endpoint" >&2; exit 9; }
+  if [ "$product" = "opi" ]; then
+    agent_key=$(sed -n 's/.*"OPI_EVAL_SCRIPTED_KEY":"\([^"]*\)".*/\1/p' "$OPI_EVAL_NATIVE_HANDOFF")
+    [ -n "$agent_key" ] || { echo "handoff agent environment lost the credential" >&2; exit 9; }
+  fi
+fi
 task_name=$(basename "$task_dir")
 trial="${task_name}__standin"
 job="jobs/2026-09-05__12-00-00"
@@ -282,9 +297,12 @@ exit 0
 # native stand-in for the exact built pi bundle (test staging)
 [ "$1" = "--mode" ] && [ "$2" = "json" ] || {{ echo "argv drift: expected --mode json" >&2; exit 9; }}
 [ -f "$PI_CODING_AGENT_DIR/models.json" ] || {{ echo "missing models.json" >&2; exit 8; }}
-[ -n "$PI_API_KEY" ] || {{ echo "missing dummy credential" >&2; exit 8; }}
+grep -q '"apiKey":"<dummy-scripted-credential>"' "$PI_CODING_AGENT_DIR/models.json" \
+  || {{ echo "models.json lost the projected credential" >&2; exit 8; }}
+grep -q '"api":"openai-completions"' "$PI_CODING_AGENT_DIR/models.json" \
+  || {{ echo "models.json lost the projected protocol" >&2; exit 8; }}
 sed -e 's/"provider":"local"/"provider":"scripted"/' \
-    -e 's/"model":"scripted"/"model":"scripted\/eval"/' "{stream}"
+    -e 's/"model":"scripted"/"model":"eval"/' "{stream}"
 printf 'pi stand-in answer\n' > answer.txt
 exit 0
 "#,
@@ -334,18 +352,10 @@ exit 0
   "agents": {{
     "opi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "model": "scripted:eval",
-      "provider_env": {{"OPENAI_API_KEY": "<dummy-scripted-credential>"}},
-      "config": {{"kind": "opi-toml", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "eval", "api_key": "<dummy>"}},
       {}
     }},
     "pi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "model": "scripted:scripted/eval",
-      "provider_env": {{"PI_API_KEY": "<redacted-dummy>"}},
-      "config": {{"kind": "pi-models-json", "base_url": "http://127.0.0.1:48127/v1",
-                  "model_id": "scripted/eval", "api_key": "<redacted-dummy>"}},
       {}
     }}
   }},
@@ -393,8 +403,9 @@ exit 0
 
 fn experiment_text(_staged: &Staged, integrity_digest: &str) -> String {
     format!(
-        r#"schema = "opi-eval-experiment/1"
+        r#"schema = "opi-eval-experiment/2"
 experiment_id = "native-driver-test"
+connection = "scripted-local"
 
 [benchmark]
 name = "terminal-bench"
@@ -417,13 +428,28 @@ id = "edge-1"
 baseline = "baseline-pi"
 candidate = "candidate-opi"
 
-[model_controls]
+[[connections]]
+id = "scripted-local"
 provider = "scripted"
+api = "openai-completions"
+base_url = "http://127.0.0.1:48127/v1"
 model = "eval"
-endpoint_class = "loopback"
+credential_env = "OPI_EVAL_SCRIPTED_KEY"
+
+[model_controls]
 temperature = 0.0
+top_p = "omitted"
 max_output_tokens = 4096
+context_window = 8192
 reasoning = "omitted"
+
+[execution]
+mode = "native-fixture"
+
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
 
 [environment]
 platform = "linux"
@@ -492,6 +518,7 @@ fn run_native(staged: &Staged, config: &Path, run_root: &Path) -> (i32, String, 
         .arg(fixtures())
         .arg("--native-material")
         .arg(&staged.material)
+        .env("OPI_EVAL_SCRIPTED_KEY", "<dummy-scripted-credential>")
         .output()
         .expect("run executes");
     (
@@ -990,5 +1017,465 @@ fn native_tb21_artifact_witness() {
         assert_eq!(report["outcome"], "verified-native", "{case}: {stdout}");
         let _ = (agent, reward);
         let _ = fs::remove_dir_all(&root);
+    }
+}
+
+#[test]
+fn native_missing_credential_rejects_before_any_effect() {
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    let run_root = staged.root.join("run");
+    // The declared credential reference resolves to nothing: the request
+    // must be rejected before any model effect, bundle, or job exists.
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--config")
+        .arg(&config)
+        .arg("--root")
+        .arg(&run_root)
+        .arg("--fixtures")
+        .arg(fixtures())
+        .arg("--native-material")
+        .arg(&staged.material)
+        .env_remove("OPI_EVAL_SCRIPTED_KEY")
+        .output()
+        .expect("run executes");
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("credential"), "stderr: {stderr}");
+    assert!(
+        !run_root
+            .join("trials/trial-opi-native/bundle/intent.json")
+            .is_file(),
+        "no durable effect may exist before credential admission"
+    );
+    assert!(
+        !run_root
+            .join("trials/trial-opi-native/verifier-trace/jobs")
+            .is_dir(),
+        "no job may exist before credential admission"
+    );
+}
+
+#[test]
+fn native_mode_gate_rejects_inconsistent_requests() {
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    let run_root = staged.root.join("run");
+    // Hermetic mode with native material: inconsistent.
+    let hermetic = fs::read_to_string(&config)
+        .unwrap()
+        .replace("[execution]\nmode = \"native-fixture\"", "");
+    let hermetic_config = staged.root.join("hermetic.toml");
+    fs::write(&hermetic_config, hermetic).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--config")
+        .arg(&hermetic_config)
+        .arg("--root")
+        .arg(&run_root)
+        .arg("--fixtures")
+        .arg(fixtures())
+        .arg("--native-material")
+        .arg(&staged.material)
+        .env("OPI_EVAL_SCRIPTED_KEY", "<dummy-scripted-credential>")
+        .output()
+        .expect("run executes");
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("mode"), "stderr: {stderr}");
+}
+
+// --- P19-AC-006-fixture: the real-client protocol matrix ---------------
+
+/// Drives both actual pinned clients (the exact built Opi binary and the
+/// pinned pi bundle under its resolved Node) through all three admitted
+/// protocol paths against the loopback scripted provider, using the
+/// production `project_connection` bytes for every configuration. Runs
+/// only with locally supplied client material
+/// (`OPI_EVAL_NATIVE_CLIENT_MATERIAL` = JSON with `opi`, `node`, and
+/// `pi_bundle` paths) and never contacts a remote service.
+#[test]
+#[ignore = "requires locally supplied client material (OPI_EVAL_NATIVE_CLIENT_MATERIAL)"]
+fn native_protocol_client_matrix() {
+    let material = std::env::var("OPI_EVAL_NATIVE_CLIENT_MATERIAL")
+        .expect("OPI_EVAL_NATIVE_CLIENT_MATERIAL points at the client material JSON");
+    let clients: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(material).unwrap()).unwrap();
+    let opi_bin = PathBuf::from(clients["opi"].as_str().unwrap());
+    let node_bin = PathBuf::from(clients["node"].as_str().unwrap());
+    let pi_bundle = PathBuf::from(clients["pi_bundle"].as_str().unwrap());
+    assert!(opi_bin.is_file() && node_bin.is_file() && pi_bundle.is_file());
+
+    let root = tempfile::tempdir().unwrap();
+    // One fresh listener per client and API: each combination's full
+    // matrix (tool loops, retry history, and exhausted rate limits) stays
+    // inside the provider's bounded request cap, the retry script's
+    // one-failure state applies per client, and the per-combination log
+    // isolates the authentication evidence.
+    let mut providers: Vec<std::process::Child> = Vec::new();
+    let apis = [
+        "anthropic-messages",
+        "openai-completions",
+        "openai-responses",
+    ];
+    let failures = [
+        ("auth-fail", "provider-auth-failure"),
+        ("rate-limit", "provider-rate-limit-exhausted"),
+        ("protocol-error", "provider-protocol-error"),
+    ];
+
+    for api in apis {
+        for client in [
+            opi_eval::experiment::NativeClient::Opi,
+            opi_eval::experiment::NativeClient::Pi,
+        ] {
+            let log = root
+                .path()
+                .join(format!("requests-{api}-{}.jsonl", client.as_str()));
+            let (provider, base) = start_scripted_provider(&log);
+            providers.push(provider);
+            let base = base.unwrap();
+            for model in ["eval", "auth-fail", "rate-limit", "retry", "protocol-error"] {
+                let connection = opi_eval::experiment::Connection {
+                    id: "matrix".to_owned(),
+                    provider: "scripted".to_owned(),
+                    api: match api {
+                        "anthropic-messages" => {
+                            opi_eval::experiment::ConnectionApi::AnthropicMessages
+                        }
+                        "openai-completions" => {
+                            opi_eval::experiment::ConnectionApi::OpenAiCompletions
+                        }
+                        _ => opi_eval::experiment::ConnectionApi::OpenAiResponses,
+                    },
+                    base_url: base.clone(),
+                    model: model.to_owned(),
+                    credential: opi_eval::experiment::CredentialReference::Env {
+                        variable: "OPI_EVAL_SCRIPTED_KEY".to_owned(),
+                    },
+                };
+                let controls = matrix_controls();
+                let credential = opi_eval::experiment::ResolvedCredential::FromEnv {
+                    variable: "OPI_EVAL_SCRIPTED_KEY".to_owned(),
+                    value: "dummy-scripted-credential".to_owned(),
+                };
+                let projection = opi_eval::experiment::project_connection(
+                    &connection,
+                    &controls,
+                    client,
+                    credential,
+                )
+                .unwrap();
+                let case_root = root
+                    .path()
+                    .join(format!("{}-{}-{}", client.as_str(), api, model));
+                let work = case_root.join("work");
+                std::fs::create_dir_all(&work).unwrap();
+                std::fs::create_dir_all(case_root.join("cfg")).unwrap();
+                let config_path = case_root.join("cfg").join(projection.config_filename);
+                std::fs::write(&config_path, &projection.config_bytes).unwrap();
+
+                let output = match client {
+                    opi_eval::experiment::NativeClient::Opi => {
+                        run_opi_client(&opi_bin, &config_path, model, &case_root, &work)
+                    }
+                    opi_eval::experiment::NativeClient::Pi => run_pi_client(
+                        &node_bin,
+                        &pi_bundle,
+                        &config_path,
+                        model,
+                        &case_root,
+                        &work,
+                    ),
+                };
+                let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+                let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+                let code = output.status.code().unwrap_or(-1);
+                let name = format!("{}/{} {}", client.as_str(), api, model);
+
+                match model {
+                    "eval" | "retry" => {
+                        // The deterministic tool loop completes; one
+                        // intermediate 429 (retry) never becomes the final
+                        // result.
+                        assert_eq!(code, 0, "{name}: {stderr}");
+                        if client == opi_eval::experiment::NativeClient::Pi {
+                            assert!(
+                                stdout.contains("\"stopReason\":\"stop\"")
+                                    || stdout.contains("\"stopReason\": \"stop\""),
+                                "{name}: no terminal stop: {stdout}"
+                            );
+                        }
+                    }
+                    script => {
+                        let kind = failures.iter().find(|(id, _)| *id == script).unwrap().1;
+                        match client {
+                            opi_eval::experiment::NativeClient::Opi => {
+                                // Exit 4 is the typed provider failure; the
+                                // typed summary is on stderr.
+                                assert_eq!(code, 4, "{name}: {stderr}");
+                                let summary = match kind {
+                                    "provider-auth-failure" => "provider authentication failed",
+                                    "provider-rate-limit-exhausted" => "rate limited by provider",
+                                    _ => "provider stream failed",
+                                };
+                                assert!(
+                                    stderr.contains(summary),
+                                    "{name}: typed summary missing: {stderr}"
+                                );
+                            }
+                            opi_eval::experiment::NativeClient::Pi => {
+                                // JSON error at process exit zero: the
+                                // client's typed terminal evidence rules.
+                                assert_eq!(code, 0, "{name}: {stderr}");
+                                // The pinned client's own typed protocol
+                                // diagnostic differs per wire.
+                                let evidence = match kind {
+                                    "provider-auth-failure" => "401",
+                                    "provider-rate-limit-exhausted" => "429",
+                                    _ => match api {
+                                        "anthropic-messages" => {
+                                            "Anthropic stream ended without a stop reason"
+                                        }
+                                        "openai-responses" => {
+                                            "OpenAI Responses stream ended before a terminal response event"
+                                        }
+                                        _ => "Stream ended without finish_reason",
+                                    },
+                                };
+                                assert!(
+                                    stdout.contains("\"stopReason\":\"error\"")
+                                        || stdout.contains("\"stopReason\": \"error\""),
+                                    "{name}: no typed error stop: {stdout}"
+                                );
+                                assert!(
+                                    stdout.contains(evidence),
+                                    "{name}: evidence {evidence} missing: {stdout}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Authentication evidence: every admitted request carried the
+    // projected credential through each API's native header scheme, and
+    // the retry script produced exactly one failure followed by the
+    // successful tool loop per client.
+    for api in apis {
+        for client in ["opi", "pi"] {
+            let requests: Vec<serde_json::Value> =
+                std::fs::read_to_string(root.path().join(format!("requests-{api}-{client}.jsonl")))
+                    .unwrap()
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+            assert!(
+                requests.iter().all(|r| r["auth"].is_string()),
+                "{api}/{client}: unauthenticated request admitted"
+            );
+            let retry: Vec<&serde_json::Value> = requests
+                .iter()
+                .filter(|r| r["model"].as_str() == Some("retry"))
+                .collect();
+            // Exactly one retryable 429, then only successes: one
+            // intermediate HTTP error never becomes the final result.
+            let statuses: Vec<u64> = retry
+                .iter()
+                .map(|r| r["status"].as_u64().unwrap())
+                .collect();
+            assert_eq!(
+                statuses.iter().filter(|status| **status == 429).count(),
+                1,
+                "{api}/{client}: exactly one retryable failure: {statuses:?}"
+            );
+            assert!(
+                statuses
+                    .iter()
+                    .all(|status| *status == 429 || *status == 200),
+                "{api}/{client}: unexpected retry-script status: {statuses:?}"
+            );
+            assert_eq!(
+                statuses.last(),
+                Some(&200),
+                "{api}/{client}: the final retry-script request succeeded: {statuses:?}"
+            );
+        }
+    }
+    for mut provider in providers {
+        let _ = provider.kill();
+    }
+}
+
+fn matrix_controls() -> opi_eval::experiment::ModelControls {
+    use opi_eval::experiment::ControlValue;
+    opi_eval::experiment::ModelControls {
+        temperature: ControlValue::Value(0.0),
+        top_p: ControlValue::Omitted,
+        max_output_tokens: ControlValue::Value(512),
+        context_window: ControlValue::Value(8192),
+        reasoning: ControlValue::Omitted,
+        required: Vec::new(),
+    }
+}
+
+fn start_scripted_provider(log: &Path) -> (std::process::Child, Option<String>) {
+    let port = {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    };
+    let mut child = Command::new("python3")
+        .arg(manifest_dir().join("scripts/scripted-provider.py"))
+        .arg("--listen")
+        .arg(format!("127.0.0.1:{port}"))
+        .arg("--request-log")
+        .arg(log)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("start scripted provider");
+    let mut line = String::new();
+    {
+        use std::io::BufRead as _;
+        let stdout = child.stdout.take().unwrap();
+        let mut reader = std::io::BufReader::new(stdout);
+        reader
+            .read_line(&mut line)
+            .expect("provider readiness line");
+    }
+    assert!(line.starts_with("listening "), "{line}");
+    let endpoint = line.trim().split(' ').nth(1).unwrap().to_owned();
+    (
+        child_with_stolen_stdout(child),
+        Some(format!("http://{endpoint}")),
+    )
+}
+
+fn child_with_stolen_stdout(mut child: std::process::Child) -> std::process::Child {
+    child.stdout.take();
+    child
+}
+
+fn run_opi_client(
+    bin: &Path,
+    config: &Path,
+    model: &str,
+    case_root: &Path,
+    work: &Path,
+) -> std::process::Output {
+    Command::new(bin)
+        .arg("--config")
+        .arg(config)
+        .arg("--model")
+        .arg(format!("scripted:{model}"))
+        .arg("--json")
+        .arg("--json-compact")
+        .arg("--allow-mutating")
+        .arg("--no-trust")
+        .arg("--trace")
+        .arg(case_root.join("trace"))
+        .arg("-C")
+        .arg(work)
+        .arg("Use the bash tool to run the command, then finish.")
+        .env("OPI_EVAL_SCRIPTED_KEY", "dummy-scripted-credential")
+        .current_dir(work)
+        .output()
+        .expect("run the exact built Opi binary")
+}
+
+fn run_pi_client(
+    node: &Path,
+    bundle: &Path,
+    config: &Path,
+    model: &str,
+    case_root: &Path,
+    work: &Path,
+) -> std::process::Output {
+    let agent_dir = case_root.join("pi-agent");
+    std::fs::create_dir_all(&agent_dir).unwrap();
+    std::fs::copy(config, agent_dir.join("models.json")).unwrap();
+    Command::new(node)
+        .arg(bundle)
+        .arg("--print")
+        .arg("--mode")
+        .arg("json")
+        .arg("--no-session")
+        .arg("--no-approve")
+        .arg("--no-extensions")
+        .arg("--no-skills")
+        .arg("--no-context-files")
+        .arg("--provider")
+        .arg("scripted")
+        .arg("--model")
+        .arg(model)
+        .arg("--")
+        .arg("Use the bash tool to run the command, then finish.")
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", work)
+        .env("no_proxy", "127.0.0.1,localhost")
+        .env("PI_CODING_AGENT_DIR", &agent_dir)
+        .current_dir(work)
+        .output()
+        .expect("run the pinned pi bundle")
+}
+
+#[test]
+fn native_capture_policy_controls_non_terminal_evidence() {
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    // Terminal-only: the bound artifacts and observation seal, the full
+    // job logs do not.
+    let terminal_only = staged.root.join("terminal-only.toml");
+    std::fs::write(
+        &terminal_only,
+        fs::read_to_string(&config).unwrap().replace(
+            "capture_policy = \"full\"",
+            "capture_policy = \"terminal-only\"",
+        ),
+    )
+    .unwrap();
+    let full_root = staged.root.join("run-full");
+    let terminal_root = staged.root.join("run-terminal");
+    let (full_code, _, full_err) = run_native(&staged, &config, &full_root);
+    let (terminal_code, _, terminal_err) = run_native(&staged, &terminal_only, &terminal_root);
+    assert_eq!(full_code, 0, "{full_err}");
+    assert_eq!(terminal_code, 0, "{terminal_err}");
+    for trial in ["trial-pi-native", "trial-opi-native"] {
+        let full_bundle = full_root.join("trials").join(trial).join("bundle");
+        let terminal_bundle = terminal_root.join("trials").join(trial).join("bundle");
+        assert!(
+            full_bundle
+                .join("artifacts/native/job-stdout.log")
+                .is_file(),
+            "full policy captures the job logs"
+        );
+        assert!(
+            !terminal_bundle
+                .join("artifacts/native/job-stdout.log")
+                .is_file(),
+            "terminal-only policy omits the job logs"
+        );
+        // Binding-required evidence stays on both policies.
+        for role in ["native/trial-result.json", "native/trial-config.json"] {
+            let file_name = role.rsplit('/').next().unwrap();
+            assert!(
+                full_bundle
+                    .join("artifacts/native")
+                    .join(file_name)
+                    .is_file()
+            );
+            assert!(
+                terminal_bundle
+                    .join("artifacts/native")
+                    .join(file_name)
+                    .is_file()
+            );
+        }
     }
 }
