@@ -643,7 +643,7 @@
       "definition_of_done": "P19-D03: Extend the selected native trial path to pinned TB3 tasks. Parse the selected task's lifecycle and collect declarations; for separate-verifier tasks transfer only declared Agent artifacts into a fresh verifier and bind collected digests, source trial/Agent, environment/image and verifier input identities. Do not widen task/verification network policy for inference. Through opi-eval run and the native result reader, reject undeclared/substituted/missing artifacts, unsupported lifecycle and unbound results. A correct/incorrect native witness changes only a declared artifact and proves a changed grader outcome; an unrelated canary file stays outside the verifier. Keep sibling TB2.1 binding conformance. Real-provider Opi/pi handoff evidence belongs to 19.11.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "19.1"
       ],
@@ -707,6 +707,11 @@
           "field": "verification",
           "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
           "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "task_owned_paths",
+          "value": null,
+          "reason": "S1 owns the pinned Harbor task.toml lifecycle parse (typed admission input for both Terminal-Bench adapters and the native result binding); the new crate-private module task_lifecycle.rs is the smallest home that both adapters and the runner consume without a new public seam."
         }
       ],
       "tier": "cli-runtime",
@@ -749,9 +754,9 @@
         "runner::experiment::run_trial"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "ae9fbd0800427750c4b2366aaafc90c7c21ba8b8",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/main.rs",
@@ -770,12 +775,104 @@
         "crates/opi-eval/scripts/native-smoke.sh",
         "crates/opi-eval/external-locks/static/linux-x86_64.json",
         "crates/opi-eval/tests/native_driver.rs",
-        "crates/opi-eval/tests/benchmark_integration_conformance.rs"
+        "crates/opi-eval/tests/benchmark_integration_conformance.rs",
+        "crates/opi-eval/src/benchmark/task_lifecycle.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "e2706e692e164b838bb15b9a190cf638ac1364fc",
+      "evidence": {
+        "Opi-Task": "19.3",
+        "Opi-DoD-SHA256": "e6768ee9b1092dad08f1dfe88d7889a8209933bae9313e5e1e2dcb5ef0dcd4a1",
+        "Opi-Verification": "cli-runtime; scoped smoke PASSED (native_driver, benchmark_integration_conformance) + lib 120 + full suite 197 passed + workspace clippy -D warnings clean + python suites 71 passed + opi-doc-check PASS",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P19-AC-004-native stays open pending the real-material witness (registered ignored filter; Docker engine unavailable here); deterministic declared-collection semantics proven at the spawned-CLI seam"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-09-06T06:30:00+08:00",
+          "attempt": 1,
+          "summary": "P19-D03 cutover: Terminal-Bench 3.0 native scoring runs through its declared separate-verifier handoff. A new crate-private pinned Harbor task.toml lifecycle parse (benchmark/task_lifecycle.rs) resolves the verifier environment mode per harbor v0.22.0 defaults and the declared artifact collect list, rejecting unsupported shapes (multi-step tasks, disabled verifiers, verifier collect hooks, non-Linux tasks, artifact entries beyond source/destination/service) before any verifier spawn. The production TB3 profile pins Harbor's jobs/<job>/result.json aggregate as the native output (harbor-result-aggregate); the TB3 adapter admission cross-checks the task's declared lifecycle against the pinned separate-container profile (drift rejects) and its native settle imports the bound upstream job exactly like 2.1, while a hermetic run under the production profile settles fail-closed. The shared native-result binding (native-trial-artifact-binding consumer change) now enforces declared-collection semantics: the trial config's recorded lifecycle must equal the admitted selection (native-binding-lifecycle-mismatch), every collected manifest entry must be a declared artifact or harbor's pinned convention publish dir (native-binding-undeclared-artifact - the unrelated-canary rule), every declared artifact must be collected with status ok (native-binding-declared-artifact-missing), delivered files under declared artifacts must match the collected bytes (substituted rejection retained), undeclared delivered files never enter the verifier, and the binding carries the verifier-input identity (environment mode plus per-artifact digests of exactly the collected bytes, directory entries canonically digested). The sealed bundle stages native/verifier-input.json and the run receipt exposes the collected identity. Explicitly selected diagnostic witnesses (oracle/nop) gain a typed SelectionKind and bind through the same production handoff without an integration terminal observation - fixing the latent 19.1 defect where real witnesses could never import - and never become Agent scores; conformance reports publish native-collected digests so a witness pair proves the grader responded to a changed declared artifact. The ignored native_tb3_artifact_witness drives both real witnesses against pinned external material (Docker Linux engine required, absent on this host: registered, not executed locally, same honesty as 19.1's AC-003 gap); the CI smoke's conformance-rerun now includes both TB3 witnesses and its artifact verifier expects 8 cases. TB2.1 binding conformance kept green throughout (fixture task now declares its answer artifact with harbor-semantics manifests).",
+          "gate_results": {
+            "d1_scoped_smoke": "PASS: bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test native_driver --test benchmark_integration_conformance (fmt + clippy -D warnings + both binaries)",
+            "d1_addendum": "PASS: cargo test -p opi-eval --lib (120 passed)",
+            "full_suite": "PASS: cargo test -p opi-eval (197 passed, 0 failed, 3 ignored)",
+            "workspace_clippy": "PASS: cargo clippy --workspace --all-targets -- -D warnings (0 findings)",
+            "python_regressions": "PASS: test_verify_native_smoke_ci.py (34), test_verify_native_smoke_artifact.py (16), test_scripted_provider.py (21)",
+            "scenario_commands": "cargo test -p opi-eval --test benchmark_integration_conformance PASSED; native_tb3_artifact_witness registered as ignored filter - real-material run requires a Docker Linux engine plus OPI_EVAL_NATIVE_WITNESS_MATERIAL, unavailable on this host (WSL distro without Docker integration); deterministic declared-collection semantics proven at the spawned-CLI seam instead",
+            "docs": "PASS: python scripts/opi-doc-check.py; git diff --check clean; bash -n native-smoke.sh; py_compile artifact verifier",
+            "d2_evaluator": "manual 7-lens exec audit passed with no must-fix findings (Workflow runtime unavailable in environment, wf_ref=null recorded in verify_runs); latent-deficit fixes called out: TB30 spawn_spec never carried the native agent selection (now identical to 2.1), binding demanded integration terminal observations from witness agents, and the old delivered-subset-manifest rule rejected legitimate shared-verifier runs - all replaced by the declared-lifecycle-driven rules at the same Interface",
+            "scenario_status": {
+              "P19-AC-004-native": "open: deterministic declared-collection/separate-verifier semantics verified at the spawned CLI seam (positive run with canary-outside proof, undeclared/substituted/missing rejections, lifecycle drift rejection, witness binding without terminal observation); the real-material witness (Docker engine + pinned external material) remains the registered ignored filter and closes with the operator evidence run (19.11/D08)"
+            },
+            "test_disposition": [
+              {
+                "subject": "P19-AC-004-native",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_tb30_run_grades_declared_artifacts_across_the_separate_verifier + native_tb30_rejects_undeclared_and_substituted_collection",
+                "interface": "spawned opi-eval run CLI over staged native material",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-004-native",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_tb3_artifact_witness (ignored; OPI_EVAL_NATIVE_WITNESS_MATERIAL + Docker)",
+                "interface": "spawned opi-eval conformance CLI through the real pinned runner",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.3",
+                "action": "add",
+                "test": "crates/opi-eval/src/benchmark/task_lifecycle.rs::tests (7 pinned-shape and rejection cases)",
+                "interface": "task_lifecycle parse",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "native-trial-artifact-binding",
+                "action": "update",
+                "test": "crates/opi-eval/src/benchmark/process.rs::native_result_binding_rejects_every_substitution + native_result_binding_admits_one_bound_job (harbor-semantics manifests; + undeclared-artifact, lifecycle-mismatch, witness-binding cases; collected identity asserted)",
+                "interface": "import_bound_native_job",
+                "replacement": "the delivered-subset-manifest expectation was superseded by declared-lifecycle-driven rules at the same Interface (stronger: family-aware, canary-excluding)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.3",
+                "action": "update",
+                "test": "crates/opi-eval/tests/native_driver.rs::sibling_native_families_are_explicitly_unavailable (TB3 arm replaced by the DeepSWE-only refusal; TB3 availability proven by the new native run tests)",
+                "interface": "spawned opi-eval run CLI",
+                "replacement": "native_tb30_run_grades_declared_artifacts_across_the_separate_verifier (passing)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.3",
+                "action": "update",
+                "test": "terminal_bench_30 adapter tests (settle matrix gates hermetic output by pinned kind; package row counts) + tests/fixtures TB2.1/TB3 fixture packages and synthetic profiles (task.toml lifecycle + instruction.md, harbor-semantics destinations)",
+                "interface": "Tb30Profile admission/settle",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.3",
+                "action": "update",
+                "test": "crates/opi-eval/scripts/test_verify_native_smoke_artifact.py (8 conformance cases incl. both TB3 witnesses)",
+                "interface": "artifact verifier contract",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.3",
+                "action": "retain",
+                "test": "crates/opi-eval/tests/{assembled_run,authority_boundaries,end_to_end_report,bundle_recompute,experiment_contract,agent_integration_conformance}.rs and the TB2.1 native tests (unchanged expectations, still green)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "19.4",
@@ -3889,6 +3986,16 @@
       "rejected_count": 0,
       "ran_at": "2026-09-06T04:40:00+08:00",
       "task_id": "19.2",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-09-06T06:30:00+08:00",
+      "task_id": "19.3",
       "criterion_id": null
     }
   ]
