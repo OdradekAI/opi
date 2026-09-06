@@ -348,7 +348,7 @@
       "definition_of_done": "P19-D02: Run both actual pinned Opi/pi clients against local fake servers for all three admitted APIs. Each request path, authentication, exact model, streamed tool call/result loop and effective controls follow the selected named connection without provider/protocol/model/billing fallback. Exact admitted connection spelling: top-level connection selects [[connections]].id; each entry has provider, api (anthropic-messages|openai-completions|openai-responses), base_url, model, and mutually exclusive credential_env/credential_file references. [execution].mode is hermetic|native-fixture|live, always explicit for live; [model_controls] retains temperature,max_output_tokens,reasoning and adds top_p,context_window,required controls. Effective values and origins are recorded, not inferred from requests. [storage] names cache,results,capture_policy. Default tests reject remote routes and never resolve real credentials. Resolve selected credential references only within the supervised Agent launch; isolate native config, reject missing credentials or required unsupported controls before model effects, redact canaries from logs/export and remove private temporary config before shared verification. Unknown service model/prices stay unknown with reasons. Before run, reject requested monetary/usage caps the native Agent/provider route cannot enforce; record explicitly enforceable time/output bounds and their limits. First remote acceptance is Zhipu glm-5.3-flash via https://open.bigmodel.cn/api/anthropic and belongs only to 19.11 evidence. Both optional connections receive deterministic client coverage only. Update experiment/material schema/callers, help, examples and bilingual docs in this task. Each Opi/pi Adapter supplies typed terminal observations and preserved capturable evidence to the 19.1 settlement owner; it does not decide final trial score eligibility. Extend the existing local real-client fixture route with terminal authentication failure, exhausted rate limiting and native protocol-error observations, plus retryable 429 followed by successful completion. Interpret the native terminal result and retry history, including JSON error at process exit 0; one intermediate HTTP error must not become the final trial result. No speculative parsing may claim a provider cause when native evidence leaves it unknown.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "19.1"
       ],
@@ -464,7 +464,7 @@
             "runner::experiment::run_trial",
             "AgentAdapter::settle"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P19-AC-010-credentials",
@@ -480,7 +480,7 @@
             "runner::experiment::run_experiment",
             "runner::experiment::run_trial"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -491,9 +491,9 @@
         "AgentAdapter::settle"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "80bee4a4ca666ba94683e79348f3d4ccae416da3",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/main.rs",
@@ -521,10 +521,118 @@
         "crates/opi-eval/tests/native_driver.rs",
         "crates/opi-eval/tests/authority_boundaries.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "951f36b4e0c443269d0b329d3a1913e1f419a1bd",
+      "evidence": {
+        "Opi-Task": "19.2",
+        "Opi-DoD-SHA256": "8bbe66182190b6422286e314c61fc218da919fe8e41510941a56dbe5045c9b4d",
+        "Opi-Verification": "cli-runtime; scoped smoke PASSED (experiment_contract, agent_integration_conformance, native_driver, authority_boundaries) + lib 112 + full suite 188 passed + workspace clippy -D warnings clean + python suites 139 passed + ignored native_protocol_client_matrix PASSED with local client material + opi-doc-check PASS",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P19-AC-006-fixture, P19-AC-010-credentials met via the real-client protocol matrix, agent conformance provider rows, experiment contract tests, and authority boundary suites at the spawned-CLI seam"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-09-06T04:40:00+08:00",
+          "attempt": 1,
+          "summary": "P19-D02 cutover: experiment schema /2 freezes a top-level selected named connection ([[connections]].id with provider, api in {anthropic-messages,openai-completions,openai-responses}, base_url, model, exactly one credential_env/credential_file), execution mode (hermetic default, native-fixture, live never defaulted), extended model_controls (+top_p, context_window, required list), and storage identity (cache/results/capture_policy with real full-vs-terminal-only behavior). Remote routes reject without explicit live mode; requested monetary/usage caps reject as unenforceable while time/output bounds are recorded; required-unsupported controls reject before effects; the selected credential resolves only inside the supervised Agent launch (absent reference = typed pre-effect rejection) and rides only the private handoff + removed-before-verifier staging. experiment::project_connection is the single owner of request identity: it renders each pinned client's exact config bytes (opi TOML api_key_env + per-api auth scheme; pi models.json inline apiKey + per-api baseUrl convention) with per-control effective/unsupported verdicts and recorded origins, replacing the legacy runner native_opi_config/native_agent_env fixed scripted projection and the material agents' inline config/model/provider_env (net deletion). The scripted provider serves all three admitted protocols with one deterministic tool loop plus model-keyed auth-fail/rate-limit/retry/protocol-error scripts and auth+model evidence in its log; adapters classify typed terminal provider causes from each client's own evidence (opi exit 3/4 + closed diagnostic summaries; pi terminal stopReason error incl. exit-zero JSON error) without speculative parsing, and provider failures are authority-boundary failures, not scored outcomes. The ignored native_protocol_client_matrix drove both actual pinned clients (locally built opi binary + pinned pi bundle under Node) through every protocol and script against loopback providers on this host: PASSED in 142s.",
+          "gate_results": {
+            "d1_scoped_smoke": "PASS: bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test experiment_contract --test agent_integration_conformance --test native_driver --test authority_boundaries (fmt + clippy -D warnings + 4 binaries)",
+            "d1_addendum": "PASS: cargo test -p opi-eval --lib (112 passed)",
+            "full_suite": "PASS: cargo test -p opi-eval (188 passed, 0 failed, 2 ignored)",
+            "workspace_clippy": "PASS: cargo clippy --workspace --all-targets -- -D warnings (0 findings)",
+            "scenario_matrix": "PASS: OPI_EVAL_NATIVE_CLIENT_MATERIAL=<local client material JSON> cargo test -p opi-eval --test native_driver native_protocol_client_matrix -- --ignored --exact (both real clients x 3 APIs x 5 scripts, 142s; retry-script evidence: exactly one 429 then only 200s per client/API; auth evidence on every admitted request)",
+            "python_regressions": "PASS: test_scripted_provider.py (21), test_verify_native_smoke_ci.py (34), test_verify_native_smoke_artifact.py (16), test_verify_external_lock_artifact.py (53), test_verify_external_lock_ci.py (15)",
+            "docs": "PASS: python scripts/opi-doc-check.py; git diff --check clean; bash -n native-smoke.sh; py_compile integration module",
+            "d2_evaluator": "manual 7-lens exec audit passed with no must-fix findings (Workflow runtime unavailable in environment, wf_ref=null recorded in verify_runs); L-D1 gap found and closed in-session: capture_policy initially parsed-only, now gates the non-terminal job-log evidence with a public-seam test",
+            "scenario_status": {
+              "P19-AC-006-fixture": "met (real-client matrix via ignored filter with locally supplied material + agent conformance + experiment contract + provider tests)",
+              "P19-AC-010-credentials": "met (authority_boundaries suite + native_missing_credential pre-effect rejection + connection credential lifecycle through the private handoff only)"
+            },
+            "test_disposition": [
+              {
+                "subject": "selected-connection-controls",
+                "action": "add",
+                "test": "crates/opi-eval/tests/experiment_contract.rs connection/execution/storage contract tests",
+                "interface": "ResolvedExperiment::resolve + opi-eval validate CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "selected-connection-controls",
+                "action": "add",
+                "test": "crates/opi-eval/src/experiment.rs::projection_tests (5)",
+                "interface": "experiment::project_connection",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-006-fixture",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_protocol_client_matrix (ignored; OPI_EVAL_NATIVE_CLIENT_MATERIAL)",
+                "interface": "opi_eval::experiment::project_connection + real pinned clients vs loopback scripted provider",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-010-credentials",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_missing_credential_rejects_before_any_effect",
+                "interface": "spawned opi-eval run --native-material CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.2",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_mode_gate_rejects_inconsistent_requests + native_capture_policy_controls_non_terminal_evidence",
+                "interface": "spawned opi-eval run CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "native-trial-outcome",
+                "action": "update",
+                "test": "crates/opi-eval/tests/agent_integration_conformance.rs provider rows (auth-failure/rate-limit/protocol-error/retry-success, both adapters) + nonzero-exit exit 5",
+                "interface": "AgentAdapter::settle typed terminal causes",
+                "replacement": "exit 3 is now the typed authentication failure; plain scored exit moved to 5 (superseded expectation replaced at the same Interface)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.2",
+                "action": "add",
+                "test": "crates/opi-eval/tests/fixtures/agents/pi/stream-{auth,rate-limit,protocol}-error.jsonl",
+                "interface": "PiImporter terminal error evidence",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.2",
+                "action": "update",
+                "test": "crates/opi-eval/scripts/test_scripted_provider.py (+6 protocol-matrix/script/auth-log tests; main block moved to end)",
+                "interface": "scripted-provider listener",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.2",
+                "action": "update",
+                "test": "10 experiment fixtures + inline docs migrated to schema /2; native_driver staging slimmed to the connection projection",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.2",
+                "action": "retain",
+                "test": "crates/opi-eval/tests/{assembled_run,authority_boundaries,end_to_end_report,bundle_recompute}.rs safety/seal/containment suites",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "19.3",
@@ -3771,6 +3879,16 @@
       "rejected_count": 0,
       "ran_at": "2026-09-05T21:40:00+08:00",
       "task_id": "19.1",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-09-06T04:40:00+08:00",
+      "task_id": "19.2",
       "criterion_id": null
     }
   ]
