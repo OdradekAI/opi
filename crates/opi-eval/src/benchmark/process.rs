@@ -80,6 +80,25 @@ pub(crate) struct NativeMetrics {
     pub other: Option<Fact>,
 }
 
+/// What the dispatch selected: the pinned opi-eval integration Agent, or
+/// an explicitly selected upstream diagnostic witness (oracle/nop). A
+/// witness is conformance evidence that never becomes an Agent score and
+/// carries no integration terminal observation (P19-D03).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SelectionKind {
+    Integration,
+    DiagnosticWitness,
+}
+
+/// The admitted task lifecycle the dispatch binds against: the resolved
+/// verifier environment mode and the task's declared collect list, parsed
+/// from the admitted task package (P19-D03).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TaskLifecycleSelection {
+    pub(crate) environment_mode: super::task_lifecycle::VerifierEnvironmentMode,
+    pub(crate) declared: Vec<super::task_lifecycle::DeclaredArtifact>,
+}
+
 /// The explicitly selected native integration identity one dispatched
 /// upstream job must bind to, plus the per-dispatch staleness defense
 /// (P19-D01, P19-AC-002). Carried on [`BenchmarkRunRequest`] whenever the
@@ -87,6 +106,10 @@ pub(crate) struct NativeMetrics {
 /// environment; hermetic requests carry `None`.
 #[derive(Debug, Clone)]
 pub(crate) struct NativeSelection {
+    /// What kind of selection this dispatch made.
+    pub(crate) kind: SelectionKind,
+    /// The task lifecycle this dispatch admitted.
+    pub(crate) lifecycle: TaskLifecycleSelection,
     /// Agent name the selected integration reports in the trial's
     /// `agent_info.name` (the integration's `name()`); `oracle` or any
     /// other name is a typed rejection even on job exit 0.
@@ -166,14 +189,33 @@ pub(crate) struct NativeTrialBinding {
     /// classification input; e.g. `NonZeroAgentExitCodeError`,
     /// `AgentTimeoutError`, `ApiError`).
     pub(crate) exception_type: Option<String>,
-    /// The integration's terminal observation.
-    pub(crate) terminal: NativeTerminalObservation,
+    /// The integration's terminal observation; `None` for an explicitly
+    /// selected diagnostic witness, which produces no integration
+    /// observation and never becomes an Agent score.
+    pub(crate) terminal: Option<NativeTerminalObservation>,
     /// Per-trial `results.json` path (evidence reference).
     pub(crate) results_path: PathBuf,
     /// Per-trial `config.json` path (evidence reference).
     pub(crate) config_path: PathBuf,
     /// Collected-artifacts manifest path, when the trial collected any.
     pub(crate) manifest_path: Option<PathBuf>,
+    /// The verifier environment mode the job recorded (the lifecycle the
+    /// verifier actually ran under; P19-D03).
+    pub(crate) environment_mode: super::task_lifecycle::VerifierEnvironmentMode,
+    /// The verifier-input identity: every declared artifact that entered
+    /// the verifier, with the digest of exactly the collected bytes
+    /// (P19-D03).
+    pub(crate) collected: Vec<CollectedArtifact>,
+}
+
+/// One declared artifact that entered the verifier input, with the digest
+/// of the collected bytes (a directory digest is the canonical digest of
+/// its sorted relative paths and per-file digests).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CollectedArtifact {
+    pub(crate) source: String,
+    pub(crate) destination: String,
+    pub(crate) sha256: String,
 }
 
 /// Typed rejections of an imported native job (P19-AC-002: every
@@ -214,10 +256,18 @@ pub(crate) enum NativeBindingError {
     RewardInvalid(&'static str),
     /// The aggregate does not attribute its reward to the bound trial.
     AggregateRewardMismatch,
-    /// A delivered file was not collected into the trial artifacts.
+    /// A delivered file covered by a declared artifact was not collected.
     DeliveredArtifactMissing { source: String },
     /// A collected artifact's bytes differ from the delivered observation.
     DeliveredArtifactSubstituted { source: String },
+    /// The job's recorded lifecycle contradicts the admitted task
+    /// lifecycle (mode or declared collect list).
+    LifecycleMismatch { observed: String },
+    /// The trial collected an artifact the task never declared: only
+    /// declared artifacts may enter a separate verifier.
+    UndeclaredArtifact { source: String },
+    /// A declared artifact was not collected into the verifier input.
+    DeclaredArtifactMissing { source: String },
 }
 
 impl NativeBindingError {
@@ -247,6 +297,11 @@ impl NativeBindingError {
             }
             NativeBindingError::DeliveredArtifactSubstituted { .. } => {
                 "native-binding-delivered-artifact-substituted"
+            }
+            NativeBindingError::LifecycleMismatch { .. } => "native-binding-lifecycle-mismatch",
+            NativeBindingError::UndeclaredArtifact { .. } => "native-binding-undeclared-artifact",
+            NativeBindingError::DeclaredArtifactMissing { .. } => {
+                "native-binding-declared-artifact-missing"
             }
         }
     }
@@ -468,57 +523,145 @@ pub(crate) fn import_bound_native_job(
         return Err(NativeBindingError::AggregateRewardMismatch);
     }
 
-    // The integration's typed terminal observation.
-    let terminal_path = trial_dir.join("agent/opi-eval-terminal.json");
-    let terminal = parse_terminal_observation(
-        &std::fs::read(&terminal_path)
-            .map_err(|_| NativeBindingError::TrialInvalid("terminal-observation"))?,
-    )?;
+    // The job's own recorded lifecycle: the trial config's artifact
+    // declarations and verifier environment mode must equal the admitted
+    // task lifecycle this dispatch selected (P19-D03).
+    let observed_lifecycle = parse_recorded_lifecycle(&config)
+        .map_err(|_| NativeBindingError::TrialInvalid("task-lifecycle"))?;
+    if observed_lifecycle != selection.lifecycle {
+        return Err(NativeBindingError::LifecycleMismatch {
+            observed: format!(
+                "mode {} with {} declared artifacts",
+                observed_lifecycle.environment_mode.as_str(),
+                observed_lifecycle.declared.len()
+            ),
+        });
+    }
 
-    // Collected artifacts: every delivered file the trial collected must
-    // still carry the bytes the integration observed in the task
-    // environment (P19-AC-002 substituted-artifact rejection).
+    // The integration's typed terminal observation: required evidence for
+    // an integration dispatch; a diagnostic witness (upstream oracle or
+    // nop agent) produces none, so its binding rests on the job's own
+    // identities and collected artifacts and never becomes an Agent
+    // score.
+    let terminal = if selection.kind == SelectionKind::Integration {
+        let terminal_path = trial_dir.join("agent/opi-eval-terminal.json");
+        Some(parse_terminal_observation(
+            &std::fs::read(&terminal_path)
+                .map_err(|_| NativeBindingError::TrialInvalid("terminal-observation"))?,
+        )?)
+    } else {
+        None
+    };
+
+    // Declared-collection binding (P19-D03, P19-AC-004). The trial's
+    // collected-artifacts manifest is the record of what left the agent
+    // environment for the verifier: every collected entry must be a
+    // declared artifact or the pinned convention publish dir (nothing
+    // undeclared enters the verifier), every declared artifact must have
+    // been collected (status ok), and the collected bytes bind as this
+    // trial's verifier-input identity.
     let manifest_path = trial_dir.join("artifacts/manifest.json");
-    if manifest_path.is_file() {
-        let manifest: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(&manifest_path)
-                .map_err(|_| NativeBindingError::TrialInvalid("artifacts-manifest"))?,
+    let manifest: Option<serde_json::Value> = if manifest_path.is_file() {
+        Some(
+            serde_json::from_slice(
+                &std::fs::read(&manifest_path)
+                    .map_err(|_| NativeBindingError::TrialInvalid("artifacts-manifest"))?,
+            )
+            .map_err(|_| NativeBindingError::TrialInvalid("artifacts-manifest"))?,
         )
-        .map_err(|_| NativeBindingError::TrialInvalid("artifacts-manifest"))?;
-        let empty: Vec<serde_json::Value> = Vec::new();
-        let entries = manifest.as_array().unwrap_or(&empty);
-        for delivered in &terminal.delivered {
-            let entry = entries.iter().find(|entry| {
-                entry.get("source").and_then(|s| s.as_str()) == Some(delivered.source.as_str())
+    } else {
+        None
+    };
+    let empty: Vec<serde_json::Value> = Vec::new();
+    let entries = manifest
+        .as_ref()
+        .and_then(|m| m.as_array())
+        .unwrap_or(&empty);
+    let artifact_root = trial_dir.join("artifacts");
+    for entry in entries {
+        let source = entry
+            .get("source")
+            .and_then(|s| s.as_str())
+            .ok_or(NativeBindingError::TrialInvalid("artifacts-manifest"))?;
+        if source != HARBOR_CONVENTION_SOURCE
+            && !selection
+                .lifecycle
+                .declared
+                .iter()
+                .any(|declared| covers(&declared.source, source))
+        {
+            return Err(NativeBindingError::UndeclaredArtifact {
+                source: source.to_owned(),
             });
-            let entry = entry.ok_or_else(|| NativeBindingError::DeliveredArtifactMissing {
-                source: delivered.source.clone(),
+        }
+    }
+    let mut collected: Vec<CollectedArtifact> = Vec::new();
+    for declared in &selection.lifecycle.declared {
+        let entry = entries.iter().find(|entry| {
+            let Some(source) = entry.get("source").and_then(|s| s.as_str()) else {
+                return false;
+            };
+            same_artifact(source, &declared.source)
+        });
+        let Some(entry) = entry else {
+            return Err(NativeBindingError::DeclaredArtifactMissing {
+                source: declared.source.clone(),
+            });
+        };
+        if entry.get("status").and_then(|s| s.as_str()) != Some("ok") {
+            return Err(NativeBindingError::DeclaredArtifactMissing {
+                source: declared.source.clone(),
+            });
+        }
+        let destination = entry
+            .get("destination")
+            .and_then(|d| d.as_str())
+            .ok_or(NativeBindingError::TrialInvalid("artifacts-manifest"))?;
+        let host = artifact_root.join(destination);
+        let digest =
+            collected_digest(&host).map_err(|_| NativeBindingError::DeclaredArtifactMissing {
+                source: declared.source.clone(),
             })?;
-            if entry.get("status").and_then(|s| s.as_str()) != Some("ok") {
-                return Err(NativeBindingError::DeliveredArtifactMissing {
-                    source: delivered.source.clone(),
-                });
-            }
-            let destination = entry
-                .get("destination")
-                .and_then(|d| d.as_str())
-                .ok_or(NativeBindingError::TrialInvalid("artifacts-manifest"))?;
-            let collected = trial_dir.join(destination);
-            let bytes = std::fs::read(&collected).map_err(|_| {
-                NativeBindingError::DeliveredArtifactMissing {
-                    source: delivered.source.clone(),
+        collected.push(CollectedArtifact {
+            source: declared.source.clone(),
+            destination: destination.to_owned(),
+            sha256: digest,
+        });
+    }
+    // The delivered cross-check (integration dispatches only): a
+    // delivered file covered by a declared artifact must still carry the
+    // bytes the integration observed in the task environment
+    // (P19-AC-002 substituted-artifact rejection).
+    if let Some(terminal) = &terminal {
+        for delivered in &terminal.delivered {
+            if let Some((entry, relative)) = covering_entry(entries, &delivered.source) {
+                if entry.get("status").and_then(|s| s.as_str()) != Some("ok") {
+                    return Err(NativeBindingError::DeliveredArtifactMissing {
+                        source: delivered.source.clone(),
+                    });
                 }
-            })?;
-            if crate::runner::material::sha256_hex(&bytes) != delivered.sha256 {
-                return Err(NativeBindingError::DeliveredArtifactSubstituted {
-                    source: delivered.source.clone(),
-                });
+                let destination = entry
+                    .get("destination")
+                    .and_then(|d| d.as_str())
+                    .ok_or(NativeBindingError::TrialInvalid("artifacts-manifest"))?;
+                let collected_path = artifact_root.join(destination);
+                let collected_path = if relative.is_empty() {
+                    collected_path
+                } else {
+                    collected_path.join(relative)
+                };
+                let bytes = std::fs::read(&collected_path).map_err(|_| {
+                    NativeBindingError::DeliveredArtifactMissing {
+                        source: delivered.source.clone(),
+                    }
+                })?;
+                if crate::runner::material::sha256_hex(&bytes) != delivered.sha256 {
+                    return Err(NativeBindingError::DeliveredArtifactSubstituted {
+                        source: delivered.source.clone(),
+                    });
+                }
             }
         }
-    } else if !terminal.delivered.is_empty() {
-        return Err(NativeBindingError::DeliveredArtifactMissing {
-            source: terminal.delivered[0].source.clone(),
-        });
     }
 
     let agent_version = agent_info
@@ -542,6 +685,147 @@ pub(crate) fn import_bound_native_job(
         results_path,
         config_path,
         manifest_path: manifest_path.is_file().then_some(manifest_path),
+        environment_mode: observed_lifecycle.environment_mode,
+        collected,
+    })
+}
+
+/// Harbor's pinned conventional agent publish directory: the one
+/// non-task collection every trial legitimately performs.
+const HARBOR_CONVENTION_SOURCE: &str = "/logs/artifacts";
+
+/// True when a manifest source and a declared source name the same
+/// artifact (a declared directory may appear with or without its
+/// trailing slash).
+fn same_artifact(source: &str, declared: &str) -> bool {
+    source.trim_end_matches('/') == declared.trim_end_matches('/')
+}
+
+/// True when `source` (a manifest or delivered path) lies inside the
+/// declared artifact `root` (equal to it or nested under it).
+fn covers(root: &str, source: &str) -> bool {
+    let root = root.trim_end_matches('/');
+    same_artifact(source, root) || source.starts_with(root) && source[root.len()..].starts_with('/')
+}
+
+/// The manifest entry covering a delivered source path, with the
+/// delivered file's path relative to the entry's collected root.
+fn covering_entry<'a>(
+    entries: &'a [serde_json::Value],
+    delivered_source: &str,
+) -> Option<(&'a serde_json::Value, String)> {
+    let mut best: Option<(&'a serde_json::Value, &str)> = None;
+    for entry in entries {
+        let Some(source) = entry.get("source").and_then(|s| s.as_str()) else {
+            continue;
+        };
+        if covers(source, delivered_source)
+            && best.is_none_or(|(_, current)| source.len() > current.len())
+        {
+            best = Some((entry, source));
+        }
+    }
+    best.map(|(entry, source)| {
+        let root = source.trim_end_matches('/');
+        let relative = delivered_source
+            .strip_prefix(root)
+            .unwrap_or_default()
+            .trim_start_matches('/');
+        (entry, relative.to_owned())
+    })
+}
+
+/// The digest of exactly the collected bytes: a file digest, or for a
+/// collected directory the canonical digest of its sorted relative
+/// paths and per-file digests.
+fn collected_digest(host: &std::path::Path) -> std::io::Result<String> {
+    fn walk(host: &std::path::Path, prefix: &str, rows: &mut Vec<String>) -> std::io::Result<()> {
+        let mut children: Vec<std::path::PathBuf> = std::fs::read_dir(host)?
+            .flatten()
+            .map(|entry| entry.path())
+            .collect();
+        children.sort();
+        for child in children {
+            let name = format!(
+                "{prefix}{}",
+                child
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            );
+            if child.is_dir() {
+                walk(&child, &format!("{name}/"), rows)?;
+            } else {
+                rows.push(format!(
+                    "{name}\\n{}",
+                    crate::runner::material::sha256_hex(&std::fs::read(&child)?)
+                ));
+            }
+        }
+        Ok(())
+    }
+    if host.is_file() {
+        return Ok(crate::runner::material::sha256_hex(&std::fs::read(host)?));
+    }
+    let mut rows = Vec::new();
+    walk(host, "", &mut rows)?;
+    Ok(crate::runner::material::sha256_hex(
+        rows.join("\\n").as_bytes(),
+    ))
+}
+
+/// The lifecycle the imported job recorded in its trial config: the
+/// resolved verifier environment mode and the declared artifact collect
+/// list (mirrors the pinned Harbor task model's resolution rules).
+fn parse_recorded_lifecycle(config: &serde_json::Value) -> Result<TaskLifecycleSelection, ()> {
+    use super::task_lifecycle::{DeclaredArtifact, VerifierEnvironmentMode};
+    let verifier = config.get("task").and_then(|task| task.get("verifier"));
+    let environment_mode = match verifier
+        .and_then(|v| v.get("environment_mode"))
+        .and_then(|mode| mode.as_str())
+    {
+        Some("shared") => VerifierEnvironmentMode::Shared,
+        Some("separate") => VerifierEnvironmentMode::Separate,
+        _ if verifier.and_then(|v| v.get("environment")).is_some() => {
+            VerifierEnvironmentMode::Separate
+        }
+        _ => VerifierEnvironmentMode::Shared,
+    };
+    let empty = Vec::new();
+    let artifacts = config
+        .get("artifacts")
+        .and_then(|artifacts| artifacts.as_array())
+        .unwrap_or(&empty);
+    let mut declared = Vec::new();
+    for artifact in artifacts {
+        match artifact {
+            serde_json::Value::String(source) => declared.push(DeclaredArtifact {
+                source: source.clone(),
+                destination: None,
+                service: None,
+            }),
+            serde_json::Value::Object(fields) => {
+                let Some(source) = fields.get("source").and_then(|s| s.as_str()) else {
+                    return Err(());
+                };
+                declared.push(DeclaredArtifact {
+                    source: source.to_owned(),
+                    destination: fields
+                        .get("destination")
+                        .and_then(|d| d.as_str())
+                        .map(str::to_owned),
+                    service: fields
+                        .get("service")
+                        .and_then(|service| service.as_str())
+                        .map(str::to_owned),
+                });
+            }
+            _ => return Err(()),
+        }
+    }
+    Ok(TaskLifecycleSelection {
+        environment_mode,
+        declared,
     })
 }
 
@@ -1262,9 +1546,11 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
         serde_json::to_vec(&results).unwrap(),
     )
     .unwrap();
-    // Explicit agent selection in the trial config.
+    // Explicit agent selection and recorded task lifecycle.
     let config = serde_json::json!({
         "agent": {"name": "opi_eval_harbor:OpiAgent", "import_path": null},
+        "artifacts": ["/root/answer.txt"],
+        "task": {"verifier": {"environment_mode": "shared"}},
     });
     std::fs::write(
         trial_dir.join("config.json"),
@@ -1285,9 +1571,11 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
         serde_json::to_vec(&terminal).unwrap(),
     )
     .unwrap();
-    // Collected artifacts: the delivered file, byte-identical.
+    // Collected artifacts: the delivered file, byte-identical, mirrored
+    // at its source-relative host path exactly as the pinned runner
+    // collects it.
     let manifest = serde_json::json!([
-        {"source": "/root/answer.txt", "destination": "artifacts/answer.txt",
+        {"source": "/root/answer.txt", "destination": "root/answer.txt",
          "type": "file", "status": "ok", "service": null},
     ]);
     std::fs::write(
@@ -1295,8 +1583,18 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
         serde_json::to_vec(&manifest).unwrap(),
     )
     .unwrap();
-    std::fs::write(trial_dir.join("artifacts/answer.txt"), answer).unwrap();
+    std::fs::create_dir_all(trial_dir.join("artifacts/root")).unwrap();
+    std::fs::write(trial_dir.join("artifacts/root/answer.txt"), answer).unwrap();
     NativeSelection {
+        kind: SelectionKind::Integration,
+        lifecycle: TaskLifecycleSelection {
+            environment_mode: super::task_lifecycle::VerifierEnvironmentMode::Shared,
+            declared: vec![super::task_lifecycle::DeclaredArtifact {
+                source: "/root/answer.txt".to_owned(),
+                destination: None,
+                service: None,
+            }],
+        },
         agent_name: agent_name.to_owned(),
         agent_import_path: "opi_eval_harbor:OpiAgent".to_owned(),
         task_name: "fixture-task".to_owned(),
@@ -1323,8 +1621,17 @@ fn native_result_binding_admits_one_bound_job() {
             origin: "native-trial-result".to_owned()
         }
     );
-    assert_eq!(binding.terminal.exit_code, 0);
-    assert_eq!(binding.terminal.delivered.len(), 1);
+    assert_eq!(binding.terminal.as_ref().unwrap().exit_code, 0);
+    assert_eq!(binding.terminal.as_ref().unwrap().delivered.len(), 1);
+    // The declared artifact binds as the verifier-input identity with the
+    // digest of exactly the collected bytes.
+    assert_eq!(binding.collected.len(), 1);
+    assert_eq!(binding.collected[0].source, "/root/answer.txt");
+    assert_eq!(binding.collected[0].destination, "root/answer.txt");
+    assert_eq!(
+        binding.collected[0].sha256,
+        crate::runner::material::sha256_hex(b"native stand-in answer\n")
+    );
     assert_eq!(binding.model_name.as_deref(), Some("scripted/eval"));
     assert!(binding.manifest_path.is_some());
 
@@ -1448,7 +1755,7 @@ fn native_result_binding_rejects_every_substitution() {
     let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
     std::fs::write(
         dir.path()
-            .join("jobs/j1/trials/fixture-task__bZZeEkw/artifacts/answer.txt"),
+            .join("jobs/j1/trials/fixture-task__bZZeEkw/artifacts/root/answer.txt"),
         b"substituted answer\n",
     )
     .unwrap();
@@ -1459,7 +1766,8 @@ fn native_result_binding_rejects_every_substitution() {
         })
     );
 
-    // Missing delivered artifact: the manifest dropped the entry.
+    // Missing declared artifact: the manifest dropped the entry, so the
+    // verifier ran without a declared artifact of the task.
     let dir = tempfile::tempdir().unwrap();
     let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
     std::fs::write(
@@ -1470,10 +1778,84 @@ fn native_result_binding_rejects_every_substitution() {
     .unwrap();
     assert_eq!(
         import_bound_native_job(dir.path(), &selection),
-        Err(NativeBindingError::DeliveredArtifactMissing {
+        Err(NativeBindingError::DeclaredArtifactMissing {
             source: "/root/answer.txt".to_owned()
         })
     );
+
+    // Undeclared artifact: a file the task never declared must not enter
+    // the verifier input (P19-AC-004 unrelated-canary rule).
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+    let manifest = dir
+        .path()
+        .join("jobs/j1/trials/fixture-task__bZZeEkw/artifacts/manifest.json");
+    std::fs::write(
+        &manifest,
+        std::fs::read_to_string(&manifest)
+            .unwrap()
+            .trim_end()
+            .to_owned()
+            + "\n",
+    )
+    .unwrap();
+    let entries =
+        serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(&manifest).unwrap())
+            .unwrap();
+    let mut entries = entries.as_array().unwrap().clone();
+    entries.push(serde_json::json!({
+        "source": "/app/opi-eval-canary-marker", "destination": "app/opi-eval-canary-marker",
+        "type": "file", "status": "ok", "service": null,
+    }));
+    std::fs::write(&manifest, serde_json::to_vec(&entries).unwrap()).unwrap();
+    assert_eq!(
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::UndeclaredArtifact {
+            source: "/app/opi-eval-canary-marker".to_owned()
+        })
+    );
+
+    // Lifecycle mismatch: the job recorded a different declared collect
+    // list than the admitted task lifecycle.
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+    let config = dir
+        .path()
+        .join("jobs/j1/trials/fixture-task__bZZeEkw/config.json");
+    std::fs::write(
+        &config,
+        r#"{"agent": {"name": "opi_eval_harbor:OpiAgent"}, "artifacts": [], "task": {"verifier": {}}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::LifecycleMismatch { .. })
+    ));
+
+    // An explicitly selected diagnostic witness binds on the job's own
+    // identities without an integration terminal observation and never
+    // reports one (its result is not an Agent score).
+    let dir = tempfile::tempdir().unwrap();
+    let mut selection = stage_bound_job(dir.path(), "j1", "oracle");
+    selection.kind = SelectionKind::DiagnosticWitness;
+    selection.agent_import_path = "harbor.agents.oracle:OracleAgent".to_owned();
+    let witness_config = dir
+        .path()
+        .join("jobs/j1/trials/fixture-task__bZZeEkw/config.json");
+    std::fs::write(
+        &witness_config,
+        r#"{"agent": {"import_path": "harbor.agents.oracle:OracleAgent"}, "artifacts": ["/root/answer.txt"], "task": {"verifier": {"environment_mode": "shared"}}}"#,
+    )
+    .unwrap();
+    std::fs::remove_file(
+        dir.path()
+            .join("jobs/j1/trials/fixture-task__bZZeEkw/agent/opi-eval-terminal.json"),
+    )
+    .unwrap();
+    let binding = import_bound_native_job(dir.path(), &selection).unwrap();
+    assert_eq!(binding.agent_name, "oracle");
+    assert!(binding.terminal.is_none());
+    assert_eq!(binding.collected.len(), 1);
 
     // Missing terminal observation: the identity chain cannot bind.
     let dir = tempfile::tempdir().unwrap();

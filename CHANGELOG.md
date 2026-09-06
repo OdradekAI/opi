@@ -39,6 +39,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inline credential fields: request identity is projected from the
   selected connection (`project_connection`) into each pinned client's
   exact configuration bytes.
+- `opi-eval`: Terminal-Bench 3.0 native scoring runs through its declared
+  separate-verifier handoff. The task package's `task.toml` lifecycle is
+  parsed and bound into every native dispatch (unsupported shapes -
+  multi-step tasks, disabled verifiers, verifier collect hooks,
+  non-Linux tasks, richer artifact entries - reject before any verifier
+  spawn, and a task contradicting the pinned separate-container profile
+  rejects as drift). The pinned native output is Harbor's
+  `jobs/<job>/result.json` aggregate; the shared binding now enforces
+  declared collection semantics: an undeclared collected file rejects
+  (`native-binding-undeclared-artifact`), a missing or uncollected
+  declared artifact rejects, substituted declared bytes reject, and the
+  sealed bundle records the verifier-input identity
+  (`native/verifier-input.json`) with the digests of exactly the
+  collected bytes. Explicitly selected diagnostic witnesses (oracle/nop)
+  bind through the same production handoff without an integration
+  terminal observation and never become Agent scores; the ignored
+  `native_tb3_artifact_witness` drives both real witnesses against
+  pinned external material.
 - `opi-eval`: the scripted provider serves all three admitted protocols
   (Anthropic Messages, OpenAI Completions, OpenAI Responses) with the same
   deterministic tool loop, model-keyed terminal failure scripts

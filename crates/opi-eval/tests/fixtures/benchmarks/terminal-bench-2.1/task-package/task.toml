@@ -1,2 +1,4 @@
+artifacts = ["/root/answer.txt"]
+
 [task]
 id = "fixture-task"

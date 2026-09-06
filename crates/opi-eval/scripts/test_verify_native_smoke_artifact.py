@@ -41,6 +41,8 @@ CONFORMANCE_CASES = [
     ("agent", "pi", "completed"), ("agent", "pi", "identity"),
     ("benchmark", "terminal-bench-2.1", "oracle-witness"),
     ("benchmark", "terminal-bench-2.1", "nop-witness"),
+    ("benchmark", "terminal-bench-3.0", "oracle-witness"),
+    ("benchmark", "terminal-bench-3.0", "nop-witness"),
 ]
 TRIAL_CONFIGS = {"terminal-bench-2.1": "terminal-bench-2.1"}
 

@@ -17,7 +17,7 @@ tasks_tree = "2222222222222222222222222222222222222222"
 task_id = "synthetic-fixture-task"
 task_tree = "3333333333333333333333333333333333333333"
 package_pin = "byte-table"
-package_manifest_sha256 = "5ebe435ab23dcfd5852c78d5c04b0613dcab81d0543d98f66d4c0cde00ac8d86"
+package_manifest_sha256 = "60de68de8aaf7e2b4312208d4455734903daaf9f4db403ebdc003820083806de"
 adapter = "opi-eval-terminal-bench-30-adapter/1"
 
 [verifier]
@@ -39,15 +39,28 @@ timeout_secs = 900
 stdout_cap_bytes = 1048576
 stderr_cap_bytes = 1048576
 
+
+[[package]]
+path = "instruction.md"
+mode = "100755"
+size = 55
+sha256 = "5f233571a15d151ca15f069ae2c8f2867a012f854c3a31e9e3d2a154d026fde4"
+
 [[package]]
 path = "README.md"
-mode = "100644"
+mode = "100755"
 size = 44
 sha256 = "38eb3358bb6a9e4193292f646628b88a91600a71fa2a7a60c13507161c9dae95"
 
 [[package]]
+path = "task.toml"
+mode = "100755"
+size = 135
+sha256 = "7da8711762a13c9472ac892ad9b0d46158dea4caf2c6bf16bc3f53965081cce1"
+
+[[package]]
 path = "environment/Dockerfile"
-mode = "100644"
+mode = "100755"
 size = 55
 sha256 = "6833a1bf47dd16d5564a8eeb9918eb05d85091aa9ddafc88e65b0e00b3171032"
 

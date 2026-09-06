@@ -881,6 +881,29 @@ fn benchmark_expect(revision: &BenchmarkRevision, case: &str) -> Option<Expect> 
     }
 }
 
+/// The task name an upstream witness trial of this staged package
+/// reports, per the admitted revision's profile.
+fn witness_task_name(
+    revision: &BenchmarkRevision,
+    profile: &std::path::Path,
+    task_dir: &std::path::Path,
+) -> Result<String, String> {
+    let bytes = std::fs::read(profile).map_err(|error| format!("profile unreadable: {error}"))?;
+    match revision.adapter {
+        "terminal-bench-2.1" => Ok(Tb21Profile::parse(bytes.as_slice())
+            .map_err(|error| error.to_string())?
+            .declared_task_name(task_dir)
+            .unwrap_or_default()),
+        "terminal-bench-3.0" => Ok(crate::benchmark::terminal_bench_30::Tb30Profile::parse(
+            bytes.as_slice(),
+        )
+        .map_err(|error| error.to_string())?
+        .declared_task_name(task_dir)
+        .unwrap_or_default()),
+        _ => Err("witness tasks are admitted for the Terminal-Bench revisions only".to_owned()),
+    }
+}
+
 /// The deterministic helper script standing in for the native verifier
 /// program: it writes pinned saved bytes into the trace root (its cwd) or
 /// sleeps past every bounded limit. Never the real grader.
@@ -1072,21 +1095,26 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
                 .agent("opi")
                 .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
                 .integration;
+            // The task's declared lifecycle binds into the witness dispatch
+            // exactly as into an agent dispatch (P19-D03); the witness
+            // kind records that no integration terminal observation can
+            // exist and the result never becomes an Agent score.
+            let task_lifecycle = crate::benchmark::task_lifecycle::parse_task_lifecycle(&task_dir)
+                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
             witness_selection = Some(crate::benchmark::process::NativeSelection {
+                kind: crate::benchmark::process::SelectionKind::DiagnosticWitness,
+                lifecycle: crate::benchmark::process::TaskLifecycleSelection {
+                    environment_mode: task_lifecycle.environment_mode,
+                    declared: task_lifecycle.declared_artifacts,
+                },
                 agent_name: (*agent).to_owned(),
                 agent_import_path: if *agent == "oracle" {
                     "harbor.agents.oracle:OracleAgent".to_owned()
                 } else {
                     "harbor.agents.nop:NopAgent".to_owned()
                 },
-                task_name: Tb21Profile::parse(
-                    std::fs::read(&benchmark.profile)
-                        .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
-                        .as_slice(),
-                )
-                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
-                .declared_task_name(&task_dir)
-                .unwrap_or_default(),
+                task_name: witness_task_name(revision, &benchmark.profile, &task_dir)
+                    .map_err(ConformanceError::Unsupported)?,
                 model: "scripted:eval".to_owned(),
                 reward_metric: "reward".to_owned(),
                 module_dir: integration.module_dir.clone(),
@@ -1139,6 +1167,19 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
                 artifact_roles.push(artifact.role.clone());
             }
             let _ = metrics;
+        }
+        // A bound native completion publishes the verifier-input identity:
+        // the declared artifacts that crossed into the verifier, with the
+        // digests of exactly the collected bytes (P19-D03). A witness pair
+        // proves the grader responded to a changed declared artifact when
+        // these digests differ.
+        if let BenchmarkCompletion::VerifiedNative { binding, .. } = &record.completion {
+            for artifact in &binding.collected {
+                notes.push(format!(
+                    "native-collected: {} {}",
+                    artifact.source, artifact.sha256
+                ));
+            }
         }
         let metrics_json = match &record.completion {
             BenchmarkCompletion::Verified { metrics, .. } => Some(serde_json::json!({

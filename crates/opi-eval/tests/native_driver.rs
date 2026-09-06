@@ -111,6 +111,12 @@ fn directory_manifest_digest(root: &Path) -> String {
 /// - `no-terminal` the terminal observation file is missing
 /// - `no-job` exit 0 without writing any job tree
 /// - `two-jobs` two new job trees (ambiguous admission)
+/// - `tb30-ok` the TB3 separate-verifier job: declared `/app/evalbench/`
+///   collection plus an undeclared delivered canary that must stay
+///   outside the verifier
+/// - `tb30-undeclared` the collection crossed an undeclared file
+/// - `tb30-substituted-declared` the collected declared artifact lost the
+///   delivered bytes
 fn verifier_stand_in_script() -> String {
     r#"#!/bin/sh
 # native stand-in for the pinned upstream runner entry (test staging)
@@ -155,8 +161,10 @@ trial="${task_name}__standin"
 job="jobs/2026-09-05__12-00-00"
 reward=1.0
 exception=null
+tb30_profile=""
 case "$OPI_EVAL_STANDIN_MODE" in
   ok) ;;
+  tb30-ok|tb30-undeclared|tb30-substituted-declared) tb30_profile=1 ;;
   zero) reward=0.0 ;;
   agent-nonzero) reward=0.0; exception='{"exception_type": "NonZeroAgentExitCodeError"}';;
   agent-timeout) reward=0.0; exception='{"exception_type": "AgentTimeoutError"}';;
@@ -183,8 +191,16 @@ JSON
   cat > "$job/trials/$trial/results.json" <<JSON
 {"task_name": "$task_name", "trial_name": "$trial", "agent_info": {"name": "$agent_name", "version": "1.0.0", "model_info": {"name": "scripted/eval"}}, "verifier_result": {"rewards": {"reward": $reward}}, "exception_info": $exception}
 JSON
-  printf '{"agent": {"name": "%s", "import_path": null}}\n' "$agent" \
-    > "$job/trials/$trial/config.json"
+  if [ -n "$tb30_profile" ]; then
+    # The TB3 job records the task's declared separate lifecycle and its
+    # /app/evalbench/ collect declaration exactly as the pinned runner
+    # would.
+    printf '{"agent": {"name": "%s", "import_path": null}, "artifacts": ["/app/evalbench/"], "task": {"verifier": {"environment_mode": "separate"}}}\n' "$agent" \
+      > "$job/trials/$trial/config.json"
+  else
+    printf '{"agent": {"name": "%s", "import_path": null}, "artifacts": ["/root/answer.txt"], "task": {"verifier": {"environment_mode": "shared"}}}\n' "$agent" \
+      > "$job/trials/$trial/config.json"
+  fi
 }
 
 if [ "$OPI_EVAL_STANDIN_MODE" = "two-jobs" ]; then
@@ -198,6 +214,34 @@ mkdir -p "$job/trials/$trial/agent" "$job/trials/$trial/artifacts"
 write_job "$job"
 answer="native stand-in answer"
 answer_sha=$(printf '%s\n' "$answer" | sha256sum | cut -d' ' -f1)
+if [ -n "$tb30_profile" ]; then
+  # The TB3 agent delivered a file inside the declared artifact plus an
+  # unrelated canary that the task never declared: only the declared
+  # artifact may cross into the separate verifier.
+  schema="schema.py bytes"
+  schema_sha=$(printf '%s' "$schema" | sha256sum | cut -d' ' -f1)
+  canary_sha=$(printf 'canary\n' | sha256sum | cut -d' ' -f1)
+  printf '{"schema": "opi-eval-native-agent-terminal/1", "product": "%s", "agent_executable_sha256": "%s", "exit_code": 0, "timed_out": false, "delivered": [{"source": "/app/evalbench/schema.py", "sha256": "%s"}, {"source": "/app/unrelated-canary.txt", "sha256": "%s"}]}\n' \
+    "$product" "$(printf 'a%.0s' $(seq 1 64))" "$schema_sha" "$canary_sha" \
+    > "$job/trials/$trial/agent/opi-eval-terminal.json"
+  mkdir -p "$job/trials/$trial/artifacts/app/evalbench"
+  printf '%s' "$schema" > "$job/trials/$trial/artifacts/app/evalbench/schema.py"
+  manifest='[{"source": "/app/evalbench/", "destination": "app/evalbench", "type": "directory", "status": "ok", "service": null}]'
+  case "$OPI_EVAL_STANDIN_MODE" in
+    tb30-undeclared)
+      # An undeclared file crossed the collection boundary: the binding
+      # must reject it.
+      manifest='[{"source": "/app/evalbench/", "destination": "app/evalbench", "type": "directory", "status": "ok", "service": null}, {"source": "/app/unrelated-canary.txt", "destination": "app/unrelated-canary.txt", "type": "file", "status": "ok", "service": null}]'
+      ;;
+    tb30-substituted-declared)
+      # The collected declared artifact no longer carries the delivered
+      # bytes.
+      printf 'substituted schema bytes' > "$job/trials/$trial/artifacts/app/evalbench/schema.py"
+      ;;
+  esac
+  printf '%s\n' "$manifest" > "$job/trials/$trial/artifacts/manifest.json"
+  exit 0
+fi
 if [ "$OPI_EVAL_STANDIN_MODE" != "no-terminal" ]; then
   printf '{"schema": "opi-eval-native-agent-terminal/1", "product": "%s", "agent_executable_sha256": "%s", "exit_code": %s, "timed_out": %s, "delivered": [{"source": "/root/answer.txt", "sha256": "%s"}]}\n' \
     "$product" "$(printf 'a%.0s' $(seq 1 64))" \
@@ -208,9 +252,10 @@ fi
 if [ "$OPI_EVAL_STANDIN_MODE" = "substituted" ]; then
   answer="substituted answer"
 fi
-printf '[{"source": "/root/answer.txt", "destination": "artifacts/answer.txt", "type": "file", "status": "ok", "service": null}]\n' \
+printf '[{"source": "/root/answer.txt", "destination": "root/answer.txt", "type": "file", "status": "ok", "service": null}]\n' \
   > "$job/trials/$trial/artifacts/manifest.json"
-printf '%s\n' "$answer" > "$job/trials/$trial/artifacts/answer.txt"
+mkdir -p "$job/trials/$trial/artifacts/root"
+printf '%s\n' "$answer" > "$job/trials/$trial/artifacts/root/answer.txt"
 exit 0
 "#
     .to_owned()
@@ -244,6 +289,17 @@ fn stage(mode: &str) -> Staged {
         &fixtures().join("benchmarks/terminal-bench-2.1/task-package"),
         &task,
     );
+    let tb30_task = mat.join("tb30-task-package");
+    copy_dir(
+        &fixtures().join("benchmarks/terminal-bench-3.0/task-package"),
+        &tb30_task,
+    );
+    let tb30_profile = mat.join("tb30-profile.toml");
+    fs::copy(
+        fixtures().join("benchmarks/terminal-bench-3.0/profile/synthetic.toml"),
+        &tb30_profile,
+    )
+    .unwrap();
 
     // The pinned integration module directory (the contract form the
     // selected import path resolves against).
@@ -368,6 +424,15 @@ exit 0
       "verifier_env": {{"OPI_EVAL_STANDIN_MODE": "{}"}},
       "oracle": {{"path": {:?}, "sha256": {:?}}},
       "oracle_env": {{}}
+    }},
+    "terminal-bench-3.0": {{
+      "profile": {:?},
+      "task_package": {:?},
+      "task_package_manifest_sha256": {:?},
+      "verifier_executable": {{"path": {:?}, "sha256": {:?}}},
+      "verifier_env": {{"OPI_EVAL_STANDIN_MODE": "tb30-ok"}},
+      "oracle": {{"path": {:?}, "sha256": {:?}}},
+      "oracle_env": {{}}
     }}
   }}
 }}"#,
@@ -388,6 +453,13 @@ exit 0
             verifier.to_string_lossy(),
             digest_of(&verifier),
             mode,
+            verifier.to_string_lossy(),
+            digest_of(&verifier),
+            tb30_profile.to_string_lossy(),
+            tb30_task.to_string_lossy(),
+            directory_manifest_digest(&tb30_task),
+            verifier.to_string_lossy(),
+            digest_of(&verifier),
             verifier.to_string_lossy(),
             digest_of(&verifier),
         ),
@@ -813,29 +885,173 @@ fn agent_executable_digest_drift_is_rejected_at_load() {
     assert!(stderr.contains("digest drift"), "stderr: {stderr}");
 }
 
+/// The TB3 experiment config: the declared separate-verifier lifecycle
+/// with its `/app/evalbench/` collect declaration.
+fn tb30_experiment_text(staged: &Staged, integrity_digest: &str) -> String {
+    experiment_text(staged, integrity_digest)
+        .replace("native-driver-test", "native-tb30-test")
+        .replace("fixture-task", "synthetic-fixture-task")
+        .replace(
+            "terminal-bench\"\nrevision = \"2.1\"",
+            "terminal-bench\"\nrevision = \"3.0\"",
+        )
+}
+
+fn write_tb30_config(staged: &Staged) -> PathBuf {
+    let config = staged.root.join("config-undigested-tb30.toml");
+    fs::write(&config, tb30_experiment_text(staged, "pending")).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("validate")
+        .arg("--config")
+        .arg(&config)
+        .arg("--native-material")
+        .arg(&staged.material)
+        .output()
+        .expect("validate runs");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let digest = stdout
+        .split_whitespace()
+        .find(|token| token.starts_with("native_integrity="))
+        .expect("native integrity digest in summary")
+        .trim_start_matches("native_integrity=");
+    let config = staged.root.join("tb30.toml");
+    fs::write(&config, tb30_experiment_text(staged, digest)).unwrap();
+    config
+}
+
+/// Retarget the TB3 benchmark entry's stand-in behavior after staging.
+fn set_tb30_mode(staged: &Staged, mode: &str) {
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+    material["benchmarks"]["terminal-bench-3.0"]["verifier_env"]["OPI_EVAL_STANDIN_MODE"] =
+        serde_json::Value::String(mode.to_owned());
+    fs::write(
+        &staged.material,
+        serde_json::to_vec_pretty(&material).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn native_tb30_run_grades_declared_artifacts_across_the_separate_verifier() {
+    let staged = stage("ok");
+    let config = write_tb30_config(&staged);
+    let run_root = staged.root.join("run-tb30");
+    let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
+    assert_eq!(code, 0, "stderr: {stderr}\nstdout: {stdout}");
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["outcome"], "completed");
+
+    for trial in ["trial-pi-native", "trial-opi-native"] {
+        let receipt = report["trials"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"] == trial)
+            .cloned()
+            .unwrap_or_else(|| panic!("{trial} receipt missing"));
+        assert_eq!(receipt["status"], "sealed", "{trial}: {receipt}");
+        // The verifier-input identity: the declared artifact crossed into
+        // the separate verifier with the digests of exactly the collected
+        // bytes, and the unrelated delivered canary did not.
+        let collected = receipt["agent"]["collected"].as_array().unwrap();
+        assert_eq!(collected.len(), 1, "{trial}: {collected:?}");
+        assert_eq!(collected[0]["source"], "/app/evalbench/");
+        assert!(collected[0]["sha256"].as_str().unwrap().len() == 64);
+        assert!(
+            !serde_json::to_string(&collected)
+                .unwrap()
+                .contains("canary"),
+            "{trial}: the undeclared canary must stay outside the verifier"
+        );
+        let delivered = receipt["agent"]["terminal"]["delivered"]
+            .as_array()
+            .unwrap();
+        assert!(
+            delivered
+                .iter()
+                .any(|file| file["source"] == "/app/unrelated-canary.txt"),
+            "{trial}: the canary was delivered by the Agent"
+        );
+        // The sealed bundle carries the verifier-input identity and the
+        // collection manifest as bound native evidence.
+        let bundle = run_root.join("trials").join(trial).join("bundle");
+        assert!(
+            bundle
+                .join("artifacts/native/verifier-input.json")
+                .is_file()
+        );
+        assert!(
+            bundle
+                .join("artifacts/native/artifacts-manifest.json")
+                .is_file()
+        );
+    }
+}
+
+#[test]
+fn native_tb30_rejects_undeclared_and_substituted_collection() {
+    for (mode, kind) in [
+        ("tb30-undeclared", "native-binding-undeclared-artifact"),
+        (
+            "tb30-substituted-declared",
+            "native-binding-delivered-artifact-substituted",
+        ),
+    ] {
+        let staged = stage("ok");
+        set_tb30_mode(&staged, mode);
+        let config = write_tb30_config(&staged);
+        let run_root = staged.root.join("run-tb30");
+        let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
+        assert_ne!(code, 0, "{mode}: stderr: {stderr}");
+        let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(report["outcome"], "incomplete", "{mode}");
+        let receipt = report["trials"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|trial| trial["id"] == "trial-opi-native")
+            .cloned()
+            .unwrap();
+        assert_eq!(receipt["status"], "failed", "{mode}");
+        assert_eq!(receipt["verifier"]["failure_kind"], kind, "{mode}");
+        assert!(
+            !run_root
+                .join("trials/trial-opi-native/bundle/manifest.json")
+                .is_file(),
+            "{mode}: rejected collection must not seal"
+        );
+    }
+}
+
 #[test]
 fn sibling_native_families_are_explicitly_unavailable() {
-    // A TB3 experiment with native material is refused before any trial:
-    // its former default-job path must not keep emitting Agent scores
-    // (P19-D03/P19-D04 sequencing).
+    // A DeepSWE experiment with native material is refused before any
+    // trial: its former default-job path must not keep emitting Agent
+    // scores (P19-D04 sequencing).
     let staged = stage("ok");
     let digest = derive_integrity(&staged);
-    let config = staged.root.join("tb30.toml");
+    let config = staged.root.join("deepswe.toml");
     fs::write(
         &config,
         experiment_text(&staged, &digest)
-            .replace("native-driver-test", "native-tb30-test")
+            .replace("native-driver-test", "native-deepswe-test")
             .replace(
                 "terminal-bench\"\nrevision = \"2.1\"",
-                "terminal-bench\"\nrevision = \"3.0\"",
+                "deepswe\"\nrevision = \"v1.1\"",
             ),
     )
     .unwrap();
-    let run_root = staged.root.join("run-tb30");
+    let run_root = staged.root.join("run-deepswe");
     let (code, _, stderr) = run_native(&staged, &config, &run_root);
     assert_eq!(code, 2);
     assert!(
-        stderr.contains("native scoring for terminal-bench-3.0 is unavailable"),
+        stderr.contains("native scoring for deepswe-v1.1 is unavailable"),
         "stderr: {stderr}"
     );
     assert!(!run_root.join("trials").exists());
@@ -1018,6 +1234,78 @@ fn native_tb21_artifact_witness() {
         let _ = (agent, reward);
         let _ = fs::remove_dir_all(&root);
     }
+}
+
+/// The real TB3 artifact witnesses through the pinned upstream runner
+/// (P19-AC-004). Ignored by default: this filter requires the pinned
+/// external material (fetched runner and task tree, materialized exact
+/// built agents, a local Docker Linux engine) supplied through
+/// `OPI_EVAL_NATIVE_WITNESS_MATERIAL`, and never a remote inference call.
+/// The correct witness (oracle reference solution) and the incorrect
+/// witness (nop agent) must change only the declared artifact: their
+/// bound verifier-input digests differ, the native reward responds, and
+/// nothing undeclared enters the verifier.
+#[test]
+#[ignore = "requires pinned external material and a local Docker Linux engine; see OPI_EVAL_NATIVE_WITNESS_MATERIAL"]
+fn native_tb3_artifact_witness() {
+    let material = std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL")
+        .expect("OPI_EVAL_NATIVE_WITNESS_MATERIAL points at the resolved material manifest");
+    let material = PathBuf::from(material);
+    let mut collected_digests = Vec::new();
+    for (case, agent, reward) in [("oracle-witness", "oracle", 1), ("nop-witness", "nop", 0)] {
+        let root = std::env::temp_dir().join(format!(
+            "opi-eval-tb30-witness-{case}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("conformance")
+            .args(["--suite", "benchmark"])
+            .args(["--adapter", "terminal-bench-3.0"])
+            .args(["--case", case])
+            .arg("--root")
+            .arg(&root)
+            .arg("--fixtures")
+            .arg(fixtures())
+            .arg("--provider")
+            .arg(manifest_dir().join("scripts/scripted-provider.py"))
+            .arg("--native-material")
+            .arg(&material)
+            .output()
+            .expect("witness executes");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{case}: {stdout}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(report["met"], true, "{case}: {stdout}");
+        assert_eq!(report["outcome"], "verified-native", "{case}: {stdout}");
+        // The bound collected identity: exactly the declared artifact, and
+        // nothing undeclared (the unrelated canary marker stays outside).
+        let collected: Vec<String> = report["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|note| note.as_str())
+            .filter(|note| note.starts_with("native-collected: "))
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(collected.len(), 1, "{case}: {collected:?}");
+        assert!(
+            collected[0].starts_with("native-collected: /app/evalbench/ "),
+            "{case}: {collected:?}"
+        );
+        assert!(!collected[0].contains("canary"), "{case}: {collected:?}");
+        collected_digests.push((agent, reward, collected[0].clone()));
+        let _ = fs::remove_dir_all(&root);
+    }
+    // The correct witness changed the declared artifact and the grader
+    // responded: same declared source, different collected bytes, reward
+    // one versus zero.
+    assert_ne!(collected_digests[0].2, collected_digests[1].2);
 }
 
 #[test]

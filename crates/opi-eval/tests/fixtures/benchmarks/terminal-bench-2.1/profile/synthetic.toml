@@ -13,7 +13,7 @@ source_commit = "0000000000000000000000000000000000000000"
 tasks_tree = "1111111111111111111111111111111111111111"
 task_id = "fixture-task"
 task_tree = "2222222222222222222222222222222222222222"
-package_manifest_sha256 = "caeae09d9c2e248f33a18c3733bdd23bb631a13fa3aa29a9db56314c7e2f71fc"
+package_manifest_sha256 = "029258e7351991da709988dde17f5533d1eb32910938463df770aab981323021"
 adapter = "opi-eval-terminal-bench-21-adapter/1"
 
 [verifier]
@@ -32,50 +32,51 @@ timeout_secs = 900
 stdout_cap_bytes = 1048576
 stderr_cap_bytes = 1048576
 
+
 [[package]]
 path = ".gitignore"
-mode = "100644"
+mode = "100755"
 size = 8
 sha256 = "b53ee26e6ff1da219b0563333a76d2c9ec19eec713d6ee54e11a1edacb0e9f3d"
 
 [[package]]
-path = "README.md"
-mode = "100644"
-size = 47
-sha256 = "6f84010d7a84ab04f8dea7c6b315cf270cf82998500f102decb2556902350789"
-
-[[package]]
-path = "environment/Dockerfile"
-mode = "100644"
-size = 22
-sha256 = "958cda0bb3c18626bfcb9a02667174e9d7fab6cc465e4245ca8e7fcdf3b37c3c"
-
-[[package]]
 path = "instruction.md"
-mode = "100644"
+mode = "100755"
 size = 48
 sha256 = "0f5acd621f11425b31eacc59aa94aeaade38178561d648aa2d043a6f0aaba87f"
 
 [[package]]
+path = "README.md"
+mode = "100755"
+size = 47
+sha256 = "6f84010d7a84ab04f8dea7c6b315cf270cf82998500f102decb2556902350789"
+
+[[package]]
+path = "task.toml"
+mode = "100755"
+size = 61
+sha256 = "05dd3f5bb228ea736825ebe9b22c9938ed51712d35d5dfb27f12941b45e4deb2"
+
+[[package]]
+path = "environment/Dockerfile"
+mode = "100755"
+size = 22
+sha256 = "958cda0bb3c18626bfcb9a02667174e9d7fab6cc465e4245ca8e7fcdf3b37c3c"
+
+[[package]]
 path = "solution/solve.sh"
-mode = "100644"
+mode = "100755"
 size = 17
 sha256 = "306c6ca7407560340797866e077e053627ad409277d1b9da58106fce4cf717cb"
 
 [[package]]
-path = "task.toml"
-mode = "100644"
-size = 27
-sha256 = "a27d0bb2791c9a4e599b1d928d01946989243c389bd96aad33fbeb2b4b2558b0"
-
-[[package]]
 path = "tests/test.sh"
-mode = "100644"
+mode = "100755"
 size = 17
 sha256 = "306c6ca7407560340797866e077e053627ad409277d1b9da58106fce4cf717cb"
 
 [[package]]
 path = "tests/test_outputs.py"
-mode = "100644"
+mode = "100755"
 size = 36
 sha256 = "422ddd49cee4e2ce70f4a3332e412461439a46bbc939f9d62ff2f000ae7620e0"

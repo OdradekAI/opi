@@ -1482,6 +1482,11 @@ mod adapter_tests {
         );
         let mut selected = production_request.clone();
         selected.native_selection = Some(crate::benchmark::process::NativeSelection {
+            kind: crate::benchmark::process::SelectionKind::Integration,
+            lifecycle: crate::benchmark::process::TaskLifecycleSelection {
+                environment_mode: crate::benchmark::task_lifecycle::VerifierEnvironmentMode::Shared,
+                declared: Vec::new(),
+            },
             agent_name: "opi-eval-opi".to_owned(),
             agent_import_path: "opi_eval_harbor:OpiAgent".to_owned(),
             task_name: "fixture-task".to_owned(),

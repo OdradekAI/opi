@@ -38,10 +38,9 @@ launch = ["run", "-p", "<task-dir>"]
 lifecycle = "separate-container"
 verifier_workdir = "/app/evalbench"
 artifact_policy = "declared-original-paths"
-# No 3.0 native-output schema is committed: the oracle preflight and native
-# verifier results are unresolved slots owned by the native smoke. Exit-0 runs
-# therefore settle fail-closed until that schema is pinned.
-output_kind = "unpinned-pending-18-15"
+# The pinned 3.0 native output: Harbor's jobs/<job>/result.json aggregate
+# with its single per-trial results.json (P19-D03).
+output_kind = "harbor-result-aggregate"
 
 [resources]
 cpus = 1

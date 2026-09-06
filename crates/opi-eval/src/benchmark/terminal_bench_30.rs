@@ -44,12 +44,13 @@ pub(crate) enum PackagePin {
     ByteTable,
 }
 
-/// The pinned native-output surface. No 3.0 native-output schema is
-/// committed; `ctrf-json` is admitted only for synthetic wiring fixtures
-/// until the native smoke pins the real schema.
+/// The pinned native-output surface. The production 3.0 native output is
+/// Harbor's own `jobs/<job>/result.json` aggregate with its single
+/// per-trial `results.json` (P19-D03); `ctrf-json` remains admitted only
+/// for synthetic wiring fixtures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputKind {
-    UnpinnedPending1815,
+    HarborResultAggregate,
     CtrfJson,
 }
 
@@ -235,7 +236,7 @@ impl Tb30Profile {
             )));
         }
         let output_kind = match doc.verifier.output_kind.as_str() {
-            "unpinned-pending-18-15" => OutputKind::UnpinnedPending1815,
+            "harbor-result-aggregate" => OutputKind::HarborResultAggregate,
             "ctrf-json" => OutputKind::CtrfJson,
             other => {
                 return Err(TbProfileError::Drift(format!(
@@ -400,6 +401,24 @@ impl Tb30Profile {
                 .expect("serializable")
                 .as_bytes(),
         )
+    }
+
+    /// The task name an upstream trial of this staged package reports:
+    /// the task.toml `[task]` name (falling back to the directory name,
+    /// matching the pinned runner's reporting).
+    pub(crate) fn declared_task_name(&self, root: &Path) -> Option<String> {
+        if let Ok(text) = std::fs::read_to_string(root.join("task.toml"))
+            && let Ok(value) = toml::from_str::<toml::Value>(&text)
+            && let Some(name) = value
+                .get("task")
+                .and_then(|task| task.get("name"))
+                .and_then(toml::Value::as_str)
+            && !name.trim().is_empty()
+        {
+            return Some(name.to_owned());
+        }
+        root.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
     }
 
     /// Admit a materialized task package against the pin
@@ -576,7 +595,7 @@ mod tests {
             profile.canonical_package_digest(),
             profile.package_manifest_sha256
         );
-        assert_eq!(profile.output_kind, OutputKind::UnpinnedPending1815);
+        assert_eq!(profile.output_kind, OutputKind::HarborResultAggregate);
         assert_eq!(profile.verifier_workdir, "/app/evalbench");
         assert_eq!(profile.launch, vec!["run", "-p", "<task-dir>"]);
         assert_eq!((profile.cpus, profile.memory_gib), (1, 4));
@@ -608,7 +627,7 @@ mod tests {
         let profile = Tb30Profile::parse(&synthetic_bytes()).unwrap();
         assert_eq!(profile.package_pin, PackagePin::ByteTable);
         assert_eq!(profile.output_kind, OutputKind::CtrfJson);
-        assert_eq!(profile.package.len(), 3);
+        assert_eq!(profile.package.len(), 5);
         assert_eq!(
             profile.canonical_package_digest(),
             profile.package_manifest_sha256
@@ -799,7 +818,7 @@ mod tests {
         // A byte-table pin must be a complete closure, not a single row.
         let single_row = {
             let positions: Vec<usize> = text.match_indices("[[package]]").map(|(i, _)| i).collect();
-            assert_eq!(positions.len(), 3);
+            assert_eq!(positions.len(), 5);
             format!("{}{}", &text[..positions[1]], &text[positions[2]..])
         };
         assert!(matches!(
@@ -968,10 +987,33 @@ impl BenchmarkAdapter for TerminalBench30Adapter {
                 part.clone().into()
             });
         }
+        let mut env = request.extra_env.clone();
+        if let Some(selection) = &request.native_selection {
+            // Native mode: the same job explicitly selects the Agent
+            // integration and model (P19-D03), exactly like the 2.1
+            // dispatch.
+            argv.push("--agent".into());
+            argv.push(selection.agent_import_path.clone().into());
+            argv.push("--model".into());
+            argv.push(selection.model.clone().into());
+            let module_dir = selection.module_dir.clone().into_os_string();
+            let handoff = selection.handoff_path.clone().into_os_string();
+            let pythonpath = match env.get(std::ffi::OsStr::new("PYTHONPATH")) {
+                Some(existing) => {
+                    let mut merged = module_dir.clone();
+                    merged.push(":");
+                    merged.push(existing);
+                    merged
+                }
+                None => module_dir,
+            };
+            env.insert("PYTHONPATH".into(), pythonpath);
+            env.insert("OPI_EVAL_NATIVE_HANDOFF".into(), handoff);
+        }
         SpawnSpec {
             argv,
             cwd: Some(request.trace_root.clone()),
-            env: request.extra_env.clone(),
+            env,
             stdout_cap: self.profile.stdout_cap_bytes as usize,
             stderr_cap: self.profile.stderr_cap_bytes as usize,
             timeout: Duration::from_secs(self.profile.timeout_secs),
@@ -1016,36 +1058,61 @@ impl BenchmarkAdapter for TerminalBench30Adapter {
                 );
             }
         }
-        // Exit 0 under an unpinned output schema settles fail-closed
-        // unless the native smoke's pinned harbor layout is present: the 3.0
-        // native-output schema this task pins is harbor's
-        // `jobs/<timestamp>/result.json` aggregate from `harbor run -p`,
-        // exactly as verified at the dispatch. Nothing is guessed or
-        // normalized beyond that aggregate.
-        if self.profile.output_kind == OutputKind::UnpinnedPending1815 {
-            // Native scoring for Terminal-Bench 3.0 is explicitly
-            // unavailable until its declared separate-verifier handoff
-            // lands (P19-D03): a selected-Agent native job must not emit
-            // an Agent score through any residual path.
-            if request.native_selection.is_some() {
-                return (
-                    reward_unknown(),
-                    BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
-                        kind: "native-scoring-unavailable-tb3",
-                        boundary: FailureBoundaryCode::Integrity,
-                    }),
-                );
-            }
+        // Native mode (P19-D03): the authority is the bound upstream job
+        // tree - the selected Agent's same-trial identity with its declared
+        // collected artifacts - imported through the shared native-result
+        // contract, never a newest-job fallback.
+        if let Some(selection) = &request.native_selection {
+            let completion =
+                match super::process::import_bound_native_job(&request.trace_root, selection) {
+                    Ok(binding) => {
+                        let reference = |path: &std::path::Path, role: &str| NativeArtifact {
+                            role: role.to_owned(),
+                            sha256: sha256_hex(&std::fs::read(path).unwrap_or_default()),
+                            path: path.to_path_buf(),
+                        };
+                        let artifacts = vec![
+                            reference(&binding.results_path, "native/trial-result"),
+                            reference(&binding.config_path, "native/trial-config"),
+                            reference(
+                                &binding
+                                    .config_path
+                                    .parent()
+                                    .expect("trial dir")
+                                    .join("agent/opi-eval-terminal.json"),
+                                "native/agent-terminal",
+                            ),
+                        ];
+                        let reward = binding.reward.clone();
+                        (
+                            reward,
+                            BenchmarkCompletion::VerifiedNative { binding, artifacts },
+                        )
+                    }
+                    Err(error) => (
+                        reward_unknown(),
+                        BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
+                            kind: error.token(),
+                            boundary: FailureBoundaryCode::Integrity,
+                        }),
+                    ),
+                };
+            return completion;
+        }
+        // Synthetic wiring path only (output_kind `ctrf-json`): import the
+        // CTRF report the fixture verifier wrote into the run's trace
+        // root. Under the pinned harbor aggregate output there is no
+        // admitted hermetic output, so a run without a bound native job
+        // settles fail-closed instead of guessing at a schema.
+        if self.profile.output_kind != OutputKind::CtrfJson {
             return (
                 reward_unknown(),
                 BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
-                    kind: "native-output-schema-unpinned",
-                    boundary: FailureBoundaryCode::Adapter,
+                    kind: "verifier-invalid-output",
+                    boundary: FailureBoundaryCode::Grader,
                 }),
             );
         }
-        // Synthetic wiring path only: import the CTRF report the fixture
-        // verifier wrote into the run's trace root.
         let report = request.trace_root.join(CTRF_REPORT_NAME);
         let bytes = match std::fs::read(&report) {
             Ok(bytes) => bytes,
@@ -1344,10 +1411,11 @@ mod adapter_tests {
         let bytes = std::fs::read(&artifacts[0].path).unwrap();
         assert_eq!(artifacts[0].sha256, sha256_hex(&bytes));
 
-        // The production 3.0 profile has no pinned output schema: even a
-        // byte-perfect CTRF-shaped file settles fail-closed instead of
-        // being guessed at (boundary Adapter: the importer lacks an
-        // admitted schema).
+        // The production 3.0 profile pins the harbor job aggregate as its
+        // native output: without a bound native job there is no admitted
+        // hermetic output, so even a byte-perfect CTRF-shaped file
+        // settles fail-closed (grader-side invalid output) instead of
+        // being guessed at.
         let production = TerminalBench30Adapter::from_profile(production_profile());
         let mut production_request =
             request_with(&production, fixture_path("task-package"), trace.clone());
@@ -1357,10 +1425,7 @@ mod adapter_tests {
             production
                 .settle(&outcome_exit_zero(), &production_request)
                 .1,
-            failed(
-                "native-output-schema-unpinned",
-                FailureBoundaryCode::Adapter
-            )
+            failed("verifier-invalid-output", FailureBoundaryCode::Grader)
         );
 
         // Process-level verdicts are authoritative and never rescued.

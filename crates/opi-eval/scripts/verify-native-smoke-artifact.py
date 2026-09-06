@@ -62,15 +62,17 @@ CONFIG_FOR = {"terminal-bench-2.1": "terminal-bench-2.1",
               "terminal-bench-3.0": "terminal-bench-3.0",
               "deepswe-v1.1": "deepswe-v1.1"}
 # The admitted native rerun matrix: four agent cases (completed and
-# identity for both products) plus the two explicitly selected TB2.1
-# artifact witnesses (oracle applies the reference solution, nop
-# delivers nothing).
-CONFORMANCE_CASES = 6
+# identity for both products) plus the two explicitly selected artifact
+# witness pairs for Terminal-Bench 2.1 (shared verifier) and 3.0
+# (declared separate-verifier handoff).
+CONFORMANCE_CASES = 8
 # The selected integration agent name each product's trials must carry.
 AGENT_NAME_FOR = {"opi": "opi-eval-opi", "pi": "opi-eval-pi"}
 WITNESS_CASES = {
     "benchmark-terminal-bench-2.1-oracle-witness": ("oracle", 1),
     "benchmark-terminal-bench-2.1-nop-witness": ("nop", 0),
+    "benchmark-terminal-bench-3.0-oracle-witness": ("oracle", 1),
+    "benchmark-terminal-bench-3.0-nop-witness": ("nop", 0),
 }
 
 IMMUTABLE_ACTIONS = {

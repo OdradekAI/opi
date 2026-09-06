@@ -1213,7 +1213,9 @@ cmd_conformance_rerun() {
       "agent opi completed" "agent opi identity" \
       "agent pi completed" "agent pi identity" \
       "benchmark terminal-bench-2.1 oracle-witness" \
-      "benchmark terminal-bench-2.1 nop-witness"; do
+      "benchmark terminal-bench-2.1 nop-witness" \
+      "benchmark terminal-bench-3.0 oracle-witness" \
+      "benchmark terminal-bench-3.0 nop-witness"; do
     suite=${case_spec%% *}
     rest=${case_spec#* }
     adapter=${rest%% *}

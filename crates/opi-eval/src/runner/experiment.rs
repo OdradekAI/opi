@@ -739,10 +739,11 @@ fn prepare_native(
     experiment: &ResolvedExperiment,
 ) -> Result<NativeInputs, RunError> {
     let adapter_key = adapter_key_for(experiment)?;
-    // Native scoring for the sibling families is explicitly unavailable
-    // until their declared handoffs land (P19-D03, P19-D04): their former
-    // host-agent/default-job path must not keep emitting Agent scores.
-    if adapter_key != "terminal-bench-2.1" {
+    // Native scoring for the sibling family without a declared handoff is
+    // explicitly unavailable (P19-D04): its former host-agent/default-job
+    // path must not keep emitting Agent scores. Terminal-Bench 3.0 runs
+    // through its declared separate-verifier handoff (P19-D03).
+    if adapter_key == "deepswe-v1.1" {
         return Err(RunError::Native(format!(
             "native scoring for {adapter_key} is unavailable until its declared handoff lands"
         )));
@@ -1032,7 +1033,7 @@ fn classify_native_trial(
         None => NativeTrialClass::GradedNative {
             reward: fact_value(&binding.reward),
             agent_failed: fact_value(&binding.reward) == 0,
-            timed_out: binding.terminal.timed_out,
+            timed_out: binding.terminal.as_ref().is_some_and(|t| t.timed_out),
         },
         Some("NonZeroAgentExitCodeError") => NativeTrialClass::GradedNative {
             reward: fact_value(&binding.reward),
@@ -1159,14 +1160,19 @@ fn native_agent_record(
     product: &str,
     binding: &crate::benchmark::process::NativeTrialBinding,
 ) -> crate::agent::process::AgentRecord {
-    let exit = if binding.terminal.timed_out {
+    let Some(terminal) = binding.terminal.as_ref() else {
+        // A diagnostic witness carries no integration observation, and the
+        // run path never dispatches one: reaching this arm means the
+        // projection was handed a witness binding, which has no honest
+        // Agent terminal state to project. Fail closed instead of
+        // inventing one.
+        unreachable!("witness bindings never project an Agent record");
+    };
+    let exit = if terminal.timed_out {
         ExitState::TimedOut
     } else {
         ExitState::Exited {
-            code: binding
-                .terminal
-                .exit_code
-                .clamp(i32::MIN as i64, i32::MAX as i64) as i32,
+            code: terminal.exit_code.clamp(i32::MIN as i64, i32::MAX as i64) as i32,
         }
     };
     let completion = match binding.exception_type.as_deref() {
@@ -1176,7 +1182,7 @@ fn native_agent_record(
                 boundary: FailureBoundaryCode::AgentProcess,
             })
         }
-        _ if binding.terminal.timed_out => {
+        _ if binding.terminal.as_ref().is_some_and(|t| t.timed_out) => {
             crate::agent::process::AgentCompletion::Failed(crate::agent::process::AgentFailure {
                 kind: "agent-timeout",
                 boundary: FailureBoundaryCode::AgentProcess,
@@ -1300,7 +1306,16 @@ async fn run_native_trial(
     // One upstream job: the selected integration runs inside the task
     // environment and the same trial's verifier grades it. The
     // pre-dispatch job snapshot backs the binding's stale-job defense.
+    // The task's declared lifecycle binds into the dispatch (P19-D03):
+    // unsupported shapes reject before any process effect.
+    let task_lifecycle = crate::benchmark::task_lifecycle::parse_task_lifecycle(&task_dir)
+        .map_err(|error| RunError::Native(error.to_string()))?;
     let selection = crate::benchmark::process::NativeSelection {
+        kind: crate::benchmark::process::SelectionKind::Integration,
+        lifecycle: crate::benchmark::process::TaskLifecycleSelection {
+            environment_mode: task_lifecycle.environment_mode,
+            declared: task_lifecycle.declared_artifacts,
+        },
         agent_name: agent.integration.agent_name.clone(),
         agent_import_path: agent.integration.import_path.clone(),
         task_name: declared_task_name(revision, &task_dir),
@@ -1443,6 +1458,29 @@ async fn run_native_trial(
                 )?);
                 staged_keys.push(produced_keys.last().cloned().expect("just pushed"));
             }
+            // The verifier-input identity (P19-D03): the admitted task
+            // lifecycle and every declared artifact that entered the
+            // verifier, with the digests of exactly the collected bytes.
+            let verifier_input = serde_json::json!({
+                "environment_mode": match binding.environment_mode {
+                    crate::benchmark::task_lifecycle::VerifierEnvironmentMode::Shared => "shared",
+                    crate::benchmark::task_lifecycle::VerifierEnvironmentMode::Separate => "separate",
+                },
+                "collected": binding.collected.iter().map(|artifact| serde_json::json!({
+                    "source": artifact.source,
+                    "destination": artifact.destination,
+                    "sha256": artifact.sha256,
+                })).collect::<Vec<_>>(),
+            });
+            produced_keys.push(stage(
+                &mut bundle,
+                &grader_source,
+                ArtifactRole::Native,
+                "native/verifier-input.json",
+                &serde_json::to_vec(&verifier_input)
+                    .map_err(|error| RunError::Staging(error.to_string()))?,
+            )?);
+            staged_keys.push(produced_keys.last().cloned().expect("just pushed"));
             // The normalized expected output is the bound native result:
             // the sealed interpretation source of this trial's grade.
             staged_keys.push(stage(
@@ -1578,14 +1616,21 @@ async fn run_native_trial(
                 "name": binding.agent_name,
                 "version": binding.agent_version,
                 "model": binding.model_name,
-                "exit_code": binding.terminal.exit_code,
-                "timed_out": binding.terminal.timed_out,
-                "executable_sha256": binding.terminal.agent_executable_sha256,
-                "exception_type": binding.exception_type,
-                "delivered": binding.terminal.delivered.iter().map(|file| json!({
-                    "source": file.source,
-                    "sha256": file.sha256,
+                "terminal": binding.terminal.as_ref().map(|terminal| json!({
+                    "exit_code": terminal.exit_code,
+                    "timed_out": terminal.timed_out,
+                    "executable_sha256": terminal.agent_executable_sha256,
+                    "delivered": terminal.delivered.iter().map(|file| json!({
+                        "source": file.source,
+                        "sha256": file.sha256,
+                    })).collect::<Vec<_>>(),
+                })),
+                "collected": binding.collected.iter().map(|artifact| json!({
+                    "source": artifact.source,
+                    "destination": artifact.destination,
+                    "sha256": artifact.sha256,
                 })).collect::<Vec<_>>(),
+                "exception_type": binding.exception_type,
             }),
             None => json!({
                 "product": product,
@@ -1682,6 +1727,12 @@ fn declared_task_name(revision: &BenchmarkRevision, task_dir: &Path) -> String {
     match revision {
         BenchmarkRevision::TerminalBench21 { profile_bytes, .. } => {
             Tb21Profile::parse(profile_bytes.as_slice())
+                .ok()
+                .and_then(|profile| profile.declared_task_name(task_dir))
+                .unwrap_or_default()
+        }
+        BenchmarkRevision::TerminalBench30 { profile_bytes, .. } => {
+            crate::benchmark::terminal_bench_30::Tb30Profile::parse(profile_bytes.as_slice())
                 .ok()
                 .and_then(|profile| profile.declared_task_name(task_dir))
                 .unwrap_or_default()
