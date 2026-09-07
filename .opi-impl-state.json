@@ -1143,7 +1143,7 @@
       "definition_of_done": "P19-D05: The built opi-eval and declared integration materials run from a fresh directory without repository fixtures or GitHub run/artifact metadata. Add doctor --config C and prepare --config C --out M; [storage].cache selects a local cache. doctor reports reachable Linux engine, x86_64 architecture, WSL/Docker-observed CPU/memory/GPU/disk, missing tools/materials and unknown observations with reasons. prepare uses current static corpus/Harbor/Pier pins, builds/resolves selected Agent executables (pi-only requires no Opi), verifies per-file inventories and selected image digests, and emits a local-origin native-material manifest consumable by validate/run. Source acquisition is pinned and supervised; downloads only public task/runner/build material, never calls a model or reads real credentials. Share producer byte/provenance verification with CI while GitHub upload receipt remains only a CI transport claim. Resolve all requested image identities before freeze, reuse verified cache, reject drift/missing material and leave shared caches/user directories intact. Update packaging inventories and affected script hash records without changing upstream revisions.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "19.2",
         "19.3",
@@ -1288,7 +1288,7 @@
         "runner::material::NativeMaterial::load"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "21d2d7e592680791ea5c6b8148aff2e4f5e28c2f",
       "baseline_dirty_files": [],
@@ -1319,14 +1319,80 @@
         "crates/opi-eval/tests/fail_closed_cli.rs",
         "crates/opi-eval/tests/experiment_contract.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "55d0a4c17f4dc445dbb86979516c543ac9cf92f3",
+      "evidence": {
+        "Opi-Task": "19.5",
+        "Opi-DoD-SHA256": "a7f6432df7fc1d7e02e34da8d3a3a7b77ad6886da15cc185f8e26a65ecf0a083",
+        "Opi-Verification": "cli-runtime; scoped smoke PASSED (native_driver, fail_closed_cli, experiment_contract) + lib 125 + full suite 211 passed + workspace clippy -D warnings clean + all Python regression suites OK + opi-doc-check PASS",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P19-AC-001-prepare and P19-AC-007-material stay open for the operator-run/live-selection evidence (19.11/D08, 19.6+); deterministic preparation, freeze, drift, acquisition, and pi-only slices proven at the spawned-CLI seam"
+      },
       "blocker": null,
       "session_notes": [
         {
           "timestamp": "2026-09-06T09:10:00+08:00",
           "attempt": 1,
           "summary": "B.2 confirmed. Starting P19-D05: doctor --config C (engine/arch/resource/material observations with unknown-with-reasons, no model) and prepare --config C --out M (static-corpus pins, verified cache reuse, drift/missing rejection, supervised declared-script acquisition, identity freeze, explicit subset freeze, local-origin /3 manifest consumable by validate/run). Config = existing experiment TOML with [storage].cache. GitHub upload receipt stays a CI-only transport claim."
+        },
+        {
+          "timestamp": "2026-09-06T10:40:00+08:00",
+          "attempt": 1,
+          "summary": "P19-D05 delivered. New doctor --config C: resolves the experiment document, probes the Linux engine (docker client honoring DOCKER_HOST, unreachable-with-reason on a closed endpoint), reports host architecture (x86_64 gate), /proc CPU and memory, engine-registry GPU observation (unknown with the engine-unreachable reason when no engine), df disk space at the cache location, and the declared materials at their pinned cache locations; diagnosis completes (exit 0) without starting a model, invalid documents reject (exit 2). New prepare --config C --out M: [storage].cache resolves against the document directory as the local cache; the seeded static lock is the authority (schema-gated, producer scripts verified over LF-normalized bytes per the producers' recorded convention); selection derives the adapter key and the sorted unique subject products; every required identity (static lock, agents, production profile, task package with instruction.md, tools/uv, oracle wrapper, scripted provider, harbor+pier integration modules) is verified and frozen into a reusable cache inventory (opi-eval-local-inventory/1) - a prior freeze with different bytes rejects as material drift naming the identity, and a repeated prepare over the untouched cache is byte-idempotent. Every requested image identity resolves before freeze (a lock image without a manifest digest rejects). The frozen task's declared [environment] requirements (cpus/memory_mb/gpus) are checked against the local observations: unmet or unobservable requirements reject the whole request naming task+requirement+observation (the set never silently shrinks); satisfied requirements freeze into the report preflight. The emitted manifest is opi-eval-native-material/3 with origin local, benchmark-scoped to the selection, provider endpoint projected from the document's selected connection, and no GitHub run/artifact metadata (the upload receipt stays a CI transport claim); validate and run consume it through NativeMaterial::load_for, which now requires exactly the document's selected agent products so a pi-only experiment prepares and validates with no Opi material. A cache miss with the pinned materializer seeded triggers supervised acquisition: plan JSON in, invocation log captured under the output root, acquired bytes re-verified by the normal freeze; without a materializer the failure names the missing identity and how to acquire it. The real materialize-external-locks.sh gained the prepare --cache/--plan mode (acquires pinned public tool archives with digest verification; unwired identities fail closed with actionable guidance); its producer hash record in the static lock is refreshed and no upstream revision changed. Supervised acquisition, drift, and reuse are proven deterministically through a stand-in materializer fixture (tests/fixtures/external-locks/local-cache/). Environment observation recorded for later tasks: a Docker engine (linux/amd64, nvidia runtime registered) is now reachable on this development host; the pinned external witness material is still absent, so the open witness scenarios keep their operator-run closure path. Shared decision verified-local-material-identity (owner): Interface = NativeMaterial::load/load_for plus the frozen inventory; the both-agents admission was the latent deficit (it made pi-only local preparation impossible) and is now selection-driven; closure tests in native_driver.rs.",
+          "gate_results": {
+            "d0_scenarios": "PASS: cargo test -p opi-eval --test native_driver independent_directory_prepare + local_material_integrity (spawned-CLI seam); fail_closed_cli doctor pair; python crates/opi-eval/scripts/test_verify_external_lock_artifact.py + test_verify_external_lock_ci.py OK",
+            "d1_scoped_smoke": "PASS: bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test native_driver --test fail_closed_cli --test experiment_contract",
+            "d1_addendum": "PASS: cargo test -p opi-eval --lib (125 passed)",
+            "full_suite": "PASS: cargo test -p opi-eval (211 passed, 0 failed, 4 ignored)",
+            "workspace_clippy": "PASS: cargo clippy --workspace --all-targets -- -D warnings (0 findings)",
+            "python_regressions": "PASS: test_verify_external_lock_ci.py, test_verify_external_lock_artifact.py, test_verify_native_smoke_ci.py, test_verify_native_smoke_artifact.py, test_scripted_provider.py",
+            "d2_evaluator": "manual 7-lens exec audit passed with no must-fix findings (Workflow runtime unavailable in environment, wf_ref=null recorded in verify_runs); doctor/prepare call sites real and exercised; materializer prepare mode verified by direct invocation (empty plan exit 0, unwired identity exit 2 with guidance); static-lock diff limited to the one refreshed producer sha256",
+            "scenario_status": {
+              "P19-AC-001-prepare": "open: preparation, identity freeze, drift rejection, supervised acquisition, and independent-directory validate consumption proven deterministically; the full AC-001 (independent-directory execution and reporting with the operator's real material) closes with the 19.11/D08 operator evidence run",
+              "P19-AC-007-material": "open: preparation/selection portion verified (full pinned inventory enumeration without models, unmet resource requirement rejection, frozen feasible selection with recorded reasons); the run-time subset freeze under live limits is 19.6+ evidence"
+            },
+            "test_disposition": [
+              {
+                "subject": "P19-AC-001-prepare",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::independent_directory_prepare_builds_a_local_origin_material + supervised_acquisition_runs_the_pinned_materializer + pi_only_preparation_requires_no_opi_material; crates/opi-eval/tests/fail_closed_cli.rs::doctor_reports_observations_without_a_model + doctor_rejects_an_invalid_config_without_observing",
+                "interface": "spawned opi-eval doctor/prepare/validate CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-007-material",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::local_material_integrity + unmet_resource_requirement_rejects_without_silent_shrink",
+                "interface": "spawned opi-eval prepare CLI over a seeded cache",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.5",
+                "action": "add",
+                "test": "crates/opi-eval/src/runner/prepare.rs::tests::nearest_existing_ancestor_walks_up (unit) + tests/fixtures/external-locks/local-cache/** (synthetic seeded cache: static lock with pinned producer digests, stand-in materializer implementing the prepare contract, stand-in verifier)",
+                "interface": "runner::prepare helpers + materializer contract",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "verified-local-material-identity",
+                "action": "update",
+                "test": "crates/opi-eval/src/runner/material.rs tests still green after load_for selection (agent-set rejection now selection-scoped); validate/run thread the document's subject products",
+                "interface": "NativeMaterial::load_for",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.5",
+                "action": "retain",
+                "test": "crates/opi-eval/tests/{native_driver,fail_closed_cli,experiment_contract,assembled_run,authority_boundaries,end_to_end_report,bundle_recompute,agent_integration_conformance}.rs existing expectations (all green unchanged)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
         }
       ]
     },
@@ -4129,6 +4195,16 @@
       "rejected_count": 0,
       "ran_at": "2026-09-06T08:30:00+08:00",
       "task_id": "19.4",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-09-06T10:40:00+08:00",
+      "task_id": "19.5",
       "criterion_id": null
     }
   ]
