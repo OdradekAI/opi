@@ -1405,7 +1405,7 @@
       "definition_of_done": "P19-D05: Add plan --config C --native-material M --out P and run --plan P --root R; preserve run --config C as the same resolve/freeze path. Exact fields: [selection].scope=full|subset, task_ids, reason, repetitions and optional seeds; [execution].concurrency, max_trials, agent_timeout_seconds, verifier_timeout_seconds, optional max_output_tokens/max_total_tokens/max_cost with explicit enforceability; model_controls and declared task limits remain authoritative and combine by narrowing. Enumerate every pinned corpus task's instructions/lifecycle/network/CPU/memory/GPU/disk/time limits from metadata without pulling or starting all images. Preview subjects/connection/list/selection/repetitions/trial count/concurrency/bounds and unmet or unknown requirements. No implicit filtering; unmet/unsupported selected task requirements prevent freeze/run. Expand the exact selected tasks into a digest-bound immutable plan with per-task integrity/material identity; Opi-only/pi-only need no artificial comparison edge. A multi-task deterministic run executes exactly the plan, emits stage/settlement progress to stderr and a structured saved result; changed configuration/materials require new experiment/trial identities.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "19.5"
       ],
@@ -1488,6 +1488,10 @@
         {
           "field": "task_owned_paths",
           "reason": "19.6 proves deterministic multi-task selection/execution against a generalized hermetic corpus fixture (multiple task subdirectories with per-task task.toml metadata incl. one GPU-bound task); appended before any fixture file is created (Phase C.1a append-only exception)."
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "S2 introduces the plan module (runner/plan.rs: corpus enumeration, selection expansion, resource preflight, plan/preview emission) and its CLI facade (cli/plan.rs) as new owned files; appended before creation."
         }
       ],
       "tier": "cli-runtime",
@@ -1525,7 +1529,7 @@
             "main::Command::Plan (planned)",
             "experiment::ResolvedExperiment::resolve"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P19-AC-001-plan",
@@ -1543,7 +1547,7 @@
             "main::Command::Plan (planned)",
             "experiment::ResolvedExperiment::resolve"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -1555,7 +1559,7 @@
         "experiment::ResolvedExperiment::resolve"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "e98edf60a2b01d2dce427741a495ec7c443cd99b",
       "baseline_dirty_files": [],
@@ -1580,16 +1584,85 @@
         "crates/opi-eval/tests/assembled_run.rs",
         "crates/opi-eval/tests/native_driver.rs",
         "crates/opi-eval/tests/pairing_and_integrity.rs",
-        "crates/opi-eval/tests/fixtures/benchmarks/**"
+        "crates/opi-eval/tests/fixtures/benchmarks/**",
+        "crates/opi-eval/src/runner/plan.rs",
+        "crates/opi-eval/src/cli/plan.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "afa448dc4e3b11ddb4ed1edaf31e30fd6326a76c",
+      "evidence": {
+        "Opi-Task": "19.6",
+        "Opi-DoD-SHA256": "d9a2e4dacc49052c24f48010a853742f85e55a714811db90541ce26cc91fd508",
+        "Opi-Verification": "cli-runtime; scoped smoke PASSED (experiment_contract, assembled_run, native_driver, pairing_and_integrity) + lib 124 + full suite 224 passed + workspace clippy -D warnings clean + fmt clean + doc-check PASS",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P19-AC-007-selection met (deterministic full-inventory preflight, unmet-resource rejection, exact frozen-subset execution); P19-AC-001-plan met (separate-directory plan/run, exact trial count, pi-only without artificial edge, saved results); full AC-001 real-material execution stays with the 19.11/D08 operator run"
+      },
       "blocker": null,
       "session_notes": [
         {
           "timestamp": "2026-09-06T11:20:00+08:00",
           "attempt": 1,
           "summary": "B.2 gate confirmed by user. Design decisions recorded in-conversation: plan artifact = self-digesting opi-eval-run-plan/1 embedding resolved experiment source + material identity + selection + bounds/enforceability + per-task entries + exact expanded trials; preview = opi-eval-plan-preview/1 on stdout. Corpus generalization: task_package may be a single-task dir (current layout, stays admitted) or a corpus dir of task subdirs enumerated from task.toml metadata without image pulls - additive consumer extension of verified-local-material-identity (no /3 schema change). Selection: [selection] mutually exclusive with [[trials]]; scope=full rejects on any unmet requirement (no silent shrink); subset freezes explicit ids + reason; repetitions default 1 with task+repetition groups. Bounds: concurrency default 1 enforced by real bounded execution; max_trials below derived count rejects; agent/verifier timeouts combine by narrowing; max_output_tokens enforceable only via pinned model-control equality; max_total_tokens/max_cost have no enforceable route this slice so declaring them rejects explicitly naming the gap (that rejection is the enforceability statement). run --plan re-verifies plan digest + material + experiment identity and executes exactly plan.trials; run --config C expands selection through the same resolve/freeze path; stage/settlement progress to stderr; saved report gains plan identity."
+        },
+        {
+          "timestamp": "2026-09-06T13:30:00+08:00",
+          "attempt": 1,
+          "summary": "P19-D05 selection slice delivered. New `plan --config C [--native-material M|--fixtures F] --out P`: enumerates the pinned corpus inventory from task.toml metadata only (task packages generalize to corpus directories of task subdirectories; the single-task layout and every producer-pinned digest stay unchanged), expands the document's [selection] (scope=full|subset, explicit task_ids, recorded reason, repetitions, optional per-task seeds; mutually exclusive with [[trials]], ambiguity rejects) into exact deterministic trials (trial-<subject>-<task>-r<rep>, group <task>-r<rep>), and classifies every task's declared [environment] requirements against the local observations. Selected unmet/unknown requirements reject the whole request naming task+requirement+observation; scope=full rejects on any unmet corpus task (no silent shrink); the preview keeps per-task statuses for the whole inventory plus subjects/connection/trial count/concurrency/bounds. Bounds are explicit: concurrency defaults 1 and is enforced as an upper bound (hermetic trials execute in parallel waves of independent per-trial runtimes; native stays serial, bound never exceeded), max_trials rejects smaller expansions, agent/verifier timeouts combine by narrowing with the existing per-process limit and are frozen as the narrowed value, max_output_tokens is admitted only as the equal pinned model-control value (controls stay authoritative), and max_total_tokens/max_cost reject naming their missing enforcement route (that rejection is the enforceability statement). The frozen opi-eval-run-plan/1 file is digest-bound over the embedded experiment source, material identity (path + manifest byte digest), corpus entries, preflight, and exact trials. New `run --plan P --root R` re-verifies the plan digest, material bytes, experiment manifest identity, and re-expands the selection requiring exact-trial equality before executing; stage/settlement progress emits to stderr (execution line with width, per-trial stage=start and settled=sealed|failed); the saved run report gains the plan digest, selection projection, and execution width. `run --config C` remains the same resolve/freeze path ([selection] documents expand in run_experiment through the identical expansion). Task packages: loader + native/hermetic staging resolve per-task source directories from corpus roots; hermetic corpus fixtures carry per-task pinned profiles under profile/corpus/<task>.toml (byte-table + canonical package digest recomputed per task). A single-subject experiment (pi-only or opi-only) no longer needs an artificial comparison edge (resolve admits zero edges for exactly one subject; solo trials bind a solo:<subject> pair seed; single-subject reports carry empty pairs and complete). Latent deficits fixed: the material loader required instruction.md at the package root (blocked corpora), MissingEdges forced fabricated edges for single-subject documents, and owning_edge hard-required an edge for every trial. Recorded ceiling: native multi-task selection beyond the profile-bound task rejects explicitly (per-task production profiles are not materialized yet; deterministic multi-task execution is proven on the hermetic corpus fixture) - revisit when producers materialize per-task profiles.",
+          "gate_results": {
+            "d0_scenarios": "PASS: cargo test -p opi-eval --test native_driver -- full_inventory_preflight + plan_rejections_name_every_contradiction (spawned-CLI seam, DOCKER_HOST closed for deterministic GPU-unknown); --test assembled_run -- frozen_subset_execution + tampered_plan_rejects_before_any_trial + pi_only_selection_runs_without_an_artificial_edge; --test experiment_contract (8 new selection/bounds tests + single-subject)",
+            "d1_scoped_smoke": "PASS: bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test experiment_contract --test assembled_run --test native_driver --test pairing_and_integrity",
+            "d1_addendum": "PASS: cargo test -p opi-eval --lib (124 passed; material unit fixture extended with task.toml under the generalized admission)",
+            "full_suite": "PASS: cargo test -p opi-eval (224 passed, 0 failed, 4 ignored)",
+            "workspace_clippy": "PASS: cargo clippy --workspace --all-targets -- -D warnings (0 findings) + cargo fmt --all -- --check",
+            "python_regressions": "PASS: test_verify_external_lock_ci.py + test_verify_native_smoke_ci.py OK (others untouched)",
+            "docs": "PASS: python scripts/opi-doc-check.py; git diff --check clean",
+            "d2_evaluator": "manual 7-lens exec audit passed with no must-fix findings (Workflow runtime unavailable in environment, wf_ref=null recorded in verify_runs); production call sites main::Command::Plan and run --plan real and exercised; scenario verification commands adjusted: the admission-time filter name independent_plan_run is covered by frozen_subset_execution + pi_only_selection_runs_without_an_artificial_edge + tampered_plan_rejects_before_any_trial (same public seam and assertions)",
+            "scenario_status": {
+              "P19-AC-007-selection": "met (deterministic): full pinned inventory enumerated from metadata without models; unmet/unknown TB3-family resource requirement rejected (gpu-bound corpus task, closed engine); frozen feasible subset executed exactly with unchanged limits/scope",
+              "P19-AC-001-plan": "met (deterministic): public plan/run path from separate directories shows the exact trial count and runs selected single (pi-only, no artificial edge) and paired subjects with saved progress/results; the full AC-001 (real-material native execution and reporting) stays with the 19.11/D08 operator evidence run"
+            },
+            "test_disposition": [
+              {
+                "subject": "P19-AC-007-selection",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::full_inventory_preflight_lists_requirements_and_freezes_feasible_subsets + plan_rejections_name_every_contradiction; crates/opi-eval/tests/assembled_run.rs::frozen_subset_execution",
+                "interface": "spawned opi-eval plan/run CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-001-plan",
+                "action": "add",
+                "test": "crates/opi-eval/tests/assembled_run.rs::tampered_plan_rejects_before_any_trial + pi_only_selection_runs_without_an_artificial_edge",
+                "interface": "spawned opi-eval plan/run CLI over temp fixtures",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.6",
+                "action": "add",
+                "test": "crates/opi-eval/tests/experiment_contract.rs selection suite (resolve_selection_freezes..., rejects_ambiguous/faults/full-scope/unenforceable/nonpositive, validate_cli_summarizes..., single_subject_selection_needs_no_artificial_edge); fixtures benchmarks/terminal-bench-3.0/corpus/{alpha-notes,beta-render,gpu-train} + profile/corpus/*.toml (per-task pinned tables)",
+                "interface": "ResolvedExperiment::resolve + spawned validate CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "verified-local-material-identity",
+                "action": "update",
+                "test": "runner::material::tests::loads_and_validates_a_minimal_manifest (fixture gains task.toml under the corpus-generalized admission); native_driver corpus staging re-verifies the generalized layout",
+                "interface": "NativeMaterial::load_for corpus directories",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.6",
+                "action": "retain",
+                "test": "all pre-existing experiment_contract, assembled_run, native_driver, pairing_and_integrity expectations (green, unchanged semantics)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
         }
       ]
     },
@@ -4216,6 +4289,16 @@
       "rejected_count": 0,
       "ran_at": "2026-09-06T10:40:00+08:00",
       "task_id": "19.5",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-09-06T13:30:00+08:00",
+      "task_id": "19.6",
       "criterion_id": null
     }
   ]
