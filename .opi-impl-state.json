@@ -883,7 +883,7 @@
       "definition_of_done": "P19-D04: Through opi-eval run, the pinned Pier Opi/pi integration executes in the selected DeepSWE task environment, invokes its collect hook, collects the Agent's committed patch against the declared base and applies exactly that patch in a pristine separate verifier with the task's network policy. Bind base, commit/patch digest, upstream trial/Agent and verifier input to the result. Reject wrong base, substituted patch, mismatched identity or silent substitution of uncommitted changes. Correct/incorrect committed-patch witnesses traverse production handoff and real native grader without a live model. Preserve raw native metrics with their meanings; real Opi/pi provider traces remain 19.11.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "19.1"
       ],
@@ -947,6 +947,21 @@
           "field": "verification",
           "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
           "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Pier family parse extension",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "19.3 landed the crate-private task lifecycle parse this task must extend with the Pier family (P19-D04); smoke artifact verifier contract must track the schema-/3 material and pier integration staging",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "19.3 landed the crate-private task lifecycle parse this task must extend with the Pier family (P19-D04); smoke artifact verifier contract must track the schema-/3 material and pier integration staging",
+          "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#5. Native execution and material contract"
         }
       ],
       "tier": "cli-runtime",
@@ -989,7 +1004,7 @@
         "runner::experiment::run_trial"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "46af3763525dbabbec67563478f528632918cd12",
       "baseline_dirty_files": [],
@@ -1010,12 +1025,114 @@
         "crates/opi-eval/scripts/native-smoke.sh",
         "crates/opi-eval/external-locks/static/linux-x86_64.json",
         "crates/opi-eval/tests/native_driver.rs",
-        "crates/opi-eval/tests/benchmark_integration_conformance.rs"
+        "crates/opi-eval/tests/benchmark_integration_conformance.rs",
+        "crates/opi-eval/src/benchmark/task_lifecycle.rs",
+        "crates/opi-eval/scripts/verify-native-smoke-artifact.py",
+        "crates/opi-eval/scripts/test_verify_native_smoke_artifact.py"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "79649fe404f845ab3fe8bb7e9cf6efb87190bb9e",
+      "evidence": {
+        "Opi-Task": "19.4",
+        "Opi-DoD-SHA256": "2b44abe75457d9c89f263fe2e113f464e2044da4b3efe76438ae435e8e11a4bd",
+        "Opi-Verification": "cli-runtime; scoped smoke PASSED (native_driver, benchmark_integration_conformance) + lib 123 + full suite 203 passed + workspace clippy -D warnings clean + python suites 71 passed + opi-doc-check PASS",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P19-AC-005-native stays open pending the real-material witness (registered ignored filter; Docker engine unavailable here); deterministic committed-patch semantics proven at the spawned-CLI seam"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-09-06T08:30:00+08:00",
+          "attempt": 1,
+          "summary": "P19-D04 cutover: DeepSWE v1.1 native scoring runs through its declared committed-patch handoff. The crate-private task lifecycle parse became family-aware (TaskFamily Harbor|Pier): the Pier policy honors the pinned task's [[verifier.collect]] hook - exactly the committed-patch extraction (git diff --binary base..HEAD > /logs/artifacts/model.patch) - records the verifier network policy, and carries the base revision and environment image into the selection; multi-step, disabled-verifier, non-Linux, and unknown network shapes still reject before any verifier spawn (verbatim pinned abs-module-cache-flags bytes pinned as a unit test). The production profile now pins Pier's jobs/<job>/result.json aggregate (pier-job-aggregate; the former unpinned-pending-18-15 kind and the native-scoring-unavailable-deepswe path are deleted); admission cross-checks the task's lifecycle against the pristine collected-patch profile (task-lifecycle-profile-drift); native settle imports through the shared bound-job contract and hermetic runs settle fail-closed; the native spawn carries the Pier selection flags (--agent-import-path/-m plus PYTHONPATH and the handoff). The shared binding (native-trial-artifact-binding consumer change) binds the Pier identity: the recorded trial config must carry the same lifecycle including base revision and image (native-binding-lifecycle-mismatch covers rebase/reimage), artifacts read in the pinned merge order (task declarations then trial extras), and the declared committed patch binds as the verifier-input identity with the digest of exactly the collected bytes; an empty nop patch still collects (Pier marks a successful empty-file download status ok) and grades zero; undeclared collection rejects; the sealed bundle's native/verifier-input.json now records base_revision and docker_image alongside the mode and collected digests. A new pinned Pier integration module (integrations/pier/opi_eval_pier.py) runs the selected Agent inside the task environment on Pier's BaseAgent surface (async exec, NonZeroAgentExitCodeError, terminal observation with the bounded delivered manifest, credential cleanup before the verifier phase). The native material manifest moved to schema /3: each agent product pins one integration per runner family (Harbor and Pier modules are not module-compatible), validated at load with per-family digest checks; the CI smoke stages both modules and reruns the DeepSWE witnesses (artifact verifier expects ten conformance cases). Latent 19.3 gap found and fixed in passing: benchmark conformance registered nop-witness only for Terminal-Bench 2.1 while the smoke already reran the 3.0 witnesses; the registration now covers all three families. The remaining 19.3-open question (whether a real TB3 nop witness fails the /app/evalbench collection and hits the fail-closed declared-artifact rejection instead of grading zero) stays with P19-AC-004-native's operator run; no semantic change was made silently. The ignored native_deepswe_patch_witness drives both real witnesses against pinned external material (Docker Linux engine required, absent on this host: registered, not executed locally).",
+          "gate_results": {
+            "d1_scoped_smoke": "PASS: bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test native_driver --test benchmark_integration_conformance (fmt + clippy -D warnings + both binaries)",
+            "d1_addendum": "PASS: cargo test -p opi-eval --lib (123 passed)",
+            "full_suite": "PASS: cargo test -p opi-eval (203 passed, 0 failed, 4 ignored)",
+            "workspace_clippy": "PASS: cargo clippy --workspace --all-targets -- -D warnings (0 findings; VerifiedNative binding boxed to stay under the variant-size lint)",
+            "python_regressions": "PASS: test_verify_native_smoke_ci.py (34), test_verify_native_smoke_artifact.py (16), test_scripted_provider.py (21)",
+            "scenario_commands": "cargo test -p opi-eval --test benchmark_integration_conformance PASSED (inside D.1 scoped smoke); native_deepswe_patch_witness registered as ignored filter - the real-material run requires a Docker Linux engine plus OPI_EVAL_NATIVE_WITNESS_MATERIAL, unavailable on this host (WSL distro without Docker integration); deterministic committed-patch semantics proven at the spawned-CLI seam instead (positive run binding base+image+patch digests, undeclared/base-drift rejections without sealing, nop empty patch grading zero, both witnesses through the conformance material path)",
+            "docs": "PASS: python scripts/opi-doc-check.py; git diff --check clean; bash -n native-smoke.sh",
+            "d2_evaluator": "manual 7-lens exec audit passed with no must-fix findings (Workflow runtime unavailable in environment, wf_ref=null recorded in verify_runs); ground truth read from the pinned Pier v0.3.1 clone at runner_commit c1ebc6d1 (task.toml schema 1.3, collect-hook patch extraction, manifest statuses, jobs aggregate, trial naming, BaseAgent surface) and the pinned deep-swe task tree 8ee76a3e; latent-deficit fixes called out: DeepSWE spawn never carried a native selection, the binding could not express base/image provenance, and nop-witness conformance registration was family-gated - all replaced by the family-aware rules at the same Interfaces",
+            "scenario_status": {
+              "P19-AC-005-native": "open: deterministic committed-patch/pristine-verifier semantics verified at the spawned CLI seam (positive run with base+patch+verifier identity sealed, undeclared collection and base-drift rejections, nop empty patch grading zero, both witnesses through the conformance material path); the real-material witness (Docker engine + pinned external material) remains the registered ignored filter and closes with the operator evidence run (19.11/D08)"
+            },
+            "test_disposition": [
+              {
+                "subject": "P19-AC-005-native",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_deepswe_run_grades_the_committed_patch_in_the_pristine_verifier + native_deepswe_rejects_undeclared_collection_and_base_drift + native_deepswe_nop_committed_nothing_grades_zero_not_rejection",
+                "interface": "spawned opi-eval run CLI over staged pier material",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-005-native",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_deepswe_patch_witness (ignored; OPI_EVAL_NATIVE_WITNESS_MATERIAL + Docker)",
+                "interface": "spawned opi-eval conformance CLI through the real pinned Pier runner",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.4",
+                "action": "add",
+                "test": "crates/opi-eval/src/benchmark/task_lifecycle.rs::tests (4 new: verbatim pinned DeepSWE pier parse, collect-hooks-are-pier-only, unknown network reject, pier unsupported shapes)",
+                "interface": "task_lifecycle family parse",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "native-trial-artifact-binding",
+                "action": "update",
+                "test": "crates/opi-eval/src/benchmark/process.rs binding tests + native_driver.rs native_result_binding_rejects_every_substitution (recorded-lifecycle parse extended to the pier merge order and base/image identity; lifecycle-mismatch now covers rebase/reimage)",
+                "interface": "import_bound_native_job",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.4",
+                "action": "update",
+                "test": "crates/opi-eval/tests/native_driver.rs::sibling_native_families_are_explicitly_unavailable replaced by the deepswe run tests (the DeepSWE-unavailable expectation was superseded by the handoff landing)",
+                "interface": "spawned opi-eval run CLI",
+                "replacement": "native_deepswe_run_grades_the_committed_patch_in_the_pristine_verifier (passing)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.4",
+                "action": "update",
+                "test": "crates/opi-eval/src/benchmark/deepswe.rs adapter tests (production kind pier-job-aggregate; native settle through the bound import; hermetic gate verifier-invalid-output/Grader; single-reward pier aggregate helper; byte-table rows for the fixture task.toml and instruction.md) + native_driver.rs integration_module_drift_is_rejected_at_load (both family modules) + native_conformance_reruns_the_admitted_cases_through_the_material (deepswe witness rows)",
+                "interface": "DeepSweAdapter admission/settle + material load",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.4",
+                "action": "update",
+                "test": "crates/opi-eval/scripts/test_verify_native_smoke_artifact.py (schema /3 integrations map, 10 conformance cases incl. deepswe witnesses)",
+                "interface": "artifact verifier contract",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.4",
+                "action": "update",
+                "test": "benchmark conformance witness registration (nop-witness ungated from Terminal-Bench 2.1 to all families; deepswe witness_task_name arm)",
+                "interface": "benchmark_expect/witness_task_name",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.4",
+                "action": "retain",
+                "test": "crates/opi-eval/tests/{assembled_run,authority_boundaries,end_to_end_report,bundle_recompute,experiment_contract,agent_integration_conformance}.rs and the TB2.1/TB3 native tests (unchanged expectations, still green)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "19.5",
@@ -3996,6 +4113,16 @@
       "rejected_count": 0,
       "ran_at": "2026-09-06T06:30:00+08:00",
       "task_id": "19.3",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-09-06T08:30:00+08:00",
+      "task_id": "19.4",
       "criterion_id": null
     }
   ]
