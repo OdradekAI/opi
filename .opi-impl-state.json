@@ -1675,7 +1675,7 @@
       "definition_of_done": "P19-D06: Expose verify --root R for original byte/seal checks; report --root R --out O remains deterministic offline reconstruction from verified evidence. Until 19.8 supplies real native regrading, regrade returns an explicit unavailable-operation diagnostic rather than performing byte verification under that name. Extend public reports with benchmark-native metric definitions/denominators, corpus/selected/planned/attempted/valid/Agent-failure/invalid/unexecuted counts, full/subset/incomplete labels, same-task/repetition/control pairs, missing pairs, exclusions and unknown telemetry reasons. Single-subject runs require no edge; protocol groups never pair. Valid native zero and benchmark-defined timeouts remain Agent outcomes; provider/access/identity/infra/invalid-grading errors never become Agent failure or success. No cross-benchmark headline average. Bind run-level planned coverage before any effect so recovery/recompute can preserve unstarted trials even if no trial seals. Repeated report reconstruction yields identical bytes without Agent/provider/network; tampered/unsealed or legacy conformance evidence never upgrades to native Agent scores, output never overwrites source or earlier report. Update affected CLI/schema/fixtures/callers and bilingual docs/Unreleased. Verify and consume the sealed 19.1 trial interpretation and its native evidence references for denominators and exclusions; do not infer a second failure class from stderr tokens or process exit. In the existing native_driver public run-to-report path, both actual pinned clients use local provider fixtures: final provider/access failure increases attempted/invalid coverage but not the valid graded denominator, valid native zero remains counted, and retryable 429 followed by a valid graded completion retains the final native outcome. Do not manufacture sealed success for capture/evidence failure.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "19.6"
       ],
@@ -1840,7 +1840,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "c1dbd8681c6c426ec04add547ca88aad28254f92",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/main.rs",
@@ -1872,7 +1872,13 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-09-06T14:05:00+08:00",
+          "attempt": 1,
+          "summary": "B.2 confirmed. Plan: S1 verify/regrade split (verify --root R takes the byte/seal role; regrade returns unavailable-operation exit 2 until P19-D08); S2 run-level run-control.json planned-coverage binding written before any effect and consumed offline (unexecuted reconstructible with zero sealed trials; digest cross-check against sealed control experiment); S3 report extension (per-benchmark metric definitions + denominators, corpus/selected/planned/attempted/valid/agent-failure/invalid/unexecuted counts, full/subset labels beside completed/incomplete, native zero in the valid denominator, infra/provider/identity/invalid-grading as invalid never Agent outcomes, no cross-benchmark average, byte stability and no-overwrite retained); S4 control/missing pairs + protocol-group pairing guard + single-subject; S5 ignored native_provider_failure_report (both pinned clients, loopback fixture provider; final provider failure attempted/invalid unscored, 429-retry-then-valid keeps final outcome, native zero counted, no manufactured sealed success) + bilingual docs/CHANGELOG."
+        }
+      ]
     },
     {
       "id": "19.8",
