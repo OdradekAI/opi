@@ -1143,7 +1143,7 @@
       "definition_of_done": "P19-D05: The built opi-eval and declared integration materials run from a fresh directory without repository fixtures or GitHub run/artifact metadata. Add doctor --config C and prepare --config C --out M; [storage].cache selects a local cache. doctor reports reachable Linux engine, x86_64 architecture, WSL/Docker-observed CPU/memory/GPU/disk, missing tools/materials and unknown observations with reasons. prepare uses current static corpus/Harbor/Pier pins, builds/resolves selected Agent executables (pi-only requires no Opi), verifies per-file inventories and selected image digests, and emits a local-origin native-material manifest consumable by validate/run. Source acquisition is pinned and supervised; downloads only public task/runner/build material, never calls a model or reads real credentials. Share producer byte/provenance verification with CI while GitHub upload receipt remains only a CI transport claim. Resolve all requested image identities before freeze, reuse verified cache, reject drift/missing material and leave shared caches/user directories intact. Update packaging inventories and affected script hash records without changing upstream revisions.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "19.2",
         "19.3",
@@ -1290,7 +1290,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "21d2d7e592680791ea5c6b8148aff2e4f5e28c2f",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/main.rs",
@@ -1322,7 +1322,13 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-09-06T09:10:00+08:00",
+          "attempt": 1,
+          "summary": "B.2 confirmed. Starting P19-D05: doctor --config C (engine/arch/resource/material observations with unknown-with-reasons, no model) and prepare --config C --out M (static-corpus pins, verified cache reuse, drift/missing rejection, supervised declared-script acquisition, identity freeze, explicit subset freeze, local-origin /3 manifest consumable by validate/run). Config = existing experiment TOML with [storage].cache. GitHub upload receipt stays a CI-only transport claim."
+        }
+      ]
     },
     {
       "id": "19.6",
