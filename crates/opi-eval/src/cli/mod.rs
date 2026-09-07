@@ -4,6 +4,7 @@
 //! [`regrade`] and [`report`].
 
 pub mod conformance;
+pub mod plan;
 pub mod prepare;
 pub mod regrade;
 pub mod report;
@@ -42,6 +43,21 @@ pub struct ValidationSummary {
     pub edge_count: usize,
     /// Number of declared trials.
     pub trial_count: usize,
+    /// Selection summary for `[selection]` documents (derived trials
+    /// expand only at freeze time).
+    pub selection: Option<SelectionSummary>,
+}
+
+/// One line of resolved selection intent for the validate summary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionSummary {
+    /// Corpus scope spelling.
+    pub scope: String,
+    /// Pinned task count (subset) or zero placeholder for `full`
+    /// (the corpus enumerates at freeze).
+    pub task_count: usize,
+    /// Repetitions per task.
+    pub repetitions: u32,
 }
 
 impl fmt::Display for ValidationSummary {
@@ -55,7 +71,15 @@ impl fmt::Display for ValidationSummary {
             self.subject_count,
             self.edge_count,
             self.trial_count
-        )
+        )?;
+        if let Some(selection) = &self.selection {
+            write!(
+                f,
+                " selection={} tasks={} repetitions={}",
+                selection.scope, selection.task_count, selection.repetitions
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -116,6 +140,11 @@ pub fn validate_native(
 pub fn validate(config_path: &Path) -> Result<ValidationSummary, ValidateError> {
     let source = std::fs::read_to_string(config_path)?;
     let resolved = ResolvedExperiment::resolve(&source)?;
+    let selection = resolved.selection().map(|selection| SelectionSummary {
+        scope: selection.scope.as_str().to_owned(),
+        task_count: selection.task_ids.len(),
+        repetitions: selection.repetitions,
+    });
     Ok(ValidationSummary {
         experiment_id: resolved.experiment_id().to_owned(),
         schema: resolved.schema().to_owned(),
@@ -123,5 +152,6 @@ pub fn validate(config_path: &Path) -> Result<ValidationSummary, ValidateError> 
         subject_count: resolved.subjects().len(),
         edge_count: resolved.edges().len(),
         trial_count: resolved.trials().len(),
+        selection,
     })
 }

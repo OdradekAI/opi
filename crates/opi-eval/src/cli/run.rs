@@ -29,8 +29,13 @@ pub enum RunCliError {
 /// Arguments of the `run` subcommand.
 #[derive(Debug, Clone)]
 pub struct RunArgs {
-    /// Path to the experiment document.
-    pub config: PathBuf,
+    /// Path to the experiment document (mutually exclusive with
+    /// `plan`).
+    pub config: Option<PathBuf>,
+    /// Path to a frozen run plan (`run --plan P`): executes exactly the
+    /// plan's trials after re-verifying its digest, material, and
+    /// corpus expansion.
+    pub plan: Option<PathBuf>,
     /// Fresh run root for trial directories, helpers, and receipts.
     pub root: PathBuf,
     /// Repository `crates/opi-eval/tests/fixtures` root.
@@ -61,7 +66,15 @@ pub fn run(args: &RunArgs) -> Result<serde_json::Value, RunCliError> {
         .map_err(|error| RunCliError::Rejected(error.to_string()))?;
     let report = runtime
         .block_on(experiment::run_experiment(&RunRequest {
-            config_path: args.config.clone(),
+            config_path: match (&args.config, &args.plan) {
+                (Some(config), _) => config.clone(),
+                (None, Some(plan)) => plan.clone(),
+                (None, None) => {
+                    return Err(RunCliError::Rejected(
+                        "run requires exactly one of --config or --plan".to_owned(),
+                    ));
+                }
+            },
             root: args.root.clone(),
             fixtures: args.fixtures.clone(),
             behavior: args.behavior.clone(),
@@ -69,19 +82,98 @@ pub fn run(args: &RunArgs) -> Result<serde_json::Value, RunCliError> {
             replacement_for: args.replacement_for.clone(),
             canaries: read_canaries(args.canaries.as_deref())
                 .map_err(|error| RunCliError::Rejected(error.to_string()))?,
-            material: match &args.native_material {
-                Some(path) => {
-                    let products = selected_products(&args.config)?;
+            material: match (&args.native_material, &args.plan) {
+                (Some(path), _) => {
+                    let config = args
+                        .config
+                        .as_ref()
+                        .expect("checked above: --native-material pairs with --config");
+                    let products = selected_products(config)?;
                     Some(
                         crate::runner::material::NativeMaterial::load_for(path, &products)
                             .map_err(|error| RunCliError::Rejected(error.to_string()))?,
                     )
                 }
-                None => None,
+                (None, Some(plan_path)) => {
+                    let plan: serde_json::Value = serde_json::from_str(
+                        &std::fs::read_to_string(plan_path)
+                            .map_err(|error| RunCliError::Rejected(error.to_string()))?,
+                    )
+                    .map_err(|error| {
+                        RunCliError::Rejected(format!("plan parse failed: {error}"))
+                    })?;
+                    crate::runner::plan::verify_plan(&plan)
+                        .map_err(|error| RunCliError::Rejected(error.to_string()))?;
+                    match plan["material"].as_object() {
+                        Some(record) => {
+                            let recorded_path = std::path::PathBuf::from(
+                                record["path"]
+                                    .as_str()
+                                    .ok_or_else(|| {
+                                        RunCliError::Rejected(
+                                            "run plan material record has no path".to_owned(),
+                                        )
+                                    })?
+                                    .to_owned(),
+                            );
+                            let path =
+                                crate::runner::plan::resolve_plan_path(plan_path, &recorded_path);
+                            let digest = {
+                                use sha2::{Digest, Sha256};
+                                let bytes = std::fs::read(&path)
+                                    .map_err(|error| RunCliError::Rejected(error.to_string()))?;
+                                let hash = Sha256::digest(&bytes);
+                                hash.iter().map(|b| format!("{b:02x}")).collect::<String>()
+                            };
+                            if digest != record["manifest_sha256"].as_str().unwrap_or("") {
+                                return Err(RunCliError::Rejected(format!(
+                                    "run-plan material drift at {}",
+                                    path.display()
+                                )));
+                            }
+                            let source = crate::runner::plan::plan_source(&plan)
+                                .map_err(|error| RunCliError::Rejected(error.to_string()))?;
+                            let experiment =
+                                crate::experiment::ResolvedExperiment::resolve(&source)
+                                    .map_err(|error| RunCliError::Rejected(error.to_string()))?;
+                            let products = selected_products_from(&experiment)
+                                .map_err(RunCliError::Rejected)?;
+                            Some(
+                                crate::runner::material::NativeMaterial::load_for(&path, &products)
+                                    .map_err(|error| RunCliError::Rejected(error.to_string()))?,
+                            )
+                        }
+                        None => None,
+                    }
+                }
+                (None, None) => None,
             },
+            plan: args.plan.clone(),
         }))
         .map_err(|error| RunCliError::Rejected(error.to_string()))?;
     Ok(report)
+}
+
+/// The sorted unique agent products a resolved experiment selects; a
+/// pi-only document prepares and runs without any Opi material.
+pub(crate) fn selected_products_from(
+    experiment: &crate::experiment::ResolvedExperiment,
+) -> Result<Vec<&'static str>, String> {
+    let mut products: Vec<&'static str> = experiment
+        .subjects()
+        .iter()
+        .filter_map(|subject| match subject.product.as_str() {
+            "opi" => Some("opi"),
+            "pi" => Some("pi"),
+            _ => None,
+        })
+        .collect();
+    products.sort_unstable();
+    products.dedup();
+    if products.is_empty() {
+        return Err("the experiment selects no supported agent product".to_owned());
+    }
+    Ok(products)
 }
 
 /// The sorted unique agent products the experiment document selects; a

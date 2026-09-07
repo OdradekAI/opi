@@ -105,6 +105,41 @@ seeded (plan and captured log under the output root); otherwise the
 failure names the missing identity and how to acquire it. The full
 operator walkthrough lives under `examples/local-evaluation/`.
 
+### 0b. Preview and freeze a selection plan
+
+```sh
+cargo run -p opi-eval -- plan --config experiment.toml   --native-material "$DEMO_DIR/material/material.json"   --out "$DEMO_DIR/plan.json"
+cargo run -p opi-eval -- run --plan "$DEMO_DIR/plan.json"   --root "$DEMO_DIR/run" --native-material "$DEMO_DIR/material/material.json"
+```
+
+`plan` enumerates the pinned corpus task inventory from `task.toml`
+metadata (no image is pulled or started), expands the document's
+`[selection]` (`scope=full|subset`, explicit `task_ids`, recorded
+`reason`, `repetitions`, optional per-task `seeds`) into exact trials,
+and checks every selected task's declared resource requirements against
+the locally observed resources: an unmet or unobservable requirement
+rejects the whole request - the set never silently shrinks - while the
+preview keeps the full inventory's per-task statuses visible. The
+preview JSON shows subjects, connection, task list, selection, trial
+count, concurrency, bounds, and the unmet/unknown preflight summary;
+the frozen `opi-eval-run-plan/1` file is digest-bound over the embedded
+experiment source, material identity, corpus entries, and exact trials.
+`[execution]` bounds are explicit: `concurrency` (default 1, an upper
+bound; hermetic trials run in parallel waves up to it, native trials
+stay serial), `max_trials` (a larger expansion rejects),
+`agent_timeout_seconds`/`verifier_timeout_seconds` (combine by
+narrowing), and `max_output_tokens` - enforceable only through the
+pinned model control of the same value. `max_total_tokens` and
+`max_cost` have no enforcement route in this build, so declaring either
+rejects with that reason (never silently ignored). `run --plan`
+re-verifies the plan digest, the material bytes, the experiment
+identity, and the corpus expansion, then executes exactly the frozen
+trials with stage/settlement progress on stderr and a saved structured
+result; a single-subject (pi-only or opi-only) experiment needs no
+artificial comparison edge. `run --config C` remains the same
+resolve/freeze path - a `[selection]` document expands against the same
+enumerated corpus at run time.
+
 ### 1. Validate
 
 ```sh

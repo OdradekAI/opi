@@ -245,10 +245,40 @@ impl NativeMaterial {
                     entry.profile.display()
                 )));
             }
-            if !entry.task_package.join("instruction.md").is_file() {
+            // The package root is either one task directory (its
+            // task.toml sits at the root) or a corpus directory of task
+            // subdirectories; every enumerated task must carry the
+            // official instruction (P19-D06 generalization; the pinned
+            // manifest digest still covers the whole tree).
+            let single_task = entry.task_package.join("task.toml").is_file();
+            let task_dirs: Vec<PathBuf> = if single_task {
+                vec![entry.task_package.clone()]
+            } else {
+                let mut children: Vec<PathBuf> = std::fs::read_dir(&entry.task_package)
+                    .map_err(|error| {
+                        MaterialError::Rejected(format!(
+                            "benchmark {benchmark} task package unreadable: {error}"
+                        ))
+                    })?
+                    .filter_map(|child| child.ok())
+                    .map(|child| child.path())
+                    .filter(|path| path.is_dir() && path.join("task.toml").is_file())
+                    .collect();
+                children.sort();
+                children
+            };
+            if task_dirs.is_empty() {
                 return Err(MaterialError::Rejected(format!(
-                    "benchmark {benchmark} task package has no instruction.md"
+                    "benchmark {benchmark} task package holds no task with a task.toml"
                 )));
+            }
+            for dir in &task_dirs {
+                if !dir.join("instruction.md").is_file() {
+                    return Err(MaterialError::Rejected(format!(
+                        "benchmark {benchmark} task {} has no instruction.md",
+                        dir.display()
+                    )));
+                }
             }
             verify_pinned(&entry.verifier_executable)?;
             verify_pinned(&entry.oracle)?;
@@ -379,6 +409,10 @@ mod tests {
         write(&profile, b"profile");
         let task = dir.join("task");
         write(&task.join("instruction.md"), b"instruction");
+        write(
+            &task.join("task.toml"),
+            b"[task]\nid = \"unit-fixture-task\"\n",
+        );
         format!(
             r#"{{
   "schema": "opi-eval-native-material/3",

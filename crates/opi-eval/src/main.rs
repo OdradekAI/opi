@@ -33,8 +33,13 @@ enum Command {
     /// paired evaluation runner.
     Run {
         /// Path to the experiment document.
+        #[arg(long, conflicts_with = "plan")]
+        config: Option<std::path::PathBuf>,
+        /// Path to a frozen run plan (`plan --out`): executes exactly
+        /// the plan's trials after re-verifying its digest, material,
+        /// and corpus expansion.
         #[arg(long)]
-        config: std::path::PathBuf,
+        plan: Option<std::path::PathBuf>,
         /// Fresh run root for trial directories and receipts.
         #[arg(long)]
         root: std::path::PathBuf,
@@ -82,6 +87,26 @@ enum Command {
         /// canary found in exportable bundle content blocks publication.
         #[arg(long)]
         canaries: Option<std::path::PathBuf>,
+    },
+    /// Preview the experiment and freeze its selection into a
+    /// digest-bound run plan: enumerates the pinned corpus inventory
+    /// from metadata (no image pulled or started), expands the
+    /// selection into exact trials, and checks every selected task's
+    /// resource requirements against the local observations.
+    Plan {
+        /// Path to the experiment document.
+        #[arg(long)]
+        config: std::path::PathBuf,
+        /// Resolved native material manifest (native mode).
+        #[arg(long)]
+        native_material: Option<std::path::PathBuf>,
+        /// Repository `crates/opi-eval/tests/fixtures` root (required
+        /// without --native-material).
+        #[arg(long)]
+        fixtures: Option<std::path::PathBuf>,
+        /// Output path of the frozen run plan.
+        #[arg(long)]
+        out: std::path::PathBuf,
     },
     /// Diagnose the local environment and declared materials without
     /// starting a model: engine reachability, architecture, observed
@@ -157,6 +182,7 @@ fn main() -> ExitCode {
         }
         Command::Run {
             config,
+            plan,
             root,
             fixtures,
             behavior,
@@ -167,6 +193,7 @@ fn main() -> ExitCode {
         } => {
             let args = cli::run::RunArgs {
                 config,
+                plan,
                 root,
                 fixtures,
                 behavior,
@@ -212,6 +239,32 @@ fn main() -> ExitCode {
                     println!(
                         "{}",
                         serde_json::to_string(&report).expect("prepare report serializes")
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Command::Plan {
+            config,
+            native_material,
+            fixtures,
+            out,
+        } => {
+            let args = cli::plan::PlanArgs {
+                config,
+                native_material,
+                fixtures,
+                out,
+            };
+            match cli::plan::plan(&args) {
+                Ok(preview) => {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&preview).expect("plan preview serializes")
                     );
                     ExitCode::SUCCESS
                 }

@@ -139,6 +139,75 @@ pub enum ResolveError {
         /// Why the requirement is not met.
         reason: String,
     },
+    /// Both `[selection]` and explicit `[[trials]]` were declared.
+    #[error("selection and explicit trials are mutually exclusive")]
+    SelectionAndTrials,
+    /// The selection scope is not `full` or `subset`.
+    #[error("invalid selection scope: {0} (expected full or subset)")]
+    InvalidSelectionScope(String),
+    /// A subset selection pinned no task ids.
+    #[error("scope=subset requires a non-empty task_ids list")]
+    EmptySubsetSelection,
+    /// A full selection also pinned task ids.
+    #[error("scope=full cannot pin task_ids; full selects the whole corpus")]
+    FullScopePinsTasks,
+    /// A task id appears twice in the selection.
+    #[error("duplicate selection task id: {0}")]
+    DuplicateSelectionTask(String),
+    /// The repetition count is not positive.
+    #[error("selection repetitions must be positive, found {0}")]
+    InvalidSelectionRepetitions(u64),
+    /// The concurrency bound is not positive.
+    #[error("execution concurrency must be positive, found {0}")]
+    InvalidConcurrency(u64),
+    /// A selection seed names a task outside the selection.
+    #[error("selection seed names task outside the selection: {0}")]
+    UnknownSelectionSeed(String),
+    /// A requested execution bound has no enforcement route here.
+    #[error("requested execution bound {bound} cannot be enforced: {reason}")]
+    UnenforceableExecutionBound {
+        /// The requested bound key.
+        bound: String,
+        /// Why it cannot be enforced.
+        reason: String,
+    },
+}
+
+/// The corpus selection scope of a `[selection]` block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SelectionScope {
+    /// Every task in the pinned corpus inventory.
+    Full,
+    /// The explicitly listed task ids.
+    Subset,
+}
+
+impl SelectionScope {
+    /// The exact document spelling of this scope.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Subset => "subset",
+        }
+    }
+}
+
+/// A resolved `[selection]` block: the user's corpus-selection intent.
+/// The exact trial expansion is corpus-dependent and happens only at
+/// freeze time (plan/run), never inside document resolution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResolvedSelection {
+    /// Corpus scope.
+    pub scope: SelectionScope,
+    /// Explicit task ids (empty for `full`).
+    pub task_ids: Vec<String>,
+    /// Recorded reason for the selection.
+    pub reason: String,
+    /// Repetitions per task (positive).
+    pub repetitions: u32,
+    /// Optional per-task deterministic seeds.
+    pub seeds: std::collections::BTreeMap<String, u64>,
 }
 
 /// An explicitly declared shared model control.
@@ -314,6 +383,17 @@ pub struct ResolvedExecution {
     pub time_limit_seconds: Option<u64>,
     /// Enforceable captured-output limit per Agent process.
     pub max_output_bytes: Option<u64>,
+    /// Bounded parallel trials (positive; 1 keeps the serial order).
+    pub concurrency: u32,
+    /// Declared maximum trial count; a larger expansion rejects at freeze.
+    pub max_trials: Option<u64>,
+    /// Per-Agent-process supervision limit (narrows `time_limit_seconds`).
+    pub agent_timeout_seconds: Option<u64>,
+    /// Per-verifier-process supervision limit.
+    pub verifier_timeout_seconds: Option<u64>,
+    /// Output-token bound; enforceable only through the pinned model
+    /// control of the same value (the projection carries it to the Agent).
+    pub max_output_tokens: Option<u64>,
 }
 
 /// Execution mode. Credential presence never selects it.
@@ -415,6 +495,7 @@ pub struct ResolvedExperiment {
     execution: ResolvedExecution,
     storage: ResolvedStorage,
     environment: ResolvedEnvironment,
+    selection: Option<ResolvedSelection>,
     trials: Vec<DeclaredTrial>,
 }
 
@@ -499,7 +580,9 @@ impl ResolvedExperiment {
             }
             edges.push(edge);
         }
-        if edges.is_empty() {
+        // A single-subject experiment needs no artificial comparison
+        // edge (P19-D05/§6): single-subject reports stand on their own.
+        if edges.is_empty() && subjects.len() > 1 {
             return Err(ResolveError::MissingEdges);
         }
         edges.sort_by(|a, b| a.id.cmp(&b.id));
@@ -594,16 +677,52 @@ impl ResolvedExperiment {
                         reason: "native Agent/provider route cannot enforce it".to_owned(),
                     });
                 }
+                let concurrency = match execution_table.get("concurrency") {
+                    None => 1,
+                    Some(toml::Value::Integer(value)) => u32::try_from(*value)
+                        .ok()
+                        .filter(|parsed| *parsed > 0)
+                        .ok_or(ResolveError::InvalidConcurrency(*value as u64))?,
+                    _ => return Err(ResolveError::InvalidConcurrency(0)),
+                };
+                let max_trials = optional_u64(execution_table, "max_trials")?;
+                let max_total_tokens = optional_u64(execution_table, "max_total_tokens")?;
+                if max_total_tokens.is_some() {
+                    return Err(ResolveError::UnenforceableExecutionBound {
+                        bound: "max_total_tokens".to_owned(),
+                        reason: "provider usage accounting is not an enforcement route in this build; declare an enforceable bound or omit it".to_owned(),
+                    });
+                }
+                if execution_table.contains_key("max_cost") {
+                    return Err(ResolveError::UnenforceableExecutionBound {
+                        bound: "max_cost".to_owned(),
+                        reason: "unknown prices cannot support a guaranteed currency cap"
+                            .to_owned(),
+                    });
+                }
                 ResolvedExecution {
                     mode,
                     time_limit_seconds: optional_u64(execution_table, "time_limit_seconds")?,
                     max_output_bytes: optional_u64(execution_table, "max_output_bytes")?,
+                    concurrency,
+                    max_trials,
+                    agent_timeout_seconds: optional_u64(execution_table, "agent_timeout_seconds")?,
+                    verifier_timeout_seconds: optional_u64(
+                        execution_table,
+                        "verifier_timeout_seconds",
+                    )?,
+                    max_output_tokens: optional_u64(execution_table, "max_output_tokens")?,
                 }
             }
             _ => ResolvedExecution {
                 mode: ExecutionMode::Hermetic,
                 time_limit_seconds: None,
                 max_output_bytes: None,
+                concurrency: 1,
+                max_trials: None,
+                agent_timeout_seconds: None,
+                verifier_timeout_seconds: None,
+                max_output_tokens: None,
             },
         };
         for connection in &connections {
@@ -693,6 +812,90 @@ impl ResolvedExperiment {
             cwd_policy: require_str(environment_table, "environment.cwd_policy")?,
         };
 
+        // Task selection (P19-D05): `[selection]` derives the trial set
+        // from the corpus inventory at freeze time; it is mutually
+        // exclusive with explicit `[[trials]]` (ambiguous intent
+        // rejects). Without either, the document has no trial set.
+        let task_selection = match table.get("selection") {
+            Some(toml::Value::Table(selection_table)) => {
+                if table.contains_key("trials") {
+                    return Err(ResolveError::SelectionAndTrials);
+                }
+                let scope = match selection_table.get("scope") {
+                    Some(toml::Value::String(value)) => match value.as_str() {
+                        "full" => SelectionScope::Full,
+                        "subset" => SelectionScope::Subset,
+                        other => {
+                            return Err(ResolveError::InvalidSelectionScope(other.to_owned()));
+                        }
+                    },
+                    _ => {
+                        return Err(ResolveError::MissingField("selection.scope".to_owned()));
+                    }
+                };
+                let task_ids: Vec<String> = match selection_table.get("task_ids") {
+                    Some(toml::Value::Array(entries)) => {
+                        let mut ids = Vec::with_capacity(entries.len());
+                        for entry in entries {
+                            let Some(id) = entry.as_str() else {
+                                return Err(ResolveError::InvalidSelectionScope(
+                                    "<non-string task id>".to_owned(),
+                                ));
+                            };
+                            if id.trim().is_empty() {
+                                return Err(ResolveError::EmptySubsetSelection);
+                            }
+                            if ids.iter().any(|known: &String| known == id) {
+                                return Err(ResolveError::DuplicateSelectionTask(id.to_owned()));
+                            }
+                            ids.push(id.to_owned());
+                        }
+                        ids
+                    }
+                    _ => Vec::new(),
+                };
+                match scope {
+                    SelectionScope::Full if !task_ids.is_empty() => {
+                        return Err(ResolveError::FullScopePinsTasks);
+                    }
+                    SelectionScope::Subset if task_ids.is_empty() => {
+                        return Err(ResolveError::EmptySubsetSelection);
+                    }
+                    _ => {}
+                }
+                let reason = require_str(selection_table, "selection.reason")?;
+                let repetitions = match selection_table.get("repetitions") {
+                    None => 1,
+                    Some(toml::Value::Integer(value)) => u32::try_from(*value)
+                        .ok()
+                        .filter(|parsed| *parsed > 0)
+                        .ok_or(ResolveError::InvalidSelectionRepetitions(*value as u64))?,
+                    _ => return Err(ResolveError::InvalidSelectionRepetitions(0)),
+                };
+                let mut seeds = std::collections::BTreeMap::new();
+                if let Some(toml::Value::Table(seed_table)) = selection_table.get("seeds") {
+                    for (task, value) in seed_table {
+                        let Some(seed) = value.as_integer() else {
+                            return Err(ResolveError::UnknownSelectionSeed(task.clone()));
+                        };
+                        if scope == SelectionScope::Subset && !task_ids.iter().any(|id| id == task)
+                        {
+                            return Err(ResolveError::UnknownSelectionSeed(task.clone()));
+                        }
+                        seeds.insert(task.clone(), seed as u64);
+                    }
+                }
+                Some(ResolvedSelection {
+                    scope,
+                    task_ids,
+                    reason,
+                    repetitions,
+                    seeds,
+                })
+            }
+            _ => None,
+        };
+
         let mut trials: Vec<DeclaredTrial> = Vec::new();
         for entry in array_entries(table, "trials", "trials")? {
             let trial = DeclaredTrial {
@@ -712,7 +915,7 @@ impl ResolvedExperiment {
             }
             trials.push(trial);
         }
-        if trials.is_empty() {
+        if trials.is_empty() && task_selection.is_none() {
             return Err(ResolveError::MissingTrials);
         }
         trials.sort_by(|a, b| a.id.cmp(&b.id));
@@ -730,8 +933,28 @@ impl ResolvedExperiment {
             execution,
             storage,
             environment,
+            selection: task_selection,
             trials,
         };
+        if let Some(bound) = resolved.execution.max_output_tokens {
+            let enforceable = matches!(
+                resolved.model_controls.max_output_tokens,
+                ControlValue::Value(value) if value == bound
+            );
+            if !enforceable {
+                let reason = match resolved.model_controls.max_output_tokens {
+                    ControlValue::Value(value) => {
+                        format!("contradicts the pinned max_output_tokens control {value}")
+                    }
+                    _ => "no enforcement route without a pinned max_output_tokens model control"
+                        .to_owned(),
+                };
+                return Err(ResolveError::UnenforceableExecutionBound {
+                    bound: "max_output_tokens".to_owned(),
+                    reason,
+                });
+            }
+        }
         let mut resolved = resolved;
         let canonical = serde_json::to_string(&resolved)
             .map_err(|error| ResolveError::Canonicalize(error.to_string()))?;
@@ -805,9 +1028,26 @@ impl ResolvedExperiment {
         &self.environment
     }
 
-    /// Declared trials, sorted by id.
+    /// Declared trials, sorted by id. Empty when the document selects
+    /// tasks through `[selection]`; the corpus-aware expansion happens
+    /// at freeze time (plan/run).
     pub fn trials(&self) -> &[DeclaredTrial] {
         &self.trials
+    }
+
+    /// The resolved `[selection]` block, when present.
+    pub fn selection(&self) -> Option<&ResolvedSelection> {
+        self.selection.as_ref()
+    }
+
+    /// Runner-only post-resolution trial expansion: replaces the
+    /// declared-trial projection with the corpus-aware expansion of the
+    /// document's `[selection]`. The manifest digest stays the document
+    /// identity (the expansion is corpus-dependent and lives in the
+    /// digest-bound run plan, never in the experiment digest).
+    pub(crate) fn replace_trials(mut self, trials: Vec<DeclaredTrial>) -> Self {
+        self.trials = trials;
+        self
     }
 
     /// Project the selected connection for one pinned native client

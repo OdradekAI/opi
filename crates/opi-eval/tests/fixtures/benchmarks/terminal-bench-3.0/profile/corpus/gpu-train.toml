@@ -1,0 +1,65 @@
+# Synthetic Terminal-Bench 3.0 profile for adapter unit tests ONLY.
+# Fabricated identity pins and a synthetic byte-table package closure: it
+# exists to exercise the byte-table admission and CTRF import wiring through
+# the shared BenchmarkExecution contract with pinned fixture bytes. It is not
+# an upstream identity and its CTRF output kind is a wiring hypothesis, not a
+# pinned 3.0 native-output schema (that remains open for the native smoke).
+
+schema = "opi-eval-benchmark-profile/1"
+benchmark = "terminal-bench"
+revision = "3.0"
+
+[identity]
+upstream = "https://example.invalid/synthetic-terminal-bench-3"
+tag = "v0.0.0-synthetic"
+source_commit = "1111111111111111111111111111111111111111"
+tasks_tree = "2222222222222222222222222222222222222222"
+task_id = "gpu-train"
+task_tree = "3333333333333333333333333333333333333333"
+package_pin = "byte-table"
+package_manifest_sha256 = "43851cc6f981a6056f3004a91d6dacd83a7ca48c6e99f5f4e1ab4f6ce96c6547"
+adapter = "opi-eval-terminal-bench-30-adapter/1"
+
+[verifier]
+runner_kind = "harbor"
+runner_version = "v0.22.0"
+runner_commit = "4407eb5227a2ff4f0d3f16b2eb48849382fdf276"
+launch = ["run", "-p", "<task-dir>"]
+lifecycle = "separate-container"
+verifier_workdir = "/app/evalbench"
+artifact_policy = "declared-original-paths"
+output_kind = "ctrf-json"
+
+[resources]
+cpus = 1
+memory_gib = 4
+
+[limits]
+timeout_secs = 900
+stdout_cap_bytes = 1048576
+stderr_cap_bytes = 1048576
+
+
+[[package]]
+path = "environment/Dockerfile"
+mode = "100755"
+size = 55
+sha256 = "6833a1bf47dd16d5564a8eeb9918eb05d85091aa9ddafc88e65b0e00b3171032"
+
+[[package]]
+path = "instruction.md"
+mode = "100755"
+size = 69
+sha256 = "2b233bdbaa8b41561ee3d697d5c429ce50140ff620d30967a5dfb6cb7d242a1a"
+
+[[package]]
+path = "task.toml"
+mode = "100755"
+size = 172
+sha256 = "f05675d61aa2f734eba40375d05cd272c9f826e47e0b7f7a8695e815707f16ab"
+
+[[package]]
+path = "tests/verify.sh"
+mode = "100755"
+size = 52
+sha256 = "c75185bc7c41e881c60f6891726071bd789efac47636edcb44319a88a80c2664"

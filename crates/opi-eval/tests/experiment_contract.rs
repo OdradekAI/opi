@@ -793,3 +793,215 @@ fn resolve_requires_every_extended_control_and_storage_identity() {
     }));
     assert!(matches!(error, ResolveError::MissingField(f) if f.contains("capture_policy")));
 }
+
+// --- Task 19.6: [selection]/[execution] document contract (P19-D05) ---
+
+/// A minimal fixture with the explicit trials replaced by a selection
+/// block (plus optional execution bound overrides).
+fn selection_doc(tweak: fn(&mut String)) -> String {
+    let mut source = MINIMAL_FIXTURE[..MINIMAL_FIXTURE.find("[[trials]]").unwrap()].to_owned();
+    source.push_str(
+        r#"
+[selection]
+scope = "subset"
+task_ids = ["hello", "world"]
+reason = "feasible subset for the deterministic run"
+repetitions = 2
+
+[selection.seeds]
+hello = 7
+
+[execution]
+mode = "hermetic"
+concurrency = 2
+max_trials = 8
+agent_timeout_seconds = 600
+verifier_timeout_seconds = 900
+max_output_tokens = 4096
+"#,
+    );
+    tweak(&mut source);
+    source
+}
+
+#[test]
+fn resolve_selection_freezes_scope_tasks_repetitions_and_bounds() {
+    let resolved = ResolvedExperiment::resolve(&selection_doc(|_| {})).unwrap();
+    let selection = resolved.selection().expect("selection must resolve");
+    assert_eq!(selection.scope.as_str(), "subset");
+    assert_eq!(selection.task_ids, ["hello", "world"]);
+    assert_eq!(
+        selection.reason,
+        "feasible subset for the deterministic run"
+    );
+    assert_eq!(selection.repetitions, 2);
+    assert_eq!(selection.seeds.get("hello"), Some(&7));
+
+    let execution = resolved.execution();
+    assert_eq!(execution.concurrency, 2);
+    assert_eq!(execution.max_trials, Some(8));
+    assert_eq!(execution.agent_timeout_seconds, Some(600));
+    assert_eq!(execution.verifier_timeout_seconds, Some(900));
+    assert_eq!(execution.max_output_tokens, Some(4096));
+
+    // No explicit trials in selection mode; expansion happens at freeze.
+    assert!(resolved.trials().is_empty());
+    let again = ResolvedExperiment::resolve(&selection_doc(|_| {})).unwrap();
+    assert_eq!(resolved.manifest_digest(), again.manifest_digest());
+}
+
+#[test]
+fn resolve_rejects_selection_and_explicit_trials_ambiguity() {
+    let mut source = selection_doc(|_| {});
+    source.push_str(
+        "\n[[trials]]\nid = \"t\"\nsubject = \"opi\"\ntask = \"hello\"\ngroup = \"hello\"\n",
+    );
+    let error = assert_rejected(&source);
+    assert!(error.to_string().contains("mutually exclusive"), "{error}");
+}
+
+#[test]
+fn resolve_rejects_selection_faults() {
+    let error = assert_rejected(&selection_doc(|s| {
+        *s = s.replace("scope = \"subset\"", "scope = \"half\"");
+    }));
+    assert!(matches!(error, ResolveError::InvalidSelectionScope(s) if s == "half"));
+
+    let error = assert_rejected(&selection_doc(|s| {
+        *s = s.replace("task_ids = [\"hello\", \"world\"]\nreason =", "reason =");
+    }));
+    assert!(matches!(error, ResolveError::EmptySubsetSelection));
+
+    let error = assert_rejected(&selection_doc(|s| {
+        *s = s.replace(
+            "task_ids = [\"hello\", \"world\"]",
+            "task_ids = [\"hello\", \"hello\"]",
+        );
+    }));
+    assert!(matches!(error, ResolveError::DuplicateSelectionTask(t) if t == "hello"));
+
+    let error = assert_rejected(&selection_doc(|s| {
+        *s = s.replace("repetitions = 2", "repetitions = 0");
+    }));
+    assert!(matches!(
+        error,
+        ResolveError::InvalidSelectionRepetitions(0)
+    ));
+
+    let error = assert_rejected(&selection_doc(|s| {
+        *s = s.replace(
+            "\nreason = \"feasible subset for the deterministic run\"",
+            "",
+        );
+    }));
+    assert!(matches!(error, ResolveError::MissingField(f) if f.contains("reason")));
+}
+
+#[test]
+fn resolve_full_scope_cannot_pin_task_ids() {
+    let error = assert_rejected(&selection_doc(|s| {
+        *s = s.replace("scope = \"subset\"", "scope = \"full\"");
+    }));
+    assert!(matches!(error, ResolveError::FullScopePinsTasks));
+    assert_rejected(&selection_doc(|s| {
+        *s = s.replace(
+            "task_ids = [\"hello\", \"world\"]\nreason",
+            "task_ids = []\nreason",
+        )
+    }));
+    ResolvedExperiment::resolve(&selection_doc(|s| {
+        *s = s.replace(
+            "scope = \"subset\"\ntask_ids = [\"hello\", \"world\"]\n",
+            "scope = \"full\"\n",
+        );
+    }))
+    .unwrap();
+}
+
+#[test]
+fn resolve_rejects_unenforceable_execution_bounds() {
+    let error = assert_rejected(&selection_doc(|s| {
+        *s = s.replace("max_output_tokens = 4096", "max_total_tokens = 100000");
+    }));
+    assert!(
+        matches!(error, ResolveError::UnenforceableExecutionBound { ref bound, .. } if bound == "max_total_tokens"),
+        "{error}"
+    );
+
+    let error = assert_rejected(&selection_doc(|s| {
+        *s = s.replace("max_output_tokens = 4096", "max_cost = \"5 USD\"");
+    }));
+    assert!(
+        matches!(error, ResolveError::UnenforceableExecutionBound { ref bound, .. } if bound == "max_cost"),
+        "{error}"
+    );
+
+    // An output-token bound is enforceable only through the pinned model
+    // control: a contradiction with the frozen control rejects.
+    let error = assert_rejected(&selection_doc(|s| {
+        *s = s.replace(
+            "verifier_timeout_seconds = 900\nmax_output_tokens = 4096",
+            "verifier_timeout_seconds = 900\nmax_output_tokens = 8192",
+        );
+    }));
+    assert!(
+        matches!(error, ResolveError::UnenforceableExecutionBound { ref bound, .. } if bound == "max_output_tokens"),
+        "{error}"
+    );
+}
+
+#[test]
+fn resolve_rejects_nonpositive_execution_bounds() {
+    let error = assert_rejected(&selection_doc(|s| {
+        *s = s.replace("concurrency = 2", "concurrency = 0");
+    }));
+    assert!(matches!(error, ResolveError::InvalidConcurrency(0)));
+
+    let error = assert_rejected(&selection_doc(|s| {
+        *s = s.replace("max_trials = 8", "max_trials = 0");
+    }));
+    assert!(
+        matches!(error, ResolveError::InvalidControlValue { ref control, .. } if control.contains("max_trials")),
+        "{error}"
+    );
+}
+
+#[test]
+fn validate_cli_summarizes_selection_documents() {
+    let dir = std::env::temp_dir().join(format!("opi-eval-selection-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("selection.toml");
+    std::fs::write(&path, selection_doc(|_| {})).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("validate")
+        .arg("--config")
+        .arg(&path)
+        .output()
+        .expect("run opi-eval validate");
+    assert!(
+        output.status.success(),
+        "validate CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("selection=subset"), "summary: {stdout}");
+    assert!(stdout.contains("tasks=2"), "summary: {stdout}");
+    assert!(stdout.contains("repetitions=2"), "summary: {stdout}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn single_subject_selection_needs_no_artificial_edge() {
+    let mut source = selection_doc(|_| {});
+    // One subject, no edges: the report stands without a fabricated pair.
+    source = source
+        .replace(
+            "[[subjects]]\nid = \"opi\"\nproduct = \"opi\"\nversion = \"0.8.1\"\n\n[[subjects]]\nid = \"pi\"\nproduct = \"pi\"\nversion = \"0.84.1\"\n\n[[edges]]\nid = \"opi-baseline-vs-pi-candidate\"\nbaseline = \"opi\"\ncandidate = \"pi\"\n",
+            "[[subjects]]\nid = \"pi\"\nproduct = \"pi\"\nversion = \"0.84.1\"\n",
+        );
+    let resolved = ResolvedExperiment::resolve(&source).unwrap();
+    assert_eq!(resolved.subjects().len(), 1);
+    assert!(resolved.edges().is_empty());
+    assert!(resolved.selection().is_some());
+}

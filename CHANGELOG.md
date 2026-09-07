@@ -39,6 +39,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inline credential fields: request identity is projected from the
   selected connection (`project_connection`) into each pinned client's
   exact configuration bytes.
+- `opi-eval`: experiments select full/subset task plans and freeze them
+  into digest-bound run plans. New `plan --config C [--native-material
+  M] --out P` enumerates the pinned corpus inventory from `task.toml`
+  metadata without pulling or starting images, expands the document's
+  `[selection]` (`scope=full|subset`, explicit `task_ids`, recorded
+  `reason`, `repetitions`, optional per-task `seeds`; mutually
+  exclusive with explicit `[[trials]]`) into exact trials, and checks
+  every selected task's declared requirements against the locally
+  observed resources: unmet or unobservable requirements reject the
+  whole request - full scope included, never a silent shrink - while
+  the preview keeps per-task statuses for the whole inventory. The
+  frozen `opi-eval-run-plan/1` file binds the embedded experiment
+  source, material identity, corpus entries, and exact trials under one
+  digest; new `[execution]` bounds are explicit (`concurrency` enforced
+  as an upper bound with parallel hermetic waves, `max_trials`
+  rejecting smaller expansions, agent/verifier timeouts combining by
+  narrowing, `max_output_tokens` enforceable only via the equal pinned
+  model control; `max_total_tokens`/`max_cost` reject naming their
+  missing enforcement route). `run --plan P --root R` re-verifies the
+  digest, material bytes, experiment identity, and corpus expansion,
+  then executes exactly the frozen trials with stage/settlement
+  progress on stderr and a saved structured result carrying the plan
+  identity; tampering with the plan rejects before any trial runs.
+  `run --config C` stays the same resolve/freeze path. Task packages
+  generalize to corpus directories of task subdirectories (single-task
+  layout unchanged) with per-task pinned profiles; hermetic corpus
+  fixtures cover multi-task selection. A single-subject experiment
+  (pi-only or opi-only) no longer requires an artificial comparison
+  edge.
 - `opi-eval`: local material preparation works from an independent
   directory. New `doctor --config C` reports Linux-engine reachability,
   architecture, WSL/Docker-observed CPU/memory/GPU/disk, and missing

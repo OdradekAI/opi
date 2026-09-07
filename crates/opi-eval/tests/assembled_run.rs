@@ -810,3 +810,362 @@ fn all_grader_families_assemble_through_run() {
         );
     }
 }
+
+// --- Task 19.6: frozen plan execution, subset selection (P19-D05) ---
+
+/// Recursively copies one directory tree (test staging only).
+fn copy_tree(source: &Path, target: &Path) {
+    std::fs::create_dir_all(target).unwrap();
+    for entry in std::fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() {
+            copy_tree(&path, &target.join(entry.file_name()));
+        } else {
+            std::fs::copy(&path, target.join(entry.file_name())).unwrap();
+        }
+    }
+}
+
+/// A fixtures tree whose terminal-bench-3.0 package is the multi-task
+/// corpus fixture (alpha-notes, beta-render, gpu-train).
+fn corpus_fixtures() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    // The whole fixture tree travels (agent stream fixtures included);
+    // only the terminal-bench-3.0 package is replaced by the corpus.
+    for entry in std::fs::read_dir(fixtures_dir()).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() && entry.file_name() != "external-locks" {
+            copy_tree(&path, &dir.path().join(entry.file_name()));
+        }
+    }
+    let package = dir
+        .path()
+        .join("benchmarks/terminal-bench-3.0/task-package");
+    std::fs::remove_dir_all(&package).unwrap();
+    copy_tree(
+        &fixtures_dir().join("benchmarks/terminal-bench-3.0/corpus"),
+        &package,
+    );
+    dir
+}
+
+fn selection_document(dir: &Path, task_ids: &str, repetitions: u32, concurrency: u32) -> PathBuf {
+    let path = dir.join("selection.toml");
+    std::fs::write(
+        &path,
+        format!(
+            r#"schema = "opi-eval-experiment/2"
+experiment_id = "corpus-subset-plan"
+connection = "fixture-local"
+
+[benchmark]
+name = "terminal-bench"
+revision = "3.0"
+dataset = "corpus-fixture"
+
+[[subjects]]
+id = "opi"
+product = "opi"
+version = "0.8.1"
+
+[[subjects]]
+id = "pi"
+product = "pi"
+version = "0.84.1"
+
+[[edges]]
+id = "opi-baseline-vs-pi-candidate"
+baseline = "opi"
+candidate = "pi"
+
+[[connections]]
+id = "fixture-local"
+provider = "local"
+api = "openai-completions"
+base_url = "http://127.0.0.1:48127/v1"
+model = "scripted"
+credential_env = "OPI_EVAL_FIXTURE_KEY"
+
+[model_controls]
+temperature = 0.0
+top_p = "omitted"
+max_output_tokens = 4096
+context_window = 8192
+reasoning = "omitted"
+
+[execution]
+mode = "hermetic"
+concurrency = {concurrency}
+agent_timeout_seconds = 600
+verifier_timeout_seconds = 900
+
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
+
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "workspace-root"
+
+[selection]
+scope = "subset"
+task_ids = {task_ids}
+reason = "feasible corpus subset for the deterministic multi-task run"
+repetitions = {repetitions}
+
+[selection.seeds]
+alpha-notes = 11
+"#,
+        ),
+    )
+    .unwrap();
+    path
+}
+
+/// Pins the hermetic integrity digest into a selection document: the
+/// first run derives the review identity (the expansion of the
+/// selection is part of it), the failure names it, and the document is
+/// patched exactly as the fixture documents were produced.
+fn pin_hermetic_integrity(config: &Path, fixtures_root: &Path) {
+    let scratch = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--config")
+        .arg(config)
+        .arg("--root")
+        .arg(scratch.path().canonicalize().unwrap())
+        .arg("--fixtures")
+        .arg(fixtures_root)
+        .args(["--behavior", "happy"])
+        .output()
+        .expect("spawn the opi-eval run binary");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let digest = stderr
+        .split("derived review is ")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .unwrap_or_else(|| panic!("no derived digest in: {stderr}"))
+        .to_owned();
+    let source = std::fs::read_to_string(config).unwrap();
+    let pinned = source.replacen(
+        "dataset = \"corpus-fixture\"",
+        &format!("dataset = \"corpus-fixture\"\nintegrity_digest = \"{digest}\""),
+        1,
+    );
+    std::fs::write(config, pinned).unwrap();
+}
+
+/// P19-AC-007 (selection) + P19-AC-001 (plan/run): a frozen feasible
+/// subset executes exactly its tasks and repetitions from an
+/// independent directory, with stage/settlement progress on stderr and
+/// a structured saved result; the unmet GPU task never silently joins.
+#[test]
+fn frozen_subset_execution() {
+    let fixtures = corpus_fixtures();
+    let work = tempfile::tempdir().unwrap();
+    let config = selection_document(work.path(), "[\"alpha-notes\", \"beta-render\"]", 2, 2);
+    pin_hermetic_integrity(&config, &fixtures.path().canonicalize().unwrap());
+    let plan_path = work.path().join("plan.json");
+
+    let plan_output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("plan")
+        .arg("--config")
+        .arg(&config)
+        .arg("--fixtures")
+        .arg(fixtures.path().canonicalize().unwrap())
+        .arg("--out")
+        .arg(&plan_path)
+        .env("DOCKER_HOST", "tcp://127.0.0.1:1")
+        .current_dir(work.path())
+        .output()
+        .expect("spawn the opi-eval plan command");
+    let stdout = String::from_utf8_lossy(&plan_output.stdout);
+    let stderr = String::from_utf8_lossy(&plan_output.stderr);
+    assert_eq!(
+        plan_output.status.code(),
+        Some(0),
+        "plan must freeze: stdout={stdout} stderr={stderr}"
+    );
+    let preview: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(preview["trial_count"], 8);
+    assert_eq!(preview["concurrency"], 2);
+    assert_eq!(
+        preview["preflight"]["unknown"],
+        serde_json::json!(["gpu-train"])
+    );
+    let plan_digest = preview["plan_digest"].as_str().unwrap().to_owned();
+
+    let root = tempfile::tempdir().unwrap();
+    let run_output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--plan")
+        .arg(&plan_path)
+        .arg("--root")
+        .arg(root.path().canonicalize().unwrap())
+        .arg("--fixtures")
+        .arg(fixtures.path().canonicalize().unwrap())
+        .env("DOCKER_HOST", "tcp://127.0.0.1:1")
+        .current_dir(work.path())
+        .output()
+        .expect("spawn the opi-eval run --plan command");
+    let stdout = String::from_utf8_lossy(&run_output.stdout);
+    let stderr = String::from_utf8_lossy(&run_output.stderr);
+    assert_eq!(
+        run_output.status.code(),
+        Some(0),
+        "run --plan must complete: stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("execution: 8 trials, width 2"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("stage=start"), "stderr: {stderr}");
+    assert!(stderr.contains("settled=sealed"), "stderr: {stderr}");
+
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["outcome"], "completed");
+    assert_eq!(report["plan_digest"], serde_json::json!(plan_digest));
+    assert_eq!(report["execution_width"], 2);
+    let tasks: std::collections::BTreeSet<&str> = report["trials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|trial| trial["task"].as_str())
+        .collect();
+    assert_eq!(
+        tasks,
+        ["alpha-notes", "beta-render"].into_iter().collect(),
+        "exactly the frozen subset executes"
+    );
+    assert_eq!(report["trials"].as_array().unwrap().len(), 8);
+    // The paired groups stay comparable across both repetitions.
+    assert_eq!(report["pairs"].as_array().unwrap().len(), 4);
+
+    let saved: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(root.path().join("run-report.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved["plan_digest"], serde_json::json!(plan_digest));
+}
+
+/// A tampered plan never executes: the digest addresses the whole
+/// frozen contract, so configuration changes require a new plan.
+#[test]
+fn tampered_plan_rejects_before_any_trial() {
+    let fixtures = corpus_fixtures();
+    let work = tempfile::tempdir().unwrap();
+    let config = selection_document(work.path(), "[\"alpha-notes\"]", 1, 1);
+    pin_hermetic_integrity(&config, &fixtures.path().canonicalize().unwrap());
+    let plan_path = work.path().join("plan.json");
+    let plan_output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("plan")
+        .arg("--config")
+        .arg(&config)
+        .arg("--fixtures")
+        .arg(fixtures.path().canonicalize().unwrap())
+        .arg("--out")
+        .arg(&plan_path)
+        .env("DOCKER_HOST", "tcp://127.0.0.1:1")
+        .output()
+        .expect("spawn the opi-eval plan command");
+    assert_eq!(plan_output.status.code(), Some(0));
+
+    let mut plan: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&plan_path).unwrap()).unwrap();
+    plan["experiment"]["source"] = serde_json::json!(
+        plan["experiment"]["source"]
+            .as_str()
+            .unwrap()
+            .replace("corpus-subset-plan", "quietly-changed")
+    );
+    std::fs::write(&plan_path, serde_json::to_string(&plan).unwrap()).unwrap();
+
+    let root = tempfile::tempdir().unwrap();
+    let run_output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--plan")
+        .arg(&plan_path)
+        .arg("--root")
+        .arg(root.path().canonicalize().unwrap())
+        .arg("--fixtures")
+        .arg(fixtures.path().canonicalize().unwrap())
+        .output()
+        .expect("spawn the opi-eval run --plan command");
+    let stderr = String::from_utf8_lossy(&run_output.stderr);
+    assert_eq!(run_output.status.code(), Some(2), "stderr: {stderr}");
+    assert!(stderr.contains("digest drift"), "stderr: {stderr}");
+}
+
+/// A pi-only selection plans and runs with no artificial comparison
+/// edge and no Opi material anywhere in the flow.
+#[test]
+fn pi_only_selection_runs_without_an_artificial_edge() {
+    let fixtures = corpus_fixtures();
+    let work = tempfile::tempdir().unwrap();
+    let mut source =
+        std::fs::read_to_string(selection_document(work.path(), "[\"alpha-notes\"]", 1, 1))
+            .unwrap();
+    // Single subject, no edges: the report stands on its own.
+    let subjects_start = source.find("[[subjects]]").unwrap();
+    let edges_end = source.find("[[connections]]").unwrap();
+    source.replace_range(
+        subjects_start..edges_end,
+        "[[subjects]]\nid = \"pi\"\nproduct = \"pi\"\nversion = \"0.84.1\"\n\n",
+    );
+    let config = work.path().join("pi-only.toml");
+    std::fs::write(&config, source).unwrap();
+    pin_hermetic_integrity(&config, &fixtures.path().canonicalize().unwrap());
+
+    let plan_path = work.path().join("pi-plan.json");
+    let plan_output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("plan")
+        .arg("--config")
+        .arg(&config)
+        .arg("--fixtures")
+        .arg(fixtures.path().canonicalize().unwrap())
+        .arg("--out")
+        .arg(&plan_path)
+        .env("DOCKER_HOST", "tcp://127.0.0.1:1")
+        .output()
+        .expect("spawn the opi-eval plan command");
+    assert_eq!(plan_output.status.code(), Some(0));
+    let preview: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&plan_output.stdout).trim()).unwrap();
+    assert_eq!(
+        preview["subjects"],
+        serde_json::json!([{"id": "pi", "product": "pi"}])
+    );
+    assert_eq!(preview["trial_count"], 1);
+
+    let root = tempfile::tempdir().unwrap();
+    let run_output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--plan")
+        .arg(&plan_path)
+        .arg("--root")
+        .arg(root.path().canonicalize().unwrap())
+        .arg("--fixtures")
+        .arg(fixtures.path().canonicalize().unwrap())
+        .env("DOCKER_HOST", "tcp://127.0.0.1:1")
+        .output()
+        .expect("spawn the opi-eval run --plan command");
+    let stdout = String::from_utf8_lossy(&run_output.stdout);
+    let stderr = String::from_utf8_lossy(&run_output.stderr);
+    assert_eq!(
+        run_output.status.code(),
+        Some(0),
+        "pi-only run must complete: stdout={stdout} stderr={stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["outcome"], "completed");
+    assert_eq!(report["trials"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        report["trials"][0]["subject"], "pi",
+        "no absent Agent fills the pair"
+    );
+    assert_eq!(report["pairs"].as_array().unwrap().len(), 0);
+}

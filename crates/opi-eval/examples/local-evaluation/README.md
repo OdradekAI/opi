@@ -61,7 +61,24 @@ seeded (`prepare --cache ... --plan ...`, log captured under the output
 root); without it, the failure names the missing identity and how to
 acquire it.
 
-## 4. Validate and run from the independent directory
+## 4. Preview, freeze, and run a selection plan
+
+```sh
+opi-eval plan --config experiment.toml --out /path/to/plan.json
+cat /path/to/plan.json
+opi-eval run --plan /path/to/plan.json --root /path/to/run-root
+```
+
+The document's `[selection]` (scope, explicit task ids, reason,
+repetitions, optional seeds) expands against the enumerated corpus at
+freeze time; unmet or unobservable selected requirements reject before
+any plan is written. The plan is digest-bound over the experiment
+source, material identity, corpus entries, and exact trials;
+`run --plan` re-verifies all of it and executes exactly those trials
+(stage/settlement progress on stderr, structured result saved under the
+run root). A pi-only experiment needs no artificial comparison edge.
+
+## 5. Validate and run from the independent directory
 
 ```sh
 opi-eval validate --config experiment.toml --native-material /path/to/material/material.json

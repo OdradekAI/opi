@@ -2591,3 +2591,232 @@ fn unmet_resource_requirement_rejects_without_silent_shrink() {
     assert_eq!(preflight["status"], "ok");
     assert!(preflight["requirements"]["gpus"].is_u64());
 }
+
+// --- Task 19.6: plan freeze, full-inventory preflight, selection (P19-D05) ---
+
+/// Builds a three-task corpus package root (one profile-bound task, one
+/// feasible extra task, one GPU-bound task) and repoints the staged
+/// material's terminal-bench-2.1 benchmark at it.
+fn stage_corpus(staged: &Staged) -> std::path::PathBuf {
+    let corpus = staged.root.join("corpus-package");
+    let bound = corpus.join("fixture-task");
+    copy_dir(&staged.root.join("material/task-package"), &bound);
+    for (id, gpus) in [("alpha-notes", None), ("gpu-train", Some(1))] {
+        let dir = corpus.join(id);
+        fs::create_dir_all(dir.join("environment")).unwrap();
+        fs::create_dir_all(dir.join("tests")).unwrap();
+        fs::write(
+            dir.join("task.toml"),
+            format!(
+                "schema_version = \"1.0\"\n\n[task]\nid = \"{id}\"\n\n[verifier]\nenvironment_mode = \"separate\"\n{}",
+                match gpus {
+                    Some(count) => format!("\n[environment]\ncpus = 2\nmemory_mb = 2048\ngpus = {count}\n"),
+                    None => String::new(),
+                }
+            ),
+        )
+        .unwrap();
+        fs::write(
+            dir.join("instruction.md"),
+            format!("TB3 synthetic corpus task {id} instruction (test staging only).\n"),
+        )
+        .unwrap();
+    }
+    let material: serde_json::Value = {
+        let text = fs::read_to_string(&staged.material).unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        value["benchmarks"]["terminal-bench-2.1"]["task_package"] = json_path(&corpus);
+        value["benchmarks"]["terminal-bench-2.1"]["task_package_manifest_sha256"] =
+            serde_json::json!(directory_manifest_digest(&corpus));
+        value
+    };
+    fs::write(
+        &staged.material,
+        serde_json::to_string_pretty(&material).unwrap(),
+    )
+    .unwrap();
+    corpus
+}
+
+fn json_path(path: &Path) -> serde_json::Value {
+    serde_json::json!(path.to_string_lossy().to_string())
+}
+
+/// A selection-mode experiment document over the staged native material.
+fn selection_experiment_text(staged: &Staged, integrity_digest: &str, task_ids: &str) -> String {
+    let base = experiment_text(staged, integrity_digest);
+    let head = base[..base.find("[[trials]]").unwrap()].to_owned();
+    format!(
+        "{head}[selection]\nscope = \"subset\"\ntask_ids = {task_ids}\nreason = \"feasible subset for the deterministic plan\"\nrepetitions = 1\n"
+    )
+}
+
+fn run_plan_with_closed_engine(staged: &Staged, config: &Path) -> (std::process::Output, String) {
+    let out = staged.root.join("plan.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("plan")
+        .arg("--config")
+        .arg(config)
+        .arg("--native-material")
+        .arg(&staged.material)
+        .arg("--out")
+        .arg(&out)
+        .env("DOCKER_HOST", "tcp://127.0.0.1:1")
+        .output()
+        .expect("spawn the opi-eval plan command");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    (output, stdout)
+}
+
+/// P19-AC-007 (selection): the full pinned inventory enumerates from
+/// metadata without models; unmet/unknown requirements stay visible in
+/// the preview while a feasible explicit subset freezes.
+#[test]
+fn full_inventory_preflight_lists_requirements_and_freezes_feasible_subsets() {
+    let staged = stage("tb21-ok");
+    stage_corpus(&staged);
+    let digest = derive_integrity(&staged);
+    let config = staged.root.join("selection.toml");
+    fs::write(
+        &config,
+        selection_experiment_text(&staged, &digest, "[\"fixture-task\"]"),
+    )
+    .unwrap();
+
+    let (output, stdout) = run_plan_with_closed_engine(&staged, &config);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "plan must freeze the feasible subset: stdout={stdout} stderr={stderr}"
+    );
+    let preview: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(preview["schema"], "opi-eval-plan-preview/1");
+    let corpus = preview["corpus"].as_array().unwrap();
+    assert_eq!(corpus.len(), 3, "full inventory must enumerate: {corpus:?}");
+    let by_id = |id: &str| {
+        corpus
+            .iter()
+            .find(|entry| entry["id"] == id)
+            .unwrap_or_else(|| panic!("task {id} missing: {corpus:?}"))
+            .clone()
+    };
+    assert_eq!(by_id("fixture-task")["status"], "ok");
+    assert_eq!(by_id("fixture-task")["selected"], true);
+    assert_eq!(by_id("alpha-notes")["status"], "ok");
+    assert_eq!(by_id("alpha-notes")["selected"], false);
+    let gpu = by_id("gpu-train");
+    assert_eq!(gpu["status"], "unknown");
+    assert_eq!(gpu["selected"], false);
+    assert!(
+        gpu["reason"].as_str().unwrap().contains("GPU observation"),
+        "reason: {gpu:?}"
+    );
+    assert_eq!(
+        preview["preflight"]["unknown"],
+        serde_json::json!(["gpu-train"])
+    );
+    assert_eq!(preview["trial_count"], 2);
+    assert_eq!(preview["concurrency"], 1);
+    assert_eq!(preview["selection"]["scope"], "subset");
+    assert_eq!(
+        preview["selection"]["task_ids"],
+        serde_json::json!(["fixture-task"])
+    );
+
+    let plan: serde_json::Value = {
+        let text = fs::read_to_string(staged.root.join("plan.json")).unwrap();
+        serde_json::from_str(&text).unwrap()
+    };
+    assert_eq!(plan["schema"], "opi-eval-run-plan/1");
+    assert!(plan["plan_digest"].as_str().unwrap().len() == 64);
+    let trials = plan["trials"].as_array().unwrap();
+    let ids: Vec<&str> = trials.iter().filter_map(|t| t["id"].as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "trial-baseline-pi-fixture-task-r1",
+            "trial-candidate-opi-fixture-task-r1"
+        ]
+    );
+    assert_eq!(
+        plan["experiment"]["manifest_digest"],
+        preview["manifest_digest"]
+    );
+}
+
+/// P19-AC-007 (selection): every contradiction rejects with its
+/// reason - unknown ids, unmet or unknown selected requirements,
+/// full-scope unmet requirements, native profile binding, and
+/// max_trials. Nothing silently shrinks.
+#[test]
+fn plan_rejections_name_every_contradiction() {
+    let staged = stage("tb21-ok");
+    stage_corpus(&staged);
+    let digest = derive_integrity(&staged);
+    let cases: [(&str, &str, &str); 5] = [
+        (
+            "unknown task id",
+            "[\"no-such-task\"]",
+            "outside the pinned inventory",
+        ),
+        (
+            "unobservable selected GPU requirement",
+            "[\"gpu-train\"]",
+            "GPU observation is unavailable",
+        ),
+        (
+            "full scope cannot silently drop the unmet task",
+            "[\"gpu-train\"]\n__scope_full",
+            "gpu-train unknown",
+        ),
+        (
+            "native profile binding",
+            "[\"alpha-notes\"]",
+            "not bound by the pinned native profile",
+        ),
+        (
+            "declared max_trials below the expansion",
+            "[\"fixture-task\"]\n__max_trials_1",
+            "exceeds the declared max_trials",
+        ),
+    ];
+    for (name, task_ids, expected) in cases {
+        let mut text = selection_experiment_text(&staged, &digest, task_ids);
+        if text.contains("__scope_full") {
+            // Full scope pins no ids: the whole corpus is the selection.
+            text = text
+                .replace("scope = \"subset\"", "scope = \"full\"")
+                .replace("\n__scope_full", "");
+            let start = text.find("task_ids = ").expect("task_ids line");
+            let end = text[start..]
+                .find('\n')
+                .map(|offset| start + offset + 1)
+                .expect("task_ids line ends");
+            text.replace_range(start..end, "");
+        }
+        text = text.replace("\n__max_trials_1", "");
+        if name.contains("max_trials") {
+            text = text.replace(
+                "[execution]\nmode = \"native-fixture\"",
+                "[execution]\nmode = \"native-fixture\"\nmax_trials = 1",
+            );
+        }
+        let config = staged
+            .root
+            .join(format!("reject-{}.toml", name.replace([' ', '/'], "-")));
+        fs::write(&config, text).unwrap();
+        let (output, stdout) = run_plan_with_closed_engine(&staged, &config);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{name} must reject: stdout={stdout} stderr={stderr}"
+        );
+        assert!(stderr.contains(expected), "{name}: {stderr}");
+        assert!(
+            !staged.root.join("plan.json").exists(),
+            "{name} must not freeze a partial plan"
+        );
+    }
+}

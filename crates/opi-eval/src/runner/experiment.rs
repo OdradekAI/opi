@@ -98,6 +98,7 @@ fn reserved_artifact_keys() -> Vec<ArtifactKey> {
 
 /// One assembled run request. `behavior` is a hermetic staging knob that
 /// selects helper-process behavior (never a production claim).
+#[derive(Clone)]
 pub(crate) struct RunRequest {
     pub(crate) config_path: PathBuf,
     pub(crate) root: PathBuf,
@@ -116,6 +117,9 @@ pub(crate) struct RunRequest {
     /// Resolved native material (native mode): when present the runner
     /// takes the native driving mode over the hermetic fixture path.
     pub(crate) material: Option<crate::runner::material::NativeMaterial>,
+    /// Frozen run plan (`run --plan`): the plan file's verified JSON is
+    /// re-derived here; the run executes exactly its trials.
+    pub(crate) plan: Option<std::path::PathBuf>,
 }
 
 /// The pinned hermetic canary the `canary-leak` fixture behavior emits
@@ -450,7 +454,22 @@ fn write_helper(path: &Path, script: &str) -> Result<(), RunError> {
 
 /// Run one assembled experiment and return its run report.
 pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::Value, RunError> {
-    let mut source = std::fs::read_to_string(&request.config_path)?;
+    let plan_json = match &request.plan {
+        Some(path) => {
+            let text = std::fs::read_to_string(path)?;
+            let plan: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|error| RunError::Native(format!("run plan parse failed: {error}")))?;
+            crate::runner::plan::verify_plan(&plan)
+                .map_err(|error| RunError::Native(error.to_string()))?;
+            Some(plan)
+        }
+        None => None,
+    };
+    let mut source = match &plan_json {
+        Some(plan) => crate::runner::plan::plan_source(plan)
+            .map_err(|error| RunError::Native(error.to_string()))?,
+        None => std::fs::read_to_string(&request.config_path)?,
+    };
     if let Some(crashed) = &request.replacement_for {
         // The replacement is a new contract: fresh trial identities for
         // every trial of the crashed group, re-resolved and digest-addressed
@@ -458,6 +477,17 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
         source = replace_group(source.as_str(), crashed)?;
     }
     let experiment = ResolvedExperiment::resolve(&source)?;
+    if let Some(plan) = &plan_json {
+        let recorded = plan["experiment"]["manifest_digest"]
+            .as_str()
+            .ok_or_else(|| RunError::Native("run plan carries no manifest digest".to_owned()))?;
+        if experiment.manifest_digest() != recorded {
+            return Err(RunError::Native(format!(
+                "run-plan identity drift: plan records {recorded}, the frozen source resolves {}",
+                experiment.manifest_digest()
+            )));
+        }
+    }
     if request.recover {
         let report = recovery_report(&experiment, &request.root);
         persist_run_report(&request.root, &report)?;
@@ -492,6 +522,56 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
         Some(material) => Some(prepare_native(material, &experiment)?),
         None => None,
     };
+    // Corpus-aware selection expansion (P19-D05): `[selection]`
+    // documents expand against the enumerated task inventory here, on
+    // the same code path `plan` freezes; a plan run must re-expand to
+    // exactly the frozen trials.
+    let experiment = match experiment.selection() {
+        Some(_) => {
+            let root = crate::runner::plan::task_package_root(
+                &experiment,
+                Some(&request.fixtures),
+                request.material.as_ref(),
+            )
+            .map_err(|error| RunError::Native(error.to_string()))?;
+            let corpus = crate::runner::plan::enumerate_corpus(&root)
+                .map_err(|error| RunError::Native(error.to_string()))?;
+            let bound = match &request.material {
+                Some(material) => Some(
+                    crate::runner::plan::profile_bound_task(&experiment, material)
+                        .map_err(|error| RunError::Native(error.to_string()))?,
+                ),
+                None => None,
+            };
+            let expansion =
+                crate::runner::plan::expand_selection(&experiment, &corpus, bound.as_deref())
+                    .map_err(|error| RunError::Native(error.to_string()))?;
+            if let Some(plan) = &plan_json {
+                let frozen: Vec<crate::experiment::DeclaredTrial> = plan["trials"]
+                    .as_array()
+                    .map(std::borrow::ToOwned::to_owned)
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(|entry| {
+                        Some(crate::experiment::DeclaredTrial {
+                            id: entry["id"].as_str()?.to_owned(),
+                            subject: entry["subject"].as_str()?.to_owned(),
+                            task: entry["task"].as_str()?.to_owned(),
+                            group: entry["group"].as_str()?.to_owned(),
+                        })
+                    })
+                    .collect();
+                if frozen != expansion.trials {
+                    return Err(RunError::Native(
+                        "run-plan trial drift: the frozen trials no longer match the                          corpus expansion (materials or corpus changed; freeze a new plan)"
+                            .to_owned(),
+                    ));
+                }
+            }
+            experiment.clone().replace_trials(expansion.trials)
+        }
+        None => experiment,
+    };
     let integrity = match &native {
         Some(inputs) => IntegrityRecord::review(native_integrity_review(
             &experiment,
@@ -521,27 +601,98 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
     let mut trials_out: Vec<serde_json::Value> = Vec::new();
     let mut facts: Vec<TrialFact> = Vec::new();
     let mut all_sealed = true;
-    for declared in experiment.trials() {
-        let subject = experiment
-            .subjects()
-            .iter()
-            .find(|subject| subject.id == declared.subject)
-            .expect("resolved experiments reference known subjects");
-        let result = run_trial(
-            &experiment,
-            &integrity,
-            &benchmark_revision,
-            declared,
-            &subject.product,
-            native.as_ref(),
-            request,
-        )
-        .await?;
-        if let Some(fact) = result.fact {
-            facts.push(fact);
+    // Bounded execution width (P19-D05): the declared concurrency is an
+    // upper bound. Hermetic trials are fully isolated under their own
+    // trial roots, so widths above one execute in parallel waves of
+    // independent per-trial runtimes; native trials stay serial (the
+    // shared scripted-provider listener is one resource) - the bound
+    // never exceeds the declaration either way.
+    let width = if native.is_some() {
+        1
+    } else {
+        experiment.execution().concurrency.max(1) as usize
+    };
+    eprintln!(
+        "execution: {} trials, width {width}",
+        experiment.trials().len()
+    );
+    let mut declared_trials: Vec<&crate::experiment::DeclaredTrial> =
+        experiment.trials().iter().collect();
+    for chunk in declared_trials.chunks_mut(width.max(1)) {
+        let mut waves = Vec::new();
+        for declared in chunk {
+            let subject = experiment
+                .subjects()
+                .iter()
+                .find(|subject| subject.id == declared.subject)
+                .expect("resolved experiments reference known subjects");
+            eprintln!("trial {}: stage=start", declared.id);
+            waves.push((declared.clone(), subject.product.clone()));
         }
-        all_sealed &= result.sealed;
-        trials_out.push(result.receipt);
+        let mut settled = Vec::with_capacity(waves.len());
+        if waves.len() == 1 || native.is_some() {
+            for (declared, product) in waves {
+                let result = run_trial(
+                    &experiment,
+                    &integrity,
+                    &benchmark_revision,
+                    &declared,
+                    &product,
+                    native.as_ref(),
+                    request,
+                )
+                .await?;
+                settled.push((declared, result));
+            }
+        } else {
+            // Parallel wave: each hermetic trial runs on its own thread
+            // and single-threaded runtime over fully cloned inputs (the
+            // trials are isolated under their own roots, so nothing is
+            // shared).
+            let mut joins = Vec::with_capacity(waves.len());
+            for (declared, product) in waves {
+                let experiment = experiment.clone();
+                let integrity = integrity.clone();
+                let revision = benchmark_revision.clone();
+                let request = (*request).clone();
+                joins.push((
+                    declared.clone(),
+                    std::thread::spawn(move || {
+                        let runtime = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .map_err(|error| RunError::Staging(error.to_string()))?;
+                        runtime.block_on(run_trial(
+                            &experiment,
+                            &integrity,
+                            &revision,
+                            &declared,
+                            &product,
+                            None,
+                            &request,
+                        ))
+                    }),
+                ));
+            }
+            for (declared, join) in joins {
+                let result = join
+                    .join()
+                    .map_err(|_| RunError::Staging("parallel trial panicked".to_owned()))??;
+                settled.push((declared, result));
+            }
+        }
+        for (declared, result) in settled {
+            eprintln!(
+                "trial {}: settled={}",
+                declared.id,
+                if result.sealed { "sealed" } else { "failed" }
+            );
+            if let Some(fact) = result.fact {
+                facts.push(fact);
+            }
+            all_sealed &= result.sealed;
+            trials_out.push(result.receipt);
+        }
     }
 
     // Coverage assembly: per-pair states stay visible; a structural
@@ -586,6 +737,23 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
         "trials": trials_out,
         "pairs": pairs,
     });
+    if let Some(selection) = experiment.selection() {
+        report["selection"] = json!({
+            "scope": selection.scope.as_str(),
+            "task_ids": experiment
+                .trials()
+                .iter()
+                .map(|trial| trial.task.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            "repetitions": selection.repetitions,
+        });
+        report["execution_width"] = json!(width);
+    }
+    if let Some(plan) = &plan_json {
+        report["plan_digest"] = plan["plan_digest"].clone();
+    }
     if let Some(reason) = comparison_error {
         report["comparison_error"] = json!(reason);
     }
@@ -607,6 +775,25 @@ fn persist_run_report(root: &Path, report: &serde_json::Value) -> Result<(), Run
 
 /// The concrete benchmark revision an experiment declares, with the staging
 /// inputs its adapter needs.
+/// The package subdirectory one declared task stages from: a
+/// single-task package root stages itself; a corpus root stages the
+/// task's own subdirectory (P19-D06 selection).
+fn task_source_dir(package: &Path, task: &str) -> Result<PathBuf, RunError> {
+    if package.join("task.toml").is_file() {
+        return Ok(package.to_path_buf());
+    }
+    let dir = package.join(task);
+    if dir.join("task.toml").is_file() {
+        Ok(dir)
+    } else {
+        Err(RunError::Staging(format!(
+            "task {task:?} has no package under {}",
+            package.display()
+        )))
+    }
+}
+
+#[derive(Clone)]
 enum BenchmarkRevision {
     TerminalBench21 {
         profile_bytes: Vec<u8>,
@@ -614,17 +801,55 @@ enum BenchmarkRevision {
         /// Hermetic-only saved fixture bytes the helper replays; `None`
         /// in native mode, where the real verifier writes the report.
         fixture_report: Option<PathBuf>,
+        /// Hermetic-only benchmark profile directory: a corpus package
+        /// resolves each task's own pinned profile from
+        /// `<root>/corpus/<task>.toml` (P19-D06 selection).
+        profile_root: Option<PathBuf>,
     },
     TerminalBench30 {
         profile_bytes: Vec<u8>,
         task_package: PathBuf,
         fixture_report: Option<PathBuf>,
+        profile_root: Option<PathBuf>,
     },
     DeepSwe {
         profile_bytes: Vec<u8>,
         task_package: PathBuf,
         fixture_report: Option<PathBuf>,
+        profile_root: Option<PathBuf>,
     },
+}
+
+impl BenchmarkRevision {
+    /// The effective profile bytes for one declared task: a corpus
+    /// task's own pinned profile when the fixture ships one, else the
+    /// benchmark-level profile.
+    fn profile_bytes_for(&self, task: &str) -> Vec<u8> {
+        let (bytes, root) = match self {
+            Self::TerminalBench21 {
+                profile_bytes,
+                profile_root,
+                ..
+            }
+            | Self::TerminalBench30 {
+                profile_bytes,
+                profile_root,
+                ..
+            }
+            | Self::DeepSwe {
+                profile_bytes,
+                profile_root,
+                ..
+            } => (profile_bytes, profile_root),
+        };
+        match root
+            .as_ref()
+            .map(|root| root.join("corpus").join(format!("{task}.toml")))
+        {
+            Some(path) if path.is_file() => std::fs::read(&path).unwrap_or_else(|_| bytes.clone()),
+            _ => bytes.clone(),
+        }
+    }
 }
 
 /// The native report file name a revision's verifier writes into its trace
@@ -654,6 +879,7 @@ impl BenchmarkRevision {
                     .map_err(|error| RunError::Staging(error.to_string()))?,
                 task_package: tb21.join("task-package"),
                 fixture_report: Some(tb21.join("ctrf/ok-six-passed.json")),
+                profile_root: Some(tb21.join("profile")),
             });
         }
         if benchmark.name == "terminal-bench" && benchmark.revision == "3.0" {
@@ -663,6 +889,7 @@ impl BenchmarkRevision {
                     .map_err(|error| RunError::Staging(error.to_string()))?,
                 task_package: tb30.join("task-package"),
                 fixture_report: Some(tb30.join("ctrf/ok-six-passed.json")),
+                profile_root: Some(tb30.join("profile")),
             });
         }
         if benchmark.name == "deepswe" && benchmark.revision == "v1.1" {
@@ -672,6 +899,7 @@ impl BenchmarkRevision {
                     .map_err(|error| RunError::Staging(error.to_string()))?,
                 task_package: deepswe.join("task-package"),
                 fixture_report: Some(deepswe.join("pier-report/resolved.json")),
+                profile_root: Some(deepswe.join("profile")),
             });
         }
         Err(RunError::UnsupportedBenchmark {
@@ -689,16 +917,19 @@ impl BenchmarkRevision {
                 profile_bytes: inputs.profile_bytes.clone(),
                 task_package: inputs.task_package.clone(),
                 fixture_report: None,
+                profile_root: None,
             },
             "terminal-bench-3.0" => BenchmarkRevision::TerminalBench30 {
                 profile_bytes: inputs.profile_bytes.clone(),
                 task_package: inputs.task_package.clone(),
                 fixture_report: None,
+                profile_root: None,
             },
             _ => BenchmarkRevision::DeepSwe {
                 profile_bytes: inputs.profile_bytes.clone(),
                 task_package: inputs.task_package.clone(),
                 fixture_report: None,
+                profile_root: None,
             },
         }
     }
@@ -1233,8 +1464,11 @@ async fn run_native_trial(
     for dir in [&verifier_trace, &task_dir] {
         std::fs::create_dir_all(dir).map_err(|error| RunError::Staging(error.to_string()))?;
     }
-    copy_dir_recursive(&inputs.task_package, &task_dir)
-        .map_err(|error| RunError::Native(error.to_string()))?;
+    copy_dir_recursive(
+        &task_source_dir(&inputs.task_package, &declared.task)?,
+        &task_dir,
+    )
+    .map_err(|error| RunError::Native(error.to_string()))?;
     let material = request.material.as_ref().expect("native implies material");
     let agent = material
         .agent(product)
@@ -1285,8 +1519,12 @@ async fn run_native_trial(
         .map_err(|error| RunError::Bundle(error.to_string()))?;
     let intent = IntentRecord {
         trial: trial_id.clone(),
-        pair: PairIdentity::new(owning_edge(experiment, declared)?.id.as_str())
-            .map_err(|error| RunError::Staging(error.to_string()))?,
+        pair: PairIdentity::new(
+            owning_pair_seed(experiment, declared)
+                .map_err(|error| RunError::Staging(error.to_string()))?
+                .as_str(),
+        )
+        .map_err(|error| RunError::Staging(error.to_string()))?,
         artifacts: reserved_artifact_keys_native(),
         expected_output: ArtifactKey::new(EXPECTED_OUTPUT_KEY)
             .map_err(|error| RunError::Staging(error.to_string()))?,
@@ -1841,8 +2079,12 @@ async fn run_fixture_trial(
         .map_err(|error| RunError::Bundle(error.to_string()))?;
     let intent = IntentRecord {
         trial: trial_id.clone(),
-        pair: PairIdentity::new(owning_edge(experiment, declared)?.id.as_str())
-            .map_err(|error| RunError::Staging(error.to_string()))?,
+        pair: PairIdentity::new(
+            owning_pair_seed(experiment, declared)
+                .map_err(|error| RunError::Staging(error.to_string()))?
+                .as_str(),
+        )
+        .map_err(|error| RunError::Staging(error.to_string()))?,
         artifacts: reserved_artifact_keys(),
         expected_output: ArtifactKey::new(EXPECTED_OUTPUT_KEY)
             .map_err(|error| RunError::Staging(error.to_string()))?,
@@ -2093,6 +2335,9 @@ async fn run_fixture_trial(
             | BenchmarkRevision::TerminalBench30 { task_package, .. }
             | BenchmarkRevision::DeepSwe { task_package, .. } => task_package.clone(),
         };
+        // Corpus-aware selection: a corpus package root stages the
+        // declared task's own subdirectory (P19-D06).
+        let task_package = task_source_dir(&task_package, &declared.task)?;
         let task_dir = trial_root.join("task-package");
         if request.behavior == "prompt-only-package" {
             // The incomplete package: the prompt alone, without the
@@ -2108,15 +2353,16 @@ async fn run_fixture_trial(
             copy_dir_recursive(&task_package, &task_dir)
                 .map_err(|error| RunError::Staging(error.to_string()))?;
         }
+        let task_profile_bytes = revision.profile_bytes_for(&declared.task);
         let benchmark_request_adapter: Box<dyn BenchmarkAdapter> = match revision {
-            BenchmarkRevision::TerminalBench21 { profile_bytes, .. } => {
-                let profile = Tb21Profile::parse(profile_bytes.as_slice())
+            BenchmarkRevision::TerminalBench21 { .. } => {
+                let profile = Tb21Profile::parse(task_profile_bytes.as_slice())
                     .map_err(|error| RunError::Staging(error.to_string()))?;
                 Box::new(TerminalBench21Adapter::from_profile(profile))
             }
-            BenchmarkRevision::TerminalBench30 { profile_bytes, .. } => {
+            BenchmarkRevision::TerminalBench30 { .. } => {
                 let profile = crate::benchmark::terminal_bench_30::Tb30Profile::parse(
-                    profile_bytes.as_slice(),
+                    task_profile_bytes.as_slice(),
                 )
                 .map_err(|error| RunError::Staging(error.to_string()))?;
                 Box::new(
@@ -2125,9 +2371,9 @@ async fn run_fixture_trial(
                     ),
                 )
             }
-            BenchmarkRevision::DeepSwe { profile_bytes, .. } => {
+            BenchmarkRevision::DeepSwe { .. } => {
                 let profile =
-                    crate::benchmark::deepswe::DeepSweProfile::parse(profile_bytes.as_slice())
+                    crate::benchmark::deepswe::DeepSweProfile::parse(task_profile_bytes.as_slice())
                         .map_err(|error| RunError::Staging(error.to_string()))?;
                 Box::new(crate::benchmark::deepswe::DeepSweAdapter::from_profile(
                     profile,
@@ -2637,6 +2883,19 @@ fn non_comparability_token(reason: &crate::comparison::NonComparability) -> Stri
 /// the same task and group (`EVAL-EXP-002`). Zero or multiple owners reject
 /// the trial before any process effect or intent publication, so no
 /// durable pair identity can default to an unrelated edge.
+/// The durable pair-identity seed for one trial: the owning edge id, or
+/// for a single-subject experiment (no artificial edge, P19-D05) the
+/// solo subject identity itself.
+fn owning_pair_seed(
+    experiment: &ResolvedExperiment,
+    declared: &crate::experiment::DeclaredTrial,
+) -> Result<String, RunError> {
+    if experiment.edges().is_empty() && experiment.subjects().len() == 1 {
+        return Ok(format!("solo:{}", declared.subject));
+    }
+    Ok(owning_edge(experiment, declared)?.id.clone())
+}
+
 fn owning_edge<'a>(
     experiment: &'a ResolvedExperiment,
     declared: &crate::experiment::DeclaredTrial,

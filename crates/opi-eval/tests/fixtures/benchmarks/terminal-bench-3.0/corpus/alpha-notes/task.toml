@@ -1,0 +1,8 @@
+schema_version = "1.0"
+artifacts = ["/app/evalbench/"]
+
+[task]
+id = "alpha-notes"
+
+[verifier]
+environment_mode = "separate"

@@ -279,7 +279,7 @@ fn probe_engine() -> Result<String, String> {
 }
 
 /// The engine's GPU runtime name, when one is registered.
-fn gpu_runtime() -> Option<String> {
+pub(crate) fn gpu_runtime() -> Option<String> {
     let output = Command::new("docker")
         .args([
             "info",
@@ -298,7 +298,7 @@ fn gpu_runtime() -> Option<String> {
         .map(|runtime| runtime.to_owned())
 }
 
-fn logical_cpu_count() -> Option<u64> {
+pub(crate) fn logical_cpu_count() -> Option<u64> {
     let text = std::fs::read_to_string("/proc/cpuinfo").ok()?;
     let count = text
         .lines()
@@ -307,7 +307,7 @@ fn logical_cpu_count() -> Option<u64> {
     if count == 0 { None } else { Some(count as u64) }
 }
 
-fn total_memory_bytes() -> Option<u64> {
+pub(crate) fn total_memory_bytes() -> Option<u64> {
     let text = std::fs::read_to_string("/proc/meminfo").ok()?;
     let line = text.lines().find(|line| line.starts_with("MemTotal:"))?;
     let kib = line.split_whitespace().nth(1)?.parse::<u64>().ok()?;
@@ -773,14 +773,17 @@ fn write_inventory(cache: &Path, inventory: &Inventory) -> Result<(), PrepareErr
 }
 
 /// The frozen task package's declared environment requirements.
-struct TaskRequirements {
-    task_id: String,
-    cpus: Option<i64>,
-    memory_bytes: Option<u64>,
-    gpus: Option<i64>,
+#[derive(Debug, Clone)]
+pub(crate) struct TaskRequirements {
+    pub(crate) task_id: String,
+    pub(crate) cpus: Option<i64>,
+    pub(crate) memory_bytes: Option<u64>,
+    pub(crate) gpus: Option<i64>,
 }
 
-fn parse_task_requirements(task_package: &Path) -> Result<TaskRequirements, PrepareError> {
+pub(crate) fn parse_task_requirements(
+    task_package: &Path,
+) -> Result<TaskRequirements, PrepareError> {
     let text = std::fs::read_to_string(task_package.join("task.toml"))?;
     let document: toml::Value = text
         .parse()

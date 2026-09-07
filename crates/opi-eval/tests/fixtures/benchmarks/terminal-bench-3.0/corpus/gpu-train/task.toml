@@ -1,0 +1,13 @@
+schema_version = "1.0"
+artifacts = ["/app/evalbench/"]
+
+[task]
+id = "gpu-train"
+
+[verifier]
+environment_mode = "separate"
+
+[environment]
+cpus = 2
+memory_mb = 2048
+gpus = 1

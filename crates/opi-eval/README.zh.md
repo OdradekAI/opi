@@ -97,6 +97,37 @@ provenance：upload receipt 仍然只是 CI 的 transport claim。缓存缺失�
 日志位于输出根下）；否则失败会点名缺失的身份及其获取方式。完整的
 operator 演练见 `examples/local-evaluation/`。
 
+### 0b. 预览并冻结 selection 计划
+
+```sh
+cargo run -p opi-eval -- plan --config experiment.toml \
+  --native-material "$DEMO_DIR/material/material.json" \
+  --out "$DEMO_DIR/plan.json"
+cargo run -p opi-eval -- run --plan "$DEMO_DIR/plan.json" \
+  --root "$DEMO_DIR/run" --native-material "$DEMO_DIR/material/material.json"
+```
+
+`plan` 仅依据 `task.toml` 元数据枚举 pinned corpus 任务清单（不拉取
+也不启动任何 image），将文档 `[selection]`（`scope=full|subset`、显式
+`task_ids`、记录的 `reason`、`repetitions`、可选按任务 `seeds`）展开
+为精确的 trial 集合，并把每个被选任务的声明资源需求与本地观测比对：
+未满足或无法观测都会整体拒绝——集合绝不静默收缩——同时预览保留完整
+清单的逐任务状态。预览 JSON 展示 subjects、connection、任务清单、
+selection、trial 总数、concurrency、bounds 以及 unmet/unknown 预检
+摘要；冻结的 `opi-eval-run-plan/1` 文件以 digest 绑定内嵌的实验源、
+material 身份、corpus 条目与精确 trials。`[execution]` bounds 全部显
+式：`concurrency`（默认 1，为上限；hermetic trial 按其并行分波执行，
+native trial 保持串行）、`max_trials`（展开超出即拒绝）、
+`agent_timeout_seconds`/`verifier_timeout_seconds`（按收窄合并）、
+`max_output_tokens`（仅当与 pinned model control 同值时可执行）。
+`max_total_tokens` 与 `max_cost` 在本构建中没有 enforcement 路径，
+声明即以该原因拒绝（绝不静默忽略）。`run --plan` 重新校验 plan
+digest、material 字节、实验身份与 corpus 展开后，精确执行冻结的
+trials，stderr 输出 stage/settlement 进度并保存结构化结果；单主体
+（pi-only 或 opi-only）实验无需人工 comparison edge。
+`run --config C` 保持同一 resolve/freeze 路径——`[selection]` 文档在
+运行时按同一枚举 corpus 展开。
+
 ### 1. 校验
 
 ```sh
