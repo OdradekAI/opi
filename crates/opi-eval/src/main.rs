@@ -83,6 +83,26 @@ enum Command {
         #[arg(long)]
         canaries: Option<std::path::PathBuf>,
     },
+    /// Diagnose the local environment and declared materials without
+    /// starting a model: engine reachability, architecture, observed
+    /// resources, and missing materials with reasons for unknown
+    /// observations.
+    Doctor {
+        /// Path to the experiment document.
+        #[arg(long)]
+        config: std::path::PathBuf,
+    },
+    /// Verify the declared local cache against the pinned static lock
+    /// and freeze a local-origin native-material manifest consumable by
+    /// `validate` and `run`. No model runs and no credential is read.
+    Prepare {
+        /// Path to the experiment document.
+        #[arg(long)]
+        config: std::path::PathBuf,
+        /// Output directory for the material manifest and report.
+        #[arg(long)]
+        out: std::path::PathBuf,
+    },
     Conformance {
         /// `agent` or `benchmark`.
         #[arg(long)]
@@ -162,6 +182,38 @@ fn main() -> ExitCode {
                         serde_json::to_string(&report).expect("run report serializes")
                     );
                     ExitCode::from(cli::run::report_exit_code(&report) as u8)
+                }
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Command::Doctor { config } => {
+            let args = cli::prepare::DoctorArgs { config };
+            match cli::prepare::doctor(&args) {
+                Ok(report) => {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&report).expect("doctor report serializes")
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Command::Prepare { config, out } => {
+            let args = cli::prepare::PrepareArgs { config, out };
+            match cli::prepare::prepare(&args) {
+                Ok(report) => {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&report).expect("prepare report serializes")
+                    );
+                    ExitCode::SUCCESS
                 }
                 Err(error) => {
                     eprintln!("error: {error}");

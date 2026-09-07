@@ -39,6 +39,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inline credential fields: request identity is projected from the
   selected connection (`project_connection`) into each pinned client's
   exact configuration bytes.
+- `opi-eval`: local material preparation works from an independent
+  directory. New `doctor --config C` reports Linux-engine reachability,
+  architecture, WSL/Docker-observed CPU/memory/GPU/disk, and missing
+  materials, with reasons on every unknown observation and no model
+  started. New `prepare --config C --out M` verifies the seeded local
+  cache (`[storage].cache`, resolved against the document directory)
+  against the pinned static lock (producer scripts over LF-normalized
+  bytes), freezes the selected benchmark, subject executables, and
+  every requested image identity, checks the frozen task's declared
+  resource requirements against the local observations, and emits a
+  local-origin native-material manifest (`origin: local`) consumable by
+  `validate` and `run`. A pi-only experiment prepares and validates
+  without any Opi material (`NativeMaterial::load_for` selects exactly
+  the document's subject products). Verified identities freeze into a
+  reusable cache inventory; drift rejects without re-fetching, and a
+  cache miss invokes the pinned materializer under supervision (plan
+  in, captured log, byte re-verification) or fails with an actionable
+  message naming the missing identity. The materializer's new
+  `prepare --cache ... --plan ...` mode acquires pinned public tool
+  archives and fails closed with guidance for unwired identities; its
+  producer hash record in the static lock is refreshed (upstream
+  revisions unchanged). Local origin never manufactures GitHub
+  provenance: the upload receipt remains a CI transport claim.
 - `opi-eval`: DeepSWE v1.1 native scoring runs through its declared
   committed-patch handoff. The task package's Pier `task.toml` lifecycle
   is parsed under the Pier family policy (collect hooks are the patch

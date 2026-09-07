@@ -112,3 +112,105 @@ fn reused_trial_identity_is_rejected_before_staging() {
         "a refused retry must preserve every existing path and byte"
     );
 }
+
+/// Spawns `opi-eval doctor` with an environment override.
+fn run_doctor(config: &Path, env: &[(&str, &str)]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_opi-eval"));
+    command.arg("doctor").arg("--config").arg(config);
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command.output().expect("spawn the opi-eval doctor command")
+}
+
+/// Copies the pinned paired fixture into a temp directory with the
+/// storage cache redirected to an absolute sibling directory.
+fn staged_config(dir: &Path, cache: &str) -> PathBuf {
+    let source =
+        std::fs::read_to_string(fixtures_dir().join("experiment/local-paired.toml")).unwrap();
+    let redirected = source
+        .lines()
+        .map(|line| {
+            if line.strip_prefix("cache = ").is_some() {
+                format!("cache = {cache:?}")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let config = dir.join("experiment.toml");
+    std::fs::write(&config, redirected).unwrap();
+    config
+}
+
+#[test]
+fn doctor_reports_observations_without_a_model() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = dir.path().join("cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    let config = staged_config(dir.path(), &cache.to_string_lossy());
+
+    // A closed loopback endpoint is never a reachable engine, on hosts
+    // with or without a Docker client: the observation must carry the
+    // failure reason instead of guessing.
+    let output = run_doctor(&config, &[("DOCKER_HOST", "tcp://127.0.0.1:1")]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "diagnosis must complete without starting a model: stdout={stdout} stderr={stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["schema"], "opi-eval-doctor/1");
+    let observations = report["observations"].as_array().unwrap();
+    let by_id = |id: &str| {
+        observations
+            .iter()
+            .find(|observation| observation["id"] == id)
+            .unwrap_or_else(|| panic!("missing observation {id}: {stdout}"))
+            .clone()
+    };
+    assert_eq!(by_id("linux-engine")["status"], "unreachable");
+    assert!(
+        !by_id("linux-engine")["reason"].as_str().unwrap().is_empty(),
+        "an unreachable engine must carry a reason: {stdout}"
+    );
+    assert_eq!(by_id("architecture")["status"], "ok");
+    assert_eq!(by_id("architecture")["detail"], "x86_64");
+    assert_eq!(by_id("cpu")["status"], "ok");
+    assert!(by_id("cpu")["count"].as_u64().unwrap() >= 1);
+    assert_eq!(by_id("memory")["status"], "ok");
+    assert!(by_id("memory")["total_bytes"].as_u64().unwrap() > 0);
+    // Without a reachable engine the GPU observation is unknown with a
+    // reason, never silently absent.
+    assert_eq!(by_id("gpu")["status"], "unknown");
+    assert!(
+        by_id("gpu")["reason"].as_str().unwrap().contains("engine"),
+        "gpu unknown reason must name the engine: {stdout}"
+    );
+    assert_eq!(by_id("disk")["status"], "ok");
+    assert!(by_id("disk")["available_bytes"].as_u64().is_some());
+    // The empty cache is reported as missing material, not a guess.
+    let static_lock = by_id("material:static-lock");
+    assert_eq!(static_lock["status"], "missing");
+    assert_eq!(by_id("material:agent:opi")["status"], "missing");
+    assert_eq!(by_id("material:agent:pi")["status"], "missing");
+    // No model or provider call happened: the report holds only
+    // observations.
+    assert!(report.get("provider").is_none());
+}
+
+#[test]
+fn doctor_rejects_an_invalid_config_without_observing() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("broken.toml");
+    std::fs::write(&config, b"not a toml document\n").unwrap();
+    let output = run_doctor(&config, &[]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2), "stderr: {stderr}");
+    assert!(stdout.trim().is_empty(), "no report may print: {stdout}");
+    assert!(!stderr.trim().is_empty(), "a diagnostic must print");
+}

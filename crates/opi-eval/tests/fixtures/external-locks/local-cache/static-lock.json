@@ -1,0 +1,47 @@
+{
+  "schema": "opi-eval-external-lock/static/1",
+  "lock_id": "opi-eval-local-fixture",
+  "platform": "linux-x86_64",
+  "authority": {
+    "trigger": "local-seed",
+    "admission": "digest",
+    "producers": [
+      {
+        "path": "crates/opi-eval/scripts/materialize-external-locks.sh",
+        "role": "materializer",
+        "sha256": "ed26664948c2244f498bcb045df374a917a2f014f73209801022aa0e15252b09"
+      },
+      {
+        "path": "crates/opi-eval/scripts/verify-external-lock-ci.py",
+        "role": "verifier",
+        "sha256": "07fe1944b63e931c026d0e1aed958cf12484178c1b135bcd323229b59d118e6e"
+      }
+    ]
+  },
+  "subjects": [
+    {
+      "id": "terminal-bench-2.1",
+      "kind": "benchmark-source",
+      "repository_url": "https://example.com/terminal-bench",
+      "commit": "0000000000000000000000000000000000000000",
+      "tasks_tree": "1111111111111111111111111111111111111111",
+      "task": "fixture-task"
+    }
+  ],
+  "tools": [],
+  "images": [
+    {
+      "id": "tb21-fixture-task",
+      "role": "task",
+      "reference": "example.com/fixture/task:1",
+      "manifest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "config": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "layers": [
+        "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      ]
+    }
+  ],
+  "closures": [],
+  "workspace_input": {},
+  "unresolved": []
+}

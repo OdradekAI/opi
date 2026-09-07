@@ -25,8 +25,145 @@ usage() {
 usage: materialize-external-locks.sh --candidate-commit <40-hex>
                                      --static-lock <path>
                                      --output-dir <path>
+       materialize-external-locks.sh prepare --cache <dir> --plan <json>
+
+The prepare mode is the supervised local-acquisition entry opi-eval
+prepare invokes on a cache miss: the plan lists missing cache-relative
+identities; every wired identity is downloaded from its pinned public
+URL, digest-verified, and installed into the cache; every unwired
+identity fails closed with actionable guidance. Only public
+task/runner/build material is fetched; no model is called and no
+credential is read.
 USAGE
 }
+
+# Supervised local acquisition (P19-D05): acquire the plan's missing
+# identities into the declared cache, fail-closed otherwise.
+run_prepare_mode() {
+  local cache="" plan=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --cache) cache="$2"; shift 2 ;;
+      --plan) plan="$2"; shift 2 ;;
+      *) usage >&2; exit 2 ;;
+    esac
+  done
+  [ -n "$cache" ] && [ -n "$plan" ] || { usage >&2; exit 2; }
+  python3 - "$cache" "$plan" <<'PREPARE_PY'
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import tarfile
+import tempfile
+import urllib.request
+
+cache, plan = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+entries = json.loads(plan.read_text(encoding="utf-8"))
+if not entries:
+    print("prepare: nothing missing")
+    raise SystemExit(0)
+
+# Tool archives the static lock pins with public URLs; each entry maps
+# to one installed executable in the cache. Everything else fails
+# closed with actionable guidance instead of a silent fetch.
+archive_tools = {}
+try:
+    lock_text = (cache / "pins/static/linux-x86_64.json").read_text(encoding="utf-8")
+except OSError:
+    raise SystemExit("prepare: the cache holds no seeded static lock")
+try:
+    for tool in json.loads(lock_text).get("tools", []):
+        archive = tool.get("archive") or {}
+        if archive.get("url") and archive.get("sha256"):
+            archive_tools[tool["id"]] = archive
+except (KeyError, TypeError):
+    raise SystemExit("prepare: the seeded static lock is malformed")
+
+import hashlib
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+failures = []
+acquired = []
+for entry in entries:
+    identity = entry["id"]
+    parts = identity.split("/")
+    target = cache / identity
+    if len(parts) == 2 and parts[0] == "tools" and parts[1] in archive_tools:
+        archive = archive_tools[parts[1]]
+        with tempfile.TemporaryDirectory() as room:
+            download = pathlib.Path(room) / "archive"
+            urllib.request.urlretrieve(archive["url"], download)
+            observed = sha256_file(download)
+            if observed != archive["sha256"]:
+                failures.append(
+                    f"{identity}: archive digest drift (pinned {archive['sha256']}, "
+                    f"observed {observed})"
+                )
+                continue
+            with tarfile.open(download) as tar:
+                members = [
+                    member
+                    for member in tar.getmembers()
+                    if member.name in ("uv", "uvx")
+                    or member.name.endswith("/uv")
+                    or member.name.endswith("/uvx")
+                    or member.name in ("node", "npm", "npx", "corepack")
+                    or member.name.endswith("/node")
+                    or member.name.endswith("/npm")
+                    or member.name.endswith("/npx")
+                    or member.name.endswith("/corepack")
+                ]
+                extracted = pathlib.Path(room) / "x"
+                extracted.mkdir()
+                tar.extractall(extracted, filter="data")
+            candidates = [
+                path
+                for path in extracted.rglob("*")
+                if path.name == parts[1] and path.is_file()
+            ]
+            if not candidates:
+                candidates = [
+                    path
+                    for path in extracted.rglob("*")
+                    if path.is_file() and path.stat().st_mode & 0o111
+                ]
+            if not candidates:
+                failures.append(f"{identity}: archive holds no executable")
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(candidates[0].read_bytes())
+            target.chmod(0o755)
+            acquired.append(identity)
+    else:
+        failures.append(
+            f"{identity}: not wired for local acquisition; build or materialize it "
+            "through the pinned producer stages (agents via "
+            "crates/opi-eval/scripts/build-agent-artifacts.sh), seed the cache, "
+            "and rerun opi-eval prepare"
+        )
+
+if acquired:
+    print("prepare: acquired " + ", ".join(sorted(acquired)))
+if failures:
+    for failure in failures:
+        print("prepare: " + failure, file=sys.stderr)
+    raise SystemExit(2)
+PREPARE_PY
+}
+
+if [ "${1:-}" = "prepare" ]; then
+  shift
+  run_prepare_mode "$@"
+  exit 0
+fi
 
 CANDIDATE_COMMIT=""
 STATIC_LOCK_PATH=""

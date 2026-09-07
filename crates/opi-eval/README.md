@@ -82,6 +82,29 @@ RUN_ROOT="$DEMO_DIR/run"
 REPORT_PATH="$DEMO_DIR/report.json"
 ```
 
+### 0. Diagnose and prepare local materials
+
+```sh
+cargo run -p opi-eval -- doctor --config experiment.toml
+cargo run -p opi-eval -- prepare --config experiment.toml --out "$DEMO_DIR/material"
+```
+
+`doctor` reports Linux-engine reachability, architecture, WSL/Docker-
+observed CPU/memory/GPU/disk, and missing materials with reasons for
+unknown observations, starting no model. `prepare` verifies the seeded
+local cache (`[storage].cache`) against the pinned static lock, freezes
+the selected benchmark, subject executables, and every requested image
+identity, checks the frozen task's resource requirements against the
+local observations (an unmet or unobservable requirement rejects the
+whole request), and emits a local-origin native-material manifest
+consumable by `validate` and `run` with `--native-material`. Local
+origin is recorded truthfully and never manufactures GitHub provenance:
+the upload receipt stays a CI transport claim. A cache miss triggers
+supervised acquisition through the pinned materializer when it is
+seeded (plan and captured log under the output root); otherwise the
+failure names the missing identity and how to acquire it. The full
+operator walkthrough lives under `examples/local-evaluation/`.
+
 ### 1. Validate
 
 ```sh

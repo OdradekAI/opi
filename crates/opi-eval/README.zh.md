@@ -77,6 +77,26 @@ RUN_ROOT="$DEMO_DIR/run"
 REPORT_PATH="$DEMO_DIR/report.json"
 ```
 
+### 0. 诊断并准备本地 material
+
+```sh
+cargo run -p opi-eval -- doctor --config experiment.toml
+cargo run -p opi-eval -- prepare --config experiment.toml --out "$DEMO_DIR/material"
+```
+
+`doctor` 报告 Linux engine 可达性、架构、WSL/Docker 观测到的
+CPU/内存/GPU/磁盘，以及缺失的 material；无法观测的项带原因说明，且
+全程不启动任何 model。`prepare` 依据 pinned static lock 校验种子化的
+本地缓存（`[storage].cache`），冻结所选 benchmark、subject 可执行文件
+与全部被请求的 image 身份，将冻结任务的资源需求与本地观测比对
+（未满足或无法观测都会整体拒绝，绝不静默收缩集合），并产出可被
+`validate`/`run` 通过 `--native-material` 消费的 local-origin
+native-material manifest。local origin 被如实记录，绝不伪造 GitHub
+provenance：upload receipt 仍然只是 CI 的 transport claim。缓存缺失时，
+若已种子化 pinned materializer 则触发受监督的获取（plan 与被捕获的
+日志位于输出根下）；否则失败会点名缺失的身份及其获取方式。完整的
+operator 演练见 `examples/local-evaluation/`。
+
 ### 1. 校验
 
 ```sh

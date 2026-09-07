@@ -4,6 +4,7 @@
 //! [`regrade`] and [`report`].
 
 pub mod conformance;
+pub mod prepare;
 pub mod regrade;
 pub mod report;
 pub mod run;

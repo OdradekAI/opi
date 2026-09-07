@@ -2123,3 +2123,471 @@ fn native_capture_policy_controls_non_terminal_evidence() {
         }
     }
 }
+
+/// Seeds a complete local material cache the way an operator does from a
+/// repository checkout: the pin seed (static lock, production profile,
+/// integration modules, provider script, pinned materializer scripts)
+/// plus the built agents, the materialized task package, the verifier
+/// tool, and the oracle wrapper.
+fn seed_local_cache(cache: &Path) {
+    let fixture_cache = fixtures().join("external-locks/local-cache");
+    copy_dir(&fixture_cache.join("scripts"), &cache.join("pins/scripts"));
+    fs::create_dir_all(static_lock_in(cache).parent().unwrap()).unwrap();
+    fs::copy(
+        fixture_cache.join("static-lock.json"),
+        static_lock_in(cache),
+    )
+    .unwrap();
+    fs::create_dir_all(cache.join("pins/profiles/benchmarks")).unwrap();
+    fs::copy(
+        manifest_dir().join("profiles/benchmarks/terminal-bench-2.1.toml"),
+        cache.join("pins/profiles/benchmarks/terminal-bench-2.1.toml"),
+    )
+    .unwrap();
+    copy_dir(
+        &manifest_dir().join("integrations/harbor"),
+        &cache.join("pins/integrations/harbor"),
+    );
+    copy_dir(
+        &manifest_dir().join("integrations/pier"),
+        &cache.join("pins/integrations/pier"),
+    );
+    fs::copy(
+        manifest_dir().join("scripts/scripted-provider.py"),
+        cache.join("pins/scripts/scripted-provider.py"),
+    )
+    .unwrap();
+    write_exec(
+        &cache.join("agents/opi"),
+        "#!/bin/sh\n# built opi stand-in (test seeding)\nexit 0\n",
+    );
+    write_exec(
+        &cache.join("agents/pi"),
+        "#!/bin/sh\n# built pi stand-in (test seeding)\nexit 0\n",
+    );
+    copy_dir(
+        &fixtures().join("benchmarks/terminal-bench-2.1/task-package"),
+        &cache.join("packages/terminal-bench-2.1"),
+    );
+    write_exec(
+        &cache.join("tools/uv"),
+        "#!/bin/sh\n# resolved uv stand-in (test seeding)\nexit 0\n",
+    );
+    write_exec(
+        &cache.join("wrappers/terminal-bench-2.1-oracle.sh"),
+        "#!/bin/sh\n# oracle wrapper stand-in (test seeding)\nexit 0\n",
+    );
+}
+
+/// The pinned static lock location inside a seeded cache.
+fn static_lock_in(cache: &Path) -> PathBuf {
+    cache.join("pins/static/linux-x86_64.json")
+}
+
+/// Copies the paired experiment fixture with `[storage].cache`
+/// redirected to `cache`.
+fn experiment_with_cache(dir: &Path, cache: &Path) -> PathBuf {
+    let source = fs::read_to_string(fixtures().join("experiment/local-paired.toml")).unwrap();
+    let redirected = source
+        .lines()
+        .map(|line| {
+            if line.strip_prefix("cache = ").is_some() {
+                format!("cache = {:?}", cache.to_string_lossy())
+            } else if line.strip_prefix("task = ").is_some() {
+                // The trials select the production pinned task the
+                // materialized task package resolves.
+                "task = \"openssl-selfsigned-cert\"".to_owned()
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let config = dir.join("experiment.toml");
+    fs::write(&config, redirected).unwrap();
+    config
+}
+
+/// P19-AC-001-prepare: `prepare --config C --out M` from an independent
+/// working directory verifies the seeded cache and emits a local-origin
+/// native-material manifest that `validate` consumes without repository
+/// fixtures or GitHub run/artifact metadata.
+#[test]
+fn independent_directory_prepare_builds_a_local_origin_material() {
+    let staged = tempfile::tempdir().unwrap();
+    let cache = staged.path().join("cache");
+    seed_local_cache(&cache);
+    let config = experiment_with_cache(staged.path(), &cache);
+
+    // The independent directory: neither the cache, the config, nor the
+    // output tree lives inside the repository checkout.
+    let independent = tempfile::tempdir().unwrap();
+    let out = independent.path().join("material");
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("prepare")
+        .arg("--config")
+        .arg(&config)
+        .arg("--out")
+        .arg(&out)
+        .current_dir(independent.path())
+        .output()
+        .expect("spawn the opi-eval prepare command");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "prepare must verify and freeze the seeded cache: stdout={stdout} stderr={stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["schema"], "opi-eval-prepare/1");
+    assert_eq!(report["origin"], "local");
+    assert_eq!(report["selection"]["benchmark"], "terminal-bench-2.1");
+    assert_eq!(
+        report["selection"]["products"],
+        serde_json::json!(["opi", "pi"])
+    );
+    assert_eq!(
+        report["images"][0]["manifest"],
+        format!("sha256:{}", "2".repeat(64))
+    );
+
+    let material_path = out.join("material.json");
+    assert!(material_path.is_file(), "{stdout}");
+    let manifest = fs::read_to_string(&material_path).unwrap();
+    let material: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+    assert_eq!(material["schema"], "opi-eval-native-material/3");
+    assert_eq!(material["origin"], "local");
+    // Only the selected benchmark is frozen into the manifest.
+    assert_eq!(
+        material["benchmarks"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+        ["terminal-bench-2.1"]
+    );
+    // The provider endpoint is the experiment's selected connection.
+    assert_eq!(
+        material["provider"]["endpoint"],
+        "http://127.0.0.1:48127/v1"
+    );
+    // No GitHub transport metadata is manufactured for local origin.
+    assert!(
+        !manifest.contains("receipt") && !manifest.contains("github"),
+        "local origin must not carry transport metadata: {manifest}"
+    );
+    // Every materialized path stays inside the cache or output tree:
+    // the runtime never needs the repository checkout.
+    let repo = manifest_dir().to_string_lossy().into_owned();
+    assert!(
+        !manifest.contains(&repo),
+        "the manifest must not point back into the repository: {manifest}"
+    );
+    // The frozen inventory records every verified identity for reuse.
+    let inventory: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(cache.join("inventory.json")).unwrap()).unwrap();
+    assert_eq!(inventory["schema"], "opi-eval-local-inventory/1");
+    assert!(inventory["entries"]["agents:opi"]["sha256"].is_string());
+    assert!(inventory["entries"]["packages:terminal-bench-2.1"]["sha256"].is_string());
+
+    // validate consumes the emitted manifest from the independent
+    // directory (the production consumption call site).
+    let validated = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("validate")
+        .arg("--config")
+        .arg(&config)
+        .arg("--native-material")
+        .arg(&material_path)
+        .current_dir(independent.path())
+        .output()
+        .expect("spawn the opi-eval validate command");
+    let vstdout = String::from_utf8_lossy(&validated.stdout);
+    let vstderr = String::from_utf8_lossy(&validated.stderr);
+    assert_eq!(
+        validated.status.code(),
+        Some(0),
+        "validate must consume the local-origin manifest: stdout={vstdout} stderr={vstderr}"
+    );
+}
+
+fn run_prepare(config: &Path, out: &Path) -> std::process::Output {
+    run_prepare_env(config, out, &[])
+}
+
+fn run_prepare_env(config: &Path, out: &Path, env: &[(&str, &str)]) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_opi-eval"));
+    command
+        .arg("prepare")
+        .arg("--config")
+        .arg(config)
+        .arg("--out")
+        .arg(out);
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command
+        .output()
+        .expect("spawn the opi-eval prepare command")
+}
+
+/// P19-AC-007-material: local verification freezes identities, reuses
+/// the verified cache, rejects drift and missing material without
+/// silently fetching or replacing anything, and leaves the shared cache
+/// byte-identical on rejection.
+#[test]
+fn local_material_integrity() {
+    let staged = tempfile::tempdir().unwrap();
+    let cache = staged.path().join("cache");
+    seed_local_cache(&cache);
+    let config = experiment_with_cache(staged.path(), &cache);
+    let out = staged.path().join("material");
+
+    // First run freezes the inventory.
+    let first = run_prepare(&config, &out);
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let manifest_before = fs::read_to_string(out.join("material.json")).unwrap();
+    let inventory_before = fs::read_to_string(cache.join("inventory.json")).unwrap();
+
+    // Second run over the untouched cache reuses the frozen identities:
+    // identical manifest and inventory bytes, no re-acquisition.
+    let second = run_prepare(&config, &out);
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(
+        manifest_before,
+        fs::read_to_string(out.join("material.json")).unwrap()
+    );
+    assert_eq!(
+        inventory_before,
+        fs::read_to_string(cache.join("inventory.json")).unwrap()
+    );
+
+    // Drift: tampering with a frozen identity rejects before any emit
+    // and never triggers a silent re-fetch.
+    write_exec(&cache.join("agents/opi"), "#!/bin/sh\n# tampered\nexit 1\n");
+    let drifted = run_prepare(&config, &out);
+    let stderr = String::from_utf8_lossy(&drifted.stderr);
+    assert_eq!(drifted.status.code(), Some(2), "stderr: {stderr}");
+    assert!(
+        stderr.contains("material drift at agents:opi"),
+        "drift must name the frozen identity: {stderr}"
+    );
+    // The previously emitted manifest survives the rejection untouched.
+    assert_eq!(
+        manifest_before,
+        fs::read_to_string(out.join("material.json")).unwrap()
+    );
+
+    // Missing material without a declared acquirer is an actionable
+    // rejection, never a silent fetch.
+    let fresh = tempfile::tempdir().unwrap();
+    let fresh_cache = fresh.path().join("cache");
+    seed_local_cache(&fresh_cache);
+    fs::remove_file(fresh_cache.join("tools/uv")).unwrap();
+    fs::remove_file(fresh_cache.join("pins/scripts/materialize-external-locks.sh")).unwrap();
+    fs::remove_file(fresh_cache.join("pins/scripts/verify-external-lock-ci.py")).unwrap();
+    let fresh_config = experiment_with_cache(fresh.path(), &fresh_cache);
+    let missing = run_prepare(&fresh_config, &fresh.path().join("material"));
+    let stderr = String::from_utf8_lossy(&missing.stderr);
+    assert_eq!(missing.status.code(), Some(2), "stderr: {stderr}");
+    assert!(
+        stderr.contains("material tools:uv missing"),
+        "the missing identity must be named: {stderr}"
+    );
+}
+
+/// Supervised acquisition: on a cache miss with the pinned materializer
+/// seeded, prepare invokes it under supervision (plan in, log captured),
+/// re-verifies the acquired bytes, and freezes them; a failing
+/// materializer is a fail-closed rejection.
+#[test]
+fn supervised_acquisition_runs_the_pinned_materializer() {
+    let staged = tempfile::tempdir().unwrap();
+    let cache = staged.path().join("cache");
+    seed_local_cache(&cache);
+    // The pi executable has not been built into this cache yet.
+    fs::remove_file(cache.join("agents/pi")).unwrap();
+    let config = experiment_with_cache(staged.path(), &cache);
+    let out = staged.path().join("material");
+
+    let output = run_prepare(&config, &out);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "supervised acquisition must complete the freeze: stdout={stdout} stderr={stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["acquired"], serde_json::json!(["agents:pi"]));
+    // The invocation is supervised and its evidence is captured.
+    let log = fs::read_to_string(out.join("acquisition.log")).unwrap();
+    assert!(log.contains("materialize"), "log: {log}");
+    // The acquired bytes are the frozen identity the manifest pins.
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(out.join("material.json")).unwrap()).unwrap();
+    let acquired = manifest["agents"]["pi"]["executable"]["path"]
+        .as_str()
+        .unwrap();
+    let sha = sha256_hex(&fs::read(acquired).unwrap());
+    assert_eq!(manifest["agents"]["pi"]["executable"]["sha256"], sha);
+}
+
+/// Derives a pi-only experiment document from the paired fixture by
+/// dropping the opi subject, the edge, and its trial.
+fn pi_only_config(dir: &Path, cache: &Path) -> PathBuf {
+    let source = fs::read_to_string(fixtures().join("experiment/local-paired.toml")).unwrap();
+    let mut blocks: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for line in source.lines().chain(std::iter::once("")) {
+        if line.is_empty() {
+            if !current.trim().is_empty() {
+                blocks.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+        current.push_str(line);
+        current.push('\n');
+    }
+    // Keep the paired structure (edges are mandatory) but make both
+    // subjects pi products: a single-product experiment.
+    let filtered: Vec<String> = blocks
+        .iter()
+        .map(|block: &String| {
+            let block = if block.contains("candidate-opi") {
+                block.replace("product = \"opi\"", "product = \"pi\"")
+            } else {
+                block.clone()
+            };
+            block
+                .lines()
+                .map(|line| {
+                    if line.strip_prefix("cache = ").is_some() {
+                        format!("cache = {:?}", cache.to_string_lossy())
+                    } else if line.strip_prefix("task = ").is_some() {
+                        "task = \"openssl-selfsigned-cert\"".to_owned()
+                    } else {
+                        line.to_owned()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .collect();
+    let text = filtered.join("\n");
+    let config = dir.join("pi-only.toml");
+    fs::write(&config, text).unwrap();
+    config
+}
+
+/// P19-D05: a pi-only experiment prepares and validates without any Opi
+/// material - the selected subject set drives the frozen manifest.
+#[test]
+fn pi_only_preparation_requires_no_opi_material() {
+    let staged = tempfile::tempdir().unwrap();
+    let cache = staged.path().join("cache");
+    seed_local_cache(&cache);
+    fs::remove_file(cache.join("agents/opi")).unwrap();
+    let config = pi_only_config(staged.path(), &cache);
+    let out = staged.path().join("material");
+
+    let output = run_prepare(&config, &out);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "pi-only preparation must not require Opi: stdout={stdout} stderr={stderr}"
+    );
+    let material: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(out.join("material.json")).unwrap()).unwrap();
+    assert_eq!(
+        material["agents"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+        ["pi"]
+    );
+    let validated = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("validate")
+        .arg("--config")
+        .arg(&config)
+        .arg("--native-material")
+        .arg(out.join("material.json"))
+        .output()
+        .expect("spawn the opi-eval validate command");
+    assert_eq!(
+        validated.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+}
+
+/// P19-AC-007-material: a task resource requirement the local
+/// environment cannot satisfy is an explicit rejection naming the task
+/// and the requirement - the requested set never silently shrinks -
+/// while a satisfied requirement freezes into the report.
+#[test]
+fn unmet_resource_requirement_rejects_without_silent_shrink() {
+    let staged = tempfile::tempdir().unwrap();
+    let cache = staged.path().join("cache");
+    seed_local_cache(&cache);
+    let config = experiment_with_cache(staged.path(), &cache);
+    let out = staged.path().join("material");
+
+    // The selected task declares a GPU requirement the local
+    // environment cannot observe (no reachable engine): prepare must
+    // reject it explicitly instead of dropping it from the set.
+    let task_toml = cache.join("packages/terminal-bench-2.1/task.toml");
+    fs::write(
+        &task_toml,
+        "artifacts = [\"/root/answer.txt\"]\n\n[task]\nid = \"openssl-selfsigned-cert\"\n\n[environment]\ncpus = 1\nmemory_mb = 256\ngpus = 1\nos = \"linux\"\n",
+    )
+    .unwrap();
+    // A closed loopback endpoint forces the unknown-GPU observation on
+    // every host, with or without a real engine: the requirement must
+    // reject explicitly instead of shrinking the set.
+    let rejected = run_prepare_env(&config, &out, &[("DOCKER_HOST", "tcp://127.0.0.1:1")]);
+    let stderr = String::from_utf8_lossy(&rejected.stderr);
+    assert_eq!(rejected.status.code(), Some(2), "stderr: {stderr}");
+    assert!(
+        stderr.contains("openssl-selfsigned-cert")
+            && stderr.contains("gpus")
+            && stderr.contains("engine"),
+        "the rejection must name the task, the requirement, and the unknown observation: {stderr}"
+    );
+    assert!(
+        !out.join("material.json").is_file(),
+        "no manifest may be emitted for a rejected set"
+    );
+
+    // A satisfied requirement freezes with its selection reason. The
+    // stage starts from a fresh cache: the rewritten task.toml above is
+    // a different frozen identity, not drift of this one.
+    let ok_staged = tempfile::tempdir().unwrap();
+    let ok_cache = ok_staged.path().join("cache");
+    seed_local_cache(&ok_cache);
+    let ok_config = experiment_with_cache(ok_staged.path(), &ok_cache);
+    let ok_out = ok_staged.path().join("material");
+    fs::write(
+        ok_cache.join("packages/terminal-bench-2.1/task.toml"),
+        "artifacts = [\"/root/answer.txt\"]\n\n[task]\nid = \"openssl-selfsigned-cert\"\n\n[environment]\ncpus = 1\nmemory_mb = 256\ngpus = 0\nos = \"linux\"\n",
+    )
+    .unwrap();
+    let output = run_prepare(&ok_config, &ok_out);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "stderr: {stderr}");
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let preflight = &report["preflight"]["tasks"][0];
+    assert_eq!(preflight["id"], "openssl-selfsigned-cert");
+    assert_eq!(preflight["status"], "ok");
+    assert!(preflight["requirements"]["gpus"].is_u64());
+}

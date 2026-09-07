@@ -70,15 +70,45 @@ pub fn run(args: &RunArgs) -> Result<serde_json::Value, RunCliError> {
             canaries: read_canaries(args.canaries.as_deref())
                 .map_err(|error| RunCliError::Rejected(error.to_string()))?,
             material: match &args.native_material {
-                Some(path) => Some(
-                    crate::runner::material::NativeMaterial::load(path)
-                        .map_err(|error| RunCliError::Rejected(error.to_string()))?,
-                ),
+                Some(path) => {
+                    let products = selected_products(&args.config)?;
+                    Some(
+                        crate::runner::material::NativeMaterial::load_for(path, &products)
+                            .map_err(|error| RunCliError::Rejected(error.to_string()))?,
+                    )
+                }
                 None => None,
             },
         }))
         .map_err(|error| RunCliError::Rejected(error.to_string()))?;
     Ok(report)
+}
+
+/// The sorted unique agent products the experiment document selects; a
+/// pi-only document prepares and runs without any Opi material.
+fn selected_products(config: &std::path::Path) -> Result<Vec<&'static str>, RunCliError> {
+    let source = std::fs::read_to_string(config).map_err(|error| {
+        RunCliError::Rejected(format!("cannot read experiment document: {error}"))
+    })?;
+    let experiment = crate::experiment::ResolvedExperiment::resolve(&source)
+        .map_err(|error| RunCliError::Rejected(error.to_string()))?;
+    let mut products: Vec<&'static str> = experiment
+        .subjects()
+        .iter()
+        .filter_map(|subject| match subject.product.as_str() {
+            "opi" => Some("opi"),
+            "pi" => Some("pi"),
+            _ => None,
+        })
+        .collect();
+    products.sort_unstable();
+    products.dedup();
+    if products.is_empty() {
+        return Err(RunCliError::Rejected(
+            "the experiment selects no supported agent product".to_owned(),
+        ));
+    }
+    Ok(products)
 }
 
 /// Reads the declared canary file (one secret per line, blank lines

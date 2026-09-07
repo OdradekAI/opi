@@ -705,7 +705,7 @@ impl BenchmarkRevision {
 }
 
 /// The CLI adapter id for an experiment's declared benchmark revision.
-fn adapter_key_for(experiment: &ResolvedExperiment) -> Result<String, RunError> {
+pub(crate) fn adapter_key_for(experiment: &ResolvedExperiment) -> Result<String, RunError> {
     let benchmark = experiment.benchmark();
     match (benchmark.name.as_str(), benchmark.revision.as_str()) {
         ("terminal-bench", "2.1") => Ok("terminal-bench-2.1".to_owned()),
@@ -885,7 +885,13 @@ pub(crate) fn native_integrity_identity(
         .map_err(|error| format!("cannot read experiment document: {error}"))?;
     let experiment = ResolvedExperiment::resolve(&source)
         .map_err(|error| format!("experiment document rejected: {error}"))?;
-    let material = NativeMaterial::load(material_path).map_err(|error| error.to_string())?;
+    let products = experiment
+        .subjects()
+        .iter()
+        .map(|subject| subject.product.as_str())
+        .collect::<Vec<_>>();
+    let material =
+        NativeMaterial::load_for(material_path, &products).map_err(|error| error.to_string())?;
     let inputs = prepare_native(&material, &experiment).map_err(|error| error.to_string())?;
     let review = IntegrityRecord::review(native_integrity_review(&experiment, &material, &inputs))
         .map_err(|error| format!("native integrity rejected: {error}"))?;

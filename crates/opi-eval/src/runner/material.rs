@@ -138,6 +138,12 @@ pub(crate) struct BenchmarkMaterial {
 #[serde(deny_unknown_fields)]
 pub(crate) struct NativeMaterial {
     schema: String,
+    /// Truthful origin of this material: absent for the CI-produced
+    /// manifests and `local` for the ones `prepare` freezes from a
+    /// seeded local cache. Local origin never manufactures GitHub
+    /// provenance (P19-D05).
+    #[serde(default)]
+    origin: Option<String>,
     /// The admitted static external lock backing every resolved identity.
     pub(crate) static_lock: PinnedFile,
     /// The scripted-provider listener.
@@ -149,25 +155,52 @@ pub(crate) struct NativeMaterial {
 }
 
 impl NativeMaterial {
-    /// Loads and fully validates the manifest. Every pinned digest is
-    /// recomputed against the bytes on disk; every declared path must
-    /// exist; the agent and benchmark identity sets must be exact.
+    /// Loads and fully validates the manifest for both agent products.
     pub(crate) fn load(path: &Path) -> Result<Self, MaterialError> {
+        Self::load_for(path, &["opi", "pi"])
+    }
+
+    /// Loads and fully validates the manifest for exactly the selected
+    /// agent products (a pi-only experiment requires no Opi material;
+    /// P19-D05). Every pinned digest is recomputed against the bytes on
+    /// disk; every declared path must exist; the agent and benchmark
+    /// identity sets must be exact.
+    pub(crate) fn load_for(path: &Path, products: &[&str]) -> Result<Self, MaterialError> {
         let text = std::fs::read_to_string(path)?;
         let material: NativeMaterial = serde_json::from_str(&text)
             .map_err(|error| MaterialError::Rejected(format!("manifest parse failed: {error}")))?;
+        let mut selected: Vec<&str> = products.to_vec();
+        selected.sort_unstable();
+        selected.dedup();
+        if selected.is_empty()
+            || selected
+                .iter()
+                .any(|product| !["opi", "pi"].contains(product))
+        {
+            return Err(MaterialError::Rejected(format!(
+                "selected products must be a non-empty subset of [opi, pi], found {selected:?}"
+            )));
+        }
         if material.schema != MATERIAL_SCHEMA {
             return Err(MaterialError::Rejected(format!(
                 "unknown schema {:?} (expected {MATERIAL_SCHEMA:?})",
                 material.schema
             )));
         }
+        match material.origin.as_deref() {
+            None | Some("local") => {}
+            Some(other) => {
+                return Err(MaterialError::Rejected(format!(
+                    "unknown material origin {other:?} (expected none or \"local\")"
+                )));
+            }
+        }
         verify_pinned(&material.static_lock)?;
         verify_pinned(&material.provider.script)?;
         let agent_ids = material.agents.keys().cloned().collect::<Vec<_>>();
-        if agent_ids != ["opi", "pi"] {
+        if agent_ids != selected {
             return Err(MaterialError::Rejected(format!(
-                "agent set must be exactly [opi, pi], found {agent_ids:?}"
+                "agent set must be exactly {selected:?}, found {agent_ids:?}"
             )));
         }
         for (product, agent) in &material.agents {
