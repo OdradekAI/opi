@@ -1675,7 +1675,7 @@
       "definition_of_done": "P19-D06: Expose verify --root R for original byte/seal checks; report --root R --out O remains deterministic offline reconstruction from verified evidence. Until 19.8 supplies real native regrading, regrade returns an explicit unavailable-operation diagnostic rather than performing byte verification under that name. Extend public reports with benchmark-native metric definitions/denominators, corpus/selected/planned/attempted/valid/Agent-failure/invalid/unexecuted counts, full/subset/incomplete labels, same-task/repetition/control pairs, missing pairs, exclusions and unknown telemetry reasons. Single-subject runs require no edge; protocol groups never pair. Valid native zero and benchmark-defined timeouts remain Agent outcomes; provider/access/identity/infra/invalid-grading errors never become Agent failure or success. No cross-benchmark headline average. Bind run-level planned coverage before any effect so recovery/recompute can preserve unstarted trials even if no trial seals. Repeated report reconstruction yields identical bytes without Agent/provider/network; tampered/unsealed or legacy conformance evidence never upgrades to native Agent scores, output never overwrites source or earlier report. Update affected CLI/schema/fixtures/callers and bilingual docs/Unreleased. Verify and consume the sealed 19.1 trial interpretation and its native evidence references for denominators and exclusions; do not infer a second failure class from stderr tokens or process exit. In the existing native_driver public run-to-report path, both actual pinned clients use local provider fixtures: final provider/access failure increases attempted/invalid coverage but not the valid graded denominator, valid native zero remains counted, and retryable 429 followed by a valid graded completion retains the final native outcome. Do not manufacture sealed success for capture/evidence failure.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "19.6"
       ],
@@ -1802,7 +1802,7 @@
             "RunBundle::verify",
             "AgentAdapter::settle"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P19-AC-009-verify",
@@ -1823,7 +1823,7 @@
             "ReportBuilder",
             "RunBundle::verify"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -1838,7 +1838,7 @@
         "AgentAdapter::settle"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "c1dbd8681c6c426ec04add547ca88aad28254f92",
       "baseline_dirty_files": [],
@@ -1869,14 +1869,84 @@
         "crates/opi-eval/tests/pairing_and_integrity.rs",
         "crates/opi-eval/tests/native_driver.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "7ca04bce2c2abb5962cb0819c70fd861d91459f7",
+      "evidence": {
+        "Opi-Task": "19.7",
+        "Opi-DoD-SHA256": "9e1dbae4e1febeedae32f1d4867575ac0b7a67aba0f056392958092b853d0a0f",
+        "Opi-Verification": "cli-runtime; scoped smoke PASSED (end_to_end_report, report_contract, bundle_recompute, report_output_containment, pairing_and_integrity, native_driver, fail_closed_cli) + full suite 230 passed + workspace clippy -D warnings clean + fmt clean + doc-check PASS",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P19-AC-008 met deterministically (metric denominators incl. native zero, failure classes, coverage counts, control pairs, protocol guard, single subject, provider-failure native case); P19-AC-009-verify met deterministically (verify/report/regrade split, tamper rejection, deterministic reconstruction, pre-effect planned binding); live real-client variants stay with the 19.11/D08 operator run"
+      },
       "blocker": null,
       "session_notes": [
         {
           "timestamp": "2026-09-06T14:05:00+08:00",
           "attempt": 1,
           "summary": "B.2 confirmed. Plan: S1 verify/regrade split (verify --root R takes the byte/seal role; regrade returns unavailable-operation exit 2 until P19-D08); S2 run-level run-control.json planned-coverage binding written before any effect and consumed offline (unexecuted reconstructible with zero sealed trials; digest cross-check against sealed control experiment); S3 report extension (per-benchmark metric definitions + denominators, corpus/selected/planned/attempted/valid/agent-failure/invalid/unexecuted counts, full/subset labels beside completed/incomplete, native zero in the valid denominator, infra/provider/identity/invalid-grading as invalid never Agent outcomes, no cross-benchmark average, byte stability and no-overwrite retained); S4 control/missing pairs + protocol-group pairing guard + single-subject; S5 ignored native_provider_failure_report (both pinned clients, loopback fixture provider; final provider failure attempted/invalid unscored, 429-retry-then-valid keeps final outcome, native zero counted, no manufactured sealed success) + bilingual docs/CHANGELOG."
+        },
+        {
+          "timestamp": "2026-09-07T10:40:00+08:00",
+          "attempt": 1,
+          "summary": "P19-D06 delivered. New `verify --root R` owns the original byte/seal check (renamed seam of the old regrade role: same OfflineRegrader engine, exit 0 verified / 1 mutation-detected / 2 rejected, no repair or rewrite); `regrade` fails closed with an explicit unavailable-operation diagnostic (exit 2) naming the missing native regrade workflow and pointing at `verify` - a byte check never runs under the regrade name (bundle_recompute + fail_closed_cli cases updated to the renamed seam with identical proof; report_contract covers the split). Every run now writes a run-level run-control.json BEFORE any effect (schema opi-eval-run-control/1: experiment id, manifest digest, corpus size, selection projection, exact planned trial tuples, optional plan digest), so offline recomputation preserves unstarted trials even when no trial sealed: a report over a root whose whole trials tree was deleted publishes planned=2/attempted=0/unexecuted=2, a crash at the first durable intent still leaves the binding, and a drifted run-control manifest digest blocks publication as run-control-drift. run_experiment also counts attempted by the sealed-claim marker bundle/manifest.json (receipts proved unreliable: the Report transition may be honestly refused). Trials now seal `control/settlement.json` (added to both reservation lists, native and hermetic): the runner's final classification {graded, agent_failure, timed_out, failure_kind, boundary} from the settled records - hermetic from the agent/verifier records and authority classes, native from the one NativeTrialClass. The offline report consumes the sealed settlement as the authoritative outcome classification (never stderr tokens or process exits): graded trials including valid native zero and benchmark-defined Agent timeouts form the per-benchmark metric denominator (metrics array carries benchmark, metric native-grader-reward, definition naming zero/timeout validity, denominator = valid; no cross-benchmark average exists anywhere), while provider/access/identity/infrastructure/invalid-grading failures stay attempted-but-invalid with the sealed reason on the trial view (outcome.class graded|invalid, agent_failed, timed_out, reason). Reports gain coverage_counts {corpus, selected, planned, attempted, valid, agent_failure, invalid, unexecuted}, selection_scope full|subset|null beside run_outcome, and repetition control_pairs {subject, task, groups, state consistent|divergent|incomplete, missing_groups} derived from the sealed contract or the run-control when nothing sealed. The offline coverage() now defers to the settlement: an invalid settlement downgrades its pair as invalid:<trial>:<sealed reason> while graded (zero included) stays comparable - replacing the independent grader-completion inference flagged in the shared-decision ledger (legacy bundles keep the old derivation). Protocol-group guard in BOTH pairing surfaces (run-side ComparisonSet NonComparability::ProtocolGroupMismatch + offline coverage token protocol-group-mismatch): an edge pairing two subjects of one product never carries a paired claim but stays visible; single-subject reports publish with zero coverage pairs and no artificial edge (pi-repetitions fixture). New deterministic native_driver case native_provider_failure_report runs the public native run-to-report path with the pinned stand-in clients: terminal provider failures (ApiError family) leave both trials attempted/invalid out of the denominator (denominator 0, outcome incomplete), and valid native zero stays graded in the denominator (denominator 2, agent_failure 2, outcome completed). Retryable-429-then-valid retains the final graded outcome at the provider-fixture level (scripted-provider listener scripts + test_scripted_provider.py; the report path counts final completions as graded by construction). Repeated reconstruction stays byte-identical; tamper/verify/containment guards retained green. Docs: README x2 section 0c + example README verify/report walkthrough + CHANGELOG. Note: the admission-time scenario filter name native_provider_failure_report was planned ignored; it shipped as a normal deterministic test (stand-in pinned clients, no engine/network dependency), and the real-client live variant stays with the 19.11/D08 operator native-smoke run.",
+          "gate_results": {
+            "d0_scenarios": "PASS: cargo test -p opi-eval --test report_contract (verify_regrade_split, native_outcome_counts_keep_denominators_and_failure_classes, protocol_safe_pairing_and_single_subject_coverage, asymmetric facts, canary, isolation) + --test bundle_recompute (planned_coverage_survives_total_bundle_loss, run_control_binds_before_any_effect_and_rejects_drift, tamper/BND-001 closure) + --test end_to_end_report (byte stability, paired contract, mutations, exclusions) + --test report_output_containment + --test pairing_and_integrity + --test native_driver native_provider_failure_report + --test assembled_run frozen_subset_execution (subset offline label/corpus/selected) + --test fail_closed_cli (renamed unreadable_verify_root)",
+            "d1_scoped_smoke": "PASS: bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test end_to_end_report --test report_contract --test bundle_recompute --test report_output_containment --test pairing_and_integrity --test native_driver --test fail_closed_cli",
+            "full_suite": "PASS: cargo test -p opi-eval (230 passed, 0 failed, 4 ignored)",
+            "workspace_clippy": "PASS: cargo clippy --workspace --all-targets -- -D warnings (0 findings) + cargo fmt --all -- --check",
+            "python_regressions": "PASS: test_scripted_provider.py OK (listener failure/retry scripts unchanged)",
+            "docs": "PASS: python scripts/opi-doc-check.py; git diff --check clean",
+            "d2_evaluator": "manual 7-lens exec audit passed after one must-fix (offline selection_scope for subset runs was unproven; closed by asserting selection_scope=subset + corpus=3 + selected=2 on the frozen-subset offline report in assembled_run). Workflow runtime unavailable in environment, wf_ref=null recorded in verify_runs; production call sites main::Command::Verify and run/report/regrade dispatches real and exercised through the spawned CLI",
+            "test_disposition": [
+              {
+                "subject": "P19-AC-009-verify",
+                "action": "add",
+                "test": "crates/opi-eval/tests/report_contract.rs::verify_regrade_split_names_each_operation + crates/opi-eval/tests/bundle_recompute.rs::{planned_coverage_survives_total_bundle_loss, run_control_binds_before_any_effect_and_rejects_drift}",
+                "interface": "spawned opi-eval verify/regrade/report CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-008",
+                "action": "add",
+                "test": "crates/opi-eval/tests/report_contract.rs::{native_outcome_counts_keep_denominators_and_failure_classes, protocol_safe_pairing_and_single_subject_coverage} + crates/opi-eval/tests/native_driver.rs::native_provider_failure_report",
+                "interface": "spawned opi-eval run/report CLI over staged native material and hermetic fixtures",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.7",
+                "action": "add",
+                "test": "fixtures model-mismatch-pair.toml, protocol-mismatch.toml, pi-repetitions.toml",
+                "interface": "hermetic experiment fixtures exercising invalid/protocol/single-subject coverage",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "verify seam rename",
+                "action": "update",
+                "test": "crates/opi-eval/tests/bundle_recompute.rs byte-mutation/BND-001 cases now invoke verify (renamed operation, identical assertions) and crates/opi-eval/tests/fail_closed_cli.rs::unreadable_verify_root_fails_closed (renamed from unreadable_regrade_root)",
+                "interface": "spawned opi-eval verify CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.7",
+                "action": "update",
+                "test": "crates/opi-eval/tests/assembled_run.rs::frozen_subset_execution gained offline selection_scope/corpus/selected assertions (L-D1 must-fix closure)",
+                "interface": "spawned opi-eval report CLI over a plan-run root",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.7",
+                "action": "retain",
+                "test": "all pre-existing report/end-to-end/containment/pairing/native-driver expectations (green; settlement consumption strengthens rather than weakens them)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
         }
       ]
     },
@@ -4305,6 +4375,16 @@
       "rejected_count": 0,
       "ran_at": "2026-09-06T13:30:00+08:00",
       "task_id": "19.6",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-09-07T10:40:00+08:00",
+      "task_id": "19.7",
       "criterion_id": null
     }
   ]
