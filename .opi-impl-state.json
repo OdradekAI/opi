@@ -1405,7 +1405,7 @@
       "definition_of_done": "P19-D05: Add plan --config C --native-material M --out P and run --plan P --root R; preserve run --config C as the same resolve/freeze path. Exact fields: [selection].scope=full|subset, task_ids, reason, repetitions and optional seeds; [execution].concurrency, max_trials, agent_timeout_seconds, verifier_timeout_seconds, optional max_output_tokens/max_total_tokens/max_cost with explicit enforceability; model_controls and declared task limits remain authoritative and combine by narrowing. Enumerate every pinned corpus task's instructions/lifecycle/network/CPU/memory/GPU/disk/time limits from metadata without pulling or starting all images. Preview subjects/connection/list/selection/repetitions/trial count/concurrency/bounds and unmet or unknown requirements. No implicit filtering; unmet/unsupported selected task requirements prevent freeze/run. Expand the exact selected tasks into a digest-bound immutable plan with per-task integrity/material identity; Opi-only/pi-only need no artificial comparison edge. A multi-task deterministic run executes exactly the plan, emits stage/settlement progress to stderr and a structured saved result; changed configuration/materials require new experiment/trial identities.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "19.5"
       ],
@@ -1484,6 +1484,10 @@
           "field": "verification",
           "reason": "P.2 revision: scoped smoke with named integration binaries excludes inline lib tests. Run this gap-only lib test command once per changed task state; it is not a duplicate of D.1. Exact changed inline filters may narrow the execution union when verified at Phase B.",
           "source": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md#8. Verification and local acceptance handoff"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "19.6 proves deterministic multi-task selection/execution against a generalized hermetic corpus fixture (multiple task subdirectories with per-task task.toml metadata incl. one GPU-bound task); appended before any fixture file is created (Phase C.1a append-only exception)."
         }
       ],
       "tier": "cli-runtime",
@@ -1553,7 +1557,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "e98edf60a2b01d2dce427741a495ec7c443cd99b",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/main.rs",
@@ -1575,12 +1579,19 @@
         "crates/opi-eval/tests/experiment_contract.rs",
         "crates/opi-eval/tests/assembled_run.rs",
         "crates/opi-eval/tests/native_driver.rs",
-        "crates/opi-eval/tests/pairing_and_integrity.rs"
+        "crates/opi-eval/tests/pairing_and_integrity.rs",
+        "crates/opi-eval/tests/fixtures/benchmarks/**"
       ],
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-09-06T11:20:00+08:00",
+          "attempt": 1,
+          "summary": "B.2 gate confirmed by user. Design decisions recorded in-conversation: plan artifact = self-digesting opi-eval-run-plan/1 embedding resolved experiment source + material identity + selection + bounds/enforceability + per-task entries + exact expanded trials; preview = opi-eval-plan-preview/1 on stdout. Corpus generalization: task_package may be a single-task dir (current layout, stays admitted) or a corpus dir of task subdirs enumerated from task.toml metadata without image pulls - additive consumer extension of verified-local-material-identity (no /3 schema change). Selection: [selection] mutually exclusive with [[trials]]; scope=full rejects on any unmet requirement (no silent shrink); subset freezes explicit ids + reason; repetitions default 1 with task+repetition groups. Bounds: concurrency default 1 enforced by real bounded execution; max_trials below derived count rejects; agent/verifier timeouts combine by narrowing; max_output_tokens enforceable only via pinned model-control equality; max_total_tokens/max_cost have no enforceable route this slice so declaring them rejects explicitly naming the gap (that rejection is the enforceability statement). run --plan re-verifies plan digest + material + experiment identity and executes exactly plan.trials; run --config C expands selection through the same resolve/freeze path; stage/settlement progress to stderr; saved report gains plan identity."
+        }
+      ]
     },
     {
       "id": "19.7",
