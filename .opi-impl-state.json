@@ -883,7 +883,7 @@
       "definition_of_done": "P19-D04: Through opi-eval run, the pinned Pier Opi/pi integration executes in the selected DeepSWE task environment, invokes its collect hook, collects the Agent's committed patch against the declared base and applies exactly that patch in a pristine separate verifier with the task's network policy. Bind base, commit/patch digest, upstream trial/Agent and verifier input to the result. Reject wrong base, substituted patch, mismatched identity or silent substitution of uncommitted changes. Correct/incorrect committed-patch witnesses traverse production handoff and real native grader without a live model. Preserve raw native metrics with their meanings; real Opi/pi provider traces remain 19.11.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "19.1"
       ],
@@ -991,7 +991,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "46af3763525dbabbec67563478f528632918cd12",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/main.rs",
