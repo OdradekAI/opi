@@ -40,9 +40,10 @@ launch = ["run", "-p", "<task-dir>"]
 lifecycle = "separate-pristine-verifier"
 network = "none"
 artifact_policy = "collected-patch"
-# No DeepSWE native-output schema is committed. Nothing is guessed or
-# normalized until the native smoke registers the real schema.
-output_kind = "unpinned-pending-18-15"
+# The pinned native output is Pier's own `jobs/<job>/result.json`
+# aggregate from `pier run -p`: the same one-trial shape the shared
+# native-result contract imports (P19-D04).
+output_kind = "pier-job-aggregate"
 
 [resources]
 cpus = 2

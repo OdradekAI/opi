@@ -1,0 +1,34 @@
+# Synthetic DeepSWE v1.1 wiring fixture task: a separate no-network
+# verifier whose collect hook extracts the committed patch beyond the
+# fixture base revision (the same shape the pinned official task pins).
+schema_version = "1.3"
+artifacts = ["/logs/artifacts/model.patch"]
+
+[task]
+name = "datacurve/synthetic-fixture-task"
+description = ""
+
+[metadata]
+task_id = "synthetic-fixture-task"
+base_commit_hash = "1111111111111111111111111111111111111112"
+
+[verifier]
+network_mode = "no-network"
+environment_mode = "separate"
+timeout_sec = 300.0
+
+[[verifier.collect]]
+command = "cd /app && mkdir -p /logs/artifacts && git diff --binary 1111111111111111111111111111111111111112 HEAD > /logs/artifacts/model.patch"
+timeout_sec = 60.0
+
+[agent]
+network_mode = "no-network"
+timeout_sec = 600.0
+
+[environment]
+build_timeout_sec = 300.0
+docker_image = "fixture-registry/swe-bench-fixture:synthetic"
+os = "linux"
+cpus = 2
+memory_mb = 8192
+gpus = 0

@@ -19,7 +19,7 @@ use serde::Deserialize;
 use thiserror::Error;
 
 /// The one admitted manifest schema identity.
-pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/2";
+pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/3";
 
 /// Typed material rejections (exit-path failures, never settled outcomes).
 #[derive(Debug, Error)]
@@ -57,7 +57,7 @@ pub(crate) struct ProviderMaterial {
 }
 
 /// The pinned upstream integration that runs this Agent inside the
-/// graded task environment (P19-D01): the module Harbor imports, the
+/// graded task environment (P19-D01): the module the runner imports, the
 /// name it reports, and the byte-pinned module directory.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -68,7 +68,7 @@ pub(crate) struct IntegrationMaterial {
     /// Sorted-manifest digest of the module directory (fail-closed
     /// against producer-side drift).
     pub(crate) module_manifest_sha256: String,
-    /// The Harbor agent import path (`module:ClassName`) the runner
+    /// The runner agent import path (`module:ClassName`) the dispatch
     /// selects on the upstream argv.
     pub(crate) import_path: String,
     /// The agent name the integration reports and every bound trial
@@ -76,17 +76,36 @@ pub(crate) struct IntegrationMaterial {
     pub(crate) agent_name: String,
 }
 
+/// The runner families a material pins integrations for: the Terminal-
+/// Bench route imports its integration through Harbor and the DeepSWE
+/// route through Pier (P19-D04).
+pub(crate) const INTEGRATION_FAMILIES: [&str; 2] = ["harbor", "pier"];
+
 /// The per-product agent projection.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AgentMaterial {
     /// The exact built executable the supervisor spawns verbatim.
     pub(crate) executable: PinnedFile,
-    /// The pinned upstream integration selecting this Agent inside the
-    /// graded task environment (native mode; schema v2). Request identity
-    /// comes from the experiment's selected connection projection, never
-    /// from the exportable material (P19-D02).
-    pub(crate) integration: IntegrationMaterial,
+    /// The pinned upstream integrations selecting this Agent inside the
+    /// graded task environment (native mode; schema v3), keyed by runner
+    /// family: exactly one Harbor import and one Pier import, because
+    /// the two runner surfaces are not module-compatible. Request
+    /// identity comes from the experiment's selected connection
+    /// projection, never from the exportable material (P19-D02).
+    pub(crate) integrations: BTreeMap<String, IntegrationMaterial>,
+}
+
+impl AgentMaterial {
+    /// The pinned integration for one runner family.
+    pub(crate) fn integration_for(
+        &self,
+        family: &str,
+    ) -> Result<&IntegrationMaterial, MaterialError> {
+        self.integrations.get(family).ok_or_else(|| {
+            MaterialError::Rejected(format!("no {family} integration pinned for this agent"))
+        })
+    }
 }
 
 /// One benchmark revision's resolved native material.
@@ -153,22 +172,31 @@ impl NativeMaterial {
         }
         for (product, agent) in &material.agents {
             verify_pinned(&agent.executable)?;
-            // The pinned integration module directory must digest to its
-            // declared manifest and carry the import path it selects.
-            let observed = directory_manifest_digest(&agent.integration.module_dir)?;
-            if observed != agent.integration.module_manifest_sha256 {
+            let families = agent.integrations.keys().cloned().collect::<Vec<_>>();
+            if families != INTEGRATION_FAMILIES {
                 return Err(MaterialError::Rejected(format!(
-                    "agent {product} integration module drift: pinned {}, observed {}",
-                    agent.integration.module_manifest_sha256, observed
+                    "agent {product} integration families must be exactly {INTEGRATION_FAMILIES:?}, found {families:?}"
                 )));
             }
-            if agent.integration.import_path.split(':').count() != 2
-                || agent.integration.import_path.is_empty()
-                || agent.integration.agent_name.trim().is_empty()
-            {
-                return Err(MaterialError::Rejected(format!(
-                    "agent {product} integration must pin module:Class and the reported agent name"
-                )));
+            for (family, integration) in &agent.integrations {
+                // The pinned integration module directory must digest to
+                // its declared manifest and carry the import path it
+                // selects.
+                let observed = directory_manifest_digest(&integration.module_dir)?;
+                if observed != integration.module_manifest_sha256 {
+                    return Err(MaterialError::Rejected(format!(
+                        "agent {product} {family} integration module drift: pinned {}, observed {}",
+                        integration.module_manifest_sha256, observed
+                    )));
+                }
+                if integration.import_path.split(':').count() != 2
+                    || integration.import_path.is_empty()
+                    || integration.agent_name.trim().is_empty()
+                {
+                    return Err(MaterialError::Rejected(format!(
+                        "agent {product} {family} integration must pin module:Class and the reported agent name"
+                    )));
+                }
             }
         }
         let admitted = ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"];
@@ -320,7 +348,7 @@ mod tests {
         write(&task.join("instruction.md"), b"instruction");
         format!(
             r#"{{
-  "schema": "opi-eval-native-material/2",
+  "schema": "opi-eval-native-material/3",
   "static_lock": {{"path": {:?}, "sha256": {:?}}},
   "provider": {{
     "script": {{"path": {:?}, "sha256": {:?}}},
@@ -330,15 +358,25 @@ mod tests {
   "agents": {{
     "opi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "integration": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
-                        "import_path": "opi_eval_harbor:OpiAgent",
-                        "agent_name": "opi-eval-opi"}}
+      "integrations": {{
+        "harbor": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
+                    "import_path": "opi_eval_harbor:OpiAgent",
+                    "agent_name": "opi-eval-opi"}},
+        "pier": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
+                   "import_path": "opi_eval_pier:OpiAgent",
+                   "agent_name": "opi-eval-opi"}}
+      }}
     }},
     "pi": {{
       "executable": {{"path": {:?}, "sha256": {:?}}},
-      "integration": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
-                        "import_path": "opi_eval_harbor:PiAgent",
-                        "agent_name": "opi-eval-pi"}}
+      "integrations": {{
+        "harbor": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
+                    "import_path": "opi_eval_harbor:PiAgent",
+                    "agent_name": "opi-eval-pi"}},
+        "pier": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
+                   "import_path": "opi_eval_pier:PiAgent",
+                   "agent_name": "opi-eval-pi"}}
+      }}
     }}
   }},
   "benchmarks": {{
@@ -362,8 +400,12 @@ mod tests {
             sha256_hex(b"opi-bin"),
             integrations.to_string_lossy(),
             directory_manifest_digest(&integrations).unwrap(),
+            integrations.to_string_lossy(),
+            directory_manifest_digest(&integrations).unwrap(),
             pi.to_string_lossy(),
             sha256_hex(b"pi-bin"),
+            integrations.to_string_lossy(),
+            directory_manifest_digest(&integrations).unwrap(),
             integrations.to_string_lossy(),
             directory_manifest_digest(&integrations).unwrap(),
             profile.to_string_lossy(),
@@ -407,7 +449,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("opi-material-schema-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let manifest = dir.join("material.json");
-        let text = minimal_manifest(&dir).replace("opi-eval-native-material/2", "other/1");
+        let text = minimal_manifest(&dir).replace("opi-eval-native-material/3", "other/1");
         write(&manifest, text.as_bytes());
         assert!(
             NativeMaterial::load(&manifest)

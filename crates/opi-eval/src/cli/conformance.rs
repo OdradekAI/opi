@@ -847,12 +847,12 @@ fn benchmark_expect(revision: &BenchmarkRevision, case: &str) -> Option<Expect> 
         // witness, reward one) and the upstream nop agent delivers
         // nothing (incorrect witness, reward zero). Both traverse the
         // same production job handoff and binding; neither is an Agent
-        // score (P19-D01, P19-AC-003).
+        // score (P19-D01, P19-AC-003, P19-AC-005).
         "oracle-witness" => Some(Expect::Witness {
             agent: "oracle",
             reward: 1,
         }),
-        "nop-witness" if revision.adapter == TB21.adapter => Some(Expect::Witness {
+        "nop-witness" => Some(Expect::Witness {
             agent: "nop",
             reward: 0,
         }),
@@ -900,7 +900,15 @@ fn witness_task_name(
         .map_err(|error| error.to_string())?
         .declared_task_name(task_dir)
         .unwrap_or_default()),
-        _ => Err("witness tasks are admitted for the Terminal-Bench revisions only".to_owned()),
+        // Pier records the task's own `[task] name` as the bound trial's
+        // task_name (P19-D04).
+        "deepswe" => crate::benchmark::task_lifecycle::parse_task_lifecycle(
+            task_dir,
+            crate::benchmark::task_lifecycle::TaskFamily::Pier,
+        )
+        .map_err(|error| error.to_string())
+        .map(|lifecycle| lifecycle.task_name.unwrap_or_default()),
+        _ => Err("witness tasks are admitted for the pinned benchmark revisions only".to_owned()),
     }
 }
 
@@ -1091,27 +1099,42 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
                 }))
                 .map_err(|error| ConformanceError::Unsupported(error.to_string()))?,
             )?;
-            let integration = &material
+            let family = match revision.adapter {
+                "deepswe" => crate::benchmark::task_lifecycle::TaskFamily::Pier,
+                _ => crate::benchmark::task_lifecycle::TaskFamily::Harbor,
+            };
+            let integration_family = match family {
+                crate::benchmark::task_lifecycle::TaskFamily::Pier => "pier",
+                crate::benchmark::task_lifecycle::TaskFamily::Harbor => "harbor",
+            };
+            let integration = material
                 .agent("opi")
                 .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
-                .integration;
-            // The task's declared lifecycle binds into the witness dispatch
-            // exactly as into an agent dispatch (P19-D03); the witness
-            // kind records that no integration terminal observation can
-            // exist and the result never becomes an Agent score.
-            let task_lifecycle = crate::benchmark::task_lifecycle::parse_task_lifecycle(&task_dir)
+                .integration_for(integration_family)
                 .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
+            // The task's declared lifecycle binds into the witness dispatch
+            // exactly as into an agent dispatch (P19-D03, P19-D04); the
+            // witness kind records that no integration terminal
+            // observation can exist and the result never becomes an
+            // Agent score.
+            let task_lifecycle =
+                crate::benchmark::task_lifecycle::parse_task_lifecycle(&task_dir, family)
+                    .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
             witness_selection = Some(crate::benchmark::process::NativeSelection {
                 kind: crate::benchmark::process::SelectionKind::DiagnosticWitness,
                 lifecycle: crate::benchmark::process::TaskLifecycleSelection {
                     environment_mode: task_lifecycle.environment_mode,
                     declared: task_lifecycle.declared_artifacts,
+                    base_revision: task_lifecycle.base_revision,
+                    docker_image: task_lifecycle.docker_image,
                 },
                 agent_name: (*agent).to_owned(),
-                agent_import_path: if *agent == "oracle" {
-                    "harbor.agents.oracle:OracleAgent".to_owned()
-                } else {
-                    "harbor.agents.nop:NopAgent".to_owned()
+                agent_import_path: match (integration_family, *agent) {
+                    ("harbor", "oracle") => "harbor.agents.oracle:OracleAgent".to_owned(),
+                    ("harbor", _) => "harbor.agents.nop:NopAgent".to_owned(),
+                    ("pier", "oracle") => "pier.agents.oracle:OracleAgent".to_owned(),
+                    ("pier", _) => "pier.agents.nop:NopAgent".to_owned(),
+                    _ => unreachable!("family pinned above"),
                 },
                 task_name: witness_task_name(revision, &benchmark.profile, &task_dir)
                     .map_err(ConformanceError::Unsupported)?,

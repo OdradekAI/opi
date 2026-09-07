@@ -43,6 +43,8 @@ CONFORMANCE_CASES = [
     ("benchmark", "terminal-bench-2.1", "nop-witness"),
     ("benchmark", "terminal-bench-3.0", "oracle-witness"),
     ("benchmark", "terminal-bench-3.0", "nop-witness"),
+    ("benchmark", "deepswe", "oracle-witness"),
+    ("benchmark", "deepswe", "nop-witness"),
 ]
 TRIAL_CONFIGS = {"terminal-bench-2.1": "terminal-bench-2.1"}
 
@@ -207,8 +209,28 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
     module = integrations / "opi_eval_harbor.py"
     module.write_text("# pinned integration module\n", encoding="utf-8")
     module_digest = sha(module.read_bytes())
+    pier_integrations = material / "integrations-pier"
+    pier_integrations.mkdir(parents=True, exist_ok=True)
+    pier_module = pier_integrations / "opi_eval_pier.py"
+    pier_module.write_text("# pinned pier integration module\n", encoding="utf-8")
+    pier_module_digest = sha(pier_module.read_bytes())
+    def integration_entry(product):
+        return {
+            "harbor": {
+                "module_dir": str(integrations),
+                "module_manifest_sha256": module_digest,
+                "import_path": f"opi_eval_harbor:{product.capitalize()}Agent",
+                "agent_name": f"opi-eval-{product}",
+            },
+            "pier": {
+                "module_dir": str(pier_integrations),
+                "module_manifest_sha256": pier_module_digest,
+                "import_path": f"opi_eval_pier:{product.capitalize()}Agent",
+                "agent_name": f"opi-eval-{product}",
+            },
+        }
     material_json = {
-        "schema": "opi-eval-native-material/2",
+        "schema": "opi-eval-native-material/3",
         "static_lock": {"path": str(material / "external-lock.json"),
                         "sha256": sha(lock_bytes)},
         "provider": {
@@ -231,12 +253,7 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
                            "model_id": "eval" if product == "opi"
                                        else "scripted/eval",
                            "api_key": "<dummy-scripted-credential>"},
-                "integration": {
-                    "module_dir": str(integrations),
-                    "module_manifest_sha256": module_digest,
-                    "import_path": f"opi_eval_harbor:{product.capitalize()}Agent",
-                    "agent_name": f"opi-eval-{product}",
-                },
+                "integrations": integration_entry(product),
             }
             for product in ("opi", "pi")
         },

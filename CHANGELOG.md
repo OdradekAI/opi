@@ -39,6 +39,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inline credential fields: request identity is projected from the
   selected connection (`project_connection`) into each pinned client's
   exact configuration bytes.
+- `opi-eval`: DeepSWE v1.1 native scoring runs through its declared
+  committed-patch handoff. The task package's Pier `task.toml` lifecycle
+  is parsed under the Pier family policy (collect hooks are the patch
+  handoff and are honored; the base revision, environment image, and
+  verifier network policy bind into the selection, and a task
+  contradicting the pinned pristine collected-patch profile rejects as
+  drift). The pinned native output is Pier's `jobs/<job>/result.json`
+  aggregate; the shared binding requires the bound job to record the
+  declared lifecycle with the same base revision and image, and the
+  sealed bundle records the full verifier-input identity
+  (`native/verifier-input.json`). A new pinned Pier integration module
+  (`integrations/pier/opi_eval_pier.py`) runs the selected Agent inside
+  the task environment on Pier's agent surface. The native material
+  manifest moves to schema `/3`: each agent product pins one integration
+  per runner family (Harbor and Pier modules are not
+  module-compatible). The incorrect witness grades honestly: an agent
+  that committed nothing still yields a collected empty patch (status
+  ok) and a bound reward zero, while undeclared collection or a rebased
+  base revision rejects. The ignored `native_deepswe_patch_witness`
+  drives both real witnesses against pinned external material, and the
+  CI smoke reruns the DeepSWE witnesses (artifact verifier expects ten
+  conformance cases). The benchmark conformance `nop-witness`
+  registration now covers all three families (the 3.0 arm had been
+  left gated to 2.1).
 - `opi-eval`: Terminal-Bench 3.0 native scoring runs through its declared
   separate-verifier handoff. The task package's `task.toml` lifecycle is
   parsed and bound into every native dispatch (unsupported shapes -

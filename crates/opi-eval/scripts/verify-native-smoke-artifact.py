@@ -62,10 +62,11 @@ CONFIG_FOR = {"terminal-bench-2.1": "terminal-bench-2.1",
               "terminal-bench-3.0": "terminal-bench-3.0",
               "deepswe-v1.1": "deepswe-v1.1"}
 # The admitted native rerun matrix: four agent cases (completed and
-# identity for both products) plus the two explicitly selected artifact
-# witness pairs for Terminal-Bench 2.1 (shared verifier) and 3.0
-# (declared separate-verifier handoff).
-CONFORMANCE_CASES = 8
+# identity for both products) plus the explicitly selected artifact
+# witness pairs for Terminal-Bench 2.1 (shared verifier), 3.0 (declared
+# separate-verifier handoff), and DeepSWE (committed patch into the
+# pristine verifier).
+CONFORMANCE_CASES = 10
 # The selected integration agent name each product's trials must carry.
 AGENT_NAME_FOR = {"opi": "opi-eval-opi", "pi": "opi-eval-pi"}
 WITNESS_CASES = {
@@ -73,6 +74,8 @@ WITNESS_CASES = {
     "benchmark-terminal-bench-2.1-nop-witness": ("nop", 0),
     "benchmark-terminal-bench-3.0-oracle-witness": ("oracle", 1),
     "benchmark-terminal-bench-3.0-nop-witness": ("nop", 0),
+    "benchmark-deepswe-oracle-witness": ("oracle", 1),
+    "benchmark-deepswe-nop-witness": ("nop", 0),
 }
 
 IMMUTABLE_ACTIONS = {
@@ -565,7 +568,7 @@ def verify_material(stage: Path, f: Findings) -> dict | None:
                          f, "material")
     if material is None:
         return None
-    if material.get("schema") != "opi-eval-native-material/2":
+    if material.get("schema") != "opi-eval-native-material/3":
         f.reject("material", "the material is not the admitted schema "
                              f"{material.get('schema')!r}")
     agents = material.get("agents")
@@ -579,16 +582,24 @@ def verify_material(stage: Path, f: Findings) -> dict | None:
     if agents["opi"].get("model") == agents["pi"].get("model"):
         f.reject("material", "both agents share one model identity")
     for product, agent in agents.items():
-        integration = agent.get("integration") or {}
-        if integration.get("agent_name") != AGENT_NAME_FOR.get(product):
-            f.reject("material", f"{product}: integration does not pin the "
-                                 f"selected agent name")
-        if ":" not in str(integration.get("import_path")):
-            f.reject("material", f"{product}: integration import path is "
-                                 f"not module:Class")
-        if not is_hex64(integration.get("module_manifest_sha256")):
-            f.reject("material", f"{product}: integration module manifest "
-                                 f"digest is missing")
+        # Schema /3 pins one integration per runner family: the Terminal-
+        # Bench dispatches import the Harbor module and the DeepSWE
+        # dispatch the Pier module (P19-D04).
+        integrations = agent.get("integrations") or {}
+        if sorted(integrations) != ["harbor", "pier"]:
+            f.reject("material", f"{product}: integration families must be "
+                                 f"exactly harbor and pier")
+            continue
+        for family, integration in integrations.items():
+            if integration.get("agent_name") != AGENT_NAME_FOR.get(product):
+                f.reject("material", f"{product}: {family} integration does "
+                                     f"not pin the selected agent name")
+            if ":" not in str(integration.get("import_path")):
+                f.reject("material", f"{product}: {family} integration "
+                                     f"import path is not module:Class")
+            if not is_hex64(integration.get("module_manifest_sha256")):
+                f.reject("material", f"{product}: {family} integration "
+                                     f"module manifest digest is missing")
     benchmarks = material.get("benchmarks")
     if not isinstance(benchmarks, dict) or sorted(benchmarks) != sorted(BENCHMARKS):
         f.reject("material", "the material does not declare the three "

@@ -117,20 +117,28 @@ fn directory_manifest_digest(root: &Path) -> String {
 /// - `tb30-undeclared` the collection crossed an undeclared file
 /// - `tb30-substituted-declared` the collected declared artifact lost the
 ///   delivered bytes
+/// - `deepswe-ok` the DeepSWE committed patch crossed into the pristine
+///   verifier with its base and image identity bound
+/// - `deepswe-nop` the agent committed nothing: an empty patch still
+///   collects (status ok) and grades zero
+/// - `deepswe-undeclared` an undeclared file crossed into the verifier
+/// - `deepswe-base-drift` the job recorded a different base revision
 fn verifier_stand_in_script() -> String {
     r#"#!/bin/sh
 # native stand-in for the pinned upstream runner entry (test staging)
 set -eu
-[ "$1" = "run" ] && [ "$2" = "--locked" ] && [ "$3" = "harbor" ] && [ "$4" = "run" ] \
-  && [ "$5" = "-p" ] || { echo "argv drift: expected run --locked harbor run -p" >&2; exit 9; }
+[ "$1" = "run" ] && [ "$2" = "--locked" ] && { [ "$3" = "harbor" ] || [ "$3" = "pier" ]; } \
+  && [ "$4" = "run" ] && [ "$5" = "-p" ] \
+  || { echo "argv drift: expected run --locked harbor|pier run -p" >&2; exit 9; }
+runner="$3"
 task_dir="$6"
 agent=""
 model=""
 prev=""
 for arg in "$@"; do
   case "$prev" in
-    --agent) agent="$arg" ;;
-    --model) model="$arg" ;;
+    --agent|--agent-import-path) agent="$arg" ;;
+    --model|-m) model="$arg" ;;
   esac
   prev="$arg"
 done
@@ -157,20 +165,30 @@ if [ -z "$diagnostic" ]; then
   fi
 fi
 task_name=$(basename "$task_dir")
-trial="${task_name}__standin"
+if [ "$runner" = "pier" ]; then
+  # Pier records the task's own `[task] name` as the bound trial's
+  # task_name.
+  task_name=$(sed -n '/^\[task\]$/,/^\[/{
+    s/^name = "\(.*\)"$/\1/p
+  }' "$task_dir/task.toml" | head -1)
+  [ -n "$task_name" ] || task_name=$(basename "$task_dir")
+fi
+trial="$(printf '%s' "$task_name" | awk -F/ '{print $NF}')__standin"
 job="jobs/2026-09-05__12-00-00"
 reward=1.0
 exception=null
 tb30_profile=""
+pier_profile=""
 case "$OPI_EVAL_STANDIN_MODE" in
   ok) ;;
   tb30-ok|tb30-undeclared|tb30-substituted-declared) tb30_profile=1 ;;
+  deepswe-ok|deepswe-nop|deepswe-undeclared|deepswe-base-drift) pier_profile=1 ;;
   zero) reward=0.0 ;;
   agent-nonzero) reward=0.0; exception='{"exception_type": "NonZeroAgentExitCodeError"}';;
   agent-timeout) reward=0.0; exception='{"exception_type": "AgentTimeoutError"}';;
   provider-error) reward=0.0; exception='{"exception_type": "ApiError"}';;
   oracle) agent_name="oracle"; agent="harbor.agents.oracle:OracleAgent" ;;
-nop-delivers-nothing) reward=0.0 ;;
+  nop-delivers-nothing) reward=0.0 ;;
   wrong-agent) agent_name="opi-eval-pi" ;;
   wrong-task) task_name="substituted-task"; trial="substituted-task__standin" ;;
   substituted) ;;
@@ -179,7 +197,11 @@ nop-delivers-nothing) reward=0.0 ;;
   two-jobs) ;;
   *) echo "unknown stand-in mode" >&2; exit 9 ;;
 esac
-if [ "$agent" = "harbor.agents.nop:NopAgent" ]; then
+if [ "$runner" = "pier" ]; then
+  # The upstream oracle and nop agents are Pier's own modules here.
+  case "$OPI_EVAL_STANDIN_MODE" in oracle) agent="pier.agents.oracle:OracleAgent" ;; esac
+fi
+if [ "$agent" = "harbor.agents.nop:NopAgent" ] || [ "$agent" = "pier.agents.nop:NopAgent" ]; then
   # The nop agent delivers nothing: the native verifier grades zero.
   reward=0.0
 fi
@@ -191,7 +213,21 @@ JSON
   cat > "$job/trials/$trial/results.json" <<JSON
 {"task_name": "$task_name", "trial_name": "$trial", "agent_info": {"name": "$agent_name", "version": "1.0.0", "model_info": {"name": "scripted/eval"}}, "verifier_result": {"rewards": {"reward": $reward}}, "exception_info": $exception}
 JSON
-  if [ -n "$tb30_profile" ]; then
+  if [ -n "$pier_profile" ]; then
+    # The Pier job records the task's own declarations and identity: the
+    # separate no-network verifier, the model.patch collect declaration,
+    # and the base revision and image the pristine verifier rebuilds
+    # from. Pier groups a modeled trial under agent__model__adhoc.
+    eval_key="${agent_name}__scripted:eval__adhoc"
+    [ -n "$model" ] || eval_key="${agent_name}__adhoc"
+    base="1111111111111111111111111111111111111112"
+    if [ "$OPI_EVAL_STANDIN_MODE" = "deepswe-base-drift" ]; then
+      base="9999999999999999999999999999999999999999"
+    fi
+    sed -i.bak "s/\"${agent_name}__adhoc\"/\"$eval_key\"/" "$job/result.json" && rm -f "$job/result.json.bak"
+    printf '{"agent": {"name": "%s", "import_path": null}, "artifacts": [], "task": {"verifier": {"environment_mode": "separate", "network_mode": "no-network"}, "artifacts": ["/logs/artifacts/model.patch"], "metadata": {"base_commit_hash": "%s"}, "environment": {"docker_image": "fixture-registry/swe-bench-fixture:synthetic"}}}\n' "$agent" "$base" \
+      > "$job/trials/$trial/config.json"
+  elif [ -n "$tb30_profile" ]; then
     # The TB3 job records the task's declared separate lifecycle and its
     # /app/evalbench/ collect declaration exactly as the pinned runner
     # would.
@@ -203,6 +239,11 @@ JSON
   fi
 }
 
+if [ "$runner" = "pier" ]; then
+  # Every pier dispatch - the deepswe run modes and the explicitly
+  # selected oracle/nop witnesses - writes the pier job tree.
+  pier_profile=1
+fi
 if [ "$OPI_EVAL_STANDIN_MODE" = "two-jobs" ]; then
   for job in jobs/2026-09-05__11-00-00 "$job"; do
     mkdir -p "$job/trials/$trial/agent" "$job/trials/$trial/artifacts"
@@ -239,6 +280,32 @@ if [ -n "$tb30_profile" ]; then
       printf 'substituted schema bytes' > "$job/trials/$trial/artifacts/app/evalbench/schema.py"
       ;;
   esac
+  printf '%s\n' "$manifest" > "$job/trials/$trial/artifacts/manifest.json"
+  exit 0
+fi
+if [ -n "$pier_profile" ]; then
+  # The DeepSWE agent committed a patch; the task's collect hook
+  # extracted it and only it crossed into the pristine verifier.
+  if [ -z "$diagnostic" ]; then
+    printf '{"schema": "opi-eval-native-agent-terminal/1", "product": "%s", "agent_executable_sha256": "%s", "exit_code": 0, "timed_out": false, "delivered": []}\n' \
+      "$product" "$(printf 'a%.0s' $(seq 1 64))" \
+      > "$job/trials/$trial/agent/opi-eval-terminal.json"
+  fi
+  mkdir -p "$job/trials/$trial/artifacts/logs/artifacts"
+  patch="fixture committed patch bytes"
+  if [ "$OPI_EVAL_STANDIN_MODE" = "deepswe-nop" ] \
+    || [ "$OPI_EVAL_STANDIN_MODE" = "nop-delivers-nothing" ]; then
+    # The nop agent committed nothing: the hook extracted an empty
+    # patch, which still collects (status ok) and grades zero.
+    patch=""
+  fi
+  printf '%s' "$patch" > "$job/trials/$trial/artifacts/logs/artifacts/model.patch"
+  manifest='[{"source": "/logs/artifacts/model.patch", "destination": "logs/artifacts/model.patch", "type": "file", "status": "ok"}]'
+  if [ "$OPI_EVAL_STANDIN_MODE" = "deepswe-undeclared" ]; then
+    # An undeclared file crossed the collection boundary into the
+    # verifier: the binding must reject it.
+    manifest='[{"source": "/logs/artifacts/model.patch", "destination": "logs/artifacts/model.patch", "type": "file", "status": "ok"}, {"source": "/app/unrelated-canary.txt", "destination": "app/unrelated-canary.txt", "type": "file", "status": "ok"}]'
+  fi
   printf '%s\n' "$manifest" > "$job/trials/$trial/artifacts/manifest.json"
   exit 0
 fi
@@ -301,13 +368,32 @@ fn stage(mode: &str) -> Staged {
     )
     .unwrap();
 
-    // The pinned integration module directory (the contract form the
-    // selected import path resolves against).
-    let integrations = mat.join("integrations");
+    // The pinned integration module directories (the contract forms the
+    // selected import paths resolve against): one Harbor module and one
+    // Pier module, because the two runner surfaces are not
+    // module-compatible.
+    let integrations = mat.join("integrations-harbor");
     write_exec(
         &integrations.join("opi_eval_harbor.py"),
-        "# native stand-in integration module (test staging)\n",
+        "# native stand-in harbor integration module (test staging)\n",
     );
+    let pier_integrations = mat.join("integrations-pier");
+    write_exec(
+        &pier_integrations.join("opi_eval_pier.py"),
+        "# native stand-in pier integration module (test staging)\n",
+    );
+
+    let deepswe_task = mat.join("deepswe-task-package");
+    copy_dir(
+        &fixtures().join("benchmarks/deepswe-v1.1/task-package"),
+        &deepswe_task,
+    );
+    let deepswe_profile = mat.join("deepswe-profile.toml");
+    fs::copy(
+        fixtures().join("benchmarks/deepswe-v1.1/profile/synthetic.toml"),
+        &deepswe_profile,
+    )
+    .unwrap();
 
     let trace_fixture = fixtures().join("agents/opi/trace-complete/run-0001");
     let stream_fixture = fixtures().join("agents/pi/stream-ok.jsonl");
@@ -384,21 +470,31 @@ exit 0
 
     let digest_of = |path: &Path| sha256_hex(&fs::read(path).unwrap());
     let material = mat.join("material.json");
-    let integration_block = |import: &str, name: &str| {
+    let integration_entry = |dir: &Path, import: &str, name: &str| {
         format!(
-            r#""integration": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
+            r#"{{"module_dir": {:?}, "module_manifest_sha256": {:?},
                         "import_path": "{}", "agent_name": "{}"}}"#,
-            integrations.to_string_lossy(),
-            directory_manifest_digest(&integrations),
+            dir.to_string_lossy(),
+            directory_manifest_digest(dir),
             import,
             name,
+        )
+    };
+    let integration_block = |import: &str, name: &str| {
+        format!(
+            r#""integrations": {{
+        "harbor": {},
+        "pier": {}
+      }}"#,
+            integration_entry(&integrations, import, name),
+            integration_entry(&pier_integrations, &import.replace("harbor", "pier"), name),
         )
     };
     fs::write(
         &material,
         format!(
             r#"{{
-  "schema": "opi-eval-native-material/2",
+  "schema": "opi-eval-native-material/3",
   "static_lock": {{"path": {:?}, "sha256": {:?}}},
   "provider": {{
     "script": {{"path": {:?}, "sha256": {:?}}},
@@ -433,6 +529,15 @@ exit 0
       "verifier_env": {{"OPI_EVAL_STANDIN_MODE": "tb30-ok"}},
       "oracle": {{"path": {:?}, "sha256": {:?}}},
       "oracle_env": {{}}
+    }},
+    "deepswe-v1.1": {{
+      "profile": {:?},
+      "task_package": {:?},
+      "task_package_manifest_sha256": {:?},
+      "verifier_executable": {{"path": {:?}, "sha256": {:?}}},
+      "verifier_env": {{"OPI_EVAL_STANDIN_MODE": "deepswe-ok"}},
+      "oracle": {{"path": {:?}, "sha256": {:?}}},
+      "oracle_env": {{}}
     }}
   }}
 }}"#,
@@ -458,6 +563,13 @@ exit 0
             tb30_profile.to_string_lossy(),
             tb30_task.to_string_lossy(),
             directory_manifest_digest(&tb30_task),
+            verifier.to_string_lossy(),
+            digest_of(&verifier),
+            verifier.to_string_lossy(),
+            digest_of(&verifier),
+            deepswe_profile.to_string_lossy(),
+            deepswe_task.to_string_lossy(),
+            directory_manifest_digest(&deepswe_task),
             verifier.to_string_lossy(),
             digest_of(&verifier),
             verifier.to_string_lossy(),
@@ -853,9 +965,18 @@ fn task_package_drift_after_materialization_is_rejected() {
 #[test]
 fn integration_module_drift_is_rejected_at_load() {
     let staged = stage("ok");
-    // Tamper with the pinned integration module after materialization.
+    // Tamper with the pinned integration modules after materialization.
     fs::write(
-        staged.root.join("material/integrations/opi_eval_harbor.py"),
+        staged
+            .root
+            .join("material/integrations-harbor/opi_eval_harbor.py"),
+        b"tampered",
+    )
+    .unwrap();
+    fs::write(
+        staged
+            .root
+            .join("material/integrations-pier/opi_eval_pier.py"),
         b"tampered",
     )
     .unwrap();
@@ -1029,32 +1150,177 @@ fn native_tb30_rejects_undeclared_and_substituted_collection() {
     }
 }
 
-#[test]
-fn sibling_native_families_are_explicitly_unavailable() {
-    // A DeepSWE experiment with native material is refused before any
-    // trial: its former default-job path must not keep emitting Agent
-    // scores (P19-D04 sequencing).
-    let staged = stage("ok");
-    let digest = derive_integrity(&staged);
+/// The DeepSWE experiment over the staged pier material with its
+/// fixture task.
+fn deepswe_experiment_text(staged: &Staged, integrity_digest: &str) -> String {
+    experiment_text(staged, integrity_digest)
+        .replace("native-driver-test", "native-deepswe-test")
+        .replace("fixture-task", "synthetic-fixture-task")
+        .replace(
+            "terminal-bench\"\nrevision = \"2.1\"",
+            "deepswe\"\nrevision = \"v1.1\"",
+        )
+}
+
+fn write_deepswe_config(staged: &Staged) -> PathBuf {
+    let config = staged.root.join("config-undigested-deepswe.toml");
+    fs::write(&config, deepswe_experiment_text(staged, "pending")).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("validate")
+        .arg("--config")
+        .arg(&config)
+        .arg("--native-material")
+        .arg(&staged.material)
+        .output()
+        .expect("validate runs");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let digest = stdout
+        .split_whitespace()
+        .find(|token| token.starts_with("native_integrity="))
+        .expect("native integrity digest in summary")
+        .trim_start_matches("native_integrity=");
     let config = staged.root.join("deepswe.toml");
+    fs::write(&config, deepswe_experiment_text(staged, digest)).unwrap();
+    config
+}
+
+/// Retarget the DeepSWE benchmark entry's stand-in behavior after
+/// staging.
+fn set_deepswe_mode(staged: &Staged, mode: &str) {
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+    material["benchmarks"]["deepswe-v1.1"]["verifier_env"]["OPI_EVAL_STANDIN_MODE"] =
+        serde_json::Value::String(mode.to_owned());
     fs::write(
-        &config,
-        experiment_text(&staged, &digest)
-            .replace("native-driver-test", "native-deepswe-test")
-            .replace(
-                "terminal-bench\"\nrevision = \"2.1\"",
-                "deepswe\"\nrevision = \"v1.1\"",
-            ),
+        &staged.material,
+        serde_json::to_vec_pretty(&material).unwrap(),
     )
     .unwrap();
+}
+
+#[test]
+fn native_deepswe_run_grades_the_committed_patch_in_the_pristine_verifier() {
+    let staged = stage("ok");
+    let config = write_deepswe_config(&staged);
     let run_root = staged.root.join("run-deepswe");
-    let (code, _, stderr) = run_native(&staged, &config, &run_root);
-    assert_eq!(code, 2);
-    assert!(
-        stderr.contains("native scoring for deepswe-v1.1 is unavailable"),
-        "stderr: {stderr}"
+    let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
+    assert_eq!(code, 0, "stderr: {stderr}\nstdout: {stdout}");
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["outcome"], "completed");
+
+    for trial in ["trial-pi-native", "trial-opi-native"] {
+        let receipt = report["trials"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"] == trial)
+            .cloned()
+            .unwrap_or_else(|| panic!("{trial} receipt missing"));
+        assert_eq!(receipt["status"], "sealed", "{trial}: {receipt}");
+        // The committed patch is the only verifier input: exactly the
+        // declared collect artifact, with the digest of exactly the
+        // collected bytes. The pristine verifier graded that patch - not
+        // the mutable agent worktree.
+        let collected = receipt["agent"]["collected"].as_array().unwrap();
+        assert_eq!(collected.len(), 1, "{trial}: {collected:?}");
+        assert_eq!(collected[0]["source"], "/logs/artifacts/model.patch");
+        let patch_digest = collected[0]["sha256"].as_str().unwrap();
+        assert_eq!(patch_digest.len(), 64);
+        let job = run_root
+            .join("trials")
+            .join(trial)
+            .join("verifier-trace/jobs/2026-09-05__12-00-00");
+        let observed = sha256_hex(
+            &fs::read(job.join(
+                "trials/synthetic-fixture-task__standin/artifacts/logs/artifacts/model.patch",
+            ))
+            .unwrap(),
+        );
+        assert_eq!(patch_digest, &observed, "{trial}: bound digest");
+        // The sealed bundle carries the verifier-input identity (mode,
+        // patch digest, base revision, image) as bound native evidence.
+        let bundle = run_root.join("trials").join(trial).join("bundle");
+        let verifier_input: serde_json::Value = serde_json::from_slice(
+            &fs::read(bundle.join("artifacts/native/verifier-input.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(verifier_input["environment_mode"], "separate");
+        assert_eq!(
+            verifier_input["base_revision"],
+            "1111111111111111111111111111111111111112"
+        );
+        assert_eq!(
+            verifier_input["docker_image"],
+            "fixture-registry/swe-bench-fixture:synthetic"
+        );
+    }
+}
+
+#[test]
+fn native_deepswe_rejects_undeclared_collection_and_base_drift() {
+    for (mode, kind) in [
+        ("deepswe-undeclared", "native-binding-undeclared-artifact"),
+        ("deepswe-base-drift", "native-binding-lifecycle-mismatch"),
+    ] {
+        let staged = stage("ok");
+        set_deepswe_mode(&staged, mode);
+        let config = write_deepswe_config(&staged);
+        let run_root = staged.root.join("run-deepswe");
+        let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
+        assert_ne!(code, 0, "{mode}: stderr: {stderr}");
+        let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(report["outcome"], "incomplete", "{mode}");
+        let receipt = report["trials"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|trial| trial["id"] == "trial-opi-native")
+            .cloned()
+            .unwrap();
+        assert_eq!(receipt["status"], "failed", "{mode}");
+        assert_eq!(receipt["verifier"]["failure_kind"], kind, "{mode}");
+        assert!(
+            !run_root
+                .join("trials/trial-opi-native/bundle/manifest.json")
+                .is_file(),
+            "{mode}: rejected collection must not seal"
+        );
+    }
+}
+
+#[test]
+fn native_deepswe_nop_committed_nothing_grades_zero_not_rejection() {
+    // The incorrect witness: the agent committed nothing, the collect
+    // hook extracted an empty patch, which still collects (status ok)
+    // and grades zero in the pristine verifier (P19-AC-005).
+    let staged = stage("ok");
+    set_deepswe_mode(&staged, "deepswe-nop");
+    let config = write_deepswe_config(&staged);
+    let run_root = staged.root.join("run-deepswe-nop");
+    let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
+    assert_eq!(code, 0, "stderr: {stderr}\nstdout: {stdout}");
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["outcome"], "completed");
+    let receipt = report["trials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|trial| trial["id"] == "trial-opi-native")
+        .cloned()
+        .unwrap();
+    assert_eq!(receipt["status"], "sealed");
+    let collected = receipt["agent"]["collected"].as_array().unwrap();
+    assert_eq!(collected.len(), 1);
+    // The empty patch digests as the sha256 of zero bytes.
+    assert_eq!(
+        collected[0]["sha256"],
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
-    assert!(!run_root.join("trials").exists());
 }
 
 fn run_conformance_native(
@@ -1125,14 +1391,31 @@ fn native_conformance_reruns_the_admitted_cases_through_the_material() {
     // the same production job handoff and binding - the oracle applies the
     // reference solution (reward one), nop delivers nothing (reward zero).
     // The former default-job conformance path no longer emits scores.
-    for (case, agent, reward) in [("oracle-witness", "oracle", 1), ("nop-witness", "nop", 0)] {
-        let (code, stdout, stderr) =
-            run_conformance_native(&staged, "benchmark", "terminal-bench-2.1", case);
-        assert_eq!(code, 0, "{case}: {stderr}");
-        let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
-        assert_eq!(report["met"], true, "{case}: {stdout}");
-        assert_eq!(report["outcome"], "verified-native", "{case}: {stdout}");
-        let _ = (agent, reward);
+    for (adapter, cases) in [
+        (
+            "terminal-bench-2.1",
+            [("oracle-witness", "oracle", 1), ("nop-witness", "nop", 0)],
+        ),
+        // The DeepSWE witnesses bind the same way through the Pier handoff:
+        // the oracle's committed reference patch grades one, the nop's
+        // empty patch grades zero (P19-AC-005).
+        (
+            "deepswe",
+            [("oracle-witness", "oracle", 1), ("nop-witness", "nop", 0)],
+        ),
+    ] {
+        for (case, agent, reward) in cases {
+            let (code, stdout, stderr) =
+                run_conformance_native(&staged, "benchmark", adapter, case);
+            assert_eq!(code, 0, "{adapter}/{case}: {stderr}");
+            let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+            assert_eq!(report["met"], true, "{adapter}/{case}: {stdout}");
+            assert_eq!(
+                report["outcome"], "verified-native",
+                "{adapter}/{case}: {stdout}"
+            );
+            let _ = (agent, reward);
+        }
     }
 }
 
@@ -1305,6 +1588,79 @@ fn native_tb3_artifact_witness() {
     // The correct witness changed the declared artifact and the grader
     // responded: same declared source, different collected bytes, reward
     // one versus zero.
+    assert_ne!(collected_digests[0].2, collected_digests[1].2);
+}
+
+/// The real DeepSWE committed-patch witnesses through the pinned
+/// upstream Pier runner (P19-AC-005). Ignored by default: this filter
+/// requires the pinned external material (fetched runner and task tree,
+/// materialized exact built agents, a local Docker Linux engine) supplied
+/// through `OPI_EVAL_NATIVE_WITNESS_MATERIAL`, and never a remote
+/// inference call. The correct witness (oracle reference solution, reward
+/// one) and the incorrect witness (nop agent, empty committed patch,
+/// reward zero) must change only the collected committed patch: their
+/// bound verifier-input digests differ, the native reward responds, and
+/// nothing undeclared enters the pristine verifier.
+#[test]
+#[ignore = "requires pinned external material and a local Docker Linux engine; see OPI_EVAL_NATIVE_WITNESS_MATERIAL"]
+fn native_deepswe_patch_witness() {
+    let material = std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL")
+        .expect("OPI_EVAL_NATIVE_WITNESS_MATERIAL points at the resolved material manifest");
+    let material = PathBuf::from(material);
+    let mut collected_digests = Vec::new();
+    for (case, agent, reward) in [("oracle-witness", "oracle", 1), ("nop-witness", "nop", 0)] {
+        let root = std::env::temp_dir().join(format!(
+            "opi-eval-deepswe-witness-{case}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("conformance")
+            .args(["--suite", "benchmark"])
+            .args(["--adapter", "deepswe"])
+            .args(["--case", case])
+            .arg("--root")
+            .arg(&root)
+            .arg("--fixtures")
+            .arg(fixtures())
+            .arg("--provider")
+            .arg(manifest_dir().join("scripts/scripted-provider.py"))
+            .arg("--native-material")
+            .arg(&material)
+            .output()
+            .expect("witness executes");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{case}: {stdout}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(report["met"], true, "{case}: {stdout}");
+        assert_eq!(report["outcome"], "verified-native", "{case}: {stdout}");
+        // The bound verifier-input identity: exactly the declared
+        // committed patch, and nothing undeclared.
+        let collected: Vec<String> = report["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|note| note.as_str())
+            .filter(|note| note.starts_with("native-collected: "))
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(collected.len(), 1, "{case}: {collected:?}");
+        assert!(
+            collected[0].starts_with("native-collected: /logs/artifacts/model.patch "),
+            "{case}: {collected:?}"
+        );
+        assert!(!collected[0].contains("canary"), "{case}: {collected:?}");
+        collected_digests.push((agent, reward, collected[0].clone()));
+        let _ = fs::remove_dir_all(&root);
+    }
+    // The correct witness committed a different patch and the pristine
+    // verifier's reward responded: same declared source, different
+    // collected bytes, reward one versus zero.
     assert_ne!(collected_digests[0].2, collected_digests[1].2);
 }
 

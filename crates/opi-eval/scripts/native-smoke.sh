@@ -903,13 +903,18 @@ exec docker run --rm --network {network} \\
 """
     return write_exec(out / "wrappers" / f"agent-{product}-{benchmark}.sh", body)
 
-    # The pinned integration module directory the selected import path
-    # resolves against, sealed by its sorted file-manifest digest.
-    integrations_dir = Path(repo) / "crates/opi-eval/integrations/harbor"
-    if not (integrations_dir / "opi_eval_harbor.py").is_file():
+    # The pinned integration module directories the selected import
+    # paths resolve against, sealed by their sorted file-manifest
+    # digests. The two runner surfaces are not module-compatible, so the
+    # material pins one Harbor module and one Pier module per product
+    # (P19-D04).
+    harbor_integrations = Path(repo) / "crates/opi-eval/integrations/harbor"
+    pier_integrations = Path(repo) / "crates/opi-eval/integrations/pier"
+    if not (harbor_integrations / "opi_eval_harbor.py").is_file() \
+            or not (pier_integrations / "opi_eval_pier.py").is_file():
         raise SystemExit(
-            "materialize-configs: pinned integration module is missing")
-    def integrations_digest():
+            "materialize-configs: pinned integration modules are missing")
+    def integrations_digest(integrations_dir):
         rows = []
         for path in sorted(integrations_dir.rglob("*")):
             if path.is_file() and "__pycache__" not in path.parts:
@@ -917,11 +922,19 @@ exec docker run --rm --network {network} \\
                              .replace(os.sep, "/"), sha(path)))
         canonical = "".join(f"{p}\n{d}\n" for p, d in rows)
         return hashlib.sha256(canonical.encode()).hexdigest()
-    integration_entry = lambda product: {
-        "module_dir": str(integrations_dir),
-        "module_manifest_sha256": integrations_digest(),
-        "import_path": f"opi_eval_harbor:{product.capitalize()}Agent",
-        "agent_name": f"opi-eval-{product}",
+    integrations_entry = lambda product: {
+        "harbor": {
+            "module_dir": str(harbor_integrations),
+            "module_manifest_sha256": integrations_digest(harbor_integrations),
+            "import_path": f"opi_eval_harbor:{product.capitalize()}Agent",
+            "agent_name": f"opi-eval-{product}",
+        },
+        "pier": {
+            "module_dir": str(pier_integrations),
+            "module_manifest_sha256": integrations_digest(pier_integrations),
+            "import_path": f"opi_eval_pier:{product.capitalize()}Agent",
+            "agent_name": f"opi-eval-{product}",
+        },
     }
 
 benchmarks = {}
@@ -1028,7 +1041,7 @@ exit $rc
     }
 
 manifest = {
-    "schema": "opi-eval-native-material/2",
+    "schema": "opi-eval-native-material/3",
     "static_lock": {"path": lock_path, "sha256": sha(lock_path)},
     "provider": {
         "script": {"path": f"{repo}/crates/opi-eval/scripts/scripted-provider.py",
@@ -1040,12 +1053,12 @@ manifest = {
         "opi": {
             "executable": {"path": str(out / "wrappers" / "agent-opi-generic.sh"),
                            "sha256": None},
-            "integration": integration_entry("opi"),
+            "integrations": integrations_entry("opi"),
         },
         "pi": {
             "executable": {"path": str(out / "wrappers" / "agent-pi-generic.sh"),
                            "sha256": None},
-            "integration": integration_entry("pi"),
+            "integrations": integrations_entry("pi"),
         },
     },
     "benchmarks": benchmarks,
@@ -1215,7 +1228,9 @@ cmd_conformance_rerun() {
       "benchmark terminal-bench-2.1 oracle-witness" \
       "benchmark terminal-bench-2.1 nop-witness" \
       "benchmark terminal-bench-3.0 oracle-witness" \
-      "benchmark terminal-bench-3.0 nop-witness"; do
+      "benchmark terminal-bench-3.0 nop-witness" \
+      "benchmark deepswe oracle-witness" \
+      "benchmark deepswe nop-witness"; do
     suite=${case_spec%% *}
     rest=${case_spec#* }
     adapter=${rest%% *}

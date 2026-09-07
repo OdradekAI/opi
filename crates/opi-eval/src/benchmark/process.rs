@@ -92,11 +92,19 @@ pub(crate) enum SelectionKind {
 
 /// The admitted task lifecycle the dispatch binds against: the resolved
 /// verifier environment mode and the task's declared collect list, parsed
-/// from the admitted task package (P19-D03).
+/// from the admitted task package (P19-D03). The Pier family additionally
+/// binds the committed-patch handoff identity - the base revision and the
+/// environment image - so a bound job cannot silently rebase or reimage
+/// the graded patch (P19-D04).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TaskLifecycleSelection {
     pub(crate) environment_mode: super::task_lifecycle::VerifierEnvironmentMode,
     pub(crate) declared: Vec<super::task_lifecycle::DeclaredArtifact>,
+    /// The base git revision the Pier collect hook diffs against and the
+    /// environment image the pristine verifier rebuilds from (Pier family
+    /// only; None for the Harbor route).
+    pub(crate) base_revision: Option<String>,
+    pub(crate) docker_image: Option<String>,
 }
 
 /// The explicitly selected native integration identity one dispatched
@@ -202,6 +210,10 @@ pub(crate) struct NativeTrialBinding {
     /// The verifier environment mode the job recorded (the lifecycle the
     /// verifier actually ran under; P19-D03).
     pub(crate) environment_mode: super::task_lifecycle::VerifierEnvironmentMode,
+    /// The base revision and environment image the job recorded (Pier
+    /// family only; the committed-patch handoff identity, P19-D04).
+    pub(crate) base_revision: Option<String>,
+    pub(crate) docker_image: Option<String>,
     /// The verifier-input identity: every declared artifact that entered
     /// the verifier, with the digest of exactly the collected bytes
     /// (P19-D03).
@@ -686,6 +698,8 @@ pub(crate) fn import_bound_native_job(
         config_path,
         manifest_path: manifest_path.is_file().then_some(manifest_path),
         environment_mode: observed_lifecycle.environment_mode,
+        base_revision: observed_lifecycle.base_revision,
+        docker_image: observed_lifecycle.docker_image,
         collected,
     })
 }
@@ -791,13 +805,22 @@ fn parse_recorded_lifecycle(config: &serde_json::Value) -> Result<TaskLifecycleS
         }
         _ => VerifierEnvironmentMode::Shared,
     };
+    // The pinned runners record the task's own declarations inside the
+    // embedded task config and the trial's additions at the root; the
+    // effective collect list is the task's declarations followed by the
+    // trial's (Pier's merge order; Harbor records the same shape).
     let empty = Vec::new();
-    let artifacts = config
+    let task_artifacts = config
+        .get("task")
+        .and_then(|task| task.get("artifacts"))
+        .and_then(|artifacts| artifacts.as_array())
+        .unwrap_or(&empty);
+    let root_artifacts = config
         .get("artifacts")
         .and_then(|artifacts| artifacts.as_array())
         .unwrap_or(&empty);
     let mut declared = Vec::new();
-    for artifact in artifacts {
+    for artifact in task_artifacts.iter().chain(root_artifacts) {
         match artifact {
             serde_json::Value::String(source) => declared.push(DeclaredArtifact {
                 source: source.clone(),
@@ -823,9 +846,23 @@ fn parse_recorded_lifecycle(config: &serde_json::Value) -> Result<TaskLifecycleS
             _ => return Err(()),
         }
     }
+    let base_revision = config
+        .get("task")
+        .and_then(|task| task.get("metadata"))
+        .and_then(|metadata| metadata.get("base_commit_hash"))
+        .and_then(|value| value.as_str())
+        .map(str::to_owned);
+    let docker_image = config
+        .get("task")
+        .and_then(|task| task.get("environment"))
+        .and_then(|environment| environment.get("docker_image"))
+        .and_then(|value| value.as_str())
+        .map(str::to_owned);
     Ok(TaskLifecycleSelection {
         environment_mode,
         declared,
+        base_revision,
+        docker_image,
     })
 }
 
@@ -911,8 +948,10 @@ pub(crate) enum BenchmarkCompletion {
     /// of the selected Agent's same-trial work.
     VerifiedNative {
         /// The bound trial identity (agent, task, job, reward, delivered
-        /// artifacts).
-        binding: NativeTrialBinding,
+        /// artifacts, verifier-input identity). Boxed: the binding grew
+        /// past the variant-size lint threshold when the Pier family
+        /// added its base/image identity.
+        binding: Box<NativeTrialBinding>,
         /// Raw native job outputs as content-addressed references.
         artifacts: Vec<NativeArtifact>,
     },
@@ -1594,6 +1633,8 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
                 destination: None,
                 service: None,
             }],
+            base_revision: None,
+            docker_image: None,
         },
         agent_name: agent_name.to_owned(),
         agent_import_path: "opi_eval_harbor:OpiAgent".to_owned(),

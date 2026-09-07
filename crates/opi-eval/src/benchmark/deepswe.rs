@@ -48,12 +48,14 @@ pub(crate) enum PackagePin {
     ByteTable,
 }
 
-/// The pinned native-output surface. No DeepSWE native-output schema is
-/// committed; `pier-report` is admitted only for synthetic wiring fixtures
-/// (a minimal resolved-flag report) until the native smoke pins the real schema.
+/// The pinned native-output surface. The production kind is Pier's own
+/// `jobs/<job>/result.json` aggregate - the same one-trial shape the
+/// shared native-result contract imports (P19-D04); `pier-report` is the
+/// minimal resolved-flag report admitted only for synthetic wiring
+/// fixtures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputKind {
-    UnpinnedPending1815,
+    PierJobAggregate,
     PierReport,
 }
 
@@ -253,7 +255,7 @@ impl DeepSweProfile {
             )));
         }
         let output_kind = match doc.verifier.output_kind.as_str() {
-            "unpinned-pending-18-15" => OutputKind::UnpinnedPending1815,
+            "pier-job-aggregate" => OutputKind::PierJobAggregate,
             "pier-report" => OutputKind::PierReport,
             other => {
                 return Err(TbProfileError::Drift(format!(
@@ -602,7 +604,7 @@ mod tests {
             profile.canonical_package_digest(),
             profile.package_manifest_sha256
         );
-        assert_eq!(profile.output_kind, OutputKind::UnpinnedPending1815);
+        assert_eq!(profile.output_kind, OutputKind::PierJobAggregate);
         // The pinned Pier closure: v0.3.1 source with its committed
         // uv.lock blob and digest, taken at the first self-consistent
         // descendant of the v0.3.1 release commit (whose shipped lock
@@ -677,7 +679,7 @@ mod tests {
         let profile = DeepSweProfile::parse(&synthetic_bytes()).unwrap();
         assert_eq!(profile.package_pin, PackagePin::ByteTable);
         assert_eq!(profile.output_kind, OutputKind::PierReport);
-        assert_eq!(profile.package.len(), 3);
+        assert_eq!(profile.package.len(), 5);
         assert_eq!(
             profile.canonical_package_digest(),
             profile.package_manifest_sha256
@@ -880,7 +882,7 @@ mod tests {
         // A byte-table pin must be a complete closure, not a single row.
         let single_row = {
             let positions: Vec<usize> = text.match_indices("[[package]]").map(|(i, _)| i).collect();
-            assert_eq!(positions.len(), 3);
+            assert_eq!(positions.len(), 5);
             format!("{}{}", &text[..positions[1]], &text[positions[2]..])
         };
         assert!(matches!(
@@ -994,6 +996,29 @@ impl BenchmarkAdapter for DeepSweAdapter {
                     _ => "task-package-drift",
                 },
             })?;
+        // The admitted task's own lifecycle must honor the profile's
+        // pinned pristine collected-patch semantics (P19-D04): a
+        // separate no-network verifier, a collect hook that extracts the
+        // committed patch, and a declared collect list. A task
+        // contradicting the pinned lifecycle is drift, never an
+        // approximate native-equivalent run.
+        let lifecycle = super::task_lifecycle::parse_task_lifecycle(
+            &request.task_dir,
+            super::task_lifecycle::TaskFamily::Pier,
+        )
+        .map_err(|error| ExecutionError {
+            token: error.token(),
+        })?;
+        let drift = || ExecutionError {
+            token: "task-lifecycle-profile-drift",
+        };
+        if lifecycle.environment_mode != super::task_lifecycle::VerifierEnvironmentMode::Separate
+            || lifecycle.verifier_network.as_deref() != Some("no-network")
+            || lifecycle.collect_hooks == 0
+            || lifecycle.declared_artifacts.is_empty()
+        {
+            return Err(drift());
+        }
         Ok(())
     }
 
@@ -1019,10 +1044,33 @@ impl BenchmarkAdapter for DeepSweAdapter {
                 part.clone().into()
             });
         }
+        let mut env = request.extra_env.clone();
+        if let Some(selection) = &request.native_selection {
+            // Native mode: the same job explicitly selects the Agent
+            // integration and model (P19-D04) on the pinned Pier CLI
+            // (`--agent-import-path` / `-m`, not Harbor's flag names).
+            argv.push("--agent-import-path".into());
+            argv.push(selection.agent_import_path.clone().into());
+            argv.push("-m".into());
+            argv.push(selection.model.clone().into());
+            let module_dir = selection.module_dir.clone().into_os_string();
+            let handoff = selection.handoff_path.clone().into_os_string();
+            let pythonpath = match env.get(std::ffi::OsStr::new("PYTHONPATH")) {
+                Some(existing) => {
+                    let mut merged = module_dir.clone();
+                    merged.push(":");
+                    merged.push(existing);
+                    merged
+                }
+                None => module_dir,
+            };
+            env.insert("PYTHONPATH".into(), pythonpath);
+            env.insert("OPI_EVAL_NATIVE_HANDOFF".into(), handoff);
+        }
         SpawnSpec {
             argv,
             cwd: Some(request.trace_root.clone()),
-            env: request.extra_env.clone(),
+            env,
             stdout_cap: self.profile.stdout_cap_bytes as usize,
             stderr_cap: self.profile.stderr_cap_bytes as usize,
             timeout: Duration::from_secs(self.profile.timeout_secs),
@@ -1067,32 +1115,62 @@ impl BenchmarkAdapter for DeepSweAdapter {
                 );
             }
         }
-        // Exit 0: the native-output schema this task pins is Pier's own
-        // `jobs/<timestamp>/result.json` aggregate from
-        // `pier run -p`, exactly as verified at the dispatch. The
-        // aggregate's structure is validated (one trial, per-metric
-        // single reward per trial); the multi-metric DeepSWE reward
-        // semantics are not translated into test counters - every metric
-        // stays unknown rather than guessed.
-        if self.profile.output_kind == OutputKind::UnpinnedPending1815 {
-            // Native scoring for DeepSWE is explicitly unavailable until
-            // its committed-patch pristine-verifier handoff lands
-            // (P19-D04): a selected-Agent native job must not emit an
-            // Agent score through any residual path.
-            if request.native_selection.is_some() {
-                return (
-                    reward_unknown(),
-                    BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
-                        kind: "native-scoring-unavailable-deepswe",
-                        boundary: FailureBoundaryCode::Integrity,
-                    }),
-                );
-            }
+        // Native mode (P19-D04): the authority is the bound upstream job
+        // tree - the selected Agent's same-trial identity with the
+        // declared committed patch the collect hook extracted - imported
+        // through the shared native-result contract, never a newest-job
+        // fallback. The mutable agent worktree is never graded directly.
+        if let Some(selection) = &request.native_selection {
+            let completion =
+                match super::process::import_bound_native_job(&request.trace_root, selection) {
+                    Ok(binding) => {
+                        let reference = |path: &std::path::Path, role: &str| NativeArtifact {
+                            role: role.to_owned(),
+                            sha256: sha256_hex(&std::fs::read(path).unwrap_or_default()),
+                            path: path.to_path_buf(),
+                        };
+                        let artifacts = vec![
+                            reference(&binding.results_path, "native/trial-result"),
+                            reference(&binding.config_path, "native/trial-config"),
+                            reference(
+                                &binding
+                                    .config_path
+                                    .parent()
+                                    .expect("trial dir")
+                                    .join("agent/opi-eval-terminal.json"),
+                                "native/agent-terminal",
+                            ),
+                        ];
+                        let reward = binding.reward.clone();
+                        (
+                            reward,
+                            BenchmarkCompletion::VerifiedNative {
+                                binding: binding.into(),
+                                artifacts,
+                            },
+                        )
+                    }
+                    Err(error) => (
+                        reward_unknown(),
+                        BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
+                            kind: error.token(),
+                            boundary: FailureBoundaryCode::Integrity,
+                        }),
+                    ),
+                };
+            return completion;
+        }
+        // Hermetic path only (output_kind `pier-report`): the synthetic
+        // wiring fixtures' minimal report. Under the pinned Pier job
+        // aggregate there is no admitted hermetic output, so a run
+        // without a bound native job settles fail-closed instead of
+        // guessing at a schema.
+        if self.profile.output_kind != OutputKind::PierReport {
             return (
                 reward_unknown(),
                 BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
-                    kind: "native-output-invalid",
-                    boundary: FailureBoundaryCode::Adapter,
+                    kind: "verifier-invalid-output",
+                    boundary: FailureBoundaryCode::Grader,
                 }),
             );
         }
@@ -1251,9 +1329,7 @@ mod adapter_tests {
                     "adhoc": {
                         "n_trials": 1,
                         "reward_stats": {
-                            "reward": { "1": ["abs-module-cache-flags"] },
-                            "F2P": { "1.0": ["abs-module-cache-flags"] },
-                            "P2P": { "1.0": ["abs-module-cache-flags"] }
+                            "reward": { "1": ["abs-module-cache-flags"] }
                         }
                     }
                 }
@@ -1454,11 +1530,12 @@ mod adapter_tests {
         let bytes = std::fs::read(&artifacts[0].path).unwrap();
         assert_eq!(artifacts[0].sha256, sha256_hex(&bytes));
 
-        // The production DeepSWE profile is explicitly unavailable for
-        // native scoring until its committed-patch pristine-verifier
-        // handoff lands (P19-D04): a job result tree under the trace
-        // root never settles an Agent score, with or without a selected
-        // integration.
+        // The production DeepSWE profile pins the Pier job aggregate: a
+        // hermetic run without a bound native selection settles
+        // fail-closed (no admitted hermetic output shape), and a native
+        // selection settles through the shared bound-job import (a bare
+        // aggregate without the bound trial tree rejects; the full
+        // admissible tree is proven at the spawned-CLI run seam).
         let production = DeepSweAdapter::from_profile(production_profile());
         let native_trace = tempfile::tempdir().unwrap();
         write_pier_job_result(native_trace.path());
@@ -1478,7 +1555,7 @@ mod adapter_tests {
         );
         assert_eq!(
             completion,
-            failed("native-output-invalid", FailureBoundaryCode::Adapter)
+            failed("verifier-invalid-output", FailureBoundaryCode::Grader)
         );
         let mut selected = production_request.clone();
         selected.native_selection = Some(crate::benchmark::process::NativeSelection {
@@ -1486,6 +1563,8 @@ mod adapter_tests {
             lifecycle: crate::benchmark::process::TaskLifecycleSelection {
                 environment_mode: crate::benchmark::task_lifecycle::VerifierEnvironmentMode::Shared,
                 declared: Vec::new(),
+                base_revision: None,
+                docker_image: None,
             },
             agent_name: "opi-eval-opi".to_owned(),
             agent_import_path: "opi_eval_harbor:OpiAgent".to_owned(),
@@ -1499,13 +1578,13 @@ mod adapter_tests {
         assert_eq!(
             production.settle(&outcome_exit_zero(), &selected).1,
             failed(
-                "native-scoring-unavailable-deepswe",
+                "native-binding-trial-result-missing",
                 FailureBoundaryCode::Integrity
             )
         );
 
         // No pier job result anywhere under the trace root: fail closed
-        // (boundary Adapter: the importer cannot admit an output shape).
+        // (boundary Grader: the pinned aggregate admits no hermetic run).
         let empty_trace = tempfile::tempdir().unwrap();
         let mut missing_request = request_with(
             &production,
@@ -1516,7 +1595,7 @@ mod adapter_tests {
         missing_request.task_id = production.profile().task_id.clone();
         assert_eq!(
             production.settle(&outcome_exit_zero(), &missing_request).1,
-            failed("native-output-invalid", FailureBoundaryCode::Adapter)
+            failed("verifier-invalid-output", FailureBoundaryCode::Grader)
         );
 
         // Process-level verdicts are authoritative and never rescued.

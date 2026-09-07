@@ -1086,7 +1086,10 @@ impl BenchmarkAdapter for TerminalBench30Adapter {
                         let reward = binding.reward.clone();
                         (
                             reward,
-                            BenchmarkCompletion::VerifiedNative { binding, artifacts },
+                            BenchmarkCompletion::VerifiedNative {
+                                binding: binding.into(),
+                                artifacts,
+                            },
                         )
                     }
                     Err(error) => (

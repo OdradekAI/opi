@@ -739,15 +739,6 @@ fn prepare_native(
     experiment: &ResolvedExperiment,
 ) -> Result<NativeInputs, RunError> {
     let adapter_key = adapter_key_for(experiment)?;
-    // Native scoring for the sibling family without a declared handoff is
-    // explicitly unavailable (P19-D04): its former host-agent/default-job
-    // path must not keep emitting Agent scores. Terminal-Bench 3.0 runs
-    // through its declared separate-verifier handoff (P19-D03).
-    if adapter_key == "deepswe-v1.1" {
-        return Err(RunError::Native(format!(
-            "native scoring for {adapter_key} is unavailable until its declared handoff lands"
-        )));
-    }
     let benchmark = material
         .benchmark(&adapter_key)
         .map_err(|error| RunError::Native(error.to_string()))?;
@@ -1119,6 +1110,7 @@ fn stage_native_handoff(
     declared: &crate::experiment::DeclaredTrial,
     product: &str,
     agent: &crate::runner::material::AgentMaterial,
+    integration: &crate::runner::material::IntegrationMaterial,
     projection: &crate::experiment::ConnectionProjection,
     model: &str,
 ) -> Result<PathBuf, RunError> {
@@ -1135,8 +1127,8 @@ fn stage_native_handoff(
         "schema": "opi-eval-native-handoff/2",
         "trial": declared.id,
         "product": product,
-        "integration_agent_name": agent.integration.agent_name,
-        "integration_import_path": agent.integration.import_path,
+        "integration_agent_name": integration.agent_name,
+        "integration_import_path": integration.import_path,
         "agent_executable": agent.executable.path,
         "agent_executable_sha256": agent.executable.sha256,
         "model": model,
@@ -1254,8 +1246,29 @@ async fn run_native_trial(
         .project_connection(client, credential)
         .map_err(|error| RunError::Native(error.to_string()))?;
     let model = format!("{}:{}", connection.provider, connection.model);
-    let handoff_path =
-        stage_native_handoff(&trial_root, declared, product, agent, &projection, &model)?;
+    // The pinned integration the runner imports is family-specific: the
+    // Terminal-Bench dispatches select the Harbor module and the DeepSWE
+    // dispatch the Pier module (P19-D04).
+    let task_family = match revision {
+        BenchmarkRevision::DeepSwe { .. } => crate::benchmark::task_lifecycle::TaskFamily::Pier,
+        _ => crate::benchmark::task_lifecycle::TaskFamily::Harbor,
+    };
+    let integration_family = match task_family {
+        crate::benchmark::task_lifecycle::TaskFamily::Pier => "pier",
+        crate::benchmark::task_lifecycle::TaskFamily::Harbor => "harbor",
+    };
+    let integration = agent
+        .integration_for(integration_family)
+        .map_err(|error| RunError::Native(error.to_string()))?;
+    let handoff_path = stage_native_handoff(
+        &trial_root,
+        declared,
+        product,
+        agent,
+        integration,
+        &projection,
+        &model,
+    )?;
 
     // Durable intent before any process effect (EVAL-DUR-001): the native
     // reservation covers the control, trajectory, authority, and bound
@@ -1306,22 +1319,26 @@ async fn run_native_trial(
     // One upstream job: the selected integration runs inside the task
     // environment and the same trial's verifier grades it. The
     // pre-dispatch job snapshot backs the binding's stale-job defense.
-    // The task's declared lifecycle binds into the dispatch (P19-D03):
-    // unsupported shapes reject before any process effect.
-    let task_lifecycle = crate::benchmark::task_lifecycle::parse_task_lifecycle(&task_dir)
-        .map_err(|error| RunError::Native(error.to_string()))?;
+    // The task's declared lifecycle binds into the dispatch (P19-D03,
+    // P19-D04): unsupported shapes reject before any process effect, and
+    // the parse runs under the revision's runner-family policy.
+    let task_lifecycle =
+        crate::benchmark::task_lifecycle::parse_task_lifecycle(&task_dir, task_family)
+            .map_err(|error| RunError::Native(error.to_string()))?;
     let selection = crate::benchmark::process::NativeSelection {
         kind: crate::benchmark::process::SelectionKind::Integration,
         lifecycle: crate::benchmark::process::TaskLifecycleSelection {
             environment_mode: task_lifecycle.environment_mode,
             declared: task_lifecycle.declared_artifacts,
+            base_revision: task_lifecycle.base_revision,
+            docker_image: task_lifecycle.docker_image,
         },
-        agent_name: agent.integration.agent_name.clone(),
-        agent_import_path: agent.integration.import_path.clone(),
+        agent_name: integration.agent_name.clone(),
+        agent_import_path: integration.import_path.clone(),
         task_name: declared_task_name(revision, &task_dir),
         model,
         reward_metric: "reward".to_owned(),
-        module_dir: agent.integration.module_dir.clone(),
+        module_dir: integration.module_dir.clone(),
         handoff_path: handoff_path.clone(),
         stale_job_names: snapshot_job_names(&verifier_trace),
     };
@@ -1458,14 +1475,20 @@ async fn run_native_trial(
                 )?);
                 staged_keys.push(produced_keys.last().cloned().expect("just pushed"));
             }
-            // The verifier-input identity (P19-D03): the admitted task
-            // lifecycle and every declared artifact that entered the
-            // verifier, with the digests of exactly the collected bytes.
+            // The verifier-input identity (P19-D03, P19-D04): the
+            // admitted task lifecycle and every declared artifact that
+            // entered the verifier, with the digests of exactly the
+            // collected bytes. The Pier family additionally carries the
+            // committed-patch handoff identity: the base revision the
+            // collect hook diffed against and the image the pristine
+            // verifier rebuilt from.
             let verifier_input = serde_json::json!({
                 "environment_mode": match binding.environment_mode {
                     crate::benchmark::task_lifecycle::VerifierEnvironmentMode::Shared => "shared",
                     crate::benchmark::task_lifecycle::VerifierEnvironmentMode::Separate => "separate",
                 },
+                "base_revision": binding.base_revision,
+                "docker_image": binding.docker_image,
                 "collected": binding.collected.iter().map(|artifact| serde_json::json!({
                     "source": artifact.source,
                     "destination": artifact.destination,
@@ -1496,7 +1519,10 @@ async fn run_native_trial(
     }
 
     // The one classification (P19-D01).
-    let class = classify_native_trial(job_record.as_ref(), binding);
+    let class = classify_native_trial(
+        job_record.as_ref(),
+        binding.map(std::convert::AsRef::as_ref),
+    );
 
     // Pre-seal projection over the settled facts: the observed Agent
     // record is the typed native terminal observation.
@@ -1737,7 +1763,17 @@ fn declared_task_name(revision: &BenchmarkRevision, task_dir: &Path) -> String {
                 .and_then(|profile| profile.declared_task_name(task_dir))
                 .unwrap_or_default()
         }
-        _ => String::new(),
+        // Pier records the task's own name (`[task] name`) as the bound
+        // trial's task_name (P19-D04).
+        BenchmarkRevision::DeepSwe { .. } => {
+            crate::benchmark::task_lifecycle::parse_task_lifecycle(
+                task_dir,
+                crate::benchmark::task_lifecycle::TaskFamily::Pier,
+            )
+            .ok()
+            .and_then(|lifecycle| lifecycle.task_name)
+            .unwrap_or_default()
+        }
     }
 }
 /// Run one declared hermetic fixture trial end to end and persist its

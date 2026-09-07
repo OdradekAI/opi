@@ -14,7 +14,7 @@ tasks_tree = "3333333333333333333333333333333333333333"
 task_id = "synthetic-fixture-task"
 task_tree = "4444444444444444444444444444444444444444"
 package_pin = "byte-table"
-package_manifest_sha256 = "13e94f44d464818873ba00931e66339db1a6249d94f1e1e17b9c8060726bd3ae"
+package_manifest_sha256 = "0e20f7e9d7ccbf9ddbf32d787a5e9666c9984ccccbf75e1c1fe3aa1b640583d2"
 adapter = "opi-eval-deepswe-adapter/1"
 
 [verifier]
@@ -49,6 +49,18 @@ path = "environment/Dockerfile"
 mode = "100644"
 size = 49
 sha256 = "345e3af5eab52c0c157f82ef7129062aea79b8465f882763e99c6a8fe7cb91e5"
+
+[[package]]
+path = "instruction.md"
+mode = "100644"
+size = 128
+sha256 = "be278811f2320bf66ed532812a08374b27ed68d3067d45e70a94b097f7192ec6"
+
+[[package]]
+path = "task.toml"
+mode = "100644"
+size = 937
+sha256 = "54e0f8be11b7974f5a7355470f04e3e960bf0517efa9eb0eb3da531c9706a159"
 
 [[package]]
 path = "verifier/collect.sh"
