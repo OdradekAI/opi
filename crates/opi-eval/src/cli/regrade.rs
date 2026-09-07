@@ -1,25 +1,26 @@
-//! `opi-eval regrade` command: offline bundle re-verification.
+//! `opi-eval regrade` command: actual native regrading (planned).
 //!
-//! One invocation re-verifies every sealed trial bundle under a run root
-//! without starting an Agent, calling a provider, or mutating anything: no
-//! repair, no rehash, no rewrite. The command prints a single-line JSON
-//! regrade report. Exit codes: 0 when every sealed bundle verified, 1 when
-//! any bundle failed verification (typed failure, bytes untouched), 2 for a
-//! rejected request. This is the hermetic fixture-grade offline path; native
-//! execution is verified separately by the native-smoke workflow.
+//! Native regrading re-executes preserved real Agent artifacts with the
+//! pinned native grader in a fresh environment. That workflow is not
+//! implemented yet, so the command fails closed with an explicit
+//! unavailable-operation diagnostic instead of quietly re-running byte
+//! verification under the regrade name (a byte check is `opi-eval
+//! verify`). Exit code is always 2 until the native regrade workflow
+//! lands; nothing is read, verified, or mutated here.
 
 use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::regrade::OfflineRegrader;
-
 /// Failures reported by [`regrade`].
 #[derive(Debug, Error)]
 pub enum RegradeCliError {
-    /// The run root could not be read.
-    #[error("cannot read run root: {0}")]
-    Io(#[from] std::io::Error),
+    /// Native regrading is not implemented yet. The message names the
+    /// missing operation and the interim byte-verification command.
+    #[error(
+        "unavailable-operation: native regrade is not implemented yet; use `opi-eval verify --root <run-root>` for the original byte/seal checks"
+    )]
+    Unavailable,
 }
 
 /// Arguments of the `regrade` subcommand.
@@ -29,21 +30,16 @@ pub struct RegradeArgs {
     pub root: PathBuf,
 }
 
-/// Regrade one run root and return its JSON report.
+/// Reject one regrade request.
 ///
-/// This is the production entry seam of the `opi-eval regrade` command; the
-/// binary prints the returned report and derives its exit code from the
-/// outcome.
-pub fn regrade(args: &RegradeArgs) -> Result<serde_json::Value, RegradeCliError> {
-    let report = OfflineRegrader::regrade(&args.root)?;
-    Ok(report.to_json())
+/// This is the production entry seam of the `opi-eval regrade` command
+/// until the native regrade workflow exists.
+pub fn regrade(_args: &RegradeArgs) -> Result<serde_json::Value, RegradeCliError> {
+    Err(RegradeCliError::Unavailable)
 }
 
-/// Whether a regrade report warrants a non-success process exit.
-pub fn regrade_exit_code(report: &serde_json::Value) -> i32 {
-    if report["outcome"] == "verified" {
-        0
-    } else {
-        1
-    }
+/// Kept for the dispatch shape: a regrade report never exists today, so
+/// any value would already be a contract break and exits non-zero.
+pub fn regrade_exit_code(_report: &serde_json::Value) -> i32 {
+    1
 }

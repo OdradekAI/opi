@@ -65,6 +65,10 @@ const NATIVE_FACT_SOURCES: &[(&str, &str)] = &[("opi", "native/evidence/records"
 /// Sealed control-evidence and execution keys shared with the runner.
 const CONTROL_EXPERIMENT_KEY: &str = "control/experiment.json";
 const CONTROL_INTEGRITY_KEY: &str = "control/integrity.json";
+/// The sealed per-trial settlement record: the runner's final outcome
+/// classification (P19-D06). The report consumes it instead of
+/// re-deriving a second failure class from stderr tokens or exits.
+const CONTROL_SETTLEMENT_KEY: &str = "control/settlement.json";
 const TRAJECTORY_KEY: &str = "evidence/trajectory.json";
 const AUTHORITY_LEDGER_KEY: &str = "native/authority-ledger.json";
 /// The bounded verifier stream captures: grader-sourced Native entries
@@ -94,6 +98,10 @@ struct SealedTrial {
     trajectory: serde_json::Value,
     /// The sealed authority ledger.
     ledger: serde_json::Value,
+    /// The sealed settlement record when the runner staged one; legacy
+    /// bundles seal without it and classification falls back to the
+    /// sealed headline and ledger observation.
+    settlement: Option<serde_json::Value>,
 }
 
 /// One recomputed normalized view of a run root.
@@ -107,6 +115,13 @@ pub(crate) struct NormalizedReport {
     /// recomputed from its canonical bytes.
     integrity_digest: String,
     trials: Vec<SealedTrial>,
+    /// Ids of trials that started (a durable receipt exists), sealed or
+    /// not: the attempted set of the planned coverage.
+    attempted_ids: Vec<String>,
+    /// The run-level planned-coverage artifact bound before any effect
+    /// (`P19-D06`): planned trial ids, selection, and corpus size under
+    /// the resolved experiment identity. Absent on legacy roots.
+    run_control: Option<serde_json::Value>,
     /// Typed failures that block publication (bundle verification or
     /// sealed-input parse failures). Empty when every contributing bundle
     /// verified and parsed.
@@ -121,6 +136,9 @@ struct TrialView {
     task: String,
     group: String,
     status: String,
+    /// The sealed settlement classification: graded (with its Agent
+    /// failure and timeout flags) or invalid with its sealed reason.
+    outcome: serde_json::Value,
     /// Outcome headline: only from the grader-sourced admitted native
     /// report artifact (`EVAL-RPT-003`). Absent when the grader never
     /// admitted.
@@ -221,25 +239,50 @@ impl ReportBuilder {
     /// trajectory, ledger, and manifest evidence. Nothing is inferred from
     /// memory or from mutable run-root side files, nothing re-runs.
     pub(crate) fn recompute_from_bundle(&self) -> Result<NormalizedReport, ReportError> {
+        // The run-level planned-coverage binding (P19-D06): written
+        // before any effect, it keeps the planned denominator
+        // reconstructible even when no trial sealed.
+        let run_control = self.read_run_control();
         let trials_root = self.run_root.join("trials");
-        if !trials_root.is_dir() {
+        if !trials_root.is_dir() && run_control.is_none() {
             return Err(ReportError::Io(std::io::Error::other(format!(
                 "run root {} holds no trials directory",
                 self.run_root.display()
             ))));
         }
-        let mut ids: Vec<String> = std::fs::read_dir(&trials_root)
-            .map_err(ReportError::Io)?
-            .flatten()
-            .filter(|entry| entry.path().is_dir())
-            .filter_map(|entry| entry.file_name().into_string().ok())
-            .collect();
+        let mut ids: Vec<String> = if trials_root.is_dir() {
+            std::fs::read_dir(&trials_root)
+                .map_err(ReportError::Io)?
+                .flatten()
+                .filter(|entry| entry.path().is_dir())
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
         ids.sort();
+
+        // A trial started exactly when it claimed a sealed bundle (its
+        // manifest exists): the receipt is written only on the report
+        // transition, which honest runs may refuse, so the durable
+        // attempted marker is the manifest claim itself.
+        let attempted_ids: Vec<String> = ids
+            .iter()
+            .filter(|id| trials_root.join(id).join("bundle/manifest.json").is_file())
+            .cloned()
+            .collect();
 
         let mut failures = Vec::new();
         let mut trials = Vec::new();
         for id in &ids {
             let bundle_root = trials_root.join(id).join("bundle");
+            if !bundle_root.join("manifest.json").is_file() {
+                // The trial never claimed a sealed bundle (crash before
+                // sealing, refused admission, or effect-unknown): nothing
+                // contributes to verification, and the planned coverage
+                // keeps the trial visible as unexecuted (`P19-D06`).
+                continue;
+            }
             if let Err(error) = RunBundle::verify(&bundle_root) {
                 failures.push(verification_failure(id, &error));
                 continue;
@@ -252,7 +295,7 @@ impl ReportBuilder {
                 })),
             }
         }
-        if trials.is_empty() {
+        if trials.is_empty() && run_control.is_none() {
             failures.push(serde_json::json!({
                 "trial": null,
                 "kind": "no-sealed-trials",
@@ -325,13 +368,40 @@ impl ReportBuilder {
         } else {
             sha256_hex(&integrity_bytes)
         };
+        // The run-level binding must match the sealed control evidence:
+        // a drifted run-control identity never silently normalizes a
+        // run root (`P19-D06`).
+        if let Some(control) = &run_control
+            && !trials.is_empty()
+            && control["manifest_digest"].as_str().is_some_and(|recorded| {
+                recorded != experiment["manifest_digest"].as_str().unwrap_or_default()
+            })
+        {
+            failures.push(serde_json::json!({
+                "trial": null,
+                "kind": "run-control-drift",
+            }));
+        }
         Ok(NormalizedReport {
             experiment,
             integrity,
             integrity_digest,
             trials,
+            attempted_ids,
+            run_control,
             failures,
         })
+    }
+
+    /// Reads the run-level planned-coverage artifact when present and
+    /// well-formed; anything else degrades to legacy sealed-contract
+    /// binding.
+    fn read_run_control(&self) -> Option<serde_json::Value> {
+        let bytes = std::fs::read(self.run_root.join("run-control.json")).ok()?;
+        let control: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+        (control["schema"] == "opi-eval-run-control/1"
+            && control["planned_trials"].as_array().is_some())
+        .then_some(control)
     }
 
     /// Builds the published report: recompute first, then redact-gate,
@@ -391,28 +461,137 @@ impl ReportBuilder {
             .map(|trial| self.trial_view(trial, normalized))
             .collect();
         let coverage = coverage(normalized);
-        let all_sealed = declared_trial_count(normalized) == normalized.trials.len();
+        // The planned denominator: the pre-effect run-control binding
+        // when present, else the sealed experiment contract (legacy
+        // roots). Unexecuted keeps every planned trial that never left
+        // a durable receipt visible (`P19-D06`).
+        let planned_ids: Vec<String> = match &normalized.run_control {
+            Some(control) => control["planned_trials"]
+                .as_array()
+                .map(|ids| {
+                    ids.iter()
+                        .filter_map(|entry| entry["id"].as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            None => normalized.experiment["trials"]
+                .as_array()
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter_map(|entry| entry["id"].as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default(),
+        };
+        let planned_count = planned_ids.len();
+        let unexecuted = planned_ids
+            .iter()
+            .filter(|id| !normalized.attempted_ids.contains(id))
+            .count();
+        // Outcome classes come from the sealed settlement records:
+        // valid graded trials form the metric denominator (zero scores
+        // and benchmark-defined Agent timeouts included); attempted
+        // trials without a grade stay invalid, never Agent outcomes.
+        let valid = normalized
+            .trials
+            .iter()
+            .filter(|trial| outcome_buckets(trial).0)
+            .count();
+        let agent_failure = normalized
+            .trials
+            .iter()
+            .filter(|trial| outcome_buckets(trial).1)
+            .count();
+        let invalid = normalized.trials.len().saturating_sub(valid);
+        let all_sealed = planned_count > 0 && planned_count == normalized.trials.len();
         let all_comparable = coverage
             .iter()
             .all(|pair| pair["comparability"] == "comparable");
+        let experiment_id = normalized.experiment["experiment_id"]
+            .as_str()
+            .map(serde_json::Value::from)
+            .or_else(|| {
+                normalized
+                    .run_control
+                    .as_ref()
+                    .and_then(|control| control["experiment"].as_str())
+                    .map(serde_json::Value::from)
+            })
+            .unwrap_or(serde_json::Value::Null);
+        let manifest_digest = normalized.experiment["manifest_digest"]
+            .as_str()
+            .map(serde_json::Value::from)
+            .or_else(|| {
+                normalized
+                    .run_control
+                    .as_ref()
+                    .and_then(|control| control["manifest_digest"].as_str())
+                    .map(serde_json::Value::from)
+            })
+            .unwrap_or(serde_json::Value::Null);
         let verification: BTreeMap<&str, serde_json::Value> = normalized
             .trials
             .iter()
             .map(|trial| (trial.id.as_str(), serde_json::json!({"state": "verified"})))
             .collect();
+        // Each benchmark reports its own metric definition and
+        // denominator; results from different benchmarks are never
+        // averaged into one cross-benchmark headline (P19-AC-008).
+        let benchmark = format!(
+            "{}/{}",
+            normalized.experiment["benchmark"]["name"]
+                .as_str()
+                .unwrap_or("unknown"),
+            normalized.experiment["benchmark"]["revision"]
+                .as_str()
+                .unwrap_or("unknown")
+        );
+        let selection_scope = normalized
+            .run_control
+            .as_ref()
+            .and_then(|control| control["selection"]["scope"].as_str())
+            .or_else(|| normalized.experiment["selection"]["scope"].as_str());
         serde_json::json!({
             "schema": REPORT_SCHEMA,
             "reporter_version": REPORTER_VERSION,
             "classification": CLASSIFICATION,
             "outcome": OUTCOME_PUBLISHED,
-            "experiment": normalized.experiment["experiment_id"],
-            "manifest_digest": normalized.experiment["manifest_digest"],
+            "experiment": experiment_id,
+            "manifest_digest": manifest_digest,
             "integrity_digest": normalized.integrity_digest,
             // The run's own outcome stays machine-visible: incomplete
             // coverage publishes with its exact reason, never silently.
             "run_outcome": if all_sealed && all_comparable { "completed" } else { "incomplete" },
+            "planned_binding": {
+                "source": if normalized.run_control.is_some() { "run-control" } else { "sealed-contract" },
+                "trials": planned_count,
+            },
+            "selection_scope": selection_scope,
+            "coverage_counts": {
+                "corpus": normalized.run_control.as_ref()
+                    .and_then(|control| control["corpus_tasks"].as_u64()),
+                "selected": normalized.run_control.as_ref()
+                    .and_then(|control| control["selection"]["task_ids"].as_array())
+                    .map(|ids| ids.len()),
+                "planned": planned_count,
+                "attempted": normalized.attempted_ids.len(),
+                "valid": valid,
+                "agent_failure": agent_failure,
+                "invalid": invalid,
+                "unexecuted": unexecuted,
+            },
+            "metrics": [
+                {
+                    "benchmark": benchmark,
+                    "metric": "native-grader-reward",
+                    "definition": "benchmark-defined native grader reward over valid graded trials; zero scores and benchmark-defined Agent timeouts stay valid graded outcomes",
+                    "denominator": valid,
+                },
+            ],
             "trials": trials,
             "coverage": coverage,
+            "control_pairs": control_pairs(normalized),
             "bundle_verification": verification,
         })
     }
@@ -465,6 +644,10 @@ impl ReportBuilder {
             entries,
             trajectory,
             ledger,
+            settlement: self
+                .sealed_bytes(id, CONTROL_SETTLEMENT_KEY)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
         })
     }
 
@@ -482,11 +665,63 @@ impl ReportBuilder {
             task: trial.task.clone(),
             group: trial.group.clone(),
             status: "sealed".to_owned(),
+            outcome: outcome_view(trial),
             headline: headline(trial),
             native_facts: native_facts(&product, &trial.entries),
             diagnostics: diagnostics(trial, &product),
         }
     }
+}
+
+/// The sealed settlement classification of one trial: graded (a valid
+/// graded Agent outcome, zero scores and benchmark-defined timeouts
+/// included) or invalid with its sealed reason. The sealed record is
+/// authoritative; a legacy bundle without one falls back to the sealed
+/// headline plus the ledger's agent observation - never to stderr
+/// tokens or process exits (P19-D06, P19-AC-008).
+fn outcome_view(trial: &SealedTrial) -> serde_json::Value {
+    if let Some(settlement) = &trial.settlement {
+        if settlement["graded"] == serde_json::Value::Bool(true) {
+            return serde_json::json!({
+                "class": "graded",
+                "agent_failed": settlement["agent_failure"].as_bool().unwrap_or(false),
+                "timed_out": settlement["timed_out"].as_bool().unwrap_or(false),
+                "source": "settlement",
+            });
+        }
+        return serde_json::json!({
+            "class": "invalid",
+            "reason": settlement["failure_kind"].clone(),
+            "boundary": settlement["boundary"].clone(),
+            "source": "settlement",
+        });
+    }
+    // Legacy fallback: a graded headline is a valid graded outcome whose
+    // Agent-failure flag comes from the sealed ledger observation.
+    if headline(trial).is_some() {
+        return serde_json::json!({
+            "class": "graded",
+            "agent_failed": trial.ledger["agent_outcome"] == "scored_failure",
+            "timed_out": false,
+            "source": "legacy-derived",
+        });
+    }
+    serde_json::json!({
+        "class": "invalid",
+        "reason": trial.ledger["failed_boundary"].clone(),
+        "boundary": trial.ledger["failed_boundary"].clone(),
+        "source": "legacy-derived",
+    })
+}
+
+/// Whether one sealed trial is a valid graded outcome (the metric
+/// denominator member) and whether it counts as an Agent failure.
+fn outcome_buckets(trial: &SealedTrial) -> (bool, bool) {
+    let outcome = outcome_view(trial);
+    (
+        outcome["class"] == "graded",
+        outcome["class"] == "graded" && outcome["agent_failed"] == serde_json::Value::Bool(true),
+    )
 }
 
 /// The product of one subject id from the sealed experiment contract.
@@ -700,12 +935,77 @@ fn diagnostics(trial: &SealedTrial, product: &str) -> serde_json::Value {
     serde_json::Value::Object(view)
 }
 
-/// How many trials the sealed experiment contract declares.
-fn declared_trial_count(normalized: &NormalizedReport) -> usize {
-    normalized.experiment["trials"]
+/// Control pairs (P19-AC-008): every (subject, task) repetition set of
+/// the frozen contract with more than one group surfaces as one control
+/// pair with its exact state - consistent (all repetition outcomes
+/// equal), divergent, or incomplete with its missing groups. Single
+/// subject reports carry these instead of any artificial comparison
+/// edge; nothing is inferred for groups that never ran.
+fn control_pairs(normalized: &NormalizedReport) -> Vec<serde_json::Value> {
+    // The declared repetition slots come from the sealed contract, or -
+    // when no trial sealed - from the pre-effect run-control binding.
+    let declared_trials: Vec<&serde_json::Value> = normalized.experiment["trials"]
         .as_array()
-        .map(Vec::len)
-        .unwrap_or(0)
+        .map(|entries| entries.iter().collect::<Vec<_>>())
+        .or_else(|| {
+            normalized
+                .run_control
+                .as_ref()
+                .and_then(|control| control["planned_trials"].as_array())
+                .map(|entries| entries.iter().collect::<Vec<_>>())
+        })
+        .unwrap_or_default();
+    // (subject, task) -> ordered distinct (group, declared trial id).
+    let mut slots: BTreeMap<(String, String), Vec<(String, String)>> = BTreeMap::new();
+    for trial in declared_trials {
+        let (Some(subject), Some(task), Some(group), Some(id)) = (
+            trial["subject"].as_str(),
+            trial["task"].as_str(),
+            trial["group"].as_str(),
+            trial["id"].as_str(),
+        ) else {
+            continue;
+        };
+        slots
+            .entry((subject.to_owned(), task.to_owned()))
+            .or_default()
+            .push((group.to_owned(), id.to_owned()));
+    }
+    let mut pairs = Vec::new();
+    for ((subject, task), mut groups) in slots {
+        groups.sort();
+        groups.dedup_by(|a, b| a.0 == b.0);
+        if groups.len() < 2 {
+            continue;
+        }
+        let mut missing = Vec::new();
+        let mut rewards: Vec<serde_json::Value> = Vec::new();
+        for (group, id) in &groups {
+            match normalized.trials.iter().find(|trial| &trial.id == id) {
+                None => missing.push(serde_json::json!(group)),
+                Some(sealed) => rewards.push(
+                    headline(sealed)
+                        .map(|headline| headline.reward)
+                        .unwrap_or(serde_json::Value::Null),
+                ),
+            }
+        }
+        let state = if !missing.is_empty() {
+            "incomplete"
+        } else if rewards.iter().all(|reward| reward == &rewards[0]) {
+            "consistent"
+        } else {
+            "divergent"
+        };
+        pairs.push(serde_json::json!({
+            "subject": subject,
+            "task": task,
+            "groups": groups.iter().map(|(group, _)| group).collect::<Vec<_>>(),
+            "state": state,
+            "missing_groups": missing,
+        }));
+    }
+    pairs
 }
 
 /// Pair coverage derived from sealed content only (`EVAL-RPT-004`,
@@ -721,7 +1021,26 @@ fn coverage(normalized: &NormalizedReport) -> Vec<serde_json::Value> {
     let Some(declared_trials) = normalized.experiment["trials"].as_array() else {
         return pairs;
     };
+    let subject_product = |id: &str| {
+        normalized.experiment["subjects"]
+            .as_array()
+            .and_then(|subjects| {
+                subjects
+                    .iter()
+                    .find(|entry| entry["id"].as_str() == Some(id))
+            })
+            .and_then(|entry| entry["product"].as_str().map(str::to_owned))
+    };
     for edge in edges {
+        // Protocol-safe pairing (P19-AC-008): an edge pairing two protocol
+        // groups of one product never carries a paired claim.
+        let protocol_mismatch = match (
+            edge["baseline"].as_str().and_then(&subject_product),
+            edge["candidate"].as_str().and_then(&subject_product),
+        ) {
+            (Some(baseline), Some(candidate)) => baseline == candidate,
+            _ => false,
+        };
         let mut keys: Vec<(String, String)> = declared_trials
             .iter()
             .filter(|trial| {
@@ -739,7 +1058,11 @@ fn coverage(normalized: &NormalizedReport) -> Vec<serde_json::Value> {
         for (task, group) in keys {
             let mut baseline_trial = String::new();
             let mut candidate_trial = String::new();
-            let mut comparability = "comparable".to_owned();
+            let mut comparability = if protocol_mismatch {
+                "protocol-group-mismatch".to_owned()
+            } else {
+                "comparable".to_owned()
+            };
             // The task's validity classification gates the whole pair:
             // only `ValidAgentOutcome` may carry a paired claim.
             let classification = normalized.integrity["tasks"]
@@ -793,13 +1116,28 @@ fn coverage(normalized: &NormalizedReport) -> Vec<serde_json::Value> {
                     }
                 }
             }
-            // Sealed outcome classes: a boundary failure is
-            // infrastructure; a dispatched grade that failed is a grader
-            // failure. A scored Agent failure stays a comparable graded
-            // Agent outcome.
+            // Sealed outcome classes are owned by the sealed settlement
+            // record: a graded trial (zero scores and scored Agent
+            // failures included) stays comparable; an invalid settlement
+            // (provider/access, adapter, identity, infrastructure, or
+            // invalid grading) downgrades the pair naming the sealed
+            // reason. Legacy bundles without a settlement fall back to
+            // the ledger observation and grader-completion facts
+            // (P19-D06).
             if comparability == "comparable" {
                 for trial in [&baseline_trial, &candidate_trial] {
                     if let Some(sealed) = normalized.trials.iter().find(|t| &t.id == trial) {
+                        let outcome = outcome_view(sealed);
+                        if outcome["source"] == "settlement" {
+                            if outcome["class"] == "invalid" {
+                                let reason =
+                                    outcome["reason"].as_str().unwrap_or("invalid-execution");
+                                comparability = format!("invalid:{trial}:{reason}");
+                                break;
+                            }
+                            continue;
+                        }
+                        // Legacy derivation.
                         if sealed.ledger["agent_outcome"] == "boundary_failure" {
                             comparability = format!("infrastructure-failure:{trial}");
                             break;
@@ -949,6 +1287,7 @@ mod tests {
             subject: "s".to_owned(),
             task: "t".to_owned(),
             group: "g".to_owned(),
+            settlement: None,
             entries,
             trajectory: serde_json::json!({
                 "nodes": [{

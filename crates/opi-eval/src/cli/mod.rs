@@ -9,6 +9,7 @@ pub mod prepare;
 pub mod regrade;
 pub mod report;
 pub mod run;
+pub mod verify;
 
 use std::fmt;
 use std::path::Path;

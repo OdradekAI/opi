@@ -51,17 +51,17 @@ fn snapshot_tree(root: &Path) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
 }
 
 #[test]
-fn unreadable_regrade_root_fails_closed() {
+fn unreadable_verify_root_fails_closed() {
     let parent = tempfile::tempdir().unwrap();
     let missing_root = parent.path().canonicalize().unwrap().join("missing-run");
     assert!(!missing_root.exists());
 
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
-        .arg("regrade")
+        .arg("verify")
         .arg("--root")
         .arg(&missing_root)
         .output()
-        .expect("spawn the opi-eval regrade command");
+        .expect("spawn the opi-eval verify command");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 

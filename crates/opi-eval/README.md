@@ -140,6 +140,43 @@ artificial comparison edge. `run --config C` remains the same
 resolve/freeze path - a `[selection]` document expands against the same
 enumerated corpus at run time.
 
+### 0c. Verify seals and reconstruct the report offline
+
+```sh
+cargo run -p opi-eval -- verify --root "$DEMO_DIR/run"
+cargo run -p opi-eval -- report --root "$DEMO_DIR/run" --out "$DEMO_DIR/report.json"
+cargo run -p opi-eval -- regrade --root "$DEMO_DIR/run"   # exit 2: not implemented yet
+```
+
+Three distinct offline operations, none starting an Agent or provider:
+`verify --root R` re-checks every sealed trial bundle against its
+original seals (exit 0 verified / 1 mutation detected / 2 rejected; no
+repair, no rewrite); `report --root R --out O` reconstructs the
+byte-stable normalized report from verified sealed evidence alone; and
+`regrade` fails closed with an explicit `unavailable-operation`
+diagnostic (exit 2) until actual native regrading lands - a byte check
+never runs under the regrade name. Every run binds a run-level
+`run-control.json` before its first effect (experiment identity,
+manifest digest, selection, corpus size, exact planned trials), so the
+offline report preserves unstarted trials even when no trial sealed.
+The report consumes the sealed per-trial settlement record - never
+stderr tokens or process exits - for its outcome classes: graded trials
+(including valid native zero and benchmark-defined Agent timeouts) form
+the metric denominator, counted per benchmark with its own metric
+definition (never a cross-benchmark average), while
+provider/access/identity/infrastructure/invalid-grading failures stay
+attempted-but-invalid and effect-unknown trials stay unexecuted.
+Coverage counts (`corpus`, `selected`, `planned`, `attempted`,
+`valid`, `agent_failure`, `invalid`, `unexecuted`), the
+`full|subset` scope label beside the completed/incomplete outcome,
+same-task/repetition comparison pairs with missing sides and
+exclusions, repetition control pairs (`consistent|divergent|incomplete`
+with missing groups), and unknown telemetry reasons all stay visible: a
+protocol-group edge (two subjects of one product) never pairs, and a
+single-subject report needs no artificial comparison edge. Repeated
+reconstruction over identical sealed inputs yields identical bytes;
+tampered or unsealed evidence blocks publication instead of upgrading.
+
 ### 1. Validate
 
 ```sh

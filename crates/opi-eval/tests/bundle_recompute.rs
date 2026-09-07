@@ -1,7 +1,7 @@
 //! Offline bundle recomputation suite.
 //!
 //! Every case drives the production `opi-eval` binary: the offline
-//! `regrade`/`report` commands consume sealed assembled outputs produced by
+//! `verify`/`report` commands consume sealed assembled outputs produced by
 //! `opi-eval run` and must never start an Agent, call a
 //! provider, mutate a sealed bundle, or repair drifted bytes. All offline
 //! operations are effect-free by construction: they only read the run root
@@ -52,7 +52,7 @@ fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json
     (code, report, stderr)
 }
 
-/// Invoke one offline subcommand (`regrade` or `report`) against a run root.
+/// Invoke one offline subcommand (`verify` or `report`) against a run root.
 #[cfg(unix)]
 fn invoke(command: &str, args: &[(&str, &std::ffi::OsStr)]) -> (i32, String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_opi-eval"));
@@ -74,6 +74,114 @@ fn bundle_dir(root: &Path, trial: &str) -> PathBuf {
     root.join("trials").join(trial).join("bundle")
 }
 
+/// `P19-D06` planned-coverage binding: the run root carries a
+/// `run-control.json` written before any trial effect, so offline
+/// recomputation preserves unstarted trials even when no trial seals -
+/// and a drifted run-control identity never silently normalizes.
+#[cfg(unix)]
+#[test]
+fn planned_coverage_survives_total_bundle_loss() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, report, stderr) = run_experiment("local-paired.toml", "happy", root.path());
+    assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
+
+    // The planned coverage is bound before any effect: the durable
+    // run-control artifact names the experiment identity, the manifest
+    // digest, and the exact planned trial ids.
+    let control_path = root.path().join("run-control.json");
+    let control: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&control_path)
+            .unwrap_or_else(|error| panic!("run-control must exist: {error}")),
+    )
+    .unwrap();
+    assert_eq!(control["schema"], "opi-eval-run-control/1", "{control}");
+    assert_eq!(control["experiment"], "local-paired-hermetic", "{control}");
+    assert_eq!(
+        control["manifest_digest"].as_str().map(str::len),
+        Some(64),
+        "{control}"
+    );
+    let planned = control["planned_trials"].as_array().unwrap();
+    assert_eq!(planned.len(), 2, "{control}");
+    let planned_ids: Vec<&str> = planned
+        .iter()
+        .filter_map(|entry| entry["id"].as_str())
+        .collect();
+    assert!(planned_ids.contains(&"trial-opi-1"), "{control}");
+    assert!(planned_ids.contains(&"trial-pi-1"), "{control}");
+
+    // Total bundle loss: with every trial directory gone, the report
+    // still reconstructs the planned coverage - attempted 0, unexecuted
+    // 2 - instead of failing with no evidence.
+    std::fs::remove_dir_all(root.path().join("trials")).unwrap();
+    let root_arg = root.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "report must publish: {stderr} {stdout}");
+    let published: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    assert_eq!(published["outcome"], "published", "{published}");
+    assert_eq!(published["run_outcome"], "incomplete", "{published}");
+    let counts = &published["coverage_counts"];
+    assert_eq!(counts["planned"], 2, "{published}");
+    assert_eq!(counts["attempted"], 0, "{published}");
+    assert_eq!(counts["unexecuted"], 2, "{published}");
+    assert_eq!(
+        published["planned_binding"]["source"], "run-control",
+        "{published}"
+    );
+}
+
+/// The binding happens before any effect: a process crash at the first
+/// durable point still leaves the run-control artifact, and a tampered
+/// run-control identity is rejected instead of normalizing silently.
+#[cfg(unix)]
+#[test]
+fn run_control_binds_before_any_effect_and_rejects_drift() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, _report, _stderr) =
+        run_experiment("local-paired.toml", "crash-after-intent", root.path());
+    assert_eq!(code, 70, "the crash behavior must exit 70");
+    let control_path = root.path().join("run-control.json");
+    assert!(
+        control_path.is_file(),
+        "planned coverage bound before effects"
+    );
+
+    // A tampered run-control identity cannot normalize sealed evidence:
+    // the manifest digest no longer matches the sealed contract.
+    let tampered = tempfile::tempdir().unwrap();
+    let (code, report, stderr) = run_experiment("local-paired.toml", "happy", tampered.path());
+    assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
+    let control: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(tampered.path().join("run-control.json")).unwrap(),
+    )
+    .unwrap();
+    let drifted = serde_json::json!({
+        "schema": control["schema"],
+        "experiment": "local-paired-hermetic",
+        "manifest_digest": "f".repeat(64),
+        "corpus_tasks": control["corpus_tasks"],
+        "selection": control["selection"],
+        "planned_trials": control["planned_trials"],
+        "plan_digest": control["plan_digest"],
+    });
+    std::fs::write(
+        tampered.path().join("run-control.json"),
+        serde_json::to_string_pretty(&drifted).unwrap(),
+    )
+    .unwrap();
+    let root_arg = tampered.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 1, "drifted run-control must block: {stderr} {stdout}");
+    let blocked: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    assert_eq!(blocked["outcome"], "verification-failed", "{blocked}");
+    assert_eq!(
+        blocked["failures"][0]["kind"], "run-control-drift",
+        "{blocked}"
+    );
+}
+
 /// `EVAL-A15`: a sealed artifact byte change is rejected by verification
 /// without repair, rehash, or manifest mutation.
 #[cfg(unix)]
@@ -83,12 +191,12 @@ fn covered_byte_mutation_is_rejected() {
     let (code, report, stderr) = run_experiment("local-paired.toml", "happy", root.path());
     assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
 
-    // Regrade over the intact run root verifies every sealed bundle.
+    // Byte verification over the intact run root verifies every sealed bundle.
     let root_arg = root.path().canonicalize().unwrap();
-    let (code, stdout, stderr) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
-    assert_eq!(code, 0, "intact regrade must verify: {stderr}");
+    let (code, stdout, stderr) = invoke("verify", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "intact verify must confirm: {stderr}");
     let verified: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|_error| panic!("regrade stdout is not one JSON report: {stdout:?}"));
+        .unwrap_or_else(|_error| panic!("verify stdout is not one JSON report: {stdout:?}"));
     assert_eq!(verified["outcome"], "verified", "{verified}");
     assert_eq!(
         verified["bundles"].as_array().map(Vec::len),
@@ -109,13 +217,13 @@ fn covered_byte_mutation_is_rejected() {
     // Verification fails without repair or silent rehash: the manifest and
     // the tampered bytes stay exactly as they are, and the failure is the
     // typed digest mismatch, not an unparsable report.
-    let (code, stdout, stderr) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    let (code, stdout, stderr) = invoke("verify", &[("--root", root_arg.as_os_str())]);
     assert_eq!(
         code, 1,
-        "mutated regrade must fail: {stderr} stdout: {stdout}"
+        "mutated verify must fail: {stderr} stdout: {stdout}"
     );
     let failed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|_error| panic!("regrade stdout is not one JSON report: {stdout:?}"));
+        .unwrap_or_else(|_error| panic!("verify stdout is not one JSON report: {stdout:?}"));
     assert_eq!(failed["outcome"], "mutation-detected", "{failed}");
     let failures = failed["failures"].as_array().unwrap();
     assert_eq!(failures.len(), 1, "{failed}");
@@ -130,7 +238,7 @@ fn covered_byte_mutation_is_rejected() {
     );
 
     // No repair: the sealed manifest and tampered bytes are byte-identical
-    // after the failed regrade.
+    // after the failed verification.
     let manifest_after =
         std::fs::read(bundle_dir(root.path(), "trial-opi-1").join("manifest.json")).unwrap();
     assert_eq!(
@@ -160,7 +268,7 @@ fn bnd001_retained_byte_closure_rejects_drift() {
     // An unmanifested rogue file inside the sealed artifact tree.
     let rogue = bundle.join("artifacts/native/rogue.txt");
     std::fs::write(&rogue, b"rogue\n").unwrap();
-    let (code, stdout, stderr) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    let (code, stdout, stderr) = invoke("verify", &[("--root", root_arg.as_os_str())]);
     assert_eq!(code, 1, "{stderr} {stdout}");
     let failed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(failed["outcome"], "mutation-detected", "{failed}");
@@ -170,14 +278,14 @@ fn bnd001_retained_byte_closure_rejects_drift() {
     assert_eq!(failure["artifact"], "native/rogue.txt", "{failed}");
     assert_eq!(std::fs::read(&rogue).unwrap(), b"rogue\n");
     std::fs::remove_file(&rogue).unwrap();
-    let (code, _, _) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    let (code, _, _) = invoke("verify", &[("--root", root_arg.as_os_str())]);
     assert_eq!(code, 0, "removing the rogue file restores verification");
 
     // A corrupted durable intent sidecar diverges from the manifest even
     // though the manifest bytes are untouched.
     let manifest_before = std::fs::read(bundle.join("manifest.json")).unwrap();
     std::fs::write(bundle.join("intent.json"), b"not json").unwrap();
-    let (code, stdout, stderr) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    let (code, stdout, stderr) = invoke("verify", &[("--root", root_arg.as_os_str())]);
     assert_eq!(code, 1, "{stderr} {stdout}");
     let failed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(failed["failures"][0]["kind"], "sidecar-drift", "{failed}");
@@ -193,14 +301,14 @@ fn bnd001_retained_byte_closure_rejects_drift() {
         serde_json::to_vec(&manifest["intent"]).unwrap()
     };
     std::fs::write(bundle.join("intent.json"), &intent_bytes).unwrap();
-    let (code, _, _) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    let (code, _, _) = invoke("verify", &[("--root", root_arg.as_os_str())]);
     assert_eq!(code, 0, "the restored sidecar matches the manifest");
 
     // A missing sealed expected output fails as a missing artifact.
     let expected = bundle.join("artifacts/normalized/expected-output");
     assert!(expected.is_file(), "the sealed expected output exists");
     std::fs::remove_file(&expected).unwrap();
-    let (code, stdout, stderr) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    let (code, stdout, stderr) = invoke("verify", &[("--root", root_arg.as_os_str())]);
     assert_eq!(code, 1, "{stderr} {stdout}");
     let failed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(
@@ -325,9 +433,9 @@ fn repeated_offline_operations_are_stable() {
     let root_arg = root.path().canonicalize().unwrap();
 
     // Repeated regrade: identical stdout bytes every time.
-    let (c1, regrade1, stderr) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    let (c1, regrade1, stderr) = invoke("verify", &[("--root", root_arg.as_os_str())]);
     assert_eq!(c1, 0, "{stderr}");
-    let (c2, regrade2, _) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    let (c2, regrade2, _) = invoke("verify", &[("--root", root_arg.as_os_str())]);
     assert_eq!(c2, 0);
     assert_eq!(regrade1, regrade2, "regrade output must be byte-stable");
 

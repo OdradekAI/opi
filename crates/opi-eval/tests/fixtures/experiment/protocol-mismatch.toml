@@ -1,0 +1,67 @@
+# Protocol-mismatch pairing fixture: one edge whose baseline and
+# candidate subjects run the same product (two opi builds). The
+# comparison must never pair them: a paired claim matches the same
+# task/repetition across products, never two protocol groups of one
+# product. Fixture-grade only: every executable resolved by the runner
+# is a runtime-generated deterministic helper.
+
+schema = "opi-eval-experiment/2"
+experiment_id = "protocol-mismatch"
+connection = "fixture-local"
+
+[benchmark]
+name = "terminal-bench"
+revision = "2.1"
+dataset = "terminal-bench-2.1-fixture"
+integrity_digest = "0c493e1e98d8be301a0a0d7837e0681aec685231ba6ae81642f07e57e5c6c135"
+
+[[subjects]]
+id = "opi-a"
+product = "opi"
+version = "0.1.0"
+
+[[subjects]]
+id = "opi-b"
+product = "opi"
+version = "0.1.0"
+
+[[edges]]
+id = "same-product-edge"
+baseline = "opi-a"
+candidate = "opi-b"
+
+[[connections]]
+id = "fixture-local"
+provider = "local"
+api = "openai-completions"
+base_url = "http://127.0.0.1:48127/v1"
+model = "scripted"
+credential_env = "OPI_EVAL_FIXTURE_KEY"
+
+[model_controls]
+temperature = 0.0
+top_p = "omitted"
+max_output_tokens = 4096
+context_window = 8192
+reasoning = "omitted"
+
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "isolated"
+
+[[trials]]
+id = "trial-opi-a-1"
+subject = "opi-a"
+task = "fixture-task"
+group = "group-hello"
+
+[[trials]]
+id = "trial-opi-b-1"
+subject = "opi-b"
+task = "fixture-task"
+group = "group-hello"

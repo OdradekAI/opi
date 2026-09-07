@@ -84,6 +84,10 @@ pub(crate) enum NonComparability {
     InvalidTaskClassification { classification: TaskClassification },
     /// The admitted record does not classify this task at all.
     TaskNotCovered,
+    /// The edge pairs two protocol groups of one product: a paired
+    /// claim matches the same task/repetition across products, never two
+    /// builds of one product (P19-AC-008).
+    ProtocolGroupMismatch,
 }
 
 /// Comparability of one assembled pair.
@@ -303,6 +307,19 @@ impl ComparisonSet {
         }
         let mut pairs = Vec::new();
         for edge in experiment.edges() {
+            // Protocol-safe pairing (P19-AC-008): an edge whose baseline
+            // and candidate subjects run the same product never pairs -
+            // the comparison stays visible but never comparable.
+            let protocol_mismatch = match (
+                experiment.subjects().iter().find(|s| s.id == edge.baseline),
+                experiment
+                    .subjects()
+                    .iter()
+                    .find(|s| s.id == edge.candidate),
+            ) {
+                (Some(baseline), Some(candidate)) => baseline.product == candidate.product,
+                _ => false,
+            };
             // The pairing universe: every (task, group) the frozen contract
             // declares for this edge's two subjects.
             let mut keys: Vec<(String, String)> = experiment
@@ -339,6 +356,10 @@ impl ComparisonSet {
                 let mut baseline_trial = String::new();
                 let mut candidate_trial = String::new();
                 let mut comparability = Comparability::Comparable;
+                if protocol_mismatch {
+                    comparability =
+                        Comparability::NonComparable(NonComparability::ProtocolGroupMismatch);
+                }
                 let classification = match integrity.task_classification(&task) {
                     None => Some(NonComparability::TaskNotCovered),
                     Some(classification) if !classification.is_valid_agent_outcome() => {

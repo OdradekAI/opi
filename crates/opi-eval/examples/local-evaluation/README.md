@@ -78,7 +78,24 @@ source, material identity, corpus entries, and exact trials;
 (stage/settlement progress on stderr, structured result saved under the
 run root). A pi-only experiment needs no artificial comparison edge.
 
-## 5. Validate and run from the independent directory
+## 5. Verify seals and read the offline report
+
+```sh
+opi-eval verify --root /path/to/run-root
+opi-eval report --root /path/to/run-root --out /path/to/report.json
+```
+
+`verify` re-checks the original seals of every sealed bundle (exit 1
+names the typed drift; bytes are never repaired). `report`
+reconstructs the normalized report offline from verified sealed
+evidence: per-benchmark metric denominators (native zero and
+benchmark-defined timeouts stay graded), coverage counts
+(planned/attempted/valid/agent-failure/invalid/unexecuted), scope
+labels, comparison pairs with missing sides, repetition control pairs,
+and typed unknown telemetry. `regrade` answers with an explicit
+unavailable-operation diagnostic until native regrading lands.
+
+## 6. Validate and run from the independent directory
 
 ```sh
 opi-eval validate --config experiment.toml --native-material /path/to/material/material.json

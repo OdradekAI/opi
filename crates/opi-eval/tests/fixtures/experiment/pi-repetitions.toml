@@ -1,0 +1,56 @@
+# Single-subject repetition fixture: one pi subject, no comparison edge,
+# two repetition groups of one task. Single-subject reports need no
+# artificial comparison edge; the repetition pairs surface as control
+# pairs. Fixture-grade only: every executable resolved by the runner is a
+# runtime-generated deterministic helper.
+
+schema = "opi-eval-experiment/2"
+experiment_id = "pi-repetitions-hermetic"
+connection = "fixture-local"
+
+[benchmark]
+name = "terminal-bench"
+revision = "2.1"
+dataset = "terminal-bench-2.1-fixture"
+integrity_digest = "0c493e1e98d8be301a0a0d7837e0681aec685231ba6ae81642f07e57e5c6c135"
+
+[[subjects]]
+id = "baseline-pi"
+product = "pi"
+version = "0.84.3"
+
+[[connections]]
+id = "fixture-local"
+provider = "local"
+api = "openai-completions"
+base_url = "http://127.0.0.1:48127/v1"
+model = "scripted"
+credential_env = "OPI_EVAL_FIXTURE_KEY"
+
+[model_controls]
+temperature = 0.0
+top_p = "omitted"
+max_output_tokens = 4096
+context_window = 8192
+reasoning = "omitted"
+
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "isolated"
+
+[[trials]]
+id = "trial-pi-r1"
+subject = "baseline-pi"
+task = "fixture-task"
+group = "group-r1"
+
+[[trials]]
+id = "trial-pi-r2"
+subject = "baseline-pi"
+task = "fixture-task"
+group = "group-r2"

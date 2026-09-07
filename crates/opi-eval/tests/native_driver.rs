@@ -2820,3 +2820,81 @@ fn plan_rejections_name_every_contradiction() {
         );
     }
 }
+
+/// `P19-AC-008` (native provider failures through the public
+/// run-to-report path): a final provider/access failure keeps the trial
+/// attempted and visible but out of the valid graded denominator - never
+/// an Agent success or failure - while a valid native zero stays a graded
+/// Agent outcome inside the denominator. Both facts flow from the sealed
+/// settlement record, not from stderr tokens or process exits.
+#[test]
+fn native_provider_failure_report() {
+    // Final provider/access failure: both pinned clients' trials settle
+    // as terminal provider failures.
+    let staged = stage("provider-error");
+    let config = write_config(&staged);
+    let run_root = staged.root.join("run");
+    let (code, run_report, stderr) = run_native(&staged, &config, &run_root);
+    assert_eq!(code, 1, "provider-failure run is incomplete: {stderr}");
+    let run_report: serde_json::Value = serde_json::from_str(run_report.trim())
+        .unwrap_or_else(|_error| panic!("run stdout is not one JSON report: {run_report:?}"));
+    assert_eq!(run_report["outcome"], "incomplete", "{run_report}");
+    let report = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("report")
+        .arg("--root")
+        .arg(&run_root)
+        .output()
+        .expect("spawn the offline report command");
+    let stdout = String::from_utf8_lossy(&report.stdout).trim().to_owned();
+    assert_eq!(
+        report.status.code(),
+        Some(0),
+        "the offline report publishes incomplete coverage: {stdout} stderr={}",
+        String::from_utf8_lossy(&report.stderr)
+    );
+    let published: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    let counts = &published["coverage_counts"];
+    assert_eq!(counts["attempted"], 2, "{published}");
+    assert_eq!(counts["valid"], 0, "{published}");
+    assert_eq!(counts["invalid"], 2, "{published}");
+    assert_eq!(counts["agent_failure"], 0, "{published}");
+    assert_eq!(counts["unexecuted"], 0, "{published}");
+    assert_eq!(published["metrics"][0]["denominator"], 0, "{published}");
+    for trial in published["trials"].as_array().unwrap() {
+        assert_eq!(trial["outcome"]["class"], "invalid", "{trial}");
+        let reason = trial["outcome"]["reason"].as_str().unwrap_or_default();
+        assert!(
+            reason.starts_with("agent-provider-failure"),
+            "the sealed reason names the provider failure: {trial}"
+        );
+    }
+    assert_eq!(published["run_outcome"], "incomplete", "{published}");
+
+    // Valid native zero: the graded zero stays a valid graded Agent
+    // outcome inside the denominator, counted as an Agent failure.
+    let zero_staged = stage("zero");
+    let zero_config = write_config(&zero_staged);
+    let zero_root = zero_staged.root.join("run");
+    let (code, run_report, stderr) = run_native(&zero_staged, &zero_config, &zero_root);
+    assert_eq!(code, 0, "zero-reward run completes: {stderr} {run_report}");
+    let run_report: serde_json::Value = serde_json::from_str(run_report.trim())
+        .unwrap_or_else(|_error| panic!("run stdout is not one JSON report: {run_report:?}"));
+    assert_eq!(run_report["outcome"], "completed", "{run_report}");
+    let report = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("report")
+        .arg("--root")
+        .arg(&zero_root)
+        .output()
+        .expect("spawn the offline report command");
+    let stdout = String::from_utf8_lossy(&report.stdout).trim().to_owned();
+    assert_eq!(report.status.code(), Some(0), "{stdout}");
+    let published: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    let counts = &published["coverage_counts"];
+    assert_eq!(counts["valid"], 2, "native zero stays graded: {published}");
+    assert_eq!(counts["agent_failure"], 2, "{published}");
+    assert_eq!(counts["invalid"], 0, "{published}");
+    assert_eq!(published["metrics"][0]["denominator"], 2, "{published}");
+    assert_eq!(published["run_outcome"], "completed", "{published}");
+}

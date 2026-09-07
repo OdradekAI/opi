@@ -39,6 +39,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inline credential fields: request identity is projected from the
   selected connection (`project_connection`) into each pinned client's
   exact configuration bytes.
+- `opi-eval`: offline evidence operations are distinct and native
+  outcome reporting is honest. New `verify --root R` owns the original
+  byte/seal check over every sealed trial bundle (no repair, no
+  rewrite); `regrade` now fails closed with an explicit
+  `unavailable-operation` diagnostic until actual native regrading
+  lands, never running byte verification under that name. Every run
+  writes a run-level `run-control.json` before its first effect
+  (experiment identity, manifest digest, selection, corpus size, exact
+  planned trials), so offline recomputation preserves unstarted trials
+  even when no trial sealed, and a drifted run-control identity blocks
+  publication. Trials seal a `control/settlement.json` record of the
+  runner's final classification; the offline report consumes it for
+  outcome classes instead of re-deriving from stderr tokens or process
+  exits: graded trials (including valid native zero and
+  benchmark-defined Agent timeouts) form the per-benchmark metric
+  denominator with its definition and no cross-benchmark average, while
+  provider/access/identity/infrastructure/invalid-grading failures stay
+  attempted-but-invalid. Published reports gain coverage counts
+  (`corpus`, `selected`, `planned`, `attempted`, `valid`,
+  `agent_failure`, `invalid`, `unexecuted`), the `full|subset` scope
+  label, repetition control pairs (`consistent|divergent|incomplete`
+  with missing groups), and a protocol-group guard: an edge pairing two
+  subjects of one product never carries a paired claim, and
+  single-subject reports need no artificial comparison edge. Repeated
+  reconstruction over identical sealed inputs stays byte-identical;
+  tampered or unsealed evidence blocks publication instead of upgrading.
 - `opi-eval`: experiments select full/subset task plans and freeze them
   into digest-bound run plans. New `plan --config C [--native-material
   M] --out P` enumerates the pinned corpus inventory from `task.toml`

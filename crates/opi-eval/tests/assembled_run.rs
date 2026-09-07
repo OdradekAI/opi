@@ -1050,6 +1050,34 @@ fn frozen_subset_execution() {
     )
     .unwrap();
     assert_eq!(saved["plan_digest"], serde_json::json!(plan_digest));
+
+    // The offline report keeps the subset label and corpus coverage from
+    // the pre-effect run-control binding (P19-AC-008).
+    let offline = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("report")
+        .arg("--root")
+        .arg(root.path().canonicalize().unwrap())
+        .output()
+        .expect("spawn the offline report command");
+    let offline_stdout = String::from_utf8_lossy(&offline.stdout).trim().to_owned();
+    assert_eq!(
+        offline.status.code(),
+        Some(0),
+        "offline report publishes: {offline_stdout}"
+    );
+    let published: serde_json::Value = serde_json::from_str(&offline_stdout)
+        .unwrap_or_else(|_error| panic!("offline report is one JSON report: {offline_stdout:?}"));
+    assert_eq!(published["selection_scope"], "subset", "{published}");
+    assert_eq!(
+        published["coverage_counts"]["corpus"],
+        serde_json::json!(3),
+        "{published}"
+    );
+    assert_eq!(
+        published["coverage_counts"]["selected"],
+        serde_json::json!(2),
+        "{published}"
+    );
 }
 
 /// A tampered plan never executes: the digest addresses the whole

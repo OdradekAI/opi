@@ -128,6 +128,37 @@ trials，stderr 输出 stage/settlement 进度并保存结构化结果；单主�
 `run --config C` 保持同一 resolve/freeze 路径——`[selection]` 文档在
 运行时按同一枚举 corpus 展开。
 
+### 0c. 离线校验 seal 并重建报告
+
+```sh
+cargo run -p opi-eval -- verify --root "$DEMO_DIR/run"
+cargo run -p opi-eval -- report --root "$DEMO_DIR/run" --out "$DEMO_DIR/report.json"
+cargo run -p opi-eval -- regrade --root "$DEMO_DIR/run"   # exit 2：尚未实现
+```
+
+三个互不相同的离线操作，均不启动 Agent 或 provider：
+`verify --root R` 按原始 seal 逐个复核 sealed trial bundle（退出码
+0 已验证 / 1 检出变更 / 2 请求被拒；不修复、不改写）；
+`report --root R --out O` 仅凭已验证的 sealed 证据重建字节稳定的
+规范化报告；`regrade` 以显式 `unavailable-operation` 诊断（退出码
+2）关闭，直到真正的原生重评落地——字节校验绝不以 regrade 之名运行。
+每次 run 在首个效果之前写入 run 级 `run-control.json`（实验身份、
+manifest digest、selection、corpus 规模、精确的 planned trials），
+因此即使没有任何 trial 封存，离线报告也能保留未启动的 trial。
+报告的结果分类只消费 sealed 的逐 trial settlement 记录——绝不从
+stderr 字符或进程退出码推断——graded trial（包括有效的原生零分与
+benchmark 定义的 Agent 超时）构成指标分母，按 benchmark 各自给出
+指标定义（绝不做跨 benchmark 平均），而 provider/access/身份/基础设施
+/评分无效类失败保持 attempted-but-invalid，效果未知的 trial 保持
+unexecuted。覆盖计数（`corpus`、`selected`、`planned`、`attempted`、
+`valid`、`agent_failure`、`invalid`、`unexecuted`）、紧随
+completed/incomplete 的 `full|subset` scope 标签、带缺失侧与排除
+原因的同任务/同重复 comparison pair、重复控制对
+（`consistent|divergent|incomplete` 并给出缺失组）以及未知遥测原因
+全部保持可见：协议组边缘（同一产品的两个主体）绝不配对，单主体
+报告无需人工 comparison edge。相同的 sealed 输入重复重建得到相同
+字节；被篡改或未封存的证据阻断发布而不是升级。
+
 ### 1. 校验
 
 ```sh

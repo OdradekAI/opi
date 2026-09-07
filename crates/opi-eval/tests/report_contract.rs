@@ -179,6 +179,261 @@ fn asymmetric_native_facts() {
     );
 }
 
+/// `P19-AC-008`: the published report keeps native metric meanings,
+/// denominators, and honest failure classes. Graded trials (including
+/// benchmark-defined Agent timeouts and zero scores) stay in the valid
+/// denominator; evidence-boundary stops stay attempted-but-invalid and
+/// never score; no cross-benchmark average exists.
+#[test]
+fn native_outcome_counts_keep_denominators_and_failure_classes() {
+    // Happy path: both subjects graded, no failures.
+    let root = tempfile::tempdir().unwrap();
+    let (code, report, stderr) = run_experiment("local-paired.toml", "happy", root.path());
+    assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
+    let root_arg = root.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "report must publish: {stderr} {stdout}");
+    let published: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    let counts = &published["coverage_counts"];
+    assert_eq!(counts["planned"], 2, "{published}");
+    assert_eq!(counts["attempted"], 2, "{published}");
+    assert_eq!(counts["valid"], 2, "{published}");
+    assert_eq!(counts["agent_failure"], 0, "{published}");
+    assert_eq!(counts["invalid"], 0, "{published}");
+    assert_eq!(counts["unexecuted"], 0, "{published}");
+
+    // Each benchmark reports its own metric definition and denominator;
+    // results are never averaged into one cross-benchmark headline.
+    let metrics = published["metrics"].as_array().unwrap();
+    assert_eq!(metrics.len(), 1, "{published}");
+    assert_eq!(metrics[0]["benchmark"], "terminal-bench/2.1", "{published}");
+    assert_eq!(metrics[0]["denominator"], 2, "{published}");
+    let definition = metrics[0]["definition"].as_str().unwrap();
+    assert!(definition.contains("zero"), "{definition}");
+    assert!(
+        !stdout.to_lowercase().contains("average"),
+        "no cross-benchmark average may exist: {stdout}"
+    );
+
+    // No selection block: the scope label stays absent, not fabricated.
+    assert!(published["selection_scope"].is_null(), "{published}");
+    for trial in published["trials"].as_array().unwrap() {
+        assert_eq!(trial["outcome"]["class"], "graded", "{trial}");
+        assert_eq!(trial["outcome"]["agent_failed"], false, "{trial}");
+    }
+
+    // Benchmark-defined Agent timeouts stay graded Agent outcomes in
+    // the denominator, counted as Agent failures - never as invalid.
+    let timeout = tempfile::tempdir().unwrap();
+    let (code, report, stderr) =
+        run_experiment("local-paired.toml", "agent-timeout", timeout.path());
+    assert_eq!(code, 0, "timeout run completes: {stderr} {report}");
+    let root_arg = timeout.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "report must publish: {stderr} {stdout}");
+    let published: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    let counts = &published["coverage_counts"];
+    assert_eq!(counts["valid"], 2, "{published}");
+    assert_eq!(counts["agent_failure"], 2, "{published}");
+    assert_eq!(counts["invalid"], 0, "{published}");
+    assert_eq!(published["metrics"][0]["denominator"], 2, "{published}");
+    for trial in published["trials"].as_array().unwrap() {
+        assert_eq!(trial["outcome"]["class"], "graded", "{trial}");
+        assert_eq!(trial["outcome"]["agent_failed"], true, "{trial}");
+        assert_eq!(trial["outcome"]["timed_out"], true, "{trial}");
+    }
+
+    // An evidence-boundary stop (agent-model-mismatch) keeps the trial
+    // attempted and visible but out of the graded denominator: never an
+    // Agent success or failure, never silently dropped.
+    let mismatch = tempfile::tempdir().unwrap();
+    let (code, report, stderr) =
+        run_experiment("model-mismatch-pair.toml", "happy", mismatch.path());
+    assert_eq!(
+        code, 1,
+        "mismatch run honestly exits incomplete: {stderr} {report}"
+    );
+    assert_eq!(report["outcome"], "incomplete", "{report}");
+    let root_arg = mismatch.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "report must publish: {stderr} {stdout}");
+    let published: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    let counts = &published["coverage_counts"];
+    assert_eq!(counts["attempted"], 2, "{published}");
+    assert_eq!(counts["valid"], 1, "{published}");
+    assert_eq!(counts["agent_failure"], 0, "{published}");
+    assert_eq!(counts["invalid"], 1, "{published}");
+    assert_eq!(published["metrics"][0]["denominator"], 1, "{published}");
+    let pi = published["trials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|trial| trial["subject"] == "baseline-pi")
+        .unwrap();
+    assert_eq!(pi["outcome"]["class"], "invalid", "{pi}");
+    assert!(
+        pi["outcome"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("agent-model-mismatch")),
+        "{pi}"
+    );
+    assert_eq!(published["run_outcome"], "incomplete", "{published}");
+}
+
+/// `P19-AC-009` (verify split): byte verification and actual native
+/// regrading are distinct operations. `verify --root R` owns the
+/// original byte/seal check; `regrade` returns an explicit
+/// unavailable-operation diagnostic (exit 2) until P19-D08 supplies the
+/// native regrade workflow, never performing byte verification under
+/// that name.
+#[test]
+fn verify_regrade_split_names_each_operation() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, report, stderr) = run_experiment("local-paired.toml", "happy", root.path());
+    assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
+    let root_arg = root.path().canonicalize().unwrap();
+
+    // Byte verification is `verify`: every sealed bundle re-checks its
+    // original seals with no Agent, provider, or mutation.
+    let (code, stdout, stderr) = invoke("verify", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(
+        code, 0,
+        "verify must confirm intact seals: {stderr} {stdout}"
+    );
+    let verified: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("verify stdout is not one JSON report: {stdout:?}"));
+    assert_eq!(verified["outcome"], "verified", "{verified}");
+    assert!(
+        verified["bundles"]
+            .as_array()
+            .is_some_and(|b| !b.is_empty()),
+        "every sealed bundle stays listed: {verified}"
+    );
+
+    // A tampered sealed byte fails verification with a typed failure and
+    // untouched bytes.
+    let mut sealed = None;
+    let trials_dir = root.path().join("trials");
+    for entry in std::fs::read_dir(&trials_dir).expect("trials directory exists") {
+        let manifest = entry
+            .expect("trial directory entry")
+            .path()
+            .join("bundle/manifest.json");
+        if manifest.is_file() {
+            sealed = Some(manifest);
+            break;
+        }
+    }
+    let manifest = sealed.expect("a sealed bundle manifest exists");
+    let original = std::fs::read(&manifest).unwrap();
+    std::fs::write(&manifest, b"{\"tampered\": true}\n").unwrap();
+    let (code, stdout, stderr) = invoke("verify", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(
+        code, 1,
+        "tampered bytes must fail verify: {stderr} {stdout}"
+    );
+    assert_eq!(std::fs::read(&manifest).unwrap(), b"{\"tampered\": true}\n");
+    std::fs::write(&manifest, &original).unwrap();
+
+    // Actual native regrading is not implemented yet: the command says
+    // so explicitly instead of quietly re-running byte checks.
+    let (code, stdout, stderr) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 2, "regrade must reject: {stderr} {stdout}");
+    assert!(stdout.is_empty(), "no byte-verification output: {stdout}");
+    assert!(
+        stderr.contains("unavailable-operation")
+            && stderr.contains("native regrade")
+            && stderr.contains("verify"),
+        "the diagnostic names the operation and the interim alternative: {stderr}"
+    );
+}
+
+/// `P19-AC-008` (protocol-safe pairing): paired comparisons never match
+/// two protocol groups of one product; single-subject reports need no
+/// artificial comparison edge, and repetition pairs surface as control
+/// pairs with their exact state.
+#[test]
+fn protocol_safe_pairing_and_single_subject_coverage() {
+    // Same-product edge: the pair stays visible but never comparable -
+    // a paired claim across protocol groups is refused by name.
+    let root = tempfile::tempdir().unwrap();
+    let (code, report, stderr) = run_experiment("protocol-mismatch.toml", "happy", root.path());
+    assert_eq!(
+        code, 1,
+        "the protocol-mismatch run honestly exits incomplete: {stderr} {report}"
+    );
+    let root_arg = root.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "report must publish: {stderr} {stdout}");
+    let published: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    let coverage = published["coverage"].as_array().unwrap();
+    assert_eq!(coverage.len(), 1, "{published}");
+    assert_eq!(
+        coverage[0]["comparability"], "protocol-group-mismatch",
+        "{published}"
+    );
+    assert_eq!(
+        coverage[0]["baseline_trial"], "trial-opi-a-1",
+        "{published}"
+    );
+    assert_eq!(
+        coverage[0]["candidate_trial"], "trial-opi-b-1",
+        "{published}"
+    );
+
+    // Single subject, two repetitions, no edge: the report publishes
+    // without any artificial pair and the repetitions surface as control
+    // pairs with their state.
+    let solo = tempfile::tempdir().unwrap();
+    let (code, report, stderr) = run_experiment("pi-repetitions.toml", "happy", solo.path());
+    assert_eq!(code, 0, "single-subject run completes: {stderr} {report}");
+    let root_arg = solo.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "report must publish: {stderr} {stdout}");
+    let published: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    assert_eq!(published["run_outcome"], "completed", "{published}");
+    assert_eq!(
+        published["coverage"].as_array().unwrap().len(),
+        0,
+        "no artificial comparison edge: {published}"
+    );
+    let control = published["control_pairs"].as_array().unwrap();
+    assert_eq!(control.len(), 1, "{published}");
+    assert_eq!(control[0]["subject"], "baseline-pi", "{published}");
+    assert_eq!(control[0]["task"], "fixture-task", "{published}");
+    assert_eq!(control[0]["state"], "consistent", "{published}");
+    assert_eq!(
+        control[0]["groups"].as_array().unwrap().len(),
+        2,
+        "{published}"
+    );
+
+    // A missing repetition keeps the control pair visible with its
+    // exact state: the crashed group is never silently dropped.
+    let crashed = tempfile::tempdir().unwrap();
+    let (code, _, _) = run_experiment("pi-repetitions.toml", "crash-after-intent", crashed.path());
+    assert_eq!(code, 70, "the crash behavior must exit 70");
+    let root_arg = crashed.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "report must publish: {stderr} {stdout}");
+    let published: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    let control = published["control_pairs"].as_array().unwrap();
+    assert_eq!(control.len(), 1, "{published}");
+    assert_eq!(control[0]["state"], "incomplete", "{published}");
+    let missing = control[0]["missing_groups"].as_array().unwrap();
+    assert_eq!(
+        missing.len(),
+        2,
+        "both repetitions stay missing: {published}"
+    );
+}
+
 /// `EVAL-A18` / `EVAL-SEC-005`: canary secrets in sealed content block
 /// bundle sealing and report publication. The blocked report never echoes
 /// the canary itself.

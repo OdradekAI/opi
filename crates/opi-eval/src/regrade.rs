@@ -1,4 +1,5 @@
-//! Offline regrade over sealed assembled outputs.
+//! Offline original byte/seal verification over sealed assembled
+//! outputs (the engine behind `opi-eval verify`).
 //!
 //! [`OfflineRegrader::regrade`] walks the sealed trial bundles under one
 //! run root and re-verifies each one through [`crate::bundle::RunBundle::verify`]:

@@ -66,8 +66,16 @@ enum Command {
         #[arg(long)]
         native_material: Option<std::path::PathBuf>,
     },
-    /// Re-verify every sealed trial bundle under a run root without
-    /// starting an Agent or mutating anything.
+    /// Verify every sealed trial bundle under a run root against its
+    /// original seals without starting an Agent or mutating anything.
+    Verify {
+        /// Run root holding `trials/<id>/bundle` sealed bundles.
+        #[arg(long)]
+        root: std::path::PathBuf,
+    },
+    /// Re-execute preserved Agent artifacts with the pinned native
+    /// grader in a fresh environment (not implemented yet: the command
+    /// fails closed with an unavailable-operation diagnostic).
     Regrade {
         /// Run root holding `trials/<id>/bundle` sealed bundles.
         #[arg(long)]
@@ -267,6 +275,22 @@ fn main() -> ExitCode {
                         serde_json::to_string(&preview).expect("plan preview serializes")
                     );
                     ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Command::Verify { root } => {
+            let args = cli::verify::VerifyArgs { root };
+            match cli::verify::verify(&args) {
+                Ok(report) => {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&report).expect("verification report serializes")
+                    );
+                    ExitCode::from(cli::verify::verify_exit_code(&report) as u8)
                 }
                 Err(error) => {
                     eprintln!("error: {error}");

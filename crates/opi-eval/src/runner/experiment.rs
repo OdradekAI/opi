@@ -60,6 +60,11 @@ const TRIAL_RECEIPT_SCHEMA: &str = "opi-eval-trial-receipt/1";
 const EXPECTED_OUTPUT_KEY: &str = "normalized/expected-output";
 /// Bundle-internal key of the sealed resolved-experiment control evidence.
 const CONTROL_EXPERIMENT_KEY: &str = "control/experiment.json";
+/// The sealed per-trial settlement record: the runner's final outcome
+/// classification with its failure kind and boundary, staged before
+/// sealing so offline recomputation consumes the sealed interpretation
+/// instead of re-deriving one from process side effects (P19-D06).
+const CONTROL_SETTLEMENT_KEY: &str = "control/settlement.json";
 /// Bundle-internal key of the sealed integrity-record control evidence.
 const CONTROL_INTEGRITY_KEY: &str = "control/integrity.json";
 /// Bundle-internal key of the sealed trajectory projection evidence.
@@ -87,6 +92,7 @@ fn reserved_artifact_keys() -> Vec<ArtifactKey> {
         AUTHORITY_LEDGER_KEY,
         CONTROL_EXPERIMENT_KEY,
         CONTROL_INTEGRITY_KEY,
+        CONTROL_SETTLEMENT_KEY,
         TRAJECTORY_KEY,
     ]
     .iter()
@@ -597,6 +603,63 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
         Some(inputs) => BenchmarkRevision::from_native(inputs),
         None => BenchmarkRevision::from_experiment(&experiment, &request.fixtures)?,
     };
+
+    // Run-level planned coverage is bound before any effect
+    // (P19-D06): the durable run-control artifact records the exact
+    // planned trial set under the resolved experiment identity, so
+    // offline recomputation preserves unstarted trials even when no
+    // trial seals - a crash at the first durable point still leaves
+    // the planned denominator on disk.
+    let corpus_tasks = match experiment.selection() {
+        Some(_) => {
+            let root = crate::runner::plan::task_package_root(
+                &experiment,
+                Some(&request.fixtures),
+                request.material.as_ref(),
+            )
+            .map_err(|error| RunError::Native(error.to_string()))?;
+            crate::runner::plan::enumerate_corpus(&root)
+                .map_err(|error| RunError::Native(error.to_string()))?
+                .len()
+        }
+        None => experiment
+            .trials()
+            .iter()
+            .map(|trial| trial.task.as_str())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+    };
+    let run_control = json!({
+        "schema": "opi-eval-run-control/1",
+        "experiment": experiment.experiment_id(),
+        "manifest_digest": experiment.manifest_digest(),
+        "corpus_tasks": corpus_tasks,
+        "selection": experiment.selection().map(|selection| json!({
+            "scope": selection.scope.as_str(),
+            "task_ids": selection.task_ids,
+            "repetitions": selection.repetitions,
+        })),
+        "planned_trials": experiment
+            .trials()
+            .iter()
+            .map(|trial| json!({
+                "id": trial.id,
+                "subject": trial.subject,
+                "task": trial.task,
+                "group": trial.group,
+            }))
+            .collect::<Vec<_>>(),
+        "plan_digest": plan_json.as_ref().and_then(|plan| {
+            plan["plan_digest"].as_str().map(str::to_owned)
+        }),
+    });
+    std::fs::create_dir_all(&request.root).map_err(|error| RunError::Staging(error.to_string()))?;
+    std::fs::write(
+        request.root.join("run-control.json"),
+        serde_json::to_vec_pretty(&run_control)
+            .map_err(|error| RunError::Staging(error.to_string()))?,
+    )
+    .map_err(|error| RunError::Staging(error.to_string()))?;
 
     let mut trials_out: Vec<serde_json::Value> = Vec::new();
     let mut facts: Vec<TrialFact> = Vec::new();
@@ -1327,6 +1390,7 @@ fn reserved_artifact_keys_native() -> Vec<ArtifactKey> {
         AUTHORITY_LEDGER_KEY,
         CONTROL_EXPERIMENT_KEY,
         CONTROL_INTEGRITY_KEY,
+        CONTROL_SETTLEMENT_KEY,
         TRAJECTORY_KEY,
     ]
     .iter()
@@ -1804,6 +1868,43 @@ async fn run_native_trial(
     // Sealing happens only after evidence admission succeeded (a bound
     // identity exists); a rejected admission retains truthful private
     // diagnostics and rejects scoring/export instead.
+    // The sealed settlement record keeps the one classification durable
+    // for offline recomputation (P19-D06).
+    let (native_graded, native_agent_failure, native_timed_out, native_reason, native_boundary) =
+        match &class {
+            NativeTrialClass::GradedNative {
+                agent_failed,
+                timed_out,
+                ..
+            } => (true, *agent_failed, *timed_out, None, None),
+            NativeTrialClass::InvalidExecution { reason, boundary } => (
+                false,
+                false,
+                false,
+                Some(reason.clone()),
+                Some(boundary_token(*boundary)),
+            ),
+            NativeTrialClass::NoOutcome { reason } => {
+                (false, false, false, Some((*reason).to_owned()), None)
+            }
+        };
+    let settlement = json!({
+        "schema": "opi-eval-trial-settlement/1",
+        "trial": declared.id,
+        "graded": native_graded,
+        "agent_failure": native_agent_failure,
+        "timed_out": native_timed_out,
+        "failure_kind": native_reason,
+        "boundary": native_boundary,
+    });
+    staged_keys.push(stage(
+        &mut bundle,
+        &runner_source,
+        ArtifactRole::Derived,
+        CONTROL_SETTLEMENT_KEY,
+        &serde_json::to_vec(&settlement).map_err(|error| RunError::Staging(error.to_string()))?,
+    )?);
+
     let canary_leak =
         scan_staged_for_canaries(&trial_root.join("bundle"), &staged_keys, &request.canaries);
     let seal_outcome = if binding.is_none() {
@@ -2500,6 +2601,51 @@ async fn run_fixture_trial(
         )?);
     }
 
+    // Trial facts for pairing and reporting: the classification is
+    // computed once here from the settled records and sealed as the
+    // durable settlement record. A scored Agent failure whose native
+    // grade verified stays an Agent outcome in the graded denominator;
+    // infrastructure and grader failures stay attempted-but-invalid.
+    let agent_failed = matches!(agent_record.completion, AgentCompletion::Failed(_));
+    let scored_agent_failure = agent_failure_class == Some(AgentFailureClass::ScoredAgentOutcome);
+    let verifier_failed = verifier_rejection.is_some()
+        || verifier_record
+            .as_ref()
+            .is_some_and(|record| matches!(record.completion, BenchmarkCompletion::Failed(_)));
+    let timed_out = exit_state_token(&agent_record.exit) == "timed-out";
+    let trial_outcome = if agent_failed && !scored_agent_failure {
+        TrialOutcome::InfrastructureFailure
+    } else if verifier_failed {
+        TrialOutcome::GraderFailure
+    } else if agent_failed {
+        // A scored Agent failure whose native grade verified stays an
+        // Agent outcome in the graded denominator.
+        TrialOutcome::AgentFailure
+    } else {
+        TrialOutcome::ValidAgentOutcome
+    };
+    let settlement = json!({
+        "schema": "opi-eval-trial-settlement/1",
+        "trial": declared.id,
+        "graded": matches!(
+            trial_outcome,
+            TrialOutcome::ValidAgentOutcome | TrialOutcome::AgentFailure
+        ),
+        "agent_failure": trial_outcome == TrialOutcome::AgentFailure,
+        "timed_out": timed_out,
+        "failure_kind": agent_failure_kind(&agent_record.completion)
+            .or_else(|| verifier_record.as_ref().and_then(benchmark_failure_kind)),
+        "boundary": agent_failure_boundary(&agent_record.completion)
+            .or_else(|| verifier_record.as_ref().and_then(benchmark_failure_boundary)),
+    });
+    staged_keys.push(stage(
+        &mut bundle,
+        &runner_source,
+        ArtifactRole::Derived,
+        CONTROL_SETTLEMENT_KEY,
+        &serde_json::to_vec(&settlement).map_err(|error| RunError::Staging(error.to_string()))?,
+    )?);
+
     // The authority ledger itself is durable evidence: its execution
     // counts enter the sealed bundle (EVAL-FAL-002 call-count proof). The
     // sealed copy honestly covers every transition up to sealing; the
@@ -2549,24 +2695,7 @@ async fn run_fixture_trial(
     // Trial facts for pairing: a sealed graded trial contributes its
     // outcome class; failures contribute their failure class so coverage
     // shows the exact reason instead of hiding the trial.
-    let agent_failed = matches!(agent_record.completion, AgentCompletion::Failed(_));
-    let scored_agent_failure = agent_failure_class == Some(AgentFailureClass::ScoredAgentOutcome);
-    let verifier_failed = verifier_rejection.is_some()
-        || verifier_record
-            .as_ref()
-            .is_some_and(|record| matches!(record.completion, BenchmarkCompletion::Failed(_)));
     let fact = if seal_outcome.is_some() {
-        let outcome = if agent_failed && !scored_agent_failure {
-            TrialOutcome::InfrastructureFailure
-        } else if verifier_failed {
-            TrialOutcome::GraderFailure
-        } else if agent_failed {
-            // A scored Agent failure whose native grade verified stays an
-            // Agent outcome in the graded denominator.
-            TrialOutcome::AgentFailure
-        } else {
-            TrialOutcome::ValidAgentOutcome
-        };
         // Honest per-profile control realization: neither pinned agent
         // profile expresses a reasoning launch control, so a shared
         // reasoning value is unsupported by every subject and the pair
@@ -2583,7 +2712,7 @@ async fn run_fixture_trial(
             manifest_digest: experiment.manifest_digest().to_owned(),
             control_fingerprint: control_fingerprint(experiment),
             unsupported_controls,
-            outcome,
+            outcome: trial_outcome,
         })
     } else {
         None
@@ -2875,6 +3004,7 @@ fn non_comparability_token(reason: &crate::comparison::NonComparability) -> Stri
         N::GraderFailure { trial } => format!("grader-failure:{trial}"),
         N::InvalidTaskClassification { .. } => "invalid-task-classification".to_owned(),
         N::TaskNotCovered => "task-not-covered".to_owned(),
+        N::ProtocolGroupMismatch => "protocol-group-mismatch".to_owned(),
     }
 }
 

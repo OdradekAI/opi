@@ -1,0 +1,69 @@
+# Hermetic paired experiment whose pi subject declares a model that the
+# sealed pi stream fixture does not carry: the pi agent stops at the
+# evidence boundary (agent-model-mismatch), its grade dispatch is
+# refused, and the trial seals without a graded headline - the honest
+# attempted/invalid coverage case for the offline report. Fixture-grade
+# only: every executable resolved by the runner is a runtime-generated
+# deterministic helper; no real agent, verifier, provider, or network is
+# involved.
+
+schema = "opi-eval-experiment/2"
+experiment_id = "model-mismatch-hermetic"
+connection = "fixture-local"
+
+[benchmark]
+name = "terminal-bench"
+revision = "2.1"
+dataset = "terminal-bench-2.1-fixture"
+integrity_digest = "0c493e1e98d8be301a0a0d7837e0681aec685231ba6ae81642f07e57e5c6c135"
+
+[[subjects]]
+id = "baseline-pi"
+product = "pi"
+version = "0.84.3"
+
+[[subjects]]
+id = "candidate-opi"
+product = "opi"
+version = "0.1.0"
+
+[[edges]]
+id = "edge-1"
+baseline = "baseline-pi"
+candidate = "candidate-opi"
+
+[[connections]]
+id = "fixture-local"
+provider = "local"
+api = "openai-completions"
+base_url = "http://127.0.0.1:48127/v1"
+model = "wrong-model"
+credential_env = "OPI_EVAL_FIXTURE_KEY"
+
+[model_controls]
+temperature = 0.0
+top_p = "omitted"
+max_output_tokens = 4096
+context_window = 8192
+reasoning = "omitted"
+
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "isolated"
+
+[[trials]]
+id = "trial-pi-1"
+subject = "baseline-pi"
+task = "fixture-task"
+group = "group-hello"
+
+[[trials]]
+id = "trial-opi-1"
+subject = "candidate-opi"
+task = "fixture-task"
+group = "group-hello"
