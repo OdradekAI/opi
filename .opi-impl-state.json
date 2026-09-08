@@ -2187,7 +2187,7 @@
       "definition_of_done": "P19-D07: Use positive execution.concurrency and frozen authorized bounds through one run supervisor with a shared cancellation token. On timeout, cancellation, exhausted enforceable budget or authority/privacy/provenance breach, stop new affected dispatch, settle observed outcomes, cancel only owned process trees/runner job containers and remove only temporary credential material. Preserve shared cache, source bundles and unrelated files/resources. Emit resource cleanup evidence and forbid successful cancellation with orphan execution. run --recover classifies durable completed/cancelled/failed/effect-unknown/unstarted states without Agent/provider calls; run --replacement-for T uses a fresh root, fresh identities for the entire paired group and the same frozen scope, preserving prior attempted evidence and unknown effects. Reject unenforceable required bounds before effects instead of ignoring them; no promised currency cap from unknown prices. CLI signal and process-race tests preserve evidence under interrupted settlement. Native no-model cancellation witness verifies actual local Docker cleanup. Recovery/replacement consumes the 19.1 sealed interpretation for settled trials and the existing durable lifecycle journal for interrupted or unstarted effects; it does not reclassify settled scores from logs/exit codes. Cancelled/effect-unknown/unstarted entries remain explicit missing coverage without fabricated zero scores, and replacement never rewrites the prior attempt classification or evidence.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "19.2",
         "19.6",
@@ -2325,7 +2325,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "41b1e8aeac7c4cb4593fbbca1d666c58cf2e9e75",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/main.rs",
@@ -2354,7 +2354,8 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [],
+      "started_at": "2026-09-07T13:05:00+08:00"
     },
     {
       "id": "19.10",
