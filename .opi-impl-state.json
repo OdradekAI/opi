@@ -2881,7 +2881,16 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-09-07T17:05:00+08:00",
+          "attempt": 1,
+          "summary": "P19-D08 external-prerequisite evaluation. DoD clause 1 executed: before any task execution the separately authorized local-operator evidence root must already be supplied. No evidence root was supplied by the operator and none exists in the worktree (no docs/audits/ directory, no manifest.json under any acceptance-shaped tree, no upstream-identity-cache.json). Per DoD the task therefore stays failing with this explicit external prerequisite and all six live scenarios (P19-AC-001-live, P19-AC-003-live, P19-AC-004-live, P19-AC-005-live, P19-AC-006-live, P19-AC-012) remain open. The harness made no provider calls, read no auth files, and fabricated no acceptance evidence or audit documents; docs/audits/phase19-local-native-acceptance.md and .zh.md are intentionally absent until real evidence is verified. Required operator input before this task can execute: one redacted evidence root containing (a) manifest.json schema opi-eval-local-acceptance/1 with exactly six attributable trials - three families terminal-bench-2.1/terminal-bench-3.0/deepswe-v1.1, one opi + one pi each - plus pi/Harbor/Pier source records (repository_url + commit) and the declared Opi commit; (b) three preserved family run roots (runs/<family>/) with run-control.json (planned subjects candidate-opi/baseline-pi), material.json, and trials/<id>/bundle/manifest.json + bundle/artifacts/native/verifier-input.json; (c) the opi-artifact-audit scoped capture view, non-empty, byte-bound and exhaustive for the three original Opi native captures; (d) upstream-identity-cache.json for offline upstream identity validation. These must come from a real six-trial operator execution of actual Opi and actual pi through Zhipu glm-5.3-flash over the selected Anthropic connection with frozen task/build/runner/material/model/control/concurrency/usage/time scope, run outside this harness with real credentials and redacted before handoff. Next action: operator supplies the evidence-root path, then re-invoke opi-implement (bare or 19.11) to resume this task; the harness will then run verify-local-acceptance.py, scripts/opi-artifact-audit.py --workspace-root ., the workspace verification union, and write the bilingual audit documents.",
+          "gate_results": {
+            "external_prerequisite": "MISSING: no operator-supplied redacted evidence root; task execution not started, status remains failing, scenarios remain open, no fabricated acceptance"
+          }
+        }
+      ]
     }
   ],
   "phase_exit": {
