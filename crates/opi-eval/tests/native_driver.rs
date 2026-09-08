@@ -3779,3 +3779,382 @@ fn native_owned_resource_cancellation() {
             .exists()
     );
 }
+
+/// Builds one family experiment config with per-family trial-id suffixes so
+/// the six acceptance trials stay individually attributable across the three
+/// preserved family run roots.
+fn acceptance_family_config(staged: &Staged, family: &str, suffix: &str) -> PathBuf {
+    let base = match family {
+        "terminal-bench-2.1" => experiment_text(staged, "pending"),
+        "terminal-bench-3.0" => tb30_experiment_text(staged, "pending"),
+        "deepswe-v1.1" => deepswe_experiment_text(staged, "pending"),
+        other => panic!("unknown acceptance family {other}"),
+    };
+    let rewrite = |text: String| {
+        text.replace("trial-pi-native", &format!("trial-pi-{suffix}"))
+            .replace("trial-opi-native", &format!("trial-opi-{suffix}"))
+    };
+    let undigested = staged
+        .root
+        .join(format!("config-undigested-accept-{suffix}.toml"));
+    fs::write(&undigested, rewrite(base)).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("validate")
+        .arg("--config")
+        .arg(&undigested)
+        .arg("--native-material")
+        .arg(&staged.material)
+        .output()
+        .expect("validate runs");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let digest = stdout
+        .split_whitespace()
+        .find(|token| token.starts_with("native_integrity="))
+        .expect("native integrity digest in summary")
+        .trim_start_matches("native_integrity=")
+        .to_owned();
+    let digested = match family {
+        "terminal-bench-2.1" => experiment_text(staged, &digest),
+        "terminal-bench-3.0" => tb30_experiment_text(staged, &digest),
+        "deepswe-v1.1" => deepswe_experiment_text(staged, &digest),
+        _ => unreachable!(),
+    };
+    let config = staged.root.join(format!("config-accept-{suffix}.toml"));
+    fs::write(&config, rewrite(digested)).unwrap();
+    config
+}
+
+/// Copies one directory tree byte-for-byte.
+fn copy_tree(source: &Path, target: &Path) {
+    fs::create_dir_all(target).unwrap();
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let destination = target.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &destination);
+        } else {
+            fs::copy(entry.path(), destination).unwrap();
+        }
+    }
+}
+
+/// P19-AC-011/P19-AC-013: the offline local-acceptance verifier accepts one
+/// genuine three-family native evidence root end to end - six attributable
+/// trials, frozen controls, digests, preserved artifacts, the Opi-only
+/// scoped capture view byte-bound to the original native captures, cached
+/// upstream identities, and the built Companion verify/report invoked only
+/// against the supplied family roots - without launching an Agent, touching
+/// credentials, or contacting a provider.
+#[test]
+fn local_acceptance_verifier_accepts_genuine_native_evidence() {
+    let staged = stage("ok");
+    let evidence = tempfile::tempdir().unwrap();
+    let root = evidence.path().join("evidence");
+    let families: [(&str, &str); 3] = [
+        ("terminal-bench-2.1", "tb21"),
+        ("terminal-bench-3.0", "tb30"),
+        ("deepswe-v1.1", "swe"),
+    ];
+    let material: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&staged.material).unwrap()).unwrap();
+
+    let mut trials = Vec::new();
+    let mut command_exits = Vec::new();
+    let mut preserved = Vec::new();
+    for (family, suffix) in families {
+        let config = acceptance_family_config(&staged, family, suffix);
+        let run_root = root.join("runs").join(family);
+        let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
+        assert_eq!(code, 0, "{family} run: {stderr} {stdout}");
+        let opi_id = format!("trial-opi-{suffix}");
+        let pi_id = format!("trial-pi-{suffix}");
+        command_exits.push(serde_json::json!({"family": family, "command": "run", "exit": code}));
+        // The preserved material copy binds the frozen selection inputs.
+        let preserved_material = run_root.join("material.json");
+        fs::copy(&staged.material, &preserved_material).unwrap();
+        preserved.push(serde_json::json!({
+            "role": "material",
+            "path": format!("runs/{family}/material.json"),
+            "sha256": sha256_hex(&fs::read(&preserved_material).unwrap()),
+        }));
+        for (trial, agent, subject) in [
+            (opi_id.clone(), "opi", "candidate-opi"),
+            (pi_id.clone(), "pi", "baseline-pi"),
+        ] {
+            let bundle_manifest = run_root
+                .join("trials")
+                .join(&trial)
+                .join("bundle/manifest.json");
+            trials.push(serde_json::json!({
+                "id": trial,
+                "agent": agent,
+                "family": family,
+                "run_root": format!("runs/{family}"),
+                "bundle_digest": sha256_hex(&fs::read(&bundle_manifest).unwrap()),
+                "attribution": {"agent_executable_sha256": material["agents"][agent]["executable"]["sha256"]},
+                "_subject": subject,
+            }));
+        }
+        // The genuine scoped capture view: the Opi trial's preserved native
+        // bytes, byte-bound by copy.
+        let native = run_root
+            .join("trials")
+            .join(&opi_id)
+            .join("bundle/artifacts/native");
+        copy_tree(&native, &root.join("opi-artifact-audit").join(&opi_id));
+    }
+
+    // Observed companion exits recorded as preserved evidence.
+    for (family, _) in families {
+        let run_root = root.join("runs").join(family);
+        for command in ["verify", "report"] {
+            let mut argv = vec![command.to_owned(), "--root".to_owned()];
+            argv.push(run_root.to_string_lossy().into_owned());
+            if command == "report" {
+                argv.push("--out".to_owned());
+                argv.push(
+                    evidence
+                        .path()
+                        .join(format!("observed-report-{family}.json"))
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
+            let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(&argv)
+                .output()
+                .expect("companion invocation");
+            assert_eq!(output.status.code(), Some(0), "{family} {command}");
+            command_exits
+                .push(serde_json::json!({"family": family, "command": command, "exit": 0}));
+        }
+    }
+
+    // Trial rows carry the manifest shape only; the subject cross-check
+    // stays against each family's frozen run-control.json.
+    let trials: Vec<serde_json::Value> = trials
+        .iter()
+        .map(|trial| {
+            let mut row = trial.clone();
+            row.as_object_mut().unwrap().remove("_subject");
+            row
+        })
+        .collect();
+    let manifest = serde_json::json!({
+        "schema": "opi-eval-local-acceptance/1",
+        "operator": {"redacted": true, "label": "local-acceptance-e2e"},
+        "opi_repository": {"url": "https://example.invalid/opi", "commit": "9".repeat(40)},
+        "controls": {
+            "execution_concurrency": 1,
+            "connection_controls": {"selector": "scripted:eval"},
+        },
+        "trials": trials,
+        "sources": {
+            "pi": {"repository_url": "https://example.invalid/pi", "commit": "a".repeat(40)},
+            "harbor": {"repository_url": "https://example.invalid/harbor", "commit": "b".repeat(40)},
+            "pier": {"repository_url": "https://example.invalid/pier", "commit": "c".repeat(40)},
+        },
+        "builds": [
+            {"agent": "opi", "executable_sha256": material["agents"]["opi"]["executable"]["sha256"]},
+            {"agent": "pi", "executable_sha256": material["agents"]["pi"]["executable"]["sha256"]},
+        ],
+        "material": [
+            {"family": "terminal-bench-2.1", "material_sha256": sha256_hex(&fs::read(&staged.material).unwrap())},
+            {"family": "terminal-bench-3.0", "material_sha256": sha256_hex(&fs::read(&staged.material).unwrap())},
+            {"family": "deepswe-v1.1", "material_sha256": sha256_hex(&fs::read(&staged.material).unwrap())},
+        ],
+        "command_exits": command_exits,
+        "preserved": preserved,
+    });
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        root.join("upstream-identity-cache.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema": "opi-eval-upstream-identity-cache/1",
+            "repositories": {
+                "https://example.invalid/pi": {"commits": {"a".repeat(40): {"tree": "1".repeat(40)}}},
+                "https://example.invalid/harbor": {"commits": {"b".repeat(40): {"tree": "2".repeat(40)}}},
+                "https://example.invalid/pier": {"commits": {"c".repeat(40): {"tree": "3".repeat(40)}}},
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let out = evidence.path().join("acceptance-report.json");
+    let output = Command::new("python3")
+        .arg(manifest_dir().join("scripts/verify-local-acceptance.py"))
+        .arg("--root")
+        .arg(&root)
+        .arg("--out")
+        .arg(&out)
+        .arg("--companion")
+        .arg(env!("CARGO_BIN_EXE_opi-eval"))
+        .output()
+        .expect("spawn the offline acceptance verifier");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {stderr} stdout: {stdout}"
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(stdout.trim().lines().last().unwrap()).unwrap();
+    assert_eq!(report["schema"], "opi-eval-local-acceptance-verification/1");
+    assert_eq!(report["accepted"], true);
+    assert_eq!(report["trials"].as_array().unwrap().len(), 6);
+    assert!(out.is_file(), "the durable verification report is written");
+
+    // Rejections at the genuine seam: an empty scoped view is not
+    // acceptance, and substituted capture bytes are not the original
+    // evidence.
+    let empty_view = root.join("opi-artifact-audit");
+    for child in fs::read_dir(&empty_view).unwrap() {
+        let child = child.unwrap().path();
+        if child.is_dir() {
+            fs::remove_dir_all(&child).unwrap();
+        }
+    }
+    fs::write(
+        empty_view.join("generic-audit-summary.json"),
+        b"{\"result\": \"success\"}\n",
+    )
+    .unwrap();
+    let out2 = evidence.path().join("acceptance-report-empty.json");
+    let output = Command::new("python3")
+        .arg(manifest_dir().join("scripts/verify-local-acceptance.py"))
+        .arg("--root")
+        .arg(&root)
+        .arg("--out")
+        .arg(&out2)
+        .arg("--companion")
+        .arg(env!("CARGO_BIN_EXE_opi-eval"))
+        .output()
+        .expect("spawn the offline acceptance verifier");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("empty"),
+        "an empty scoped view with a generic audit success must be rejected"
+    );
+
+    // Restore the genuine capture and tamper with its bytes.
+    let capture = root.join("opi-artifact-audit").join("trial-opi-tb21");
+    fs::remove_file(empty_view.join("generic-audit-summary.json")).unwrap();
+    copy_tree(
+        &root.join("runs/terminal-bench-2.1/trials/trial-opi-tb21/bundle/artifacts/native"),
+        &capture,
+    );
+    let tampered = capture.join("agent-stdout.log");
+    if tampered.is_file() {
+        fs::write(&tampered, b"tampered capture bytes\n").unwrap();
+    } else {
+        fs::write(capture.join("verifier-input.json"), b"tampered\n").unwrap();
+    }
+    let out3 = evidence.path().join("acceptance-report-tampered.json");
+    let output = Command::new("python3")
+        .arg(manifest_dir().join("scripts/verify-local-acceptance.py"))
+        .arg("--root")
+        .arg(&root)
+        .arg("--out")
+        .arg(&out3)
+        .arg("--companion")
+        .arg(env!("CARGO_BIN_EXE_opi-eval"))
+        .output()
+        .expect("spawn the offline acceptance verifier");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("byte-bound"),
+        "substituted capture bytes must be rejected"
+    );
+}
+
+/// P19-AC-013: a pi-only experiment runs and reports end to end without any
+/// Opi product in the trial set, and the Companion package stays
+/// independent - no Opi crate dependency, no bundled task corpora, grader
+/// implementations, or images.
+#[test]
+fn pi_only_without_opi_runtime_and_packaging() {
+    // Runtime: every subject is a pi product; the run completes
+    // hermetically and the offline report publishes with no Opi trial.
+    let staged = tempfile::tempdir().unwrap();
+    let source = fs::read_to_string(fixtures().join("experiment/local-paired.toml")).unwrap();
+    let config = staged.path().join("pi-only.toml");
+    fs::write(
+        &config,
+        source.replace("product = \"opi\"", "product = \"pi\""),
+    )
+    .unwrap();
+    let run_root = staged.path().join("pi-only-run");
+    let run = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--config")
+        .arg(&config)
+        .arg("--root")
+        .arg(&run_root)
+        .arg("--fixtures")
+        .arg(fixtures())
+        .args(["--behavior", "happy"])
+        .output()
+        .expect("spawn the pi-only run");
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    // Both trials run, seal, and grade through the pi path; the pairing
+    // layer refuses to fabricate a comparability verdict for two
+    // identical protocols, so the run settles non-success with the
+    // mismatch explicit rather than inventing an Opi baseline.
+    assert_eq!(
+        run.status.code(),
+        Some(1),
+        "stderr: {stderr} stdout: {stdout}"
+    );
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["outcome"], "incomplete", "{report}");
+    assert_eq!(
+        report["pairs"][0]["comparability"], "protocol-group-mismatch",
+        "{report}"
+    );
+    for trial in report["trials"].as_array().unwrap() {
+        assert_eq!(trial["status"], "sealed", "{trial}");
+        assert_eq!(trial["agent"]["product"], "pi", "{trial}");
+    }
+    let offline = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("report")
+        .arg("--root")
+        .arg(&run_root)
+        .arg("--out")
+        .arg(staged.path().join("offline.json"))
+        .output()
+        .expect("spawn the offline report command");
+    assert_eq!(offline.status.code(), Some(0));
+    let offline_report: serde_json::Value = serde_json::from_slice(&offline.stdout).unwrap();
+    assert_eq!(offline_report["outcome"], "published", "{offline_report}");
+
+    // Packaging: the Companion manifest declares no Opi crate dependency
+    // and the crate bundles no task corpora, grader implementations, or
+    // images (the package listing gate covers the shipped file set).
+    let manifest = fs::read_to_string(manifest_dir().join("Cargo.toml")).unwrap();
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("opi-") && trimmed.contains('=') {
+            let name = trimmed.split('=').next().unwrap_or_default().trim();
+            panic!("the Companion must not depend on Opi crates: {name}");
+        }
+    }
+    for corpus in ["corpora", "graders", "images", "datasets"] {
+        assert!(
+            !manifest_dir().join(corpus).exists(),
+            "the Companion must not bundle {corpus}"
+        );
+    }
+}

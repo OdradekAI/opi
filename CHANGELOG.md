@@ -39,6 +39,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inline credential fields: request identity is projected from the
   selected connection (`project_connection`) into each pinned client's
   exact configuration bytes.
+- `opi-eval`: new offline verifier
+  `crates/opi-eval/scripts/verify-local-acceptance.py --root E --out O
+  --companion C` validates a supplied redacted local-acceptance evidence
+  root: six attributable trials across the three benchmark families,
+  frozen controls cross-checked against each run-control, source/build/
+  material/bundle digests, preserved command exits and artifacts, the
+  Opi-only `opi-artifact-audit` scoped capture view byte-bound to and
+  exhaustive for the three original Opi native captures, and pi/Harbor/
+  Pier upstream identities validated only against the supplied cached
+  inventory. It rejects substituted, oracle, missing, or fixture-only
+  evidence, refuses an empty generic-audit success, never launches an
+  Agent, reads credentials, or contacts a provider, and invokes the
+  built Companion verify/report only against the supplied family roots.
+  A populated dummy credential environment is now pinned to leave the
+  deterministic hermetic contract and every durable artifact unchanged,
+  and pi-only runtime plus packaging independence (no Opi crate
+  dependency, no bundled corpora/graders/images) is pinned at the
+  spawned-CLI seam.
 - `opi-eval`: one run-level cancellation token now bounds every dispatch.
   SIGINT/SIGTERM at the CLI stops new affected dispatch, cancels only the
   owned process trees, removes the job containers recorded under each

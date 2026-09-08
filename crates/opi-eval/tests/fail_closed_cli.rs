@@ -1,6 +1,7 @@
 //! Cross-platform fail-closed regressions over the production `opi-eval` binary.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -213,4 +214,71 @@ fn doctor_rejects_an_invalid_config_without_observing() {
     assert_eq!(output.status.code(), Some(2), "stderr: {stderr}");
     assert!(stdout.trim().is_empty(), "no report may print: {stdout}");
     assert!(!stderr.trim().is_empty(), "a diagnostic must print");
+}
+
+/// P19-AC-011: a populated dummy credential environment does not activate
+/// live behavior. A complete fixture run with dummy credentials exported
+/// stays the deterministic hermetic contract - completed, sealed, scripted
+/// rewards - and no credential byte reaches any durable artifact.
+#[test]
+fn dummy_credentials_do_not_activate_live_behavior() {
+    let guard = tempfile::tempdir().unwrap();
+    let root = guard.path().join("run-root");
+    fs::create_dir(&root).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--config")
+        .arg(fixtures_dir().join("experiment/local-paired.toml"))
+        .arg("--root")
+        .arg(root.canonicalize().unwrap())
+        .arg("--fixtures")
+        .arg(fixtures_dir().canonicalize().unwrap())
+        .args(["--behavior", "happy"])
+        .env("OPENAI_API_KEY", "dummy-credential")
+        .env("ANTHROPIC_API_KEY", "dummy-credential")
+        .env("OPI_EVAL_SCRIPTED_KEY", "dummy-credential")
+        .output()
+        .expect("spawn the opi-eval run command");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The deterministic hermetic contract, unchanged by the credential
+    // environment: both trials complete, seal, and grade through the
+    // scripted fixture path.
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("run stdout is one JSON report");
+    assert_eq!(report["outcome"], "completed", "{report}");
+    let trials = report["trials"].as_array().unwrap();
+    assert_eq!(trials.len(), 2);
+    for trial in trials {
+        assert_eq!(trial["status"], "sealed", "{trial}");
+        assert_eq!(
+            trial["verifier"]["reward"], "unknown:native-reward-pending-18-15-smoke",
+            "a live provider never graded this trial: {trial}"
+        );
+    }
+
+    // No credential material crosses into the durable evidence.
+    let mut stack = vec![root.clone()];
+    while let Some(path) = stack.pop() {
+        if path.is_dir() {
+            for entry in fs::read_dir(&path).unwrap() {
+                stack.push(entry.unwrap().path());
+            }
+        } else {
+            let bytes = fs::read(&path).unwrap();
+            assert!(
+                !bytes
+                    .windows(b"dummy-credential".len())
+                    .any(|w| w == b"dummy-credential"),
+                "credential material leaked into {}",
+                path.display()
+            );
+        }
+    }
 }

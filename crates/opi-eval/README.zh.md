@@ -322,6 +322,38 @@ sealing 或报告发布会被阻止。
 `run --replacement-for <TRIAL_ID>` 会为崩溃 trial 所在的整个对比组创建新身份，不会
 复用失败 trial 的身份。
 
+### 本地操作员验收与离线校验器
+
+真实验收是另一套明确授权的本地操作员运行，发生在 WSL/Linux 上、
+独立于任何开发 harness：操作员选定并冻结任务、Agent 构建、材料
+摘要、模型连接控制、并发与用量/时间预算，显式接通第一个真实
+凭据，并运行同一个公开 CLI。默认测试与 CI 绝不因环境中恰好存在
+凭据而转为 live，任何确定性路径都不联系 provider。发生预算、
+权限、来源或隐私违约时，停止受影响的 trial、取消自有执行，回滚
+方式是禁用受影响的本地执行路径或恢复先前已校验的 Companion
+构建——绝不重新标注旧证据。
+
+操作员交付一个脱敏的证据根目录：包含六个可归属 trial（覆盖三个
+benchmark 家族）的 manifest、冻结的 controls、source/build/
+material/bundle 摘要、保留的命令退出码与 provider/tool/native
+工件、Opi 专属的 `opi-artifact-audit` 范围捕获视图（与三个原始
+Opi native 捕获逐字节绑定且恰好穷尽它们），以及 pi/Harbor/Pier
+来源记录的缓存上游仓库身份清单。任何人都可以离线校验该证据：
+
+```sh
+python3 crates/opi-eval/scripts/verify-local-acceptance.py \
+  --root <redacted-evidence-root> \
+  --out <verification-report.json> \
+  --companion <built opi-eval executable>
+```
+
+校验器绝不启动 Agent、读取凭据或联系 provider。它拒绝被替换、
+oracle、缺失或仅 fixture 的证据，拒绝把空的一般审计成功当作验收，
+仅凭随证据提供的缓存身份校验上游提交（绝不在本 checkout 中
+解析提交），并且只针对随证据提供的家族 run 根调用构建出的
+Companion `verify` 与 `report`。退出码 0 表示接受证据；退出码 2
+输出一个类型化的拒绝原因。
+
 ### 有界取消
 
 整个 run 由一个共享取消令牌管辖。向运行中的 `run` 进程发送 SIGINT 或

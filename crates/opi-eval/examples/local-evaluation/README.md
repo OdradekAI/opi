@@ -110,3 +110,18 @@ opi-eval run --config experiment.toml --root /fresh/root \
 
 Neither command needs the repository checkout: every identity the
 runtime consumes lives inside the cache or the output tree.
+
+## 7. Hand the operator evidence to the offline verifier
+
+After the real operator run, redact and stage the evidence root (manifest
+with the six attributable trials, preserved artifacts, the
+`opi-artifact-audit` scoped view, the cached upstream identities) and
+verify it offline - the verifier launches no Agent, reads no credentials,
+and contacts no provider:
+
+```sh
+python3 scripts/verify-local-acceptance.py --root /redacted/evidence-root   --out /tmp/verification-report.json --companion ./target/release/opi-eval
+```
+
+See the crate README section "Local operator acceptance and its offline
+verifier" for the full contract.

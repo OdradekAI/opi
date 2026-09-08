@@ -371,6 +371,44 @@ or publication if it appears in exportable content.
 `run --replacement-for <TRIAL_ID>` creates fresh identities for the crashed
 trial's whole comparison group. It does not reuse the failed trial identity.
 
+### Local operator acceptance and its offline verifier
+
+Real acceptance is a separately authorized local operator run on
+WSL/Linux, outside any development harness: the operator selects and
+freezes the tasks, agent builds, material digests, model connection
+controls, concurrency, and usage/time budget, connects the first real
+credential explicitly, and runs the same public CLI. Default tests and CI
+never become live because a credential happens to exist, and no provider
+is contacted by any deterministic path. On a budget, authority,
+provenance, or privacy breach, stop the affected trials, cancel owned
+execution, and roll back by disabling the affected local execution path
+or restoring a previously verified Companion build - never by relabeling
+old evidence.
+
+The operator hands over one redacted evidence root: the manifest with six
+attributable trials across the three benchmark families, the frozen
+controls, source/build/material/bundle digests, the preserved command
+exits and provider/tool/native artifacts, the Opi-only
+`opi-artifact-audit` scoped capture view (byte-bound to the three
+original Opi native captures and exhaustive for them), and a cached
+upstream repository-identity inventory for the pi/Harbor/Pier source
+records. Anyone can verify that evidence offline:
+
+```sh
+python3 crates/opi-eval/scripts/verify-local-acceptance.py \
+  --root <redacted-evidence-root> \
+  --out <verification-report.json> \
+  --companion <built opi-eval executable>
+```
+
+The verifier never launches an Agent, reads credentials, or contacts a
+provider. It rejects substituted, oracle, missing, or fixture-only
+evidence, refuses an empty generic-audit success, validates upstream
+commits only against the supplied cached identities (never by resolving
+commits in this checkout), and invokes the built Companion `verify` and
+`report` only against the supplied family run roots. Exit 0 accepts the
+evidence; exit 2 prints one typed rejection.
+
 ### Bounded cancellation
 
 One run-level cancellation token governs every dispatch. Sending SIGINT or
