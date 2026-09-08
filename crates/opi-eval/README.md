@@ -371,6 +371,22 @@ or publication if it appears in exportable content.
 `run --replacement-for <TRIAL_ID>` creates fresh identities for the crashed
 trial's whole comparison group. It does not reuse the failed trial identity.
 
+### Bounded cancellation
+
+One run-level cancellation token governs every dispatch. Sending SIGINT or
+SIGTERM to a running `run` stops new affected dispatch, cancels only the
+owned process trees of the in-flight trials, removes the job containers
+recorded under each trial's owned prefix (`opi-eval-owned-<trial-id>-`) plus
+the temporary credential material, and still settles and renders the
+interrupted report: cancelled and never-dispatched trials stay explicit
+missing coverage with no fabricated score, and the durable
+`integration/owned-resources.json` evidence plus the receipt's cleanup token
+name exactly what was cleaned. A successful cancellation never leaves orphan
+execution behind; the ignored `native_owned_resource_cancellation` witness
+exercises the real Docker removal locally. Unenforceable required bounds
+reject before any effect, and a currency cap can never be promised from
+unknown prices.
+
 ## Developer guide
 
 | Area | Owning source |

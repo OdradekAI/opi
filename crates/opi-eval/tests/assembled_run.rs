@@ -274,6 +274,30 @@ fn agent_stream_contract_fails_closed() {
     }
 }
 
+/// Runs the offline `report` command over one run root.
+fn offline_report(root: &Path) -> (i32, serde_json::Value, String) {
+    // Report output never lies inside the sealed run root.
+    let out = std::env::temp_dir().join(format!(
+        "opi-eval-offline-report-{}-{}.json",
+        root.file_name().and_then(|n| n.to_str()).unwrap_or("run"),
+        std::process::id()
+    ));
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("report")
+        .arg("--root")
+        .arg(root.canonicalize().unwrap())
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .expect("spawn the opi-eval report command");
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|error| {
+        panic!("report stdout is not one JSON report ({error}): {stdout:?} stderr: {stderr:?}")
+    });
+    (output.status.code().unwrap_or(-1), report, stderr)
+}
+
 /// `EVAL-A06`: timeout or cancellation racing a bounded process, workspace
 /// mutation, and process exit through `run` retains actual partial
 /// artifacts and cleanup status, never infers replay safety (no replacement
@@ -348,6 +372,16 @@ fn process_timeout_cancellation_race() {
             pairs[0]["comparability"], "comparable",
             "{behavior}: {report}"
         );
+        // The settled classifications are immutable offline evidence: the
+        // scored Agent timeout stays a valid graded zero in the coverage
+        // denominator, never reclassified from logs or exit codes.
+        let (code, offline, stderr) = offline_report(root.path());
+        assert_eq!(code, 0, "{behavior}: {stderr}");
+        assert_eq!(offline["run_outcome"], "completed", "{behavior}: {offline}");
+        let counts = &offline["coverage_counts"];
+        assert_eq!(counts["planned"], 2, "{behavior}: {counts}");
+        assert_eq!(counts["attempted"], 2, "{behavior}: {counts}");
+        assert_eq!(counts["valid"], 2, "{behavior}: {counts}");
     }
 
     // User cancellation: a boundary failure. The grade dispatch is
@@ -400,6 +434,60 @@ fn process_timeout_cancellation_race() {
                 .unwrap()
                 .starts_with("infrastructure-failure:")
         );
+
+        // The cancelled settlement is durable and immutable: recovery
+        // classifies both trials by their settled state - never
+        // not-started or retryable under the same identity - and the
+        // offline report keeps them as explicit missing coverage with no
+        // fabricated score (P19-AC-010).
+        let settlement = root
+            .path()
+            .join("trials/trial-opi-1/bundle/settlement.json");
+        let settlement_before = std::fs::read(&settlement)
+            .unwrap_or_else(|error| panic!("{behavior}: settlement must be durable: {error}"));
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("run")
+            .arg("--config")
+            .arg(fixtures_dir().join("experiment/local-paired.toml"))
+            .arg("--root")
+            .arg(root.path().canonicalize().unwrap())
+            .arg("--fixtures")
+            .arg(fixtures_dir().canonicalize().unwrap())
+            .arg("--behavior")
+            .arg("happy")
+            .arg("--recover")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{behavior}: recover exits nonzero"
+        );
+        let recovery: serde_json::Value =
+            serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
+        for row in recovery["recovery"].as_array().unwrap() {
+            assert_eq!(
+                row["status"], "sealed",
+                "{behavior}: the cancelled settlement classifies immutably: {row}"
+            );
+        }
+        assert_eq!(
+            std::fs::read(&settlement).unwrap(),
+            settlement_before,
+            "{behavior}: recovery never rewrites the settled evidence"
+        );
+        let (code, offline, stderr) = offline_report(root.path());
+        assert_eq!(code, 0, "{behavior}: {stderr}");
+        assert_eq!(
+            offline["run_outcome"], "incomplete",
+            "{behavior}: {offline}"
+        );
+        let counts = &offline["coverage_counts"];
+        assert_eq!(counts["planned"], 2, "{behavior}: {counts}");
+        assert_eq!(counts["attempted"], 2, "{behavior}: {counts}");
+        assert_eq!(counts["valid"], 0, "{behavior}: {counts}");
+        assert_eq!(counts["invalid"], 2, "{behavior}: {counts}");
+        assert_eq!(counts["unexecuted"], 0, "{behavior}: {counts}");
     }
 }
 
@@ -503,6 +591,67 @@ fn effect_unknown_reopen() {
         intent_before
     );
     assert!(!crashed.join("settlement.json").exists());
+
+    // The prior attempt classification survives the replacement (P19-AC-010):
+    // recovery still reports the crashed trial as effect-unknown under its
+    // original identity and the replacement group as sealed, and the
+    // offline report keeps the prior attempt as explicit missing coverage
+    // instead of merging or rewriting it.
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--config")
+        .arg(fixtures_dir().join("experiment/local-paired.toml"))
+        .arg("--root")
+        .arg(root.path().canonicalize().unwrap())
+        .arg("--fixtures")
+        .arg(fixtures_dir().canonicalize().unwrap())
+        .arg("--behavior")
+        .arg("happy")
+        .arg("--recover")
+        .output()
+        .unwrap();
+    let after: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
+    let statuses: std::collections::BTreeMap<&str, &str> = after["recovery"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["id"].as_str().unwrap_or_default(),
+                row["status"].as_str().unwrap_or_default(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        statuses.get("trial-opi-1").copied(),
+        Some("effect-unknown"),
+        "the prior attempt keeps its immutable classification: {statuses:?}"
+    );
+    // The never-started baseline left no trial root: its durable state is
+    // the absence of any attempted evidence, never a fabricated row.
+    assert!(!statuses.contains_key("trial-pi-1"), "{statuses:?}");
+    assert_eq!(statuses.get("trial-opi-1.r2").copied(), Some("sealed"));
+    assert_eq!(statuses.get("trial-pi-1.r2").copied(), Some("sealed"));
+    // The offline report publishes the replacement scope (same frozen
+    // scope, fresh identities); the prior attempt is never merged into it
+    // - it stays explicit and immutable in the recovery classification
+    // above, with its unsealed evidence untouched on disk.
+    let (code, offline, stderr) = offline_report(root.path());
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(offline["run_outcome"], "completed", "{offline}");
+    let counts = &offline["coverage_counts"];
+    assert_eq!(counts["planned"], 2, "{counts}");
+    assert_eq!(counts["attempted"], 2, "{counts}");
+    assert_eq!(counts["valid"], 2, "{counts}");
+    assert_eq!(counts["unexecuted"], 0, "{counts}");
+    let reported_ids: Vec<&str> = offline["trials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|trial| trial["id"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(reported_ids, vec!["trial-opi-1.r2", "trial-pi-1.r2"]);
 }
 
 /// `EVAL-A11`: prompt-only/incomplete packages and selected native-verifier

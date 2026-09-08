@@ -459,7 +459,15 @@ fn write_helper(path: &Path, script: &str) -> Result<(), RunError> {
 }
 
 /// Run one assembled experiment and return its run report.
-pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::Value, RunError> {
+///
+/// `run_cancel` is the one run-level cancellation token shared with every
+/// dispatch (P19-D07): once cancelled, no new trial dispatches start, the
+/// in-flight owned process trees cancel, and the run still settles and
+/// renders its interrupted report.
+pub(crate) async fn run_experiment(
+    request: &RunRequest,
+    run_cancel: &CancellationToken,
+) -> Result<serde_json::Value, RunError> {
     let plan_json = match &request.plan {
         Some(path) => {
             let text = std::fs::read_to_string(path)?;
@@ -703,6 +711,7 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
                     &product,
                     native.as_ref(),
                     request,
+                    run_cancel,
                 )
                 .await?;
                 settled.push((declared, result));
@@ -718,6 +727,7 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
                 let integrity = integrity.clone();
                 let revision = benchmark_revision.clone();
                 let request = (*request).clone();
+                let run_cancel = run_cancel.clone();
                 joins.push((
                     declared.clone(),
                     std::thread::spawn(move || {
@@ -733,6 +743,7 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
                             &product,
                             None,
                             &request,
+                            &run_cancel,
                         ))
                     }),
                 ));
@@ -755,6 +766,13 @@ pub(crate) async fn run_experiment(request: &RunRequest) -> Result<serde_json::V
             }
             all_sealed &= result.sealed;
             trials_out.push(result.receipt);
+        }
+        // Stop new affected dispatch (P19-D07): once the run-level token
+        // is cancelled, remaining planned trials never start; the run
+        // keeps every already-observed settlement and reports the rest as
+        // explicit missing coverage instead of dispatching them.
+        if run_cancel.is_cancelled() {
+            break;
         }
     }
 
@@ -1228,6 +1246,7 @@ fn benchmark_adapter_for(
 }
 
 /// Run one declared trial end to end and persist its receipts.
+#[allow(clippy::too_many_arguments)]
 async fn run_trial(
     experiment: &ResolvedExperiment,
     integrity: &IntegrityRecord,
@@ -1236,16 +1255,20 @@ async fn run_trial(
     product: &str,
     native: Option<&NativeInputs>,
     request: &RunRequest,
+    run_cancel: &CancellationToken,
 ) -> Result<TrialResult, RunError> {
     match native {
         Some(inputs) => {
             run_native_trial(
-                experiment, integrity, revision, declared, product, inputs, request,
+                experiment, integrity, revision, declared, product, inputs, request, run_cancel,
             )
             .await
         }
         None => {
-            run_fixture_trial(experiment, integrity, revision, declared, product, request).await
+            run_fixture_trial(
+                experiment, integrity, revision, declared, product, request, run_cancel,
+            )
+            .await
         }
     }
 }
@@ -1515,6 +1538,7 @@ async fn run_native_trial(
     product: &str,
     inputs: &NativeInputs,
     request: &RunRequest,
+    run_cancel: &CancellationToken,
 ) -> Result<TrialResult, RunError> {
     let trial_root = request.root.join("trials").join(&declared.id);
     if trial_root.join("bundle/intent.json").is_file() {
@@ -1652,8 +1676,30 @@ async fn run_native_trial(
     };
     let mut job_record = None;
     let mut job_rejection: Option<String> = None;
+    // Owned-resource identity (P19-D07): every job container this trial
+    // may start is named under one trial-owned prefix, recorded durably
+    // before any process effect so a later cleanup can prove exactly what
+    // it owns - never a shared cache, source bundle, or unrelated name.
+    let owned_prefix = format!("opi-eval-owned-{}-", declared.id);
+    let owned_resources_path = trial_root.join("integration/owned-resources.json");
+    std::fs::write(
+        &owned_resources_path,
+        serde_json::to_vec(&json!({
+            "schema": "opi-eval-owned-resources/1",
+            "trial": declared.id,
+            "container_prefix": owned_prefix,
+            "cleanup": serde_json::Value::Null,
+        }))
+        .map_err(|error| RunError::Native(error.to_string()))?,
+    )
+    .map_err(|error| RunError::Native(error.to_string()))?;
     if ledger.attempt(AuthorityTransition::AgentDispatch) {
         let adapter = benchmark_adapter_for(revision)?;
+        let mut job_env = inputs.verifier_env.clone();
+        job_env.insert(
+            "OPI_EVAL_OWNED_CONTAINER_PREFIX".into(),
+            owned_prefix.clone().into(),
+        );
         let benchmark_request = BenchmarkRunRequest {
             verifier_executable: inputs.verifier_executable.clone(),
             task_dir: task_dir.clone(),
@@ -1662,15 +1708,9 @@ async fn run_native_trial(
             trace_root: verifier_trace.clone(),
             admitted_lock_digest: material.static_lock.sha256.clone(),
             integrity: integrity.clone(),
-            extra_env: inputs.verifier_env.clone(),
+            extra_env: job_env,
         };
-        match BenchmarkExecution::run(
-            &benchmark_request,
-            adapter.as_ref(),
-            &CancellationToken::new(),
-        )
-        .await
-        {
+        match BenchmarkExecution::run(&benchmark_request, adapter.as_ref(), run_cancel).await {
             Ok(record) => job_record = Some(record),
             // Pre-spawn admission refusal: no job process ever existed.
             Err(rejection) => {
@@ -1679,6 +1719,26 @@ async fn run_native_trial(
             }
         }
     }
+
+    // Owned-resource and credential cleanup (P19-D07): a terminated job
+    // tree cannot be trusted to have removed the containers it started,
+    // so the runner - the owner of the recorded identity - removes
+    // exactly the prefix-owned containers and removes the temporary
+    // credential material. Only the owned prefix is ever addressed.
+    let terminated = matches!(
+        job_record.as_ref().map(|record| &record.exit),
+        Some(ExitState::Cancelled) | Some(ExitState::TimedOut)
+    );
+    let owned_cleanup = cleanup_owned_resources(
+        &owned_prefix,
+        &owned_resources_path,
+        job_record.as_ref().map(|record| &record.exit),
+    );
+    let handoff_removed = if terminated {
+        remove_credential_material(&handoff_path)
+    } else {
+        true
+    };
 
     // Settlement and grade admission: the observed job outcome settles
     // durably; the grade transition is the binding admission (import plus
@@ -2014,6 +2074,22 @@ async fn run_native_trial(
             json!({
                 "exit_state": exit_state_token(&record.exit),
                 "reward": fact_token(&record.reward),
+                "cleanup": format!(
+                    "{}{}",
+                    cleanup_token(&record.cleanup),
+                    owned_cleanup_receipt(
+                        &owned_cleanup,
+                        if terminated {
+                            if handoff_removed {
+                                "removed"
+                            } else {
+                                "removal-failed"
+                            }
+                        } else {
+                            "not-required"
+                        },
+                    ),
+                ),
                 "completion": match &record.completion {
                     BenchmarkCompletion::Verified { .. } => "verified",
                     BenchmarkCompletion::VerifiedNative { .. } => "verified-native",
@@ -2132,6 +2208,7 @@ async fn run_fixture_trial(
     declared: &crate::experiment::DeclaredTrial,
     product: &str,
     request: &RunRequest,
+    run_cancel: &CancellationToken,
 ) -> Result<TrialResult, RunError> {
     let trial_root = request.root.join("trials").join(&declared.id);
 
@@ -2266,7 +2343,10 @@ async fn run_fixture_trial(
     };
 
     let agent_record = if ledger.attempt(AuthorityTransition::AgentDispatch) {
-        let cancel = CancellationToken::new();
+        // The trial's own cancellation stays a child of the run-level
+        // token: a behavior watcher cancels only this trial, while a run
+        // signal cancels every dispatch (P19-D07).
+        let cancel = run_cancel.child_token();
         let adapter = if request.behavior == "agent-timeout" {
             timeout_patched_adapter(product)?
         } else {
@@ -2507,7 +2587,7 @@ async fn run_fixture_trial(
         let record = BenchmarkExecution::run(
             &benchmark_request,
             benchmark_request_adapter.as_ref(),
-            &CancellationToken::new(),
+            &run_cancel.child_token(),
         )
         .await;
         match record {
@@ -2747,6 +2827,7 @@ async fn run_fixture_trial(
             json!({
                 "exit_state": exit_state_token(&record.exit),
                 "reward": fact_token(&record.reward),
+                "cleanup": cleanup_token(&record.cleanup),
                 "completion": match &record.completion {
                     BenchmarkCompletion::Verified { .. } => "verified",
                     BenchmarkCompletion::VerifiedNative { .. } => "verified-native",
@@ -2923,6 +3004,111 @@ fn exit_state_token(exit: &ExitState) -> String {
         ExitState::Cancelled => "cancelled".to_owned(),
         ExitState::FailedToSpawn { .. } => "failed-to-spawn".to_owned(),
     }
+}
+
+/// Observed owned-resource cleanup for one settled native job.
+#[derive(Debug, Clone)]
+struct OwnedCleanup {
+    /// Docker CLI status: absent, or the removal outcome per container
+    /// found under the owned prefix.
+    status: String,
+}
+
+/// Removes the prefix-owned containers after a terminated job and records
+/// the observed cleanup under the durable owned-resource identity. Only
+/// the recorded prefix is ever addressed; a missing Docker CLI leaves the
+/// cleanup explicitly unconfirmed instead of claiming success.
+fn cleanup_owned_resources(
+    prefix: &str,
+    evidence_path: &std::path::Path,
+    exit: Option<&ExitState>,
+) -> OwnedCleanup {
+    let terminated = matches!(exit, Some(ExitState::Cancelled) | Some(ExitState::TimedOut));
+    let status = if terminated {
+        match owned_containers(prefix) {
+            Ok(names) if names.is_empty() => "none-found".to_owned(),
+            Ok(names) => {
+                let mut removed = Vec::new();
+                for name in &names {
+                    let outcome = std::process::Command::new("docker")
+                        .args(["rm", "-f", name])
+                        .output();
+                    removed.push(match outcome {
+                        Ok(output) if output.status.success() => {
+                            format!("{name}:removed")
+                        }
+                        Ok(output) => format!(
+                            "{name}:failed:{}",
+                            String::from_utf8_lossy(&output.stderr).trim()
+                        ),
+                        Err(error) => format!("{name}:spawn-failed:{error}"),
+                    });
+                }
+                format!("containers:{}", removed.join(","))
+            }
+            Err(error) => format!("docker-unavailable:{error}"),
+        }
+    } else {
+        "not-required".to_owned()
+    };
+    let evidence = json!({
+        "schema": "opi-eval-owned-resources/1",
+        "container_prefix": prefix,
+        "cleanup": status,
+    });
+    if let Ok(bytes) = serde_json::to_vec(&evidence) {
+        let _ = std::fs::write(evidence_path, bytes);
+    }
+    OwnedCleanup { status }
+}
+
+/// Lists the container names the owned prefix addresses, newest first.
+fn owned_containers(prefix: &str) -> Result<Vec<String>, String> {
+    let output = std::process::Command::new("docker")
+        .args(["ps", "-aq", "--filter", &format!("name=^{prefix}")])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+/// Removes the temporary credential material of one terminated native
+/// job: the handoff document and the projected connection configuration.
+/// Returns whether the material is absent after the call. A job that
+/// settled by itself keeps its staged handoff evidence.
+fn remove_credential_material(handoff_path: &std::path::Path) -> bool {
+    let Some(directory) = handoff_path.parent() else {
+        return true;
+    };
+    let projected = [
+        handoff_path.to_path_buf(),
+        directory.join("opi.toml"),
+        directory.join("pi.toml"),
+    ];
+    let mut absent = true;
+    for path in projected {
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => absent = false,
+        }
+    }
+    absent
+}
+
+/// The receipt token for one owned-resource cleanup outcome.
+fn owned_cleanup_receipt(cleanup: &OwnedCleanup, credential_material: &str) -> String {
+    format!(
+        "+owned-containers:{}+credential-material:{credential_material}",
+        cleanup.status,
+    )
 }
 
 fn cleanup_token(cleanup: &crate::process::CleanupEvidence) -> String {

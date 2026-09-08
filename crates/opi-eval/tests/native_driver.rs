@@ -261,6 +261,28 @@ if [ -z "$diagnostic" ]; then
     [ -n "$agent_key" ] || { echo "handoff agent environment lost the credential" >&2; exit 9; }
   fi
 fi
+if [ "$OPI_EVAL_STANDIN_MODE" = "owned-container" ]; then
+  # The owned-container cancellation witness: like owned-cancel, but the
+  # job also starts one real Docker container named under the runner's
+  # owned prefix - the resource only the runner's cleanup may remove.
+  mkdir -p witness
+  sleep 300 &
+  printf '%s\n' "$!" > witness/pid
+  printf 'ready\n' > witness/ready
+  docker run -d --name "${OPI_EVAL_OWNED_CONTAINER_PREFIX}witness" \
+    "${OPI_EVAL_WITNESS_IMAGE:-busybox}" sleep 300 >/dev/null
+  wait $!
+fi
+if [ "$OPI_EVAL_STANDIN_MODE" = "owned-cancel" ]; then
+  # The owned-resource cancellation witness: the job owns a live child
+  # process tree. It publishes the child pid under its trace root, then
+  # holds the job open until the run supervisor cancels the whole tree.
+  mkdir -p witness
+  sleep 300 &
+  printf '%s\n' "$!" > witness/pid
+  printf 'ready\n' > witness/ready
+  wait $!
+fi
 task_name=$(basename "$task_dir")
 if [ "$runner" = "pier" ]; then
   # Pier records the task's own `[task] name` as the bound trial's
@@ -3352,4 +3374,408 @@ fn native_offline_regrade_rejects_every_fail_closed_case() {
             assert_eq!(trial["reward"], 0, "empty patch grades zero: {report}");
         }
     }
+}
+
+/// `P19-AC-010` (bounded native cancellation): one run-level
+/// cancellation token reaches the native job supervisor. A SIGTERM at the
+/// CLI stops new affected dispatch (the paired second trial never
+/// starts), settles the observed job outcome as cancelled infrastructure
+/// failure without a fabricated score, terminates only the owned process
+/// tree (the witness child dies - no orphan execution survives the
+/// successful cancellation), removes the temporary credential material,
+/// and emits resource cleanup evidence. The offline report keeps both
+/// the cancelled trial and the never-dispatched trial as explicit
+/// missing coverage.
+#[test]
+fn native_signal_cancellation_bounds_dispatch() {
+    use std::io::Read;
+    use std::process::Stdio;
+
+    let staged = stage("owned-cancel");
+    let config = write_config(&staged);
+    let run_root = staged.root.join("run");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--config")
+        .arg(&config)
+        .arg("--root")
+        .arg(&run_root)
+        .arg("--fixtures")
+        .arg(fixtures())
+        .arg("--native-material")
+        .arg(&staged.material)
+        .env("OPI_EVAL_SCRIPTED_KEY", "<dummy-scripted-credential>")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn the opi-eval run command");
+    let cli_pid = child.id();
+
+    // Wait until the dispatched job provably owns a live child process,
+    // then cancel the whole run through the CLI signal surface.
+    let mut witness = None;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+    while std::time::Instant::now() < deadline {
+        for trial in ["trial-opi-native", "trial-pi-native"] {
+            let pid_file = run_root
+                .join("trials")
+                .join(trial)
+                .join("verifier-trace/witness/pid");
+            if pid_file.is_file() {
+                witness = Some((trial.to_owned(), pid_file));
+                break;
+            }
+        }
+        if witness.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let (dispatched, pid_file) = witness.expect("the native job publishes its owned child witness");
+    let owned_pid: i32 = fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("witness pid is numeric");
+    assert!(
+        nix_kill_alive(owned_pid),
+        "the owned child is provably alive before cancellation"
+    );
+
+    unsafe { libc::kill(cli_pid as i32, libc::SIGTERM) };
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    if let Some(mut pipe) = child.stdout.take() {
+        pipe.read_to_string(&mut stdout).unwrap();
+    }
+    if let Some(mut pipe) = child.stderr.take() {
+        pipe.read_to_string(&mut stderr).unwrap();
+    }
+    let status = child.wait().expect("the cancelled run exits");
+
+    // The interrupted run still settles and renders its report: exit 1
+    // with one JSON report naming the incomplete outcome.
+    assert_eq!(status.code(), Some(1), "stderr: {stderr} stdout: {stdout}");
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+        panic!("stdout is not one JSON report ({error}): {stdout:?} stderr: {stderr:?}")
+    });
+    assert_eq!(report["outcome"], "incomplete", "{report}");
+
+    // Stop-new-dispatch: exactly one trial dispatched and settled; the
+    // paired trial never started.
+    let trials = report["trials"].as_array().unwrap();
+    assert_eq!(
+        trials.len(),
+        1,
+        "only the in-flight trial settled: {report}"
+    );
+    assert_eq!(trials[0]["id"], dispatched);
+    assert_eq!(trials[0]["status"], "failed", "{:?}", trials[0]);
+    assert_eq!(
+        trials[0]["verifier"]["exit_state"], "cancelled",
+        "{trials:?}"
+    );
+    // The observed cancellation is settled honestly: the reward stays an
+    // explicit unknown token (never a fabricated numeric score), the
+    // grade transition is mechanically refused, and cleanup evidence is
+    // emitted for the terminated owned tree.
+    assert!(
+        trials[0]["verifier"]["reward"]
+            .as_str()
+            .is_some_and(|token| token.starts_with("unknown")),
+        "no fabricated score after cancellation: {trials:?}"
+    );
+    assert_eq!(trials[0]["classification"]["class"], "no-outcome");
+    assert_eq!(trials[0]["classification"]["reason"], "job-cancelled");
+    assert!(
+        trials[0]["verifier"]["cleanup"]
+            .as_str()
+            .is_some_and(|token| token.starts_with("tree-terminated")),
+        "cleanup evidence for the owned tree: {trials:?}"
+    );
+    assert!(
+        trials[0]["authority"]["grade_dispatch"]
+            .as_str()
+            .is_some_and(|token| token.starts_with("failed")),
+        "grade admission mechanically fails after cancellation - never a silent grade: {trials:?}"
+    );
+    let other = if dispatched == "trial-opi-native" {
+        "trial-pi-native"
+    } else {
+        "trial-opi-native"
+    };
+    assert!(
+        !run_root.join("trials").join(other).exists(),
+        "the paired trial is never dispatched after cancellation"
+    );
+
+    // No orphan execution survives the successful cancellation: the owned
+    // child witnessed before the signal is gone.
+    let mut gone = false;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while std::time::Instant::now() < deadline {
+        if !nix_kill_alive(owned_pid) {
+            gone = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(gone, "the owned child must not outlive the run");
+    // Temporary credential material is removed; the owned-resource
+    // identity and its cleanup result stay as durable evidence.
+    let integration = run_root
+        .join("trials")
+        .join(&dispatched)
+        .join("integration");
+    assert!(
+        !integration.join("handoff.json").exists(),
+        "the credential handoff is removed after settlement"
+    );
+    let owned = serde_json::Value::Object(serde_json::Map::from_iter(std::iter::once((
+        "path".to_owned(),
+        serde_json::Value::String(
+            integration
+                .join("owned-resources.json")
+                .to_string_lossy()
+                .into_owned(),
+        ),
+    ))));
+    let owned_text = fs::read_to_string(owned["path"].as_str().unwrap())
+        .unwrap_or_else(|error| panic!("owned-resources evidence: {error}"));
+    let owned: serde_json::Value = serde_json::from_str(&owned_text).unwrap();
+    assert!(
+        owned["cleanup"].is_string(),
+        "cleanup evidence names the owned resources: {owned}"
+    );
+
+    // The offline report keeps both sides as explicit missing coverage:
+    // the cancelled trial is invalid execution, the undistpatched trial
+    // unexecuted, and neither carries a fabricated score.
+    let out = staged.root.join("cancel-report");
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("report")
+        .arg("--root")
+        .arg(&run_root)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .expect("spawn the opi-eval report command");
+    assert_eq!(output.status.code(), Some(0), "{:?}", output.status);
+    let report: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
+    assert_eq!(report["outcome"], "published", "{report}");
+    assert_eq!(report["run_outcome"], "incomplete", "{report}");
+    // Both sides stay explicit missing coverage in the offline report:
+    // only sealed evidence counts, so the cancelled trial never scores
+    // and never silently disappears from the plan denominator.
+    let counts = &report["coverage_counts"];
+    assert_eq!(counts["planned"], 2, "{counts}");
+    assert_eq!(counts["attempted"], 0, "{counts}");
+    assert_eq!(counts["valid"], 0, "{counts}");
+    assert_eq!(counts["invalid"], 0, "{counts}");
+    assert_eq!(counts["unexecuted"], 2, "{counts}");
+    for trial in report["trials"].as_array().unwrap() {
+        assert_ne!(
+            trial["outcome"]["reward"],
+            serde_json::json!(0.0),
+            "no fabricated zero score: {trial}"
+        );
+        let class = trial["outcome"]["class"].as_str().unwrap_or_default();
+        assert!(
+            class == "invalid" || class == "unexecuted",
+            "cancelled and undistpatched trials stay explicit missing coverage: {trial}"
+        );
+    }
+}
+
+/// Probes whether `pid` is still alive (signal 0 delivery).
+fn nix_kill_alive(pid: i32) -> bool {
+    unsafe { libc::kill(pid, 0) == 0 }
+}
+
+/// `P19-AC-010` (native no-model Docker cleanup witness): the native job
+/// starts one real container named under the runner's recorded
+/// trial-owned prefix. A SIGTERM at the CLI cancels only the owned
+/// process tree and removes exactly the prefix-owned container - the
+/// successful cancellation leaves no orphan execution, the durable
+/// owned-resource evidence names the removed container, and the shared
+/// material stays byte-identical.
+///
+/// Ignored: needs the local Docker engine and the `busybox` image (pulled
+/// on first use). No model, provider, or remote inference is involved.
+#[test]
+#[ignore = "requires the local Docker engine and the busybox image"]
+fn native_owned_resource_cancellation() {
+    use std::io::Read;
+    use std::process::Stdio;
+
+    let image = std::process::Command::new("docker")
+        .args(["image", "inspect", "busybox"])
+        .output()
+        .expect("docker CLI present");
+    if !image.status.success() {
+        let pull = std::process::Command::new("docker")
+            .args(["pull", "busybox"])
+            .output()
+            .expect("docker pull runs");
+        assert!(
+            pull.status.success(),
+            "busybox image is required material: {}",
+            String::from_utf8_lossy(&pull.stderr)
+        );
+    }
+
+    let staged = stage("owned-container");
+    let config = write_config(&staged);
+    let run_root = staged.root.join("run");
+    let material_before = fs::read(&staged.material).unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--config")
+        .arg(&config)
+        .arg("--root")
+        .arg(&run_root)
+        .arg("--fixtures")
+        .arg(fixtures())
+        .arg("--native-material")
+        .arg(&staged.material)
+        .env("OPI_EVAL_SCRIPTED_KEY", "<dummy-scripted-credential>")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn the opi-eval run command");
+    let cli_pid = child.id();
+
+    // Wait until the job owns both a live child process and a running
+    // container under the trial-owned prefix.
+    let mut witness = None;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    while std::time::Instant::now() < deadline {
+        for trial in ["trial-opi-native", "trial-pi-native"] {
+            let ready = run_root
+                .join("trials")
+                .join(trial)
+                .join("verifier-trace/witness/ready");
+            if ready.is_file() {
+                witness = Some(trial.to_owned());
+                break;
+            }
+        }
+        if let Some(trial) = &witness {
+            let listed = std::process::Command::new("docker")
+                .args([
+                    "ps",
+                    "--filter",
+                    &format!("name=^opi-eval-owned-{trial}-"),
+                    "--format",
+                    "{{.Names}}",
+                ])
+                .output()
+                .unwrap();
+            if !String::from_utf8_lossy(&listed.stdout).trim().is_empty() {
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let dispatched = witness.expect("the native job owns a running container witness");
+    let owned_pid: i32 = fs::read_to_string(
+        run_root
+            .join("trials")
+            .join(&dispatched)
+            .join("verifier-trace/witness/pid"),
+    )
+    .unwrap()
+    .trim()
+    .parse()
+    .unwrap();
+    assert!(nix_kill_alive(owned_pid), "the owned child is alive");
+
+    unsafe { libc::kill(cli_pid as i32, libc::SIGTERM) };
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    if let Some(mut pipe) = child.stdout.take() {
+        pipe.read_to_string(&mut stdout).unwrap();
+    }
+    if let Some(mut pipe) = child.stderr.take() {
+        pipe.read_to_string(&mut stderr).unwrap();
+    }
+    let status = child.wait().expect("the cancelled run exits");
+    assert_eq!(status.code(), Some(1), "stderr: {stderr} stdout: {stdout}");
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["outcome"], "incomplete", "{report}");
+
+    // The persisted run report names the removed owned container: a
+    // cancelled trial never seals, so its report transition is
+    // mechanically refused and the run report - not a per-trial
+    // receipt - is the durable cleanup evidence.
+    let persisted: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(run_root.join("run-report.json")).unwrap())
+            .unwrap();
+    let cancelled_trial = persisted["trials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|trial| trial["id"] == dispatched)
+        .expect("the cancelled trial stays in the persisted report");
+    let cleanup = cancelled_trial["verifier"]["cleanup"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        cleanup.contains("owned-containers:containers:") && cleanup.contains(":removed"),
+        "cleanup evidence names the removed container: {cleanup}"
+    );
+
+    // No orphan execution: the owned container and the owned child are
+    // both gone, and exactly the prefix was addressed.
+    let mut gone = false;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while std::time::Instant::now() < deadline {
+        let listed = std::process::Command::new("docker")
+            .args([
+                "ps",
+                "-aq",
+                "--filter",
+                &format!("name=^opi-eval-owned-{dispatched}-"),
+            ])
+            .output()
+            .unwrap();
+        let names = String::from_utf8_lossy(&listed.stdout).trim().to_owned();
+        if names.is_empty() && !nix_kill_alive(owned_pid) {
+            gone = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert!(gone, "no owned container or child may outlive the run");
+
+    // The durable owned-resource evidence records the exact removal.
+    let owned: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            run_root
+                .join("trials")
+                .join(&dispatched)
+                .join("integration/owned-resources.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let cleanup = owned["cleanup"].as_str().unwrap_or_default();
+    assert!(
+        cleanup.starts_with("containers:") && cleanup.ends_with(":removed"),
+        "owned-resource evidence names the removed container: {owned}"
+    );
+
+    // Shared material stays byte-identical; the credential handoff is
+    // gone.
+    assert_eq!(fs::read(&staged.material).unwrap(), material_before);
+    assert!(
+        !run_root
+            .join("trials")
+            .join(&dispatched)
+            .join("integration/handoff.json")
+            .exists()
+    );
 }

@@ -980,10 +980,8 @@ pub(crate) struct BenchmarkRecord {
     pub exit: ExitState,
     pub stdout: OutputCapture,
     pub stderr: OutputCapture,
-    #[expect(
-        dead_code,
-        reason = "settled benchmark record retains process-cleanup evidence"
-    )]
+    /// What termination cleanup was observed for the supervised tree; the
+    /// trial receipts project it as durable cleanup evidence.
     pub cleanup: CleanupEvidence,
     /// Wall-clock duration of the supervised verification run.
     pub wall_time: Duration,

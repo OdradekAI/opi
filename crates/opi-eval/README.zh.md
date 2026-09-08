@@ -322,6 +322,19 @@ sealing 或报告发布会被阻止。
 `run --replacement-for <TRIAL_ID>` 会为崩溃 trial 所在的整个对比组创建新身份，不会
 复用失败 trial 的身份。
 
+### 有界取消
+
+整个 run 由一个共享取消令牌管辖。向运行中的 `run` 进程发送 SIGINT 或
+SIGTERM 会停止新的受影响派发、只取消在飞 trial 拥有的进程树、移除记录在
+各 trial 专属前缀（`opi-eval-owned-<trial-id>-`）下的 job 容器以及临时
+凭据材料，并且仍然完成结算并输出中断报告：被取消与从未派发的 trial
+保持为显式缺失覆盖，绝不伪造分数；持久的
+`integration/owned-resources.json` 证据与 receipt 中的 cleanup token
+精确记录清理了什么。成功的取消绝不留下孤儿执行；被 ignore 的
+`native_owned_resource_cancellation` 见证在本地验证真实的 Docker 移除。
+无法强制执行的必需边界在任何效果之前拒绝，且绝不以未知价格承诺
+货币上限。
+
 ## 开发者指南
 
 | 职责 | 权威实现 |

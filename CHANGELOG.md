@@ -39,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inline credential fields: request identity is projected from the
   selected connection (`project_connection`) into each pinned client's
   exact configuration bytes.
+- `opi-eval`: one run-level cancellation token now bounds every dispatch.
+  SIGINT/SIGTERM at the CLI stops new affected dispatch, cancels only the
+  owned process trees, removes the job containers recorded under each
+  trial's owned prefix (`opi-eval-owned-<trial-id>-`) plus the temporary
+  credential material, and still settles and renders the interrupted
+  report: cancelled and never-dispatched trials stay explicit missing
+  coverage with no fabricated score. The durable
+  `integration/owned-resources.json` evidence and the receipt cleanup
+  token name exactly what was cleaned, so a successful cancellation never
+  leaves orphan execution behind. The recovery and replacement flows
+  consume the sealed interpretation and the durable lifecycle journal
+  only; they never reclassify settled scores from logs or exit codes, and
+  a replacement never rewrites the prior attempt's classification or
+  evidence.
 - `opi-eval`: `regrade --root --native-material --out` is now actual
   native regrading, not a byte check. It verifies every source bundle
   first, requires the saved Agent artifacts under each trial's
