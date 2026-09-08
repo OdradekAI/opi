@@ -2187,7 +2187,7 @@
       "definition_of_done": "P19-D07: Use positive execution.concurrency and frozen authorized bounds through one run supervisor with a shared cancellation token. On timeout, cancellation, exhausted enforceable budget or authority/privacy/provenance breach, stop new affected dispatch, settle observed outcomes, cancel only owned process trees/runner job containers and remove only temporary credential material. Preserve shared cache, source bundles and unrelated files/resources. Emit resource cleanup evidence and forbid successful cancellation with orphan execution. run --recover classifies durable completed/cancelled/failed/effect-unknown/unstarted states without Agent/provider calls; run --replacement-for T uses a fresh root, fresh identities for the entire paired group and the same frozen scope, preserving prior attempted evidence and unknown effects. Reject unenforceable required bounds before effects instead of ignoring them; no promised currency cap from unknown prices. CLI signal and process-race tests preserve evidence under interrupted settlement. Native no-model cancellation witness verifies actual local Docker cleanup. Recovery/replacement consumes the 19.1 sealed interpretation for settled trials and the existing durable lifecycle journal for interrupted or unstarted effects; it does not reclassify settled scores from logs/exit codes. Cancelled/effect-unknown/unstarted entries remain explicit missing coverage without fabricated zero scores, and replacement never rewrites the prior attempt classification or evidence.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "19.2",
         "19.6",
@@ -2311,7 +2311,7 @@
             "ProcessSupervisor",
             "runner::experiment::recovery_report"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -2323,7 +2323,7 @@
         "runner::experiment::recovery_report"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "41b1e8aeac7c4cb4593fbbca1d666c58cf2e9e75",
       "baseline_dirty_files": [],
@@ -2351,10 +2351,80 @@
         "crates/opi-eval/tests/native_driver.rs",
         "crates/opi-eval/tests/pairing_and_integrity.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "ea7d7932062363c501fcd2edc9d320436156ea16",
+      "evidence": {
+        "Opi-Task": "19.9",
+        "Opi-DoD-SHA256": "dfb68e957ab4cc2f7a0d6432345c33a981e9cba3721b217de461305d64e95f91",
+        "Opi-Verification": "cli-runtime; scoped smoke PASSED (assembled_run, authority_boundaries, native_driver, pairing_and_integrity) + lib 124 + full suite 234 passed + ignored Docker witness run explicitly and passed + workspace clippy -D warnings clean + fmt clean + doc-check PASS",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P19-AC-010-lifecycle met (SIGTERM settles and bounds dispatch with owned-tree/container cleanup and evidence; recovery/replacement immutable; no fabricated scores; unenforceable-bound and currency-cap rejections retained)"
+      },
       "blocker": null,
-      "session_notes": [],
+      "session_notes": [
+        {
+          "timestamp": "2026-09-07T14:05:00+08:00",
+          "attempt": 1,
+          "summary": "P19-D07 delivered. One run-level CancellationToken now bounds every dispatch: cli::run::run installs cooperative SIGINT/SIGTERM handlers (install_signal_cancellation) and passes the token into run_experiment; the wave loop stops new affected dispatch once cancelled (remaining planned trials stay unexecuted explicit missing coverage); the native job dispatch (BenchmarkExecution::run) runs under the shared token while each hermetic trial keeps a child token so behavior watchers cancel only their trial and a run signal still reaches every dispatch. Native owned-resource ownership: before any job spawn the runner derives and durably records the trial-owned container prefix opi-eval-owned-<trial-id>- in trials/<id>/integration/owned-resources.json (opi-eval-owned-resources/1) and projects it to the job env (OPI_EVAL_OWNED_CONTAINER_PREFIX); after a terminated dispatch (Cancelled or TimedOut) the runner removes exactly the prefix-owned containers (docker ps -aq --filter name=^prefix then docker rm -f each, docker-unavailable recorded as explicit unconfirmed cleanup instead of claimed success) and removes the temporary credential material (handoff.json + projected config) only on terminated paths - a job that settled by itself keeps its staged handoff evidence, preserving the pre-existing staged-handoff contract. The native receipt verifier.cleanup token combines the supervisor tree evidence, owned-container removal, and credential-material disposition (e.g. tree-terminated:unix-pgroup:verified+owned-containers:none-found+credential-material:removed); BenchmarkRecord.cleanup's dead-code expectation was lifted into a real contract. Tests at the spawned-CLI seam: native_driver::native_signal_cancellation_bounds_dispatch (deterministic) proves SIGTERM mid-job settles the observed outcome (no-outcome/job-cancelled, reward stays an unknown token, grade mechanically failed, cleanup evidence emitted), stops the paired second trial before dispatch, leaves no orphan child (kill(pid,0) poll), removes the handoff, and the offline report publishes planned=2/attempted=0/valid=0/unexecuted=2 with no fabricated score; native_driver::native_owned_resource_cancellation (#[ignore], exact filter, local Docker engine + busybox pulled on first use, no model/provider) proves a real container started under the owned prefix is removed by the cancellation (docker ps -aq filter empty afterwards), the child is dead, the durable owned-resources.json records containers:<id>:removed, and the shared material stays byte-identical. assembled_run::process_timeout_cancellation_race was extended per the admitted revision: the scored agent-timeout stays a valid graded zero in the offline denominator (immutable settled classification), and the cancelled run's settlement.json is durable and byte-identical across --recover (both trials classify sealed, never not-started or retryable) with offline coverage attempted=2/invalid=2/no fabricated score. assembled_run::effect_unknown_reopen was extended: after the replacement the crashed trial stays effect-unknown under its original identity, the never-started baseline has no fabricated row, the .r2 group is sealed, and the offline report publishes exactly the replacement scope without merging the prior attempt. Existing unenforceable-bound rejection (max_cost, unknown prices cannot support a guaranteed currency cap, experiment_contract.rs) retained. Docs: README.md/README.zh.md new 'Bounded cancellation' sections, CHANGELOG entry. No Cargo.toml change (libc already a crate dependency).",
+          "gate_results": {
+            "d0_scenarios": "PASS: cargo test -p opi-eval --test assembled_run process_timeout_cancellation_race + effect_unknown_reopen (updated, green) + cargo test -p opi-eval --test authority_boundaries (scoped smoke) + cargo test -p opi-eval --test native_driver native_owned_resource_cancellation -- --ignored --exact (ran explicitly, PASSED, real busybox container removed); production call sites main::Command::Run -> cli::run::run(install_signal_cancellation) -> run_experiment -> run_trial -> run_native_trial/run_fixture_trial -> ProcessSupervisor and recovery_report/replace_group all exercised through the spawned CLI",
+            "d1_scoped_smoke": "PASS: bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test assembled_run --test authority_boundaries --test native_driver --test pairing_and_integrity; lib gate cargo test -p opi-eval --lib (124 passed)",
+            "full_suite": "PASS: cargo test -p opi-eval (234 passed, 0 failed, 5 ignored = 4 pre-existing + the new Docker witness which was run explicitly and passed)",
+            "workspace_clippy": "PASS: cargo clippy --workspace --all-targets -- -D warnings (0 findings; BenchmarkRecord.cleanup dead-code expectation lifted into a documented contract, run_trial too_many_arguments allow) + cargo fmt --all -- --check",
+            "docs": "PASS: python scripts/opi-doc-check.py; git diff --check clean",
+            "d2_evaluator": "manual 7-lens exec audit passed with no must-fix findings (workflow runtime unavailable in environment, wf_ref=null recorded in verify_runs; shared decisions selected-connection-controls (19.2), frozen-selection-coverage (19.6), and native-trial-outcome (19.1) consumed through their owning Interfaces - the frozen scope drives replacement, the sealed settlement is never reclassified from logs/exit codes, closures remain in their owning tests)",
+            "test_disposition": [
+              {
+                "subject": "P19-AC-010-lifecycle",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_signal_cancellation_bounds_dispatch (deterministic SIGTERM witness: settle, stop-new-dispatch, no orphan, credential removal, offline missing coverage)",
+                "interface": "spawned opi-eval run/report CLI over staged native material + POSIX signals",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-010-lifecycle",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::native_owned_resource_cancellation (#[ignore], exact filter, local Docker engine + busybox; real owned container removed, no orphan, durable evidence)",
+                "interface": "spawned opi-eval run CLI over staged native material + local Docker engine",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-010-lifecycle",
+                "action": "update",
+                "test": "crates/opi-eval/tests/assembled_run.rs::process_timeout_cancellation_race (immutable settled classification offline + cancelled settlement durable across --recover + explicit missing coverage)",
+                "interface": "spawned opi-eval run/report CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-010-lifecycle",
+                "action": "update",
+                "test": "crates/opi-eval/tests/assembled_run.rs::effect_unknown_reopen (post-replacement recovery immutability, no fabricated not-started row, offline report publishes exactly the replacement scope)",
+                "interface": "spawned opi-eval run/report CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.9",
+                "action": "update",
+                "test": "crates/opi-eval/tests/native_driver.rs stand-in verifier gained the owned-cancel and owned-container witness modes (live child process / real docker container under the owned prefix, holds the job open until cancellation)",
+                "interface": "pinned verifier stand-in scripting",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.9",
+                "action": "retain",
+                "test": "all pre-existing assembled_run/authority_boundaries/native_driver/pairing_and_integrity expectations including native_run_drives_paired_trials_through_one_selected_job_each (staged-handoff persistence on settled runs preserved; credential removal is scoped to terminated dispatches) and experiment_contract.rs max_cost rejection (green in full suite)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ],
       "started_at": "2026-09-07T13:05:00+08:00"
     },
     {
@@ -4458,6 +4528,16 @@
       "rejected_count": 0,
       "ran_at": "2026-09-07T12:10:00+08:00",
       "task_id": "19.8",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-09-07T14:05:00+08:00",
+      "task_id": "19.9",
       "criterion_id": null
     }
   ]
