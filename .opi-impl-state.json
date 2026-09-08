@@ -2436,7 +2436,7 @@
       "definition_of_done": "P19-D07: Make existing GitHub workflows thin callers of the same local prepare/conformance/run/verify/report policy, retaining CI transport verification without a second scoring/materialization policy. Add an offline verifier scripts/verify-local-acceptance.py --root E --out O with deterministic tests; validate supplied redacted operator manifest, six attributable trials, controls, source/build/material/bundle digests, command exits and preserved provider/tool/native artifacts, reject substituted/oracle/missing/fixture-only evidence, and invoke built Companion verify/report only against supplied artifacts. It must not launch an Agent, access credentials or run a provider. Document the independent WSL/Linux CLI path, first connection, budget/task freeze, no-live default tests, rollback and operator-only real-run handoff in bilingual README/examples. Confirm pi-only runtime without Opi, unchanged Minimal Runtime and package absence of Opi dependencies/task corpora/grader implementations/images. Dummy credential environment must not activate live tests. Update affected Python regression tests and producer hashes, synchronize actual 0.x changes/help/docs/Unreleased. This produces acceptance tooling and instructions, not six-trial success. The operator handoff defines <redacted-evidence-root>/opi-artifact-audit as an Opi-only capture surface containing the three preserved Opi trial captures and only Opi repository commit references. The local verifier checks that this surface is present, non-empty, byte-bound to the corresponding original Opi native captures, and exhaustive for those three trials; it must not treat an empty generic-auditor success as acceptance. Preserve pi/Harbor/Pier identities with repository URL and commit in their original source records outside that scoped view. Validate those records against the admitted external inventories and cached upstream repository identities offline, never by resolving every commit in the Opi checkout. Do not discard or rename upstream provenance to evade validation. Add fixtures proving valid upstream commits are accepted in their correct repository and mismatched repository/commit pairs fail.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "19.9"
       ],
@@ -2540,7 +2540,7 @@
             "crates/opi-eval/scripts/verify-local-acceptance.py (planned)",
             "opi_eval::cli::conformance::run"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P19-AC-013",
@@ -2562,7 +2562,7 @@
             "crates/opi-eval/scripts/verify-local-acceptance.py (planned)",
             "opi_eval::cli::conformance::run"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -2574,7 +2574,7 @@
         "opi_eval::cli::conformance::run"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "f56176c1e73df45a512229516e5c43e0dc84a3c5",
       "baseline_dirty_files": [],
@@ -2606,10 +2606,80 @@
         "crates/opi-eval/tests/fail_closed_cli.rs",
         "crates/opi-eval/tests/native_driver.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "7647312685e5287c3e0172e076437fcf50ae6b56",
+      "evidence": {
+        "Opi-Task": "19.10",
+        "Opi-DoD-SHA256": "749962e51ba21fb8ef889a54ec3610e7b6e137ec8a16db7eb1dbea96bbd74e48",
+        "Opi-Verification": "cli-runtime; scoped smoke PASSED (authority_boundaries, fail_closed_cli, native_driver) + Python unittest discover 165 OK + full suite 237 passed + cargo metadata/package list reviewed + workspace clippy -D warnings clean + fmt clean + doc-check PASS",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P19-AC-011 and P19-AC-013 met (offline verifier + dummy-credential determinism; pi-only runtime, unchanged Minimal Runtime, package independence; workflows remain thin callers; bilingual docs and Unreleased synchronized)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-09-07T16:10:00+08:00",
+          "attempt": 1,
+          "summary": "P19-D07 acceptance tooling delivered. New offline verifier crates/opi-eval/scripts/verify-local-acceptance.py --root E --out O --companion C (exit 0 accepted / 2 typed rejection, durable opi-eval-local-acceptance-verification/1 report at a fresh non-existent --out outside the root): validates the supplied redacted operator manifest (opi-eval-local-acceptance/1) - exactly six attributable trials (unique ids, three benchmark families terminal-bench-2.1/terminal-bench-3.0/deepswe-v1.1, one opi + one pi each), frozen controls cross-checked against each family run-control.json planned subjects, build digests consistent with every trial attribution, material digests recomputed from the preserved family material copies, per-family run/verify/report command exits present and zero, preserved provider/tool/native artifacts present and digest-bound, and run_root paths confined inside the evidence root. Rejects substituted (bundle manifest digest recomputed; preserved-artifact digest), oracle (attribution), missing (trials, artifacts, exits), and fixture-only evidence (every counted trial must preserve bundle/artifacts/native/verifier-input.json). The <root>/opi-artifact-audit scoped capture view must be present, non-empty (an empty view with a generic-audit success JSON is rejected), byte-bound (recursive manifest digest) to each original Opi native capture, and exhaustive (exactly the three Opi trial captures, no pi captures, extra files may only reference the declared Opi commit). pi/Harbor/Pier source records keep repository_url+commit in the manifest outside the scoped view and validate only against the supplied upstream-identity-cache.json offline - never by resolving commits in the Opi checkout; mismatched repo/commit, unknown commits, malformed ids, and missing cache repositories all fail typed. The verifier spawns only the supplied Companion executable with exactly 'verify --root <family>' and 'report --root <family> --out <scratch>' argv under a credential-stripped environment (API_KEY/TOKEN/SECRET/CREDENTIAL/OPI_EVAL_SCRIPTED_KEY markers removed) into a scratch outside the evidence root; it never launches an Agent or contacts a provider. Deterministic tests: 26 Python unittest cases (structural matrix + stub-companion invocation contract) in scripts/test_verify_local_acceptance.py plus the Rust end-to-end native_driver::local_acceptance_verifier_accepts_genuine_native_evidence which stages three GENUINE native family runs through the real Companion (per-family suffixed trial ids via acceptance_family_config), records observed run/verify/report exits, builds the evidence root, and proves acceptance exit 0 with six trials and the durable report written, then proves the empty-view and tampered-capture rejections at the same genuine seam. fail_closed_cli::dummy_credentials_do_not_activate_live_behavior pins P19-AC-011: a populated dummy OPENAI/ANTHROPIC/OPI_EVAL_SCRIPTED_KEY environment leaves the hermetic contract completed+sealed with scripted rewards and no credential byte anywhere in the durable root. native_driver::pi_only_without_opi_runtime_and_packaging pins P19-AC-013: a pi-products-only experiment runs and seals both trials, the pairing layer keeps the identical-protocol mismatch explicit (outcome incomplete, protocol-group-mismatch, exit 1) instead of fabricating a baseline, the offline report publishes, and the crate manifest declares no opi- crate dependency and bundles no corpora/graders/images/datasets. GitHub workflows were verified already-thin (every step delegates to native-smoke.sh / materialize-external-locks.sh; no scoring or materialization policy in YAML), so they are unchanged and the static-lock producer hashes stay valid. Docs: README.md + README.zh.md new 'Local operator acceptance and its offline verifier' section (WSL/Linux path, first connection, budget/task freeze, no-live default tests, rollback, operator-only handoff, verifier contract), examples/local-evaluation README section 7, CHANGELOG Unreleased entry. Zero Cargo changes; Minimal Runtime and all other crates untouched.",
+          "gate_results": {
+            "d0_scenarios": "PASS: P19-AC-011 (cargo test -p opi-eval --test fail_closed_cli green + python -m unittest discover -s crates/opi-eval/scripts -p 'test_*.py' 165 tests OK) and P19-AC-013 (cargo test -p opi-eval --test native_driver pi_only_without_opi green; cargo test -p opi-eval --test authority_boundaries green; cargo metadata --no-deps OK; cargo package -p opi-eval --list --allow-dirty reviewed 181 files - source/tests/scripts/examples/integrations/external-locks/profiles only, no corpora/graders/images; python scripts/opi-doc-check.py PASS; git diff --check clean); production call sites main.rs Command::Run, cli::run::run, run_experiment, run_trial exercised through the spawned CLI by the new tests, verify/report invoked as real Companion calls by the Rust e2e",
+            "d1_scoped_smoke": "PASS: bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test authority_boundaries --test fail_closed_cli --test native_driver",
+            "full_suite": "PASS: cargo test -p opi-eval (237 passed, 0 failed, 5 ignored - unchanged ignores; the 5th is the 19.9 Docker witness)",
+            "workspace_clippy": "PASS: cargo clippy --workspace --all-targets -- -D warnings (0 findings) + cargo fmt --all -- --check",
+            "docs": "PASS: python scripts/opi-doc-check.py; git diff --check clean",
+            "d2_evaluator": "manual 7-lens exec audit passed with no must-fix findings (exec.workflow.js runtime unavailable in environment, wf_ref=null recorded in verify_runs; all 15 DoD clauses traced to concrete checks; shared decision verified-local-material-identity consumed as the preserved-material digest cross-check, closure remains in native_driver.rs; workflows confirmed already-thin transport callers, unchanged with valid static-lock producer hashes pinned by the external-lock unittests inside the 165)",
+            "test_disposition": [
+              {
+                "subject": "P19-AC-011",
+                "action": "add",
+                "test": "crates/opi-eval/scripts/test_verify_local_acceptance.py (26 cases: acceptance, companion invocation contract via recording stub, request-level rejections, manifest/trial/digest/exit/preserved/controls matrix, scoped-view empty/missing/substituted/non-exhaustive/foreign-commit, upstream identity accept/mismatch/unknown/malformed/missing-cache)",
+                "interface": "spawned verify-local-acceptance.py CLI over synthetic redacted evidence roots",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-011",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::local_acceptance_verifier_accepts_genuine_native_evidence (three genuine native family runs through the real Companion, evidence root accepted end to end, empty-view and tampered-capture rejections at the genuine seam)",
+                "interface": "spawned opi-eval run/verify/report CLI + spawned verify-local-acceptance.py with the real Companion",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-011",
+                "action": "add",
+                "test": "crates/opi-eval/tests/fail_closed_cli.rs::dummy_credentials_do_not_activate_live_behavior (populated dummy credential env keeps the hermetic contract and leaks no credential byte into durable evidence)",
+                "interface": "spawned opi-eval run CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-013",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::pi_only_without_opi_runtime_and_packaging (pi-only run+offline report without any Opi product; pairing keeps protocol-group-mismatch explicit; manifest has no opi- dependency and no bundled corpora/graders/images)",
+                "interface": "spawned opi-eval run/report CLI + crate manifest",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.10",
+                "action": "retain",
+                "test": "crates/opi-eval/tests/native_driver.rs::pi_only_preparation_requires_no_opi_material (prepares/validates pi-only material; distinct from the new runtime+packaging case) and all pre-existing authority_boundaries/fail_closed_cli/native_driver expectations plus the existing verify-external-lock/native-smoke Python suites (all green in the 165-test discover and the full suite)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.10",
+                "action": "retain",
+                "test": "GitHub workflows .github/workflows/opi-eval-native-smoke.yml and opi-eval-external-lock-materialization.yml unchanged - verified already-thin transport callers delegating every step to the local producer scripts with no second scoring/materialization policy",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "19.11",
@@ -4538,6 +4608,16 @@
       "rejected_count": 0,
       "ran_at": "2026-09-07T14:05:00+08:00",
       "task_id": "19.9",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-09-07T16:10:00+08:00",
+      "task_id": "19.10",
       "criterion_id": null
     }
   ]
