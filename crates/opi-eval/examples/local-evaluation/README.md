@@ -92,8 +92,13 @@ evidence: per-benchmark metric denominators (native zero and
 benchmark-defined timeouts stay graded), coverage counts
 (planned/attempted/valid/agent-failure/invalid/unexecuted), scope
 labels, comparison pairs with missing sides, repetition control pairs,
-and typed unknown telemetry. `regrade` answers with an explicit
-unavailable-operation diagnostic until native regrading lands.
+and typed unknown telemetry.
+
+`regrade --root R --native-material M --out D` is the distinct actual
+native regrading: it re-grades the preserved Agent artifacts with the
+pinned native verifier in fresh offline environments, persisting one
+derived grading record per trial without rewriting any original score
+and without any Agent, credential, or provider involvement.
 
 ## 6. Validate and run from the independent directory
 

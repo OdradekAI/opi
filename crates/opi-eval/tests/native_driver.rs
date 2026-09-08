@@ -127,6 +127,103 @@ fn verifier_stand_in_script() -> String {
     r#"#!/bin/sh
 # native stand-in for the pinned upstream runner entry (test staging)
 set -eu
+# Offline regrade dispatch (P19-AC-009): this fresh verifier environment
+# grades the preserved Agent artifacts it received. No integration
+# handoff, no agent dispatch, and no provider contact exist on this
+# path; the argv of a graded dispatch never applies here.
+if [ "${OPI_EVAL_REGRADE:-0}" = "1" ]; then
+  identity="$OPI_EVAL_REGRADE_IDENTITY"
+  artifacts_root="$OPI_EVAL_REGRADE_ARTIFACTS"
+  [ -f "$identity" ] || { echo "missing regrade identity" >&2; exit 9; }
+  [ -d "$artifacts_root" ] || { echo "missing regrade artifacts" >&2; exit 9; }
+  python3 - "$identity" "$artifacts_root" "$OPI_EVAL_REGRADE_FAMILY" <<'REGRADE'
+import hashlib, json, os, shutil, sys
+
+identity = json.load(open(sys.argv[1]))
+artifacts_root, family = sys.argv[2], sys.argv[3]
+job = os.path.join("jobs", "2026-09-05__13-00-00")
+trial_dir = os.path.join(job, "trials", identity["trial_name"])
+os.makedirs(os.path.join(trial_dir, "agent"), exist_ok=True)
+os.makedirs(os.path.join(trial_dir, "artifacts"), exist_ok=True)
+# Deliver the preserved collected artifacts into the fresh job tree.
+manifest = []
+for entry in identity["collected"]:
+    destination = entry["destination"]
+    source_abs = os.path.join(artifacts_root, destination)
+    target = os.path.join(trial_dir, "artifacts", destination)
+    os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+    if os.path.isdir(source_abs):
+        shutil.copytree(source_abs, target)
+        manifest.append({"source": entry["source"], "destination": destination, "type": "directory", "status": "ok"})
+    else:
+        shutil.copyfile(source_abs, target)
+        manifest.append({"source": entry["source"], "destination": destination, "type": "file", "status": "ok"})
+# The grading reads exactly these bytes: each family's verifier inspects
+# the delivered environment, and the marker is the witness the reward
+# derives from (changed witness bytes change the fresh grade).
+markers = {
+    "terminal-bench-2.1": ("root/answer.txt", b"native stand-in answer\n"),
+    "terminal-bench-3.0": ("app/evalbench/schema.py", b"schema.py bytes"),
+    "deepswe-v1.1": ("logs/artifacts/model.patch", b"fixture committed patch bytes"),
+}
+if family not in markers:
+    print("unknown regrade family", file=sys.stderr)
+    sys.exit(9)
+marker_path, marker_bytes = markers[family]
+observed = None
+marker_abs = os.path.join(trial_dir, "artifacts", marker_path)
+if os.path.isfile(marker_abs):
+    with open(marker_abs, "rb") as handle:
+        observed = handle.read()
+reward = 1.0 if observed == marker_bytes else 0.0
+terminal = {
+    "schema": "opi-eval-native-agent-terminal/1",
+    "product": identity["product"],
+    "agent_executable_sha256": identity["agent_executable_sha256"],
+    "exit_code": 0,
+    "timed_out": False,
+    "delivered": identity["delivered"],
+}
+with open(os.path.join(trial_dir, "agent", "opi-eval-terminal.json"), "w") as handle:
+    json.dump(terminal, handle)
+if identity["runner"] == "pier":
+    eval_key = "{}__{}__adhoc".format(identity["agent_name"], identity["model"])
+else:
+    eval_key = identity["agent_name"] + "__adhoc"
+aggregate = {
+    "n_total_trials": 1,
+    "stats": {"evals": {eval_key: {"reward_stats": {"reward": {str(reward): [identity["trial_name"]]}}}}},
+}
+with open(os.path.join(job, "result.json"), "w") as handle:
+    json.dump(aggregate, handle)
+config = {
+    "agent": {"name": identity["agent_import_path"], "import_path": None},
+    "task": {"verifier": {"environment_mode": identity["environment_mode"]}},
+}
+if identity["runner"] == "pier":
+    config["artifacts"] = []
+    config["task"]["artifacts"] = identity["declared"]
+    config["task"]["verifier"]["network_mode"] = identity["verifier_network"]
+    config["task"]["metadata"] = {"base_commit_hash": identity["base_revision"]}
+    config["task"]["environment"] = {"docker_image": identity["docker_image"]}
+else:
+    config["artifacts"] = identity["declared"]
+with open(os.path.join(trial_dir, "config.json"), "w") as handle:
+    json.dump(config, handle)
+results = {
+    "task_name": identity["task_name"],
+    "trial_name": identity["trial_name"],
+    "agent_info": {"name": identity["agent_name"], "version": "1.0.0", "model_info": {"name": "scripted/eval"}},
+    "verifier_result": {"rewards": {"reward": reward}},
+    "exception_info": None,
+}
+with open(os.path.join(trial_dir, "results.json"), "w") as handle:
+    json.dump(results, handle)
+with open(os.path.join(trial_dir, "artifacts", "manifest.json"), "w") as handle:
+    json.dump(manifest, handle)
+REGRADE
+  exit $?
+fi
 [ "$1" = "run" ] && [ "$2" = "--locked" ] && { [ "$3" = "harbor" ] || [ "$3" = "pier" ]; } \
   && [ "$4" = "run" ] && [ "$5" = "-p" ] \
   || { echo "argv drift: expected run --locked harbor|pier run -p" >&2; exit 9; }
@@ -2897,4 +2994,362 @@ fn native_provider_failure_report() {
     assert_eq!(counts["invalid"], 0, "{published}");
     assert_eq!(published["metrics"][0]["denominator"], 2, "{published}");
     assert_eq!(published["run_outcome"], "completed", "{published}");
+}
+
+/// Runs one native family to completion and returns its root plus the
+/// pre-regrade offline report bytes (the immutability baseline).
+fn regrade_family_root(
+    staged: &Staged,
+    config: &Path,
+    run_name: &str,
+) -> (std::path::PathBuf, String) {
+    let run_root = staged.root.join(run_name);
+    let (code, stdout, stderr) = run_native(staged, config, &run_root);
+    assert_eq!(code, 0, "{run_name} run: {stderr} {stdout}");
+    let report = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("report")
+        .arg("--root")
+        .arg(&run_root)
+        .output()
+        .expect("spawn the offline report command");
+    assert_eq!(report.status.code(), Some(0));
+    (
+        run_root,
+        String::from_utf8_lossy(&report.stdout).trim().to_owned(),
+    )
+}
+
+/// Regrades one run root offline and returns (exit, stdout report JSON).
+fn regrade_run(staged: &Staged, run_root: &Path, out: &Path) -> (i32, serde_json::Value, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("regrade")
+        .arg("--root")
+        .arg(run_root)
+        .arg("--native-material")
+        .arg(&staged.material)
+        .arg("--out")
+        .arg(out)
+        .output()
+        .expect("spawn the opi-eval regrade command");
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let report = serde_json::from_str(&stdout).unwrap_or_else(|_error| {
+        panic!("regrade stdout is one JSON report: {stdout:?} stderr={stderr}")
+    });
+    (output.status.code().unwrap_or(-1), report, stderr)
+}
+
+/// `P19-AC-009` (regrade): saved native Agent artifacts undergo fresh
+/// offline native grading in fresh verifier environments - for all three
+/// families - through the same binding readers, with a derived record per
+/// trial, zero Agent or provider invocations, and byte-identical source
+/// evidence afterwards. Byte checking alone never satisfies this path.
+#[test]
+fn native_offline_regrade() {
+    let staged = stage("ok");
+    let cases: Vec<(&str, PathBuf)> = vec![
+        ("terminal-bench-2.1", write_config(&staged)),
+        ("terminal-bench-3.0", write_tb30_config(&staged)),
+        ("deepswe-v1.1", write_deepswe_config(&staged)),
+    ];
+    for (family, config) in &cases {
+        let (run_root, before_report) =
+            regrade_family_root(&staged, config, &format!("run-{family}"));
+        let out = staged.root.join(format!("regrade-{family}"));
+
+        let (code, report, stderr) = regrade_run(&staged, &run_root, &out);
+        assert_eq!(code, 0, "{family} regrade: {stderr} {report}");
+        assert_eq!(report["schema"], "opi-eval-native-regrade/1", "{report}");
+        assert_eq!(report["outcome"], "regraded", "{family}: {report}");
+        let trials = report["trials"].as_array().unwrap();
+        assert_eq!(trials.len(), 2, "{family}: {report}");
+        for trial in trials {
+            assert_eq!(trial["reward"], 1, "{family}: {report}");
+            assert!(trial["bundle_identity"].as_str().unwrap().len() == 64);
+            let record_path = trial["record"].as_str().unwrap();
+            assert!(out.join(record_path).is_file(), "{family}: {record_path}");
+            let record: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(out.join(record_path)).unwrap()).unwrap();
+            assert_eq!(record["schema"], "opi-eval-regrade-record/1", "{record}");
+            assert_eq!(record["source"]["trial"], trial["trial"], "{record}");
+            for artifact in record["source"]["collected"].as_array().unwrap() {
+                // Every preserved artifact digests to exactly the sealed
+                // verifier-input identity the fresh grade consumed.
+                assert!(artifact["sha256"].as_str().unwrap().len() == 64, "{record}");
+            }
+            assert!(
+                record["fresh"]["verifier_executable_sha256"]
+                    .as_str()
+                    .unwrap()
+                    .len()
+                    == 64,
+                "{record}"
+            );
+        }
+        assert_eq!(
+            report["rejections"].as_array().unwrap().len(),
+            0,
+            "{family}: {report}"
+        );
+
+        // Zero Agent or provider invocations: the stand-in agents write
+        // their argv capture next to themselves; nothing of the agent
+        // boundary may appear anywhere under the regrade output.
+        let out_text = walk_text(&out);
+        assert!(!out_text.contains("opi-argv.txt"), "{family}: agent argv");
+        assert!(
+            !out_text.contains("handoff.json"),
+            "{family}: no integration handoff in the fresh environment"
+        );
+        // The fresh environment record carries no credential projection.
+        for env_record in walk_files_matching(&out, "env.json") {
+            let text = fs::read_to_string(env_record).unwrap();
+            let projected: serde_json::Value = serde_json::from_str(&text).unwrap();
+            let keys = projected["projected"].as_object().unwrap();
+            assert!(
+                !keys.contains_key("OPI_EVAL_SCRIPTED_KEY") && !keys.contains_key("OPENAI_API_KEY"),
+                "{family}: credential material in the fresh environment: {text}"
+            );
+        }
+
+        // Immutable source evidence: the offline report and the seals are
+        // byte-identical after regrading.
+        let after = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("report")
+            .arg("--root")
+            .arg(&run_root)
+            .output()
+            .expect("spawn the offline report command");
+        assert_eq!(
+            String::from_utf8_lossy(&after.stdout).trim(),
+            before_report,
+            "{family}: regrade must not change the source report"
+        );
+        let verify = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("verify")
+            .arg("--root")
+            .arg(&run_root)
+            .output()
+            .expect("spawn the verify command");
+        assert_eq!(verify.status.code(), Some(0), "{family}: seals intact");
+    }
+}
+
+fn walk_files(root: &Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                files.extend(walk_files(&path));
+            } else {
+                files.push(path);
+            }
+        }
+    }
+    files
+}
+
+fn walk_files_matching(root: &Path, name: &str) -> Vec<std::path::PathBuf> {
+    walk_files(root)
+        .into_iter()
+        .filter(|path| path.file_name().is_some_and(|n| n == name))
+        .collect()
+}
+
+fn walk_text(root: &Path) -> String {
+    walk_files(root)
+        .into_iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Rewrites the staged material's deepswe task package with `edit`
+/// applied to its task.toml, recomputing the manifest digest so the
+/// variant material stays internally admissible.
+fn deepswe_task_variant(staged: &Staged, name: &str, edit: impl FnOnce(&mut String)) -> PathBuf {
+    let variant_dir = staged.root.join(name);
+    copy_dir(
+        &staged.root.join("material/deepswe-task-package"),
+        &variant_dir,
+    );
+    let toml_path = variant_dir.join("task.toml");
+    let mut text = fs::read_to_string(&toml_path).unwrap();
+    edit(&mut text);
+    fs::write(&toml_path, text).unwrap();
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+    material["benchmarks"]["deepswe-v1.1"]["task_package"] =
+        serde_json::Value::String(variant_dir.to_string_lossy().into_owned());
+    material["benchmarks"]["deepswe-v1.1"]["task_package_manifest_sha256"] =
+        serde_json::Value::String(directory_manifest_digest(&variant_dir));
+    fs::write(
+        &staged.material,
+        serde_json::to_vec_pretty(&material).unwrap(),
+    )
+    .unwrap();
+    staged.material.clone()
+}
+
+/// `P19-AC-009` (regrade fail-closed): every missing dependency or
+/// identity drift rejects offline regrading with a typed reason, and the
+/// fresh grade follows the preserved witness bytes rather than any
+/// recorded score.
+#[test]
+fn native_offline_regrade_rejects_every_fail_closed_case() {
+    let staged = stage("ok");
+    let original_material = fs::read(&staged.material).unwrap();
+
+    // Tampered source bundle: the seal rejects before any fresh grading.
+    {
+        let config = write_config(&staged);
+        let (run_root, _) = regrade_family_root(&staged, &config, "run-tamper");
+        let artifact =
+            run_root.join("trials/trial-opi-native/bundle/artifacts/native/trial-result.json");
+        let mut bytes = fs::read(&artifact).unwrap();
+        bytes.push(b' ');
+        fs::write(&artifact, bytes).unwrap();
+        let out = staged.root.join("regrade-tamper");
+        let (code, report, stderr) = regrade_run(&staged, &run_root, &out);
+        assert_eq!(code, 1, "{stderr} {report}");
+        assert_eq!(report["outcome"], "rejected", "{report}");
+        let rejection = &report["rejections"][0];
+        assert_eq!(rejection["trial"], "trial-opi-native", "{report}");
+        assert!(
+            rejection["reason"].as_str().unwrap().starts_with("bundle-"),
+            "{report}"
+        );
+        assert!(
+            report["trials"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|trial| trial["trial"] != "trial-opi-native"),
+            "{report}"
+        );
+    }
+
+    // Missing saved Agent artifacts: the preserved job tree is gone.
+    {
+        let config = write_config(&staged);
+        let (run_root, _) = regrade_family_root(&staged, &config, "run-missing");
+        std::fs::remove_dir_all(run_root.join("trials/trial-opi-native/verifier-trace")).unwrap();
+        let out = staged.root.join("regrade-missing");
+        let (code, report, _) = regrade_run(&staged, &run_root, &out);
+        assert_eq!(code, 1);
+        let rejection = &report["rejections"][0];
+        assert_eq!(rejection["trial"], "trial-opi-native", "{report}");
+        assert_eq!(rejection["reason"], "agent-artifacts-missing", "{report}");
+    }
+
+    // Tampered preserved Agent bytes: digests reject against the sealed
+    // verifier-input identity before any grading.
+    {
+        let config = write_config(&staged);
+        let (run_root, _) = regrade_family_root(&staged, &config, "run-altered");
+        let jobs_root = run_root.join("trials/trial-opi-native/verifier-trace/jobs");
+        let mut jobs: Vec<_> = fs::read_dir(&jobs_root)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.join("result.json").is_file())
+            .collect();
+        jobs.sort();
+        assert_eq!(jobs.len(), 1, "one job tree");
+        let trial_dirs: Vec<_> = fs::read_dir(jobs[0].join("trials"))
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .collect();
+        assert_eq!(trial_dirs.len(), 1, "one trial inside the job");
+        let answer_file = trial_dirs[0].join("artifacts/root/answer.txt");
+        fs::write(&answer_file, b"substituted witness bytes\n").unwrap();
+        let out = staged.root.join("regrade-altered");
+        let (code, report, _) = regrade_run(&staged, &run_root, &out);
+        assert_eq!(code, 1);
+        let rejection = &report["rejections"][0];
+        assert_eq!(rejection["trial"], "trial-opi-native", "{report}");
+        assert_eq!(rejection["reason"], "agent-artifacts-tampered", "{report}");
+    }
+
+    // Wrong patch base: the fresh material's task declares a different
+    // base revision than the sealed verifier-input recorded.
+    {
+        let config = write_deepswe_config(&staged);
+        let (run_root, _) = regrade_family_root(&staged, &config, "run-base");
+        deepswe_task_variant(&staged, "deepswe-base-variant", |text| {
+            *text = text.replace(
+                "1111111111111111111111111111111111111112",
+                "9999999999999999999999999999999999999999",
+            );
+        });
+        let out = staged.root.join("regrade-base");
+        let (code, report, _) = regrade_run(&staged, &run_root, &out);
+        assert_eq!(code, 1);
+        assert_eq!(
+            report["rejections"][0]["reason"], "patch-base-drift",
+            "{report}"
+        );
+        fs::write(&staged.material, &original_material).unwrap();
+    }
+
+    // A verifier requiring network has no permitted offline equivalent
+    // here: the task itself declares public network access.
+    {
+        let config = write_deepswe_config(&staged);
+        let (run_root, _) = regrade_family_root(&staged, &config, "run-network");
+        deepswe_task_variant(&staged, "deepswe-network-variant", |text| {
+            *text = text.replace("network_mode = \"no-network\"", "network_mode = \"public\"");
+        });
+        let out = staged.root.join("regrade-network");
+        let (code, report, _) = regrade_run(&staged, &run_root, &out);
+        assert_eq!(code, 1);
+        assert_eq!(
+            report["rejections"][0]["reason"], "verifier-network-required",
+            "{report}"
+        );
+        fs::write(&staged.material, &original_material).unwrap();
+    }
+
+    // Existing output root: request-level rejection, nothing overwritten.
+    {
+        let config = write_config(&staged);
+        let (run_root, _) = regrade_family_root(&staged, &config, "run-exists");
+        let out = staged.root.join("regrade-exists");
+        fs::create_dir_all(&out).unwrap();
+        fs::write(out.join("prior.txt"), b"prior").unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("regrade")
+            .arg("--root")
+            .arg(&run_root)
+            .arg("--native-material")
+            .arg(&staged.material)
+            .arg("--out")
+            .arg(&out)
+            .output()
+            .expect("spawn the opi-eval regrade command");
+        assert_eq!(output.status.code(), Some(2));
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("output root already exists"),
+            "stderr names the request rejection"
+        );
+        assert_eq!(fs::read(out.join("prior.txt")).unwrap(), b"prior");
+    }
+
+    // Changed witness input: the DeepSWE nop run preserved an empty
+    // committed patch; the fresh verifier grades it zero - the regrade
+    // consumes the preserved bytes, not a recorded score.
+    {
+        set_deepswe_mode(&staged, "deepswe-nop");
+        let config = write_deepswe_config(&staged);
+        let (run_root, _) = regrade_family_root(&staged, &config, "run-nop");
+        let out = staged.root.join("regrade-nop");
+        let (code, report, stderr) = regrade_run(&staged, &run_root, &out);
+        assert_eq!(code, 0, "{stderr} {report}");
+        assert_eq!(report["outcome"], "regraded", "{report}");
+        for trial in report["trials"].as_array().unwrap() {
+            assert_eq!(trial["reward"], 0, "empty patch grades zero: {report}");
+        }
+    }
 }

@@ -73,13 +73,22 @@ enum Command {
         #[arg(long)]
         root: std::path::PathBuf,
     },
-    /// Re-execute preserved Agent artifacts with the pinned native
-    /// grader in a fresh environment (not implemented yet: the command
-    /// fails closed with an unavailable-operation diagnostic).
+    /// Re-grade preserved Agent artifacts with the pinned native
+    /// verifier in fresh offline environments; nothing Agent- or
+    /// provider-side ever runs.
     Regrade {
-        /// Run root holding `trials/<id>/bundle` sealed bundles.
+        /// Run root holding `trials/<id>/bundle` sealed bundles and the
+        /// preserved Agent artifact job trees.
         #[arg(long)]
         root: std::path::PathBuf,
+        /// Resolved native material manifest with the cached immutable
+        /// task and verifier materials.
+        #[arg(long)]
+        native_material: std::path::PathBuf,
+        /// Fresh output root for verifier environments and derived
+        /// records (must not exist).
+        #[arg(long)]
+        out: std::path::PathBuf,
     },
     /// Recompute and render the offline normalized report from sealed
     /// assembled outputs.
@@ -298,8 +307,16 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Command::Regrade { root } => {
-            let args = cli::regrade::RegradeArgs { root };
+        Command::Regrade {
+            root,
+            native_material,
+            out,
+        } => {
+            let args = cli::regrade::RegradeArgs {
+                root,
+                native_material,
+                out,
+            };
             match cli::regrade::regrade(&args) {
                 Ok(report) => {
                     println!(

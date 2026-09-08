@@ -39,6 +39,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inline credential fields: request identity is projected from the
   selected connection (`project_connection`) into each pinned client's
   exact configuration bytes.
+- `opi-eval`: `regrade --root --native-material --out` is now actual
+  native regrading, not a byte check. It verifies every source bundle
+  first, requires the saved Agent artifacts under each trial's
+  preserved job tree to still digest to the sealed verifier-input
+  identity, then re-grades those preserved artifacts with the pinned
+  native verifier in fresh trial-owned environments under the output
+  root - reusing the same binding readers as initial execution - and
+  persists one derived `opi-eval-regrade-record/1` grading record per
+  trial referencing the source bundle, original artifact identities,
+  and fresh verifier identity, without rewriting any original score.
+  No Agent executable is spawned, no credential is resolved, and no
+  provider is contacted; a verifier whose task declares a network
+  requirement without a permitted offline equivalent rejects
+  fail-closed, as do tampered bundles, missing or altered Agent
+  artifacts, a drifted patch base, and drifted task material identity.
+  Exit 0 means every sealed native trial regraded; 1 names typed
+  per-trial rejections; 2 rejects the request (a root with no native
+  trial, an unreadable material, or an existing output root, which a
+  regrade never overwrites).
 - `opi-eval`: offline evidence operations are distinct and native
   outcome reporting is honest. New `verify --root R` owns the original
   byte/seal check over every sealed trial bundle (no repair, no

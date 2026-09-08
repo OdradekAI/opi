@@ -41,7 +41,7 @@ evaluation fixtures and evidence workflows, not general Agent execution.
 - Run commands from the workspace root.
 - Building the crate requires Rust 1.97 or newer.
 - The repository checkout supplies the example experiment and fixtures.
-- `validate` is cross-platform. The complete `run` -> `regrade` -> `report`
+- `validate` is cross-platform. The complete `run` -> `verify` -> `report`
   and fixture-conformance walkthroughs documented here are backed by Unix-only
   acceptance tests that use POSIX helper processes.
 - Hermetic fixture mode needs no live credentials or network access and never
@@ -145,7 +145,6 @@ enumerated corpus at run time.
 ```sh
 cargo run -p opi-eval -- verify --root "$DEMO_DIR/run"
 cargo run -p opi-eval -- report --root "$DEMO_DIR/run" --out "$DEMO_DIR/report.json"
-cargo run -p opi-eval -- regrade --root "$DEMO_DIR/run"   # exit 2: not implemented yet
 ```
 
 Three distinct offline operations, none starting an Agent or provider:
@@ -153,9 +152,9 @@ Three distinct offline operations, none starting an Agent or provider:
 original seals (exit 0 verified / 1 mutation detected / 2 rejected; no
 repair, no rewrite); `report --root R --out O` reconstructs the
 byte-stable normalized report from verified sealed evidence alone; and
-`regrade` fails closed with an explicit `unavailable-operation`
-diagnostic (exit 2) until actual native regrading lands - a byte check
-never runs under the regrade name. Every run binds a run-level
+`regrade --root R --native-material M --out D` is the distinct actual
+native regrading described below - a byte check never runs under the
+regrade name. Every run binds a run-level
 `run-control.json` before its first effect (experiment identity,
 manifest digest, selection, corpus size, exact planned trials), so the
 offline report preserves unstarted trials even when no trial sealed.
@@ -205,19 +204,39 @@ The run root must be fresh: use an absent or empty path that does not contain
 an earlier durable run. The command writes `run-report.json` plus one receipt
 and bundle under `trials/<trial-id>/`.
 
-### 3. Regrade sealed bundles
+### 3. Verify sealed bundles, or re-grade them natively offline
 
 ```sh
-cargo run -p opi-eval -- regrade --root "$RUN_ROOT"
+cargo run -p opi-eval -- verify --root "$RUN_ROOT"
+cargo run -p opi-eval -- regrade \
+  --root "$RUN_ROOT" \
+  --native-material "$MATERIAL" \
+  --out "$REGRADE_OUT"
 ```
 
-`regrade` reads every `trials/<trial-id>/bundle`, recomputes its identity, and
+`verify` reads every `trials/<trial-id>/bundle`, recomputes its identity, and
 checks every covered artifact. It does not start an Agent or provider, repair a
-bundle, rehash changed bytes, or modify the run root.
+bundle, rehash changed bytes, or modify the run root. Exit 0 and
+`"outcome":"verified"` mean every sealed bundle still matches its manifest; a
+mutation or missing seal exits 1 and remains visible in the JSON failure list.
 
-Exit 0 and `"outcome":"verified"` mean every sealed bundle still matches its
-manifest. A mutation or missing seal exits 1 and remains visible in the JSON
-failure list.
+`regrade` is the distinct actual native regrading (`P19-AC-009`): it verifies
+every source bundle first, requires the saved real Agent artifacts under each
+trial's preserved job tree to still digest to the sealed verifier-input
+identity, then re-grades those preserved artifacts with the pinned native
+verifier in fresh trial-owned environments under `--out` - reusing the same
+binding readers as initial execution - and persists one derived
+`opi-eval-regrade-record/1` grading record per trial that references the
+source bundle, the original artifact identities, and the fresh verifier
+identity, without rewriting any original score. No Agent executable is
+spawned, no credential is resolved, and no provider is contacted: a task whose
+verifier declares a network requirement without a permitted offline equivalent
+rejects fail-closed, as do tampered bundles, missing or altered Agent
+artifacts, a drifted patch base, and drifted task material identity. Exit 0
+(`"outcome":"regraded"`) means every sealed native trial regraded; exit 1
+names the typed per-trial rejections; exit 2 rejects the request itself (a
+root with no native trial, an unreadable material, or an existing output
+root, which a regrade never overwrites).
 
 ### 4. Produce a report
 
@@ -312,7 +331,8 @@ budget and evidence separately from the hermetic CLI examples.
 |---------|-----------------|-------------------|--------------------------|
 | `validate` | `--config PATH` | `--native-material PATH` adds native integrity identity. | Summary line; 0 resolved, 1 invalid. |
 | `run` | `--config PATH --root PATH --fixtures PATH` | `--recover`, `--replacement-for TRIAL`, `--canaries PATH`, `--native-material PATH`; `--behavior` selects hermetic fault fixtures. | One-line JSON; 0 completed, 1 settled non-success, 2 rejected request. |
-| `regrade` | `--root PATH` | None. | One-line JSON; 0 verified, 1 mutation/unsealed failure, 2 rejected command request. |
+| `verify` | `--root PATH` | None. | One-line JSON; 0 verified, 1 mutation/unsealed failure, 2 rejected command request. |
+| `regrade` | `--root PATH --native-material PATH --out PATH` | None. | One-line JSON; 0 all native trials regraded, 1 typed per-trial rejections, 2 rejected command request. |
 | `report` | `--root PATH` | `--out PATH`, `--canaries PATH`. | One-line JSON; 0 published, 1 blocked/unverified, 2 rejected command request. |
 | `conformance` | `--suite ID --adapter ID --case ID --root PATH --fixtures PATH --provider PATH` | `--native-material PATH`. | One-line JSON; 0 expectation met, 1 expectation missed, 2 unsupported/rejected request. |
 
@@ -335,9 +355,9 @@ $RUN_ROOT/
         └── artifacts/
 ```
 
-Treat a sealed bundle as immutable. Changing a covered byte causes `regrade`
-and `report` verification to fail; neither command repairs or silently rehashes
-the evidence. A canary listed one per line in `--canaries PATH` blocks sealing
+Treat a sealed bundle as immutable. Changing a covered byte causes `verify`,
+`regrade`, and `report` verification to fail; none of them repairs or silently
+rehashes the evidence. A canary listed one per line in `--canaries PATH` blocks sealing
 or publication if it appears in exportable content.
 
 | Symptom | What to do |
@@ -345,7 +365,7 @@ or publication if it appears in exportable content.
 | Configuration is rejected | Run `validate` first and follow its typed stderr diagnostic. There is no implicit control default or fallback. |
 | Run root already contains durable state | Do not delete or edit trial evidence. Use `run --recover` to classify durable states, or follow the explicit replacement flow for a crashed trial group. |
 | Native material is rejected | Regenerate and resolve it through the native workflow; do not substitute unpinned executables or task packages. |
-| `regrade` reports `mutation-detected` | Preserve the bundle for diagnosis. Do not repair, rewrite, or rehash it. |
+| `verify`/`regrade` reports `mutation-detected` or a typed rejection | Preserve the bundle and preserved artifacts for diagnosis. Do not repair, rewrite, or rehash them. |
 | `report` is blocked | Inspect bundle-verification and canary failures, then use a new outside-root `--out` path after correcting the input source. |
 
 `run --replacement-for <TRIAL_ID>` creates fresh identities for the crashed
@@ -359,7 +379,7 @@ trial's whole comparison group. It does not reuse the failed trial identity.
 | Experiment assembly and durable lifecycle | [`src/runner/`](src/runner) |
 | Agent and benchmark process adapters | [`src/agent/`](src/agent), [`src/benchmark/`](src/benchmark) |
 | Admission and sealed evidence | [`src/integrity.rs`](src/integrity.rs), [`src/bundle/`](src/bundle) |
-| Offline re-verification and normalized reports | [`src/regrade.rs`](src/regrade.rs), [`src/report.rs`](src/report.rs) |
+| Offline byte verification, native regrading, and normalized reports | [`src/regrade.rs`](src/regrade.rs), [`src/report.rs`](src/report.rs) |
 | Hermetic inputs | [`tests/fixtures/`](tests/fixtures) |
 | Assembled run behavior | [`tests/assembled_run.rs`](tests/assembled_run.rs) |
 | Regrade/report lifecycle | [`tests/end_to_end_report.rs`](tests/end_to_end_report.rs) |

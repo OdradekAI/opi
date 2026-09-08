@@ -1,45 +1,72 @@
-//! `opi-eval regrade` command: actual native regrading (planned).
+//! `opi-eval regrade` command: actual native regrading (P19-AC-009).
 //!
-//! Native regrading re-executes preserved real Agent artifacts with the
-//! pinned native grader in a fresh environment. That workflow is not
-//! implemented yet, so the command fails closed with an explicit
-//! unavailable-operation diagnostic instead of quietly re-running byte
-//! verification under the regrade name (a byte check is `opi-eval
-//! verify`). Exit code is always 2 until the native regrade workflow
-//! lands; nothing is read, verified, or mutated here.
+//! Native regrading re-grades preserved real Agent artifacts with the
+//! pinned native verifier in a fresh environment, through the same
+//! binding readers as initial execution, persisting one derived grading
+//! record per trial without rewriting any original score. No Agent
+//! executable is spawned, no credential is resolved, and no provider is
+//! contacted (byte checking is the distinct `opi-eval verify` command).
 
 use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::regrade::{NativeRegradeError, NativeRegrader};
+
 /// Failures reported by [`regrade`].
 #[derive(Debug, Error)]
 pub enum RegradeCliError {
-    /// Native regrading is not implemented yet. The message names the
-    /// missing operation and the interim byte-verification command.
-    #[error(
-        "unavailable-operation: native regrade is not implemented yet; use `opi-eval verify --root <run-root>` for the original byte/seal checks"
-    )]
-    Unavailable,
+    /// The request itself was unusable (output exists, material
+    /// rejected, run root unreadable). Exit code 2.
+    #[error("{0}")]
+    Request(String),
 }
 
 /// Arguments of the `regrade` subcommand.
 #[derive(Debug, Clone)]
 pub struct RegradeArgs {
-    /// Run root holding `trials/<id>/bundle` sealed bundles.
+    /// Run root holding `trials/<id>/bundle` sealed bundles and the
+    /// preserved Agent artifact job trees.
     pub root: PathBuf,
+    /// Native material manifest with the cached immutable task and
+    /// verifier materials.
+    pub native_material: PathBuf,
+    /// Fresh output root for verifier environments and derived records.
+    /// Must not exist; a regrade never overwrites prior output.
+    pub out: PathBuf,
 }
 
-/// Reject one regrade request.
+/// Regrade one run root offline.
 ///
-/// This is the production entry seam of the `opi-eval regrade` command
-/// until the native regrade workflow exists.
-pub fn regrade(_args: &RegradeArgs) -> Result<serde_json::Value, RegradeCliError> {
-    Err(RegradeCliError::Unavailable)
+/// This is the production entry seam of the `opi-eval regrade` command.
+pub fn regrade(args: &RegradeArgs) -> Result<serde_json::Value, RegradeCliError> {
+    let report =
+        NativeRegrader::regrade(&args.root, &args.native_material, &args.out).map_err(|error| {
+            match error {
+                NativeRegradeError::OutputExists(path) => RegradeCliError::Request(format!(
+                    "output root already exists: {}",
+                    path.display()
+                )),
+                NativeRegradeError::NotNativeRoot => {
+                    RegradeCliError::Request("run root holds no native trial to regrade".to_owned())
+                }
+                NativeRegradeError::Material(reason) => {
+                    RegradeCliError::Request(format!("native material rejected: {reason}"))
+                }
+                NativeRegradeError::Io(error) => {
+                    RegradeCliError::Request(format!("cannot read run root: {error}"))
+                }
+            }
+        })?;
+    Ok(report.to_json())
 }
 
-/// Kept for the dispatch shape: a regrade report never exists today, so
-/// any value would already be a contract break and exits non-zero.
-pub fn regrade_exit_code(_report: &serde_json::Value) -> i32 {
-    1
+/// Exit code of one completed regrade report: 0 only when every sealed
+/// trial regraded; 1 names the typed rejections.
+pub fn regrade_exit_code(report: &serde_json::Value) -> i32 {
+    if report.get("outcome").and_then(|value| value.as_str()) == Some("regraded") {
+        0
+    } else {
+        1
+    }
 }

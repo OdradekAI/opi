@@ -40,7 +40,7 @@ sealed bundle，并且只根据仍能通过验证的证据生成报告。
 - 从 workspace 根目录运行命令。
 - 构建本 crate 需要 Rust 1.97 或更高版本。
 - 示例实验和 fixture 来自当前仓库 checkout。
-- `validate` 支持跨平台运行。本文提供的完整 `run` -> `regrade` -> `report`
+- `validate` 支持跨平台运行。本文提供的完整 `run` -> `verify` -> `report`
   流程和 fixture conformance 示例目前只由 Unix 验收测试保障；这些测试使用
   POSIX helper process。
 - Hermetic fixture 模式不需要在线凭据或网络，也不会调用付费 Provider。
@@ -133,15 +133,15 @@ trials，stderr 输出 stage/settlement 进度并保存结构化结果；单主�
 ```sh
 cargo run -p opi-eval -- verify --root "$DEMO_DIR/run"
 cargo run -p opi-eval -- report --root "$DEMO_DIR/run" --out "$DEMO_DIR/report.json"
-cargo run -p opi-eval -- regrade --root "$DEMO_DIR/run"   # exit 2：尚未实现
 ```
+
 
 三个互不相同的离线操作，均不启动 Agent 或 provider：
 `verify --root R` 按原始 seal 逐个复核 sealed trial bundle（退出码
 0 已验证 / 1 检出变更 / 2 请求被拒；不修复、不改写）；
 `report --root R --out O` 仅凭已验证的 sealed 证据重建字节稳定的
-规范化报告；`regrade` 以显式 `unavailable-operation` 诊断（退出码
-2）关闭，直到真正的原生重评落地——字节校验绝不以 regrade 之名运行。
+规范化报告；`regrade --root R --native-material M --out D` 则是下文
+单独描述的真正原生重评——字节校验绝不以 regrade 之名运行。
 每次 run 在首个效果之前写入 run 级 `run-control.json`（实验身份、
 manifest digest、selection、corpus 规模、精确的 planned trials），
 因此即使没有任何 trial 封存，离线报告也能保留未启动的 trial。
@@ -282,7 +282,8 @@ hermetic CLI 示例相互独立。
 |------|----------|----------|----------------|
 | `validate` | `--config PATH` | `--native-material PATH` 会加入 native integrity identity。 | 一行摘要；解析成功为 0，无效为 1。 |
 | `run` | `--config PATH --root PATH --fixtures PATH` | `--recover`、`--replacement-for TRIAL`、`--canaries PATH`、`--native-material PATH`；`--behavior` 用于选择 hermetic 故障 fixture。 | 单行 JSON；完成为 0，已落定但未成功为 1，请求被拒绝为 2。 |
-| `regrade` | `--root PATH` | 无。 | 单行 JSON；验证成功为 0，发现变更或未 seal 为 1，命令请求被拒绝为 2。 |
+| `verify` | `--root PATH` | 无。 | 单行 JSON；验证成功为 0，发现变更或未 seal 为 1，命令请求被拒绝为 2。 |
+| `regrade` | `--root PATH --native-material PATH --out PATH` | 无。 | 单行 JSON；全部原生 trial 完成重评为 0，逐 trial 类型化拒绝为 1，命令请求被拒绝为 2。 |
 | `report` | `--root PATH` | `--out PATH`、`--canaries PATH`。 | 单行 JSON；发布成功为 0，被阻止或未通过验证为 1，命令请求被拒绝为 2。 |
 | `conformance` | `--suite ID --adapter ID --case ID --root PATH --fixtures PATH --provider PATH` | `--native-material PATH`。 | 单行 JSON；满足预期为 0，未满足预期为 1，不受支持或被拒绝的请求为 2。 |
 
@@ -305,7 +306,7 @@ $RUN_ROOT/
         └── artifacts/
 ```
 
-sealed bundle 一旦生成，就应视为不可变。修改任何受覆盖字节都会导致 `regrade` 和
+sealed bundle 一旦生成，就应视为不可变。修改任何受覆盖字节都会导致 `verify`、`regrade` 和
 `report` 验证失败；这两个命令都不会修复证据或静默重算摘要。`--canaries PATH`
 指定的文件每行声明一个 canary；如果 exportable content 中出现其中任意内容，
 sealing 或报告发布会被阻止。
@@ -315,7 +316,7 @@ sealing 或报告发布会被阻止。
 | 配置被拒绝 | 先运行 `validate`，再根据 stderr 中的类型化诊断处理。系统没有隐式控制默认值或回退。 |
 | run root 已包含 durable state | 不要删除或编辑 trial 证据。使用 `run --recover` 对 durable state 分类；若 trial 崩溃，则使用显式 replacement 流程。 |
 | native material 被拒绝 | 通过 native workflow 重新生成并解析；不要替换为未固定的 executable 或 task package。 |
-| `regrade` 报告 `mutation-detected` | 保留 bundle 以便诊断，不要修复、重写或重算摘要。 |
+| `verify`/`regrade` 报告 `mutation-detected` 或类型化拒绝 | 保留 bundle 与保留 artifacts 以便诊断，不要修复、重写或重算摘要。 |
 | `report` 被阻止 | 检查 bundle verification 与 canary failure；修正输入来源后，使用新的、位于 run root 外的 `--out` 路径。 |
 
 `run --replacement-for <TRIAL_ID>` 会为崩溃 trial 所在的整个对比组创建新身份，不会
@@ -329,7 +330,7 @@ sealing 或报告发布会被阻止。
 | 实验组装与持久 lifecycle | [`src/runner/`](src/runner) |
 | Agent 与 benchmark process adapter | [`src/agent/`](src/agent)、[`src/benchmark/`](src/benchmark) |
 | 准入与 sealed evidence | [`src/integrity.rs`](src/integrity.rs)、[`src/bundle/`](src/bundle) |
-| 离线重新验证与规范化报告 | [`src/regrade.rs`](src/regrade.rs)、[`src/report.rs`](src/report.rs) |
+| 离线字节校验、原生重评与规范化报告 | [`src/regrade.rs`](src/regrade.rs)、[`src/report.rs`](src/report.rs) |
 | Hermetic input | [`tests/fixtures/`](tests/fixtures) |
 | Assembled run 行为 | [`tests/assembled_run.rs`](tests/assembled_run.rs) |
 | Regrade/report lifecycle | [`tests/end_to_end_report.rs`](tests/end_to_end_report.rs) |

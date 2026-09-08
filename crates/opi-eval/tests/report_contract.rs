@@ -285,10 +285,10 @@ fn native_outcome_counts_keep_denominators_and_failure_classes() {
 
 /// `P19-AC-009` (verify split): byte verification and actual native
 /// regrading are distinct operations. `verify --root R` owns the
-/// original byte/seal check; `regrade` returns an explicit
-/// unavailable-operation diagnostic (exit 2) until P19-D08 supplies the
-/// native regrade workflow, never performing byte verification under
-/// that name.
+/// original byte/seal check; `regrade` is the actual native regrade and
+/// never performs byte verification under that name: over a hermetic
+/// root it rejects the request (no native trial to regrade) instead of
+/// re-checking seals.
 #[test]
 fn verify_regrade_split_names_each_operation() {
     let root = tempfile::tempdir().unwrap();
@@ -338,17 +338,24 @@ fn verify_regrade_split_names_each_operation() {
     assert_eq!(std::fs::read(&manifest).unwrap(), b"{\"tampered\": true}\n");
     std::fs::write(&manifest, &original).unwrap();
 
-    // Actual native regrading is not implemented yet: the command says
-    // so explicitly instead of quietly re-running byte checks.
-    let (code, stdout, stderr) = invoke("regrade", &[("--root", root_arg.as_os_str())]);
+    // Actual native regrading never re-runs byte checks under its name:
+    // a hermetic root is rejected as holding nothing to regrade.
+    let out = root.path().join("regrade-out");
+    let (code, stdout, stderr) = invoke(
+        "regrade",
+        &[
+            ("--root", root_arg.as_os_str()),
+            ("--native-material", root_arg.as_os_str()),
+            ("--out", out.as_os_str()),
+        ],
+    );
     assert_eq!(code, 2, "regrade must reject: {stderr} {stdout}");
     assert!(stdout.is_empty(), "no byte-verification output: {stdout}");
     assert!(
-        stderr.contains("unavailable-operation")
-            && stderr.contains("native regrade")
-            && stderr.contains("verify"),
-        "the diagnostic names the operation and the interim alternative: {stderr}"
+        stderr.contains("no native trial to regrade"),
+        "the diagnostic names the typed request rejection: {stderr}"
     );
+    assert!(!out.exists(), "nothing is written for a rejected request");
 }
 
 /// `P19-AC-008` (protocol-safe pairing): paired comparisons never match

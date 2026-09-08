@@ -752,7 +752,7 @@ fn covering_entry<'a>(
 /// The digest of exactly the collected bytes: a file digest, or for a
 /// collected directory the canonical digest of its sorted relative
 /// paths and per-file digests.
-fn collected_digest(host: &std::path::Path) -> std::io::Result<String> {
+pub(crate) fn collected_digest(host: &std::path::Path) -> std::io::Result<String> {
     fn walk(host: &std::path::Path, prefix: &str, rows: &mut Vec<String>) -> std::io::Result<()> {
         let mut children: Vec<std::path::PathBuf> = std::fs::read_dir(host)?
             .flatten()

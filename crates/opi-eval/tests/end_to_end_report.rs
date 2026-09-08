@@ -257,3 +257,49 @@ fn exclusions_stay_visible_in_the_coverage_denominator() {
         "surviving trials stay visible: {excluded}"
     );
 }
+
+/// `P19-AC-009` (regrade fail-closed on non-native evidence): a hermetic
+/// fixture run root holds no native trial, so actual native regrading
+/// rejects the request without reading a material, without touching the
+/// sealed evidence, and without re-running byte checks under the regrade
+/// name.
+#[test]
+fn offline_regrade() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, _, stderr) = run_experiment("local-paired.toml", "happy", root.path());
+    assert_eq!(code, 0, "{stderr}");
+    let (before_code, before, stderr) = report(root.path());
+    assert_eq!(before_code, 0, "{stderr}");
+
+    let guard = tempfile::tempdir().unwrap();
+    let out = guard.path().join("regrade");
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("regrade")
+        .arg("--root")
+        .arg(root.path().canonicalize().unwrap())
+        .arg("--native-material")
+        .arg(fixtures_dir().join("experiment/local-paired.toml"))
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .expect("spawn the opi-eval regrade command");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert_eq!(output.status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.contains("no native trial to regrade"),
+        "stderr names the typed request rejection: {stderr}"
+    );
+    assert!(
+        !out.join("records").exists(),
+        "no derived record is written for a non-native root"
+    );
+
+    // The sealed hermetic evidence is untouched by the rejection.
+    let (after_code, after, stderr) = report(root.path());
+    assert_eq!(after_code, 0, "{stderr}");
+    assert_eq!(
+        serde_json::to_string(&before).unwrap(),
+        serde_json::to_string(&after).unwrap(),
+        "the rejected regrade must not change the source report"
+    );
+}
