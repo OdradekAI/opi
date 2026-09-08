@@ -1959,7 +1959,7 @@
       "definition_of_done": "P19-D06: Implement regrade --root R --native-material M --out D as actual native grading. Verify source bundles first, require all saved real Agent artifacts/patches and cached immutable task/verifier materials, then create fresh trial-owned verifier environments under each task's native lifecycle/network rules. Reuse the same binding/adapter readers as initial execution; no Agent executable, provider credential resolution or provider/network invocation. For a verifier requiring an external service, reject unless its declared offline equivalent and cached material are available; never silently relax policy. Persist a new derived grading record referencing source bundle, original trial/artifact and fresh verifier identities without rewriting original scores. Real native witnesses for all three families prove regrade consumes changed witness input and immutable source bytes; reject missing cache/artifacts, wrong patch base and tamper. Update regrade help/callers/docs; fake grader output alone cannot close this scenario.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "19.7"
       ],
@@ -2070,7 +2070,7 @@
             "cli::regrade::regrade",
             "BenchmarkExecution::run"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -2082,7 +2082,7 @@
         "BenchmarkExecution::run"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": "3c039145abc76137e3de84ff8197b56b6251f51c",
       "baseline_dirty_files": [],
@@ -2111,10 +2111,72 @@
         "crates/opi-eval/tests/bundle_recompute.rs",
         "crates/opi-eval/tests/report_output_containment.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "76ad07404bc9a6bc4551e674c81c08979d15574f",
+      "evidence": {
+        "Opi-Task": "19.8",
+        "Opi-DoD-SHA256": "f7a7bdae3d3de0be466f68371a77aa5535984f958fa5b531f6bfd7aead4eb2f4",
+        "Opi-Verification": "cli-runtime; scoped smoke PASSED (native_driver, end_to_end_report, bundle_recompute, report_output_containment) + lib 124 + full suite 233 passed + workspace clippy -D warnings clean + fmt clean + doc-check PASS",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P19-AC-009-regrade met deterministically (all three families regrade through the same binding readers; tamper/missing-cache/wrong-base/network rejections; zero Agent or provider invocations; derived records with immutable source); live real-material variant stays with the 19.11/D08 operator run"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-09-07T12:10:00+08:00",
+          "attempt": 1,
+          "summary": "P19-D06 regrade half delivered. `regrade --root R --native-material M --out D` is now actual native regrading (`NativeRegrader` in src/regrade.rs behind cli::regrade), replacing the 19.7 unavailable-operation diagnostic (that superseded expectation was updated in report_contract::verify_regrade_split to the stronger contract: regrade over a hermetic root rejects request-level as `no native trial to regrade`, exit 2, never re-running byte checks under its name). Flow: run-root native gate first (any sealed bundle carrying native/verifier-input.json, else request rejection) -> material admission through the same NativeMaterial::load (19.5 Interface) -> per trial: RunBundle::verify first (tamper -> bundle-<kind> rejection), sealed native evidence read (control/experiment.json, native/{verifier-input,trial-result,trial-config}.json), benchmark family from the sealed experiment, material integration/task identity cross-checked against the sealed job config (material-identity-drift), fresh task package copied from the digest-admitted material and parsed with the same parse_task_lifecycle reader, then fail-closed cross-checks against the sealed verifier-input BEFORE any verifier spawn: environment mode (lifecycle-drift), base revision (patch-base-drift), docker image (environment-image-drift), pier network policy (verifier-network-required unless the task itself declares no-network - never silently relaxed), profile task id (task-identity-drift). The preserved Agent artifacts under the run root's newest job tree must digest to exactly the sealed verifier-input identity (file: sha256, tree: the binding's own collected_digest, now pub(crate)): missing -> agent-artifacts-missing, altered -> agent-artifacts-tampered; the delivered observation is reconstructed file-by-file from the preserved bytes. A fresh trial-owned environment under --out/<trial> stages identity.json, env.json (persisted closed projection; credential-shaped verifier_env keys reject as verifier-env-credential), the collected copies, and a fresh verifier-trace; the pinned verifier executable spawns there with only the material verifier_env plus four OPI_EVAL_REGRADE_* variables, with OPI_EVAL_NATIVE_HANDOFF/OPI_EVAL_SCRIPTED_KEY/OPENAI_API_KEY explicitly removed - no agent executable, no credential resolution, no provider contact. The fresh job is validated by the SAME reader as initial execution (import_bound_native_job + NativeTrialBinding) with the selection reconstructed from sealed evidence plus fresh material identity. One derived opi-eval-regrade-record/1 grading record per trial persists under --out/records (source bundle identity, original collected digests, fresh verifier executable digest, fresh lifecycle, fresh job and reward); the source root is never rewritten - offline report bytes stay identical and verify stays green after regrading (asserted). Exit 0 outcome=regraded, 1 typed per-trial rejections, 2 request-level (non-native root, material rejection, existing output root - never overwritten). Tests at the spawned-CLI seam: native_driver::native_offline_regrade regrades all three families (tb2.1 shared answer, tb3 separate-verifier declared directory, deepswe pristine patch) reward 1 with records, no agent argv capture anywhere under --out, no credential keys in the projected env, source immutability; native_driver::native_offline_regrade_rejects_every_fail_closed_case covers tampered bundle (bundle-digest-mismatch), deleted job tree (agent-artifacts-missing), altered preserved bytes (agent-artifacts-tampered), deepswe base-drift material variant with recomputed manifest digest (patch-base-drift), network_mode=public variant (verifier-network-required), existing output root (exit 2, prior bytes intact), and the changed-witness proof: a deepswe-nop run's empty committed patch regrades to reward 0 while deepswe-ok regrades 1 - the fresh grade follows the preserved bytes, never a recorded score. end_to_end_report::offline_regrade proves the hermetic-root fail-closed rejection with source untouched. Deviation from the admission-time plan recorded: the scenario filter was planned ignored (`native_offline_regrade -- --ignored --exact`); it shipped as a normal deterministic test (stand-in pinned clients and verifier consume local bytes; no engine/network dependency), and the real-material live variant stays with the 19.11/D08 operator native-smoke run. Docs: README.md/README.zh.md section 3 rewritten as verify-vs-regrade split + 0c adjustments, example README, CHANGELOG.",
+          "gate_results": {
+            "d0_scenarios": "PASS: cargo test -p opi-eval --test native_driver -- native_offline_regrade (exact + rejects fail-closed cases, 2 tests) + --test end_to_end_report -- offline_regrade + --test bundle_recompute + --test report_contract -- verify_regrade_split; production call sites main::Command::Regrade -> cli::regrade::regrade -> NativeRegrader::regrade exercised through the spawned CLI; run/BenchmarkExecution::run exercised by the seeding native runs",
+            "d1_scoped_smoke": "PASS: bash scripts/opi-impl-smoke.sh scoped --crate opi-eval --test native_driver --test end_to_end_report --test bundle_recompute --test report_output_containment; lib gate cargo test -p opi-eval --lib (124 passed)",
+            "full_suite": "PASS: cargo test -p opi-eval (233 passed, 0 failed, 4 ignored)",
+            "workspace_clippy": "PASS: cargo clippy --workspace --all-targets -- -D warnings (0 findings) + cargo fmt --all -- --check",
+            "docs": "PASS: python scripts/opi-doc-check.py; git diff --check clean",
+            "d2_evaluator": "manual 7-lens exec audit passed with no must-fix findings (workflow runtime unavailable in environment, wf_ref=null recorded in verify_runs; shared decisions native-trial-artifact-binding and verified-local-material-identity consumed through their owning Interfaces with closures in native_driver.rs)",
+            "test_disposition": [
+              {
+                "subject": "P19-AC-009-regrade",
+                "action": "add",
+                "test": "crates/opi-eval/tests/native_driver.rs::{native_offline_regrade, native_offline_regrade_rejects_every_fail_closed_case}",
+                "interface": "spawned opi-eval run/regrade/verify/report CLI over staged native material",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P19-AC-009-regrade",
+                "action": "add",
+                "test": "crates/opi-eval/tests/end_to_end_report.rs::offline_regrade (hermetic root rejects request-level; source untouched)",
+                "interface": "spawned opi-eval regrade/report CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "verify/regrade split",
+                "action": "update",
+                "test": "crates/opi-eval/tests/report_contract.rs::verify_regrade_split_names_each_operation - the 19.7 unavailable-operation expectation is superseded by the shipped native regrade contract (stronger Interface proof: hermetic-root typed rejection, exit 2, nothing written)",
+                "interface": "spawned opi-eval verify/regrade CLI",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.8",
+                "action": "update",
+                "test": "crates/opi-eval/tests/native_driver.rs stand-in verifier gained the OPI_EVAL_REGRADE branch (grades preserved bytes by family marker; no handoff/argv checks on that path)",
+                "interface": "pinned verifier stand-in scripting",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "19.8",
+                "action": "retain",
+                "test": "all pre-existing native_driver/end_to_end_report/bundle_recompute/report_output_containment expectations (green; src/benchmark/process.rs change is visibility-only: collected_digest pub(crate))",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "19.9",
@@ -4385,6 +4447,16 @@
       "rejected_count": 0,
       "ran_at": "2026-09-07T10:40:00+08:00",
       "task_id": "19.7",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-09-07T12:10:00+08:00",
+      "task_id": "19.8",
       "criterion_id": null
     }
   ]
