@@ -2436,7 +2436,7 @@
       "definition_of_done": "P19-D07: Make existing GitHub workflows thin callers of the same local prepare/conformance/run/verify/report policy, retaining CI transport verification without a second scoring/materialization policy. Add an offline verifier scripts/verify-local-acceptance.py --root E --out O with deterministic tests; validate supplied redacted operator manifest, six attributable trials, controls, source/build/material/bundle digests, command exits and preserved provider/tool/native artifacts, reject substituted/oracle/missing/fixture-only evidence, and invoke built Companion verify/report only against supplied artifacts. It must not launch an Agent, access credentials or run a provider. Document the independent WSL/Linux CLI path, first connection, budget/task freeze, no-live default tests, rollback and operator-only real-run handoff in bilingual README/examples. Confirm pi-only runtime without Opi, unchanged Minimal Runtime and package absence of Opi dependencies/task corpora/grader implementations/images. Dummy credential environment must not activate live tests. Update affected Python regression tests and producer hashes, synchronize actual 0.x changes/help/docs/Unreleased. This produces acceptance tooling and instructions, not six-trial success. The operator handoff defines <redacted-evidence-root>/opi-artifact-audit as an Opi-only capture surface containing the three preserved Opi trial captures and only Opi repository commit references. The local verifier checks that this surface is present, non-empty, byte-bound to the corresponding original Opi native captures, and exhaustive for those three trials; it must not treat an empty generic-auditor success as acceptance. Preserve pi/Harbor/Pier identities with repository URL and commit in their original source records outside that scoped view. Validate those records against the admitted external inventories and cached upstream repository identities offline, never by resolving every commit in the Opi checkout. Do not discard or rename upstream provenance to evade validation. Add fixtures proving valid upstream commits are accepted in their correct repository and mismatched repository/commit pairs fail.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "19.9"
       ],
@@ -2576,7 +2576,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "f56176c1e73df45a512229516e5c43e0dc84a3c5",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/main.rs",
