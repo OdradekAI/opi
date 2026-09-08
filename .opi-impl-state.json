@@ -1959,7 +1959,7 @@
       "definition_of_done": "P19-D06: Implement regrade --root R --native-material M --out D as actual native grading. Verify source bundles first, require all saved real Agent artifacts/patches and cached immutable task/verifier materials, then create fresh trial-owned verifier environments under each task's native lifecycle/network rules. Reuse the same binding/adapter readers as initial execution; no Agent executable, provider credential resolution or provider/network invocation. For a verifier requiring an external service, reject unless its declared offline equivalent and cached material are available; never silently relax policy. Persist a new derived grading record referencing source bundle, original trial/artifact and fresh verifier identities without rewriting original scores. Real native witnesses for all three families prove regrade consumes changed witness input and immutable source bytes; reject missing cache/artifacts, wrong patch base and tamper. Update regrade help/callers/docs; fake grader output alone cannot close this scenario.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "19.7"
       ],
@@ -2084,7 +2084,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "3c039145abc76137e3de84ff8197b56b6251f51c",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-eval/src/main.rs",
