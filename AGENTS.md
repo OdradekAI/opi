@@ -98,6 +98,8 @@ workflow routing.
 - Human-led shaping updates the normative spec or a registered supplemental
   source.
 - `opi-implement plan` is the admission gate for implementation work;
+  user-confirmed eval repairs follow the scoped exception in
+  [opi-eval](.agents/skills/opi-eval/SKILL.md#user-confirmed-source-repairs).
   `opi-implement` alone owns `.opi-impl-state.json`.
 - `opi-audit`, `opi-eval`, and `opi-remediate` provide assurance and correction.
 - `opi-document`, `opi-release`, and `opi-slim-tests` own their named workflows.

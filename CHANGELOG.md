@@ -9,6 +9,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- `opi-eval`: native required output limits and execution output-token bounds
+  now require `agents.<product>.output_control_evidence` in new material.
+  Admission binds the exact executable, runtime package, projected config and
+  two independently observed loopback requests before native effects. Optional
+  limits without proof remain unsupported comparison controls. Each admitted
+  trial seals its proof for offline acceptance, which checks the full projected
+  controls and rejects missing or substituted evidence. Existing evidence is
+  not retroactively qualified by a version string or a repaired executable.
+
+- `opi-coding-agent`: `DefaultsConfig` adds the optional `max_output_tokens`
+  field and `ConfigError` adds `InvalidMaxOutputTokens`.
+  `CodingHarness::set_model` now returns `Result<(), String>` and
+  rejects incompatible model/request settings before changing the active model.
+  Embedders must initialize the new field (or use `Default`), handle the setter
+  result, and update exhaustive error matches.
+
+- `opi-ai`: `AssistantContent::Thinking` now carries an optional `signature`,
+  and `RedactedThinking { data }` preserves encrypted continuation blocks.
+  Rust constructors must supply the signature field; old unsigned serialized
+  messages still deserialize. Anthropic streams retain both kinds of blocks
+  through sessions and same-provider/model tool continuation. Model aliases
+  retain the requested identity separately from the reported response model.
+  Missing reported model names remain unknown in actual-route evidence.
+  Exports omit opaque metadata; foreign routes receive only readable text.
+
+- `opi-eval`: owned-resource evidence moves to `opi-eval-owned-resources/2`.
+  Cleanup binds Docker containers to the exact private Compose working
+  directories and verifies removal after every dispatched job, including
+  upstream exit-zero failures. Unconfirmed cleanup blocks successful sealing.
+  Temporary `handoff.json`, `config.toml`, and `models.json` are removed on
+  settlement; `handoff-identity.json` preserves non-secret launch identity.
+
+- `opi-eval`: native materials move to `opi-eval-native-material/4` and
+  handoffs to `opi-eval-native-handoff/3`. Optional runtime packages bind the
+  complete resource tree and executable entrypoint; Harbor and Pier verify
+  and transfer the full package, preserve Agent output before cleanup, and
+  launch the selected connection's provider/model. Local preparation accepts
+  package directories under `agents/<product>` and rejects resource drift.
+  Local material also pins the runner project source and uv environment,
+  rechecks source identity on load, selects the prepared Python interpreter,
+  and uses uv directly for oracle witnesses.
+  Pier applies its existing filtered inference route only to the Agent process.
+  Benchmark profile inventory keys include the revision so the three families
+  can share one cache without reporting false profile drift.
+  Native selection binds a profile's task ID to its exact admitted upstream
+  task name, keeping generated trial IDs canonical. Headless Opi task processes
+  isolate the session keyring so the pinned client's environment-credential
+  fallback can use the projected connection.
+
 - `opi-eval`: native mode now binds scores to the selected Agent's same-trial
   work. `run --native-material` dispatches one explicitly selected upstream
   job per trial that runs the Opi/pi integration inside the graded task
@@ -23,6 +72,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `opi-eval`: mounted Harbor/Pier jobs write Agent output and Opi traces to
+  their trial log mount before completion. Outer timeout/cancellation retains
+  a bounded private diagnostic copy after owned writers are removed, including
+  root-owned private trace files, without fabricating terminal events, grades,
+  or seals. Capture and cleanup failures remain explicit.
+
+- `opi-eval`: offline reports retain bound unsealed failures in attempted and
+  invalid coverage without assigning scores or verified status. Native
+  completion diagnostics recognize verified native grades, and reward
+  provenance names the exact sealed trial result. Conflicting lifecycle or
+  control records block publication.
+
+- `opi-coding-agent`: JSON session summaries now include observed token usage
+  from failed prompts and estimate known costs from those same totals. Both
+  text and content inputs count completed responses once, including across
+  repeated runs and resumed history. Accepted-turn counts and failed-prompt
+  session durability remain unchanged; unknown usage still leaves cost unknown.
+
+- `opi-coding-agent`: `--json-compact` now strips redundant cumulative
+  thinking, opaque blocks and tool arguments from text/thinking/tool-call
+  delta updates, including signatures attached to omitted thinking snapshots.
+  Full block-end and terminal messages, ordinary JSON and durable/model-facing
+  thinking remain unchanged.
+
+- `opi-coding-agent`: optional `[defaults] max_output_tokens` sets the output
+  limit on each provider request independently of model capability metadata.
+  It survives retries, tool continuation, and compatible model/thinking changes.
+  Zero, values above the model ceiling, and incompatible thinking budgets fail
+  before provider dispatch; omission preserves existing defaults.
+
+- `opi-ai`: Anthropic HTTP streaming buffers complete SSE frames before
+  decoding, preserving signed reasoning across UTF-8 and CRLF chunk boundaries.
+
+- `opi-eval`: local acceptance verification resolves each subject's product
+  from its sealed experiment instead of requiring fixed subject names. Fresh
+  replacement names are accepted only when experiment, trial, and bundle
+  identities match; swapped or ambiguous product assignments still reject.
+
+- `opi-eval`: native result binding reads the pinned Harbor/Pier layout,
+  `jobs/<job>/<trial>/result.json`, and retains the single-trial, selected
+  Agent, task, artifact, and reward identity checks. A valid zero reward no
+  longer fails because the reader searched a nonexistent `trials/` directory.
+  Collection binding resolves the native task reference, checks Harbor's
+  recorded verifier mode, and reads manifest destinations relative to the
+  trial directory. Regrading locates preserved artifacts in that same layout.
+  Aggregate binding selects the configured primary reward by name, allowing
+  Pier's auxiliary test metrics while retaining strict trial and score checks.
+
+- `opi-eval`: pi source admission now pins v0.85.1 and its verified lockfiles.
+  The offline provider accepts the pinned Anthropic SDK's exact beta Messages
+  request path; all three protocol tool/error-loop checks pass with pi 0.85.1
+  and Opi 0.8.2.
+
+- `opi-eval` skill: native benchmark and six-trial operator acceptance modes
+  now select software/version, benchmarks and model, drive the Rust Companion
+  through frozen plans, and stage privacy-reviewed evidence with bilingual
+  reports and offline verification. Explicit fidelity cases remain available
+  separately; producing evidence does not complete implementation task 19.11.
 - `opi-eval`: the upstream oracle is now an explicitly selected conformance
   diagnostic (`conformance --case oracle-witness`, the incorrect
   `nop-witness` grades zero), never a prerequisite silently run by `run`.
@@ -59,8 +166,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spawned-CLI seam.
 - `opi-eval`: one run-level cancellation token now bounds every dispatch.
   SIGINT/SIGTERM at the CLI stops new affected dispatch, cancels only the
-  owned process trees, removes the job containers recorded under each
-  trial's owned prefix (`opi-eval-owned-<trial-id>-`) plus the temporary
+  owned process trees, removes the job containers bound to each trial's
+  private Compose working directories plus the temporary
   credential material, and still settles and renders the interrupted
   report: cancelled and never-dispatched trials stay explicit missing
   coverage with no fabricated score. The durable

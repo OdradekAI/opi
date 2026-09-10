@@ -99,7 +99,7 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `-s, --system <FILE>` | Append a user system prompt file to the built-in coding prompt. |
 | `--non-interactive` | Force one-shot text mode; prompt text is still required. |
 | `--json` | Emit NDJSON session/agent events to stdout. |
-| `--json-compact` | Compact `--json`: streamed `text_delta` updates omit the redundant cumulative snapshot (~linear bytes). |
+| `--json-compact` | Compact `--json`: text, thinking and tool-call deltas omit redundant cumulative content. |
 | `--rpc` | Start bidirectional JSONL command/event mode over stdin/stdout. |
 | `--allow-mutating` | Allow `write`, `edit`, and `bash` outside interactive mode. |
 | `--execution-strategy <fixed\|rules\|model>` | Select the `command.execute` routing strategy. |
@@ -445,16 +445,25 @@ writes a schema header, serialized session/agent events, and a final
 `NDJSON_SCHEMA_VERSION = 2`. In `session_summary`, `turns` counts accepted user
 prompt turns, while `provider_turns` counts provider request/response cycles
 (`TurnStart` events), so a tool-using prompt usually has `provider_turns > turns`.
+Token totals include each completed assistant response, including responses
+from failed prompts. They start with restored committed usage and accumulate
+for the runner's lifetime; failed prompts still do not become durable session
+turns. Known pricing estimates use those same observed totals, while unknown
+usage or pricing keeps cost unknown. Usage from an unfinished response is not
+invented. Restarting from a session restores only its committed history.
 Typed `CredentialNeeded` failures exit with code `3`, name the provider and
 `/login <provider>` remediation, and never start an OAuth flow or block for
 input.
 
-`--json-compact` is an opt-in flag that makes streamed `text_delta` updates
-constant-size: it omits the redundant `assistant_event.partial` snapshot and
-empties the cumulative text in `event.message` for those updates, so a long
-streamed turn scales ~linearly in bytes. Consumers reconstruct the full text
-from the deltas or read the terminal `Done`/`MessageEnd` snapshot. Default
-`--json` output and `NDJSON_SCHEMA_VERSION = 2` are unchanged.
+`--json-compact` is an opt-in flag that omits `assistant_event.partial` from
+`text_delta`, `thinking_delta`, and `tool_call_delta` updates. Those updates
+retain block positions and tool identity while emptying cumulative text,
+thinking, opaque data and tool arguments from `event.message`; signatures are
+omitted with their thinking snapshots. Delta payloads remain available, and
+block-end events plus terminal `Done`/`MessageEnd` snapshots retain the complete
+content. Long delta streams no longer repeat the accumulated payload on each
+update. Default `--json`, durable sessions, model-facing continuation and
+`NDJSON_SCHEMA_VERSION = 2` are unchanged.
 
 Exit codes:
 
@@ -492,6 +501,29 @@ Config layers merge user config, project config, and explicit `--config` files.
 Model precedence is `--model`, then `OPI_MODEL` when no `--config` was passed,
 then explicit config, project `.opi/config.toml`, user config, and built-in
 defaults.
+
+Set an explicit output limit per provider request in TOML:
+
+```toml
+[defaults]
+max_output_tokens = 16384
+```
+
+This optional value follows config-layer precedence. It must be positive, fit
+the selected model's output capability, and exceed any enabled thinking budget.
+Invalid combinations fail before a provider request. The explicit limit remains
+in effect through retries, tool continuation, and compatible model or thinking
+changes, including turning thinking off. Incompatible runtime changes reject
+without persisting the change. Omission retains the existing provider/thinking
+defaults. A custom model's `max_output_tokens` describes its capability ceiling;
+it does not select this request limit.
+
+Hook-proposed next-turn states must retain the explicit limit and compatible
+model/thinking settings. Invalid proposals reject before the state is applied,
+including between provider requests during tool continuation.
+
+For embedders, `CodingHarness::set_model` returns `Result<(), String>`; handle
+rejection before assuming that the active model changed.
 
 User config paths:
 

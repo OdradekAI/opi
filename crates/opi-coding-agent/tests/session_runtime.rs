@@ -1324,7 +1324,7 @@ async fn harness_unprefixed_embedded_pricing_survives_switch_resume_and_fork() {
     assert_total_cost(&harness, 18.0, "new session usage");
     let source_session_id = harness.session().unwrap().session_id().to_owned();
 
-    harness.set_model("claude-opus-4".into());
+    harness.set_model("claude-opus-4".into()).unwrap();
     assert_eq!(harness.model(), "claude-opus-4");
     assert_total_cost(&harness, 42.0, "unprefixed set_model");
 
@@ -4036,7 +4036,7 @@ fn phase17_resume_fork_branch_preserve_canonical_route_binding() {
 
     // Divert the live model away from branch B's chain. `set_model` does not
     // persist a model_change, so the session file still records branch B's route.
-    harness.set_model("mock:alpha-model".into());
+    harness.set_model("mock:alpha-model".into()).unwrap();
     assert_eq!(harness.model_spec(), "mock:alpha-model");
 
     // Fork re-applies the active branch B route from the chain, not the diverted

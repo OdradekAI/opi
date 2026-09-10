@@ -1091,7 +1091,7 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
             std::fs::write(
                 &handoff_path,
                 serde_json::to_vec(&serde_json::json!({
-                    "schema": "opi-eval-native-handoff/2",
+                    "schema": "opi-eval-native-handoff/3",
                     "trial": format!("conformance-{agent}-witness"),
                     "product": agent,
                     "integration_agent_name": agent,

@@ -877,7 +877,7 @@ fn thinking_fixture_done_has_both_thinking_and_text() {
         );
 
         // First content block is thinking
-        if let AssistantContent::Thinking { thinking } = &message.content[0] {
+        if let AssistantContent::Thinking { thinking, .. } = &message.content[0] {
             assert_eq!(
                 thinking,
                 "Let me analyze this problem. Step 1: identify the key constraint."
@@ -1069,7 +1069,7 @@ fn thinking_only_fixture_produces_correct_events() {
     if let AssistantStreamEvent::Done { message, reason } = &stream_events[4] {
         assert_eq!(*reason, StopReason::Stop);
         assert_eq!(message.content.len(), 1);
-        if let AssistantContent::Thinking { thinking } = &message.content[0] {
+        if let AssistantContent::Thinking { thinking, .. } = &message.content[0] {
             assert_eq!(thinking, "Reasoning only");
         } else {
             panic!("expected Thinking content");
@@ -1140,7 +1140,7 @@ fn empty_thinking_block_emits_empty_thinking_end() {
 
     // Done message should have Thinking with empty string
     if let AssistantStreamEvent::Done { message, .. } = &stream_events[6] {
-        if let AssistantContent::Thinking { thinking } = &message.content[0] {
+        if let AssistantContent::Thinking { thinking, .. } = &message.content[0] {
             assert_eq!(thinking, "");
         } else {
             panic!("expected Thinking content in Done");

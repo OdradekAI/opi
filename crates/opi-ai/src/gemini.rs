@@ -580,7 +580,8 @@ impl GeminiProvider {
                                     }
                                 }))
                             }
-                            AssistantContent::Thinking { .. } => None,
+                            AssistantContent::Thinking { .. }
+                            | AssistantContent::RedactedThinking { .. } => None,
                         })
                         .collect();
                     if !parts.is_empty() {

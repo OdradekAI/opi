@@ -59,22 +59,22 @@
       "id": "pi",
       "kind": "agent-source",
       "repository_url": "https://github.com/earendil-works/pi",
-      "commit": "4e58f324fae8ebfa98a3d45181fb248072a2afac",
+      "commit": "d981de1229ef899957bbe968bc8dcda02a21f477",
       "blobs": [
         {
           "path": "package-lock.json",
-          "git_blob": "37842d14c45e87e34a19e0f79dbbed54a71cce23",
-          "sha256": "abd9982ce837df8e2775196cde3b5c5584c30e66b232c26b7c55aafd58ab2e1b"
+          "git_blob": "aad45bdb63cc1c2407fbe14d6d1ddfd2bf77f64f",
+          "sha256": "e3569b99e673a0051be908f2bed57651b90a966a5a0d208913c29e6830a6a6c2"
         },
         {
           "path": "packages/coding-agent/npm-shrinkwrap.json",
-          "git_blob": "f65c23df9a50204b11484d91ccbb4d2618534acf",
-          "sha256": "df18751951cef578a1e5d809b33774bb385f69539f197bade0e70f1944aa3de7"
+          "git_blob": "6cebe320b7c2a1258448be460f80c106584b7d5d",
+          "sha256": "5ff461d87e0a7ccac07e6a9eb3edcd18841d3373d375bed043606b51082f1a26"
         },
         {
           "path": "packages/coding-agent/package.json",
-          "git_blob": "02f45a37b3aa707af5bf7c99e8c3dc041c88cba5",
-          "sha256": "6c0bfa4558a0de32fb54fa97ca73397753ec7d4ad7d0ba607790920168de751f"
+          "git_blob": "572af1e947bf8b827389ecafae428a13b4957fa9",
+          "sha256": "f1738e4b42203e5f22bcb513f13fb2fb224f1e98d1f129ff042f87048665a94c"
         }
       ]
     },

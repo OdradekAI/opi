@@ -24,12 +24,59 @@ cp -r crates/opi-eval/integrations/harbor "$cache/pins/integrations/"
 cp -r crates/opi-eval/integrations/pier  "$cache/pins/integrations/"
 ```
 
-Build the selected Agent executables into the cache (pi-only selections
-need no Opi):
+Build the selected Agent executables (pi-only selections need no Opi), then
+copy the verified artifacts into the cache; the build script emits locators
+and does not install cache entries:
 
 ```sh
-bash crates/opi-eval/scripts/build-agent-artifacts.sh ...   # agents/<product>
+bash crates/opi-eval/scripts/build-agent-artifacts.sh ...
 ```
+
+For a standalone executable, use `agents/<product>`. For a runtime package,
+copy the complete verified directory to `agents/<product>/`, with executable
+entrypoint `agents/<product>/<product>`. The official pi standalone package
+requires its adjacent resources, including `package.json` and themes; copying
+only its binary loses its version and resource identity. `prepare` freezes
+both the executable digest and the complete sorted-file package digest;
+links, unsafe paths and later resource drift reject.
+
+Seed the selected runner as its own clean Git checkout at
+`runners/harbor/` (Terminal-Bench) or `runners/pier/` (DeepSWE). Use the
+exact `tools[].commit` and `tools[].uv_lock` identities from the copied
+static lock; a matching runner version or lock file alone is insufficient.
+Keep the source checkout inside the cache, rather than linking to another
+checkout. Install the verified static-lock `uv` 0.9.7 executable at
+`tools/uv`, and prepare that runner's `.venv` with `uv sync --locked --no-dev`
+against its pinned `pyproject.toml` and `uv.lock`. The resulting
+`.venv/bin/python` and `.venv/bin/harbor` or `.venv/bin/pier` must exist;
+do this installation at the final cache path so entrypoint shebangs and
+editable source paths remain correct.
+
+`prepare` checks the runner's Git root, exact commit, clean source, lock
+blob and SHA-256, then freezes its source tree, project file, lock,
+interpreter and entrypoint identities in the inventory. Local material also
+requires a `runner_project` with an absolute path and a source manifest
+digest over tracked Git entries and their working-file bytes. Material
+loading rechecks the source against the static commit and lock pins,
+including after preparation and when loading a frozen plan. The emitted
+`verifier_env` binds `UV_PROJECT`, `UV_PROJECT_ENVIRONMENT` and `UV_PYTHON`
+to the absolute cached project, virtual environment and its prepared Python
+interpreter, while preserving the trial's working directory for native
+job evidence. It uses a cache-local home and uv cache, offline dependency
+resolution, disabled Python downloads and dotenv loading, and an explicit
+system `PATH`; development dependencies are excluded with `UV_NO_DEV=1`,
+and no ambient provider credentials enter this environment.
+Populate all required dependencies before freezing: an offline run cannot
+fetch missing dependencies. No host wrapper is needed to select the runner.
+The source manifest excludes `.git`, `.venv` and ignored generated files.
+Interpreter and console-script digests are checked during preparation;
+material loading does not yet verify the installed virtual environment's
+complete dependency bytes. The source and lock binding is not a complete
+runtime dependency closure.
+
+Oracle diagnostics use the same pinned uv executable and runner environment;
+the explicit witness dispatch selects the upstream oracle Agent. No separately
+invented `wrappers/*-oracle.sh` is needed for local preparation.
 
 ## 2. Diagnose
 
@@ -77,6 +124,9 @@ source, material identity, corpus entries, and exact trials;
 `run --plan` re-verifies all of it and executes exactly those trials
 (stage/settlement progress on stderr, structured result saved under the
 run root). A pi-only experiment needs no artificial comparison edge.
+For native material, selection accepts the profile's canonical task ID or the
+exact upstream task name from its admitted package. Plans and generated trial
+IDs use the canonical ID; unbound aliases and duplicate selections reject.
 
 ## 5. Verify seals and read the offline report
 

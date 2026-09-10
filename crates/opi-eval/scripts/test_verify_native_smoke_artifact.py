@@ -230,7 +230,7 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
             },
         }
     material_json = {
-        "schema": "opi-eval-native-material/3",
+        "schema": "opi-eval-native-material/4",
         "static_lock": {"path": str(material / "external-lock.json"),
                         "sha256": sha(lock_bytes)},
         "provider": {
@@ -243,16 +243,6 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
             product: {
                 "executable": {"path": str(wrappers / f"agent-{product}-generic.sh"),
                                "sha256": sha(f"agent-{product}\n".encode())},
-                "model": "scripted:eval" if product == "opi"
-                         else "scripted:scripted/eval",
-                "provider_env": {"OPENAI_API_KEY": "<dummy-scripted-credential>"}
-                                if product == "opi" else {"PI_API_KEY": "<redacted-dummy>"},
-                "config": {"kind": "opi-toml" if product == "opi"
-                           else "pi-models-json",
-                           "base_url": "http://127.0.0.1:48127/v1",
-                           "model_id": "eval" if product == "opi"
-                                       else "scripted/eval",
-                           "api_key": "<dummy-scripted-credential>"},
                 "integrations": integration_entry(product),
             }
             for product in ("opi", "pi")

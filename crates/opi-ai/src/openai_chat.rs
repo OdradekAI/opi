@@ -1394,7 +1394,8 @@ fn serialize_messages(
                                 }
                             }));
                         }
-                        AssistantContent::Thinking { .. } => {}
+                        AssistantContent::Thinking { .. }
+                        | AssistantContent::RedactedThinking { .. } => {}
                     }
                 }
 

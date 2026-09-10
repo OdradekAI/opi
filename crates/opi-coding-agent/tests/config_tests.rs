@@ -90,6 +90,66 @@ budget_tokens = 20000
 }
 
 #[test]
+fn request_output_limit_rejects_zero() {
+    let file = write_toml("[defaults]\nmax_output_tokens = 0\n");
+    let error = load_config_file(file.path())
+        .expect_err("an explicit request output limit must be positive")
+        .to_string();
+    assert!(error.contains("defaults.max_output_tokens"), "{error}");
+    assert!(error.contains("greater than zero"), "{error}");
+}
+
+#[test]
+fn request_output_limit_obeys_config_precedence_and_project_trust() {
+    let root = tempfile::tempdir().unwrap();
+    let user = root.path().join("user.toml");
+    let explicit = root.path().join("explicit.toml");
+    let project = root.path().join("project");
+    fs::create_dir_all(project.join(".opi")).unwrap();
+    fs::write(&user, "[defaults]\nmax_output_tokens = 2048\n").unwrap();
+    fs::write(&explicit, "[defaults]\nmax_output_tokens = 16384\n").unwrap();
+    let project_config = project.join(".opi/config.toml");
+    fs::write(&project_config, "[defaults]\nmax_output_tokens = 4096\n").unwrap();
+    let source = |config_path| ConfigSource {
+        user_config_path: Some(user.clone()),
+        project_dir: Some(project.clone()),
+        config_path,
+        cli_model: None,
+        env_model: None,
+    };
+    let staged = stage_config(source(None)).unwrap();
+    let global = staged.clone().finalize_with_project(false).unwrap();
+    assert_eq!(global.defaults.max_output_tokens, Some(2048));
+    assert_eq!(
+        staged
+            .finalize_with_project(true)
+            .unwrap()
+            .defaults
+            .max_output_tokens,
+        Some(4096)
+    );
+    assert_eq!(
+        resolve_config(source(Some(explicit.clone())))
+            .unwrap()
+            .defaults
+            .max_output_tokens,
+        Some(16384)
+    );
+    fs::write(&explicit, "[defaults]\nmax_iterations = 10\n").unwrap();
+    assert_eq!(
+        resolve_config(source(Some(explicit)))
+            .unwrap()
+            .defaults
+            .max_output_tokens,
+        Some(4096)
+    );
+    fs::write(&project_config, "[defaults]\nmax_output_tokens = 0\n").unwrap();
+    assert!(resolve_config(source(None)).is_err());
+    assert!(opi_coding_agent::config::merge_project_config(global, &project).is_err());
+    assert_eq!(OpiConfig::default().defaults.max_output_tokens, None);
+}
+
+#[test]
 fn valid_config_parses_providers() {
     let dir = tempfile::tempdir().unwrap();
     let path = write_temp_config(

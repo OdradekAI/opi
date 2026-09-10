@@ -832,7 +832,7 @@ cmd_materialize_configs() {
   # lock; nothing is resolved from ambient state.
   python3 - "$STATIC_LOCK" "$external_root" "$agents_out" "$provider_out" \
     "$out" "$REPO_ROOT" "$OPI_EVAL_EXECUTABLE" "$PROVIDER_NETWORK" <<'MATEOF'
-import hashlib, json, os, subprocess, sys
+import hashlib, json, os, shutil, subprocess, sys
 from pathlib import Path
 
 lock_path, external, agents_out, provider_out, out, repo, opi_eval, network = sys.argv[1:9]
@@ -903,39 +903,39 @@ exec docker run --rm --network {network} \\
 """
     return write_exec(out / "wrappers" / f"agent-{product}-{benchmark}.sh", body)
 
-    # The pinned integration module directories the selected import
-    # paths resolve against, sealed by their sorted file-manifest
-    # digests. The two runner surfaces are not module-compatible, so the
-    # material pins one Harbor module and one Pier module per product
-    # (P19-D04).
-    harbor_integrations = Path(repo) / "crates/opi-eval/integrations/harbor"
-    pier_integrations = Path(repo) / "crates/opi-eval/integrations/pier"
-    if not (harbor_integrations / "opi_eval_harbor.py").is_file() \
-            or not (pier_integrations / "opi_eval_pier.py").is_file():
-        raise SystemExit(
-            "materialize-configs: pinned integration modules are missing")
-    def integrations_digest(integrations_dir):
-        rows = []
-        for path in sorted(integrations_dir.rglob("*")):
-            if path.is_file() and "__pycache__" not in path.parts:
-                rows.append((str(path.relative_to(integrations_dir))
-                             .replace(os.sep, "/"), sha(path)))
-        canonical = "".join(f"{p}\n{d}\n" for p, d in rows)
-        return hashlib.sha256(canonical.encode()).hexdigest()
-    integrations_entry = lambda product: {
-        "harbor": {
-            "module_dir": str(harbor_integrations),
-            "module_manifest_sha256": integrations_digest(harbor_integrations),
-            "import_path": f"opi_eval_harbor:{product.capitalize()}Agent",
-            "agent_name": f"opi-eval-{product}",
-        },
-        "pier": {
-            "module_dir": str(pier_integrations),
-            "module_manifest_sha256": integrations_digest(pier_integrations),
-            "import_path": f"opi_eval_pier:{product.capitalize()}Agent",
-            "agent_name": f"opi-eval-{product}",
-        },
-    }
+# The pinned integration module directories the selected import
+# paths resolve against, sealed by their sorted file-manifest
+# digests. The two runner surfaces are not module-compatible, so the
+# material pins one Harbor module and one Pier module per product
+# (P19-D04).
+harbor_integrations = Path(repo) / "crates/opi-eval/integrations/harbor"
+pier_integrations = Path(repo) / "crates/opi-eval/integrations/pier"
+if not (harbor_integrations / "opi_eval_harbor.py").is_file() \
+        or not (pier_integrations / "opi_eval_pier.py").is_file():
+    raise SystemExit(
+        "materialize-configs: pinned integration modules are missing")
+def integrations_digest(integrations_dir):
+    rows = []
+    for path in sorted(integrations_dir.rglob("*")):
+        if path.is_file() and "__pycache__" not in path.parts:
+            rows.append((str(path.relative_to(integrations_dir))
+                         .replace(os.sep, "/"), sha(path)))
+    canonical = "".join(f"{p}\n{d}\n" for p, d in rows)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+integrations_entry = lambda product: {
+    "harbor": {
+        "module_dir": str(harbor_integrations),
+        "module_manifest_sha256": integrations_digest(harbor_integrations),
+        "import_path": f"opi_eval_harbor:{product.capitalize()}Agent",
+        "agent_name": f"opi-eval-{product}",
+    },
+    "pier": {
+        "module_dir": str(pier_integrations),
+        "module_manifest_sha256": integrations_digest(pier_integrations),
+        "import_path": f"opi_eval_pier:{product.capitalize()}Agent",
+        "agent_name": f"opi-eval-{product}",
+    },
+}
 
 benchmarks = {}
 env_keys = {"opi": ["HOME", "OPI_EVAL_SCRIPTED_KEY"],
@@ -1040,8 +1040,39 @@ exit $rc
         },
     }
 
+# Transport and probe the same client bytes. The pi package includes its
+# interpreter and bundle resources; a host-absolute launcher alone cannot
+# identify the code that will run inside the task environment.
+opi_executable = Path(opi_identity["canonical_executable"])
+node_executable = Path(pi_identity["node_executable"])
+pi_bundle = Path(pi_identity["bundle_path"])
+for path, expected in (
+        (opi_executable, opi_identity["executable_sha256"]),
+        (node_executable, pi_identity["node_sha256"]),
+        (pi_bundle, pi_identity["bundle_sha256"])):
+    if sha(path) != expected:
+        raise SystemExit("materialize-configs: built client identity drift")
+pi_package = out / "runtime" / "pi"
+pi_package.mkdir(parents=True)
+shutil.copy2(node_executable, pi_package / "node")
+# Preserve Node's package-root lookup and dist-relative assets from the
+# canonical packages/coding-agent/dist/bundle/cli.js build output.
+pi_source_package = pi_bundle.parents[2]
+for name in ("dist", "docs", "examples"):
+    shutil.copytree(pi_source_package / name, pi_package / name, symlinks=True)
+for name in ("package.json", "README.md", "CHANGELOG.md"):
+    shutil.copy2(pi_source_package / name, pi_package / name)
+if sha(pi_package / "node") != pi_identity["node_sha256"] \
+        or sha(pi_package / "dist" / "bundle" / "cli.js") != pi_identity["bundle_sha256"]:
+    raise SystemExit("materialize-configs: transported pi identity drift")
+pi_executable = pi_package / "pi"
+pi_executable_sha256 = write_exec(pi_executable, """#!/bin/sh
+agent_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$agent_root/node" "$agent_root/dist/bundle/cli.js" "$@"
+""")
+
 manifest = {
-    "schema": "opi-eval-native-material/3",
+    "schema": "opi-eval-native-material/4",
     "static_lock": {"path": lock_path, "sha256": sha(lock_path)},
     "provider": {
         "script": {"path": f"{repo}/crates/opi-eval/scripts/scripted-provider.py",
@@ -1051,37 +1082,21 @@ manifest = {
     },
     "agents": {
         "opi": {
-            "executable": {"path": str(out / "wrappers" / "agent-opi-generic.sh"),
-                           "sha256": None},
+            "executable": {"path": str(opi_executable),
+                           "sha256": opi_identity["executable_sha256"]},
             "integrations": integrations_entry("opi"),
         },
         "pi": {
-            "executable": {"path": str(out / "wrappers" / "agent-pi-generic.sh"),
-                           "sha256": None},
+            "executable": {"path": str(pi_executable),
+                           "sha256": pi_executable_sha256},
+            "runtime_package": {"path": str(pi_package),
+                                "manifest_sha256": package_manifest_digest(pi_package),
+                                "entrypoint": "pi"},
             "integrations": integrations_entry("pi"),
         },
     },
     "benchmarks": benchmarks,
 }
-
-# One executable per product is declared in the manifest: the generic
-# wrapper execs the exact built program (contract form); the
-# per-benchmark container wrappers are recorded in the stage receipt as
-# the admitted native launch surfaces the dispatch selects by trial.
-manifest["agents"]["opi"]["executable"]["sha256"] = write_exec(
-    out / "wrappers" / "agent-opi-generic.sh",
-    f"""#!/bin/sh
-# eval generic agent wrapper (native mode): execs the exact built Opi
-# binary; per-benchmark container wrappers are recorded in the stage receipt.
-exec "{opi_identity['canonical_executable']}" "$@"
-""")
-manifest["agents"]["pi"]["executable"]["sha256"] = write_exec(
-    out / "wrappers" / "agent-pi-generic.sh",
-    f"""#!/bin/sh
-# eval generic agent wrapper (native mode): invokes the pi bundle with
-# the resolved Node executable so the runtime is part of the identity.
-exec "{pi_identity['node_executable']}" "{pi_identity['bundle_path']}" "$@"
-""")
 
 # The wrapper launch surfaces are stage evidence, not manifest fields:
 # the crate-private material schema denies unknown fields, so they are
@@ -1089,8 +1104,6 @@ exec "{pi_identity['node_executable']}" "{pi_identity['bundle_path']}" "$@"
 agent_wrappers = {adapter: entry.pop("_agent_wrappers")
                   for adapter, entry in benchmarks.items()}
 material_path = out / "material.json"
-material_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-                         encoding="utf-8")
 
 configs = {}
 # Native scoring runs Terminal-Bench 2.1 only; the TB3 and DeepSWE
@@ -1115,7 +1128,7 @@ integrity_digest = "pending"
 [[subjects]]
 id = "baseline-pi"
 product = "pi"
-version = "0.84.3"
+version = "0.85.1"
 
 [[subjects]]
 id = "candidate-opi"
@@ -1141,6 +1154,7 @@ top_p = "omitted"
 max_output_tokens = 4096
 context_window = 128000
 reasoning = "omitted"
+required = ["max_output_tokens"]
 
 [execution]
 mode = "native-fixture"
@@ -1167,6 +1181,42 @@ subject = "candidate-opi"
 task = "{task_id}"
 group = "group-{adapter}"
 """, encoding="utf-8")
+    # The existing producer observes both requests from each exact client
+    # against a private loopback listener. Only successful evidence is pinned;
+    # validation and config freezing cannot run after a failed/incomplete probe.
+    clients_path = out / f"{adapter}-output-control-clients.json"
+    proof_root = out / f"{adapter}-output-control"
+    clients_path.write_text(json.dumps({
+        "opi": str(opi_executable), "pi": str(pi_executable),
+        "pi_package": str(pi_package), "experiment": str(config),
+    }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    probe_env = {key: os.environ[key] for key in (
+        "HOME", "PATH", "CARGO_HOME", "CARGO_TARGET_DIR", "CARGO_INCREMENTAL",
+        "RUSTUP_HOME", "RUSTUP_TOOLCHAIN") if key in os.environ}
+    probe_env.update({"OPI_EVAL_NATIVE_CLIENT_MATERIAL": str(clients_path),
+                      "OPI_EVAL_OUTPUT_CONTROL_OUT": str(proof_root)})
+    probe_argv = ["cargo", "test", "--locked", "-p", "opi-eval",
+                  "--test", "native_driver", "native_output_control_client_matrix",
+                  "--", "--ignored", "--exact"]
+    (out / f"{adapter}-output-control-command.json").write_text(json.dumps({
+        "argv": probe_argv, "cwd": repo, "env": probe_env,
+    }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    probe = subprocess.run(probe_argv, cwd=repo, env=probe_env,
+                           capture_output=True, text=True)
+    (out / f"{adapter}-output-control-stdout.log").write_text(probe.stdout, encoding="utf-8")
+    (out / f"{adapter}-output-control-stderr.log").write_text(probe.stderr, encoding="utf-8")
+    (out / f"{adapter}-output-control-exit.json").write_text(
+        json.dumps({"exit_code": probe.returncode}) + "\n", encoding="utf-8")
+    if probe.returncode != 0:
+        raise SystemExit("materialize-configs: exact-client output-control probe failed")
+    for product in ("opi", "pi"):
+        proof = proof_root / product / "output-control.json"
+        if not proof.is_file():
+            raise SystemExit("materialize-configs: exact-client output-control proof missing")
+        manifest["agents"][product]["output_control_evidence"] = {
+            "path": str(proof), "sha256": sha(proof)}
+    material_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+                             encoding="utf-8")
     # Pin the integrity digest through the production validate entry.
     summary = subprocess.run(
         [opi_eval, "validate", "--config", str(config),

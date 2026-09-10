@@ -757,7 +757,8 @@ pub(crate) fn convert_messages(request: &Request) -> Vec<serde_json::Value> {
                                 "arguments":tool_call.arguments,
                             }));
                         }
-                        AssistantContent::Thinking { .. } => {}
+                        AssistantContent::Thinking { .. }
+                        | AssistantContent::RedactedThinking { .. } => {}
                     }
                 }
                 if !text.is_empty() {

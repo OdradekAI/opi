@@ -30,6 +30,8 @@ pub struct AssistantMessage {
     pub api: crate::ApiKind,
     pub provider: String,
     pub model: String,
+    /// Reported model override: `None` falls back to `model`; an empty string
+    /// explicitly records that the provider did not report a model.
     pub response_model: Option<String>,
     pub response_id: Option<String>,
     pub usage: crate::stream::Usage,
@@ -108,7 +110,15 @@ pub enum AssistantContent {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "thinking")]
-    Thinking { thinking: String },
+    Thinking {
+        thinking: String,
+        /// Opaque provider signature; preserve with the original thinking text.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
+    },
+    /// Encrypted reasoning retained for continuation, never display text.
+    #[serde(rename = "redacted_thinking")]
+    RedactedThinking { data: String },
     #[serde(rename = "tool_call")]
     ToolCall { tool_call: ToolCall },
 }

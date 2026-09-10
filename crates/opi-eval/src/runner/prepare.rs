@@ -18,7 +18,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::experiment::ResolvedExperiment;
-use crate::runner::material::{directory_manifest_digest, sha256_hex};
+use crate::runner::material::{
+    directory_manifest_digest, runner_source_digest, runtime_package_manifest_digest, sha256_hex,
+};
 
 /// Failures of the local preparation commands.
 #[derive(Debug, Error)]
@@ -251,7 +253,12 @@ pub(crate) fn static_lock_path(cache: &Path) -> PathBuf {
 
 /// One selected product's built executable location inside the cache.
 pub(crate) fn agent_executable_path(cache: &Path, product: &str) -> PathBuf {
-    cache.join("agents").join(product)
+    let path = cache.join("agents").join(product);
+    if path.is_dir() {
+        path.join(product)
+    } else {
+        path
+    }
 }
 
 fn unknown(id: &str, reason: &str) -> Observation {
@@ -373,6 +380,22 @@ struct StaticLockProjection {
     authority: AuthorityProjection,
     #[serde(default)]
     images: Vec<ImageProjection>,
+    #[serde(default)]
+    tools: Vec<ToolProjection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ToolProjection {
+    id: String,
+    version: Option<String>,
+    commit: Option<String>,
+    uv_lock: Option<RunnerLockProjection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunnerLockProjection {
+    git_blob: String,
+    sha256: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -491,12 +514,39 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
         .join(format!("{adapter}.toml"));
     let task_package = context.cache.join("packages").join(&adapter);
     let verifier = context.cache.join("tools/uv");
-    let oracle = context
-        .cache
-        .join("wrappers")
-        .join(format!("{adapter}-oracle.sh"));
+    let runner = if adapter == "deepswe-v1.1" {
+        "pier"
+    } else {
+        "harbor"
+    };
+    let runner_pin = lock
+        .tools
+        .iter()
+        .find(|tool| tool.id == runner)
+        .ok_or_else(|| PrepareError::Rejected(format!("static lock has no runner {runner} pin")))?;
+    let uv_version = lock
+        .tools
+        .iter()
+        .find(|tool| tool.id == "uv")
+        .and_then(|tool| tool.version.as_deref())
+        .filter(|version| *version == "0.9.7")
+        .ok_or_else(|| {
+            PrepareError::Rejected("static lock must pin supported uv 0.9.7".to_owned())
+        })?;
+    let runner_project = context.cache.join("runners").join(runner);
+    let runner_commit = runner_pin.commit.as_deref().ok_or_else(|| {
+        PrepareError::Rejected(format!("runner {runner}: static lock has no source commit"))
+    })?;
+    let runner_lock = runner_pin.uv_lock.as_ref().ok_or_else(|| {
+        PrepareError::Rejected(format!(
+            "runner {runner}: static lock has no uv.lock identity"
+        ))
+    })?;
+    // Witness dispatch explicitly selects the upstream oracle on the same
+    // uv entrypoint; no additional local launch wrapper is needed.
+    let oracle = verifier.clone();
     let provider = context.cache.join("pins/scripts/scripted-provider.py");
-    let required: Vec<(String, PathBuf)> = std::iter::once((
+    let mut required: Vec<(String, PathBuf)> = std::iter::once((
         "pins:static-lock".to_owned(),
         static_lock_path(&context.cache),
     ))
@@ -507,9 +557,25 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
         )
     }))
     .chain([
-        ("profiles".to_owned(), profile.clone()),
+        (format!("profiles:{adapter}"), profile.clone()),
         ("tools:uv".to_owned(), verifier.clone()),
-        ("wrappers:oracle".to_owned(), oracle.clone()),
+        (format!("runners:{runner}"), runner_project.clone()),
+        (
+            format!("runners:{runner}:project"),
+            runner_project.join("pyproject.toml"),
+        ),
+        (
+            format!("runners:{runner}:lock"),
+            runner_project.join("uv.lock"),
+        ),
+        (
+            format!("runners:{runner}:python"),
+            runner_project.join(".venv/bin/python"),
+        ),
+        (
+            format!("runners:{runner}:entrypoint"),
+            runner_project.join(".venv/bin").join(runner),
+        ),
         (
             "pins:scripts:scripted-provider.py".to_owned(),
             provider.clone(),
@@ -525,11 +591,21 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
     ])
     .chain([(format!("packages:{adapter}"), task_package.clone())])
     .collect();
+    for product in &products {
+        let package = context.cache.join("agents").join(product);
+        if package.is_dir() {
+            required.push((format!("runtime:{product}"), package));
+        }
+    }
     let missing: Vec<(&String, &PathBuf)> = required
         .iter()
         .map(|(key, path)| (key, path))
         .filter(|(key, path)| {
-            let present = if key.starts_with("integrations:") || key.starts_with("packages:") {
+            let present = if key.starts_with("integrations:")
+                || key.starts_with("packages:")
+                || key.starts_with("runtime:")
+                || key.as_str() == format!("runners:{runner}")
+            {
                 path.is_dir()
             } else {
                 path.is_file()
@@ -604,7 +680,11 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
             )));
         }
         for (key, path) in &missing {
-            let present = if key.starts_with("integrations:") || key.starts_with("packages:") {
+            let present = if key.starts_with("integrations:")
+                || key.starts_with("packages:")
+                || key.starts_with("runtime:")
+                || key.as_str() == format!("runners:{runner}")
+            {
                 path.is_dir()
             } else {
                 path.is_file()
@@ -622,10 +702,43 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
 
     // 6. Verify every identity and freeze it into the reusable
     //    inventory; any drift against a prior freeze rejects.
+    let version = Command::new(&verifier)
+        .arg("--version")
+        .env_clear()
+        .output()?;
+    if !version.status.success()
+        || String::from_utf8_lossy(&version.stdout).trim() != format!("uv {uv_version}")
+    {
+        return Err(PrepareError::Rejected(
+            "verifier executable is not the pinned uv 0.9.7".to_owned(),
+        ));
+    }
     let mut inventory = read_inventory(&context.cache)?;
+    for product in &products {
+        if inventory
+            .entries
+            .contains_key(&format!("runtime:{product}"))
+            && !context.cache.join("agents").join(product).is_dir()
+        {
+            return Err(PrepareError::Rejected(format!(
+                "runtime package removed for {product}"
+            )));
+        }
+    }
     let mut verified = Vec::new();
     for (key, path) in &required {
-        let observed = if path.is_dir() {
+        let observed = if key == &format!("runners:{runner}") {
+            runner_source_digest(
+                path,
+                runner_commit,
+                &runner_lock.git_blob,
+                &runner_lock.sha256,
+            )
+            .map_err(|error| PrepareError::Rejected(error.to_string()))?
+        } else if key.starts_with("runtime:") {
+            runtime_package_manifest_digest(path)
+                .map_err(|error| PrepareError::Rejected(error.to_string()))?
+        } else if path.is_dir() {
             directory_manifest_digest(path)
                 .map_err(|error| PrepareError::Rejected(error.to_string()))?
         } else {
@@ -659,11 +772,34 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
     // 7. Emit the local-origin native-material manifest.
     std::fs::create_dir_all(out)?;
     let material_path = out.join("material.json");
+    let runner_home = context.cache.join("runner-homes").join(runner);
+    let uv_cache = context.cache.join("uv-cache");
+    std::fs::create_dir_all(&runner_home)?;
+    std::fs::create_dir_all(&uv_cache)?;
+    let verifier_env = serde_json::json!({
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": runner_home.canonicalize()?,
+        "UV_PROJECT": runner_project.canonicalize()?,
+        "UV_PROJECT_ENVIRONMENT": runner_project.canonicalize()?.join(".venv"),
+        "UV_PYTHON": runner_project.canonicalize()?.join(".venv/bin/python"),
+        "UV_CACHE_DIR": uv_cache.canonicalize()?,
+        "UV_OFFLINE": "1",
+        "UV_NO_DEV": "1",
+        "UV_PYTHON_DOWNLOADS": "never",
+        "UV_NO_ENV_FILE": "1",
+        "PYTHON_DOTENV_DISABLED": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "HARBOR_TELEMETRY": "0",
+    });
     let digest_of = |path: &Path| sha256_hex(&std::fs::read(path).unwrap_or_default());
     let agents: BTreeMap<String, serde_json::Value> = products
         .iter()
         .map(|product| {
             let executable = agent_executable_path(&context.cache, product);
+            let package = context.cache.join("agents").join(product);
+            let runtime_package = inventory.entries.get(&format!("runtime:{product}")).map(|entry| {
+                serde_json::json!({"path": package, "manifest_sha256": entry.sha256, "entrypoint": product})
+            });
             let class = match product.as_str() {
                 "opi" => "Opi",
                 "pi" => "Pi",
@@ -689,13 +825,14 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
                 product.clone(),
                 serde_json::json!({
                     "executable": {"path": executable, "sha256": digest_of(&executable)},
+                    "runtime_package": runtime_package,
                     "integrations": integrations,
                 }),
             )
         })
         .collect();
     let material = serde_json::json!({
-        "schema": "opi-eval-native-material/3",
+        "schema": "opi-eval-native-material/4",
         "origin": "local",
         "static_lock": {"path": lock_path, "sha256": sha256_hex(&lock_bytes)},
         "provider": {
@@ -711,9 +848,13 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
                 "task_package_manifest_sha256": directory_manifest_digest(&task_package)
                     .unwrap_or_default(),
                 "verifier_executable": {"path": verifier, "sha256": digest_of(&verifier)},
-                "verifier_env": {},
+                "verifier_env": verifier_env,
+                "runner_project": {
+                    "path": runner_project.canonicalize()?,
+                    "source_manifest_sha256": inventory.entries[&format!("runners:{runner}")].sha256,
+                },
                 "oracle": {"path": oracle, "sha256": digest_of(&oracle)},
-                "oracle_env": {},
+                "oracle_env": verifier_env,
             },
         },
     });

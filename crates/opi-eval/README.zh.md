@@ -7,7 +7,8 @@
 
 `opi-eval` 用同一组显式模型参数、环境、任务和 trial 控制来比较多个 Agent
 harness。它会在任何 Agent 启动前解析并冻结这些输入，把每次 trial 的证据写入
-sealed bundle，并且只根据仍能通过验证的证据生成报告。
+sealed bundle，并且只根据仍能通过验证的证据计算分数。报告也会将绑定一致的
+未封存尝试保留为未经验证的诊断，不为其赋分。
 
 本 crate 是未发布、Agent 中立的 workspace companion，不属于 `opi` 运行时，也
 不会改变普通 `opi` 的行为。
@@ -20,7 +21,7 @@ sealed bundle，并且只根据仍能通过验证的证据生成报告。
 - 在相同控制条件下比较 baseline 与 candidate harness；
 - 用固定的 conformance fixture 检查 Agent 或 benchmark adapter；
 - 不重新运行 Agent 或 Provider，直接验证 sealed trial 证据；
-- 根据通过验证的 bundle 生成规范化、仅用于 conformance 的报告。
+- 生成规范化报告，包含通过验证的结果及明确的无效、未执行覆盖计数。
 
 本文会反复使用以下术语：
 
@@ -139,14 +140,17 @@ cargo run -p opi-eval -- report --root "$DEMO_DIR/run" --out "$DEMO_DIR/report.j
 三个互不相同的离线操作，均不启动 Agent 或 provider：
 `verify --root R` 按原始 seal 逐个复核 sealed trial bundle（退出码
 0 已验证 / 1 检出变更 / 2 请求被拒；不修复、不改写）；
-`report --root R --out O` 仅凭已验证的 sealed 证据重建字节稳定的
-规范化报告；`regrade --root R --native-material M --out D` 则是下文
+`report --root R --out O` 重建字节稳定的规范化报告，其分数只来自已验证的
+sealed 证据；`regrade --root R --native-material M --out D` 则是下文
 单独描述的真正原生重评——字节校验绝不以 regrade 之名运行。
 每次 run 在首个效果之前写入 run 级 `run-control.json`（实验身份、
 manifest digest、selection、corpus 规模、精确的 planned trials），
 因此即使没有任何 trial 封存，离线报告也能保留未启动的 trial。
-报告的结果分类只消费 sealed 的逐 trial settlement 记录——绝不从
-stderr 字符或进程退出码推断——graded trial（包括有效的原生零分与
+报告的结果分类消费逐 trial settlement 记录，绝不从 stderr 字符或进程
+退出码推断。未封存记录必须与实验及 planned trial 的绑定一致；它们仅保留
+attempted/invalid 或效果未知的覆盖信息，不提供已验证状态、原生事实或分数。
+因此即使所有尝试都未封存，缺失的 seal 也保持可见。
+只有已封存且通过验证的 graded trial（包括有效的原生零分与
 benchmark 定义的 Agent 超时）构成指标分母，按 benchmark 各自给出
 指标定义（绝不做跨 benchmark 平均），而 provider/access/身份/基础设施
 /评分无效类失败保持 attempted-but-invalid，效果未知的 trial 保持
@@ -156,8 +160,10 @@ completed/incomplete 的 `full|subset` scope 标签、带缺失侧与排除
 原因的同任务/同重复 comparison pair、重复控制对
 （`consistent|divergent|incomplete` 并给出缺失组）以及未知遥测原因
 全部保持可见：协议组边缘（同一产品的两个主体）绝不配对，单主体
-报告无需人工 comparison edge。相同的 sealed 输入重复重建得到相同
-字节；被篡改或未封存的证据阻断发布而不是升级。
+报告无需人工 comparison edge。相同输入重复重建得到相同字节。被篡改的
+sealed 证据和相互矛盾的控制记录阻断发布；未封存尝试保持未经验证，且不进入
+指标分母。原生完成诊断识别 verified native grade，每个原生 headline 都指向
+实际提供 reward 的那份已封存 trial result。
 
 ### 1. 校验
 
@@ -247,7 +253,23 @@ conformance matrix 定义；不受支持的 suite、adapter 或 case 会 fail-cl
 | 模式 | 输入与行为 | 能够证明什么 |
 |------|------------|--------------|
 | Hermetic fixture 模式 | 默认模式。使用有界的确定性 helper 和仓库内固定 fixture。 | 能证明 adapter、lifecycle、sealing、reporting 和失败路径的 conformance；不能证明真实产品或真实 Provider 的 fidelity。 |
-| Native-material 模式 | 给 `validate`、`run` 或 `conformance` 添加 `--native-material <MANIFEST>`。manifest（schema `opi-eval-native-material/3`）会解析精确的 Agent executable、在任务环境内运行 Agent 的固定 integration module（按 runner 家族各一份：Terminal-Bench 路线用 Harbor，DeepSWE 用 Pier）、task package、verifier/oracle 入口和 scripted-provider endpoint。 | 对 `run`：每个 trial 由一个显式选择的 upstream job 在被评分的任务环境内运行所选 Agent，并对同一个 trial 评分；导入的结果必须先绑定到所选 Agent、task 与 job 身份，之后才能 seal。Terminal-Bench 3.0 走其声明的独立 verifier 交接：解析并绑定任务自身 `task.toml` 的生命周期（不支持的形态——多步任务、禁用 verifier、Harbor 路线上的 verifier collect 钩子、非 Linux 任务——在任何 verifier 启动之前拒绝）；对独立 verifier 任务，只有声明过的 artifact 进入全新 verifier——未声明、缺失或被替换的收集一律拒绝，无关的 canary 文件留在 verifier 之外。DeepSWE 走其声明的已提交补丁交接：Pier 任务的 collect 钩子提取超出任务 base revision 的已提交补丁，无网络的全新 pristine verifier 只对这份补丁评分（未提交的工作绝不可能被替换进来）；被绑定的 job 必须记录任务声明的生命周期以及 base revision 与环境镜像，nop 的空补丁照样收集并评零分，未声明的收集一律拒绝。密封 bundle 记录 verifier 输入身份（`native/verifier-input.json`：环境模式、DeepSWE 的 base revision 与镜像，加上每个声明 artifact 及其被收集字节的精确摘要）。`conformance` 只允许已注册的 native case 子集（含三个家族显式选择的 `oracle-witness`/`nop-witness` artifact witness）。 |
+| Native-material 模式 | 给 `validate`、`run` 或 `conformance` 添加 `--native-material <MANIFEST>`。manifest（schema `opi-eval-native-material/4`）会解析精确的 Agent executable、在任务环境内运行 Agent 的固定 integration module（按 runner 家族各一份：Terminal-Bench 路线用 Harbor，DeepSWE 用 Pier）、task package、verifier/oracle 入口和 scripted-provider endpoint。 | 对 `run`：每个 trial 由一个显式选择的 upstream job 在被评分的任务环境内运行所选 Agent，并对同一个 trial 评分；导入的结果必须先绑定到所选 Agent、task 与 job 身份，之后才能 seal。Terminal-Bench 3.0 走其声明的独立 verifier 交接：解析并绑定任务自身 `task.toml` 的生命周期（不支持的形态——多步任务、禁用 verifier、Harbor 路线上的 verifier collect 钩子、非 Linux 任务——在任何 verifier 启动之前拒绝）；对独立 verifier 任务，只有声明过的 artifact 进入全新 verifier——未声明、缺失或被替换的收集一律拒绝，无关的 canary 文件留在 verifier 之外。DeepSWE 走其声明的已提交补丁交接：Pier 任务的 collect 钩子提取超出任务 base revision 的已提交补丁，无网络的全新 pristine verifier 只对这份补丁评分（未提交的工作绝不可能被替换进来）；被绑定的 job 必须记录任务声明的生命周期以及 base revision 与环境镜像，nop 的空补丁照样收集并评零分，未声明的收集一律拒绝。密封 bundle 记录 verifier 输入身份（`native/verifier-input.json`：环境模式、DeepSWE 的 base revision 与镜像，加上每个声明 artifact 及其被收集字节的精确摘要）。`conformance` 只允许已注册的 native case 子集（含三个家族显式选择的 `oracle-witness`/`nop-witness` artifact witness）。 |
+
+Agent 可携带 `runtime_package`，其中包含绝对 `path`、排序文件清单的
+`manifest_sha256`，以及绑定到固定 executable 的相对 `entrypoint`。
+native handoff schema 为 `opi-eval-native-handoff/3`；Harbor 和 Pier 在使用
+选定 provider/model 启动前，校验并上传完整运行包。资源漂移、链接和入口路径
+穿越均拒绝。对于本地准备，`cache/agents/<product>` 可以是 executable，
+也可以是包含 `<product>` executable 及其资源的目录。
+
+本地 material 还通过 `runner_project` 绑定静态 runner 提交、锁文件和已跟踪
+源码字节；加载时重新校验这些身份及绝对 `UV_PROJECT`、
+`UV_PROJECT_ENVIRONMENT` 和 `UV_PYTHON` 选择。准备流程对显式
+oracle 诊断复用同一固定 uv executable。Pier 从 handoff 的选定
+`inference_endpoint` 推导推理域名白名单，并只向 Agent 进程投影上游代理环境；
+独立 verifier 不接收白名单或代理凭据。
+Opi 任务进程使用隔离且不可用的会话总线地址，使固定客户端在无桌面容器中
+能够通过既有的环境凭据回退路径使用所投影的连接。
 
 上游 oracle 是显式选择的 conformance 诊断（`conformance --case oracle-witness` /
 `--case nop-witness`），绝不是被 `run` 静默执行的前置条件。
@@ -269,9 +291,63 @@ conformance matrix 定义；不受支持的 suite、adapter 或 case 会 fail-cl
 只依据客户端自身证据分类类型化的终端 provider 原因（认证失败、限流耗尽、协议
 错误）——包括进程退出码为 0 时的 JSON 错误——绝不臆测证据未知的 provider 原因。
 
+数值输出上限同时投影到模型能力字段与 Opi 的显式请求设置
+`[defaults].max_output_tokens`。这**不代表**原版 Opi 0.8.2 支持该设置；
+它可能静默忽略新字段。当 `max_output_tokens` 为 required 控制，或声明了
+execution 输出 token 边界时，原生 `validate`、`plan` 和 `run` 要求精确客户端
+的回环证据。没有证据的可选数值上限保持为不支持的比较控制。版本字符串、
+声明的能力或较低的实际 token 用量，均不能替代观察到的请求上限。
+
+使用选定实验与本地提供的 executable 生成范围明确的证据。探针仅把 endpoint
+和 credential 替换为回环监听器与固定的合成认证值；绝不解析实验凭据，也不
+联系实验 provider。例如 `clients.json`：
+
+```json
+{
+  "opi": "/absolute/opi",
+  "pi": "/absolute/pi-package/pi",
+  "pi_package": "/absolute/pi-package",
+  "experiment": "/absolute/experiment.toml"
+}
+```
+
+```sh
+OPI_EVAL_NATIVE_CLIENT_MATERIAL=/absolute/clients.json \
+OPI_EVAL_OUTPUT_CONTROL_OUT=/absolute/new-proof-directory \
+cargo test -p opi-eval --test native_driver \
+  native_output_control_client_matrix -- --ignored --exact
+```
+
+输出目录必须尚不存在。原生 pi executable 按原路径启动，也保留已有的
+`node`/`pi_bundle` 输入形式。若 native material 携带客户端运行包，必须提供
+相应的 `opi_package` 或 `pi_package`。此探针只覆盖实验选定的 API 和数值
+上限，reasoning 为 omitted 或 unknown；它不证明 reasoning effort。确定性
+工具循环中的两个请求都必须携带精确上限。
+
+启动监听器前，探针将实际执行的文件绑定到所提供 package 内的普通相对
+entrypoint，拒绝路径穿越、链接和无关 package，即使 executable 字节相同。
+证据同时保留 entrypoint 和 package 摘要。`node`/`pi_bundle` 形式要求
+`pi_package` 同时包含解释器与 bundle；仅解释器摘要不能标识 pi 代码。
+
+每个 `<product>/output-control.json` 固定 executable/package 身份、
+provider/API/model、冻结控制、投影 config 和独立监听器日志。保留完整证据
+目录，并在冻结 plan 前，在**新** native material 中设置
+`agents.<product>.output_control_evidence` 为
+`{"path":"/absolute/proof/<product>/output-control.json","sha256":"<file SHA-256>"}`。
+该可选字段本身并不授予能力：准入校验固定字节、重新生成生产投影，并检查
+两个实际 wire 上限。必需证据缺失、被替换、不支持或不一致时，在派发前拒绝。
+不会改写已有 plan、run 或 seal。每个已准入 trial 将自包含快照封存为
+`control/output-control.json`。
+
 CLI 只消费已经解析的 native-material manifest；它不会临时拼凑或静默替换缺失的
 native input。Native materialization 和 fidelity 验证由仓库的
 [native-smoke workflow](../../.github/workflows/opi-eval-native-smoke.yml) 负责。
+其 materialization 阶段在固定 material 和冻结 config 前，通过同一回环探针
+验证 required 的 4096 token 上限。Opi 使用已定位的构建 executable；pi 通过
+相对路径 launcher 携带已构建的 Node 解释器、package 元数据、发行代码与资源。
+探针绑定的 package 和 entrypoint 与 trial material 声明一致。证据失败或不完整
+会停止 materialization；artifact verifier 仍要求 comparable pair。该阶段可能
+获取锁定的 Cargo 测试依赖，但客户端仅接收隔离的合成认证值与回环 URL。
 真实 Provider 行为评测使用显式调用的
 [opi-eval workflow](../../.agents/skills/opi-eval/SKILL.md)；其预算和证据管理与本文
 hermetic CLI 示例相互独立。
@@ -354,11 +430,19 @@ oracle、缺失或仅 fixture 的证据，拒绝把空的一般审计成功当�
 Companion `verify` 与 `report`。退出码 0 表示接受证据；退出码 2
 输出一个类型化的拒绝原因。
 
+验收校验器要求 Python 3.11 或更高版本。manifest 的
+`controls.connection_controls` 包含 `connection`（选定的 `provider`、
+`api`、`base_url`、`model`）与 `model_controls`（冻结的 resolved 对象）。
+校验器将它们和 `execution_concurrency` 与每个 sealed experiment 比较，
+再把封存的输出控制快照与 trial executable 身份和保留的 material 核对。
+投影中的数值上限和两个独立观察到的请求上限必须一致；仅有字典形状的声明
+或 seal 不足以通过。验收时绝不沿探针记录中的原始主机路径读取文件。
+
 ### 有界取消
 
 整个 run 由一个共享取消令牌管辖。向运行中的 `run` 进程发送 SIGINT 或
 SIGTERM 会停止新的受影响派发、只取消在飞 trial 拥有的进程树、移除记录在
-各 trial 专属前缀（`opi-eval-owned-<trial-id>-`）下的 job 容器以及临时
+各 trial 私有 Compose 工作目录所绑定的 job 容器以及临时
 凭据材料，并且仍然完成结算并输出中断报告：被取消与从未派发的 trial
 保持为显式缺失覆盖，绝不伪造分数；持久的
 `integration/owned-resources.json` 证据与 receipt 中的 cleanup token
@@ -366,6 +450,21 @@ SIGTERM 会停止新的受影响派发、只取消在飞 trial 拥有的进程�
 `native_owned_resource_cancellation` 见证在本地验证真实的 Docker 移除。
 无法强制执行的必需边界在任何效果之前拒绝，且绝不以未知价格承诺
 货币上限。
+
+在固定的 Docker 挂载路径中，Agent 输出流和 Opi trace 直接写入该 trial 的
+日志挂载，因此外层超时不依赖最终下载。移除本次运行拥有的写入进程后，
+full-capture 运行保留一份私有诊断副本，限制为每文件 1 MiB、总计 16 MiB、
+最多 256 个文件，并限制遍历工作量、明确记录截断计数。仅在 Docker 确认的
+精确日志挂载内恢复 root 所有捕获文件的可读性，不放宽权限。符号链接和
+硬链接文件不提供捕获内容。这些部分证据不提供终止事件、原生分数或 seal，
+原始超时及清理失败仍然可见。
+
+上游正常退出后也会执行清理，因为退出码为零的 job 仍可能包含失败的初始化
+或销毁操作。移除前必须确认 Docker 标签、完整容器 ID 与记录的私有根目录
+一致；无法确认移除完成时，禁止成功封存。`opi-eval-owned-resources/2` 记录
+这些身份和结果。结算时移除临时 `handoff.json`、`config.toml` 和 `models.json`，
+由 `handoff-identity.json` 保留不含秘密的启动身份。原生结果绑定采用固定
+Harbor/Pier 的 `jobs/<job>/<trial>/result.json` 布局，并保留有效零分。
 
 ## 开发者指南
 

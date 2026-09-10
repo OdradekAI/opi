@@ -22,7 +22,8 @@ command and stops; it does not create another workflow ledger.
    - Yes: run `opi-implement plan`; run `opi-implement` only after admission.
 3. Are you checking or correcting shipped behavior?
    - Static requirement conformance: `opi-audit`.
-   - Credentialed real-provider behavior: `opi-eval`.
+   - Native benchmark evidence, explicit provider-fidelity cases, and
+     user-confirmed repairs of evaluation findings: `opi-eval`.
    - Verify and optionally fix normalized findings: `opi-remediate`.
    - Documentation, release, or test-link cleanup: use the named skill.
 
@@ -55,6 +56,7 @@ flowchart TD
     PLAN -. DESIGN_DECISION_REQUIRED .-> SH
     PLAN -->|GRAPH_REVISION_REQUIRED| PLAN
     EXEC --> ASSURE
+    ASSURE -. opi-eval user-confirmed source repair .-> ASSURE
     ASSURE -->|confirmed findings| FIX
     FIX --> ASSURE
     ASSURE -->|requirements satisfied| DOC
@@ -71,9 +73,13 @@ flowchart TD
   delivery source.
 - `opi-implement plan` tests readiness; it does not repair missing product
   meaning. Graph confirmation and Git commit authorization are separate gates.
-- `opi-audit` and `opi-eval` diagnose; they do not edit production code. Each
-  audit uses the latest committed registered sources and never reads prior
-  audit or remediation conclusions.
+- `opi-audit` diagnoses without editing production code. Each audit uses the
+  latest committed registered sources and never reads prior audit or
+  remediation conclusions.
+- `opi-eval` may repair Opi source within a user-confirmed scope through its
+  [repair branch](opi-eval/SKILL.md#user-confirmed-source-repairs), without a
+  separate implementation-skill invocation. Source repair and additional live
+  trial authorization are separate; ledger and Phase ownership stay unchanged.
 - `opi-remediate mode=plan` verifies every member of the current live indexed
   audit set and plans the strict finding union; `mode=apply` requires
   explicit approval of that fixed plan's digest and exact live-index digest.
@@ -99,13 +105,44 @@ local commit after an explicit gate, `$` may use credentials or paid providers,
 | `opi-research` | Investigate outward capabilities from primary sources | `docs/research/*.md` | Evidence only; next is shaping | W |
 | `opi-implement` | Admit a registered Phase source, execute its graph, and archive Phase evidence | `.opi-impl-state.json`, Phase snapshots, task changes | Graph, task-commit, ledger-commit, and failure gates are distinct | W, C |
 | `opi-audit` | Independently verify one Phase as an explicitly identified reviewer/model peer against the latest committed registered sources | One suffixed four-file report group installed into the live indexed set under `docs/snapshots/phase<N>/assurance/` | No fixes; each report installs independently and current findings go to `opi-remediate` | W |
-| `opi-eval` | Run explicit isolated real-provider fidelity cases | `docs/eval/` reports and history | Requires credentials and mutating-tool opt-in where applicable | W, $ |
+| `opi-eval` | Select software/version, benchmarks and model; run native trials or explicit fidelity cases | External sealed evidence roots, bilingual `docs/eval/` reports, user-confirmed Opi source repairs; fidelity history remains separate | Confirm repair scope separately from live scope; acceptance mode produces the six-trial handoff for independent offline verification | W, $ |
 | `opi-remediate` | With `mode=plan`, verify the live indexed set and derive closure batches for its strict finding union; with `mode=apply`, execute the exact approved plan and index digests | Set-wide fixed plan, dispositions, result, and user-approved fixes | `READY-FOR-APPLY` plus both exact-digest bindings gate execution; intent changes return to shaping | W |
 | `opi-document` | Audit every maintained current-product README against implementation evidence by default; apply explicit targeted/version-bump doc synchronization | Documentation and doc-check changes | Does not publish | W |
 | `opi-release` | Run seven gated release phases for six crates and GitHub assets | Git tag/release and crates.io versions | Public Git gate, then separate irreversible crates gate | W, C, P, I |
 | `opi-slim-tests` | Remove duplicate or superseded Rust test binaries without losing behavior | Verified uncommitted test-graph reduction | Never commits automatically | W |
 
 ## Assurance model
+
+### Native evaluation entry
+
+Invoke `$opi-eval` with software, version, benchmark and model choices. The
+skill resolves remaining connection, task, resource and budget inputs, then
+uses the Rust Companion's doctor/prepare/validate/plan/run/verify/report
+commands. These are skill arguments, not new CLI flags:
+
+```text
+$opi-eval mode=benchmark software=pi version=<actual-pi-version> bench=terminal-bench-2.1 model=<provider:model>
+$opi-eval mode=acceptance software=opi,pi version=opi:<actual-version>,pi:<actual-version> bench=all model=zhipu:glm-5.3-flash
+$opi-eval mode=verify evidence_root=<redacted-evidence-root>
+$opi-eval mode=fidelity cases=all model=<provider:model>
+```
+
+For task 19.11, acceptance fixes the registered Anthropic connection and one
+feasible task in each of TB2.1/TB3/DeepSWE, once per actual Opi/pi subject.
+Ordinary benchmark mode allows other supported selections. Preparation starts
+no model; live execution requires explicit scope and enforceable limits.
+Reports include native outcomes, coverage, failed attempts, privacy review and
+offline checks. A ready evidence root is input to a separately invoked
+`opi-implement 19.11`, not automatic task completion or Phase archival.
+
+Before final handoff, `opi-eval` performs
+[environment cleanup](opi-eval/references/environment-cleanup.md): inspect
+Docker images and other run-owned residue, remove only disposable resources,
+and retain reusable materials plus evidence needed to trace and reproduce
+results. Reports include cleanup outcomes and remaining residue; read-only
+verification cleans only its own scratch.
+
+### Findings and independent review
 
 `opi-audit` and `opi-eval` share the finding vocabulary in
 `_shared/references/finding-contract.md`, but only the current live indexed
@@ -142,7 +179,7 @@ contract.
 | `.opi-impl-state.draft.json` | `opi-implement plan`; ignored scratch retained only while review/resume needs it |
 | `docs/snapshots/phase<N>/` | Frozen implementation ledger snapshots and non-assurance Phase evidence |
 | `docs/snapshots/phase<N>/assurance/` | One live indexed audit set with independently installed report groups and one remediation group; superseded runs live under `history/` and are excluded from semantic input |
-| `docs/eval/` | `opi-eval` reports and history |
+| `docs/eval/` | `opi-eval` bilingual native/acceptance summaries and explicit fidelity reports/history; large/private evidence stays in the operator's external storage |
 | `.opi-release-state.json` | `opi-release`; ignored resume state retained only during an incomplete release |
 | `_shared/references/finding-contract.md` | Shared finding schema |
 | `_shared/references/audit-set-contract.md` | Indexed report paths, identity, aggregate verdict, lock/recovery, independent installation, rotation, and history rules |

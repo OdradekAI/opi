@@ -149,6 +149,16 @@ LLM 可见内容和 provider 专用失败信号。
 
 ## Provider 行为矩阵
 
+Anthropic thinking 内容保留不透明的 `signature`，
+`AssistantContent::RedactedThinking` 保留加密的 `data`。这两个字段会经过消息与
+会话序列化完整保存，仅向同一个 Anthropic provider 和请求模型原样回传。
+HTTP 响应的 `model` 保留请求模型，`response_model` 保存服务端报告的名称，
+因此模型别名可以继续使用自己的签名历史。切换路由时，带签名的可读 thinking 转成文本，
+加密块被省略。会话导出始终省略这两个不透明字段，即使包含可读 thinking。
+已有无签名消息仍可读取，`signature` 为 `None`。
+服务端省略模型名时，`response_model: Some("")` 明确保留未知证据，
+不会回退为请求别名。
+
 按 family 列出能力与元数据行为。“yes” 表示 adapter 在 wire 上实现了该行为；
 “inherited” 表示继承共享的 OpenAI Chat 或 Gemini 路径；“—” 表示不产生。
 

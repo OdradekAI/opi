@@ -168,6 +168,18 @@ failure signal.
 
 ## Provider Behavior Matrix
 
+Anthropic thinking content retains its opaque `signature`, and
+`AssistantContent::RedactedThinking` retains encrypted `data`. These fields
+survive message/session serialization and are replayed unchanged only on the
+same Anthropic provider and requested model. HTTP responses keep that requested
+model in `model` and the service-reported name in `response_model`, so aliases
+can continue their own signed history. A different route receives signed
+thinking as readable text and omits encrypted blocks. Session exports omit both opaque
+fields, even when readable thinking is included. Existing unsigned messages
+remain readable with `signature: None`.
+When the service omits the model name, `response_model: Some("")` preserves
+explicitly unknown evidence instead of falling back to the requested alias.
+
 Per-family capability and metadata behavior. "yes" means the adapter implements
 the behavior on the wire; "inherited" means it inherits the shared OpenAI Chat
 or Gemini path; "—" means not produced.

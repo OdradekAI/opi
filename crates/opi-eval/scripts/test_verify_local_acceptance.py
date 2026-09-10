@@ -30,6 +30,33 @@ PIER_REPO = "https://github.com/princeton-nlp/SWE-agent"
 PI_COMMIT = "a" * 40
 HARBOR_COMMIT = "b" * 40
 PIER_COMMIT = "c" * 40
+CONNECTION = {"id": "primary", "provider": "scripted", "api": "anthropic-messages", "base_url": "http://127.0.0.1:48127", "model": "eval"}
+MODEL_CONTROLS = {"temperature": "omitted", "top_p": "omitted", "max_output_tokens": 16384, "context_window": 1000000, "reasoning": "omitted", "required": ["max_output_tokens"]}
+
+
+def synthetic_output_control(product, experiment):
+    """Structural fixture only; real clients run in the ignored Rust matrix."""
+    if product == "opi":
+        config = '''[defaults]
+max_output_tokens = 16384
+[providers.custom.scripted]
+name = "opi-eval scripted"
+base_url = "http://127.0.0.1:48127"
+api = "anthropic-messages"
+api_key_env = "OPI_EVAL_SCRIPTED_KEY"
+auth_scheme = "api-key"
+[[providers.custom.scripted.models]]
+id = "eval"
+display_name = "opi-eval scripted"
+max_output_tokens = 16384
+context_window = 1000000
+'''
+    else:
+        config = json.dumps({"providers": {"scripted": {"baseUrl": CONNECTION["base_url"], "api": CONNECTION["api"], "apiKey": "dummy-scripted-credential", "models": [{"id": "eval", "maxTokens": 16384, "contextWindow": 1000000}]}}})
+    requests = "".join(json.dumps({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": "/v1/messages", "model": "eval", "output_limits": {"max_tokens": 16384}, "request_sha256": "d" * 64}) + "\n" for seq in (1, 2))
+    proof = {"schema": "opi-eval-output-control/1", "product": product, "executable_sha256": "e" * 64, "runtime_package_manifest_sha256": None, "connection": {key: CONNECTION[key] for key in ("provider", "api", "model")}, "model_controls": experiment["model_controls"], "probe_base_url": CONNECTION["base_url"], "exit_code": 0, "config": {"path": "synthetic-config", "sha256": sha256(config.encode())}, "requests": {"path": "synthetic-requests", "sha256": sha256(requests.encode())}}
+    evidence = json.dumps(proof)
+    return {"evidence": evidence, "evidence_sha256": sha256(evidence.encode()), "config": config, "requests": requests}
 
 
 def sha256(data: bytes) -> str:
@@ -84,7 +111,9 @@ def companion_stub(record: Path) -> str:
 class EvidenceRoot:
     """A synthetic but structurally complete redacted evidence root."""
 
-    def __init__(self, base: Path) -> None:
+    def __init__(
+        self, base: Path, subject_ids: tuple[str, str] = ("candidate-opi", "baseline-pi")
+    ) -> None:
         self.root = base / "evidence"
         self.root.mkdir(parents=True)
         self.outside = base / "out"
@@ -93,6 +122,7 @@ class EvidenceRoot:
         write_exec(self.companion, companion_stub(self.stub_record))
         self.trials = []
         self.runs = {}
+        self.subject_ids = subject_ids
         for index, family in enumerate(FAMILIES):
             run = self.root / "runs" / family
             opi_id = f"trial-opi-{index + 1}"
@@ -117,18 +147,34 @@ class EvidenceRoot:
         self._write_manifest()
 
     def _stage_family(self, run: Path, family: str, opi_id: str, pi_id: str) -> None:
+        declared = [
+            {"id": opi_id, "subject": self.subject_ids[0], "task": family, "group": "g"},
+            {"id": pi_id, "subject": self.subject_ids[1], "task": family, "group": "g"},
+        ]
+        experiment = {
+            "schema": "opi-eval-experiment/2",
+            "experiment_id": f"native-acceptance-{family}",
+            "manifest_digest": sha256(family.encode()),
+            "subjects": [
+                {"id": self.subject_ids[0], "product": "opi", "version": "0.8.2"},
+                {"id": self.subject_ids[1], "product": "pi", "version": "0.85.1"},
+            ],
+            "trials": declared,
+            "connection_id": "primary",
+            "connections": [CONNECTION],
+            "model_controls": MODEL_CONTROLS,
+            "execution": {"concurrency": 2},
+        }
         write_json(
             run / "run-control.json",
             {
                 "schema": "opi-eval-run-control/1",
-                "experiment": f"native-acceptance-{family}",
-                "planned_trials": [
-                    {"id": opi_id, "subject": "candidate-opi", "task": family, "group": "g"},
-                    {"id": pi_id, "subject": "baseline-pi", "task": family, "group": "g"},
-                ],
+                "experiment": experiment["experiment_id"],
+                "manifest_digest": experiment["manifest_digest"],
+                "planned_trials": declared,
             },
         )
-        write_json(run / "material.json", {"schema": "preserved-material"})
+        material = {"schema": "preserved-material", "agents": {}}
         for trial, product in ((opi_id, "opi"), (pi_id, "pi")):
             bundle = run / "trials" / trial / "bundle"
             native = bundle / "artifacts" / "native"
@@ -144,9 +190,42 @@ class EvidenceRoot:
                 {"schema": "opi-eval-intent/1", "product": product},
             )
             write_json(
-                bundle / "manifest.json",
-                {"schema": "opi-eval-bundle-manifest/1", "artifacts": []},
+                bundle / "artifacts/control/experiment.json",
+                experiment,
             )
+            snapshot = synthetic_output_control(product, experiment)
+            wire_path = bundle / "artifacts/control/output-control.json"
+            write_json(wire_path, snapshot)
+            material["agents"][product] = {"executable": {"sha256": "e" * 64}, "output_control_evidence": {"sha256": snapshot["evidence_sha256"]}}
+            write_json(
+                bundle / "manifest.json",
+                {
+                    "schema": "opi-eval-bundle-manifest/1",
+                    "entries": {
+                        "control/output-control.json": {"digest": sha256(wire_path.read_bytes())},
+                        "control/experiment.json": {
+                            "digest": sha256(
+                                (bundle / "artifacts/control/experiment.json").read_bytes()
+                            )
+                        }
+                    },
+                },
+            )
+        write_json(run / "material.json", material)
+
+    def rewrite_sealed_experiment(self, family: str, experiment: dict) -> None:
+        """Bind a changed synthetic contract so semantic checks see intact digests."""
+        run = self.runs[family]["run"]
+        for trial in run.joinpath("trials").iterdir():
+            bundle = trial / "bundle"
+            path = bundle / "artifacts/control/experiment.json"
+            write_json(path, experiment)
+            manifest = json.loads((bundle / "manifest.json").read_text())
+            manifest["entries"]["control/experiment.json"]["digest"] = sha256(
+                path.read_bytes()
+            )
+            write_json(bundle / "manifest.json", manifest)
+        self._write_manifest()
 
     def _stage_scoped_view(self) -> None:
         view = self.root / "opi-artifact-audit"
@@ -181,7 +260,7 @@ class EvidenceRoot:
             "opi_repository": {"url": "https://github.com/OdradekAI/opi", "commit": "9" * 40},
             "controls": {
                 "execution_concurrency": 2,
-                "connection_controls": {"selector": "scripted:eval"},
+                "connection_controls": {"connection": {key: CONNECTION[key] for key in ("provider", "api", "base_url", "model")}, "model_controls": MODEL_CONTROLS},
             },
             "trials": trials,
             "sources": {
@@ -303,6 +382,13 @@ class AcceptanceVerifierTest(unittest.TestCase):
             self.assertEqual(len(reports), 1)
             self.assertIn("--out", reports[0])
 
+    def test_fresh_subject_labels_are_accepted(self) -> None:
+        self.evidence = EvidenceRoot(
+            self.base / "replacement",
+            subject_ids=("candidate-opi-replacement", "baseline-pi-replacement"),
+        )
+        self.accept()
+
     # -- request-level rejections -------------------------------------------
 
     def test_missing_root_is_rejected(self) -> None:
@@ -412,6 +498,168 @@ class AcceptanceVerifierTest(unittest.TestCase):
         value = json.loads(control.read_text(encoding="utf-8"))
         value["planned_trials"][0]["subject"] = "someone-else"
         write_json(control, value)
+        self.reject("run-control")
+
+    def test_output_limit_claim_without_sealed_controls_is_rejected(self) -> None:
+        entry = self.evidence.runs[FAMILIES[0]]
+        path = entry["run"] / "trials" / entry["opi"] / "bundle/artifacts/control/experiment.json"
+        experiment = json.loads(path.read_text())
+        del experiment["model_controls"]
+        self.evidence.rewrite_sealed_experiment(FAMILIES[0], experiment)
+        self.reject("output-control")
+
+    def test_numeric_output_control_drift_is_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        manifest["controls"]["connection_controls"]["model_controls"]["max_output_tokens"] = 8192
+        self.evidence.save_manifest(manifest)
+        self.reject("output-control")
+
+    def test_output_control_missing_wire_or_wrong_client_is_rejected(self) -> None:
+        for case in (
+            "missing", "wire", "binary", "package", "projection",
+            "opi-context", "pi-context", "opi-reasoning", "pi-reasoning", "pi-sampling",
+            "opi-output-float", "pi-output-float", "opi-context-float", "pi-context-float",
+            "opi-output-bool", "pi-output-bool",
+        ):
+            with self.subTest(case=case):
+                self.evidence = EvidenceRoot(self.base / case)
+                entry = self.evidence.runs[FAMILIES[0]]
+                product = "pi" if case.startswith("pi-") else "opi"
+                bundle = entry["run"] / "trials" / entry[product] / "bundle"
+                path = bundle / "artifacts/control/output-control.json"
+                if case == "missing":
+                    path.unlink()
+                else:
+                    snapshot = json.loads(path.read_text())
+                    proof = json.loads(snapshot["evidence"])
+                    if case == "wire":
+                        snapshot["requests"] = snapshot["requests"].replace("16384", "8192")
+                        proof["requests"]["sha256"] = sha256(snapshot["requests"].encode())
+                    elif case == "binary":
+                        proof["executable_sha256"] = "f" * 64
+                    elif case == "package":
+                        proof["runtime_package_manifest_sha256"] = "f" * 64
+                    elif case.endswith(("float", "bool")):
+                        context = "context" in case
+                        value = True if case.endswith("bool") else float(1000000 if context else 16384)
+                        if product == "opi":
+                            field = "context_window" if context else "max_output_tokens"
+                            number = 1000000 if context else 16384
+                            snapshot["config"] = snapshot["config"].replace(
+                                f"{field} = {number}", f"{field} = {json.dumps(value)}"
+                            )
+                        else:
+                            config = json.loads(snapshot["config"])
+                            model = config["providers"]["scripted"]["models"][0]
+                            model["contextWindow" if context else "maxTokens"] = value
+                            snapshot["config"] = json.dumps(config)
+                        proof["config"]["sha256"] = sha256(snapshot["config"].encode())
+                    elif case.endswith("context"):
+                        snapshot["config"] = snapshot["config"].replace("1000000", "4096")
+                        proof["config"]["sha256"] = sha256(snapshot["config"].encode())
+                    elif case == "opi-reasoning":
+                        snapshot["config"] += 'supports_thinking = true\nthinking_level_map = { high = "high" }\n'
+                        proof["config"]["sha256"] = sha256(snapshot["config"].encode())
+                    elif case in ("pi-reasoning", "pi-sampling"):
+                        config = json.loads(snapshot["config"])
+                        model = config["providers"]["scripted"]["models"][0]
+                        if case == "pi-reasoning":
+                            model.update(reasoning=True, thinkingLevelMap={"high": "high"})
+                        else:
+                            model["samplingParams"] = {"temperature": 0.25, "top_p": 0.9}
+                        snapshot["config"] = json.dumps(config)
+                        proof["config"]["sha256"] = sha256(snapshot["config"].encode())
+                    else:
+                        snapshot["config"] = snapshot["config"].replace("16384", "8192")
+                        proof["config"]["sha256"] = sha256(snapshot["config"].encode())
+                    snapshot["evidence"] = json.dumps(proof)
+                    snapshot["evidence_sha256"] = sha256(snapshot["evidence"].encode())
+                    write_json(path, snapshot)
+                    material_path = entry["run"] / "material.json"
+                    material = json.loads(material_path.read_text())
+                    material["agents"][product]["output_control_evidence"]["sha256"] = snapshot["evidence_sha256"]
+                    write_json(material_path, material)
+                    manifest_path = bundle / "manifest.json"
+                    sealed = json.loads(manifest_path.read_text())
+                    sealed["entries"]["control/output-control.json"]["digest"] = sha256(path.read_bytes())
+                    write_json(manifest_path, sealed)
+                self.evidence._write_manifest()
+                self.reject("output-control")
+
+    def test_swapped_agent_claims_are_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        manifest["trials"][0]["agent"], manifest["trials"][1]["agent"] = "pi", "opi"
+        self.evidence.save_manifest(manifest)
+        self.reject("run-control")
+
+    def test_ambiguous_or_wrong_sealed_subject_bindings_are_rejected(self) -> None:
+        for case in (
+            "swapped-products", "duplicate-subject", "missing-subject",
+            "swapped-trials", "duplicate-trial", "missing-trial",
+        ):
+            with self.subTest(case=case):
+                self.evidence = EvidenceRoot(self.base / case)
+                family = FAMILIES[0]
+                entry = self.evidence.runs[family]
+                path = (
+                    entry["run"] / "trials" / entry["opi"]
+                    / "bundle/artifacts/control/experiment.json"
+                )
+                experiment = json.loads(path.read_text())
+                if case == "swapped-products":
+                    experiment["subjects"][0]["product"] = "pi"
+                    experiment["subjects"][1]["product"] = "opi"
+                elif case == "duplicate-subject":
+                    experiment["subjects"].append(experiment["subjects"][0].copy())
+                elif case == "missing-subject":
+                    experiment["subjects"].pop(0)
+                elif case == "swapped-trials":
+                    experiment["trials"][0]["subject"] = "baseline-pi"
+                    experiment["trials"][1]["subject"] = "candidate-opi"
+                elif case == "duplicate-trial":
+                    experiment["trials"].append(experiment["trials"][0].copy())
+                else:
+                    experiment["trials"].pop(0)
+                self.evidence.rewrite_sealed_experiment(family, experiment)
+                self.reject("run-control")
+
+    def test_duplicate_planned_trial_is_rejected(self) -> None:
+        path = self.evidence.runs[FAMILIES[0]]["run"] / "run-control.json"
+        control = json.loads(path.read_text())
+        control["planned_trials"].append(control["planned_trials"][0].copy())
+        write_json(path, control)
+        self.reject("run-control")
+
+    def test_run_control_identity_must_match_sealed_experiment(self) -> None:
+        for field in ("experiment", "manifest_digest"):
+            for missing in (False, True):
+                with self.subTest(field=field, missing=missing):
+                    self.evidence = EvidenceRoot(self.base / f"{field}-{missing}")
+                    path = self.evidence.runs[FAMILIES[0]]["run"] / "run-control.json"
+                    control = json.loads(path.read_text())
+                    if missing:
+                        del control[field]
+                    else:
+                        control[field] = "substituted"
+                    write_json(path, control)
+                    self.reject("run-control")
+
+    def test_sealed_experiment_bytes_must_match_bundle_entry(self) -> None:
+        entry = self.evidence.runs[FAMILIES[0]]
+        path = (
+            entry["run"] / "trials" / entry["opi"]
+            / "bundle/artifacts/control/experiment.json"
+        )
+        path.write_bytes(path.read_bytes() + b"\n")
+        self.reject("experiment digest")
+
+    def test_missing_sealed_experiment_is_rejected(self) -> None:
+        entry = self.evidence.runs[FAMILIES[0]]
+        path = (
+            entry["run"] / "trials" / entry["opi"]
+            / "bundle/artifacts/control/experiment.json"
+        )
+        path.unlink()
         self.reject("run-control")
 
     # -- scoped capture view --------------------------------------------------

@@ -1,17 +1,16 @@
 //! `opi-eval report` command: offline normalized reporting.
 //!
-//! One invocation recomputes the normalized report from the verified
-//! sealed bundles of a run root through the report builder's
-//! recompute-from-bundle step before rendering, redact-gates publication
-//! against declared canaries, and writes the byte-stable
-//! conformance-only report (stdout or an explicit output path). It never
+//! One invocation recomputes verified results from sealed bundles and
+//! retains bound unsealed attempts as unverified coverage diagnostics.
+//! The report builder redact-gates publication against declared canaries
+//! and writes the byte-stable normalized report (stdout or an explicit
+//! output path). Unsealed metadata never supplies scores. It never
 //! starts an Agent or provider and never mutates the run root
 //! (`EVAL-RPT-001`). Exit codes: 0 when published, 1 when publication is
 //! blocked (typed canary leak) or a contributing bundle failed
-//! verification or sealed-input parsing, 2 for a rejected request. The
+//! verification or input parsing, 2 for a rejected request. The
 //! output path is opened with create-new semantics outside the run root,
 //! so neither sealed bytes nor a prior report can ever be replaced.
-//! Hermetic fixture-grade only; native smoke owns native execution.
 
 use std::path::{Path, PathBuf};
 
@@ -39,7 +38,7 @@ pub enum ReportCliError {
 /// Arguments of the `report` subcommand.
 #[derive(Debug, Clone)]
 pub struct ReportArgs {
-    /// Run root holding sealed bundles.
+    /// Run root holding trial bundles and their control records.
     pub root: PathBuf,
     /// Optional output path; when absent the report goes to stdout only.
     pub out: Option<PathBuf>,

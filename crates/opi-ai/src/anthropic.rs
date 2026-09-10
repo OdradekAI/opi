@@ -223,9 +223,11 @@ enum RawContentBlock {
     },
     #[serde(rename = "thinking")]
     Thinking {
-        #[allow(dead_code)]
         thinking: Option<String>,
+        signature: Option<String>,
     },
+    #[serde(rename = "redacted_thinking")]
+    RedactedThinking { data: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -238,6 +240,8 @@ enum RawDelta {
     InputJsonDelta { partial_json: String },
     #[serde(rename = "thinking_delta")]
     ThinkingDelta { thinking: String },
+    #[serde(rename = "signature_delta")]
+    SignatureDelta { signature: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -289,8 +293,17 @@ pub enum AnthropicEvent {
 #[derive(Debug, Clone)]
 pub enum ContentBlockType {
     Text,
-    ToolUse { id: String, name: String },
-    Thinking,
+    ToolUse {
+        id: String,
+        name: String,
+    },
+    Thinking {
+        thinking: String,
+        signature: Option<String>,
+    },
+    RedactedThinking {
+        data: String,
+    },
 }
 
 /// Delta data from content_block_delta.
@@ -299,6 +312,7 @@ pub enum DeltaData {
     Text { text: String },
     InputJson { partial_json: String },
     Thinking { thinking: String },
+    Signature { signature: String },
 }
 
 impl AnthropicEvent {
@@ -325,7 +339,16 @@ impl AnthropicEvent {
                     RawContentBlock::ToolUse { id, name, .. } => {
                         ContentBlockType::ToolUse { id, name }
                     }
-                    RawContentBlock::Thinking { .. } => ContentBlockType::Thinking,
+                    RawContentBlock::Thinking {
+                        thinking,
+                        signature,
+                    } => ContentBlockType::Thinking {
+                        thinking: thinking.unwrap_or_default(),
+                        signature,
+                    },
+                    RawContentBlock::RedactedThinking { data } => {
+                        ContentBlockType::RedactedThinking { data }
+                    }
                 };
                 AnthropicEvent::ContentBlockStart { index, block_type }
             }
@@ -336,6 +359,7 @@ impl AnthropicEvent {
                         DeltaData::InputJson { partial_json }
                     }
                     RawDelta::ThinkingDelta { thinking } => DeltaData::Thinking { thinking },
+                    RawDelta::SignatureDelta { signature } => DeltaData::Signature { signature },
                 };
                 AnthropicEvent::ContentBlockDelta {
                     index,
@@ -381,6 +405,7 @@ enum BlockState {
     Thinking {
         thinking: String,
     },
+    RedactedThinking,
 }
 
 impl Default for AnthropicMapper {
@@ -411,7 +436,11 @@ impl AnthropicMapper {
             AnthropicEvent::MessageStart { id, model, usage } => {
                 self.partial.response_id = id;
                 if let Some(m) = model {
-                    self.partial.model = m;
+                    if self.partial.model.is_empty() {
+                        self.partial.model = m;
+                    } else {
+                        self.partial.response_model = Some(m);
+                    }
                 }
                 self.partial.usage = usage;
                 let start = self.partial.clone();
@@ -453,17 +482,28 @@ impl AnthropicMapper {
                             partial: self.partial.clone(),
                         }]
                     }
-                    ContentBlockType::Thinking => {
+                    ContentBlockType::Thinking {
+                        thinking,
+                        signature,
+                    } => {
                         self.blocks.push(BlockState::Thinking {
-                            thinking: String::new(),
+                            thinking: thinking.clone(),
                         });
                         self.partial.content.push(AssistantContent::Thinking {
-                            thinking: String::new(),
+                            thinking,
+                            signature,
                         });
                         vec![AssistantStreamEvent::ThinkingStart {
                             content_index,
                             partial: self.partial.clone(),
                         }]
+                    }
+                    ContentBlockType::RedactedThinking { data } => {
+                        self.blocks.push(BlockState::RedactedThinking);
+                        self.partial
+                            .content
+                            .push(AssistantContent::RedactedThinking { data });
+                        Vec::new()
                     }
                 }
             }
@@ -512,7 +552,7 @@ impl AnthropicMapper {
                         {
                             acc.push_str(&thinking);
                         }
-                        if let Some(AssistantContent::Thinking { thinking: acc }) =
+                        if let Some(AssistantContent::Thinking { thinking: acc, .. }) =
                             self.partial.content.get_mut(index)
                         {
                             acc.push_str(&thinking);
@@ -522,6 +562,14 @@ impl AnthropicMapper {
                             delta: thinking,
                             partial: self.partial.clone(),
                         }]
+                    }
+                    DeltaData::Signature { signature } => {
+                        if let Some(AssistantContent::Thinking { signature: acc, .. }) =
+                            self.partial.content.get_mut(index)
+                        {
+                            acc.get_or_insert_default().push_str(&signature);
+                        }
+                        Vec::new()
                     }
                 }
             }
@@ -566,7 +614,7 @@ impl AnthropicMapper {
                             partial: self.partial.clone(),
                         }]
                     }
-                    None => Vec::new(),
+                    Some(BlockState::RedactedThinking) | None => Vec::new(),
                 }
             }
             AnthropicEvent::MessageDelta { stop_reason, usage } => {
@@ -831,7 +879,7 @@ impl AnthropicProvider {
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
-            "messages": serialize_messages(&request.messages, emit_cache, &cache_marker),
+            "messages": serialize_messages(&request.messages, &self.provider_id, model_id, emit_cache, &cache_marker),
         });
 
         // System prompt: when caching is active, wrap the bare string as a
@@ -990,8 +1038,14 @@ impl AnthropicProvider {
         }
 
         let mut byte_stream = response.bytes_stream();
-        let mut buffer = String::new();
+        let mut buffer = Vec::new();
         let mut mapper = AnthropicMapper::new_for_provider(&provider_id);
+        // Keep the requested route for continuation even when the service
+        // reports a resolved model name for an alias.
+        mapper.partial.model = body["model"].as_str().unwrap_or_default().to_owned();
+        // An explicitly unknown report must not fall back to the requested
+        // alias when the Agent derives actual-route evidence.
+        mapper.partial.response_model = Some(String::new());
 
         loop {
             let chunk = tokio::select! {
@@ -999,25 +1053,25 @@ impl AnthropicProvider {
                     return Err(ProviderError::Cancelled);
                 }
                 chunk = byte_stream.next() => {
-                    match chunk {
-                        Some(c) => c,
-                        None => break, // stream ended
-                    }
+                    chunk
                 }
             };
 
-            let chunk = chunk.map_err(|e| {
-                if e.is_timeout() {
-                    ProviderError::Timeout
-                } else if e.is_connect() {
-                    ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
-                } else {
-                    ProviderError::StreamError(ProviderErrorSummary::sanitized(e.to_string()))
-                }
-            })?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
+            let eof = chunk.is_none();
+            if let Some(chunk) = chunk {
+                let chunk = chunk.map_err(|e| {
+                    if e.is_timeout() {
+                        ProviderError::Timeout
+                    } else if e.is_connect() {
+                        ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
+                    } else {
+                        ProviderError::StreamError(ProviderErrorSummary::sanitized(e.to_string()))
+                    }
+                })?;
+                buffer.extend_from_slice(&chunk);
+            }
 
-            for parsed in drain_sse_events(&mut buffer) {
+            for parsed in drain_sse_events(&mut buffer, eof)? {
                 match parsed {
                     ParsedEvent::Valid(event) => {
                         for stream_event in mapper.process(event) {
@@ -1036,6 +1090,9 @@ impl AnthropicProvider {
                         }
                     }
                 }
+            }
+            if eof {
+                break;
             }
         }
 
@@ -1073,20 +1130,55 @@ impl futures_core::Stream for ReceiverStream {
 
 /// Drain complete SSE events from a growing buffer.
 /// Returns parsed [`ParsedEvent`]s and leaves incomplete data in the buffer.
-/// Normalizes CRLF (`\r\n`) to LF (`\n`) to handle real-world HTTP SSE streams.
-fn drain_sse_events(buffer: &mut String) -> Vec<ParsedEvent> {
-    // Normalize CRLF to LF for consistent delimiter detection
-    if buffer.contains('\r') {
-        *buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
-    }
-
+/// Decode only complete frames so UTF-8 and CRLF split across HTTP chunks
+/// remain unchanged, including the text covered by a thinking signature.
+fn drain_sse_events(buffer: &mut Vec<u8>, eof: bool) -> Result<Vec<ParsedEvent>, ProviderError> {
     let mut events = Vec::new();
-    while let Some(idx) = buffer.find("\n\n") {
-        let end = idx + 2;
-        let chunk: String = buffer.drain(..end).collect();
-        events.extend(parse_sse_events(&chunk));
+    loop {
+        let mut line_start = 0;
+        let mut offset = 0;
+        let end = loop {
+            let Some(byte) = buffer.get(offset) else {
+                break None;
+            };
+            let width = match byte {
+                b'\n' => 1,
+                b'\r' => {
+                    // A trailing CR may be the first half of CRLF. At EOF it
+                    // is a complete lone-CR line ending.
+                    if offset + 1 == buffer.len() && !eof {
+                        break None;
+                    }
+                    if buffer.get(offset + 1) == Some(&b'\n') {
+                        2
+                    } else {
+                        1
+                    }
+                }
+                _ => {
+                    offset += 1;
+                    continue;
+                }
+            };
+            let empty_line = offset == line_start;
+            offset += width;
+            if empty_line {
+                break Some(offset);
+            }
+            line_start = offset;
+        };
+        let Some(end) = end else {
+            break;
+        };
+        let chunk = String::from_utf8(buffer.drain(..end).collect()).map_err(|_| {
+            ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                "invalid UTF-8 in Anthropic SSE frame",
+            ))
+        })?;
+        let normalized = chunk.replace("\r\n", "\n").replace('\r', "\n");
+        events.extend(parse_sse_events(&normalized));
     }
-    events
+    Ok(events)
 }
 
 /// Map an HTTP status code and headers to a `ProviderError`.
@@ -1112,6 +1204,8 @@ fn map_http_status(
 
 fn serialize_messages(
     messages: &[crate::message::Message],
+    provider_id: &str,
+    model_id: &str,
     emit_cache: bool,
     cache_marker: &serde_json::Value,
 ) -> serde_json::Value {
@@ -1169,10 +1263,13 @@ fn serialize_messages(
                 serde_json::json!({"role": "user", "content": content})
             }
             crate::message::Message::Assistant(a) => {
+                let same_route = a.api == crate::ApiKind::Anthropic
+                    && a.provider == provider_id
+                    && a.model == model_id;
                 let content: Vec<serde_json::Value> = a
                     .content
                     .iter()
-                    .map(|c| match c {
+                    .filter_map(|c| { Some(match c {
                         AssistantContent::Text { text } => {
                             serde_json::json!({"type": "text", "text": text})
                         }
@@ -1189,10 +1286,23 @@ fn serialize_messages(
                                 "input": input,
                             })
                         }
-                        AssistantContent::Thinking { thinking } => {
-                            serde_json::json!({"type": "thinking", "thinking": thinking})
+                        AssistantContent::Thinking { thinking, signature } => {
+                            if !same_route && signature.is_some() {
+                                if thinking.is_empty() { return None; }
+                                serde_json::json!({"type": "text", "text": thinking})
+                            } else {
+                                let mut block = serde_json::json!({"type": "thinking", "thinking": thinking});
+                                if let Some(signature) = signature {
+                                    block["signature"] = serde_json::json!(signature);
+                                }
+                                block
+                            }
                         }
-                    })
+                        AssistantContent::RedactedThinking { data } => {
+                            if !same_route { return None; }
+                            serde_json::json!({"type": "redacted_thinking", "data": data})
+                        }
+                    }) })
                     .collect();
                 serde_json::json!({"role": "assistant", "content": content})
             }
@@ -1226,6 +1336,7 @@ fn serialize_messages(
                 })
             }
         })
+        .filter(|message| message["role"] != "assistant" || message["content"].as_array().is_none_or(|content| !content.is_empty()))
         .collect();
 
     // Post-process: when caching is active, mark the last text block in the
@@ -1402,7 +1513,7 @@ mod tests {
             },
         }]);
 
-        let serialized = serialize_messages(&[msg], false, &serde_json::Value::Null);
+        let serialized = serialize_messages(&[msg], "", "", false, &serde_json::Value::Null);
         let input = &serialized[0]["content"][0]["input"];
         assert!(input.is_object(), "input must be JSON object, got: {input}");
         assert_eq!(input["path"], "/tmp/foo.txt");
@@ -1418,7 +1529,7 @@ mod tests {
             },
         }]);
 
-        let serialized = serialize_messages(&[msg], false, &serde_json::Value::Null);
+        let serialized = serialize_messages(&[msg], "", "", false, &serde_json::Value::Null);
         let input = &serialized[0]["content"][0]["input"];
         assert!(input.is_object());
         assert_eq!(input.as_object().unwrap().len(), 0);
@@ -1441,7 +1552,7 @@ mod tests {
                 },
             }]);
 
-            let serialized = serialize_messages(&[msg], false, &serde_json::Value::Null);
+            let serialized = serialize_messages(&[msg], "", "", false, &serde_json::Value::Null);
             let input = &serialized[0]["content"][0]["input"];
             assert!(
                 input.is_object(),
@@ -1664,6 +1775,7 @@ mod tests {
             }]),
             test_assistant_msg(vec![AssistantContent::Thinking {
                 thinking: "textless for cache marker purposes".into(),
+                signature: None,
             }]),
         ];
 

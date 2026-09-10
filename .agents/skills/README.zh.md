@@ -19,7 +19,8 @@ Opi 有十个项目技能。受 Git 跟踪的真实来源位于 `.agents/skills/
    - 有：先运行 `opi-implement plan`；通过准入后才能运行 `opi-implement`。
 3. 你在检查或修正已交付行为吗？
    - 静态需求符合性：`opi-audit`。
-   - 带凭据的真实 provider 行为：`opi-eval`。
+   - 原生 benchmark 证据、显式 provider 保真度用例及用户确认的评测发现修复：
+     `opi-eval`。
    - 验证并按需修复统一发现：`opi-remediate`。
    - 文档、发布或测试链接清理：使用对应的具名技能。
 
@@ -51,6 +52,7 @@ flowchart TD
     PLAN -. DESIGN_DECISION_REQUIRED .-> SH
     PLAN -->|GRAPH_REVISION_REQUIRED| PLAN
     EXEC --> ASSURE
+    ASSURE -. opi-eval 用户确认的源码修复 .-> ASSURE
     ASSURE -->|已确认发现| FIX
     FIX --> ASSURE
     ASSURE -->|需求已满足| DOC
@@ -65,8 +67,11 @@ flowchart TD
   `docs/opi-spec.md` 或已登记 Phase 交付来源前不具规范性。
 - `opi-implement plan` 只检查就绪度，不修补缺失的产品含义。任务图确认与
   Git commit 授权是两个不同关卡。
-- `opi-audit` 与 `opi-eval` 只诊断，不编辑生产代码。每次 audit 只使用最新已提交
-  的登记来源，绝不读取先前 audit 或 remediation 结论。
+- `opi-audit` 只诊断，不编辑生产代码。每次 audit 只使用最新已提交的登记来源，
+  绝不读取先前 audit 或 remediation 结论。
+- `opi-eval` 可按[修复分支](opi-eval/SKILL.md#user-confirmed-source-repairs)，
+  在用户确认的范围内直接修复 Opi 源码，无需另行调用实现技能。源码修复与
+  新增真实试次分别授权，实现台账和 Phase 归属保持不变。
 - `opi-remediate mode=plan` 验证当前活动 indexed audit set 的每个成员，并为
   findings 严格并集制定计划；`mode=apply` 必须显式批准固定计划摘要与精确活动
   index 摘要。apply 只允许契约限定的顺手修复，两种模式都不写入正式
@@ -88,13 +93,39 @@ commit，`$` 可能使用凭据或付费 provider，`P` 改变公开状态，`I`
 | `opi-research` | 基于一手资料调研向外能力 | `docs/research/*.md` | 只是证据；下一步为塑形 | W |
 | `opi-implement` | 准入 Phase 来源、执行任务图并归档 Phase 证据 | `.opi-impl-state.json`、Phase 快照、任务变更 | 任务图、任务 commit、账本 commit 和失败关卡相互独立 | W、C |
 | `opi-audit` | 以显式 reviewer/model 身份，按最新已提交的登记来源独立核实一个 Phase | `docs/snapshots/phase<N>/assurance/` 活动索引集合中一个带后缀的四文件报告组 | 不修复；各报告独立入集，当前发现进入 `opi-remediate` | W |
-| `opi-eval` | 运行显式、隔离的真实 provider 保真度用例 | `docs/eval/` 报告与历史 | 可能需要凭据；变更工具还需额外确认 | W、$ |
+| `opi-eval` | 选择软件/版本、benchmark 和模型；运行原生 trial 或显式保真度用例 | 外部封存证据根、`docs/eval/` 中英文报告、用户确认的 Opi 源码修复；保真度历史单独保留 | 修复范围与真实运行范围分别确认；acceptance 模式生产供独立离线核验的六次 trial 证据 | W、$ |
 | `opi-remediate` | `mode=plan` 验证活动 indexed set 并为 findings 严格并集生成 closure batch；`mode=apply` 执行精确批准的 plan 与 index 摘要 | 集合级固定计划、disposition、结果和用户批准的修复 | `READY-FOR-APPLY` 与两个精确摘要绑定共同控制执行；意图变化返回塑形 | W |
 | `opi-document` | 默认依据实现证据审计每份受维护的当前产品 README；按显式 targeted/version-bump scope 同步文档 | 文档与 doc-check 变更 | 不发布 | W |
 | `opi-release` | 为六个 crate 与 GitHub 产物执行七阶段发布 | Git tag/release 与 crates.io 版本 | 公开 Git 关卡之后仍有独立 crates 不可逆关卡 | W、C、P、I |
 | `opi-slim-tests` | 在不丢失行为的前提下删除重复或已取代测试二进制 | 已验证、未提交的测试图缩减 | 从不自动提交 | W |
 
 ## 保障模型
+
+### 原生评测入口
+
+调用 `$opi-eval` 并输入软件、版本、benchmark 和模型。技能补齐连接、任务、
+资源与预算输入，再调用 Rust Companion 的 doctor/prepare/validate/plan/run/
+verify/report 命令。以下是技能参数，不是新增的 CLI 参数：
+
+```text
+$opi-eval mode=benchmark software=pi version=<实际pi版本> bench=terminal-bench-2.1 model=<provider:model>
+$opi-eval mode=acceptance software=opi,pi version=opi:<实际版本>,pi:<实际版本> bench=all model=zhipu:glm-5.3-flash
+$opi-eval mode=verify evidence_root=<脱敏证据根>
+$opi-eval mode=fidelity cases=all model=<provider:model>
+```
+
+针对 19.11，acceptance 固定已登记的 Anthropic 连接，在 TB2.1/TB3/DeepSWE
+各选择一个可运行任务，由真实 Opi/pi 各跑一次。普通 benchmark 模式允许其他
+受支持选择。准备阶段不启动模型；真实执行要求显式范围与可执行的限制。
+报告包含原生结果、覆盖率、失败尝试、隐私检查和离线核验。就绪证据根交给单独
+调用的 `opi-implement 19.11`，不自动完成任务或归档 Phase。
+
+最终交接前，`opi-eval` 执行
+[环境清理](opi-eval/references/environment-cleanup.md)：检查 Docker 镜像及本次
+运行产生的其他残留，只移除确认可丢弃的资源，保留通用材料和支撑结果追溯、
+复现的证据。报告记录清理结果与未清残留；只读核验仅清理自身产生的临时资源。
+
+### 发现与独立审阅
 
 `opi-audit` 与 `opi-eval` 使用 `_shared/references/finding-contract.md` 的统一
 发现词汇，但只有当前活动 indexed set 能进入 `opi-remediate`。每个 Phase 只有一个
@@ -125,7 +156,7 @@ runtime-fidelity 用例才能关闭产品条件。
 | `.opi-impl-state.draft.json` | `opi-implement plan`；仅在评审/恢复需要时保留的忽略草稿 |
 | `docs/snapshots/phase<N>/` | 冻结的实现账本快照与非保证类 Phase 证据 |
 | `docs/snapshots/phase<N>/assurance/` | 一个含独立入集报告组的活动 indexed audit set 与一组 remediation；被替代 run 位于 `history/`，不参与语义输入 |
-| `docs/eval/` | `opi-eval` 报告与历史 |
+| `docs/eval/` | `opi-eval` 原生/验收中英文摘要与显式保真度报告/历史；大型或私密证据保留在操作员外部存储 |
 | `.opi-release-state.json` | `opi-release`；仅在未完成发布期间保留的忽略恢复状态 |
 | `_shared/references/finding-contract.md` | 共享发现格式 |
 | `_shared/references/audit-set-contract.md` | indexed 报告路径、身份、聚合 verdict、锁/恢复、独立入集、轮换与历史规则 |

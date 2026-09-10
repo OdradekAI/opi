@@ -20,7 +20,9 @@
 //! `coding_harness_composes_generic_opi_agent_seams`. Existing CLI/RPC/JSON/
 //! interactive behavior continues to run through this wrapper unchanged.
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 
 use opi_agent::agent::ArmedAgentRun;
@@ -33,8 +35,11 @@ use opi_agent::diagnostic::{
 };
 use opi_agent::event::AgentEvent;
 use opi_agent::extension::ExtensionRegistry;
-use opi_agent::hooks::AgentHooks;
-use opi_agent::loop_types::{AgentError, AgentLoopConfig};
+use opi_agent::hooks::{
+    AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
+    BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
+};
+use opi_agent::loop_types::{AgentError, AgentLoopConfig, NextTurnState};
 use opi_agent::message::AgentMessage;
 use opi_agent::session::ModelInputSource;
 use opi_agent::session_context::reconstruct_context;
@@ -1748,6 +1753,18 @@ impl CodingHarness {
             retry: Some(config.retry.clone()),
         };
 
+        let diagnostics = build_options
+            .record_diagnostics
+            .then(|| Arc::new(RecordingSink::new()));
+        if let Some(limit) = config.defaults.max_output_tokens {
+            hooks = Box::new(ConfiguredOutputLimitHooks {
+                inner: hooks,
+                collection: dispatch_collection.clone(),
+                limit,
+                diagnostics: diagnostics.clone(),
+            });
+        }
+
         let mut agent = Agent::new(
             dispatch_collection.clone(),
             registrations,
@@ -1846,13 +1863,9 @@ impl CodingHarness {
         // Opt-in diagnostic recording: install a RecordingSink on the agent so
         // runtime diagnostics (retry/cancel/provider/tool failures) are captured
         // for run-summary severity counts. Off by default -> no behavior change.
-        let diagnostics = if build_options.record_diagnostics {
-            let sink = Arc::new(RecordingSink::new());
+        if let Some(sink) = &diagnostics {
             agent.set_diagnostic_sink(Some(sink.clone() as Arc<dyn DiagnosticSink>));
-            Some(sink)
-        } else {
-            None
-        };
+        }
 
         // Assemble the evidence capture (recorder plus per-run binding
         // facts) and bind the recorder as the Agent's
@@ -1961,10 +1974,12 @@ impl CodingHarness {
     }
 
     /// Change the model used by subsequent prompts.
-    pub fn set_model(&mut self, model: String) {
-        self.apply_agent_model(&model)
-            .expect("model change must keep a dispatchable route");
+    /// Reject incompatible request settings before changing the active model.
+    pub fn set_model(&mut self, model: String) -> Result<(), String> {
+        let canonical = self.try_configure_model(&model)?;
+        self.apply_agent_model(&canonical)?;
         self.sync_session_cost_model();
+        Ok(())
     }
 
     fn apply_agent_model(&mut self, model: &str) -> Result<(), String> {
@@ -2155,8 +2170,14 @@ impl CodingHarness {
         let (thinking, max_tokens) = match budget_tokens {
             Some(budget_tokens) => {
                 let (mut thinking, max_tokens) = request_config_for_thinking_budget(budget_tokens)?;
+                let max_tokens = self.config.defaults.max_output_tokens.unwrap_or(max_tokens);
                 thinking.level = persisted_level;
                 if let Some(model) = self.active_model_info() {
+                    validate_request_output_limit(
+                        self.config.defaults.max_output_tokens,
+                        &model,
+                        &thinking,
+                    )?;
                     validate_thinking_budget_for_model(&model, budget_tokens, max_tokens)?;
                     // After the broad capability + budget check passes, also
                     // reject levels the model's thinking_level_map cannot
@@ -2171,7 +2192,16 @@ impl CodingHarness {
                 }
                 (Some(thinking), Some(max_tokens))
             }
-            None => (None, None),
+            None => {
+                if let Some(model) = self.active_model_info() {
+                    validate_request_output_limit(
+                        self.config.defaults.max_output_tokens,
+                        &model,
+                        &ThinkingConfig::default(),
+                    )?;
+                }
+                (None, self.config.defaults.max_output_tokens)
+            }
         };
 
         let state = RuntimeThinkingState {
@@ -2289,13 +2319,18 @@ impl CodingHarness {
 
     fn validate_current_thinking_for_model(&self, model: &ModelInfo) -> Result<(), String> {
         let thinking = self.agent.thinking_config();
+        validate_request_output_limit(self.config.defaults.max_output_tokens, model, &thinking)?;
         if !thinking.enabled {
             return Ok(());
         }
         let Some(budget_tokens) = thinking.budget_tokens else {
             return Ok(());
         };
-        let max_tokens = max_tokens_for_thinking_budget(budget_tokens)?;
+        let max_tokens = self
+            .config
+            .defaults
+            .max_output_tokens
+            .unwrap_or(max_tokens_for_thinking_budget(budget_tokens)?);
         validate_thinking_budget_for_model(model, budget_tokens, max_tokens)
     }
 
@@ -2829,6 +2864,7 @@ impl CodingHarness {
     pub async fn prompt(&mut self, text: &str) -> Result<Vec<AgentMessage>, AgentError> {
         let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
+        self.ensure_request_output_limit()?;
         self.restore_pending_extension_state().await;
         // C5: discard any unpersisted failed-turn user message before starting
         // a fresh turn so it is not absorbed into this turn's persistence slice.
@@ -2857,6 +2893,7 @@ impl CodingHarness {
     ) -> Result<Vec<AgentMessage>, AgentError> {
         let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
+        self.ensure_request_output_limit()?;
         self.restore_pending_extension_state().await;
         // C5: discard any unpersisted failed-turn user message before starting a
         // fresh turn (see `prompt`).
@@ -2883,6 +2920,7 @@ impl CodingHarness {
     pub async fn retry_last_prompt(&mut self) -> Result<Vec<AgentMessage>, AgentError> {
         let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
+        self.ensure_request_output_limit()?;
         self.restore_pending_extension_state().await;
         self.setup_evidence_run()?;
         let offset = self.turn_offset;
@@ -2903,6 +2941,7 @@ impl CodingHarness {
     pub async fn continue_(&mut self, text: &str) -> Result<Vec<AgentMessage>, AgentError> {
         let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
+        self.ensure_request_output_limit()?;
         self.restore_pending_extension_state().await;
         // A continuation is also a fresh entry. Discard any unpersisted failed
         // prompt/retry before appending its new user message.
@@ -3222,6 +3261,21 @@ impl CodingHarness {
         if let Some(sink) = &self.diagnostics {
             sink.clear();
         }
+    }
+
+    fn ensure_request_output_limit(&self) -> Result<(), AgentError> {
+        if let Some(limit) = self.config.defaults.max_output_tokens {
+            validate_request_output_state(
+                limit,
+                &self.model_registry,
+                &self.agent.state_snapshot(),
+            )
+            .map_err(|message| {
+                self.record_harness_diagnostic(request_output_limit_diagnostic(&message));
+                AgentError::Hook(message)
+            })?;
+        }
+        Ok(())
     }
 
     fn ensure_session_resume_ready(&self) -> Result<(), AgentError> {
@@ -4247,21 +4301,22 @@ fn initial_thinking_request_config(
     model: &str,
     config: &OpiConfig,
 ) -> (Option<ThinkingConfig>, Option<u64>) {
+    let explicit_max_tokens = config.defaults.max_output_tokens;
     if !config.thinking.enabled {
-        return (None, None);
+        return (None, explicit_max_tokens);
     }
 
     let budget_tokens = config.thinking.budget_tokens as u64;
     let Ok((mut thinking, mut max_tokens)) = request_config_for_thinking_budget(budget_tokens)
     else {
-        return (None, None);
+        return (None, explicit_max_tokens);
     };
 
     if let Ok((_, model)) = collection.resolve(model) {
         if !model.capabilities.supports_thinking {
-            return (None, None);
+            return (None, explicit_max_tokens);
         }
-        if max_tokens > model.capabilities.max_output_tokens {
+        if explicit_max_tokens.is_none() && max_tokens > model.capabilities.max_output_tokens {
             if model.capabilities.max_output_tokens <= 1 {
                 return (None, None);
             }
@@ -4276,7 +4331,129 @@ fn initial_thinking_request_config(
         }
     }
 
-    (Some(thinking), Some(max_tokens))
+    (Some(thinking), explicit_max_tokens.or(Some(max_tokens)))
+}
+
+fn request_output_limit_diagnostic(message: &str) -> Diagnostic {
+    Diagnostic::new(
+        Severity::Error,
+        opi_agent::diagnostic::code::CODE_CONFIG_PARSE_FAILED,
+        opi_agent::diagnostic::SOURCE_CONFIG,
+        message,
+    )
+    .action("set defaults.max_output_tokens within the model output limit and above the enabled thinking budget; preserve it in next-turn state")
+}
+
+fn validate_request_output_state(
+    limit: u64,
+    collection: &opi_ai::ProviderCollection,
+    state: &NextTurnState,
+) -> Result<(), String> {
+    if state.inference.max_tokens != Some(limit) {
+        return Err(format!(
+            "request max_tokens must retain defaults.max_output_tokens {limit}; preserve the configured limit in the next-turn state"
+        ));
+    }
+    let (_, model) = collection
+        .resolve(&state.model_selection.to_spec())
+        .map_err(|error| {
+            format!("cannot validate defaults.max_output_tokens for the selected model: {error}")
+        })?;
+    validate_request_output_limit(Some(limit), model, &state.inference.thinking)
+}
+
+fn validate_request_output_limit(
+    limit: Option<u64>,
+    model: &ModelInfo,
+    thinking: &ThinkingConfig,
+) -> Result<(), String> {
+    let Some(limit) = limit else {
+        return Ok(());
+    };
+    if limit == 0 {
+        return Err("defaults.max_output_tokens must be greater than zero".into());
+    }
+    if limit > model.capabilities.max_output_tokens {
+        return Err(format!(
+            "defaults.max_output_tokens {limit} exceeds model '{}' output limit {}; lower defaults.max_output_tokens or select a model with a larger output limit",
+            model.id, model.capabilities.max_output_tokens,
+        ));
+    }
+    if thinking.enabled
+        && let Some(budget) = thinking.budget_tokens
+        && budget >= limit
+    {
+        return Err(format!(
+            "thinking budget {budget} must be less than defaults.max_output_tokens {limit}; lower the thinking budget or increase defaults.max_output_tokens within the model output limit"
+        ));
+    }
+    Ok(())
+}
+
+/// Enforce the explicit product setting after all extension preparations and
+/// before Agent Core applies their complete candidate state atomically.
+struct ConfiguredOutputLimitHooks {
+    inner: Box<dyn AgentHooks>,
+    collection: Arc<opi_ai::ProviderCollection>,
+    limit: u64,
+    diagnostics: Option<Arc<RecordingSink>>,
+}
+
+impl AgentHooks for ConfiguredOutputLimitHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        self.inner.convert_to_llm(messages)
+    }
+
+    fn transform_context(
+        &self,
+        messages: Vec<AgentMessage>,
+        signal: tokio_util::sync::CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<AgentMessage>, AgentError>> + Send>> {
+        self.inner.transform_context(messages, signal)
+    }
+
+    fn should_stop_after_turn(
+        &self,
+        ctx: ShouldStopAfterTurnContext,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        self.inner.should_stop_after_turn(ctx)
+    }
+
+    fn before_tool_call(
+        &self,
+        ctx: BeforeToolCallContext,
+    ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
+        self.inner.before_tool_call(ctx)
+    }
+
+    fn after_tool_call(
+        &self,
+        ctx: AfterToolCallContext,
+    ) -> Pin<Box<dyn Future<Output = AfterToolCallResult> + Send>> {
+        self.inner.after_tool_call(ctx)
+    }
+
+    fn prepare_next_turn(
+        &self,
+        ctx: PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        let prepared = self.inner.prepare_next_turn(ctx);
+        let collection = self.collection.clone();
+        let limit = self.limit;
+        let diagnostics = self.diagnostics.clone();
+        Box::pin(async move {
+            let candidate = prepared.await?;
+            if let Some(state) = &candidate {
+                validate_request_output_state(limit, &collection, state).map_err(|message| {
+                    if let Some(sink) = &diagnostics {
+                        sink.record(request_output_limit_diagnostic(&message));
+                    }
+                    AgentError::Hook(message)
+                })?;
+            }
+            Ok(candidate)
+        })
+    }
 }
 
 fn request_config_for_thinking_budget(budget_tokens: u64) -> Result<(ThinkingConfig, u64), String> {
@@ -4401,6 +4578,393 @@ impl InteractiveCodingHooks {
 impl AgentHooks for InteractiveCodingHooks {
     fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
         Ok(agent_messages_to_llm(messages))
+    }
+}
+
+#[cfg(test)]
+mod request_output_limit_tests {
+    use super::*;
+    use opi_ai::test_support::{MockProvider, text_response};
+
+    fn config(workspace: &Path, limit: u64, budget: u32) -> OpiConfig {
+        let path = workspace.join("config.toml");
+        std::fs::write(
+            &path,
+            format!(
+                "[defaults]\nmax_output_tokens = {limit}\n[thinking]\nbudget_tokens = {budget}\n"
+            ),
+        )
+        .unwrap();
+        crate::config::load_config_file(&path).unwrap()
+    }
+
+    fn models() -> Vec<ModelInfo> {
+        [("wide", 32_768), ("other", 32_768), ("small", 4096)]
+            .into_iter()
+            .map(|(id, limit)| {
+                ModelInfo::new(
+                    id,
+                    id,
+                    opi_ai::WireApi::AnthropicMessages,
+                    opi_ai::ModelCapabilities::new(100_000, limit).with_thinking(true),
+                )
+            })
+            .collect()
+    }
+
+    struct ReplaceOutputSettings {
+        change: usize,
+        used: std::sync::atomic::AtomicBool,
+    }
+
+    impl AgentHooks for ReplaceOutputSettings {
+        fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+            Ok(agent_messages_to_llm(messages))
+        }
+
+        fn prepare_next_turn(
+            &self,
+            ctx: opi_agent::hooks::PrepareNextTurnContext,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<Option<opi_agent::loop_types::NextTurnState>, AgentError>,
+                    > + Send,
+            >,
+        > {
+            let used = self.used.swap(true, std::sync::atomic::Ordering::SeqCst);
+            let change = self.change;
+            Box::pin(async move {
+                if used {
+                    return Ok(None);
+                }
+                let mut candidate = ctx.state;
+                match change {
+                    0 => candidate.inference.max_tokens = None,
+                    1 => candidate.inference.max_tokens = Some(8192),
+                    2 => candidate.model_selection.model_id = "small".into(),
+                    3 => candidate.inference.thinking.budget_tokens = Some(16_384),
+                    4 => {
+                        candidate.model_selection.model_id = "other".into();
+                        candidate.inference.thinking.budget_tokens = Some(2048);
+                    }
+                    _ => unreachable!(),
+                }
+                Ok(Some(candidate))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn request_output_limit_rejects_hook_state_replacement_before_next_dispatch() {
+        for change in 0..4 {
+            let workspace = tempfile::tempdir().unwrap();
+            std::fs::write(workspace.path().join("note.txt"), "local read").unwrap();
+            let global = tempfile::tempdir().unwrap();
+            let sessions = tempfile::tempdir().unwrap();
+            let provider = MockProvider::new_with_models(
+                "mock",
+                models(),
+                vec![
+                    opi_ai::test_support::tool_call_response(
+                        "read-1",
+                        "read",
+                        r#"{"path":"note.txt"}"#,
+                    ),
+                    text_response("must not dispatch"),
+                ],
+            );
+            let calls = provider.call_log_handle();
+            let mut harness = CodingHarness::builder(
+                Box::new(provider),
+                "mock:wide".into(),
+                config(workspace.path(), 16_384, 1024),
+                workspace.path().to_path_buf(),
+                TrustDecision::Trusted,
+            )
+            .global_config_dir(global.path().to_path_buf())
+            .session_dir_for_test(sessions.path().to_path_buf())
+            .hooks(Box::new(ReplaceOutputSettings {
+                change,
+                used: false.into(),
+            }))
+            .record_diagnostics(true)
+            .build();
+            let completed = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let observed = completed.clone();
+            harness.subscribe(Box::new(move |event| {
+                if let AgentEvent::ToolExecutionEnd {
+                    tool_call_id,
+                    is_error,
+                    ..
+                } = event
+                    && tool_call_id == "read-1"
+                {
+                    observed.lock().unwrap().push(*is_error);
+                }
+            }));
+            let error = harness.prompt("first").await.unwrap_err();
+            assert!(error.to_string().contains("max_output_tokens"), "{error}");
+            assert_eq!(calls.lock().unwrap().len(), 1);
+            let state = harness.agent.state_snapshot();
+            assert_eq!(*completed.lock().unwrap(), vec![false]);
+            assert!(
+                harness
+                    .recorded_diagnostics()
+                    .iter()
+                    .any(
+                        |diagnostic| diagnostic.source == opi_agent::diagnostic::SOURCE_CONFIG
+                            && diagnostic.message.contains("defaults.max_output_tokens")
+                    )
+            );
+            assert_eq!(state.model_selection.model_id, "wide");
+            assert_eq!(state.inference.max_tokens, Some(16_384));
+            assert_eq!(state.inference.thinking.budget_tokens, Some(1024));
+        }
+    }
+
+    #[tokio::test]
+    async fn request_output_limit_rejects_model_and_thinking_changes_atomically() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new_with_models("mock", models(), vec![text_response("done")]);
+        let calls = provider.call_log_handle();
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:wide".into(),
+            config(workspace.path(), 16_384, 1024),
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .build();
+        let session_path = harness.session().unwrap().session_path().to_path_buf();
+        let before = std::fs::read(&session_path).unwrap();
+        let thinking = harness.thinking_config();
+
+        let error = harness
+            .set_model_validated("mock:small".into())
+            .unwrap_err();
+        assert!(error.contains("16384") && error.contains("4096"), "{error}");
+        assert!(harness.set_thinking_level("high").is_err());
+        assert!(harness.set_model("mock:small".into()).is_err());
+        assert_eq!(harness.model_spec(), "mock:wide");
+        let current = harness.thinking_config();
+        assert_eq!(current.enabled, thinking.enabled);
+        assert_eq!(current.budget_tokens, thinking.budget_tokens);
+        assert_eq!(current.level, thinking.level);
+        assert_eq!(std::fs::read(&session_path).unwrap(), before);
+        assert!(calls.lock().unwrap().is_empty());
+        harness.prompt("still valid").await.unwrap();
+        assert_eq!(calls.lock().unwrap()[0].max_tokens, Some(16_384));
+    }
+
+    #[tokio::test]
+    async fn request_output_limit_survives_thinking_and_model_changes() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new_with_models(
+            "mock",
+            models(),
+            (0..5).map(|_| text_response("done")).collect(),
+        );
+        let calls = provider.call_log_handle();
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:wide".into(),
+            config(workspace.path(), 16_384, 1024),
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .build();
+        harness.set_thinking_level("off").unwrap();
+        harness.prompt("off").await.unwrap();
+        harness.set_thinking_level("low").unwrap();
+        harness.continue_("on").await.unwrap();
+        harness.set_model_validated("mock:other".into()).unwrap();
+        harness.continue_("other").await.unwrap();
+        harness.retry_last_prompt().await.unwrap();
+        harness
+            .prompt_with_content(vec![opi_ai::message::InputContent::Text {
+                text: "content".into(),
+            }])
+            .await
+            .unwrap();
+        let session = harness.session().unwrap();
+        let session_path = session.session_path().to_path_buf();
+        let session_id = session.session_id().to_owned();
+        let (_, entries, recovery) =
+            opi_agent::session::SessionReader::read_with_recovery(&session_path).unwrap();
+        let reconstructed = reconstruct_context(&entries, &recovery);
+        let provider =
+            MockProvider::new_with_models("mock", models(), vec![text_response("resumed")]);
+        let resumed_calls = provider.call_log_handle();
+        drop(harness);
+        let mut resumed = CodingHarness::builder(
+            Box::new(provider),
+            "mock:wide".into(),
+            config(workspace.path(), 16_384, 1024),
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .initial_messages(reconstructed.messages)
+        .resume(ResumeInfo {
+            path: session_path,
+            session_id,
+            entries,
+            original_cwd: workspace.path().to_path_buf(),
+            diagnostics: reconstructed.diagnostics,
+            recorded_model: reconstructed.model,
+            recorded_thinking: reconstructed.thinking_level,
+        })
+        .build();
+        resumed.continue_("resumed").await.unwrap();
+        let resumed_calls = resumed_calls.lock().unwrap();
+        assert_eq!(resumed_calls.len(), 1);
+        assert_eq!(resumed_calls[0].model, "mock:other");
+        assert_eq!(resumed_calls[0].max_tokens, Some(16_384));
+        assert_eq!(resumed_calls[0].thinking.budget_tokens, Some(2048));
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 5);
+        assert!(
+            calls
+                .iter()
+                .all(|request| request.max_tokens == Some(16_384))
+        );
+        assert!(!calls[0].thinking.enabled);
+        assert_eq!(calls[1].thinking.budget_tokens, Some(2048));
+        assert_eq!(calls[2].model, "mock:other");
+    }
+
+    #[tokio::test]
+    async fn request_output_limit_allows_compatible_hook_state_replacement() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new_with_models(
+            "mock",
+            models(),
+            vec![text_response("first"), text_response("second")],
+        );
+        let calls = provider.call_log_handle();
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:wide".into(),
+            config(workspace.path(), 16_384, 1024),
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .hooks(Box::new(ReplaceOutputSettings {
+            change: 4,
+            used: false.into(),
+        }))
+        .build();
+        harness.prompt("first").await.unwrap();
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert!(
+            calls
+                .iter()
+                .all(|request| request.max_tokens == Some(16_384))
+        );
+        assert_eq!(calls[1].model, "mock:other");
+        assert_eq!(calls[1].thinking.budget_tokens, Some(2048));
+    }
+
+    #[tokio::test]
+    async fn request_output_limit_omission_preserves_legacy_thinking_defaults() {
+        for (enabled, budget, expected_limit, expected_budget) in [
+            (false, 1024, None, None),
+            (true, 1024, Some(1025), Some(1024)),
+            (true, 40_000, Some(32_768), Some(32_767)),
+        ] {
+            let workspace = tempfile::tempdir().unwrap();
+            let global = tempfile::tempdir().unwrap();
+            let sessions = tempfile::tempdir().unwrap();
+            let provider =
+                MockProvider::new_with_models("mock", models(), vec![text_response("done")]);
+            let calls = provider.call_log_handle();
+            let mut config = OpiConfig::default();
+            config.thinking.enabled = enabled;
+            config.thinking.budget_tokens = budget;
+            let mut harness = CodingHarness::builder(
+                Box::new(provider),
+                "mock:wide".into(),
+                config,
+                workspace.path().to_path_buf(),
+                TrustDecision::Trusted,
+            )
+            .global_config_dir(global.path().to_path_buf())
+            .session_dir_for_test(sessions.path().to_path_buf())
+            .build();
+            harness.prompt("legacy").await.unwrap();
+            let calls = calls.lock().unwrap();
+            assert_eq!(calls[0].max_tokens, expected_limit);
+            assert_eq!(calls[0].thinking.budget_tokens, expected_budget);
+        }
+    }
+
+    #[tokio::test]
+    async fn request_output_limit_invalid_startup_never_dispatches() {
+        for (limit, budget) in [(0, 1024), (32_769, 1024), (1024, 1024), (16_384, 40_000)] {
+            let workspace = tempfile::tempdir().unwrap();
+            let global = tempfile::tempdir().unwrap();
+            let sessions = tempfile::tempdir().unwrap();
+            let provider =
+                MockProvider::new_with_models("mock", models(), vec![text_response("bad")]);
+            let calls = provider.call_log_handle();
+            let mut config = config(workspace.path(), limit.max(1), budget);
+            config.defaults.max_output_tokens = Some(limit);
+            let mut harness = CodingHarness::builder(
+                Box::new(provider),
+                "mock:wide".into(),
+                config,
+                workspace.path().to_path_buf(),
+                TrustDecision::Trusted,
+            )
+            .global_config_dir(global.path().to_path_buf())
+            .session_dir_for_test(sessions.path().to_path_buf())
+            .record_diagnostics(true)
+            .build();
+            let session_path = harness.session().unwrap().session_path().to_path_buf();
+            let before = std::fs::read(&session_path).unwrap();
+            let results = [
+                harness.prompt("must not dispatch").await,
+                harness
+                    .prompt_with_content(vec![opi_ai::message::InputContent::Text {
+                        text: "must not dispatch".into(),
+                    }])
+                    .await,
+                harness.continue_("must not dispatch").await,
+                harness.retry_last_prompt().await,
+            ];
+            for result in results {
+                let error = result.unwrap_err();
+                assert!(error.to_string().contains("max_output_tokens"), "{error}");
+            }
+            assert!(calls.lock().unwrap().is_empty());
+            assert_eq!(std::fs::read(&session_path).unwrap(), before);
+            assert_eq!(
+                harness
+                    .recorded_diagnostics()
+                    .iter()
+                    .filter(
+                        |diagnostic| diagnostic.source == opi_agent::diagnostic::SOURCE_CONFIG
+                            && diagnostic.message.contains("defaults.max_output_tokens")
+                    )
+                    .count(),
+                4
+            );
+        }
     }
 }
 

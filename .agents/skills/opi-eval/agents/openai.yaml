@@ -1,6 +1,6 @@
 interface:
   display_name: "Opi Eval"
-  short_description: "Run isolated runtime regression evaluations"
-  default_prompt: "Use $opi-eval to run isolated runtime regression cases against the selected model and preserve normalized findings."
+  short_description: "Evaluate agents and apply user-confirmed Opi repairs"
+  default_prompt: "Use $opi-eval with my selected software, version, benchmarks and model to prepare frozen native trials, run the authorized scope, and produce privacy-reviewed evidence and reports. Apply Opi source repairs only after I confirm their scope, reusing existing approval for that scope; keep authorization for additional paid trials separate."
 policy:
   allow_implicit_invocation: false

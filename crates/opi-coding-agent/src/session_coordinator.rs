@@ -755,18 +755,23 @@ impl SessionCoordinator {
     /// pricing table. Returns `None` if any turn has unknown usage or if no
     /// pricing is known for the model.
     pub fn cost_summary(&self) -> Option<opi_ai::stream::CostBreakdown> {
-        if self.usage.has_unknown_usage() {
+        self.cost_for_usage(&self.usage)
+    }
+
+    /// Apply this session's model pricing to observed or committed usage.
+    pub(crate) fn cost_for_usage(
+        &self,
+        usage: &CumulativeUsage,
+    ) -> Option<opi_ai::stream::CostBreakdown> {
+        if usage.has_unknown_usage() {
             return None;
         }
         let pricing = self
             .model_pricing
             .as_ref()
-            .map(|pricing| pricing.effective(self.usage.total_input_tokens()))
+            .map(|pricing| pricing.effective(usage.total_input_tokens()))
             .or_else(|| lookup_pricing(&self.model))?;
-        Some(opi_ai::stream::calculate_cumulative_cost(
-            &self.usage,
-            &pricing,
-        ))
+        Some(opi_ai::stream::calculate_cumulative_cost(usage, &pricing))
     }
 
     fn append_entry(&mut self, entry: &SessionEntry) -> Result<(), std::io::Error> {

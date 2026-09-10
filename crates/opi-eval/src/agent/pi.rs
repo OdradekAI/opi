@@ -3,7 +3,7 @@
 //!
 //! [`PiProcessAdapter`] owns ONLY pi-specific launch and evidence rules:
 //! argv/profile construction for the pinned earendil-works coding-agent
-//! (v0.84.3 CLI surface) in one-shot JSON print mode with an isolated
+//! (v0.85.1 CLI surface) in one-shot JSON print mode with an isolated
 //! `PI_CODING_AGENT_DIR`/session projection and no ambient project, user, or
 //! extension resources, plus the private importer for pi's documented stdout
 //! JSON event stream (session header + `AgentSessionEvent` lines) and the
@@ -118,7 +118,7 @@ impl PiProfile {
     }
 }
 
-/// The pi adapter: launch policy + private importer over the pinned v0.84.3
+/// The pi adapter: launch policy + private importer over the pinned v0.85.1
 /// stdout JSON surface. Constructed from the checked-in declarative profile.
 pub(crate) struct PiProcessAdapter {
     profile: PiProfile,
@@ -162,7 +162,7 @@ impl AgentAdapter for PiProcessAdapter {
         &[AgentCapability::JsonEvents, AgentCapability::UsageFacts]
     }
 
-    /// Exact argv for the pinned pi v0.84.3 production CLI — one-shot JSON
+    /// Exact argv for the pinned pi v0.85.1 production CLI — one-shot JSON
     /// print mode, no persistent session, no project trust or context files,
     /// no extension/skill discovery, explicit provider/model and deterministic
     /// thinking (EVAL-AGT-001/005). `--` ends option parsing before the prompt.
@@ -309,7 +309,7 @@ struct ImportedPi {
 
 /// Private importer for pi's documented stdout JSON protocol: one session
 /// header line followed by `AgentSessionEvent` NDJSON. Accepts only the
-/// pinned v0.84.3 shapes; anything older, unknown, corrupted, or ambiguous
+/// pinned v0.85.1 shapes; anything older, unknown, corrupted, or ambiguous
 /// fails closed (EVAL-MIG-002). Never mutates anything outside the fresh
 /// trace root.
 /// The typed terminal provider cause from the pinned pi client's own
@@ -357,7 +357,7 @@ impl PiImporter {
 
         // Line 1 must be the current session header: exact field identity.
         // The hermetic fixtures pin the v2 sample shape and the pinned pi
-        // 0.84.3 stream emits v3 with the same event vocabulary; both
+        // 0.85.1 stream emits v3 with the same event vocabulary; both
         // admitted, anything older or drifted fails closed.
         let header: serde_json::Value = match lines.next().map(serde_json::from_str) {
             Some(Ok(value)) => value,
@@ -548,7 +548,7 @@ fn validate_terminal_message(message: &serde_json::Value) -> Result<(), &'static
             return Err("import-unsupported-schema");
         }
     }
-    // Correlation identity: v2 samples carry `id`, the pinned 0.84.3
+    // Correlation identity: v2 samples carry `id`, the pinned 0.85.1
     // stream carries `responseId`; one of the two must be present.
     if !(fields.contains_key("id") || fields.contains_key("responseId")) {
         return Err("import-unsupported-schema");

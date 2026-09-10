@@ -56,6 +56,64 @@ fn write_exec(path: &Path, body: &str) {
     fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
+/// A private Docker daemon stand-in. It implements only the scoped lifecycle
+/// exercised here; any other command fails without contacting a real engine.
+fn stage_cleanup_docker(root: &Path) -> std::ffi::OsString {
+    write_exec(
+        &root.join("tools/docker"),
+        r#"#!/usr/bin/env python3
+import hashlib, json, os, pathlib, sys
+root = pathlib.Path(__file__).resolve().parents[1]
+state_path = root / 'docker-state.json'
+state = json.loads(state_path.read_text()) if state_path.exists() else {}
+args = sys.argv[1:]
+with (root / 'docker-calls.jsonl').open('a') as log:
+    log.write(json.dumps(args) + '\n')
+if (root / 'require-dispatch-context').exists():
+    assert os.environ.get('HOME') == str(root / 'runner-home')
+    assert os.environ.get('DOCKER_CONTEXT') == 'fixture-job-context'
+    assert os.environ.get('DOCKER_HOST') == 'unix:///fixture-job.sock'
+label = 'label=com.docker.compose.project.working_dir='
+if args[0] == 'compose':
+    working_dir = args[args.index('--project-directory') + 1]
+    project = args[args.index('--project-name') + 1]
+    for suffix in ('', '-neighbor'):
+        directory = working_dir + suffix
+        identity = hashlib.sha256(directory.encode()).hexdigest()
+        state[identity] = dict(id=identity, working_dir=directory, project=project)
+    state_path.write_text(json.dumps(state))
+elif args[0] == 'ps':
+    value = args[args.index('--filter') + 1]
+    assert value.startswith(label), 'cleanup must use an exact ownership label'
+    directory = value[len(label):]
+    for identity, entry in state.items():
+        if entry['working_dir'] == directory:
+            print(identity)
+elif args[0] == 'inspect':
+    identity = args[-1]
+    assert '--format' in args, 'never inspect container environment or secrets'
+    entry = state[identity].copy()
+    if (root / 'inspect-drift').exists():
+        entry['working_dir'] += '-neighbor'
+    print(json.dumps(entry))
+elif args[0] == 'rm':
+    identity = args[-1]
+    assert len(identity) == 64 and identity in state
+    assert not state[identity]['working_dir'].endswith('-neighbor')
+    if (root / 'remove-failed').exists():
+        sys.exit(1)
+    if not (root / 'remove-lied').exists():
+        del state[identity]
+        state_path.write_text(json.dumps(state))
+else:
+    raise AssertionError('unexpected Docker command')
+"#,
+    );
+    let mut paths = vec![root.join("tools")];
+    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
+    std::env::join_paths(paths).unwrap()
+}
+
 /// The sorted-manifest digest scheme of `runner::material`, recomputed
 /// independently here so the test does not trust the implementation's own
 /// helper.
@@ -142,7 +200,7 @@ import hashlib, json, os, shutil, sys
 identity = json.load(open(sys.argv[1]))
 artifacts_root, family = sys.argv[2], sys.argv[3]
 job = os.path.join("jobs", "2026-09-05__13-00-00")
-trial_dir = os.path.join(job, "trials", identity["trial_name"])
+trial_dir = os.path.join(job, identity["trial_name"])
 os.makedirs(os.path.join(trial_dir, "agent"), exist_ok=True)
 os.makedirs(os.path.join(trial_dir, "artifacts"), exist_ok=True)
 # Deliver the preserved collected artifacts into the fresh job tree.
@@ -154,10 +212,10 @@ for entry in identity["collected"]:
     os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
     if os.path.isdir(source_abs):
         shutil.copytree(source_abs, target)
-        manifest.append({"source": entry["source"], "destination": destination, "type": "directory", "status": "ok"})
+        manifest.append({"source": entry["source"], "destination": "artifacts/" + destination, "type": "directory", "status": "ok"})
     else:
         shutil.copyfile(source_abs, target)
-        manifest.append({"source": entry["source"], "destination": destination, "type": "file", "status": "ok"})
+        manifest.append({"source": entry["source"], "destination": "artifacts/" + destination, "type": "file", "status": "ok"})
 # The grading reads exactly these bytes: each family's verifier inspects
 # the delivered environment, and the marker is the witness the reward
 # derives from (changed witness bytes change the fresh grade).
@@ -198,16 +256,11 @@ with open(os.path.join(job, "result.json"), "w") as handle:
     json.dump(aggregate, handle)
 config = {
     "agent": {"name": identity["agent_import_path"], "import_path": None},
-    "task": {"verifier": {"environment_mode": identity["environment_mode"]}},
+    "task": {"path": os.path.abspath(os.path.join(os.path.dirname(sys.argv[1]), "task-package"))},
+    "artifacts": [],
 }
 if identity["runner"] == "pier":
-    config["artifacts"] = []
-    config["task"]["artifacts"] = identity["declared"]
-    config["task"]["verifier"]["network_mode"] = identity["verifier_network"]
-    config["task"]["metadata"] = {"base_commit_hash": identity["base_revision"]}
-    config["task"]["environment"] = {"docker_image": identity["docker_image"]}
-else:
-    config["artifacts"] = identity["declared"]
+    config["agent"] = {"name": None, "import_path": identity["agent_import_path"]}
 with open(os.path.join(trial_dir, "config.json"), "w") as handle:
     json.dump(config, handle)
 results = {
@@ -217,7 +270,9 @@ results = {
     "verifier_result": {"rewards": {"reward": reward}},
     "exception_info": None,
 }
-with open(os.path.join(trial_dir, "results.json"), "w") as handle:
+if identity["runner"] == "harbor":
+    results["verifier_environment_mode"] = identity["environment_mode"]
+with open(os.path.join(trial_dir, "result.json"), "w") as handle:
     json.dump(results, handle)
 with open(os.path.join(trial_dir, "artifacts", "manifest.json"), "w") as handle:
     json.dump(manifest, handle)
@@ -262,15 +317,27 @@ if [ -z "$diagnostic" ]; then
   fi
 fi
 if [ "$OPI_EVAL_STANDIN_MODE" = "owned-container" ]; then
-  # The owned-container cancellation witness: like owned-cancel, but the
-  # job also starts one real Docker container named under the runner's
-  # owned prefix - the resource only the runner's cleanup may remove.
+  # Enact the same exact-root labels used by the pinned Compose runners.
   mkdir -p witness
   sleep 300 &
   printf '%s\n' "$!" > witness/pid
+  capture="$(pwd)/jobs/partial/task__partial/agent"
+  mkdir -p "$capture"
+  docker run -d --network none --pull never \
+    --mount "type=bind,source=$capture,target=/logs/agent" \
+    --label "com.docker.compose.project.working_dir=$task_dir/environment" \
+    --label com.docker.compose.project=opi-eval-witness \
+    "${OPI_EVAL_WITNESS_IMAGE:-busybox}" sh -c '
+      umask 077
+      mkdir -p /logs/agent/trace/run-1
+      printf "private-root-stdout\n" > /logs/agent/stdout.log
+      printf "private-root-stderr\n" > /logs/agent/stderr.log
+      printf "private-root-trace\n" > /logs/agent/trace/run-1/evidence.jsonl
+      touch /logs/agent/ready
+      sleep 300
+    ' >/dev/null
+  while [ ! -f "$capture/ready" ]; do sleep 0.05; done
   printf 'ready\n' > witness/ready
-  docker run -d --name "${OPI_EVAL_OWNED_CONTAINER_PREFIX}witness" \
-    "${OPI_EVAL_WITNESS_IMAGE:-busybox}" sleep 300 >/dev/null
   wait $!
 fi
 if [ "$OPI_EVAL_STANDIN_MODE" = "owned-cancel" ]; then
@@ -278,11 +345,34 @@ if [ "$OPI_EVAL_STANDIN_MODE" = "owned-cancel" ]; then
   # process tree. It publishes the child pid under its trace root, then
   # holds the job open until the run supervisor cancels the whole tree.
   mkdir -p witness
+  # Partial Agent evidence already reached the trial-owned log mount.
+  capture=jobs/partial/task__partial/agent
+  mkdir -p "$capture/trace/run-1"
+  printf 'tool-progress\n' > "$capture/stdout.log"
+  dd if=/dev/zero bs=1048576 count=2 >> "$capture/stdout.log" 2>/dev/null
+  printf 'diagnostic-progress\n' > "$capture/stderr.log"
+  printf 'trace-progress\n' > "$capture/trace/run-1/evidence.jsonl"
+  printf 'untouched-neighbor\n' > witness/neighbor
+  ln -s "$(pwd)/witness/neighbor" "$capture/trace/run-1/link"
+  ln "$(pwd)/witness/neighbor" "$capture/trace/run-1/hardlink"
+  mkfifo "$capture/trace/run-1/fifo"
   sleep 300 &
   printf '%s\n' "$!" > witness/pid
   printf 'ready\n' > witness/ready
   wait $!
 fi
+case "$OPI_EVAL_STANDIN_MODE" in
+  owned-settled|owned-setup-failed)
+    docker compose --project-name task-package__dqrbzu6__env \
+      --project-directory "$task_dir/environment" up -d
+    # The native CLI can exit zero even when trial setup and Compose down fail.
+    if [ "$OPI_EVAL_STANDIN_MODE" = "owned-setup-failed" ]; then
+      echo 'trial setup failed; compose down: getwd: no such file or directory' >&2
+      exit 0
+    fi
+    OPI_EVAL_STANDIN_MODE=ok
+    ;;
+esac
 task_name=$(basename "$task_dir")
 if [ "$runner" = "pier" ]; then
   # Pier records the task's own `[task] name` as the bound trial's
@@ -329,32 +419,28 @@ write_job() {
   cat > "$job/result.json" <<JSON
 {"n_total_trials": 1, "stats": {"evals": {"${agent_name}__adhoc": {"reward_stats": {"reward": {"$reward": ["$trial"]}}}}}}
 JSON
-  cat > "$job/trials/$trial/results.json" <<JSON
+  cat > "$job/$trial/result.json" <<JSON
 {"task_name": "$task_name", "trial_name": "$trial", "agent_info": {"name": "$agent_name", "version": "1.0.0", "model_info": {"name": "scripted/eval"}}, "verifier_result": {"rewards": {"reward": $reward}}, "exception_info": $exception}
 JSON
   if [ -n "$pier_profile" ]; then
-    # The Pier job records the task's own declarations and identity: the
-    # separate no-network verifier, the model.patch collect declaration,
-    # and the base revision and image the pristine verifier rebuilds
-    # from. Pier groups a modeled trial under agent__model__adhoc.
+    # Pier groups a modeled trial under agent__model__adhoc and records
+    # the custom integration in agent.import_path.
     eval_key="${agent_name}__scripted:eval__adhoc"
     [ -n "$model" ] || eval_key="${agent_name}__adhoc"
-    base="1111111111111111111111111111111111111112"
     if [ "$OPI_EVAL_STANDIN_MODE" = "deepswe-base-drift" ]; then
-      base="9999999999999999999999999999999999999999"
+      sed -i 's/1111111111111111111111111111111111111112/9999999999999999999999999999999999999999/g' "$task_dir/task.toml"
     fi
     sed -i.bak "s/\"${agent_name}__adhoc\"/\"$eval_key\"/" "$job/result.json" && rm -f "$job/result.json.bak"
-    printf '{"agent": {"name": "%s", "import_path": null}, "artifacts": [], "task": {"verifier": {"environment_mode": "separate", "network_mode": "no-network"}, "artifacts": ["/logs/artifacts/model.patch"], "metadata": {"base_commit_hash": "%s"}, "environment": {"docker_image": "fixture-registry/swe-bench-fixture:synthetic"}}}\n' "$agent" "$base" \
-      > "$job/trials/$trial/config.json"
+    printf '{"agent": {"name": null, "import_path": "%s"}, "artifacts": [], "task": {"path": "%s"}}\n' "$agent" "$task_dir" \
+      > "$job/$trial/config.json"
   elif [ -n "$tb30_profile" ]; then
-    # The TB3 job records the task's declared separate lifecycle and its
-    # /app/evalbench/ collect declaration exactly as the pinned runner
-    # would.
-    printf '{"agent": {"name": "%s", "import_path": null}, "artifacts": ["/app/evalbench/"], "task": {"verifier": {"environment_mode": "separate"}}}\n' "$agent" \
-      > "$job/trials/$trial/config.json"
+    sed -i 's/"exception_info":/"verifier_environment_mode": "separate", "exception_info":/' "$job/$trial/result.json"
+    printf '{"agent": {"name": "%s", "import_path": null}, "artifacts": [], "task": {"path": "%s"}}\n' "$agent" "$task_dir" \
+      > "$job/$trial/config.json"
   else
-    printf '{"agent": {"name": "%s", "import_path": null}, "artifacts": ["/root/answer.txt"], "task": {"verifier": {"environment_mode": "shared"}}}\n' "$agent" \
-      > "$job/trials/$trial/config.json"
+    sed -i 's/"exception_info":/"verifier_environment_mode": "shared", "exception_info":/' "$job/$trial/result.json"
+    printf '{"agent": {"name": "%s", "import_path": null}, "artifacts": [], "task": {"path": "%s"}}\n' "$agent" "$task_dir" \
+      > "$job/$trial/config.json"
   fi
 }
 
@@ -365,12 +451,12 @@ if [ "$runner" = "pier" ]; then
 fi
 if [ "$OPI_EVAL_STANDIN_MODE" = "two-jobs" ]; then
   for job in jobs/2026-09-05__11-00-00 "$job"; do
-    mkdir -p "$job/trials/$trial/agent" "$job/trials/$trial/artifacts"
+    mkdir -p "$job/$trial/agent" "$job/$trial/artifacts"
     write_job "$job"
   done
   exit 0
 fi
-mkdir -p "$job/trials/$trial/agent" "$job/trials/$trial/artifacts"
+mkdir -p "$job/$trial/agent" "$job/$trial/artifacts"
 write_job "$job"
 answer="native stand-in answer"
 answer_sha=$(printf '%s\n' "$answer" | sha256sum | cut -d' ' -f1)
@@ -383,23 +469,23 @@ if [ -n "$tb30_profile" ]; then
   canary_sha=$(printf 'canary\n' | sha256sum | cut -d' ' -f1)
   printf '{"schema": "opi-eval-native-agent-terminal/1", "product": "%s", "agent_executable_sha256": "%s", "exit_code": 0, "timed_out": false, "delivered": [{"source": "/app/evalbench/schema.py", "sha256": "%s"}, {"source": "/app/unrelated-canary.txt", "sha256": "%s"}]}\n' \
     "$product" "$(printf 'a%.0s' $(seq 1 64))" "$schema_sha" "$canary_sha" \
-    > "$job/trials/$trial/agent/opi-eval-terminal.json"
-  mkdir -p "$job/trials/$trial/artifacts/app/evalbench"
-  printf '%s' "$schema" > "$job/trials/$trial/artifacts/app/evalbench/schema.py"
-  manifest='[{"source": "/app/evalbench/", "destination": "app/evalbench", "type": "directory", "status": "ok", "service": null}]'
+    > "$job/$trial/agent/opi-eval-terminal.json"
+  mkdir -p "$job/$trial/artifacts/app/evalbench"
+  printf '%s' "$schema" > "$job/$trial/artifacts/app/evalbench/schema.py"
+  manifest='[{"source": "/app/evalbench/", "destination": "artifacts/app/evalbench", "type": "directory", "status": "ok", "service": null}]'
   case "$OPI_EVAL_STANDIN_MODE" in
     tb30-undeclared)
       # An undeclared file crossed the collection boundary: the binding
       # must reject it.
-      manifest='[{"source": "/app/evalbench/", "destination": "app/evalbench", "type": "directory", "status": "ok", "service": null}, {"source": "/app/unrelated-canary.txt", "destination": "app/unrelated-canary.txt", "type": "file", "status": "ok", "service": null}]'
+      manifest='[{"source": "/app/evalbench/", "destination": "artifacts/app/evalbench", "type": "directory", "status": "ok", "service": null}, {"source": "/app/unrelated-canary.txt", "destination": "artifacts/app/unrelated-canary.txt", "type": "file", "status": "ok", "service": null}]'
       ;;
     tb30-substituted-declared)
       # The collected declared artifact no longer carries the delivered
       # bytes.
-      printf 'substituted schema bytes' > "$job/trials/$trial/artifacts/app/evalbench/schema.py"
+      printf 'substituted schema bytes' > "$job/$trial/artifacts/app/evalbench/schema.py"
       ;;
   esac
-  printf '%s\n' "$manifest" > "$job/trials/$trial/artifacts/manifest.json"
+  printf '%s\n' "$manifest" > "$job/$trial/artifacts/manifest.json"
   exit 0
 fi
 if [ -n "$pier_profile" ]; then
@@ -408,9 +494,9 @@ if [ -n "$pier_profile" ]; then
   if [ -z "$diagnostic" ]; then
     printf '{"schema": "opi-eval-native-agent-terminal/1", "product": "%s", "agent_executable_sha256": "%s", "exit_code": 0, "timed_out": false, "delivered": []}\n' \
       "$product" "$(printf 'a%.0s' $(seq 1 64))" \
-      > "$job/trials/$trial/agent/opi-eval-terminal.json"
+      > "$job/$trial/agent/opi-eval-terminal.json"
   fi
-  mkdir -p "$job/trials/$trial/artifacts/logs/artifacts"
+  mkdir -p "$job/$trial/artifacts/logs/artifacts"
   patch="fixture committed patch bytes"
   if [ "$OPI_EVAL_STANDIN_MODE" = "deepswe-nop" ] \
     || [ "$OPI_EVAL_STANDIN_MODE" = "nop-delivers-nothing" ]; then
@@ -418,14 +504,14 @@ if [ -n "$pier_profile" ]; then
     # patch, which still collects (status ok) and grades zero.
     patch=""
   fi
-  printf '%s' "$patch" > "$job/trials/$trial/artifacts/logs/artifacts/model.patch"
-  manifest='[{"source": "/logs/artifacts/model.patch", "destination": "logs/artifacts/model.patch", "type": "file", "status": "ok"}]'
+  printf '%s' "$patch" > "$job/$trial/artifacts/logs/artifacts/model.patch"
+  manifest='[{"source": "/logs/artifacts/model.patch", "destination": "artifacts/logs/artifacts/model.patch", "type": "file", "status": "ok"}]'
   if [ "$OPI_EVAL_STANDIN_MODE" = "deepswe-undeclared" ]; then
     # An undeclared file crossed the collection boundary into the
     # verifier: the binding must reject it.
-    manifest='[{"source": "/logs/artifacts/model.patch", "destination": "logs/artifacts/model.patch", "type": "file", "status": "ok"}, {"source": "/app/unrelated-canary.txt", "destination": "app/unrelated-canary.txt", "type": "file", "status": "ok"}]'
+    manifest='[{"source": "/logs/artifacts/model.patch", "destination": "artifacts/logs/artifacts/model.patch", "type": "file", "status": "ok"}, {"source": "/app/unrelated-canary.txt", "destination": "artifacts/app/unrelated-canary.txt", "type": "file", "status": "ok"}]'
   fi
-  printf '%s\n' "$manifest" > "$job/trials/$trial/artifacts/manifest.json"
+  printf '%s\n' "$manifest" > "$job/$trial/artifacts/manifest.json"
   exit 0
 fi
 if [ "$OPI_EVAL_STANDIN_MODE" != "no-terminal" ]; then
@@ -433,15 +519,15 @@ if [ "$OPI_EVAL_STANDIN_MODE" != "no-terminal" ]; then
     "$product" "$(printf 'a%.0s' $(seq 1 64))" \
     "$( [ "$OPI_EVAL_STANDIN_MODE" = "agent-nonzero" ] && echo 3 || echo 0 )" \
     "$( [ "$OPI_EVAL_STANDIN_MODE" = "agent-timeout" ] && echo true || echo false )" \
-    "$answer_sha" > "$job/trials/$trial/agent/opi-eval-terminal.json"
+    "$answer_sha" > "$job/$trial/agent/opi-eval-terminal.json"
 fi
 if [ "$OPI_EVAL_STANDIN_MODE" = "substituted" ]; then
   answer="substituted answer"
 fi
-printf '[{"source": "/root/answer.txt", "destination": "root/answer.txt", "type": "file", "status": "ok", "service": null}]\n' \
-  > "$job/trials/$trial/artifacts/manifest.json"
-mkdir -p "$job/trials/$trial/artifacts/root"
-printf '%s\n' "$answer" > "$job/trials/$trial/artifacts/root/answer.txt"
+printf '[{"source": "/root/answer.txt", "destination": "artifacts/root/answer.txt", "type": "file", "status": "ok", "service": null}]\n' \
+  > "$job/$trial/artifacts/manifest.json"
+mkdir -p "$job/$trial/artifacts/root"
+printf '%s\n' "$answer" > "$job/$trial/artifacts/root/answer.txt"
 exit 0
 "#
     .to_owned()
@@ -613,7 +699,7 @@ exit 0
         &material,
         format!(
             r#"{{
-  "schema": "opi-eval-native-material/3",
+  "schema": "opi-eval-native-material/4",
   "static_lock": {{"path": {:?}, "sha256": {:?}}},
   "provider": {{
     "script": {{"path": {:?}, "sha256": {:?}}},
@@ -697,6 +783,15 @@ exit 0
     )
     .unwrap();
 
+    if mode != "owned-container" {
+        let docker_path = stage_cleanup_docker(&root_path);
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&material).unwrap()).unwrap();
+        for benchmark in value["benchmarks"].as_object_mut().unwrap().values_mut() {
+            benchmark["verifier_env"]["PATH"] = serde_json::json!(docker_path.to_string_lossy());
+        }
+        fs::write(&material, serde_json::to_vec(&value).unwrap()).unwrap();
+    }
     Staged {
         _guard: root,
         root: root_path,
@@ -807,7 +902,74 @@ fn write_config(staged: &Staged) -> PathBuf {
     assert_eq!(digest.len(), 64);
     let config = staged.root.join("config.toml");
     fs::write(&config, experiment_text(staged, &digest)).unwrap();
+    stage_output_control(staged, &config);
     config
+}
+
+/// Synthetic admission evidence for stand-in driver tests. Only the ignored
+/// exact-client matrix establishes actual executable conformance.
+fn stage_output_control(staged: &Staged, config: &Path) {
+    use opi_eval::experiment::{
+        CredentialReference, NativeClient, ResolvedCredential, ResolvedExperiment,
+    };
+    let experiment = ResolvedExperiment::resolve(&fs::read_to_string(config).unwrap()).unwrap();
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+    for client in [NativeClient::Opi, NativeClient::Pi] {
+        let product = client.as_str();
+        let root = staged.root.join("output-control-fixture").join(product);
+        fs::create_dir_all(&root).unwrap();
+        let mut connection = experiment.selected_connection().clone();
+        connection.base_url = "http://127.0.0.1:48127".to_owned();
+        connection.credential = CredentialReference::Env {
+            variable: "OPI_EVAL_SCRIPTED_KEY".to_owned(),
+        };
+        let projection = opi_eval::experiment::project_connection(
+            &connection,
+            experiment.model_controls(),
+            client,
+            ResolvedCredential::FromEnv {
+                variable: "OPI_EVAL_SCRIPTED_KEY".to_owned(),
+                value: "dummy-scripted-credential".to_owned(),
+            },
+        )
+        .unwrap();
+        let config_path = root.join(projection.config_filename);
+        fs::write(&config_path, &projection.config_bytes).unwrap();
+        let controls = serde_json::to_value(experiment.model_controls()).unwrap();
+        let (wire_path, field) = match connection.api {
+            opi_eval::experiment::ConnectionApi::AnthropicMessages => {
+                ("/v1/messages", "max_tokens")
+            }
+            opi_eval::experiment::ConnectionApi::OpenAiCompletions => {
+                ("/v1/chat/completions", "max_tokens")
+            }
+            opi_eval::experiment::ConnectionApi::OpenAiResponses => {
+                ("/v1/responses", "max_output_tokens")
+            }
+        };
+        let requests = (1..=2).map(|seq| {
+            serde_json::json!({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": wire_path, "model": connection.model, "request_sha256": "d".repeat(64), "output_limits": {field: controls["max_output_tokens"]}}).to_string() + "\n"
+        }).collect::<String>();
+        let log = root.join("requests.jsonl");
+        fs::write(&log, &requests).unwrap();
+        let proof = serde_json::json!({
+            "schema": "opi-eval-output-control/1", "product": product,
+            "executable_sha256": material["agents"][product]["executable"]["sha256"],
+            "runtime_package_manifest_sha256": material["agents"][product]["runtime_package"]["manifest_sha256"],
+            "runtime_package_entrypoint": material["agents"][product]["runtime_package"]["entrypoint"],
+            "connection": {"provider": connection.provider, "api": connection.api, "model": connection.model},
+            "model_controls": controls, "probe_base_url": connection.base_url, "exit_code": 0,
+            "config": {"path": config_path, "sha256": sha256_hex(&projection.config_bytes)},
+            "requests": {"path": log, "sha256": sha256_hex(requests.as_bytes())},
+        });
+        let path = root.join("output-control.json");
+        let bytes = serde_json::to_vec(&proof).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        material["agents"][product]["output_control_evidence"] =
+            serde_json::json!({"path": path, "sha256": sha256_hex(&bytes)});
+    }
+    fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
 }
 
 fn run_native(staged: &Staged, config: &Path, run_root: &Path) -> (i32, String, String) {
@@ -822,6 +984,7 @@ fn run_native(staged: &Staged, config: &Path, run_root: &Path) -> (i32, String, 
         .arg("--native-material")
         .arg(&staged.material)
         .env("OPI_EVAL_SCRIPTED_KEY", "<dummy-scripted-credential>")
+        .env("PATH", stage_cleanup_docker(&staged.root))
         .output()
         .expect("run executes");
     (
@@ -829,6 +992,131 @@ fn run_native(staged: &Staged, config: &Path, run_root: &Path) -> (i32, String, 
         String::from_utf8_lossy(&output.stdout).into_owned(),
         String::from_utf8_lossy(&output.stderr).into_owned(),
     )
+}
+
+#[test]
+fn native_settlement_removes_actual_credentials() {
+    for mode in ["ok", "no-job", "provider-error"] {
+        let staged = stage(mode);
+        let config = write_config(&staged);
+        let run_root = staged.root.join("run");
+        let (_, stdout, stderr) = run_native(&staged, &config, &run_root);
+        let report: serde_json::Value =
+            serde_json::from_str(stdout.trim()).unwrap_or_else(|_| panic!("{stderr}"));
+        for trial in report["trials"].as_array().unwrap() {
+            let integration = run_root
+                .join("trials")
+                .join(trial["id"].as_str().unwrap())
+                .join("integration");
+            for filename in ["config.toml", "models.json", "handoff.json"] {
+                assert!(
+                    !integration.join(filename).exists(),
+                    "{mode}: retained {filename}"
+                );
+            }
+            let identity = read_cleanup_json(&integration.join("handoff-identity.json"));
+            assert!(identity.get("agent_env").is_none());
+            assert_eq!(identity["trial"], trial["id"]);
+            assert!(!identity.to_string().contains("<dummy-scripted-credential>"));
+        }
+    }
+}
+
+#[test]
+fn native_settlement_cleans_root_bound_containers() {
+    for mode in ["owned-settled", "owned-setup-failed"] {
+        let staged = stage(mode);
+        let config = write_config(&staged);
+        let run_root = staged.root.join("run");
+        let (_, stdout, stderr) = run_native(&staged, &config, &run_root);
+        let report: serde_json::Value =
+            serde_json::from_str(stdout.trim()).unwrap_or_else(|_| panic!("{stderr}"));
+        let state = read_cleanup_json(&staged.root.join("docker-state.json"));
+        assert_eq!(
+            state.as_object().unwrap().len(),
+            2,
+            "only the two neighbors survive"
+        );
+        assert!(state.as_object().unwrap().values().all(|entry| {
+            entry["working_dir"]
+                .as_str()
+                .unwrap()
+                .ends_with("-neighbor")
+        }));
+        for trial in report["trials"].as_array().unwrap() {
+            assert_eq!(trial["verifier"]["exit_state"], "exited:0");
+            let evidence = read_cleanup_json(
+                &run_root
+                    .join("trials")
+                    .join(trial["id"].as_str().unwrap())
+                    .join("integration/owned-resources.json"),
+            );
+            assert!(evidence.get("container_prefix").is_none());
+            assert_eq!(evidence["trial"], trial["id"]);
+            assert_eq!(evidence["containers"][0]["status"], "removed");
+        }
+    }
+}
+
+#[test]
+fn native_settlement_cleanup_uncertainty_blocks_success() {
+    for failure in ["inspect-drift", "remove-failed", "remove-lied"] {
+        let staged = stage("owned-settled");
+        fs::write(staged.root.join(failure), "").unwrap();
+        let config = write_config(&staged);
+        let run_root = staged.root.join("run");
+        let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
+        assert_eq!(code, 1, "{failure}: {stdout} {stderr}");
+        let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(report["outcome"], "incomplete");
+        let calls = fs::read_to_string(staged.root.join("docker-calls.jsonl")).unwrap();
+        if failure == "inspect-drift" {
+            assert!(
+                !calls.lines().any(
+                    |line| serde_json::from_str::<serde_json::Value>(line).unwrap()[0] == "rm"
+                )
+            );
+        }
+        for trial in report["trials"].as_array().unwrap() {
+            assert_eq!(trial["status"], "failed");
+            assert_eq!(
+                trial["classification"]["reason"],
+                "owned-resource-cleanup-unconfirmed"
+            );
+            let integration = run_root
+                .join("trials")
+                .join(trial["id"].as_str().unwrap())
+                .join("integration");
+            assert!(!integration.join("handoff.json").exists());
+        }
+    }
+}
+
+fn read_cleanup_json(path: &Path) -> serde_json::Value {
+    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+}
+
+#[test]
+fn native_settlement_cleanup_uses_dispatch_docker_context() {
+    let staged = stage("owned-settled");
+    fs::write(staged.root.join("require-dispatch-context"), "").unwrap();
+    let mut material = read_cleanup_json(&staged.material);
+    let env = &mut material["benchmarks"]["terminal-bench-2.1"]["verifier_env"];
+    env["HOME"] = serde_json::json!(staged.root.join("runner-home").to_string_lossy());
+    env["DOCKER_CONTEXT"] = serde_json::json!("fixture-job-context");
+    env["DOCKER_HOST"] = serde_json::json!("unix:///fixture-job.sock");
+    fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+    let config = write_config(&staged);
+    let run_root = staged.root.join("run");
+    let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
+    assert_eq!(code, 0, "{stdout} {stderr}");
+    let state = read_cleanup_json(&staged.root.join("docker-state.json"));
+    assert!(state.as_object().unwrap().values().all(|entry| {
+        entry["working_dir"]
+            .as_str()
+            .unwrap()
+            .ends_with("-neighbor")
+    }));
 }
 
 /// Reads one trial receipt from a completed run root.
@@ -912,8 +1200,7 @@ fn native_run_drives_paired_trials_through_one_selected_job_each() {
         );
     }
 
-    // The integration handoff (with credential material) stays outside the
-    // sealed bundle.
+    // Secret projections are removed; only their nonsecret identity survives.
     for trial in ["trial-pi-native", "trial-opi-native"] {
         let bundle = run_root.join("trials").join(trial).join("bundle");
         let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap();
@@ -925,9 +1212,9 @@ fn native_run_drives_paired_trials_through_one_selected_job_each() {
             run_root
                 .join("trials")
                 .join(trial)
-                .join("integration/handoff.json")
+                .join("integration/handoff-identity.json")
                 .is_file(),
-            "{trial} staged the handoff"
+            "{trial} retained the handoff identity"
         );
     }
 }
@@ -1161,6 +1448,7 @@ fn write_tb30_config(staged: &Staged) -> PathBuf {
         .trim_start_matches("native_integrity=");
     let config = staged.root.join("tb30.toml");
     fs::write(&config, tb30_experiment_text(staged, digest)).unwrap();
+    stage_output_control(staged, &config);
     config
 }
 
@@ -1305,6 +1593,7 @@ fn write_deepswe_config(staged: &Staged) -> PathBuf {
         .trim_start_matches("native_integrity=");
     let config = staged.root.join("deepswe.toml");
     fs::write(&config, deepswe_experiment_text(staged, digest)).unwrap();
+    stage_output_control(staged, &config);
     config
 }
 
@@ -1355,9 +1644,9 @@ fn native_deepswe_run_grades_the_committed_patch_in_the_pristine_verifier() {
             .join(trial)
             .join("verifier-trace/jobs/2026-09-05__12-00-00");
         let observed = sha256_hex(
-            &fs::read(job.join(
-                "trials/synthetic-fixture-task__standin/artifacts/logs/artifacts/model.patch",
-            ))
+            &fs::read(
+                job.join("synthetic-fixture-task__standin/artifacts/logs/artifacts/model.patch"),
+            )
             .unwrap(),
         );
         assert_eq!(patch_digest, &observed, "{trial}: bound digest");
@@ -1784,6 +2073,164 @@ fn native_deepswe_patch_witness() {
 }
 
 #[test]
+fn native_required_output_control_rejects_unproven_binary_before_effects() {
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+    for agent in material["agents"].as_object_mut().unwrap().values_mut() {
+        agent
+            .as_object_mut()
+            .unwrap()
+            .remove("output_control_evidence");
+    }
+    fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+    fs::write(
+        &config,
+        fs::read_to_string(&config).unwrap().replace(
+            "max_output_tokens = 4096",
+            "max_output_tokens = 4096\nrequired = [\"max_output_tokens\"]",
+        ),
+    )
+    .unwrap();
+    let run_root = staged.root.join("unproven-run");
+    let (code, _, stderr) = run_native(&staged, &config, &run_root);
+    assert_eq!(code, 2, "{stderr}");
+    assert!(stderr.contains("output-control"), "{stderr}");
+    assert!(
+        !run_root.join("trials").exists(),
+        "no trial before control admission"
+    );
+    let plan = staged.root.join("unproven-plan");
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .args(["plan", "--config"])
+        .arg(&config)
+        .arg("--native-material")
+        .arg(&staged.material)
+        .arg("--out")
+        .arg(&plan)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("output-control"));
+    assert!(!plan.exists());
+}
+
+#[test]
+fn native_optional_output_control_without_proof_is_not_comparable() {
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+    for agent in material["agents"].as_object_mut().unwrap().values_mut() {
+        agent
+            .as_object_mut()
+            .unwrap()
+            .remove("output_control_evidence");
+    }
+    fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+    let (code, stdout, stderr) = run_native(&staged, &config, &staged.root.join("optional-run"));
+    assert_eq!(code, 1, "{stderr}");
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        report["pairs"][0]["comparability"],
+        "unsupported-control:max_output_tokens"
+    );
+    assert!(
+        report["trials"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|trial| trial["status"] == "sealed")
+    );
+}
+
+#[test]
+fn native_output_control_binds_projection_wire_and_exact_client() {
+    for case in [
+        "valid",
+        "wire",
+        "binary",
+        "package",
+        "entrypoint",
+        "config",
+        "required",
+        "missing-log",
+    ] {
+        let staged = stage("ok");
+        let config = write_config(&staged);
+        fs::write(
+            &config,
+            fs::read_to_string(&config).unwrap().replace(
+                "max_output_tokens = 4096",
+                "max_output_tokens = 4096\nrequired = [\"max_output_tokens\"]",
+            ),
+        )
+        .unwrap();
+        if case == "entrypoint" {
+            let mut material: serde_json::Value =
+                serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+            let executable = PathBuf::from(
+                material["agents"]["opi"]["executable"]["path"]
+                    .as_str()
+                    .unwrap(),
+            );
+            let package = executable.parent().unwrap();
+            fs::create_dir(package.join("alternate")).unwrap();
+            fs::copy(&executable, package.join("alternate/opi")).unwrap();
+            material["agents"]["opi"]["runtime_package"] = serde_json::json!({
+                "path": package, "manifest_sha256": directory_manifest_digest(package), "entrypoint": "opi",
+            });
+            fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+        }
+        stage_output_control(&staged, &config);
+        let mut material: serde_json::Value =
+            serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+        let pin = &mut material["agents"]["opi"]["output_control_evidence"];
+        let path = PathBuf::from(pin["path"].as_str().unwrap());
+        let mut proof: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        match case {
+            "wire" | "config" => {
+                let key = if case == "wire" { "requests" } else { "config" };
+                let file = Path::new(proof[key]["path"].as_str().unwrap());
+                let bytes = fs::read_to_string(file).unwrap().replace("4096", "8192");
+                fs::write(file, &bytes).unwrap();
+                proof[key]["sha256"] = sha256_hex(bytes.as_bytes()).into();
+            }
+            "binary" => proof["executable_sha256"] = "f".repeat(64).into(),
+            "package" => proof["runtime_package_manifest_sha256"] = "f".repeat(64).into(),
+            "entrypoint" => proof["runtime_package_entrypoint"] = "alternate/opi".into(),
+            "required" => proof["model_controls"]["max_output_tokens"] = "unknown".into(),
+            "missing-log" => fs::remove_file(proof["requests"]["path"].as_str().unwrap()).unwrap(),
+            _ => {}
+        }
+        let bytes = serde_json::to_vec(&proof).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        pin["sha256"] = sha256_hex(&bytes).into();
+        fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+        let run_root = staged.root.join("proven-run");
+        let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
+        if case == "valid" {
+            assert_eq!(code, 0, "{stdout} {stderr}");
+            for trial in ["trial-opi-native", "trial-pi-native"] {
+                assert!(
+                    run_root
+                        .join("trials")
+                        .join(trial)
+                        .join("bundle/artifacts/control/output-control.json")
+                        .is_file()
+                );
+            }
+        } else {
+            assert_eq!(code, 2, "{case}: {stderr}");
+            assert!(stderr.contains("output-control"), "{case}: {stderr}");
+            assert!(!run_root.join("trials").exists());
+        }
+    }
+}
+
+#[test]
 fn native_missing_credential_rejects_before_any_effect() {
     let staged = stage("ok");
     let config = write_config(&staged);
@@ -2040,6 +2487,9 @@ fn native_protocol_client_matrix() {
                 requests.iter().all(|r| r["auth"].is_string()),
                 "{api}/{client}: unauthenticated request admitted"
             );
+            for request in &requests {
+                assert_wire_output_limit(request, api, 512);
+            }
             let retry: Vec<&serde_json::Value> = requests
                 .iter()
                 .filter(|r| r["model"].as_str() == Some("retry"))
@@ -2085,6 +2535,301 @@ fn matrix_controls() -> opi_eval::experiment::ModelControls {
     }
 }
 
+fn assert_wire_output_limit(request: &serde_json::Value, api: &str, expected: u64) {
+    let limits = request["output_limits"]
+        .as_object()
+        .expect("listener observed output limits");
+    assert_eq!(limits.len(), 1, "one unambiguous wire limit: {request}");
+    let fields: &[&str] = match api {
+        "anthropic-messages" => &["max_tokens"],
+        "openai-completions" => &["max_tokens", "max_completion_tokens"],
+        "openai-responses" => &["max_output_tokens"],
+        _ => panic!("unsupported API"),
+    };
+    assert!(
+        fields
+            .iter()
+            .any(|key| limits.get(*key).and_then(serde_json::Value::as_u64) == Some(expected)),
+        "wrong wire limit: {request}"
+    );
+}
+
+fn probe_package_identity(executable: &Path, package: &Path) -> Result<(String, PathBuf), String> {
+    // Match NativeMaterial's package contract: an absolute regular-file tree
+    // and a normal relative entrypoint bound to the executable actually run.
+    if !package.is_absolute() || !package.is_dir() {
+        return Err("runtime package requires an absolute directory".to_owned());
+    }
+    let entrypoint = executable
+        .strip_prefix(package)
+        .map_err(|_| "runtime package does not contain the executable")?;
+    if entrypoint.as_os_str().is_empty()
+        || entrypoint
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        || entrypoint.to_str().is_none_or(|path| {
+            path.chars()
+                .any(|c| c.is_control() || matches!(c, '\\' | ':'))
+                || path.split('/').any(|part| part.is_empty() || part == ".")
+        })
+    {
+        return Err("runtime package entrypoint must be a normal relative path".to_owned());
+    }
+    fn check(path: &Path) -> Result<(), String> {
+        let kind = fs::symlink_metadata(path)
+            .map_err(|error| error.to_string())?
+            .file_type();
+        if kind.is_symlink() || !(kind.is_file() || kind.is_dir()) {
+            return Err("runtime package contains a link or special file".to_owned());
+        }
+        if kind.is_dir() {
+            for entry in fs::read_dir(path).map_err(|error| error.to_string())? {
+                let entry = entry.map_err(|error| error.to_string())?;
+                if entry.file_name().to_str().is_none_or(|name| {
+                    name.chars()
+                        .any(|c| c.is_control() || matches!(c, '\\' | ':'))
+                }) {
+                    return Err("runtime package contains an ambiguous path".to_owned());
+                }
+                check(&entry.path())?;
+            }
+        }
+        Ok(())
+    }
+    for ancestor in package.ancestors() {
+        if fs::symlink_metadata(ancestor)
+            .map_err(|error| error.to_string())?
+            .file_type()
+            .is_symlink()
+        {
+            return Err("runtime package root traverses a link".to_owned());
+        }
+    }
+    check(package)?;
+    if !package.join(entrypoint).is_file()
+        || package
+            .join(entrypoint)
+            .canonicalize()
+            .map_err(|error| error.to_string())?
+            != executable
+                .canonicalize()
+                .map_err(|error| error.to_string())?
+    {
+        return Err("runtime package entrypoint differs from executable".to_owned());
+    }
+    Ok((directory_manifest_digest(package), entrypoint.to_path_buf()))
+}
+
+#[test]
+fn output_control_probe_rejects_unrelated_runtime_package() {
+    let root = tempfile::tempdir().unwrap();
+    let first = root.path().join("first");
+    let second = root.path().join("second");
+    for (package, resource) in [
+        (&first, "first resources"),
+        (&second, "different resources"),
+    ] {
+        fs::create_dir_all(package.join("bin")).unwrap();
+        fs::write(package.join("bin/pi"), b"identical executable").unwrap();
+        fs::write(package.join("resource"), resource).unwrap();
+    }
+    assert!(
+        probe_package_identity(&first.join("bin/pi"), &second).is_err(),
+        "equal executable bytes cannot bind the other package's resources"
+    );
+    let identity = probe_package_identity(&first.join("bin/pi"), &first).unwrap();
+    assert_eq!(identity.1, PathBuf::from("bin/pi"));
+    assert!(probe_package_identity(&first.join("../second/bin/pi"), &first).is_err());
+    std::os::unix::fs::symlink(second.join("bin/pi"), first.join("linked-pi")).unwrap();
+    assert!(probe_package_identity(&first.join("linked-pi"), &first).is_err());
+}
+
+/// Offline evidence for the exact projected output control. Supply an
+/// `experiment` config path and `opi` plus native `pi` (or `node`/`pi_bundle`)
+/// in OPI_EVAL_NATIVE_CLIENT_MATERIAL. Optional `opi_package`/`pi_package`
+/// roots bind transported resources. OPI_EVAL_OUTPUT_CONTROL_OUT must not
+/// exist. The original endpoint and credential are never used or resolved.
+#[test]
+#[ignore = "requires exact local clients, experiment, and a fresh OPI_EVAL_OUTPUT_CONTROL_OUT"]
+fn native_output_control_client_matrix() {
+    use opi_eval::experiment::{
+        ControlValue, CredentialReference, NativeClient, ResolvedCredential, ResolvedExperiment,
+    };
+    let input = std::env::var("OPI_EVAL_NATIVE_CLIENT_MATERIAL").unwrap();
+    let clients: serde_json::Value = serde_json::from_slice(&fs::read(input).unwrap()).unwrap();
+    let experiment = ResolvedExperiment::resolve(
+        &fs::read_to_string(clients["experiment"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    let ControlValue::Value(limit) = experiment.model_controls().max_output_tokens else {
+        panic!("output-control probe requires a numeric control");
+    };
+    assert!(limit > 0);
+    assert!(
+        !matches!(
+            experiment.model_controls().reasoning,
+            ControlValue::Value(_)
+        ),
+        "this output-control probe does not attest reasoning effort"
+    );
+    let root = PathBuf::from(std::env::var("OPI_EVAL_OUTPUT_CONTROL_OUT").unwrap());
+    assert!(root.is_absolute());
+    // Validate all local client inputs before creating evidence or starting a listener.
+    for key in if clients["pi"].is_string() {
+        vec!["opi", "pi"]
+    } else {
+        vec!["opi", "node", "pi_bundle"]
+    } {
+        assert!(
+            Path::new(clients[key].as_str().unwrap()).is_file(),
+            "missing {key}"
+        );
+    }
+    let mut package_identities = std::collections::BTreeMap::new();
+    for product in ["opi", "pi"] {
+        let executable_key = if product == "pi" && !clients["pi"].is_string() {
+            "node"
+        } else {
+            product
+        };
+        let executable = Path::new(clients[executable_key].as_str().unwrap());
+        let package = clients[format!("{product}_package")]
+            .as_str()
+            .map(Path::new);
+        let identity = package.map(|package| probe_package_identity(executable, package).unwrap());
+        if executable_key == "node" {
+            // The interpreter digest alone does not identify the pi code.
+            let package =
+                package.expect("node/pi_bundle proof requires pi_package containing both files");
+            probe_package_identity(Path::new(clients["pi_bundle"].as_str().unwrap()), package)
+                .unwrap();
+        }
+        package_identities.insert(product, identity);
+    }
+    fs::create_dir(&root).expect("output-control evidence root must be fresh");
+    for client in [NativeClient::Opi, NativeClient::Pi] {
+        let product = client.as_str();
+        let case = root.join(product);
+        let work = case.join("work");
+        fs::create_dir_all(&work).unwrap();
+        fs::write(work.join(".env"), "").unwrap();
+        let log = case.join("requests.jsonl");
+        let (mut listener, endpoint) = start_scripted_provider(&log);
+        let mut connection = experiment.selected_connection().clone();
+        connection.base_url = endpoint.unwrap();
+        connection.credential = CredentialReference::Env {
+            variable: "OPI_EVAL_SCRIPTED_KEY".to_owned(),
+        };
+        let projection = opi_eval::experiment::project_connection(
+            &connection,
+            experiment.model_controls(),
+            client,
+            ResolvedCredential::FromEnv {
+                variable: "OPI_EVAL_SCRIPTED_KEY".to_owned(),
+                value: "dummy-scripted-credential".to_owned(),
+            },
+        )
+        .unwrap();
+        let config = case.join(projection.config_filename);
+        fs::write(&config, &projection.config_bytes).unwrap();
+        let executable = PathBuf::from(
+            clients[if client == NativeClient::Pi && !clients["pi"].is_string() {
+                "node"
+            } else {
+                product
+            }]
+            .as_str()
+            .unwrap(),
+        );
+        let executable_sha256 = sha256_hex(&fs::read(&executable).unwrap());
+        let package = clients[format!("{product}_package")]
+            .as_str()
+            .map(PathBuf::from);
+        let package_identity = &package_identities[product];
+        let package_digest = package_identity.as_ref().map(|identity| &identity.0);
+        let package_entrypoint = package_identity.as_ref().map(|identity| &identity.1);
+        let output = if client == NativeClient::Opi {
+            run_opi_client_for(
+                &executable,
+                &config,
+                &connection.provider,
+                &connection.model,
+                &case,
+                &work,
+            )
+        } else {
+            let bundle = if clients["pi"].is_string() {
+                None
+            } else {
+                Some(Path::new(clients["pi_bundle"].as_str().unwrap()))
+            };
+            run_pi_client_for(
+                &executable,
+                bundle,
+                &config,
+                &connection.provider,
+                &connection.model,
+                &case,
+                &work,
+            )
+        };
+        let _ = listener.kill();
+        listener.wait().unwrap();
+        fs::write(case.join("stdout.jsonl"), &output.stdout).unwrap();
+        fs::write(case.join("stderr.log"), &output.stderr).unwrap();
+        fs::write(
+            case.join("exit.json"),
+            serde_json::to_vec(&serde_json::json!({"exit_code": output.status.code()})).unwrap(),
+        )
+        .unwrap();
+        let requests = fs::read(&log).unwrap();
+        let rows: Vec<serde_json::Value> = std::str::from_utf8(&requests)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{product}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(rows.len(), 2, "{product}: exact tool continuation");
+        for row in &rows {
+            assert_eq!(row["status"], 200);
+            assert_eq!(row["model"], connection.model);
+            assert_wire_output_limit(row, connection.api.as_str(), limit);
+        }
+        assert_eq!(
+            sha256_hex(&fs::read(&executable).unwrap()),
+            executable_sha256
+        );
+        assert_eq!(
+            package
+                .as_deref()
+                .map(|package| probe_package_identity(&executable, package).unwrap())
+                .as_ref(),
+            package_identity.as_ref()
+        );
+        let evidence = serde_json::json!({
+            "schema": "opi-eval-output-control/1", "product": product,
+            "executable_sha256": executable_sha256,
+            "runtime_package_manifest_sha256": package_digest,
+            "runtime_package_entrypoint": package_entrypoint,
+            "connection": {"provider": connection.provider, "api": connection.api, "model": connection.model},
+            "model_controls": experiment.model_controls(),
+            "probe_base_url": connection.base_url, "exit_code": 0,
+            "config": {"path": config, "sha256": sha256_hex(&projection.config_bytes)},
+            "requests": {"path": log, "sha256": sha256_hex(&requests)},
+        });
+        fs::write(
+            case.join("output-control.json"),
+            serde_json::to_vec_pretty(&evidence).unwrap(),
+        )
+        .unwrap();
+    }
+}
+
 fn start_scripted_provider(log: &Path) -> (std::process::Child, Option<String>) {
     let port = {
         std::net::TcpListener::bind("127.0.0.1:0")
@@ -2099,6 +2844,10 @@ fn start_scripted_provider(log: &Path) -> (std::process::Child, Option<String>) 
         .arg(format!("127.0.0.1:{port}"))
         .arg("--request-log")
         .arg(log)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", log.parent().expect("listener log has a parent"))
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .stdout(std::process::Stdio::piped())
         .spawn()
         .expect("start scripted provider");
@@ -2131,13 +2880,26 @@ fn run_opi_client(
     case_root: &Path,
     work: &Path,
 ) -> std::process::Output {
+    run_opi_client_for(bin, config, "scripted", model, case_root, work)
+}
+
+fn run_opi_client_for(
+    bin: &Path,
+    config: &Path,
+    provider: &str,
+    model: &str,
+    case_root: &Path,
+    work: &Path,
+) -> std::process::Output {
+    let bus = sha256_hex(case_root.as_os_str().as_encoded_bytes());
     Command::new(bin)
         .arg("--config")
         .arg(config)
         .arg("--model")
-        .arg(format!("scripted:{model}"))
+        .arg(format!("{provider}:{model}"))
         .arg("--json")
         .arg("--json-compact")
+        .arg("--non-interactive")
         .arg("--allow-mutating")
         .arg("--no-trust")
         .arg("--trace")
@@ -2145,6 +2907,22 @@ fn run_opi_client(
         .arg("-C")
         .arg(work)
         .arg("Use the bash tool to run the command, then finish.")
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", work)
+        .env("XDG_CONFIG_HOME", work.join(".config"))
+        .env("XDG_DATA_HOME", work.join(".local/share"))
+        .env("XDG_CACHE_HOME", work.join(".cache"))
+        .env("APPDATA", work.join(".appdata"))
+        .env("no_proxy", "127.0.0.1,localhost")
+        .env(
+            "DBUS_SESSION_BUS_ADDRESS",
+            format!("unix:abstract=opi-output-session-{}", &bus[..32]),
+        )
+        .env(
+            "DBUS_SYSTEM_BUS_ADDRESS",
+            format!("unix:abstract=opi-output-system-{}", &bus[..32]),
+        )
         .env("OPI_EVAL_SCRIPTED_KEY", "dummy-scripted-credential")
         .current_dir(work)
         .output()
@@ -2159,11 +2937,34 @@ fn run_pi_client(
     case_root: &Path,
     work: &Path,
 ) -> std::process::Output {
+    run_pi_client_for(
+        node,
+        Some(bundle),
+        config,
+        "scripted",
+        model,
+        case_root,
+        work,
+    )
+}
+
+fn run_pi_client_for(
+    executable: &Path,
+    bundle: Option<&Path>,
+    config: &Path,
+    provider: &str,
+    model: &str,
+    case_root: &Path,
+    work: &Path,
+) -> std::process::Output {
     let agent_dir = case_root.join("pi-agent");
     std::fs::create_dir_all(&agent_dir).unwrap();
     std::fs::copy(config, agent_dir.join("models.json")).unwrap();
-    Command::new(node)
-        .arg(bundle)
+    let mut command = Command::new(executable);
+    if let Some(bundle) = bundle {
+        command.arg(bundle);
+    }
+    command
         .arg("--print")
         .arg("--mode")
         .arg("json")
@@ -2172,8 +2973,9 @@ fn run_pi_client(
         .arg("--no-extensions")
         .arg("--no-skills")
         .arg("--no-context-files")
+        .args(["--thinking", "off"])
         .arg("--provider")
-        .arg("scripted")
+        .arg(provider)
         .arg("--model")
         .arg(model)
         .arg("--")
@@ -2290,8 +3092,80 @@ fn seed_local_cache(cache: &Path) {
     );
     write_exec(
         &cache.join("tools/uv"),
-        "#!/bin/sh\n# resolved uv stand-in (test seeding)\nexit 0\n",
+        "#!/bin/sh\n# resolved uv stand-in (test seeding)\n[ \"$1\" = --version ] && echo 'uv 0.9.7'\nexit 0\n",
     );
+    let mut lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(static_lock_in(cache)).unwrap()).unwrap();
+    let mut tools = vec![serde_json::json!({"id": "uv", "version": "0.9.7"})];
+    for family in ["harbor", "pier"] {
+        let project = cache.join("runners").join(family);
+        fs::create_dir_all(project.join("src")).unwrap();
+        fs::write(project.join(".gitignore"), ".venv/\n__pycache__/\n").unwrap();
+        fs::write(
+            project.join("pyproject.toml"),
+            format!("[project]\nname = {family:?}\nversion = \"0.0.0\"\n"),
+        )
+        .unwrap();
+        fs::write(project.join("uv.lock"), "version = 1\n").unwrap();
+        fs::write(
+            project.join("src/runner.py"),
+            "# offline runner source fixture\n",
+        )
+        .unwrap();
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&project)
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        };
+        git(&["init", "--quiet"]);
+        git(&[
+            "add",
+            "--",
+            ".gitignore",
+            "pyproject.toml",
+            "uv.lock",
+            "src/runner.py",
+        ]);
+        git(&[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "fixture",
+        ]);
+        tools.push(serde_json::json!({
+            "id": family, "commit": git(&["rev-parse", "HEAD"]),
+            "uv_lock": {"git_blob": git(&["rev-parse", "HEAD:uv.lock"]),
+                "sha256": sha256_hex(&fs::read(project.join("uv.lock")).unwrap())}
+        }));
+        write_exec(&project.join(".venv/bin/python"), "#!/bin/sh\nexit 0\n");
+        write_exec(
+            &project.join(".venv/bin").join(family),
+            "#!/bin/sh\nexit 0\n",
+        );
+    }
+    lock["tools"] = tools.into();
+    fs::write(
+        static_lock_in(cache),
+        serde_json::to_vec_pretty(&lock).unwrap(),
+    )
+    .unwrap();
     write_exec(
         &cache.join("wrappers/terminal-bench-2.1-oracle.sh"),
         "#!/bin/sh\n# oracle wrapper stand-in (test seeding)\nexit 0\n",
@@ -2336,6 +3210,7 @@ fn independent_directory_prepare_builds_a_local_origin_material() {
     let staged = tempfile::tempdir().unwrap();
     let cache = staged.path().join("cache");
     seed_local_cache(&cache);
+    fs::remove_file(cache.join("wrappers/terminal-bench-2.1-oracle.sh")).unwrap();
     let config = experiment_with_cache(staged.path(), &cache);
 
     // The independent directory: neither the cache, the config, nor the
@@ -2375,8 +3250,11 @@ fn independent_directory_prepare_builds_a_local_origin_material() {
     assert!(material_path.is_file(), "{stdout}");
     let manifest = fs::read_to_string(&material_path).unwrap();
     let material: serde_json::Value = serde_json::from_str(&manifest).unwrap();
-    assert_eq!(material["schema"], "opi-eval-native-material/3");
+    assert_eq!(material["schema"], "opi-eval-native-material/4");
     assert_eq!(material["origin"], "local");
+    let benchmark = &material["benchmarks"]["terminal-bench-2.1"];
+    assert_eq!(benchmark["oracle"], benchmark["verifier_executable"]);
+    assert_eq!(benchmark["oracle_env"], benchmark["verifier_env"]);
     // Only the selected benchmark is frozen into the manifest.
     assert_eq!(
         material["benchmarks"]
@@ -2430,8 +3308,306 @@ fn independent_directory_prepare_builds_a_local_origin_material() {
     );
 }
 
+#[test]
+fn prepare_binds_runtime_package_and_rejects_resource_drift() {
+    let staged = tempfile::tempdir().unwrap();
+    let cache = staged.path().join("cache");
+    seed_local_cache(&cache);
+    let executable = cache.join("agents/pi");
+    let bytes = fs::read(&executable).unwrap();
+    fs::remove_file(&executable).unwrap();
+    write_exec(&executable.join("pi"), std::str::from_utf8(&bytes).unwrap());
+    fs::write(executable.join("package.json"), br#"{"version":"0.85.1"}"#).unwrap();
+    let config = experiment_with_cache(staged.path(), &cache);
+    let out = staged.path().join("prepared");
+    let prepared = run_prepare(&config, &out);
+    assert!(
+        prepared.status.success(),
+        "{}",
+        String::from_utf8_lossy(&prepared.stderr)
+    );
+    let path = out.join("material.json");
+    let material: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let package = &material["agents"]["pi"]["runtime_package"];
+    assert_eq!(package["path"], executable.to_string_lossy().as_ref());
+    assert_eq!(package["entrypoint"], "pi");
+    assert_eq!(
+        package["manifest_sha256"],
+        directory_manifest_digest(&executable)
+    );
+    assert_eq!(
+        material["agents"]["pi"]["executable"]["path"],
+        executable.join("pi").to_string_lossy().as_ref()
+    );
+    let validate = || {
+        Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .args(["validate", "--config"])
+            .arg(&config)
+            .arg("--native-material")
+            .arg(&path)
+            .output()
+            .unwrap()
+    };
+    let valid = validate();
+    assert!(
+        valid.status.success(),
+        "{}",
+        String::from_utf8_lossy(&valid.stderr)
+    );
+    for entrypoint in ["../pi", "/bin/sh", "package.json"] {
+        let mut invalid = material.clone();
+        invalid["agents"]["pi"]["runtime_package"]["entrypoint"] = entrypoint.into();
+        fs::write(&path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        let rejected = validate();
+        assert!(
+            !rejected.status.success(),
+            "accepted entrypoint {entrypoint}"
+        );
+        assert!(String::from_utf8_lossy(&rejected.stderr).contains("runtime package"));
+    }
+    fs::write(&path, serde_json::to_vec(&material).unwrap()).unwrap();
+    #[cfg(unix)]
+    {
+        let link = executable.join("linked-resource");
+        std::os::unix::fs::symlink(executable.join("package.json"), &link).unwrap();
+        let rejected = validate();
+        assert!(!rejected.status.success());
+        assert!(
+            String::from_utf8_lossy(&rejected.stderr).contains("runtime package contains a link")
+        );
+        fs::remove_file(link).unwrap();
+    }
+    fs::write(executable.join("package.json"), br#"{"version":"0.0.0"}"#).unwrap();
+    let drift = validate();
+    assert!(!drift.status.success());
+    assert!(String::from_utf8_lossy(&drift.stderr).contains("runtime package"));
+    let refreeze = run_prepare(&config, &out);
+    assert!(!refreeze.status.success());
+    assert!(String::from_utf8_lossy(&refreeze.stderr).contains("material drift at runtime:pi"));
+}
+
 fn run_prepare(config: &Path, out: &Path) -> std::process::Output {
     run_prepare_env(config, out, &[])
+}
+
+#[test]
+fn prepare_shares_cache_between_benchmark_profiles() {
+    let staged = tempfile::tempdir().unwrap();
+    let cache = staged.path().join("cache");
+    seed_local_cache(&cache);
+    let first = experiment_with_cache(staged.path(), &cache);
+    let prepared = run_prepare(&first, &staged.path().join("tb21"));
+    assert!(
+        prepared.status.success(),
+        "{}",
+        String::from_utf8_lossy(&prepared.stderr)
+    );
+    fs::copy(
+        manifest_dir().join("profiles/benchmarks/terminal-bench-3.0.toml"),
+        cache.join("pins/profiles/benchmarks/terminal-bench-3.0.toml"),
+    )
+    .unwrap();
+    copy_dir(
+        &cache.join("packages/terminal-bench-2.1"),
+        &cache.join("packages/terminal-bench-3.0"),
+    );
+    let second = staged.path().join("tb30.toml");
+    fs::write(
+        &second,
+        fs::read_to_string(&first)
+            .unwrap()
+            .replace("revision = \"2.1\"", "revision = \"3.0\""),
+    )
+    .unwrap();
+    let prepared = run_prepare(&second, &staged.path().join("tb30"));
+    assert!(
+        prepared.status.success(),
+        "{}",
+        String::from_utf8_lossy(&prepared.stderr)
+    );
+    fs::write(
+        cache.join("pins/profiles/benchmarks/terminal-bench-2.1.toml"),
+        "drift",
+    )
+    .unwrap();
+    let rejected = run_prepare(&first, &staged.path().join("tb21-again"));
+    assert!(!rejected.status.success());
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr)
+            .contains("material drift at profiles:terminal-bench-2.1")
+    );
+}
+
+#[test]
+fn prepare_binds_runner_project_and_rejects_source_drift() {
+    for (adapter, family) in [("terminal-bench-2.1", "harbor"), ("deepswe-v1.1", "pier")] {
+        let staged = tempfile::tempdir().unwrap();
+        let cache = staged.path().join("cache");
+        seed_local_cache(&cache);
+        let config = experiment_with_cache(staged.path(), &cache);
+        if family == "pier" {
+            let source = fs::read_to_string(&config)
+                .unwrap()
+                .replace("terminal-bench", "deepswe")
+                .replace("revision = \"2.1\"", "revision = \"v1.1\"");
+            fs::write(&config, source).unwrap();
+            fs::copy(
+                manifest_dir().join("profiles/benchmarks/deepswe-v1.1.toml"),
+                cache.join("pins/profiles/benchmarks/deepswe-v1.1.toml"),
+            )
+            .unwrap();
+            copy_dir(
+                &cache.join("packages/terminal-bench-2.1"),
+                &cache.join("packages/deepswe-v1.1"),
+            );
+            fs::copy(
+                cache.join("wrappers/terminal-bench-2.1-oracle.sh"),
+                cache.join("wrappers/deepswe-v1.1-oracle.sh"),
+            )
+            .unwrap();
+        }
+        let independent = tempfile::tempdir().unwrap();
+        let out = independent.path().join("material");
+        let prepare = || {
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["prepare", "--config"])
+                .arg(&config)
+                .arg("--out")
+                .arg(&out)
+                .env("UNRELATED_SECRET", "must-not-be-inherited")
+                .current_dir(independent.path())
+                .output()
+                .unwrap()
+        };
+        let result = prepare();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let bytes = fs::read(out.join("material.json")).unwrap();
+        let material: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let project = cache.join("runners").join(family);
+        let env = &material["benchmarks"][adapter]["verifier_env"];
+        assert_eq!(env["UV_PROJECT"], project.to_string_lossy().as_ref());
+        assert_eq!(
+            env["UV_PROJECT_ENVIRONMENT"],
+            project.join(".venv").to_string_lossy().as_ref()
+        );
+        assert_eq!(
+            env["UV_PYTHON"],
+            project.join(".venv/bin/python").to_string_lossy().as_ref()
+        );
+        assert_eq!(env["UV_OFFLINE"], "1");
+        assert_eq!(env["UV_NO_DEV"], "1");
+        assert_eq!(env["UV_NO_ENV_FILE"], "1");
+        assert_eq!(env["PYTHON_DOTENV_DISABLED"], "1");
+        assert!(env.get("UNRELATED_SECRET").is_none());
+        assert!(env.get("UV_WORKING_DIRECTORY").is_none());
+        let inventory = fs::read(cache.join("inventory.json")).unwrap();
+        let validate = || {
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["validate", "--config"])
+                .arg(&config)
+                .arg("--native-material")
+                .arg(out.join("material.json"))
+                .current_dir(independent.path())
+                .output()
+                .unwrap()
+        };
+        if family == "harbor" {
+            let valid = validate();
+            assert!(
+                valid.status.success(),
+                "{}",
+                String::from_utf8_lossy(&valid.stderr)
+            );
+            let mut redirected = material.clone();
+            redirected["benchmarks"][adapter]["verifier_env"]["UV_PYTHON"] =
+                serde_json::json!("/unselected/python");
+            fs::write(
+                out.join("material.json"),
+                serde_json::to_vec(&redirected).unwrap(),
+            )
+            .unwrap();
+            let rejected = validate();
+            assert!(!rejected.status.success());
+            assert!(String::from_utf8_lossy(&rejected.stderr).contains("runner project"));
+            fs::write(out.join("material.json"), &bytes).unwrap();
+        }
+        for relative in ["src/runner.py", "uv.lock"] {
+            let file = project.join(relative);
+            let before = fs::read(&file).unwrap();
+            fs::write(&file, "# source drift\n").unwrap();
+            if family == "harbor" {
+                let rejected = validate();
+                assert!(
+                    !rejected.status.success(),
+                    "validate accepted runner source drift"
+                );
+                assert!(String::from_utf8_lossy(&rejected.stderr).contains("runner"));
+            }
+            let rejected = prepare();
+            assert!(
+                !rejected.status.success(),
+                "accepted {family} {relative} drift"
+            );
+            assert!(String::from_utf8_lossy(&rejected.stderr).contains("runner"));
+            assert_eq!(fs::read(out.join("material.json")).unwrap(), bytes);
+            assert_eq!(fs::read(cache.join("inventory.json")).unwrap(), inventory);
+            fs::write(file, before).unwrap();
+        }
+        fs::remove_file(project.join(".venv/bin").join(family)).unwrap();
+        assert!(
+            !prepare().status.success(),
+            "accepted missing runner entrypoint"
+        );
+    }
+}
+
+#[test]
+fn prepare_rejects_unpinned_runner_and_uv_identities() {
+    let staged = tempfile::tempdir().unwrap();
+    let cache = staged.path().join("cache");
+    seed_local_cache(&cache);
+    let config = experiment_with_cache(staged.path(), &cache);
+    let out = staged.path().join("material");
+    let original: serde_json::Value =
+        serde_json::from_slice(&fs::read(static_lock_in(&cache)).unwrap()).unwrap();
+    for (pointer, replacement, reason) in [
+        ("/tools/1/commit", "0".repeat(40), "source commit"),
+        ("/tools/1/uv_lock/git_blob", "0".repeat(40), "uv.lock"),
+        ("/tools/1/uv_lock/sha256", "0".repeat(64), "uv.lock"),
+        ("/tools/0/version", "0.9.8".to_owned(), "uv 0.9.7"),
+    ] {
+        let mut lock = original.clone();
+        *lock.pointer_mut(pointer).unwrap() = replacement.into();
+        fs::write(static_lock_in(&cache), serde_json::to_vec(&lock).unwrap()).unwrap();
+        let rejected = run_prepare(&config, &out);
+        assert!(!rejected.status.success(), "accepted {pointer}");
+        assert!(
+            String::from_utf8_lossy(&rejected.stderr).contains(reason),
+            "{}",
+            String::from_utf8_lossy(&rejected.stderr)
+        );
+        assert!(!cache.join("inventory.json").exists());
+        assert!(!out.join("material.json").exists());
+    }
+    fs::write(
+        static_lock_in(&cache),
+        serde_json::to_vec(&original).unwrap(),
+    )
+    .unwrap();
+    let untracked = cache.join("runners/harbor/src/untracked.py");
+    fs::write(&untracked, "# not part of the pinned source\n").unwrap();
+    let rejected = run_prepare(&config, &out);
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("untracked source"));
+    fs::remove_file(untracked).unwrap();
+    write_exec(&cache.join("tools/uv"), "#!/bin/sh\necho 'uv 0.9.8'\n");
+    let rejected = run_prepare(&config, &out);
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("pinned uv 0.9.7"));
 }
 
 fn run_prepare_env(config: &Path, out: &Path, env: &[(&str, &str)]) -> std::process::Output {
@@ -3279,10 +4455,11 @@ fn native_offline_regrade_rejects_every_fail_closed_case() {
             .collect();
         jobs.sort();
         assert_eq!(jobs.len(), 1, "one job tree");
-        let trial_dirs: Vec<_> = fs::read_dir(jobs[0].join("trials"))
+        let trial_dirs: Vec<_> = fs::read_dir(&jobs[0])
             .unwrap()
             .flatten()
             .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
             .collect();
         assert_eq!(trial_dirs.len(), 1, "one trial inside the job");
         let answer_file = trial_dirs[0].join("artifacts/root/answer.txt");
@@ -3406,6 +4583,7 @@ fn native_signal_cancellation_bounds_dispatch() {
         .arg("--native-material")
         .arg(&staged.material)
         .env("OPI_EVAL_SCRIPTED_KEY", "<dummy-scripted-credential>")
+        .env("PATH", stage_cleanup_docker(&staged.root))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -3566,15 +4744,14 @@ fn native_signal_cancellation_bounds_dispatch() {
         serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
     assert_eq!(report["outcome"], "published", "{report}");
     assert_eq!(report["run_outcome"], "incomplete", "{report}");
-    // Both sides stay explicit missing coverage in the offline report:
-    // only sealed evidence counts, so the cancelled trial never scores
-    // and never silently disappears from the plan denominator.
+    // The durable cancelled attempt remains invalid coverage without a score;
+    // its undispatched pair remains unexecuted in the plan denominator.
     let counts = &report["coverage_counts"];
     assert_eq!(counts["planned"], 2, "{counts}");
-    assert_eq!(counts["attempted"], 0, "{counts}");
+    assert_eq!(counts["attempted"], 1, "{counts}");
     assert_eq!(counts["valid"], 0, "{counts}");
-    assert_eq!(counts["invalid"], 0, "{counts}");
-    assert_eq!(counts["unexecuted"], 2, "{counts}");
+    assert_eq!(counts["invalid"], 1, "{counts}");
+    assert_eq!(counts["unexecuted"], 1, "{counts}");
     for trial in report["trials"].as_array().unwrap() {
         assert_ne!(
             trial["outcome"]["reward"],
@@ -3589,15 +4766,128 @@ fn native_signal_cancellation_bounds_dispatch() {
     }
 }
 
+/// Cancellation retains a bounded private prefix view without altering raw
+/// upstream bytes, following links, admitting a terminal, or resolving a model.
+#[test]
+fn native_cancel_preserves_bounded_partial_capture() {
+    use std::process::Stdio;
+    let staged = stage("owned-cancel");
+    let config = write_config(&staged);
+    let run_root = staged.root.join("run");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .args(["run", "--config"])
+        .arg(&config)
+        .arg("--root")
+        .arg(&run_root)
+        .arg("--fixtures")
+        .arg(fixtures())
+        .arg("--native-material")
+        .arg(&staged.material)
+        .env("OPI_EVAL_SCRIPTED_KEY", "<dummy-scripted-credential>")
+        .env("PATH", stage_cleanup_docker(&staged.root))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let dispatched = loop {
+        let ready = ["trial-opi-native", "trial-pi-native"]
+            .into_iter()
+            .find(|trial| {
+                run_root
+                    .join("trials")
+                    .join(trial)
+                    .join("verifier-trace/witness/ready")
+                    .is_file()
+            });
+        if let Some(trial) = ready {
+            break trial;
+        }
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "fixture exited before progress"
+        );
+        if std::time::Instant::now() >= deadline {
+            unsafe { libc::kill(child.id() as i32, libc::SIGTERM) };
+            child.wait().unwrap();
+            panic!("fixture did not produce partial capture");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    };
+    unsafe { libc::kill(child.id() as i32, libc::SIGTERM) };
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["trials"][0]["verifier"]["exit_state"], "cancelled");
+    assert_eq!(report["trials"][0]["classification"]["class"], "no-outcome");
+    assert!(
+        report["trials"][0]["verifier"]["reward"]
+            .as_str()
+            .unwrap()
+            .starts_with("unknown")
+    );
+    let integration = run_root.join("trials").join(dispatched).join("integration");
+    for name in ["handoff.json", "config.toml", "models.json"] {
+        assert!(!integration.join(name).exists());
+    }
+    let trace = run_root
+        .join("trials")
+        .join(dispatched)
+        .join("verifier-trace");
+    let capture = integration.join("partial-capture/jobs/partial/task__partial/agent");
+    assert_eq!(
+        fs::metadata(trace.join("jobs/partial/task__partial/agent/stdout.log"))
+            .unwrap()
+            .len(),
+        2 * 1024 * 1024 + 14
+    );
+    let stdout = fs::read(capture.join("stdout.log")).unwrap();
+    assert_eq!(stdout.len(), 1024 * 1024, "partial stdout must be bounded");
+    assert!(stdout.starts_with(b"tool-progress\n"));
+    assert_eq!(
+        fs::read(capture.join("stderr.log")).unwrap(),
+        b"diagnostic-progress\n"
+    );
+    assert_eq!(
+        fs::read(capture.join("trace/run-1/evidence.jsonl")).unwrap(),
+        b"trace-progress\n"
+    );
+    assert_eq!(
+        fs::read(trace.join("witness/neighbor")).unwrap(),
+        b"untouched-neighbor\n"
+    );
+    for name in ["link", "hardlink", "fifo"] {
+        assert!(fs::symlink_metadata(capture.join("trace/run-1").join(name)).is_err());
+    }
+    assert!(!capture.join("opi-eval-terminal.json").exists());
+    assert!(!trace.join("jobs/partial/result.json").exists());
+    let partial: serde_json::Value =
+        serde_json::from_slice(&fs::read(integration.join("partial-capture.json")).unwrap())
+            .unwrap();
+    assert_eq!(partial["truncated_files"], 1);
+    assert_eq!(partial["discarded_entries"], 3);
+    let pid: i32 = fs::read_to_string(trace.join("witness/pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(!nix_kill_alive(pid));
+}
+
 /// Probes whether `pid` is still alive (signal 0 delivery).
 fn nix_kill_alive(pid: i32) -> bool {
     unsafe { libc::kill(pid, 0) == 0 }
 }
 
 /// `P19-AC-010` (native no-model Docker cleanup witness): the native job
-/// starts one real container named under the runner's recorded
-/// trial-owned prefix. A SIGTERM at the CLI cancels only the owned
-/// process tree and removes exactly the prefix-owned container - the
+/// starts one real container with the pinned runner's exact-root labels.
+/// A SIGTERM at the CLI cancels only the owned process tree and removes
+/// exactly the root-bound container - the
 /// successful cancellation leaves no orphan execution, the durable
 /// owned-resource evidence names the removed container, and the shared
 /// material stays byte-identical.
@@ -3649,7 +4939,7 @@ fn native_owned_resource_cancellation() {
     let cli_pid = child.id();
 
     // Wait until the job owns both a live child process and a running
-    // container under the trial-owned prefix.
+    // container with the trial-owned root label.
     let mut witness = None;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
     while std::time::Instant::now() < deadline {
@@ -3668,7 +4958,14 @@ fn native_owned_resource_cancellation() {
                 .args([
                     "ps",
                     "--filter",
-                    &format!("name=^opi-eval-owned-{trial}-"),
+                    &format!(
+                        "label=com.docker.compose.project.working_dir={}",
+                        run_root
+                            .join("trials")
+                            .join(trial)
+                            .join("task-package/environment")
+                            .display()
+                    ),
                     "--format",
                     "{{.Names}}",
                 ])
@@ -3729,7 +5026,7 @@ fn native_owned_resource_cancellation() {
     );
 
     // No orphan execution: the owned container and the owned child are
-    // both gone, and exactly the prefix was addressed.
+    // both gone, and exactly the private task root was addressed.
     let mut gone = false;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     while std::time::Instant::now() < deadline {
@@ -3738,7 +5035,14 @@ fn native_owned_resource_cancellation() {
                 "ps",
                 "-aq",
                 "--filter",
-                &format!("name=^opi-eval-owned-{dispatched}-"),
+                &format!(
+                    "label=com.docker.compose.project.working_dir={}",
+                    run_root
+                        .join("trials")
+                        .join(&dispatched)
+                        .join("task-package/environment")
+                        .display()
+                ),
             ])
             .output()
             .unwrap();
@@ -3771,6 +5075,53 @@ fn native_owned_resource_cancellation() {
     // Shared material stays byte-identical; the credential handoff is
     // gone.
     assert_eq!(fs::read(&staged.material).unwrap(), material_before);
+    let trial = run_root.join("trials").join(&dispatched);
+    let raw = trial.join("verifier-trace/jobs/partial/task__partial/agent");
+    let partial = trial.join("integration/partial-capture/jobs/partial/task__partial/agent");
+    assert_eq!(
+        fs::read(raw.join("trace/run-1/evidence.jsonl")).unwrap(),
+        b"private-root-trace\n"
+    );
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let directory = fs::metadata(raw.join("trace/run-1")).unwrap();
+    let file = fs::metadata(raw.join("trace/run-1/evidence.jsonl")).unwrap();
+    assert_eq!(directory.permissions().mode() & 0o777, 0o700);
+    assert_eq!(file.permissions().mode() & 0o777, 0o600);
+    assert_eq!(directory.uid(), fs::metadata(&run_root).unwrap().uid());
+    let helpers = owned["capture_helpers"].as_array().unwrap();
+    assert_eq!(helpers.len(), 1);
+    for helper in helpers {
+        assert_eq!(helper["removed"], true);
+        let listed = Command::new("docker")
+            .args([
+                "ps",
+                "--all",
+                "--quiet",
+                "--no-trunc",
+                "--filter",
+                &format!("id={}", helper["id"].as_str().unwrap()),
+            ])
+            .output()
+            .unwrap();
+        assert!(listed.status.success());
+        assert!(
+            listed.stdout.is_empty(),
+            "capture helper must not outlive cleanup"
+        );
+    }
+    assert_eq!(
+        fs::read(partial.join("trace/run-1/evidence.jsonl")).unwrap(),
+        b"private-root-trace\n"
+    );
+    assert_eq!(
+        fs::read(partial.join("stdout.log")).unwrap(),
+        b"private-root-stdout\n"
+    );
+    assert_eq!(
+        fs::read(partial.join("stderr.log")).unwrap(),
+        b"private-root-stderr\n"
+    );
+    assert!(!raw.join("opi-eval-terminal.json").exists());
     assert!(
         !run_root
             .join("trials")
@@ -3853,6 +5204,13 @@ fn copy_tree(source: &Path, target: &Path) {
 #[test]
 fn local_acceptance_verifier_accepts_genuine_native_evidence() {
     let staged = stage("ok");
+    let proof_config = write_config(&staged);
+    stage_output_control(&staged, &proof_config);
+    let frozen = opi_eval::experiment::ResolvedExperiment::resolve(
+        &fs::read_to_string(&proof_config).unwrap(),
+    )
+    .unwrap();
+    let connection = frozen.selected_connection();
     let evidence = tempfile::tempdir().unwrap();
     let root = evidence.path().join("evidence");
     let families: [(&str, &str); 3] = [
@@ -3951,7 +5309,10 @@ fn local_acceptance_verifier_accepts_genuine_native_evidence() {
         "opi_repository": {"url": "https://example.invalid/opi", "commit": "9".repeat(40)},
         "controls": {
             "execution_concurrency": 1,
-            "connection_controls": {"selector": "scripted:eval"},
+            "connection_controls": {
+                "connection": {"provider": connection.provider, "api": connection.api, "base_url": connection.base_url, "model": connection.model},
+                "model_controls": frozen.model_controls(),
+            },
         },
         "trials": trials,
         "sources": {

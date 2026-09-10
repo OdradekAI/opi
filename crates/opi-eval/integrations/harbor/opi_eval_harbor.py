@@ -10,7 +10,7 @@ job is not this contract.
 
 The integration is driven exclusively by the ``OPI_EVAL_NATIVE_HANDOFF``
 environment variable the opi-eval runner exports for the dispatched job.
-The handoff is a typed JSON document (schema ``opi-eval-native-handoff/2``)
+The handoff is a typed JSON document (schema ``opi-eval-native-handoff/3``)
 carrying the exact built Agent executable, the projected selected
 connection (the exact configuration bytes and agent environment rendered
 by the runner from the frozen experiment contract), and the credential
@@ -34,10 +34,12 @@ The module uses only the pinned Harbor v0.22.0 ``BaseAgent`` surface
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 import shlex
+import stat
 from pathlib import Path, PurePosixPath
 from typing import Any, override
 
@@ -46,7 +48,7 @@ from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
 _HANDOFF_ENV = "OPI_EVAL_NATIVE_HANDOFF"
-_HANDOFF_SCHEMA = "opi-eval-native-handoff/2"
+_HANDOFF_SCHEMA = "opi-eval-native-handoff/3"
 _TERMINAL_SCHEMA = "opi-eval-native-agent-terminal/1"
 _TERMINAL_FILENAME = "opi-eval-terminal.json"
 
@@ -86,6 +88,10 @@ class _OpiEvalAgent(BaseAgent):
         )
         self._handoff_path, self._handoff = self._load_handoff()
         self._timed_out = False
+        self._runtime_entrypoint: PurePosixPath | None = None
+        self._executable_sha256: str | None = None
+        self._capture_root = self._stage_dir()
+        self._capture_mounted = False
 
     def _load_handoff(self) -> tuple[Path, dict[str, Any]]:
         path = os.environ.get(_HANDOFF_ENV)
@@ -121,24 +127,115 @@ class _OpiEvalAgent(BaseAgent):
     def _stage_dir(self) -> PurePosixPath:
         return _ENV_STAGE_DIR / self._PRODUCT
 
-    async def setup(self, environment: BaseEnvironment) -> None:
-        # Upload the exact built Agent executable and its projected
-        # configuration into the task environment. The staging directory
-        # is private to the Agent phase and removed again in run().
-        stage = self._stage_dir()
+    @staticmethod
+    def _safe_relative(value: str) -> PurePosixPath:
+        if (
+            not isinstance(value, str)
+            or not value
+            or any(ord(char) < 32 for char in value)
+            or "\\" in value
+            or ":" in value
+        ):
+            raise _OpiEvalAgentError("unsafe runtime package path")
+        path = PurePosixPath(value)
+        if path.is_absolute() or ".." in path.parts or path.as_posix() != value or value == ".":
+            raise _OpiEvalAgentError("unsafe runtime package path")
+        return path
+
+    def _verify_runtime(self) -> Path | None:
         executable = Path(self._handoff["agent_executable"])
-        if not executable.is_file():
-            raise _OpiEvalAgentError("handoff agent executable is missing")
-        environment.exec(
-            command=f"mkdir -p {shlex.quote(str(stage))} && chmod 700 {shlex.quote(str(stage))}",
-            user="root",
+        if (
+            not executable.is_absolute()
+            or any(path.is_symlink() for path in (executable, *executable.parents))
+            or not executable.is_file()
+        ):
+            raise _OpiEvalAgentError("handoff agent executable is missing or unsafe")
+        self._executable_sha256 = self._digest_file(executable)
+        if self._executable_sha256 != self._handoff.get("agent_executable_sha256"):
+            raise _OpiEvalAgentError("agent executable digest mismatch")
+
+        package = self._handoff.get("runtime_package")
+        if package is None:
+            return None
+        if not isinstance(package, dict) or set(package) != {"path", "manifest_sha256", "entrypoint"}:
+            raise _OpiEvalAgentError("invalid runtime package")
+        root = Path(package["path"])
+        if (
+            not root.is_absolute()
+            or ".." in root.parts
+            or any(path.is_symlink() for path in (root, *root.parents))
+            or not root.is_dir()
+        ):
+            raise _OpiEvalAgentError("unsafe runtime package directory")
+        entrypoint = self._safe_relative(package["entrypoint"])
+        rows = []
+        pending = [root]
+        while pending:
+            for path in pending.pop().iterdir():
+                relative = self._safe_relative(path.relative_to(root).as_posix())
+                mode = path.lstat().st_mode
+                if stat.S_ISDIR(mode):
+                    pending.append(path)
+                elif stat.S_ISREG(mode):
+                    rows.append((relative.as_posix(), self._digest_file(path)))
+                else:
+                    raise _OpiEvalAgentError("runtime package contains a symlink or special file")
+        canonical = "".join(f"{path}\n{digest}\n" for path, digest in sorted(rows))
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        if digest != package["manifest_sha256"]:
+            raise _OpiEvalAgentError("runtime package manifest digest mismatch")
+        if dict(rows).get(entrypoint.as_posix()) != self._executable_sha256:
+            raise _OpiEvalAgentError("runtime package entrypoint digest mismatch")
+        self._runtime_entrypoint = entrypoint
+        return root
+
+    def _staged_executable(self, stage: PurePosixPath) -> str:
+        path = (
+            stage / "runtime" / self._runtime_entrypoint
+            if self._runtime_entrypoint else stage / "agent"
         )
-        await environment.upload_file(executable, f"{stage}/agent")
-        await environment.exec(
-            command=f"chmod 700 {shlex.quote(f'{stage}/agent')}",
-            user="root",
-        )
-        await self._project_configuration(environment, stage)
+        return shlex.quote(str(path))
+
+    async def setup(self, environment: BaseEnvironment) -> None:
+        # Verify the entire runtime before any task-environment upload.
+        stage = self._stage_dir()
+        package_root = self._verify_runtime()
+        model = self._handoff.get("model")
+        if (
+            not isinstance(model, str)
+            or ":" not in model
+            or any(not part or part.strip() != part for part in model.split(":", 1))
+        ):
+            raise _OpiEvalAgentError("handoff model must be exact provider:model")
+        config_name = "models.json" if self._PRODUCT == "pi" else "config.toml"
+        config_path = self._handoff_path.parent / config_name
+        if (
+            self._handoff.get("config_path", config_name) != config_name
+            or config_path.is_symlink()
+            or not config_path.is_file()
+        ):
+            raise _OpiEvalAgentError("handoff configuration is missing or unsafe")
+        try:
+            result = await environment.exec(
+                command=f"mkdir -p {shlex.quote(str(stage))} && chmod 700 {shlex.quote(str(stage))}",
+                user="root",
+            )
+            if result.return_code != 0:
+                raise _OpiEvalAgentError("agent stage creation failed")
+            if package_root is None:
+                await environment.upload_file(Path(self._handoff["agent_executable"]), f"{stage}/agent")
+            else:
+                await environment.upload_dir(package_root, f"{stage}/runtime")
+            result = await environment.exec(
+                command=f"chmod 700 {self._staged_executable(stage)}",
+                user="root",
+            )
+            if result.return_code != 0:
+                raise _OpiEvalAgentError("agent executable staging failed")
+            await self._project_configuration(environment, stage)
+        except BaseException:  # Cleanup also applies when the runner cancels setup.
+            await self._cleanup(environment, stage)
+            raise
 
     async def _project_configuration(
         self, environment: BaseEnvironment, stage: PurePosixPath
@@ -161,13 +258,38 @@ class _OpiEvalAgent(BaseAgent):
         context: AgentContext,
     ) -> None:
         stage = self._stage_dir()
+        # Both pinned Docker runners bind only this trial's Agent log directory.
+        # Keep configuration/runtime staging private; a killed host runner cannot
+        # download from that staging directory before owned-container removal.
+        self._capture_mounted = environment.capabilities.mounted
+        try:
+            if self._capture_mounted:
+                if any(path.is_symlink() for path in (self.logs_dir, *self.logs_dir.parents)):
+                    raise _OpiEvalAgentError("unsafe mounted capture directory")
+                self.logs_dir.mkdir(parents=True, exist_ok=True)
+                if any((self.logs_dir / name).exists() or (self.logs_dir / name).is_symlink()
+                       for name in ("stdout.log", "stderr.log", "trace")):
+                    raise _OpiEvalAgentError("mounted capture destination already exists")
+                self._capture_root = PurePosixPath("/logs/agent")
+        except BaseException:
+            await self._cleanup(environment, stage)
+            raise
         exit_code = 0
+        cancelled = False
         try:
             result = await environment.exec(
-                command=self._agent_command(instruction, stage),
+                command=(
+                    f"{self._agent_command(instruction, stage)}"
+                    f" > {shlex.quote(f'{self._capture_root}/stdout.log')}"
+                    f" 2> {shlex.quote(f'{self._capture_root}/stderr.log')}"
+                ),
                 env=self._agent_env(),
             )
-            exit_code = int(getattr(result, "return_code", 0) or 0)
+            exit_code = int(result.return_code)
+        except asyncio.CancelledError:
+            # Preserve cancellation without publishing a successful exit.
+            cancelled = True
+            raise
         except Exception as exc:  # noqa: BLE001 - settle every terminal shape
             name = type(exc).__name__
             if "Timeout" in name:
@@ -177,8 +299,13 @@ class _OpiEvalAgent(BaseAgent):
                 exit_code = 125
             self.logger.warning("agent phase ended with %s", name)
         finally:
-            await self._cleanup(environment, stage)
-            self._write_terminal_observation(environment, exit_code)
+            try:
+                await self._capture_logs(environment, stage)
+                delivered = await self._observe_delivered(environment)
+            finally:
+                await self._cleanup(environment, stage)
+            if not cancelled:
+                self._write_terminal_observation(environment, exit_code, delivered)
         if exit_code not in (0,):
             # The Agent's own non-zero exit or timeout is a graded Agent
             # outcome: the verifier still grades the environment. Raise
@@ -191,26 +318,35 @@ class _OpiEvalAgent(BaseAgent):
                 + (" (timeout)" if self._timed_out else "")
             )
 
+    async def _capture_logs(self, environment: BaseEnvironment, stage: PurePosixPath) -> None:
+        if self._capture_mounted:
+            return
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("stdout.log", "stderr.log"):
+            await environment.download_file(f"{stage}/{name}", self.logs_dir / name)
+        if self._PRODUCT == "opi" and await environment.is_dir(f"{stage}/trace", user="root"):
+            await environment.download_dir(f"{stage}/trace", self.logs_dir / "trace")
+
     async def _cleanup(self, environment: BaseEnvironment, stage: PurePosixPath) -> None:
-        # Credential cleanup before the verifier phase: the staging
-        # directory carried the projected configuration and credential
-        # material; the verifier must never see them.
+        # A failed cleanup must prevent successful settlement and grading.
         try:
-            await environment.exec(
-                command=f"rm -rf {shlex.quote(str(stage))}",
+            result = await environment.exec(
+                command=f"rm -rf {shlex.quote(str(stage))} && test ! -e {shlex.quote(str(stage))}",
                 user="root",
             )
-        except Exception:  # noqa: BLE001 - cleanup is best effort, logged
-            self.logger.warning("opi-eval stage cleanup failed", exc_info=True)
+            if result.return_code != 0:
+                raise _OpiEvalAgentError("agent stage cleanup failed")
+        except Exception as exc:
+            raise _OpiEvalAgentError("agent stage cleanup failed") from exc
 
     def _write_terminal_observation(
-        self, environment: BaseEnvironment, exit_code: int
+        self, environment: BaseEnvironment, exit_code: int, delivered: list[dict[str, Any]]
     ) -> None:
-        delivered = self._observe_delivered(environment)
+        del environment
         observation = {
             "schema": _TERMINAL_SCHEMA,
             "product": self._PRODUCT,
-            "agent_executable_sha256": self._handoff.get("agent_executable_sha256"),
+            "agent_executable_sha256": self._executable_sha256,
             "exit_code": exit_code,
             "timed_out": self._timed_out,
             "delivered": delivered,
@@ -219,10 +355,10 @@ class _OpiEvalAgent(BaseAgent):
             json.dumps(observation, sort_keys=True) + "\n", encoding="utf-8"
         )
 
-    def _observe_delivered(self, environment: BaseEnvironment) -> list[dict[str, Any]]:
+    async def _observe_delivered(self, environment: BaseEnvironment) -> list[dict[str, Any]]:
         """Bounded manifest of files in the environment working directory."""
         try:
-            listing = environment.exec(
+            listing = await environment.exec(
                 command=(
                     "pwd && find . -maxdepth 3 -type f "
                     f"-size -{_MAX_DELIVERED_BYTES}c -print0 "
@@ -263,6 +399,14 @@ class OpiAgent(_OpiEvalAgent):
     def version(self) -> str | None:
         return "1"
 
+    def _agent_env(self) -> dict[str, str]:
+        env = super()._agent_env()
+        # An unused Linux abstract address isolates the session keyring and
+        # yields connection refused: Opi's typed unavailable/env fallback.
+        # This names no filesystem socket and starts no D-Bus service.
+        env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:abstract={self._stage_dir()}/no-keyring"
+        return env
+
     async def _project_configuration(
         self, environment: BaseEnvironment, stage: PurePosixPath
     ) -> None:
@@ -276,19 +420,19 @@ class OpiAgent(_OpiEvalAgent):
         await environment.upload_file(config_path, f"{stage}/{config_path.name}")
 
     def _agent_command(self, instruction: str, stage: PurePosixPath) -> str:
-        agent = f"{stage}/agent"
+        agent = self._staged_executable(stage)
         quoted = shlex.quote(instruction)
         return (
             f"{agent} --config {stage}/config.toml"
             f" --model {shlex.quote(self._handoff.get('model', ''))}"
             " --json --json-compact --allow-mutating --no-trust"
-            f" --trace {stage}/trace"
-            f" {quoted}"
+            f" --trace {self._capture_root}/trace"
+            f" -- {quoted}"
         )
 
 
 class PiAgent(_OpiEvalAgent):
-    """Runs the exact built pi bundle inside the task environment."""
+    """Runs the pinned pi runtime inside the task environment."""
 
     _PRODUCT = "pi"
 
@@ -314,11 +458,13 @@ class PiAgent(_OpiEvalAgent):
         await environment.upload_file(config_path, f"{stage}/{config_path.name}")
 
     def _agent_command(self, instruction: str, stage: PurePosixPath) -> str:
-        agent = f"{stage}/agent"
+        agent = self._staged_executable(stage)
+        provider, model = self._handoff["model"].split(":", 1)
         quoted = shlex.quote(instruction)
         return (
             f"PI_CODING_AGENT_DIR={stage} {agent}"
             " --print --mode json --no-session --no-approve"
-            f" --provider scripted --model {shlex.quote(self._handoff.get('model', '').split(':', 1)[-1])}"
-            f" {quoted}"
+            " --no-extensions --no-skills --no-context-files --thinking off"
+            f" --provider {shlex.quote(provider)} --model {shlex.quote(model)}"
+            f" -- {quoted}"
         )

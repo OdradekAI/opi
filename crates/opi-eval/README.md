@@ -7,8 +7,9 @@
 
 `opi-eval` compares multiple Agent harnesses under the same explicit model,
 environment, task, and trial controls. It resolves those inputs before any
-Agent starts, records each trial in a sealed bundle, and builds reports only
-from evidence that still verifies.
+Agent starts, records each trial in a sealed bundle, and derives scores only
+from evidence that still verifies. Reports also retain bound unsealed attempts
+as unverified diagnostics, without assigning them scores.
 
 The crate is an unpublished, Agent-neutral workspace companion. It is not part
 of the `opi` runtime and does not change ordinary `opi` behavior.
@@ -21,7 +22,8 @@ Use `opi-eval` when you need to:
 - compare baseline and candidate harnesses under shared controls;
 - exercise an Agent or benchmark adapter against pinned conformance fixtures;
 - re-verify sealed trial evidence without rerunning an Agent or provider;
-- produce a normalized, conformance-only report from verified bundles.
+- produce a normalized report with verified results and explicit invalid or
+  unexecuted coverage.
 
 The central terms are:
 
@@ -151,15 +153,19 @@ Three distinct offline operations, none starting an Agent or provider:
 `verify --root R` re-checks every sealed trial bundle against its
 original seals (exit 0 verified / 1 mutation detected / 2 rejected; no
 repair, no rewrite); `report --root R --out O` reconstructs the
-byte-stable normalized report from verified sealed evidence alone; and
+byte-stable normalized report with scores from verified sealed evidence; and
 `regrade --root R --native-material M --out D` is the distinct actual
 native regrading described below - a byte check never runs under the
 regrade name. Every run binds a run-level
 `run-control.json` before its first effect (experiment identity,
 manifest digest, selection, corpus size, exact planned trials), so the
 offline report preserves unstarted trials even when no trial sealed.
-The report consumes the sealed per-trial settlement record - never
-stderr tokens or process exits - for its outcome classes: graded trials
+The report consumes per-trial settlement records - never stderr tokens or
+process exits - for its outcome classes. Unsealed records must agree with the
+experiment and planned-trial bindings; they preserve attempted/invalid or
+effect-unknown coverage only, never verified status, native facts, or scores.
+Missing seals therefore remain visible even when all attempts are unsealed.
+Only sealed, verified graded trials
 (including valid native zero and benchmark-defined Agent timeouts) form
 the metric denominator, counted per benchmark with its own metric
 definition (never a cross-benchmark average), while
@@ -173,8 +179,11 @@ exclusions, repetition control pairs (`consistent|divergent|incomplete`
 with missing groups), and unknown telemetry reasons all stay visible: a
 protocol-group edge (two subjects of one product) never pairs, and a
 single-subject report needs no artificial comparison edge. Repeated
-reconstruction over identical sealed inputs yields identical bytes;
-tampered or unsealed evidence blocks publication instead of upgrading.
+reconstruction over identical inputs yields identical bytes. Tampered sealed
+evidence and contradictory control records block publication. Unsealed
+attempts stay unverified and outside the metric denominator. Native completion
+diagnostics recognize verified native grades, and each native headline points
+to the exact sealed trial result that supplied its reward.
 
 ### 1. Validate
 
@@ -287,7 +296,25 @@ case fails closed.
 | Mode | Inputs and behavior | What it proves |
 |------|---------------------|----------------|
 | Hermetic fixture mode | Default. Uses bounded deterministic helpers and pinned repository fixtures. | Adapter, lifecycle, sealing, reporting, and failure-path conformance. It does not prove real-product or real-provider fidelity. |
-| Native-material mode | Add `--native-material <MANIFEST>` to `validate`, `run`, or `conformance`. The manifest (schema `opi-eval-native-material/3`) resolves exact Agent executables, the pinned integration modules that run each Agent inside the task environment (one per runner family: Harbor for the Terminal-Bench route, Pier for DeepSWE), task packages, verifier/oracle entry points, and the scripted-provider endpoint. | For `run`, one explicitly selected upstream job per trial runs the selected Agent inside the graded task environment and grades that same trial; the imported result must bind to the selected Agent, task, and job identity before anything seals. Terminal-Bench 3.0 runs through its declared separate-verifier handoff: the task's own `task.toml` lifecycle is parsed and bound (unsupported shapes, including multi-step tasks, disabled verifiers, verifier collect hooks on the Harbor route, and non-Linux tasks, reject before any verifier spawn), and for separate-verifier tasks only the declared artifacts cross into the fresh verifier - undeclared, missing, or substituted collections reject and an unrelated canary file stays outside. DeepSWE runs through its declared committed-patch handoff: the Pier task's collect hook extracts the committed patch beyond the task's base revision and the pristine no-network verifier grades exactly that patch (uncommitted work can never be substituted for it); the bound job must record the task's declared lifecycle together with the base revision and environment image, an empty nop patch still collects and grades zero, and undeclared collection rejects. The sealed bundle records the verifier-input identity (`native/verifier-input.json`: the environment mode, the DeepSWE base revision and image, plus every declared artifact with the digests of exactly the collected bytes). `conformance` restricts native mode to its registered native case subset (including the explicitly selected `oracle-witness`/`nop-witness` artifact witnesses for all three families). |
+| Native-material mode | Add `--native-material <MANIFEST>` to `validate`, `run`, or `conformance`. The manifest (schema `opi-eval-native-material/4`) resolves exact Agent executables, the pinned integration modules that run each Agent inside the task environment (one per runner family: Harbor for the Terminal-Bench route, Pier for DeepSWE), task packages, verifier/oracle entry points, and the scripted-provider endpoint. | For `run`, one explicitly selected upstream job per trial runs the selected Agent inside the graded task environment and grades that same trial; the imported result must bind to the selected Agent, task, and job identity before anything seals. Terminal-Bench 3.0 runs through its declared separate-verifier handoff: the task's own `task.toml` lifecycle is parsed and bound (unsupported shapes, including multi-step tasks, disabled verifiers, verifier collect hooks on the Harbor route, and non-Linux tasks, reject before any verifier spawn), and for separate-verifier tasks only the declared artifacts cross into the fresh verifier - undeclared, missing, or substituted collections reject and an unrelated canary file stays outside. DeepSWE runs through its declared committed-patch handoff: the Pier task's collect hook extracts the committed patch beyond the task's base revision and the pristine no-network verifier grades exactly that patch (uncommitted work can never be substituted for it); the bound job must record the task's declared lifecycle together with the base revision and environment image, an empty nop patch still collects and grades zero, and undeclared collection rejects. The sealed bundle records the verifier-input identity (`native/verifier-input.json`: the environment mode, the DeepSWE base revision and image, plus every declared artifact with the digests of exactly the collected bytes). `conformance` restricts native mode to its registered native case subset (including the explicitly selected `oracle-witness`/`nop-witness` artifact witnesses for all three families). |
+
+An Agent may carry a `runtime_package` with an absolute `path`, sorted-file
+`manifest_sha256`, and relative `entrypoint` bound to its pinned executable.
+The native handoff schema is `opi-eval-native-handoff/3`; Harbor and Pier
+verify and upload the complete package before launching it with the selected
+provider and model. Resource drift, links and entrypoint traversal reject.
+For local preparation, `cache/agents/<product>` is either the executable or
+a package directory containing the `<product>` executable and its resources.
+
+Local material also binds a `runner_project` to the static runner commit,
+lockfile and tracked source bytes. Loading rechecks those identities and the
+absolute `UV_PROJECT`, `UV_PROJECT_ENVIRONMENT` and `UV_PYTHON` selections.
+Preparation uses the same pinned uv executable
+for explicit oracle diagnostics. Pier derives its inference allowlist from the
+handoff's selected `inference_endpoint` and scopes the upstream proxy environment
+to the Agent process; the separate verifier receives neither.
+Opi task processes use an isolated unavailable session-bus address so the pinned
+client's environment-credential fallback works in headless containers.
 
 The upstream oracle is an explicitly selected conformance diagnostic
 (`conformance --case oracle-witness` / `--case nop-witness`), never a
@@ -317,10 +344,74 @@ material. Each adapter classifies typed terminal provider causes
 client's own evidence - including a JSON error at process exit zero - and
 never speculates a provider cause the evidence leaves unknown.
 
+Numeric output limits are projected into both the model capability and Opi's
+explicit `[defaults].max_output_tokens` request setting. This does **not**
+establish support in stock Opi 0.8.2, which can silently ignore that setting.
+Native `validate`, `plan`, and `run` require exact-client loopback evidence
+when `max_output_tokens` is required or an execution output-token bound is
+declared. An optional numeric limit without evidence remains an unsupported
+comparison control. A version string, declared capability, or low token usage
+does not substitute for observed request limits.
+
+Generate the narrowly scoped proof with the selected experiment and locally
+supplied executables; the probe replaces only the endpoint and credential with
+a loopback listener and literal synthetic authentication. It never resolves
+the experiment's credential or contacts its provider. For example, `clients.json`:
+
+```json
+{
+  "opi": "/absolute/opi",
+  "pi": "/absolute/pi-package/pi",
+  "pi_package": "/absolute/pi-package",
+  "experiment": "/absolute/experiment.toml"
+}
+```
+
+```sh
+OPI_EVAL_NATIVE_CLIENT_MATERIAL=/absolute/clients.json \
+OPI_EVAL_OUTPUT_CONTROL_OUT=/absolute/new-proof-directory \
+cargo test -p opi-eval --test native_driver \
+  native_output_control_client_matrix -- --ignored --exact
+```
+
+The output directory must not exist. Native pi is launched verbatim; the
+existing `node`/`pi_bundle` input form is also supported. Supply `opi_package`
+or `pi_package` whenever native material transports that client's runtime
+package. This probe covers the experiment's selected API and numeric limit,
+with reasoning omitted or unknown; it does not attest reasoning effort. Both
+requests in the deterministic tool loop must carry the exact limit.
+
+Before starting a listener, the probe binds the executed file to a normal
+relative entrypoint inside the supplied package, rejecting traversal, links,
+and unrelated packages even when executable bytes match. The proof retains
+that entrypoint as well as the package digest. The `node`/`pi_bundle` form
+requires `pi_package` to contain both the interpreter and bundle; an
+interpreter hash alone cannot identify the pi code.
+
+Each `<product>/output-control.json` pins the executable/package identity,
+provider/API/model, frozen controls, projected config, and the independent
+listener log. Retain the entire proof directory. In **new** native material,
+set `agents.<product>.output_control_evidence` to
+`{"path":"/absolute/proof/<product>/output-control.json","sha256":"<file SHA-256>"}`
+before freezing the plan. The optional field does not grant support by itself:
+admission verifies the pinned bytes, regenerates the production projection,
+and checks both observed wire limits. Missing, substituted, unsupported, or
+mismatched required evidence rejects before dispatch. No existing plan, run,
+or seal is rewritten. Each admitted trial seals a self-contained snapshot as
+`control/output-control.json`.
+
 The CLI consumes a resolved native-material manifest; it does not improvise or
 silently replace missing native inputs. Native materialization and fidelity
 verification belong to the repository's
 [native-smoke workflow](../../.github/workflows/opi-eval-native-smoke.yml).
+Its materialization stage runs the same loopback producer with a required
+4096-token limit before pinning material and freezing configs. Opi uses the
+located build executable; pi transports the built Node interpreter, package
+metadata, distribution and assets behind a relative launcher. The package and
+entrypoint bound by the probe are the ones declared in trial material. Failed
+or incomplete proof stops materialization; the artifact verifier still requires
+a comparable pair. This stage may fetch locked Cargo test dependencies, but
+the clients receive only isolated synthetic authentication and a loopback URL.
 Real-provider behavior evaluations use the explicitly invoked
 [opi-eval workflow](../../.agents/skills/opi-eval/SKILL.md), which manages
 budget and evidence separately from the hermetic CLI examples.
@@ -409,12 +500,22 @@ commits in this checkout), and invokes the built Companion `verify` and
 `report` only against the supplied family run roots. Exit 0 accepts the
 evidence; exit 2 prints one typed rejection.
 
+Acceptance requires Python 3.11 or later. Its manifest's
+`controls.connection_controls` contains `connection` (the selected `provider`,
+`api`, `base_url`, and `model`) and `model_controls` (the frozen resolved object).
+The verifier compares these and `execution_concurrency` with every sealed
+experiment, then checks the sealed output-control snapshot against the trial's
+executable identity and preserved material. It validates the projected numeric
+limit and both independently observed request limits; a dictionary-shaped
+claim or a seal alone is insufficient. Original host paths inside the probe
+record are never followed during acceptance.
+
 ### Bounded cancellation
 
 One run-level cancellation token governs every dispatch. Sending SIGINT or
 SIGTERM to a running `run` stops new affected dispatch, cancels only the
 owned process trees of the in-flight trials, removes the job containers
-recorded under each trial's owned prefix (`opi-eval-owned-<trial-id>-`) plus
+bound to each trial's private Compose working directories plus
 the temporary credential material, and still settles and renders the
 interrupted report: cancelled and never-dispatched trials stay explicit
 missing coverage with no fabricated score, and the durable
@@ -424,6 +525,25 @@ execution behind; the ignored `native_owned_resource_cancellation` witness
 exercises the real Docker removal locally. Unenforceable required bounds
 reject before any effect, and a currency cap can never be promised from
 unknown prices.
+
+On the pinned mounted Docker routes, Agent streams and Opi traces are written
+directly to the trial's log mount, so an outer timeout does not depend on a
+final download. After owned writers are removed, full-capture runs retain a
+private diagnostic copy limited to 1 MiB per file, 16 MiB total and 256 files,
+with bounded traversal and explicit truncation counts. Root-owned capture is
+made readable only within the exact daemon-observed log mount; permissions are
+not widened. Links and hardlinked files cannot supply captured content. This
+partial evidence never supplies a terminal event, native grade, or seal, and
+the original timeout and cleanup failures remain visible.
+
+Cleanup also runs after normal upstream exits, since an exit-zero job can
+contain a failed setup or teardown. Docker labels and full container IDs must
+match the recorded private roots before removal; an unconfirmed removal blocks
+successful sealing. `opi-eval-owned-resources/2` records those identities and
+outcomes. The temporary `handoff.json`, `config.toml`, and `models.json` are
+removed on settlement, while `handoff-identity.json` retains non-secret launch
+identity. Native result binding follows the pinned Harbor/Pier layout,
+`jobs/<job>/<trial>/result.json`, including valid zero rewards.
 
 ## Developer guide
 

@@ -93,7 +93,7 @@ opi --allow-mutating "更新 README。"
 | `-s, --system <FILE>` | 把用户系统提示词文件追加到内置编程提示词。 |
 | `--non-interactive` | 强制单次文本模式；仍然需要提示词文本。 |
 | `--json` | 向 stdout 输出 NDJSON session/agent 事件。 |
-| `--json-compact` | 紧凑 `--json`：流式 `text_delta` 更新省略冗余累积快照（~线性字节）。 |
+| `--json-compact` | 紧凑 `--json`：文本、thinking 和工具调用增量省略冗余累积内容。 |
 | `--rpc` | 通过 stdin/stdout 启动双向 JSONL 命令/事件模式。 |
 | `--allow-mutating` | 在交互模式之外允许 `write`、`edit` 和 `bash`。 |
 | `--execution-strategy <fixed\|rules\|model>` | 选择 `command.execute` 路由策略。 |
@@ -404,13 +404,19 @@ inline 结果；四个导航工具都会在访问 10,000 个条目后停止遍�
 schema version 是 `NDJSON_SCHEMA_VERSION = 2`。在 `session_summary` 中，`turns` 统计
 已接受的用户提示词轮数，而 `provider_turns` 统计 provider 请求/响应周期（`TurnStart`
 事件），因此使用工具的提示词通常 `provider_turns > turns`。
+Token 合计包含每条完成的 assistant 响应，包括失败提示词产生的响应；以恢复的
+已提交用量起算，并在 runner 生命周期内持续累计。失败提示词仍不会成为持久化
+会话轮次。已知价格下的成本估算采用相同的已观察合计，用量或价格未知时成本仍
+保持未知，不推算尚未完成响应的消耗。从会话重新启动时只恢复已提交的历史。
 类型化 `CredentialNeeded` 失败以 code `3` 退出，点名 provider 与
 `/login <provider>` 修复提示，绝不启动 OAuth flow 或阻塞等待输入。
 
-`--json-compact` 是一个可选标志，使流式 `text_delta` 更新变为固定大小：它省略冗余的
-`assistant_event.partial` 快照，并清空这些更新中 `event.message` 的累积文本，从而让
-长时间流式轮次在字节上按 ~线性增长。消费者可从增量重建完整文本，或读取终态
-`Done`/`MessageEnd` 快照。默认 `--json` 输出和 `NDJSON_SCHEMA_VERSION = 2` 保持不变。
+`--json-compact` 会在 `text_delta`、`thinking_delta` 和 `tool_call_delta` 更新中
+省略 `assistant_event.partial`。这些更新保留内容块位置与工具标识，清空
+`event.message` 中累积的文本、thinking、不透明数据和工具参数；签名随对应的
+thinking 快照一同省略。增量载荷仍可读取，内容块结束事件和终态
+`Done`/`MessageEnd` 快照保留完整内容。较长的增量流不再于每次更新重复累积载荷。
+默认 `--json`、持久化会话、模型侧续接及 `NDJSON_SCHEMA_VERSION = 2` 保持不变。
 
 退出码：
 
@@ -445,6 +451,26 @@ schema version 是 `3`。启动诊断会通过该 ready header 的 `startup_diag
 配置会合并用户配置、项目配置和显式 `--config` 文件。模型优先级依次为
 `--model`、未传入 `--config` 时的 `OPI_MODEL`、显式配置、项目 `.opi/config.toml`、
 用户配置和内置默认值。
+
+可在 TOML 中显式设置每次 Provider 请求的输出上限：
+
+```toml
+[defaults]
+max_output_tokens = 16384
+```
+
+该可选值遵循配置层优先级，必须为正数、不超过所选模型的输出能力上限，并大于
+已启用的 thinking budget。不兼容的组合会在发送 Provider 请求前失败。显式上限
+会贯穿重试、工具续接及兼容的模型或 thinking 切换，关闭 thinking 后也保留。
+不兼容的运行时切换会被拒绝，且不会持久化该变更。省略此项时沿用原有 Provider／
+thinking 默认行为。自定义模型的 `max_output_tokens` 描述模型能力上限，不用于
+选择每次请求的输出限制。
+
+Hook 提议的下一轮状态也必须保留显式上限及兼容的模型／thinking 设置。不兼容的
+提议会在状态应用前被拒绝，工具续接中的 Provider 请求之间同样执行该检查。
+
+嵌入方调用 `CodingHarness::set_model` 会得到 `Result<(), String>`，需先处理
+拒绝结果，再确认当前模型是否已切换。
 
 用户配置路径：
 

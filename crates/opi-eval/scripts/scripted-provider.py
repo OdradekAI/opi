@@ -368,6 +368,18 @@ def serve_listener(rest: list[str]) -> int:
 
         def _record(self, method: str, path: str, raw: bytes, status: int,
                     model=None):
+            try:
+                body = json.loads(raw)
+            except (ValueError, UnicodeError):
+                body = {}
+            # Only numeric request knobs cross this boundary, never headers,
+            # prompts, tool arguments, or arbitrary provider metadata.
+            limits = {
+                key: body[key]
+                for key in ("max_tokens", "max_completion_tokens", "max_output_tokens")
+                if isinstance(body, dict) and key in body
+                and type(body[key]) is int
+            }
             line = json.dumps(
                 {
                     "schema": LOG_SCHEMA,
@@ -377,6 +389,7 @@ def serve_listener(rest: list[str]) -> int:
                     "model": model,
                     "auth": self.auth_kind(),
                     "request_sha256": canonical_digest(raw),
+                    "output_limits": limits,
                     "response_script": RESPONSE_SCRIPT,
                     "status": status,
                 },
@@ -456,9 +469,12 @@ def serve_listener(rest: list[str]) -> int:
             # ``/chat/completions`` and ``/responses`` on a ``/v1``-bearing
             # base URL, Anthropic SDKs and Opi append the full
             # ``/v1/...`` path to a root base URL.
+            # pi's Anthropic beta Messages client appends exactly
+            # ``?beta=true``; other query forms remain undeclared.
             admitted = self.path in ("/chat/completions",
                                      "/v1/chat/completions",
                                      "/v1/messages",
+                                     "/v1/messages?beta=true",
                                      "/v1/responses",
                                      "/responses")
             if self.command != "POST" or not admitted:
@@ -498,7 +514,7 @@ def serve_listener(rest: list[str]) -> int:
                 self._reply(status, "application/json", payload, headers)
                 return
             final = wants_final_turn(body)
-            if self.path == "/v1/messages":
+            if self.path in ("/v1/messages", "/v1/messages?beta=true"):
                 payload = b"".join(anthropic_events(final)) if (
                     body.get("stream") is True) else json.dumps(
                     anthropic_message(final), sort_keys=True,

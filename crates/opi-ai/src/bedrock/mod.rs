@@ -983,7 +983,7 @@ fn serialize_converse_messages(messages: &[crate::message::Message]) -> serde_js
                     let content: Vec<serde_json::Value> = a
                         .content
                         .iter()
-                        .map(|c| match c {
+                        .filter_map(|c| Some(match c {
                             AssistantContent::Text { text } => {
                                 serde_json::json!({"text": text})
                             }
@@ -1001,10 +1001,11 @@ fn serialize_converse_messages(messages: &[crate::message::Message]) -> serde_js
                                     }
                                 })
                             }
-                            AssistantContent::Thinking { thinking } => {
+                            AssistantContent::Thinking { thinking, .. } => {
                                 serde_json::json!({"text": thinking})
                             }
-                        })
+                            AssistantContent::RedactedThinking { .. } => return None,
+                        }))
                         .collect();
                     serde_json::json!({"role": "assistant", "content": content})
                 }
@@ -1033,6 +1034,7 @@ fn serialize_converse_messages(messages: &[crate::message::Message]) -> serde_js
                     })
                 }
             })
+            .filter(|message| message["role"] != "assistant" || message["content"].as_array().is_none_or(|content| !content.is_empty()))
             .collect(),
     )
 }

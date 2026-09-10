@@ -15,11 +15,11 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// The one admitted manifest schema identity.
-pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/3";
+pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/4";
 
 /// Typed material rejections (exit-path failures, never settled outcomes).
 #[derive(Debug, Error)]
@@ -81,14 +81,29 @@ pub(crate) struct IntegrationMaterial {
 /// route through Pier (P19-D04).
 pub(crate) const INTEGRATION_FAMILIES: [&str; 2] = ["harbor", "pier"];
 
+/// The byte-pinned resource tree transported with an Agent executable.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RuntimePackage {
+    pub(crate) path: PathBuf,
+    pub(crate) manifest_sha256: String,
+    pub(crate) entrypoint: PathBuf,
+}
+
 /// The per-product agent projection.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AgentMaterial {
     /// The exact built executable the supervisor spawns verbatim.
     pub(crate) executable: PinnedFile,
+    /// Optional runtime resources transported with the executable.
+    #[serde(default)]
+    pub(crate) runtime_package: Option<RuntimePackage>,
+    /// Independent loopback output-control evidence for this exact client.
+    #[serde(default)]
+    pub(crate) output_control_evidence: Option<PinnedFile>,
     /// The pinned upstream integrations selecting this Agent inside the
-    /// graded task environment (native mode; schema v3), keyed by runner
+    /// graded task environment (native mode; schema v4), keyed by runner
     /// family: exactly one Harbor import and one Pier import, because
     /// the two runner surfaces are not module-compatible. Request
     /// identity comes from the experiment's selected connection
@@ -105,6 +120,70 @@ impl AgentMaterial {
         self.integrations.get(family).ok_or_else(|| {
             MaterialError::Rejected(format!("no {family} integration pinned for this agent"))
         })
+    }
+}
+
+/// The source project selected by the native uv invocation.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RunnerProject {
+    pub(crate) path: PathBuf,
+    /// Tracked Git entries and their working-file bytes, including uv.lock.
+    pub(crate) source_manifest_sha256: String,
+}
+
+impl RunnerProject {
+    fn verify(
+        &self,
+        benchmark: &str,
+        env: &BTreeMap<String, String>,
+        static_lock: &Path,
+    ) -> Result<(), MaterialError> {
+        let reject = |reason: &str| MaterialError::Rejected(format!("runner project: {reason}"));
+        if !self.path.is_absolute() {
+            return Err(reject("root must be absolute"));
+        }
+        let family = if benchmark == "deepswe-v1.1" {
+            "pier"
+        } else {
+            "harbor"
+        };
+        let lock: serde_json::Value = serde_json::from_slice(&std::fs::read(static_lock)?)
+            .map_err(|_| reject("cannot parse static lock"))?;
+        let pin = lock
+            .get("tools")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|tools| tools.iter().find(|tool| tool["id"] == family))
+            .ok_or_else(|| reject("static lock has no selected runner pin"))?;
+        let commit = pin["commit"]
+            .as_str()
+            .ok_or_else(|| reject("static lock has no source commit"))?;
+        let blob = pin["uv_lock"]["git_blob"]
+            .as_str()
+            .ok_or_else(|| reject("static lock has no uv.lock blob"))?;
+        let sha = pin["uv_lock"]["sha256"]
+            .as_str()
+            .ok_or_else(|| reject("static lock has no uv.lock SHA-256"))?;
+        if runner_source_digest(&self.path, commit, blob, sha)? != self.source_manifest_sha256 {
+            return Err(reject("source manifest digest drift"));
+        }
+        for (key, expected) in [
+            ("UV_PROJECT", self.path.clone()),
+            ("UV_PROJECT_ENVIRONMENT", self.path.join(".venv")),
+            ("UV_PYTHON", self.path.join(".venv/bin/python")),
+        ] {
+            if env.get(key).map(String::as_str) != expected.to_str() {
+                return Err(reject(
+                    "verifier environment does not select the pinned project",
+                ));
+            }
+        }
+        if env.contains_key("UV_WORKING_DIRECTORY") {
+            return Err(reject(
+                "verifier environment must preserve the trial working directory",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -125,6 +204,9 @@ pub(crate) struct BenchmarkMaterial {
     pub(crate) verifier_executable: PinnedFile,
     /// The closed verifier environment projection.
     pub(crate) verifier_env: BTreeMap<String, String>,
+    /// Required for local preparation; legacy producer-owned wrappers omit it.
+    #[serde(default)]
+    pub(crate) runner_project: Option<RunnerProject>,
     /// The upstream oracle wrapper: consumes the adapter's exact spawn
     /// spec, applies the official reference solution, and grades it with
     /// the unchanged native verifier.
@@ -205,6 +287,9 @@ impl NativeMaterial {
         }
         for (product, agent) in &material.agents {
             verify_pinned(&agent.executable)?;
+            if let Some(package) = &agent.runtime_package {
+                package.verify(&agent.executable)?;
+            }
             let families = agent.integrations.keys().cloned().collect::<Vec<_>>();
             if families != INTEGRATION_FAMILIES {
                 return Err(MaterialError::Rejected(format!(
@@ -281,6 +366,13 @@ impl NativeMaterial {
                 }
             }
             verify_pinned(&entry.verifier_executable)?;
+            if let Some(project) = &entry.runner_project {
+                project.verify(benchmark, &entry.verifier_env, &material.static_lock.path)?;
+            } else if material.origin.as_deref() == Some("local") {
+                return Err(MaterialError::Rejected(format!(
+                    "benchmark {benchmark} local material requires a runner project"
+                )));
+            }
             verify_pinned(&entry.oracle)?;
         }
         if material.benchmarks.is_empty() {
@@ -306,6 +398,163 @@ impl NativeMaterial {
             ))
         })
     }
+}
+
+impl RuntimePackage {
+    /// Binds a regular-file resource tree to the exact executable entrypoint.
+    pub(crate) fn verify(&self, executable: &PinnedFile) -> Result<(), MaterialError> {
+        if !self.path.is_absolute()
+            || self.entrypoint.as_os_str().is_empty()
+            || self
+                .entrypoint
+                .components()
+                .any(|part| !matches!(part, std::path::Component::Normal(_)))
+            || self.entrypoint.to_str().is_none_or(|path| {
+                path.chars()
+                    .any(|c| c.is_control() || matches!(c, '\\' | ':'))
+                    || path.split('/').any(|part| part.is_empty() || part == ".")
+            })
+        {
+            return Err(MaterialError::Rejected("runtime package requires an absolute root and relative entrypoint without traversal".to_owned()));
+        }
+        let observed = runtime_package_manifest_digest(&self.path)?;
+        if observed != self.manifest_sha256 {
+            return Err(MaterialError::Rejected(format!(
+                "runtime package digest drift at {}",
+                self.path.display()
+            )));
+        }
+        let entrypoint = self.path.join(&self.entrypoint);
+        if !entrypoint.is_file() || entrypoint.canonicalize()? != executable.path.canonicalize()? {
+            return Err(MaterialError::Rejected(
+                "runtime package entrypoint differs from the pinned executable".to_owned(),
+            ));
+        }
+        verify_pinned(executable)
+    }
+}
+
+/// Runtime packages reject links, special files and ambiguous manifest paths.
+pub(crate) fn runtime_package_manifest_digest(root: &Path) -> Result<String, MaterialError> {
+    fn check(path: &Path) -> Result<(), MaterialError> {
+        let kind = std::fs::symlink_metadata(path)?.file_type();
+        if kind.is_symlink() || !(kind.is_file() || kind.is_dir()) {
+            return Err(MaterialError::Rejected(format!(
+                "runtime package contains a link or special file: {}",
+                path.display()
+            )));
+        }
+        if kind.is_dir() {
+            for entry in std::fs::read_dir(path)? {
+                let entry = entry?;
+                let name = entry.file_name();
+                if name.to_str().is_none_or(|name| {
+                    name.chars()
+                        .any(|c| c.is_control() || matches!(c, '\\' | ':'))
+                }) {
+                    return Err(MaterialError::Rejected(
+                        "runtime package contains an ambiguous path".to_owned(),
+                    ));
+                }
+                check(&entry.path())?;
+            }
+        }
+        Ok(())
+    }
+    for path in root.ancestors() {
+        if std::fs::symlink_metadata(path)?.file_type().is_symlink() {
+            return Err(MaterialError::Rejected(
+                "runtime package root traverses a link".to_owned(),
+            ));
+        }
+    }
+    check(root)?;
+    directory_manifest_digest(root)
+}
+
+/// Verifies the selected checkout against the static source and lock pins.
+/// Git metadata and the installed virtual environment are not source bytes.
+pub(crate) fn runner_source_digest(
+    project: &Path,
+    commit: &str,
+    lock_blob: &str,
+    lock_sha256: &str,
+) -> Result<String, MaterialError> {
+    let reject =
+        |reason: &str| MaterialError::Rejected(format!("runner {}: {reason}", project.display()));
+    if std::fs::symlink_metadata(project)?.file_type().is_symlink() {
+        return Err(reject(
+            "project must be a directory inside the cache, not a link",
+        ));
+    }
+    let git = |args: &[&str]| -> Result<Vec<u8>, MaterialError> {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(project)
+            .args(args)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .map_err(|_| reject("cannot inspect the seeded Git checkout"))?;
+        if !output.status.success() {
+            return Err(reject(
+                "source inspection failed; seed a clean pinned Git checkout",
+            ));
+        }
+        Ok(output.stdout)
+    };
+    let git_text = |args: &[&str]| -> Result<String, MaterialError> {
+        String::from_utf8(git(args)?)
+            .map(|value| value.trim().to_owned())
+            .map_err(|_| reject("Git identity is not UTF-8"))
+    };
+    let root = PathBuf::from(git_text(&["rev-parse", "--show-toplevel"])?);
+    if root.canonicalize()? != project.canonicalize()? {
+        return Err(reject("project is not its own Git root"));
+    }
+    if git_text(&["rev-parse", "HEAD"])? != commit {
+        return Err(reject("source commit differs from the static lock"));
+    }
+    if git_text(&["rev-parse", "HEAD:uv.lock"])? != lock_blob
+        || sha256_hex(&std::fs::read(project.join("uv.lock"))?) != lock_sha256
+    {
+        return Err(reject("uv.lock differs from the static lock"));
+    }
+    git(&["diff", "--no-ext-diff", "--quiet", "HEAD", "--"])?;
+    if !git(&["ls-files", "--others", "--exclude-standard", "-z"])?.is_empty() {
+        return Err(reject("checkout contains untracked source files"));
+    }
+    let tree = git(&["ls-tree", "-r", "-z", "--full-tree", "HEAD"])?;
+    let tree = std::str::from_utf8(&tree).map_err(|_| reject("source tree is not UTF-8"))?;
+    let mut rows = Vec::new();
+    for row in tree.split('\0').filter(|row| !row.is_empty()) {
+        let (identity, relative) = row
+            .split_once('\t')
+            .ok_or_else(|| reject("invalid source tree entry"))?;
+        if relative.chars().any(char::is_control)
+            || Path::new(relative)
+                .components()
+                .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        {
+            return Err(reject("unsafe source tree path"));
+        }
+        let file = project.join(relative);
+        let kind = std::fs::symlink_metadata(&file)?.file_type();
+        let digest = if identity.starts_with("120000 blob ") && kind.is_symlink() {
+            sha256_hex(std::fs::read_link(&file)?.as_os_str().as_encoded_bytes())
+        } else if (identity.starts_with("100644 blob ") || identity.starts_with("100755 blob "))
+            && kind.is_file()
+        {
+            sha256_hex(&std::fs::read(&file)?)
+        } else {
+            return Err(reject("source entry type differs from the pinned tree"));
+        };
+        rows.push(format!("{identity}\t{relative}\n{digest}\n"));
+    }
+    rows.sort();
+    Ok(sha256_hex(rows.concat().as_bytes()))
 }
 
 /// Verifies one pinned file: existence plus digest match.
@@ -415,7 +664,7 @@ mod tests {
         );
         format!(
             r#"{{
-  "schema": "opi-eval-native-material/3",
+  "schema": "opi-eval-native-material/4",
   "static_lock": {{"path": {:?}, "sha256": {:?}}},
   "provider": {{
     "script": {{"path": {:?}, "sha256": {:?}}},
@@ -516,7 +765,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("opi-material-schema-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let manifest = dir.join("material.json");
-        let text = minimal_manifest(&dir).replace("opi-eval-native-material/3", "other/1");
+        let text = minimal_manifest(&dir).replace("opi-eval-native-material/4", "other/1");
         write(&manifest, text.as_bytes());
         assert!(
             NativeMaterial::load(&manifest)

@@ -45,7 +45,7 @@ use crate::failure::FailureBoundaryCode;
 use crate::integrity::{
     IntegrityRecord, IntegrityReview, OraclePreflight, RevisionStatus, TaskClassification,
 };
-use crate::process::ExitState;
+use crate::process::{ExitState, ProcessSupervisor, SpawnSpec};
 use crate::runner::lifecycle::{
     CancellationSource, ObservedOutcome, SettlementKind, TrialLifecycle,
 };
@@ -558,7 +558,7 @@ pub(crate) async fn run_experiment(
                 None => None,
             };
             let expansion =
-                crate::runner::plan::expand_selection(&experiment, &corpus, bound.as_deref())
+                crate::runner::plan::expand_selection(&experiment, &corpus, bound.as_ref())
                     .map_err(|error| RunError::Native(error.to_string()))?;
             if let Some(plan) = &plan_json {
                 let frozen: Vec<crate::experiment::DeclaredTrial> = plan["trials"]
@@ -1050,6 +1050,8 @@ fn prepare_native(
     material: &NativeMaterial,
     experiment: &ResolvedExperiment,
 ) -> Result<NativeInputs, RunError> {
+    super::output_control::admit(material, experiment)
+        .map_err(|error| RunError::Native(error.to_string()))?;
     let adapter_key = adapter_key_for(experiment)?;
     let benchmark = material
         .benchmark(&adapter_key)
@@ -1437,10 +1439,12 @@ fn stage_native_handoff(
     integration: &crate::runner::material::IntegrationMaterial,
     projection: &crate::experiment::ConnectionProjection,
     model: &str,
-) -> Result<PathBuf, RunError> {
+) -> Result<NativeHandoff, RunError> {
     let integration_dir = trial_root.join("integration");
     std::fs::create_dir_all(&integration_dir)
         .map_err(|error| RunError::Native(error.to_string()))?;
+    // Own cleanup before the first write, including partial staging failures.
+    let staged = NativeHandoff(integration_dir.join("handoff.json"));
     std::fs::write(
         integration_dir.join(projection.config_filename),
         &projection.config_bytes,
@@ -1448,14 +1452,16 @@ fn stage_native_handoff(
     .map_err(|error| RunError::Native(error.to_string()))?;
     let handoff_path = integration_dir.join("handoff.json");
     let handoff = json!({
-        "schema": "opi-eval-native-handoff/2",
+        "schema": "opi-eval-native-handoff/3",
         "trial": declared.id,
         "product": product,
         "integration_agent_name": integration.agent_name,
         "integration_import_path": integration.import_path,
         "agent_executable": agent.executable.path,
         "agent_executable_sha256": agent.executable.sha256,
+        "runtime_package": agent.runtime_package,
         "model": model,
+        "inference_endpoint": projection.connection.base_url,
         "config_path": projection.config_filename,
         "agent_env": projection.agent_env,
     });
@@ -1464,7 +1470,18 @@ fn stage_native_handoff(
         serde_json::to_vec(&handoff).map_err(|error| RunError::Native(error.to_string()))?,
     )
     .map_err(|error| RunError::Native(error.to_string()))?;
-    Ok(handoff_path)
+    let mut identity = handoff;
+    identity
+        .as_object_mut()
+        .expect("handoff object")
+        .remove("agent_env");
+    identity["schema"] = json!("opi-eval-native-handoff-identity/1");
+    std::fs::write(
+        integration_dir.join("handoff-identity.json"),
+        serde_json::to_vec(&identity).map_err(|error| RunError::Native(error.to_string()))?,
+    )
+    .map_err(|error| RunError::Native(error.to_string()))?;
+    Ok(staged)
 }
 
 /// The synthetic observed Agent record for one bound native trial: every
@@ -1561,6 +1578,8 @@ async fn run_native_trial(
     let agent = material
         .agent(product)
         .map_err(|error| RunError::Native(error.to_string()))?;
+    let output_control = super::output_control::snapshot(agent, product, experiment)
+        .map_err(|error| RunError::Native(error.to_string()))?;
     // The selected connection projection is the single owner of request
     // identity (P19-D02): the credential resolves only here, inside the
     // supervised Agent launch boundary, before any model effect.
@@ -1588,7 +1607,7 @@ async fn run_native_trial(
     let integration = agent
         .integration_for(integration_family)
         .map_err(|error| RunError::Native(error.to_string()))?;
-    let handoff_path = stage_native_handoff(
+    let handoff = stage_native_handoff(
         &trial_root,
         declared,
         product,
@@ -1648,6 +1667,17 @@ async fn run_native_trial(
         &integrity.canonical_bytes(),
     )?);
 
+    if let Some(bytes) = &output_control {
+        produced_keys.push(stage(
+            &mut bundle,
+            &runner_source,
+            ArtifactRole::Derived,
+            "control/output-control.json",
+            bytes,
+        )?);
+        staged_keys.push(produced_keys.last().cloned().expect("just pushed"));
+    }
+
     // One upstream job: the selected integration runs inside the task
     // environment and the same trial's verifier grades it. The
     // pre-dispatch job snapshot backs the binding's stale-job defense.
@@ -1657,6 +1687,7 @@ async fn run_native_trial(
     let task_lifecycle =
         crate::benchmark::task_lifecycle::parse_task_lifecycle(&task_dir, task_family)
             .map_err(|error| RunError::Native(error.to_string()))?;
+    let stale_job_names = snapshot_job_names(&verifier_trace);
     let selection = crate::benchmark::process::NativeSelection {
         kind: crate::benchmark::process::SelectionKind::Integration,
         lifecycle: crate::benchmark::process::TaskLifecycleSelection {
@@ -1671,23 +1702,23 @@ async fn run_native_trial(
         model,
         reward_metric: "reward".to_owned(),
         module_dir: integration.module_dir.clone(),
-        handoff_path: handoff_path.clone(),
-        stale_job_names: snapshot_job_names(&verifier_trace),
+        handoff_path: handoff.0.clone(),
+        stale_job_names: stale_job_names.clone(),
     };
     let mut job_record = None;
     let mut job_rejection: Option<String> = None;
-    // Owned-resource identity (P19-D07): every job container this trial
-    // may start is named under one trial-owned prefix, recorded durably
-    // before any process effect so a later cleanup can prove exactly what
-    // it owns - never a shared cache, source bundle, or unrelated name.
-    let owned_prefix = format!("opi-eval-owned-{}-", declared.id);
+    // Both pinned runners pass these private task roots as Compose's
+    // --project-directory, for the Agent and separate verifier respectively.
+    // Multi-step tasks are rejected by the lifecycle parser above.
+    let task_root = task_dir.canonicalize()?;
+    let owned_directories = [task_root.join("environment"), task_root.join("tests")];
     let owned_resources_path = trial_root.join("integration/owned-resources.json");
     std::fs::write(
         &owned_resources_path,
         serde_json::to_vec(&json!({
-            "schema": "opi-eval-owned-resources/1",
+            "schema": "opi-eval-owned-resources/2",
             "trial": declared.id,
-            "container_prefix": owned_prefix,
+            "compose_working_directories": owned_directories,
             "cleanup": serde_json::Value::Null,
         }))
         .map_err(|error| RunError::Native(error.to_string()))?,
@@ -1695,11 +1726,6 @@ async fn run_native_trial(
     .map_err(|error| RunError::Native(error.to_string()))?;
     if ledger.attempt(AuthorityTransition::AgentDispatch) {
         let adapter = benchmark_adapter_for(revision)?;
-        let mut job_env = inputs.verifier_env.clone();
-        job_env.insert(
-            "OPI_EVAL_OWNED_CONTAINER_PREFIX".into(),
-            owned_prefix.clone().into(),
-        );
         let benchmark_request = BenchmarkRunRequest {
             verifier_executable: inputs.verifier_executable.clone(),
             task_dir: task_dir.clone(),
@@ -1708,7 +1734,7 @@ async fn run_native_trial(
             trace_root: verifier_trace.clone(),
             admitted_lock_digest: material.static_lock.sha256.clone(),
             integrity: integrity.clone(),
-            extra_env: job_env,
+            extra_env: inputs.verifier_env.clone(),
         };
         match BenchmarkExecution::run(&benchmark_request, adapter.as_ref(), run_cancel).await {
             Ok(record) => job_record = Some(record),
@@ -1720,25 +1746,54 @@ async fn run_native_trial(
         }
     }
 
-    // Owned-resource and credential cleanup (P19-D07): a terminated job
-    // tree cannot be trusted to have removed the containers it started,
-    // so the runner - the owner of the recorded identity - removes
-    // exactly the prefix-owned containers and removes the temporary
-    // credential material. Only the owned prefix is ever addressed.
-    let terminated = matches!(
-        job_record.as_ref().map(|record| &record.exit),
-        Some(ExitState::Cancelled) | Some(ExitState::TimedOut)
-    );
+    // Upstream job exit zero does not prove that trial setup or teardown
+    // succeeded. Remove credentials first, then verify cleanup on every exit.
+    let handoff_removed = remove_credential_material(&handoff.0);
+    let docker = cleanup_docker_spec(&inputs.verifier_env, &verifier_trace);
     let owned_cleanup = cleanup_owned_resources(
-        &owned_prefix,
+        &declared.id,
+        &owned_directories,
         &owned_resources_path,
         job_record.as_ref().map(|record| &record.exit),
-    );
-    let handoff_removed = if terminated {
-        remove_credential_material(&handoff_path)
+        &docker,
+        job_record.as_ref().and_then(|record| {
+            matches!(record.exit, ExitState::TimedOut | ExitState::Cancelled)
+                .then_some(verifier_trace.as_path())
+        }),
+    )
+    .await;
+    // Interrupted native logs are still private, unsealed capture. Only bound
+    // them once all owned writers are gone; never manufacture an Agent terminal.
+    let partial_capture_failed = matches!(
+        job_record.as_ref().map(|record| &record.exit),
+        Some(ExitState::TimedOut | ExitState::Cancelled)
+    ) && (!owned_cleanup.confirmed()
+        || !job_record.as_ref().is_some_and(|record| {
+            matches!(
+                record.cleanup,
+                crate::process::CleanupEvidence::NotRequired
+                    | crate::process::CleanupEvidence::TreeTerminated { verified: true, .. }
+            )
+        })
+        || bound_partial_capture(
+            &verifier_trace,
+            &trial_root.join("integration/partial-capture.json"),
+            experiment.storage().capture_policy == crate::experiment::CapturePolicy::Full,
+            &stale_job_names,
+        )
+        .is_err());
+    let cleanup_failure = if !handoff_removed {
+        Some("credential-material-removal-failed")
+    } else if !owned_cleanup.confirmed() {
+        Some("owned-resource-cleanup-unconfirmed")
+    } else if partial_capture_failed {
+        Some("partial-capture-unconfirmed")
     } else {
-        true
+        None
     };
+    if cleanup_failure.is_some() {
+        ledger.fail(FailureBoundaryCode::Infrastructure);
+    }
 
     // Settlement and grade admission: the observed job outcome settles
     // durably; the grade transition is the binding admission (import plus
@@ -1887,10 +1942,16 @@ async fn run_native_trial(
     }
 
     // The one classification (P19-D01).
-    let class = classify_native_trial(
+    let mut class = classify_native_trial(
         job_record.as_ref(),
         binding.map(std::convert::AsRef::as_ref),
     );
+    if let Some(reason) = cleanup_failure {
+        class = NativeTrialClass::InvalidExecution {
+            reason: reason.to_owned(),
+            boundary: FailureBoundaryCode::Infrastructure,
+        };
+    }
 
     // Pre-seal projection over the settled facts: the observed Agent
     // record is the typed native terminal observation.
@@ -1967,7 +2028,13 @@ async fn run_native_trial(
 
     let canary_leak =
         scan_staged_for_canaries(&trial_root.join("bundle"), &staged_keys, &request.canaries);
-    let seal_outcome = if binding.is_none() {
+    let seal_outcome = if cleanup_failure.is_some() {
+        ledger.attempt_failed(
+            AuthorityTransition::Seal,
+            FailureBoundaryCode::Infrastructure,
+        );
+        None
+    } else if binding.is_none() {
         // Evidence admission did not succeed: the seal transition is
         // recorded as failed so the report (and every export derived from
         // it) is refused mechanically, never silently skipped.
@@ -1994,10 +2061,17 @@ async fn run_native_trial(
     };
 
     // Trial facts for pairing from the one classification.
-    let unsupported_controls = match experiment.model_controls().reasoning {
+    let mut unsupported_controls = match experiment.model_controls().reasoning {
         crate::experiment::ControlValue::Value(_) => vec!["reasoning".to_owned()],
         _ => Vec::new(),
     };
+    if matches!(
+        experiment.model_controls().max_output_tokens,
+        crate::experiment::ControlValue::Value(_)
+    ) && output_control.is_none()
+    {
+        unsupported_controls.push("max_output_tokens".to_owned());
+    }
     let fact = if seal_outcome.is_some() {
         let outcome = match &class {
             NativeTrialClass::GradedNative { agent_failed, .. } => {
@@ -2079,14 +2153,10 @@ async fn run_native_trial(
                     cleanup_token(&record.cleanup),
                     owned_cleanup_receipt(
                         &owned_cleanup,
-                        if terminated {
-                            if handoff_removed {
-                                "removed"
-                            } else {
-                                "removal-failed"
-                            }
+                        if handoff_removed {
+                            "removed"
                         } else {
-                            "not-required"
+                            "removal-failed"
                         },
                     ),
                 ),
@@ -3006,94 +3076,564 @@ fn exit_state_token(exit: &ExitState) -> String {
     }
 }
 
-/// Observed owned-resource cleanup for one settled native job.
-#[derive(Debug, Clone)]
-struct OwnedCleanup {
-    /// Docker CLI status: absent, or the removal outcome per container
-    /// found under the owned prefix.
-    status: String,
+/// Only daemon-observed identities with an exact private Compose root can
+/// authorize removal. Names, trial-name prefixes and task output are not proof.
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+struct OwnedContainer {
+    id: String,
+    working_dir: PathBuf,
+    project: String,
 }
 
-/// Removes the prefix-owned containers after a terminated job and records
-/// the observed cleanup under the durable owned-resource identity. Only
-/// the recorded prefix is ever addressed; a missing Docker CLI leaves the
-/// cleanup explicitly unconfirmed instead of claiming success.
-fn cleanup_owned_resources(
-    prefix: &str,
-    evidence_path: &std::path::Path,
-    exit: Option<&ExitState>,
-) -> OwnedCleanup {
-    let terminated = matches!(exit, Some(ExitState::Cancelled) | Some(ExitState::TimedOut));
-    let status = if terminated {
-        match owned_containers(prefix) {
-            Ok(names) if names.is_empty() => "none-found".to_owned(),
-            Ok(names) => {
-                let mut removed = Vec::new();
-                for name in &names {
-                    let outcome = std::process::Command::new("docker")
-                        .args(["rm", "-f", name])
-                        .output();
-                    removed.push(match outcome {
-                        Ok(output) if output.status.success() => {
-                            format!("{name}:removed")
-                        }
-                        Ok(output) => format!(
-                            "{name}:failed:{}",
-                            String::from_utf8_lossy(&output.stderr).trim()
-                        ),
-                        Err(error) => format!("{name}:spawn-failed:{error}"),
-                    });
-                }
-                format!("containers:{}", removed.join(","))
-            }
-            Err(error) => format!("docker-unavailable:{error}"),
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum OwnedCleanupError {
+    DockerCommandFailed,
+    DockerOutputInvalid,
+    IdentityMismatch,
+    RemovalUnconfirmed,
+    EvidenceWriteFailed,
+    CaptureOwnershipUnconfirmed,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum ContainerRemoval {
+    Removed,
+    Unconfirmed,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ContainerCleanup {
+    #[serde(flatten)]
+    identity: OwnedContainer,
+    status: ContainerRemoval,
+}
+
+/// An unconfirmed cleanup must never admit a successful seal.
+#[derive(Debug, Default)]
+struct OwnedCleanup {
+    containers: Vec<ContainerCleanup>,
+    capture_helpers: Vec<CaptureHelperCleanup>,
+    error: Option<OwnedCleanupError>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct CaptureHelperCleanup {
+    id: String,
+    removed: bool,
+}
+
+impl OwnedCleanup {
+    fn confirmed(&self) -> bool {
+        self.error.is_none()
+    }
+
+    fn token(&self) -> String {
+        if let Some(error) = self.error {
+            return format!(
+                "unconfirmed:{}",
+                serde_json::to_value(error)
+                    .expect("cleanup error serializes")
+                    .as_str()
+                    .expect("error token")
+            );
         }
-    } else {
-        "not-required".to_owned()
+        if self.containers.is_empty() {
+            return "none-found".to_owned();
+        }
+        format!(
+            "containers:{}",
+            self.containers
+                .iter()
+                .map(|entry| format!("{}:removed", entry.identity.id))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    }
+}
+
+/// Copies bounded private capture after owned writers have been removed.
+/// Raw upstream bytes stay unchanged. Links and special files are skipped. A
+/// traversal that exceeds its fixed work budget fails visibly, retaining the
+/// interrupted outcome rather than claiming bounded evidence or a grade.
+fn bound_partial_capture(
+    trace: &Path,
+    receipt: &Path,
+    full: bool,
+    stale: &[std::ffi::OsString],
+) -> std::io::Result<()> {
+    const FILE_BYTES: u64 = 1024 * 1024;
+    const TOTAL_BYTES: u64 = 16 * FILE_BYTES;
+    const FILES: usize = 256;
+    const ENTRIES: usize = 4096;
+    use std::io::Read;
+    let destination = receipt.with_extension("");
+    let mut directories = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        directories.mode(0o700);
+    }
+    directories.create(&destination)?;
+    directories.recursive(true);
+    let mut visited = 0;
+    let mut files = 0;
+    let mut bytes = 0;
+    let mut truncated = 0;
+    let mut discarded = 0;
+    let invalid = || std::io::Error::other("partial capture traversal limit or unsafe root");
+    let mut children = |root: &Path| -> std::io::Result<Vec<PathBuf>> {
+        match std::fs::symlink_metadata(root) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Ok(metadata) if metadata.is_dir() && !metadata.is_symlink() => {}
+            _ => return Err(invalid()),
+        }
+        let mut paths = Vec::new();
+        for entry in std::fs::read_dir(root)? {
+            visited += 1;
+            if visited > ENTRIES {
+                return Err(invalid());
+            }
+            paths.push(entry?.path());
+        }
+        paths.sort();
+        Ok(paths)
+    };
+    let mut pending = Vec::new();
+    for job in children(&trace.join("jobs"))? {
+        if job
+            .file_name()
+            .is_some_and(|name| stale.iter().any(|old| old == name))
+        {
+            continue;
+        }
+        if !std::fs::symlink_metadata(&job)?.is_dir() {
+            continue;
+        }
+        for trial in children(&job)? {
+            if !std::fs::symlink_metadata(&trial)?.is_dir() {
+                continue;
+            }
+            let agent = trial.join("agent");
+            for path in children(&agent)? {
+                if matches!(
+                    path.file_name().and_then(|n| n.to_str()),
+                    Some("stdout.log" | "stderr.log" | "trace")
+                ) {
+                    pending.push((path, 0));
+                }
+            }
+        }
+    }
+    // Streams precede trace files so an excessive trace cannot crowd them out.
+    pending.sort_by(|a, b| b.0.cmp(&a.0));
+    while let Some((path, depth)) = pending.pop() {
+        let metadata = std::fs::symlink_metadata(&path)?;
+        if metadata.is_dir() && !metadata.is_symlink() {
+            if depth >= 16 {
+                return Err(invalid());
+            }
+            let mut entries = children(&path)?;
+            entries.reverse();
+            pending.extend(entries.into_iter().map(|path| (path, depth + 1)));
+            continue;
+        }
+        #[cfg(unix)]
+        let single_link = {
+            use std::os::unix::fs::MetadataExt;
+            metadata.nlink() == 1
+        };
+        #[cfg(not(unix))]
+        let single_link = false; // Native capture uses the admitted Linux runtime.
+        if !full
+            || !metadata.is_file()
+            || metadata.is_symlink()
+            || !single_link
+            || files >= FILES
+            || bytes >= TOTAL_BYTES
+        {
+            discarded += 1;
+            continue;
+        }
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+        }
+        let file = options.open(&path)?;
+        let opened = file.metadata()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if !opened.is_file()
+                || opened.nlink() != 1
+                || opened.ino() != metadata.ino()
+                || opened.dev() != metadata.dev()
+            {
+                return Err(invalid());
+            }
+        }
+        let retained = opened.len().min(FILE_BYTES).min(TOTAL_BYTES - bytes);
+        if retained < metadata.len() {
+            truncated += 1;
+        }
+        let target = destination.join(path.strip_prefix(trace).map_err(|_| invalid())?);
+        directories.create(target.parent().ok_or_else(invalid)?)?;
+        let mut output = std::fs::OpenOptions::new();
+        output.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            output.mode(0o600);
+        }
+        let copied = std::io::copy(&mut file.take(retained), &mut output.open(&target)?)?;
+        files += 1;
+        bytes += copied;
+    }
+    std::fs::write(
+        receipt,
+        serde_json::to_vec(&json!({
+            "schema": "opi-eval-partial-capture/1",
+            "sensitivity": "private-unredacted",
+            "files": files, "bytes": bytes,
+            "truncated_files": truncated, "discarded_entries": discarded,
+            "file_byte_limit": FILE_BYTES, "total_byte_limit": TOTAL_BYTES,
+            "file_limit": FILES,
+        }))
+        .expect("capture counts serialize"),
+    )
+}
+
+/// Cleanup has its own bounded supervision after the job's cancellation.
+/// Only Docker connection settings cross this boundary; output/error text
+/// cannot disclose container environment or credentials into receipts.
+fn cleanup_docker_spec(
+    job_env: &BTreeMap<std::ffi::OsString, std::ffi::OsString>,
+    job_cwd: &Path,
+) -> SpawnSpec {
+    let env = [
+        "PATH",
+        "HOME",
+        "USERPROFILE",
+        "SystemRoot",
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT",
+        "DOCKER_CONFIG",
+        "DOCKER_TLS_VERIFY",
+        "DOCKER_CERT_PATH",
+    ]
+    .into_iter()
+    .filter_map(|key| {
+        job_env
+            .get(std::ffi::OsStr::new(key))
+            .cloned()
+            .map(|value| (key.into(), value))
+    })
+    .collect();
+    SpawnSpec {
+        argv: vec!["docker".into()],
+        cwd: Some(job_cwd.to_path_buf()),
+        env,
+        stdout_cap: 64 * 1024,
+        stderr_cap: 1024,
+        timeout: std::time::Duration::from_secs(15),
+    }
+}
+
+async fn cleanup_docker(spec: &SpawnSpec, args: &[&str]) -> Result<Vec<u8>, OwnedCleanupError> {
+    let mut spec = spec.clone();
+    spec.argv.extend(args.iter().map(Into::into));
+    let outcome = ProcessSupervisor::run(&spec, &CancellationToken::new()).await;
+    if outcome.exit != (ExitState::Exited { code: 0 }) || outcome.stdout.truncated {
+        return Err(OwnedCleanupError::DockerCommandFailed);
+    }
+    Ok(outcome.stdout.bytes)
+}
+
+fn full_container_id(id: &str) -> bool {
+    id.len() == 64
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+async fn owned_container_ids(
+    docker: &SpawnSpec,
+    directory: &Path,
+) -> Result<BTreeSet<String>, OwnedCleanupError> {
+    let filter = format!(
+        "label=com.docker.compose.project.working_dir={}",
+        directory.display()
+    );
+    let bytes = cleanup_docker(
+        docker,
+        &["ps", "--all", "--quiet", "--no-trunc", "--filter", &filter],
+    )
+    .await?;
+    let text = std::str::from_utf8(&bytes).map_err(|_| OwnedCleanupError::DockerOutputInvalid)?;
+    let ids: BTreeSet<_> = text.lines().map(str::to_owned).collect();
+    if ids.len() > 256 || ids.iter().any(|id| !full_container_id(id)) {
+        return Err(OwnedCleanupError::DockerOutputInvalid);
+    }
+    Ok(ids)
+}
+
+struct OwnedCaptureMount {
+    image: String,
+    source: PathBuf,
+}
+
+async fn owned_capture_mount(
+    docker: &SpawnSpec,
+    id: &str,
+    trace: &Path,
+) -> Result<Option<OwnedCaptureMount>, OwnedCleanupError> {
+    #[derive(serde::Deserialize)]
+    struct CaptureInspect {
+        image: String,
+        sources: Vec<PathBuf>,
+    }
+    let bytes = cleanup_docker(docker, &["inspect", "--type", "container", "--format",
+        r#"{"image":{{json .Image}},"sources":[{{range .Mounts}}{{if and (eq .Type "bind") (eq .Destination "/logs/agent") .RW}}{{json .Source}}{{end}}{{end}}]}"#,
+        id]).await?;
+    let inspected: CaptureInspect =
+        serde_json::from_slice(&bytes).map_err(|_| OwnedCleanupError::DockerOutputInvalid)?;
+    if inspected.sources.is_empty() {
+        return Ok(None);
+    }
+    if inspected.sources.len() != 1
+        || !inspected
+            .image
+            .strip_prefix("sha256:")
+            .is_some_and(full_container_id)
+    {
+        return Err(OwnedCleanupError::IdentityMismatch);
+    }
+    let source = &inspected.sources[0];
+    let relative = source
+        .strip_prefix(trace)
+        .map_err(|_| OwnedCleanupError::IdentityMismatch)?;
+    let components: Vec<_> = relative.components().collect();
+    if components.len() != 4
+        || components[0].as_os_str() != "jobs"
+        || components[3].as_os_str() != "agent"
+        || components
+            .iter()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        || source.to_string_lossy().contains(',')
+    {
+        return Err(OwnedCleanupError::IdentityMismatch);
+    }
+    let mut checked = trace.to_path_buf();
+    for part in components {
+        checked.push(part);
+        let metadata = std::fs::symlink_metadata(&checked)
+            .map_err(|_| OwnedCleanupError::CaptureOwnershipUnconfirmed)?;
+        if metadata.is_symlink() || !metadata.is_dir() {
+            return Err(OwnedCleanupError::IdentityMismatch);
+        }
+    }
+    Ok(Some(OwnedCaptureMount {
+        image: inspected.image,
+        source: source.clone(),
+    }))
+}
+
+/// The original container is gone before this helper starts. It has no
+/// credentials, network, host configuration or writable root filesystem, only
+/// the exact daemon-observed Agent log mount. No chmod, symlink traversal or
+/// hardlink ownership change is permitted. Its removal gates capture success.
+#[cfg(unix)]
+async fn restore_capture_owner(
+    docker: &SpawnSpec,
+    image: &str,
+    source: &Path,
+    trace: &Path,
+    helpers: &mut Vec<CaptureHelperCleanup>,
+) -> Result<(), OwnedCleanupError> {
+    use std::os::unix::fs::MetadataExt;
+    let host =
+        std::fs::metadata(trace).map_err(|_| OwnedCleanupError::CaptureOwnershipUnconfirmed)?;
+    let owner = format!("{}:{}", host.uid(), host.gid());
+    let bind = format!("type=bind,source={},target=/capture", source.display());
+    let id = cleanup_docker(docker, &[
+        "create", "--pull", "never", "--network", "none", "--read-only", "--cap-drop", "ALL",
+        "--cap-add", "CHOWN", "--cap-add", "DAC_OVERRIDE", "--user", "0:0",
+        "--security-opt", "no-new-privileges", "--entrypoint", "/bin/sh",
+        "--mount", &bind, image, "-c",
+        "find /capture -xdev -type d -exec chown -h \"$1\" {} + && find /capture -xdev -type f -links 1 -exec chown -h \"$1\" {} +",
+        "opi-eval-capture", &owner,
+    ]).await?;
+    let id = std::str::from_utf8(&id)
+        .map_err(|_| OwnedCleanupError::DockerOutputInvalid)?
+        .trim();
+    if !full_container_id(id) {
+        return Err(OwnedCleanupError::DockerOutputInvalid);
+    }
+    helpers.push(CaptureHelperCleanup {
+        id: id.to_owned(),
+        removed: false,
+    });
+    let restored = cleanup_docker(docker, &["start", "--attach", id]).await;
+    let removed = cleanup_docker(docker, &["rm", "--force", "--volumes", id]).await;
+    let remaining = cleanup_docker(
+        docker,
+        &[
+            "ps",
+            "--all",
+            "--quiet",
+            "--no-trunc",
+            "--filter",
+            &format!("id={id}"),
+        ],
+    )
+    .await;
+    let gone = removed.is_ok() && remaining.is_ok_and(|bytes| bytes.is_empty());
+    helpers
+        .last_mut()
+        .expect("helper recorded before start")
+        .removed = gone;
+    if restored.is_err() || !gone {
+        return Err(OwnedCleanupError::CaptureOwnershipUnconfirmed);
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+async fn restore_capture_owner(
+    _: &SpawnSpec,
+    _: &str,
+    _: &Path,
+    _: &Path,
+    _: &mut Vec<CaptureHelperCleanup>,
+) -> Result<(), OwnedCleanupError> {
+    Err(OwnedCleanupError::CaptureOwnershipUnconfirmed)
+}
+
+/// Verify every candidate before removing any, using complete immutable IDs.
+/// The exact-root query includes stopped containers and every Compose service.
+async fn remove_owned_containers(
+    docker: &SpawnSpec,
+    directories: &[PathBuf],
+    capture: Option<&Path>,
+) -> OwnedCleanup {
+    let mut cleanup = OwnedCleanup::default();
+    let result = async {
+        for directory in directories {
+            for id in owned_container_ids(docker, directory).await? {
+                let bytes = cleanup_docker(docker, &["inspect", "--type", "container", "--format",
+                    r#"{"id":{{json .Id}},"working_dir":{{json (index .Config.Labels "com.docker.compose.project.working_dir")}},"project":{{json (index .Config.Labels "com.docker.compose.project")}}}"#,
+                    &id]).await?;
+                let identity: OwnedContainer = serde_json::from_slice(&bytes)
+                    .map_err(|_| OwnedCleanupError::DockerOutputInvalid)?;
+                if identity.id != id || identity.working_dir != *directory
+                    || !identity.project.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+                    || !identity.project.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-' || c == b'_') {
+                    return Err(OwnedCleanupError::IdentityMismatch);
+                }
+                cleanup.containers.push(ContainerCleanup { identity, status: ContainerRemoval::Unconfirmed });
+            }
+        }
+        // Capture mounts and immutable images come from the daemon, never Agent
+        // output. Retain them before removal so no Agent can race the helper.
+        let mut mounts = Vec::new();
+        let mut capture_error = None;
+        if let Some(trace) = capture {
+            for entry in &cleanup.containers {
+                match owned_capture_mount(docker, &entry.identity.id, trace).await {
+                    Ok(Some(mount)) => mounts.push(mount),
+                    Ok(None) => {}
+                    Err(error) => capture_error = Some(error),
+                }
+            }
+        }
+        let mut removed = true;
+        for entry in &mut cleanup.containers {
+            if cleanup_docker(docker, &["rm", "--force", &entry.identity.id]).await.is_ok() {
+                entry.status = ContainerRemoval::Removed;
+            } else {
+                removed = false;
+            }
+        }
+        // A successful CLI exit is not proof of removal either.
+        for directory in directories {
+            let remaining = owned_container_ids(docker, directory).await?;
+            for entry in &mut cleanup.containers {
+                if remaining.contains(&entry.identity.id) {
+                    entry.status = ContainerRemoval::Unconfirmed;
+                }
+            }
+            removed &= remaining.is_empty();
+        }
+        if !removed { return Err(OwnedCleanupError::RemovalUnconfirmed); }
+        if let Some(error) = capture_error { return Err(error); }
+        if let Some(trace) = capture {
+            for mount in mounts {
+                restore_capture_owner(docker, &mount.image, &mount.source, trace, &mut cleanup.capture_helpers).await?;
+            }
+        }
+        Ok(())
+    }.await;
+    cleanup.error = result.err();
+    cleanup
+}
+
+async fn cleanup_owned_resources(
+    trial: &str,
+    directories: &[PathBuf],
+    evidence_path: &Path,
+    exit: Option<&ExitState>,
+    docker: &SpawnSpec,
+    capture: Option<&Path>,
+) -> OwnedCleanup {
+    let mut cleanup = match exit {
+        None | Some(ExitState::FailedToSpawn { .. }) => OwnedCleanup::default(),
+        _ => remove_owned_containers(docker, directories, capture).await,
     };
     let evidence = json!({
-        "schema": "opi-eval-owned-resources/1",
-        "container_prefix": prefix,
-        "cleanup": status,
+        "schema": "opi-eval-owned-resources/2",
+        "trial": trial,
+        "compose_working_directories": directories,
+        "cleanup": cleanup.token(),
+        "containers": cleanup.containers,
+        "capture_helpers": cleanup.capture_helpers,
+        "error": cleanup.error,
     });
-    if let Ok(bytes) = serde_json::to_vec(&evidence) {
-        let _ = std::fs::write(evidence_path, bytes);
+    if std::fs::write(
+        evidence_path,
+        serde_json::to_vec(&evidence).expect("cleanup serializes"),
+    )
+    .is_err()
+    {
+        cleanup.error = Some(OwnedCleanupError::EvidenceWriteFailed);
     }
-    OwnedCleanup { status }
+    cleanup
 }
 
-/// Lists the container names the owned prefix addresses, newest first.
-fn owned_containers(prefix: &str) -> Result<Vec<String>, String> {
-    let output = std::process::Command::new("docker")
-        .args(["ps", "-aq", "--filter", &format!("name=^{prefix}")])
-        .output()
-        .map_err(|error| error.to_string())?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+/// The guard also removes partially written handoffs on pre-dispatch errors.
+struct NativeHandoff(PathBuf);
+
+impl Drop for NativeHandoff {
+    fn drop(&mut self) {
+        remove_credential_material(&self.0);
     }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect())
 }
 
-/// Removes the temporary credential material of one terminated native
-/// job: the handoff document and the projected connection configuration.
-/// Returns whether the material is absent after the call. A job that
-/// settled by itself keeps its staged handoff evidence.
-fn remove_credential_material(handoff_path: &std::path::Path) -> bool {
+/// Remove actual connection projections on every settlement, without reading
+/// secret bytes or trusting filenames supplied by the integration process.
+fn remove_credential_material(handoff_path: &Path) -> bool {
     let Some(directory) = handoff_path.parent() else {
         return true;
     };
-    let projected = [
-        handoff_path.to_path_buf(),
-        directory.join("opi.toml"),
-        directory.join("pi.toml"),
-    ];
     let mut absent = true;
-    for path in projected {
+    for path in [
+        handoff_path.to_path_buf(),
+        directory.join("config.toml"),
+        directory.join("models.json"),
+    ] {
         match std::fs::remove_file(&path) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -3103,11 +3643,10 @@ fn remove_credential_material(handoff_path: &std::path::Path) -> bool {
     absent
 }
 
-/// The receipt token for one owned-resource cleanup outcome.
 fn owned_cleanup_receipt(cleanup: &OwnedCleanup, credential_material: &str) -> String {
     format!(
         "+owned-containers:{}+credential-material:{credential_material}",
-        cleanup.status,
+        cleanup.token()
     )
 }
 
@@ -3385,6 +3924,88 @@ fn recovery_report(experiment: &ResolvedExperiment, root: &Path) -> serde_json::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn partial_capture_limits_and_policy_preserve_raw_evidence() {
+        for (count, size, full, expected_files, expected_bytes) in [
+            (20, 2 * 1024 * 1024, true, 16, 16 * 1024 * 1024),
+            (270, 0, true, 256, 0),
+            (2, 32, false, 0, 0),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let trace = root.path().join("upstream");
+            let source = trace.join("jobs/new/trial/agent/trace/run");
+            std::fs::create_dir_all(&source).unwrap();
+            for n in 0..count {
+                let file = std::fs::File::create(source.join(format!("{n:03}.jsonl"))).unwrap();
+                file.set_len(size).unwrap();
+            }
+            let stale = trace.join("jobs/old/trial/agent");
+            std::fs::create_dir_all(&stale).unwrap();
+            std::fs::write(stale.join("stdout.log"), "excluded prior evidence").unwrap();
+            let receipt = root.path().join("partial.json");
+            bound_partial_capture(&trace, &receipt, full, &["old".into()]).unwrap();
+            let value: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(receipt).unwrap()).unwrap();
+            assert_eq!(value["files"], expected_files);
+            assert_eq!(value["bytes"], expected_bytes);
+            assert!(!root.path().join("partial/jobs/old").exists());
+            for n in 0..count {
+                assert_eq!(
+                    std::fs::metadata(source.join(format!("{n:03}.jsonl")))
+                        .unwrap()
+                        .len(),
+                    size
+                );
+            }
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(root.path().join("partial"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o700
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn partial_capture_rejects_linked_roots_and_bounds_traversal() {
+        for kind in ["linked-agent", "excess-entries", "excess-depth"] {
+            let root = tempfile::tempdir().unwrap();
+            let trace = root.path().join("upstream");
+            let source = trace.join("jobs/new/trial/agent");
+            std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+            if kind == "linked-agent" {
+                let outside = root.path().join("outside");
+                std::fs::create_dir(&outside).unwrap();
+                std::fs::write(outside.join("stdout.log"), "private-neighbor").unwrap();
+                std::os::unix::fs::symlink(outside, &source).unwrap();
+            } else {
+                std::fs::create_dir_all(source.join("trace")).unwrap();
+                if kind == "excess-entries" {
+                    for n in 0..4096 {
+                        std::fs::write(source.join("trace").join(n.to_string()), "").unwrap();
+                    }
+                } else {
+                    let deep = (0..17).fold(source.join("trace"), |p, _| p.join("deeper"));
+                    std::fs::create_dir_all(deep).unwrap();
+                }
+            }
+            let receipt = root.path().join("partial.json");
+            assert!(
+                bound_partial_capture(&trace, &receipt, true, &[]).is_err(),
+                "{kind}"
+            );
+            assert!(
+                !receipt.exists(),
+                "no false completed capture receipt: {kind}"
+            );
+        }
+    }
 
     #[test]
     fn fixture_experiment_pins_the_derived_integrity_identity() {

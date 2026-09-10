@@ -38,6 +38,8 @@ pub struct OpiConfig {
 pub struct DefaultsConfig {
     pub model: String,
     pub max_iterations: u32,
+    /// Explicit per-request output limit; omission preserves provider and thinking defaults.
+    pub max_output_tokens: Option<u64>,
     pub tool_timeout_ms: u64,
     pub max_image_bytes: u64,
     pub theme: String,
@@ -72,6 +74,7 @@ impl Default for DefaultsConfig {
         Self {
             model: "anthropic:claude-sonnet-4".into(),
             max_iterations: 50,
+            max_output_tokens: None,
             tool_timeout_ms: 30_000,
             max_image_bytes: crate::image::DEFAULT_MAX_IMAGE_BYTES,
             theme: "default".into(),
@@ -529,6 +532,7 @@ struct TomlConfig {
 struct TomlDefaults {
     model: Option<String>,
     max_iterations: Option<u32>,
+    max_output_tokens: Option<u64>,
     tool_timeout_ms: Option<u64>,
     max_image_bytes: Option<u64>,
     theme: Option<String>,
@@ -857,6 +861,9 @@ impl TomlConfig {
         }
         if let Some(v) = self.defaults.max_iterations {
             config.defaults.max_iterations = v;
+        }
+        if let Some(v) = self.defaults.max_output_tokens {
+            config.defaults.max_output_tokens = Some(v);
         }
         if let Some(v) = self.defaults.tool_timeout_ms {
             config.defaults.tool_timeout_ms = v;
@@ -1798,6 +1805,8 @@ pub enum ConfigError {
     InvalidProviderNamespace { provider: String, message: String },
     #[error("invalid execution config field '{field}': {message}")]
     InvalidExecutionConfig { field: String, message: String },
+    #[error("defaults.max_output_tokens must be greater than zero")]
+    InvalidMaxOutputTokens,
     #[error("{remediation}", remediation = crate::diagnostics::LEGACY_SANDBOX_REMEDIATION)]
     LegacySandboxSection,
 }
@@ -1831,7 +1840,15 @@ fn parse_toml(contents: &str, path: &Path) -> Result<OpiConfig, ConfigError> {
     config.providers.custom = validate_custom_providers(custom)?;
     validate_provider_namespace(&config)?;
     validate_execution_config(&config)?;
+    validate_max_output_tokens(&config)?;
     Ok(config)
+}
+
+fn validate_max_output_tokens(config: &OpiConfig) -> Result<(), ConfigError> {
+    if config.defaults.max_output_tokens == Some(0) {
+        return Err(ConfigError::InvalidMaxOutputTokens);
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1916,6 +1933,7 @@ impl StagedConfig {
         config.providers.custom = validate_custom_providers(custom)?;
         validate_provider_namespace(&config)?;
         validate_execution_config(&config)?;
+        validate_max_output_tokens(&config)?;
         Ok(config)
     }
 }
@@ -1985,6 +2003,7 @@ pub fn merge_project_config(
     }
     validate_provider_namespace(&config)?;
     validate_execution_config(&config)?;
+    validate_max_output_tokens(&config)?;
     Ok(config)
 }
 

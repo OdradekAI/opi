@@ -180,6 +180,147 @@ async fn runner_text_prompt_stdout_exit0() {
     );
 }
 
+#[tokio::test]
+async fn request_output_limit_is_independent_of_thinking() {
+    let _env_guard = common::empty_user_config_dir();
+    let workspace = tempfile::tempdir().unwrap();
+    for (limit, enabled) in [(2048, false), (16384, false), (16384, true)] {
+        let path = workspace.path().join("config.toml");
+        std::fs::write(
+            &path,
+            format!(
+                "[defaults]\nmax_output_tokens = {limit}\n[thinking]\nenabled = {enabled}\nbudget_tokens = 1024\n"
+            ),
+        )
+        .unwrap();
+        let config = opi_coding_agent::config::load_config_file(&path).unwrap();
+        let provider = MockProvider::new_with_models(
+            "mock",
+            vec![opi_ai::ModelInfo::new(
+                "mock-model",
+                "Mock model",
+                opi_ai::WireApi::AnthropicMessages,
+                opi_ai::ModelCapabilities::new(100_000, 32_768).with_thinking(true),
+            )],
+            vec![test_support::text_response("done")],
+        );
+        let calls = provider.call_log_handle();
+        let mut runner = NonInteractiveRunner::new(
+            Box::new(provider),
+            "mock-model".into(),
+            config,
+            workspace.path().to_path_buf(),
+            false,
+            None,
+            Vec::new(),
+            TrustDecision::Trusted,
+        );
+        let result = runner.run("hello").await;
+        assert_eq!(
+            result.exit_code,
+            ExitCode::Success as i32,
+            "{}",
+            result.stderr
+        );
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].max_tokens, Some(limit));
+        assert_eq!(calls[0].thinking.enabled, enabled);
+        assert_eq!(calls[0].thinking.budget_tokens, enabled.then_some(1024));
+    }
+}
+
+#[tokio::test]
+async fn request_output_limit_survives_retry_and_tool_continuation() {
+    let _env_guard = common::empty_user_config_dir();
+    let workspace = tempfile::tempdir().unwrap();
+    std::fs::write(workspace.path().join("note.txt"), "local tool evidence").unwrap();
+    let mut config = OpiConfig::default();
+    config.defaults.max_output_tokens = Some(2048);
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            test_support::MockResponse::Error(ProviderError::RateLimited {
+                retry_after_ms: Some(0),
+            }),
+            test_support::MockResponse::Events(test_support::tool_call_response(
+                "read-1",
+                "read",
+                r#"{"path":"note.txt"}"#,
+            )),
+            test_support::MockResponse::Events(test_support::text_response("done")),
+        ],
+    );
+    let calls = provider.call_log_handle();
+    let mut runner = NonInteractiveRunner::new(
+        Box::new(provider),
+        "mock-model".into(),
+        config,
+        workspace.path().to_path_buf(),
+        false,
+        None,
+        Vec::new(),
+        TrustDecision::Trusted,
+    );
+    let result = runner.run("read note.txt").await;
+    assert_eq!(
+        result.exit_code,
+        ExitCode::Success as i32,
+        "{}",
+        result.stderr
+    );
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 3);
+    assert!(calls.iter().all(|request| request.max_tokens == Some(2048)));
+    assert!(calls[2].messages.iter().any(|message| matches!(
+        message, opi_ai::message::Message::ToolResult(result)
+            if result.tool_call_id == "read-1" && !result.is_error
+                && serde_json::to_string(&result.content).unwrap().contains("local tool evidence")
+    )));
+}
+
+#[tokio::test]
+async fn request_output_limit_invalid_config_has_actionable_stderr_without_dispatch() {
+    let _env_guard = common::empty_user_config_dir();
+    let workspace = tempfile::tempdir().unwrap();
+    for (limit, mode) in [0, 4097]
+        .into_iter()
+        .flat_map(|limit| (0..4).map(move |mode| (limit, mode)))
+    {
+        let mut config = OpiConfig::default();
+        config.defaults.max_output_tokens = Some(limit);
+        let provider = MockProvider::new("mock", vec![test_support::text_response("bad")]);
+        let calls = provider.call_log_handle();
+        let mut runner = NonInteractiveRunner::new(
+            Box::new(provider),
+            "mock-model".into(),
+            config,
+            workspace.path().to_path_buf(),
+            false,
+            None,
+            Vec::new(),
+            TrustDecision::Trusted,
+        );
+        let content = vec![opi_ai::message::InputContent::Text {
+            text: "must not dispatch".into(),
+        }];
+        let result = match mode {
+            0 => runner.run("must not dispatch").await,
+            1 => runner.run_json("must not dispatch").await,
+            2 => runner.run_with_content(content).await,
+            3 => runner.run_json_with_content(content).await,
+            _ => unreachable!(),
+        };
+        assert_ne!(result.exit_code, ExitCode::Success as i32);
+        assert!(
+            result.stderr.contains("defaults.max_output_tokens"),
+            "{}",
+            result.stderr
+        );
+        assert!(calls.lock().unwrap().is_empty());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Test 2: tool call (read-only) succeeds in non-interactive mode
 // ---------------------------------------------------------------------------

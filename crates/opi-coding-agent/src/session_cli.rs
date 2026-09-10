@@ -422,7 +422,8 @@ pub struct ExportOptions {
     pub scope: ExportScope,
     /// Include `Message::ToolResult` output content blocks.
     pub include_tool_output: bool,
-    /// Include `AssistantContent::Thinking` blocks.
+    /// Include readable thinking text. Signatures and opaque redacted thinking
+    /// are omitted from every export.
     pub include_thinking: bool,
     /// Redaction mode. Maps to Phase 7 `RedactionMode` plus an explicit
     /// opt-out.
@@ -593,12 +594,13 @@ fn render_markdown(
                             out.push_str(&redact_export_text(text, options.redact));
                             out.push('\n');
                         }
-                        AssistantContent::Thinking { thinking } if options.include_thinking => {
+                        AssistantContent::Thinking { thinking, .. } if options.include_thinking => {
                             out.push_str("> thinking: ");
                             out.push_str(&redact_export_text(thinking, options.redact));
                             out.push('\n');
                         }
-                        AssistantContent::Thinking { .. } => {}
+                        AssistantContent::Thinking { .. }
+                        | AssistantContent::RedactedThinking { .. } => {}
                         AssistantContent::ToolCall { tool_call } => {
                             out.push_str(&format!(
                                 "*tool call: {} ({})* {}\n",
@@ -705,13 +707,14 @@ fn render_json(
                                 "text": redact_export_text(text, options.redact),
                             }));
                         }
-                        AssistantContent::Thinking { thinking } if options.include_thinking => {
+                        AssistantContent::Thinking { thinking, .. } if options.include_thinking => {
                             content.push(serde_json::json!({
                                 "type": "thinking",
                                 "thinking": redact_export_text(thinking, options.redact),
                             }));
                         }
-                        AssistantContent::Thinking { .. } => {}
+                        AssistantContent::Thinking { .. }
+                        | AssistantContent::RedactedThinking { .. } => {}
                         AssistantContent::ToolCall { tool_call } => {
                             content.push(serde_json::json!({
                                 "type": "tool_call",

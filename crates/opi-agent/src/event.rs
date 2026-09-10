@@ -355,11 +355,10 @@ fn redact_assistant_content(
         opi_ai::message::AssistantContent::Text { text } => {
             opi_ai::message::AssistantContent::Text { text: text.clone() }
         }
-        opi_ai::message::AssistantContent::Thinking { thinking } => {
-            opi_ai::message::AssistantContent::Thinking {
-                thinking: thinking.clone(),
-            }
-        }
+        // Provider continuation metadata is part of the assistant conversation
+        // content and must remain byte-for-byte intact alongside its thinking.
+        opi_ai::message::AssistantContent::Thinking { .. }
+        | opi_ai::message::AssistantContent::RedactedThinking { .. } => content.clone(),
         opi_ai::message::AssistantContent::ToolCall { tool_call } => {
             opi_ai::message::AssistantContent::ToolCall {
                 tool_call: redact_tool_call(tool_call),

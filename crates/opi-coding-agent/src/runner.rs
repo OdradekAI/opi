@@ -18,7 +18,7 @@ use opi_agent::{Diagnostic, RedactionMode, redact_text};
 use opi_ai::message::InputContent;
 use opi_ai::message::Message;
 use opi_ai::provider::Provider;
-use opi_ai::stream::AssistantStreamEvent;
+use opi_ai::stream::{AssistantStreamEvent, CumulativeUsage};
 
 use crate::config::OpiConfig;
 use crate::harness::{CodingHarness, ProviderAuthFailure, ResumeInfo, provider_auth_failure};
@@ -65,20 +65,24 @@ pub struct NonInteractiveResult {
 pub struct NonInteractiveRunner {
     harness: CodingHarness,
     compact_ndjson: bool,
+    observed_usage: Arc<Mutex<CumulativeUsage>>,
 }
 
 /// Serialize a session event for NDJSON, applying compact-mode stripping to
-/// `text_delta` MessageUpdate lines. Other lines pass through unchanged.
+/// text, thinking and tool-call delta MessageUpdate lines. Other lines pass
+/// through unchanged, including complete block-end and terminal messages.
 fn compact_ndjson_line(session_event: &AgentSessionEvent) -> Option<String> {
     let mut value = serde_json::to_value(session_event).ok()?;
     let inner = value.get("event")?;
     let is_compact_target = value.get("type").and_then(|v| v.as_str()) == Some("Agent")
         && inner.get("type").and_then(|v| v.as_str()) == Some("MessageUpdate")
-        && inner
-            .get("assistant_event")
-            .and_then(|a| a.get("type"))
-            .and_then(|v| v.as_str())
-            == Some("text_delta");
+        && matches!(
+            inner
+                .get("assistant_event")
+                .and_then(|a| a.get("type"))
+                .and_then(|v| v.as_str()),
+            Some("text_delta" | "thinking_delta" | "tool_call_delta")
+        );
     if !is_compact_target {
         return serde_json::to_string(&value).ok();
     }
@@ -90,17 +94,37 @@ fn compact_ndjson_line(session_event: &AgentSessionEvent) -> Option<String> {
     {
         ae.remove("partial");
     }
-    // 2) Empty the cumulative text in event.message so the line is constant-size.
+    // 2) Keep block positions and tool identity, but omit cumulative payloads.
+    // Signatures belong with their complete thinking, not this empty projection.
     if let Some(content) = event_obj
         .get_mut("message")
         .and_then(|m| m.get_mut("content"))
         .and_then(|c| c.as_array_mut())
     {
         for block in content.iter_mut() {
-            if let Some(obj) = block.as_object_mut()
-                && obj.get("type").and_then(|v| v.as_str()) == Some("text")
-            {
-                obj.insert("text".into(), serde_json::Value::String(String::new()));
+            if let Some(obj) = block.as_object_mut() {
+                match obj.get("type").and_then(|v| v.as_str()) {
+                    Some("text") => {
+                        obj.insert("text".into(), serde_json::Value::String(String::new()));
+                    }
+                    Some("thinking") => {
+                        obj.insert("thinking".into(), serde_json::Value::String(String::new()));
+                        obj.remove("signature");
+                    }
+                    Some("redacted_thinking") => {
+                        obj.insert("data".into(), serde_json::Value::String(String::new()));
+                    }
+                    Some("tool_call") => {
+                        if let Some(call) = obj.get_mut("tool_call").and_then(|v| v.as_object_mut())
+                        {
+                            call.insert(
+                                "arguments".into(),
+                                serde_json::Value::String(String::new()),
+                            );
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -304,16 +328,68 @@ impl NonInteractiveRunner {
                 source: crate::evidence::CLI_ASSEMBLY.clone(),
             });
         }
-        let harness = builder.build();
+        let mut harness = builder.build();
+        // Consumption includes failed prompts, while the session accumulator
+        // only describes its committed branch. Subscribe once so repeated runs
+        // and either input API count each completed response exactly once.
+        let observed_usage = Arc::new(Mutex::new(
+            harness
+                .session()
+                .map(|session| session.usage().clone())
+                .unwrap_or_default(),
+        ));
+        let meter = Arc::clone(&observed_usage);
+        harness.subscribe(Box::new(move |event| {
+            if let AgentEvent::MessageEnd {
+                message: AgentMessage::Llm(Message::Assistant(message)),
+            } = event
+            {
+                meter
+                    .lock()
+                    .expect("runner usage mutex")
+                    .accumulate(&message.usage);
+            }
+        }));
         Ok(Self {
             harness,
             compact_ndjson: false,
+            observed_usage,
+        })
+    }
+
+    fn session_summary(&self, provider_turns: u32) -> Option<AgentSessionEvent> {
+        let session = self.harness.session()?;
+        let usage = self.observed_usage.lock().expect("runner usage mutex");
+        let cost = session
+            .cost_for_usage(&usage)
+            .map(|cost| SessionCostTotals {
+                input: cost.input_cost,
+                output: cost.output_cost,
+                cache_read: cost.cache_read_cost,
+                cache_write: cost.cache_write_cost,
+                total: cost.total_cost(),
+            });
+        Some(AgentSessionEvent::SessionSummary {
+            session_id: session.session_id().to_owned(),
+            model: session.model().to_owned(),
+            turns: session.usage().turn_count(),
+            provider_turns,
+            tokens: SessionTokenTotals {
+                input: usage.total_input_tokens(),
+                output: usage.total_output_tokens(),
+                cache_read: usage.total_cache_read_tokens(),
+                cache_write: usage.total_cache_write_tokens(),
+            },
+            cost_usd: cost,
+            diagnostics: self.harness.diagnostic_counts(),
         })
     }
 
     /// Enable compact NDJSON output (opt-in `--json-compact`). Streamed
-    /// `text_delta` updates become constant-size, so a long streamed turn
-    /// scales ~linearly in bytes. Default `--json` output is unchanged.
+    /// Text, thinking and tool-call deltas omit cumulative content, so output
+    /// grows with the deltas instead of repeating their growing snapshots.
+    /// Block identity and complete terminal content remain available; default
+    /// `--json` output and durable/model-facing messages are unchanged.
     pub fn with_compact_ndjson(mut self, enabled: bool) -> Self {
         self.compact_ndjson = enabled;
         self
@@ -420,35 +496,13 @@ impl NonInteractiveRunner {
         // Emit a final `SessionSummary` event with cumulative token totals
         // and (when known) cost breakdown. Emitted before the result match so
         // even error paths surface what the user spent before failing.
-        if let Some(session) = self.harness.session() {
-            let usage = session.usage();
-            let cost = session.cost_summary().map(|c| SessionCostTotals {
-                input: c.input_cost,
-                output: c.output_cost,
-                cache_read: c.cache_read_cost,
-                cache_write: c.cache_write_cost,
-                total: c.total_cost(),
-            });
-            let summary_event = AgentSessionEvent::SessionSummary {
-                session_id: session.session_id().to_owned(),
-                model: session.model().to_owned(),
-                turns: usage.turn_count(),
-                provider_turns: provider_turns.load(std::sync::atomic::Ordering::Relaxed),
-                tokens: SessionTokenTotals {
-                    input: usage.total_input_tokens(),
-                    output: usage.total_output_tokens(),
-                    cache_read: usage.total_cache_read_tokens(),
-                    cache_write: usage.total_cache_write_tokens(),
-                },
-                cost_usd: cost,
-                diagnostics: self.harness.diagnostic_counts(),
-            };
-            if let Ok(json) = serde_json::to_string(&summary_event)
-                && let Ok(mut guard) = output.lock()
-            {
-                guard.push_str(&json);
-                guard.push('\n');
-            }
+        if let Some(summary_event) =
+            self.session_summary(provider_turns.load(std::sync::atomic::Ordering::Relaxed))
+            && let Ok(json) = serde_json::to_string(&summary_event)
+            && let Ok(mut guard) = output.lock()
+        {
+            guard.push_str(&json);
+            guard.push('\n');
         }
 
         match prompt_result {
@@ -470,7 +524,7 @@ impl NonInteractiveRunner {
                 append_credential_remediation(&output, &error);
                 NonInteractiveResult {
                     stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
-                    stderr: stderr_for_agent_error(&error, ""),
+                    stderr: stderr_for_agent_error(&self.harness, &error, ""),
                     exit_code: exit_code_for_agent_error(&error),
                 }
             }
@@ -561,7 +615,7 @@ impl NonInteractiveRunner {
                 stdout: String::new(),
                 stderr: format!(
                     "{startup_prefix}{contract_stderr}{tool_stderr}{}",
-                    stderr_for_agent_error(&error, &persist_stderr)
+                    stderr_for_agent_error(&self.harness, &error, &persist_stderr)
                 ),
                 exit_code: exit_code_for_agent_error(&error),
             },
@@ -668,35 +722,13 @@ impl NonInteractiveRunner {
 
         let prompt_result = self.harness.prompt_with_content(content).await;
 
-        if let Some(session) = self.harness.session() {
-            let usage = session.usage();
-            let cost = session.cost_summary().map(|c| SessionCostTotals {
-                input: c.input_cost,
-                output: c.output_cost,
-                cache_read: c.cache_read_cost,
-                cache_write: c.cache_write_cost,
-                total: c.total_cost(),
-            });
-            let summary_event = AgentSessionEvent::SessionSummary {
-                session_id: session.session_id().to_owned(),
-                model: session.model().to_owned(),
-                turns: usage.turn_count(),
-                provider_turns: provider_turns.load(std::sync::atomic::Ordering::Relaxed),
-                tokens: SessionTokenTotals {
-                    input: usage.total_input_tokens(),
-                    output: usage.total_output_tokens(),
-                    cache_read: usage.total_cache_read_tokens(),
-                    cache_write: usage.total_cache_write_tokens(),
-                },
-                cost_usd: cost,
-                diagnostics: self.harness.diagnostic_counts(),
-            };
-            if let Ok(json) = serde_json::to_string(&summary_event)
-                && let Ok(mut guard) = output.lock()
-            {
-                guard.push_str(&json);
-                guard.push('\n');
-            }
+        if let Some(summary_event) =
+            self.session_summary(provider_turns.load(std::sync::atomic::Ordering::Relaxed))
+            && let Ok(json) = serde_json::to_string(&summary_event)
+            && let Ok(mut guard) = output.lock()
+        {
+            guard.push_str(&json);
+            guard.push('\n');
         }
 
         match prompt_result {
@@ -718,7 +750,7 @@ impl NonInteractiveRunner {
                 append_credential_remediation(&output, &error);
                 NonInteractiveResult {
                     stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
-                    stderr: stderr_for_agent_error(&error, ""),
+                    stderr: stderr_for_agent_error(&self.harness, &error, ""),
                     exit_code: exit_code_for_agent_error(&error),
                 }
             }
@@ -830,7 +862,7 @@ impl NonInteractiveRunner {
                 stdout: String::new(),
                 stderr: format!(
                     "{startup_prefix}{contract_stderr}{tool_stderr}{}",
-                    stderr_for_agent_error(&error, &persist_stderr)
+                    stderr_for_agent_error(&self.harness, &error, &persist_stderr)
                 ),
                 exit_code: exit_code_for_agent_error(&error),
             },
@@ -920,7 +952,21 @@ fn append_credential_remediation(output: &Arc<Mutex<String>>, error: &AgentError
     }
 }
 
-fn stderr_for_agent_error(error: &AgentError, suffix: &str) -> String {
+fn stderr_for_agent_error(harness: &CodingHarness, error: &AgentError, suffix: &str) -> String {
+    let diagnostic = if let AgentError::Hook(message) = error {
+        harness
+            .recorded_diagnostics()
+            .into_iter()
+            .rev()
+            .find(|diagnostic| {
+                diagnostic.source == opi_agent::diagnostic::SOURCE_CONFIG
+                    && diagnostic.code == opi_agent::diagnostic::code::CODE_CONFIG_PARSE_FAILED
+                    && diagnostic.message == *message
+            })
+    } else {
+        None
+    }
+    .unwrap_or_else(|| Diagnostic::from(error));
     let mut stderr = match provider_auth_failure(error) {
         Some(ProviderAuthFailure::CredentialNeeded(provider_id)) => {
             format!("credential needed for '{provider_id}': run /login {provider_id}")
@@ -933,11 +979,7 @@ fn stderr_for_agent_error(error: &AgentError, suffix: &str) -> String {
         }
         None => match error {
             AgentError::Cancelled => "cancelled".to_owned(),
-            _ => {
-                Diagnostic::from(error)
-                    .redacted_payload(RedactionMode::Summary)
-                    .message
-            }
+            _ => diagnostic.redacted_payload(RedactionMode::Summary).message,
         },
     };
     stderr.push_str(suffix);
@@ -1110,5 +1152,82 @@ impl AgentHooks for NonInteractiveHooks {
         >,
     > {
         Box::pin(async { Ok(None) })
+    }
+}
+
+#[cfg(test)]
+mod compact_tests {
+    use super::*;
+    use opi_ai::message::{AssistantContent, ToolCall};
+    use opi_ai::test_support;
+
+    #[test]
+    fn tool_call_deltas_keep_public_delta_and_identity_without_snapshots() {
+        // The current agent loop does not forward ToolCallDelta. Exercise its
+        // public event projection directly at the compact serialization seam.
+        let mut sizes = Vec::new();
+        for count in [128, 256] {
+            let mut lines = Vec::new();
+            for i in 1..=count {
+                let mut partial = test_support::base_assistant();
+                partial.content = vec![
+                    AssistantContent::Thinking {
+                        thinking: "thinking ".repeat(count),
+                        signature: Some("signed+/=".repeat(count)),
+                    },
+                    AssistantContent::RedactedThinking {
+                        data: "opaque+/=".repeat(count),
+                    },
+                    AssistantContent::ToolCall {
+                        tool_call: ToolCall {
+                            id: "stream-call".into(),
+                            name: "read".into(),
+                            arguments: serde_json::json!({"note": "argument ".repeat(i)})
+                                .to_string(),
+                        },
+                    },
+                ];
+                let event = AgentEvent::MessageUpdate {
+                    message: AgentMessage::Llm(Message::Assistant(partial.clone())),
+                    assistant_event: Box::new(AssistantStreamEvent::ToolCallDelta {
+                        content_index: 2,
+                        delta: "argument ".into(),
+                        partial,
+                    }),
+                }
+                .redacted_for_public();
+                let public = serde_json::to_value(&event).unwrap();
+                let line = compact_ndjson_line(&AgentSessionEvent::Agent { event }).unwrap();
+                let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+                let event = &value["event"];
+                assert_eq!(event["assistant_event"]["type"], "tool_call_delta");
+                assert_eq!(event["assistant_event"]["content_index"], 2);
+                assert_eq!(public["assistant_event"]["delta"], "[REDACTED]");
+                assert_eq!(
+                    event["assistant_event"]["delta"],
+                    public["assistant_event"]["delta"]
+                );
+                assert!(event["assistant_event"].get("partial").is_none());
+                assert_eq!(event["message"]["content"][0]["thinking"], "");
+                assert!(event["message"]["content"][0].get("signature").is_none());
+                assert_eq!(event["message"]["content"][1]["data"], "");
+                let tool = &event["message"]["content"][2]["tool_call"];
+                assert_eq!(tool["arguments"], "");
+                assert_eq!(tool["id"], "stream-call");
+                assert_eq!(tool["name"], "read");
+                assert!(line.len() < 1000, "compact tool delta repeated a snapshot");
+                lines.push(line);
+            }
+            assert_eq!(
+                lines.len(),
+                count,
+                "every supplied tool-call delta is serialized"
+            );
+            sizes.push(lines.iter().map(String::len).sum::<usize>());
+        }
+        assert!(
+            sizes[1] <= sizes[0] * 22 / 10,
+            "tool-call N/2N bytes: {sizes:?}"
+        );
     }
 }

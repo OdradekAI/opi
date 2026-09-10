@@ -495,8 +495,12 @@ fn regrade_one(
     // the fresh material must pin the same one.
     let sealed_import_path = trial_config
         .get("agent")
-        .and_then(|agent| agent.get("name"))
-        .and_then(|value| value.as_str())
+        .and_then(|agent| {
+            agent
+                .get("import_path")
+                .and_then(|value| value.as_str())
+                .or_else(|| agent.get("name").and_then(|value| value.as_str()))
+        })
         .ok_or("sealed-config-missing-agent")?;
     if sealed_import_path != integration.import_path {
         return Err("material-identity-drift".to_owned());
@@ -610,7 +614,6 @@ fn regrade_one(
     }
     let preserved_root = newest_job(&run_root.join("trials").join(trial).join("verifier-trace"))
         .ok_or("agent-artifacts-missing")?
-        .join("trials")
         .join(trial_name)
         .join("artifacts");
     let mut delivered: Vec<serde_json::Value> = Vec::new();

@@ -1,306 +1,230 @@
 ---
 name: opi-eval
-description: Run explicit, isolated end-to-end runtime regression evaluations against real providers, preserve traces, and emit normalized findings for remediation.
+description: Run native benchmarks or explicit fidelity cases, report evidence, and repair Opi source after user confirmation.
 disable-model-invocation: true
 ---
 
 # opi-eval
 
-End-to-end real-provider fidelity eval for the opi runtime. It compiles opi,
-runs structured cases against a real LLM provider, collects NDJSON traces, and
-dispatches an independent evaluator subagent to detect fidelity degradation.
+Produce evidence through the Rust CLI in `crates/opi-eval`. The skill owns
+operator input, authorized execution, private evidence staging, readable
+reports, and post-evaluation environment cleanup; the Companion owns frozen
+trials, native grading, seals, and offline reconstruction. Opi source fixes follow the
+[user-confirmed repair branch](#user-confirmed-source-repairs). Only
+`opi-implement` owns `.opi-impl-state.json` and Phase exit.
 
-Existing public-seam Rust tests and CI remain the
-sole deterministic acceptance baseline. `opi-eval` supplements them only when
-a registered criterion requires real-provider evidence; a generic canary is
-never acceptance proof.
+## Inputs and routing
 
-## Evidence authority
-
-- `provider-fidelity` cases detect general model/provider regressions and do
-  not cite Opi product criteria.
-- `runtime-fidelity` cases cover a registered behavior that deterministic
-  providers cannot faithfully reproduce. They must cite that criterion or
-  acceptance scenario and state the remaining fidelity gap.
-- Do not create a behavior-baseline manifest, copy production call sites into
-  this skill, or generate eval cases from the implementation ledger.
-
-Every case supplies metadata from `references/test-cases.md`. Historical
-comparison is permitted only for the exact identity
-`case_id@revision + provider:model + OS/arch + run_mode + effective_tools`.
-
-## Inputs
+These are skill inputs, not additional CLI flags. Accept natural-language
+software names, versions, benchmark selections, and models, then resolve them
+to the following contract. Ask only for unresolved choices that affect the
+run; reuse explicit authorization and selections already supplied.
 
 ```text
-model=<provider:model>   # optional; defaults to user's configured default
-cases=<name,...>         # optional; comma-separated case names, or "all" (default)
+mode=benchmark|acceptance|verify|fidelity
+software=opi|pi|opi,pi
+version=<version for one software, or opi:<version>,pi:<version>>
+bench=terminal-bench-2.1|terminal-bench-3.0|deepswe-v1.1|all
+model=<provider:model>  api=<protocol>  base_url=<endpoint>
+credential_env=<name> | credential_file=<private absolute path>
+tasks=<family:task-id,...>  scope=subset|full  repetitions=<positive integer>
+concurrency=<positive integer>  budget=<requested time/usage/spend limits>
+workspace=<independent Linux directory>  cache=<local material cache>
+config=<existing experiment.toml>  evidence_root=<existing root for verify>
+cases=<name,...|all>  # fidelity branch only
 ```
 
-If no model is specified, use opi's default resolution. The model used is always
-recorded in the report regardless of how it was resolved.
+| Selection | Route |
+|---|---|
+| Software/bench evaluation, no mode | `benchmark`; native CLI workflow below. |
+| Six-trial evidence for task 19.11 / P19-AC-012 | `acceptance`; first read [local acceptance](references/local-acceptance.md). |
+| Existing evidence, no new execution | `verify`; go to Step 4 with supplied roots. Never resolve credentials. |
+| Explicit canaries or `cases=...` | `fidelity`; use [fidelity cases](references/fidelity-run.md) instead of the native workflow. |
 
-## Step 1: Build
+An explicit `mode` wins; reject contradictory inputs instead of combining
+branches. A bare invocation collects software, version, bench and model; it
+never selects paid trials or a configured default model silently. An existing
+config supplies defaults, but conflicting requested overrides require a new
+experiment and plan. `verify` derives identities from evidence, not new inputs.
 
-Build the opi binary in release mode using the same persistent external-cache
-policy as `opi-implement`:
+## Step 1: Resolve the operator request
 
-1. Respect an existing `CARGO_TARGET_DIR`.
-2. Otherwise set it to the single path printed by `python
-   scripts/opi-cargo-cache.py resolve`.
-3. For a resolver-managed cache, acquire a lease with
-   `scripts/opi-cargo-cache.py lease start` for the current process, and release
-   it in `finally`/`trap` after the build. An explicitly supplied unmarked
-   target remains externally managed and is never eligible for Opi pruning.
-4. Retain Cargo's incremental default and run:
+Read the [crate README](../../../crates/opi-eval/README.md),
+[local walkthrough](../../../crates/opi-eval/examples/local-evaluation/README.md),
+and [native run reference](references/native-run.md). For acceptance, also use
+the registered source linked by that branch; inspect task 19.11 read-only to
+identify its handoff, never to generate benchmark cases or update progress.
 
-```text
-cargo build --release -p opi-coding-agent
-```
+Present the available pinned benchmark families and the selected corpus task
+inventory. Bind each software version to its actual source/build/executable
+identity; `software` currently admits only Opi and pi native integrations.
+An unsupported version/adapter is an explicit preparation gap, not permission
+to substitute the current build. A pi-only selection needs no Opi executable.
 
-Do not use a GUID/`mktemp` target, set `CARGO_INCREMENTAL=0`, run `cargo clean`,
-or delete the target after the eval. Different worktrees/toolchains must not
-share a target. Cache pruning is an explicit maintenance action outside an
-eval: report inactive marked-cache paths, age, and size; remove oldest caches
-only after confirming no Cargo process uses them. Inspect with `python
-scripts/opi-cargo-cache.py status`; `prune` is dry-run by default and requires
-both age/size thresholds plus `--execute` to delete marked inactive caches.
+Resolve one named connection, common controls, full/subset tasks and reasons,
+repetitions, concurrency, enforceable bounds, storage, capture, and failure
+policy. Explicitly distinguish the evaluated software version from the
+Companion build version. Keep credential values out of conversation and reports;
+only the selected Agent launch resolves their declared reference.
 
-On Unix the binary is `$CARGO_TARGET_DIR/release/opi`; on Windows
-`$env:CARGO_TARGET_DIR\release\opi.exe`.
+**Completion criterion**: every input is resolved or named as a blocking input;
+the chosen branch and exact software/model/benchmark scope are visible. Missing
+live authorization still permits preparation, never a provider call.
 
-**Completion criterion**: the build exits 0 and the resolved cached binary file
-exists.
+## Step 2: Prepare and freeze
 
-If the build fails, stop and report the error. Do not proceed with stale
-binaries.
+Follow [native run](references/native-run.md) for cached builds, WSL/Linux
+execution, material acquisition, configuration projection, and exact commands.
+Use the built Companion for `doctor`, `prepare`, `validate`, and `plan` from
+the independent directory. Each benchmark family has its own experiment,
+material manifest and plan. Keep the full inventory and rejected requirements;
+resource failures never silently shrink a requested full run.
 
-## Step 2: Execute test cases
+Before freezing capture, read the privacy section of
+[evidence root](references/evidence-root.md); sealed bytes cannot be edited
+later to make an unsafe capture shareable.
+Before acquisition/builds create resources, record the resource baseline and
+protected locations required by [environment cleanup](references/environment-cleanup.md).
 
-Read `references/test-cases.md` for the full test case definitions. For each
-selected case:
+Show the resulting plan digests, subjects/builds, task IDs, model connection,
+effective/unsupported controls, exact trial count, concurrency, time limits,
+capture policy and budget enforcement limits. The current CLI rejects total
+token and monetary caps; resolve any required unsupported bound before running.
+Honor the user's approval of this exact scope. If authorization is missing,
+finish the preview and ask once, citing the remaining live/paid effect.
 
-1. Create an isolated temp directory as the workspace for that case.
-2. If the case requires fixture files (noted in its definition), create them in
-   the temp workspace.
-3. Run:
+**Completion criterion**: every selected family has verified local material,
+successful validation and a frozen feasible plan; all trials and bounds are
+accounted for, with authorization bound to that scope before Step 3.
 
-```
-<opi-binary> --json --model <model> --no-builtin-tools "<prompt>"
-```
+## Step 3: Run the exact plans
 
-   Or with tools enabled when the case requires tool access:
+Execute `run --plan` through the Companion's native path as documented in
+[native run](references/native-run.md). Preserve each command's cwd, sanitized
+argv, start/end time, exit, stdout/stderr, plan and material identity. Let the
+selected Agent operate in the task environment and the native grader consume
+that same trial's declared artifacts. Shell exit alone is not a score.
 
-```
-<opi-binary> --json --model <model> --allow-mutating "<prompt>"
-```
+Retain every failed, cancelled and unstarted trial and its typed settlement.
+On authority, privacy or budget breach, cancel owned execution and stop affected
+dispatch. Recovery classifies prior effects; a separately scoped replacement
+uses new identities and preserves the original group. No automatic paid retries
+or substitution of witnesses for real trials.
 
-4. Capture stdout (NDJSON) to `<temp>/output.ndjson`.
-5. Record wall-clock duration and exit code.
+**Completion criterion**: every planned trial has a settled result or an explicit
+unexecuted/effect-unknown record. An invalid trial remains invalid; completion
+of the run operation does not imply acceptance.
 
-**Completion criterion**: every selected test case has a corresponding
-`output.ndjson` file and recorded exit code. Cases that crash (non-zero exit
-without output) are marked `ERROR` rather than skipped.
+## Step 4: Verify and stage shareable evidence
 
-## Step 3: Parse and extract
+Read [evidence root](references/evidence-root.md). Run Companion `verify` and
+`report` for each run root, preserving exits and typed failures. Reconstruct
+each successful report twice to distinct external paths and compare bytes.
+`regrade` is a separate, explicitly requested native-grader operation; byte
+verification and report reconstruction never imply regrading occurred.
 
-For each test case's `output.ndjson`, extract:
+Stage privacy-reviewed evidence without changing sealed bytes. Produce the
+acceptance manifest, repository-qualified upstream cache, and exact Opi-only
+capture view only for the acceptance branch. Then run its offline acceptance
+verifier and generic artifact audit against that view. For `mode=verify`, use
+the [local acceptance](references/local-acceptance.md) route only when the
+supplied manifest has the acceptance schema; otherwise verify the supplied
+ordinary run roots. Never reconstruct a missing
+trial or approval from a template, source code, or historical run.
 
-| Signal | Source event(s) |
-|--------|----------------|
-| Tool calls | `Agent.event.type == "ToolExecutionStart"` / `"ToolExecutionEnd"` |
-| Tool call arguments | `ToolExecutionStart.args` |
-| Tool call results | `ToolExecutionEnd.result`, `.is_error`, `.truncated` |
-| Compaction | Top-level `CompactionStart` / `CompactionEnd` |
-| Auto-retry | Top-level `AutoRetryStart` / `AutoRetryEnd` |
-| Final answer | Last `Agent.event.type == "MessageEnd"` -> `message.content` |
-| Token usage | `session_summary.tokens` |
-| Cost | `session_summary.cost_usd` (if present) |
-| Diagnostics | `session_summary.diagnostics`, `StartupDiagnostics` |
+**Completion criterion**: all selected roots have explicit verification results;
+shareable roots retain their original seals and pass the privacy review. Any
+missing/invalid evidence yields a blocked or incomplete report, not a ready
+acceptance handoff.
 
-Produce a structured extraction (JSON or inline markdown) per case containing
-the above signals.
+## Step 5: Report and hand off
 
-**Completion criterion**: extracted signals exist for every case that produced
-output. Cases marked `ERROR` get a minimal extraction noting the failure.
+Use [benchmark report](references/benchmark-report.md) for native/acceptance
+and verify results. Write unique English/Chinese reports under `docs/eval/`
+and retain machine reports beside the external evidence. Keep native metrics
+per benchmark, with denominator, coverage, missing pairs and unknown telemetry.
+Report each requested criterion as evidenced, missing or rejected with an
+artifact link; acceptance readiness is distinct from Phase completion.
 
-## Step 4: Evaluate
+The final handoff gives the evidence-root path, manifest digest, report paths,
+exact verification commands/exits, six-trial coverage when applicable, and
+remaining gaps. Eval findings follow the shared
+[finding contract](../_shared/references/finding-contract.md); only a subsequent
+independent audit can admit them to the live remediation set. Do not commit
+reports or invoke another user-only workflow without an explicit request.
 
-Dispatch a **readonly** evaluator subagent. The evaluator receives only data and
-criteria. Prefer a different model family from the provider model under test;
-record the actual relationship using the shared finding-contract vocabulary.
+**Completion criterion**: readable reports agree with verified native JSON and
+all attempted/planned coverage; a blocked run has a useful gap report without
+invented evidence. Complete [post-evaluation cleanup](#post-evaluation-cleanup)
+and include its result before final handoff. The user can locate the evidence
+and repeat its offline checks.
 
-Feed the evaluator:
-- The test case definitions (from `references/test-cases.md`)
-- The extracted runtime signals from Step 3
-- The evaluation dimensions and scoring protocol from `references/evaluator-prompt.md`
+## Post-evaluation cleanup
 
-Read `references/evaluator-prompt.md` now and include its full content as the
-evaluator's task prompt, appending the runtime data.
+After execution, evidence preservation and report preparation, follow
+[environment cleanup](references/environment-cleanup.md). Inspect Docker images
+and other evaluation leftovers; retain reusable evaluation materials and all
+evidence needed to trace, verify or reproduce results. Automatically remove
+only proven run-owned disposable resources under the authorized evaluation
+scope. Apply this on success, failure, cancellation, and completed repair
+checks; preserve resources needed by an active or resumable run.
 
-The evaluator produces per-case verdicts across six dimensions and an overall
-assessment. Wait for its response before proceeding.
+This is an operator procedure, not a new Companion CLI command. `mode=verify`
+keeps supplied evidence and shared Docker resources read-only; it may clean
+only disposable scratch created by that verification invocation.
 
-**Completion criterion**: evaluator returns structured verdicts for all
-dimensions on all evaluated cases.
+**Completion criterion**: a retained cleanup record identifies removed resources,
+kept resources and reasons, unresolved failures, and post-cleanup evidence
+checks. An uncertain resource stays intact with its reason; incomplete cleanup
+is explicit and never changes a trial's score or verification status.
 
-## Step 5: Report
+## User-confirmed source repairs
 
-Write results to `docs/eval/`.
+In any eval mode, an observed defect or execution blocker may lead to an Opi
+source repair within this skill. Present the evidence, intended behavior,
+affected source scope and verification plan before seeking confirmation. Once
+the user explicitly confirms that repair scope, proceed directly; a separate
+`opi-implement plan` or `opi-remediate` invocation is not required. Reuse an
+existing clear approval for the same scope; ask again only for a material scope
+expansion. Authorization to run trials alone does not authorize source fixes.
 
-### Report file
+1. Reproduce the defect offline where possible and define an observable success
+   criterion. Keep the repair consistent with the normative specification;
+   product-direction changes still require human-led specification revision.
+2. Make the minimum Opi runtime, product or Companion source change needed for
+   the approved repair, with affected regression tests and documentation. Use
+   [change-scope and check selection](../_shared/references/change-scope-and-check-selection.md)
+   to select checks, including workspace gates for cross-crate runtime changes.
+   Repair approval covers offline reproduction, builds and verification with
+   mocks, synthetic credentials and isolated fixtures.
+3. Preserve prior trials, sealed evidence and their frozen executables/materials.
+   Build the repair as a separately identified candidate; record source revision,
+   dirty diff, executable and affected material identities. Changes to a candidate
+   do not retroactively repair or regrade an existing result.
+4. Record the approval, reproduction, changed scope, test impact, exact check
+   commands/results and remaining gaps in the eval handoff. Repair evidence
+   remains outside the live audit set; independent audit admission, implementation
+   ledger updates and Phase exit retain their existing owners.
+   Apply post-evaluation cleanup to completed repair-check scratch as well,
+   preserving the separate candidate and regression evidence.
+5. Return to preparation for any subsequent evaluation. Repair approval does not
+   authorize additional paid trials, new credential use, commits or publication;
+   obtain any missing authorization for the new frozen execution scope under
+   Step 2. Do not present offline regression success as a new benchmark result.
 
-Filename: `<version>-<date>-<model-short>.md`
-- `version`: from workspace `Cargo.toml` version field
-- `date`: `YYYY-MM-DD`
-- `model-short`: provider and model name, colons replaced with dashes
+**Completion criterion**: the approved repair has reproducible verification or
+explicit remaining failures, its candidate identity is distinct, and prior
+evidence is unchanged. Keep further live execution pending unless its exact
+scope is already authorized.
 
-Use the format from `references/report-template.md`.
+## Fidelity authority
 
-### History log
-
-Append one JSON line to `docs/eval/history.jsonl` with:
-```json
-{
-  "version": "<semver>",
-  "commit": "<short hash>",
-  "date": "<YYYY-MM-DD>",
-  "model": "<provider:model>",
-  "platform": "<OS/arch>",
-  "run_mode": "json",
-  "effective_tools": ["<tool-name>"],
-  "cases": {
-    "<name>": {
-      "case_id": "<name>",
-      "case_class": "<provider-fidelity|runtime-fidelity>",
-      "case_revision": 1,
-      "criterion_source": null,
-      "comparison_identity": "<case@revision + subject + environment>",
-      "comparison_status": "<comparable|incomparable|record-only>",
-      "verdict": "<PASS|DEGRADED|FAIL|ERROR>",
-      "tokens_input": 0,
-      "tokens_output": 0,
-      "time_ms": 0,
-      "tool_calls": 0
-    }
-  },
-  "overall": "<PASS|REGRESSION|DEGRADED>",
-  "evaluator": "<subagent-type>",
-  "evaluator_model": "<provider:model of the evaluator>",
-  "independence": "<independent-family|fresh-context-same-family|unknown>"
-}
-```
-
-Keep `evaluator_model` and `independence` truthful according to the model
-independence guardrail below.
-
-### Delta analysis
-
-Compare a case only with prior samples having the same comparison identity.
-Mark all other prior samples `incomparable`; do not calculate or narrate a
-percentage delta. Opi version and commit remain recorded but are intentionally
-outside the identity because cross-version comparison is the purpose.
-
-**Completion criterion**: report markdown file written, `history.jsonl` updated.
-
-### Normalized regressions
-
-For every confirmed `FAIL`, `ERROR`, or cross-version regression signal, append
-the normalized YAML block from
-`../_shared/references/finding-contract.md`. Use:
-
-```text
-source_kind = eval
-axis = runtime-fidelity
-status = unverified
-```
-
-The block cites trace events, report artifacts, and the eval case or exact
-reproduction command. It diagnoses the regression but does not recommend or
-execute a source fix. `opi-remediate sources=<eval-report>` can ingest it
-directly.
-
-## Evaluation dimensions
-
-Six dimensions, applied to every test case:
-
-### 1. Answer correctness
-
-Does the final output solve the problem? Checked against the expected answer
-defined in the test case. Scoring:
-- PASS: correct answer present
-- DEGRADED: partially correct or correct with extraneous errors
-- FAIL: wrong answer or no answer
-
-### 2. Tool call correctness
-
-Were the right tools called with valid arguments? Were results handled properly?
-- PASS: correct tools, correct args, results used appropriately
-- DEGRADED: unnecessary extra calls, minor arg issues, unused results
-- FAIL: wrong tools, malformed args, critical results ignored
-- N/A: test case does not involve tools
-
-### 3. Context integrity
-
-Is information preserved across the conversation? Particularly after compaction.
-- PASS: all relevant information retained and used
-- DEGRADED: minor detail loss that did not affect the answer
-- FAIL: critical information lost, answer affected
-
-### 4. Chain efficiency
-
-Is the execution path efficient? No dead loops, no redundant operations.
-- PASS: direct path to solution
-- DEGRADED: minor redundancy (1-2 unnecessary steps)
-- FAIL: loops, repeated failures, excessive steps
-
-### 5. Resource consumption
-
-Always record token usage, elapsed time, and tool-call count. By default score
-this dimension `N/A` with resource status `record-only`; it does not change
-the case or overall verdict.
-
-A resource threshold is allowed only when a registered performance criterion
-defines the budget, or when at least three prior samples share the comparison
-identity and the resource policy is explicitly enabled. Historical thresholds
-use the comparable cohort median, never the first run.
-
-### 6. Error handling
-
-Does the runtime handle errors gracefully?
-- PASS: no errors, or errors handled with recovery
-- DEGRADED: errors occurred but runtime continued correctly
-- FAIL: crash, hang, or unhandled error corrupting output
-
-## Guardrails
-
-- This skill consumes real API credits. Never fire without user invocation.
-- Always record the model in every output artifact.
-- Generic `provider-fidelity` cases are fidelity signals, not deterministic
-  acceptance evidence.
-- Admit a `runtime-fidelity` case only for a registered-source fidelity gap;
-  do not duplicate a deterministic test for convenience.
-- Never compare metrics across different case revisions, provider/models,
-  OS/architectures, run modes, or effective tool sets.
-- **Model independence (preferred and truthful).** Use a different model family
-  when available and record `independent-family`. If only the same family is
-  available, use a fresh evaluator context, record
-  `fresh-context-same-family`, mark the overall verdict `DEGRADED`, and disclose
-  the self-grade risk. If identity cannot be established, record `unknown` and
-  mark the run `DEGRADED`.
-- The evaluator subagent must be readonly -- it analyzes, never executes.
-- Test fixtures use isolated temp directories. Never write fixtures into the
-  workspace root.
-- Do not commit results unless the user explicitly asks.
-- If a test case fails to run (opi crashes), record it as ERROR and continue
-  with remaining cases rather than aborting the entire eval.
-- Do not modify opi source code. This skill observes and reports only.
-
-## References
-
-- Read `references/test-cases.md` for test case definitions (prompts, expected
-  answers, fixture requirements, evaluation criteria).
-- Read `references/evaluator-prompt.md` for the evaluator's full task prompt
-  and scoring protocol.
-- Read `references/report-template.md` for the output report format.
-- Read `../_shared/references/finding-contract.md` for normalized runtime
-  regression blocks consumed by `opi-remediate`.
+For the explicit fidelity branch, public-seam Rust tests and CI remain the
+sole deterministic acceptance baseline. `provider-fidelity` canaries are
+signals; `runtime-fidelity` cases require a registered criterion and a stated
+fidelity gap. Do not create a behavior-baseline manifest or generate cases from
+the implementation ledger. Compare only
+`case_id@revision + provider:model + OS/arch + run_mode + effective_tools`;
+other samples are `incomparable`, resources default to `record-only`, and
+`evaluator_model` / `independence` disclose the actual readonly evaluator.
+These judge verdicts never replace benchmark-native grading.

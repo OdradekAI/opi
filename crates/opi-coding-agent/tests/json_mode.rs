@@ -1394,102 +1394,236 @@ async fn json_mode_session_summary_reports_provider_turns() {
     );
 }
 
-#[tokio::test]
-async fn json_mode_compact_text_deltas_are_constant_size() {
-    let _env_guard = common::empty_user_config_dir();
+fn thinking_tool_text_stream(
+    count: usize,
+) -> (
+    Vec<opi_ai::stream::AssistantStreamEvent>,
+    opi_ai::message::AssistantMessage,
+) {
+    use opi_ai::message::{AssistantContent, ToolCall};
+    use opi_ai::stream::{AssistantStreamEvent, StopReason};
 
-    use opi_ai::message::AssistantContent;
-    use opi_ai::stream::AssistantStreamEvent;
-
+    let mut partial = test_support::base_assistant();
     let mut events = vec![AssistantStreamEvent::Start {
-        partial: test_support::base_assistant(),
+        partial: partial.clone(),
     }];
-    for i in 1u32..=200 {
-        let mut partial = test_support::base_assistant();
-        partial.content = vec![AssistantContent::Text {
-            text: "x".repeat(i as usize),
-        }];
-        events.push(AssistantStreamEvent::TextDelta {
+    partial.content.push(AssistantContent::Thinking {
+        thinking: String::new(),
+        signature: None,
+    });
+    events.push(AssistantStreamEvent::ThinkingStart {
+        content_index: 0,
+        partial: partial.clone(),
+    });
+    let thinking_delta = "thinking chunk ";
+    for i in 1..=count {
+        partial.content[0] = AssistantContent::Thinking {
+            thinking: thinking_delta.repeat(i),
+            signature: None,
+        };
+        events.push(AssistantStreamEvent::ThinkingDelta {
             content_index: 0,
-            delta: "x".into(),
-            partial,
+            delta: thinking_delta.into(),
+            partial: partial.clone(),
         });
     }
-    let mut done = test_support::base_assistant();
-    done.content = vec![AssistantContent::Text {
-        text: "x".repeat(200),
-    }];
-    events.push(AssistantStreamEvent::Done {
-        reason: opi_ai::stream::StopReason::Stop,
-        message: done,
+    partial.content[0] = AssistantContent::Thinking {
+        thinking: thinking_delta.repeat(count),
+        signature: Some("signature+/=".repeat(count)),
+    };
+    events.push(AssistantStreamEvent::ThinkingEnd {
+        content_index: 0,
+        content: thinking_delta.repeat(count),
+        partial: partial.clone(),
+    });
+    partial.content.push(AssistantContent::RedactedThinking {
+        data: "opaque+/=".repeat(count),
+    });
+    partial.content.push(AssistantContent::Thinking {
+        thinking: String::new(),
+        signature: Some("signature-only+/=".repeat(count)),
     });
 
-    let provider = MockProvider::new("mock", vec![events]);
-    let mut runner = NonInteractiveRunner::new(
-        Box::new(provider),
-        "mock-model".into(),
-        OpiConfig::default(),
-        std::env::current_dir().unwrap(),
-        false,
-        None,
-        Vec::new(),
-        opi_coding_agent::project_trust::TrustDecision::Trusted,
-    )
-    .with_compact_ndjson(true);
+    let mut tool_call = ToolCall {
+        id: "stream-read".into(),
+        name: "read".into(),
+        arguments: String::new(),
+    };
+    partial.content.push(AssistantContent::ToolCall {
+        tool_call: tool_call.clone(),
+    });
+    events.push(AssistantStreamEvent::ToolCallStart {
+        content_index: 3,
+        partial: partial.clone(),
+    });
+    let fragments = std::iter::once(r#"{"path":"Cargo.toml","offset":1,"limit":1,"note":""#)
+        .chain(std::iter::repeat_n("argument chunk ", count))
+        .chain(std::iter::once(r#""}"#));
+    for delta in fragments {
+        tool_call.arguments.push_str(delta);
+        partial.content[3] = AssistantContent::ToolCall {
+            tool_call: tool_call.clone(),
+        };
+        events.push(AssistantStreamEvent::ToolCallDelta {
+            content_index: 3,
+            delta: delta.into(),
+            partial: partial.clone(),
+        });
+    }
+    events.push(AssistantStreamEvent::ToolCallEnd {
+        content_index: 3,
+        tool_call,
+        partial: partial.clone(),
+    });
+    // Later text updates carry the completed thinking and tool-argument snapshots.
+    partial.content.push(AssistantContent::Text {
+        text: String::new(),
+    });
+    for i in 1..=count {
+        partial.content[4] = AssistantContent::Text {
+            text: "text chunk ".repeat(i),
+        };
+        events.push(AssistantStreamEvent::TextDelta {
+            content_index: 4,
+            delta: "text chunk ".into(),
+            partial: partial.clone(),
+        });
+    }
+    partial.stop_reason = StopReason::ToolUse;
+    events.push(AssistantStreamEvent::Done {
+        reason: StopReason::ToolUse,
+        message: partial.clone(),
+    });
+    (events, partial)
+}
 
-    let result = runner.run_json("stream").await;
-    assert_eq!(result.exit_code, ExitCode::Success as i32);
+#[tokio::test]
+async fn json_mode_compact_text_deltas_are_constant_size() {
+    use opi_agent::AgentMessage;
+    use opi_agent::event::AgentEvent;
+    use opi_agent::session::SessionReader;
+    use opi_agent::session_context::reconstruct_context;
+    use opi_ai::message::{InputContent, Message};
 
-    let text_delta_lines: Vec<&str> = result
-        .stdout
-        .lines()
-        .filter(|line| line.contains(r#""text_delta""#))
-        .collect();
-    assert_eq!(text_delta_lines.len(), 200, "expected 200 text_delta lines");
-    // Each compact line must be constant-size (proves ~linear, not quadratic).
-    assert!(
-        text_delta_lines.iter().all(|line| line.len() < 700),
-        "each compact text_delta line must be constant-size; got a line > 700 bytes"
-    );
-    assert!(
-        !text_delta_lines
-            .iter()
-            .any(|line| line.contains(r#""partial""#)),
-        "compact text_delta lines must omit assistant_event.partial"
-    );
-    // Cumulative text (a long run of 'x') must not appear in any delta line.
-    assert!(
-        !text_delta_lines
-            .iter()
-            .any(|line| line.contains("xxxxxxxxxx")),
-        "compact text_delta lines must omit cumulative event.message text"
-    );
+    let _env_guard = common::empty_user_config_dir();
+    for with_content in [false, true] {
+        let mut sizes = Vec::new();
+        for count in [128, 256] {
+            let (events, complete) = thinking_tool_text_stream(count);
+            let provider =
+                MockProvider::new("mock", vec![events, test_support::text_response("done")]);
+            let calls = provider.call_log_handle();
+            let session_dir = tempfile::tempdir().unwrap();
+            let mut runner =
+                runner_with_isolated_session(Box::new(provider), "mock-model", &session_dir, None)
+                    .with_compact_ndjson(true);
+            let result = if with_content {
+                runner
+                    .run_json_with_content(vec![InputContent::Text {
+                        text: "stream".into(),
+                    }])
+                    .await
+            } else {
+                runner.run_json("stream").await
+            };
+            assert_eq!(
+                result.exit_code,
+                ExitCode::Success as i32,
+                "{}",
+                result.stderr
+            );
+            let lines = parse_ndjson(&result.stdout);
+            for (kind, index, delta) in [
+                ("thinking_delta", 0, "thinking chunk "),
+                ("text_delta", 4, "text chunk "),
+            ] {
+                let updates: Vec<_> = lines
+                    .iter()
+                    .filter(|v| {
+                        v["event"]["assistant_event"]["type"] == kind
+                            && v["event"]["assistant_event"]["content_index"] == index
+                    })
+                    .collect();
+                assert_eq!(updates.len(), count);
+                for update in updates {
+                    assert_eq!(update["event"]["assistant_event"]["delta"], delta);
+                    let bytes = serde_json::to_vec(update).unwrap().len();
+                    assert!(
+                        bytes < 1000,
+                        "compact {kind} repeated a cumulative payload: {bytes} bytes"
+                    );
+                    assert!(update["event"]["assistant_event"].get("partial").is_none());
+                    if kind == "text_delta" {
+                        assert_eq!(
+                            update["event"]["message"]["content"][3]["tool_call"]["id"],
+                            "stream-read"
+                        );
+                        assert_eq!(
+                            update["event"]["message"]["content"][3]["tool_call"]["name"],
+                            "read"
+                        );
+                    }
+                }
+            }
+            let public_end = AgentEvent::MessageEnd {
+                message: AgentMessage::Llm(Message::Assistant(complete.clone())),
+            }
+            .redacted_for_public();
+            let expected = serde_json::to_value(public_end).unwrap();
+            let end = lines
+                .iter()
+                .find(|v| {
+                    v["event"]["type"] == "MessageEnd"
+                        && v["event"]["message"]["stop_reason"] == "tool_use"
+                })
+                .unwrap();
+            assert_eq!(
+                end["event"], expected,
+                "terminal content must remain complete"
+            );
+            assert_eq!(lines.last().unwrap()["type"], "session_summary");
+            let calls = calls.lock().unwrap();
+            assert_eq!(
+                calls.len(),
+                2,
+                "tool continuation reaches the next mock request"
+            );
+            assert!(
+                calls[1]
+                    .messages
+                    .contains(&Message::Assistant(complete.clone()))
+            );
+            let (_, entries, recovery) =
+                SessionReader::read_with_recovery(runner.session().unwrap().session_path())
+                    .unwrap();
+            assert!(recovery.is_clean());
+            let restored = reconstruct_context(&entries, &recovery);
+            assert!(restored.diagnostics.is_empty());
+            // Sessions retain thinking verbatim, but already apply the public
+            // redaction/canonicalization policy to tool arguments.
+            assert!(
+                restored
+                    .messages
+                    .iter()
+                    .any(|m| serde_json::to_value(m).unwrap() == expected["message"]),
+                "durable content must retain its existing session projection"
+            );
+            sizes.push(result.stdout.len());
+        }
+        assert!(
+            sizes[1] <= sizes[0] * 22 / 10,
+            "doubling stream content must grow output at most linearly: {sizes:?}"
+        );
+        println!("compact with_content={with_content}: N/2N bytes={sizes:?}");
+    }
 }
 
 #[tokio::test]
 async fn json_mode_default_output_still_carries_partial() {
     let _env_guard = common::empty_user_config_dir();
 
-    use opi_ai::message::AssistantContent;
-    use opi_ai::stream::AssistantStreamEvent;
-
-    let mut partial = test_support::base_assistant();
-    partial.content = vec![AssistantContent::Text { text: "ab".into() }];
-    let events = vec![
-        AssistantStreamEvent::Start {
-            partial: test_support::base_assistant(),
-        },
-        AssistantStreamEvent::TextDelta {
-            content_index: 0,
-            delta: "ab".into(),
-            partial: partial.clone(),
-        },
-        AssistantStreamEvent::Done {
-            reason: opi_ai::stream::StopReason::Stop,
-            message: partial,
-        },
-    ];
-    let provider = MockProvider::new("mock", vec![events]);
+    let (events, complete) = thinking_tool_text_stream(8);
+    let provider = MockProvider::new("mock", vec![events, test_support::text_response("done")]);
     let mut runner = NonInteractiveRunner::new(
         Box::new(provider),
         "mock-model".into(),
@@ -1503,12 +1637,47 @@ async fn json_mode_default_output_still_carries_partial() {
 
     let result = runner.run_json("stream").await;
     assert_eq!(result.exit_code, ExitCode::Success as i32);
-    assert!(
-        result
-            .stdout
-            .lines()
-            .any(|l| l.contains(r#""text_delta""#) && l.contains(r#""partial""#)),
-        "default mode must still carry assistant_event.partial (non-breaking)"
+    let lines = parse_ndjson(&result.stdout);
+    for kind in ["thinking_delta", "text_delta"] {
+        let updates: Vec<_> = lines
+            .iter()
+            .filter(|v| v["event"]["assistant_event"]["type"] == kind)
+            .collect();
+        assert!(updates.len() >= 8);
+        for update in updates {
+            let event = &update["event"];
+            assert_eq!(
+                event["assistant_event"]["partial"]["content"], event["message"]["content"],
+                "full JSON must retain both cumulative snapshots"
+            );
+            serde_json::from_value::<AgentSessionEvent>(update.clone())
+                .expect("full JSON event round-trip");
+        }
+    }
+    let last_text = lines
+        .iter()
+        .rfind(|v| {
+            v["event"]["assistant_event"]["type"] == "text_delta"
+                && v["event"]["assistant_event"]["content_index"] == 4
+        })
+        .unwrap();
+    let snapshot = &last_text["event"]["message"]["content"];
+    let complete = serde_json::to_value(complete).unwrap();
+    for index in [0, 1, 2, 4] {
+        assert_eq!(
+            snapshot[index], complete["content"][index],
+            "full JSON content is unchanged"
+        );
+    }
+    let arguments = |value: &serde_json::Value| {
+        serde_json::from_str::<serde_json::Value>(
+            value[3]["tool_call"]["arguments"].as_str().unwrap(),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        arguments(snapshot),
+        opi_agent::diagnostic::redact_public_value(&arguments(&complete["content"]))
     );
 }
 

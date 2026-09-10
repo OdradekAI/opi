@@ -854,34 +854,56 @@ async fn provider_turn_emits_correlated_provider_record() {
 
 #[tokio::test]
 async fn absent_terminal_model_keeps_evidence_healthy_for_tool_authorization() {
-    let sink = Arc::new(InMemoryEvidenceSink::new());
-    let count = Arc::new(AtomicUsize::new(0));
-    let registrations = common::registrations_from(vec![Box::new(common::RecordingTool::new(
-        "mytool",
-        count.clone(),
-    ))]);
-    let mut agent = make_agent(
-        vec![
-            MockResponse::Events(tool_call_response_with_model("")),
-            MockResponse::Events(text_response("done")),
-        ],
-        registrations,
-        Some(Arc::new(common::StaleGenerationAuthorizer::default())),
-        None,
-        sink.clone(),
-    );
+    for (model, response_model) in [("", None), ("mock-model", Some(""))] {
+        let sink = Arc::new(InMemoryEvidenceSink::new());
+        let count = Arc::new(AtomicUsize::new(0));
+        let registrations = common::registrations_from(vec![Box::new(common::RecordingTool::new(
+            "mytool",
+            count.clone(),
+        ))]);
+        let mut response = tool_call_response_with_model(model);
+        for event in &mut response {
+            match event {
+                AssistantStreamEvent::Start { partial }
+                | AssistantStreamEvent::Done {
+                    message: partial, ..
+                } => {
+                    partial.response_model = response_model.map(str::to_owned);
+                }
+                _ => {}
+            }
+        }
+        let mut agent = make_agent(
+            vec![
+                MockResponse::Events(response),
+                MockResponse::Events(text_response("done")),
+            ],
+            registrations,
+            Some(Arc::new(common::StaleGenerationAuthorizer::default())),
+            None,
+            sink.clone(),
+        );
 
-    let run = agent.prompt("go").await;
-    assert!(run.error().is_none());
+        let run = agent.prompt("go").await;
+        assert!(run.error().is_none());
 
-    assert_eq!(
-        common::RecordingTool::count_of(&count),
-        1,
-        "an absent provider-reported model is unknown evidence, not evidence corruption"
-    );
-    assert!(sink.records().iter().any(|record| {
-        matches!(
-            &record.payload,
+        assert_eq!(
+            common::RecordingTool::count_of(&count),
+            1,
+            "an absent provider-reported model is unknown evidence, not evidence corruption"
+        );
+        let records = sink.records();
+        let tool = records
+            .iter()
+            .find(|record| record.kind == CallKind::Tool)
+            .expect("the tool emits evidence");
+        let provider = records
+            .iter()
+            .rev()
+            .find(|record| record.kind == CallKind::Provider && Some(record.call) == tool.parent)
+            .expect("the tool's provider emits terminal evidence");
+        assert!(matches!(
+            &provider.payload,
             EvidencePayload::Provider(facts)
                 if matches!(
                     facts.route.actual(),
@@ -889,9 +911,9 @@ async fn absent_terminal_model_keeps_evidence_healthy_for_tool_authorization() {
                         reason: opi_agent::evidence::UnknownReason::NotReported
                     }
                 )
-        )
-    }));
-    drop(run);
+        ));
+        drop(run);
+    }
 }
 
 #[tokio::test]

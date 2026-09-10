@@ -181,7 +181,7 @@ pub(crate) struct NativeTerminalObservation {
 pub(crate) struct NativeTrialBinding {
     /// The new `jobs/<name>` directory the dispatch produced.
     pub(crate) job_name: OsString,
-    /// Trial name inside the job (`trials/<trial>`).
+    /// Trial name inside the job (`<trial>`).
     pub(crate) trial_name: String,
     /// Actual Agent name reported by the trial (`agent_info.name`).
     pub(crate) agent_name: String,
@@ -201,17 +201,17 @@ pub(crate) struct NativeTrialBinding {
     /// selected diagnostic witness, which produces no integration
     /// observation and never becomes an Agent score.
     pub(crate) terminal: Option<NativeTerminalObservation>,
-    /// Per-trial `results.json` path (evidence reference).
+    /// Per-trial `result.json` path (evidence reference).
     pub(crate) results_path: PathBuf,
     /// Per-trial `config.json` path (evidence reference).
     pub(crate) config_path: PathBuf,
     /// Collected-artifacts manifest path, when the trial collected any.
     pub(crate) manifest_path: Option<PathBuf>,
-    /// The verifier environment mode the job recorded (the lifecycle the
-    /// verifier actually ran under; P19-D03).
+    /// The verifier mode resolved from the job-referenced task and, for
+    /// Harbor, cross-checked against its native result.
     pub(crate) environment_mode: super::task_lifecycle::VerifierEnvironmentMode,
-    /// The base revision and environment image the job recorded (Pier
-    /// family only; the committed-patch handoff identity, P19-D04).
+    /// The base revision and environment image of the job-referenced task
+    /// (Pier family only; the committed-patch handoff identity).
     pub(crate) base_revision: Option<String>,
     pub(crate) docker_image: Option<String>,
     /// The verifier-input identity: every declared artifact that entered
@@ -226,6 +226,7 @@ pub(crate) struct NativeTrialBinding {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CollectedArtifact {
     pub(crate) source: String,
+    /// Host destination relative to the trial's artifacts directory.
     pub(crate) destination: String,
     pub(crate) sha256: String,
 }
@@ -246,7 +247,7 @@ pub(crate) enum NativeBindingError {
     /// no-reward-stats, reward-count, reward-trials, bad-reward-values,
     /// agent-component).
     AggregateInvalid(&'static str),
-    /// No `trials/<name>/results.json` exists in the new job.
+    /// No unique `<name>/result.json` exists in the new job.
     TrialResultMissing,
     /// The per-trial result drifted; the token names the drift
     /// (json-parse, agent-info, agent-name, task-name, verifier-rewards,
@@ -357,7 +358,7 @@ fn new_job_dir(
 
 /// Imports and binds one dispatched native job against `selection`
 /// (P19-AC-002). The authority chain: the job aggregate proves the
-/// one-trial shape; the per-trial `results.json` proves the actual Agent,
+/// one-trial shape; the per-trial `result.json` proves the actual Agent,
 /// task, and native reward of that exact trial; the trial `config.json`
 /// proves the explicit Agent selection; the integration's terminal
 /// observation proves the delivered artifacts; the collected-artifacts
@@ -369,8 +370,8 @@ pub(crate) fn import_bound_native_job(
 ) -> Result<NativeTrialBinding, NativeBindingError> {
     let (job_name, job_dir) = new_job_dir(trace_root, &selection.stale_job_names)?;
 
-    // Job aggregate: the pinned one-trial shape, attributing its single
-    // reward to the bound trial name.
+    // Job aggregate: one trial, with the selected primary reward attributed
+    // to that trial. Pier also records auxiliary metrics such as test counts.
     let aggregate_path = job_dir.join("result.json");
     let aggregate: serde_json::Value = serde_json::from_slice(
         &std::fs::read(&aggregate_path).map_err(|_| NativeBindingError::AggregateUnreadable)?,
@@ -395,10 +396,9 @@ pub(crate) fn import_bound_native_job(
         .get("reward_stats")
         .and_then(|r| r.as_object())
         .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
-    if reward_stats.len() != 1 {
-        return Err(NativeBindingError::AggregateInvalid("reward-count"));
-    }
-    let (_metric, by_value) = reward_stats.iter().next().expect("len checked");
+    let by_value = reward_stats
+        .get(&selection.reward_metric)
+        .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
     let by_value = by_value
         .as_object()
         .ok_or(NativeBindingError::AggregateInvalid("reward-values"))?;
@@ -417,12 +417,11 @@ pub(crate) fn import_bound_native_job(
     }
 
     // The single per-trial result: the authoritative native identity.
-    let trials_dir = job_dir.join("trials");
-    let mut trial_dirs: Vec<PathBuf> = std::fs::read_dir(&trials_dir)
+    let mut trial_dirs: Vec<PathBuf> = std::fs::read_dir(&job_dir)
         .map_err(|_| NativeBindingError::TrialResultMissing)?
         .flatten()
         .map(|entry| entry.path())
-        .filter(|path| path.join("results.json").is_file())
+        .filter(|path| path.join("result.json").is_file())
         .collect();
     trial_dirs.sort();
     let trial_dir = trial_dirs
@@ -430,7 +429,7 @@ pub(crate) fn import_bound_native_job(
         .filter(|_| trial_dirs.len() == 1)
         .cloned()
         .ok_or(NativeBindingError::TrialResultMissing)?;
-    let results_path = trial_dir.join("results.json");
+    let results_path = trial_dir.join("result.json");
     let results: serde_json::Value = serde_json::from_slice(
         &std::fs::read(&results_path).map_err(|_| NativeBindingError::TrialResultMissing)?,
     )
@@ -535,10 +534,9 @@ pub(crate) fn import_bound_native_job(
         return Err(NativeBindingError::AggregateRewardMismatch);
     }
 
-    // The job's own recorded lifecycle: the trial config's artifact
-    // declarations and verifier environment mode must equal the admitted
-    // task lifecycle this dispatch selected (P19-D03).
-    let observed_lifecycle = parse_recorded_lifecycle(&config)
+    // Resolve the job's task reference, trial additions, and native mode
+    // against the admitted lifecycle this dispatch selected.
+    let observed_lifecycle = parse_recorded_lifecycle(&config, &results, selection)
         .map_err(|_| NativeBindingError::TrialInvalid("task-lifecycle"))?;
     if observed_lifecycle != selection.lifecycle {
         return Err(NativeBindingError::LifecycleMismatch {
@@ -625,10 +623,7 @@ pub(crate) fn import_bound_native_job(
                 source: declared.source.clone(),
             });
         }
-        let destination = entry
-            .get("destination")
-            .and_then(|d| d.as_str())
-            .ok_or(NativeBindingError::TrialInvalid("artifacts-manifest"))?;
+        let destination = manifest_destination(entry)?;
         let host = artifact_root.join(destination);
         let digest =
             collected_digest(&host).map_err(|_| NativeBindingError::DeclaredArtifactMissing {
@@ -652,10 +647,7 @@ pub(crate) fn import_bound_native_job(
                         source: delivered.source.clone(),
                     });
                 }
-                let destination = entry
-                    .get("destination")
-                    .and_then(|d| d.as_str())
-                    .ok_or(NativeBindingError::TrialInvalid("artifacts-manifest"))?;
+                let destination = manifest_destination(entry)?;
                 let collected_path = artifact_root.join(destination);
                 let collected_path = if relative.is_empty() {
                     collected_path
@@ -707,6 +699,32 @@ pub(crate) fn import_bound_native_job(
 /// Harbor's pinned conventional agent publish directory: the one
 /// non-task collection every trial legitimately performs.
 const HARBOR_CONVENTION_SOURCE: &str = "/logs/artifacts";
+
+/// Both pinned runners express manifest destinations relative to the
+/// trial. The Companion stores destinations relative to its artifacts
+/// directory, so remove exactly that prefix before reading collected bytes.
+fn manifest_destination(entry: &serde_json::Value) -> Result<&str, NativeBindingError> {
+    let invalid = NativeBindingError::TrialInvalid("artifacts-manifest");
+    let destination = entry
+        .get("destination")
+        .and_then(|d| d.as_str())
+        .ok_or(invalid.clone())?;
+    if destination == "artifacts" {
+        return Ok(".");
+    }
+    let relative = destination
+        .strip_prefix("artifacts/")
+        .ok_or(invalid.clone())?;
+    if relative.is_empty()
+        || relative.contains('\\')
+        || !std::path::Path::new(relative)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err(invalid);
+    }
+    Ok(relative)
+}
 
 /// True when a manifest source and a declared source name the same
 /// artifact (a declared directory may appear with or without its
@@ -788,39 +806,53 @@ pub(crate) fn collected_digest(host: &std::path::Path) -> std::io::Result<String
     ))
 }
 
-/// The lifecycle the imported job recorded in its trial config: the
-/// resolved verifier environment mode and the declared artifact collect
-/// list (mirrors the pinned Harbor task model's resolution rules).
-fn parse_recorded_lifecycle(config: &serde_json::Value) -> Result<TaskLifecycleSelection, ()> {
-    use super::task_lifecycle::{DeclaredArtifact, VerifierEnvironmentMode};
-    let verifier = config.get("task").and_then(|task| task.get("verifier"));
-    let environment_mode = match verifier
-        .and_then(|v| v.get("environment_mode"))
-        .and_then(|mode| mode.as_str())
-    {
-        Some("shared") => VerifierEnvironmentMode::Shared,
-        Some("separate") => VerifierEnvironmentMode::Separate,
-        _ if verifier.and_then(|v| v.get("environment")).is_some() => {
-            VerifierEnvironmentMode::Separate
-        }
-        _ => VerifierEnvironmentMode::Shared,
-    };
-    // The pinned runners record the task's own declarations inside the
-    // embedded task config and the trial's additions at the root; the
-    // effective collect list is the task's declarations followed by the
-    // trial's (Pier's merge order; Harbor records the same shape).
-    let empty = Vec::new();
-    let task_artifacts = config
+/// Resolve lifecycle facts from the task package referenced by the native
+/// trial config. That config records a task reference, not the task's
+/// definition. Harbor also records the resolved mode in its result;
+/// Pier's pinned result schema leaves it with the referenced task.
+fn parse_recorded_lifecycle(
+    config: &serde_json::Value,
+    results: &serde_json::Value,
+    selection: &NativeSelection,
+) -> Result<TaskLifecycleSelection, ()> {
+    use super::task_lifecycle::{DeclaredArtifact, TaskFamily, VerifierEnvironmentMode};
+    let task_dir = config
         .get("task")
-        .and_then(|task| task.get("artifacts"))
-        .and_then(|artifacts| artifacts.as_array())
-        .unwrap_or(&empty);
-    let root_artifacts = config
-        .get("artifacts")
-        .and_then(|artifacts| artifacts.as_array())
-        .unwrap_or(&empty);
-    let mut declared = Vec::new();
-    for artifact in task_artifacts.iter().chain(root_artifacts) {
+        .and_then(|task| task.get("path"))
+        .and_then(|path| path.as_str())
+        .map(std::path::Path::new)
+        .filter(|path| path.is_absolute())
+        .ok_or(())?;
+    // The admitted committed-patch route carries the Pier base identity;
+    // Harbor selections carry no base revision.
+    let family = if selection.lifecycle.base_revision.is_some() {
+        TaskFamily::Pier
+    } else {
+        TaskFamily::Harbor
+    };
+    let task = super::task_lifecycle::parse_task_lifecycle(task_dir, family).map_err(|_| ())?;
+    if family == TaskFamily::Harbor {
+        let recorded_mode = match results
+            .get("verifier_environment_mode")
+            .and_then(|v| v.as_str())
+        {
+            Some("shared") => VerifierEnvironmentMode::Shared,
+            Some("separate") => VerifierEnvironmentMode::Separate,
+            _ => return Err(()),
+        };
+        if recorded_mode != task.environment_mode {
+            return Err(());
+        }
+    }
+    // Both runners collect the task declarations followed by the trial's
+    // additional artifacts. The frozen selection must match that union.
+    let mut declared = task.declared_artifacts;
+    let empty = Vec::new();
+    let additions = match config.get("artifacts") {
+        Some(value) => value.as_array().ok_or(())?,
+        None => &empty,
+    };
+    for artifact in additions {
         match artifact {
             serde_json::Value::String(source) => declared.push(DeclaredArtifact {
                 source: source.clone(),
@@ -846,26 +878,13 @@ fn parse_recorded_lifecycle(config: &serde_json::Value) -> Result<TaskLifecycleS
             _ => return Err(()),
         }
     }
-    let base_revision = config
-        .get("task")
-        .and_then(|task| task.get("metadata"))
-        .and_then(|metadata| metadata.get("base_commit_hash"))
-        .and_then(|value| value.as_str())
-        .map(str::to_owned);
-    let docker_image = config
-        .get("task")
-        .and_then(|task| task.get("environment"))
-        .and_then(|environment| environment.get("docker_image"))
-        .and_then(|value| value.as_str())
-        .map(str::to_owned);
     Ok(TaskLifecycleSelection {
-        environment_mode,
+        environment_mode: task.environment_mode,
         declared,
-        base_revision,
-        docker_image,
+        base_revision: task.base_revision,
+        docker_image: task.docker_image,
     })
 }
-
 /// Parses the integration's typed terminal observation.
 fn parse_terminal_observation(
     bytes: &[u8],
@@ -1552,7 +1571,7 @@ mod tests {
 #[cfg(test)]
 fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> NativeSelection {
     let trial = "fixture-task__bZZeEkw";
-    let trial_dir = root.join("jobs").join(job).join("trials").join(trial);
+    let trial_dir = root.join("jobs").join(job).join(trial);
     std::fs::create_dir_all(trial_dir.join("agent")).unwrap();
     std::fs::create_dir_all(trial_dir.join("artifacts")).unwrap();
     let answer = b"native stand-in answer\n";
@@ -1576,18 +1595,23 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
         "agent_info": {"name": agent_name, "version": "1.0.0",
             "model_info": {"name": "scripted/eval"}},
         "verifier_result": {"rewards": {"reward": 1.0}},
+        "verifier_environment_mode": "shared",
         "exception_info": null,
     });
     std::fs::write(
-        trial_dir.join("results.json"),
+        trial_dir.join("result.json"),
         serde_json::to_vec(&results).unwrap(),
     )
     .unwrap();
-    // Explicit agent selection and recorded task lifecycle.
+    // Explicit agent selection and a native task reference. Trial-level
+    // artifacts are additions to the referenced task's declarations.
+    let task_dir = root.join("task-packages").join(job);
+    std::fs::create_dir_all(&task_dir).unwrap();
+    std::fs::write(task_dir.join("task.toml"), "schema_version = '1.0'\n").unwrap();
     let config = serde_json::json!({
         "agent": {"name": "opi_eval_harbor:OpiAgent", "import_path": null},
         "artifacts": ["/root/answer.txt"],
-        "task": {"verifier": {"environment_mode": "shared"}},
+        "task": {"path": task_dir},
     });
     std::fs::write(
         trial_dir.join("config.json"),
@@ -1612,7 +1636,7 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
     // at its source-relative host path exactly as the pinned runner
     // collects it.
     let manifest = serde_json::json!([
-        {"source": "/root/answer.txt", "destination": "root/answer.txt",
+        {"source": "/root/answer.txt", "destination": "artifacts/root/answer.txt",
          "type": "file", "status": "ok", "service": null},
     ]);
     std::fs::write(
@@ -1642,6 +1666,401 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
         module_dir: "/nonexistent/integrations".into(),
         handoff_path: "/nonexistent/handoff.json".into(),
         stale_job_names: Vec::new(),
+    }
+}
+
+#[test]
+fn native_result_binding_imports_harbor_pi_zero_reward() {
+    let dir = tempfile::tempdir().unwrap();
+    let job = dir.path().join("jobs/2026-09-09__01-55-07");
+    let trial_dir = job.join("task-package__Z7PUBXF");
+    std::fs::create_dir_all(trial_dir.join("agent")).unwrap();
+    // Minimal structural projection of the Harbor v0.22.0 result, with
+    // host paths and Agent content omitted.
+    std::fs::write(
+        job.join("result.json"),
+        r#"{
+            "n_total_trials": 1,
+            "stats": {"n_completed_trials": 1, "n_errored_trials": 0, "evals": {
+                "opi-eval-pi__zhipu:glm-5.3-flash__adhoc": {
+                    "n_trials": 1, "n_errors": 0,
+                    "reward_stats": {"reward": {"0.0": ["task-package__Z7PUBXF"]}},
+                    "exception_stats": {}
+                }
+            }}
+        }"#,
+    )
+    .unwrap();
+    std::fs::write(
+        trial_dir.join("result.json"),
+        r#"{
+            "task_name": "terminal-bench/openssl-selfsigned-cert",
+            "trial_name": "task-package__Z7PUBXF",
+            "agent_info": {"name": "opi-eval-pi", "version": "1",
+                "model_info": {"name": "zhipu:glm-5.3-flash", "provider": null}},
+            "verifier_result": {"rewards": {"reward": 0.0}},
+            "verifier_environment_mode": "shared",
+            "exception_info": null
+        }"#,
+    )
+    .unwrap();
+    let task_dir = dir.path().join("task-package");
+    std::fs::create_dir_all(&task_dir).unwrap();
+    std::fs::write(task_dir.join("task.toml"), "schema_version = '1.0'\n").unwrap();
+    std::fs::write(
+        trial_dir.join("config.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "agent": {"name": "opi_eval_harbor:PiAgent", "import_path": null},
+            "task": {"path": task_dir}, "artifacts": []
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        trial_dir.join("agent/opi-eval-terminal.json"),
+        r#"{"schema": "opi-eval-native-agent-terminal/1", "product": "pi",
+            "agent_executable_sha256": "443bd83f30e4dbc7bac2eed9c6aa2461b9a15016fd555f48c92a0591d028c403",
+            "exit_code": 0, "timed_out": false, "delivered": []}"#,
+    )
+    .unwrap();
+    let selection = NativeSelection {
+        kind: SelectionKind::Integration,
+        lifecycle: TaskLifecycleSelection {
+            environment_mode: super::task_lifecycle::VerifierEnvironmentMode::Shared,
+            declared: Vec::new(),
+            base_revision: None,
+            docker_image: None,
+        },
+        agent_name: "opi-eval-pi".to_owned(),
+        agent_import_path: "opi_eval_harbor:PiAgent".to_owned(),
+        task_name: "terminal-bench/openssl-selfsigned-cert".to_owned(),
+        model: "zhipu:glm-5.3-flash".to_owned(),
+        reward_metric: "reward".to_owned(),
+        module_dir: "/nonexistent/integrations".into(),
+        handoff_path: "/nonexistent/handoff.json".into(),
+        stale_job_names: Vec::new(),
+    };
+    let binding = import_bound_native_job(dir.path(), &selection).unwrap();
+    assert_eq!(binding.results_path, trial_dir.join("result.json"));
+    assert_eq!(binding.agent_name, "opi-eval-pi");
+    assert_eq!(binding.agent_version, "1");
+    assert_eq!(binding.model_name.as_deref(), Some("zhipu:glm-5.3-flash"));
+    assert_eq!(binding.task_name, selection.task_name);
+    assert_eq!(binding.trial_name, "task-package__Z7PUBXF");
+    assert_eq!(
+        binding.reward,
+        Fact::Known {
+            value: 0,
+            origin: "native-trial-result".to_owned(),
+        }
+    );
+    let terminal = binding.terminal.unwrap();
+    assert_eq!(terminal.product, "pi");
+    assert_eq!(terminal.exit_code, 0);
+    assert_eq!(
+        terminal.agent_executable_sha256,
+        "443bd83f30e4dbc7bac2eed9c6aa2461b9a15016fd555f48c92a0591d028c403"
+    );
+    assert!(binding.exception_type.is_none());
+}
+
+#[test]
+fn native_result_binding_imports_pinned_separate_collection() {
+    use super::task_lifecycle::{DeclaredArtifact, VerifierEnvironmentMode};
+
+    for pier in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+        let trial_dir = dir.path().join("jobs/j1/fixture-task__bZZeEkw");
+        let task_dir = dir.path().join("task-package");
+        std::fs::create_dir_all(&task_dir).unwrap();
+        let (source, destination, content_path, task, agent) = if pier {
+            (
+                "/logs/artifacts/model.patch",
+                "model.patch",
+                "model.patch",
+                "schema_version = '1.0'\nartifacts = ['/logs/artifacts/model.patch']\n\
+                 [metadata]\nbase_commit_hash = '0123456789abcdef0123456789abcdef01234567'\n\
+                 [environment]\ndocker_image = 'fixture/pristine:locked'\n\
+                 [verifier]\nenvironment_mode = 'separate'\nnetwork_mode = 'no-network'\n\
+                 [[verifier.collect]]\ncommand = 'git diff HEAD > /logs/artifacts/model.patch'\n",
+                serde_json::json!({"name": null, "import_path": "opi_eval_pier:OpiAgent"}),
+            )
+        } else {
+            (
+                "/app/evalbench/",
+                "app/evalbench",
+                "app/evalbench/answer.py",
+                "schema_version = '1.0'\nartifacts = ['/app/evalbench/']\n\
+                 [verifier]\nenvironment_mode = 'separate'\n[verifier.environment]\n",
+                serde_json::json!({"name": "opi_eval_harbor:OpiAgent"}),
+            )
+        };
+        std::fs::write(task_dir.join("task.toml"), task).unwrap();
+        let config = serde_json::json!({
+            "task": {"path": task_dir}, "agent": agent, "artifacts": []
+        });
+        std::fs::write(
+            trial_dir.join("config.json"),
+            serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
+        let result_path = trial_dir.join("result.json");
+        let mut result: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&result_path).unwrap()).unwrap();
+        if pier {
+            result
+                .as_object_mut()
+                .unwrap()
+                .remove("verifier_environment_mode");
+            selection.agent_import_path = "opi_eval_pier:OpiAgent".to_owned();
+            selection.lifecycle.base_revision =
+                Some("0123456789abcdef0123456789abcdef01234567".to_owned());
+            selection.lifecycle.docker_image = Some("fixture/pristine:locked".to_owned());
+        } else {
+            result["verifier_environment_mode"] = serde_json::json!("separate");
+        }
+        std::fs::write(&result_path, serde_json::to_vec(&result).unwrap()).unwrap();
+        selection.lifecycle.environment_mode = VerifierEnvironmentMode::Separate;
+        selection.lifecycle.declared = vec![DeclaredArtifact {
+            source: source.to_owned(),
+            destination: None,
+            service: None,
+        }];
+        let bytes = b"fixture collected content\n";
+        let host = trial_dir.join("artifacts").join(content_path);
+        std::fs::create_dir_all(host.parent().unwrap()).unwrap();
+        std::fs::write(&host, bytes).unwrap();
+        let manifest = serde_json::json!([{
+            "source": source, "destination": format!("artifacts/{destination}"),
+            "type": if pier { "file" } else { "directory" }, "status": "ok"
+        }]);
+        std::fs::write(
+            trial_dir.join("artifacts/manifest.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        let terminal_path = trial_dir.join("agent/opi-eval-terminal.json");
+        let mut terminal: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&terminal_path).unwrap()).unwrap();
+        terminal["delivered"] = serde_json::json!([{
+            "source": if pier { "/logs/artifacts/model.patch" } else { "/app/evalbench/answer.py" },
+            "sha256": crate::runner::material::sha256_hex(bytes)
+        }]);
+        std::fs::write(&terminal_path, serde_json::to_vec(&terminal).unwrap()).unwrap();
+
+        let binding = import_bound_native_job(dir.path(), &selection).unwrap();
+        assert_eq!(binding.environment_mode, VerifierEnvironmentMode::Separate);
+        assert_eq!(binding.base_revision, selection.lifecycle.base_revision);
+        assert_eq!(binding.docker_image, selection.lifecycle.docker_image);
+        assert_eq!(
+            binding.collected,
+            vec![CollectedArtifact {
+                source: source.to_owned(),
+                destination: destination.to_owned(),
+                sha256: collected_digest(&trial_dir.join("artifacts").join(destination)).unwrap(),
+            }]
+        );
+
+        // Native result mode and the referenced task must agree. Pier
+        // carries no such result field; its task supplies the mode.
+        if !pier {
+            result["verifier_environment_mode"] = serde_json::json!("shared");
+            std::fs::write(&result_path, serde_json::to_vec(&result).unwrap()).unwrap();
+            assert_eq!(
+                import_bound_native_job(dir.path(), &selection),
+                Err(NativeBindingError::TrialInvalid("task-lifecycle"))
+            );
+            result["verifier_environment_mode"] = serde_json::json!("separate");
+            std::fs::write(&result_path, serde_json::to_vec(&result).unwrap()).unwrap();
+        }
+        let mut wrong_selection = selection.clone();
+        if pier {
+            wrong_selection.lifecycle.base_revision = Some("f".repeat(40));
+        } else {
+            wrong_selection.lifecycle.declared.clear();
+        }
+        assert!(matches!(
+            import_bound_native_job(dir.path(), &wrong_selection),
+            Err(NativeBindingError::LifecycleMismatch { .. })
+        ));
+
+        // A failed native collection never becomes a valid input merely
+        // because the host happens to contain bytes at its destination.
+        let mut invalid_manifest = manifest.clone();
+        invalid_manifest[0]["status"] = serde_json::json!("failed");
+        std::fs::write(
+            trial_dir.join("artifacts/manifest.json"),
+            serde_json::to_vec(&invalid_manifest).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            import_bound_native_job(dir.path(), &selection),
+            Err(NativeBindingError::DeclaredArtifactMissing {
+                source: source.to_owned()
+            })
+        );
+        for invalid_destination in ["app/evalbench", "artifacts/../outside"] {
+            invalid_manifest[0]["status"] = serde_json::json!("ok");
+            invalid_manifest[0]["destination"] = serde_json::json!(invalid_destination);
+            std::fs::write(
+                trial_dir.join("artifacts/manifest.json"),
+                serde_json::to_vec(&invalid_manifest).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                import_bound_native_job(dir.path(), &selection),
+                Err(NativeBindingError::TrialInvalid("artifacts-manifest"))
+            );
+        }
+    }
+}
+
+#[test]
+fn native_result_binding_requires_one_direct_trial_result() {
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+    let trial_dir = dir.path().join("jobs/j1/fixture-task__bZZeEkw");
+    let result = trial_dir.join("result.json");
+    let bytes = std::fs::read(&result).unwrap();
+
+    // The aggregate alone cannot supply a trial identity or reward.
+    std::fs::remove_file(&result).unwrap();
+    assert_eq!(
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::TrialResultMissing)
+    );
+
+    // Only the pinned filename and directory depth are admitted.
+    std::fs::write(trial_dir.join("results.json"), &bytes).unwrap();
+    let nested = dir.path().join("jobs/j1/trials/other-trial");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::write(nested.join("result.json"), &bytes).unwrap();
+    assert_eq!(
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::TrialResultMissing)
+    );
+
+    // Two direct trial results are ambiguous even if the aggregate names
+    // just one of them.
+    std::fs::write(&result, &bytes).unwrap();
+    let extra = dir.path().join("jobs/j1/other-trial");
+    std::fs::create_dir_all(&extra).unwrap();
+    std::fs::write(extra.join("result.json"), &bytes).unwrap();
+    assert_eq!(
+        import_bound_native_job(dir.path(), &selection),
+        Err(NativeBindingError::TrialResultMissing)
+    );
+}
+
+#[test]
+fn native_result_binding_imports_multi_metric_primary_reward() {
+    for (metric, reward) in [("reward", 1), ("reward", 0), ("custom_primary", 1)] {
+        let dir = tempfile::tempdir().unwrap();
+        let selection = stage_multi_metric_job(dir.path(), metric, reward);
+        let aggregate_path = dir.path().join("jobs/j1/result.json");
+        let results_path = dir.path().join("jobs/j1/fixture-task__bZZeEkw/result.json");
+        let aggregate_bytes = std::fs::read(&aggregate_path).unwrap();
+        let results_bytes = std::fs::read(&results_path).unwrap();
+
+        let binding = import_bound_native_job(dir.path(), &selection).unwrap();
+        assert_eq!(
+            binding.reward,
+            Fact::Known {
+                value: reward,
+                origin: "native-trial-result".to_owned()
+            }
+        );
+        assert_eq!(binding.results_path, results_path);
+        assert_eq!(std::fs::read(aggregate_path).unwrap(), aggregate_bytes);
+        assert_eq!(std::fs::read(binding.results_path).unwrap(), results_bytes);
+    }
+}
+
+#[cfg(test)]
+fn stage_multi_metric_job(root: &std::path::Path, metric: &str, reward: u64) -> NativeSelection {
+    let mut selection = stage_bound_job(root, "j1", "opi-eval-opi");
+    selection.reward_metric = metric.to_owned();
+    // Pinned Pier records every native reward metric, including test counts.
+    let mut rewards = serde_json::json!({
+        "f2p_total": 20, "f2p_passed": 20, "p2p_total": 3, "p2p_passed": 3,
+        "f2p": 1.0, "p2p": 1.0, "partial": 1.0,
+    });
+    rewards[metric] = reward.into();
+    let mut stats = serde_json::json!({});
+    for (name, value) in rewards.as_object().unwrap() {
+        stats[name] = serde_json::json!({value.to_string(): ["fixture-task__bZZeEkw"]});
+    }
+    let aggregate_path = root.join("jobs/j1/result.json");
+    let mut aggregate: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&aggregate_path).unwrap()).unwrap();
+    aggregate["stats"]["evals"]["opi-eval-opi__adhoc"]["reward_stats"] = stats;
+    std::fs::write(aggregate_path, serde_json::to_vec(&aggregate).unwrap()).unwrap();
+    let results_path = root.join("jobs/j1/fixture-task__bZZeEkw/result.json");
+    let mut results: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&results_path).unwrap()).unwrap();
+    results["verifier_result"]["rewards"] = rewards;
+    std::fs::write(results_path, serde_json::to_vec(&results).unwrap()).unwrap();
+    selection
+}
+
+#[test]
+fn native_result_binding_rejects_invalid_multi_metric_primary_reward() {
+    let trial = "fixture-task__bZZeEkw";
+    for (case, expected) in [
+        (
+            "missing-primary",
+            NativeBindingError::AggregateInvalid("no-reward-stats"),
+        ),
+        (
+            "multiple-buckets",
+            NativeBindingError::AggregateInvalid("reward-count"),
+        ),
+        ("wrong-trial", NativeBindingError::AggregateRewardMismatch),
+        (
+            "duplicate-trial",
+            NativeBindingError::AggregateRewardMismatch,
+        ),
+        ("wrong-primary", NativeBindingError::AggregateRewardMismatch),
+        (
+            "nonbinary-primary",
+            NativeBindingError::AggregateInvalid("bad-reward-values"),
+        ),
+        ("missing-trial-primary", NativeBindingError::RewardMissing),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let selection = stage_multi_metric_job(dir.path(), "reward", 1);
+        let path = dir.path().join("jobs/j1/result.json");
+        let mut aggregate: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let stats = &mut aggregate["stats"]["evals"]["opi-eval-opi__adhoc"]["reward_stats"];
+        match case {
+            "missing-primary" => {
+                stats.as_object_mut().unwrap().remove("reward");
+            }
+            "multiple-buckets" => stats["reward"]["0"] = serde_json::json!([trial]),
+            "wrong-trial" => stats["reward"]["1"] = serde_json::json!(["other-trial"]),
+            "duplicate-trial" => stats["reward"]["1"] = serde_json::json!([trial, trial]),
+            "wrong-primary" => stats["reward"] = serde_json::json!({"0": [trial]}),
+            "nonbinary-primary" => stats["reward"] = serde_json::json!({"20": [trial]}),
+            "missing-trial-primary" => {
+                let result_path = dir.path().join("jobs/j1/fixture-task__bZZeEkw/result.json");
+                let mut result: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(&result_path).unwrap()).unwrap();
+                result["verifier_result"]["rewards"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("reward");
+                std::fs::write(result_path, serde_json::to_vec(&result).unwrap()).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        std::fs::write(path, serde_json::to_vec(&aggregate).unwrap()).unwrap();
+        assert_eq!(
+            import_bound_native_job(dir.path(), &selection),
+            Err(expected),
+            "{case}"
+        );
     }
 }
 
@@ -1677,7 +2096,7 @@ fn native_result_binding_admits_one_bound_job() {
     // A pre-existing (stale) job is never the imported one: only the new
     // job binds.
     let stale = dir.path().join("jobs/2026-09-04__00-00-00");
-    std::fs::create_dir_all(stale.join("trials")).unwrap();
+    std::fs::create_dir_all(&stale).unwrap();
     std::fs::write(
         stale.join("result.json"),
         br#"{"n_total_trials": 1, "stats": {"evals": {"oracle__adhoc": {"reward_stats": {"reward": {"1.0": ["x"]}}}}}}"#,
@@ -1715,9 +2134,7 @@ fn native_result_binding_rejects_every_substitution() {
     );
     // Even when the per-trial identity is patched away, the aggregate is
     // still grouped under the oracle agent: rejected.
-    let results = dir
-        .path()
-        .join("jobs/j1/trials/fixture-task__bZZeEkw/results.json");
+    let results = dir.path().join("jobs/j1/fixture-task__bZZeEkw/result.json");
     std::fs::write(
         &results,
         std::fs::read_to_string(&results)
@@ -1736,9 +2153,7 @@ fn native_result_binding_rejects_every_substitution() {
     // Wrong agent in the per-trial result.
     let dir = tempfile::tempdir().unwrap();
     let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
-    let results = dir
-        .path()
-        .join("jobs/j1/trials/fixture-task__bZZeEkw/results.json");
+    let results = dir.path().join("jobs/j1/fixture-task__bZZeEkw/result.json");
     std::fs::write(
         &results,
         std::fs::read_to_string(&results)
@@ -1757,9 +2172,7 @@ fn native_result_binding_rejects_every_substitution() {
     // Substituted task.
     let dir = tempfile::tempdir().unwrap();
     let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
-    let results = dir
-        .path()
-        .join("jobs/j1/trials/fixture-task__bZZeEkw/results.json");
+    let results = dir.path().join("jobs/j1/fixture-task__bZZeEkw/result.json");
     std::fs::write(
         &results,
         std::fs::read_to_string(&results).unwrap().replace(
@@ -1779,9 +2192,7 @@ fn native_result_binding_rejects_every_substitution() {
     // Missing explicit agent selection (implicit default/oracle job).
     let dir = tempfile::tempdir().unwrap();
     let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
-    let config = dir
-        .path()
-        .join("jobs/j1/trials/fixture-task__bZZeEkw/config.json");
+    let config = dir.path().join("jobs/j1/fixture-task__bZZeEkw/config.json");
     std::fs::write(&config, r#"{"agent": {"name": null, "import_path": null}}"#).unwrap();
     assert_eq!(
         import_bound_native_job(dir.path(), &selection),
@@ -1794,7 +2205,7 @@ fn native_result_binding_rejects_every_substitution() {
     let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
     std::fs::write(
         dir.path()
-            .join("jobs/j1/trials/fixture-task__bZZeEkw/artifacts/root/answer.txt"),
+            .join("jobs/j1/fixture-task__bZZeEkw/artifacts/root/answer.txt"),
         b"substituted answer\n",
     )
     .unwrap();
@@ -1811,7 +2222,7 @@ fn native_result_binding_rejects_every_substitution() {
     let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
     std::fs::write(
         dir.path()
-            .join("jobs/j1/trials/fixture-task__bZZeEkw/artifacts/manifest.json"),
+            .join("jobs/j1/fixture-task__bZZeEkw/artifacts/manifest.json"),
         "[]",
     )
     .unwrap();
@@ -1828,7 +2239,7 @@ fn native_result_binding_rejects_every_substitution() {
     let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
     let manifest = dir
         .path()
-        .join("jobs/j1/trials/fixture-task__bZZeEkw/artifacts/manifest.json");
+        .join("jobs/j1/fixture-task__bZZeEkw/artifacts/manifest.json");
     std::fs::write(
         &manifest,
         std::fs::read_to_string(&manifest)
@@ -1858,14 +2269,11 @@ fn native_result_binding_rejects_every_substitution() {
     // list than the admitted task lifecycle.
     let dir = tempfile::tempdir().unwrap();
     let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
-    let config = dir
-        .path()
-        .join("jobs/j1/trials/fixture-task__bZZeEkw/config.json");
-    std::fs::write(
-        &config,
-        r#"{"agent": {"name": "opi_eval_harbor:OpiAgent"}, "artifacts": [], "task": {"verifier": {}}}"#,
-    )
-    .unwrap();
+    let config = dir.path().join("jobs/j1/fixture-task__bZZeEkw/config.json");
+    let mut config_value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
+    config_value["artifacts"] = serde_json::json!([]);
+    std::fs::write(&config, serde_json::to_vec(&config_value).unwrap()).unwrap();
     assert!(matches!(
         import_bound_native_job(dir.path(), &selection),
         Err(NativeBindingError::LifecycleMismatch { .. })
@@ -1878,17 +2286,14 @@ fn native_result_binding_rejects_every_substitution() {
     let mut selection = stage_bound_job(dir.path(), "j1", "oracle");
     selection.kind = SelectionKind::DiagnosticWitness;
     selection.agent_import_path = "harbor.agents.oracle:OracleAgent".to_owned();
-    let witness_config = dir
-        .path()
-        .join("jobs/j1/trials/fixture-task__bZZeEkw/config.json");
-    std::fs::write(
-        &witness_config,
-        r#"{"agent": {"import_path": "harbor.agents.oracle:OracleAgent"}, "artifacts": ["/root/answer.txt"], "task": {"verifier": {"environment_mode": "shared"}}}"#,
-    )
-    .unwrap();
+    let witness_config = dir.path().join("jobs/j1/fixture-task__bZZeEkw/config.json");
+    let mut config_value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&witness_config).unwrap()).unwrap();
+    config_value["agent"] = serde_json::json!({"import_path": "harbor.agents.oracle:OracleAgent"});
+    std::fs::write(&witness_config, serde_json::to_vec(&config_value).unwrap()).unwrap();
     std::fs::remove_file(
         dir.path()
-            .join("jobs/j1/trials/fixture-task__bZZeEkw/agent/opi-eval-terminal.json"),
+            .join("jobs/j1/fixture-task__bZZeEkw/agent/opi-eval-terminal.json"),
     )
     .unwrap();
     let binding = import_bound_native_job(dir.path(), &selection).unwrap();
@@ -1901,7 +2306,7 @@ fn native_result_binding_rejects_every_substitution() {
     let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
     std::fs::remove_file(
         dir.path()
-            .join("jobs/j1/trials/fixture-task__bZZeEkw/agent/opi-eval-terminal.json"),
+            .join("jobs/j1/fixture-task__bZZeEkw/agent/opi-eval-terminal.json"),
     )
     .unwrap();
     assert_eq!(
@@ -1912,9 +2317,7 @@ fn native_result_binding_rejects_every_substitution() {
     // Reward missing (errored trial, no verifier reward).
     let dir = tempfile::tempdir().unwrap();
     let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
-    let results = dir
-        .path()
-        .join("jobs/j1/trials/fixture-task__bZZeEkw/results.json");
+    let results = dir.path().join("jobs/j1/fixture-task__bZZeEkw/result.json");
     std::fs::write(
         &results,
         std::fs::read_to_string(&results).unwrap().replace(

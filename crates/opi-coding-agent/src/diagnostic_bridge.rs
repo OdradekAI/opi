@@ -273,6 +273,13 @@ pub fn diagnostic_from_config(err: &ConfigError) -> Diagnostic {
         )
         .details(serde_json::json!({ "field": field, "message": message }))
         .action("fix the [execution] section before starting opi"),
+        ConfigError::InvalidMaxOutputTokens => Diagnostic::new(
+            Severity::Error,
+            CODE_CONFIG_PARSE_FAILED,
+            SOURCE_CONFIG,
+            "defaults.max_output_tokens must be greater than zero",
+        )
+        .action("set a positive defaults.max_output_tokens or omit it to use defaults"),
         ConfigError::LegacySandboxSection => Diagnostic::new(
             Severity::Error,
             CODE_CONFIG_PARSE_FAILED,

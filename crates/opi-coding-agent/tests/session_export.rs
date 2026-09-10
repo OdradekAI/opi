@@ -93,6 +93,7 @@ fn assistant_with_thinking(
             content: vec![
                 AssistantContent::Thinking {
                     thinking: thinking.into(),
+                    signature: None,
                 },
                 AssistantContent::Text { text: text.into() },
             ],
@@ -620,6 +621,76 @@ fn phase13_export_excludes_tool_output_and_thinking_when_requested() {
     );
 
     clear_sessions_dir();
+}
+
+#[test]
+fn export_omits_thinking_signature_and_opaque_data_in_every_scope() {
+    let _lock = session_lock();
+    let sessions = tempfile::tempdir().unwrap();
+    let out_dir = tempfile::tempdir().unwrap();
+    const SIGNATURE: &str = "opaque-signature-canary+/==";
+    const DATA: &str = "opaque-redacted-thinking-canary+/==";
+    const THINKING: &str = "Readable thinking canary";
+    const ANSWER: &str = "Visible answer canary";
+
+    let mut entry = assistant_msg("m1", None, ANSWER);
+    let SessionEntry::Message(message) = &mut entry else {
+        panic!("expected message entry");
+    };
+    let Message::Assistant(assistant) = &mut message.message else {
+        panic!("expected assistant message");
+    };
+    assistant.content = serde_json::from_value(serde_json::json!([
+        { "type": "thinking", "thinking": THINKING, "signature": SIGNATURE },
+        { "type": "redacted_thinking", "data": DATA },
+        { "type": "text", "text": ANSWER }
+    ]))
+    .expect("signed and redacted thinking deserialize");
+    let path = write_session(sessions.path(), "sess-opaque", &[entry], Some("m1"));
+    let before = read_bytes(&path);
+    let source = std::str::from_utf8(&before).unwrap();
+    assert!(source.contains(SIGNATURE));
+    assert!(source.contains(DATA));
+
+    for scope in [ExportScope::ActiveBranch, ExportScope::FullTree] {
+        for format in [ExportFormat::Markdown, ExportFormat::Json] {
+            for include_thinking in [false, true] {
+                let output = out_dir.path().join("export");
+                export_session(&ExportOptions {
+                    session_ref: path.to_string_lossy().into_owned(),
+                    format,
+                    output: output.clone(),
+                    scope,
+                    include_tool_output: true,
+                    include_thinking,
+                    redact: ExportRedactMode::None,
+                })
+                .expect("export succeeds");
+                let exported = std::fs::read_to_string(output).unwrap();
+                assert!(!exported.contains(SIGNATURE), "{exported}");
+                assert!(!exported.contains(DATA), "{exported}");
+                assert!(!exported.contains("redacted_thinking"), "{exported}");
+                assert!(exported.contains(ANSWER), "{exported}");
+                assert_eq!(exported.contains(THINKING), include_thinking, "{exported}");
+                if matches!(format, ExportFormat::Json) {
+                    let value: serde_json::Value = serde_json::from_str(&exported).unwrap();
+                    let mut expected = Vec::new();
+                    if include_thinking {
+                        expected.push(serde_json::json!({
+                            "type": "thinking", "thinking": THINKING
+                        }));
+                    }
+                    expected.push(serde_json::json!({ "type": "text", "text": ANSWER }));
+                    assert_eq!(value["messages"][0]["content"], serde_json::json!(expected));
+                }
+                assert_eq!(
+                    read_bytes(&path),
+                    before,
+                    "source session remains unchanged"
+                );
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

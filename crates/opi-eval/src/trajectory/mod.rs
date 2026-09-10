@@ -775,7 +775,7 @@ impl TrajectoryBuilder {
         };
         let mut grader_facts = BTreeMap::new();
         grader_facts.insert("reward".to_owned(), record.reward.clone());
-        let completion_kind = match &record.completion {
+        let completed = match &record.completion {
             crate::benchmark::process::BenchmarkCompletion::Verified { metrics, .. } => {
                 for (name, fact) in [
                     ("tests", &metrics.tests),
@@ -789,17 +789,15 @@ impl TrajectoryBuilder {
                         grader_facts.insert(name.to_owned(), fact.clone());
                     }
                 }
-                "verified"
+                true
             }
-            crate::benchmark::process::BenchmarkCompletion::VerifiedNative { .. } => {
-                "verified-native"
-            }
-            crate::benchmark::process::BenchmarkCompletion::Failed(_) => "failed",
+            crate::benchmark::process::BenchmarkCompletion::VerifiedNative { .. } => true,
+            crate::benchmark::process::BenchmarkCompletion::Failed(_) => false,
         };
         grader_facts.insert(
             "completion".to_owned(),
             Fact::Known {
-                value: if completion_kind == "verified" { 1 } else { 0 },
+                value: u64::from(completed),
                 origin: "native-completion".to_owned(),
             },
         );
@@ -1601,6 +1599,70 @@ mod tests {
                 .collect();
             assert_eq!(grader_span.len(), 1, "{}", family.adapter);
             assert_eq!(grader_span[0].covers.len(), 3, "{}", family.adapter);
+
+            // Native admission and task reward are independent: a valid
+            // zero still completes verification for every benchmark family.
+            for reward in [0, 1] {
+                let mut native = record.clone();
+                native.reward = Fact::Known {
+                    value: reward,
+                    origin: "native-trial-result".to_owned(),
+                };
+                native.completion = BenchmarkCompletion::VerifiedNative {
+                    binding: Box::new(crate::benchmark::process::NativeTrialBinding {
+                        job_name: "fixture-job".into(),
+                        trial_name: "trial-1".to_owned(),
+                        agent_name: "opi".to_owned(),
+                        agent_version: "fixture".to_owned(),
+                        model_name: None,
+                        task_name: "fixture-task".to_owned(),
+                        reward: native.reward.clone(),
+                        exception_type: None,
+                        terminal: None,
+                        results_path: PathBuf::from("fixture-result.json"),
+                        config_path: PathBuf::from("fixture-config.json"),
+                        manifest_path: None,
+                        environment_mode:
+                            crate::benchmark::task_lifecycle::VerifierEnvironmentMode::Shared,
+                        base_revision: None,
+                        docker_image: None,
+                        collected: Vec::new(),
+                    }),
+                    artifacts: Vec::new(),
+                };
+                for verified in [true, false] {
+                    if !verified {
+                        native.completion = BenchmarkCompletion::Failed(
+                            crate::benchmark::process::failure_kinds::TIMED_OUT,
+                        );
+                        native.reward = Fact::Unknown {
+                            reason: "verifier-timeout".to_owned(),
+                        };
+                    }
+                    let projected = ProjectionPipeline::project(&TrialInputs {
+                        agent: &agent,
+                        benchmark: Some(&native),
+                        lifecycle: &lifecycle,
+                        workspace: None,
+                    })
+                    .unwrap();
+                    let grader = projected
+                        .nodes
+                        .iter()
+                        .find(|node| matches!(node.kind, NodeKind::Grader { .. }))
+                        .unwrap();
+                    assert_eq!(
+                        grader.facts["completion"],
+                        Fact::Known {
+                            value: u64::from(verified),
+                            origin: "native-completion".to_owned(),
+                        },
+                        "{} reward={reward}",
+                        family.adapter
+                    );
+                    assert_eq!(grader.facts["reward"], native.reward);
+                }
+            }
         }
     }
 

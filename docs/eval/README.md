@@ -1,20 +1,44 @@
 # opi eval results
 
-This directory stores real-provider fidelity results produced by the
-`opi-eval` skill (`.claude/skills/opi-eval/SKILL.md`). Generic canaries are
-runtime signals, not deterministic acceptance evidence; public-seam tests and
-CI remain the acceptance baseline.
+This directory stores reports produced by the
+[`opi-eval` skill](../../.agents/skills/opi-eval/SKILL.md): native benchmark
+summaries, six-trial operator handoffs, offline verification results, and
+explicit provider-fidelity cases. Large sealed run trees and private material
+stay in the operator's external evaluation storage; reports link their exact
+identities. Generic canaries are runtime signals,
+not deterministic acceptance evidence; public-seam tests and CI remain the
+deterministic acceptance baseline.
 
-## Contents
+## Native benchmark and acceptance reports
+
+Select software/version, benchmark families and model through `mode=benchmark`.
+Use `mode=acceptance` for task 19.11's fixed Opi/pi six-trial scope or
+`mode=verify evidence_root=<path>` for offline checks without new Agent calls.
+The skill drives the Rust Companion's actual native workflow; native graders
+own scores. The [report contract](../../.agents/skills/opi-eval/references/benchmark-report.md)
+defines bilingual `<UTC-date-time>-<software-versions>-<model-short>-<run-id>.md`
+and `.zh.md` summaries with coverage, provenance, failure history, usage/time,
+privacy review and exact verification results.
+
+Acceptance reports link the external evidence root, its manifest SHA-256,
+per-family native JSON, offline verifier result and exhaustive Opi-only capture
+audit. They do not mark task 19.11 complete or substitute for its independent
+audit/workspace gates. A blocked run produces a gap report without fabricated
+trials. Native runs do not use the case-based `history.jsonl` schema below.
+
+No native benchmark or acceptance reports are currently indexed. Add each new
+bilingual report pair here after its evaluation and verification.
+
+## Fidelity contents
 
 - `history.jsonl` -- append-only log of eval runs, one JSON object per line.
   Used for trend analysis across versions.
 - `<version>-<date>-<model>.md` -- individual eval reports with per-case
   verdicts and runtime trace highlights.
 
-The currently registered cases are provider-fidelity canaries. There is no
-registered runtime-fidelity acceptance case yet, so these canaries cannot by
-themselves close a product criterion or Phase exit condition.
+The cases in the fidelity catalogue are provider-fidelity canaries. They cannot
+by themselves close a product criterion or Phase exit condition; the native
+acceptance route above has its own registered requirements and evidence.
 
 ## history.jsonl schema
 
@@ -99,7 +123,7 @@ To run an eval, invoke the `opi-eval` skill from any compatible agent
 (Cursor, Claude Code, Codex). Example:
 
 ```
-opi-eval model=anthropic:claude-sonnet-4-5-20250514
+$opi-eval mode=fidelity model=anthropic:claude-sonnet-4-5-20250514
 ```
 
 Results will be written here automatically.

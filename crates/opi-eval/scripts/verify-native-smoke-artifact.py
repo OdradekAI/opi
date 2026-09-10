@@ -568,7 +568,7 @@ def verify_material(stage: Path, f: Findings) -> dict | None:
                          f, "material")
     if material is None:
         return None
-    if material.get("schema") != "opi-eval-native-material/3":
+    if material.get("schema") != "opi-eval-native-material/4":
         f.reject("material", "the material is not the admitted schema "
                              f"{material.get('schema')!r}")
     agents = material.get("agents")
@@ -579,10 +579,8 @@ def verify_material(stage: Path, f: Findings) -> dict | None:
     pi_exec = agents["pi"].get("executable", {})
     if opi_exec.get("path") == pi_exec.get("path"):
         f.reject("material", "both agents share one executable identity")
-    if agents["opi"].get("model") == agents["pi"].get("model"):
-        f.reject("material", "both agents share one model identity")
     for product, agent in agents.items():
-        # Schema /3 pins one integration per runner family: the Terminal-
+        # The material pins one integration per runner family: the Terminal-
         # Bench dispatches import the Harbor module and the DeepSWE
         # dispatch the Pier module (P19-D04).
         integrations = agent.get("integrations") or {}

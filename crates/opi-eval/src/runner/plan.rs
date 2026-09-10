@@ -230,6 +230,36 @@ pub(crate) struct Expansion {
     pub(crate) selected_ids: Vec<String>,
 }
 
+/// A canonical task id and its exact upstream name, admitted together by
+/// the selected profile's complete task-package file table.
+pub(crate) struct ProfileTaskBinding {
+    id: String,
+    native_name: String,
+    dir: PathBuf,
+}
+
+impl ProfileTaskBinding {
+    fn canonicalize(&self, corpus: &mut [CorpusTask]) -> Result<(), PlanError> {
+        let mut matched = 0;
+        for task in corpus.iter_mut().filter(|task| task.dir == self.dir) {
+            if task.requirements.task_id != self.native_name {
+                return Err(PlanError::Rejected(
+                    "profile-bound task metadata drift".to_owned(),
+                ));
+            }
+            task.id.clone_from(&self.id);
+            matched += 1;
+        }
+        let mut ids = std::collections::BTreeSet::new();
+        if matched != 1 || corpus.iter().any(|task| !ids.insert(&task.id)) {
+            return Err(PlanError::Rejected(
+                "profile-bound task has no unique corpus identity".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Expands the document's `[selection]` against the corpus inventory.
 ///
 /// Rejections name the contradiction: unknown task id, unmet or
@@ -238,8 +268,13 @@ pub(crate) struct Expansion {
 pub(crate) fn expand_selection(
     experiment: &ResolvedExperiment,
     corpus: &[CorpusTask],
-    profile_bound_task: Option<&str>,
+    profile_bound_task: Option<&ProfileTaskBinding>,
 ) -> Result<Expansion, PlanError> {
+    let mut canonical_corpus = corpus.to_vec();
+    if let Some(bound) = profile_bound_task {
+        bound.canonicalize(&mut canonical_corpus)?;
+    }
+    let corpus = &canonical_corpus;
     let selection = experiment.selection().ok_or_else(|| {
         PlanError::Rejected(
             "plan requires [selection]; explicit-trial documents run directly through \
@@ -252,8 +287,25 @@ pub(crate) fn expand_selection(
         crate::experiment::SelectionScope::Full => {
             corpus.iter().map(|task| task.id.clone()).collect()
         }
-        crate::experiment::SelectionScope::Subset => selection.task_ids.clone(),
+        crate::experiment::SelectionScope::Subset => selection
+            .task_ids
+            .iter()
+            .map(|id| match profile_bound_task {
+                Some(bound) if id == &bound.native_name => bound.id.clone(),
+                _ => id.clone(),
+            })
+            .collect(),
     };
+    if selected_ids
+        .iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        != selected_ids.len()
+    {
+        return Err(PlanError::Rejected(
+            "selection repeats the same canonical task identity".to_owned(),
+        ));
+    }
     for id in &selected_ids {
         if !inventory_ids.contains(&id.as_str()) {
             return Err(PlanError::Rejected(format!(
@@ -285,7 +337,8 @@ pub(crate) fn expand_selection(
     }
     if let Some(bound) = profile_bound_task {
         for id in &selected_ids {
-            if id != bound {
+            if id != &bound.id {
+                let bound = &bound.id;
                 rejections.push(format!(
                     "task {id:?} is not bound by the pinned native profile \
                      (the profile binds {bound:?}); per-task native profiles are not \
@@ -338,30 +391,60 @@ pub(crate) fn expand_selection(
 pub(crate) fn profile_bound_task(
     experiment: &ResolvedExperiment,
     material: &NativeMaterial,
-) -> Result<String, PlanError> {
+) -> Result<ProfileTaskBinding, PlanError> {
     let adapter_key = crate::runner::experiment::adapter_key_for(experiment)
         .map_err(|error| PlanError::Rejected(error.to_string()))?;
     let benchmark = material
         .benchmark(&adapter_key)
         .map_err(|error| PlanError::Rejected(error.to_string()))?;
     let profile_bytes = std::fs::read(&benchmark.profile)?;
-    match adapter_key.as_str() {
-        "terminal-bench-2.1" => Ok(crate::benchmark::terminal_bench_21::Tb21Profile::parse(
-            profile_bytes.as_slice(),
-        )
+    let package_dir = |id: &str| {
+        if benchmark.task_package.join("task.toml").is_file() {
+            benchmark.task_package.clone()
+        } else {
+            benchmark.task_package.join(id)
+        }
+    };
+    let (id, dir) = match adapter_key.as_str() {
+        "terminal-bench-2.1" => {
+            let profile =
+                crate::benchmark::terminal_bench_21::Tb21Profile::parse(profile_bytes.as_slice())
+                    .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            let dir = package_dir(&profile.task_id);
+            profile
+                .validate_task_package(&dir)
+                .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            (profile.task_id, dir)
+        }
+        "terminal-bench-3.0" => {
+            let profile =
+                crate::benchmark::terminal_bench_30::Tb30Profile::parse(profile_bytes.as_slice())
+                    .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            let dir = package_dir(&profile.task_id);
+            profile
+                .admit_task_package(&dir)
+                .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            (profile.task_id, dir)
+        }
+        _ => {
+            let profile =
+                crate::benchmark::deepswe::DeepSweProfile::parse(profile_bytes.as_slice())
+                    .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            let dir = package_dir(&profile.task_id);
+            profile
+                .admit_task_package(&dir)
+                .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            (profile.task_id, dir)
+        }
+    };
+    let native_name = crate::runner::prepare::parse_task_requirements(&dir)
         .map_err(|error| PlanError::Rejected(error.to_string()))?
-        .task_id),
-        "terminal-bench-3.0" => Ok(crate::benchmark::terminal_bench_30::Tb30Profile::parse(
-            profile_bytes.as_slice(),
-        )
-        .map_err(|error| PlanError::Rejected(error.to_string()))?
-        .task_id),
-        _ => Ok(
-            crate::benchmark::deepswe::DeepSweProfile::parse(profile_bytes.as_slice())
-                .map_err(|error| PlanError::Rejected(error.to_string()))?
-                .task_id,
-        ),
-    }
+        .task_id;
+    Ok(ProfileTaskBinding {
+        id,
+        native_name,
+        dir,
+    })
 }
 
 /// Builds the digest-bound run plan and its preview.
@@ -414,13 +497,20 @@ pub(crate) fn build_plan(
         _ => {}
     }
 
+    if let Some((_, material)) = &material {
+        super::output_control::admit(material, &experiment)
+            .map_err(|error| PlanError::Rejected(error.to_string()))?;
+    }
     let root = task_package_root(&experiment, fixtures, material.as_ref().map(|(_, m)| m))?;
-    let corpus = enumerate_corpus(&root)?;
+    let mut corpus = enumerate_corpus(&root)?;
     let bound = material
         .as_ref()
         .map(|(_, m)| profile_bound_task(&experiment, m))
         .transpose()?;
-    let expansion = expand_selection(&experiment, &corpus, bound.as_deref())?;
+    if let Some(bound) = &bound {
+        bound.canonicalize(&mut corpus)?;
+    }
+    let expansion = expand_selection(&experiment, &corpus, bound.as_ref())?;
 
     let execution = experiment.execution();
     // Declared supervision bounds combine by narrowing: the per-stage
@@ -599,4 +689,142 @@ fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let digest = Sha256::digest(bytes);
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn selection_source(adapter: &str, tasks: &[&str]) -> String {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/experiment/local-paired.toml");
+        let source = std::fs::read_to_string(fixture).unwrap();
+        let mut source = source.split("[[trials]]").next().unwrap().to_owned();
+        if adapter == "terminal-bench-3.0" {
+            source = source.replace("revision = \"2.1\"", "revision = \"3.0\"");
+        } else if adapter == "deepswe-v1.1" {
+            source = source
+                .replace("name = \"terminal-bench\"", "name = \"deepswe\"")
+                .replace("revision = \"2.1\"", "revision = \"v1.1\"");
+        }
+        source.push_str(&format!("\n[selection]\nscope = \"subset\"\ntask_ids = {tasks:?}\nreason = \"identity regression\"\nrepetitions = 1\n\n[execution]\nmode = \"native-fixture\"\n"));
+        source
+    }
+
+    fn stage_profile(root: &Path, adapter: &str) -> (NativeMaterial, String, String) {
+        fn copy(source: &Path, target: &Path) {
+            std::fs::create_dir_all(target).unwrap();
+            for entry in std::fs::read_dir(source).unwrap() {
+                let entry = entry.unwrap();
+                if entry.path().is_dir() {
+                    copy(&entry.path(), &target.join(entry.file_name()));
+                } else {
+                    std::fs::copy(entry.path(), target.join(entry.file_name())).unwrap();
+                }
+            }
+        }
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/benchmarks")
+            .join(adapter);
+        let package = root.join("package");
+        copy(&fixture.join("task-package"), &package);
+        let text = std::fs::read_to_string(fixture.join("profile/synthetic.toml")).unwrap();
+        let mut profile: toml::Value = toml::from_str(&text).unwrap();
+        let id = profile["identity"]["task_id"].as_str().unwrap().to_owned();
+        let namespace = if adapter == "deepswe-v1.1" {
+            "datacurve"
+        } else {
+            "terminal-bench"
+        };
+        let name = format!("{namespace}/{id}");
+        std::fs::write(
+            package.join("task.toml"),
+            format!("[task]\nname = {name:?}\n"),
+        )
+        .unwrap();
+        let rows = profile["package"].as_array_mut().unwrap();
+        for row in rows.iter_mut() {
+            let bytes = std::fs::read(package.join(row["path"].as_str().unwrap())).unwrap();
+            row["sha256"] = sha256_hex(&bytes).into();
+            row["size"] = (bytes.len() as i64).into();
+        }
+        rows.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+        let table = serde_json::to_value(&*rows).unwrap();
+        profile["identity"]["package_manifest_sha256"] =
+            sha256_hex(serde_json::to_string(&table).unwrap().as_bytes()).into();
+        let profile_path = root.join("profile.toml");
+        std::fs::write(&profile_path, toml::to_string(&profile).unwrap()).unwrap();
+        let pinned = json!({"path": "/unused", "sha256": "unused"});
+        let material = serde_json::from_value(json!({
+            "schema": "opi-eval-native-material/4", "static_lock": pinned,
+            "provider": {"script": pinned, "endpoint": "unused", "request_log": "/unused"},
+            "agents": {}, "benchmarks": {adapter: {
+                "profile": profile_path, "task_package": package,
+                "task_package_manifest_sha256": "unused", "verifier_executable": pinned,
+                "verifier_env": {}, "oracle": pinned, "oracle_env": {}
+            }}
+        }))
+        .unwrap();
+        (material, id, name)
+    }
+
+    #[test]
+    fn native_selection_uses_profile_id_for_namespaced_task_name() {
+        for adapter in ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"] {
+            let root = tempfile::tempdir().unwrap();
+            let (material, id, name) = stage_profile(root.path(), adapter);
+            for selected in [&id, &name] {
+                let experiment =
+                    ResolvedExperiment::resolve(&selection_source(adapter, &[selected])).unwrap();
+                let package = task_package_root(&experiment, None, Some(&material)).unwrap();
+                let corpus = enumerate_corpus(&package).unwrap();
+                let bound = profile_bound_task(&experiment, &material).unwrap();
+                let expansion = expand_selection(&experiment, &corpus, Some(&bound)).unwrap();
+                assert_eq!(expansion.selected_ids, std::slice::from_ref(&id));
+                assert_eq!(expansion.trials.len(), 2);
+                assert!(
+                    expansion
+                        .trials
+                        .iter()
+                        .all(|trial| trial.task == id && !trial.id.contains('/'))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn native_task_aliases_require_exact_package_binding() {
+        for adapter in ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"] {
+            let root = tempfile::tempdir().unwrap();
+            let (mut material, id, name) = stage_profile(root.path(), adapter);
+            let corpus_root = root.path().join("corpus");
+            std::fs::create_dir_all(&corpus_root).unwrap();
+            std::fs::rename(root.path().join("package"), corpus_root.join(&id)).unwrap();
+            material.benchmarks.get_mut(adapter).unwrap().task_package = corpus_root.clone();
+            let valid = ResolvedExperiment::resolve(&selection_source(adapter, &[&name])).unwrap();
+            let corpus = enumerate_corpus(&corpus_root).unwrap();
+            let bound = profile_bound_task(&valid, &material).unwrap();
+            assert_eq!(
+                expand_selection(&valid, &corpus, Some(&bound))
+                    .unwrap()
+                    .selected_ids,
+                std::slice::from_ref(&id)
+            );
+            let forged = format!("unrelated/{id}");
+            for tasks in [&[forged.as_str()][..], &[id.as_str(), name.as_str()][..]] {
+                let invalid =
+                    ResolvedExperiment::resolve(&selection_source(adapter, tasks)).unwrap();
+                assert!(expand_selection(&invalid, &corpus, Some(&bound)).is_err());
+            }
+            std::fs::write(
+                corpus_root.join(&id).join("task.toml"),
+                format!("[task]\nname = {forged:?}\n"),
+            )
+            .unwrap();
+            assert!(
+                profile_bound_task(&valid, &material).is_err(),
+                "alias must be bound to exact reviewed task bytes"
+            );
+        }
+    }
 }

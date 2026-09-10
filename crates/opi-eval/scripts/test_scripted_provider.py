@@ -234,6 +234,22 @@ class ScriptedProviderListenerTest(unittest.TestCase):
         self.assertEqual(lines[0]["schema"], "opi-eval-scripted-provider-log/1")
         self.assertEqual(lines[0]["response_script"], "scripted-turn-plan/1")
 
+    def test_request_log_retains_observed_output_limits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "requests.jsonl"
+            process, base = self.start_listener(log)
+            try:
+                for field in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
+                    body = self.chat_body(stream=False) | {field: 16384}
+                    self.post(base, body)
+            finally:
+                self.stop_listener(process)
+            rows = [json.loads(line) for line in log.read_text().splitlines()]
+        self.assertEqual([r.get("output_limits") for r in rows], [
+            {"max_tokens": 16384}, {"max_completion_tokens": 16384},
+            {"max_output_tokens": 16384},
+        ])
+
     def test_undeclared_paths_and_methods_are_rejected(self) -> None:
         import urllib.request
 
@@ -429,6 +445,42 @@ class ScriptedProviderProtocolMatrixTest(unittest.TestCase):
         )
         self.assertEqual(final[0], 200)
         self.assertEqual(json.loads(final[1])["stop_reason"], "end_turn")
+
+    def test_anthropic_beta_query_serves_the_same_tool_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "requests.jsonl"
+            process, base = self.start(log)
+            try:
+                for stream in (False, True):
+                    for tool_result in (False, True):
+                        with self.subTest(stream=stream, tool_result=tool_result):
+                            body = self.anthropic_body(stream, tool_result)
+                            stable = self.post(base, body, "/v1/messages")
+                            beta = self.post(base, body, "/v1/messages?beta=true")
+                            self.assertEqual(beta[0], 200)
+                            self.assertEqual(beta[1], stable[1])
+                            self.assertEqual(beta[2]["Content-Type"],
+                                             stable[2]["Content-Type"])
+            finally:
+                self.stop(process)
+            lines = [json.loads(line) for line in log.read_text().splitlines()]
+        self.assertEqual([line["path"] for line in lines],
+                         ["/v1/messages", "/v1/messages?beta=true"] * 4)
+
+    def test_anthropic_beta_query_does_not_admit_unknown_routes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            process, base = self.start(Path(tmp) / "requests.jsonl")
+            try:
+                for path in ("/v1/messages?beta=false", "/v1/messages?other=true",
+                             "/v1/messages?beta=true&other=true",
+                             "/v1/v1/messages?beta=true", "/v1/other?beta=true",
+                             "/v1/chat/completions?beta=true"):
+                    with self.subTest(path=path):
+                        status, _, _ = self.post(
+                            base, self.anthropic_body(False, False), path)
+                        self.assertEqual(status, 404)
+            finally:
+                self.stop(process)
 
     def test_openai_responses_stream_tool_loop_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

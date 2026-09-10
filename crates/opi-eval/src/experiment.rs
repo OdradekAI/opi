@@ -1248,6 +1248,9 @@ display_name = \"opi-eval {provider}\"\n",
             "thinking_level_map = {{ {value} = \"{value}\" }}\n"
         ));
     }
+    if let ProjectedControl::Effective { value } = controls.max_output_tokens {
+        body.push_str(&format!("\n[defaults]\nmax_output_tokens = {value}\n"));
+    }
     Ok(body)
 }
 
@@ -1744,6 +1747,33 @@ group = "hello"
                 }
             }
         }
+    }
+
+    #[test]
+    fn opi_projection_sets_request_limit_without_enabling_thinking() {
+        let source = doc("anthropic-messages")
+            .replace("max_output_tokens = 4096", "max_output_tokens = 16384")
+            .replace("reasoning = \"high\"", "reasoning = \"omitted\"")
+            .replace(
+                "required = [\"max_output_tokens\", \"context_window\", \"reasoning\"]",
+                "required = [\"max_output_tokens\", \"context_window\"]",
+            );
+        let projection = ResolvedExperiment::resolve(&source)
+            .unwrap()
+            .project_connection(NativeClient::Opi, credential())
+            .unwrap();
+        let config: toml::Value =
+            toml::from_str(std::str::from_utf8(&projection.config_bytes).unwrap()).unwrap();
+        assert_eq!(
+            config
+                .get("defaults")
+                .and_then(|v| v.get("max_output_tokens"))
+                .and_then(toml::Value::as_integer),
+            Some(16384)
+        );
+        let model = &config["providers"]["custom"]["scripted"]["models"][0];
+        assert_eq!(model["max_output_tokens"].as_integer(), Some(16384));
+        assert!(model.get("supports_thinking").is_none());
     }
 
     #[test]

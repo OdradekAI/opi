@@ -1,14 +1,15 @@
 //! Normalized offline report over sealed assembled outputs.
 //!
 //! [`ReportBuilder::recompute_from_bundle`] rebuilds the normalized view
-//! purely from verified sealed bundles: every trial view, the pair
+//! from verified sealed bundles: graded trial views, the pair
 //! coverage, the integrity provenance, the native rewards, and the
 //! diagnostics are reconstructed from the sealed control evidence (the
 //! resolved experiment contract and the integrity record), the sealed
 //! trajectory projection, the sealed authority ledger, and the sealed
-//! manifest identities. No mutable side file of the run root is read, so
-//! mutating outer run artifacts can never change a published report
-//! (`EVAL-RPT-001`, `EVAL-OUT-004`). Both paths are effect-free: no Agent,
+//! manifest identities. Unsealed settlements retain attempted failure
+//! coverage as explicitly unverified diagnostics, never as scores. Outer
+//! receipts cannot change sealed trial facts (`EVAL-RPT-001`, `EVAL-OUT-004`).
+//! Both paths are effect-free: no Agent,
 //! no provider, no spawn, no mutation of sealed bytes.
 //!
 //! Report contract enforced here: headline outcomes come only from the
@@ -71,10 +72,9 @@ const CONTROL_INTEGRITY_KEY: &str = "control/integrity.json";
 const CONTROL_SETTLEMENT_KEY: &str = "control/settlement.json";
 const TRAJECTORY_KEY: &str = "evidence/trajectory.json";
 const AUTHORITY_LEDGER_KEY: &str = "native/authority-ledger.json";
-/// The bounded verifier stream captures: grader-sourced Native entries
-/// that are not the native grader report itself.
-const VERIFIER_STREAM_KEYS: [&str; 2] =
-    ["native/verifier-stdout.log", "native/verifier-stderr.log"];
+/// The bound result carrying native-mode rewards, distinct from collection
+/// manifests, configs, and process streams.
+const NATIVE_RESULT_KEY: &str = "native/trial-result.json";
 
 /// The offline report builder over one run root.
 pub(crate) struct ReportBuilder {
@@ -115,6 +115,8 @@ pub(crate) struct NormalizedReport {
     /// recomputed from its canonical bytes.
     integrity_digest: String,
     trials: Vec<SealedTrial>,
+    /// Unverified lifecycle diagnostics, excluded from grades and seals.
+    unsealed: Vec<TrialView>,
     /// Ids of trials that started (a durable receipt exists), sealed or
     /// not: the attempted set of the planned coverage.
     attempted_ids: Vec<String>,
@@ -233,61 +235,84 @@ impl ReportBuilder {
         }
     }
 
-    /// Recomputes the normalized view from verified sealed bundles only:
+    /// Recomputes grades from verified sealed bundles and retains unsealed
+    /// failure coverage separately:
     /// every sealed trial bundle is re-verified from its durable bytes,
     /// and every reconstructed fact is parsed from the sealed control,
     /// trajectory, ledger, and manifest evidence. Nothing is inferred from
-    /// memory or from mutable run-root side files, nothing re-runs.
+    /// memory; unsealed control records never establish grades. Nothing re-runs.
     pub(crate) fn recompute_from_bundle(&self) -> Result<NormalizedReport, ReportError> {
         // The run-level planned-coverage binding (P19-D06): written
         // before any effect, it keeps the planned denominator
         // reconstructible even when no trial sealed.
-        let run_control = self.read_run_control();
-        let trials_root = self.run_root.join("trials");
-        if !trials_root.is_dir() && run_control.is_none() {
+        let mut failures = Vec::new();
+        let run_control = match self.read_run_control() {
+            Ok(control) => control,
+            Err(kind) => {
+                failures.push(serde_json::json!({"trial": null, "kind": kind}));
+                None
+            }
+        };
+        let trials_root = match self.checked_input_path(Path::new("trials")) {
+            Ok(path) => Some(path),
+            Err(kind) => {
+                failures.push(serde_json::json!({"trial": null, "kind": kind}));
+                None
+            }
+        };
+        if trials_root.as_ref().is_none_or(|path| !path.is_dir())
+            && run_control.is_none()
+            && failures.is_empty()
+        {
             return Err(ReportError::Io(std::io::Error::other(format!(
                 "run root {} holds no trials directory",
                 self.run_root.display()
             ))));
         }
-        let mut ids: Vec<String> = if trials_root.is_dir() {
-            std::fs::read_dir(&trials_root)
-                .map_err(ReportError::Io)?
-                .flatten()
-                .filter(|entry| entry.path().is_dir())
-                .filter_map(|entry| entry.file_name().into_string().ok())
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let mut ids: Vec<String> =
+            if let Some(trials_root) = trials_root.filter(|path| path.is_dir()) {
+                std::fs::read_dir(&trials_root)
+                    .map_err(ReportError::Io)?
+                    .flatten()
+                    .filter(|entry| {
+                        entry
+                            .file_type()
+                            .is_ok_and(|kind| kind.is_dir() || kind.is_symlink())
+                    })
+                    .filter_map(|entry| entry.file_name().into_string().ok())
+                    .collect()
+            } else {
+                Vec::new()
+            };
         ids.sort();
 
-        // A trial started exactly when it claimed a sealed bundle (its
-        // manifest exists): the receipt is written only on the report
-        // transition, which honest runs may refuse, so the durable
-        // attempted marker is the manifest claim itself.
-        let attempted_ids: Vec<String> = ids
-            .iter()
-            .filter(|id| trials_root.join(id).join("bundle/manifest.json").is_file())
-            .cloned()
-            .collect();
+        // A manifest claim remains an attempt even when verification fails.
+        // Unsealed durable settlements are added after their binding checks.
+        let mut attempted_ids: Vec<String> = Vec::new();
 
-        let mut failures = Vec::new();
         let mut trials = Vec::new();
         for id in &ids {
-            let bundle_root = trials_root.join(id).join("bundle");
-            if !bundle_root.join("manifest.json").is_file() {
-                // The trial never claimed a sealed bundle (crash before
-                // sealing, refused admission, or effect-unknown): nothing
-                // contributes to verification, and the planned coverage
-                // keeps the trial visible as unexecuted (`P19-D06`).
+            let manifest = match self
+                .checked_input_path(&Path::new("trials").join(id).join("bundle/manifest.json"))
+            {
+                Ok(path) => path,
+                Err(kind) => {
+                    failures.push(serde_json::json!({"trial": id, "kind": kind}));
+                    continue;
+                }
+            };
+            let bundle_root = manifest.parent().expect("manifest has bundle parent");
+            if !manifest.is_file() {
+                // Reconstruct unsealed lifecycle evidence separately, after
+                // resolving the common experiment and planned denominator.
                 continue;
             }
-            if let Err(error) = RunBundle::verify(&bundle_root) {
+            attempted_ids.push(id.clone());
+            if let Err(error) = RunBundle::verify(bundle_root) {
                 failures.push(verification_failure(id, &error));
                 continue;
             }
-            match self.sealed_trial(id, &bundle_root) {
+            match self.sealed_trial(id, bundle_root) {
                 Ok(trial) => trials.push(trial),
                 Err(kind) => failures.push(serde_json::json!({
                     "trial": id,
@@ -373,35 +398,224 @@ impl ReportBuilder {
         // run root (`P19-D06`).
         if let Some(control) = &run_control
             && !trials.is_empty()
-            && control["manifest_digest"].as_str().is_some_and(|recorded| {
-                recorded != experiment["manifest_digest"].as_str().unwrap_or_default()
-            })
+            && !control_matches_experiment(control, &experiment)
         {
             failures.push(serde_json::json!({
                 "trial": null,
                 "kind": "run-control-drift",
             }));
         }
+        let mut unsealed = Vec::new();
+        let mut diagnostic_experiment = experiment.clone();
+        for id in &ids {
+            if attempted_ids.contains(id) || failures.iter().any(|failure| failure["trial"] == *id)
+            {
+                continue;
+            }
+            match self.unsealed_trial(id, &diagnostic_experiment, run_control.as_ref()) {
+                Ok(Some((trial, contract))) => {
+                    diagnostic_experiment = contract;
+                    attempted_ids.push(id.clone());
+                    unsealed.push(trial);
+                }
+                Ok(None) => {}
+                Err(kind) => failures.push(serde_json::json!({"trial": id, "kind": kind})),
+            }
+        }
+        attempted_ids.sort();
         Ok(NormalizedReport {
             experiment,
             integrity,
             integrity_digest,
             trials,
+            unsealed,
             attempted_ids,
             run_control,
             failures,
         })
     }
 
-    /// Reads the run-level planned-coverage artifact when present and
-    /// well-formed; anything else degrades to legacy sealed-contract
-    /// binding.
-    fn read_run_control(&self) -> Option<serde_json::Value> {
-        let bytes = std::fs::read(self.run_root.join("run-control.json")).ok()?;
-        let control: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-        (control["schema"] == "opi-eval-run-control/1"
-            && control["planned_trials"].as_array().is_some())
-        .then_some(control)
+    /// A durable settlement proves an attempt, but without a seal its
+    /// classification is diagnostic only and cannot establish a reward.
+    fn unsealed_trial(
+        &self,
+        id: &str,
+        experiment: &serde_json::Value,
+        run_control: Option<&serde_json::Value>,
+    ) -> Result<Option<(TrialView, serde_json::Value)>, String> {
+        let relative = Path::new("trials").join(id).join("bundle");
+        let bundle = self.checked_input_path(&relative)?;
+        self.checked_input_path(&relative.join("intent.json"))?;
+        self.checked_input_path(&relative.join("settlement.json"))?;
+        let recovered = RunBundle::recover(&bundle).map_err(|_| "unsealed-lifecycle-unparsable")?;
+        let Some(marker) = recovered.settlement else {
+            return Ok(None);
+        };
+        if marker.trial.as_str() != id
+            || recovered
+                .intent
+                .as_ref()
+                .is_none_or(|intent| intent.trial.as_str() != id)
+        {
+            return Err("unsealed-trial-drift".to_owned());
+        }
+        let declared = experiment["trials"]
+            .as_array()
+            .or_else(|| run_control.and_then(|control| control["planned_trials"].as_array()))
+            .and_then(|trials| trials.iter().find(|trial| trial["id"] == id))
+            .ok_or("undeclared-unsealed-trial")?;
+        let staged_experiment = read_optional_json(
+            &self.checked_input_path(&relative.join("artifacts").join(CONTROL_EXPERIMENT_KEY))?,
+        )?
+        .ok_or("unsealed-experiment-missing")?;
+        if (!experiment.is_null() && staged_experiment != *experiment)
+            || run_control
+                .is_some_and(|control| !control_matches_experiment(control, &staged_experiment))
+        {
+            return Err("unsealed-control-drift".to_owned());
+        }
+        let pair = serde_json::to_value(
+            &recovered
+                .intent
+                .as_ref()
+                .expect("intent checked above")
+                .pair,
+        )
+        .expect("pair serializes");
+        let owns_pair = staged_experiment["edges"].as_array().is_some_and(|edges| {
+            edges.iter().any(|edge| {
+                edge["id"] == pair
+                    && (edge["baseline"] == declared["subject"]
+                        || edge["candidate"] == declared["subject"])
+            }) || (edges.is_empty()
+                && pair == format!("solo:{}", declared["subject"].as_str().unwrap_or_default()))
+        });
+        if !owns_pair {
+            return Err("unsealed-pair-drift".to_owned());
+        }
+        let settlement = read_optional_json(
+            &self.checked_input_path(&relative.join("artifacts").join(CONTROL_SETTLEMENT_KEY))?,
+        )?
+        .ok_or("unsealed-settlement-missing")?;
+        if settlement["schema"] != "opi-eval-trial-settlement/1"
+            || settlement["trial"] != id
+            || settlement["graded"].as_bool().is_none()
+            || settlement["agent_failure"].as_bool().is_none()
+            || settlement["timed_out"].as_bool().is_none()
+            || (settlement["graded"] == false
+                && (settlement["agent_failure"] != false
+                    || settlement["failure_kind"]
+                        .as_str()
+                        .is_none_or(str::is_empty)))
+            || (settlement["graded"] == true && !settlement["failure_kind"].is_null())
+        {
+            return Err("unsealed-settlement-invalid".to_owned());
+        }
+        // An optional outer receipt can contradict an unsealed settlement,
+        // but can never supply a grade or override the durable control facts.
+        if let Some(receipt) = read_optional_json(
+            &self.checked_input_path(&Path::new("trials").join(id).join("receipt.json"))?,
+        )? {
+            let class = &receipt["classification"];
+            let agrees = if settlement["graded"] == true {
+                class["class"] == "graded-native"
+                    && class["agent_failed"] == settlement["agent_failure"]
+                    && class["timed_out"] == settlement["timed_out"]
+            } else {
+                matches!(
+                    class["class"].as_str(),
+                    Some("invalid-execution" | "no-outcome")
+                ) && class["reason"] == settlement["failure_kind"]
+                    && class["boundary"] == settlement["boundary"]
+            };
+            if receipt["schema"] != "opi-eval-trial-receipt/1"
+                || receipt["id"] != id
+                || receipt["status"] != "failed"
+                || ["subject", "task", "group"]
+                    .iter()
+                    .any(|key| receipt[*key] != declared[*key])
+                || !receipt["bundle_identity"].is_null()
+                || !receipt["seal_result"]["sealed"].is_null()
+                || !agrees
+            {
+                return Err("unsealed-receipt-drift".to_owned());
+            }
+        }
+        let reason = if settlement["graded"] == true {
+            serde_json::json!("unsealed-grade")
+        } else {
+            settlement["failure_kind"].clone()
+        };
+        Ok(Some((
+            TrialView {
+                id: id.to_owned(),
+                subject: declared["subject"].as_str().unwrap_or_default().to_owned(),
+                task: declared["task"].as_str().unwrap_or_default().to_owned(),
+                group: declared["group"].as_str().unwrap_or_default().to_owned(),
+                status: "unsealed".to_owned(),
+                outcome: serde_json::json!({
+                    "class": "invalid", "reason": reason, "boundary": settlement["boundary"],
+                    "source": "unsealed-settlement",
+                }),
+                headline: None,
+                native_facts: BTreeMap::new(),
+                diagnostics: serde_json::json!({
+                    "label": "diagnostic", "evidence": "unverified",
+                    "artifact": CONTROL_SETTLEMENT_KEY,
+                }),
+            },
+            staged_experiment,
+        )))
+    }
+
+    /// Only absence permits legacy binding; malformed coverage never
+    /// silently replaces a declared denominator with the surviving bundles.
+    fn read_run_control(&self) -> Result<Option<serde_json::Value>, String> {
+        let Some(control) =
+            read_optional_json(&self.checked_input_path(Path::new("run-control.json"))?)?
+        else {
+            return Ok(None);
+        };
+        if control["schema"] != "opi-eval-run-control/1"
+            || control["experiment"].as_str().is_none_or(str::is_empty)
+            || control["manifest_digest"].as_str().is_none_or(|digest| {
+                digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit())
+            })
+            || trial_slots(&control["planned_trials"]).is_none()
+        {
+            return Err("run-control-invalid".to_owned());
+        }
+        Ok(Some(control))
+    }
+
+    /// Unsealed metadata has no manifest traversal guard. Check every
+    /// descendant component before following it, rejecting links and Windows
+    /// junctions/reparse points, including dangling leaf links. The supplied
+    /// root itself defines the authority boundary.
+    fn checked_input_path(&self, relative: &Path) -> Result<PathBuf, String> {
+        let mut path = self.run_root.clone();
+        for component in relative.components() {
+            let std::path::Component::Normal(component) = component else {
+                return Err("input-path-escape".to_owned());
+            };
+            path.push(component);
+            match std::fs::symlink_metadata(&path) {
+                Ok(metadata) => {
+                    let linked = metadata.file_type().is_symlink();
+                    #[cfg(windows)]
+                    let linked = {
+                        use std::os::windows::fs::MetadataExt;
+                        linked || metadata.file_attributes() & 0x400 != 0
+                    };
+                    if linked {
+                        return Err("input-path-link".to_owned());
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err("input-path-unreadable".to_owned()),
+            }
+        }
+        Ok(path)
     }
 
     /// Builds the published report: recompute first, then redact-gate,
@@ -428,6 +642,14 @@ impl ReportBuilder {
         normalized: &NormalizedReport,
         guard: &RedactionGuard,
     ) -> Option<serde_json::Value> {
+        for trial in &normalized.unsealed {
+            if guard.find_leak(&serde_json::to_vec(trial).expect("trial serializes")) {
+                return Some(serde_json::json!({
+                    "artifact": CONTROL_SETTLEMENT_KEY,
+                    "reason": "declared-canary-present",
+                }));
+            }
+        }
         for trial in &normalized.trials {
             for (key, entry) in &trial.entries {
                 if entry.get("classification") != Some(&serde_json::json!("Exportable")) {
@@ -455,11 +677,20 @@ impl ReportBuilder {
     /// vary between identical independent runs) are never echoed: the
     /// normalized view cites only stable sealed facts.
     fn render(&self, normalized: &NormalizedReport) -> serde_json::Value {
-        let trials: Vec<TrialView> = normalized
+        let mut trials: Vec<serde_json::Value> = normalized
             .trials
             .iter()
-            .map(|trial| self.trial_view(trial, normalized))
+            .map(|trial| {
+                serde_json::to_value(self.trial_view(trial, normalized)).expect("trial serializes")
+            })
             .collect();
+        trials.extend(
+            normalized
+                .unsealed
+                .iter()
+                .map(|trial| serde_json::to_value(trial).expect("trial serializes")),
+        );
+        trials.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
         let coverage = coverage(normalized);
         // The planned denominator: the pre-effect run-control binding
         // when present, else the sealed experiment contract (legacy
@@ -503,7 +734,7 @@ impl ReportBuilder {
             .iter()
             .filter(|trial| outcome_buckets(trial).1)
             .count();
-        let invalid = normalized.trials.len().saturating_sub(valid);
+        let invalid = normalized.trials.len().saturating_sub(valid) + normalized.unsealed.len();
         let all_sealed = planned_count > 0 && planned_count == normalized.trials.len();
         let all_comparable = coverage
             .iter()
@@ -530,11 +761,17 @@ impl ReportBuilder {
                     .map(serde_json::Value::from)
             })
             .unwrap_or(serde_json::Value::Null);
-        let verification: BTreeMap<&str, serde_json::Value> = normalized
+        let mut verification: BTreeMap<&str, serde_json::Value> = normalized
             .trials
             .iter()
             .map(|trial| (trial.id.as_str(), serde_json::json!({"state": "verified"})))
             .collect();
+        verification.extend(
+            normalized
+                .unsealed
+                .iter()
+                .map(|trial| (trial.id.as_str(), serde_json::json!({"state": "unsealed"}))),
+        );
         // Each benchmark reports its own metric definition and
         // denominator; results from different benchmarks are never
         // averaged into one cross-benchmark headline (P19-AC-008).
@@ -636,7 +873,7 @@ impl ReportBuilder {
                     .cloned()
             })
             .ok_or("undeclared-trial".to_owned())?;
-        Ok(SealedTrial {
+        let trial = SealedTrial {
             id: id.to_owned(),
             subject: declared["subject"].as_str().unwrap_or_default().to_owned(),
             task: declared["task"].as_str().unwrap_or_default().to_owned(),
@@ -648,7 +885,27 @@ impl ReportBuilder {
                 .sealed_bytes(id, CONTROL_SETTLEMENT_KEY)
                 .ok()
                 .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
-        })
+        };
+        if let Some(grader) = trajectory_node_matching(&trial.trajectory, "grader/")
+            && grader["facts"]["reward"]["Known"]["origin"] == "native-trial-result"
+        {
+            // A digest proves retained bytes, not that a collection or
+            // configuration artifact actually carries the projected reward.
+            let result: serde_json::Value = serde_json::from_slice(
+                &self
+                    .sealed_bytes(id, NATIVE_RESULT_KEY)
+                    .map_err(|_| "native-reward-source-missing")?,
+            )
+            .map_err(|_| "native-reward-source-unparsable")?;
+            let reward = result["verifier_result"]["rewards"]["reward"].as_f64();
+            if headline(&trial).is_none()
+                || reward.is_none()
+                || reward != grader["facts"]["reward"]["Known"]["value"].as_f64()
+            {
+                return Err("native-reward-source-mismatch".to_owned());
+            }
+        }
+        Ok(trial)
     }
 
     /// Reads the sealed artifact bytes of one key of one trial.
@@ -712,6 +969,50 @@ fn outcome_view(trial: &SealedTrial) -> serde_json::Value {
         "boundary": trial.ledger["failed_boundary"].clone(),
         "source": "legacy-derived",
     })
+}
+
+/// Optional unverified metadata is absent only on NotFound; bad bytes or
+/// unreadable records cannot silently erase coverage or contradictions.
+fn read_optional_json(path: &Path) -> Result<Option<serde_json::Value>, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|_| "control-unparsable".to_owned()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err("control-unreadable".to_owned()),
+    }
+}
+
+/// Exact trial identities, independent of declaration order; duplicates or
+/// incomplete slots cannot establish a denominator.
+fn trial_slots(value: &serde_json::Value) -> Option<BTreeMap<String, Vec<String>>> {
+    let mut slots = BTreeMap::new();
+    for trial in value.as_array()? {
+        let id = trial["id"].as_str().filter(|id| !id.is_empty())?;
+        let fields = ["subject", "task", "group"]
+            .iter()
+            .map(|key| {
+                trial[*key]
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        if slots.insert(id.to_owned(), fields).is_some() {
+            return None;
+        }
+    }
+    Some(slots)
+}
+
+fn control_matches_experiment(control: &serde_json::Value, experiment: &serde_json::Value) -> bool {
+    control["manifest_digest"] == experiment["manifest_digest"]
+        && control["experiment"] == experiment["experiment_id"]
+        && ["scope", "task_ids", "repetitions"]
+            .iter()
+            .all(|key| control["selection"][*key] == experiment["selection"][*key])
+        && trial_slots(&control["planned_trials"])
+            .is_some_and(|planned| Some(planned) == trial_slots(&experiment["trials"]))
 }
 
 /// Whether one sealed trial is a valid graded outcome (the metric
@@ -816,12 +1117,19 @@ fn fact_token(fact: &serde_json::Value) -> Option<String> {
 fn headline(trial: &SealedTrial) -> Option<HeadlineView> {
     let grader = trajectory_node_matching(&trial.trajectory, "grader/")?;
     let reward = fact_token(&grader["facts"]["reward"])?;
+    let native_reward = grader["facts"]["reward"]["Known"]["origin"] == "native-trial-result";
     let artifact = trial
         .entries
         .iter()
         .find(|(key, entry)| {
-            !VERIFIER_STREAM_KEYS.contains(&key.as_str())
-                && entry["role"].as_str() == Some("Native")
+            (if native_reward {
+                key.as_str() == NATIVE_RESULT_KEY
+            } else {
+                matches!(
+                    key.as_str(),
+                    "native/native/ctrf-report" | "native/native/pier-report"
+                )
+            }) && entry["role"].as_str() == Some("Native")
                 && entry["source"]
                     .as_str()
                     .is_some_and(|source| source.starts_with("grader-"))
@@ -905,10 +1213,18 @@ fn diagnostics(trial: &SealedTrial, product: &str) -> serde_json::Value {
             .map(|node| &node["facts"]["completion"])
             .and_then(|fact| fact.get("Known"))
             .and_then(|known| known["value"].as_u64());
+        // The sealed settlement records successful native admission even
+        // when an older trajectory projected VerifiedNative as zero.
+        let native_graded = trial.settlement.as_ref().is_some_and(|settlement| {
+            settlement["graded"] == true
+                && trajectory_node_matching(&trial.trajectory, "grader/").is_some_and(|node| {
+                    node["facts"]["reward"]["Known"]["origin"] == "native-trial-result"
+                })
+        });
         if let Some(completion) = completion {
             verifier_view.insert(
                 "completion".to_owned(),
-                serde_json::json!(if completion == 1 {
+                serde_json::json!(if completion == 1 || native_graded {
                     "verified"
                 } else {
                     "failed"
@@ -1088,6 +1404,12 @@ fn coverage(normalized: &NormalizedReport) -> Vec<serde_json::Value> {
                         return true;
                     }
                 }
+                if let Some(trial) = normalized.unsealed.iter().find(|trial| {
+                    trial.subject == subject && trial.task == task && trial.group == group
+                }) {
+                    *sealed = trial.id.clone();
+                    return true;
+                }
                 false
             };
             let has_baseline = side_trial(
@@ -1126,6 +1448,13 @@ fn coverage(normalized: &NormalizedReport) -> Vec<serde_json::Value> {
             // (P19-D06).
             if comparability == "comparable" {
                 for trial in [&baseline_trial, &candidate_trial] {
+                    if let Some(unsealed) = normalized.unsealed.iter().find(|t| &t.id == trial) {
+                        comparability = format!(
+                            "invalid:{trial}:{}",
+                            unsealed.outcome["reason"].as_str().unwrap_or("unsealed")
+                        );
+                        break;
+                    }
                     if let Some(sealed) = normalized.trials.iter().find(|t| &t.id == trial) {
                         let outcome = outcome_view(sealed);
                         if outcome["source"] == "settlement" {

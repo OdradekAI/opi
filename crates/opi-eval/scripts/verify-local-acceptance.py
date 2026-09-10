@@ -23,6 +23,8 @@ import re
 import subprocess
 import sys
 import tempfile
+import tomllib
+import urllib.parse
 from pathlib import Path
 
 ACCEPTANCE_SCHEMA = "opi-eval-local-acceptance/1"
@@ -66,6 +68,17 @@ def load_json(path: Path, fragment: str) -> dict:
     if not isinstance(value, dict):
         raise Rejection(f"{fragment}: {path.name} is not a JSON object")
     return value
+
+
+def unique_record(rows: object, record_id: str, fragment: str) -> dict:
+    if not isinstance(rows, list) or not isinstance(record_id, str) or not record_id:
+        raise Rejection(f"{fragment}: missing record identity")
+    matches = [row for row in rows if isinstance(row, dict) and row.get("id") == record_id]
+    if len(matches) != 1:
+        raise Rejection(
+            f"{fragment}: expected one record for {record_id!r}, found {len(matches)}"
+        )
+    return matches[0]
 
 
 class Acceptance:
@@ -246,7 +259,7 @@ class Acceptance:
     def check_controls(self, manifest: dict, trials: list[dict]) -> None:
         controls = manifest.get("controls", {})
         concurrency = controls.get("execution_concurrency")
-        if not isinstance(concurrency, int) or concurrency < 1:
+        if type(concurrency) is not int or concurrency < 1:
             raise Rejection(f"run-control: controls declare no positive concurrency")
         if not isinstance(controls.get("connection_controls"), dict):
             raise Rejection(f"run-control: controls declare no frozen connection controls")
@@ -257,22 +270,212 @@ class Acceptance:
             control = load_json(
                 self.root / "runs" / family / "run-control.json", "run-control"
             )
-            planned = {
-                row.get("id"): row.get("subject") for row in control.get("planned_trials", [])
-            }
             for trial in entries:
-                if planned.get(trial["id"]) is None:
-                    raise Rejection(
-                        f"run-control: family {family!r} never planned {trial['id']!r}"
-                    )
-                expected_subject = (
-                    "candidate-opi" if trial["agent"] == "opi" else "baseline-pi"
+                planned = unique_record(
+                    control.get("planned_trials"), trial["id"], "run-control planned trial"
                 )
-                if planned[trial["id"]] != expected_subject:
+                bundle = self.resolve_run_root(trial) / "trials" / trial["id"] / "bundle"
+                bundle_manifest = load_json(bundle / "manifest.json", "bundle manifest")
+                artifact_entries = bundle_manifest.get("entries", {})
+                entry = (
+                    artifact_entries.get("control/experiment.json")
+                    if isinstance(artifact_entries, dict)
+                    else None
+                )
+                try:
+                    experiment_bytes = (
+                        bundle / "artifacts/control/experiment.json"
+                    ).read_bytes()
+                except OSError as error:
                     raise Rejection(
-                        f"run-control: {trial['id']!r} planned as subject "
-                        f"{planned[trial['id']]!r}, not {expected_subject!r}"
+                        f"run-control: {trial['id']!r} has no readable sealed experiment"
+                    ) from error
+                if not isinstance(entry, dict) or sha256(experiment_bytes) != entry.get(
+                    "digest"
+                ):
+                    raise Rejection(
+                        f"experiment digest: {trial['id']!r} differs from its bundle entry"
                     )
+                try:
+                    experiment = json.loads(experiment_bytes)
+                except (ValueError, UnicodeError) as error:
+                    raise Rejection(
+                        f"run-control: {trial['id']!r} has an invalid sealed experiment"
+                    ) from error
+                if not isinstance(experiment, dict):
+                    raise Rejection(
+                        f"run-control: {trial['id']!r} sealed experiment is not an object"
+                    )
+                for recorded, sealed in (
+                    ("experiment", "experiment_id"),
+                    ("manifest_digest", "manifest_digest"),
+                ):
+                    identity = control.get(recorded)
+                    if (
+                        not isinstance(identity, str)
+                        or not identity
+                        or identity != experiment.get(sealed)
+                    ):
+                        raise Rejection(
+                            f"run-control: {trial['id']!r} {recorded} differs "
+                            f"from its sealed experiment"
+                        )
+                declared = unique_record(
+                    experiment.get("trials"), trial["id"], "run-control sealed trial"
+                )
+                for field in ("subject", "task", "group"):
+                    value = planned.get(field)
+                    if (
+                        not isinstance(value, str)
+                        or not value
+                        or value != declared.get(field)
+                    ):
+                        raise Rejection(
+                            f"run-control: {trial['id']!r} planned {field} differs "
+                            f"from its sealed trial"
+                        )
+                subject = unique_record(
+                    experiment.get("subjects"), declared["subject"], "run-control sealed subject"
+                )
+                if subject.get("product") != trial["agent"]:
+                    raise Rejection(
+                        f"run-control: {trial['id']!r} subject {declared['subject']!r} "
+                        f"binds product {subject.get('product')!r}, not {trial['agent']!r}"
+                    )
+                self.check_output_control(controls, experiment, trial, bundle, artifact_entries)
+
+    def check_output_control(self, controls, experiment, trial, bundle, entries):
+        """Read only sealed loopback evidence; never follow its original host paths."""
+        def reject(reason):
+            raise Rejection(f"output-control: {trial['id']!r} {reason}")
+
+        declared = experiment.get("model_controls")
+        claims = controls["connection_controls"]
+        if not isinstance(declared, dict) or claims.get("model_controls") != declared:
+            reject("manifest controls differ from the sealed experiment")
+        limit = declared.get("max_output_tokens")
+        if type(limit) is not int or limit <= 0:
+            reject("requires a positive, proven output limit")
+        if experiment.get("execution", {}).get("concurrency") != controls["execution_concurrency"]:
+            reject("concurrency differs from the sealed experiment")
+        selected = unique_record(
+            experiment.get("connections"), experiment.get("connection_id"),
+            "output-control connection",
+        )
+        public = {key: selected.get(key) for key in ("provider", "api", "base_url", "model")}
+        if claims.get("connection") != public:
+            reject("connection differs from the sealed experiment")
+        key = "control/output-control.json"
+        path = bundle / "artifacts" / key
+        try:
+            raw = path.read_bytes()
+            if sha256(raw) != entries.get(key, {}).get("digest"):
+                reject("wire snapshot digest differs from its seal")
+            snapshot = json.loads(raw)
+            evidence_text = snapshot["evidence"]
+            proof = json.loads(evidence_text)
+            config = snapshot["config"]
+            request_text = snapshot["requests"]
+            requests = [json.loads(line) for line in request_text.splitlines()]
+            material = load_json(
+                self.resolve_run_root(trial) / "material.json", "output-control material"
+            )
+            agent = material["agents"][trial["agent"]]
+            if (
+                proof["schema"] != "opi-eval-output-control/1"
+                or proof["product"] != trial["agent"]
+                or proof["exit_code"] != 0
+                or type(proof["exit_code"]) is not int
+                or proof["executable_sha256"] != trial["attribution"]["agent_executable_sha256"]
+                or proof["executable_sha256"] != agent["executable"]["sha256"]
+                or proof.get("runtime_package_manifest_sha256") != (agent.get("runtime_package") or {}).get("manifest_sha256")
+                or proof.get("runtime_package_entrypoint") != (agent.get("runtime_package") or {}).get("entrypoint")
+                or sha256(evidence_text.encode()) != snapshot["evidence_sha256"]
+                or snapshot["evidence_sha256"] != agent["output_control_evidence"]["sha256"]
+                or proof["connection"] != {key: public[key] for key in ("provider", "api", "model")}
+                or proof["model_controls"] != declared
+                or sha256(config.encode()) != proof["config"]["sha256"]
+                or sha256(request_text.encode()) != proof["requests"]["sha256"]
+            ):
+                reject("client, package, projection, or wire identity differs")
+            endpoint = urllib.parse.urlsplit(proof["probe_base_url"])
+            if (
+                endpoint.scheme != "http" or endpoint.hostname != "127.0.0.1"
+                or not endpoint.port or endpoint.path or endpoint.query
+                or endpoint.fragment or endpoint.username or endpoint.password
+            ):
+                reject("probe endpoint is not the loopback listener")
+            # Compare the entire projected structure, including absence of
+            # unsupported controls. Digests alone cannot detect a rewritten
+            # config that still repeats the original declared controls.
+            opi = trial["agent"] == "opi"
+            expected_model = {"id": public["model"]}
+            if opi:
+                expected_model["display_name"] = f"opi-eval {public['provider']}"
+            for source, target in (
+                ("context_window", "context_window" if opi else "contextWindow"),
+                ("max_output_tokens", "max_output_tokens" if opi else "maxTokens"),
+            ):
+                if type(declared[source]) is int:
+                    expected_model[target] = declared[source]
+            reasoning = declared["reasoning"]
+            if reasoning not in ("omitted", "unknown"):
+                expected_model["supports_thinking" if opi else "reasoning"] = True
+                expected_model["thinking_level_map" if opi else "thinkingLevelMap"] = {reasoning: reasoning}
+            if not opi and public["api"] != "anthropic-messages":
+                sampling = {
+                    name: declared[name] for name in ("temperature", "top_p")
+                    if type(declared[name]) in (int, float)
+                }
+                if sampling:
+                    expected_model["samplingParams"] = sampling
+            if opi:
+                expected_provider = {
+                    "name": f"opi-eval {public['provider']}",
+                    "base_url": proof["probe_base_url"], "api": public["api"],
+                    "api_key_env": "OPI_EVAL_SCRIPTED_KEY",
+                    "auth_scheme": "api-key" if public["api"] == "anthropic-messages" else "bearer",
+                    "models": [expected_model],
+                }
+                expected_config = {
+                    "providers": {"custom": {public["provider"]: expected_provider}},
+                    "defaults": {"max_output_tokens": limit},
+                }
+                parsed = tomllib.loads(config)
+            else:
+                expected_config = {"providers": {public["provider"]: {
+                    "baseUrl": proof["probe_base_url"], "api": public["api"],
+                    "apiKey": "dummy-scripted-credential", "models": [expected_model],
+                }}}
+                parsed = json.loads(config)
+            if json.dumps(parsed, sort_keys=True, allow_nan=False) != json.dumps(
+                expected_config, sort_keys=True, allow_nan=False
+            ):
+                reject("config differs from the frozen control projection")
+            fields, paths = {
+                "anthropic-messages": (("max_tokens",), ("/v1/messages", "/v1/messages?beta=true")),
+                "openai-completions": (("max_tokens", "max_completion_tokens"), ("/chat/completions", "/v1/chat/completions")),
+                "openai-responses": (("max_output_tokens",), ("/responses", "/v1/responses")),
+            }[public["api"]]
+            if len(requests) != 2:
+                reject("missing first request or tool continuation")
+            for index, request in enumerate(requests, 1):
+                limits = request["output_limits"]
+                if (
+                    request["schema"] != "opi-eval-scripted-provider-log/1"
+                    or request["seq"] != index or request["status"] != 200
+                    or request["method"] != "POST" or request["path"] not in paths
+                    or request["model"] != public["model"]
+                    or not isinstance(limits, dict) or len(limits) != 1
+                    or not any(
+                        type(limits.get(field)) is int and limits[field] == limit
+                        for field in fields
+                    )
+                    or not re.fullmatch(r"[0-9a-f]{64}", request["request_sha256"])
+                ):
+                    reject("observed wire output limit or request identity differs")
+        except (OSError, ValueError, KeyError, TypeError, IndexError) as error:
+            reject(f"missing or malformed sealed wire evidence ({type(error).__name__})")
 
     # -- scoped capture view -------------------------------------------------
 
