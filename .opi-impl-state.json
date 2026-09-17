@@ -6,7 +6,7 @@
     "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "cc7f8898f60c0d8abaa667f4b49b7affc721412e75dd3a67dcde37a783e1bc4c",
+    "docs/opi-spec.md": "1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db",
     "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md": "5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a",
     "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
   },
@@ -2690,7 +2690,7 @@
       "definition_of_done": "P19-D08: With separately authorized local-operator evidence already supplied, verify at least one feasible pinned task in each TB2.1/TB3/DeepSWE family, once by actual Opi and once by actual pi through Zhipu glm-5.3-flash over the selected Anthropic connection. Require frozen task/build/runner/material/model/control/concurrency/usage/time scope, redacted provider tool loops, task-side effects, official handoff and attributable native grading for all six trials; retain failed attempts and new replacement identities. Native zero can count; auth/infra/missing-tool-loop/invalid-handoff cannot. Verify independent-directory prepare/run/report, both real Agent paths for AC-003 through AC-006, all required artifacts/seals, deterministic offline reconstruction and criteria trace. Run required workspace verification union once on the final state plus actual WSL/Linux acceptance evidence and artifact audit. Record redacted findings in docs/audits/phase19-local-native-acceptance.md and .zh.md. Before any task execution, missing supplied evidence leaves this task failing with an explicit external prerequisite and all live scenarios open; no harness provider calls/auth reads, fabricated acceptance or uncited deferral. Passing this task does not auto-archive; Phase F independently reconstructs criteria and retains its human archive gate. Require the 19.10 local verifier to prove the Opi-only generic-audit view is non-empty, exhaustive for the three Opi trial captures and byte-bound to originals; audit it with scripts/opi-artifact-audit.py --workspace-root . . Validate full pi/Harbor/Pier repository-qualified provenance through the repository-aware local acceptance verifier. Generic auditor success cannot replace cross-Agent/native evidence verification.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "19.10"
       ],
@@ -2884,8 +2884,14 @@
         "crates/opi-eval/scripts/verify-local-acceptance.py",
         "crates/opi-eval/scripts/test_verify_local_acceptance.py"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "4bf5fc0b64c3e93aee5726713670ffa34196038d",
+      "evidence": {
+        "Opi-Task": "19.11",
+        "Opi-DoD-SHA256": "19cadd5913f2bd58fba4415263bdf27e626565f977cf8fa9d4ccb2af828adcd1",
+        "Opi-Verification": "workspace; smoke full PASSED (fmt, clippy -D warnings, cargo test --workspace --all-targets, --doc, rustdoc -D warnings) on 4bf5fc0 after CRLF-normalized spec hash re-sync; offline verify-local-acceptance.py --root phase19-operator/evidence-root --companion phase19-operator/bin/opi-eval accepted:true exit 0 (six trials, three families); scripts/opi-artifact-audit.py PASS (non-empty, exhaustive, byte-bound); verifier unittest 40 OK; doc-check PASS",
+        "Opi-Evaluator": "not-required (assurance-only supplied evidence, deterministic checks); Phase F audit mandatory",
+        "Opi-Acceptance": "P19-AC-001-live, P19-AC-003, P19-AC-004, P19-AC-005, P19-AC-006-live, P19-AC-012 met via six verified-native trials (tb21 pi/opi 1, tb30 0/0, deepswe 0/0, all comparable) with retained r1/r1.r2 failures and replacement identities; redacted findings recorded in docs/audits/phase19-local-native-acceptance.md and .zh.md"
+      },
       "blocker": null,
       "session_notes": [
         {
@@ -2895,6 +2901,11 @@
           "gate_results": {
             "external_prerequisite": "MISSING: no operator-supplied redacted evidence root; task execution not started, status remains failing, scenarios remain open, no fabricated acceptance"
           }
+        },
+        {
+          "timestamp": "2026-09-17T17:20:00+08:00",
+          "attempt": 2,
+          "summary": "P19-D08 closed on operator-supplied evidence. Task-owned paths (docs/audits bilingual pair, verifier script + tests amendment accepting sealed+verified run exit 1) landed in consolidated commit 4bf5fc0 authorized by the user alongside parallel session fixes; no separate chore task commit was possible on the clean tree. Evidence root at phase19-operator/evidence-root (outside the repository) corrected once before verification: manifest command_exits run entries stale-1 -> actual final-batch 0, re-accepted exit 0; correction recorded in the audit docs. Runtime note: credential_store::mutation_lock_times_out_under_contention failed once under peak workspace load (pre-existing 20ms/80ms timing assumption), then smoke full PASSED unchanged."
         }
       ]
     }
