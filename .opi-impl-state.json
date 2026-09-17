@@ -4362,6 +4362,77 @@
           "verified_at_commit": "d7238123de8c814323ecc3466fcbaa7c7122b04b"
         }
       ]
+    },
+    "19": {
+      "exit_criteria_met": true,
+      "criteria_trace": [
+        {
+          "id": "P19-AC-001",
+          "status": "met",
+          "evidence": "assembled_run tests (2 ok) + operator evidence: runs executed from phase19-operator workspace and ext4 roots outside the repository with declared external materials (material.json origin local); manifest command_exits run/verify/report and runs/<family> trees"
+        },
+        {
+          "id": "P19-AC-002",
+          "status": "met",
+          "evidence": "native_driver identity/oracle rejections passing; real trials bind executable digests and delivered artifact digests (agent.terminal.delivered in preserved run reports)"
+        },
+        {
+          "id": "P19-AC-003",
+          "status": "met",
+          "evidence": "native_driver tb21 lifecycle conformance + real tb21 trials: both agents verified-native reward 1 with graded delivered artifacts and sealed trajectories"
+        },
+        {
+          "id": "P19-AC-004",
+          "status": "met",
+          "evidence": "tb30 declared-collection/separate-verifier conformance (34 ok) + real tb30 trials with verifier-input.json and declared /app/evalbench collection"
+        },
+        {
+          "id": "P19-AC-005",
+          "status": "met",
+          "evidence": "deepswe base/patch-digest conformance + real deepswe trials: committed patch graded in pristine verifier, verified-native 0"
+        },
+        {
+          "id": "P19-AC-006",
+          "status": "met",
+          "evidence": "agent_integration_conformance local fake servers for all three APIs + real first-connection tool-loop evidence in tb21 trajectories; sealed output-control witness in all six bundles"
+        },
+        {
+          "id": "P19-AC-007",
+          "status": "met",
+          "evidence": "full inventory enumeration, unmet-resource rejection, frozen-subset selection tests passing (experiment_contract 45 ok)"
+        },
+        {
+          "id": "P19-AC-008",
+          "status": "met",
+          "evidence": "report_contract fixtures: valid zero, partial/full/subset, missing pairs, provider failure, protocol mismatch"
+        },
+        {
+          "id": "P19-AC-009",
+          "status": "met",
+          "evidence": "verify/regrade split surfaces: tamper rejection, deterministic reconstruction, fresh native regrade, zero agent invocations (bundle_recompute + pairing_and_integrity ok)"
+        },
+        {
+          "id": "P19-AC-010",
+          "status": "met",
+          "evidence": "authority_boundaries canary absence + cancellation/recovery tests; operator owned-container cleanup records; replacement identities r1.r2/r1.r2.r2 retained"
+        },
+        {
+          "id": "P19-AC-011",
+          "status": "met",
+          "evidence": "fail_closed_cli dummy-credential determinism + CI native smoke as thin caller; real acceptance separately identified outside the repository and offline-verified"
+        },
+        {
+          "id": "P19-AC-012",
+          "status": "met",
+          "evidence": "evidence-root six verified-native attributable trials (tb21 1/1, tb30 0/0, deepswe 0/0, all comparable), frozen manifest, redacted evidence, reproducible offline reports; verify-local-acceptance accepted exit 0; artifact audit PASS"
+        },
+        {
+          "id": "P19-AC-013",
+          "status": "met",
+          "evidence": "opi-eval Cargo.toml free of internal dependencies, pi-only acceptance path, Minimal Runtime unchanged, bilingual README + Unreleased changelog entries in 4bf5fc0"
+        }
+      ],
+      "evaluator_summary": "Phase 19 exit passed: 13/13 criteria met (P19-AC-001..013) via sequential six-lens audit (L-F1..L-F6, degraded single-reviewer path); two non-blocking human flags (degraded independence, consolidated-commit provenance); five shared decisions closed; opi-eval 273/0 + smoke full PASSED on 4bf5fc0; offline verifier accepted six-trial evidence root; artifact audit PASS"
     }
   },
   "session_notes": [
@@ -4645,6 +4716,16 @@
       "ran_at": "2026-09-07T16:10:00+08:00",
       "task_id": "19.10",
       "criterion_id": null
+    },
+    {
+      "stage": "phase-exit",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 0,
+      "ran_at": "2026-09-17T17:45:00+08:00",
+      "task_id": null,
+      "criterion_id": "P19-AC-001..P19-AC-013"
     }
   ]
 }
