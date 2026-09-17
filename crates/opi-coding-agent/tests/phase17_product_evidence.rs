@@ -425,12 +425,11 @@ async fn evidence_capture_finalizes_direct_runtime_input_manifest() {
     assert!(
         matches!(
             manifest.environment.budget,
-            opi_agent::evidence::Measurement::Known {
-                origin: opi_agent::evidence::MeasurementOrigin::Quota,
-                ..
+            opi_agent::evidence::Measurement::Unknown {
+                reason: opi_agent::evidence::UnknownReason::NotApplicable,
             }
         ),
-        "the configured run budget is distinguished from unknown"
+        "an absent turn quota is explicit, not a fabricated numeric budget"
     );
     let route = manifest
         .provider
@@ -442,6 +441,42 @@ async fn evidence_capture_finalizes_direct_runtime_input_manifest() {
             if route.provider_id() == "mock"
                 && route.model_id() == "mock-model"
                 && *reason == opi_agent::evidence::UnknownReason::NotReported
+    ));
+}
+
+#[tokio::test]
+async fn explicit_turn_budget_is_retained_in_runtime_evidence() {
+    let workspace = tempfile::tempdir().unwrap();
+    let user = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    let sink = Arc::new(InMemoryEvidenceSink::new());
+    let mut config = OpiConfig::default();
+    config.defaults.max_iterations = Some(7);
+    let mut harness = CodingHarness::builder(
+        Box::new(MockProvider::new("mock", vec![text_response("done")])),
+        "mock:mock-model".into(),
+        config,
+        workspace.path().to_path_buf(),
+        TrustDecision::Trusted,
+    )
+    .global_config_dir(user.path().to_path_buf())
+    .resume(empty_resume_info(
+        workspace.path(),
+        sessions.path(),
+        "turn-budget",
+    ))
+    .evidence(EvidenceBuilderConfig {
+        recorder: sink.clone(),
+        source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
+    })
+    .build();
+    harness.prompt("hello").await.unwrap();
+    assert!(matches!(
+        sink.completed_manifest().unwrap().environment.budget,
+        opi_agent::evidence::Measurement::Known {
+            value: 7,
+            origin: opi_agent::evidence::MeasurementOrigin::Quota,
+        }
     ));
 }
 
@@ -1538,7 +1573,6 @@ async fn required_evidence_failure_denies_unlaunched_tool_side_effect() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             ..Default::default()
         },
         Box::new(NoopHooks),
@@ -1634,7 +1668,6 @@ async fn malformed_provider_record_rejection_blocks_later_tool_launch() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             ..Default::default()
         },
         Box::new(NoopHooks),

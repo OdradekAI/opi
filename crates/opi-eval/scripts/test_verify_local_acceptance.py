@@ -34,7 +34,7 @@ CONNECTION = {"id": "primary", "provider": "scripted", "api": "anthropic-message
 MODEL_CONTROLS = {"temperature": "omitted", "top_p": "omitted", "max_output_tokens": 16384, "context_window": 1000000, "reasoning": "omitted", "required": ["max_output_tokens"]}
 
 
-def synthetic_output_control(product, experiment):
+def synthetic_output_control(product, experiment, opi_turn_budget=None):
     """Structural fixture only; real clients run in the ignored Rust matrix."""
     if product == "opi":
         config = '''[defaults]
@@ -53,6 +53,8 @@ context_window = 1000000
 '''
     else:
         config = json.dumps({"providers": {"scripted": {"baseUrl": CONNECTION["base_url"], "api": CONNECTION["api"], "apiKey": "dummy-scripted-credential", "models": [{"id": "eval", "maxTokens": 16384, "contextWindow": 1000000}]}}})
+    if product == "opi" and opi_turn_budget is not None:
+        config = config.replace("[defaults]\n", f"[defaults]\nmax_iterations = {opi_turn_budget}\n")
     requests = "".join(json.dumps({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": "/v1/messages", "model": "eval", "output_limits": {"max_tokens": 16384}, "request_sha256": "d" * 64}) + "\n" for seq in (1, 2))
     proof = {"schema": "opi-eval-output-control/1", "product": product, "executable_sha256": "e" * 64, "runtime_package_manifest_sha256": None, "connection": {key: CONNECTION[key] for key in ("provider", "api", "model")}, "model_controls": experiment["model_controls"], "probe_base_url": CONNECTION["base_url"], "exit_code": 0, "config": {"path": "synthetic-config", "sha256": sha256(config.encode())}, "requests": {"path": "synthetic-requests", "sha256": sha256(requests.encode())}}
     evidence = json.dumps(proof)
@@ -112,7 +114,8 @@ class EvidenceRoot:
     """A synthetic but structurally complete redacted evidence root."""
 
     def __init__(
-        self, base: Path, subject_ids: tuple[str, str] = ("candidate-opi", "baseline-pi")
+        self, base: Path, subject_ids: tuple[str, str] = ("candidate-opi", "baseline-pi"),
+        opi_turn_budget: str | None = None,
     ) -> None:
         self.root = base / "evidence"
         self.root.mkdir(parents=True)
@@ -123,6 +126,7 @@ class EvidenceRoot:
         self.trials = []
         self.runs = {}
         self.subject_ids = subject_ids
+        self.opi_turn_budget = opi_turn_budget
         for index, family in enumerate(FAMILIES):
             run = self.root / "runs" / family
             opi_id = f"trial-opi-{index + 1}"
@@ -193,7 +197,7 @@ class EvidenceRoot:
                 bundle / "artifacts/control/experiment.json",
                 experiment,
             )
-            snapshot = synthetic_output_control(product, experiment)
+            snapshot = synthetic_output_control(product, experiment, self.opi_turn_budget)
             wire_path = bundle / "artifacts/control/output-control.json"
             write_json(wire_path, snapshot)
             material["agents"][product] = {"executable": {"sha256": "e" * 64}, "output_control_evidence": {"sha256": snapshot["evidence_sha256"]}}
@@ -212,6 +216,25 @@ class EvidenceRoot:
                 },
             )
         write_json(run / "material.json", material)
+        write_json(
+            run / "run-report.json",
+            {
+                "schema": "opi-eval-run-report/1",
+                "outcome": "incomplete",
+                "trials": [
+                    {
+                        "id": opi_id,
+                        "status": "sealed",
+                        "verifier": {"completion": "verified-native"},
+                    },
+                    {
+                        "id": pi_id,
+                        "status": "sealed",
+                        "verifier": {"completion": "verified-native"},
+                    },
+                ],
+            },
+        )
 
     def rewrite_sealed_experiment(self, family: str, experiment: dict) -> None:
         """Bind a changed synthetic contract so semantic checks see intact digests."""
@@ -478,6 +501,39 @@ class AcceptanceVerifierTest(unittest.TestCase):
         self.evidence.save_manifest(manifest)
         self.reject("command exits")
 
+    def test_run_exit_one_with_all_trials_sealed_is_accepted(self) -> None:
+        # A paired run whose every trial is sealed and verified natively can
+        # settle non-zero through its comparability marker; that is genuine
+        # operator evidence, not a command failure.
+        manifest = self.evidence.load_manifest()
+        for entry in manifest["command_exits"]:
+            if entry["command"] == "run":
+                entry["exit"] = 1
+        self.evidence.save_manifest(manifest)
+        self.accept()
+
+    def test_run_exit_one_with_unsealed_trial_is_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        for entry in manifest["command_exits"]:
+            if entry["command"] == "run":
+                entry["exit"] = 1
+        self.evidence.save_manifest(manifest)
+        family = FAMILIES[0]
+        path = self.evidence.runs[family]["run"] / "run-report.json"
+        report = json.loads(path.read_text())
+        report["trials"][0]["status"] = "failed"
+        write_json(path, report)
+        self.reject("command exits")
+
+    def test_run_exit_one_without_run_report_is_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        for entry in manifest["command_exits"]:
+            if entry["command"] == "run":
+                entry["exit"] = 1
+        self.evidence.save_manifest(manifest)
+        (self.evidence.runs[FAMILIES[0]]["run"] / "run-report.json").unlink()
+        self.reject("command exits")
+
     def test_substituted_preserved_artifact_is_rejected(self) -> None:
         manifest = self.evidence.load_manifest()
         manifest["preserved"][0]["sha256"] = "0" * 64
@@ -513,6 +569,18 @@ class AcceptanceVerifierTest(unittest.TestCase):
         manifest["controls"]["connection_controls"]["model_controls"]["max_output_tokens"] = 8192
         self.evidence.save_manifest(manifest)
         self.reject("output-control")
+
+    def test_sealed_turn_budget_accepts_historical_and_current_projections(self) -> None:
+        for index, budget in enumerate((
+            None, "4294967295", "50", "0", "-1", "4294967296",
+            "true", "4294967295.0", '"4294967295"',
+        )):
+            with self.subTest(budget=budget):
+                self.evidence = EvidenceRoot(self.base / f"turn-{index}", opi_turn_budget=budget)
+                if budget in (None, "4294967295"):
+                    self.accept()
+                else:
+                    self.reject("output-control")
 
     def test_output_control_missing_wire_or_wrong_client_is_rejected(self) -> None:
         for case in (

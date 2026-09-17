@@ -11,6 +11,24 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// One shared loopback client that ignores ambient proxy configuration:
+/// every request in this suite targets 127.0.0.1 and asserts listener
+/// behavior, never proxy routing. An ambient HTTP(S)_PROXY otherwise
+/// turns refused-connection assertions into proxy 502 responses.
+async fn loopback_get(url: impl reqwest::IntoUrl) -> Result<reqwest::Response, reqwest::Error> {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("client")
+        })
+        .get(url)
+        .send()
+        .await
+}
+
 use common::{MockLoginPresenter, extract_query_param, extract_redirect_port};
 use opi_agent::AgentError;
 use opi_ai::anthropic::AnthropicProvider;
@@ -1205,7 +1223,7 @@ async fn anthropic_oauth_login_loopback_callback_wins_race() {
         // The authorize URL carries code_challenge, never the verifier.
         assert!(url.contains("code_challenge="));
         assert!(!url.contains("code_verifier"));
-        let _ = reqwest::get(format!(
+        let _ = loopback_get(format!(
             "http://127.0.0.1:{port}/?code=CB+CODE&state={encoded_state}"
         ))
         .await
@@ -1236,7 +1254,7 @@ async fn anthropic_oauth_login_callback_response_writes_minimal_200() {
         let url = presenter.captured_url().expect("url");
         let port = extract_redirect_port(&url).expect("port");
         let state = extract_query_param(&url, "state").expect("state");
-        let resp = reqwest::get(format!("http://127.0.0.1:{port}/?code=CB&state={state}"))
+        let resp = loopback_get(format!("http://127.0.0.1:{port}/?code=CB&state={state}"))
             .await
             .expect("GET");
         assert_eq!(resp.status(), 200);
@@ -1265,7 +1283,7 @@ async fn anthropic_oauth_login_state_mismatch_rejects_and_notifies_failure() {
         let url = presenter.captured_url().expect("auth url");
         let port = extract_redirect_port(&url).expect("port");
         // Send a deliberately wrong state.
-        let _ = reqwest::get(format!(
+        let _ = loopback_get(format!(
             "http://127.0.0.1:{port}/?code=CB&state=WRONG-STATE"
         ))
         .await;
@@ -1335,7 +1353,7 @@ async fn pkce_loopback_callback_rejections_are_fixed_and_redacted_for_both_provi
                     }
                     _ => unreachable!(),
                 };
-                reqwest::get(format!("http://127.0.0.1:{port}/?{query}"))
+                loopback_get(format!("http://127.0.0.1:{port}/?{query}"))
                     .await
                     .expect("callback GET")
                     .status()
@@ -1438,13 +1456,13 @@ async fn pkce_total_budget_includes_manual_wait_and_token_response_for_both_prov
                         "budget-refresh",
                         3600,
                     ))
-                    .set_delay(Duration::from_millis(80)),
+                    .set_delay(Duration::from_millis(800)),
             )
             .mount(&server)
             .await;
         let provider = provider_kind.build_with_timeout(
             format!("{}/oauth/token", server.uri()),
-            Duration::from_millis(100),
+            Duration::from_millis(1000),
         );
         let presenter = MockLoginPresenter::new();
         let manual_code = presenter.manual_code_sender();
@@ -1452,7 +1470,7 @@ async fn pkce_total_budget_includes_manual_wait_and_token_response_for_both_prov
         let login = provider.login(&presenter);
         let delayed_code = async {
             presenter.wait_for_auth_url().await;
-            tokio::time::sleep(Duration::from_millis(60)).await;
+            tokio::time::sleep(Duration::from_millis(600)).await;
             manual_code.send("budget-code".to_owned()).unwrap();
         };
         let (result, ()) = tokio::join!(login, delayed_code);
@@ -1564,7 +1582,7 @@ async fn pkce_cancellation_is_biased_and_prevents_exchange_and_persistence() {
         let authorize_url = presenter.captured_url().expect("authorization URL");
         let port = extract_redirect_port(&authorize_url).expect("loopback port");
         assert!(
-            reqwest::get(format!("http://127.0.0.1:{port}/?code=late&state=late"))
+            loopback_get(format!("http://127.0.0.1:{port}/?code=late&state=late"))
                 .await
                 .is_err(),
             "{provider_kind:?} left its callback listener open"
@@ -1580,13 +1598,13 @@ async fn pkce_post_code_cancellation_is_ignored_but_original_deadline_still_appl
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_json(token_body("late-access", "late-refresh", 3600))
-                .set_delay(Duration::from_millis(80)),
+                .set_delay(Duration::from_millis(800)),
         )
         .mount(&server)
         .await;
     let provider = anthropic_provider(
         format!("{}/oauth/token", server.uri()),
-        Duration::from_millis(100),
+        Duration::from_millis(1000),
     );
     let presenter = MockLoginPresenter::new();
     let manual_code = presenter.manual_code_sender();
@@ -1595,9 +1613,9 @@ async fn pkce_post_code_cancellation_is_ignored_but_original_deadline_still_appl
     let login = provider.login(&presenter);
     let drive = async {
         presenter.wait_for_auth_url().await;
-        tokio::time::sleep(Duration::from_millis(40)).await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
         manual_code.send("one-use-code".to_owned()).unwrap();
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
         let _ = cancel.send(());
     };
     let (result, ()) = tokio::join!(login, drive);
@@ -1707,7 +1725,7 @@ async fn anthropic_oauth_login_listener_dropped_after_manual_code_wins() {
     let url = presenter.captured_url().expect("url");
     let port = extract_redirect_port(&url).expect("port");
     // The listener must have been dropped; a GET to the port is now refused.
-    let refused = reqwest::get(format!("http://127.0.0.1:{port}/?code=X&state=Y")).await;
+    let refused = loopback_get(format!("http://127.0.0.1:{port}/?code=X&state=Y")).await;
     assert!(refused.is_err(), "listener not dropped: {refused:?}");
 }
 
@@ -2003,7 +2021,7 @@ async fn codex_login_callback_wins_completes_token_exchange_and_returns_credenti
         let url = presenter.captured_url().expect("url");
         let port = extract_redirect_port(&url).expect("port");
         let state = extract_query_param(&url, "state").expect("state");
-        let _ = reqwest::get(format!(
+        let _ = loopback_get(format!(
             "http://127.0.0.1:{port}/?code=CB-CODEX&state={state}"
         ))
         .await
@@ -2034,7 +2052,7 @@ async fn codex_login_state_mismatch_rejects_callback_and_notifies_failure() {
         presenter.wait_for_auth_url().await;
         let url = presenter.captured_url().expect("url");
         let port = extract_redirect_port(&url).expect("port");
-        let _ = reqwest::get(format!("http://127.0.0.1:{port}/?code=CB&state=WRONG")).await;
+        let _ = loopback_get(format!("http://127.0.0.1:{port}/?code=CB&state=WRONG")).await;
     };
     let (outcome, _) = tokio::join!(login_fut, drive_fut);
     let err = outcome.expect_err("mismatch");

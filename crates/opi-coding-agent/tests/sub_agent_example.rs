@@ -210,7 +210,6 @@ impl Extension for SubAgentExtension {
                         None,
                         InferenceConfig::default(),
                         AgentLoopConfig {
-                            max_turns: 10,
                             ..Default::default()
                         },
                         child_hooks,

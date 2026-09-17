@@ -152,6 +152,8 @@ pub enum AgentError {
     /// [`crate::tool::ToolError`] variant.
     #[error("tool error: {0}")]
     Tool(#[from] crate::tool::ToolError),
+    /// An explicit caller-owned turn budget rejected a further dispatch.
+    /// Agent Core does not impose or track a finite turn budget.
     #[error("max turns exceeded ({0})")]
     MaxTurnsExceeded(u32),
     /// Evidence capture setup failed before the run (fail-closed):
@@ -450,19 +452,8 @@ pub struct AgentLoopContext {
 /// Immutable loop-control configuration. Per-request inference knobs (thinking,
 /// max tokens, temperature) live in [`InferenceConfig`] on [`NextTurnState`] so
 /// a preparation can change them atomically with context and model.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AgentLoopConfig {
-    /// Maximum number of turns before stopping.
-    pub max_turns: u32,
     /// Retry configuration for retryable provider errors.
     pub retry: Option<opi_ai::retry::RetryConfig>,
-}
-
-impl Default for AgentLoopConfig {
-    fn default() -> Self {
-        Self {
-            max_turns: 50,
-            retry: None,
-        }
-    }
 }

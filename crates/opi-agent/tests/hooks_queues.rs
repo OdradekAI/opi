@@ -176,7 +176,7 @@ impl Tool for EchoTool {
 struct RecordingHooks {
     after_calls: Arc<Mutex<Vec<AfterToolCallContext>>>,
     stop_calls: Arc<Mutex<Vec<ShouldStopAfterTurnContext>>>,
-    prepare_calls: Arc<Mutex<Vec<u32>>>,
+    prepare_calls: Arc<Mutex<Vec<u64>>>,
     stop_result: bool,
 }
 
@@ -389,6 +389,17 @@ fn make_agent(
     .expect("agent")
 }
 
+fn steer_after_first_turn(agent: &mut Agent, text: &str) {
+    let control = agent.control_handle();
+    let text = text.to_owned();
+    let sent = AtomicBool::new(false);
+    agent.subscribe(Box::new(move |event| {
+        if matches!(event, AgentEvent::TurnEnd { .. }) && !sent.swap(true, Ordering::SeqCst) {
+            control.steer(text.clone());
+        }
+    }));
+}
+
 fn user_text_in_messages(messages: &[Message], text: &str) -> bool {
     messages.iter().any(|m| match m {
         Message::User(u) => u
@@ -518,7 +529,7 @@ async fn steering_queue_delivered_before_next_request() {
     let hooks = RecordingHooks::new(false);
 
     let mut agent = make_agent(provider, vec![Box::new(EchoTool)], Box::new(hooks));
-    agent.steer("focus on quality".into());
+    steer_after_first_turn(&mut agent, "focus on quality");
     agent.prompt("test").await.into_execution_result().unwrap();
 
     let msgs = received.lock().unwrap();
@@ -568,7 +579,7 @@ async fn should_stop_prevents_queue_polling() {
     let hooks = RecordingHooks::new(true);
 
     let mut agent = make_agent(provider, vec![Box::new(EchoTool)], Box::new(hooks));
-    agent.steer("should not be delivered".into());
+    steer_after_first_turn(&mut agent, "should not be delivered");
     agent.prompt("test").await.into_execution_result().unwrap();
 
     let msgs = received.lock().unwrap();
@@ -592,7 +603,7 @@ async fn queue_update_event_emitted() {
     let queue_events_clone = queue_events.clone();
 
     let mut agent = make_agent(provider, vec![Box::new(EchoTool)], Box::new(hooks));
-    agent.steer("redirect".into());
+    steer_after_first_turn(&mut agent, "redirect");
     agent.subscribe(Box::new(move |e| {
         if let AgentEvent::QueueUpdate {
             steering,
@@ -637,7 +648,7 @@ async fn phase8_queue_polling_order_steering_before_follow_up() {
     let hooks = RecordingHooks::new(false);
 
     let mut agent = make_agent(provider, vec![], Box::new(hooks));
-    agent.steer("steer-msg".into());
+    steer_after_first_turn(&mut agent, "steer-msg");
     agent.follow_up("follow-msg".into());
     agent.prompt("test").await.into_execution_result().unwrap();
 
@@ -702,13 +713,9 @@ async fn phase8_queue_polling_order_compaction_stop_before_next_turn() {
             .any(|ms| user_text_in_messages(ms, "must-not-deliver")),
         "follow-up must not be delivered after a compaction stop"
     );
-    // Phase 17.2: prepare_next_turn runs BEFORE should_stop (it applies the
-    // candidate state that stop then observes), so it is invoked once; the stop
-    // then terminates the run without polling the follow-up queue.
-    assert_eq!(
-        prepare_calls.lock().unwrap().len(),
-        1,
-        "prepare_next_turn runs once before stop; stop terminates before queue polling"
+    assert!(
+        prepare_calls.lock().unwrap().is_empty(),
+        "terminal stop skips preparation"
     );
 }
 
@@ -961,10 +968,10 @@ async fn phase8_hook_contract_order() {
             "convert",
             "before",
             "after",
-            "prepare",
             "should_stop",
+            "prepare",
         ],
-        "first-turn hook order must be transform -> convert -> before -> after -> prepare -> should_stop (Phase 17.2: prepare runs before stop observes the applied state)"
+        "first-turn hook order must be transform -> convert -> before -> after -> should_stop -> prepare"
     );
 }
 
@@ -1118,9 +1125,7 @@ async fn phase8_hook_contract_prepare_injection() {
     );
 }
 
-// DoD (Phase 17.2): a terminal should_stop_after_turn terminates the run after
-// prepare_next_turn has applied the candidate state; no further turns or queue
-// polling follow the stop.
+// A terminal stop skips preparation and further queue polling.
 #[tokio::test]
 async fn phase8_hook_contract_terminal_stop_terminates_run() {
     let provider = RecordingProvider::new(vec![text_response("only")]);
@@ -1131,18 +1136,14 @@ async fn phase8_hook_contract_terminal_stop_terminates_run() {
     let mut agent = make_agent(provider, vec![], Box::new(hooks));
     agent.prompt("test").await.into_execution_result().unwrap();
 
-    // Phase 17.2: prepare_next_turn runs before stop (applies candidate), then
-    // the terminal stop ends the run.
-    assert_eq!(
-        prepare_calls.lock().unwrap().len(),
-        1,
-        "prepare_next_turn runs once before a terminal stop ends the run"
+    assert!(
+        prepare_calls.lock().unwrap().is_empty(),
+        "terminal stop skips preparation"
     );
 }
 
 // ---------------------------------------------------------------------------
-// Phase 17.2 acceptance — P17-A04 / P17-NXT-003: stop observes the applied
-// complete next-turn state (no observer sees a mixed/pre-preparation state).
+// Complete next-turn replacement is visible at the next completed-turn stop.
 // ---------------------------------------------------------------------------
 
 fn llm_only(messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
@@ -1346,7 +1347,7 @@ impl AgentHooks for ObserveAppliedStateHooks {
             *observed_temperature.lock().unwrap() = ctx.state.inference.temperature;
             *observed_thinking_budget.lock().unwrap() = ctx.state.inference.thinking.budget_tokens;
             *observed_model.lock().unwrap() = Some(ctx.state.model_selection.model_id.clone());
-            true
+            ctx.state.model_selection.model_id == "alt-model"
         })
     }
     fn before_tool_call(
@@ -1358,8 +1359,11 @@ impl AgentHooks for ObserveAppliedStateHooks {
 }
 
 #[tokio::test]
-async fn phase17_stop_observes_complete_next_turn_state() {
-    let provider = RecordingProvider::new(vec![text_response("hello")]);
+async fn stop_observes_complete_applied_state_after_the_next_turn() {
+    let provider = RecordingProvider::new(vec![
+        text_response("hello"),
+        text_response("prepared reply"),
+    ]);
     let observed_max_tokens = Arc::new(Mutex::new(None));
     let observed_context_len = Arc::new(Mutex::new(None));
     let observed_temperature = Arc::new(Mutex::new(None));
@@ -1376,12 +1380,10 @@ async fn phase17_stop_observes_complete_next_turn_state() {
             observed_model: observed_model.clone(),
         }),
     );
+    agent.follow_up("continue".into());
     agent.prompt("test").await.into_execution_result().unwrap();
 
-    // should_stop ran AFTER prepare_next_turn applied the candidate, so it
-    // observes ALL FIVE prepared fields together — the complete replacement,
-    // never a mixed state (P17-A04: context, model, thinking, max tokens,
-    // temperature).
+    // The second completed turn exposes all prepared fields together.
     assert_eq!(
         *observed_max_tokens.lock().unwrap(),
         Some(9999),
@@ -1407,14 +1409,14 @@ async fn phase17_stop_observes_complete_next_turn_state() {
         .unwrap()
         .expect("should_stop must run after a successful prepare");
     assert_eq!(
-        len, 3,
-        "should_stop observed the complete prepared context: user prompt + assistant reply + prepared marker"
+        len, 5,
+        "second stop observes the prepared context plus follow-up and its completed reply"
     );
 }
 
 // ---------------------------------------------------------------------------
 // Phase 17.2 acceptance — P17-A05 / P17-NXT-002/004: a preparation failure
-// preserves every mutable field and skips stop + steering/follow-up polling.
+// preserves every mutable field and restores undelivered queued input.
 // ---------------------------------------------------------------------------
 
 struct FailPrepareHooks {
@@ -1470,17 +1472,18 @@ async fn phase17_failed_prepare_preserves_state_and_skips_later_boundaries() {
     baseline.inference.max_tokens = Some(1111);
     baseline.inference.temperature = Some(0.25);
     agent.replace_state(baseline.clone()).unwrap();
+    agent.follow_up("continue to preparation".into());
     let result = agent.prompt("test").await;
 
     assert!(
         result.error().is_some(),
         "a failed prepare must surface an error"
     );
-    // should_stop was NOT called: prepare failed before the stop gate.
+    // The completed-turn stop gate ran before the preparation failure.
     assert_eq!(
         *stop_calls.lock().unwrap(),
-        0,
-        "should_stop must not run after a failed prepare"
+        1,
+        "only the completed-turn stop runs before failed preparation"
     );
     // Prior state preserved field-by-field (the turn's assistant message is
     // discarded because the candidate never applied).
@@ -1497,7 +1500,7 @@ async fn phase17_failed_prepare_preserves_state_and_skips_later_boundaries() {
 // Phase 17 exit closure — P17-NXT-002 validation leg: a prepare hook that
 // returns Some(candidate) whose model selection the collection cannot resolve
 // fails the transition with the TYPED InvalidNextTurnCandidate before any
-// state applies; prior state, the stop gate, and queue polling are untouched.
+// state applies; prior state and undelivered queued input are preserved.
 // ---------------------------------------------------------------------------
 
 struct InvalidCandidateHooks {
@@ -1559,6 +1562,7 @@ async fn phase17_invalid_prepare_candidate_preserves_state_with_typed_error() {
     baseline.inference.max_tokens = Some(1111);
     baseline.inference.temperature = Some(0.25);
     agent.replace_state(baseline.clone()).unwrap();
+    agent.follow_up("continue to preparation".into());
     let result = agent.prompt("test").await;
 
     assert!(
@@ -1572,8 +1576,8 @@ async fn phase17_invalid_prepare_candidate_preserves_state_with_typed_error() {
     );
     assert_eq!(
         *stop_calls.lock().unwrap(),
-        0,
-        "the stop gate must not run after an invalid candidate"
+        1,
+        "the stop gate runs once on the completed state before candidate validation"
     );
     assert_prior_state_plus_prompt(&agent.state_snapshot(), &baseline, "test");
     assert_eq!(
@@ -1635,7 +1639,7 @@ impl AgentHooks for EnabledNoneThinkingCandidateHooks {
 }
 
 #[tokio::test]
-async fn enabled_none_thinking_hook_candidate_rolls_back_before_stop_and_queue_polling() {
+async fn enabled_none_thinking_hook_candidate_preserves_state_and_queued_input() {
     let provider = RecordingProvider::new(vec![
         text_response("failed transition turn"),
         text_response("retry turn"),
@@ -1659,7 +1663,7 @@ async fn enabled_none_thinking_hook_candidate_rolls_back_before_stop_and_queue_p
     baseline.inference.max_tokens = Some(1111);
     baseline.inference.temperature = Some(0.25);
     agent.replace_state(baseline.clone()).unwrap();
-    agent.steer("queued steering".into());
+    steer_after_first_turn(&mut agent, "queued steering");
     agent.follow_up("queued follow-up".into());
     let queue_updates = Arc::new(AtomicU32::new(0));
     let observed_queue_updates = queue_updates.clone();
@@ -1677,7 +1681,7 @@ async fn enabled_none_thinking_hook_candidate_rolls_back_before_stop_and_queue_p
             InvalidNextTurnReason::UnsupportedThinking { .. }
         ))
     ));
-    assert_eq!(*stop_calls.lock().unwrap(), 0);
+    assert_eq!(*stop_calls.lock().unwrap(), 1);
     assert_prior_state_plus_prompt(&agent.state_snapshot(), &baseline, "first attempt");
     assert_eq!(queue_updates.load(Ordering::SeqCst), 0);
     assert_eq!(received.lock().unwrap().len(), 1);
@@ -1688,9 +1692,9 @@ async fn enabled_none_thinking_hook_candidate_rolls_back_before_stop_and_queue_p
         .into_execution_result()
         .unwrap();
     let requests = received.lock().unwrap();
-    assert_eq!(requests.len(), 4);
-    assert!(user_text_in_messages(&requests[2], "queued steering"));
-    assert!(user_text_in_messages(&requests[3], "queued follow-up"));
+    assert_eq!(requests.len(), 3);
+    assert!(user_text_in_messages(&requests[1], "queued steering"));
+    assert!(user_text_in_messages(&requests[2], "queued follow-up"));
 }
 
 struct NonFiniteCandidateHooks {
@@ -1753,7 +1757,7 @@ impl AgentHooks for NonFiniteCandidateHooks {
 }
 
 #[tokio::test]
-async fn non_finite_hook_candidate_rolls_back_state_and_leaves_stop_and_queues_untouched() {
+async fn non_finite_hook_candidate_preserves_state_and_queued_input() {
     let provider = RecordingProvider::new(vec![
         text_response("failed transition turn"),
         text_response("retry turn"),
@@ -1774,7 +1778,7 @@ async fn non_finite_hook_candidate_rolls_back_state_and_leaves_stop_and_queues_u
     baseline.inference.max_tokens = Some(1111);
     baseline.inference.temperature = Some(0.25);
     agent.replace_state(baseline.clone()).unwrap();
-    agent.steer("queued steering".into());
+    steer_after_first_turn(&mut agent, "queued steering");
     agent.follow_up("queued follow-up".into());
     let result = agent.prompt("first attempt").await;
 
@@ -1789,7 +1793,7 @@ async fn non_finite_hook_candidate_rolls_back_state_and_leaves_stop_and_queues_u
     );
     assert_eq!(
         *stop_calls.lock().unwrap(),
-        0,
+        1,
         "stop must not observe an invalid candidate"
     );
     let after = agent.state_snapshot();
@@ -1811,13 +1815,13 @@ async fn non_finite_hook_candidate_rolls_back_state_and_leaves_stop_and_queues_u
         .into_execution_result()
         .unwrap();
     let requests = received.lock().unwrap();
-    assert_eq!(requests.len(), 4);
+    assert_eq!(requests.len(), 3);
     assert!(
-        user_text_in_messages(&requests[2], "queued steering"),
+        user_text_in_messages(&requests[1], "queued steering"),
         "steering must remain queued after candidate rejection"
     );
     assert!(
-        user_text_in_messages(&requests[3], "queued follow-up"),
+        user_text_in_messages(&requests[2], "queued follow-up"),
         "follow-up must remain queued after candidate rejection"
     );
 }
@@ -1864,7 +1868,7 @@ impl AgentHooks for CancelDuringValidationHooks {
 }
 
 #[tokio::test]
-async fn cancellation_during_candidate_validation_prevents_apply_stop_and_queue_polling() {
+async fn cancellation_during_candidate_validation_prevents_apply_and_preserves_queued_input() {
     let validation_gate = Arc::new(ValidationGate::new());
     let provider = RecordingProvider::with_validation_gate(
         vec![
@@ -1893,7 +1897,7 @@ async fn cancellation_during_candidate_validation_prevents_apply_stop_and_queue_
     baseline.inference.max_tokens = Some(1111);
     baseline.inference.temperature = Some(0.25);
     agent.replace_state(baseline.clone()).unwrap();
-    agent.steer("queued steering".into());
+    steer_after_first_turn(&mut agent, "queued steering");
     agent.follow_up("queued follow-up".into());
     let queue_updates = Arc::new(AtomicU32::new(0));
     let observed_queue_updates = queue_updates.clone();
@@ -1916,7 +1920,7 @@ async fn cancellation_during_candidate_validation_prevents_apply_stop_and_queue_
     assert!(matches!(result.error(), Some(AgentError::Cancelled)));
     assert_eq!(
         *stop_calls.lock().unwrap(),
-        0,
+        1,
         "stop must not observe a candidate cancelled during validation"
     );
     let after = agent.state_snapshot();
@@ -1924,7 +1928,7 @@ async fn cancellation_during_candidate_validation_prevents_apply_stop_and_queue_
     assert_eq!(
         queue_updates.load(Ordering::SeqCst),
         0,
-        "cancellation at validation must not poll either queue"
+        "cancelled preparation must not emit delivery events"
     );
     assert_eq!(received.lock().unwrap().len(), 1);
 
@@ -1934,9 +1938,9 @@ async fn cancellation_during_candidate_validation_prevents_apply_stop_and_queue_
         .into_execution_result()
         .unwrap();
     let requests = received.lock().unwrap();
-    assert_eq!(requests.len(), 4);
-    assert!(user_text_in_messages(&requests[2], "queued steering"));
-    assert!(user_text_in_messages(&requests[3], "queued follow-up"));
+    assert_eq!(requests.len(), 3);
+    assert!(user_text_in_messages(&requests[1], "queued steering"));
+    assert!(user_text_in_messages(&requests[2], "queued follow-up"));
 }
 
 struct PendingStopCancellationHooks {
@@ -2012,7 +2016,7 @@ async fn cancellation_while_stop_is_pending_restores_state_and_leaves_queues_unt
     baseline.inference.max_tokens = Some(1111);
     baseline.inference.temperature = Some(0.25);
     agent.replace_state(baseline.clone()).unwrap();
-    agent.steer("queued steering".into());
+    steer_after_first_turn(&mut agent, "queued steering");
     agent.follow_up("queued follow-up".into());
     let queue_updates = Arc::new(AtomicU32::new(0));
     let observed_queue_updates = queue_updates.clone();
@@ -2047,9 +2051,9 @@ async fn cancellation_while_stop_is_pending_restores_state_and_leaves_queues_unt
         .into_execution_result()
         .unwrap();
     let requests = received.lock().unwrap();
-    assert_eq!(requests.len(), 4);
-    assert!(user_text_in_messages(&requests[2], "queued steering"));
-    assert!(user_text_in_messages(&requests[3], "queued follow-up"));
+    assert_eq!(requests.len(), 3);
+    assert!(user_text_in_messages(&requests[1], "queued steering"));
+    assert!(user_text_in_messages(&requests[2], "queued follow-up"));
 }
 
 struct BlockingPrepareHooks {
@@ -2105,6 +2109,7 @@ async fn cancellation_during_prepare_preserves_the_complete_prior_state() {
     );
     let control = agent.control_handle();
 
+    agent.follow_up("continue to preparation".into());
     let prompt = agent.prompt("test");
     let cancel = async move {
         entered.notified().await;

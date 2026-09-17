@@ -329,9 +329,14 @@ fn resolve_runtime_input(
         adapter_digest,
         material_digest,
     };
-    let budget = opi_agent::evidence::Measurement::Known {
-        value: u64::from(max_iterations),
-        origin: opi_agent::evidence::MeasurementOrigin::Quota,
+    let budget = match max_iterations {
+        Some(limit) => opi_agent::evidence::Measurement::Known {
+            value: u64::from(limit),
+            origin: opi_agent::evidence::MeasurementOrigin::Quota,
+        },
+        None => opi_agent::evidence::Measurement::Unknown {
+            reason: opi_agent::evidence::UnknownReason::NotApplicable,
+        },
     };
     let binding = direct_runtime_input_binding(source, policy_digest, &config, &material_inputs);
     ResolvedRuntimeInput {
@@ -1749,18 +1754,18 @@ impl CodingHarness {
             temperature: None,
         };
         let agent_config = AgentLoopConfig {
-            max_turns: config.defaults.max_iterations,
             retry: Some(config.retry.clone()),
         };
 
         let diagnostics = build_options
             .record_diagnostics
             .then(|| Arc::new(RecordingSink::new()));
-        if let Some(limit) = config.defaults.max_output_tokens {
-            hooks = Box::new(ConfiguredOutputLimitHooks {
+        if config.defaults.max_output_tokens.is_some() || config.defaults.max_iterations.is_some() {
+            hooks = Box::new(ConfiguredLimitHooks {
                 inner: hooks,
                 collection: dispatch_collection.clone(),
-                limit,
+                output_limit: config.defaults.max_output_tokens,
+                turn_limit: config.defaults.max_iterations,
                 diagnostics: diagnostics.clone(),
             });
         }
@@ -4390,16 +4395,17 @@ fn validate_request_output_limit(
     Ok(())
 }
 
-/// Enforce the explicit product setting after all extension preparations and
-/// before Agent Core applies their complete candidate state atomically.
-struct ConfiguredOutputLimitHooks {
+/// Enforce product-owned limits before another turn and validate explicit
+/// output settings after extension preparation, before atomic state application.
+struct ConfiguredLimitHooks {
     inner: Box<dyn AgentHooks>,
     collection: Arc<opi_ai::ProviderCollection>,
-    limit: u64,
+    output_limit: Option<u64>,
+    turn_limit: Option<u32>,
     diagnostics: Option<Arc<RecordingSink>>,
 }
 
-impl AgentHooks for ConfiguredOutputLimitHooks {
+impl AgentHooks for ConfiguredLimitHooks {
     fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
         self.inner.convert_to_llm(messages)
     }
@@ -4409,6 +4415,9 @@ impl AgentHooks for ConfiguredOutputLimitHooks {
         messages: Vec<AgentMessage>,
         signal: tokio_util::sync::CancellationToken,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<AgentMessage>, AgentError>> + Send>> {
+        if self.turn_limit == Some(0) {
+            return Box::pin(async { Err(AgentError::MaxTurnsExceeded(0)) });
+        }
         self.inner.transform_context(messages, signal)
     }
 
@@ -4437,13 +4446,20 @@ impl AgentHooks for ConfiguredOutputLimitHooks {
         &self,
         ctx: PrepareNextTurnContext,
     ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        if let Some(limit) = self.turn_limit
+            && ctx.turn >= u64::from(limit)
+        {
+            return Box::pin(async move { Err(AgentError::MaxTurnsExceeded(limit)) });
+        }
         let prepared = self.inner.prepare_next_turn(ctx);
         let collection = self.collection.clone();
-        let limit = self.limit;
+        let limit = self.output_limit;
         let diagnostics = self.diagnostics.clone();
         Box::pin(async move {
             let candidate = prepared.await?;
-            if let Some(state) = &candidate {
+            if let Some(state) = &candidate
+                && let Some(limit) = limit
+            {
                 validate_request_output_state(limit, &collection, state).map_err(|message| {
                     if let Some(sink) = &diagnostics {
                         sink.record(request_output_limit_diagnostic(&message));
@@ -4868,6 +4884,7 @@ mod request_output_limit_tests {
             used: false.into(),
         }))
         .build();
+        harness.follow_up("continue with the prepared model".into());
         harness.prompt("first").await.unwrap();
         let calls = calls.lock().unwrap();
         assert_eq!(calls.len(), 2);
@@ -5061,6 +5078,7 @@ mod permission_boundary_tests {
             vec![
                 opi_ai::test_support::text_response("baseline response"),
                 opi_ai::test_support::text_response("rejected response"),
+                opi_ai::test_support::text_response("prepared response"),
                 opi_ai::test_support::text_response("recovered response"),
             ],
         );
@@ -5086,6 +5104,7 @@ mod permission_boundary_tests {
         let state_before = harness.agent.state_snapshot();
         let offset_before = harness.turn_offset;
         replacement_mode.store(replacement, std::sync::atomic::Ordering::SeqCst);
+        harness.follow_up("continue through context preparation".into());
 
         let error = harness
             .prompt("rejected prompt")
@@ -5195,6 +5214,7 @@ mod permission_boundary_tests {
             REWRITE_COMMITTED_PREFIX_AND_CONTINUE,
             std::sync::atomic::Ordering::SeqCst,
         );
+        harness.follow_up("continue through context preparation".into());
 
         let error = harness.prompt("rejected prompt").await.unwrap_err();
 
@@ -5278,6 +5298,7 @@ mod permission_boundary_tests {
             vec![
                 opi_ai::test_support::text_response("baseline response"),
                 opi_ai::test_support::text_response("replacement response"),
+                opi_ai::test_support::text_response("prepared response"),
                 opi_ai::test_support::text_response("continued response"),
             ],
         );
@@ -5302,16 +5323,24 @@ mod permission_boundary_tests {
             REPLACE_WITH_SHORTER_CONTEXT,
             std::sync::atomic::Ordering::SeqCst,
         );
+        harness.follow_up("continue through context preparation".into());
 
         harness.prompt("replacement prompt").await.unwrap();
 
         let state = harness.agent.state_snapshot();
-        assert_eq!(state.context.len(), 1);
+        assert_eq!(state.context.len(), 3);
+        assert!(matches!(
+            &state.context[2],
+            AgentMessage::Llm(Message::Assistant(message))
+                if message.content == vec![opi_ai::message::AssistantContent::Text {
+                    text: "prepared response".into(),
+                }]
+        ));
         assert_eq!(state.inference.max_tokens, Some(17));
         assert_eq!(state.inference.temperature, Some(0.25));
 
         harness.prompt("continued prompt").await.unwrap();
-        assert_eq!(harness.agent.messages_snapshot().len(), 3);
+        assert_eq!(harness.agent.messages_snapshot().len(), 5);
     }
 
     fn build_persistence_failure_harness(

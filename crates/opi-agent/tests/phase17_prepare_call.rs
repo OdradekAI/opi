@@ -89,7 +89,6 @@ async fn prepare_call_resolves_auth_once_across_retries() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             retry: Some(opi_ai::retry::RetryConfig {
                 max_attempts: 3,
                 ..Default::default()

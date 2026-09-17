@@ -68,7 +68,7 @@ fn runner(
     )
     .unwrap();
     let mut config = OpiConfig::default();
-    config.defaults.max_iterations = max_iterations;
+    config.defaults.max_iterations = Some(max_iterations);
     let resume = resume.or_else(|| {
         let directory = workspace.join("sessions");
         std::fs::create_dir_all(&directory).unwrap();

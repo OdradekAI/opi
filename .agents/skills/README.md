@@ -115,17 +115,30 @@ local commit after an explicit gate, `$` may use credentials or paid providers,
 
 ### Native evaluation entry
 
-Invoke `$opi-eval` with software, version, benchmark and model choices. The
+Invoke `$opi-eval` with software, benchmark and model choices, plus any explicit
+version pins. Omitted Opi version selects the current local working tree,
+including build-relevant uncommitted changes; preparation builds it and records
+its package, commit/dirty source and executable identities. Explicit versions
+take precedence; pi still needs its actual version. The
 skill resolves remaining connection, task, resource and budget inputs, then
 uses the Rust Companion's doctor/prepare/validate/plan/run/verify/report
 commands. These are skill arguments, not new CLI flags:
 
 ```text
 $opi-eval mode=benchmark software=pi version=<actual-pi-version> bench=terminal-bench-2.1 model=<provider:model>
-$opi-eval mode=acceptance software=opi,pi version=opi:<actual-version>,pi:<actual-version> bench=all model=zhipu:glm-5.3-flash
+$opi-eval mode=acceptance software=opi,pi version=pi:<actual-version> bench=all model=zhipu:glm-5.3-flash
 $opi-eval mode=verify evidence_root=<redacted-evidence-root>
 $opi-eval mode=fidelity cases=all model=<provider:model>
 ```
+
+For `zhipu:glm-5.3-flash`, omitted controls default to a 1000000-token context
+window and 131072-token maximum output per model request, including thinking.
+Override them with `context_window=<n>` and `max_output_tokens=<n>` or an
+explicit config. Both subjects use the same values and need exact-client
+output-control proof before native planning. See
+[model controls](opi-eval/references/native-run.md#model-controls).
+These are skill defaults; the CLI experiment still stores concrete versions
+and controls. Verification of existing evidence retains its original settings.
 
 For task 19.11, acceptance fixes the registered Anthropic connection and one
 feasible task in each of TB2.1/TB3/DeepSWE, once per actual Opi/pi subject.

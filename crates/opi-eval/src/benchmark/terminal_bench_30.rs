@@ -1245,6 +1245,27 @@ mod adapter_tests {
         }
     }
 
+    #[test]
+    fn production_job_budget_covers_native_task_lifecycle() {
+        let adapter = TerminalBench30Adapter::from_profile(production_profile());
+        let root = tempfile::tempdir().unwrap();
+        let request = request_with(
+            &adapter,
+            root.path().join("task"),
+            root.path().join("trace"),
+        );
+        let spec = adapter.spawn_spec(&request);
+        // Pinned batched-eval-parity allows four hours for the agent,
+        // fifteen minutes for grading and two ten-minute environment builds.
+        // The whole-job watchdog must also leave time for collection/cleanup.
+        let native_phases = Duration::from_secs(14_400 + 900 + 2 * 600);
+        assert!(
+            spec.timeout > native_phases,
+            "whole-job budget: {:?}",
+            spec.timeout
+        );
+    }
+
     fn write_ctrf(trace_root: &std::path::Path, name: &str) {
         std::fs::copy(
             fixture_path(&format!("ctrf/{name}")),

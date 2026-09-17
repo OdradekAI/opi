@@ -883,7 +883,7 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
                 format!("max turns exceeded ({max_turns})"),
             )
             .details(serde_json::json!({ "max_turns": max_turns }))
-            .action("increase max_turns or narrow the task"),
+            .action("increase the caller-configured turn budget or narrow the task"),
             AgentError::EvidenceSetup(message) => Diagnostic::new(
                 Severity::Error,
                 code::CODE_EVIDENCE_SETUP_FAILED,

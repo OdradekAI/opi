@@ -465,6 +465,14 @@ content. Long delta streams no longer repeat the accumulated payload on each
 update. Default `--json`, durable sessions, model-facing continuation and
 `NDJSON_SCHEMA_VERSION = 2` are unchanged.
 
+On a provider stream failure, stderr retains the human summary followed by one
+JSON `DiagnosticPayload` line with `code`, `source`, `severity`, `message` and
+safe `details.cause`. This distinguishes transport failures, malformed
+events and missing terminal events. Summary redaction applies; raw upstream
+error payloads remain redacted. Capture stderr alongside NDJSON when diagnosing
+an interrupted response. This does not change retries or imply the partial
+response completed.
+
 Exit codes:
 
 | Code | Meaning |
@@ -501,6 +509,15 @@ Config layers merge user config, project config, and explicit `--config` files.
 Model precedence is `--model`, then `OPI_MODEL` when no `--config` was passed,
 then explicit config, project `.opi/config.toml`, user config, and built-in
 defaults.
+
+Agent runs have no default turn-count ceiling. Set `[defaults] max_iterations`
+to an integer to apply a product-owned budget to each prompt or continuation;
+omission leaves the run governed by completion, stop hooks, errors and cancellation.
+A turn includes one logical provider response and its tool batch; provider retry
+attempts do not consume extra turns. Exhaustion before another required turn
+returns `max turns exceeded`, while natural completion on the last permitted
+turn succeeds. Zero fails before any provider request. The budget resets for
+each new run and is independent of output tokens, context size and deadlines.
 
 Set an explicit output limit per provider request in TOML:
 

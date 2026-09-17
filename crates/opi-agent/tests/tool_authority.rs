@@ -237,10 +237,7 @@ fn make_agent_with_hooks(
         "mock:mock-model".to_owned(),
         None,
         InferenceConfig::default(),
-        AgentLoopConfig {
-            max_turns: 5,
-            ..Default::default()
-        },
+        AgentLoopConfig::default(),
         hooks,
     )
     .expect("agent builds")

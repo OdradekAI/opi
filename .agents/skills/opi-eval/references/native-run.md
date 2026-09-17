@@ -48,6 +48,26 @@ do not run this two-product script or require an unselected Opi installation.
 Compare requested versions with the source package and actual executable;
 never rewrite the version field to make a mismatched build pass.
 
+### Opi source selection
+
+For each new evaluation without an explicit Opi version/source pin, build from
+the current local repository working tree at preparation time, including
+build-relevant uncommitted changes. Local means that checkout, without fetching
+or switching to a release tag or remote branch. A prior run's executable is
+historical evidence, not the default source for a new run. Explicit version
+selection, including a pin in a user-supplied config, keeps its requested source.
+
+Record the repository path, HEAD, package version, dirty diff and build-input
+inventory, including relevant untracked files; exclude credentials and generated
+caches. Run the locked build with the shared Cargo cache and bind its actual
+artifact digest to that source snapshot. Recheck the inputs after building;
+concurrent source changes require a fresh build identity before freezing.
+Use the real package version in `[[subjects]].version` and label the subject as
+a local working-tree candidate with its commit/dirty identity. Equal package
+versions do not make a local candidate the corresponding release. Preserve the
+snapshot evidence and binary used by every frozen trial. A repository that is
+unavailable or cannot build is an explicit preparation gap.
+
 Stage the exact selected executable at `cache/agents/<product>` or the complete
 verified standalone runtime package at that directory, with entrypoint
 `cache/agents/<product>/<product>`. Verify its digest against build evidence.
@@ -82,10 +102,35 @@ subjects and selection; fixture digests/tasks are never live evidence.
 | Opi + pi comparison | `baseline-pi` -> `candidate-opi` edge; same task/repetition/connection/controls. |
 | `bench` | `[benchmark].name`, `.revision`, `.dataset` from the selected admitted material. `all` expands to three documents. |
 | `model`, `api`, `base_url` | Top-level `connection` selecting a `[[connections]]` id with `provider`, `api`, `base_url`, `model`. |
+| `max_output_tokens`, `context_window` | Equal-named `[model_controls]` values for every compared subject; explicit inputs override model-specific defaults. |
 | Credential reference | Exactly one `credential_env` or `credential_file` on the connection; no inline value. Prefer an environment name to avoid personal paths in frozen config. |
 | `tasks`, `scope`, `repetitions` | `[selection]` with `scope`, explicit `task_ids` for subset, `reason`, positive `repetitions`, optional per-task `seeds`. Remove `[[trials]]` when using selection. |
 | `concurrency`, budget | `[execution]` with explicit `mode = "live"`, concurrency, `max_trials` and enforceable bounds. |
 | `cache`, workspace/capture | `[storage].cache`, `.results`, `.capture_policy`; `[environment]` records Linux architecture and isolated cwd policy. |
+
+### Model controls
+
+Explicit user inputs or user-supplied config values take precedence. Otherwise,
+for `zhipu:glm-5.3-flash`, use `context_window = 1000000` and
+`max_output_tokens = 131072` for both subjects, with both controls required.
+The [model documentation](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash)
+lists a 1M context window and 128K maximum output; the
+[API reference](https://docs.bigmodel.cn/api-reference/模型-api/对话补全)
+specifies `max_tokens <= 131072` (checked 2026-09-11). Recheck the selected
+endpoint's current support before freezing; an incompatible required value is
+a preparation gap rather than permission to silently lower the limit. Other
+models resolve their own documented capabilities instead of inheriting these
+numbers. Temperature, top_p and reasoning remain omitted unless selected.
+
+`max_output_tokens` limits each model response, including thinking, and resets
+for the next provider request; it is not the task's cumulative token budget.
+`context_window` describes the client's context capacity, not the response
+budget or a measurement of server capacity. When an execution output bound is
+present, set `[execution].max_output_tokens` to the same response limit.
+Preserve exact-client loopback proof of that value on the first request and
+tool continuation before native planning. A larger declared capability or an
+old 8192-token proof does not establish the new request limit. Changed controls
+need fresh config/material/plan identities; prior sealed runs remain unchanged.
 
 All five `[model_controls]` keys are explicit: `temperature`, `top_p`,
 `max_output_tokens`, `context_window`, `reasoning`, each a supported value or
@@ -110,6 +155,27 @@ cleanup. Wall time and per-response output limits are not total-spend
 guarantees. Record estimates, provider usage, billed cost and unknowns
 separately. Finish preparation before requesting revised unsupported bounds;
 never silently omit the user's requirement.
+
+### Agent turn budgets
+
+Inspect the selected Companion's `render_opi_config` and the actual client's
+loop configuration alongside the native time limits. The current projection
+omits `[defaults].max_iterations`; current-tree Opi has no default turn-count
+ceiling and only the product enforces an explicitly supplied budget. An older
+Opi executable may still default to 50: a version label or absent field alone
+does not prove the selected executable's behavior. Native task/adapter deadlines
+and cancellation still apply. Disclose the observed turn policy and deadlines
+in the preview, separately from tokens and pi's actual loop/retry policy.
+
+Before using a new Opi executable/projection combination, verify it with the
+offline `native_client_turn_budgets` test documented in the crate README. It must
+finish beyond 50 turns using both the default and production projection, while
+an explicitly small product budget stops before the next request. A failed
+exact-client check is a preparation gap; do not silently substitute a newer
+executable or fabricate a limit. Changed projection bytes require fresh output-control
+proof, material and plan identities; preserve old candidates and sealed runs.
+The machine plan has no dedicated Agent-turn-budget field, so retain the
+projection and actual-client check alongside the readable preview.
 
 ## Commands and completion
 

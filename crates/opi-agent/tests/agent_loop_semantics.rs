@@ -289,12 +289,12 @@ impl AgentHooks for RecordingStopHooks {
 }
 
 struct InjectingHooks {
-    inject_on_turn: u32,
+    inject_on_turn: u64,
     inject_text: String,
 }
 
 impl InjectingHooks {
-    fn new(inject_on_turn: u32, inject_text: String) -> Self {
+    fn new(inject_on_turn: u64, inject_text: String) -> Self {
         Self {
             inject_on_turn,
             inject_text,
@@ -825,13 +825,16 @@ async fn h4_partial_terminate_continues() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn h5_prepare_next_turn_injects_and_continues() {
-    let provider = RecordingProvider::new(vec![text_response("first"), text_response("second")]);
+async fn h5_prepare_next_turn_injects_during_tool_continuation() {
+    let provider = RecordingProvider::new(vec![
+        multi_tool_call_response(vec![("c1", "echo", r#"{"arg":"first"}"#)]),
+        text_response("second"),
+    ]);
     let call_count = provider.call_count.clone();
 
     let hooks = InjectingHooks::new(1, "injected context".into());
 
-    let context = make_context(Box::new(provider), vec![]);
+    let context = make_context(Box::new(provider), vec![Box::new(EchoTool)]);
 
     let result = opi_agent::agent_loop(
         context,
@@ -979,7 +982,7 @@ fn matches_user_text(m: &AgentMessage, target: &str) -> bool {
 /// record every `prepare_next_turn` invocation. Models a compaction coordinator
 /// that requests a stop before the next turn.
 struct TerminalStopHooks {
-    prepare_calls: Arc<Mutex<Vec<u32>>>,
+    prepare_calls: Arc<Mutex<Vec<u64>>>,
 }
 
 impl AgentHooks for TerminalStopHooks {
@@ -1142,9 +1145,8 @@ async fn phase8_event_order_one_tool_run() {
     assert!(event_pos(&seq, "tool_execution_end") < first_turn_end);
 }
 
-// DoD: prepare_next_turn injection is applied before follow-up polling. With a
-// turn-1 injection and a queued follow-up, the injected message reaches the
-// provider strictly before the follow-up message.
+// Preparation applies before the selected follow-up is appended to the same
+// next provider request.
 #[tokio::test]
 async fn phase8_event_order_prepare_next_turn_injection() {
     let provider = RecordingProvider::new(vec![
@@ -1199,8 +1201,8 @@ async fn phase8_event_order_prepare_next_turn_injection() {
 
     assert_eq!(
         *call_count.lock().unwrap(),
-        3,
-        "injection then follow-up yield three provider calls"
+        2,
+        "prepared context and follow-up share the next provider call"
     );
     let injected_at = result
         .context
@@ -1218,10 +1220,9 @@ async fn phase8_event_order_prepare_next_turn_injection() {
     );
 }
 
-// DoD (Phase 17.2): a terminal should_stop_after_turn stops the run after
-// prepare_next_turn has applied the candidate state, before any queue is polled.
+// A terminal stop ends the completed turn before preparation or queue polling.
 #[tokio::test]
-async fn phase8_event_order_terminal_stop_runs_prepare_then_stops() {
+async fn phase8_event_order_terminal_stop_skips_prepare() {
     let provider = RecordingProvider::new(vec![text_response("only")]);
     let call_count = provider.call_count.clone();
 
@@ -1254,13 +1255,9 @@ async fn phase8_event_order_terminal_stop_runs_prepare_then_stops() {
         1,
         "terminal stop makes exactly one provider call"
     );
-    // Phase 17.2: prepare_next_turn runs BEFORE should_stop (applies the
-    // candidate state that stop observes), so it is invoked once; the terminal
-    // stop then ends the run without polling queues.
-    assert_eq!(
-        prepare_calls.lock().unwrap().len(),
-        1,
-        "prepare_next_turn runs once before a terminal stop ends the run"
+    assert!(
+        prepare_calls.lock().unwrap().is_empty(),
+        "terminal stop skips preparation"
     );
     assert!(
         !seq.contains(&"queue_update".to_string()),

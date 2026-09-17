@@ -132,10 +132,7 @@ async fn run_truncated(mode: ExecutionMode) -> (Option<bool>, Option<bool>) {
         session_id: None,
         evidence_sink: None,
     };
-    let config = AgentLoopConfig {
-        max_turns: 10,
-        ..Default::default()
-    };
+    let config = AgentLoopConfig::default();
     let hooks = AllowHooks;
     let result = opi_agent::agent_loop(context, config, &hooks, sink, CancellationToken::new())
         .await

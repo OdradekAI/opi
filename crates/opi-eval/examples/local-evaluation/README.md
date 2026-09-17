@@ -108,6 +108,19 @@ seeded (`prepare --cache ... --plan ...`, log captured under the output
 root); without it, the failure names the missing identity and how to
 acquire it.
 
+If registry access needs a host proxy, configure it before freezing the plan.
+Native runner processes receive only the material's explicit environment;
+exporting `HTTPS_PROXY` in the launching shell does not reach Pier's Docker
+client. Add the required credential-free proxy endpoint to the selected
+benchmark's `verifier_env` and `oracle_env` in a fresh, unfrozen material copy,
+then re-run native validation and plan generation with that copy. Keep proxy
+passwords and provider credentials out of these persisted maps. Preserve the
+pinned runner variables and the Agent's separate inference-egress policy.
+Check registry access and the runner's container startup with that exact
+environment and no model invocation; a successful build in the interactive
+shell or with warm registry caches does not establish native-run readiness.
+Already frozen material and failed trials remain unchanged.
+
 ## 4. Preview, freeze, and run a selection plan
 
 ```sh

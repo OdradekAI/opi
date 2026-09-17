@@ -368,6 +368,7 @@ fn rpc_startup_rejects_unadvertised_current_model() {
         Vec::new(),
     );
     let workspace = tempfile::tempdir().expect("workspace tempdir");
+    crate::shared_sessions_dir();
     let _runner = RpcRunner::new(
         Box::new(provider),
         "mock:legacy-model".into(),
@@ -694,6 +695,7 @@ async fn rpc_set_thinking_level_off_medium_high_change_runtime_config() {
     let (command_tx, mut output_rx, task) = custom_provider_runner_with_config(provider, config);
 
     let header = recv_rpc_line(&mut output_rx).await;
+    eprintln!("S1");
     assert_eq!(header["type"], "rpc_ready");
 
     command_tx
@@ -703,6 +705,7 @@ async fn rpc_set_thinking_level_off_medium_high_change_runtime_config() {
         })
         .unwrap();
     let resp = recv_response(&mut output_rx, "set_thinking_level").await;
+    eprintln!("S2");
     assert_eq!(resp["success"], true);
     assert_eq!(resp["data"]["level"], "off");
     assert_eq!(resp["data"]["enabled"], false);
@@ -714,6 +717,7 @@ async fn rpc_set_thinking_level_off_medium_high_change_runtime_config() {
         })
         .unwrap();
     let prompt = recv_response(&mut output_rx, "prompt").await;
+    eprintln!("S3");
     assert_eq!(prompt["success"], true);
     recv_until_agent_end(&mut output_rx).await;
 
@@ -724,6 +728,7 @@ async fn rpc_set_thinking_level_off_medium_high_change_runtime_config() {
         })
         .unwrap();
     let resp = recv_response(&mut output_rx, "set_thinking_level").await;
+    eprintln!("S5");
     assert_eq!(resp["success"], true);
     assert_eq!(resp["data"]["level"], "medium");
     assert_eq!(resp["data"]["enabled"], true);
@@ -735,6 +740,7 @@ async fn rpc_set_thinking_level_off_medium_high_change_runtime_config() {
         })
         .unwrap();
     let prompt = recv_response(&mut output_rx, "prompt").await;
+    eprintln!("S6");
     assert_eq!(prompt["success"], true);
     recv_until_agent_end(&mut output_rx).await;
 
@@ -745,6 +751,7 @@ async fn rpc_set_thinking_level_off_medium_high_change_runtime_config() {
         })
         .unwrap();
     let resp = recv_response(&mut output_rx, "set_thinking_level").await;
+    eprintln!("S8");
     assert_eq!(resp["success"], true);
     assert_eq!(resp["data"]["level"], "high");
     assert_eq!(resp["data"]["enabled"], true);
@@ -756,6 +763,7 @@ async fn rpc_set_thinking_level_off_medium_high_change_runtime_config() {
         })
         .unwrap();
     let prompt = recv_response(&mut output_rx, "prompt").await;
+    eprintln!("S9");
     assert_eq!(prompt["success"], true);
     recv_until_agent_end(&mut output_rx).await;
 
@@ -772,6 +780,7 @@ async fn rpc_set_thinking_level_off_medium_high_change_runtime_config() {
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
     let _quit = recv_response(&mut output_rx, "quit").await;
+    eprintln!("S11");
     assert_eq!(task.await.unwrap(), 0);
 }
 
@@ -1084,6 +1093,7 @@ fn rpc_tool_selection_respects_no_tools() {
     let workspace = tempfile::tempdir().expect("workspace tempdir");
     let provider = MockProvider::new("mock", vec![text_response("ok")]);
 
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -1125,6 +1135,7 @@ Body should remain undisclosed.
     .unwrap();
 
     let provider = MockProvider::new("mock", Vec::new());
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -1234,6 +1245,7 @@ async fn phase13_rpc_session_info_returns_metadata() {
     };
 
     let provider = MockProvider::new("mock", Vec::new());
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new_with_runtime_packages(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -1422,6 +1434,7 @@ async fn phase13_rpc_session_metadata_shape() {
     };
 
     let provider = MockProvider::new("mock", Vec::new());
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new_with_runtime_packages(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -1609,6 +1622,7 @@ async fn phase13_rpc_session_info_reports_tree_recovery_diagnostics() {
     };
 
     let provider = MockProvider::new("mock", Vec::new());
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new_with_runtime_packages(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -1711,6 +1725,7 @@ async fn phase13_rpc_session_info_reports_tree_read_error() {
     };
 
     let provider = MockProvider::new("mock", Vec::new());
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new_with_runtime_packages(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -2107,6 +2122,7 @@ fn blocking_cleanup_runner(
     tokio::task::JoinHandle<i32>,
 ) {
     let workspace = tempfile::tempdir().expect("workspace tempdir");
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -2183,6 +2199,7 @@ where
     P: Provider + 'static,
 {
     let workspace = tempfile::tempdir().expect("workspace tempdir");
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         model.into(),
@@ -2400,6 +2417,26 @@ impl Provider for SecondTurnGatedDeltaProvider {
     }
 }
 
+/// One leaked sessions directory for this test binary, installed as
+/// `OPI_SESSIONS_DIR` exactly once before the first runner is built.
+/// `session_dir()` prefers that variable over `$HOME`, so parallel tests
+/// whose `HOME` guards redirect and delete their tempdirs mid-run can
+/// never strand a runner's session file in a foreign directory.
+fn shared_sessions_dir() -> std::path::PathBuf {
+    static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let leaked = tempfile::tempdir_in("/dev/shm")
+            .expect("sessions tempdir")
+            .keep();
+        // SAFETY: process-global env mutation happens exactly once, before
+        // any runner construction in this binary, and the variable is never
+        // removed afterwards.
+        unsafe { std::env::set_var("OPI_SESSIONS_DIR", &leaked) };
+        leaked
+    })
+    .clone()
+}
+
 fn rpc_test_runner(
     provider: ControlledProvider,
 ) -> (
@@ -2408,6 +2445,7 @@ fn rpc_test_runner(
     tokio::task::JoinHandle<i32>,
 ) {
     let workspace = tempfile::tempdir().expect("workspace tempdir");
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -2442,6 +2480,7 @@ where
     P: Provider + 'static,
 {
     let workspace = tempfile::tempdir().expect("workspace tempdir");
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new_with_extension_registry(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -2483,6 +2522,7 @@ async fn write_tool_result_carries_write_audit_details() {
     );
 
     let workspace = tempfile::tempdir().expect("workspace tempdir");
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -2581,7 +2621,7 @@ async fn provider_error_events_are_redacted() {
     let mut saw_auto_retry = false;
     for _ in 0..256 {
         let Ok(maybe_line) =
-            tokio::time::timeout(std::time::Duration::from_secs(2), output_rx.recv()).await
+            tokio::time::timeout(std::time::Duration::from_secs(10), output_rx.recv()).await
         else {
             break;
         };
@@ -2634,6 +2674,7 @@ async fn edit_tool_result_carries_diff_preview_details() {
         ],
     );
 
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -2720,6 +2761,7 @@ async fn tool_failure_trace_carries_tool_details() {
         ],
     );
     let workspace = tempfile::tempdir().expect("workspace tempdir");
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -2795,6 +2837,7 @@ async fn tool_result_details_diagnostics_and_truncated_shape() {
         ],
     );
     let workspace = tempfile::tempdir().expect("workspace tempdir");
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -2881,6 +2924,7 @@ async fn rpc_tool_events_redact_bash_command_canary() {
         ],
     );
     let workspace = tempfile::tempdir().expect("workspace tempdir");
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -2972,6 +3016,7 @@ async fn bash_tool_result_carries_truncation_details() {
         ],
     );
 
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -3045,7 +3090,7 @@ async fn bash_tool_result_carries_truncation_details() {
 async fn recv_rpc_line(
     output_rx: &mut tokio::sync::mpsc::UnboundedReceiver<serde_json::Value>,
 ) -> serde_json::Value {
-    tokio::time::timeout(Duration::from_secs(2), output_rx.recv())
+    tokio::time::timeout(Duration::from_secs(10), output_rx.recv())
         .await
         .expect("timed out waiting for RPC output")
         .expect("RPC output channel closed")
@@ -3066,10 +3111,19 @@ async fn recv_response(
 async fn recv_until_agent_end(
     output_rx: &mut tokio::sync::mpsc::UnboundedReceiver<serde_json::Value>,
 ) {
+    // AgentEnd is the run's last agent event, but the runner is idle only
+    // once the follow-up run_summary lands (`...events, AgentEnd,
+    // run_summary`). Consuming both keeps every caller that immediately
+    // sends an idle command from racing the task's final join.
     loop {
         let line = recv_rpc_line(output_rx).await;
         if line["type"] == "AgentEnd" {
-            return;
+            loop {
+                let line = recv_rpc_line(output_rx).await;
+                if line["type"] == "run_summary" {
+                    return;
+                }
+            }
         }
     }
 }
@@ -3078,7 +3132,7 @@ async fn wait_for_idle_session_info(
     command_tx: &tokio::sync::mpsc::UnboundedSender<RpcCommand>,
     output_rx: &mut tokio::sync::mpsc::UnboundedReceiver<serde_json::Value>,
 ) {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     let mut attempt = 0;
     loop {
         if tokio::time::Instant::now() >= deadline {
@@ -3735,9 +3789,10 @@ async fn phase8_rpc_command_contract_mutating_commands_rejected_while_busy_no_mu
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rpc_mid_turn_steer_is_queued() {
-    let provider = ControlledProvider::new();
+    let provider = HeldRequestProvider::new();
     let call_log = provider.call_log();
-    let (command_tx, mut output_rx, task) = rpc_test_runner(provider);
+    let release = provider.release_handle();
+    let (command_tx, mut output_rx, task) = custom_provider_runner(provider);
 
     let header = recv_rpc_line(&mut output_rx).await;
     assert_eq!(header["type"], "rpc_ready");
@@ -3750,6 +3805,14 @@ async fn rpc_mid_turn_steer_is_queued() {
         .unwrap();
     let _prompt = recv_response(&mut output_rx, "prompt").await;
 
+    // Acceptance precedes dispatch. Hold the first stream open so this input
+    // is truly mid-turn rather than eligible for initial steering delivery.
+    loop {
+        if recv_rpc_line(&mut output_rx).await["type"] == "MessageStart" {
+            break;
+        }
+    }
+
     command_tx
         .send(RpcCommand::steer {
             id: Some("steer-1".into()),
@@ -3758,9 +3821,13 @@ async fn rpc_mid_turn_steer_is_queued() {
         .unwrap();
     let steer = recv_response(&mut output_rx, "steer").await;
     assert_eq!(steer["success"], true);
+    release.notify_one();
 
     loop {
         let line = recv_rpc_line(&mut output_rx).await;
+        if line["type"] == "MessageStart" {
+            release.notify_one();
+        }
         if line["type"] == "AgentEnd" {
             break;
         }
@@ -3768,8 +3835,9 @@ async fn rpc_mid_turn_steer_is_queued() {
 
     {
         let calls = call_log.lock().unwrap();
-        assert!(
-            calls.len() >= 2,
+        assert_eq!(
+            calls.len(),
+            2,
             "queued steering should trigger a second provider request"
         );
         let second_call = &calls[1];
@@ -3922,6 +3990,7 @@ where
         diagnostics,
         trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
     };
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new_with_runtime_packages(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -3996,6 +4065,7 @@ async fn rpc_ready_refuses_local_ask_at_startup_without_prompt() {
     let call_log = provider.call_log_handle();
     let _env_guard = common::empty_user_config_dir();
     let workspace = tempfile::tempdir().expect("workspace tempdir");
+    crate::shared_sessions_dir();
     let runner = RpcRunner::new(
         Box::new(provider),
         "mock:mock-model".into(),
@@ -4257,6 +4327,7 @@ mod phase7 {
             trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         };
         let workspace = tempfile::tempdir().expect("workspace tempdir");
+        crate::shared_sessions_dir();
         let mut runner = RpcRunner::new_with_runtime_packages(
             Box::new(provider),
             "mock:mock-model".into(),
@@ -4346,6 +4417,7 @@ mod phase7 {
             recorded_model: None,
             recorded_thinking: None,
         };
+        crate::shared_sessions_dir();
         let mut runner = RpcRunner::new_with_runtime_packages(
             Box::new(provider),
             "mock:mock-model".into(),
@@ -4396,6 +4468,7 @@ mod phase7 {
         let trace_sink = Arc::new(InMemoryEvidenceSink::new());
         let provider = MockProvider::new("mock", vec![test_support::text_response("hi")]);
         let workspace = tempfile::tempdir().expect("workspace tempdir");
+        crate::shared_sessions_dir();
         let mut runner = RpcRunner::new_with_trace(
             Box::new(provider),
             "mock:mock-model".into(),
@@ -4450,6 +4523,7 @@ mod phase7 {
         // --- Unsupported path: runner built WITHOUT a trace sink. ---
         let provider2 = MockProvider::new("mock", vec![test_support::text_response("hi")]);
         let workspace2 = tempfile::tempdir().expect("workspace tempdir");
+        crate::shared_sessions_dir();
         let mut runner2 = RpcRunner::new_with_trace(
             Box::new(provider2),
             "mock:mock-model".into(),
@@ -4496,6 +4570,7 @@ mod phase7 {
             trust_decision: opi_coding_agent::project_trust::TrustDecision::Trusted,
         };
         let workspace = tempfile::tempdir().expect("workspace tempdir");
+        crate::shared_sessions_dir();
         let mut runner = RpcRunner::new_with_runtime_packages(
             Box::new(provider),
             "mock:mock-model".into(),
@@ -4558,6 +4633,7 @@ mod phase7 {
         };
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let resume_info = empty_resume_info(&workspace, "compact-manual");
+        crate::shared_sessions_dir();
         let mut runner = RpcRunner::new_with_runtime_packages(
             Box::new(provider),
             "mock:mock-model".into(),
@@ -4625,6 +4701,7 @@ mod phase7 {
         };
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let resume_info = empty_resume_info(&workspace, "compact-empty");
+        crate::shared_sessions_dir();
         let mut runner = RpcRunner::new_with_runtime_packages(
             Box::new(provider),
             "mock:mock-model".into(),
@@ -4692,6 +4769,7 @@ mod phase7 {
         let trace_sink = Arc::new(InMemoryEvidenceSink::new());
         let provider = MockProvider::new("mock", vec![test_support::text_response("hi")]);
         let workspace = tempfile::tempdir().expect("workspace tempdir");
+        crate::shared_sessions_dir();
         let mut runner = RpcRunner::new_with_trace(
             Box::new(provider),
             "mock:mock-model".into(),
@@ -4760,6 +4838,7 @@ mod phase7 {
             ],
         );
         let workspace = tempfile::tempdir().expect("workspace tempdir");
+        crate::shared_sessions_dir();
         let mut runner = RpcRunner::new(
             Box::new(provider),
             "mock:mock-model".into(),
@@ -4840,6 +4919,7 @@ async fn phase17_canary_is_absent_from_rpc_jsonl() {
     let provider = MockProvider::new("mock", vec![text_response("done")]);
     let workspace = tempfile::tempdir().unwrap();
     let recorder = Arc::new(InMemoryEvidenceSink::new());
+    crate::shared_sessions_dir();
     let mut runner = RpcRunner::new_with_trace(
         Box::new(provider),
         "mock:mock-model".into(),

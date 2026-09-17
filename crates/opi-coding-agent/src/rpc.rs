@@ -541,6 +541,20 @@ impl RpcRunner {
                             }
                         }
                         RpcInput::Command(command) => {
+                            // A run task that already finished must complete
+                            // (queued events, run summary, `running = false`)
+                            // before the command is interpreted: an idle
+                            // command racing the task's final join would
+                            // otherwise observe agent_busy for a run that
+                            // already emitted AgentEnd.
+                            if run_task.as_ref().is_some_and(|task| task.is_finished()) {
+                                let task = run_task.take().expect("run task checked above");
+                                let joined = task.await;
+                                drain_events(&mut event_rx, &mut emit);
+                                if !self.complete_run_task(joined, &mut emit) {
+                                    return ExitCode::RuntimeFailure as i32;
+                                }
+                            }
                             if command.is_quit() {
                                 let cmd_id = command.id().map(String::from);
                                 let cmd_name = command.command_name();

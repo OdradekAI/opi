@@ -111,10 +111,7 @@ async fn thinking_config_passed_to_provider() {
         session_id: None,
         evidence_sink: None,
     };
-    let config = AgentLoopConfig {
-        max_turns: 1,
-        ..Default::default()
-    };
+    let config = AgentLoopConfig::default();
     let cancel = tokio_util::sync::CancellationToken::new();
     let _ = agent_loop(context, config, &NoopHooks, noop_sink(), cancel)
         .await
@@ -154,10 +151,7 @@ async fn thinking_disabled_by_default() {
         session_id: None,
         evidence_sink: None,
     };
-    let config = AgentLoopConfig {
-        max_turns: 1,
-        ..Default::default()
-    };
+    let config = AgentLoopConfig::default();
     let cancel = tokio_util::sync::CancellationToken::new();
     let _ = agent_loop(context, config, &NoopHooks, noop_sink(), cancel)
         .await

@@ -344,6 +344,29 @@ material. Each adapter classifies typed terminal provider causes
 client's own evidence - including a JSON error at process exit zero - and
 never speculates a provider cause the evidence leaves unknown.
 
+Native Opi configuration omits `[defaults].max_iterations`. Current-tree Opi's
+core has no intrinsic turn ceiling; its product enforces only explicitly
+configured budgets. Native task/adapter deadlines and cancellation still apply.
+Older executables may retain a 50-turn default, so record the exact observed
+client behavior alongside deadlines in the preview; the machine plan has no
+dedicated Agent-turn-budget field. Verify the selected executable with the
+production projection using the offline long-loop test:
+
+```sh
+OPI_EVAL_NATIVE_CLIENT_MATERIAL=/absolute/clients.json cargo test -p opi-eval --test native_driver \
+  native_client_turn_budgets -- --ignored --exact --nocapture
+```
+
+Supply a JSON object with absolute `opi` and `pi` executable paths. The loopback
+test completes 51 tool turns and a final response with numeric output controls
+for Opi's default and projected configurations and the pinned pi client, and checks that
+an explicit small budget stops before another request. A custom Opi model with
+an omitted output capability still rejects before provider dispatch; the
+projection does not invent that capability. A failed check blocks preparation
+for this behavior claim instead of silently replacing the selected executable.
+Changed projection bytes require new control proof and native
+material/plan identities; old candidates and sealed results remain historical.
+
 Numeric output limits are projected into both the model capability and Opi's
 explicit `[defaults].max_output_tokens` request setting. This does **not**
 establish support in stock Opi 0.8.2, which can silently ignore that setting.
@@ -511,6 +534,17 @@ claim or a seal alone is insufficient. Original host paths inside the probe
 record are never followed during acceptance.
 
 ### Bounded cancellation
+
+The pinned Terminal-Bench 3.0 profile gives the whole Harbor job 18,000 seconds:
+14,400 for the task's Agent, 900 for grading, two 600-second environment builds,
+and 1,500 for remaining setup, collection and cleanup. This outer deadline is
+separate from the task's native Agent and verifier deadlines. Profile changes
+require new material and plan identities; existing frozen plans keep their
+original budgets. A selected native job that reaches its outer deadline is an
+ungraded `native-job-timeout` at the infrastructure boundary. Native verifier
+timeouts remain grader-owned, and both retain `timed_out: true` in settlement
+and receipt classification; benchmark-valid Agent timeouts retain their native
+grade.
 
 One run-level cancellation token governs every dispatch. Sending SIGINT or
 SIGTERM to a running `run` stops new affected dispatch, cancels only the

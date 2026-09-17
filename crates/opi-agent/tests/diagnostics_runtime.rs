@@ -645,10 +645,7 @@ mod runtime_emission {
     }
 
     fn config(retry: Option<RetryConfig>) -> AgentLoopConfig {
-        AgentLoopConfig {
-            max_turns: 10,
-            retry,
-        }
+        AgentLoopConfig { retry }
     }
 
     fn fast_retry() -> RetryConfig {
@@ -894,15 +891,35 @@ mod runtime_emission {
     }
 
     #[tokio::test]
-    async fn max_turns_exhaustion_emits_warning_diagnostic_and_error() {
-        // Phase 11.8 S2: exhausting max_turns with tools still pending emits a
-        // CODE_AGENT_MAX_TURNS_EXCEEDED warning diagnostic and returns
-        // AgentError::MaxTurnsExceeded (not a silent Ok(messages)).
+    async fn caller_turn_budget_emits_warning_diagnostic_and_error() {
+        // A caller-owned budget rejects a further turn via fallible preparation.
         use opi_agent::tool::{Tool, ToolError, ToolResult};
         use opi_ai::message::{OutputContent, ToolDef};
         use std::future::Future;
         use std::pin::Pin;
 
+        struct BudgetHooks;
+        impl AgentHooks for BudgetHooks {
+            fn convert_to_llm(
+                &self,
+                messages: &[AgentMessage],
+            ) -> Result<Vec<Message>, AgentError> {
+                NoopHooks.convert_to_llm(messages)
+            }
+            fn prepare_next_turn(
+                &self,
+                ctx: opi_agent::hooks::PrepareNextTurnContext,
+            ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>>
+            {
+                Box::pin(async move {
+                    if ctx.turn >= 2 {
+                        Err(AgentError::MaxTurnsExceeded(2))
+                    } else {
+                        Ok(None)
+                    }
+                })
+            }
+        }
         struct PendingTool;
         impl Tool for PendingTool {
             fn definition(&self) -> ToolDef {
@@ -957,14 +974,11 @@ mod runtime_emission {
             session_id: None,
             evidence_sink: None,
         };
-        let cfg = AgentLoopConfig {
-            max_turns: 2,
-            ..Default::default()
-        };
+        let cfg = AgentLoopConfig::default();
         let result = agent_loop(
             loop_ctx,
             cfg,
-            &NoopHooks,
+            &BudgetHooks,
             null_event_sink(),
             tokio_util::sync::CancellationToken::new(),
         )

@@ -579,6 +579,9 @@ pub enum MeasurementOrigin {
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum UnknownReason {
+    /// The quantity does not apply, such as a finite quota when the caller
+    /// imposed no turn budget. Distinct from an unreported or zero quota.
+    NotApplicable,
     /// The provider did not report the value.
     NotReported,
     /// The value was withheld for safety/privacy.

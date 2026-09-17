@@ -92,6 +92,8 @@ pub struct ToolResult {
     pub content: Vec<OutputContent>,
     pub details: Option<serde_json::Value>,
     pub is_error: bool,
+    /// Suppress automatic continuation when every result in the batch sets
+    /// this flag. The stop hook still runs, and queued input can continue.
     pub terminate: bool,
     /// Whether `content` was truncated (large file, capped output, partial walk).
     pub truncated: bool,

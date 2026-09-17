@@ -169,10 +169,7 @@ async fn no_tool_turn_emits_lifecycle_events() {
         evidence_sink: None,
     };
 
-    let config = AgentLoopConfig {
-        max_turns: 10,
-        ..Default::default()
-    };
+    let config = AgentLoopConfig::default();
 
     let hooks = TestHooks;
     let result =
@@ -237,10 +234,7 @@ async fn account_id_missing_provider_error_maps_to_typed_agent_error() {
         session_id: None,
         evidence_sink: None,
     };
-    let config = AgentLoopConfig {
-        max_turns: 10,
-        ..Default::default()
-    };
+    let config = AgentLoopConfig::default();
     let sink: AgentEventSink = Box::new(|_| {});
     let err = opi_agent::agent_loop(context, config, &TestHooks, sink, CancellationToken::new())
         .await
@@ -334,10 +328,7 @@ async fn tool_use_turn_executes_tool_and_loops() {
         evidence_sink: None,
     };
 
-    let config = AgentLoopConfig {
-        max_turns: 10,
-        ..Default::default()
-    };
+    let config = AgentLoopConfig::default();
 
     let hooks = TestHooks;
     let result = opi_agent::agent_loop(context, config, &hooks, sink, CancellationToken::new())
@@ -407,10 +398,7 @@ async fn text_content_preserved_in_assistant_message() {
         evidence_sink: None,
     };
 
-    let config = AgentLoopConfig {
-        max_turns: 10,
-        ..Default::default()
-    };
+    let config = AgentLoopConfig::default();
 
     let hooks = TestHooks;
     let result = opi_agent::agent_loop(context, config, &hooks, sink, CancellationToken::new())

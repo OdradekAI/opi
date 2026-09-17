@@ -90,10 +90,7 @@ fn make_context_with_sink(provider: MockProvider, sink: Arc<RecordingSink>) -> A
 }
 
 fn make_config(retry: Option<RetryConfig>) -> AgentLoopConfig {
-    AgentLoopConfig {
-        max_turns: 10,
-        retry,
-    }
+    AgentLoopConfig { retry }
 }
 
 fn collect_events() -> (Arc<Mutex<Vec<AgentEvent>>>, AgentEventSink) {

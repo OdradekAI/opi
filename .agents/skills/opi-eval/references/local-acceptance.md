@@ -41,9 +41,13 @@ candidates are `openssl-selfsigned-cert`, `batched-eval-parity`, and
 lifecycle and resource checks. A different feasible task needs an explicit
 selection/reason and must still exercise its family's required handoff.
 
-Verify selected software versions against pinned client profiles, source
-commits and staged executable bytes. An arbitrary version string does not
-admit a new integration. Preserve requested/effective controls, runner/task/
+Resolve an omitted Opi version from the current local working tree under
+[Opi source selection](native-run.md#opi-source-selection); verify its actual
+package version, source snapshot and staged executable against the admitted
+client profile. An explicit version still selects that version, and an
+arbitrary version string does not admit a new integration. Apply the
+[model-control defaults](native-run.md#model-controls) unless overridden.
+Preserve requested/effective controls, runner/task/
 material/image identities, usage/time scope and operator authorization before
 launch. Use [native run](native-run.md) for the concrete CLI steps.
 

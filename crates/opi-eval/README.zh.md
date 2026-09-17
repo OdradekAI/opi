@@ -291,6 +291,24 @@ Opi 任务进程使用隔离且不可用的会话总线地址，使固定客户�
 只依据客户端自身证据分类类型化的终端 provider 原因（认证失败、限流耗尽、协议
 错误）——包括进程退出码为 0 时的 JSON 错误——绝不臆测证据未知的 provider 原因。
 
+原生 Opi 配置省略 `[defaults].max_iterations`。当前仓库的 Opi 核心没有内置
+轮数上限，产品只执行显式配置的预算；原生任务/adapter 超时与取消仍然生效。
+旧 executable 可能仍有 50 轮默认值，因此需在预览中同时披露精确客户端的实测
+行为与执行时限；机器 plan 尚无专门的 Agent 轮数预算字段。使用离线长循环测试
+验证所选 executable 与生产配置投影：
+
+```sh
+OPI_EVAL_NATIVE_CLIENT_MATERIAL=/absolute/clients.json cargo test -p opi-eval --test native_driver \
+  native_client_turn_budgets -- --ignored --exact --nocapture
+```
+
+提供包含 `opi` 和 `pi` executable 绝对路径的 JSON 对象。回环测试在指定数值输出控制时，
+分别验证 Opi 默认配置、投影配置与固定 pi 客户端完成 51 轮工具调用及最终回答，
+并确认 Opi 显式较小预算会在额外请求前停止。自定义 Opi 模型省略输出能力
+时仍在 provider 请求前拒绝；配置投影不会编造该能力。检查失败会阻断该行为声明
+对应的准备工作，不能静默替换所选 executable。投影字节变化需要新建控制证据、native material 和 plan
+身份；旧候选与封存结果仍作为历史证据保留。
+
 数值输出上限同时投影到模型能力字段与 Opi 的显式请求设置
 `[defaults].max_output_tokens`。这**不代表**原版 Opi 0.8.2 支持该设置；
 它可能静默忽略新字段。当 `max_output_tokens` 为 required 控制，或声明了
@@ -439,6 +457,13 @@ Companion `verify` 与 `report`。退出码 0 表示接受证据；退出码 2
 或 seal 不足以通过。验收时绝不沿探针记录中的原始主机路径读取文件。
 
 ### 有界取消
+
+固定的 Terminal-Bench 3.0 profile 为整个 Harbor 作业分配 18,000 秒：任务 Agent
+14,400 秒、评分 900 秒、两次环境构建各 600 秒，其余准备、收集和清理预留 1,500 秒。
+外层期限与任务原生的 Agent、评分器期限各自独立。修改 profile 需要新的材料与计划身份，
+已有冻结计划继续保留原预算。所选原生作业达到外层期限时，归类为基础设施边界的
+`native-job-timeout`，不计分；原生评分器超时仍归评分边界，两者在 settlement 与 receipt
+分类中均保留 `timed_out: true`。基准允许的 Agent 超时继续保留其原生分数。
 
 整个 run 由一个共享取消令牌管辖。向运行中的 `run` 进程发送 SIGINT 或
 SIGTERM 会停止新的受影响派发、只取消在飞 trial 拥有的进程树、移除记录在

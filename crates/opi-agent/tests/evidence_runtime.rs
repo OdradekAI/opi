@@ -660,10 +660,7 @@ fn make_agent_with_sink(
         "mock:mock-model".to_owned(),
         None,
         InferenceConfig::default(),
-        AgentLoopConfig {
-            max_turns: 5,
-            retry,
-        },
+        AgentLoopConfig { retry },
         Box::new(TestHooks),
     )
     .expect("agent builds");
@@ -2450,7 +2447,6 @@ async fn in_band_stream_error_terminal_fails_the_run_without_retry() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             // Retry is deliberately enabled: an in-band error terminal is a
             // non-retryable provider failure even under a retry policy.
             retry: Some(fast_retry()),

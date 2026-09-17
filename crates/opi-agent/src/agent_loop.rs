@@ -33,10 +33,10 @@ use crate::validation;
 /// Each turn prepares one logical model call through the registered
 /// [`opi_ai::ProviderCollection`] (route lookup + auth resolution + validation) before
 /// the retry loop, then opens every sequential attempt from that same opaque
-/// prepared call. After a turn reaches a terminal outcome the loop finalizes
-/// it, builds and validates a candidate next-turn state away from live state,
-/// atomically applies it, and only then lets `should_stop_after_turn` observe
-/// the applied state before any steering/follow-up polling.
+/// prepared call. After a turn completes, `should_stop_after_turn` observes its
+/// complete state before queue polling. Only warranted continuation prepares,
+/// validates, and atomically applies a next-turn candidate before dispatch.
+/// Agent Core imposes no intrinsic turn limit.
 ///
 /// An in-band provider stream `Error` terminal is a provider failure, not a
 /// completed turn: the provider's complete terminal message stays visible in
@@ -193,6 +193,9 @@ pub(crate) async fn agent_loop_with_identities(
     macro_rules! finish_with_error {
         ($error:expr) => {{
             let error = $error;
+            if matches!(&error, AgentError::MaxTurnsExceeded(_)) {
+                observe(&diagnostic_sink, Diagnostic::from(&error));
+            }
             if matches!(&error, AgentError::Cancelled) {
                 let diagnostic_call = identities.next_call();
                 emit_evidence(
@@ -236,16 +239,62 @@ pub(crate) async fn agent_loop_with_identities(
 
     emit_public_event(&events, AgentEvent::AgentStart);
 
-    let mut has_tools_pending = false;
-    for turn_idx in 0..config.max_turns {
+    let mut completed_turns = 0_u64;
+    let mut pending_steering = Vec::new();
+    let mut pending_follow_up = Vec::new();
+    loop {
         let turn = identities.next_turn();
         if cancel.is_cancelled() {
+            restore_queue(&context.steering_queue, pending_steering);
+            restore_queue(&context.follow_up_queue, pending_follow_up);
             observe(&diagnostic_sink, cancelled_diagnostic("before_turn"));
             emit_agent_end(&events, &state.context);
             finish_with_error!(AgentError::Cancelled);
         }
+        if completed_turns == 0 {
+            pending_steering = drain_queue(&context.steering_queue);
+        }
 
         emit_public_event(&events, AgentEvent::TurnStart);
+
+        let input_context_start = state.context.len();
+        macro_rules! fail_before_dispatch {
+            ($error:expr) => {{
+                // Selected input is only delivered once an attempt starts.
+                // Keep both low-level state and the queues retryable on an
+                // earlier transform, conversion, preparation, or cancel error.
+                if !pending_steering.is_empty() || !pending_follow_up.is_empty() {
+                    state.context.truncate(input_context_start);
+                    restore_queue(
+                        &context.steering_queue,
+                        std::mem::take(&mut pending_steering),
+                    );
+                    restore_queue(
+                        &context.follow_up_queue,
+                        std::mem::take(&mut pending_follow_up),
+                    );
+                }
+                emit_agent_end(&events, &state.context);
+                finish_with_error!($error);
+            }};
+        }
+
+        if !pending_steering.is_empty() || !pending_follow_up.is_empty() {
+            emit_public_event(
+                &events,
+                AgentEvent::QueueUpdate {
+                    steering: pending_steering.clone(),
+                    follow_up: pending_follow_up.clone(),
+                },
+            );
+            state.context.extend(
+                pending_steering
+                    .iter()
+                    .chain(pending_follow_up.iter())
+                    .cloned()
+                    .map(user_text_message),
+            );
+        }
 
         let transformed = match hooks
             .transform_context(state.context.clone(), cancel.clone())
@@ -253,20 +302,18 @@ pub(crate) async fn agent_loop_with_identities(
         {
             Ok(transformed) => transformed,
             Err(error) => {
-                emit_agent_end(&events, &state.context);
-                finish_with_error!(error);
+                fail_before_dispatch!(error);
             }
         };
 
         let llm_messages = match hooks.convert_to_llm(&transformed) {
             Ok(messages) => messages,
             Err(error) => {
-                emit_agent_end(&events, &state.context);
-                finish_with_error!(error);
+                fail_before_dispatch!(error);
             }
         };
 
-        has_tools_pending = false;
+        let mut has_tools_pending = false;
         let mut retry_attempt: u32 = 0;
         let max_attempts = config.retry.as_ref().map(|r| r.max_attempts).unwrap_or(0);
 
@@ -304,8 +351,7 @@ pub(crate) async fn agent_loop_with_identities(
                 let err = AgentError::from(e);
                 if matches!(&err, AgentError::Cancelled) {
                     observe(&diagnostic_sink, cancelled_diagnostic("during_prepare"));
-                    emit_agent_end(&events, &state.context);
-                    finish_with_error!(err);
+                    fail_before_dispatch!(err);
                 }
                 let diagnostic: Diagnostic = (&err).into();
                 let diagnostic_call = identities.next_call();
@@ -326,8 +372,7 @@ pub(crate) async fn agent_loop_with_identities(
                     ),
                 );
                 observe_provider_failure(&diagnostic_sink, diagnostic);
-                emit_agent_end(&events, &state.context);
-                finish_with_error!(err);
+                fail_before_dispatch!(err);
             }
         };
 
@@ -370,7 +415,7 @@ pub(crate) async fn agent_loop_with_identities(
         };
 
         // Outcome of the turn's provider/tool work, collected inside the stream
-        // loop and consumed by the post-stream finalize → prepare → stop path.
+        // loop and consumed by the completed-turn stop and continuation gates.
         let mut turn_tool_results: Vec<ToolResultMessage> = Vec::new();
         let mut turn_terminate = false;
 
@@ -379,17 +424,17 @@ pub(crate) async fn agent_loop_with_identities(
                 Ok(stream) => stream,
                 Err(CollectionError::CallCancelled) => {
                     observe(&diagnostic_sink, cancelled_diagnostic("during_prepare"));
-                    emit_agent_end(&events, &state.context);
-                    finish_with_error!(AgentError::Cancelled);
+                    fail_before_dispatch!(AgentError::Cancelled);
                 }
                 Err(e) => {
                     let err = AgentError::from(e);
                     let diagnostic = Diagnostic::from(&err);
                     observe_provider_failure(&diagnostic_sink, diagnostic);
-                    emit_agent_end(&events, &state.context);
-                    finish_with_error!(err);
+                    fail_before_dispatch!(err);
                 }
             };
+            pending_steering.clear();
+            pending_follow_up.clear();
             // Track whether the provider has already delivered any stream item
             // for this attempt. Once content has been emitted to the caller, a
             // subsequent mid-stream retryable error must NOT trigger a retry:
@@ -1022,78 +1067,21 @@ pub(crate) async fn agent_loop_with_identities(
             );
         }
 
-        // Construct the candidate next-turn state away from live state, validate
-        // it as a unit, and atomically apply it. None retains the state; an
-        // error or cancellation leaves the prior state intact.
-        let prep_ctx = PrepareNextTurnContext {
+        completed_turns = completed_turns.saturating_add(1);
+        let stop_ctx = ShouldStopAfterTurnContext {
             state: state.clone(),
             tool_results: turn_tool_results.clone(),
-            terminate: turn_terminate,
-            turn: turn_idx + 1,
         };
-        let mut did_prepare = false;
-        let mut prior_state = None;
-        let prepared_next_turn = tokio::select! {
+        let should_stop = tokio::select! {
             biased;
             _ = cancel.cancelled() => {
-                observe(&diagnostic_sink, cancelled_diagnostic("during_prepare_next_turn"));
+                observe(&diagnostic_sink, cancelled_diagnostic("during_should_stop_after_turn"));
                 emit_agent_end(&events, &state.context);
                 finish_with_error!(AgentError::Cancelled);
             }
-            prepared = hooks.prepare_next_turn(prep_ctx) => prepared,
-        };
-        match prepared_next_turn {
-            Ok(Some(candidate)) => {
-                if let Err(err) = validate_next_turn_candidate(&collection, &candidate) {
-                    emit_agent_end(&events, &state.context);
-                    finish_with_error!(err);
-                }
-                if cancel.is_cancelled() {
-                    observe(
-                        &diagnostic_sink,
-                        cancelled_diagnostic("after_prepare_next_turn_validation"),
-                    );
-                    emit_agent_end(&events, &state.context);
-                    finish_with_error!(AgentError::Cancelled);
-                }
-                prior_state = Some(std::mem::replace(&mut state, candidate));
-                did_prepare = true;
-            }
-            Ok(None) => {}
-            Err(e) => {
-                emit_agent_end(&events, &state.context);
-                finish_with_error!(e);
-            }
-        }
-        // should_stop_after_turn observes the APPLIED state, after preparation.
-        // A tool-driven terminate flag forces the stop.
-        let stop_ctx = ShouldStopAfterTurnContext {
-            state: state.clone(),
-            tool_results: turn_tool_results,
-        };
-        let should_stop = if turn_terminate {
-            true
-        } else {
-            tokio::select! {
-                biased;
-                _ = cancel.cancelled() => {
-                    if let Some(prior) = prior_state.take() {
-                        state = prior;
-                    }
-                    observe(
-                        &diagnostic_sink,
-                        cancelled_diagnostic("during_should_stop_after_turn"),
-                    );
-                    emit_agent_end(&events, &state.context);
-                    finish_with_error!(AgentError::Cancelled);
-                }
-                stop = hooks.should_stop_after_turn(stop_ctx) => stop,
-            }
+            stop = hooks.should_stop_after_turn(stop_ctx) => stop,
         };
         if cancel.is_cancelled() {
-            if let Some(prior) = prior_state.take() {
-                state = prior;
-            }
             observe(
                 &diagnostic_sink,
                 cancelled_diagnostic("after_should_stop_after_turn"),
@@ -1106,73 +1094,63 @@ pub(crate) async fn agent_loop_with_identities(
             finish_success!();
         }
 
-        // The cancellation-sensitive stop boundary completed. The applied
-        // candidate is now committed before queue polling begins.
-        drop(prior_state.take());
-
-        // Queue input is applied only after the stop decision permits polling;
-        // it cannot resurrect a transition that already failed or was cancelled.
-        let steering = drain_queue(&context.steering_queue);
-        if !steering.is_empty() {
-            emit_public_event(
-                &events,
-                AgentEvent::QueueUpdate {
-                    steering: steering.clone(),
-                    follow_up: vec![],
-                },
-            );
-            for msg in steering {
-                state.context.push(user_text_message(msg));
+        // A terminating batch suppresses automatic tool continuation, but
+        // queued steering or follow-up can still warrant another turn.
+        pending_steering = drain_queue(&context.steering_queue);
+        if pending_steering.is_empty() && (!has_tools_pending || turn_terminate) {
+            pending_follow_up = pop_follow_up(&context.follow_up_queue);
+            if pending_follow_up.is_empty() {
+                emit_agent_end(&events, &state.context);
+                finish_success!();
             }
-            continue;
         }
 
-        // prepare_next_turn applied a fresh candidate (new context for the next
-        // provider call). It gets its own next turn, polled before follow-up, so
-        // a prepared message is not bundled with a queued follow-up.
-        if did_prepare {
-            continue;
+        // Prepare only an already-warranted next turn. Pending input stays
+        // outside the candidate so complete replacement cannot discard it.
+        let prep_ctx = PrepareNextTurnContext {
+            state: state.clone(),
+            tool_results: turn_tool_results,
+            terminate: turn_terminate,
+            turn: completed_turns,
+        };
+        let prepared_next_turn = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => Err(AgentError::Cancelled),
+            prepared = hooks.prepare_next_turn(prep_ctx) => prepared,
         }
-
-        if !has_tools_pending {
-            let follow_up = pop_follow_up(&context.follow_up_queue);
-            if !follow_up.is_empty() {
-                emit_public_event(
-                    &events,
-                    AgentEvent::QueueUpdate {
-                        steering: vec![],
-                        follow_up: follow_up.clone(),
-                    },
-                );
-                for msg in follow_up {
-                    state.context.push(user_text_message(msg));
+        .and_then(|candidate| {
+            if let Some(candidate) = &candidate {
+                validate_next_turn_candidate(&collection, candidate)?;
+            }
+            if cancel.is_cancelled() {
+                return Err(AgentError::Cancelled);
+            }
+            Ok(candidate)
+        });
+        match prepared_next_turn {
+            Ok(Some(candidate)) => state = candidate,
+            Ok(None) => {}
+            Err(error) => {
+                // Preserve dequeued, undelivered user input ahead of anything
+                // queued while preparation ran, including on validation failure.
+                restore_queue(&context.steering_queue, pending_steering);
+                restore_queue(&context.follow_up_queue, pending_follow_up);
+                if matches!(&error, AgentError::Cancelled) {
+                    observe(
+                        &diagnostic_sink,
+                        cancelled_diagnostic("during_prepare_next_turn"),
+                    );
                 }
-                continue;
+                emit_agent_end(&events, &state.context);
+                finish_with_error!(error);
             }
-            break;
         }
-    }
 
-    // The for-loop only falls through when `turn_idx` reached
-    // `config.max_turns`. If tools were still pending on the final turn the run
-    // hit the turn cap mid-work — emit a max-turns warning diagnostic
-    // (BEFORE AgentEnd, mirroring the cancellation ordering at the top of the
-    // loop) and return `AgentError::MaxTurnsExceeded` instead of a silent Ok. A
-    // zero-turn run, or exhaustion without pending tools (e.g. steering kept the
-    // loop alive), completes normally.
-    if has_tools_pending {
-        let err = AgentError::MaxTurnsExceeded(config.max_turns);
-        observe(&diagnostic_sink, Diagnostic::from(&err));
-        emit_agent_end(&events, &state.context);
-        finish_with_error!(err);
-    }
-    emit_agent_end(&events, &state.context);
-    AgentLoopResult {
-        state,
-        identities,
-        evidence_health,
-        terminal_outcome: crate::evidence::TerminalOutcome::Success,
-        error: None,
+        // Preparation can suspend for compaction. Poll again only when no
+        // earlier steering or follow-up was selected for the upcoming turn.
+        if pending_steering.is_empty() && pending_follow_up.is_empty() {
+            pending_steering = drain_queue(&context.steering_queue);
+        }
     }
 }
 
@@ -2133,6 +2111,15 @@ fn denial_result(stable_code: &str, redacted_reason: &str) -> ToolResult {
         terminate: false,
         truncated: false,
         diagnostics: vec![],
+    }
+}
+
+fn restore_queue(queue: &Option<Arc<Mutex<VecDeque<String>>>>, messages: Vec<String>) {
+    if let Some(queue) = queue {
+        let mut queue = queue.lock().unwrap();
+        for message in messages.into_iter().rev() {
+            queue.push_front(message);
+        }
     }
 }
 

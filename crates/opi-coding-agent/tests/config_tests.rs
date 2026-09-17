@@ -68,7 +68,7 @@ theme = "dark"
     );
     let config = load_config_file(&path).unwrap();
     assert_eq!(config.defaults.model, "anthropic:claude-sonnet-4");
-    assert_eq!(config.defaults.max_iterations, 100);
+    assert_eq!(config.defaults.max_iterations, Some(100));
     assert_eq!(config.defaults.tool_timeout_ms, 60000);
     assert_eq!(config.defaults.theme, "dark");
 }
@@ -1006,7 +1006,7 @@ model = "anthropic:claude-sonnet-4"
     // Project model wins
     assert_eq!(config.defaults.model, "anthropic:claude-sonnet-4");
     // User's max_iterations still applies (project didn't override it)
-    assert_eq!(config.defaults.max_iterations, 200);
+    assert_eq!(config.defaults.max_iterations, Some(200));
 }
 
 // ---------------------------------------------------------------------------
@@ -1037,7 +1037,7 @@ max_iterations = 100
     .unwrap();
 
     assert_eq!(config.defaults.model, "anthropic:claude-opus-4");
-    assert_eq!(config.defaults.max_iterations, 100);
+    assert_eq!(config.defaults.max_iterations, Some(100));
 }
 
 // ---------------------------------------------------------------------------
@@ -1058,6 +1058,7 @@ fn defaults_when_nothing_configured() {
     .unwrap();
 
     let defaults = OpiConfig::default();
+    assert_eq!(config.defaults.max_iterations, None);
     assert_eq!(config.defaults.model, defaults.defaults.model);
     assert_eq!(
         config.defaults.max_iterations,

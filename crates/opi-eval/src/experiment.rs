@@ -1750,6 +1750,43 @@ group = "hello"
     }
 
     #[test]
+    fn opi_projection_does_not_invent_a_turn_budget() {
+        for api in [
+            "anthropic-messages",
+            "openai-completions",
+            "openai-responses",
+        ] {
+            for output in [
+                ControlValue::Value(4096),
+                ControlValue::Omitted,
+                ControlValue::Unknown,
+            ] {
+                let experiment = resolved(api);
+                let mut controls = experiment.model_controls().clone();
+                controls.max_output_tokens = output;
+                let projection = project_connection(
+                    experiment.selected_connection(),
+                    &controls,
+                    NativeClient::Opi,
+                    credential(),
+                )
+                .unwrap();
+                let config: toml::Value =
+                    toml::from_str(std::str::from_utf8(&projection.config_bytes).unwrap()).unwrap();
+                assert_eq!(
+                    config
+                        .get("defaults")
+                        .and_then(|v| v.get("max_iterations"))
+                        .and_then(toml::Value::as_integer),
+                    None,
+                    "{api}/{:?}",
+                    controls.max_output_tokens,
+                );
+            }
+        }
+    }
+
+    #[test]
     fn opi_projection_sets_request_limit_without_enabling_thinking() {
         let source = doc("anthropic-messages")
             .replace("max_output_tokens = 4096", "max_output_tokens = 16384")

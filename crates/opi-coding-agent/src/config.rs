@@ -37,7 +37,8 @@ pub struct OpiConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DefaultsConfig {
     pub model: String,
-    pub max_iterations: u32,
+    /// Optional per-run provider-turn budget; omission imposes no turn-count ceiling.
+    pub max_iterations: Option<u32>,
     /// Explicit per-request output limit; omission preserves provider and thinking defaults.
     pub max_output_tokens: Option<u64>,
     pub tool_timeout_ms: u64,
@@ -73,7 +74,7 @@ impl Default for DefaultsConfig {
     fn default() -> Self {
         Self {
             model: "anthropic:claude-sonnet-4".into(),
-            max_iterations: 50,
+            max_iterations: None,
             max_output_tokens: None,
             tool_timeout_ms: 30_000,
             max_image_bytes: crate::image::DEFAULT_MAX_IMAGE_BYTES,
@@ -860,7 +861,7 @@ impl TomlConfig {
             config.defaults.model = v;
         }
         if let Some(v) = self.defaults.max_iterations {
-            config.defaults.max_iterations = v;
+            config.defaults.max_iterations = Some(v);
         }
         if let Some(v) = self.defaults.max_output_tokens {
             config.defaults.max_output_tokens = Some(v);

@@ -121,10 +121,7 @@ fn agent_with_provider_and_tools(provider: MockProvider, tools: Vec<Box<dyn Tool
         "mock:mock-model".into(),
         None,
         InferenceConfig::default(),
-        AgentLoopConfig {
-            max_turns: 3,
-            ..Default::default()
-        },
+        AgentLoopConfig::default(),
         Box::new(AllowHooks),
     )
     .expect("valid test agent")
@@ -424,10 +421,7 @@ async fn tool_events_redact_command_context_and_provider_content_stays_unchanged
     };
     let messages = opi_agent::agent_loop(
         context,
-        AgentLoopConfig {
-            max_turns: 3,
-            ..Default::default()
-        },
+        AgentLoopConfig::default(),
         &AllowHooks,
         events,
         CancellationToken::new(),

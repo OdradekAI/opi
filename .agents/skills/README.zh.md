@@ -103,16 +103,26 @@ commit，`$` 可能使用凭据或付费 provider，`P` 改变公开状态，`I`
 
 ### 原生评测入口
 
-调用 `$opi-eval` 并输入软件、版本、benchmark 和模型。技能补齐连接、任务、
+调用 `$opi-eval` 并输入软件、benchmark 和模型，按需显式指定版本。
+未指定 Opi 版本时，默认使用当前本地工作区，包含影响构建的未提交改动；
+准备阶段构建并记录包版本、commit/dirty 源码身份和可执行文件摘要。
+显式版本优先，pi 仍需解析实际版本。技能补齐连接、任务、
 资源与预算输入，再调用 Rust Companion 的 doctor/prepare/validate/plan/run/
 verify/report 命令。以下是技能参数，不是新增的 CLI 参数：
 
 ```text
 $opi-eval mode=benchmark software=pi version=<实际pi版本> bench=terminal-bench-2.1 model=<provider:model>
-$opi-eval mode=acceptance software=opi,pi version=opi:<实际版本>,pi:<实际版本> bench=all model=zhipu:glm-5.3-flash
+$opi-eval mode=acceptance software=opi,pi version=pi:<实际版本> bench=all model=zhipu:glm-5.3-flash
 $opi-eval mode=verify evidence_root=<脱敏证据根>
 $opi-eval mode=fidelity cases=all model=<provider:model>
 ```
+
+`zhipu:glm-5.3-flash` 未指定控制项时，默认上下文窗口为 1000000 token，
+每次模型请求最大输出为 131072 token，包含 thinking。可通过
+`context_window=<n>`、`max_output_tokens=<n>` 或显式配置覆盖。
+两端使用相同值，原生计划冻结前须取得精确客户端的输出控制证明，详见
+[模型控制](opi-eval/references/native-run.md#model-controls)。
+这是技能默认规则，CLI 实验仍记录具体版本和控制值；核验已有证据时沿用原设置。
 
 针对 19.11，acceptance 固定已登记的 Anthropic 连接，在 TB2.1/TB3/DeepSWE
 各选择一个可运行任务，由真实 Opi/pi 各跑一次。普通 benchmark 模式允许其他

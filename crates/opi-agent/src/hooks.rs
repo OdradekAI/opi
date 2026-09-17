@@ -53,9 +53,8 @@ pub enum AfterToolCallResult {
 
 /// Context provided to the should_stop_after_turn hook.
 ///
-/// Stop evaluation runs after the next-turn state has been atomically applied,
-/// so this observes the applied complete state (not the pre-preparation
-/// buffer).
+/// Stop evaluation observes the completed turn before queue polling or
+/// next-turn preparation. Returning true ends the run without preparing.
 #[derive(Clone)]
 pub struct ShouldStopAfterTurnContext {
     pub state: NextTurnState,
@@ -73,7 +72,9 @@ pub struct PrepareNextTurnContext {
     pub state: NextTurnState,
     pub tool_results: Vec<opi_ai::message::ToolResultMessage>,
     pub terminate: bool,
-    pub turn: u32,
+    /// Number of completed turns in this loop invocation, starting at one.
+    /// Resets for each invocation; this is not a budget or a session total.
+    pub turn: u64,
 }
 
 /// Hook trait for customizing agent loop behavior.
@@ -125,7 +126,10 @@ pub trait AgentHooks: Send + Sync {
     /// turn outcome. Return `Ok(Some(replacement))` to replace the state with a
     /// validated complete value, `Ok(None)` to retain the current state, or
     /// `Err(_)` to leave the prior state intact and terminate the transition.
-    /// This runs before `should_stop_after_turn` observes state.
+    /// Runs only after the completed-turn stop decision permits continuation
+    /// and tool work or queued input warrants another provider call. Returning
+    /// a candidate cannot itself create a turn. Queued input is appended after
+    /// the replacement applies; on failure it remains available for a later run.
     fn prepare_next_turn(
         &self,
         _ctx: PrepareNextTurnContext,

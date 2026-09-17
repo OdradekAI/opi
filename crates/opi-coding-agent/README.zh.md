@@ -399,6 +399,11 @@ inline 结果；四个导航工具都会在访问 10,000 个条目后停止遍�
 
 ### 非交互与 JSON
 
+Provider 流失败时，stderr 在原有摘要后追加一行 JSON `DiagnosticPayload`，包含
+`code`、`source`、`severity`、`message` 及安全的 `details.cause`，用来区分
+传输失败、事件格式错误和缺失终止事件。采用 Summary 脱敏，原始上游错误内容仍被隐藏。
+诊断中断响应时应同时保存 stderr 与 NDJSON；这不改变重试行为，也不代表部分响应已经完成。
+
 文本模式把助手文本写到 stdout，把诊断写到 stderr。`--json` 会输出 schema header、
 序列化 session/agent 事件，以及最终 `session_summary`，格式为 NDJSON。当前 NDJSON
 schema version 是 `NDJSON_SCHEMA_VERSION = 2`。在 `session_summary` 中，`turns` 统计
@@ -451,6 +456,13 @@ schema version 是 `3`。启动诊断会通过该 ready header 的 `startup_diag
 配置会合并用户配置、项目配置和显式 `--config` 文件。模型优先级依次为
 `--model`、未传入 `--config` 时的 `OPI_MODEL`、显式配置、项目 `.opi/config.toml`、
 用户配置和内置默认值。
+
+Agent 默认没有固定轮数上限。在 `[defaults]` 中显式设置整数 `max_iterations`，
+即可为每次提示词或续接运行设置产品层预算；省略时，由完成条件、停止 hook、错误和
+取消决定终止。一轮包括一次逻辑 Provider 响应及其工具批次，Provider 重试不额外
+消耗轮数。仍需下一轮却已耗尽预算时返回 `max turns exceeded`；在最后允许的一轮
+自然完成仍算成功。零轮预算在任何 Provider 请求前失败。每次新运行重新计算预算，
+它与输出 token、上下文大小和执行时限相互独立。
 
 可在 TOML 中显式设置每次 Provider 请求的输出上限：
 

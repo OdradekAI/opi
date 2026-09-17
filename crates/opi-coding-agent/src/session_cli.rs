@@ -290,10 +290,10 @@ fn fork_loaded_session(
         }
     }
 
+    std::fs::create_dir_all(dir)?;
     let (header, path) =
         new_fork_session_target(dir, &source.header, runtime_input_binding.clone())?;
 
-    std::fs::create_dir_all(dir)?;
     let mut writer = opi_agent::session::SessionWriter::create(&path, header.clone())?;
     for entry in &entries {
         writer.append(entry)?;
@@ -890,8 +890,18 @@ fn new_fork_session_target(
             format!("{base}-{suffix}")
         };
         let path = dir.join(format!("{id}.jsonl"));
-        if path.exists() {
-            continue;
+        // Reserve the target exclusively instead of checking existence first.
+        // Millisecond ids collide when concurrent runners fork into the same
+        // directory within one millisecond; `create_new` fails atomically for
+        // the loser, which retries with the next candidate suffix.
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(reserved) => drop(reserved),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(SessionCliError::Io(error)),
         }
         let header = opi_agent::session::SessionHeader::new_with_runtime_input_binding(
             id,

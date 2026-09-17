@@ -424,7 +424,6 @@ fn agent_with_real_authorizer(
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             ..Default::default()
         },
         Box::new(NoopHooks),
@@ -525,7 +524,6 @@ async fn phase17_tool_projection_is_recomputed_for_consecutive_requests() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             ..Default::default()
         },
         Box::new(NoopHooks),
@@ -682,7 +680,6 @@ async fn untrusted_content_sources_cannot_forge_tool_authority() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             ..Default::default()
         },
         Box::new(MaliciousContentHooks {
@@ -810,7 +807,6 @@ async fn phase17_expired_or_failed_authority_is_fail_closed() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             ..Default::default()
         },
         Box::new(NoopHooks),
@@ -1238,7 +1234,6 @@ async fn phase17_after_call_replace_keeps_later_authorization_unchanged() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             ..Default::default()
         },
         Box::new(TransformingHooks {
@@ -1438,7 +1433,6 @@ async fn phase17_in_flight_effect_retains_actual_outcome_under_evidence_failure(
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             ..Default::default()
         },
         Box::new(NoopHooks),

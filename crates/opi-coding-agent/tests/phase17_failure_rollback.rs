@@ -640,7 +640,6 @@ async fn phase17_failure_precedence_stops_before_later_boundaries() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             ..Default::default()
         },
         Box::new(NoopHooks),
@@ -2034,7 +2033,6 @@ async fn phase17_rollback_does_not_widen_user_policy() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 5,
             ..Default::default()
         },
         Box::new(NoopHooks),

@@ -378,14 +378,27 @@ implementation.
 
 ### 7.2 Agent turn transition
 
-Next-turn preparation is a state transition, not a message-append hook. It can
-atomically replace context, model, and reasoning settings. Stop and queue
-decisions consume the resulting state, and their ordering is part of the public
-Agent semantics.
+The generic Agent loop follows the completed-turn and continuation semantics
+of pi's Agent Core. A completed turn is evaluated for stopping before any queue
+polling or next-turn preparation. Steering, tool continuation and applicable
+follow-up input determine whether another turn is needed. A tool termination
+hint suppresses automatic tool continuation without discarding queued input.
+
+Next-turn preparation runs only when continuing. It is a state transition,
+not a message-append hook: the complete candidate context, model and inference
+settings are validated and applied atomically before the next request.
+Preparation cannot itself create a reason to continue. A failed or cancelled
+preparation preserves the prior state and undelivered queue input.
+
+The core has no intrinsic turn-count ceiling. Product or embedder policy owns
+explicit execution budgets and supplies termination through the generic hooks
+or cancellation interface. Budget exhaustion remains distinguishable from
+normal completion. This does not remove bounded queues, provider retry limits,
+or externally enforced deadlines.
 
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
-| INV-003 | The Agent loop **MUST** define and test the exact order of turn completion, next-turn preparation, stop evaluation, and steering/follow-up polling. | `opi-agent` | State-transition unit and integration tests. |
+| INV-003 | The Agent loop **MUST** evaluate stopping on the completed-turn state before queue polling; only a continuing run **MUST** prepare the next request state. Initial steering, conditional steering/follow-up polling, tool continuation and termination, and preparation ordering **MUST** have explicit conformance tests. | `opi-agent` | State-transition unit and integration tests against pinned pi semantics. |
 | INV-004 | A next-turn update **MUST** be able to replace the full next request state atomically rather than only append messages. | `opi-agent` | Hook interface and state replacement tests. |
 
 ### 7.3 Tools, cancellation, and backpressure

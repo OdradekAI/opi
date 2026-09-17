@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- `opi-agent`: `AgentLoopConfig.max_turns` is removed. The generic loop has
+  no intrinsic turn ceiling; embedders provide explicit budgets through hooks
+  or cancellation. `PrepareNextTurnContext.turn` is now `u64`. Stop hooks
+  observe the completed turn before queues or preparation; preparation runs
+  only for an already-required continuation and cannot itself request one.
+  Initial steering precedes the first request, and terminating tool batches
+  suppress automatic continuation without suppressing queued input. Complete
+  candidate validation and atomic replacement remain enforced.
+- `opi-coding-agent`: `DefaultsConfig.max_iterations` is now `Option<u32>`,
+  defaulting to no turn-count ceiling. Explicit budgets remain product-owned
+  and fail before a required extra turn; zero fails before provider dispatch
+  instead of reporting an empty success. Natural completion at the configured
+  limit still succeeds. Evidence distinguishes no applicable turn quota with
+  the new `UnknownReason::NotApplicable` variant from a numeric quota.
+
 - `opi-eval`: native required output limits and execution output-token bounds
   now require `agents.<product>.output_control_evidence` in new material.
   Admission binds the exact executable, runtime package, projected config and
@@ -71,6 +86,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handoffs land; their hermetic fixture conformance is unchanged.
 
 ### Changed
+
+- `opi-eval`: native Opi configuration omits `max_iterations`, using the
+  client's default loop without a fixed turn ceiling. Native deadlines and
+  cancellation remain in force. New projections require fresh exact-client
+  control evidence, native material and plans; offline acceptance preserves
+  both historical absent-field projections and the former exact finite
+  ceiling without reinterpreting old executable defaults or sealed results.
+
+- `opi-eval`: the pinned Terminal-Bench 3.0 whole-job deadline is now 18,000
+  seconds, covering the task's four-hour Agent allowance, grading and lifecycle
+  overhead. Native job watchdog failures are `native-job-timeout` at the
+  infrastructure boundary; invalid timeout classifications, settlements and
+  receipts retain `timed_out: true`. Native Agent and verifier timeouts remain
+  distinct, and historical frozen plans/materials are unchanged.
+- `opi-coding-agent`: non-interactive provider stream failures append a
+  summary-redacted `DiagnosticPayload` JSON line to stderr after the human
+  message. Captures retain safe transport/protocol causes without exposing raw
+  upstream errors; NDJSON framing, exit codes and retry behavior are unchanged.
+
+- `opi-eval` skill: omitted Opi versions now select a build of the current
+  local working tree with recorded commit, dirty-source and binary identities.
+  Explicit pins still take precedence. GLM-5.3-Flash defaults to a 1000000-token
+  context window and 131072-token per-response output limit, with exact-client
+  control proof required before native planning; prior frozen evidence is unchanged.
 
 - `opi-eval`: mounted Harbor/Pier jobs write Agent output and Opi traces to
   their trial log mount before completion. Outer timeout/cancellation retains

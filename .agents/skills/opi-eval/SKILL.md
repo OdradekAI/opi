@@ -23,9 +23,10 @@ run; reuse explicit authorization and selections already supplied.
 ```text
 mode=benchmark|acceptance|verify|fidelity
 software=opi|pi|opi,pi
-version=<version for one software, or opi:<version>,pi:<version>>
+version=<single-product version or per-product entries, e.g. pi:<version>>
 bench=terminal-bench-2.1|terminal-bench-3.0|deepswe-v1.1|all
 model=<provider:model>  api=<protocol>  base_url=<endpoint>
+max_output_tokens=<positive integer>  context_window=<positive integer>
 credential_env=<name> | credential_file=<private absolute path>
 tasks=<family:task-id,...>  scope=subset|full  repetitions=<positive integer>
 concurrency=<positive integer>  budget=<requested time/usage/spend limits>
@@ -42,7 +43,12 @@ cases=<name,...|all>  # fidelity branch only
 | Explicit canaries or `cases=...` | `fidelity`; use [fidelity cases](references/fidelity-run.md) instead of the native workflow. |
 
 An explicit `mode` wins; reject contradictory inputs instead of combining
-branches. A bare invocation collects software, version, bench and model; it
+branches. For a new evaluation, omitted Opi version/source selection means the
+current local repository working tree, including build-relevant uncommitted
+changes. Resolve that snapshot under [native builds](references/native-run.md#opi-source-selection);
+an explicit version or user-supplied config pin takes precedence. A per-product
+version map may pin only pi and leave Opi at this default. Resolve pi's actual
+version separately. A bare invocation collects software, bench and model; it
 never selects paid trials or a configured default model silently. An existing
 config supplies defaults, but conflicting requested overrides require a new
 experiment and plan. `verify` derives identities from evidence, not new inputs.
@@ -61,7 +67,8 @@ identity; `software` currently admits only Opi and pi native integrations.
 An unsupported version/adapter is an explicit preparation gap, not permission
 to substitute the current build. A pi-only selection needs no Opi executable.
 
-Resolve one named connection, common controls, full/subset tasks and reasons,
+Resolve one named connection and [model controls](references/native-run.md#model-controls),
+then full/subset tasks and reasons,
 repetitions, concurrency, enforceable bounds, storage, capture, and failure
 policy. Explicitly distinguish the evaluated software version from the
 Companion build version. Keep credential values out of conversation and reports;
@@ -87,7 +94,8 @@ Before acquisition/builds create resources, record the resource baseline and
 protected locations required by [environment cleanup](references/environment-cleanup.md).
 
 Show the resulting plan digests, subjects/builds, task IDs, model connection,
-effective/unsupported controls, exact trial count, concurrency, time limits,
+effective/unsupported controls, exact trial count, concurrency,
+[Agent turn budgets](references/native-run.md#agent-turn-budgets), time limits,
 capture policy and budget enforcement limits. The current CLI rejects total
 token and monetary caps; resolve any required unsupported bound before running.
 Honor the user's approval of this exact scope. If authorization is missing,

@@ -1296,6 +1296,7 @@ enum NativeTrialClass {
     InvalidExecution {
         reason: String,
         boundary: FailureBoundaryCode,
+        timed_out: bool,
     },
     /// Cancelled, unstarted, or effect-unknown: no outcome is invented
     /// (EVAL-DUR-002).
@@ -1335,6 +1336,7 @@ fn classify_native_trial(
         return NativeTrialClass::InvalidExecution {
             reason: failure.kind.to_owned(),
             boundary: failure.boundary,
+            timed_out: record.exit == ExitState::TimedOut,
         };
     }
     let Some(binding) = binding else {
@@ -1343,6 +1345,7 @@ fn classify_native_trial(
         return NativeTrialClass::InvalidExecution {
             reason: "native-binding-absent".to_owned(),
             boundary: FailureBoundaryCode::Integrity,
+            timed_out: false,
         };
     };
     match binding.exception_type.as_deref() {
@@ -1373,14 +1376,17 @@ fn classify_native_trial(
                 binding.exception_type.as_deref().unwrap_or("")
             ),
             boundary: FailureBoundaryCode::AgentProcess,
+            timed_out: false,
         },
         Some("VerifierTimeoutError") => NativeTrialClass::InvalidExecution {
             reason: "verifier-timeout".to_owned(),
             boundary: FailureBoundaryCode::Grader,
+            timed_out: true,
         },
         Some(other) => NativeTrialClass::InvalidExecution {
             reason: format!("job-exception:{other}"),
             boundary: FailureBoundaryCode::Infrastructure,
+            timed_out: false,
         },
     }
 }
@@ -1950,6 +1956,16 @@ async fn run_native_trial(
         class = NativeTrialClass::InvalidExecution {
             reason: reason.to_owned(),
             boundary: FailureBoundaryCode::Infrastructure,
+            timed_out: matches!(
+                class,
+                NativeTrialClass::GradedNative {
+                    timed_out: true,
+                    ..
+                } | NativeTrialClass::InvalidExecution {
+                    timed_out: true,
+                    ..
+                }
+            ),
         };
     }
 
@@ -1998,10 +2014,14 @@ async fn run_native_trial(
                 timed_out,
                 ..
             } => (true, *agent_failed, *timed_out, None, None),
-            NativeTrialClass::InvalidExecution { reason, boundary } => (
+            NativeTrialClass::InvalidExecution {
+                reason,
+                boundary,
+                timed_out,
+            } => (
                 false,
                 false,
-                false,
+                *timed_out,
                 Some(reason.clone()),
                 Some(boundary_token(*boundary)),
             ),
@@ -2182,10 +2202,11 @@ async fn run_native_trial(
                 "agent_failed": agent_failed,
                 "timed_out": timed_out,
             }),
-            NativeTrialClass::InvalidExecution { reason, boundary } => json!({
+            NativeTrialClass::InvalidExecution { reason, boundary, timed_out } => json!({
                 "class": "invalid-execution",
                 "reason": reason,
                 "boundary": boundary_token(*boundary),
+                "timed_out": timed_out,
             }),
             NativeTrialClass::NoOutcome { reason } => json!({
                 "class": "no-outcome",

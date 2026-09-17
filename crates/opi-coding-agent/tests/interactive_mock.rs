@@ -219,7 +219,6 @@ async fn harness_tool_call_with_mock() {
         None,
         opi_agent::loop_types::InferenceConfig::default(),
         opi_agent::loop_types::AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         Box::new(NoopHooks),
@@ -321,45 +320,40 @@ async fn harness_multi_turn_with_mock() {
 #[allow(clippy::await_holding_lock)]
 async fn harness_respects_max_iterations_config() {
     let _lock = session_lock();
+    let _config = common::empty_user_config_dir();
+    let workspace = tempfile::tempdir().unwrap();
+    let global = tempfile::tempdir().unwrap();
+    std::fs::write(workspace.path().join("input.txt"), "fixture").unwrap();
     let responses = (0..50)
         .map(|index| {
             test_support::tool_call_response(
                 &format!("tc-{index}"),
-                "record_tool",
-                r#"{"arg":"keep-going"}"#,
+                "read",
+                r#"{"path":"input.txt"}"#,
             )
         })
         .collect();
     let provider = MockProvider::new("mock", responses);
     let provider_calls = provider.call_log_handle();
-    let tool_calls = Arc::new(Mutex::new(Vec::new()));
-
-    // Phase 17.4: CodingHarness::add_tool was removed; a raw Agent drives the
-    // RecordTool as a trusted registration behind a permissive authorizer. The
-    // old `config.defaults.max_iterations = 3` maps directly to `max_turns: 3`.
-    let collection = Arc::new(test_support::single_route_collection(Box::new(provider)));
-    let mut agent = opi_agent::Agent::new(
-        collection,
-        common::registrations_from(vec![Box::new(RecordTool::new(
-            "record_tool",
-            Arc::clone(&tool_calls),
-        ))]),
-        Some(common::permissive_authorizer()),
-        "mock:mock-model".to_owned(),
-        None,
-        opi_agent::loop_types::InferenceConfig::default(),
-        opi_agent::loop_types::AgentLoopConfig {
-            max_turns: 3,
-            ..Default::default()
-        },
-        Box::new(NoopHooks),
+    let mut config = OpiConfig::default();
+    config.defaults.max_iterations = Some(3);
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        config,
+        workspace.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
     )
-    .unwrap();
-
-    let result = agent
-        .prompt("Keep using the record tool")
-        .await
-        .into_execution_result();
+    .global_config_dir(global.path().to_path_buf())
+    .build();
+    let tool_calls = Arc::new(Mutex::new(Vec::new()));
+    let observed = tool_calls.clone();
+    harness.subscribe(Box::new(move |event: &AgentEvent| {
+        if let AgentEvent::ToolExecutionEnd { is_error, .. } = event {
+            observed.lock().unwrap().push(*is_error);
+        }
+    }));
+    let result = harness.prompt("Keep reading input.txt").await;
 
     assert!(
         matches!(
@@ -374,9 +368,9 @@ async fn harness_respects_max_iterations_config() {
         "max_iterations=3 must stop before a fourth provider turn"
     );
     assert_eq!(
-        tool_calls.lock().unwrap().len(),
-        3,
-        "each permitted provider turn must execute exactly one tool call"
+        *tool_calls.lock().unwrap(),
+        vec![false; 3],
+        "each permitted provider turn must execute one successful tool call"
     );
 }
 

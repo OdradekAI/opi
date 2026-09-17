@@ -982,6 +982,23 @@ fn stderr_for_agent_error(harness: &CodingHarness, error: &AgentError, suffix: &
             _ => diagnostic.redacted_payload(RedactionMode::Summary).message,
         },
     };
+    // Stream failures retain their existing human summary plus a structured,
+    // redacted cause so captured CLI output distinguishes transport and
+    // protocol failures without exposing raw upstream payloads.
+    if let AgentError::Provider(failure) = error
+        && let opi_ai::provider::ProviderError::StreamError(summary) = failure.provider_error()
+    {
+        let mut payload = diagnostic.redacted_payload(RedactionMode::Summary);
+        // `provider_error` remains structurally redacted. Only the provider's
+        // closed safe-summary type may supply the public cause.
+        payload.details = Some(serde_json::json!({
+            "cause": redact_text(summary.as_str(), RedactionMode::Summary),
+        }));
+        if let Ok(payload) = serde_json::to_string(&payload) {
+            stderr.push('\n');
+            stderr.push_str(&payload);
+        }
+    }
     stderr.push_str(suffix);
     stderr
 }

@@ -472,7 +472,6 @@ async fn allow_all_permits_read_and_write() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -527,7 +526,6 @@ async fn allow_paths_permits_listed_paths() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -582,7 +580,6 @@ async fn deny_paths_blocks_matching_write() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -638,7 +635,6 @@ async fn deny_paths_allows_non_matching_path() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -693,7 +689,6 @@ async fn deny_paths_blocks_edit_on_protected_file() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -741,7 +736,6 @@ async fn deny_paths_blocks_bash_when_workspace_root_is_denied() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -796,7 +790,6 @@ async fn parent_traversal_normalizes_to_workspace_root() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -845,7 +838,6 @@ async fn dot_dot_in_path_is_resolved() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -895,7 +887,6 @@ async fn absolute_path_outside_workspace_blocked() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -955,7 +946,6 @@ async fn symlink_traversal_to_protected_path_blocked() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -1003,7 +993,6 @@ async fn non_file_tools_pass_through_unaffected() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -1071,7 +1060,6 @@ async fn audit_log_records_allow_and_deny_across_turns() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,

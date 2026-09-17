@@ -177,7 +177,6 @@ async fn extension_tool_executes_through_agent_loop() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -279,7 +278,6 @@ async fn extension_hooks_observe_builtin_tool_calls() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -369,7 +367,6 @@ async fn extension_can_block_tool_in_agent_loop() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,

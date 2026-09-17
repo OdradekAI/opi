@@ -232,10 +232,42 @@ class Acceptance:
                     raise Rejection(
                         f"command exits: family {family!r} preserves no {command} exit"
                     )
-                if value != 0:
+                if command != "run" and value != 0:
                     raise Rejection(
                         f"command exits: family {family!r} {command} exited {value}"
                     )
+                if command == "run":
+                    self.check_run_exit(family, value)
+
+    def check_run_exit(self, family: str, value: int) -> None:
+        """A paired run may settle non-zero through its comparability
+        marker while every planned trial is sealed and graded natively;
+        auth/infra/tool-loop failures leave trials unsealed or unverified
+        and stay rejected."""
+        if value == 0:
+            return
+        if value != 1:
+            raise Rejection(f"command exits: family {family!r} run exited {value}")
+        report = load_json(
+            self.root / "runs" / family / "run-report.json", "command exits"
+        )
+        trials = report.get("trials")
+        if not isinstance(trials, list) or not trials:
+            raise Rejection(
+                f"command exits: family {family!r} run exited 1 without sealed trials"
+            )
+        for trial in trials:
+            if not isinstance(trial, dict) or trial.get("status") != "sealed":
+                raise Rejection(
+                    f"command exits: family {family!r} run exited 1 with unsealed "
+                    f"trial {trial.get('id') if isinstance(trial, dict) else trial!r}"
+                )
+            completion = trial.get("verifier", {}).get("completion")
+            if not isinstance(completion, str) or not completion.startswith("verified"):
+                raise Rejection(
+                    f"command exits: family {family!r} run exited 1 without native "
+                    f"verification for {trial.get('id')!r}"
+                )
 
     def check_preserved(self, manifest: dict) -> None:
         for entry in manifest.get("preserved", []):
@@ -442,6 +474,11 @@ class Acceptance:
                     "defaults": {"max_output_tokens": limit},
                 }
                 parsed = tomllib.loads(config)
+                # Current projections omit a turn budget; historical sealed
+                # projections may contain the former exact finite ceiling.
+                # This checks bytes, not the executable's default loop policy.
+                if "max_iterations" in parsed.get("defaults", {}):
+                    expected_config["defaults"]["max_iterations"] = 4294967295
             else:
                 expected_config = {"providers": {public["provider"]: {
                     "baseUrl": proof["probe_base_url"], "api": public["api"],

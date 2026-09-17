@@ -395,6 +395,8 @@ case "$OPI_EVAL_STANDIN_MODE" in
   zero) reward=0.0 ;;
   agent-nonzero) reward=0.0; exception='{"exception_type": "NonZeroAgentExitCodeError"}';;
   agent-timeout) reward=0.0; exception='{"exception_type": "AgentTimeoutError"}';;
+  verifier-timeout) reward=0.0; exception='{"exception_type": "VerifierTimeoutError"}';;
+  job-timeout) sleep 30; exit 0 ;;
   provider-error) reward=0.0; exception='{"exception_type": "ApiError"}';;
   oracle) agent_name="oracle"; agent="harbor.agents.oracle:OracleAgent" ;;
   nop-delivers-nothing) reward=0.0 ;;
@@ -557,6 +559,14 @@ fn stage(mode: &str) -> Staged {
     )
     .unwrap();
     let task = mat.join("task-package");
+    if mode == "job-timeout" {
+        let text = fs::read_to_string(&profile).unwrap();
+        fs::write(
+            &profile,
+            text.replace("timeout_secs = 900", "timeout_secs = 1"),
+        )
+        .unwrap();
+    }
     copy_dir(
         &fixtures().join("benchmarks/terminal-bench-2.1/task-package"),
         &task,
@@ -1284,6 +1294,53 @@ fn native_trial_outcome_classifies_every_terminal_shape() {
         report["pairs"][0]["comparability"],
         "infrastructure-failure:trial-pi-native"
     );
+}
+
+#[test]
+fn native_job_and_verifier_timeouts_keep_distinct_settlements() {
+    for (mode, reason, boundary) in [
+        ("job-timeout", "native-job-timeout", "infrastructure"),
+        ("verifier-timeout", "verifier-timeout", "grader"),
+    ] {
+        let staged = stage(mode);
+        let config = write_config(&staged);
+        let run_root = staged.root.join("run");
+        let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
+        assert_eq!(code, 1, "{mode}: {stderr}\n{stdout}");
+        let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(report["outcome"], "incomplete");
+        for trial in ["trial-opi-native", "trial-pi-native"] {
+            let receipt = report["trials"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|receipt| receipt["id"] == trial)
+                .unwrap_or_else(|| panic!("{trial}: {report}"));
+            assert_eq!(receipt["classification"]["class"], "invalid-execution");
+            assert_eq!(receipt["classification"]["reason"], reason);
+            assert_eq!(receipt["classification"]["boundary"], boundary);
+            assert_eq!(receipt["classification"]["timed_out"], true);
+            let settlement: serde_json::Value = serde_json::from_slice(
+                &fs::read(
+                    run_root
+                        .join("trials")
+                        .join(trial)
+                        .join("bundle/artifacts/control/settlement.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(settlement["graded"], false);
+            assert_eq!(settlement["timed_out"], true);
+            assert_eq!(settlement["failure_kind"], reason);
+            assert_eq!(settlement["boundary"], boundary);
+            if mode == "job-timeout" {
+                assert_eq!(receipt["verifier"]["failure_kind"], reason);
+                assert_eq!(receipt["verifier"]["boundary"], boundary);
+                assert!(receipt["verifier"]["binding"].is_null());
+            }
+        }
+    }
 }
 
 #[test]
@@ -2520,6 +2577,186 @@ fn native_protocol_client_matrix() {
     }
     for mut provider in providers {
         let _ = provider.kill();
+    }
+}
+
+/// Exercises both actual clients with the same isolated long-loop provider.
+/// Default and projected configurations complete the long task; a supplied
+/// Opi product budget still bounds continuation.
+#[test]
+#[ignore = "requires locally supplied client material (OPI_EVAL_NATIVE_CLIENT_MATERIAL)"]
+fn native_client_turn_budgets() {
+    use opi_eval::experiment::{
+        Connection, ConnectionApi, ControlValue, CredentialReference, NativeClient,
+        ResolvedCredential, project_connection,
+    };
+    use std::io::BufRead as _;
+
+    struct Provider(std::process::Child);
+    impl Drop for Provider {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    let material = std::env::var("OPI_EVAL_NATIVE_CLIENT_MATERIAL").unwrap();
+    let clients: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(material).unwrap()).unwrap();
+    let bin = PathBuf::from(clients["opi"].as_str().unwrap());
+    let pi = PathBuf::from(clients["pi"].as_str().unwrap());
+    assert!(bin.is_absolute() && bin.is_file());
+    assert!(pi.is_absolute() && pi.is_file());
+    let root = tempfile::tempdir().unwrap();
+    let script = root.path().join("long_loop.py");
+    fs::write(
+        &script,
+        r#"import importlib.util, sys
+spec = importlib.util.spec_from_file_location('scripted', sys.argv[1])
+provider = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(provider)
+def final_turn(body):
+    results = [block for message in body.get('messages', [])
+               if message.get('role') == 'user'
+               and isinstance(message.get('content'), list)
+               for block in message['content']
+               if block.get('type') == 'tool_result']
+    assert all(not result.get('is_error') for result in results)
+    provider.TOOL_USE_ID = f'toolu_scripted_{len(results) + 1}'
+    return len(results) >= 51
+provider.wants_final_turn = final_turn
+sys.argv = [sys.argv[1], '--listen', '127.0.0.1:0', '--request-log', sys.argv[2]]
+sys.exit(provider.main())
+"#,
+    )
+    .unwrap();
+
+    for (case, expected_requests) in [
+        ("default", 52),
+        ("explicit-two", 2),
+        ("projected", 52),
+        ("pi-projected", 52),
+        ("omitted-output", 0),
+    ] {
+        let case_root = root.path().join(case);
+        let work = case_root.join("work");
+        fs::create_dir_all(&work).unwrap();
+        let log = case_root.join("requests.jsonl");
+        let mut provider = Provider(
+            Command::new("python3")
+                .arg(&script)
+                .arg(manifest_dir().join("scripts/scripted-provider.py"))
+                .arg(&log)
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .env("PYTHONDONTWRITEBYTECODE", "1")
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+        let mut ready = String::new();
+        std::io::BufReader::new(provider.0.stdout.take().unwrap())
+            .read_line(&mut ready)
+            .unwrap();
+        let endpoint = ready.trim().strip_prefix("listening ").unwrap();
+        let connection = Connection {
+            id: "long-loop".to_owned(),
+            provider: "scripted".to_owned(),
+            api: ConnectionApi::AnthropicMessages,
+            base_url: format!("http://{endpoint}"),
+            model: "eval".to_owned(),
+            credential: CredentialReference::Env {
+                variable: "OPI_EVAL_SCRIPTED_KEY".to_owned(),
+            },
+        };
+        let mut controls = matrix_controls();
+        controls.context_window = ControlValue::Value(1_000_000);
+        controls.max_output_tokens = if case == "omitted-output" {
+            ControlValue::Omitted
+        } else {
+            ControlValue::Value(131_072)
+        };
+        let projection = project_connection(
+            &connection,
+            &controls,
+            if case == "pi-projected" {
+                NativeClient::Pi
+            } else {
+                NativeClient::Opi
+            },
+            ResolvedCredential::FromEnv {
+                variable: "OPI_EVAL_SCRIPTED_KEY".to_owned(),
+                value: "dummy-scripted-credential".to_owned(),
+            },
+        )
+        .unwrap();
+        let config = case_root.join(projection.config_filename);
+        let mut bytes = projection.config_bytes;
+        if case != "pi-projected" {
+            let projected: toml::Value =
+                toml::from_str(std::str::from_utf8(&bytes).unwrap()).unwrap();
+            assert!(
+                projected
+                    .get("defaults")
+                    .and_then(|v| v.get("max_iterations"))
+                    .is_none(),
+                "evaluation projection must not supply a turn budget"
+            );
+        }
+        if matches!(case, "default" | "explicit-two") {
+            let mut value: toml::Value =
+                toml::from_str(std::str::from_utf8(&bytes).unwrap()).unwrap();
+            let defaults = value["defaults"].as_table_mut().unwrap();
+            defaults.remove("max_iterations");
+            if case == "explicit-two" {
+                defaults.insert("max_iterations".to_owned(), 2.into());
+            }
+            bytes = toml::to_string(&value).unwrap().into_bytes();
+        }
+        fs::write(&config, bytes).unwrap();
+        let output = if case == "pi-projected" {
+            run_pi_client_for(&pi, None, &config, "scripted", "eval", &case_root, &work)
+        } else {
+            run_opi_client(&bin, &config, "eval", &case_root, &work)
+        };
+        drop(provider);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let requests: Vec<serde_json::Value> = if case == "omitted-output" {
+            // A custom model needs a numeric output capability. Omitting it
+            // must remain a pre-dispatch refusal, not an invented limit.
+            assert!(!log.exists(), "{case}: provider was contacted");
+            Vec::new()
+        } else {
+            fs::read_to_string(&log)
+                .unwrap_or_else(|error| panic!("{case}: {error}; {stderr}"))
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect()
+        };
+        eprintln!(
+            "{case}: requests={}, exit={:?}",
+            requests.len(),
+            output.status.code()
+        );
+        assert_eq!(requests.len(), expected_requests, "{case}: {stderr}");
+        if expected_requests == 52 {
+            assert!(output.status.success(), "{case}: {stderr}");
+            assert!(
+                String::from_utf8_lossy(&output.stdout)
+                    .contains("scripted-provider: integration turn complete")
+            );
+        } else if case == "omitted-output" {
+            assert!(!output.status.success(), "{case}: {stderr}");
+            assert!(stderr.contains("max_output_tokens"), "{stderr}");
+        } else {
+            assert_eq!(output.status.code(), Some(1), "{case}: {stderr}");
+            assert!(stderr.contains(&format!("max turns exceeded ({expected_requests})")));
+        }
+        if case != "omitted-output" {
+            for request in requests {
+                assert_wire_output_limit(&request, "anthropic-messages", 131_072);
+            }
+        }
     }
 }
 

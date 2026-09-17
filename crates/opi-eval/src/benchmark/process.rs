@@ -1128,7 +1128,15 @@ impl BenchmarkExecution {
         let started = Instant::now();
         let outcome = ProcessSupervisor::run(&spec, cancel).await;
         let wall_time = started.elapsed();
-        let (reward, completion) = adapter.settle(&outcome, request);
+        let (reward, mut completion) = adapter.settle(&outcome, request);
+        // A selected native dispatch supervises the entire upstream job,
+        // including the Agent. Verifier-only executions keep grader ownership.
+        if request.native_selection.is_some() && outcome.exit == ExitState::TimedOut {
+            completion = BenchmarkCompletion::Failed(BenchmarkFailure {
+                kind: "native-job-timeout",
+                boundary: crate::failure::FailureBoundaryCode::Infrastructure,
+            });
+        }
         Ok(BenchmarkRecord {
             identity,
             exit: outcome.exit,

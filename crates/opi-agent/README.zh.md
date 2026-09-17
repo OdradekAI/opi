@@ -63,19 +63,23 @@ id，`opi-ai` adapter 决定审查过的 cache-affinity 映射是否消费该值
 | `AgentHooks` | 覆盖上下文转换、LLM 转换、工具策略/结果、停止判断和下一轮准备的生命周期 hooks。 |
 | `AgentEvent` | 运行时事件流，覆盖生命周期、流式文本、工具调用、队列、重试、压缩和结束状态。 |
 | `AgentSessionEvent` | `opi --json` 使用的会话级事件协议。 |
-| `AgentLoopConfig` | 主循环限制、重试配置、压缩配置和相关运行时设置。 |
+| `AgentLoopConfig` | 不可变的 provider 重试配置；不含内置轮数预算。 |
 
 ## 主循环形状
 
 主循环按固定的运行时事件顺序执行。`AgentStart` 在首轮之前仅触发一次，
-`AgentEnd` 在每条终止路径上仅触发一次（正常停止、Hook 停止、terminate 标志、
-取消或错误）。每个 turn（`0..max_turns`）内：
+`AgentEnd` 在每条终止路径上仅触发一次（正常停止、Hook 停止、取消或错误）。
+主循环没有内置轮数上限；`PrepareNextTurnContext.turn` 以 `u64` 记录当前调用中
+已完成的轮数，每次调用从头计数。调用方可通过可失败的 hooks 实施显式预算，
+在再次派发 provider 之前返回 `AgentError::MaxTurnsExceeded`：
 
 ```text
 agent_start                              # 仅一次，首轮之前
+  poll initial steering                   # 首个请求之前投递
   对每个 turn：
     cancel check                          # 被取消 -> AgentEnd, AgentError::Cancelled
     turn_start
+    append pending input                  # QueueUpdate；在候选替换之后追加
     transform_context                     # AgentHooks::transform_context
     convert_to_llm                        # AgentHooks::convert_to_llm
     ProviderCollection::prepare_call(Request)
@@ -97,16 +101,16 @@ agent_start                              # 仅一次，首轮之前
         turn_end                          # assistant 消息 + tool_results
       否则：
         turn_end                          # assistant 消息，无 tool_results
-    prepare_next_turn                     # hook 可返回完整候选状态
+    should_stop_after_turn                # 观察已完成状态
+                                         # true -> AgentEnd，成功；跳过准备和轮询
+    drain steering queue
+    若没有 steering 且不需要自动工具续轮：
+      pop follow-up queue                 # 弹出一条；为空则停止
+    prepare_next_turn                     # 仅在需要下一轮时调用
     validate candidate as one unit
-    apply candidate atomically            # 先于停止判断
-    should_stop_after_turn                # 观察已应用状态；terminate 强制为 true
-                                         # true -> AgentEnd, 成功的 AgentLoopResult
-    drain steering queue                  # 非空 -> QueueUpdate，追加，进入下一 turn
-    若已应用候选状态 -> 进入下一 turn
-    若无待处理工具：
-      pop follow-up queue                 # 非空 -> QueueUpdate，追加，进入下一 turn
-      否则 -> 停止
+    apply candidate atomically
+    若尚无待投递输入 -> 再次轮询 steering
+                                         # 接收准备期间入队的输入
 agent_end                                 # 仅一次，终止时
 ```
 
@@ -115,16 +119,15 @@ agent_end                                 # 仅一次，终止时
 - `transform_context` 与 `convert_to_llm` 先完成，随后
   `ProviderCollection::prepare_call` 才针对已解析模型的 schema、wire 和能力校验
   转换后的请求。
-- `prepare_next_turn` 在 live state 之外构造完整候选状态。主循环先把候选作为整体
-  校验并原子应用，再执行 `should_stop_after_turn`；取消或校验失败会保留（或恢复）
-  先前状态。
-- `should_stop_after_turn` 在 `turn_end` 和候选应用之后、任何队列轮询之前观察已应用
-  状态。终止停止会阻止 steering/follow-up 轮询；否则，已应用的 prepared candidate
-  会在弹出 follow-up 前获得自己的下一次 provider turn。
-- Steering 先于 follow-up 被排空。仅当无待处理工具且 steering 队列为空时，
-  才弹出 follow-up。
-- `CompactionEngine` 只是上下文大小的原语；将压缩与持久化 CLI 会话相连的
-  高层协调器位于 `opi-coding-agent`，并通过 `should_stop_after_turn` 停止主循环。
+- `should_stop_after_turn` 在 `turn_end` 之后、队列轮询和准备之前观察已完成状态。
+  返回终止决定时跳过后续轮询和准备。
+- `prepare_next_turn` 仅在需要下一次 provider 调用时在 live state 之外构造完整候选。
+  校验与应用保持原子性；错误和取消保留先前状态及尚未投递的输入。
+  返回 `Some` 本身不能触发续轮。
+- Steering 优先于 follow-up；只有没有自动工具续轮且无 steering 时才弹出 follow-up。
+  待投递输入在准备之后追加；只有之前未选中任何输入，准备之后才再次轮询 steering。
+- `CompactionEngine` 是上下文大小原语；连接它与持久化 CLI 会话的协调器位于
+  `opi-coding-agent`。
 
 Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.retry` 处理。
 重试开始/结束会通过 `AgentEvent` 暴露。
@@ -139,8 +142,8 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
 | `convert_to_llm` | 将应用消息转换为 Provider 消息，并过滤仅会话状态。 |
 | `before_tool_call` | 在解析可信工具之后、JSON Schema 参数校验与强制 authorization 之前运行；可 `Deny` 阻止执行（拒绝原因成为工具错误）。`Continue` 不是授权。 |
 | `after_tool_call` | 在执行之后、最终的 `ToolExecutionEnd` 事件之前运行；可 `Replace` 展示结果，使替换值被发出并持久化，但工具 evidence 仍保留原始的底层执行结果。 |
-| `prepare_next_turn` | 在 `turn_end` 之后运行；可返回完整候选状态，该状态会在停止判断前被校验并原子应用。 |
-| `should_stop_after_turn` | 在候选准备/应用之后、steering/follow-up 轮询之前运行；返回 `true` 会在下一 turn 之前停止。 |
+| `should_stop_after_turn` | 在队列轮询和准备之前观察已完成轮次；返回 `true` 立即结束运行。 |
+| `prepare_next_turn` | 仅在停止决定和输入选择后确实需要续轮时运行；返回的可选完整候选在下一次 provider 派发前校验并原子应用。 |
 
 扩展组合：`ExtensionRegistry::wrap_hooks` 先运行基础 `AgentHooks` 方法，再按注册顺序依次运行每个扩展。
 扩展的 `on_before_tool_call` 返回 `Block` 会在首个 block 处中断链路；后续扩展不会被调用。
@@ -163,8 +166,8 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
   的具体结束事件顺序。
 - 无论串行还是并行，持久化的 `ToolResult` 消息都按 assistant 源顺序排列，
   与完成顺序无关。
-- 仅当批次中每一个已完成的工具结果都设置 `terminate` 时，运行才提前终止。
-  只要有一个非终止结果，运行就继续到下一 turn。
+- 当批次中所有已完成结果均设置 `terminate` 时，仅抑制自动工具续轮；停止 hook
+  仍会运行，排队消息仍可推动下一轮。只要有一个非终止结果，就保留自动续轮。
 
 对于已解析的工具，`before_tool_call` 先运行；随后参数校验会在强制 authorization 与
 `Tool::execute` 之前执行。校验失败是正常的运行时结果，而非循环错误：会持久化一个
@@ -180,7 +183,7 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
 | `content` | LLM 可见的文本或图片输出。 |
 | `details` | 面向运行时、UI、JSON/RPC 和 evidence 边界的可选结构化元数据。 |
 | `is_error` | 该结果是否表示工具失败。 |
-| `terminate` | 当同一批次中的每个结果也终止时，该结果是否可以结束运行。 |
+| `terminate` | 所有批次结果均设置时抑制自动工具续轮；排队输入仍可推动续轮。 |
 | `truncated` | 输出是否被缩短或受界限限制。 |
 | `diagnostics` | 工具自有结构化原因记录（`code`、`message`、`context`）。 |
 

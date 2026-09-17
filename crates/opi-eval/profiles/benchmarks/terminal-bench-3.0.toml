@@ -47,7 +47,9 @@ cpus = 1
 memory_gib = 4
 
 [limits]
-timeout_secs = 900
+# Whole Harbor job: 14400s agent + 900s verifier + two 600s environment
+# builds + 1500s for remaining setup, artifact collection and cleanup.
+timeout_secs = 18000
 stdout_cap_bytes = 1048576
 stderr_cap_bytes = 1048576
 

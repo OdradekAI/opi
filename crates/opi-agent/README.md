@@ -74,19 +74,24 @@ mapping consumes it.
 | `AgentHooks` | Lifecycle hooks for context transforms, LLM conversion, tool policy/results, stopping, and next-turn preparation. |
 | `AgentEvent` | Runtime event stream for lifecycle, streaming text, tool calls, queues, retries, compaction, and end state. |
 | `AgentSessionEvent` | Session-level event protocol used by `opi --json`. |
-| `AgentLoopConfig` | Loop limits, retry config, compaction config, and related runtime settings. |
+| `AgentLoopConfig` | Immutable provider retry configuration; no intrinsic turn budget. |
 
 ## Loop Shape
 
 The loop emits a fixed runtime event order. `AgentStart` fires once before the
 first turn and `AgentEnd` fires once on every termination path (normal stop,
-hook stop, terminate flags, cancellation, or error). Per turn (`0..max_turns`):
+hook stop, cancellation, or error). The loop has no intrinsic turn limit;
+`PrepareNextTurnContext.turn` counts completed turns as `u64` and resets for each
+invocation. A caller can enforce an explicit budget through the fallible hooks
+and return `AgentError::MaxTurnsExceeded` before another provider dispatch:
 
 ```text
-agent_start                              # once, before turn 0
+agent_start                              # once, before the first turn
+  poll initial steering                   # delivered before the first request
   for each turn:
     cancel check                          # cancelled -> AgentEnd, AgentError::Cancelled
     turn_start
+    append pending input                  # QueueUpdate; after any state replacement
     transform_context                     # AgentHooks::transform_context
     convert_to_llm                        # AgentHooks::convert_to_llm
     ProviderCollection::prepare_call(Request)
@@ -108,16 +113,16 @@ agent_start                              # once, before turn 0
         turn_end                          # assistant message + tool_results
       else:
         turn_end                          # assistant message, no tool_results
-    prepare_next_turn                     # hook may return a complete candidate state
+    should_stop_after_turn                # observes the completed state
+                                         # true -> AgentEnd, success; no preparation/polling
+    drain steering queue
+    if no steering and no automatic tool continuation:
+      pop follow-up queue                 # one message; empty -> stop
+    prepare_next_turn                     # only a warranted next turn
     validate candidate as one unit
-    apply candidate atomically            # before the stop decision
-    should_stop_after_turn                # observes applied state; terminate forces true
-                                         # true -> AgentEnd, successful AgentLoopResult
-    drain steering queue                  # non-empty -> QueueUpdate, append, next turn
-    if a candidate was applied -> next turn
-    if no tools are pending:
-      pop follow-up queue                 # non-empty -> QueueUpdate, append, next turn
-      else -> stop
+    apply candidate atomically
+    if no pending input -> poll steering again
+                                         # collect input queued during preparation
 agent_end                                 # once, on termination
 ```
 
@@ -126,19 +131,17 @@ Boundaries:
 - `transform_context` and `convert_to_llm` finish before
   `ProviderCollection::prepare_call` validates the resulting request against
   the resolved model schema, wire, and capabilities.
-- `prepare_next_turn` builds a complete candidate away from live state. The
-  loop validates and atomically applies that candidate before
-  `should_stop_after_turn`; cancellation or validation failure retains (or
-  restores) the prior state.
-- `should_stop_after_turn` observes the applied state after `turn_end` and
-  before any queue polling. A terminal stop prevents steering/follow-up
-  polling; an applied prepared candidate otherwise receives its next provider
-  turn before follow-up is popped.
-- Steering is drained before follow-up. Follow-up is popped only when no tools
-  are pending and the steering queue is empty.
-- `CompactionEngine` is a context-size primitive; the higher-level coordinator
-  that connects compaction to persisted CLI sessions lives in `opi-coding-agent`
-  and stops the loop through `should_stop_after_turn`.
+- `should_stop_after_turn` observes the completed state after `turn_end` and
+  before queue polling or preparation. A terminal stop skips both.
+- `prepare_next_turn` builds a complete candidate away from live state only
+  when another provider turn is warranted. Validation and application are
+  atomic; errors and cancellation retain prior state and undelivered input.
+  Returning `Some` cannot itself cause continuation.
+- Steering precedes follow-up. Follow-up is popped only when no automatic tool
+  continuation or steering remains. Pending input is appended after preparation;
+  steering is polled again after preparation only if no input was already selected.
+- `CompactionEngine` is a context-size primitive; the coordinator connecting it
+  to persisted CLI sessions lives in `opi-coding-agent`.
 
 Retryable provider errors such as rate limits and timeouts can be retried
 through `AgentLoopConfig.retry`. Retry start/end events are surfaced through
@@ -155,8 +158,8 @@ these effects:
 | `convert_to_llm` | Converts app messages to provider messages and filters session-only state. |
 | `before_tool_call` | Runs after trusted tool resolution and before JSON Schema argument validation and mandatory authorization; may `Deny` to block execution (the deny reason becomes the tool error). `Continue` is not an authorization grant. |
 | `after_tool_call` | Runs after execution and before the final `ToolExecutionEnd` event; may `Replace` the presentation result so the replacement is emitted and persisted, while tool evidence retains the original lower-boundary execution outcome. |
-| `prepare_next_turn` | Runs after `turn_end`; may return a complete candidate state, which is validated and atomically applied before the stop decision. |
-| `should_stop_after_turn` | Runs after candidate preparation/application and before steering/follow-up polling; returning `true` stops before the next turn. |
+| `should_stop_after_turn` | Observes the completed turn before queue polling and preparation; `true` ends the run immediately. |
+| `prepare_next_turn` | Runs only for warranted continuation after the stop decision and input selection; returns an optional complete candidate validated and applied before the next provider dispatch. |
 
 Extension composition: `ExtensionRegistry::wrap_hooks` runs the base
 `AgentHooks` method first, then each extension in registration order. A
@@ -185,8 +188,9 @@ each batch by these rules:
   must not depend on a specific end-event ordering across parallel tools.
 - Persisted `ToolResult` messages follow assistant source order in both
   sequential and parallel batches, independent of completion order.
-- The run terminates early only when every finalized tool result in the batch
-  sets `terminate`. A single non-terminating result lets the run continue.
+- When every finalized result sets `terminate`, the batch suppresses automatic
+  tool continuation. The stop hook still runs, and queued messages can continue
+  the run. A single non-terminating result preserves automatic continuation.
 
 For a resolved tool, `before_tool_call` runs first; argument validation then
 runs before mandatory authorization and `Tool::execute`. A validation failure
@@ -205,7 +209,7 @@ tools, and extension tools:
 | `content` | LLM-visible text or image output. |
 | `details` | Optional structured metadata for runtime, UI, JSON/RPC, and evidence boundaries. |
 | `is_error` | Whether the result represents a tool failure. |
-| `terminate` | Whether this result can end the run when every result in the batch also terminates. |
+| `terminate` | Suppresses automatic tool continuation when every batch result sets it; queued input may still continue. |
 | `truncated` | Whether output was shortened or bounded. |
 | `diagnostics` | Tool-owned structured cause records (`code`, `message`, `context`). |
 

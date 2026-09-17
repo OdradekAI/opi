@@ -771,7 +771,7 @@ impl AgentHooks for PrepareInferenceHooks {
         &self,
         _ctx: ShouldStopAfterTurnContext,
     ) -> Pin<Box<dyn std::future::Future<Output = bool> + Send>> {
-        Box::pin(async { true })
+        Box::pin(async { false })
     }
     fn before_tool_call(
         &self,
@@ -791,7 +791,11 @@ async fn phase17_agent_persists_complete_next_turn_state() {
     // the complete state survived the public Agent operation boundary.
     let provider = opi_ai::test_support::MockProvider::new(
         "mock",
-        vec![text_response("first"), text_response("second")],
+        vec![
+            text_response("first"),
+            text_response("follow-up"),
+            text_response("second"),
+        ],
     );
     let call_log = provider.call_log_handle();
     let mut agent = Agent::new(
@@ -806,6 +810,7 @@ async fn phase17_agent_persists_complete_next_turn_state() {
     )
     .expect("agent");
 
+    agent.follow_up("continue".into());
     agent
         .prompt("turn one")
         .await
@@ -818,19 +823,19 @@ async fn phase17_agent_persists_complete_next_turn_state() {
         .unwrap();
 
     let log = call_log.lock().unwrap();
-    assert_eq!(log.len(), 2, "two provider calls across two prompts");
+    assert_eq!(log.len(), 3, "three provider calls across two prompts");
     // First call (turn one) ran before prepare applied the inference change.
     assert_eq!(log[0].max_tokens, None);
     // Second call (turn two) carries max_tokens == 9999 — the prepare-applied
     // inference persisted across the Agent::prompt boundary.
     assert_eq!(
-        log[1].max_tokens,
+        log[2].max_tokens,
         Some(9999),
         "prepare-applied inference (max_tokens) must persist across Agent::prompt"
     );
     // Context persistence: the second call observed the first turn's user msg.
     assert!(
-        log[1].messages.iter().any(|m| matches!(
+        log[2].messages.iter().any(|m| matches!(
             m,
             Message::User(u) if u.content.iter().any(|c| matches!(
                 c, InputContent::Text { text } if text == "turn one"
@@ -907,13 +912,13 @@ async fn idle_replacement_rejects_enabled_none_thinking_atomically_without_consu
         .into_execution_result()
         .unwrap();
     let requests = call_log.lock().unwrap();
-    assert_eq!(requests.len(), 3);
+    assert_eq!(requests.len(), 2);
     assert!(
-        contains_user_text(&requests[1], "queued steering"),
+        contains_user_text(&requests[0], "queued steering"),
         "steering must not be consumed by invalid idle replacement"
     );
     assert!(
-        contains_user_text(&requests[2], "queued follow-up"),
+        contains_user_text(&requests[1], "queued follow-up"),
         "follow-up must not be consumed by invalid idle replacement"
     );
     assert_eq!(
@@ -1170,14 +1175,12 @@ async fn phase17_next_call_routes_from_applied_state_nxt006() {
         "a:mock-model".into(),
         None,
         InferenceConfig::default(),
-        AgentLoopConfig {
-            max_turns: 5,
-            ..Default::default()
-        },
+        AgentLoopConfig::default(),
         Box::new(hooks),
     )
     .expect("agent");
 
+    agent.follow_up("continue on the new route".into());
     agent
         .prompt("route me")
         .await

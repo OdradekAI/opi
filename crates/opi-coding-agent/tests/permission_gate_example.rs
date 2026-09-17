@@ -331,7 +331,6 @@ async fn allow_all_policy_permits_tool_call() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -383,7 +382,6 @@ async fn allow_list_policy_permits_listed_tool() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -427,7 +425,6 @@ async fn deny_all_policy_blocks_tool_call() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -480,7 +477,6 @@ async fn deny_list_policy_blocks_specific_tools() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -528,7 +524,6 @@ async fn deny_list_policy_allows_non_listed_tools() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -582,7 +577,6 @@ async fn audit_log_records_allow_and_deny_across_turns() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -700,7 +694,6 @@ async fn non_interactive_auto_approves_with_allow_all() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -742,7 +735,6 @@ async fn non_interactive_auto_denies_with_deny_all() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
@@ -788,7 +780,6 @@ async fn non_interactive_auto_denies_with_allow_list_for_unlisted() {
         None,
         InferenceConfig::default(),
         AgentLoopConfig {
-            max_turns: 10,
             ..Default::default()
         },
         hooks,
