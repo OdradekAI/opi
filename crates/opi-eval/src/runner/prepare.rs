@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::experiment::ResolvedExperiment;
+use crate::process::{CleanupEvidence, ExitState, ProcessSupervisor, SpawnSpec};
 use crate::runner::material::{
     directory_manifest_digest, runner_source_digest, runtime_package_manifest_digest, sha256_hex,
 };
@@ -357,6 +358,67 @@ fn nearest_existing_ancestor(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn acquisition_settles_deadline_capture_and_failures() {
+        for (case, script, successful) in [
+            ("timeout", "echo $$ > child.pid; exec sleep 30", false),
+            (
+                "noisy",
+                "touch \"$TMPDIR/owned\"; head -c 4096 /dev/zero; head -c 4096 /dev/zero >&2",
+                true,
+            ),
+            ("nonzero", "echo acquisition-failed >&2; exit 7", false),
+            ("spawn", "", false),
+        ] {
+            let room = tempfile::tempdir().unwrap();
+            let cache = room.path().join("verified-cache-entry");
+            std::fs::write(&cache, b"verified unchanged bytes").unwrap();
+            let spec = SpawnSpec {
+                argv: if case == "spawn" {
+                    vec![room.path().join("absent").into_os_string()]
+                } else {
+                    vec!["/bin/sh".into(), "-c".into(), script.into()]
+                },
+                cwd: Some(room.path().to_owned()),
+                env: BTreeMap::from([("PATH".into(), "/usr/bin:/bin".into())]),
+                stdout_cap: 128,
+                stderr_cap: 128,
+                timeout: std::time::Duration::from_millis(if case == "timeout" {
+                    100
+                } else {
+                    5000
+                }),
+            };
+            let result = settle_acquisition(
+                &spec,
+                room.path(),
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await;
+            assert_eq!(result.is_ok(), successful, "{case}: {result:?}");
+            let log = std::fs::read_to_string(room.path().join("acquisition.log")).unwrap();
+            assert!(log.len() < 2048, "{case}: bounded diagnostic");
+            match case {
+                "timeout" => {
+                    assert!(log.contains("TimedOut"), "{log}");
+                    assert!(log.contains("verified: true"), "{log}");
+                    let pid = std::fs::read_to_string(room.path().join("child.pid")).unwrap();
+                    assert!(!Path::new(&format!("/proc/{}", pid.trim())).exists());
+                }
+                "noisy" => {
+                    assert!(log.contains("stdout_truncated: true"), "{log}");
+                    assert!(log.contains("stderr_truncated: true"), "{log}");
+                }
+                "spawn" => assert!(log.contains("FailedToSpawn"), "{log}"),
+                _ => assert!(log.contains("code: 7"), "{log}"),
+            }
+            assert!(!room.path().join("material.json").exists());
+            assert!(!room.path().join("acquisition-staging").exists());
+            assert_eq!(std::fs::read(cache).unwrap(), b"verified unchanged bytes");
+        }
+    }
 
     fn execution() -> crate::experiment::ResolvedExecution {
         ResolvedExperiment::resolve(include_str!(
@@ -704,7 +766,24 @@ struct InventoryEntry {
 /// local-origin native-material manifest plus this report. Never starts
 /// a model, never reads credentials, and never writes outside the
 /// declared cache and output tree.
-pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Value, PrepareError> {
+pub(crate) async fn prepare(
+    config_path: &Path,
+    out: &Path,
+    opi_source: Option<&Path>,
+    opi_commit: Option<&str>,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Result<serde_json::Value, PrepareError> {
+    if opi_source.is_some() != opi_commit.is_some()
+        || opi_commit.is_some_and(|commit| {
+            commit.len() != 40
+                || !commit
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        })
+    {
+        return Err(PrepareError::Rejected("--opi-source and --opi-commit require a paired local directory and full lowercase 40-hex commit".to_owned()));
+    }
+    let opi_source = opi_source.map(std::fs::canonicalize).transpose()?;
     let context = PreparedContext::load(config_path)?;
     let adapter = crate::runner::experiment::adapter_key_for(&context.experiment)
         .map_err(|error| PrepareError::Rejected(error.to_string()))?;
@@ -895,6 +974,11 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
     // is an actionable rejection, never a silent fetch.
     let mut acquired: Vec<String> = Vec::new();
     if !missing.is_empty() {
+        if missing.iter().any(|(key, _)| key.as_str() == "agents:opi") && opi_source.is_none() {
+            return Err(PrepareError::Rejected(
+                "a selected cold Opi build requires --opi-source and --opi-commit".to_owned(),
+            ));
+        }
         let materializer = context
             .cache
             .join("pins/scripts/materialize-external-locks.sh");
@@ -906,6 +990,16 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
                 path.display()
             )));
         }
+        if !lock
+            .authority
+            .producers
+            .iter()
+            .any(|producer| Path::new(&producer.path).file_name() == materializer.file_name())
+        {
+            return Err(PrepareError::Rejected(
+                "the acquisition materializer has no static producer pin".to_owned(),
+            ));
+        }
         std::fs::create_dir_all(out)?;
         let plan_path = out.join("acquisition-plan.json");
         let plan: Vec<serde_json::Value> = missing
@@ -916,43 +1010,35 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
                     .expect("required paths live inside the cache")
                     .to_string_lossy()
                     .replace('\\', "/");
-                let _ = key;
-                serde_json::json!({"id": relative})
+                serde_json::json!({"id": relative, "key": key, "products": products,
+                    "benchmark": adapter, "opi_source": opi_source, "opi_commit": opi_commit})
             })
             .collect();
         std::fs::write(
             &plan_path,
             serde_json::to_string_pretty(&plan).expect("acquisition plan serializes"),
         )?;
-        let invocation = Command::new(&materializer)
-            .arg("prepare")
-            .arg("--cache")
-            .arg(&context.cache)
-            .arg("--plan")
-            .arg(&plan_path)
-            .output()
-            .map_err(|error| {
-                PrepareError::Rejected(format!(
-                    "cannot invoke the pinned materializer at {}: {error}",
-                    materializer.display()
-                ))
-            })?;
-        let log = format!(
-            "$ {} prepare --cache {} --plan {}\n--- stdout ---\n{}--- stderr ---\n{}",
-            materializer.display(),
-            context.cache.display(),
-            plan_path.display(),
-            String::from_utf8_lossy(&invocation.stdout),
-            String::from_utf8_lossy(&invocation.stderr),
-        );
-        std::fs::write(out.join("acquisition.log"), &log)?;
-        if !invocation.status.success() {
-            return Err(PrepareError::Rejected(format!(
-                "supervised acquisition failed (see {})",
-                out.join("acquisition.log").display()
-            )));
-        }
-        for (key, path) in &missing {
+        let spec = SpawnSpec {
+            argv: vec![
+                materializer.into_os_string(),
+                "prepare".into(),
+                "--cache".into(),
+                context.cache.as_os_str().to_owned(),
+                "--plan".into(),
+                plan_path.into_os_string(),
+            ],
+            cwd: None,
+            env: acquisition_environment(),
+            stdout_cap: 1_048_576,
+            stderr_cap: 1_048_576,
+            timeout: std::time::Duration::from_secs(3600),
+        };
+        settle_acquisition(&spec, out, cancel).await?;
+        for (key, original_path) in &missing {
+            let acquired_executable = key
+                .strip_prefix("agents:")
+                .map(|product| agent_executable_path(&context.cache, product));
+            let path = acquired_executable.as_ref().unwrap_or(original_path);
             let present = if key.starts_with("integrations:")
                 || key.starts_with("corpora:")
                 || key.starts_with("runtime:")
@@ -971,6 +1057,19 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
             acquired.push((*key).clone());
         }
         acquired.sort();
+    }
+
+    for (key, path) in &mut required {
+        if let Some(product) = key.strip_prefix("agents:") {
+            *path = agent_executable_path(&context.cache, product);
+        }
+    }
+    for product in &products {
+        let package = context.cache.join("agents").join(product);
+        let key = format!("runtime:{product}");
+        if package.is_dir() && !required.iter().any(|(present, _)| *present == key) {
+            required.push((key, package));
+        }
     }
 
     // 6. Verify every identity and freeze it into the reusable
@@ -1289,6 +1388,73 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
         "acquired": acquired,
         "inventory": context.cache.join("inventory.json"),
     }))
+}
+
+/// Build-tool inputs projected over the supervisor's empty environment.
+fn acquisition_environment() -> BTreeMap<std::ffi::OsString, std::ffi::OsString> {
+    [
+        "PATH",
+        "HOME",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "RUSTUP_TOOLCHAIN",
+        "CARGO_TARGET_DIR",
+        "CARGO_INCREMENTAL",
+        "CC",
+        "CXX",
+        "AR",
+        "CFLAGS",
+        "CXXFLAGS",
+        "PKG_CONFIG_PATH",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "SYSTEMROOT",
+        "PATHEXT",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+    ]
+    .into_iter()
+    .filter_map(|key| std::env::var_os(key).map(|value| (key.into(), value)))
+    .collect()
+}
+
+/// Persist the bounded settled evidence before admitting any acquired material.
+async fn settle_acquisition(
+    spec: &SpawnSpec,
+    out: &Path,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Result<(), PrepareError> {
+    let staging = out.join("acquisition-staging");
+    std::fs::create_dir(&staging)?;
+    let mut spec = spec.clone();
+    spec.env
+        .insert("TMPDIR".into(), staging.canonicalize()?.into_os_string());
+    let invocation = ProcessSupervisor::run(&spec, cancel).await;
+    let verified_cleanup = matches!(
+        invocation.cleanup,
+        CleanupEvidence::NotRequired | CleanupEvidence::TreeTerminated { verified: true, .. }
+    );
+    let staging_removed = verified_cleanup && std::fs::remove_dir_all(&staging).is_ok();
+    let log = format!(
+        "argv: {:?}\nexit: {:?}\ncleanup: {:?}\nstaging_removed: {}\nstdout_truncated: {}\nstderr_truncated: {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+        spec.argv,
+        invocation.exit,
+        invocation.cleanup,
+        staging_removed,
+        invocation.stdout.truncated,
+        invocation.stderr.truncated,
+        String::from_utf8_lossy(&invocation.stdout.bytes),
+        String::from_utf8_lossy(&invocation.stderr.bytes),
+    );
+    std::fs::write(out.join("acquisition.log"), log)?;
+    if invocation.exit != (ExitState::Exited { code: 0 }) || !staging_removed {
+        return Err(PrepareError::Rejected(format!(
+            "supervised acquisition failed (see {})",
+            out.join("acquisition.log").display(),
+        )));
+    }
+    Ok(())
 }
 
 /// The reusable verified-identity inventory inside the cache.

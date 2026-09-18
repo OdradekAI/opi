@@ -43,6 +43,10 @@ pub struct PrepareArgs {
     /// Output directory receiving the local-origin material manifest
     /// and the preparation report.
     pub out: PathBuf,
+    /// Explicit local Git repository for a selected cold Opi build.
+    pub opi_source: Option<PathBuf>,
+    /// Exact local commit paired with `opi_source`; never inferred or fetched.
+    pub opi_commit: Option<String>,
 }
 
 /// Verify the declared local cache and freeze a local-origin
@@ -53,6 +57,21 @@ pub struct PrepareArgs {
 /// non-zero exit and a stderr diagnostic otherwise. No model runs and
 /// no credential is read.
 pub fn prepare(args: &PrepareArgs) -> Result<serde_json::Value, PrepareCliError> {
-    crate::runner::prepare::prepare(&args.config, &args.out)
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| PrepareCliError::Rejected(error.to_string()))?;
+    runtime.block_on(async {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        super::run::install_signal_cancellation(&cancel);
+        crate::runner::prepare::prepare(
+            &args.config,
+            &args.out,
+            args.opi_source.as_deref(),
+            args.opi_commit.as_deref(),
+            &cancel,
+        )
+        .await
         .map_err(|error| PrepareCliError::Rejected(error.to_string()))
+    })
 }

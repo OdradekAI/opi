@@ -565,6 +565,9 @@ pub(crate) fn build_plan(
     }
 
     if let Some((_, material)) = &material {
+        experiment
+            .admit_native_controls()
+            .map_err(|error| PlanError::Rejected(error.to_string()))?;
         super::output_control::admit(material, &experiment)
             .map_err(|error| PlanError::Rejected(error.to_string()))?;
     }

@@ -4,8 +4,8 @@
 The verifier reads one supplied redacted evidence root and never launches an
 Agent, accesses credentials, or contacts a provider. These tests exercise its
 structural logic and its Companion invocation contract with a recording stub;
-the genuine three-family native acceptance path over the built Companion is
-proven by the Rust test in crates/opi-eval/tests/native_driver.rs.
+the Rust test in crates/opi-eval/tests/native_driver.rs verifies that fixture
+evidence is rejected. These unit positives do not establish live acceptance.
 """
 
 from __future__ import annotations
@@ -30,7 +30,8 @@ PIER_REPO = "https://github.com/princeton-nlp/SWE-agent"
 PI_COMMIT = "a" * 40
 HARBOR_COMMIT = "b" * 40
 PIER_COMMIT = "c" * 40
-CONNECTION = {"id": "primary", "provider": "scripted", "api": "anthropic-messages", "base_url": "http://127.0.0.1:48127", "model": "eval"}
+PROBE_BASE_URL = "http://127.0.0.1:48127"
+CONNECTION = {"id": "primary", "provider": "zhipu", "api": "anthropic-messages", "base_url": "https://open.bigmodel.cn/api/anthropic", "model": "glm-5.3-flash"}
 MODEL_CONTROLS = {"temperature": "omitted", "top_p": "omitted", "max_output_tokens": 16384, "context_window": 1000000, "reasoning": "omitted", "required": ["max_output_tokens"]}
 
 
@@ -39,24 +40,24 @@ def synthetic_output_control(product, experiment, opi_turn_budget=None):
     if product == "opi":
         config = '''[defaults]
 max_output_tokens = 16384
-[providers.custom.scripted]
-name = "opi-eval scripted"
+[providers.custom.zhipu]
+name = "opi-eval zhipu"
 base_url = "http://127.0.0.1:48127"
 api = "anthropic-messages"
 api_key_env = "OPI_EVAL_SCRIPTED_KEY"
 auth_scheme = "api-key"
-[[providers.custom.scripted.models]]
-id = "eval"
-display_name = "opi-eval scripted"
+[[providers.custom.zhipu.models]]
+id = "glm-5.3-flash"
+display_name = "opi-eval zhipu"
 max_output_tokens = 16384
 context_window = 1000000
 '''
     else:
-        config = json.dumps({"providers": {"scripted": {"baseUrl": CONNECTION["base_url"], "api": CONNECTION["api"], "apiKey": "dummy-scripted-credential", "models": [{"id": "eval", "maxTokens": 16384, "contextWindow": 1000000}]}}})
+        config = json.dumps({"providers": {"zhipu": {"baseUrl": PROBE_BASE_URL, "api": CONNECTION["api"], "apiKey": "dummy-scripted-credential", "models": [{"id": "glm-5.3-flash", "maxTokens": 16384, "contextWindow": 1000000}]}}})
     if product == "opi" and opi_turn_budget is not None:
         config = config.replace("[defaults]\n", f"[defaults]\nmax_iterations = {opi_turn_budget}\n")
-    requests = "".join(json.dumps({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": "/v1/messages", "model": "eval", "output_limits": {"max_tokens": 16384}, "request_sha256": "d" * 64}) + "\n" for seq in (1, 2))
-    proof = {"schema": "opi-eval-output-control/1", "product": product, "executable_sha256": "e" * 64, "runtime_package_manifest_sha256": None, "connection": {key: CONNECTION[key] for key in ("provider", "api", "model")}, "model_controls": experiment["model_controls"], "probe_base_url": CONNECTION["base_url"], "exit_code": 0, "config": {"path": "synthetic-config", "sha256": sha256(config.encode())}, "requests": {"path": "synthetic-requests", "sha256": sha256(requests.encode())}}
+    requests = "".join(json.dumps({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": "/v1/messages", "model": "glm-5.3-flash", "output_limits": {"max_tokens": 16384}, "request_sha256": "d" * 64}) + "\n" for seq in (1, 2))
+    proof = {"schema": "opi-eval-output-control/1", "product": product, "executable_sha256": "e" * 64, "runtime_package_manifest_sha256": None, "connection": {key: CONNECTION[key] for key in ("provider", "api", "model")}, "model_controls": experiment["model_controls"], "probe_base_url": PROBE_BASE_URL, "exit_code": 0, "config": {"path": "synthetic-config", "sha256": sha256(config.encode())}, "requests": {"path": "synthetic-requests", "sha256": sha256(requests.encode())}}
     evidence = json.dumps(proof)
     return {"evidence": evidence, "evidence_sha256": sha256(evidence.encode()), "config": config, "requests": requests}
 
@@ -167,7 +168,7 @@ class EvidenceRoot:
             "connection_id": "primary",
             "connections": [CONNECTION],
             "model_controls": MODEL_CONTROLS,
-            "execution": {"concurrency": 2},
+            "execution": {"concurrency": 2, "mode": "live"},
         }
         write_json(
             run / "run-control.json",
@@ -186,9 +187,25 @@ class EvidenceRoot:
                 native / "verifier-input.json",
                 {"environment_mode": "separate", "collected": []},
             )
-            (native / "agent-stdout.log").write_text(
-                f"{family} {product} native capture bytes\n", encoding="utf-8"
+            message = {"role": "assistant", **{key: CONNECTION[key] for key in ("provider", "api", "model")}}
+            events = (
+                [{"type": "MessageEnd", "message": message}, {"type": "ToolExecutionStart", "tool_call_id": "call"}, {"type": "ToolExecutionEnd", "tool_call_id": "call"}, {"type": "AgentEnd", "messages": [message]}]
+                if product == "opi" else
+                [{"type": "message_end", "message": message}, {"type": "tool_execution_start", "toolCallId": "call"}, {"type": "tool_execution_end", "toolCallId": "call"}, {"type": "agent_end", "messages": [message]}]
             )
+            rows = [{"type": "Agent", "event": event} for event in events] if product == "opi" else events
+            stdout = "".join(json.dumps(row) + "\n" for row in rows).encode()
+            (native / "agent-stdout.log").write_bytes(stdout)
+            (native / "agent-stderr.log").write_bytes(b"")
+            write_json(native / "agent-terminal.json", {
+                "product": product, "exit_code": 0, "timed_out": False, "failure_kind": None,
+                "stdout_truncated": False, "stderr_truncated": False,
+                "stdout_sha256": sha256(stdout), "stderr_sha256": sha256(b""),
+            })
+            write_json(native / "trial-result.json", {
+                "agent_info": {"model_info": {"name": "zhipu:glm-5.3-flash"}},
+                "exception_info": None, "verifier_result": {"rewards": {"reward": 0}},
+            })
             write_json(
                 bundle / "intent.json",
                 {"schema": "opi-eval-intent/1", "product": product},
@@ -206,6 +223,7 @@ class EvidenceRoot:
                 {
                     "schema": "opi-eval-bundle-manifest/1",
                     "entries": {
+                        **{f"native/{path.name}": {"digest": sha256(path.read_bytes())} for path in native.iterdir()},
                         "control/output-control.json": {"digest": sha256(wire_path.read_bytes())},
                         "control/experiment.json": {
                             "digest": sha256(
@@ -381,7 +399,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
 
     # -- acceptance ---------------------------------------------------------
 
-    def test_genuine_structured_root_is_accepted(self) -> None:
+    def test_synthetic_structured_root_is_accepted(self) -> None:
         report = self.accept()
         self.assertEqual(report["schema"], "opi-eval-local-acceptance-verification/1")
         self.assertEqual(len(report["trials"]), 6)
@@ -411,6 +429,69 @@ class AcceptanceVerifierTest(unittest.TestCase):
             subject_ids=("candidate-opi-replacement", "baseline-pi-replacement"),
         )
         self.accept()
+
+    def test_first_connection_and_live_mode_are_required(self) -> None:
+        for field, value in (
+            ("mode", None), ("mode", "native-fixture"), ("provider", "scripted"),
+            ("api", "openai-completions"), ("base_url", PROBE_BASE_URL),
+            ("model", "other"),
+        ):
+            with self.subTest(field=field, value=value):
+                self.evidence = EvidenceRoot(self.base / f"connection-{field}-{value}")
+                family = FAMILIES[0]
+                entry = self.evidence.runs[family]
+                path = entry["run"] / "trials" / entry["opi"] / "bundle/artifacts/control/experiment.json"
+                experiment = json.loads(path.read_text())
+                if field == "mode":
+                    if value is None:
+                        experiment["execution"].pop("mode")
+                    else:
+                        experiment["execution"]["mode"] = value
+                else:
+                    experiment["connections"][0][field] = value
+                self.evidence.rewrite_sealed_experiment(family, experiment)
+                self.reject("first connection")
+
+    def test_live_agent_observations_cannot_be_substituted(self) -> None:
+        for product in ("opi", "pi"):
+            for case in ("missing", "terminal", "stream", "model", "provider", "tools"):
+                with self.subTest(product=product, case=case):
+                    self.evidence = EvidenceRoot(self.base / f"observed-{product}-{case}")
+                    entry = self.evidence.runs[FAMILIES[0]]
+                    bundle = entry["run"] / "trials" / entry[product] / "bundle"
+                    native = bundle / "artifacts/native"
+                    terminal_path = native / "agent-terminal.json"
+                    terminal = json.loads(terminal_path.read_text())
+                    if case == "missing":
+                        terminal_path.unlink()
+                    elif case == "terminal":
+                        terminal["exit_code"] = 3
+                        write_json(terminal_path, terminal)
+                    elif case == "model":
+                        path = native / "trial-result.json"
+                        result = json.loads(path.read_text())
+                        result["agent_info"]["model_info"]["name"] = "scripted:eval"
+                        write_json(path, result)
+                    else:
+                        path = native / "agent-stdout.log"
+                        raw = path.read_text()
+                        if case == "provider":
+                            raw = raw.replace('"zhipu"', '"scripted"')
+                        elif case == "tools":
+                            raw = "\n".join(line for line in raw.splitlines() if "oolExecution" not in line and "tool_execution" not in line) + "\n"
+                        else:
+                            raw += "{}\n"
+                        path.write_text(raw)
+                        if case != "stream":
+                            terminal["stdout_sha256"] = sha256(path.read_bytes())
+                            write_json(terminal_path, terminal)
+                    manifest_path = bundle / "manifest.json"
+                    manifest = json.loads(manifest_path.read_text())
+                    for path in native.iterdir():
+                        manifest["entries"][f"native/{path.name}"] = {"digest": sha256(path.read_bytes())}
+                    write_json(manifest_path, manifest)
+                    self.evidence._write_manifest()
+                    self.reject("agent evidence")
 
     # -- request-level rejections -------------------------------------------
 
@@ -618,7 +699,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
                             )
                         else:
                             config = json.loads(snapshot["config"])
-                            model = config["providers"]["scripted"]["models"][0]
+                            model = config["providers"]["zhipu"]["models"][0]
                             model["contextWindow" if context else "maxTokens"] = value
                             snapshot["config"] = json.dumps(config)
                         proof["config"]["sha256"] = sha256(snapshot["config"].encode())
@@ -630,7 +711,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
                         proof["config"]["sha256"] = sha256(snapshot["config"].encode())
                     elif case in ("pi-reasoning", "pi-sampling"):
                         config = json.loads(snapshot["config"])
-                        model = config["providers"]["scripted"]["models"][0]
+                        model = config["providers"]["zhipu"]["models"][0]
                         if case == "pi-reasoning":
                             model.update(reasoning=True, thinkingLevelMap={"high": "high"})
                         else:

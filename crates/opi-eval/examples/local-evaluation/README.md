@@ -17,6 +17,7 @@ mkdir -p "$cache/pins/static" "$cache/pins/scripts" \
 cp crates/opi-eval/external-locks/static/linux-x86_64.json \
    "$cache/pins/static/linux-x86_64.json"
 cp crates/opi-eval/scripts/materialize-external-locks.sh \
+   crates/opi-eval/scripts/build-agent-artifacts.sh \
    crates/opi-eval/scripts/verify-external-lock-ci.py \
    crates/opi-eval/scripts/scripted-provider.py "$cache/pins/scripts/"
 cp crates/opi-eval/profiles/benchmarks/*.toml "$cache/pins/profiles/benchmarks/"
@@ -24,33 +25,21 @@ cp -r crates/opi-eval/integrations/harbor "$cache/pins/integrations/"
 cp -r crates/opi-eval/integrations/pier  "$cache/pins/integrations/"
 ```
 
-Build the selected Agent executables (pi-only selections need no Opi), then
-copy the verified artifacts into the cache; the build script emits locators
-and does not install cache entries:
+The public prepare entry acquires the selected Agent packages, complete pinned
+corpus and selected Harbor/Pier runner directly from this pin-only cache.
+For a cold Opi build, pass the local repository and exact committed revision:
+prepare exports only that commit and verifies its Cargo.lock against the static
+workspace input before building. Uncommitted source bytes never enter the build.
+A missing local commit rejects without fetching. Pi-only selections require no
+Opi source, and verified warm packages require no source arguments.
 
-```sh
-bash crates/opi-eval/scripts/build-agent-artifacts.sh ...
-```
-
-For a standalone executable, use `agents/<product>`. For a runtime package,
-copy the complete verified directory to `agents/<product>/`, with executable
-entrypoint `agents/<product>/<product>`. The official pi standalone package
-requires its adjacent resources, including `package.json` and themes; copying
-only its binary loses its version and resource identity. `prepare` freezes
-both the executable digest and the complete sorted-file package digest;
-links, unsafe paths and later resource drift reject.
-
-Seed the selected runner as its own clean Git checkout at
-`runners/harbor/` (Terminal-Bench) or `runners/pier/` (DeepSWE). Use the
-exact `tools[].commit` and `tools[].uv_lock` identities from the copied
-static lock; a matching runner version or lock file alone is insufficient.
-Keep the source checkout inside the cache, rather than linking to another
-checkout. Install the verified static-lock `uv` 0.9.7 executable at
-`tools/uv`, and prepare that runner's `.venv` with `uv sync --locked --no-dev`
-against its pinned `pyproject.toml` and `uv.lock`. The resulting
-`.venv/bin/python` and `.venv/bin/harbor` or `.venv/bin/pier` must exist;
-do this installation at the final cache path so entrypoint shebangs and
-editable source paths remain correct.
+Pi preparation verifies its source blobs, locked dependencies, model-data archive
+against the committed shrinkwrap integrity and pinned Node distribution. Its
+complete runtime package includes Node, bundle, metadata, docs and assets.
+Harbor/Pier are installed with pinned uv and locked dependencies at their final
+cache paths, preserving interpreter and console-script paths. No manual producer
+stage is required. An unverifiable source, archive or build input rejects before
+material publication; existing verified cache entries remain reusable.
 
 `prepare` checks the runner's Git root, exact commit, clean source, lock
 blob and SHA-256, then freezes its source tree, project file, lock,
@@ -91,7 +80,8 @@ reasons; diagnosis starts no model.
 ## 3. Prepare
 
 ```sh
-opi-eval prepare --config experiment.toml --out /path/to/material
+opi-eval prepare --config experiment.toml --out /path/to/material \
+  --opi-source /path/to/local/opi --opi-commit <full-40-hex-commit>
 ```
 
 Verifies the seeded cache against the pinned static lock (producer

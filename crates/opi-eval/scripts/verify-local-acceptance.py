@@ -32,6 +32,12 @@ IDENTITY_CACHE_SCHEMA = "opi-eval-upstream-identity-cache/1"
 VERIFICATION_SCHEMA = "opi-eval-local-acceptance-verification/1"
 FAMILIES = ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1")
 EXPECTED_TRIALS = 6
+FIRST_CONNECTION = {
+    "provider": "zhipu",
+    "api": "anthropic-messages",
+    "base_url": "https://open.bigmodel.cn/api/anthropic",
+    "model": "glm-5.3-flash",
+}
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX40_TOKEN = re.compile(r"\b[0-9a-f]{40}\b")
 NATIVE_GATE = Path("bundle/artifacts/native/verifier-input.json")
@@ -338,6 +344,19 @@ class Acceptance:
                     raise Rejection(
                         f"run-control: {trial['id']!r} sealed experiment is not an object"
                     )
+                selected = unique_record(
+                    experiment.get("connections"), experiment.get("connection_id"),
+                    "first connection",
+                )
+                if (
+                    experiment.get("execution", {}).get("mode") != "live"
+                    or {key: selected.get(key) for key in FIRST_CONNECTION} != FIRST_CONNECTION
+                ):
+                    raise Rejection(
+                        f"first connection: {trial['id']!r} requires live Zhipu "
+                        "anthropic-messages at https://open.bigmodel.cn/api/anthropic "
+                        "with glm-5.3-flash"
+                    )
                 for recorded, sealed in (
                     ("experiment", "experiment_id"),
                     ("manifest_digest", "manifest_digest"),
@@ -375,6 +394,57 @@ class Acceptance:
                         f"binds product {subject.get('product')!r}, not {trial['agent']!r}"
                     )
                 self.check_output_control(controls, experiment, trial, bundle, artifact_entries)
+                self.check_agent_observations(trial, bundle, artifact_entries)
+
+    def check_agent_observations(self, trial, bundle, entries):
+        """Bind live client observations to the sealed first-connection claim."""
+        def reject(reason):
+            raise Rejection(f"agent evidence: {trial['id']!r} {reason}")
+
+        def sealed(key):
+            raw = (bundle / "artifacts" / key).read_bytes()
+            if sha256(raw) != entries.get(key, {}).get("digest"):
+                reject(f"{key} differs from its seal")
+            return raw
+
+        try:
+            terminal = json.loads(sealed("native/agent-terminal.json"))
+            stdout = sealed("native/agent-stdout.log")
+            stderr = sealed("native/agent-stderr.log")
+            result = json.loads(sealed("native/trial-result.json"))
+            if (
+                terminal["product"] != trial["agent"]
+                or type(terminal["exit_code"]) is not int or terminal["exit_code"] != 0
+                or terminal["timed_out"] is not False or terminal["failure_kind"] is not None
+                or terminal["stdout_truncated"] is not False
+                or terminal["stderr_truncated"] is not False
+                or terminal["stdout_sha256"] != sha256(stdout)
+                or terminal["stderr_sha256"] != sha256(stderr)
+                or result["agent_info"]["model_info"]["name"] != "zhipu:glm-5.3-flash"
+                or result.get("exception_info") is not None
+            ):
+                reject("terminal, stream, or native model attribution differs")
+            rows = [json.loads(line) for line in stdout.splitlines() if line.strip()]
+            opi = trial["agent"] == "opi"
+            events = [row["event"] for row in rows if row.get("type") == "Agent"] if opi else rows
+            message_end, agent_end, tool_start, tool_end = (
+                ("MessageEnd", "AgentEnd", "ToolExecutionStart", "ToolExecutionEnd") if opi
+                else ("message_end", "agent_end", "tool_execution_start", "tool_execution_end")
+            )
+            messages = [event["message"] for event in events if event.get("type") == message_end]
+            assistants = [message for message in messages if message.get("role") == "assistant"]
+            if not assistants or not any(event.get("type") == agent_end for event in events):
+                reject("missing provider response or Agent terminal event")
+            for message in assistants:
+                if any(message.get(key) != FIRST_CONNECTION[key] for key in ("provider", "api", "model")):
+                    reject("provider response differs from the first connection")
+            call_key = "tool_call_id" if opi else "toolCallId"
+            starts = {event.get(call_key) for event in events if event.get("type") == tool_start}
+            ends = {event.get(call_key) for event in events if event.get("type") == tool_end}
+            if not starts or None in starts or starts != ends:
+                reject("missing or unsettled tool execution evidence")
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+            reject(f"missing or malformed live observations ({type(error).__name__})")
 
     def check_output_control(self, controls, experiment, trial, bundle, entries):
         """Read only sealed loopback evidence; never follow its original host paths."""

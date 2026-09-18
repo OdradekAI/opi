@@ -13,12 +13,17 @@
       {
         "path": "crates/opi-eval/scripts/materialize-external-locks.sh",
         "role": "materializer",
-        "sha256": "4eb596aedf5797a83d36256d70fd506eea79f2cc3febfa332d0deb36f194f705"
+        "sha256": "a46e7ab7beafef95e70990da0f290bda1c2da59513b90f105018d00bc4ace8e3"
       },
       {
         "path": "crates/opi-eval/scripts/verify-external-lock-ci.py",
         "role": "verifier",
         "sha256": "000adfa0669dc5ec4abe53fc5789c2400e3b1cc556f2fdf2ff56bea445ea6ce2"
+      },
+      {
+        "path": "crates/opi-eval/scripts/build-agent-artifacts.sh",
+        "role": "agent-builder",
+        "sha256": "4f32214af9fc34abc142365ca0d88ac0918e771d2d94a7e394303cd13d3ef490"
       }
     ],
     "actions": [

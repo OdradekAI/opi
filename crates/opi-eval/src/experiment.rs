@@ -1013,6 +1013,50 @@ impl ResolvedExperiment {
         &self.model_controls
     }
 
+    /// Reject required sampling values that a selected native client cannot express.
+    pub(crate) fn admit_native_controls(&self) -> Result<(), ResolveError> {
+        for subject in self.subjects() {
+            let client = match subject.product.as_str() {
+                "opi" => NativeClient::Opi,
+                "pi" => NativeClient::Pi,
+                _ => continue,
+            };
+            for name in self.unsupported_native_sampling(client) {
+                if self.model_controls.required.contains(&name) {
+                    return Err(ResolveError::RequiredControlUnsupported {
+                        control: name,
+                        reason: format!(
+                            "selected {} client cannot express this value on the selected protocol",
+                            subject.product
+                        ),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Requested sampling values unsupported by this exact client projection.
+    pub(crate) fn unsupported_native_sampling(&self, client: NativeClient) -> Vec<String> {
+        let projected = project_controls(self.model_controls(), client, self.selected_connection());
+        [
+            ("temperature", projected.temperature),
+            ("top_p", projected.top_p),
+        ]
+        .into_iter()
+        .filter_map(|(name, control)| {
+            matches!(
+                control,
+                ProjectedControl::Unsupported {
+                    requested: ControlValue::Value(_),
+                    ..
+                }
+            )
+            .then(|| name.to_owned())
+        })
+        .collect()
+    }
+
     /// Frozen execution mode and enforceable bounds.
     pub fn execution(&self) -> &ResolvedExecution {
         &self.execution

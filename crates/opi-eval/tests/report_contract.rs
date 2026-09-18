@@ -347,6 +347,15 @@ fn verify_regrade_split_names_each_operation() {
             .is_some_and(|b| !b.is_empty()),
         "every sealed bundle stays listed: {verified}"
     );
+    let (code, before, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "{stderr}");
+    std::fs::write(root.path().join("run-report.json"), b"{}\n").unwrap();
+    let (code, after, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(
+        before, after,
+        "mutable run reports never override sealed interpretation"
+    );
 
     // A tampered sealed byte fails verification with a typed failure and
     // untouched bytes.

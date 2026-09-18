@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- `opi-eval`: `PrepareArgs` adds paired optional `opi_source` and `opi_commit`
+  fields, exposed as `prepare --opi-source` and `--opi-commit`. A selected
+  cold Opi build requires an explicit local repository and exact commit;
+  verified warm packages and pi-only preparation need neither. Public prepare
+  now acquires selected clients, complete pinned corpora and locked runners.
+
 - `opi-eval`: normalized reports and reporter identity move to
   `opi-eval-normalized-report/2` and `opi-eval-reporter/2`. Binary native task
   outcomes retain their benchmark-specific meanings. Native test-case
@@ -120,6 +126,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handoffs land; their hermetic fixture conformance is unchanged.
 
 ### Changed
+
+- `opi-eval`: material acquisition now settles under a whole-invocation
+  deadline and signal cancellation, bounds diagnostic output, records owned
+  cleanup, and prevents material publication after unsuccessful settlement.
+
+- `opi-eval`: local acceptance requires sealed live first-connection evidence
+  and matching native client observations; internally consistent fixture
+  trials and loopback control probes cannot establish real acceptance.
+
+- `opi-eval`: replacement runs verify and expand the original frozen plan
+  before deriving fresh experiment, group and trial identities for each
+  attempt, preserving selected scope and unrelated groups.
+
+- `opi-eval`: recovery prints a read-only view of every frozen planned trial,
+  including unstarted entries. It preserves original reports and bundles and
+  rejects inconsistent run-control or durable trial identities.
+
+- `opi-eval`: offline native comparisons retain unsupported sampling and
+  require sealed, bound output-control evidence for requested output limits.
+  Missing proof in older bundles cannot become a comparable control.
+
+- `opi-eval`: native validation, planning and execution reject required
+  sampling values unsupported by any selected client. Optional unsupported
+  sampling remains explicit in paired comparisons.
+
+- `opi-eval`: native canary detection cancels the run before another trial
+  starts. Failed sealing retains private evidence and planned missing coverage.
 
 - `opi-eval`: pinned Harbor/Pier jobs select an owned Docker execution
   environment for both Agent and verifier stages. Cancellation waits for the

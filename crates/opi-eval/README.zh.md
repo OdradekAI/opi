@@ -98,6 +98,13 @@ provenance：upload receipt 仍然只是 CI 的 transport claim。缓存缺失�
 日志位于输出根下）；否则失败会点名缺失的身份及其获取方式。完整的
 operator 演练见 `examples/local-evaluation/`。
 
+选中 Opi 且需要冷构建时，必须成对提供 `--opi-source /local/git/repository`
+与 `--opi-commit <full-40-hex>`。prepare 仅导出该本地 commit，验证 Cargo 锁定
+输入后在导出目录构建；不会推断 HEAD、包含未提交文件或获取缺失的 Opi commit。
+已验证的热缓存无需源码参数，pi-only 准备也无需构建 Opi。一次调用获取选中的
+客户端、完整固定语料及锁定的 Harbor/Pier 环境。种子集合必须包含 materializer
+与 `build-agent-artifacts.sh`。Agent 运行时资源和构建身份保留在已验证包中。
+
 缓存中的 `corpora/<adapter>/tasks` 必须是完整、干净且版本固定的 Git 语料。
 prepare 为选中任务生成 `packages/<adapter>/<task-id>` 和绑定 SHA-256 的
 `profiles/<adapter>/<task-id>.toml`。material/5 分开记录完整语料的
@@ -347,6 +354,11 @@ Opi 任务进程使用隔离且不可用的会话总线地址，使固定客户�
 只依据客户端自身证据分类类型化的终端 provider 原因（认证失败、限流耗尽、协议
 错误）——包括进程退出码为 0 时的 JSON 错误——绝不臆测证据未知的 provider 原因。
 
+native 准入按每个选定客户端检查 required `temperature` 与 `top_p`。
+Opi 无法表达这两个控制；pi 仅在 OpenAI 协议上支持它们。不受支持的 required
+数值会阻断验证、计划与执行；可选的请求数值则保留为不可比较。omitted 与 unknown
+标记保持区别，均不能证明数值已被强制执行。
+
 原生 Opi 配置省略 `[defaults].max_iterations`。当前仓库的 Opi 核心没有内置
 轮数上限，产品只执行显式配置的预算；原生任务/adapter 超时与取消仍然生效。
 旧 executable 可能仍有 50 轮默认值，因此需在预览中同时披露精确客户端的实测
@@ -442,6 +454,11 @@ hermetic CLI 示例相互独立。
 
 ## 输出与故障恢复
 
+材料获取整次调用限时 3,600 秒，每个输出流最多保留 1 MiB。
+`acquisition.log` 记录退出、超时/取消、截断及自有资源清理状态。
+SIGINT/SIGTERM 取消自有进程树；失败或未验证落定的调用不能发布材料。
+仅清理本次调用自有的临时 staging，保留已验证的缓存条目。
+
 完成后的 fixture run 具有以下持久结构；sealed bundle 外还可能存在其他 staging
 文件：
 
@@ -459,7 +476,10 @@ $RUN_ROOT/
 sealed bundle 一旦生成，就应视为不可变。修改任何受覆盖字节都会导致 `verify`、`regrade` 和
 `report` 验证失败；这两个命令都不会修复证据或静默重算摘要。`--canaries PATH`
 指定的文件每行声明一个 canary；如果 exportable content 中出现其中任意内容，
-sealing 或报告发布会被阻止。
+sealing 或报告发布会被阻止。native canary 违约还会取消整个 run，阻止后续 trial
+启动；已观察到的证据保持私有、未密封，未派发 trial 仍保留在计划覆盖范围内。
+离线比较要求已请求的 native 输出上限具备密封的 output-control 快照。缺少证明时
+仍标为不受支持，旧 bundle 也如此；可变的 run report 不能提升可比性或补充缺失证明。
 
 | 现象 | 处理方式 |
 |------|----------|
@@ -469,10 +489,20 @@ sealing 或报告发布会被阻止。
 | `verify`/`regrade` 报告 `mutation-detected` 或类型化拒绝 | 保留 bundle 与保留 artifacts 以便诊断，不要修复、重写或重算摘要。 |
 | `report` 被阻止 | 检查 bundle verification 与 canary failure；修正输入来源后，使用新的、位于 run root 外的 `--out` 路径。 |
 
-`run --replacement-for <TRIAL_ID>` 会为崩溃 trial 所在的整个对比组创建新身份，不会
-复用失败 trial 的身份。
+`run --recover` 只读输出冻结计划中全部 trial 的分类，包括尚未创建目录的条目。
+它保留原报告、control 与 bundle 的每个字节，展示已保留的结算证据，并拒绝
+不一致的身份，不会重新标记已有证据。
+
+`run --replacement-for <TRIAL_ID>` 每次调用使用同一个新 attempt token，为崩溃
+trial 所在的整个对比组创建新身份。替换前会校验原计划并展开 selection；新实验
+保留冻结范围、控制项及无关分组。必须使用新输出目录，原计划与运行证据保持不变。
 
 ### 本地操作员验收与离线校验器
+
+校验器要求封存的 `execution.mode = "live"`，以及首个连接
+`zhipu` / `anthropic-messages` / `https://open.bigmodel.cn/api/anthropic` /
+`glm-5.3-flash`。封存的终止状态、客户端流、provider 响应和工具事件必须与该声明
+及保留的构建/控制证据一致。loopback 输出控制探针仅证明客户端一致性。
 
 真实验收是另一套明确授权的本地操作员运行，发生在 WSL/Linux 上、
 独立于任何开发 harness：操作员选定并冻结任务、Agent 构建、材料

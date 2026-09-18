@@ -116,6 +116,14 @@ fn pair_and_control_fail_closed() {
     assert_eq!(pairs.len(), 1);
     let missing = pairs[0]["missing_sides"].as_array().unwrap();
     assert!(missing.contains(&serde_json::json!("candidate")));
+    assert_eq!(report["recovery"].as_array().unwrap().len(), 2);
+    assert!(
+        report["recovery"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["id"] == "trial-pi-1" && row["status"] == "not-started")
+    );
 }
 
 /// `EVAL-A14` (integrity-owner arm): exclusions and reclassifications

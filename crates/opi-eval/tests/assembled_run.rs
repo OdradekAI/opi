@@ -25,6 +25,190 @@ fn fixtures_dir() -> PathBuf {
     manifest_dir().join("tests/fixtures")
 }
 
+fn original_files(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    let mut result = std::collections::BTreeMap::new();
+    if root.exists() {
+        for entry in std::fs::read_dir(root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                result.extend(original_files(&path));
+            } else {
+                result.insert(path.clone(), std::fs::read(path).unwrap());
+            }
+        }
+    }
+    result
+}
+
+#[test]
+fn replacement_fresh_resolved_pairs_preserve_original_scope() {
+    for selected in [false, true] {
+        let room = tempfile::tempdir().unwrap();
+        let config = room.path().join("original.toml");
+        let mut source: toml::Value = toml::from_str(
+            &std::fs::read_to_string(fixtures_dir().join("experiment/local-paired.toml")).unwrap(),
+        )
+        .unwrap();
+        if selected {
+            source.as_table_mut().unwrap().remove("trials");
+            source.as_table_mut().unwrap().insert("selection".into(), toml::from_str::<toml::Value>(
+                "scope = 'subset'\ntask_ids = ['fixture-task']\nreason = 'replacement regression'\nrepetitions = 2\n",
+            ).unwrap());
+        } else {
+            let mut other = source["trials"].as_array().unwrap().clone();
+            for trial in &mut other {
+                trial["id"] =
+                    toml::Value::String(format!("{}-other", trial["id"].as_str().unwrap()));
+                trial["group"] = toml::Value::String("unrelated-group".into());
+            }
+            source["trials"].as_array_mut().unwrap().extend(other);
+        }
+        std::fs::write(&config, toml::to_string(&source).unwrap()).unwrap();
+        let frozen = room.path().join("plan.json");
+        let input = if selected {
+            let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["plan", "--config"])
+                .arg(&config)
+                .arg("--fixtures")
+                .arg(fixtures_dir())
+                .arg("--out")
+                .arg(&frozen)
+                .env("DOCKER_HOST", "tcp://127.0.0.1:1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            &frozen
+        } else {
+            &config
+        };
+        let target = if selected {
+            "trial-baseline-pi-fixture-task-r1"
+        } else {
+            "trial-pi-1"
+        };
+        let invoke = |root: &Path, replace: bool| {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_opi-eval"));
+            command
+                .arg("run")
+                .arg(if selected { "--plan" } else { "--config" })
+                .arg(input)
+                .arg("--fixtures")
+                .arg(fixtures_dir())
+                .arg("--root")
+                .arg(root);
+            if replace {
+                command.args(["--replacement-for", target]);
+            }
+            command.output().unwrap()
+        };
+        let original = room.path().join("original-run");
+        let output = invoke(&original, false);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let before = original_files(&original);
+        let input_before = std::fs::read(input).unwrap();
+        let original_control: serde_json::Value =
+            serde_json::from_slice(&before[&original.join("run-control.json")]).unwrap();
+        let planned = original_control["planned_trials"].as_array().unwrap();
+        let group = planned.iter().find(|row| row["id"] == target).unwrap()["group"]
+            .as_str()
+            .unwrap();
+        let mut attempts = Vec::new();
+        for index in 0..2 {
+            let root = room.path().join(format!("replacement-{index}"));
+            let output = invoke(&root, true);
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let control: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(root.join("run-control.json")).unwrap())
+                    .unwrap();
+            let token = control["experiment"]
+                .as_str()
+                .unwrap()
+                .strip_prefix("local-paired-hermetic.r")
+                .unwrap();
+            assert_eq!(token.len(), 64);
+            assert_ne!(
+                control["manifest_digest"],
+                original_control["manifest_digest"]
+            );
+            assert_eq!(control["selection"], original_control["selection"]);
+            assert_eq!(control["plan_digest"], original_control["plan_digest"]);
+            let rows = control["planned_trials"].as_array().unwrap();
+            assert_eq!(rows.len(), planned.len());
+            for old in planned {
+                let old_id = old["id"].as_str().unwrap();
+                let changed = old["group"] == group;
+                let new_id = if changed {
+                    format!("{old_id}.r{token}")
+                } else {
+                    old_id.to_owned()
+                };
+                let row = rows.iter().find(|row| row["id"] == new_id).unwrap();
+                assert_eq!(row["subject"], old["subject"]);
+                assert_eq!(row["task"], old["task"]);
+                assert_eq!(
+                    row["group"],
+                    if changed {
+                        serde_json::json!(format!("{group}.r{token}"))
+                    } else {
+                        old["group"].clone()
+                    }
+                );
+                let sealed = |root: &Path, id: &str| -> serde_json::Value {
+                    serde_json::from_slice(
+                        &std::fs::read(
+                            root.join("trials")
+                                .join(id)
+                                .join("bundle/artifacts/control/experiment.json"),
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap()
+                };
+                let old_sealed = sealed(&original, old_id);
+                let new_sealed = sealed(&root, &new_id);
+                for field in [
+                    "connections",
+                    "connection",
+                    "model_controls",
+                    "benchmark",
+                    "execution",
+                    "selection",
+                ] {
+                    assert_eq!(new_sealed[field], old_sealed[field], "{field}");
+                }
+            }
+            let replaced_before = original_files(&root);
+            assert_eq!(invoke(&root, true).status.code(), Some(2));
+            assert_eq!(original_files(&root), replaced_before);
+            attempts.push(control);
+        }
+        assert_ne!(attempts[0]["experiment"], attempts[1]["experiment"]);
+        assert_ne!(attempts[0]["planned_trials"], attempts[1]["planned_trials"]);
+        assert_eq!(original_files(&original), before);
+        assert_eq!(std::fs::read(input).unwrap(), input_before);
+        if selected {
+            let mut plan: serde_json::Value = serde_json::from_slice(&input_before).unwrap();
+            plan["trials"][0]["id"] = serde_json::json!("tampered");
+            std::fs::write(input, serde_json::to_vec(&plan).unwrap()).unwrap();
+            let rejected = room.path().join("rejected");
+            assert_eq!(invoke(&rejected, true).status.code(), Some(2));
+            assert!(!rejected.exists());
+        }
+    }
+}
+
 /// Run one experiment through the real `opi-eval run` binary.
 fn run_experiment(config: &str, behavior: &str, root: &Path) -> (i32, serde_json::Value, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
@@ -495,6 +679,112 @@ fn process_timeout_cancellation_race() {
 /// as effect-unknown with the original identity and artifacts, and any
 /// replacement uses a new paired trial group.
 #[test]
+fn recovery_preserves_every_original_file_and_planned_trial() {
+    fn files(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        let mut result = std::collections::BTreeMap::new();
+        if root.exists() {
+            for entry in std::fs::read_dir(root).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    result.extend(files(&path));
+                } else {
+                    result.insert(path.clone(), std::fs::read(path).unwrap());
+                }
+            }
+        }
+        result
+    }
+    for behavior in [
+        "unstarted",
+        "happy",
+        "agent-crash",
+        "agent-cancelled",
+        "crash-after-intent",
+    ] {
+        let room = tempfile::tempdir().unwrap();
+        let root = room.path().join("run");
+        if behavior != "unstarted" {
+            std::fs::create_dir(&root).unwrap();
+            let (code, _, _) = run_experiment("local-paired.toml", behavior, &root);
+            assert_eq!(
+                code,
+                match behavior {
+                    "happy" | "agent-crash" => 0,
+                    "crash-after-intent" => 70,
+                    _ => 1,
+                },
+                "{behavior}"
+            );
+        }
+        let before = files(&root);
+        let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("run")
+            .arg("--config")
+            .arg(fixtures_dir().join("experiment/local-paired.toml"))
+            .arg("--fixtures")
+            .arg(fixtures_dir())
+            .arg("--root")
+            .arg(&root)
+            .arg("--recover")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let rows = report["recovery"].as_array().unwrap();
+        assert_eq!(rows.len(), 2, "{behavior}: {report}");
+        assert_eq!(
+            files(&root),
+            before,
+            "{behavior}: recovery mutated original files"
+        );
+        if behavior == "unstarted" {
+            assert!(!root.exists());
+            assert!(rows.iter().all(|row| row["status"] == "not-started"));
+        } else if behavior == "crash-after-intent" {
+            assert_eq!(rows[0]["status"], "effect-unknown");
+            assert_eq!(rows[1]["status"], "not-started");
+        } else {
+            assert!(rows.iter().all(|row| row["status"] == "sealed"));
+            assert!(rows.iter().all(|row| row["settlement"].is_object()));
+        }
+    }
+}
+
+#[test]
+fn recovery_rejects_frozen_inventory_identity_drift() {
+    let root = tempfile::tempdir().unwrap();
+    assert_eq!(
+        run_experiment("local-paired.toml", "happy", root.path()).0,
+        0
+    );
+    let control_path = root.path().join("run-control.json");
+    let mut control: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&control_path).unwrap()).unwrap();
+    control["planned_trials"][0]["subject"] = "wrong-subject".into();
+    let bytes = serde_json::to_vec(&control).unwrap();
+    std::fs::write(&control_path, &bytes).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("run")
+        .arg("--config")
+        .arg(fixtures_dir().join("experiment/local-paired.toml"))
+        .arg("--fixtures")
+        .arg(fixtures_dir())
+        .arg("--root")
+        .arg(root.path())
+        .arg("--recover")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("identity drift"));
+    assert_eq!(std::fs::read(control_path).unwrap(), bytes);
+}
+
+#[test]
 fn effect_unknown_reopen() {
     let root = tempfile::tempdir().unwrap();
 
@@ -589,16 +879,18 @@ fn effect_unknown_reopen() {
         .iter()
         .map(|trial| trial["id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids, vec!["trial-opi-1.r2", "trial-pi-1.r2"]);
+    let token = ids[0].strip_prefix("trial-opi-1.r").unwrap();
+    assert_eq!(token.len(), 64);
+    assert_eq!(ids[1], format!("trial-pi-1.r{token}"));
     for trial in trials {
-        assert_eq!(trial["group"], "group-hello.r2");
+        assert_eq!(trial["group"], format!("group-hello.r{token}"));
         assert_eq!(trial["status"], "sealed");
     }
     let pairs = replacement["pairs"].as_array().unwrap();
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0]["comparability"], "comparable");
-    assert_eq!(pairs[0]["baseline_trial"], "trial-pi-1.r2");
-    assert_eq!(pairs[0]["candidate_trial"], "trial-opi-1.r2");
+    assert_eq!(pairs[0]["baseline_trial"], ids[1]);
+    assert_eq!(pairs[0]["candidate_trial"], ids[0]);
 
     // Prior evidence is untouched by the replacement.
     assert_eq!(
@@ -641,11 +933,10 @@ fn effect_unknown_reopen() {
         Some("effect-unknown"),
         "the prior attempt keeps its immutable classification: {statuses:?}"
     );
-    // The never-started baseline left no trial root: its durable state is
-    // the absence of any attempted evidence, never a fabricated row.
-    assert!(!statuses.contains_key("trial-pi-1"), "{statuses:?}");
-    assert!(!statuses.contains_key("trial-opi-1.r2"));
-    assert!(!statuses.contains_key("trial-pi-1.r2"));
+    // The frozen inventory retains the baseline without inventing an attempt.
+    assert_eq!(statuses.get("trial-pi-1").copied(), Some("not-started"));
+    assert!(!statuses.contains_key(ids[0]));
+    assert!(!statuses.contains_key(ids[1]));
     assert_eq!(
         std::fs::read(root.path().join("run-control.json")).unwrap(),
         control_before
@@ -668,7 +959,7 @@ fn effect_unknown_reopen() {
         .iter()
         .map(|trial| trial["id"].as_str().unwrap_or_default())
         .collect();
-    assert_eq!(reported_ids, vec!["trial-opi-1.r2", "trial-pi-1.r2"]);
+    assert_eq!(reported_ids, ids);
 }
 
 /// `EVAL-A11`: prompt-only/incomplete packages and selected native-verifier

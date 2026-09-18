@@ -413,7 +413,8 @@ cmd_build_agents() {
   [ -n "$build_script" ] && [ -n "$pi_source" ] && [ -n "$out" ] \
     || die "build-agents: --build-script, --pi-source, and --out are required"
   require_file "$build_script"
-  bash "$build_script" --opi-source "$REPO_ROOT" --pi-source "$pi_source" \
+  opi_commit=$(git -C "$REPO_ROOT" rev-parse HEAD)
+  bash "$build_script" --opi-source "$REPO_ROOT" --opi-commit "$opi_commit" --pi-source "$pi_source" \
     --out "$out"
   # Adapter manifest: the exact argv, cwd, environment allowlist, and
   # configuration projection each agent phase will receive.
@@ -480,7 +481,7 @@ import json, sys
 out = sys.argv[1]
 print(json.dumps({
     "build_script_invocation": ["bash", "crates/opi-eval/scripts/build-agent-artifacts.sh",
-        "--opi-source", "<repo>", "--pi-source", "<pi>", "--out", "<out>"],
+        "--opi-source", "<repo>", "--opi-commit", json.load(open(f"{out}/opi-identity.json"))["checkout_commit"], "--pi-source", "<pi>", "--out", "<out>"],
     "opi_identity_sha256": __import__("hashlib").sha256(
         open(f"{out}/opi-identity.json", "rb").read()).hexdigest(),
     "pi_identity_sha256": __import__("hashlib").sha256(

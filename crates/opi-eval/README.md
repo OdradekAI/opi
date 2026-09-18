@@ -107,6 +107,16 @@ seeded (plan and captured log under the output root); otherwise the
 failure names the missing identity and how to acquire it. The full
 operator walkthrough lives under `examples/local-evaluation/`.
 
+A cold selected Opi build requires paired `--opi-source /local/git/repository`
+and `--opi-commit <full-40-hex>` arguments. Preparation exports only that local
+commit, verifies its locked Cargo input and builds from the export; it never
+infers HEAD, includes uncommitted files or fetches a missing Opi commit.
+Verified warm packages need no source arguments, and pi-only preparation
+needs no Opi build. One invocation acquires the selected clients, complete
+pinned corpus and locked Harbor/Pier environment. Seed both the materializer
+and `build-agent-artifacts.sh` from the pin set. Agent runtime resources and
+build identities remain in the verified package.
+
 The cache holds each complete, clean pinned Git corpus at
 `corpora/<adapter>/tasks`. Preparation creates the selected tasks' packages at
 `packages/<adapter>/<task-id>` and SHA-256-bound profiles at
@@ -395,6 +405,12 @@ material. Each adapter classifies typed terminal provider causes
 client's own evidence - including a JSON error at process exit zero - and
 never speculates a provider cause the evidence leaves unknown.
 
+Native admission checks required `temperature` and `top_p` against every
+selected client. Opi cannot express either control; pi supports them only on
+the OpenAI protocols. Unsupported required values reject validation, planning
+and execution; optional requested values remain non-comparable. Omitted and
+unknown markers remain distinct and do not establish an enforced value.
+
 Native Opi configuration omits `[defaults].max_iterations`. Current-tree Opi's
 core has no intrinsic turn ceiling; its product enforces only explicitly
 configured budgets. Native task/adapter deadlines and cancellation still apply.
@@ -506,6 +522,12 @@ reference. The CLI and its formats remain unstable 0.x contracts.
 
 ## Outputs and failure recovery
 
+Material acquisition uses a 3,600-second deadline for the whole invocation
+and retains at most 1 MiB per output stream. `acquisition.log` records exit,
+timeout/cancellation, truncation and owned cleanup. SIGINT/SIGTERM cancel the
+owned process tree; failed or unverified settlement cannot publish material.
+Only invocation-owned temporary staging is removed; verified cache entries remain.
+
 A completed fixture run has this durable shape; additional staging files may
 exist outside the sealed bundles:
 
@@ -523,7 +545,12 @@ $RUN_ROOT/
 Treat a sealed bundle as immutable. Changing a covered byte causes `verify`,
 `regrade`, and `report` verification to fail; none of them repairs or silently
 rehashes the evidence. A canary listed one per line in `--canaries PATH` blocks sealing
-or publication if it appears in exportable content.
+or publication if it appears in exportable content. A native canary breach also
+cancels the run before another trial starts; observed evidence remains private
+and unsealed, and undispatched trials remain in planned coverage.
+Offline comparisons require the sealed output-control snapshot for a requested
+native output limit. Missing proof remains unsupported, including older bundles;
+mutable run reports cannot upgrade comparability or supply missing proof.
 
 | Symptom | What to do |
 |---------|------------|
@@ -533,10 +560,24 @@ or publication if it appears in exportable content.
 | `verify`/`regrade` reports `mutation-detected` or a typed rejection | Preserve the bundle and preserved artifacts for diagnosis. Do not repair, rewrite, or rehash them. |
 | `report` is blocked | Inspect bundle-verification and canary failures, then use a new outside-root `--out` path after correcting the input source. |
 
+`run --recover` prints a read-only classification of the frozen planned trials,
+including unstarted trials without directories. It preserves every original
+report, control and bundle byte, exposes retained settlement evidence, and
+rejects inconsistent identities instead of relabelling them.
+
 `run --replacement-for <TRIAL_ID>` creates fresh identities for the crashed
-trial's whole comparison group. It does not reuse the failed trial identity.
+trial's whole comparison group using one new attempt token per invocation.
+The original plan is verified and its selection expanded before replacement;
+the new experiment retains its frozen scope, controls and unrelated groups.
+Use a fresh output root; original plans and run evidence remain unchanged.
 
 ### Local operator acceptance and its offline verifier
+
+The verifier requires sealed `execution.mode = "live"` and the first connection
+`zhipu` / `anthropic-messages` / `https://open.bigmodel.cn/api/anthropic` /
+`glm-5.3-flash`. Sealed terminal states, client streams, provider responses and
+tool events must agree with that claim and the retained build/control evidence.
+Loopback output-control probes establish client conformance only.
 
 Real acceptance is a separately authorized local operator run on
 WSL/Linux, outside any development harness: the operator selects and

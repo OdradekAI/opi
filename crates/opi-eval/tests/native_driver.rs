@@ -933,7 +933,7 @@ model = "eval"
 credential_env = "OPI_EVAL_SCRIPTED_KEY"
 
 [model_controls]
-temperature = 0.0
+temperature = "omitted"
 top_p = "omitted"
 max_output_tokens = 4096
 context_window = 8192
@@ -1222,6 +1222,200 @@ fn receipt_of(run_root: &Path, trial: &str) -> serde_json::Value {
     let text = fs::read_to_string(run_root.join("trials").join(trial).join("receipt.json"))
         .unwrap_or_else(|error| panic!("trial {trial} receipt: {error}"));
     serde_json::from_str(&text).unwrap()
+}
+
+#[test]
+fn p19_plan_required_sampling_rejects_before_dispatch() {
+    for api in [
+        "anthropic-messages",
+        "openai-completions",
+        "openai-responses",
+    ] {
+        for products in ["paired", "opi", "pi"] {
+            for control in ["temperature", "top_p"] {
+                let staged = stage("ok");
+                let config = write_config(&staged);
+                let mut source: toml::Value = fs::read_to_string(&config).unwrap().parse().unwrap();
+                source["connections"][0]["api"] = api.into();
+                source["model_controls"][control] = toml::Value::Float(0.5);
+                source["model_controls"].as_table_mut().unwrap().insert(
+                    "required".to_owned(),
+                    toml::Value::Array(vec![control.into()]),
+                );
+                if products != "paired" {
+                    source["subjects"]
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|s| s["product"].as_str() == Some(products));
+                    let subject = source["subjects"][0]["id"].as_str().unwrap().to_owned();
+                    source["trials"]
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|t| t["subject"].as_str() == Some(&subject));
+                    source.as_table_mut().unwrap().remove("edges");
+                }
+                fs::write(&config, toml::to_string(&source).unwrap()).unwrap();
+                stage_output_control(&staged, &config);
+                if products != "paired" {
+                    let mut material: serde_json::Value =
+                        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+                    material["agents"]
+                        .as_object_mut()
+                        .unwrap()
+                        .retain(|product, _| product == products);
+                    fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+                }
+                let supported = products == "pi" && api != "anthropic-messages";
+                for entry in ["validate", "plan", "run"] {
+                    let out = staged.root.join(format!("required-{entry}"));
+                    let entry_config = if entry == "plan" {
+                        let mut planned = source.clone();
+                        planned.as_table_mut().unwrap().remove("trials");
+                        planned.as_table_mut().unwrap().insert("selection".to_owned(),
+                            "scope = 'subset'\ntask_ids = ['fixture-task']\nreason = 'sampling admission'\nrepetitions = 1".parse::<toml::Value>().unwrap());
+                        let path = staged.root.join("selected.toml");
+                        fs::write(&path, toml::to_string(&planned).unwrap()).unwrap();
+                        path
+                    } else {
+                        config.clone()
+                    };
+                    let mut command = Command::new(env!("CARGO_BIN_EXE_opi-eval"));
+                    command
+                        .arg(entry)
+                        .arg("--config")
+                        .arg(&entry_config)
+                        .arg("--native-material")
+                        .arg(&staged.material)
+                        .env("OPI_EVAL_SCRIPTED_KEY", "<dummy-scripted-credential>")
+                        .env("PATH", stage_cleanup_docker(&staged.root));
+                    if entry == "run" {
+                        command.arg("--root").arg(&out);
+                    }
+                    if entry == "plan" {
+                        command.arg("--out").arg(&out);
+                    }
+                    let output = command.output().unwrap();
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let expected = if supported {
+                        0
+                    } else if entry == "validate" {
+                        1
+                    } else {
+                        2
+                    };
+                    assert_eq!(
+                        output.status.code(),
+                        Some(expected),
+                        "{products} {api} {control} {entry}: {stderr}"
+                    );
+                    if !supported {
+                        assert!(
+                            stderr.contains(&format!("required control {control}")),
+                            "{stderr}"
+                        );
+                        assert!(
+                            !out.exists(),
+                            "unsupported controls must reject before output effects"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn native_optional_sampling_records_unsupported_values() {
+    for control in ["temperature", "top_p"] {
+        let staged = stage("ok");
+        let config = write_config(&staged);
+        let source = fs::read_to_string(&config).unwrap().replace(
+            &format!("{control} = \"omitted\""),
+            &format!("{control} = 0.5"),
+        );
+        fs::write(&config, source).unwrap();
+        stage_output_control(&staged, &config);
+        let (code, stdout, stderr) = run_native(&staged, &config, &staged.root.join("run"));
+        assert_eq!(code, 1, "{stderr}");
+        let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(
+            report["pairs"][0]["comparability"],
+            format!("unsupported-control:{control}")
+        );
+        assert!(
+            report["trials"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|t| t["status"] == "sealed")
+        );
+    }
+}
+
+#[test]
+fn p19_plan_privacy_failure_stops_dispatch() {
+    for (canary, leaked) in [
+        ("native-driver-test", true),
+        ("absent-private-canary", false),
+    ] {
+        let staged = stage("ok");
+        let config = write_config(&staged);
+        let root = staged.root.join("privacy-run");
+        let canaries = staged.root.join("canaries.txt");
+        fs::write(&canaries, format!("{canary}\n")).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("run")
+            .arg("--config")
+            .arg(&config)
+            .arg("--root")
+            .arg(&root)
+            .arg("--fixtures")
+            .arg(fixtures())
+            .arg("--native-material")
+            .arg(&staged.material)
+            .arg("--canaries")
+            .arg(&canaries)
+            .env("OPI_EVAL_SCRIPTED_KEY", "<dummy-scripted-credential>")
+            .env("PATH", stage_cleanup_docker(&staged.root))
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(if leaked { 1 } else { 0 }),
+            "{stderr}"
+        );
+        let trials = report["trials"].as_array().unwrap();
+        assert_eq!(trials.len(), if leaked { 1 } else { 2 }, "{report}");
+        assert_eq!(
+            trials[0]["status"],
+            if leaked { "failed" } else { "sealed" }
+        );
+        assert_eq!(
+            stderr.contains("trial trial-pi-native: stage=start"),
+            !leaked,
+            "second native dispatch after a privacy breach: {stderr}"
+        );
+        assert_eq!(root.join("trials/trial-pi-native").exists(), !leaked);
+        let first = root.join("trials/trial-opi-native");
+        assert_eq!(first.join("bundle/manifest.json").exists(), !leaked);
+        assert!(
+            first
+                .join("bundle/artifacts/control/experiment.json")
+                .is_file()
+        );
+        let control: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join("run-control.json")).unwrap()).unwrap();
+        assert_eq!(control["planned_trials"].as_array().unwrap().len(), 2);
+        if leaked {
+            assert_eq!(
+                trials[0]["authority"]["seal"], "failed:at-evidence",
+                "{report}"
+            );
+            assert_ne!(report["outcome"], "completed");
+        }
+    }
 }
 
 #[test]
@@ -2284,32 +2478,85 @@ fn native_required_output_control_rejects_unproven_binary_before_effects() {
 }
 
 #[test]
-fn native_optional_output_control_without_proof_is_not_comparable() {
-    let staged = stage("ok");
-    let config = write_config(&staged);
-    let mut material: serde_json::Value =
-        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
-    for agent in material["agents"].as_object_mut().unwrap().values_mut() {
-        agent
-            .as_object_mut()
-            .unwrap()
-            .remove("output_control_evidence");
+fn p19_plan_offline_preserves_unsupported_output() {
+    for proven in [false, true] {
+        let staged = stage("ok");
+        let config = write_config(&staged);
+        let mut material: serde_json::Value =
+            serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+        if !proven {
+            for agent in material["agents"].as_object_mut().unwrap().values_mut() {
+                agent
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("output_control_evidence");
+            }
+        }
+        fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+        let root = staged.root.join("optional-run");
+        let (code, stdout, stderr) = run_native(&staged, &config, &root);
+        assert_eq!(code, if proven { 0 } else { 1 }, "{stderr}");
+        let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(
+            report["pairs"][0]["comparability"],
+            if proven {
+                "comparable"
+            } else {
+                "unsupported-control:max_output_tokens"
+            }
+        );
+        assert!(
+            report["trials"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|trial| trial["status"] == "sealed")
+        );
+        // The mutable convenience report cannot supply control evidence.
+        fs::write(root.join("run-report.json"), b"{}\n").unwrap();
+        let before: Vec<_> = walk_files(&root)
+            .into_iter()
+            .map(|path| {
+                let bytes = fs::read(&path).unwrap();
+                (path, bytes)
+            })
+            .collect();
+        for _ in 0..2 {
+            let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .arg("report")
+                .arg("--root")
+                .arg(&root)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let offline: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(
+                offline["coverage"][0]["comparability"],
+                report["pairs"][0]["comparability"]
+            );
+            for (path, bytes) in &before {
+                assert_eq!(&fs::read(path).unwrap(), bytes);
+            }
+        }
+        if proven {
+            let proof =
+                root.join("trials/trial-opi-native/bundle/artifacts/control/output-control.json");
+            fs::write(proof, b"{}\n").unwrap();
+            let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .arg("report")
+                .arg("--root")
+                .arg(&root)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1));
+            let offline: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(offline["outcome"], "verification-failed");
+        }
     }
-    fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
-    let (code, stdout, stderr) = run_native(&staged, &config, &staged.root.join("optional-run"));
-    assert_eq!(code, 1, "{stderr}");
-    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(
-        report["pairs"][0]["comparability"],
-        "unsupported-control:max_output_tokens"
-    );
-    assert!(
-        report["trials"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|trial| trial["status"] == "sealed")
-    );
 }
 
 #[test]
@@ -3813,6 +4060,149 @@ fn run_prepare(config: &Path, out: &Path) -> std::process::Output {
 }
 
 #[test]
+fn prepare_cold_selected_products_from_explicit_committed_source() {
+    for product in ["opi", "pi", "paired"] {
+        let room = tempfile::tempdir().unwrap();
+        let seeded = Command::new("python3")
+            .arg(manifest_dir().join("scripts/test_prepare_acquisition.py"))
+            .arg("--seed")
+            .arg(room.path().join("fixture"))
+            .output()
+            .unwrap();
+        assert!(
+            seeded.status.success(),
+            "{}",
+            String::from_utf8_lossy(&seeded.stderr)
+        );
+        let seed: serde_json::Value = serde_json::from_slice(&seeded.stdout).unwrap();
+        let cache = PathBuf::from(seed["cache"].as_str().unwrap());
+        let config = experiment_with_cache(room.path(), &cache);
+        let mut document: toml::Value = fs::read_to_string(&config).unwrap().parse().unwrap();
+        if product != "paired" {
+            document["subjects"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|subject| subject["product"].as_str() == Some(product));
+            document.as_table_mut().unwrap().remove("edges");
+            document["trials"].as_array_mut().unwrap().retain(|trial| {
+                trial["subject"].as_str()
+                    == Some(if product == "opi" {
+                        "candidate-opi"
+                    } else {
+                        "baseline-pi"
+                    })
+            });
+        }
+        fs::write(&config, toml::to_string(&document).unwrap()).unwrap();
+        let invoke = |out: &Path, source: bool, commit: Option<&str>| {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_opi-eval"));
+            command
+                .arg("prepare")
+                .arg("--config")
+                .arg(&config)
+                .arg("--out")
+                .arg(out)
+                .current_dir(room.path().join("fixture/unrelated"))
+                .env("PATH", seed["path"].as_str().unwrap());
+            if source {
+                command
+                    .arg("--opi-source")
+                    .arg(seed["opi_source"].as_str().unwrap());
+            }
+            if let Some(commit) = commit {
+                command.arg("--opi-commit").arg(commit);
+            }
+            command.output().unwrap()
+        };
+        let selected_opi = product != "pi";
+        let commit = seed["opi_commit"].as_str().unwrap();
+        for (index, source, revision) in [
+            (0, true, None),
+            (1, false, Some(commit)),
+            (2, true, Some("bad")),
+        ] {
+            let out = room.path().join(format!("invalid-{index}"));
+            assert_eq!(invoke(&out, source, revision).status.code(), Some(2));
+            assert!(!out.join("material.json").exists());
+        }
+        if selected_opi {
+            for (label, source, revision) in [
+                ("missing-source", false, None),
+                (
+                    "missing-commit",
+                    true,
+                    Some("0000000000000000000000000000000000000000"),
+                ),
+            ] {
+                let out = room.path().join(label);
+                assert_eq!(invoke(&out, source, revision).status.code(), Some(2));
+                assert!(!out.join("material.json").exists());
+            }
+        }
+        let out = room.path().join("prepared");
+        let result = invoke(&out, selected_opi, selected_opi.then_some(commit));
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "{}\n{}",
+            String::from_utf8_lossy(&result.stderr),
+            fs::read_to_string(out.join("acquisition.log")).unwrap_or_default()
+        );
+        let material: serde_json::Value =
+            serde_json::from_slice(&fs::read(out.join("material.json")).unwrap()).unwrap();
+        let products = if product == "paired" {
+            vec!["opi", "pi"]
+        } else {
+            vec![product]
+        };
+        assert_eq!(
+            material["agents"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            products
+        );
+        for selected in &products {
+            assert!(material["agents"][selected]["runtime_package"].is_object());
+            let identity: serde_json::Value = serde_json::from_slice(
+                &fs::read(
+                    cache
+                        .join("agents")
+                        .join(selected)
+                        .join("build-identity.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            if *selected == "opi" {
+                assert_eq!(identity["checkout_commit"], commit);
+                assert_eq!(identity["checkout_dirty"], false);
+            }
+        }
+        let frozen = fs::read(out.join("material.json")).unwrap();
+        let events = room.path().join("fixture/build-events.jsonl");
+        let built = fs::read(&events).unwrap();
+        assert_eq!(invoke(&out, false, None).status.code(), Some(0));
+        assert_eq!(fs::read(&events).unwrap(), built);
+        assert_eq!(fs::read(out.join("material.json")).unwrap(), frozen);
+        let touched = cache
+            .join("agents")
+            .join(products[0])
+            .join("build-identity.json");
+        fs::write(touched, b"tampered resource").unwrap();
+        assert_eq!(
+            invoke(&room.path().join("drift"), false, None)
+                .status
+                .code(),
+            Some(2)
+        );
+        assert!(!room.path().join("drift/material.json").exists());
+    }
+}
+
+#[test]
 fn prepare_shares_cache_between_benchmark_profiles() {
     let staged = tempfile::tempdir().unwrap();
     let cache = staged.path().join("cache");
@@ -4147,6 +4537,103 @@ fn supervised_acquisition_runs_the_pinned_materializer() {
         .unwrap();
     let sha = sha256_hex(&fs::read(acquired).unwrap());
     assert_eq!(manifest["agents"]["pi"]["executable"]["sha256"], sha);
+}
+
+#[test]
+fn p19_plan_acquisition_cancel_cleans_child() {
+    use std::time::{Duration, Instant};
+    for signal in ["-INT", "-TERM"] {
+        let staged = tempfile::tempdir().unwrap();
+        let cache = staged.path().join("cache");
+        seed_local_cache(&cache);
+        fs::remove_file(cache.join("agents/pi")).unwrap();
+        let marker = staged.path().join("acquirer.pid");
+        let materializer = cache.join("pins/scripts/materialize-external-locks.sh");
+        write_exec(
+            &materializer,
+            &format!(
+                "#!/bin/sh\n[ \"${{OPENAI_API_KEY-unset}}\" = unset ] || exit 8\nprintf '%s' \"$$\" > '{}'\nexec sleep 30\n",
+                marker.display(),
+            ),
+        );
+        let lock_path = static_lock_in(&cache);
+        let mut lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
+        lock["authority"]["producers"][0]["sha256"] =
+            sha256_hex(&fs::read(&materializer).unwrap()).into();
+        fs::write(&lock_path, serde_json::to_vec(&lock).unwrap()).unwrap();
+        let snapshot = || {
+            walk_files(&cache)
+                .into_iter()
+                .map(|path| {
+                    let bytes = fs::read(&path).unwrap();
+                    (path, bytes)
+                })
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        let before = snapshot();
+        let config = experiment_with_cache(staged.path(), &cache);
+        let out = staged.path().join("out");
+        let mut child = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("prepare")
+            .arg("--config")
+            .arg(&config)
+            .arg("--out")
+            .arg(&out)
+            .env("OPENAI_API_KEY", "dummy-must-not-reach-acquirer")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !marker.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("materializer failed to start without ambient credential forwarding");
+        }
+        let pid = fs::read_to_string(marker).unwrap();
+        assert!(
+            Command::new("kill")
+                .args([signal, &child.id().to_string()])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let settled = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break Some(status);
+            }
+            if Instant::now() >= deadline {
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        if settled.is_none() {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = Command::new("kill").args(["-KILL", &pid]).status();
+        }
+        assert_eq!(settled.and_then(|status| status.code()), Some(2));
+        assert!(
+            !Path::new(&format!("/proc/{pid}")).exists(),
+            "owned acquisition survived {signal}"
+        );
+        let log = fs::read_to_string(out.join("acquisition.log")).unwrap();
+        assert!(
+            log.contains("Cancelled") && log.contains("verified: true"),
+            "{log}"
+        );
+        assert!(!out.join("material.json").exists());
+        assert_eq!(
+            snapshot(),
+            before,
+            "verified shared cache remains unchanged"
+        );
+    }
 }
 
 /// Derives a pi-only experiment document from the paired fixture by
@@ -6898,15 +7385,9 @@ fn copy_tree(source: &Path, target: &Path) {
     }
 }
 
-/// P19-AC-011/P19-AC-013: the offline local-acceptance verifier accepts one
-/// genuine three-family native evidence root end to end - six attributable
-/// trials, frozen controls, digests, preserved artifacts, the Opi-only
-/// scoped capture view byte-bound to the original native captures, cached
-/// upstream identities, and the built Companion verify/report invoked only
-/// against the supplied family roots - without launching an Agent, touching
-/// credentials, or contacting a provider.
+/// Internally consistent native-fixture evidence cannot establish live acceptance.
 #[test]
-fn local_acceptance_verifier_accepts_genuine_native_evidence() {
+fn p19_plan_acceptance_rejects_fixture_evidence() {
     let staged = stage("ok");
     let proof_config = write_config(&staged);
     stage_output_control(&staged, &proof_config);
@@ -6962,7 +7443,7 @@ fn local_acceptance_verifier_accepts_genuine_native_evidence() {
                 "_subject": subject,
             }));
         }
-        // The genuine scoped capture view: the Opi trial's preserved native
+        // The fixture scoped capture view: the Opi trial's preserved native
         // bytes, byte-bound by copy.
         let native = run_root
             .join("trials")
@@ -7071,77 +7552,15 @@ fn local_acceptance_verifier_accepts_genuine_native_evidence() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(
         output.status.code(),
-        Some(0),
+        Some(2),
         "stderr: {stderr} stdout: {stdout}"
     );
     let report: serde_json::Value =
         serde_json::from_str(stdout.trim().lines().last().unwrap()).unwrap();
     assert_eq!(report["schema"], "opi-eval-local-acceptance-verification/1");
-    assert_eq!(report["accepted"], true);
-    assert_eq!(report["trials"].as_array().unwrap().len(), 6);
+    assert_eq!(report["accepted"], false);
+    assert!(stderr.contains("first connection"), "{stderr}");
     assert!(out.is_file(), "the durable verification report is written");
-
-    // Rejections at the genuine seam: an empty scoped view is not
-    // acceptance, and substituted capture bytes are not the original
-    // evidence.
-    let empty_view = root.join("opi-artifact-audit");
-    for child in fs::read_dir(&empty_view).unwrap() {
-        let child = child.unwrap().path();
-        if child.is_dir() {
-            fs::remove_dir_all(&child).unwrap();
-        }
-    }
-    fs::write(
-        empty_view.join("generic-audit-summary.json"),
-        b"{\"result\": \"success\"}\n",
-    )
-    .unwrap();
-    let out2 = evidence.path().join("acceptance-report-empty.json");
-    let output = Command::new("python3")
-        .arg(manifest_dir().join("scripts/verify-local-acceptance.py"))
-        .arg("--root")
-        .arg(&root)
-        .arg("--out")
-        .arg(&out2)
-        .arg("--companion")
-        .arg(env!("CARGO_BIN_EXE_opi-eval"))
-        .output()
-        .expect("spawn the offline acceptance verifier");
-    assert_eq!(output.status.code(), Some(2));
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("empty"),
-        "an empty scoped view with a generic audit success must be rejected"
-    );
-
-    // Restore the genuine capture and tamper with its bytes.
-    let capture = root.join("opi-artifact-audit").join("trial-opi-tb21");
-    fs::remove_file(empty_view.join("generic-audit-summary.json")).unwrap();
-    copy_tree(
-        &root.join("runs/terminal-bench-2.1/trials/trial-opi-tb21/bundle/artifacts/native"),
-        &capture,
-    );
-    let tampered = capture.join("agent-stdout.log");
-    if tampered.is_file() {
-        fs::write(&tampered, b"tampered capture bytes\n").unwrap();
-    } else {
-        fs::write(capture.join("verifier-input.json"), b"tampered\n").unwrap();
-    }
-    let out3 = evidence.path().join("acceptance-report-tampered.json");
-    let output = Command::new("python3")
-        .arg(manifest_dir().join("scripts/verify-local-acceptance.py"))
-        .arg("--root")
-        .arg(&root)
-        .arg("--out")
-        .arg(&out3)
-        .arg("--companion")
-        .arg(env!("CARGO_BIN_EXE_opi-eval"))
-        .output()
-        .expect("spawn the offline acceptance verifier");
-    assert_eq!(output.status.code(), Some(2));
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("byte-bound"),
-        "substituted capture bytes must be rejected"
-    );
 }
 
 /// P19-AC-013: a pi-only experiment runs and reports end to end without any

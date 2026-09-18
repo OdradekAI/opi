@@ -755,6 +755,19 @@ fn resolve_rejects_requested_caps_the_native_route_cannot_enforce() {
 
 #[test]
 fn resolve_rejects_required_control_marked_unsupported() {
+    for name in ["temperature", "top_p"] {
+        for marker in ["omitted", "unknown"] {
+            let mut source: toml::Value = CONNECTION_DOC.parse().unwrap();
+            source["model_controls"][name] = marker.into();
+            source["model_controls"]["required"] = toml::Value::Array(vec![name.into()]);
+            let error = assert_rejected(&toml::to_string(&source).unwrap());
+            assert!(
+                matches!(error, ResolveError::RequiredControlUnsupported { control, .. } if control == name)
+            );
+            source["model_controls"]["required"] = toml::Value::Array(Vec::new());
+            assert!(ResolvedExperiment::resolve(&toml::to_string(&source).unwrap()).is_ok());
+        }
+    }
     let error = assert_rejected(&connection_doc(|s| {
         *s = s.replace(
             "required = [\"max_output_tokens\", \"context_window\"]",

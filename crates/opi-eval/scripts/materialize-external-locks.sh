@@ -29,9 +29,9 @@ usage: materialize-external-locks.sh --candidate-commit <40-hex>
 
 The prepare mode is the supervised local-acquisition entry opi-eval
 prepare invokes on a cache miss: the plan lists missing cache-relative
-identities; every wired identity is downloaded from its pinned public
-URL, digest-verified, and installed into the cache; every unwired
-identity fails closed with actionable guidance. Only public
+identities and explicit selections; selected sources and build inputs are
+verified against the static lock before installation. Opi uses only the
+declared local Git commit. Seeded pins are never fetched implicitly. Only public
 task/runner/build material is fetched; no model is called and no
 credential is read.
 USAGE
@@ -50,112 +50,254 @@ run_prepare_mode() {
   done
   [ -n "$cache" ] && [ -n "$plan" ] || { usage >&2; exit 2; }
   python3 - "$cache" "$plan" <<'PREPARE_PY'
+import hashlib
 import json
 import os
-import pathlib
+from pathlib import Path
+import re
+import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
 import urllib.request
 
-cache, plan = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-entries = json.loads(plan.read_text(encoding="utf-8"))
-if not entries:
-    print("prepare: nothing missing")
-    raise SystemExit(0)
+cache, plan_path = (Path(value).resolve() for value in sys.argv[1:])
+entries = json.loads(plan_path.read_text())
+lock = json.loads((cache / "pins/static/linux-x86_64.json").read_text())
+subjects = {row["id"]: row for row in lock["subjects"]}
+tools = {row["id"]: row for row in lock["tools"]}
 
-# Tool archives the static lock pins with public URLs; each entry maps
-# to one installed executable in the cache. Everything else fails
-# closed with actionable guidance instead of a silent fetch.
-archive_tools = {}
-try:
-    lock_text = (cache / "pins/static/linux-x86_64.json").read_text(encoding="utf-8")
-except OSError:
-    raise SystemExit("prepare: the cache holds no seeded static lock")
-try:
-    for tool in json.loads(lock_text).get("tools", []):
-        archive = tool.get("archive") or {}
-        if archive.get("url") and archive.get("sha256"):
-            archive_tools[tool["id"]] = archive
-except (KeyError, TypeError):
-    raise SystemExit("prepare: the seeded static lock is malformed")
 
-import hashlib
+def fail(message):
+    raise SystemExit(f"prepare: {message}")
 
-def sha256_file(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
-failures = []
-acquired = []
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def run(*args, cwd=None, env=None):
+    subprocess.run([str(arg) for arg in args], cwd=cwd, env=env, check=True)
+
+
+def git(root, *args):
+    return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
+
+
+def verify_blob(root, commit, relative, pin):
+    if git(root, "rev-parse", f"{commit}:{relative}") != pin["git_blob"] or sha(root / relative) != pin["sha256"]:
+        fail(f"{relative}: committed blob or working-byte drift")
+
+
+def checkout(url, commit, destination):
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        fail("source requires an exact commit")
+    run("git", "init", "--quiet", destination)
+    run("git", "-C", destination, "-c", "protocol.file.allow=always", "fetch", "--quiet", "--depth=1", url, commit)
+    run("git", "-C", destination, "-c", "core.autocrlf=false", "checkout", "--quiet", "--detach", commit)
+    if git(destination, "rev-parse", "HEAD") != commit:
+        fail("source commit drift")
+
+
+def install(source, destination):
+    # Only a previously absent destination can be claimed by this producer.
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists() or destination.is_symlink():
+        fail(f"refusing to replace existing cache entry {destination}")
+    if source.is_dir():
+        destination.mkdir()
+        try:
+            shutil.copytree(source, destination, dirs_exist_ok=True, symlinks=True)
+        except BaseException:
+            shutil.rmtree(destination)
+            raise
+    else:
+        with destination.open("xb") as output, source.open("rb") as content:
+            shutil.copyfileobj(content, output)
+        destination.chmod(source.stat().st_mode & 0o777)
+
+
+def archive(tool, room):
+    pin = tools[tool]["archive"]
+    downloaded = room / f"{tool}.archive"
+    urllib.request.urlretrieve(pin["url"], downloaded)
+    if sha(downloaded) != pin["sha256"]:
+        fail(f"{tool}: archive digest drift")
+    extracted = room / f"{tool}-archive"
+    extracted.mkdir()
+    with tarfile.open(downloaded) as source:
+        source.extractall(extracted, filter="data")
+    if tool == "uv":
+        candidates = [path for path in (*extracted.glob("*/uv"), *extracted.glob("uv")) if path.is_file()]
+        if len(candidates) != 1 or not candidates[0].is_file():
+            fail("uv: archive must contain exactly one uv executable")
+        executable = candidates[0]
+        executable.chmod(0o755)
+        cached = cache / "tools/uv"
+        if cached.exists():
+            if sha(cached) != sha(executable):
+                fail("cached uv differs from its pinned archive")
+        else:
+            install(executable, cached)
+        return cached
+    candidates = list(extracted.glob("*/bin/node"))
+    if len(candidates) != 1:
+        fail("node: archive must preserve its complete distribution")
+    distribution = candidates[0].parents[1]
+    if not (distribution / "bin/npm").is_file():
+        fail("node: archive is missing npm")
+    return distribution / "bin/node"
+
+
+def pinned_builder():
+    name = "build-agent-artifacts.sh"
+    matches = [row for row in lock["authority"]["producers"] if Path(row["path"]).name == name]
+    path = cache / "pins/scripts" / name
+    if len(matches) != 1 or not path.is_file() or hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest() != matches[0]["sha256"]:
+        fail("Agent builder is absent, unpinned, or changed")
+    return path
+
+
+def package_digest(root):
+    rows = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink() or not (path.is_file() or path.is_dir()):
+            fail("runtime package contains a link or special file")
+        relative = path.relative_to(root).as_posix()
+        if path.is_file():
+            rows.append((relative, sha(path)))
+    return hashlib.sha256("".join(f"{name}\n{digest}\n" for name, digest in sorted(rows)).encode()).hexdigest()
+
+
+if not isinstance(entries, list):
+    fail("acquisition plan must be a list")
+missing = set()
 for entry in entries:
     identity = entry["id"]
-    parts = identity.split("/")
-    target = cache / identity
-    if len(parts) == 2 and parts[0] == "tools" and parts[1] in archive_tools:
-        archive = archive_tools[parts[1]]
-        with tempfile.TemporaryDirectory() as room:
-            download = pathlib.Path(room) / "archive"
-            urllib.request.urlretrieve(archive["url"], download)
-            observed = sha256_file(download)
-            if observed != archive["sha256"]:
-                failures.append(
-                    f"{identity}: archive digest drift (pinned {archive['sha256']}, "
-                    f"observed {observed})"
-                )
-                continue
-            with tarfile.open(download) as tar:
-                members = [
-                    member
-                    for member in tar.getmembers()
-                    if member.name in ("uv", "uvx")
-                    or member.name.endswith("/uv")
-                    or member.name.endswith("/uvx")
-                    or member.name in ("node", "npm", "npx", "corepack")
-                    or member.name.endswith("/node")
-                    or member.name.endswith("/npm")
-                    or member.name.endswith("/npx")
-                    or member.name.endswith("/corepack")
-                ]
-                extracted = pathlib.Path(room) / "x"
-                extracted.mkdir()
-                tar.extractall(extracted, filter="data")
-            candidates = [
-                path
-                for path in extracted.rglob("*")
-                if path.name == parts[1] and path.is_file()
-            ]
-            if not candidates:
-                candidates = [
-                    path
-                    for path in extracted.rglob("*")
-                    if path.is_file() and path.stat().st_mode & 0o111
-                ]
-            if not candidates:
-                failures.append(f"{identity}: archive holds no executable")
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(candidates[0].read_bytes())
-            target.chmod(0o755)
-            acquired.append(identity)
-    else:
-        failures.append(
-            f"{identity}: not wired for local acquisition; build or materialize it "
-            "through the pinned producer stages (agents via "
-            "crates/opi-eval/scripts/build-agent-artifacts.sh), seed the cache, "
-            "and rerun opi-eval prepare"
-        )
+    parts = Path(identity).parts
+    if not parts or Path(identity).is_absolute() or any(part in (".", "..") for part in parts):
+        fail("invalid cache-relative acquisition identity")
+    if parts[0] not in ("agents", "corpora", "runners", "tools") or len(parts) < 2:
+        fail(f"{identity}: required pin must be explicitly seeded")
+    missing.add((parts[0], parts[1]))
+if not entries:
+    raise SystemExit(0)
+products = entries[0]["products"]
+benchmark = entries[0]["benchmark"]
+if any(entry["products"] != products or entry["benchmark"] != benchmark for entry in entries):
+    fail("inconsistent selected material plan")
+if any(product not in ("opi", "pi") for product in products):
+    fail("unsupported Agent product")
+runner = "pier" if benchmark == "deepswe-v1.1" else "harbor"
+allowed = {("agents", product) for product in products} | {("corpora", benchmark), ("runners", runner), ("tools", "uv")}
+if not missing <= allowed:
+    fail("acquisition plan exceeds its selected materials")
 
-if acquired:
-    print("prepare: acquired " + ", ".join(sorted(acquired)))
-if failures:
-    for failure in failures:
-        print("prepare: " + failure, file=sys.stderr)
-    raise SystemExit(2)
+with tempfile.TemporaryDirectory(prefix="opi-eval-acquire-") as temporary:
+    room = Path(temporary)
+    if ("tools", "uv") in missing or ("runners", runner) in missing:
+        archive("uv", room)
+        observed = subprocess.check_output([str(cache / "tools/uv"), "--version"], text=True).strip()
+        if observed != f"uv {tools['uv']['version']}":
+            fail("uv version drift")
+
+    for product in products:
+        if ("agents", product) not in missing:
+            continue
+        builder = pinned_builder()
+        output = room / f"{product}-build"
+        output.mkdir()
+        package = room / f"{product}-package"
+        package.mkdir()
+        if product == "opi":
+            source, commit = entries[0].get("opi_source"), entries[0].get("opi_commit")
+            if not source or not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+                fail("cold Opi build requires an explicit local source and commit")
+            if git(source, "rev-parse", f"{commit}^{{commit}}") != commit:
+                fail("Opi commit is unavailable locally")
+            source_export = room / "opi-source"
+            source_export.mkdir()
+            archive_path = room / "opi-source.tar"
+            with archive_path.open("wb") as stream:
+                subprocess.run(["git", "-C", str(source), "archive", "--format=tar", commit], stdout=stream, check=True)
+            with tarfile.open(archive_path) as source_tar:
+                source_tar.extractall(source_export, filter="data")
+            if sha(source_export / "Cargo.lock") != lock["workspace_input"]["cargo_lock_sha256"]:
+                fail("Opi Cargo.lock differs from the declared workspace input")
+            run("bash", builder, "--opi-source", source_export, "--opi-commit", commit, "--out", output)
+            identity = json.loads((output / "opi-identity.json").read_text())
+            executable = Path(identity["canonical_executable"])
+            if identity["checkout_commit"] != commit or sha(executable) != identity["executable_sha256"]:
+                fail("built Opi identity drift")
+            shutil.copy2(executable, package / "opi")
+        else:
+            pin = subjects["pi"]
+            source = room / "pi-source"
+            checkout(pin["repository_url"], pin["commit"], source)
+            for blob in pin["blobs"]:
+                verify_blob(source, pin["commit"], blob["path"], blob)
+            node = archive("node", room)
+            if subprocess.check_output([str(node), "--version"], text=True).strip() != "v" + tools["node"]["version"]:
+                fail("Node version drift")
+            environment = dict(os.environ, PATH=str(node.parent) + os.pathsep + os.environ.get("PATH", ""))
+            run("bash", builder, "--pi-source", source, "--out", output, env=environment)
+            identity = json.loads((output / "pi-identity.json").read_text())
+            bundle = Path(identity["bundle_path"])
+            if identity["checkout_commit"] != pin["commit"] or sha(bundle) != identity["bundle_sha256"] or sha(node) != identity["node_sha256"]:
+                fail("built pi identity drift")
+            shutil.copy2(node, package / "node")
+            source_package = source / "packages/coding-agent"
+            for name in ("dist", "docs", "examples"):
+                shutil.copytree(source_package / name, package / name, symlinks=True)
+            for name in ("package.json", "README.md", "CHANGELOG.md"):
+                shutil.copy2(source_package / name, package / name)
+            (package / "pi").write_text('#!/bin/sh\nagent_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$agent_root/node" "$agent_root/dist/bundle/cli.js" "$@"\n')
+            (package / "pi").chmod(0o755)
+        shutil.copy2(output / f"{product}-identity.json", package / "build-identity.json")
+        digest = package_digest(package)
+        install(package, cache / "agents" / product)
+        print(f"prepare: acquired agents/{product}; package_sha256={digest}", flush=True)
+
+    if ("corpora", benchmark) in missing:
+        pin = subjects[benchmark]
+        source = room / benchmark
+        checkout(pin["repository_url"], pin["commit"], source)
+        if git(source, "rev-parse", f"{pin['commit']}:tasks") != pin["tasks_tree"]:
+            fail("corpus tasks-tree drift")
+        install(source, cache / "corpora" / benchmark)
+        print(f"prepare: acquired complete corpora/{benchmark}", flush=True)
+
+    if ("runners", runner) in missing:
+        pin = tools[runner]
+        target = cache / "runners" / runner
+        created = False
+        try:
+            if not target.exists():
+                source = room / runner
+                urls = {"harbor": "https://github.com/harbor-framework/harbor", "pier": "https://github.com/datacurve-ai/pier"}
+                checkout(urls[runner], pin["commit"], source)
+                verify_blob(source, pin["commit"], "uv.lock", pin["uv_lock"])
+                install(source, target)
+                created = True
+            if git(target, "rev-parse", "HEAD") != pin["commit"] or git(target, "status", "--porcelain", "--untracked-files=no"):
+                fail("runner source drift")
+            verify_blob(target, pin["commit"], "uv.lock", pin["uv_lock"])
+            target = target.resolve()
+            environment = dict(os.environ, UV_PROJECT=str(target), UV_PROJECT_ENVIRONMENT=str(target / ".venv"), UV_CACHE_DIR=str(cache / "uv-cache"), UV_NO_DEV="1", UV_NO_ENV_FILE="1", PYTHON_DOTENV_DISABLED="1")
+            if runner == "pier":
+                environment["UV_PYTHON"] = "3.12"
+            # Installation at the final path keeps editable imports and shebangs valid.
+            run(cache / "tools/uv", "sync", "--locked", "--no-dev", cwd=target, env=environment)
+            if not (target / ".venv/bin/python").is_file() or not (target / f".venv/bin/{runner}").is_file():
+                fail("runner environment lacks its interpreter or entrypoint")
+            print(f"prepare: acquired runners/{runner}", flush=True)
+        except BaseException:
+            if created:
+                shutil.rmtree(target)
+            raise
+
+print("prepare: selected acquisition settled", flush=True)
 PREPARE_PY
 }
 

@@ -143,6 +143,12 @@ enum Command {
         /// Output directory for the material manifest and report.
         #[arg(long)]
         out: std::path::PathBuf,
+        /// Local Git repository providing a selected cold Opi build.
+        #[arg(long, requires = "opi_commit")]
+        opi_source: Option<std::path::PathBuf>,
+        /// Exact local 40-hex Opi commit; never inferred or fetched.
+        #[arg(long, requires = "opi_source")]
+        opi_commit: Option<String>,
     },
     Conformance {
         /// `agent` or `benchmark`.
@@ -248,8 +254,18 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Command::Prepare { config, out } => {
-            let args = cli::prepare::PrepareArgs { config, out };
+        Command::Prepare {
+            config,
+            out,
+            opi_source,
+            opi_commit,
+        } => {
+            let args = cli::prepare::PrepareArgs {
+                config,
+                out,
+                opi_source,
+                opi_commit,
+            };
             match cli::prepare::prepare(&args) {
                 Ok(report) => {
                     println!(

@@ -479,17 +479,11 @@ pub(crate) async fn run_experiment(
         }
         None => None,
     };
-    let mut source = match &plan_json {
+    let source = match &plan_json {
         Some(plan) => crate::runner::plan::plan_source(plan)
             .map_err(|error| RunError::Native(error.to_string()))?,
         None => std::fs::read_to_string(&request.config_path)?,
     };
-    if let Some(crashed) = &request.replacement_for {
-        // The replacement is a new contract: fresh trial identities for
-        // every trial of the crashed group, re-resolved and digest-addressed
-        // separately. The original document is never edited on disk.
-        source = replace_group(source.as_str(), crashed)?;
-    }
     let experiment = ResolvedExperiment::resolve(&source)?;
     if let Some(plan) = &plan_json {
         let recorded = plan["experiment"]["manifest_digest"]
@@ -503,9 +497,7 @@ pub(crate) async fn run_experiment(
         }
     }
     if request.recover {
-        let report = recovery_report(&experiment, &request.root);
-        persist_run_report(&request.root, &report)?;
-        return Ok(report);
+        return recovery_report(&experiment, &request.root, plan_json.as_ref());
     }
     if request.material.is_some() && request.behavior != "happy" {
         return Err(RunError::Native(
@@ -589,6 +581,10 @@ pub(crate) async fn run_experiment(
             }
             experiment.clone().replace_trials(expansion.trials)
         }
+        None => experiment,
+    };
+    let experiment = match &request.replacement_for {
+        Some(crashed) => replace_group(&source, &experiment, crashed, &request.root)?,
         None => experiment,
     };
     if let (Some(tasks), Some(material)) = (&native, &request.material) {
@@ -770,6 +766,9 @@ pub(crate) async fn run_experiment(
     let mut declared_trials: Vec<&crate::experiment::DeclaredTrial> =
         experiment.trials().iter().collect();
     for chunk in declared_trials.chunks_mut(width.max(1)) {
+        if run_cancel.is_cancelled() {
+            break;
+        }
         let mut waves = Vec::new();
         for declared in chunk {
             let subject = experiment
@@ -1129,6 +1128,7 @@ fn prepare_native(
     material: &NativeMaterial,
     experiment: &ResolvedExperiment,
 ) -> Result<BTreeMap<String, NativeInputs>, RunError> {
+    experiment.admit_native_controls()?;
     super::output_control::admit(material, experiment)
         .map_err(|error| RunError::Native(error.to_string()))?;
     let adapter_key = adapter_key_for(experiment)?;
@@ -2299,6 +2299,9 @@ async fn run_native_trial(
 
     let canary_leak =
         scan_staged_for_canaries(&trial_root.join("bundle"), &staged_keys, &request.canaries);
+    if canary_leak.is_some() {
+        run_cancel.cancel();
+    }
     let seal_outcome = if cleanup_failure.is_some() {
         ledger.attempt_failed(
             AuthorityTransition::Seal,
@@ -2336,6 +2339,7 @@ async fn run_native_trial(
         crate::experiment::ControlValue::Value(_) => vec!["reasoning".to_owned()],
         _ => Vec::new(),
     };
+    unsupported_controls.extend(experiment.unsupported_native_sampling(client));
     if matches!(
         experiment.model_controls().max_output_tokens,
         crate::experiment::ControlValue::Value(_)
@@ -4068,94 +4072,236 @@ fn owning_edge<'a>(
     Ok(first)
 }
 
-/// Rewrite the experiment document so every trial of the group owning
-/// `crashed_trial` gets a fresh identity and the group gets a new paired
-/// id. Line-scoped: only `id =` and `group =` lines inside the affected
-/// `[[trials]]` blocks change.
-fn replace_group(source: &str, crashed_trial: &str) -> Result<String, RunError> {
-    let original = ResolvedExperiment::resolve(source)?;
+/// Derive a fresh attempt from the verified, expanded original contract.
+/// Selection metadata and every non-identity control remain frozen.
+fn replace_group(
+    source: &str,
+    original: &ResolvedExperiment,
+    crashed_trial: &str,
+    root: &Path,
+) -> Result<ResolvedExperiment, RunError> {
     let Some(crashed) = original.trials().iter().find(|t| t.id == crashed_trial) else {
         return Err(RunError::Staging(format!(
-            "replacement target {crashed_trial:?} is not a declared trial"
+            "replacement target {crashed_trial:?} is not a resolved trial"
         )));
     };
     let group = &crashed.group;
-    let group_trials: Vec<&str> = original
-        .trials()
-        .iter()
-        .filter(|trial| trial.group == *group)
-        .map(|trial| trial.id.as_str())
-        .collect();
-    // Line-scoped rewrite: only `id =` lines naming a trial of the group
-    // and `group =` lines naming the group itself change; ids and the
-    // group id are unique across the document.
-    let mut out = String::with_capacity(source.len());
-    for line in source.lines() {
-        let trimmed = line.trim_start();
-        let rewrite = if trimmed.starts_with("id =") || trimmed.starts_with("group =") {
-            trimmed
-                .split('"')
-                .nth(1)
-                .map(|value| group_trials.contains(&value) || value == group)
-        } else {
-            None
-        };
-        match rewrite {
-            Some(true) => {
-                let value = trimmed.split('"').nth(1).unwrap();
-                out.push_str(&line.replacen(value, &format!("{value}.r2"), 1));
-            }
-            _ => out.push_str(line),
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| RunError::Staging(error.to_string()))?;
+    let token = crate::agent::opi::sha256_hex(
+        format!(
+            "{}:{}:{}:{}",
+            now.as_nanos(),
+            std::process::id(),
+            root.display(),
+            original.manifest_digest()
+        )
+        .as_bytes(),
+    );
+    let mut trials = original.trials().to_vec();
+    for trial in &mut trials {
+        if trial.group == *group {
+            trial.id = format!("{}.r{token}", trial.id);
+            trial.group = format!("{}.r{token}", trial.group);
         }
-        out.push('\n');
     }
-    Ok(out)
+    trials.sort_by(|left, right| left.id.cmp(&right.id));
+    let mut document: toml::Value =
+        toml::from_str(source).map_err(|error| RunError::Staging(error.to_string()))?;
+    document["experiment_id"] =
+        toml::Value::String(format!("{}.r{token}", original.experiment_id()));
+    if original.selection().is_none() {
+        document["trials"] = toml::Value::Array(
+            trials
+                .iter()
+                .map(|trial| {
+                    toml::Value::try_from(trial).expect("declared trials serialize as TOML tables")
+                })
+                .collect(),
+        );
+    }
+    let derived = ResolvedExperiment::resolve(
+        &toml::to_string(&document).map_err(|error| RunError::Staging(error.to_string()))?,
+    )?;
+    Ok(derived.replace_trials(trials))
 }
 
 /// Classify every existing trial root under `root` from its durable files
 /// only. Effect-unknown trials keep their original identity and boundary
 /// and are never reclassified as not-started (EVAL-DUR-002).
-fn recovery_report(experiment: &ResolvedExperiment, root: &Path) -> serde_json::Value {
+fn recovery_report(
+    experiment: &ResolvedExperiment,
+    root: &Path,
+    plan: Option<&serde_json::Value>,
+) -> Result<serde_json::Value, RunError> {
+    let control = match std::fs::read(root.join("run-control.json")) {
+        Ok(bytes) => {
+            let value: serde_json::Value = serde_json::from_slice(&bytes)
+                .map_err(|error| RunError::Bundle(error.to_string()))?;
+            if value["schema"] != "opi-eval-run-control/1"
+                || value["experiment"] != experiment.experiment_id()
+                || value["manifest_digest"] != experiment.manifest_digest()
+            {
+                return Err(RunError::Bundle(
+                    "recovery run-control identity drift".to_owned(),
+                ));
+            }
+            Some(value)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    let inventory = control
+        .as_ref()
+        .map(|value| &value["planned_trials"])
+        .or_else(|| plan.map(|value| &value["trials"]));
+    let mut planned = Vec::new();
+    if let Some(inventory) = inventory {
+        let entries = inventory
+            .as_array()
+            .ok_or_else(|| RunError::Bundle("recovery planned inventory missing".to_owned()))?;
+        for entry in entries {
+            let field = |name: &str| {
+                entry[name]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .ok_or_else(|| RunError::Bundle(format!("recovery trial lacks {name}")))
+            };
+            let trial = crate::experiment::DeclaredTrial {
+                id: field("id")?,
+                subject: field("subject")?,
+                task: field("task")?,
+                group: field("group")?,
+            };
+            TrialIdentity::new(&trial.id).map_err(|error| RunError::Bundle(error.to_string()))?;
+            if !experiment
+                .subjects()
+                .iter()
+                .any(|subject| subject.id == trial.subject)
+                || planned
+                    .iter()
+                    .any(|prior: &crate::experiment::DeclaredTrial| prior.id == trial.id)
+            {
+                return Err(RunError::Bundle(
+                    "recovery planned trial identity drift".to_owned(),
+                ));
+            }
+            planned.push(trial);
+        }
+        planned.sort_by(|a, b| a.id.cmp(&b.id));
+        if experiment.selection().is_none() && planned != experiment.trials() {
+            return Err(RunError::Bundle(
+                "recovery inventory differs from resolved trials".to_owned(),
+            ));
+        }
+        if let Some(plan) = plan {
+            let frozen: Vec<_> = planned
+                .iter()
+                .map(
+                    |t| json!({"id": t.id, "subject": t.subject, "task": t.task, "group": t.group}),
+                )
+                .collect();
+            let recorded: Vec<_> = plan["trials"].as_array().ok_or_else(|| RunError::Bundle("recovery plan trials missing".to_owned()))?
+                .iter().map(|t| json!({"id": t["id"], "subject": t["subject"], "task": t["task"], "group": t["group"]})).collect();
+            if frozen != recorded {
+                return Err(RunError::Bundle(
+                    "recovery inventory differs from frozen plan".to_owned(),
+                ));
+            }
+        }
+    } else {
+        planned = experiment.trials().to_vec();
+        if planned.is_empty() {
+            return Err(RunError::Bundle(
+                "recovery of selection requires its frozen planned inventory".to_owned(),
+            ));
+        }
+    }
+    let experiment = experiment.clone().replace_trials(planned);
     let mut recovery = Vec::new();
     let mut effect_unknown = 0;
     let trials_root = root.join("trials");
-    if let Ok(entries) = std::fs::read_dir(&trials_root) {
-        let mut ids: Vec<String> = entries
-            .flatten()
-            .filter(|entry| entry.path().is_dir())
-            .map(|entry| entry.file_name().to_string_lossy().into_owned())
-            .collect();
-        ids.sort();
-        for id in ids {
-            let observed = RunBundle::recover(&trials_root.join(&id).join("bundle"));
-            let row = match observed {
-                Ok(observed) => match TrialLifecycle::recover(&observed) {
-                    crate::runner::lifecycle::RecoveryClassification::NotStarted => {
-                        json!({"id": id, "status": "not-started"})
-                    }
-                    crate::runner::lifecycle::RecoveryClassification::EffectUnknown {
-                        trial,
-                        boundary,
-                    } => {
-                        effect_unknown += 1;
-                        json!({
-                            "id": id,
-                            "trial": trial.as_str(),
-                            "status": "effect-unknown",
-                            "boundary": boundary_token(boundary),
-                        })
-                    }
-                    crate::runner::lifecycle::RecoveryClassification::SettledUnsealed => {
-                        json!({"id": id, "status": "settled-unsealed"})
-                    }
-                    crate::runner::lifecycle::RecoveryClassification::Sealed => {
-                        json!({"id": id, "status": "sealed"})
-                    }
-                },
-                Err(error) => json!({"id": id, "status": "unreadable", "error": error.to_string()}),
-            };
-            recovery.push(row);
+    if trials_root.exists() {
+        for entry in std::fs::read_dir(&trials_root)? {
+            let entry = entry?;
+            if entry.path().is_dir()
+                && !experiment
+                    .trials()
+                    .iter()
+                    .any(|trial| entry.file_name() == std::ffi::OsStr::new(&trial.id))
+            {
+                return Err(RunError::Bundle(
+                    "recovery found an unplanned trial root".to_owned(),
+                ));
+            }
         }
+    }
+    for trial in experiment.trials() {
+        let id = &trial.id;
+        let observed = RunBundle::recover(&trials_root.join(id).join("bundle"));
+        if let Ok(observed) = &observed {
+            if observed
+                .intent
+                .as_ref()
+                .is_some_and(|intent| intent.trial.as_str() != id)
+                || observed
+                    .settlement
+                    .as_ref()
+                    .is_some_and(|marker| marker.trial.as_str() != id)
+            {
+                return Err(RunError::Bundle(
+                    "recovery durable trial identity drift".to_owned(),
+                ));
+            }
+            if observed.sealed {
+                RunBundle::verify(&trials_root.join(id).join("bundle"))
+                    .map_err(|error| RunError::Bundle(error.to_string()))?;
+            }
+        }
+        let mut row = match observed {
+            Ok(observed) => match TrialLifecycle::recover(&observed) {
+                crate::runner::lifecycle::RecoveryClassification::NotStarted => {
+                    json!({"id": id, "status": "not-started"})
+                }
+                crate::runner::lifecycle::RecoveryClassification::EffectUnknown {
+                    trial,
+                    boundary,
+                } => {
+                    effect_unknown += 1;
+                    json!({
+                        "id": id,
+                        "trial": trial.as_str(),
+                        "status": "effect-unknown",
+                        "boundary": boundary_token(boundary),
+                    })
+                }
+                crate::runner::lifecycle::RecoveryClassification::SettledUnsealed => {
+                    json!({"id": id, "status": "settled-unsealed"})
+                }
+                crate::runner::lifecycle::RecoveryClassification::Sealed => {
+                    json!({"id": id, "status": "sealed"})
+                }
+            },
+            Err(error) => json!({"id": id, "status": "unreadable", "error": error.to_string()}),
+        };
+        let settlement_path = trials_root
+            .join(id)
+            .join("bundle/artifacts")
+            .join(CONTROL_SETTLEMENT_KEY);
+        if settlement_path.is_file() {
+            let settlement: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(settlement_path)?)
+                    .map_err(|error| RunError::Bundle(error.to_string()))?;
+            if settlement["trial"] != *id {
+                return Err(RunError::Bundle(
+                    "recovery settlement identity drift".to_owned(),
+                ));
+            }
+            row["settlement"] = settlement;
+        }
+        recovery.push(row);
     }
     // Pairing visibility for the recovery view: for every edge, the sides
     // whose subjects have no durably settled trial root are named exactly.
@@ -4194,7 +4340,7 @@ fn recovery_report(experiment: &ResolvedExperiment, root: &Path) -> serde_json::
         })
         .collect();
     let _ = &mut effect_unknown;
-    json!({
+    Ok(json!({
         "schema": RUN_REPORT_SCHEMA,
         "experiment": experiment.experiment_id(),
         "manifest_digest": experiment.manifest_digest(),
@@ -4202,7 +4348,7 @@ fn recovery_report(experiment: &ResolvedExperiment, root: &Path) -> serde_json::
         "recovery": recovery,
         "trials": [],
         "pairs": pairs,
-    })
+    }))
 }
 
 #[cfg(test)]

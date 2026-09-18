@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # opi-eval exact agent build/locator script.
 #
-# Builds and locates both evaluated agents with full executable identity,
+# Builds and locates the explicitly selected evaluated agents with full executable identity,
 # before any agent process starts:
 #
 # - Opi: `cargo build --locked --release -p opi-coding-agent --bin opi
@@ -20,7 +20,7 @@
 #   and the canonical bundle path and digest.
 #
 # Usage:
-#   crates/opi-eval/scripts/build-agent-artifacts.sh --opi-source DIR --pi-source DIR --out DIR
+#   crates/opi-eval/scripts/build-agent-artifacts.sh --opi-source DIR --opi-commit COMMIT --pi-source DIR --out DIR
 #
 # Emits <out>/opi-identity.json and <out>/pi-identity.json
 # (schema `opi-eval-agent-identity/1`). Fails closed on any drift.
@@ -28,22 +28,32 @@
 set -euo pipefail
 
 OPI_SOURCE=""
+OPI_COMMIT=""
 PI_SOURCE=""
 OUT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --opi-source) OPI_SOURCE=$2; shift 2 ;;
+    --opi-commit) OPI_COMMIT=$2; shift 2 ;;
     --pi-source) PI_SOURCE=$2; shift 2 ;;
     --out) OUT=$2; shift 2 ;;
     *) echo "opi-eval-build-agent-artifacts: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-if [ -z "$OPI_SOURCE" ] || [ -z "$PI_SOURCE" ] || [ -z "$OUT" ]; then
-  echo "opi-eval-build-agent-artifacts: --opi-source, --pi-source, and --out are required" >&2
+if [ -z "$OUT" ] || { [ -z "$OPI_SOURCE" ] && [ -z "$PI_SOURCE" ]; }; then
+  echo "opi-eval-build-agent-artifacts: --out and at least one selected source are required" >&2
   exit 2
 fi
-OPI_SOURCE=$(readlink -f "$OPI_SOURCE")
-PI_SOURCE=$(readlink -f "$PI_SOURCE")
+if { [ -n "$OPI_SOURCE" ] && [ -z "$OPI_COMMIT" ]; } || { [ -z "$OPI_SOURCE" ] && [ -n "$OPI_COMMIT" ]; }; then
+  echo "opi-eval-build-agent-artifacts: --opi-source and --opi-commit must be paired" >&2
+  exit 2
+fi
+if [ -n "$OPI_SOURCE" ]; then
+  [[ "$OPI_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid Opi commit" >&2; exit 2; }
+  OPI_SOURCE=$(readlink -f "$OPI_SOURCE")
+fi
+if [ -n "$PI_SOURCE" ]; then PI_SOURCE=$(readlink -f "$PI_SOURCE"); fi
+OUT=$(realpath -m "$OUT")
 mkdir -p "$OUT"
 
 git_identity() {
@@ -65,13 +75,15 @@ tree_digest() {
 }
 
 # --- Opi -----------------------------------------------------------------
+if [ -n "$OPI_SOURCE" ]; then
 echo "opi-eval-build-agent-artifacts: building opi (locked release)" >&2
+if [ -d "$OPI_SOURCE/.git" ]; then
+  [ "$(git -C "$OPI_SOURCE" rev-parse HEAD)" = "$OPI_COMMIT" ] || { echo "Opi source commit drift" >&2; exit 2; }
+fi
+(
+cd "$OPI_SOURCE"
 build_json=$(cargo build --locked --release \
-  -p opi-coding-agent --bin opi \
-  --message-format=json-render-diagnostics 2>/dev/null || \
-  cargo build --locked --release \
-    -p opi-coding-agent --bin opi \
-    --message-format=json-render-diagnostics)
+  -p opi-coding-agent --bin opi --message-format=json-render-diagnostics)
 OPI_EXECUTABLE=$(printf '%s\n' "$build_json" | python3 -c '
 import json, sys
 for line in sys.stdin:
@@ -91,9 +103,16 @@ else:
     sys.exit("no opi compiler-artifact executable was reported")
 ')
 OPI_EXECUTABLE=$(readlink -f "$OPI_EXECUTABLE")
-read -r OPI_COMMIT OPI_DIRTY OPI_DIRTY_FILES <<EOF
+if [ -d "$OPI_SOURCE/.git" ]; then
+  read -r observed_commit OPI_DIRTY OPI_DIRTY_FILES <<EOF
 $(git_identity "$OPI_SOURCE")
 EOF
+  [ "$observed_commit" = "$OPI_COMMIT" ] || exit 2
+else
+  # The preparation owner supplies a verified git archive of this exact commit.
+  OPI_DIRTY=false
+  OPI_DIRTY_FILES=0
+fi
 CARGO_LOCK_SHA=$(sha256sum "$OPI_SOURCE/Cargo.lock" | cut -d' ' -f1)
 {
   printf 'cargo build --locked --release -p opi-coding-agent --bin opi '
@@ -135,7 +154,12 @@ with open(f"{out}/opi-identity.json", "w", encoding="utf-8") as f:
     f.write("\n")
 PYEOF
 
+printf '%s\n' "$OPI_EXECUTABLE" > "$OUT/opi-executable-path.txt"
+)
+fi
+
 # --- pi ------------------------------------------------------------------
+if [ -n "$PI_SOURCE" ]; then
 echo "opi-eval-build-agent-artifacts: building pi (locked source build)" >&2
 NODE_EXECUTABLE=$(readlink -f "$(command -v node)")
 NPM_EXECUTABLE=$(readlink -f "$(command -v npm)")
@@ -156,6 +180,22 @@ mkdir -p "$npm_cache"
     --pack-destination "$npm_cache" >&2
   pi_ai_tarball=$(ls "$npm_cache"/earendil-works-pi-ai-"${pi_ai_version}".tgz)
   pi_ai_tarball_sha=$(sha256sum "$pi_ai_tarball" | cut -d' ' -f1)
+  # The released data archive is admitted only by the committed shrinkwrap SRI.
+  python3 - "$pi_ai_tarball" packages/coding-agent/npm-shrinkwrap.json "$pi_ai_version" <<'DATA_PIN'
+import base64, hashlib, json, pathlib, sys
+archive, shrinkwrap, version = sys.argv[1:]
+lock = json.loads(pathlib.Path(shrinkwrap).read_text())
+entry = lock.get("packages", {}).get("node_modules/@earendil-works/pi-ai", {})
+if entry.get("version") != version or not entry.get("integrity"):
+    raise SystemExit("pi build data: no exact committed shrinkwrap integrity")
+content = pathlib.Path(archive).read_bytes()
+for token in entry["integrity"].split():
+    algorithm, digest = token.split("-", 1)
+    if algorithm not in ("sha256", "sha384", "sha512"):
+        raise SystemExit("pi build data: unsupported integrity algorithm")
+    if base64.b64encode(hashlib.new(algorithm, content).digest()).decode() != digest:
+        raise SystemExit("pi build data: archive integrity drift")
+DATA_PIN
   mkdir -p "$npm_cache/pi-ai-data"
   tar -xzf "$pi_ai_tarball" -C "$npm_cache/pi-ai-data" \
     package/dist/providers/data
@@ -223,7 +263,7 @@ with open(f"{out}/pi-identity.json", "w", encoding="utf-8") as f:
     f.write("\n")
 PYEOF
 
-printf '%s\n' "$OPI_EXECUTABLE" > "$OUT/opi-executable-path.txt"
 printf '%s\n' "$BUNDLE_PATH" > "$OUT/pi-bundle-path.txt"
 printf '%s\n' "$NODE_EXECUTABLE" > "$OUT/node-executable-path.txt"
+fi
 echo "opi-eval-build-agent-artifacts: identities written to $OUT" >&2
