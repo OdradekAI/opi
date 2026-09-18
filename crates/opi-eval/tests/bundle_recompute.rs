@@ -462,6 +462,13 @@ fn repeated_offline_operations_are_stable() {
     );
     assert_eq!(c4, 0);
     assert_eq!(render1, render2, "report stdout must be byte-stable");
+    let normalized: serde_json::Value = serde_json::from_str(&render1).unwrap();
+    assert_eq!(normalized["schema"], "opi-eval-normalized-report/2");
+    assert_eq!(normalized["reporter_version"], "opi-eval-reporter/2");
+    assert_eq!(
+        normalized["metrics"][1]["observation_coverage"]["unknown"],
+        2
+    );
     let written1 = std::fs::read(&out1).unwrap();
     let written2 = std::fs::read(&out2).unwrap();
     assert_eq!(

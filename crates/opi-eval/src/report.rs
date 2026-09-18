@@ -32,14 +32,15 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::benchmark::process::native_grader_observation;
 use crate::bundle::RunBundle;
 
 /// Normalized report schema identity.
-const REPORT_SCHEMA: &str = "opi-eval-normalized-report/1";
+const REPORT_SCHEMA: &str = "opi-eval-normalized-report/2";
 /// Pinned reporter identity: part of every byte-stability contract
 /// (`EVAL-RPT-002` - same sealed inputs, grader identity, and reporter
 /// version).
-pub(crate) const REPORTER_VERSION: &str = "opi-eval-reporter/1";
+pub(crate) const REPORTER_VERSION: &str = "opi-eval-reporter/2";
 /// The single classification wording of opi-eval paired results
 /// (`EVAL-RPT-006`): conformance evidence only, never leaderboard
 /// verification or superiority.
@@ -102,6 +103,8 @@ struct SealedTrial {
     /// bundles seal without it and classification falls back to the
     /// sealed headline and ledger observation.
     settlement: Option<serde_json::Value>,
+    /// Exact raw native result admitted as the sealed headline source.
+    native_result: Option<serde_json::Value>,
 }
 
 /// One recomputed normalized view of a run root.
@@ -146,6 +149,8 @@ struct TrialView {
     /// admitted.
     #[serde(skip_serializing_if = "Option::is_none")]
     headline: Option<HeadlineView>,
+    /// Native test counters and opaque fields, separate from the task reward.
+    native_grader: serde_json::Value,
     /// Asymmetric native facts: measured or typed unknown (`EVAL-A16`).
     native_facts: BTreeMap<String, serde_json::Value>,
     /// Separately labelled diagnostics: sealed agent and verifier
@@ -558,6 +563,7 @@ impl ReportBuilder {
                     "source": "unsealed-settlement",
                 }),
                 headline: None,
+                native_grader: native_grader_observation(None, None, false),
                 native_facts: BTreeMap::new(),
                 diagnostics: serde_json::json!({
                     "label": "diagnostic", "evidence": "unverified",
@@ -789,6 +795,28 @@ impl ReportBuilder {
             .as_ref()
             .and_then(|control| control["selection"]["scope"].as_str())
             .or_else(|| normalized.experiment["selection"]["scope"].as_str());
+        let (metric, definition) = match benchmark.as_str() {
+            "terminal-bench/2.1" => (
+                "native-task-success",
+                "native binary task success; zero scores and benchmark-defined Agent timeouts remain valid graded outcomes",
+            ),
+            "terminal-bench/3.0" => (
+                "native-task-success-after-collection",
+                "native binary task success after declared artifact collection; zero scores and benchmark-defined Agent timeouts remain valid graded outcomes",
+            ),
+            "deepswe/v1.1" => (
+                "native-resolved-task",
+                "native binary resolved task outcome after committed-patch verification; zero scores and benchmark-defined Agent timeouts remain valid graded outcomes",
+            ),
+            _ => (
+                "native-task-outcome",
+                "native task outcome for the recorded benchmark revision; zero scores remain valid graded outcomes",
+            ),
+        };
+        let measured_counts = trials
+            .iter()
+            .filter(|trial| trial["native_grader"]["test_case_fraction"]["state"] == "measured")
+            .count();
         serde_json::json!({
             "schema": REPORT_SCHEMA,
             "reporter_version": REPORTER_VERSION,
@@ -821,9 +849,16 @@ impl ReportBuilder {
             "metrics": [
                 {
                     "benchmark": benchmark,
-                    "metric": "native-grader-reward",
-                    "definition": "benchmark-defined native grader reward over valid graded trials; zero scores and benchmark-defined Agent timeouts stay valid graded outcomes",
+                    "metric": metric,
+                    "definition": definition,
+                    "domain": [0, 1],
                     "denominator": valid,
+                },
+                {
+                    "benchmark": benchmark,
+                    "metric": "native-test-case-fraction",
+                    "definition": "per-trial native passed / total; independent of binary task outcome, without cross-trial pooling",
+                    "observation_coverage": {"eligible": valid, "measured": measured_counts, "unknown": valid - measured_counts},
                 },
             ],
             "trials": trials,
@@ -873,7 +908,7 @@ impl ReportBuilder {
                     .cloned()
             })
             .ok_or("undeclared-trial".to_owned())?;
-        let trial = SealedTrial {
+        let mut trial = SealedTrial {
             id: id.to_owned(),
             subject: declared["subject"].as_str().unwrap_or_default().to_owned(),
             task: declared["task"].as_str().unwrap_or_default().to_owned(),
@@ -885,6 +920,7 @@ impl ReportBuilder {
                 .sealed_bytes(id, CONTROL_SETTLEMENT_KEY)
                 .ok()
                 .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
+            native_result: None,
         };
         if let Some(grader) = trajectory_node_matching(&trial.trajectory, "grader/")
             && grader["facts"]["reward"]["Known"]["origin"] == "native-trial-result"
@@ -904,6 +940,7 @@ impl ReportBuilder {
             {
                 return Err("native-reward-source-mismatch".to_owned());
             }
+            trial.native_result = Some(result);
         }
         Ok(trial)
     }
@@ -924,6 +961,15 @@ impl ReportBuilder {
             status: "sealed".to_owned(),
             outcome: outcome_view(trial),
             headline: headline(trial),
+            native_grader: native_grader_observation(
+                trial.native_result.as_ref(),
+                trial
+                    .native_result
+                    .as_ref()
+                    .and_then(|_| trial.entries.get(NATIVE_RESULT_KEY))
+                    .and_then(|entry| entry["digest"].as_str()),
+                outcome_buckets(trial).0,
+            ),
             native_facts: native_facts(&product, &trial.entries),
             diagnostics: diagnostics(trial, &product),
         }
@@ -1617,6 +1663,7 @@ mod tests {
             task: "t".to_owned(),
             group: "g".to_owned(),
             settlement: None,
+            native_result: None,
             entries,
             trajectory: serde_json::json!({
                 "nodes": [{

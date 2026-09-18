@@ -18,8 +18,7 @@
 //! real Agent artifacts and the cached immutable task/verifier material,
 //! then re-grades the preserved artifacts with the pinned native
 //! verifier in a fresh trial-owned environment under the output root -
-//! reusing the same binding readers as initial execution
-//! ([`crate::benchmark::process::import_bound_native_job`]) - and
+//! admitting a distinct verifier-only observation - and
 //! persists one derived grading record per trial without rewriting any
 //! original score. No Agent executable is spawned, no credential is
 //! resolved, and no provider is contacted; a verifier whose task
@@ -28,7 +27,8 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
 use crate::bundle::{BundleError, RunBundle};
 
@@ -198,10 +198,10 @@ fn classify(trial: &str, error: BundleError) -> VerificationFailure {
 // ---------------------------------------------------------------------------
 
 /// Identity schema of the per-trial derived grading record.
-const REGRADE_RECORD_SCHEMA: &str = "opi-eval-regrade-record/1";
+const REGRADE_RECORD_SCHEMA: &str = "opi-eval-regrade-record/2";
 
 /// Identity schema of the regrade summary report on stdout.
-const NATIVE_REGRADE_SCHEMA: &str = "opi-eval-native-regrade/1";
+const NATIVE_REGRADE_SCHEMA: &str = "opi-eval-native-regrade/2";
 
 /// One successfully regraded trial in the summary report.
 #[derive(Debug, Serialize)]
@@ -213,8 +213,8 @@ struct RegradedTrial {
     /// Path of the persisted derived grading record, relative to the
     /// output root.
     record: String,
-    /// The fresh job directory name the regrade produced.
-    job: String,
+    /// Identity of the fresh verifier, without an Agent job.
+    verifier_id: String,
     /// Digest of the pinned verifier executable that graded.
     verifier_executable_sha256: String,
 }
@@ -286,14 +286,16 @@ impl NativeRegrader {
     /// Fresh-grades every sealed native trial bundle under `run_root`
     /// with the pinned verifier from `material`, writing derived records
     /// and fresh verifier environments under `out` only.
-    pub(crate) fn regrade(
+    pub(crate) async fn regrade(
         run_root: &Path,
         material_path: &Path,
         out: &Path,
+        cancel: &CancellationToken,
     ) -> Result<NativeRegradeReport, NativeRegradeError> {
+        let run_root = std::fs::canonicalize(run_root).map_err(NativeRegradeError::Io)?;
         // A root with no native trial is not regradable under this
         // command: hermetic fixture evidence never enters native grading.
-        let trial_ids = read_trial_ids(run_root).map_err(NativeRegradeError::Io)?;
+        let trial_ids = read_trial_ids(&run_root).map_err(NativeRegradeError::Io)?;
         let any_native = trial_ids.iter().any(|trial| {
             run_root
                 .join("trials")
@@ -309,13 +311,34 @@ impl NativeRegrader {
         }
         let material = crate::runner::material::NativeMaterial::load(material_path)
             .map_err(|error| NativeRegradeError::Material(error.to_string()))?;
-        std::fs::create_dir_all(out).map_err(NativeRegradeError::Io)?;
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent).map_err(NativeRegradeError::Io)?;
+        }
+        std::fs::create_dir(out).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                NativeRegradeError::OutputExists(out.to_owned())
+            } else {
+                NativeRegradeError::Io(error)
+            }
+        })?;
+        let out = std::fs::canonicalize(out).map_err(NativeRegradeError::Io)?;
         let mut trials = Vec::new();
         let mut rejections = Vec::new();
+        let mut blocked = false;
         for trial in trial_ids {
-            match regrade_one(run_root, &material, out, &trial) {
+            if blocked || cancel.is_cancelled() {
+                rejections.push(RegradeRejection {
+                    trial,
+                    reason: "not-dispatched-after-unsettled-verifier".to_owned(),
+                });
+                continue;
+            }
+            match regrade_one(&run_root, &material, &out, &trial, cancel).await {
                 Ok(entry) => trials.push(entry),
-                Err(reason) => rejections.push(RegradeRejection { trial, reason }),
+                Err(reason) => {
+                    blocked = reason == "verifier-cleanup-unconfirmed";
+                    rejections.push(RegradeRejection { trial, reason });
+                }
             }
         }
         let outcome = if rejections.is_empty() {
@@ -380,20 +403,6 @@ fn copy_tree(source: &Path, target: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Collects every file under `root` with its path relative to `base`.
-fn collect_files(base: &Path, root: &Path, files: &mut Vec<(String, PathBuf)>) {
-    if let Ok(entries) = std::fs::read_dir(root) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_files(base, &path, files);
-            } else if let Ok(relative) = path.strip_prefix(base) {
-                files.push((relative.to_string_lossy().into_owned(), path));
-            }
-        }
-    }
-}
-
 /// The newest job directory (by sorted name) holding a `result.json`.
 fn newest_job(trace_root: &Path) -> Option<PathBuf> {
     let jobs = trace_root.join("jobs");
@@ -414,13 +423,16 @@ const CREDENTIAL_ENV_MARKERS: [&str; 5] = ["KEY", "TOKEN", "SECRET", "PASSWORD",
 
 /// Fresh-grades one sealed trial. Every typed failure is a rejection
 /// string; the caller keeps the trial visible.
-fn regrade_one(
+async fn regrade_one(
     run_root: &Path,
     material: &crate::runner::material::NativeMaterial,
     out: &Path,
     trial: &str,
+    cancel: &CancellationToken,
 ) -> Result<RegradedTrial, String> {
     use crate::benchmark::task_lifecycle::{TaskFamily, VerifierEnvironmentMode};
+    use crate::process::{ExitState, ProcessSupervisor, SpawnSpec};
+    use crate::runner::material::sha256_hex;
 
     // Source evidence first: a tampered or unsealed bundle never regrades.
     let bundle_root = run_root.join("trials").join(trial).join("bundle");
@@ -560,21 +572,24 @@ fn regrade_one(
     // the fresh material's profile.
     let profile_bytes = std::fs::read(&task_material.profile.path)
         .map_err(|error| format!("profile-unreadable:{error}"))?;
-    let material_task_id = match adapter_key.as_str() {
+    let (material_task_id, timeout_secs) = match adapter_key.as_str() {
         "terminal-bench-2.1" => {
-            crate::benchmark::terminal_bench_21::Tb21Profile::parse(profile_bytes.as_slice())
-                .map_err(|error| format!("profile-invalid:{error}"))?
-                .task_id
+            let profile =
+                crate::benchmark::terminal_bench_21::Tb21Profile::parse(profile_bytes.as_slice())
+                    .map_err(|error| format!("profile-invalid:{error}"))?;
+            (profile.task_id, profile.timeout_secs)
         }
         "terminal-bench-3.0" => {
-            crate::benchmark::terminal_bench_30::Tb30Profile::parse(profile_bytes.as_slice())
-                .map_err(|error| format!("profile-invalid:{error}"))?
-                .task_id
+            let profile =
+                crate::benchmark::terminal_bench_30::Tb30Profile::parse(profile_bytes.as_slice())
+                    .map_err(|error| format!("profile-invalid:{error}"))?;
+            (profile.task_id, profile.timeout_secs)
         }
         _ => {
-            crate::benchmark::deepswe::DeepSweProfile::parse(profile_bytes.as_slice())
-                .map_err(|error| format!("profile-invalid:{error}"))?
-                .task_id
+            let profile =
+                crate::benchmark::deepswe::DeepSweProfile::parse(profile_bytes.as_slice())
+                    .map_err(|error| format!("profile-invalid:{error}"))?;
+            (profile.task_id, profile.timeout_secs)
         }
     };
     let sealed_task = subject
@@ -584,15 +599,34 @@ fn regrade_one(
     if sealed_task != material_task_id {
         return Err("task-identity-drift".to_owned());
     }
+    // This is the source identity recorded by native_integrity_review, not a
+    // task-name match against a newly substituted package or grader.
+    let task_rows = benchmark
+        .tasks
+        .iter()
+        .map(|(id, task)| {
+            serde_json::json!({
+                "id": id, "native_task_name": task.native_task_name,
+                "profile_sha256": task.profile.sha256,
+                "task_package_manifest_sha256": task.task_package_manifest_sha256,
+            })
+        })
+        .collect::<Vec<_>>();
+    let task_identity = sha256_hex(
+        serde_json::json!({
+            "source_commit": benchmark.corpus.source_commit,
+            "tasks_tree": benchmark.corpus.tasks_tree, "tasks": task_rows,
+        })
+        .to_string()
+        .as_bytes(),
+    );
+    if bundle_json(&bundle_root, "control/integrity.json")?["upstream_digest"] != task_identity {
+        return Err("task-package-drift".to_owned());
+    }
 
     // The saved real Agent artifacts: preserved under the run root's
     // job tree, located through the sealed identity, copied into the
     // fresh environment exactly as collected.
-    let agent_name = trial_result
-        .get("agent_info")
-        .and_then(|info| info.get("name"))
-        .and_then(|value| value.as_str())
-        .ok_or("sealed-result-missing-agent")?;
     let task_name = trial_result
         .get("task_name")
         .and_then(|value| value.as_str())
@@ -601,30 +635,45 @@ fn regrade_one(
         .get("trial_name")
         .and_then(|value| value.as_str())
         .ok_or("sealed-result-missing-trial-name")?;
-    let sealed_collected: Vec<(String, String, String)> = verifier_input
-        .get("collected")
-        .and_then(|value| value.as_array())
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|entry| {
-                    let source = entry.get("source")?.as_str()?.to_owned();
-                    let destination = entry.get("destination")?.as_str()?.to_owned();
-                    let sha256 = entry.get("sha256")?.as_str()?.to_owned();
-                    Some((source, destination, sha256))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    if sealed_collected.is_empty() {
+    let sealed_collected: Vec<RestoredArtifact> = serde_json::from_value(
+        verifier_input
+            .get("collected")
+            .cloned()
+            .ok_or("agent-artifacts-missing")?,
+    )
+    .map_err(|_| "sealed-artifacts-invalid")?;
+    if sealed_collected.is_empty() || lifecycle.declared_artifacts.is_empty() {
         return Err("agent-artifacts-missing".to_owned());
+    }
+    if !safe_relative(trial_name) || trial_name.contains('/') {
+        return Err("sealed-trial-name-invalid".to_owned());
+    }
+    for declared in &lifecycle.declared_artifacts {
+        if !sealed_collected.iter().any(|entry| {
+            entry.source.trim_end_matches('/') == declared.source.trim_end_matches('/')
+                && entry.destination == artifact_destination(declared, family)
+        }) {
+            return Err("agent-artifacts-missing".to_owned());
+        }
     }
     let preserved_root = newest_job(&run_root.join("trials").join(trial).join("verifier-trace"))
         .ok_or("agent-artifacts-missing")?
         .join(trial_name)
         .join("artifacts");
-    let mut delivered: Vec<serde_json::Value> = Vec::new();
-    for (source, destination, sealed_sha256) in &sealed_collected {
+    for entry in &sealed_collected {
+        let RestoredArtifact {
+            source,
+            destination,
+            sha256: sealed_sha256,
+        } = entry;
+        if !safe_relative(destination)
+            || !lifecycle.declared_artifacts.iter().any(|declared| {
+                declared.source.trim_end_matches('/') == source.trim_end_matches('/')
+                    && destination == artifact_destination(declared, family)
+            })
+        {
+            return Err("agent-artifacts-undeclared".to_owned());
+        }
         let preserved = preserved_root.join(destination);
         if !preserved.exists() {
             return Err("agent-artifacts-missing".to_owned());
@@ -632,6 +681,18 @@ fn regrade_one(
         // Every preserved artifact must still digest to exactly the
         // sealed verifier-input identity: altered Agent bytes reject
         // fail-closed instead of grading substituted evidence.
+        if preserved.is_dir() {
+            crate::runner::material::runtime_package_manifest_digest(&preserved)
+                .map_err(|_| "agent-artifacts-unsafe")?;
+        } else if std::fs::symlink_metadata(&preserved)
+            .map_err(|_| "agent-artifacts-missing")?
+            .file_type()
+            .is_symlink()
+            || std::fs::canonicalize(&preserved).map_err(|_| "agent-artifacts-missing")?
+                != preserved
+        {
+            return Err("agent-artifacts-unsafe".to_owned());
+        }
         let observed = if preserved.is_dir() {
             crate::benchmark::process::collected_digest(&preserved)
                 .map_err(|_| "agent-artifacts-tampered".to_owned())?
@@ -643,92 +704,61 @@ fn regrade_one(
         if observed != *sealed_sha256 {
             return Err("agent-artifacts-tampered".to_owned());
         }
-        // The delivered observation mirrors the integration's own: one
-        // entry per preserved file under the collected destination.
-        let mut files: Vec<(String, PathBuf)> = Vec::new();
-        if preserved.is_dir() {
-            collect_files(&preserved, &preserved, &mut files);
-        } else {
-            files.push((String::new(), preserved.clone()));
-        }
-        files.sort_by(|a, b| a.0.cmp(&b.0));
-        for (relative, file) in files {
-            let bytes = std::fs::read(&file).map_err(|_| "agent-artifacts-missing".to_owned())?;
-            let delivered_source = if relative.is_empty() {
-                source.trim_end_matches('/').to_owned()
-            } else {
-                format!("{}/{}", source.trim_end_matches('/'), relative)
-            };
-            delivered.push(serde_json::json!({
-                "source": delivered_source,
-                "sha256": crate::runner::material::sha256_hex(&bytes),
-            }));
-        }
         copy_tree(&preserved, &collected_root.join(destination))
             .map_err(|error| format!("artifact-copy-failed:{error}"))?;
     }
 
-    // The identity the pinned verifier reads in regrade mode: every
-    // fact derives from sealed evidence or the admitted material; no
-    // credential or provider projection exists on this path.
-    let model = experiment
-        .get("connections")
-        .and_then(|connections| connections.as_array())
-        .and_then(|connections| {
-            connections.iter().find_map(|entry| {
-                if entry.get("id").and_then(|id| id.as_str())
-                    == experiment.get("connection_id").and_then(|id| id.as_str())
-                {
-                    let provider = entry.get("provider")?.as_str()?;
-                    let model = entry.get("model")?.as_str()?;
-                    Some(format!("{provider}:{model}"))
-                } else {
-                    None
-                }
-            })
-        })
-        .ok_or("sealed-experiment-missing-connection")?;
-    let identity = serde_json::json!({
-        "schema": "opi-eval-native-regrade-identity/1",
-        "trial": trial,
-        "runner": runner,
-        "family": adapter_key,
-        "product": product,
-        "task_name": task_name,
-        "trial_name": trial_name,
-        "agent_name": agent_name,
-        "agent_import_path": integration.import_path,
-        "model": model,
-        "agent_executable_sha256": agent.executable.sha256,
-        "environment_mode": fresh_mode,
-        "base_revision": lifecycle.base_revision,
-        "docker_image": lifecycle.docker_image,
-        "verifier_network": lifecycle.verifier_network,
-        "declared": lifecycle
-            .declared_artifacts
-            .iter()
-            .map(|artifact| artifact.source.clone())
-            .collect::<Vec<_>>(),
-        "collected": sealed_collected
-            .iter()
-            .map(|(source, destination, sha256)| serde_json::json!({
-                "source": source,
-                "destination": destination,
-                "sha256": sha256,
-            }))
-            .collect::<Vec<_>>(),
-        "delivered": delivered,
+    let verifier_id = format!(
+        "opi-eval-regrade-{}",
+        &sha256_hex(env_root.to_string_lossy().as_bytes())[..24]
+    );
+    let module = integration
+        .import_path
+        .split(':')
+        .next()
+        .ok_or("integration-module-missing")?;
+    let build_context = task_dir.join(if fresh_mode == "shared" {
+        "environment"
+    } else {
+        "tests"
     });
-    let identity_path = env_root.join("identity.json");
-    std::fs::write(
-        &identity_path,
-        serde_json::to_vec(&identity).expect("identity serializes"),
-    )
-    .map_err(|error| format!("staging-failed:{error}"))?;
+    // A native prebuilt verifier may have no host-side tests directory.
+    let context_digest = if build_context.exists() {
+        crate::runner::material::runtime_package_manifest_digest(&build_context)
+            .map_err(|_| "verifier-build-context-invalid")?
+    } else {
+        sha256_hex(b"")
+    };
+    let request = serde_json::json!({
+        "schema": "opi-eval-verifier-request/1",
+        "verifier_id": verifier_id,
+        "source": {
+            "trial": trial, "subject": subject_id, "product": product,
+            "bundle_identity": bundle_identity,
+            "original_result_sha256": sha256_hex(&std::fs::read(
+                bundle_root.join("artifacts/native/trial-result.json")
+            ).map_err(|_| "sealed-result-missing")?),
+        },
+        "family": adapter_key, "runner": runner, "task_name": task_name,
+        "task_package": task_dir, "collected_root": collected_root,
+        "trace_root": trace_root, "environment_mode": fresh_mode,
+        "base_revision": lifecycle.base_revision,
+        "task_package_manifest_sha256": task_material.task_package_manifest_sha256,
+        "build_context_sha256": context_digest,
+        "runner_source_sha256": benchmark.runner_project.as_ref().map(|p| &p.source_manifest_sha256),
+        "module_manifest_sha256": integration.module_manifest_sha256,
+        "verifier_executable_sha256": benchmark.verifier_executable.sha256,
+        "restored": sealed_collected,
+        "timeout_seconds": timeout_secs,
+        "verifier_timeout_seconds": trial_config["verifier"]["max_timeout_sec"],
+    });
+    let request_bytes = serde_json::to_vec(&request).expect("request serializes");
+    let request_sha256 = sha256_hex(&request_bytes);
+    let request_path = env_root.join("request.json");
+    std::fs::write(&request_path, &request_bytes)
+        .map_err(|error| format!("staging-failed:{error}"))?;
 
-    // The closed spawn projection: material verifier environment plus
-    // the four regrade variables; anything credential-shaped rejects.
-    let mut projected: std::collections::BTreeMap<String, String> = benchmark.verifier_env.clone();
+    let mut projected = benchmark.verifier_env.clone();
     for key in projected.keys() {
         if CREDENTIAL_ENV_MARKERS
             .iter()
@@ -737,109 +767,141 @@ fn regrade_one(
             return Err("verifier-env-credential".to_owned());
         }
     }
+    projected.insert(
+        "PYTHONPATH".to_owned(),
+        integration.module_dir.to_string_lossy().into_owned(),
+    );
+    projected.insert("PYTHONDONTWRITEBYTECODE".to_owned(), "1".to_owned());
+    projected.insert("UV_OFFLINE".to_owned(), "1".to_owned());
+    projected.insert("UV_NO_PROGRESS".to_owned(), "1".to_owned());
     projected.insert("OPI_EVAL_REGRADE".to_owned(), "1".to_owned());
-    projected.insert("OPI_EVAL_REGRADE_FAMILY".to_owned(), adapter_key.clone());
-    projected.insert(
-        "OPI_EVAL_REGRADE_IDENTITY".to_owned(),
-        identity_path.to_string_lossy().into_owned(),
-    );
-    projected.insert(
-        "OPI_EVAL_REGRADE_ARTIFACTS".to_owned(),
-        collected_root.to_string_lossy().into_owned(),
-    );
-    let env_record = serde_json::json!({
-        "schema": "opi-eval-native-regrade-env/1",
-        "projected": projected,
-        "cwd": "verifier-trace",
-        "credential_free": true,
-    });
+    let spec = SpawnSpec {
+        argv: vec![
+            benchmark.verifier_executable.path.as_os_str().to_owned(),
+            "run".into(),
+            "--locked".into(),
+            "--offline".into(),
+            "python".into(),
+            "-m".into(),
+            module.into(),
+            request_path.as_os_str().to_owned(),
+        ],
+        cwd: Some(trace_root.clone()),
+        env: projected
+            .iter()
+            .map(|(key, value)| (key.into(), value.into()))
+            .collect(),
+        stdout_cap: 1024 * 1024,
+        stderr_cap: 1024 * 1024,
+        timeout: std::time::Duration::from_secs(timeout_secs),
+    };
     std::fs::write(
         env_root.join("env.json"),
-        serde_json::to_vec_pretty(&env_record).expect("env record serializes"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema": "opi-eval-native-regrade-env/2", "projected": projected,
+            "argv": spec.argv, "cwd": "verifier-trace", "credential_free": true,
+        }))
+        .expect("environment serializes"),
     )
     .map_err(|error| format!("staging-failed:{error}"))?;
-
-    // Spawn the pinned verifier in the fresh trace root. No agent
-    // executable, no handoff, and no provider network exist here.
-    let mut command = std::process::Command::new(&benchmark.verifier_executable.path);
-    command
-        .current_dir(&trace_root)
-        .env_clear()
-        .envs(&projected);
-    let status = command
-        .status()
-        .map_err(|error| format!("verifier-spawn-failed:{error}"))?;
-    if !status.success() {
-        return Err(format!(
-            "fresh-verifier-failed:{}",
-            status.code().unwrap_or(-1)
-        ));
+    if cancel.is_cancelled() {
+        return Err("verifier-cancelled".to_owned());
     }
-
-    // The same binding reader as initial execution validates the fresh
-    // job: identity, declared lifecycle, delivered-vs-collected bytes.
-    let selection = crate::benchmark::process::NativeSelection {
-        kind: crate::benchmark::process::SelectionKind::Integration {
-            product: product.to_owned(),
-            executable_sha256: agent.executable.sha256.clone(),
-        },
-        lifecycle: crate::benchmark::process::TaskLifecycleSelection {
-            environment_mode: lifecycle.environment_mode,
-            declared: lifecycle.declared_artifacts.clone(),
-            base_revision: lifecycle.base_revision.clone(),
-            docker_image: lifecycle.docker_image.clone(),
-        },
-        agent_name: agent_name.to_owned(),
-        agent_import_path: integration.import_path.clone(),
-        task_name: task_name.to_owned(),
-        model,
-        reward_metric: "reward".to_owned(),
-        module_dir: integration.module_dir.clone(),
-        handoff_path: identity_path.clone(),
-        stale_job_names: Vec::new(),
+    let outcome = ProcessSupervisor::run(&spec, cancel).await;
+    // Docker effects outlive their client process. Verify exact owned roots even
+    // when the native module claims cleanup, and settle before the next trial.
+    let cleaned = if matches!(outcome.exit, ExitState::FailedToSpawn { .. }) {
+        true
+    } else {
+        cleanup_verifier(&spec, &build_context, &verifier_id)
+            .await
+            .is_ok()
     };
-    let binding = crate::benchmark::process::import_bound_native_job(&trace_root, &selection)
-        .map_err(|error| format!("fresh-binding-rejected:{}", error.token()))?;
-
-    // Persist the derived grading record; the source bundle and its
-    // original score are never rewritten.
-    let reward = match &binding.reward {
-        crate::agent::process::Fact::Known { value, .. } => *value,
-        crate::agent::process::Fact::Unknown { .. } => {
-            return Err("fresh-binding-rejected:reward-unknown".to_owned());
+    std::fs::write(env_root.join("stdout.log"), &outcome.stdout.bytes)
+        .and_then(|()| std::fs::write(env_root.join("stderr.log"), &outcome.stderr.bytes))
+        .map_err(|error| format!("capture-write-failed:{error}"))?;
+    let process_cleaned = matches!(
+        outcome.cleanup,
+        crate::process::CleanupEvidence::NotRequired
+            | crate::process::CleanupEvidence::TreeTerminated { verified: true, .. }
+    );
+    std::fs::write(env_root.join("settlement.json"), serde_json::to_vec_pretty(&serde_json::json!({
+        "exit": format!("{:?}", outcome.exit), "process_cleanup": format!("{:?}", outcome.cleanup),
+        "containers_removed": cleaned, "compose_working_directory": build_context,
+        "verifier_id": verifier_id, "stdout_truncated": outcome.stdout.truncated,
+        "stderr_truncated": outcome.stderr.truncated,
+    })).expect("settlement serializes")).map_err(|_| "verifier-cleanup-unconfirmed")?;
+    if !cleaned || !process_cleaned {
+        return Err("verifier-cleanup-unconfirmed".to_owned());
+    }
+    match outcome.exit {
+        ExitState::TimedOut => return Err("verifier-timeout".to_owned()),
+        ExitState::Cancelled => return Err("verifier-cancelled".to_owned()),
+        ExitState::FailedToSpawn { .. } => return Err("verifier-spawn-failed".to_owned()),
+        ExitState::Exited { code: 0 } => {}
+        ExitState::Exited { code } => return Err(format!("fresh-verifier-failed:{code}")),
+    }
+    let observation: FreshVerifierObservation = serde_json::from_slice(
+        &std::fs::read(trace_root.join("observation.json"))
+            .map_err(|_| "fresh-observation-missing")?,
+    )
+    .map_err(|_| "fresh-observation-invalid")?;
+    if observation.schema != "opi-eval-verifier-observation/1"
+        || observation.request_sha256 != request_sha256
+        || observation.verifier_id != verifier_id
+        || observation.restored != sealed_collected
+        || observation.build_context_sha256 != context_digest
+    {
+        return Err("fresh-observation-identity-drift".to_owned());
+    }
+    if !observation.cleanup_confirmed {
+        return Err("verifier-cleanup-unconfirmed".to_owned());
+    }
+    if let Some(failure) = &observation.failure {
+        return Err(format!("fresh-verifier-rejected:{failure}"));
+    }
+    let image = observation.image.as_ref().ok_or("fresh-image-unobserved")?;
+    if image.name.is_empty() || !image.id.strip_prefix("sha256:").is_some_and(is_sha256) {
+        return Err("fresh-image-invalid".to_owned());
+    }
+    let raw = observation
+        .raw_result
+        .as_ref()
+        .ok_or("fresh-result-missing")?;
+    if raw.path != "native-result.json" {
+        return Err("fresh-result-path-invalid".to_owned());
+    }
+    let raw_bytes =
+        std::fs::read(trace_root.join(&raw.path)).map_err(|_| "fresh-result-missing")?;
+    if sha256_hex(&raw_bytes) != raw.sha256 {
+        return Err("fresh-result-digest-mismatch".to_owned());
+    }
+    let native: serde_json::Value =
+        serde_json::from_slice(&raw_bytes).map_err(|_| "fresh-result-invalid")?;
+    let reward = match native["rewards"]["reward"].as_f64() {
+        Some(0.0) => 0,
+        Some(1.0) => 1,
+        _ => return Err("fresh-reward-not-binary".to_owned()),
+    };
+    for entry in &sealed_collected {
+        let observed =
+            crate::benchmark::process::collected_digest(&collected_root.join(&entry.destination))
+                .map_err(|_| "restored-artifacts-missing")?;
+        if observed != entry.sha256 {
+            return Err("restored-artifacts-tampered".to_owned());
         }
-    };
+    }
     let record = serde_json::json!({
         "schema": REGRADE_RECORD_SCHEMA,
-        "source": {
-            "trial": trial,
-            "bundle_identity": bundle_identity,
-            "collected": sealed_collected
-                .iter()
-                .map(|(source, destination, sha256)| serde_json::json!({
-                    "source": source,
-                    "destination": destination,
-                    "sha256": sha256,
-                }))
-                .collect::<Vec<_>>(),
-            "original_result": verifier_input
-                .get("original_result")
-                .cloned()
-                .unwrap_or(serde_json::Value::Null),
-        },
-        "fresh": {
+        "source": {"trial": trial, "bundle_identity": bundle_identity,
+            "collected": sealed_collected, "original_result_sha256": request["source"]["original_result_sha256"]},
+        "request_sha256": request_sha256,
+        "fresh": {"verifier_id": verifier_id, "task_name": task_name, "runner": runner,
             "verifier_executable_sha256": benchmark.verifier_executable.sha256,
-            "task_package_schema": lifecycle.schema_version,
-            "lifecycle": {
-                "environment_mode": fresh_mode,
-                "base_revision": lifecycle.base_revision,
-                "docker_image": lifecycle.docker_image,
-                "verifier_network": lifecycle.verifier_network,
-            },
-            "agent_name": binding.agent_name,
-            "task_name": binding.task_name,
-            "job": binding.job_name.to_string_lossy(),
-        },
+            "runner_source_sha256": request["runner_source_sha256"],
+            "module_manifest_sha256": integration.module_manifest_sha256,
+            "task_package_manifest_sha256": task_material.task_package_manifest_sha256,
+            "observation": observation, "native_result": native, "reward": reward},
     });
     let records_dir = out.join("records");
     std::fs::create_dir_all(&records_dir).map_err(|error| format!("staging-failed:{error}"))?;
@@ -849,15 +911,174 @@ fn regrade_one(
         serde_json::to_vec_pretty(&record).expect("record serializes"),
     )
     .map_err(|error| format!("record-write-failed:{error}"))?;
-
     Ok(RegradedTrial {
         trial: trial.to_owned(),
         bundle_identity,
         reward,
         record: record_rel,
-        job: binding.job_name.to_string_lossy().into_owned(),
+        verifier_id,
         verifier_executable_sha256: benchmark.verifier_executable.sha256.clone(),
     })
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct RestoredArtifact {
+    source: String,
+    destination: String,
+    sha256: String,
+}
+
+/// The pinned runners use different default host layouts: Harbor mirrors
+/// sources; Pier uses basenames, with its conventional publish root at `.`.
+fn artifact_destination(
+    declared: &crate::benchmark::task_lifecycle::DeclaredArtifact,
+    family: crate::benchmark::task_lifecycle::TaskFamily,
+) -> &str {
+    let source = declared.source.trim_end_matches('/');
+    let explicit = declared
+        .destination
+        .as_deref()
+        .filter(|path| !path.is_empty());
+    if family == crate::benchmark::task_lifecycle::TaskFamily::Pier {
+        if source == "/logs/artifacts"
+            && explicit.is_none_or(|path| path == "." || path.trim_end_matches('/') == source)
+        {
+            "."
+        } else {
+            explicit
+                .unwrap_or_else(|| source.rsplit('/').next().unwrap_or(source))
+                .trim_matches('/')
+        }
+    } else {
+        explicit.unwrap_or(source).trim_matches('/')
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct FreshVerifierObservation {
+    schema: String,
+    request_sha256: String,
+    verifier_id: String,
+    restored: Vec<RestoredArtifact>,
+    build_context_sha256: String,
+    image: Option<VerifierImage>,
+    raw_result: Option<VerifierResultReference>,
+    cleanup_confirmed: bool,
+    failure: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct VerifierImage {
+    name: String,
+    id: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct VerifierResultReference {
+    path: String,
+    sha256: String,
+}
+
+fn safe_relative(value: &str) -> bool {
+    !value.is_empty()
+        && !value.contains(['\\', ':'])
+        && Path::new(value)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+}
+
+fn is_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+/// A cancelled verifier cannot clean its own Docker effects. Inspect only
+/// identity labels, remove complete owned IDs, then independently query again.
+async fn cleanup_verifier(
+    spec: &crate::process::SpawnSpec,
+    directory: &Path,
+    verifier_id: &str,
+) -> Result<(), ()> {
+    use crate::process::{CleanupEvidence, ExitState, ProcessSupervisor};
+    async fn docker(spec: &crate::process::SpawnSpec, args: &[&str]) -> Result<Vec<u8>, ()> {
+        let mut cleanup = spec.clone();
+        cleanup.argv = std::iter::once("docker".into())
+            .chain(args.iter().map(Into::into))
+            .collect();
+        cleanup.env.retain(|key, _| {
+            matches!(
+                key.to_str(),
+                Some(
+                    "PATH"
+                        | "HOME"
+                        | "USERPROFILE"
+                        | "SystemRoot"
+                        | "DOCKER_HOST"
+                        | "DOCKER_CONTEXT"
+                        | "DOCKER_CONFIG"
+                        | "DOCKER_TLS_VERIFY"
+                        | "DOCKER_CERT_PATH"
+                )
+            )
+        });
+        cleanup.timeout = std::time::Duration::from_secs(15);
+        cleanup.stdout_cap = 64 * 1024;
+        cleanup.stderr_cap = 1024;
+        let result = ProcessSupervisor::run(&cleanup, &CancellationToken::new()).await;
+        if result.exit != (ExitState::Exited { code: 0 })
+            || result.stdout.truncated
+            || !matches!(
+                result.cleanup,
+                CleanupEvidence::NotRequired
+                    | CleanupEvidence::TreeTerminated { verified: true, .. }
+            )
+        {
+            return Err(());
+        }
+        Ok(result.stdout.bytes)
+    }
+    let label = format!(
+        "label=com.docker.compose.project.working_dir={}",
+        directory.display()
+    );
+    let query = ["ps", "--all", "--quiet", "--no-trunc", "--filter", &label];
+    let result = async {
+        let bytes = docker(spec, &query).await?;
+        let ids = std::str::from_utf8(&bytes)
+            .map_err(|_| ())?
+            .lines()
+            .collect::<Vec<_>>();
+        if ids.len() > 64 || ids.iter().any(|id| !is_sha256(id)) {
+            return Err(());
+        }
+        for id in &ids {
+            let bytes = docker(spec, &["inspect", "--type", "container", "--format",
+                r#"{"id":{{json .Id}},"working_dir":{{json (index .Config.Labels "com.docker.compose.project.working_dir")}},"project":{{json (index .Config.Labels "com.docker.compose.project")}}}"#, id]).await?;
+            let identity: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| ())?;
+            if identity["id"] != *id
+                || identity["working_dir"] != directory.to_string_lossy().as_ref()
+                || identity["project"] != verifier_id
+            {
+                return Err(());
+            }
+        }
+        for id in ids {
+            docker(spec, &["rm", "--force", "--volumes", id]).await?;
+        }
+        if !docker(spec, &query).await?.is_empty() {
+            return Err(());
+        }
+        Ok(())
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(30), result)
+        .await
+        .map_err(|_| ())?
 }
 
 #[cfg(test)]

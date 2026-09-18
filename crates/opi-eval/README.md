@@ -261,11 +261,13 @@ mutation or missing seal exits 1 and remains visible in the JSON failure list.
 every source bundle first, requires the saved real Agent artifacts under each
 trial's preserved job tree to still digest to the sealed verifier-input
 identity, then re-grades those preserved artifacts with the pinned native
-verifier in fresh trial-owned environments under `--out` - reusing the same
-binding readers as initial execution - and persists one derived
-`opi-eval-regrade-record/1` grading record per trial that references the
-source bundle, the original artifact identities, and the fresh verifier
-identity, without rewriting any original score. No Agent executable is
+verifier in fresh trial-owned environments under `--out`. The private entry
+uses explicit `uv run --locked --offline python -m <module>` arguments and
+the pinned native Task, ArtifactHandler and Verifier APIs. It emits an
+`opi-eval-native-regrade/2` report and an `opi-eval-regrade-record/2` record
+per successful trial, binding the source bundle, original result, restored
+inputs, task/package, runner/module, image/build context and fresh native
+result digest without rewriting any original score. No Agent executable is
 spawned, no credential is resolved, and no provider is contacted: a task whose
 verifier declares a network requirement without a permitted offline equivalent
 rejects fail-closed, as do tampered bundles, missing or altered Agent
@@ -273,7 +275,11 @@ artifacts, a drifted patch base, and drifted task material identity. Exit 0
 (`"outcome":"regraded"`) means every sealed native trial regraded; exit 1
 names the typed per-trial rejections; exit 2 rejects the request itself (a
 root with no native trial, an unreadable material, or an existing output
-root, which a regrade never overwrites).
+root, which a regrade never overwrites). Only declared, digest-bound preserved
+inputs are restored; missing shared final state cannot be replaced by a
+pristine task. Images must already be cached: this operation never builds or
+pulls. Cancellation and finite process bounds settle owned effects before
+continuing; unconfirmed cleanup blocks success and further dispatch.
 
 ### 4. Produce a report
 
@@ -284,8 +290,25 @@ cargo run -p opi-eval -- report \
 ```
 
 `report` re-verifies the sealed inputs, then renders one
-`opi-eval-normalized-report/1` JSON report. It prints the report to stdout and,
+`opi-eval-normalized-report/2` JSON report (`opi-eval-reporter/2`). It prints the report to stdout and,
 when `--out` is present, writes the same canonical bytes to that path.
+
+The binary task outcome remains 0 or 1: TB2.1 reports native task success,
+TB3 reports task success after declared artifact collection, and DeepSWE
+reports the resolved task outcome after committed-patch verification. Each
+metric names its benchmark revision and counts only valid graded trials;
+zero scores and benchmark-defined Agent timeouts remain in that denominator.
+
+Per-trial `native_grader.test_case_fraction` separately reports the native
+`passed / total`, with numerator, denominator and the raw result digest. Partial
+test success may accompany task reward zero. Missing counters, zero totals and
+invalid counters remain explicit unknowns. `native_fields` preserves additional
+reward fields under their original names without interpreting abbreviations.
+`observation_coverage` counts eligible valid trials, measured fractions and
+unknowns. Invalid trials, corpus/subset coverage, planned/attempted/unexecuted
+trials and pair coverage remain separate; fractions are not pooled across
+trials or benchmark families. Offline reconstruction reads existing sealed
+bundles without rewriting them; absent native observations stay unknown.
 
 Exit 0 and `"outcome":"published"` mean publication succeeded. `REPORT_PATH`
 must be outside `RUN_ROOT` and must not exist: report output never overwrites a
@@ -571,6 +594,30 @@ blocks sealing. The persisted trial configuration must retain that environment
 selection and the effective stage caps. Teardown preserves shared images and
 neighboring resources. Changed integration bytes require fresh material and
 plan identities; existing source bundles are never rewritten.
+
+Run the explicit no-model stage witness with prepared material/5:
+
+```sh
+OPI_EVAL_NATIVE_WITNESS_MATERIAL=/absolute/material.json \
+cargo test -p opi-eval --locked --test native_driver \
+  remediation_native_stage_deadlines -- --exact --ignored --nocapture --test-threads=1
+```
+
+Prepare immutable task/helper images and separate-verifier build contexts before
+timed dispatch. The three families each require all nine controlled cases for
+both subjects; all positive controls run first. Harbor uses a 3-second positive
+verifier cap and a 1-second timeout cap against a 4-second delayed command.
+Pier times the entire verifier lifecycle and retries once: every case uses a
+30-second verifier cap, a 60-second task verifier limit and, for verifier-timeout
+cases, a 60-second delayed command. Agent caps stay at one second, with a
+0.5-second stricter-task control. Each cancelled command needs an observed exit;
+Pier verifier timeouts require two distinct command identities. Native stage
+timestamps, command durations, absent delayed completion and owned-resource
+cleanup remain separate evidence. Command settlement allows at most five extra
+seconds for Pier; paired outer bounds are 270 seconds for Harbor and 510 for
+Pier. Host wall-clock regressions remain diagnostic observations; elapsed checks
+use monotonic clocks. These fixtures establish cancellation conformance, not real
+acceptance.
 
 The pinned Terminal-Bench 3.0 profile gives the whole Harbor job 18,000 seconds:
 14,400 for the task's Agent, 900 for grading, two 600-second environment builds,

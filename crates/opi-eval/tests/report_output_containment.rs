@@ -298,6 +298,105 @@ fn native_reward_cites_exact_trial_result() {
 }
 
 #[test]
+fn native_test_counts_are_separate_provenance_bound_observations() {
+    for (fields, state, reason, value) in [
+        (
+            serde_json::json!({"passed": 5.0, "total": 5.0}),
+            "measured",
+            None,
+            Some(1.0),
+        ),
+        (
+            serde_json::json!({"passed": 0, "total": 5}),
+            "measured",
+            None,
+            Some(0.0),
+        ),
+        (
+            serde_json::json!({"passed": 3, "total": 5, "f2p": 7}),
+            "measured",
+            None,
+            Some(0.6),
+        ),
+        (
+            serde_json::json!({}),
+            "unknown",
+            Some("native-test-counts-missing"),
+            None,
+        ),
+        (
+            serde_json::json!({"passed": 0, "total": 0}),
+            "unknown",
+            Some("native-test-total-zero"),
+            None,
+        ),
+        (
+            serde_json::json!({"passed": 6, "total": 5}),
+            "unknown",
+            Some("native-test-counts-invalid"),
+            None,
+        ),
+        (
+            serde_json::json!({"passed": 0.5, "total": 5}),
+            "unknown",
+            Some("native-test-counts-invalid"),
+            None,
+        ),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        native_report_fixture(root.path());
+        let mut rewards = fields.clone();
+        rewards["reward"] = serde_json::json!(0);
+        fixture_artifact(
+            root.path(),
+            "trial-pi-1",
+            "native/trial-result.json",
+            serde_json::json!({"verifier_result": {"rewards": rewards}}),
+        );
+        let before = fixture_tree_bytes(root.path());
+        let (code, report) = normalized(root.path());
+        assert_eq!(code, 0, "{report}");
+        assert_eq!(report["schema"], "opi-eval-normalized-report/2");
+        assert_eq!(report["reporter_version"], "opi-eval-reporter/2");
+        let trial = report["trials"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|trial| trial["id"] == "trial-pi-1")
+            .unwrap();
+        assert_eq!(trial["headline"]["reward"], "known:0(native-trial-result)");
+        let observation = &trial["native_grader"];
+        let fraction = &observation["test_case_fraction"];
+        assert_eq!(fraction["state"], state, "{trial}");
+        assert_eq!(fraction["reason"].as_str(), reason, "{trial}");
+        assert_eq!(fraction["value"].as_f64(), value, "{trial}");
+        assert_eq!(observation["native_fields"], rewards, "{trial}");
+        assert_eq!(
+            observation["native_source"],
+            trial["headline"]["native_source"]
+        );
+        if state == "measured" {
+            assert_eq!(fraction["numerator"].as_f64(), fields["passed"].as_f64());
+            assert_eq!(fraction["denominator"].as_f64(), fields["total"].as_f64());
+        }
+        assert_eq!(report["metrics"][0]["denominator"], 2);
+        assert_eq!(
+            report["metrics"][1]["observation_coverage"],
+            serde_json::json!({
+                "eligible": 2, "measured": usize::from(state == "measured"),
+                "unknown": 2 - usize::from(state == "measured"),
+            })
+        );
+        assert_eq!(normalized(root.path()).1, report);
+        assert_eq!(
+            fixture_tree_bytes(root.path()),
+            before,
+            "source bytes changed"
+        );
+    }
+}
+
+#[test]
 fn native_reward_without_matching_score_evidence_blocks_publication() {
     for result in [
         serde_json::json!([]),
@@ -356,6 +455,11 @@ fn unsealed_settled_failure_keeps_attempt_and_invalid_denominators() {
     assert_eq!(pi["outcome"]["class"], "invalid", "{pi}");
     assert_eq!(pi["outcome"]["reason"], "verifier-timeout", "{pi}");
     assert_eq!(pi["outcome"]["source"], "unsealed-settlement", "{pi}");
+    assert_eq!(
+        pi["native_grader"]["test_case_fraction"]["reason"],
+        "invalid-trial"
+    );
+    assert_eq!(report["metrics"][1]["observation_coverage"]["eligible"], 1);
     assert!(pi.get("headline").is_none(), "{pi}");
     assert!(pi.get("seal_result").is_none(), "{pi}");
     assert_eq!(

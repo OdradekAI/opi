@@ -84,6 +84,8 @@ fn normalized_report_is_byte_stable_across_independent_runs() {
 
     let (c1, r1, stderr) = report(first.path());
     assert_eq!(c1, 0, "{stderr}");
+    assert_eq!(r1["schema"], "opi-eval-normalized-report/2");
+    assert_eq!(r1["reporter_version"], "opi-eval-reporter/2");
     let (c2, r2, stderr) = report(second.path());
     assert_eq!(c2, 0, "{stderr}");
     assert_eq!(
@@ -134,6 +136,10 @@ fn paired_report_contract_end_to_end() {
         // Diagnostics stay separately labelled, never mixed into the
         // headline.
         assert_eq!(trial["diagnostics"]["label"], "diagnostic", "{trial}");
+        assert_eq!(
+            trial["native_grader"]["test_case_fraction"]["reason"],
+            "native-result-not-observed"
+        );
     }
 
     // No composite score or best-trial verdict anywhere (`EVAL-RPT-005`).

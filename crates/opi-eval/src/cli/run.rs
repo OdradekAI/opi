@@ -172,7 +172,7 @@ pub fn run(args: &RunArgs) -> Result<serde_json::Value, RunCliError> {
 /// cooperative from here on: the process no longer dies mid-settlement;
 /// the runner stops new dispatch, cancels only the owned process trees,
 /// and still renders its interrupted report.
-fn install_signal_cancellation(token: &tokio_util::sync::CancellationToken) {
+pub(super) fn install_signal_cancellation(token: &tokio_util::sync::CancellationToken) {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};

@@ -226,9 +226,16 @@ fn native_outcome_counts_keep_denominators_and_failure_classes() {
     // Each benchmark reports its own metric definition and denominator;
     // results are never averaged into one cross-benchmark headline.
     let metrics = published["metrics"].as_array().unwrap();
-    assert_eq!(metrics.len(), 1, "{published}");
+    assert_eq!(metrics.len(), 2, "{published}");
     assert_eq!(metrics[0]["benchmark"], "terminal-bench/2.1", "{published}");
     assert_eq!(metrics[0]["denominator"], 2, "{published}");
+    assert_eq!(metrics[0]["metric"], "native-task-success");
+    assert_eq!(
+        metrics[1]["observation_coverage"],
+        serde_json::json!({
+            "eligible": 2, "measured": 0, "unknown": 2,
+        })
+    );
     let definition = metrics[0]["definition"].as_str().unwrap();
     assert!(definition.contains("zero"), "{definition}");
     assert!(
@@ -294,6 +301,14 @@ fn native_outcome_counts_keep_denominators_and_failure_classes() {
         .find(|trial| trial["subject"] == "baseline-pi")
         .unwrap();
     assert_eq!(pi["outcome"]["class"], "invalid", "{pi}");
+    assert_eq!(
+        pi["native_grader"]["test_case_fraction"]["reason"],
+        "invalid-trial"
+    );
+    assert_eq!(
+        published["metrics"][1]["observation_coverage"]["eligible"],
+        1
+    );
     assert!(
         pi["outcome"]["reason"]
             .as_str()

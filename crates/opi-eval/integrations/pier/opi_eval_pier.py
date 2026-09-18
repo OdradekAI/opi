@@ -674,3 +674,167 @@ class PiAgent(_OpiEvalAgent):
             f" --provider {shlex.quote(provider)} --model {shlex.quote(model)}"
             f" -- {quoted}"
         )
+
+
+def _regrade_manifest(root: Path) -> str:
+    rows = []
+    for path in sorted(root.rglob("*")):
+        mode = path.lstat().st_mode
+        if stat.S_ISREG(mode):
+            rows.append(f"{path.relative_to(root).as_posix()}\n{hashlib.sha256(path.read_bytes()).hexdigest()}\n")
+        elif not stat.S_ISDIR(mode):
+            raise ValueError("unsafe-verifier-input")
+    return hashlib.sha256("".join(rows).encode()).hexdigest()
+
+
+def _regrade_artifact(path: Path) -> str:
+    if path.is_symlink():
+        raise ValueError("unsafe-verifier-input")
+    if path.is_file():
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    _regrade_manifest(path)
+    rows = [f"{entry.relative_to(path).as_posix()}\\n{hashlib.sha256(entry.read_bytes()).hexdigest()}"
+            for entry in sorted(path.rglob("*")) if entry.is_file()]
+    return hashlib.sha256("\\n".join(rows).encode()).hexdigest()
+
+
+async def _regrade_docker(*args: str) -> str:
+    process = await asyncio.create_subprocess_exec(
+        "docker", *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await process.communicate()
+    if process.returncode or len(stdout) > 65536:
+        raise ValueError("cached-verifier-image-unavailable")
+    return stdout.decode().strip()
+
+
+class _VerifierDockerEnvironment(OwnedDockerEnvironment):
+    """Use cached native images; offline regrading never builds or pulls."""
+
+    async def _cached_image(self, name):
+        identity = await _regrade_docker("image", "inspect", "--format", "{{.Id}}", name)
+        if not identity.startswith("sha256:") or len(identity) != 71:
+            raise ValueError("cached-verifier-image-unavailable")
+        return {"name": name, "id": identity}
+
+    async def _run_docker_compose_command(self, command, **kwargs):
+        command = list(command)
+        if command and command[0] == "build":
+            # Both pinned starts await build without reading its return value.
+            # The exact native image name must already exist from preparation.
+            await self._cached_image(self._env_vars.main_image_name)
+            return None
+        if command and command[0] == "up":
+            name = self.task_env_config.docker_image if self._use_prebuilt else self._env_vars.main_image_name
+            self.regrade_image = await self._cached_image(name)
+            command.extend(["--no-build", "--pull", "never"])
+        if command and command[0] == "pull":
+            raise ValueError("offline-verifier-pull-refused")
+        return await super()._run_docker_compose_command(command, **kwargs)
+
+
+async def _regrade(request_path: Path) -> None:
+    import logging
+    from pier.models.task.task import Task
+    from pier.models.task.verifier_mode import resolve_effective_verifier_env_config
+    from pier.models.trial.paths import TrialPaths, EnvironmentPaths
+    from pier.trial.artifact_handler import ArtifactHandler
+    from pier.verifier.verifier import Verifier
+
+    request_bytes = request_path.read_bytes()
+    request = json.loads(request_bytes)
+    if request.get("schema") != "opi-eval-verifier-request/1" or request.get("runner") != 'pier':
+        raise ValueError("invalid-verifier-request")
+    root = Path(request["trace_root"])
+    if root.resolve() != request_path.parent.resolve() / "verifier-trace":
+        raise ValueError("invalid-verifier-root")
+    observation = {
+        "schema": "opi-eval-verifier-observation/1",
+        "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
+        "verifier_id": request["verifier_id"], "restored": request["restored"],
+        "build_context_sha256": request["build_context_sha256"],
+        "image": None, "raw_result": None, "cleanup_confirmed": True, "failure": None,
+    }
+    environment = None
+    try:
+        task_path = Path(request["task_package"])
+        if _regrade_manifest(task_path) != request["task_package_manifest_sha256"]:
+            raise ValueError("task-package-drift")
+        task = Task(task_path)
+        if task.has_steps or task.name != request["task_name"]:
+            raise ValueError("task-identity-drift")
+        separate = request["environment_mode"] == "separate"
+        env_config = resolve_effective_verifier_env_config(task.config, None)
+        if separate != (env_config is not None):
+            raise ValueError("lifecycle-drift")
+        env_config = env_config if separate else task.config.environment
+        context = task.paths.tests_dir if separate else task.paths.environment_dir
+        if _regrade_manifest(context) != request["build_context_sha256"]:
+            raise ValueError("verifier-build-context-drift")
+        for values in (env_config.env, task.config.verifier.env):
+            if any(any(part in key.upper() for part in ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"))
+                   for key in values):
+                raise ValueError("verifier-env-credential")
+        collected = Path(request["collected_root"])
+        for entry in request["restored"]:
+            relative = PurePosixPath(entry["destination"])
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError("unsafe-verifier-input")
+            if _regrade_artifact(collected / relative) != entry["sha256"]:
+                raise ValueError("restored-artifacts-tampered")
+        paths = TrialPaths(root)
+        paths.mkdir()
+        logger = logging.getLogger("opi-eval-verifier")
+        if env_config.allow_internet:
+            raise ValueError("verifier-network-required")
+        environment = _VerifierDockerEnvironment(
+            environment_dir=context, environment_name=task.name,
+            session_id=request["verifier_id"], trial_paths=paths, task_env_config=env_config,
+            logger=logger, agent_install_spec=None, network_allowlist=None,
+            default_user=task.config.verifier.user,
+            mounts_json=[{"type": "bind", "source": str(paths.verifier_dir), "target": "/logs/verifier"}],
+        )
+        observation["cleanup_confirmed"] = False
+        await environment.start(force_build=False)
+        observation["image"] = environment.regrade_image
+        container = await environment._run_docker_compose_command(["ps", "--quiet", "main"])
+        actual_image = await _regrade_docker("inspect", "--type", "container", "--format", "{{.Image}}", container.stdout.strip())
+        if actual_image != observation["image"]["id"]:
+            raise ValueError("verifier-image-drift")
+        env_paths = EnvironmentPaths.for_os(env_config.os)
+        await environment.empty_dirs([env_paths.verifier_dir], chmod=True)
+        handler = ArtifactHandler(artifacts=task.config.artifacts, logger=logger)
+        await handler.upload_artifacts(
+            environment, artifacts_dir=collected,
+            source_artifacts_dir=env_paths.artifacts_dir, target_artifacts_dir=env_paths.artifacts_dir,
+        )
+        verifier = Verifier(task=task, trial_paths=paths, environment=environment,
+                            logger=logger, skip_tests_upload=separate, verifier_env=None)
+        limits = [float(request["timeout_seconds"])]
+        for value in (task.config.verifier.timeout_sec, request.get("verifier_timeout_seconds")):
+            if value is not None and value > 0:
+                limits.append(float(value))
+        result = await asyncio.wait_for(verifier.verify(), min(limits))
+        raw = result.model_dump_json().encode()
+        (root / "native-result.json").write_bytes(raw)
+        observation["raw_result"] = {"path": "native-result.json", "sha256": hashlib.sha256(raw).hexdigest()}
+    except (Exception, asyncio.CancelledError) as error:
+        observation["failure"] = ("verifier-timeout" if isinstance(error, TimeoutError)
+                                   else "verifier-cancelled" if isinstance(error, asyncio.CancelledError)
+                                   else str(error) if isinstance(error, ValueError) else type(error).__name__)
+    finally:
+        if environment is not None:
+            try:
+                await environment.stop(delete=True)
+                observation["cleanup_confirmed"] = True
+            except (Exception, asyncio.CancelledError):
+                observation["cleanup_confirmed"] = False
+        (root / "observation.json").write_text(json.dumps(observation, sort_keys=True) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) != 2:
+        raise SystemExit("one private verifier request is required")
+    asyncio.run(_regrade(Path(sys.argv[1])))

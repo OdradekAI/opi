@@ -83,6 +83,55 @@ pub(crate) struct NativeMetrics {
     pub other: Option<Fact>,
 }
 
+/// Projects only explicitly named native test counters. The binary task reward
+/// remains independent; opaque reward fields retain their native names. Invalid
+/// trials cannot contribute a measured fraction even when raw counters exist.
+pub(crate) fn native_grader_observation(
+    result: Option<&serde_json::Value>,
+    digest: Option<&str>,
+    graded: bool,
+) -> serde_json::Value {
+    let fields = result.map(|value| &value["verifier_result"]["rewards"]);
+    let passed = fields.and_then(|fields| native_count(&fields["passed"]));
+    let total = fields.and_then(|fields| native_count(&fields["total"]));
+    let reason = if !graded {
+        Some("invalid-trial")
+    } else if result.is_none() || digest.is_none() {
+        Some("native-result-not-observed")
+    } else if fields.is_none_or(|fields| fields["passed"].is_null() || fields["total"].is_null()) {
+        Some("native-test-counts-missing")
+    } else {
+        match (passed, total) {
+            (Some(0), Some(0)) => Some("native-test-total-zero"),
+            (Some(passed), Some(total)) if passed <= total => None,
+            _ => Some("native-test-counts-invalid"),
+        }
+    };
+    serde_json::json!({
+        "test_case_fraction": {
+            "state": if reason.is_none() { "measured" } else { "unknown" },
+            "reason": reason,
+            "numerator": passed,
+            "denominator": total,
+            "value": if reason.is_none() {
+                Some(passed.expect("validated counter") as f64 / total.expect("validated counter") as f64)
+            } else { None },
+        },
+        "native_fields": fields,
+        "native_source": digest.map(|digest| serde_json::json!({
+            "artifact": "native/trial-result.json", "digest": digest,
+        })),
+    })
+}
+
+/// Native reward maps may encode counters as floats. Only exact nonnegative
+/// integers in the common lossless JSON-number range are eligible.
+fn native_count(value: &serde_json::Value) -> Option<u64> {
+    let count = value.as_f64()?;
+    (count.is_finite() && (0.0..=9_007_199_254_740_991.0).contains(&count) && count.fract() == 0.0)
+        .then_some(count as u64)
+}
+
 /// What the dispatch selected: the pinned opi-eval integration Agent, or
 /// an explicitly selected upstream diagnostic witness (oracle/nop). A
 /// witness is conformance evidence that never becomes an Agent score and

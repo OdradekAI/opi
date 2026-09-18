@@ -2060,6 +2060,8 @@ async fn run_native_trial(
         ledger.attempt_failed(AuthorityTransition::GradeDispatch, boundary);
     }
 
+    let mut native_result = None;
+    let mut native_result_digest = None;
     let native_agent = binding.map(|binding| native_agent_record(product, &model, binding));
     if let Some((agent, terminal_evidence)) = &native_agent {
         let bytes = serde_json::to_vec(terminal_evidence)
@@ -2123,6 +2125,13 @@ async fn run_native_trial(
                 let bytes = std::fs::read(&path).map_err(|error| {
                     RunError::Native(format!("bound evidence unreadable: {error}"))
                 })?;
+                if role == "native/trial-result.json" {
+                    native_result =
+                        Some(serde_json::from_slice::<serde_json::Value>(&bytes).map_err(
+                            |error| RunError::Native(format!("bound result unparsable: {error}")),
+                        )?);
+                    native_result_digest = Some(super::material::sha256_hex(&bytes));
+                }
                 produced_keys.push(stage(
                     &mut bundle,
                     &grader_source,
@@ -2377,6 +2386,10 @@ async fn run_native_trial(
         "group": declared.group,
         "status": if seal_outcome.is_some() { "sealed" } else { "failed" },
         "mode": "native",
+        "native_grader": crate::benchmark::process::native_grader_observation(
+            native_result.as_ref(), native_result_digest.as_deref(),
+            seal_outcome.is_some() && matches!(class, NativeTrialClass::GradedNative { .. }),
+        ),
         "agent": match binding {
             Some(binding) => json!({
                 "product": product,

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- `opi-eval`: normalized reports and reporter identity move to
+  `opi-eval-normalized-report/2` and `opi-eval-reporter/2`. Binary native task
+  outcomes retain their benchmark-specific meanings. Native test-case
+  `passed / total` is a separate per-trial observation with raw provenance,
+  explicit unknown reasons and observation coverage; opaque native reward
+  fields keep their original names. Existing sealed bundles are read without
+  mutation, and missing observations are not inferred from task scores.
+
+- `opi-eval`: native regrading emits `opi-eval-native-regrade/2` and
+  `opi-eval-regrade-record/2`. Its explicit offline entry runs the pinned
+  native verifier directly, binds restored inputs and fresh grading evidence,
+  and never constructs an Agent job. It requires cached images and sufficient
+  declared preserved inputs; uncertain cleanup blocks further dispatch.
+  Original bundles and scores remain unchanged.
+
 - `opi-eval`: native material moves to `opi-eval-native-material/5`, and
   frozen plans/previews to `opi-eval-run-plan/2` / `opi-eval-plan-preview/2`.
   Complete pinned corpora are independent of the per-task material map;

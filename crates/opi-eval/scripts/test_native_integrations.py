@@ -220,6 +220,61 @@ class NativeEnvironmentTest(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue((Path(root) / "opi-eval-effect-unknown").exists())
 
 
+class VerifierOnlyEnvironmentTest(unittest.IsolatedAsyncioTestCase):
+    async def test_offline_verifier_never_builds_or_pulls(self):
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                environment = module._VerifierDockerEnvironment(Path(root))
+                environment._env_vars = types.SimpleNamespace(main_image_name="native-cached-image")
+                environment.task_env_config = types.SimpleNamespace(docker_image=None)
+                environment._use_prebuilt = False
+                inspections = []
+                async def cached(*args):
+                    inspections.append(args)
+                    return "sha256:" + "a" * 64
+                with patch.object(module, "_regrade_docker", cached):
+                    await environment._run_docker_compose_command(["build"])
+                    self.assertEqual(environment.commands, [])
+                    await environment._run_docker_compose_command(["up", "--detach", "--wait"])
+                    self.assertEqual(environment.commands, [["up", "--detach", "--wait", "--no-build", "--pull", "never"]])
+                    self.assertEqual(environment.regrade_image["id"], "sha256:" + "a" * 64)
+                    with self.assertRaisesRegex(ValueError, "pull-refused"):
+                        await environment._run_docker_compose_command(["pull"])
+                self.assertEqual(len(inspections), 2)
+                self.assertTrue(all(args[-1] == "native-cached-image" for args in inspections))
+
+    async def test_missing_cached_verifier_image_prevents_start(self):
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                environment = module._VerifierDockerEnvironment(Path(root))
+                environment._env_vars = types.SimpleNamespace(main_image_name="missing")
+                environment.task_env_config = types.SimpleNamespace(docker_image="missing")
+                environment._use_prebuilt = True
+                async def missing(*args):
+                    raise ValueError("cached-verifier-image-unavailable")
+                with patch.object(module, "_regrade_docker", missing):
+                    for command in (["build"], ["up", "--detach", "--wait"]):
+                        with self.assertRaisesRegex(ValueError, "image-unavailable"):
+                            await environment._run_docker_compose_command(command)
+                self.assertEqual(environment.commands, [])
+
+    async def test_restored_bytes_bind_file_and_directory_contents(self):
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                answer = root / "answer"
+                answer.write_bytes(b"correct\n")
+                expected = hashlib.sha256(b"correct\n").hexdigest()
+                self.assertEqual(module._regrade_artifact(answer), expected)
+                self.assertEqual(module._regrade_artifact(root), hashlib.sha256(f"answer\\n{expected}".encode()).hexdigest())
+                answer.write_bytes(b"incorrect\n")
+                self.assertNotEqual(module._regrade_artifact(answer), expected)
+                if os.name == "posix":
+                    answer.with_name("link").symlink_to(answer)
+                    with self.assertRaisesRegex(ValueError, "unsafe-verifier-input"):
+                        module._regrade_artifact(root)
+
+
 class FakeEnvironment:
     """Async file-transfer/exec boundary with no shell, container, or provider."""
 

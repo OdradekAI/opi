@@ -215,19 +215,39 @@ run root 必须是全新的：请使用不存在或为空、且不含以往 dura
 会写入 `run-report.json`，并在 `trials/<trial-id>/` 下为每次 trial 写入 receipt
 和 bundle。
 
-### 3. 重新验证 sealed bundle
+### 3. 验证 sealed bundle，或离线原生重评
 
 ```sh
-cargo run -p opi-eval -- regrade --root "$RUN_ROOT"
+cargo run -p opi-eval -- verify --root "$RUN_ROOT"
+cargo run -p opi-eval -- regrade \
+  --root "$RUN_ROOT" \
+  --native-material "$MATERIAL" \
+  --out "$REGRADE_OUT"
 ```
 
-`regrade` 会读取每个 `trials/<trial-id>/bundle`，重新计算其身份，并检查所有受覆盖
+`verify` 会读取每个 `trials/<trial-id>/bundle`，重新计算其身份，并检查所有受覆盖
 artifact。它不会启动 Agent 或 Provider，不会修复 bundle、为变更后的字节重新
 计算摘要，也不会修改 run root。
 
 退出码为 0 且包含 `"outcome":"verified"`，表示所有 sealed bundle 仍与各自
 manifest 一致。发现修改或缺失 seal 时，命令以 1 退出，并在 JSON failure 列表中
 保留问题。
+
+`regrade` 执行独立的原生重评（`P19-AC-009`）：先验证源 bundle，再检查每个 trial
+保留的 Agent artifact 与 sealed verifier-input 摘要一致。它在 `--out` 下创建全新
+的 trial 专属环境，通过显式 `uv run --locked --offline python -m <module>`
+参数调用私有入口，直接使用固定版本的 Task、ArtifactHandler 和 Verifier API。
+输出为 `opi-eval-native-regrade/2`；每个成功 trial 写入
+`opi-eval-regrade-record/2`，绑定源 bundle、原始结果、恢复输入、任务包、runner、
+模块、镜像、构建上下文与新原生结果摘要，原始分数和证据保持不变。
+
+重评不启动 Agent、不解析凭据、不联系 Provider，也不构建或拉取镜像。
+仅恢复已声明、保留且绑定摘要的输入；缺失共享环境最终状态时，不能用原始任务状态
+替代。缓存材料缺失、输入被修改、任务或补丁基线漂移，以及无法离线满足的 verifier
+网络要求均会被拒绝。取消和有限进程边界会先完成专属资源清理；清理无法确认时，
+禁止成功结算和后续派发。退出码 0（`"outcome":"regraded"`）表示全部原生 trial
+重评成功，1 表示逐 trial 类型化拒绝，2 表示请求被拒绝（没有原生 trial、材料不可读
+或输出目录已存在）；已有输出目录不会被覆盖。
 
 ### 4. 生成报告
 
@@ -238,8 +258,21 @@ cargo run -p opi-eval -- report \
 ```
 
 `report` 会先重新验证 sealed input，再渲染一个
-`opi-eval-normalized-report/1` JSON 报告。报告会输出到 stdout；如果传入
+`opi-eval-normalized-report/2` JSON 报告（`opi-eval-reporter/2`）。报告会输出到 stdout；如果传入
 `--out`，同一份规范字节还会写入指定路径。
+
+二元任务结果仍为 0 或 1：TB2.1 表示原生任务成功，TB3 表示完成声明产物收集后的
+任务成功，DeepSWE 表示 committed patch 验证后的任务解决结果。每个指标标明
+benchmark revision，仅以有效已评分 trial 为分母；零分和 benchmark 定义的
+Agent 超时仍计入该分母。
+
+每个 trial 的 `native_grader.test_case_fraction` 单独呈现原生 `passed / total`，
+同时记录分子、分母及原始结果摘要。部分测试通过可以与任务零分并存。缺失计数、
+零总数和无效计数均保留明确的 unknown 原因。`native_fields` 按原名保留其他
+reward 字段，不推测缩写含义。`observation_coverage` 分别统计可计入的有效 trial、
+已测得比例和未知项。无效 trial、corpus/subset 覆盖、计划/尝试/未执行 trial 和
+配对覆盖保持独立；不跨 trial 或 benchmark family 合并测试比例。离线重建读取
+现有 sealed bundle，不重写源证据；缺失的原生观测继续保持 unknown。
 
 退出码为 0 且包含 `"outcome":"published"`，表示报告发布成功。`REPORT_PATH`
 必须位于 `RUN_ROOT` 外部且尚不存在；报告输出绝不会覆盖 sealed input 或以前的
@@ -486,6 +519,25 @@ Docker 环境。每条命令保留自身的进程组身份；阶段取消必须�
 才能结算。无法确认终止时，停止后续派发并阻断封存。持久化 trial 配置必须保留
 该环境选择和有效的阶段时限。销毁保留共享镜像与相邻资源。integration 字节变化
 要求新的 material 和 plan 身份；已有源 bundle 不会被改写。
+
+使用准备好的 material/5 显式运行无模型阶段见证：
+
+```sh
+OPI_EVAL_NATIVE_WITNESS_MATERIAL=/absolute/material.json \
+cargo test -p opi-eval --locked --test native_driver \
+  remediation_native_stage_deadlines -- --exact --ignored --nocapture --test-threads=1
+```
+
+计时派发前准备不可变任务/helper 镜像及独立 verifier 构建上下文。三个家族各需
+覆盖九种受控场景和两个主体，先运行全部正向控制。Harbor 的正向 verifier 上限
+为 3 秒，超时控制为 1 秒，对应延迟 4 秒的命令。Pier 对整个 verifier 生命周期
+计时并重试一次：所有场景显式使用 30 秒 verifier 上限、60 秒任务 verifier
+时限，verifier 超时场景的命令延迟 60 秒。Agent 上限保持 1 秒，另有任务自身
+0.5 秒的更严格控制。每条被取消命令都须观察到退出；Pier verifier 超时须保留
+两个不同命令身份。原生阶段时间戳、命令耗时、未达到延迟完成点和自有资源清理
+分别保留证据。Pier 命令结算最多额外允许 5 秒；两主体外层观察界限分别为
+Harbor 270 秒、Pier 510 秒。这些 fixture 证明取消契约，不代表真实验收。
+主机墙钟回拨保留为诊断观察，耗时检查使用单调时钟。
 
 固定的 Terminal-Bench 3.0 profile 为整个 Harbor 作业分配 18,000 秒：任务 Agent
 14,400 秒、评分 900 秒、两次环境构建各 600 秒，其余准备、收集和清理预留 1,500 秒。
