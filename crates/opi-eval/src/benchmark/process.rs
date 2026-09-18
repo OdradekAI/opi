@@ -1182,6 +1182,14 @@ fn native_job_config(request: &BenchmarkRunRequest) -> Result<serde_json::Value,
             },
         }],
         "verifier": {"max_timeout_sec": request.verifier_timeout_seconds},
+        "environment": {
+            "type": "docker",
+            "import_path": if matches!(selection.kind, SelectionKind::Integration { .. }) {
+                Some(format!("{}:OwnedDockerEnvironment", selection.agent_import_path.split(':').next().ok_or_else(reject)?))
+            } else {
+                None
+            },
+        },
         "tasks": [{"path": task_path}],
         "datasets": [],
     }))
@@ -1196,6 +1204,9 @@ fn native_stage_config_matches(config: &std::path::Path, expected: &serde_json::
     let Ok(observed) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
         return false;
     };
+    if observed["environment"]["import_path"] != expected["environment"]["import_path"] {
+        return false;
+    }
     for (actual, wanted) in [
         (&observed["agent"], &expected["agents"][0]),
         (&observed["verifier"], &expected["verifier"]),
@@ -1292,6 +1303,26 @@ impl BenchmarkExecution {
         let outcome = ProcessSupervisor::run(&spec, cancel).await;
         let wall_time = started.elapsed();
         let (mut reward, mut completion) = adapter.settle(&outcome, request);
+        let termination_unknown = request.native_selection.as_ref().is_some_and(|selection| {
+            new_job_dir(&request.trace_root, &selection.stale_job_names)
+                .ok()
+                .and_then(|(_, job)| std::fs::read_dir(job).ok())
+                .is_some_and(|entries| {
+                    entries
+                        .flatten()
+                        .any(|entry| entry.path().join("opi-eval-effect-unknown").exists())
+                })
+        });
+        if termination_unknown {
+            cancel.cancel();
+            reward = Fact::Unknown {
+                reason: "native-command-termination-unconfirmed".to_owned(),
+            };
+            completion = BenchmarkCompletion::Failed(BenchmarkFailure {
+                kind: "native-command-termination-unconfirmed",
+                boundary: FailureBoundaryCode::Infrastructure,
+            });
+        }
         if let (Some(expected), BenchmarkCompletion::VerifiedNative { binding, .. }) =
             (&native_config, &completion)
             && !native_stage_config_matches(&binding.config_path, expected)

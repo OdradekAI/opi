@@ -106,6 +106,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `opi-eval`: pinned Harbor/Pier jobs select an owned Docker execution
+  environment for both Agent and verifier stages. Cancellation waits for the
+  container command's observed exit; uncertain termination stops further
+  dispatch and blocks sealing. Trial configuration binds the selected
+  environment. Teardown preserves shared images and removes only trial-owned
+  resources; refreshed integration bytes require new material identities.
+
 - `opi-eval`: native preparation, planning and dispatch retain effective
   Agent/verifier resource, network, lifecycle and deadline requirements with
   pinned default origins. Required unobserved or insufficient engine resources,

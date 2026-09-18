@@ -38,12 +38,15 @@ import os
 import re
 import shlex
 import stat
+import time
+import uuid
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
 from pier.agents.base import BaseAgent
 from pier.environments.base import BaseEnvironment
+from pier.environments.docker.docker import DockerEnvironment
 from pier.models.agent.context import AgentContext
 from pier.models.agent.network import NetworkAllowlist
 
@@ -67,6 +70,135 @@ _MAX_DELIVERED_BYTES = 64 * 1024 * 1024
 class _OpiEvalAgentError(RuntimeError):
     """Raised for integration contract violations (fail-closed)."""
 
+
+
+class OwnedDockerEnvironment(DockerEnvironment):
+    """Supervise each native exec through its observed container-command exit."""
+
+    async def _settle_shielded(self, task, *, propagate_cancellation=False):
+        # Repeated caller cancellation must not interrupt the bounded settlement.
+        cancelled = False
+        while True:
+            try:
+                result = await asyncio.shield(task)
+                break
+            except asyncio.CancelledError:
+                cancelled = True
+                if task.done():
+                    result = task.result()
+                    break
+        if cancelled and propagate_cancellation:
+            raise asyncio.CancelledError
+        return result
+
+    def _effect_unknown(self, reason):
+        (self.trial_paths.trial_dir / "opi-eval-effect-unknown").write_text(
+            reason + "\n", encoding="utf-8",
+        )
+
+    async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None):
+        identity = uuid.uuid4().hex
+        state = f"/tmp/opi-eval-exec-{identity}"
+        # Bash job control creates one process group for this invocation.
+        # Keep the transport alive until wait reports that group's actual exit.
+        wrapped = (
+            f"(umask 077; mkdir {state}) || exit 125\n"
+            "set -m\n"
+            f"bash -c {shlex.quote(command)} &\n"
+            "opi_eval_pid=$!\n"
+            f"printf '%s\\n' \"$opi_eval_pid\" > {state}/pid\n"
+            "wait \"$opi_eval_pid\"\n"
+            "opi_eval_code=$?\n"
+            f"rm -f {state}/pid; rmdir {state}\n"
+            "exit \"$opi_eval_code\""
+        )
+        started = time.monotonic()
+        launch = asyncio.create_task(super().exec(
+            wrapped, cwd=cwd, env=env, timeout_sec=None, user=user,
+        ))
+        termination = "completed"
+        result = None
+        try:
+            if timeout_sec is None:
+                result = await asyncio.shield(launch)
+            else:
+                result = await asyncio.wait_for(asyncio.shield(launch), timeout_sec)
+            return result
+        except (asyncio.CancelledError, TimeoutError) as cause:
+            termination = "cancelled" if isinstance(cause, asyncio.CancelledError) else "timeout"
+
+            async def settle():
+                try:
+                    async with asyncio.timeout(5):
+                        if not launch.done():
+                            stop = (
+                                f"for i in {{1..100}}; do test -f {state}/pid && break; sleep 0.01; done\n"
+                                f"if read -r pid < {state}/pid; then\n"
+                                "[[ $pid =~ ^[1-9][0-9]*$ ]] && kill -KILL -- -\"$pid\"\n"
+                                "fi"
+                            )
+                            await super(OwnedDockerEnvironment, self).exec(
+                                stop, user="root", timeout_sec=2,
+                            )
+                        return await asyncio.shield(launch)
+                except Exception as exc:
+                    self._effect_unknown("native command exit could not be observed")
+                    # This uses the upstream environment's exact compose project.
+                    # No shared image, neighboring project, or global prune is used.
+                    try:
+                        await self._run_docker_compose_command(["stop"], timeout_sec=5)
+                        await asyncio.wait_for(asyncio.shield(launch), 5)
+                    except Exception:
+                        pass
+                    raise RuntimeError("native command termination is uncertain") from exc
+
+            result = await self._settle_shielded(asyncio.create_task(settle()))
+            raise
+        except Exception:
+            self._effect_unknown("native exec transport failed")
+            raise
+        finally:
+            record = {
+                "command_id": identity,
+                "command_sha256": hashlib.sha256(command.encode()).hexdigest(),
+                "elapsed_seconds": time.monotonic() - started,
+                "exit_code": None if result is None else result.return_code,
+                "termination": termination,
+            }
+            with (self.trial_paths.trial_dir / "opi-eval-commands.jsonl").open(
+                "a", encoding="utf-8",
+            ) as log:
+                log.write(json.dumps(record, sort_keys=True) + "\n")
+
+    async def _run_docker_compose_command(self, command, **kwargs):
+        command = list(command)
+        if command and command[0] == "down" and "--rmi" in command:
+            index = command.index("--rmi")
+            del command[index:index + 2]
+        try:
+            return await super()._run_docker_compose_command(command, **kwargs)
+        except Exception:
+            if command and command[0] in ("down", "stop"):
+                self._effect_unknown("owned environment cleanup failed")
+            raise
+
+    async def stop(self, delete):
+        async def settle():
+            try:
+                async with asyncio.timeout(15):
+                    await super(OwnedDockerEnvironment, self).stop(delete)
+                    # Upstream teardown logs some failures without raising them.
+                    if (self.trial_paths.trial_dir / "opi-eval-effect-unknown").exists():
+                        raise RuntimeError("owned environment cleanup unavailable")
+                    remaining = await self._run_docker_compose_command(
+                        ["ps", "--all", "--quiet"], timeout_sec=5,
+                    )
+                    if remaining.stdout and remaining.stdout.strip():
+                        raise RuntimeError("owned environment resources remain")
+            except Exception:
+                self._effect_unknown("owned environment cleanup failed")
+                raise
+        await self._settle_shielded(asyncio.create_task(settle()), propagate_cancellation=True)
 
 class _OpiEvalAgent(BaseAgent):
     """Shared implementation for the opi-eval selected Agents."""

@@ -2001,6 +2001,11 @@ async fn run_native_trial(
         Some("owned-resource-cleanup-unconfirmed")
     } else if partial_capture_failed {
         Some("partial-capture-unconfirmed")
+    } else if job_record.as_ref().is_some_and(|record| matches!(
+        &record.completion,
+        BenchmarkCompletion::Failed(failure) if failure.kind == "native-command-termination-unconfirmed"
+    )) {
+        Some("native-command-termination-unconfirmed")
     } else {
         None
     };

@@ -59,13 +59,45 @@ class RunnerPierBaseAgent(RunnerBaseAgent):
         return types.SimpleNamespace(domains=[])
 
 
+class RunnerDockerEnvironment:
+    """Pinned exec transport seam, backed by real isolated shell commands."""
+
+    def __init__(self, root):
+        self.work = root
+        self.trial_paths = types.SimpleNamespace(trial_dir=root)
+        self.session_id = root.name
+        self._keep_containers = False
+        self.commands = []
+
+    async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None):
+        proc = await asyncio.create_subprocess_exec(
+            "bash", "-c", command, cwd=cwd or self.work,
+            env={"PATH": "/usr/bin:/bin", **(env or {})},
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        return types.SimpleNamespace(return_code=proc.returncode,
+                                     stdout=stdout.decode(), stderr=stderr.decode())
+
+    async def _run_docker_compose_command(self, command, **kwargs):
+        self.commands.append(command)
+        return types.SimpleNamespace(return_code=0, stdout="", stderr="")
+
+    async def prepare_logs_for_host(self):
+        pass
+
+    async def stop(self, delete):
+        await self._run_docker_compose_command(["down", "--rmi", "all", "--volumes"])
+
+
 def load_integration(family):
     """Stub only imported runner types; execute the real integration module."""
     modules = {}
     for suffix in ("", ".agents", ".agents.base", ".agents.installed",
                    ".agents.installed.base", ".environments", ".environments.base",
                    ".models", ".models.agent", ".models.agent.context",
-                   ".models.agent.network"):
+                   ".models.agent.network", ".environments.docker",
+                   ".environments.docker.docker"):
         name = family + suffix
         modules[name] = types.ModuleType(name)
     modules[f"{family}.agents.base"].BaseAgent = (
@@ -73,6 +105,7 @@ def load_integration(family):
     )
     modules[f"{family}.agents.installed.base"].NonZeroAgentExitCodeError = NonZeroAgentExitCodeError
     modules[f"{family}.environments.base"].BaseEnvironment = object
+    modules[f"{family}.environments.docker.docker"].DockerEnvironment = RunnerDockerEnvironment
     modules[f"{family}.models.agent.context"].AgentContext = object
     modules[f"{family}.models.agent.network"].NetworkAllowlist = types.SimpleNamespace
     path = ROOT / "integrations" / family / f"opi_eval_{family}.py"
@@ -84,6 +117,107 @@ def load_integration(family):
 
 
 INTEGRATIONS = {family: load_integration(family) for family in ("harbor", "pier")}
+
+
+@unittest.skipUnless(os.name == "posix", "requires Linux process groups and shell")
+class NativeEnvironmentTest(unittest.IsolatedAsyncioTestCase):
+    async def test_native_exec_preserves_command_umask(self):
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                baseline = await RunnerDockerEnvironment(Path(root)).exec("umask")
+                observed = await module.OwnedDockerEnvironment(Path(root)).exec("umask")
+                self.assertEqual(observed.stdout, baseline.stdout)
+
+    async def test_native_exec_cancellation_stops_effects_and_observes_exit(self):
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                environment = module.OwnedDockerEnvironment(root)
+                launch = asyncio.create_task(environment.exec(
+                    "touch started; (sleep 0.6; touch escaped) & wait"))
+                async with asyncio.timeout(2):
+                    while not (root / "started").exists():
+                        await asyncio.sleep(0.01)
+                launch.cancel()
+                await asyncio.sleep(0.01)
+                launch.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await launch
+                await asyncio.sleep(0.7)
+                self.assertFalse((root / "escaped").exists())
+                rows = [json.loads(row) for row in
+                        (root / "opi-eval-commands.jsonl").read_text().splitlines()]
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["exit_code"], 137)
+                self.assertEqual(rows[0]["termination"], "cancelled")
+
+    async def test_native_exec_completion_timeout_and_race(self):
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                environment = module.OwnedDockerEnvironment(Path(root))
+                for code in (0, 7):
+                    result = await environment.exec(f"printf result; exit {code}")
+                    self.assertEqual(result.return_code, code)
+                    self.assertEqual(result.stdout, "result")
+                with self.assertRaises(TimeoutError):
+                    await environment.exec("sleep 0.6; touch escaped", timeout_sec=0.05)
+                for _ in range(5):
+                    launch = asyncio.create_task(environment.exec("sleep 0.01"))
+                    await asyncio.sleep(0.01)
+                    launch.cancel()
+                    try:
+                        await launch
+                    except asyncio.CancelledError:
+                        pass
+                await asyncio.sleep(0.7)
+                self.assertFalse((Path(root) / "escaped").exists())
+
+    async def test_native_stop_preserves_shared_images_and_surfaces_failure(self):
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                environment = module.OwnedDockerEnvironment(Path(root))
+                await environment.stop(delete=True)
+                self.assertIn(["down", "--volumes"], environment.commands)
+                self.assertFalse(any("--rmi" in cmd for cmd in environment.commands))
+                async def failed(*args, **kwargs):
+                    raise RuntimeError("cleanup unavailable")
+                with patch.object(RunnerDockerEnvironment, "_run_docker_compose_command", failed):
+                    with self.assertRaisesRegex(RuntimeError, "cleanup unavailable"):
+                        await environment.stop(delete=True)
+
+    async def test_native_stop_settles_before_propagating_cancellation(self):
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                environment = module.OwnedDockerEnvironment(Path(root))
+                settled = asyncio.Event()
+                async def slow_stop(*args, **kwargs):
+                    await asyncio.sleep(0.1)
+                    settled.set()
+                with patch.object(RunnerDockerEnvironment, "stop", slow_stop):
+                    stop = asyncio.create_task(environment.stop(delete=True))
+                    await asyncio.sleep(0.01)
+                    stop.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await stop
+                self.assertTrue(settled.is_set())
+
+    async def test_failed_command_termination_escalates_only_owned_environment(self):
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                environment = module.OwnedDockerEnvironment(Path(root))
+                original = RunnerDockerEnvironment.exec
+                async def broken_stop(instance, command, **kwargs):
+                    if kwargs.get("user") == "root":
+                        raise RuntimeError("termination transport failed")
+                    return await original(instance, command, **kwargs)
+                with patch.object(RunnerDockerEnvironment, "exec", broken_stop):
+                    launch = asyncio.create_task(environment.exec("sleep 0.2"))
+                    await asyncio.sleep(0.02)
+                    launch.cancel()
+                    with self.assertRaisesRegex(RuntimeError, "termination is uncertain"):
+                        await launch
+                self.assertEqual(environment.commands, [["stop"]])
+                self.assertTrue((Path(root) / "opi-eval-effect-unknown").exists())
 
 
 class FakeEnvironment:

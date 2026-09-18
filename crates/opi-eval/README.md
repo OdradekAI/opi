@@ -563,6 +563,15 @@ record are never followed during acceptance.
 
 ### Bounded cancellation
 
+Native Harbor/Pier jobs select the pinned integration's supervised Docker
+environment for both Agent and verifier execution. Each command retains its
+own process-group identity; stage cancellation waits for an observed command
+exit before settling. Uncertain termination stops subsequent dispatch and
+blocks sealing. The persisted trial configuration must retain that environment
+selection and the effective stage caps. Teardown preserves shared images and
+neighboring resources. Changed integration bytes require fresh material and
+plan identities; existing source bundles are never rewritten.
+
 The pinned Terminal-Bench 3.0 profile gives the whole Harbor job 18,000 seconds:
 14,400 for the task's Agent, 900 for grading, two 600-second environment builds,
 and 1,500 for remaining setup, collection and cleanup. This outer deadline is

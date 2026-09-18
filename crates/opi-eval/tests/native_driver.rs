@@ -480,6 +480,7 @@ trial = json.loads(path.read_text())
 for key in ('max_timeout_sec', 'override_timeout_sec', 'model_name'):
     trial['agent'][key] = job['agents'][0].get(key)
 trial['verifier'] = job['verifier']
+trial['environment'] = job['environment']
 for key in ('timeout_multiplier', 'agent_timeout_multiplier', 'verifier_timeout_multiplier'):
     trial[key] = job[key]
 path.write_text(json.dumps(trial))
@@ -7092,6 +7093,50 @@ fn remediation_native_stage_deadlines() {
     let guard = tempfile::tempdir().unwrap();
     let evidence = guard.keep();
     eprintln!("native deadline evidence: {}", evidence.display());
+    // The neighboring container and shared immutable image must survive every
+    // trial's Agent and separate-verifier cleanup, including deadline paths.
+    let image = "python@sha256:272efc3f94bec901e2bc7a5c9984b3d113c317839edca2714c6a388b9476f8fc";
+    let inspect_image = || {
+        Command::new("/usr/bin/docker")
+            .args(["image", "inspect", "--format", "{{.Id}}", image])
+            .output()
+            .unwrap()
+    };
+    let image_before = inspect_image();
+    assert!(image_before.status.success());
+    let neighbor = Command::new("/usr/bin/docker")
+        .args([
+            "run",
+            "--detach",
+            "--pull",
+            "never",
+            "--network",
+            "none",
+            "--label",
+        ])
+        .arg(format!("opi-eval-stage-neighbor={}", evidence.display()))
+        .args([image, "sleep", "3600"])
+        .output()
+        .unwrap();
+    assert!(
+        neighbor.status.success(),
+        "{}",
+        String::from_utf8_lossy(&neighbor.stderr)
+    );
+    struct Neighbor(String);
+    impl Drop for Neighbor {
+        fn drop(&mut self) {
+            let _ = Command::new("/usr/bin/docker")
+                .args(["rm", "--force", &self.0])
+                .output();
+        }
+    }
+    let neighbor_id = String::from_utf8(neighbor.stdout)
+        .unwrap()
+        .trim()
+        .to_owned();
+    assert!(neighbor_id.len() == 64 && neighbor_id.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    let neighbor = Neighbor(neighbor_id);
     for family in ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"] {
         for (case, bounds, exception) in [
             (
@@ -7249,29 +7294,42 @@ fn remediation_native_stage_deadlines() {
                     exception,
                     "{family}/{case}: {native}"
                 );
-                let phase = if verifier_timeout {
-                    "verifier"
-                } else {
-                    "agent_execution"
-                };
-                let timing = Command::new("/usr/bin/python3")
-                    .arg("-c")
-                    .arg("import datetime,json,sys; t=json.load(open(sys.argv[1]))[sys.argv[2]]; print((datetime.datetime.fromisoformat(t['finished_at'])-datetime.datetime.fromisoformat(t['started_at'])).total_seconds())")
-                    .arg(&result)
-                    .arg(phase)
-                    .output()
-                    .unwrap();
-                assert!(timing.status.success(), "{family}/{case}: {native}");
-                let seconds: f64 = String::from_utf8(timing.stdout)
-                    .unwrap()
-                    .trim()
-                    .parse()
-                    .unwrap();
+                let directory = result.parent().unwrap();
                 assert!(
-                    seconds < 4.0,
-                    "{family}/{case}: {phase} took {seconds}s, reaching the delayed completion"
+                    fs::read_to_string(directory.join("agent/stderr.log"))
+                        .unwrap()
+                        .contains("stage-witness-start"),
+                    "Agent never started"
                 );
+                let observations =
+                    fs::read_to_string(directory.join("opi-eval-commands.jsonl")).unwrap();
+                let commands: Vec<serde_json::Value> = observations
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                assert!(
+                    commands
+                        .iter()
+                        .all(|row| row["exit_code"].as_i64().is_some()),
+                    "{family}/{case}: a command exit was not observed: {commands:?}"
+                );
+                if exception.is_some() {
+                    let stopped: Vec<_> = commands
+                        .iter()
+                        .filter(|row| row["exit_code"] == 137)
+                        .collect();
+                    assert_eq!(stopped.len(), 1, "{family}/{case}: {commands:?}");
+                    let seconds = stopped[0]["elapsed_seconds"].as_f64().unwrap();
+                    // Measure only the exec, excluding native environment startup and
+                    // teardown. The strict task's 0.5s cap must beat the 3s override.
+                    let upper = if case == "strict-task" { 1.5 } else { 2.5 };
+                    assert!(seconds < upper, "{family}/{case}: command took {seconds}s");
+                }
                 if verifier_timeout {
+                    assert!(
+                        directory.join("verifier/stage-start").exists(),
+                        "verifier never started"
+                    );
                     assert!(!result.parent().unwrap().join("verifier/stage-end").exists());
                 } else if exception == Some("AgentTimeoutError") {
                     assert!(
@@ -7285,25 +7343,40 @@ fn remediation_native_stage_deadlines() {
                 }
             }
             for trial in ["trial-opi-native", "trial-pi-native"] {
-                let owned = run
-                    .join("trials")
-                    .join(trial)
-                    .join("task-package/environment");
-                let listed = Command::new("/usr/bin/docker")
-                    .args(["ps", "-aq", "--filter"])
-                    .arg(format!(
-                        "label=com.docker.compose.project.working_dir={}",
-                        owned.display()
-                    ))
-                    .output()
-                    .unwrap();
-                assert!(listed.status.success());
-                assert!(
-                    listed.stdout.is_empty(),
-                    "owned containers remain after {family}/{case}"
-                );
+                for component in ["environment", "tests"] {
+                    let owned = run
+                        .join("trials")
+                        .join(trial)
+                        .join("task-package")
+                        .join(component);
+                    let listed = Command::new("/usr/bin/docker")
+                        .args(["ps", "-aq", "--filter"])
+                        .arg(format!(
+                            "label=com.docker.compose.project.working_dir={}",
+                            owned.display()
+                        ))
+                        .output()
+                        .unwrap();
+                    assert!(listed.status.success());
+                    assert!(
+                        listed.stdout.is_empty(),
+                        "owned containers remain after {family}/{case}"
+                    );
+                }
             }
             assert_eq!(fs::read(&material).unwrap(), input);
+            let image_after = inspect_image();
+            assert!(
+                image_after.status.success(),
+                "shared image removed after {family}/{case}"
+            );
+            assert_eq!(image_after.stdout, image_before.stdout);
+            let alive = Command::new("/usr/bin/docker")
+                .args(["inspect", "--format", "{{.State.Running}}", &neighbor.0])
+                .output()
+                .unwrap();
+            assert!(alive.status.success());
+            assert_eq!(String::from_utf8(alive.stdout).unwrap().trim(), "true");
         }
     }
 }
@@ -7321,6 +7394,8 @@ fn native_stage_configuration_drift_rejects_scores() {
         "trial['verifier_timeout_multiplier'] = 1000",
         "trial['agent']['max_timeout_sec'] = None",
         "trial['verifier']['override_timeout_sec'] = 'invalid'",
+        "trial['environment']['import_path'] = None",
+        "trial['environment']['import_path'] = 'harbor.environments.docker.docker:DockerEnvironment'",
     ] {
         let staged = stage("ok");
         remediation_runner(&staged, |body| {
@@ -7347,6 +7422,41 @@ fn native_stage_configuration_drift_rejects_scores() {
             );
         }
     }
+}
+
+#[test]
+fn native_unobserved_command_exit_stops_dispatch_and_sealing() {
+    let staged = stage("ok");
+    remediation_runner(&staged, |body| {
+        body.replace(
+        "path.write_text(json.dumps(trial))",
+        "path.write_text(json.dumps(trial))\n(path.parent / 'opi-eval-effect-unknown').write_text('command exit unobserved')",
+    )
+    });
+    let config = write_config(&staged);
+    let root = staged.root.join("run");
+    let (code, stdout, stderr) = run_native(&staged, &config, &root);
+    assert_eq!(code, 1, "{stdout} {stderr}");
+    assert_eq!(
+        walk_files_matching(&root, "opi-eval-effect-unknown").len(),
+        1,
+        "uncertain termination must stop the second dispatch"
+    );
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert!(
+        report["trials"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|trial| trial["classification"]["reason"]
+                == "native-command-termination-unconfirmed")
+    );
+    assert!(
+        walk_files_matching(&root, "manifest.json")
+            .iter()
+            .all(|path| !path.parent().unwrap().ends_with("bundle")),
+        "uncertain execution cannot seal"
+    );
 }
 
 #[test]

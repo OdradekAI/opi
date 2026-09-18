@@ -481,6 +481,12 @@ Companion `verify` 与 `report`。退出码 0 表示接受证据；退出码 2
 
 ### 有界取消
 
+原生 Harbor/Pier job 为 Agent 和 verifier 执行选择固定 integration 中的受监督
+Docker 环境。每条命令保留自身的进程组身份；阶段取消必须等到观察到命令退出后
+才能结算。无法确认终止时，停止后续派发并阻断封存。持久化 trial 配置必须保留
+该环境选择和有效的阶段时限。销毁保留共享镜像与相邻资源。integration 字节变化
+要求新的 material 和 plan 身份；已有源 bundle 不会被改写。
+
 固定的 Terminal-Bench 3.0 profile 为整个 Harbor 作业分配 18,000 秒：任务 Agent
 14,400 秒、评分 900 秒、两次环境构建各 600 秒，其余准备、收集和清理预留 1,500 秒。
 外层期限与任务原生的 Agent、评分器期限各自独立。修改 profile 需要新的材料与计划身份，
