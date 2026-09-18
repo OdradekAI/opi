@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// The one admitted manifest schema identity.
-pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/4";
+pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/5";
 
 /// Typed material rejections (exit-path failures, never settled outcomes).
 #[derive(Debug, Error)]
@@ -33,7 +33,7 @@ pub(crate) enum MaterialError {
 }
 
 /// One pinned file identity: the path plus its required SHA-256.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PinnedFile {
     pub(crate) path: PathBuf,
@@ -188,17 +188,32 @@ impl RunnerProject {
 }
 
 /// One benchmark revision's resolved native material.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct BenchmarkMaterial {
-    /// The production profile TOML (declarative identity, never the
-    /// synthetic fixture profile).
-    pub(crate) profile: PathBuf,
+pub(crate) struct TaskMaterial {
+    pub(crate) native_task_name: String,
+    pub(crate) profile: PinnedFile,
     /// The materialized official task package directory.
     pub(crate) task_package: PathBuf,
     /// Sorted-manifest digest of the task package the runner recomputes
     /// and compares (fail-closed against producer-side drift).
     pub(crate) task_package_manifest_sha256: String,
+}
+
+/// Full pinned source inventory, independent of the selected material map.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CorpusMaterial {
+    pub(crate) root: PathBuf,
+    pub(crate) source_commit: String,
+    pub(crate) tasks_tree: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BenchmarkMaterial {
+    pub(crate) corpus: CorpusMaterial,
+    pub(crate) tasks: BTreeMap<String, TaskMaterial>,
     /// The pinned verifier entrypoint (the resolved `uv` executable; the
     /// adapter owns the exact `uv run --locked ...` argv).
     pub(crate) verifier_executable: PinnedFile,
@@ -249,6 +264,13 @@ impl NativeMaterial {
     /// identity sets must be exact.
     pub(crate) fn load_for(path: &Path, products: &[&str]) -> Result<Self, MaterialError> {
         let text = std::fs::read_to_string(path)?;
+        let header: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|error| MaterialError::Rejected(format!("manifest parse failed: {error}")))?;
+        if header["schema"] != MATERIAL_SCHEMA {
+            return Err(MaterialError::Rejected(format!(
+                "unknown native-material schema; regenerate material as {MATERIAL_SCHEMA}"
+            )));
+        }
         let material: NativeMaterial = serde_json::from_str(&text)
             .map_err(|error| MaterialError::Rejected(format!("manifest parse failed: {error}")))?;
         let mut selected: Vec<&str> = products.to_vec();
@@ -324,47 +346,7 @@ impl NativeMaterial {
                     "benchmark {benchmark:?} is not admitted"
                 )));
             }
-            if !entry.profile.is_file() {
-                return Err(MaterialError::Rejected(format!(
-                    "benchmark {benchmark} profile is missing: {}",
-                    entry.profile.display()
-                )));
-            }
-            // The package root is either one task directory (its
-            // task.toml sits at the root) or a corpus directory of task
-            // subdirectories; every enumerated task must carry the
-            // official instruction (P19-D06 generalization; the pinned
-            // manifest digest still covers the whole tree).
-            let single_task = entry.task_package.join("task.toml").is_file();
-            let task_dirs: Vec<PathBuf> = if single_task {
-                vec![entry.task_package.clone()]
-            } else {
-                let mut children: Vec<PathBuf> = std::fs::read_dir(&entry.task_package)
-                    .map_err(|error| {
-                        MaterialError::Rejected(format!(
-                            "benchmark {benchmark} task package unreadable: {error}"
-                        ))
-                    })?
-                    .filter_map(|child| child.ok())
-                    .map(|child| child.path())
-                    .filter(|path| path.is_dir() && path.join("task.toml").is_file())
-                    .collect();
-                children.sort();
-                children
-            };
-            if task_dirs.is_empty() {
-                return Err(MaterialError::Rejected(format!(
-                    "benchmark {benchmark} task package holds no task with a task.toml"
-                )));
-            }
-            for dir in &task_dirs {
-                if !dir.join("instruction.md").is_file() {
-                    return Err(MaterialError::Rejected(format!(
-                        "benchmark {benchmark} task {} has no instruction.md",
-                        dir.display()
-                    )));
-                }
-            }
+            entry.verify_tasks(benchmark, &material.static_lock.path)?;
             verify_pinned(&entry.verifier_executable)?;
             if let Some(project) = &entry.runner_project {
                 project.verify(benchmark, &entry.verifier_env, &material.static_lock.path)?;
@@ -398,6 +380,612 @@ impl NativeMaterial {
             ))
         })
     }
+}
+
+impl BenchmarkMaterial {
+    pub(crate) fn task(&self, id: &str) -> Result<&TaskMaterial, MaterialError> {
+        self.tasks.get(id).ok_or_else(|| {
+            MaterialError::Rejected(format!(
+                "selected task {id:?} has no byte-bound native material; prepare that task"
+            ))
+        })
+    }
+
+    pub(crate) fn verify_tasks(
+        &self,
+        adapter: &str,
+        lock_path: &Path,
+    ) -> Result<(), MaterialError> {
+        let lock: serde_json::Value = serde_json::from_slice(&std::fs::read(lock_path)?)
+            .map_err(|error| MaterialError::Rejected(error.to_string()))?;
+        self.corpus.verify(adapter, &lock)?;
+        if self.tasks.is_empty() {
+            return Err(MaterialError::Rejected(
+                "selected native task map is empty".to_owned(),
+            ));
+        }
+        for (id, task) in &self.tasks {
+            if id.is_empty()
+                || id
+                    .chars()
+                    .any(|ch| !(ch.is_ascii_alphanumeric() || "-_.".contains(ch)))
+                || id.contains("..")
+            {
+                return Err(MaterialError::Rejected(
+                    "invalid canonical native task id".to_owned(),
+                ));
+            }
+            verify_pinned(&task.profile)?;
+            if task_package_manifest_digest(&task.task_package)?
+                != task.task_package_manifest_sha256
+            {
+                return Err(MaterialError::Rejected(format!(
+                    "task package manifest drift for {adapter}/{id}"
+                )));
+            }
+            let source = self.corpus.root.join(id);
+            let task_tree = git_text(
+                &self.corpus.root,
+                &["rev-parse", &format!("{}:{id}", self.corpus.tasks_tree)],
+            )?;
+            let profile: toml::Value = std::fs::read_to_string(&task.profile.path)?
+                .parse()
+                .map_err(|error| MaterialError::Rejected(format!("profile parse: {error}")))?;
+            for (field, expected) in [
+                ("task_id", id.as_str()),
+                ("task_tree", task_tree.as_str()),
+                ("source_commit", self.corpus.source_commit.as_str()),
+                ("tasks_tree", self.corpus.tasks_tree.as_str()),
+            ] {
+                if profile
+                    .get("identity")
+                    .and_then(|identity| identity.get(field))
+                    .and_then(toml::Value::as_str)
+                    != Some(expected)
+                {
+                    return Err(MaterialError::Rejected(format!(
+                        "{adapter}/{id} profile {field} differs from pinned corpus"
+                    )));
+                }
+            }
+            let profile_bytes = std::fs::read(&task.profile.path)?;
+            let admitted = match adapter {
+                "terminal-bench-2.1" => {
+                    crate::benchmark::terminal_bench_21::Tb21Profile::parse(&profile_bytes[..])
+                        .map_err(|error| error.to_string())
+                        .and_then(|profile| {
+                            profile
+                                .validate_task_package(&task.task_package)
+                                .map_err(|error| error.to_string())
+                        })
+                }
+                "terminal-bench-3.0" => {
+                    crate::benchmark::terminal_bench_30::Tb30Profile::parse(&profile_bytes[..])
+                        .map_err(|error| error.to_string())
+                        .and_then(|profile| {
+                            profile
+                                .admit_task_package(&task.task_package)
+                                .map(|_| ())
+                                .map_err(|error| error.to_string())
+                        })
+                }
+                _ => crate::benchmark::deepswe::DeepSweProfile::parse(&profile_bytes[..])
+                    .map_err(|error| error.to_string())
+                    .and_then(|profile| {
+                        profile
+                            .admit_task_package(&task.task_package)
+                            .map(|_| ())
+                            .map_err(|error| error.to_string())
+                    }),
+            };
+            admitted.map_err(MaterialError::Rejected)?;
+            let source_doc: toml::Value = std::fs::read_to_string(source.join("task.toml"))?
+                .parse()
+                .map_err(|error| MaterialError::Rejected(format!("task metadata: {error}")))?;
+            let native_name = source_doc
+                .get("task")
+                .and_then(|task| task.get("name").or_else(|| task.get("id")))
+                .and_then(toml::Value::as_str)
+                .unwrap_or(id);
+            if task.native_task_name != native_name {
+                return Err(MaterialError::Rejected(format!(
+                    "{id} native task name differs from pinned corpus"
+                )));
+            }
+            verify_materialized_package(&source, &task.task_package, &lock)?;
+        }
+        Ok(())
+    }
+}
+
+/// Git reads use no user configuration, hooks, external diff, or network.
+pub(crate) fn git_text(root: &Path, args: &[&str]) -> Result<String, MaterialError> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .output()?;
+    if !output.status.success() {
+        return Err(MaterialError::Rejected(format!(
+            "pinned corpus Git inspection failed at {}",
+            root.display()
+        )));
+    }
+    String::from_utf8(output.stdout)
+        .map(|text| text.trim_end_matches('\n').to_owned())
+        .map_err(|_| MaterialError::Rejected("corpus paths must be UTF-8".to_owned()))
+}
+
+impl CorpusMaterial {
+    pub(crate) fn verify(
+        &self,
+        adapter: &str,
+        lock: &serde_json::Value,
+    ) -> Result<(), MaterialError> {
+        let pin = lock["subjects"]
+            .as_array()
+            .and_then(|subjects| subjects.iter().find(|subject| subject["id"] == adapter))
+            .ok_or_else(|| {
+                MaterialError::Rejected(format!("static lock has no {adapter} corpus"))
+            })?;
+        if pin["commit"].as_str() != Some(&self.source_commit)
+            || pin["tasks_tree"].as_str() != Some(&self.tasks_tree)
+        {
+            return Err(MaterialError::Rejected(format!(
+                "{adapter} corpus identity differs from static lock"
+            )));
+        }
+        let project = PathBuf::from(git_text(&self.root, &["rev-parse", "--show-toplevel"])?);
+        if project.join("tasks").canonicalize()? != self.root.canonicalize()?
+            || git_text(&self.root, &["rev-parse", "HEAD"])? != self.source_commit
+            || git_text(&self.root, &["rev-parse", "HEAD:tasks"])? != self.tasks_tree
+        {
+            return Err(MaterialError::Rejected(format!(
+                "{adapter} corpus root/commit/tree drift"
+            )));
+        }
+        git_text(
+            &project,
+            &["diff", "--no-ext-diff", "--quiet", "HEAD", "--", "tasks"],
+        )?;
+        for args in [
+            vec!["ls-files", "--others", "--exclude-standard", "--", "tasks"],
+            vec![
+                "ls-files",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--",
+                "tasks",
+            ],
+        ] {
+            if !git_text(&project, &args)?.is_empty() {
+                return Err(MaterialError::Rejected(
+                    "pinned corpus contains untracked task bytes".to_owned(),
+                ));
+            }
+        }
+        // This also rejects links and special files before metadata is read.
+        runtime_package_manifest_digest(&self.root)?;
+        let tree = git_text(&self.root, &["ls-tree", "-r", "-z", &self.tasks_tree])?;
+        let mut expected = Vec::new();
+        let mut paths = Vec::new();
+        for row in tree.split('\0').filter(|row| !row.is_empty()) {
+            let (identity, relative) = row
+                .split_once('\t')
+                .ok_or_else(|| MaterialError::Rejected("invalid corpus Git entry".to_owned()))?;
+            let fields = identity.split_whitespace().collect::<Vec<_>>();
+            if fields.len() != 3 || fields[1] != "blob" || !matches!(fields[0], "100644" | "100755")
+            {
+                return Err(MaterialError::Rejected(
+                    "unsupported corpus source entry".to_owned(),
+                ));
+            }
+            let file = self.root.join(relative);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if (std::fs::metadata(&file)?.permissions().mode() & 0o111 != 0)
+                    != (fields[0] == "100755")
+                {
+                    return Err(MaterialError::Rejected(
+                        "corpus source mode drift".to_owned(),
+                    ));
+                }
+            }
+            expected.push(fields[2]);
+            paths.push(file);
+        }
+        let mut observed = Vec::new();
+        for batch in paths.chunks(128) {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&self.root)
+                .args(["hash-object", "--no-filters", "--"])
+                .args(batch)
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .output()?;
+            if !output.status.success() {
+                return Err(MaterialError::Rejected(
+                    "cannot hash pinned corpus working bytes".to_owned(),
+                ));
+            }
+            observed.extend(
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .map(str::to_owned),
+            );
+        }
+        if observed != expected {
+            return Err(MaterialError::Rejected(
+                "corpus working bytes differ from pinned Git blobs".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Image resolution may replace a declared image reference with the exact
+/// immutable manifest from the admitted lock. All other source bytes remain
+/// unchanged; resolved task packages keep their own file table and digest.
+pub(crate) fn resolved_image(
+    reference: &str,
+    lock: &serde_json::Value,
+) -> Result<String, MaterialError> {
+    let immutable = |image: &str| {
+        image.rsplit_once("@sha256:").is_some_and(|(name, digest)| {
+            !name.is_empty()
+                && digest.len() == 64
+                && digest
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
+    };
+    if immutable(reference) {
+        return Ok(reference.to_owned());
+    }
+    let image = lock["images"].as_array().and_then(|images| images.iter().find(|image| image["reference"] == reference))
+        .ok_or_else(|| MaterialError::Rejected(format!("mutable/unbound task image {reference:?}; resolve its immutable image material first")))?;
+    let manifest = image["manifest"].as_str().unwrap_or_default();
+    let resolved = format!("{reference}@{manifest}");
+    if !immutable(&resolved) {
+        return Err(MaterialError::Rejected(format!(
+            "image {reference:?} has no immutable manifest"
+        )));
+    }
+    Ok(resolved)
+}
+
+pub(crate) fn materialized_task_file(
+    relative: &str,
+    bytes: &[u8],
+    lock: &serde_json::Value,
+) -> Result<Vec<u8>, MaterialError> {
+    if relative == "task.toml" {
+        let text = std::str::from_utf8(bytes)
+            .map_err(|_| MaterialError::Rejected("task metadata UTF-8".to_owned()))?;
+        let doc: toml::Value = text
+            .parse()
+            .map_err(|error| MaterialError::Rejected(format!("task metadata: {error}")))?;
+        let mut replacements = BTreeMap::new();
+        for (section, environment) in [
+            ("environment", doc.get("environment")),
+            (
+                "verifier.environment",
+                doc.get("verifier")
+                    .and_then(|value| value.get("environment")),
+            ),
+        ] {
+            if let Some(image) = environment.and_then(|value| value.get("docker_image")) {
+                let reference = image.as_str().ok_or_else(|| {
+                    MaterialError::Rejected("task image must be a string".to_owned())
+                })?;
+                let resolved = resolved_image(reference, lock)?;
+                if reference != resolved {
+                    replacements.insert(section, resolved);
+                }
+            }
+        }
+        let mut output = String::new();
+        let mut section = "";
+        for line in text.split_inclusive('\n') {
+            let trimmed = line.trim();
+            if let Some(name) = trimmed
+                .strip_prefix('[')
+                .and_then(|name| name.strip_suffix(']'))
+            {
+                section = name;
+            }
+            if line
+                .split_once('=')
+                .is_some_and(|(key, _)| key.trim() == "docker_image")
+                && let Some(image) = replacements.remove(section)
+            {
+                output.push_str(&format!("docker_image = {image:?}\n"));
+            } else {
+                output.push_str(line);
+            }
+        }
+        if !replacements.is_empty() {
+            return Err(MaterialError::Rejected(
+                "unsupported image declaration layout".to_owned(),
+            ));
+        }
+        return Ok(output.into_bytes());
+    }
+    if Path::new(relative)
+        .file_name()
+        .is_some_and(|name| name == "Dockerfile")
+    {
+        let text = std::str::from_utf8(bytes)
+            .map_err(|_| MaterialError::Rejected("Dockerfile UTF-8".to_owned()))?;
+        let mut output = String::new();
+        let mut stages = std::collections::BTreeSet::new();
+        for line in text.lines() {
+            let words = line.split_whitespace().collect::<Vec<_>>();
+            if words
+                .first()
+                .is_some_and(|word| word.eq_ignore_ascii_case("FROM"))
+            {
+                if words.len() != 2 && !(words.len() == 4 && words[2].eq_ignore_ascii_case("AS")) {
+                    return Err(MaterialError::Rejected(
+                        "unsupported Dockerfile FROM shape; immutable image identity is unproven"
+                            .to_owned(),
+                    ));
+                }
+                let image = if words[1] == "scratch" || stages.contains(words[1]) {
+                    words[1].to_owned()
+                } else {
+                    resolved_image(words[1], lock)?
+                };
+                output.push_str(&format!("FROM {image}"));
+                if words.len() == 4 {
+                    stages.insert(words[3]);
+                    output.push_str(&format!(" AS {}", words[3]));
+                }
+            } else {
+                output.push_str(line);
+            }
+            output.push('\n');
+        }
+        return Ok(output.into_bytes());
+    }
+    Ok(bytes.to_vec())
+}
+
+fn verify_materialized_package(
+    source: &Path,
+    package: &Path,
+    lock: &serde_json::Value,
+) -> Result<(), MaterialError> {
+    runtime_package_manifest_digest(package)?;
+    let mut files = Vec::new();
+    visit_files(source, source, &mut files)?;
+    let mut observed = Vec::new();
+    visit_files(package, package, &mut observed)?;
+    files.sort();
+    observed.sort();
+    if files.iter().map(|(path, _)| path).collect::<Vec<_>>()
+        != observed.iter().map(|(path, _)| path).collect::<Vec<_>>()
+    {
+        return Err(MaterialError::Rejected(
+            "materialized task file set differs from pinned source".to_owned(),
+        ));
+    }
+    for (relative, _) in files {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let source_mode = std::fs::metadata(source.join(&relative))?
+                .permissions()
+                .mode()
+                & 0o111;
+            let package_mode = std::fs::metadata(package.join(&relative))?
+                .permissions()
+                .mode()
+                & 0o111;
+            if source_mode != package_mode {
+                return Err(MaterialError::Rejected(format!(
+                    "materialized task {relative} executable mode differs from pinned source"
+                )));
+            }
+        }
+        let expected =
+            materialized_task_file(&relative, &std::fs::read(source.join(&relative))?, lock)?;
+        if std::fs::read(package.join(&relative))? != expected {
+            return Err(MaterialError::Rejected(format!(
+                "materialized task {relative} differs from pinned source and image resolution"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Inspect immutable image identities already present at the selected engine.
+/// This observation never pulls an image or starts a container.
+pub(crate) fn image_preflight(
+    package: &Path,
+    lock: &serde_json::Value,
+    environment: &BTreeMap<String, String>,
+) -> serde_json::Value {
+    let collect = || -> Result<std::collections::BTreeSet<String>, MaterialError> {
+        let mut images = std::collections::BTreeSet::new();
+        let metadata = materialized_task_file(
+            "task.toml",
+            &std::fs::read(package.join("task.toml"))?,
+            lock,
+        )?;
+        let doc: toml::Value = std::str::from_utf8(&metadata)
+            .map_err(|_| MaterialError::Rejected("task metadata UTF-8".to_owned()))?
+            .parse()
+            .map_err(|error| MaterialError::Rejected(format!("task metadata: {error}")))?;
+        for env in [
+            doc.get("environment"),
+            doc.get("verifier")
+                .and_then(|value| value.get("environment")),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let Some(image) = env.get("docker_image").and_then(toml::Value::as_str) {
+                images.insert(image.to_owned());
+            }
+        }
+        let mut files = Vec::new();
+        visit_files(package, package, &mut files)?;
+        for (relative, _) in files {
+            if Path::new(&relative)
+                .file_name()
+                .is_none_or(|name| name != "Dockerfile")
+            {
+                continue;
+            }
+            let bytes =
+                materialized_task_file(&relative, &std::fs::read(package.join(&relative))?, lock)?;
+            for line in String::from_utf8_lossy(&bytes).lines() {
+                let words = line.split_whitespace().collect::<Vec<_>>();
+                if words.first() == Some(&"FROM")
+                    && words.get(1).is_some_and(|image| image.contains("@sha256:"))
+                {
+                    images.insert(words[1].to_owned());
+                }
+            }
+        }
+        Ok(images)
+    };
+    let images = match collect() {
+        Ok(images) => images,
+        Err(error) => return serde_json::json!({"status": "unmet", "reason": error.to_string()}),
+    };
+    let entries = images.iter().map(|image| {
+        let output = std::process::Command::new("docker").args(["image", "inspect", "--format", "{{json .RepoDigests}}", image])
+            .env_clear().envs(environment).output();
+        let digests = output.ok().filter(|output| output.status.success())
+            .and_then(|output| serde_json::from_slice::<Vec<String>>(&output.stdout).ok());
+        let present = digests.as_ref().is_some_and(|digests| digests.iter().any(|digest| digest.rsplit_once('@').map(|(_, digest)| digest) == image.rsplit_once('@').map(|(_, digest)| digest)));
+        serde_json::json!({"image": image, "status": if present {"known"} else {"unknown"}, "source": "selected-engine:docker-image-inspect",
+            "reason": if present { None } else { Some("immutable image missing or unobservable; populate the selected engine cache before freezing") }})
+    }).collect::<Vec<_>>();
+    let missing = entries
+        .iter()
+        .filter(|entry| entry["status"] != "known")
+        .filter_map(|entry| entry["image"].as_str())
+        .collect::<Vec<_>>();
+    serde_json::json!({"status": if missing.is_empty() {"ok"} else {"unknown"}, "reason": if missing.is_empty() {String::new()} else {format!("immutable images missing/unobserved: {}; populate the selected engine cache", missing.join(", "))}, "images": entries})
+}
+
+/// Materializes one selected task from verified source. Existing cached bytes
+/// are reusable only when identical; a stale package is never overwritten.
+pub(crate) fn materialize_task(
+    corpus: &CorpusMaterial,
+    id: &str,
+    template: &Path,
+    package: &Path,
+    profile_path: &Path,
+    lock: &serde_json::Value,
+) -> Result<TaskMaterial, MaterialError> {
+    let source = corpus.root.join(id);
+    runtime_package_manifest_digest(&source)?;
+    let mut files = Vec::new();
+    visit_files(&source, &source, &mut files)?;
+    files.sort();
+    let mut rows = Vec::new();
+    for (relative, _) in files {
+        let source_file = source.join(&relative);
+        let bytes = materialized_task_file(&relative, &std::fs::read(&source_file)?, lock)?;
+        let target = package.join(&relative);
+        if target.exists() {
+            if std::fs::read(&target)? != bytes {
+                return Err(MaterialError::Rejected(format!(
+                    "cached task drift at {}; prepare in a fresh cache",
+                    target.display()
+                )));
+            }
+        } else {
+            std::fs::create_dir_all(target.parent().expect("package file parent"))?;
+            std::fs::write(&target, &bytes)?;
+            std::fs::set_permissions(&target, std::fs::metadata(&source_file)?.permissions())?;
+        }
+        #[cfg(unix)]
+        let executable = {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::metadata(&source_file)?.permissions().mode() & 0o111 != 0
+        };
+        #[cfg(not(unix))]
+        let executable = false;
+        rows.push(
+            serde_json::json!({"path": relative, "mode": if executable {"100755"} else {"100644"},
+            "size": bytes.len(), "sha256": sha256_hex(&bytes)}),
+        );
+    }
+    verify_materialized_package(&source, package, lock)?;
+    let mut profile: toml::Value = std::fs::read_to_string(template)?
+        .parse()
+        .map_err(|error| MaterialError::Rejected(format!("profile template: {error}")))?;
+    let identity = profile
+        .get_mut("identity")
+        .and_then(toml::Value::as_table_mut)
+        .ok_or_else(|| MaterialError::Rejected("profile template has no identity".to_owned()))?;
+    for (field, value) in [
+        ("source_commit", corpus.source_commit.clone()),
+        ("tasks_tree", corpus.tasks_tree.clone()),
+        ("task_id", id.to_owned()),
+        (
+            "task_tree",
+            git_text(
+                &corpus.root,
+                &["rev-parse", &format!("{}:{id}", corpus.tasks_tree)],
+            )?,
+        ),
+        (
+            "package_manifest_sha256",
+            sha256_hex(
+                serde_json::to_string(&rows)
+                    .expect("file table serializes")
+                    .as_bytes(),
+            ),
+        ),
+    ] {
+        identity.insert(field.to_owned(), value.into());
+    }
+    profile["package"] =
+        toml::Value::try_from(&rows).map_err(|error| MaterialError::Rejected(error.to_string()))?;
+    let bytes = toml::to_string(&profile)
+        .map_err(|error| MaterialError::Rejected(error.to_string()))?
+        .into_bytes();
+    if profile_path.exists() && std::fs::read(profile_path)? != bytes {
+        return Err(MaterialError::Rejected(format!(
+            "cached profile drift at {}",
+            profile_path.display()
+        )));
+    }
+    std::fs::create_dir_all(profile_path.parent().expect("profile parent"))?;
+    std::fs::write(profile_path, &bytes)?;
+    let metadata: toml::Value = std::fs::read_to_string(source.join("task.toml"))?
+        .parse()
+        .map_err(|error| MaterialError::Rejected(format!("task metadata: {error}")))?;
+    let name = metadata
+        .get("task")
+        .and_then(|task| task.get("name").or_else(|| task.get("id")))
+        .and_then(toml::Value::as_str)
+        .unwrap_or(id);
+    Ok(TaskMaterial {
+        native_task_name: name.to_owned(),
+        profile: PinnedFile {
+            path: profile_path.canonicalize()?,
+            sha256: sha256_hex(&bytes),
+        },
+        task_package: package.canonicalize()?,
+        task_package_manifest_sha256: task_package_manifest_digest(package)?,
+    })
 }
 
 impl RuntimePackage {
@@ -637,101 +1225,98 @@ mod tests {
     }
 
     fn minimal_manifest(dir: &Path) -> String {
-        let lock = dir.join("lock.json");
-        write(&lock, b"{}");
-        let provider = dir.join("provider.py");
-        write(&provider, b"provider");
-        let integrations = dir.join("integrations");
-        write(
-            &integrations.join("opi_eval_harbor.py"),
-            b"# pinned integration module\n",
-        );
-        let opi = dir.join("opi");
-        write(&opi, b"opi-bin");
-        let pi = dir.join("pi.js");
-        write(&pi, b"pi-bin");
-        let uv = dir.join("uv");
-        write(&uv, b"uv-bin");
-        let oracle = dir.join("oracle.sh");
-        write(&oracle, b"oracle");
-        let profile = dir.join("tb21.toml");
-        write(&profile, b"profile");
-        let task = dir.join("task");
+        let project = dir.join("corpus");
+        let task = project.join("tasks/unit-fixture-task");
         write(&task.join("instruction.md"), b"instruction");
         write(
             &task.join("task.toml"),
             b"[task]\nid = \"unit-fixture-task\"\n",
         );
-        format!(
-            r#"{{
-  "schema": "opi-eval-native-material/4",
-  "static_lock": {{"path": {:?}, "sha256": {:?}}},
-  "provider": {{
-    "script": {{"path": {:?}, "sha256": {:?}}},
-    "endpoint": "http://127.0.0.1:48127/v1",
-    "request_log": {:?}
-  }},
-  "agents": {{
-    "opi": {{
-      "executable": {{"path": {:?}, "sha256": {:?}}},
-      "integrations": {{
-        "harbor": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
-                    "import_path": "opi_eval_harbor:OpiAgent",
-                    "agent_name": "opi-eval-opi"}},
-        "pier": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
-                   "import_path": "opi_eval_pier:OpiAgent",
-                   "agent_name": "opi-eval-opi"}}
-      }}
-    }},
-    "pi": {{
-      "executable": {{"path": {:?}, "sha256": {:?}}},
-      "integrations": {{
-        "harbor": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
-                    "import_path": "opi_eval_harbor:PiAgent",
-                    "agent_name": "opi-eval-pi"}},
-        "pier": {{"module_dir": {:?}, "module_manifest_sha256": {:?},
-                   "import_path": "opi_eval_pier:PiAgent",
-                   "agent_name": "opi-eval-pi"}}
-      }}
-    }}
-  }},
-  "benchmarks": {{
-    "terminal-bench-2.1": {{
-      "profile": {:?},
-      "task_package": {:?},
-      "task_package_manifest_sha256": "{}",
-      "verifier_executable": {{"path": {:?}, "sha256": {:?}}},
-      "verifier_env": {{}},
-      "oracle": {{"path": {:?}, "sha256": {:?}}},
-      "oracle_env": {{}}
-    }}
-  }}
-}}"#,
-            lock.to_string_lossy(),
-            sha256_hex(b"{}"),
-            provider.to_string_lossy(),
-            sha256_hex(b"provider"),
-            dir.join("requests.jsonl").to_string_lossy(),
-            opi.to_string_lossy(),
-            sha256_hex(b"opi-bin"),
-            integrations.to_string_lossy(),
-            directory_manifest_digest(&integrations).unwrap(),
-            integrations.to_string_lossy(),
-            directory_manifest_digest(&integrations).unwrap(),
-            pi.to_string_lossy(),
-            sha256_hex(b"pi-bin"),
-            integrations.to_string_lossy(),
-            directory_manifest_digest(&integrations).unwrap(),
-            integrations.to_string_lossy(),
-            directory_manifest_digest(&integrations).unwrap(),
-            profile.to_string_lossy(),
-            task.to_string_lossy(),
-            task_package_manifest_digest(&task).unwrap(),
-            uv.to_string_lossy(),
-            sha256_hex(b"uv-bin"),
-            oracle.to_string_lossy(),
-            sha256_hex(b"oracle"),
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&project)
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        };
+        git(&["init", "--quiet"]);
+        git(&["add", "--", "tasks"]);
+        if !project.join(".git/refs/heads/master").exists()
+            && !project.join(".git/refs/heads/main").exists()
+        {
+            git(&[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            ]);
+        }
+        let corpus = CorpusMaterial {
+            root: project.join("tasks"),
+            source_commit: git(&["rev-parse", "HEAD"]),
+            tasks_tree: git(&["rev-parse", "HEAD:tasks"]),
+        };
+        let lock_value = serde_json::json!({"subjects": [{"id": "terminal-bench-2.1", "commit": corpus.source_commit, "tasks_tree": corpus.tasks_tree}]});
+        let lock = dir.join("lock.json");
+        write(
+            &lock,
+            serde_json::to_string(&lock_value).unwrap().as_bytes(),
+        );
+        for (name, bytes) in [
+            ("provider.py", "provider"),
+            ("opi", "opi-bin"),
+            ("pi.js", "pi-bin"),
+            ("uv", "uv-bin"),
+            ("oracle.sh", "oracle"),
+            ("integrations/opi_eval_harbor.py", "# pinned integration\n"),
+        ] {
+            write(&dir.join(name), bytes.as_bytes());
+        }
+        let template = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/benchmarks/terminal-bench-2.1/profile/synthetic.toml");
+        let task_material = materialize_task(
+            &corpus,
+            "unit-fixture-task",
+            &template,
+            &dir.join("package"),
+            &dir.join("profile.toml"),
+            &lock_value,
         )
+        .unwrap();
+        let pinned = |name: &str| {
+            let path = dir.join(name);
+            serde_json::json!({"path": path, "sha256": sha256_hex(&std::fs::read(&path).unwrap())})
+        };
+        let integrations = dir.join("integrations");
+        let agent = |product: &str, executable: &str| {
+            let integration = |family: &str| {
+                serde_json::json!({"module_dir": integrations,
+                "module_manifest_sha256": directory_manifest_digest(&integrations).unwrap(),
+                "import_path": format!("opi_eval_{family}:{product}Agent"), "agent_name": format!("opi-eval-{product}")})
+            };
+            serde_json::json!({"executable": pinned(executable), "integrations": {"harbor": integration("harbor"), "pier": integration("pier")}})
+        };
+        serde_json::json!({"schema": MATERIAL_SCHEMA, "static_lock": pinned("lock.json"),
+            "provider": {"script": pinned("provider.py"), "endpoint": "http://127.0.0.1:48127/v1", "request_log": dir.join("requests.jsonl")},
+            "agents": {"opi": agent("opi", "opi"), "pi": agent("pi", "pi.js")},
+            "benchmarks": {"terminal-bench-2.1": {"corpus": corpus, "tasks": {"unit-fixture-task": task_material},
+                "verifier_executable": pinned("uv"), "verifier_env": {}, "oracle": pinned("oracle.sh"), "oracle_env": {}}}
+        }).to_string()
     }
 
     #[test]
@@ -765,13 +1350,13 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("opi-material-schema-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let manifest = dir.join("material.json");
-        let text = minimal_manifest(&dir).replace("opi-eval-native-material/4", "other/1");
+        let text = minimal_manifest(&dir).replace(MATERIAL_SCHEMA, "other/1");
         write(&manifest, text.as_bytes());
         assert!(
             NativeMaterial::load(&manifest)
                 .expect_err("schema rejected")
                 .to_string()
-                .contains("unknown schema")
+                .contains("unknown native-material schema")
         );
         let text = minimal_manifest(&dir).replace("\"opi\":", "\"opix\":");
         write(&manifest, text.as_bytes());
@@ -782,6 +1367,31 @@ mod tests {
                 .contains("agent set")
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mutable_images_need_an_exact_lock_binding() {
+        let digest = format!("sha256:{}", "a".repeat(64));
+        let lock = serde_json::json!({"images": [{"reference": "base:1", "manifest": digest}]});
+        assert_eq!(
+            resolved_image("base:1", &lock).unwrap(),
+            format!("base:1@{digest}")
+        );
+        for reference in ["base:2", "base:1@sha256:bad", "unbound"] {
+            assert!(resolved_image(reference, &lock).is_err());
+        }
+        let raw = b"[environment]\ndocker_image = 'base:1'\n[verifier.environment]\ndocker_image = 'base:2'\n";
+        assert!(materialized_task_file("task.toml", raw, &lock).is_err());
+        assert!(materialized_task_file("environment/Dockerfile", b"FROM base:2\n", &lock).is_err());
+        assert_eq!(
+            materialized_task_file(
+                "environment/Dockerfile",
+                b"FROM base:1 AS build\nFROM build\n",
+                &lock
+            )
+            .unwrap(),
+            format!("FROM base:1@{digest} AS build\nFROM build\n").as_bytes()
+        );
     }
 
     #[test]

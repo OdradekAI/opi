@@ -169,21 +169,27 @@ pub(crate) fn doctor(config_path: &Path) -> Result<serde_json::Value, PrepareErr
         None => unknown("memory", "/proc/meminfo is unavailable on this host"),
     });
 
-    // 5. GPU: observable only through the engine's runtime registry.
+    // Device capacity requires an observation in the selected engine namespace.
+    let resources = observe_resources(
+        &context.cache,
+        config_path.parent().unwrap_or(Path::new(".")),
+        None,
+    );
     observations.push(if !engine_reachable {
         unknown("gpu", "engine unreachable; GPU state cannot be observed")
     } else {
-        match gpu_runtime() {
-            Some(runtime) => {
-                let mut observation = Observation::new("gpu", "available");
-                observation.detail = Some(runtime);
+        match resources.engine_gpus.value {
+            Some(count) => {
+                let mut observation =
+                    Observation::new("gpu", if count > 0 { "available" } else { "absent" });
+                observation.count = Some(count);
+                observation.detail = Some(resources.gpu_types.join(", "));
                 observation
             }
-            None => {
-                let mut observation = Observation::new("gpu", "absent");
-                observation.reason = Some("engine reports no GPU runtime".to_owned());
-                observation
-            }
+            None => unknown(
+                "gpu",
+                "selected engine GPU devices are unobserved; runtime registration is not capacity",
+            ),
         }
     });
 
@@ -243,6 +249,7 @@ pub(crate) fn doctor(config_path: &Path) -> Result<serde_json::Value, PrepareErr
         "schema": DOCTOR_SCHEMA,
         "experiment": context.experiment.experiment_id(),
         "observations": observations,
+        "resources": resources,
     }))
 }
 
@@ -350,6 +357,272 @@ fn nearest_existing_ancestor(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn execution() -> crate::experiment::ResolvedExecution {
+        ResolvedExperiment::resolve(include_str!(
+            "../../tests/fixtures/experiment/local-paired.toml"
+        ))
+        .unwrap()
+        .execution()
+        .clone()
+    }
+
+    fn requirements(
+        text: &str,
+        family: crate::benchmark::task_lifecycle::TaskFamily,
+        execution: &crate::experiment::ResolvedExecution,
+    ) -> Result<EffectiveTaskRequirements, PrepareError> {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("task.toml"), text).unwrap();
+        effective_task_requirements(root.path(), family, execution)
+    }
+
+    fn resources() -> ResourceObservations {
+        let observed = |value, source| ResourceObservation::observed(Some(value), source, "");
+        ResourceObservations {
+            engine_id: Some("selected-engine".to_owned()),
+            engine_cpu: observed(4, "docker-info:NCPU"),
+            engine_memory: observed(8 << 30, "docker-info:MemTotal"),
+            engine_storage: observed(30 << 30, "engine-root"),
+            cache_storage: observed(30 << 30, "cache"),
+            output_storage: observed(30 << 30, "output"),
+            engine_gpus: observed(1, "engine-nvidia-smi"),
+            gpu_types: vec!["NVIDIA A100".to_owned()],
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn observations_use_selected_engine_and_runtime_registration_stays_unknown() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let docker = root.path().join("docker");
+        std::fs::write(&docker, "#!/bin/sh\n[ \"$DOCKER_HOST\" = tcp://selected.invalid:2375 ] || exit 9\ncase \"$1\" in\ninfo) printf '%s\\n' '{\"ID\":\"selected\",\"NCPU\":1,\"MemTotal\":4096,\"DockerRootDir\":\"/remote\",\"Runtimes\":{\"nvidia\":{}}}';;\ncontext) echo tcp://selected.invalid:2375;;\n*) exit 8;;\nesac\n").unwrap();
+        std::fs::set_permissions(docker, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let env = BTreeMap::from([
+            ("PATH".to_owned(), root.path().display().to_string()),
+            (
+                "DOCKER_HOST".to_owned(),
+                "tcp://selected.invalid:2375".to_owned(),
+            ),
+        ]);
+        let observed = observe_resources(root.path(), root.path(), Some(&env));
+        assert_eq!(observed.engine_id.as_deref(), Some("selected"));
+        assert_eq!(observed.engine_cpu.value, Some(1));
+        assert_eq!(observed.engine_memory.value, Some(4096));
+        assert_eq!(observed.engine_storage.status, "unknown");
+        assert_eq!(observed.engine_gpus.status, "unknown");
+        let req = requirements(
+            "[environment]\ncpus=2",
+            crate::benchmark::task_lifecycle::TaskFamily::Harbor,
+            &execution(),
+        )
+        .unwrap();
+        assert_eq!(check_requirements(&req, &observed)["status"], "unmet");
+    }
+
+    #[test]
+    fn pinned_requirement_defaults_and_role_inheritance_are_explicit() {
+        use crate::benchmark::task_lifecycle::TaskFamily::{Harbor, Pier};
+        for family in [Harbor, Pier] {
+            let defaults = requirements("", family, &execution()).unwrap();
+            assert_eq!(defaults.agent.cpus, None);
+            assert_eq!(defaults.agent.memory_bytes, None);
+            assert_eq!(
+                defaults.agent.storage_bytes,
+                (family == Pier).then_some(10240 * 1024 * 1024)
+            );
+            assert_eq!(defaults.agent.gpus, (family == Pier).then_some(0));
+            assert_eq!(defaults.agent.timeout_seconds, None);
+            assert_eq!(defaults.verifier.timeout_seconds, Some(600.0));
+            assert_eq!(defaults.agent.build_timeout_seconds, 600.0);
+            assert!(
+                defaults
+                    .agent
+                    .origins
+                    .values()
+                    .all(|origin| origin.contains("default"))
+            );
+            let separate = requirements("[environment]\ncpus=2\nmemory_mb=100\nstorage_mb=7\ngpus=0\n[verifier.environment]\ncpus=3\nmemory_mb=200\nstorage_mb=8\ngpus=1\ngpu_types=['A100']\n", family, &execution()).unwrap();
+            assert_eq!(separate.agent.cpus, Some(2));
+            assert_eq!(separate.verifier.cpus, Some(3));
+            assert_eq!(separate.agent.memory_bytes, Some(100 * 1024 * 1024));
+            assert_eq!(separate.verifier.storage_bytes, Some(8 * 1024 * 1024));
+            assert_eq!(
+                separate.verifier.origins["cpus"],
+                "task.toml:verifier.environment.cpus"
+            );
+            assert_eq!(check_requirements(&separate, &resources())["status"], "ok");
+            let shared = requirements("[environment]\ncpus=2\n[verifier]\nenvironment_mode='shared'\n[verifier.environment]\ncpus=9\n", family, &execution()).unwrap();
+            assert_eq!(shared.verifier.cpus, Some(2));
+            assert_eq!(
+                shared.verifier.origins["cpus"],
+                "task.toml:environment.cpus"
+            );
+        }
+    }
+
+    #[test]
+    fn independent_resource_deficits_and_unknowns_reject_each_role() {
+        use crate::benchmark::task_lifecycle::TaskFamily::Harbor;
+        for role in ["environment", "verifier.environment"] {
+            for (declaration, resource) in [
+                ("cpus=5", "cpus"),
+                ("memory_mb=9000", "memory_bytes"),
+                ("storage_mb=40000", "engine_storage_bytes"),
+                ("gpus=2", "gpus"),
+                ("gpus=1\ngpu_types=['H100']", "gpu_types"),
+            ] {
+                let required =
+                    requirements(&format!("[{role}]\n{declaration}"), Harbor, &execution())
+                        .unwrap();
+                let report = check_requirements(&required, &resources());
+                assert_eq!(report["status"], "unmet", "{report}");
+                assert!(
+                    report["checks"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|check| check["resource"] == resource && check["status"] == "unmet")
+                );
+            }
+        }
+        let required = requirements(
+            "[environment]\nstorage_mb=1\ngpus=1\ngpu_types=['A100']",
+            Harbor,
+            &execution(),
+        )
+        .unwrap();
+        let mut observed = resources();
+        observed.engine_storage =
+            ResourceObservation::observed(None, "remote-engine", "engine namespace unavailable");
+        observed.engine_gpus = ResourceObservation::observed(
+            None,
+            "docker-info:nvidia-runtime",
+            "device capacity unobserved",
+        );
+        let report = check_requirements(&required, &observed);
+        assert_eq!(report["status"], "unknown");
+        assert!(
+            report["reason"]
+                .as_str()
+                .unwrap()
+                .contains("namespace unavailable")
+        );
+        for location in ["cache", "output"] {
+            let mut observed = resources();
+            let disk = if location == "cache" {
+                &mut observed.cache_storage
+            } else {
+                &mut observed.output_storage
+            };
+            *disk = ResourceObservation::observed(Some(0), location, "");
+            assert_eq!(check_requirements(&required, &observed)["status"], "unmet");
+        }
+    }
+
+    #[test]
+    fn invalid_units_and_unimplemented_requirements_never_disappear() {
+        use crate::benchmark::task_lifecycle::TaskFamily::{Harbor, Pier};
+        for family in [Harbor, Pier] {
+            for field in [
+                "cpus=-1",
+                "cpus=0",
+                "memory_mb=-1",
+                "memory_mb=9223372036854775807",
+                "memory_mb='one'",
+                "storage_mb=-1",
+                "storage_mb=9223372036854775807",
+                "gpus=-1",
+                "gpu_types=1",
+                "gpu_vram_mb=1000",
+                "tpu='v4'",
+                "memory='1G'",
+            ] {
+                assert!(
+                    requirements(&format!("[environment]\n{field}"), family, &execution()).is_err(),
+                    "{field}"
+                );
+            }
+            for phase in ["agent", "verifier"] {
+                for value in ["-1", "0", "nan", "inf", "'1'"] {
+                    assert!(
+                        requirements(
+                            &format!("[{phase}]\ntimeout_sec={value}"),
+                            family,
+                            &execution()
+                        )
+                        .is_err()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn effective_network_lifecycle_collect_and_deadlines_keep_origins() {
+        use crate::benchmark::task_lifecycle::TaskFamily::{Harbor, Pier};
+        let mut bounds = execution();
+        bounds.agent_timeout_seconds = Some(9);
+        bounds.time_limit_seconds = Some(7);
+        bounds.verifier_timeout_seconds = Some(11);
+        for family in [Harbor, Pier] {
+            for (declared, wanted) in [("", 7.0), ("timeout_sec=3", 3.0), ("timeout_sec=20", 7.0)] {
+                let req = requirements(
+                    &format!("[agent]\n{declared}\n[verifier]\ntimeout_sec=5"),
+                    family,
+                    &bounds,
+                )
+                .unwrap();
+                assert_eq!(req.agent.timeout_seconds, Some(wanted));
+                assert_eq!(req.verifier.timeout_seconds, Some(5.0));
+                assert!(req.agent.origins["timeout_seconds"].contains("execution cap"));
+            }
+        }
+        let harbor = requirements("artifacts=[{source='/app/out',destination='out',service='main'}]\n[environment]\nnetwork_mode='no-network'\n[agent]\nnetwork_mode='public'\n[verifier.environment]\nnetwork_mode='allowlist'\nallowed_hosts=[' EXAMPLE.COM. ', '10.0.0.0/8', '*.example.org']", Harbor, &bounds).unwrap();
+        assert_eq!(harbor.agent.network_mode, "public");
+        assert_eq!(harbor.verifier.network_mode, "allowlist");
+        assert_eq!(
+            harbor.verifier.allowed_hosts,
+            ["example.com", "10.0.0.0/8", "*.example.org"]
+        );
+        assert_eq!(
+            harbor.lifecycle.declared_artifacts[0]
+                .destination
+                .as_deref(),
+            Some("out")
+        );
+        assert_eq!(harbor.origins["artifacts"], "task.toml:artifacts");
+        let pier = requirements("[agent]\nnetwork_mode='no-network'\n[verifier]\nenvironment_mode='separate'\n[[verifier.collect]]\ncommand='git diff'", Pier, &bounds).unwrap();
+        assert_eq!(pier.agent.network_mode, "no-network");
+        assert_eq!(pier.verifier.network_mode, "no-network");
+        assert_eq!(pier.collect[0]["timeout_sec"], 60.0);
+        assert_eq!(pier.collect[0]["service"], "main");
+        assert!(
+            pier.collect[0]["origins"]["service"]
+                .as_str()
+                .unwrap()
+                .contains("default")
+        );
+        for (family, text) in [
+            (
+                Harbor,
+                "[agent]\nnetwork_mode='allowlist'\nallowed_hosts=['https://example.com']",
+            ),
+            (
+                Harbor,
+                "[agent]\nnetwork_mode='allowlist'\nallowed_hosts=['10.1.0.0/8']",
+            ),
+            (Pier, "[agent]\nnetwork_mode='allowlist'"),
+            (
+                Pier,
+                "[agent]\nnetwork_mode='public'\n[verifier]\nnetwork_mode='no-network'",
+            ),
+            (Pier, "[[verifier.collect]]\ncommand='x'\nservice='sidecar'"),
+        ] {
+            assert!(requirements(text, family, &bounds).is_err(), "{text}");
+        }
+    }
 
     #[test]
     fn nearest_existing_ancestor_walks_up() {
@@ -512,7 +785,7 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
         .cache
         .join("pins/profiles/benchmarks")
         .join(format!("{adapter}.toml"));
-    let task_package = context.cache.join("packages").join(&adapter);
+    let corpus_root = context.cache.join("corpora").join(&adapter).join("tasks");
     let verifier = context.cache.join("tools/uv");
     let runner = if adapter == "deepswe-v1.1" {
         "pier"
@@ -589,7 +862,7 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
             context.cache.join("pins/integrations/pier"),
         ),
     ])
-    .chain([(format!("packages:{adapter}"), task_package.clone())])
+    .chain([(format!("corpora:{adapter}"), corpus_root.clone())])
     .collect();
     for product in &products {
         let package = context.cache.join("agents").join(product);
@@ -602,7 +875,7 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
         .map(|(key, path)| (key, path))
         .filter(|(key, path)| {
             let present = if key.starts_with("integrations:")
-                || key.starts_with("packages:")
+                || key.starts_with("corpora:")
                 || key.starts_with("runtime:")
                 || key.as_str() == format!("runners:{runner}")
             {
@@ -681,7 +954,7 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
         }
         for (key, path) in &missing {
             let present = if key.starts_with("integrations:")
-                || key.starts_with("packages:")
+                || key.starts_with("corpora:")
                 || key.starts_with("runtime:")
                 || key.as_str() == format!("runners:{runner}")
             {
@@ -763,12 +1036,6 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
     verified.sort();
     write_inventory(&context.cache, &inventory)?;
 
-    // 8. Resource preflight: the frozen task's declared requirements
-    //    are compared against the local observations. An unmet or
-    //    unobservable requirement rejects the whole request - the
-    //    requested set never silently shrinks.
-    let preflight = preflight_tasks(&task_package)?;
-
     // 7. Emit the local-origin native-material manifest.
     std::fs::create_dir_all(out)?;
     let material_path = out.join("material.json");
@@ -776,7 +1043,7 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
     let uv_cache = context.cache.join("uv-cache");
     std::fs::create_dir_all(&runner_home)?;
     std::fs::create_dir_all(&uv_cache)?;
-    let verifier_env = serde_json::json!({
+    let mut verifier_env: BTreeMap<String, String> = serde_json::from_value(serde_json::json!({
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "HOME": runner_home.canonicalize()?,
         "UV_PROJECT": runner_project.canonicalize()?,
@@ -790,7 +1057,149 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
         "PYTHON_DOTENV_DISABLED": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
         "HARBOR_TELEMETRY": "0",
-    });
+    }))
+    .expect("runner environment strings");
+    // Resolve the operator's selected endpoint before isolating HOME. Only
+    // Docker routing is projected; provider credentials remain unobserved.
+    for key in ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"] {
+        if let Ok(value) = std::env::var(key) {
+            verifier_env.insert(key.to_owned(), value);
+        }
+    }
+    if std::env::var_os("DOCKER_CONTEXT").is_some() || !verifier_env.contains_key("DOCKER_HOST") {
+        let endpoint = Command::new("docker")
+            .args([
+                "context",
+                "inspect",
+                "--format",
+                "{{(index .Endpoints \"docker\").Host}}",
+            ])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned());
+        if let Some(endpoint) = endpoint {
+            verifier_env.insert("DOCKER_HOST".to_owned(), endpoint);
+        }
+    }
+    let lock_value: serde_json::Value = serde_json::from_slice(&lock_bytes)
+        .map_err(|error| PrepareError::Rejected(error.to_string()))?;
+    let pin = lock_value["subjects"]
+        .as_array()
+        .and_then(|subjects| subjects.iter().find(|subject| subject["id"] == adapter))
+        .ok_or_else(|| {
+            PrepareError::Rejected(format!("static lock has no {adapter} corpus pin"))
+        })?;
+    let corpus = super::material::CorpusMaterial {
+        root: corpus_root.canonicalize()?,
+        source_commit: pin["commit"].as_str().unwrap_or_default().to_owned(),
+        tasks_tree: pin["tasks_tree"].as_str().unwrap_or_default().to_owned(),
+    };
+    corpus
+        .verify(&adapter, &lock_value)
+        .map_err(|error| PrepareError::Rejected(error.to_string()))?;
+    let inventory_tasks = super::plan::enumerate_corpus(&corpus.root)
+        .map_err(|error| PrepareError::Rejected(error.to_string()))?;
+    let requested = match context.experiment.selection() {
+        Some(selection) if selection.scope == crate::experiment::SelectionScope::Full => None,
+        Some(selection) => Some(selection.task_ids.clone()),
+        None => Some(
+            context
+                .experiment
+                .trials()
+                .iter()
+                .map(|trial| trial.task.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+        ),
+    };
+    let mut selected = Vec::new();
+    if let Some(requested) = requested {
+        for id in requested {
+            let task = inventory_tasks
+                .iter()
+                .find(|task| {
+                    task.dir.file_name().and_then(|name| name.to_str()) == Some(&id)
+                        || task.requirements.task_id == id
+                })
+                .ok_or_else(|| {
+                    PrepareError::Rejected(format!(
+                        "selected task {id:?} is outside the pinned corpus"
+                    ))
+                })?;
+            let canonical = task
+                .dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("corpus directory")
+                .to_owned();
+            if selected.contains(&canonical) {
+                return Err(PrepareError::Rejected(
+                    "selection repeats a canonical task".to_owned(),
+                ));
+            }
+            selected.push(canonical);
+        }
+    } else {
+        selected = inventory_tasks
+            .iter()
+            .map(|task| task.dir.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+    }
+    let family = if runner == "pier" {
+        crate::benchmark::task_lifecycle::TaskFamily::Pier
+    } else {
+        crate::benchmark::task_lifecycle::TaskFamily::Harbor
+    };
+    let observations = observe_resources(&context.cache, out, Some(&verifier_env));
+    let mut tasks = BTreeMap::new();
+    let mut entries = Vec::new();
+    for task in &inventory_tasks {
+        let id = task
+            .dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("corpus directory");
+        let chosen = selected.iter().any(|selected| selected == id);
+        let mut entry =
+            match effective_task_requirements(&task.dir, family, context.experiment.execution()) {
+                Ok(requirements) => check_requirements(&requirements, &observations),
+                Err(error) => serde_json::json!({"status": "unmet", "reason": error.to_string()}),
+            };
+        let images = super::material::image_preflight(&task.dir, &lock_value, &verifier_env);
+        if entry["status"] == "ok" && images["status"] != "ok" {
+            entry["status"] = images["status"].clone();
+            entry["reason"] = images["reason"].clone();
+        }
+        entry["image_material"] = images;
+        entry["id"] = serde_json::json!(id);
+        entry["selected"] = serde_json::json!(chosen);
+        if chosen {
+            if entry["status"] != "ok" {
+                return Err(PrepareError::Rejected(format!(
+                    "task {id} resource preflight: {}",
+                    entry["reason"]
+                )));
+            }
+            let material = super::material::materialize_task(
+                &corpus,
+                id,
+                &profile,
+                &context.cache.join("packages").join(&adapter).join(id),
+                &context
+                    .cache
+                    .join("profiles")
+                    .join(&adapter)
+                    .join(format!("{id}.toml")),
+                &lock_value,
+            )
+            .map_err(|error| PrepareError::Rejected(error.to_string()))?;
+            tasks.insert(id.to_owned(), material);
+        }
+        entries.push(entry);
+    }
+    let preflight = serde_json::json!({"tasks": entries, "observations": observations});
     let digest_of = |path: &Path| sha256_hex(&std::fs::read(path).unwrap_or_default());
     let agents: BTreeMap<String, serde_json::Value> = products
         .iter()
@@ -832,7 +1241,7 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
         })
         .collect();
     let material = serde_json::json!({
-        "schema": "opi-eval-native-material/4",
+        "schema": super::material::MATERIAL_SCHEMA,
         "origin": "local",
         "static_lock": {"path": lock_path, "sha256": sha256_hex(&lock_bytes)},
         "provider": {
@@ -843,10 +1252,8 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
         "agents": agents,
         "benchmarks": {
             adapter.clone(): {
-                "profile": profile,
-                "task_package": task_package,
-                "task_package_manifest_sha256": directory_manifest_digest(&task_package)
-                    .unwrap_or_default(),
+                "corpus": corpus,
+                "tasks": tasks,
                 "verifier_executable": {"path": verifier, "sha256": digest_of(&verifier)},
                 "verifier_env": verifier_env,
                 "runner_project": {
@@ -858,6 +1265,12 @@ pub(crate) fn prepare(config_path: &Path, out: &Path) -> Result<serde_json::Valu
             },
         },
     });
+    let frozen: super::material::NativeMaterial = serde_json::from_value(material.clone())
+        .map_err(|error| PrepareError::Rejected(error.to_string()))?;
+    frozen
+        .benchmark(&adapter)
+        .and_then(|entry| entry.verify_tasks(&adapter, &lock_path))
+        .map_err(|error| PrepareError::Rejected(error.to_string()))?;
     std::fs::write(
         &material_path,
         serde_json::to_string_pretty(&material).expect("material serializes"),
@@ -922,6 +1335,706 @@ pub(crate) struct TaskRequirements {
     pub(crate) gpus: Option<i64>,
 }
 
+/// Effective values of one native execution role. Origins distinguish task
+/// declarations, inherited environment settings, and pinned runner defaults.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct RoleRequirements {
+    pub(crate) cpus: Option<u64>,
+    pub(crate) memory_bytes: Option<u64>,
+    pub(crate) storage_bytes: Option<u64>,
+    pub(crate) gpus: Option<u64>,
+    pub(crate) gpu_types: Option<Vec<String>>,
+    pub(crate) network_mode: String,
+    pub(crate) allowed_hosts: Vec<String>,
+    pub(crate) timeout_seconds: Option<f64>,
+    pub(crate) build_timeout_seconds: f64,
+    pub(crate) origins: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct EffectiveTaskRequirements {
+    pub(crate) agent: RoleRequirements,
+    pub(crate) verifier: RoleRequirements,
+    pub(crate) lifecycle: crate::benchmark::task_lifecycle::TaskLifecycle,
+    pub(crate) collect: Vec<serde_json::Value>,
+    pub(crate) origins: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ResourceObservation {
+    status: &'static str,
+    value: Option<u64>,
+    source: String,
+    reason: Option<String>,
+}
+
+impl ResourceObservation {
+    fn observed(value: Option<u64>, source: impl Into<String>, reason: &str) -> Self {
+        Self {
+            status: if value.is_some() { "known" } else { "unknown" },
+            value,
+            source: source.into(),
+            reason: value.is_none().then(|| reason.to_owned()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ResourceObservations {
+    engine_id: Option<String>,
+    engine_cpu: ResourceObservation,
+    engine_memory: ResourceObservation,
+    engine_storage: ResourceObservation,
+    cache_storage: ResourceObservation,
+    output_storage: ResourceObservation,
+    engine_gpus: ResourceObservation,
+    gpu_types: Vec<String>,
+}
+
+/// A local engine can expose its filesystem without starting an image. Bind
+/// the selected Unix listener to dockerd's own open descriptor before reading
+/// its root namespace; a Desktop proxy or remote endpoint remains unknown.
+fn local_engine_pid(endpoint: &str) -> Option<u32> {
+    let socket = Path::new(endpoint.strip_prefix("unix://")?);
+    let socket = socket.canonicalize().ok()?;
+    let sockets = std::fs::read_to_string("/proc/net/unix").ok()?;
+    let inode = sockets.lines().find_map(|line| {
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        let path = Path::new(fields.get(7)?);
+        (path.canonicalize().ok()? == socket).then(|| fields[6].to_owned())
+    })?;
+    let target = format!("socket:[{inode}]");
+    for entry in std::fs::read_dir("/proc").ok()?.flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        if std::fs::read_to_string(entry.path().join("comm"))
+            .ok()
+            .as_deref()
+            != Some("dockerd\n")
+        {
+            continue;
+        }
+        let Ok(descriptors) = std::fs::read_dir(entry.path().join("fd")) else {
+            continue;
+        };
+        if descriptors.flatten().any(|entry| {
+            std::fs::read_link(entry.path())
+                .ok()
+                .is_some_and(|path| path.as_os_str() == target.as_str())
+        }) {
+            return Some(pid);
+        }
+    }
+    None
+}
+
+pub(crate) fn observe_resources(
+    cache: &Path,
+    output: &Path,
+    environment: Option<&BTreeMap<String, String>>,
+) -> ResourceObservations {
+    let docker = |args: &[&str]| -> Option<String> {
+        let mut command = Command::new("docker");
+        command.args(args);
+        if let Some(environment) = environment {
+            command.env_clear().envs(environment);
+        }
+        let output = command.output().ok()?;
+        output
+            .status
+            .success()
+            .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    };
+    let info: serde_json::Value = docker(&["info", "--format", "{{json .}}"])
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default();
+    let variable = |key: &str| {
+        environment
+            .and_then(|env| env.get(key).cloned())
+            .or_else(|| {
+                environment
+                    .is_none()
+                    .then(|| std::env::var(key).ok())
+                    .flatten()
+            })
+    };
+    let endpoint = if variable("DOCKER_CONTEXT").is_some_and(|value| !value.is_empty()) {
+        docker(&[
+            "context",
+            "inspect",
+            "--format",
+            "{{(index .Endpoints \"docker\").Host}}",
+        ])
+    } else {
+        variable("DOCKER_HOST").or_else(|| {
+            docker(&[
+                "context",
+                "inspect",
+                "--format",
+                "{{(index .Endpoints \"docker\").Host}}",
+            ])
+        })
+    };
+    let pid = endpoint.as_deref().and_then(local_engine_pid);
+    let engine_root = pid.zip(info["DockerRootDir"].as_str()).map(|(pid, root)| {
+        PathBuf::from(format!("/proc/{pid}/root")).join(root.trim_start_matches('/'))
+    });
+    let engine_storage = ResourceObservation::observed(
+        engine_root.as_deref().and_then(available_disk_bytes),
+        engine_root.as_ref().map_or_else(
+            || "selected-docker-engine".to_owned(),
+            |path| path.display().to_string(),
+        ),
+        "selected engine storage namespace is not locally observable",
+    );
+    let disk = |path: &Path| {
+        let root = nearest_existing_ancestor(path);
+        ResourceObservation::observed(
+            available_disk_bytes(&root),
+            format!("df:{}", root.display()),
+            "storage observation unavailable",
+        )
+    };
+    let same_mount = pid.is_some_and(|pid| {
+        let current = std::fs::read_link("/proc/self/ns/mnt").ok();
+        current.is_some() && current == std::fs::read_link(format!("/proc/{pid}/ns/mnt")).ok()
+    });
+    let gpu_types = if same_mount && info["Runtimes"].get("nvidia").is_some() {
+        Command::new("nvidia-smi")
+            .args(["--query-gpu=name", "--format=csv,noheader"])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| {
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+    } else {
+        None
+    };
+    ResourceObservations {
+        engine_id: info["ID"].as_str().map(str::to_owned),
+        engine_cpu: ResourceObservation::observed(
+            info["NCPU"].as_u64().filter(|count| *count > 0),
+            "docker-info:NCPU",
+            "selected engine CPU count unavailable",
+        ),
+        engine_memory: ResourceObservation::observed(
+            info["MemTotal"].as_u64().filter(|bytes| *bytes > 0),
+            "docker-info:MemTotal",
+            "selected engine memory unavailable",
+        ),
+        engine_storage,
+        cache_storage: disk(cache),
+        output_storage: disk(output),
+        engine_gpus: ResourceObservation::observed(
+            gpu_types.as_ref().map(|types| types.len() as u64),
+            "selected-engine-namespace:nvidia-smi",
+            "GPU devices/types unobserved; runtime registration is not capacity",
+        ),
+        gpu_types: gpu_types.unwrap_or_default(),
+    }
+}
+
+/// Every required comparison is retained. One missing required observation
+/// rejects the task rather than converting unknown capacity into zero or pass.
+pub(crate) fn check_requirements(
+    requirements: &EffectiveTaskRequirements,
+    observations: &ResourceObservations,
+) -> serde_json::Value {
+    let mut checks = Vec::new();
+    for (role, required) in [
+        ("agent", &requirements.agent),
+        ("verifier", &requirements.verifier),
+    ] {
+        for (name, value, observation) in [
+            ("cpus", required.cpus, &observations.engine_cpu),
+            (
+                "memory_bytes",
+                required.memory_bytes,
+                &observations.engine_memory,
+            ),
+            (
+                "engine_storage_bytes",
+                required.storage_bytes,
+                &observations.engine_storage,
+            ),
+            (
+                "cache_storage_bytes",
+                required.storage_bytes,
+                &observations.cache_storage,
+            ),
+            (
+                "output_storage_bytes",
+                required.storage_bytes,
+                &observations.output_storage,
+            ),
+            ("gpus", required.gpus, &observations.engine_gpus),
+        ] {
+            let status = match (value, observation.value) {
+                (None | Some(0), _) => "not-required",
+                (Some(required), Some(observed)) if observed >= required => "ok",
+                (Some(_), Some(_)) => "unmet",
+                (Some(_), None) => "unknown",
+            };
+            checks.push(
+                serde_json::json!({"role": role, "resource": name, "required": value,
+                "observation": observation, "status": status}),
+            );
+        }
+        if let Some(types) = &required.gpu_types {
+            let matching = observations
+                .gpu_types
+                .iter()
+                .filter(|observed| {
+                    types.iter().any(|allowed| {
+                        observed.as_str() == allowed
+                            || observed.strip_prefix("NVIDIA ") == Some(allowed.as_str())
+                            || observed.strip_prefix("Tesla ") == Some(allowed.as_str())
+                    })
+                })
+                .count() as u64;
+            let status = if observations.engine_gpus.value.is_none() {
+                "unknown"
+            } else if matching < required.gpus.unwrap_or(1).max(1) {
+                "unmet"
+            } else {
+                "ok"
+            };
+            checks.push(serde_json::json!({"role": role, "resource": "gpu_types", "required": types,
+                "observation": {"value": observations.gpu_types, "source": observations.engine_gpus.source,
+                    "reason": observations.engine_gpus.reason}, "status": status}));
+        }
+    }
+    let status = if checks.iter().any(|check| check["status"] == "unmet") {
+        "unmet"
+    } else if checks.iter().any(|check| check["status"] == "unknown") {
+        "unknown"
+    } else {
+        "ok"
+    };
+    let reasons = checks
+        .iter()
+        .filter(|check| matches!(check["status"].as_str(), Some("unmet" | "unknown")))
+        .map(|check| {
+            format!(
+                "{} {} {} ({}: {})",
+                check["role"].as_str().unwrap_or_default(),
+                check["resource"].as_str().unwrap_or_default(),
+                check["status"].as_str().unwrap_or_default(),
+                check["observation"]["source"].as_str().unwrap_or_default(),
+                check["observation"]["reason"]
+                    .as_str()
+                    .unwrap_or("observed capacity below requirement")
+            )
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({"status": status, "reason": reasons.join("; "), "checks": checks,
+        "requirements": requirements, "observations": observations})
+}
+
+fn allowed_host(value: &str) -> Result<String, PrepareError> {
+    let host = value
+        .trim()
+        .to_ascii_lowercase()
+        .trim_end_matches('.')
+        .to_owned();
+    let reject = || {
+        PrepareError::Rejected(
+            "invalid allowed_hosts entry (hostname, IP or strict CIDR required)".to_owned(),
+        )
+    };
+    if let Some((address, prefix)) = host.split_once('/') {
+        let address = address.parse::<std::net::IpAddr>().map_err(|_| reject())?;
+        let prefix = prefix.parse::<u32>().map_err(|_| reject())?;
+        let (value, bits) = match address {
+            std::net::IpAddr::V4(address) => (u32::from(address) as u128, 32),
+            std::net::IpAddr::V6(address) => (u128::from(address), 128),
+        };
+        if prefix > bits || (prefix < bits && value & (u128::MAX >> (128 - (bits - prefix))) != 0) {
+            return Err(reject());
+        }
+        return Ok(format!("{address}/{prefix}"));
+    }
+    if host.contains(':') {
+        return host
+            .parse::<std::net::Ipv6Addr>()
+            .map(|address| address.to_string())
+            .map_err(|_| reject());
+    }
+    let name = host.strip_prefix("*.").unwrap_or(&host);
+    if name != host && name.parse::<std::net::IpAddr>().is_ok() {
+        return Err(reject());
+    }
+    if !name.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && label.as_bytes()[0].is_ascii_alphanumeric()
+            && label.as_bytes()[label.len() - 1].is_ascii_alphanumeric()
+            && label
+                .bytes()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == b'-')
+    }) {
+        return Err(reject());
+    }
+    Ok(host)
+}
+
+/// Resolves the single-step task under the exact Harbor/Pier defaults. This
+/// value is shared by preparation, selection and pre-dispatch admission.
+pub(crate) fn effective_task_requirements(
+    task_package: &Path,
+    family: crate::benchmark::task_lifecycle::TaskFamily,
+    execution: &crate::experiment::ResolvedExecution,
+) -> Result<EffectiveTaskRequirements, PrepareError> {
+    use crate::benchmark::task_lifecycle::{TaskFamily, VerifierEnvironmentMode};
+    let bytes = std::fs::read(task_package.join("task.toml"))?;
+    let lifecycle = crate::benchmark::task_lifecycle::parse_task_lifecycle_bytes(&bytes, family)
+        .map_err(|error| PrepareError::Rejected(error.to_string()))?;
+    let document: toml::Value = std::str::from_utf8(&bytes)
+        .map_err(|_| PrepareError::Rejected("task.toml is not UTF-8".to_owned()))?
+        .parse()
+        .map_err(|error| PrepareError::Rejected(format!("task.toml parse failed: {error}")))?;
+    let empty = toml::Value::Table(Default::default());
+    let environment = document.get("environment").unwrap_or(&empty);
+    let verifier = document.get("verifier").unwrap_or(&empty);
+    let verifier_environment = if lifecycle.environment_mode == VerifierEnvironmentMode::Separate {
+        verifier.get("environment").unwrap_or(environment)
+    } else {
+        environment
+    };
+    let default_origin = match family {
+        TaskFamily::Harbor => "harbor-v0.22.0-default",
+        TaskFamily::Pier => "pier-v0.3.1-default",
+    };
+    let reject = |field: &str| PrepareError::Rejected(format!("invalid task requirement: {field}"));
+    let seconds = |value: Option<&toml::Value>, fallback: Option<f64>, field: &str| {
+        let parsed = match value {
+            Some(toml::Value::Integer(number)) => Some(*number as f64),
+            Some(toml::Value::Float(number)) => Some(*number),
+            Some(_) => return Err(reject(field)),
+            None => fallback,
+        };
+        if parsed.is_some_and(|number| !number.is_finite() || number <= 0.0) {
+            return Err(reject(field));
+        }
+        Ok(parsed)
+    };
+    let mut roles: Vec<RoleRequirements> = Vec::new();
+    for (role, env, path, cap) in [
+        (
+            "agent",
+            environment,
+            "environment",
+            super::plan::narrowed_agent_timeout(execution),
+        ),
+        (
+            "verifier",
+            verifier_environment,
+            if lifecycle.environment_mode == VerifierEnvironmentMode::Separate
+                && verifier.get("environment").is_some()
+            {
+                "verifier.environment"
+            } else {
+                "environment"
+            },
+            execution.verifier_timeout_seconds,
+        ),
+    ] {
+        let phase = document.get(role).unwrap_or(&empty);
+        let mut origins = BTreeMap::new();
+        let mut number =
+            |key: &str, default: Option<u64>, scale: u64| -> Result<Option<u64>, PrepareError> {
+                let value = match env.get(key) {
+                    Some(value) => Some(
+                        value
+                            .as_integer()
+                            .and_then(|n| u64::try_from(n).ok())
+                            .ok_or_else(|| reject(&format!("{path}.{key}")))?,
+                    ),
+                    None => default,
+                };
+                origins.insert(
+                    key.to_owned(),
+                    if env.get(key).is_some() {
+                        format!("task.toml:{path}.{key}")
+                    } else {
+                        default_origin.to_owned()
+                    },
+                );
+                value
+                    .map(|value| {
+                        value
+                            .checked_mul(scale)
+                            .ok_or_else(|| reject(&format!("{path}.{key} overflows bytes")))
+                    })
+                    .transpose()
+            };
+        let cpus = number("cpus", None, 1)?;
+        let memory_bytes = number("memory_mb", None, 1024 * 1024)?;
+        let storage_bytes = number(
+            "storage_mb",
+            (family == TaskFamily::Pier).then_some(10240),
+            1024 * 1024,
+        )?;
+        let gpus = number("gpus", (family == TaskFamily::Pier).then_some(0), 1)?;
+        if cpus == Some(0) || memory_bytes == Some(0) {
+            return Err(reject(&format!("{path} CPU and memory must be positive")));
+        }
+        // The deprecated string sizes and accelerator shapes need exact
+        // interpretation; this route does not silently erase them.
+        for key in ["memory", "storage", "tpu", "gpu_vram_mb"] {
+            if env.get(key).is_some() {
+                return Err(PrepareError::Rejected(format!(
+                    "unsupported task requirement: {path}.{key}"
+                )));
+            }
+        }
+        let gpu_types = env
+            .get("gpu_types")
+            .map(|value| {
+                value
+                    .as_array()
+                    .ok_or_else(|| reject("gpu_types"))?
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .filter(|value| !value.trim().is_empty())
+                            .map(str::to_owned)
+                            .ok_or_else(|| reject("gpu_types"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        origins.insert(
+            "gpu_types".to_owned(),
+            if gpu_types.is_some() {
+                format!("task.toml:{path}.gpu_types")
+            } else {
+                default_origin.to_owned()
+            },
+        );
+        let network_source = if phase.get("network_mode").is_some() {
+            (phase, role)
+        } else if family == TaskFamily::Pier && environment.get("network_mode").is_some() {
+            (environment, "environment")
+        } else {
+            (env, path)
+        };
+        let (mut network_mode, mut network_origin) =
+            if let Some(mode) = network_source.0.get("network_mode") {
+                (
+                    mode.as_str()
+                        .ok_or_else(|| reject("network_mode"))?
+                        .to_owned(),
+                    format!("task.toml:{}.network_mode", network_source.1),
+                )
+            } else if let Some(allow) = env.get("allow_internet") {
+                (
+                    if allow.as_bool().ok_or_else(|| reject("allow_internet"))? {
+                        "public"
+                    } else {
+                        "no-network"
+                    }
+                    .to_owned(),
+                    format!("task.toml:{path}.allow_internet"),
+                )
+            } else {
+                ("public".to_owned(), default_origin.to_owned())
+            };
+        if family == TaskFamily::Pier
+            && role == "verifier"
+            && phase.get("network_mode").is_none()
+            && environment.get("network_mode").is_none()
+            && (lifecycle.environment_mode == VerifierEnvironmentMode::Shared
+                || verifier.get("environment").is_none())
+        {
+            network_mode.clone_from(&roles[0].network_mode);
+            network_origin = format!("inherited-agent: {}", roles[0].origins["network_mode"]);
+        }
+        if !matches!(network_mode.as_str(), "public" | "no-network" | "allowlist")
+            || (network_mode == "allowlist" && family == TaskFamily::Pier)
+        {
+            return Err(reject("unsupported network_mode"));
+        }
+        let allowed_hosts = match network_source.0.get("allowed_hosts") {
+            Some(hosts) => {
+                if network_mode != "allowlist" {
+                    return Err(reject("allowed_hosts requires allowlist"));
+                }
+                hosts
+                    .as_array()
+                    .ok_or_else(|| reject("allowed_hosts"))?
+                    .iter()
+                    .map(|host| allowed_host(host.as_str().ok_or_else(|| reject("allowed_hosts"))?))
+                    .collect::<Result<Vec<_>, _>>()?
+            }
+            None => vec![],
+        };
+        origins.insert("network_mode".to_owned(), network_origin);
+        origins.insert(
+            "allowed_hosts".to_owned(),
+            if network_source.0.get("allowed_hosts").is_some() {
+                format!("task.toml:{}.allowed_hosts", network_source.1)
+            } else {
+                default_origin.to_owned()
+            },
+        );
+        let timeout = seconds(
+            phase.get("timeout_sec"),
+            (role == "verifier").then_some(600.0),
+            "timeout_sec",
+        )?;
+        let timeout_seconds = match (timeout, cap) {
+            (Some(task), Some(cap)) => Some(task.min(cap as f64)),
+            (task, cap) => task.or(cap.map(|cap| cap as f64)),
+        };
+        origins.insert(
+            "timeout_seconds".to_owned(),
+            format!(
+                "{}; execution cap={cap:?}",
+                if phase.get("timeout_sec").is_some() {
+                    format!("task.toml:{role}.timeout_sec")
+                } else {
+                    default_origin.to_owned()
+                }
+            ),
+        );
+        let build_timeout_seconds = seconds(
+            env.get("build_timeout_sec"),
+            Some(600.0),
+            "build_timeout_sec",
+        )?
+        .expect("default");
+        origins.insert(
+            "build_timeout_seconds".to_owned(),
+            if env.get("build_timeout_sec").is_some() {
+                format!("task.toml:{path}.build_timeout_sec")
+            } else {
+                default_origin.to_owned()
+            },
+        );
+        roles.push(RoleRequirements {
+            cpus,
+            memory_bytes,
+            storage_bytes,
+            gpus,
+            gpu_types,
+            network_mode,
+            allowed_hosts,
+            timeout_seconds,
+            build_timeout_seconds,
+            origins,
+        });
+    }
+    let verifier = roles.pop().expect("two roles");
+    let agent = roles.pop().expect("two roles");
+    if family == TaskFamily::Pier
+        && lifecycle.environment_mode == VerifierEnvironmentMode::Shared
+        && agent.network_mode != verifier.network_mode
+    {
+        return Err(reject("shared Pier verifier cannot change network policy"));
+    }
+    let collect = document
+        .get("verifier")
+        .and_then(|verifier| verifier.get("collect"))
+        .and_then(toml::Value::as_array)
+        .map(|hooks| {
+            hooks
+                .iter()
+                .enumerate()
+                .map(|(index, hook)| {
+                    let declared = hook;
+                    let timeout =
+                        seconds(hook.get("timeout_sec"), Some(60.0), "collect.timeout_sec")?;
+                    let mut hook = serde_json::to_value(hook)
+                        .map_err(|error| PrepareError::Rejected(error.to_string()))?;
+                    hook["timeout_sec"] = serde_json::json!(timeout);
+                    if hook.get("service").is_none() {
+                        hook["service"] = serde_json::json!("main");
+                    }
+                    if hook["service"] != "main" {
+                        return Err(reject(
+                            "unsupported collect service; Pier skips non-main services",
+                        ));
+                    }
+                    if hook["command"]
+                        .as_str()
+                        .is_none_or(|command| command.is_empty())
+                    {
+                        return Err(reject("collect.command"));
+                    }
+                    let origins = ["command", "service", "timeout_sec", "user"]
+                        .into_iter()
+                        .map(|key| {
+                            (
+                                key,
+                                if declared.get(key).is_some() {
+                                    format!("task.toml:verifier.collect[{index}].{key}")
+                                } else {
+                                    default_origin.to_owned()
+                                },
+                            )
+                        })
+                        .collect::<BTreeMap<_, _>>();
+                    if hook.get("user").is_none() {
+                        hook["user"] = serde_json::Value::Null;
+                    }
+                    hook["origins"] = serde_json::json!(origins);
+                    Ok::<_, PrepareError>(hook)
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    Ok(EffectiveTaskRequirements {
+        agent,
+        verifier,
+        lifecycle,
+        collect,
+        origins: [
+            ("schema_version", document.get("schema_version").is_some()),
+            ("artifacts", document.get("artifacts").is_some()),
+            (
+                "verifier.environment_mode",
+                document
+                    .get("verifier")
+                    .and_then(|value| value.get("environment_mode"))
+                    .is_some(),
+            ),
+            (
+                "verifier.collect",
+                document
+                    .get("verifier")
+                    .and_then(|value| value.get("collect"))
+                    .is_some(),
+            ),
+        ]
+        .into_iter()
+        .map(|(field, declared)| {
+            (
+                field.to_owned(),
+                if declared {
+                    format!("task.toml:{field}")
+                } else {
+                    default_origin.to_owned()
+                },
+            )
+        })
+        .collect(),
+    })
+}
+
 pub(crate) fn parse_task_requirements(
     task_package: &Path,
 ) -> Result<TaskRequirements, PrepareError> {
@@ -936,7 +2049,12 @@ pub(crate) fn parse_task_requirements(
                 .or_else(|| task.get("id"))
                 .and_then(|value| value.as_str())
         })
-        .unwrap_or("unnamed-task")
+        .unwrap_or_else(|| {
+            task_package
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("unnamed-task")
+        })
         .to_owned();
     let environment = document.get("environment");
     let get = |key: &str| -> Option<i64> {
@@ -944,76 +2062,15 @@ pub(crate) fn parse_task_requirements(
             .and_then(|table| table.get(key))
             .and_then(|value| value.as_integer())
     };
-    let memory_bytes = get("memory_mb").map(|mb| mb as u64 * 1024 * 1024);
+    let memory_bytes = get("memory_mb")
+        .and_then(|mb| u64::try_from(mb).ok())
+        .and_then(|mb| mb.checked_mul(1024 * 1024));
     Ok(TaskRequirements {
         task_id,
         cpus: get("cpus"),
         memory_bytes,
         gpus: get("gpus"),
     })
-}
-
-/// Compares every frozen task's declared requirements against the
-/// local observations; each comparison is explicit and any unmet or
-/// unobservable requirement rejects.
-fn preflight_tasks(task_package: &Path) -> Result<serde_json::Value, PrepareError> {
-    let requirements = parse_task_requirements(task_package)?;
-    let gpu = gpu_runtime();
-    let reject = |reason: String| -> PrepareError { PrepareError::Rejected(reason) };
-    if let Some(required) = requirements.cpus {
-        match logical_cpu_count() {
-            Some(observed) if observed as i64 >= required => {}
-            Some(observed) => {
-                return Err(reject(format!(
-                    "task {} requires cpus={} but the host observes {} logical CPUs",
-                    requirements.task_id, required, observed
-                )));
-            }
-            None => {
-                return Err(reject(format!(
-                    "task {} requires cpus={} but the CPU observation is unavailable",
-                    requirements.task_id, required
-                )));
-            }
-        }
-    }
-    if let Some(required) = requirements.memory_bytes {
-        match total_memory_bytes() {
-            Some(observed) if observed >= required => {}
-            Some(observed) => {
-                return Err(reject(format!(
-                    "task {} requires {} memory bytes but the host observes {}",
-                    requirements.task_id, required, observed
-                )));
-            }
-            None => {
-                return Err(reject(format!(
-                    "task {} requires memory but the memory observation is unavailable",
-                    requirements.task_id
-                )));
-            }
-        }
-    }
-    if requirements.gpus.is_some_and(|required| required > 0) && gpu.is_none() {
-        return Err(reject(format!(
-            "task {} requires gpus={} but the GPU observation is unavailable \
-             (engine unreachable or no GPU runtime registered)",
-            requirements.task_id,
-            requirements.gpus.unwrap_or_default()
-        )));
-    }
-    Ok(serde_json::json!({
-        "tasks": [{
-            "id": requirements.task_id,
-            "status": "ok",
-            "requirements": {
-                "cpus": requirements.cpus,
-                "memory_bytes": requirements.memory_bytes,
-                "gpus": requirements.gpus,
-            },
-            "gpu_observation": if gpu.is_some() { "available" } else { "unknown" },
-        }],
-    }))
 }
 
 /// Replaces two-byte CRLF line endings with LF, the convention the

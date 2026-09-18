@@ -49,7 +49,7 @@ use crate::process::{ExitState, ProcessSupervisor, SpawnSpec};
 use crate::runner::lifecycle::{
     CancellationSource, ObservedOutcome, SettlementKind, TrialLifecycle,
 };
-use crate::runner::material::{NativeMaterial, task_package_manifest_digest};
+use crate::runner::material::NativeMaterial;
 use crate::trajectory::{ProjectionPipeline, TrialInputs};
 
 /// Run report schema identity.
@@ -108,7 +108,7 @@ fn reserved_artifact_keys() -> Vec<ArtifactKey> {
 pub(crate) struct RunRequest {
     pub(crate) config_path: PathBuf,
     pub(crate) root: PathBuf,
-    pub(crate) fixtures: PathBuf,
+    pub(crate) fixtures: Option<PathBuf>,
     pub(crate) behavior: String,
     /// Recovery mode: classify the durable state of every existing trial
     /// root instead of running anything.
@@ -544,7 +544,7 @@ pub(crate) async fn run_experiment(
         Some(_) => {
             let root = crate::runner::plan::task_package_root(
                 &experiment,
-                Some(&request.fixtures),
+                request.fixtures.as_deref(),
                 request.material.as_ref(),
             )
             .map_err(|error| RunError::Native(error.to_string()))?;
@@ -557,9 +557,14 @@ pub(crate) async fn run_experiment(
                 ),
                 None => None,
             };
-            let expansion =
-                crate::runner::plan::expand_selection(&experiment, &corpus, bound.as_ref())
-                    .map_err(|error| RunError::Native(error.to_string()))?;
+            let expansion = crate::runner::plan::expand_selection(
+                &experiment,
+                &corpus,
+                bound.as_ref(),
+                request.material.as_ref(),
+                &request.root,
+            )
+            .map_err(|error| RunError::Native(error.to_string()))?;
             if let Some(plan) = &plan_json {
                 let frozen: Vec<crate::experiment::DeclaredTrial> = plan["trials"]
                     .as_array()
@@ -586,6 +591,58 @@ pub(crate) async fn run_experiment(
         }
         None => experiment,
     };
+    if let (Some(tasks), Some(material)) = (&native, &request.material) {
+        let adapter = adapter_key_for(&experiment)?;
+        let benchmark = material
+            .benchmark(&adapter)
+            .map_err(|error| RunError::Native(error.to_string()))?;
+        let cache = benchmark
+            .verifier_env
+            .get("UV_CACHE_DIR")
+            .map(Path::new)
+            .unwrap_or(&benchmark.corpus.root);
+        let observations =
+            super::prepare::observe_resources(cache, &request.root, Some(&benchmark.verifier_env));
+        let family = if adapter == "deepswe-v1.1" {
+            crate::benchmark::task_lifecycle::TaskFamily::Pier
+        } else {
+            crate::benchmark::task_lifecycle::TaskFamily::Harbor
+        };
+        for id in experiment
+            .trials()
+            .iter()
+            .map(|trial| &trial.task)
+            .collect::<BTreeSet<_>>()
+        {
+            let inputs = tasks.get(id).ok_or_else(|| {
+                RunError::Native(format!("selected task {id:?} is not materialized"))
+            })?;
+            let requirements = super::prepare::effective_task_requirements(
+                &inputs.task_package,
+                family,
+                experiment.execution(),
+            )
+            .map_err(|error| RunError::Native(error.to_string()))?;
+            let preflight = super::prepare::check_requirements(&requirements, &observations);
+            if preflight["status"] != "ok" {
+                return Err(RunError::Native(format!(
+                    "task {id} resource preflight: {}",
+                    preflight["reason"]
+                )));
+            }
+            let lock: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&material.static_lock.path)?)
+                    .map_err(|error| RunError::Native(error.to_string()))?;
+            let images = super::material::image_preflight(
+                &inputs.task_package,
+                &lock,
+                &benchmark.verifier_env,
+            );
+            if images["status"] != "ok" {
+                return Err(RunError::Native(format!("task {id}: {}", images["reason"])));
+            }
+        }
+    }
     let integrity = match &native {
         Some(inputs) => IntegrityRecord::review(native_integrity_review(
             &experiment,
@@ -608,8 +665,13 @@ pub(crate) async fn run_experiment(
         }
     }
     let benchmark_revision = match &native {
-        Some(inputs) => BenchmarkRevision::from_native(inputs),
-        None => BenchmarkRevision::from_experiment(&experiment, &request.fixtures)?,
+        Some(_) => None,
+        None => Some(BenchmarkRevision::from_experiment(
+            &experiment,
+            request.fixtures.as_deref().ok_or_else(|| {
+                RunError::Staging("--fixtures is required for hermetic execution".to_owned())
+            })?,
+        )?),
     };
 
     // Run-level planned coverage is bound before any effect
@@ -618,11 +680,11 @@ pub(crate) async fn run_experiment(
     // offline recomputation preserves unstarted trials even when no
     // trial seals - a crash at the first durable point still leaves
     // the planned denominator on disk.
-    let corpus_tasks = match experiment.selection() {
-        Some(_) => {
+    let corpus_tasks = match (experiment.selection(), request.material.as_ref()) {
+        (Some(_), _) | (_, Some(_)) => {
             let root = crate::runner::plan::task_package_root(
                 &experiment,
-                Some(&request.fixtures),
+                request.fixtures.as_deref(),
                 request.material.as_ref(),
             )
             .map_err(|error| RunError::Native(error.to_string()))?;
@@ -630,7 +692,7 @@ pub(crate) async fn run_experiment(
                 .map_err(|error| RunError::Native(error.to_string()))?
                 .len()
         }
-        None => experiment
+        (None, None) => experiment
             .trials()
             .iter()
             .map(|trial| trial.task.as_str())
@@ -662,12 +724,30 @@ pub(crate) async fn run_experiment(
         }),
     });
     std::fs::create_dir_all(&request.root).map_err(|error| RunError::Staging(error.to_string()))?;
-    std::fs::write(
-        request.root.join("run-control.json"),
-        serde_json::to_vec_pretty(&run_control)
+    for entry in std::fs::read_dir(&request.root)? {
+        if matches!(
+            entry?.file_name().to_str(),
+            Some("trials" | "run-report.json")
+        ) {
+            return Err(RunError::Staging(
+                "run root already contains execution evidence; use recovery or a fresh root"
+                    .to_owned(),
+            ));
+        }
+    }
+    // Claim the run before any trial effect. A concurrent or repeated caller
+    // cannot replace control bytes; even an interrupted write keeps its claim.
+    let mut control_file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(request.root.join("run-control.json"))
+        .map_err(|error| RunError::Staging(format!("cannot reserve fresh run control: {error}")))?;
+    use std::io::Write;
+    control_file.write_all(
+        &serde_json::to_vec_pretty(&run_control)
             .map_err(|error| RunError::Staging(error.to_string()))?,
-    )
-    .map_err(|error| RunError::Staging(error.to_string()))?;
+    )?;
+    control_file.sync_all()?;
 
     let mut trials_out: Vec<serde_json::Value> = Vec::new();
     let mut facts: Vec<TrialFact> = Vec::new();
@@ -706,7 +786,7 @@ pub(crate) async fn run_experiment(
                 let result = run_trial(
                     &experiment,
                     &integrity,
-                    &benchmark_revision,
+                    benchmark_revision.as_ref(),
                     &declared,
                     &product,
                     native.as_ref(),
@@ -738,7 +818,7 @@ pub(crate) async fn run_experiment(
                         runtime.block_on(run_trial(
                             &experiment,
                             &integrity,
-                            &revision,
+                            revision.as_ref(),
                             &declared,
                             &product,
                             None,
@@ -1040,7 +1120,6 @@ struct NativeInputs {
     adapter_key: String,
     profile_bytes: Vec<u8>,
     task_package: PathBuf,
-    task_id: String,
     verifier_executable: PathBuf,
     verifier_env: std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
 }
@@ -1049,63 +1128,38 @@ struct NativeInputs {
 fn prepare_native(
     material: &NativeMaterial,
     experiment: &ResolvedExperiment,
-) -> Result<NativeInputs, RunError> {
+) -> Result<BTreeMap<String, NativeInputs>, RunError> {
     super::output_control::admit(material, experiment)
         .map_err(|error| RunError::Native(error.to_string()))?;
     let adapter_key = adapter_key_for(experiment)?;
     let benchmark = material
         .benchmark(&adapter_key)
         .map_err(|error| RunError::Native(error.to_string()))?;
-    let profile_bytes = std::fs::read(&benchmark.profile)
-        .map_err(|error| RunError::Native(format!("profile unreadable: {error}")))?;
-    let task_id = match adapter_key.as_str() {
-        "terminal-bench-2.1" => {
-            Tb21Profile::parse(profile_bytes.as_slice())
-                .map_err(|error| RunError::Native(error.to_string()))?
-                .task_id
-        }
-        "terminal-bench-3.0" => {
-            crate::benchmark::terminal_bench_30::Tb30Profile::parse(profile_bytes.as_slice())
-                .map_err(|error| RunError::Native(error.to_string()))?
-                .task_id
-        }
-        _ => {
-            crate::benchmark::deepswe::DeepSweProfile::parse(profile_bytes.as_slice())
-                .map_err(|error| RunError::Native(error.to_string()))?
-                .task_id
-        }
-    };
-    // Fail-closed package verification: the runner recomputes the sorted
-    // package manifest and compares it with the pinned digest.
-    let observed = task_package_manifest_digest(&benchmark.task_package)
-        .map_err(|error| RunError::Native(error.to_string()))?;
-    if observed != benchmark.task_package_manifest_sha256 {
-        return Err(RunError::Native(format!(
-            "task package manifest drift for {adapter_key}: pinned {}, observed {}",
-            benchmark.task_package_manifest_sha256, observed
-        )));
-    }
     for declared in experiment.trials() {
-        if declared.task != task_id {
-            return Err(RunError::Native(format!(
-                "trial {} declares task {:?}, material resolves {:?}",
-                declared.id, declared.task, task_id
-            )));
-        }
+        benchmark
+            .task(&declared.task)
+            .map_err(|error| RunError::Native(error.to_string()))?;
     }
-    let to_env = |map: &std::collections::BTreeMap<String, String>| {
-        map.iter()
-            .map(|(key, value)| (key.clone().into(), value.clone().into()))
-            .collect::<std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>>()
-    };
-    Ok(NativeInputs {
-        adapter_key,
-        profile_bytes,
-        task_package: benchmark.task_package.clone(),
-        task_id,
-        verifier_executable: benchmark.verifier_executable.path.clone(),
-        verifier_env: to_env(&benchmark.verifier_env),
-    })
+    benchmark
+        .tasks
+        .iter()
+        .map(|(id, task)| {
+            Ok((
+                id.clone(),
+                NativeInputs {
+                    adapter_key: adapter_key.clone(),
+                    profile_bytes: std::fs::read(&task.profile.path)?,
+                    task_package: task.task_package.clone(),
+                    verifier_executable: benchmark.verifier_executable.path.clone(),
+                    verifier_env: benchmark
+                        .verifier_env
+                        .iter()
+                        .map(|(key, value)| (key.clone().into(), value.clone().into()))
+                        .collect(),
+                },
+            ))
+        })
+        .collect()
 }
 
 /// The native integrity review: every identity derives from the verified
@@ -1114,10 +1168,15 @@ fn prepare_native(
 fn native_integrity_review(
     experiment: &ResolvedExperiment,
     material: &NativeMaterial,
-    inputs: &NativeInputs,
+    inputs: &BTreeMap<String, NativeInputs>,
 ) -> IntegrityReview {
     let benchmark = experiment.benchmark();
-    let (grader, environment) = match inputs.adapter_key.as_str() {
+    let adapter_key = &inputs
+        .values()
+        .next()
+        .expect("validated non-empty task map")
+        .adapter_key;
+    let (grader, environment) = match adapter_key.as_str() {
         "terminal-bench-2.1" => ("harbor-v0.22.0", "separate-container"),
         "terminal-bench-3.0" => ("harbor-v0.22.0", "separate-verifier-container"),
         _ => ("pier-v0.3.1", "separate-pristine-verifier"),
@@ -1128,20 +1187,41 @@ fn native_integrity_review(
         dataset: benchmark.dataset.clone(),
         grader: grader.to_owned(),
         environment: environment.to_owned(),
-        upstream_identity: format!("{}@{}", inputs.adapter_key, material.static_lock.sha256),
-        upstream_digest: material
-            .benchmark(&inputs.adapter_key)
-            .map(|entry| entry.task_package_manifest_sha256.clone())
-            .unwrap_or_default(),
+        upstream_identity: format!("{}@{}", adapter_key, material.static_lock.sha256),
+        upstream_digest: {
+            let benchmark = material.benchmark(adapter_key).expect("prepared benchmark");
+            let tasks = benchmark
+                .tasks
+                .iter()
+                .map(|(id, task)| {
+                    json!({
+                        "id": id, "native_task_name": task.native_task_name,
+                        "profile_sha256": task.profile.sha256,
+                        "task_package_manifest_sha256": task.task_package_manifest_sha256,
+                    })
+                })
+                .collect::<Vec<_>>();
+            super::material::sha256_hex(
+                json!({"source_commit": benchmark.corpus.source_commit,
+                "tasks_tree": benchmark.corpus.tasks_tree, "tasks": tasks})
+                .to_string()
+                .as_bytes(),
+            )
+        },
         // The oracle is an explicitly selected conformance diagnostic,
         // never a prerequisite silently run by `run` (P19-D01): the
         // admission record carries no oracle claim.
         oracle: None,
         status: crate::integrity::RevisionStatus::Admitted,
-        tasks: std::collections::BTreeMap::from([(
-            inputs.task_id.clone(),
-            crate::integrity::TaskClassification::ValidAgentOutcome,
-        )]),
+        tasks: inputs
+            .keys()
+            .map(|id| {
+                (
+                    id.clone(),
+                    crate::integrity::TaskClassification::ValidAgentOutcome,
+                )
+            })
+            .collect(),
         excluded_trials: std::collections::BTreeMap::new(),
         reviewer: "opi-eval-native-material".to_owned(),
     }
@@ -1252,23 +1332,33 @@ fn benchmark_adapter_for(
 async fn run_trial(
     experiment: &ResolvedExperiment,
     integrity: &IntegrityRecord,
-    revision: &BenchmarkRevision,
+    revision: Option<&BenchmarkRevision>,
     declared: &crate::experiment::DeclaredTrial,
     product: &str,
-    native: Option<&NativeInputs>,
+    native: Option<&BTreeMap<String, NativeInputs>>,
     request: &RunRequest,
     run_cancel: &CancellationToken,
 ) -> Result<TrialResult, RunError> {
     match native {
-        Some(inputs) => {
+        Some(tasks) => {
+            let inputs = tasks
+                .get(&declared.task)
+                .ok_or_else(|| RunError::Native("selected task material missing".to_owned()))?;
+            let revision = BenchmarkRevision::from_native(inputs);
             run_native_trial(
-                experiment, integrity, revision, declared, product, inputs, request, run_cancel,
+                experiment, integrity, &revision, declared, product, inputs, request, run_cancel,
             )
             .await
         }
         None => {
             run_fixture_trial(
-                experiment, integrity, revision, declared, product, request, run_cancel,
+                experiment,
+                integrity,
+                revision.expect("hermetic revision"),
+                declared,
+                product,
+                request,
+                run_cancel,
             )
             .await
         }
@@ -1313,6 +1403,7 @@ enum NativeTrialClass {
 fn classify_native_trial(
     record: Option<&crate::benchmark::process::BenchmarkRecord>,
     binding: Option<&crate::benchmark::process::NativeTrialBinding>,
+    agent: Option<&crate::agent::process::AgentRecord>,
 ) -> NativeTrialClass {
     let Some(record) = record else {
         return NativeTrialClass::NoOutcome {
@@ -1348,10 +1439,22 @@ fn classify_native_trial(
             timed_out: false,
         };
     };
+    if let Some(AgentCompletion::Failed(failure)) = agent.map(|agent| &agent.completion)
+        && failure.class() == AgentFailureClass::AuthorityBoundary
+        && failure.kind != "agent-outcome-not-success"
+    {
+        return NativeTrialClass::InvalidExecution {
+            reason: failure.kind.to_owned(),
+            boundary: failure.boundary,
+            timed_out: false,
+        };
+    }
     match binding.exception_type.as_deref() {
         None => NativeTrialClass::GradedNative {
             reward: fact_value(&binding.reward),
-            agent_failed: fact_value(&binding.reward) == 0,
+            agent_failed: fact_value(&binding.reward) == 0
+                || agent
+                    .is_some_and(|agent| matches!(agent.completion, AgentCompletion::Failed(_))),
             timed_out: binding.terminal.as_ref().is_some_and(|t| t.timed_out),
         },
         Some("NonZeroAgentExitCodeError") => NativeTrialClass::GradedNative {
@@ -1497,8 +1600,9 @@ fn stage_native_handoff(
 /// canonical trace format); observation coverage expands later.
 fn native_agent_record(
     product: &str,
+    provider_model: &str,
     binding: &crate::benchmark::process::NativeTrialBinding,
-) -> crate::agent::process::AgentRecord {
+) -> (crate::agent::process::AgentRecord, serde_json::Value) {
     let Some(terminal) = binding.terminal.as_ref() else {
         // A diagnostic witness carries no integration observation, and the
         // run path never dispatches one: reaching this arm means the
@@ -1507,29 +1611,80 @@ fn native_agent_record(
         // inventing one.
         unreachable!("witness bindings never project an Agent record");
     };
-    let exit = if terminal.timed_out {
+    // The integration observes process exit; the pinned runner alone knows
+    // whether its cancellation came from the Agent-stage deadline.
+    let timed_out =
+        terminal.timed_out || binding.exception_type.as_deref() == Some("AgentTimeoutError");
+    let exit = if timed_out {
         ExitState::TimedOut
     } else {
         ExitState::Exited {
             code: terminal.exit_code.clamp(i32::MIN as i64, i32::MAX as i64) as i32,
         }
     };
-    let completion = match binding.exception_type.as_deref() {
-        Some("NonZeroAgentExitCodeError") => {
-            crate::agent::process::AgentCompletion::Failed(crate::agent::process::AgentFailure {
-                kind: "agent-non-zero-exit",
-                boundary: FailureBoundaryCode::AgentProcess,
-            })
+    let capture = binding
+        .results_path
+        .parent()
+        .expect("bound trial directory")
+        .join("agent");
+    let stdout = read_native_agent_capture(&capture, "stdout.log");
+    let stderr = read_native_agent_capture(&capture, "stderr.log");
+    let capture_failed = stdout.is_err() || stderr.is_err();
+    let stdout = stdout.unwrap_or_default();
+    let stderr = stderr.unwrap_or_default();
+    let mut client_message = serde_json::Value::Null;
+    let completion = if timed_out {
+        AgentCompletion::Failed(crate::agent::process::failure_kinds::TIMED_OUT)
+    } else if capture_failed {
+        AgentCompletion::Failed(crate::agent::process::AgentFailure {
+            kind: "native-client-capture-unreadable",
+            boundary: FailureBoundaryCode::Evidence,
+        })
+    } else if product == "pi" {
+        let (completion, message) =
+            crate::agent::pi::native_terminal_completion(&stdout, provider_model);
+        client_message = message;
+        match completion {
+            AgentCompletion::Completed { .. } if terminal.exit_code != 0 => {
+                AgentCompletion::Failed(crate::agent::process::failure_kinds::non_zero_exit(1))
+            }
+            completion => completion,
         }
-        _ if binding.terminal.as_ref().is_some_and(|t| t.timed_out) => {
-            crate::agent::process::AgentCompletion::Failed(crate::agent::process::AgentFailure {
-                kind: "agent-timeout",
+    } else if let ExitState::Exited { code } = exit {
+        match crate::agent::opi::opi_provider_failure_kind(code, &stderr.bytes) {
+            Some(kind) => AgentCompletion::Failed(crate::agent::process::AgentFailure {
+                kind,
                 boundary: FailureBoundaryCode::AgentProcess,
-            })
+            }),
+            None if code != 0 => {
+                AgentCompletion::Failed(crate::agent::process::failure_kinds::non_zero_exit(code))
+            }
+            None => AgentCompletion::Completed { artifacts: vec![] },
         }
-        _ => crate::agent::process::AgentCompletion::Completed { artifacts: vec![] },
+    } else {
+        unreachable!("native terminal is an exit or timeout");
     };
-    crate::agent::process::AgentRecord {
+    // Both policies preserve the actual terminal message/diagnostic and the
+    // interpretation that excluded a score. Full captures additionally retain
+    // bounded raw client streams; terminal-only omits intermediate events.
+    let evidence = json!({
+        "product": product,
+        "exit_code": terminal.exit_code,
+        "timed_out": timed_out,
+        "client_message": client_message,
+        "diagnostic": if product == "opi" && matches!(terminal.exit_code, 3 | 4) {
+            Some(String::from_utf8_lossy(&stderr.bytes))
+        } else { None },
+        "stdout_sha256": crate::runner::material::sha256_hex(&stdout.bytes),
+        "stderr_sha256": crate::runner::material::sha256_hex(&stderr.bytes),
+        "stdout_truncated": stdout.truncated,
+        "stderr_truncated": stderr.truncated,
+        "failure_kind": match &completion {
+            AgentCompletion::Failed(failure) => Some(failure.kind),
+            AgentCompletion::Completed { .. } => None,
+        },
+    });
+    let record = crate::agent::process::AgentRecord {
         identity: crate::agent::process::AgentIdentity {
             product: product.to_owned(),
             package: format!("native-integration:{}", binding.agent_name),
@@ -1538,13 +1693,60 @@ fn native_agent_record(
         },
         workspace: PathBuf::new(),
         exit,
-        stdout: crate::process::OutputCapture::default(),
-        stderr: crate::process::OutputCapture::default(),
+        stdout,
+        stderr,
         cleanup: crate::process::CleanupEvidence::NotRequired,
-        wall_time: std::time::Duration::from_secs(0),
+        wall_time: crate::agent::process::Fact::Unknown {
+            reason: "native-agent-duration-unobserved".to_owned(),
+        },
         usage: crate::agent::process::UsageProjection::default(),
         completion,
+    };
+    (record, evidence)
+}
+
+/// Reads a bounded native client stream after owned writers have stopped.
+/// Missing streams remain empty evidence; links and special files fail closed.
+fn read_native_agent_capture(
+    directory: &Path,
+    name: &str,
+) -> std::io::Result<crate::process::OutputCapture> {
+    use std::io::Read;
+    const CAP: usize = 1024 * 1024;
+    let metadata = std::fs::symlink_metadata(directory)?;
+    if !metadata.is_dir() || metadata.is_symlink() {
+        return Err(std::io::Error::other(
+            "unsafe native client capture directory",
+        ));
     }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = match options.open(directory.join(name)) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Default::default()),
+        Err(error) => return Err(error),
+    };
+    let metadata = file.metadata()?;
+    #[cfg(unix)]
+    let single_link = {
+        use std::os::unix::fs::MetadataExt;
+        metadata.nlink() == 1
+    };
+    #[cfg(not(unix))]
+    let single_link = false;
+    if !metadata.is_file() || !single_link {
+        return Err(std::io::Error::other("unsafe native client capture file"));
+    }
+    let mut bytes = Vec::new();
+    file.take(CAP as u64 + 1).read_to_end(&mut bytes)?;
+    let truncated = bytes.len() > CAP;
+    bytes.truncate(CAP);
+    Ok(crate::process::OutputCapture { bytes, truncated })
 }
 
 /// Run one declared native trial: one explicitly selected upstream job
@@ -1695,7 +1897,10 @@ async fn run_native_trial(
             .map_err(|error| RunError::Native(error.to_string()))?;
     let stale_job_names = snapshot_job_names(&verifier_trace);
     let selection = crate::benchmark::process::NativeSelection {
-        kind: crate::benchmark::process::SelectionKind::Integration,
+        kind: crate::benchmark::process::SelectionKind::Integration {
+            product: product.to_owned(),
+            executable_sha256: agent.executable.sha256.clone(),
+        },
         lifecycle: crate::benchmark::process::TaskLifecycleSelection {
             environment_mode: task_lifecycle.environment_mode,
             declared: task_lifecycle.declared_artifacts,
@@ -1705,7 +1910,7 @@ async fn run_native_trial(
         agent_name: integration.agent_name.clone(),
         agent_import_path: integration.import_path.clone(),
         task_name: declared_task_name(revision, &task_dir),
-        model,
+        model: model.clone(),
         reward_metric: "reward".to_owned(),
         module_dir: integration.module_dir.clone(),
         handoff_path: handoff.0.clone(),
@@ -1737,6 +1942,8 @@ async fn run_native_trial(
             task_dir: task_dir.clone(),
             task_id: declared.task.clone(),
             native_selection: Some(selection),
+            agent_timeout_seconds: super::plan::narrowed_agent_timeout(experiment.execution()),
+            verifier_timeout_seconds: experiment.execution().verifier_timeout_seconds,
             trace_root: verifier_trace.clone(),
             admitted_lock_digest: material.static_lock.sha256.clone(),
             integrity: integrity.clone(),
@@ -1848,6 +2055,35 @@ async fn run_native_trial(
         ledger.attempt_failed(AuthorityTransition::GradeDispatch, boundary);
     }
 
+    let native_agent = binding.map(|binding| native_agent_record(product, &model, binding));
+    if let Some((agent, terminal_evidence)) = &native_agent {
+        let bytes = serde_json::to_vec(terminal_evidence)
+            .map_err(|error| RunError::Staging(error.to_string()))?;
+        produced_keys.push(stage(
+            &mut bundle,
+            &runner_source,
+            ArtifactRole::Native,
+            "native/agent-terminal.json",
+            &bytes,
+        )?);
+        staged_keys.push(produced_keys.last().cloned().expect("just pushed"));
+        if experiment.storage().capture_policy == crate::experiment::CapturePolicy::Full {
+            for (key, capture) in [
+                (AGENT_STDOUT_KEY, &agent.stdout),
+                (AGENT_STDERR_KEY, &agent.stderr),
+            ] {
+                produced_keys.push(stage(
+                    &mut bundle,
+                    &runner_source,
+                    ArtifactRole::Native,
+                    key,
+                    &capture.bytes,
+                )?);
+                staged_keys.push(produced_keys.last().cloned().expect("just pushed"));
+            }
+        }
+    }
+
     // Native job evidence into the staging bundle, under the grader's
     // source identity: bounded stream captures on every path, and the
     // bound identity references when admission succeeded.
@@ -1951,6 +2187,7 @@ async fn run_native_trial(
     let mut class = classify_native_trial(
         job_record.as_ref(),
         binding.map(std::convert::AsRef::as_ref),
+        native_agent.as_ref().map(|(agent, _)| agent),
     );
     if let Some(reason) = cleanup_failure {
         class = NativeTrialClass::InvalidExecution {
@@ -1971,9 +2208,9 @@ async fn run_native_trial(
 
     // Pre-seal projection over the settled facts: the observed Agent
     // record is the typed native terminal observation.
-    let projection = match (&job_record, binding) {
-        (Some(record), Some(binding)) => ProjectionPipeline::project(&TrialInputs {
-            agent: &native_agent_record(product, binding),
+    let projection = match (&job_record, &native_agent) {
+        (Some(record), Some((agent, _))) => ProjectionPipeline::project(&TrialInputs {
+            agent,
             benchmark: Some(record),
             lifecycle: &lifecycle,
             workspace: None,
@@ -2411,7 +2648,13 @@ async fn run_fixture_trial(
         write_helper(&helper, &agent_helper_script(product))?;
         (
             helper,
-            agent_env(product, &request.fixtures, &request.behavior)?,
+            agent_env(
+                product,
+                request.fixtures.as_deref().ok_or_else(|| {
+                    RunError::Staging("--fixtures is required for hermetic execution".to_owned())
+                })?,
+                &request.behavior,
+            )?,
             format!(
                 "{}:{}",
                 experiment.selected_connection().provider,
@@ -2668,6 +2911,8 @@ async fn run_fixture_trial(
             task_dir,
             task_id: declared.task.clone(),
             native_selection: None,
+            agent_timeout_seconds: None,
+            verifier_timeout_seconds: None,
             trace_root: verifier_trace.clone(),
             // Hermetic staging pins a per-trial fixture digest; the native
             // mode binds the admitted static external lock instead.
@@ -4107,4 +4352,27 @@ mod tests {
             "{error}"
         );
     }
+}
+
+#[cfg(all(test, unix))]
+#[test]
+fn native_client_capture_is_bounded_and_rejects_links() {
+    use std::os::unix::fs::symlink;
+    let root = tempfile::tempdir().unwrap();
+    let stream = root.path().join("stdout.log");
+    assert!(
+        read_native_agent_capture(root.path(), "stdout.log")
+            .unwrap()
+            .bytes
+            .is_empty()
+    );
+    std::fs::write(&stream, vec![b'x'; 1024 * 1024 + 1]).unwrap();
+    let capture = read_native_agent_capture(root.path(), "stdout.log").unwrap();
+    assert_eq!(capture.bytes.len(), 1024 * 1024);
+    assert!(capture.truncated);
+    symlink(&stream, root.path().join("stderr.log")).unwrap();
+    assert!(read_native_agent_capture(root.path(), "stderr.log").is_err());
+    std::fs::remove_file(root.path().join("stderr.log")).unwrap();
+    std::fs::hard_link(&stream, root.path().join("stderr.log")).unwrap();
+    assert!(read_native_agent_capture(root.path(), "stdout.log").is_err());
 }

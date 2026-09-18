@@ -63,12 +63,18 @@ class MaterializeOutputControlTest(unittest.TestCase):
         self.lock = self.root / "lock.json"
         self.lock.write_text(json.dumps({
             "subjects": [{"kind": "benchmark-source", "id": family,
-                          "task": {"id": "fixture"}} for family in
+                          "commit": "a" * 40, "tasks_tree": "b" * 40,
+                          "task": {"id": "fixture", "tree": "c" * 40}} for family in
                          ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1")],
             "images": [{"id": name, "reference": "synthetic", "manifest": "sha256:00"}
                        for name in ("tb21-openssl-selfsigned-cert-task",
                                     "tb30-python-base", "deepswe-task")],
         }))
+        for clone in ("terminal-bench-2-1", "terminal-bench", "deep-swe"):
+            task = self.external / clone / "tasks" / "fixture"
+            task.mkdir(parents=True)
+            (task / "task.toml").write_text('[task]\nname = "fixture"\n')
+            (task / "instruction.md").write_text("synthetic instruction\n")
         self.eval = self.root / "opi-eval"
         self.eval.write_text("synthetic companion\n")
         self.calls = []

@@ -258,7 +258,7 @@ impl AgentAdapter for OpiProcessAdapter {
 /// codes and its closed stderr diagnostic summaries (the `opi-agent`
 /// diagnostic taxonomy, not provider body text). Unknown shapes stay
 /// unknown.
-fn opi_provider_failure_kind(code: i32, stderr: &[u8]) -> Option<&'static str> {
+pub(crate) fn opi_provider_failure_kind(code: i32, stderr: &[u8]) -> Option<&'static str> {
     let text = std::str::from_utf8(stderr).unwrap_or("");
     match code {
         3 => Some("provider-auth-failure"),

@@ -39,7 +39,7 @@ pub(crate) struct BenchmarkIdentity {
 /// the materialized task package, the admitted external lock digest, the
 /// immutable integrity admission, and - in native mode - the explicitly
 /// selected Agent integration the dispatched job must run and bind to.
-/// Limits come from the adapter's declarative profile.
+/// The profile bounds the whole process; native stage caps narrow task limits.
 #[derive(Debug, Clone)]
 pub(crate) struct BenchmarkRunRequest {
     /// Resolved verifier entry executable (argv[0]; e.g. the pinned `uv`
@@ -53,6 +53,9 @@ pub(crate) struct BenchmarkRunRequest {
     /// spawned upstream job runs this Agent inside the graded task
     /// environment and the settled result must bind to it (P19-D01).
     pub native_selection: Option<NativeSelection>,
+    /// Accepted native Agent and verifier caps, independent of the job watchdog.
+    pub agent_timeout_seconds: Option<u64>,
+    pub verifier_timeout_seconds: Option<u64>,
     /// Fresh capture root for native verifier outputs.
     pub trace_root: PathBuf,
     /// Digest of the admitted resolved external lock.
@@ -84,9 +87,12 @@ pub(crate) struct NativeMetrics {
 /// an explicitly selected upstream diagnostic witness (oracle/nop). A
 /// witness is conformance evidence that never becomes an Agent score and
 /// carries no integration terminal observation (P19-D03).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SelectionKind {
-    Integration,
+    Integration {
+        product: String,
+        executable_sha256: String,
+    },
     DiagnosticWitness,
 }
 
@@ -396,25 +402,6 @@ pub(crate) fn import_bound_native_job(
         .get("reward_stats")
         .and_then(|r| r.as_object())
         .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
-    let by_value = reward_stats
-        .get(&selection.reward_metric)
-        .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
-    let by_value = by_value
-        .as_object()
-        .ok_or(NativeBindingError::AggregateInvalid("reward-values"))?;
-    if by_value.len() != 1 {
-        return Err(NativeBindingError::AggregateInvalid("reward-count"));
-    }
-    let (aggregate_reward_key, trial_names) = by_value.iter().next().expect("len checked");
-    let aggregate_reward: f64 = aggregate_reward_key
-        .parse()
-        .map_err(|_| NativeBindingError::AggregateInvalid("bad-reward-values"))?;
-    if !aggregate_reward.is_finite()
-        || aggregate_reward.fract() != 0.0
-        || !(0.0..=1.0).contains(&aggregate_reward)
-    {
-        return Err(NativeBindingError::AggregateInvalid("bad-reward-values"));
-    }
 
     // The single per-trial result: the authoritative native identity.
     let mut trial_dirs: Vec<PathBuf> = std::fs::read_dir(&job_dir)
@@ -477,6 +464,25 @@ pub(crate) fn import_bound_native_job(
         .and_then(|m| m.get("name"))
         .and_then(|n| n.as_str())
         .map(str::to_owned);
+    if matches!(selection.kind, SelectionKind::Integration { .. }) {
+        // Both pinned BaseAgent implementations split the first slash into
+        // ModelInfo.provider/name and otherwise retain the selector verbatim.
+        let (provider, name) = match selection.model.split_once('/') {
+            Some((provider, name)) => (Some(provider), name),
+            None => (None, selection.model.as_str()),
+        };
+        let observed_provider = match agent_info
+            .get("model_info")
+            .and_then(|info| info.get("provider"))
+        {
+            None | Some(serde_json::Value::Null) => None,
+            Some(serde_json::Value::String(value)) => Some(value.as_str()),
+            _ => return Err(NativeBindingError::TrialInvalid("selected-model-mismatch")),
+        };
+        if model_name.as_deref() != Some(name) || observed_provider != provider {
+            return Err(NativeBindingError::TrialInvalid("selected-model-mismatch"));
+        }
+    }
     let exception_type = results
         .get("exception_info")
         .and_then(|e| e.get("exception_type"))
@@ -507,32 +513,74 @@ pub(crate) fn import_bound_native_job(
         }
     }
 
-    // The native reward of this exact trial.
-    let rewards = results
-        .get("verifier_result")
-        .and_then(|v| v.get("rewards"))
-        .and_then(|r| r.as_object())
-        .ok_or(NativeBindingError::RewardMissing)?;
-    let reward_value = rewards
-        .get(&selection.reward_metric)
-        .and_then(|v| v.as_f64())
-        .ok_or(NativeBindingError::RewardMissing)?;
-    if !reward_value.is_finite()
-        || reward_value.fract() != 0.0
-        || !(0.0..=1.0).contains(&reward_value)
-    {
-        return Err(NativeBindingError::RewardInvalid("bad-reward-values"));
-    }
-    if reward_value != aggregate_reward {
-        return Err(NativeBindingError::AggregateRewardMismatch);
-    }
-    // The aggregate must attribute its reward to exactly this trial.
-    let names = trial_names
-        .as_array()
-        .ok_or(NativeBindingError::AggregateInvalid("reward-trials"))?;
-    if names.len() != 1 || names[0].as_str() != Some(trial_name.as_str()) {
-        return Err(NativeBindingError::AggregateRewardMismatch);
-    }
+    // A timed-out verifier has no reward in either pinned runner. Bind its
+    // exact exception attribution without manufacturing a zero score.
+    let reward = if exception_type.as_deref() == Some("VerifierTimeoutError") {
+        let stats = evals.values().next().expect("len checked");
+        if !reward_stats.is_empty()
+            || results.get("verifier_result") != Some(&serde_json::Value::Null)
+            || stats.get("n_trials").and_then(|n| n.as_u64()) != Some(0)
+            || stats.get("n_errors").and_then(|n| n.as_u64()) != Some(1)
+            || stats.get("exception_stats")
+                != Some(&serde_json::json!({"VerifierTimeoutError": [trial_name]}))
+        {
+            return Err(NativeBindingError::AggregateInvalid("verifier-timeout"));
+        }
+        Fact::Unknown {
+            reason: "verifier-timeout".to_owned(),
+        }
+    } else {
+        let by_value = reward_stats
+            .get(&selection.reward_metric)
+            .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
+        let by_value = by_value
+            .as_object()
+            .ok_or(NativeBindingError::AggregateInvalid("reward-values"))?;
+        if by_value.len() != 1 {
+            return Err(NativeBindingError::AggregateInvalid("reward-count"));
+        }
+        let (aggregate_reward_key, trial_names) = by_value.iter().next().expect("len checked");
+        let aggregate_reward: f64 = aggregate_reward_key
+            .parse()
+            .map_err(|_| NativeBindingError::AggregateInvalid("bad-reward-values"))?;
+        if !aggregate_reward.is_finite()
+            || aggregate_reward.fract() != 0.0
+            || !(0.0..=1.0).contains(&aggregate_reward)
+        {
+            return Err(NativeBindingError::AggregateInvalid("bad-reward-values"));
+        }
+
+        // The native reward of this exact trial.
+        let rewards = results
+            .get("verifier_result")
+            .and_then(|v| v.get("rewards"))
+            .and_then(|r| r.as_object())
+            .ok_or(NativeBindingError::RewardMissing)?;
+        let reward_value = rewards
+            .get(&selection.reward_metric)
+            .and_then(|v| v.as_f64())
+            .ok_or(NativeBindingError::RewardMissing)?;
+        if !reward_value.is_finite()
+            || reward_value.fract() != 0.0
+            || !(0.0..=1.0).contains(&reward_value)
+        {
+            return Err(NativeBindingError::RewardInvalid("bad-reward-values"));
+        }
+        if reward_value != aggregate_reward {
+            return Err(NativeBindingError::AggregateRewardMismatch);
+        }
+        // The aggregate must attribute its reward to exactly this trial.
+        let names = trial_names
+            .as_array()
+            .ok_or(NativeBindingError::AggregateInvalid("reward-trials"))?;
+        if names.len() != 1 || names[0].as_str() != Some(trial_name.as_str()) {
+            return Err(NativeBindingError::AggregateRewardMismatch);
+        }
+        Fact::Known {
+            value: reward_value as u64,
+            origin: "native-trial-result".to_owned(),
+        }
+    };
 
     // Resolve the job's task reference, trial additions, and native mode
     // against the admitted lifecycle this dispatch selected.
@@ -553,12 +601,20 @@ pub(crate) fn import_bound_native_job(
     // nop agent) produces none, so its binding rests on the job's own
     // identities and collected artifacts and never becomes an Agent
     // score.
-    let terminal = if selection.kind == SelectionKind::Integration {
+    let terminal = if let SelectionKind::Integration {
+        product,
+        executable_sha256,
+    } = &selection.kind
+    {
         let terminal_path = trial_dir.join("agent/opi-eval-terminal.json");
-        Some(parse_terminal_observation(
+        let terminal = parse_terminal_observation(
             &std::fs::read(&terminal_path)
                 .map_err(|_| NativeBindingError::TrialInvalid("terminal-observation"))?,
-        )?)
+        )?;
+        if terminal.product != *product || terminal.agent_executable_sha256 != *executable_sha256 {
+            return Err(NativeBindingError::TrialInvalid("selected-agent-mismatch"));
+        }
+        Some(terminal)
     } else {
         None
     };
@@ -680,10 +736,7 @@ pub(crate) fn import_bound_native_job(
         agent_version,
         model_name,
         task_name: task_name.to_owned(),
-        reward: Fact::Known {
-            value: reward_value as u64,
-            origin: "native-trial-result".to_owned(),
-        },
+        reward,
         exception_type,
         terminal,
         results_path,
@@ -1084,6 +1137,87 @@ fn is_sha256_hex(value: &str) -> bool {
 /// every path.
 pub(crate) struct BenchmarkExecution;
 
+/// Materialize the pinned runners' single-trial JobConfig without CLI Agent
+/// flags, which would replace the configured Agent and discard its stage caps.
+fn native_job_config(request: &BenchmarkRunRequest) -> Result<serde_json::Value, ExecutionError> {
+    let reject = || ExecutionError {
+        token: "native-stage-configuration-invalid",
+    };
+    let selection = request.native_selection.as_ref().ok_or_else(reject)?;
+    let task: toml::Value = toml::from_str(
+        &std::fs::read_to_string(request.task_dir.join("task.toml")).map_err(|_| reject())?,
+    )
+    .map_err(|_| reject())?;
+    // Both locked task models default Agent timeout to None. Their timeout
+    // resolution returns None before considering max_timeout_sec in that case.
+    let agent_default = task.get("agent").and_then(|agent| agent.get("timeout_sec"));
+    if let Some(value) = agent_default {
+        let seconds = value
+            .as_float()
+            .or_else(|| value.as_integer().map(|v| v as f64));
+        if !seconds.is_some_and(|seconds| seconds.is_finite() && seconds > 0.0) {
+            return Err(reject());
+        }
+    }
+    if request.agent_timeout_seconds == Some(0) || request.verifier_timeout_seconds == Some(0) {
+        return Err(reject());
+    }
+    let task_path = request.task_dir.canonicalize().map_err(|_| reject())?;
+    Ok(serde_json::json!({
+        "jobs_dir": "jobs",
+        "n_attempts": 1,
+        "n_concurrent_trials": 1,
+        "retry": {"max_retries": 0},
+        "timeout_multiplier": 1.0,
+        "agent_timeout_multiplier": 1.0,
+        "verifier_timeout_multiplier": 1.0,
+        "agents": [{
+            "import_path": selection.agent_import_path,
+            "model_name": selection.model,
+            "max_timeout_sec": request.agent_timeout_seconds,
+            "override_timeout_sec": if agent_default.is_none() {
+                request.agent_timeout_seconds
+            } else {
+                None
+            },
+        }],
+        "verifier": {"max_timeout_sec": request.verifier_timeout_seconds},
+        "tasks": [{"path": task_path}],
+        "datasets": [],
+    }))
+}
+
+/// The persisted effective trial config must retain the caps sent to the runner.
+/// Compare numeric values, since the Python models serialize integer caps as floats.
+fn native_stage_config_matches(config: &std::path::Path, expected: &serde_json::Value) -> bool {
+    let Ok(bytes) = std::fs::read(config) else {
+        return false;
+    };
+    let Ok(observed) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return false;
+    };
+    for (actual, wanted) in [
+        (&observed["agent"], &expected["agents"][0]),
+        (&observed["verifier"], &expected["verifier"]),
+    ] {
+        for key in ["max_timeout_sec", "override_timeout_sec"] {
+            if !(actual[key].is_null() && wanted[key].is_null())
+                && (actual[key].as_f64().is_none() || actual[key].as_f64() != wanted[key].as_f64())
+            {
+                return false;
+            }
+        }
+    }
+    // Harbor omits model defaults when persisting TrialConfig. Its global
+    // multiplier defaults to 1; explicit null or a changed value is invalid.
+    observed
+        .get("timeout_multiplier")
+        .is_none_or(|value| value.as_f64() == Some(1.0))
+        && ["agent_timeout_multiplier", "verifier_timeout_multiplier"]
+            .iter()
+            .all(|key| observed[*key].as_f64() == Some(1.0))
+}
+
 impl BenchmarkExecution {
     /// Run `request` under `adapter` to settlement.
     ///
@@ -1123,12 +1257,53 @@ impl BenchmarkExecution {
             });
         }
         adapter.admission(request)?;
+        let mut resolved_request;
+        let request = if request.native_selection.is_some() {
+            resolved_request = request.clone();
+            resolved_request.trace_root =
+                request
+                    .trace_root
+                    .canonicalize()
+                    .map_err(|_| ExecutionError {
+                        token: "native-job-config-unwritable",
+                    })?;
+            &resolved_request
+        } else {
+            request
+        };
+        let native_config = request
+            .native_selection
+            .as_ref()
+            .map(|_| native_job_config(request))
+            .transpose()?;
+        if let Some(config) = &native_config {
+            let bytes = serde_json::to_vec(config).map_err(|_| ExecutionError {
+                token: "native-job-config-unwritable",
+            })?;
+            std::fs::write(request.trace_root.join("native-job-config.json"), bytes).map_err(
+                |_| ExecutionError {
+                    token: "native-job-config-unwritable",
+                },
+            )?;
+        }
         let identity = adapter.identity();
         let spec = adapter.spawn_spec(request);
         let started = Instant::now();
         let outcome = ProcessSupervisor::run(&spec, cancel).await;
         let wall_time = started.elapsed();
-        let (reward, mut completion) = adapter.settle(&outcome, request);
+        let (mut reward, mut completion) = adapter.settle(&outcome, request);
+        if let (Some(expected), BenchmarkCompletion::VerifiedNative { binding, .. }) =
+            (&native_config, &completion)
+            && !native_stage_config_matches(&binding.config_path, expected)
+        {
+            reward = Fact::Unknown {
+                reason: "native-stage-configuration-drift".to_owned(),
+            };
+            completion = BenchmarkCompletion::Failed(BenchmarkFailure {
+                kind: "native-stage-configuration-drift",
+                boundary: FailureBoundaryCode::Integrity,
+            });
+        }
         // A selected native dispatch supervises the entire upstream job,
         // including the Agent. Verifier-only executions keep grader ownership.
         if request.native_selection.is_some() && outcome.exit == ExitState::TimedOut {
@@ -1285,6 +1460,8 @@ mod tests {
             task_dir: "/nonexistent/task".into(),
             task_id: "helper-task".to_owned(),
             native_selection: None,
+            agent_timeout_seconds: None,
+            verifier_timeout_seconds: None,
             trace_root: std::env::temp_dir(),
             admitted_lock_digest: "a".repeat(64),
             integrity,
@@ -1601,7 +1778,7 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
         "task_name": "fixture-task",
         "trial_name": trial,
         "agent_info": {"name": agent_name, "version": "1.0.0",
-            "model_info": {"name": "scripted/eval"}},
+            "model_info": {"name": "scripted:eval"}},
         "verifier_result": {"rewards": {"reward": 1.0}},
         "verifier_environment_mode": "shared",
         "exception_info": null,
@@ -1655,7 +1832,10 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
     std::fs::create_dir_all(trial_dir.join("artifacts/root")).unwrap();
     std::fs::write(trial_dir.join("artifacts/root/answer.txt"), answer).unwrap();
     NativeSelection {
-        kind: SelectionKind::Integration,
+        kind: SelectionKind::Integration {
+            product: "opi".to_owned(),
+            executable_sha256: "a".repeat(64),
+        },
         lifecycle: TaskLifecycleSelection {
             environment_mode: super::task_lifecycle::VerifierEnvironmentMode::Shared,
             declared: vec![super::task_lifecycle::DeclaredArtifact {
@@ -1669,11 +1849,138 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
         agent_name: agent_name.to_owned(),
         agent_import_path: "opi_eval_harbor:OpiAgent".to_owned(),
         task_name: "fixture-task".to_owned(),
-        model: "scripted/eval".to_owned(),
+        model: "scripted:eval".to_owned(),
         reward_metric: "reward".to_owned(),
         module_dir: "/nonexistent/integrations".into(),
         handoff_path: "/nonexistent/handoff.json".into(),
         stale_job_names: Vec::new(),
+    }
+}
+
+#[test]
+fn native_verifier_timeout_binds_without_inventing_reward() {
+    for mutation in [
+        "none",
+        "wrong-trial",
+        "missing-error",
+        "missing-terminal",
+        "wrong-product",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+        let job = dir.path().join("jobs/j1");
+        let trial = job.join("fixture-task__bZZeEkw");
+        let mut result: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(trial.join("result.json")).unwrap()).unwrap();
+        result["verifier_result"] = serde_json::Value::Null;
+        result["exception_info"] = serde_json::json!({"exception_type": "VerifierTimeoutError"});
+        std::fs::write(
+            trial.join("result.json"),
+            serde_json::to_vec(&result).unwrap(),
+        )
+        .unwrap();
+        let mut aggregate = serde_json::json!({
+            "n_total_trials": 1,
+            "stats": {"evals": {"opi-eval-opi__adhoc": {
+                "n_trials": 0, "n_errors": 1, "reward_stats": {},
+                "exception_stats": {"VerifierTimeoutError": ["fixture-task__bZZeEkw"]},
+            }}},
+        });
+        match mutation {
+            "wrong-trial" => {
+                aggregate["stats"]["evals"]["opi-eval-opi__adhoc"]["exception_stats"] =
+                    serde_json::json!({"VerifierTimeoutError": ["other-trial"]})
+            }
+            "missing-error" => {
+                aggregate["stats"]["evals"]["opi-eval-opi__adhoc"]["n_errors"] = 0.into()
+            }
+            "missing-terminal" => {
+                std::fs::remove_file(trial.join("agent/opi-eval-terminal.json")).unwrap()
+            }
+            "wrong-product" => {
+                let path = trial.join("agent/opi-eval-terminal.json");
+                let bytes = std::fs::read_to_string(&path)
+                    .unwrap()
+                    .replace("\"product\":\"opi\"", "\"product\":\"pi\"");
+                std::fs::write(path, bytes).unwrap();
+            }
+            _ => {}
+        }
+        std::fs::write(
+            job.join("result.json"),
+            serde_json::to_vec(&aggregate).unwrap(),
+        )
+        .unwrap();
+        let binding = import_bound_native_job(dir.path(), &selection);
+        if mutation == "none" {
+            let binding = binding.unwrap();
+            assert_eq!(
+                binding.exception_type.as_deref(),
+                Some("VerifierTimeoutError")
+            );
+            assert_eq!(
+                binding.reward,
+                Fact::Unknown {
+                    reason: "verifier-timeout".to_owned()
+                }
+            );
+        } else {
+            assert!(binding.is_err(), "{mutation}: {binding:?}");
+        }
+    }
+}
+
+#[test]
+fn native_model_binding_uses_only_the_pinned_slash_split() {
+    for (selector, model, accepted) in [
+        (
+            "scripted:eval",
+            serde_json::json!({"name": "scripted:eval"}),
+            true,
+        ),
+        (
+            "scripted:eval",
+            serde_json::json!({"name": "scripted:eval", "provider": false}),
+            false,
+        ),
+        (
+            "scripted:org/eval",
+            serde_json::json!({"name": "eval", "provider": "scripted:org"}),
+            true,
+        ),
+        (
+            "scripted:org/eval",
+            serde_json::json!({"name": "eval"}),
+            false,
+        ),
+        (
+            "scripted:org/eval",
+            serde_json::json!({"name": "eval", "provider": "other"}),
+            false,
+        ),
+        (
+            "scripted:org/eval",
+            serde_json::json!({"name": "scripted:org/eval"}),
+            false,
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+        selection.model = selector.to_owned();
+        let result_path = dir.path().join("jobs/j1/fixture-task__bZZeEkw/result.json");
+        let mut result: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&result_path).unwrap()).unwrap();
+        result["agent_info"]["model_info"] = model;
+        std::fs::write(&result_path, serde_json::to_vec(&result).unwrap()).unwrap();
+        let bound = import_bound_native_job(dir.path(), &selection);
+        if accepted {
+            assert!(bound.is_ok(), "{selector}: {bound:?}");
+        } else {
+            assert_eq!(
+                bound.unwrap_err(),
+                NativeBindingError::TrialInvalid("selected-model-mismatch")
+            );
+        }
     }
 }
 
@@ -1732,7 +2039,11 @@ fn native_result_binding_imports_harbor_pi_zero_reward() {
     )
     .unwrap();
     let selection = NativeSelection {
-        kind: SelectionKind::Integration,
+        kind: SelectionKind::Integration {
+            product: "pi".to_owned(),
+            executable_sha256: "443bd83f30e4dbc7bac2eed9c6aa2461b9a15016fd555f48c92a0591d028c403"
+                .to_owned(),
+        },
         lifecycle: TaskLifecycleSelection {
             environment_mode: super::task_lifecycle::VerifierEnvironmentMode::Shared,
             declared: Vec::new(),
@@ -2098,7 +2409,7 @@ fn native_result_binding_admits_one_bound_job() {
         binding.collected[0].sha256,
         crate::runner::material::sha256_hex(b"native stand-in answer\n")
     );
-    assert_eq!(binding.model_name.as_deref(), Some("scripted/eval"));
+    assert_eq!(binding.model_name.as_deref(), Some("scripted:eval"));
     assert!(binding.manifest_path.is_some());
 
     // A pre-existing (stale) job is never the imported one: only the new

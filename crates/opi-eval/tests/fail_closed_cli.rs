@@ -52,6 +52,36 @@ fn snapshot_tree(root: &Path) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
 }
 
 #[test]
+fn run_requires_one_source_and_hermetic_fixtures_before_effects() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = fixtures_dir().join("experiment/local-paired.toml");
+    for case in ["neither", "both", "missing-fixtures"] {
+        let root = dir.path().join(case);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_opi-eval"));
+        command.args(["run", "--root"]).arg(&root);
+        if case != "neither" {
+            command.arg("--config").arg(&config);
+        }
+        if case == "both" {
+            command
+                .arg("--plan")
+                .arg(dir.path().join("missing-plan.json"));
+        }
+        let output = command.output().unwrap();
+        assert_eq!(output.status.code(), Some(2), "{case}");
+        assert!(!root.exists(), "{case}: no run effects");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!stderr.contains("panicked"), "{stderr}");
+        if case == "missing-fixtures" {
+            assert!(
+                stderr.contains("--fixtures is required for hermetic execution"),
+                "{stderr}"
+            );
+        }
+    }
+}
+
+#[test]
 fn unreadable_verify_root_fails_closed() {
     let parent = tempfile::tempdir().unwrap();
     let missing_root = parent.path().canonicalize().unwrap().join("missing-run");
@@ -104,7 +134,7 @@ fn reused_trial_identity_is_rejected_before_staging() {
         "identity reuse must be rejected: stdout={stdout} stderr={stderr}"
     );
     assert!(
-        stderr.contains("already has a durable intent reservation"),
+        stderr.contains("run root already contains execution evidence"),
         "{stderr}"
     );
     assert_eq!(

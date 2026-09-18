@@ -16,7 +16,7 @@ use crate::runner::lifecycle::{CancellationSource, SettlementKind};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 /// Exact Agent identity retained on every settled record (EVAL-AGT-001).
@@ -195,8 +195,8 @@ pub(crate) struct AgentRecord {
     pub stdout: OutputCapture,
     pub stderr: OutputCapture,
     pub cleanup: CleanupEvidence,
-    /// Wall-clock duration of the supervised run.
-    pub wall_time: Duration,
+    /// Agent-only wall time in milliseconds, with its observation or absence.
+    pub wall_time: Fact,
     pub usage: UsageProjection,
     pub completion: AgentCompletion,
 }
@@ -310,7 +310,10 @@ impl AgentExecution {
         let spec = adapter.spawn_spec(request);
         let started = Instant::now();
         let outcome = ProcessSupervisor::run(&spec, cancel).await;
-        let wall_time = started.elapsed();
+        let wall_time = Fact::Known {
+            value: started.elapsed().as_millis() as u64,
+            origin: "supervisor-wall-clock".to_owned(),
+        };
         let (usage, completion) = adapter.settle(&outcome, request);
         Ok(AgentRecord {
             identity,
@@ -412,6 +415,7 @@ mod class_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     /// A helper adapter proving the shared driver without any product
     /// semantics: argv is a real process (`/bin/true`-style), settle maps
@@ -522,6 +526,10 @@ mod tests {
         );
         assert_eq!(record.identity.product, "helper");
         assert_eq!(record.failure_boundary(), None);
+        assert!(matches!(
+            &record.wall_time,
+            Fact::Known { origin, .. } if origin == "supervisor-wall-clock"
+        ));
         // The lifecycle bridge keeps exit codes exact.
         assert_eq!(
             record.settlement_kind(CancellationSource::User),

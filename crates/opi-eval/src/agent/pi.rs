@@ -264,32 +264,7 @@ impl AgentAdapter for PiProcessAdapter {
             .expect("AgentExecution validates the exact provider:model shape");
         let imported = PiImporter.import_stream(&outcome.stdout, &request.trace_root);
         let usage = imported.usage.clone();
-        let completion = match imported.completion {
-            AgentCompletion::Failed(failure) => AgentCompletion::Failed(failure),
-            AgentCompletion::Completed { artifacts } => {
-                if imported.stop_reason == "error" {
-                    // The client's own typed terminal evidence rules even
-                    // at process exit zero: no speculative provider cause
-                    // is claimed beyond the client's typed status prefixes.
-                    AgentCompletion::Failed(AgentFailure {
-                        kind: pi_provider_failure_kind(&imported.error_message),
-                        boundary: FailureBoundaryCode::AgentProcess,
-                    })
-                } else if imported.stop_reason != "stop" {
-                    AgentCompletion::Failed(AgentFailure {
-                        kind: "agent-outcome-not-success",
-                        boundary: FailureBoundaryCode::AgentProcess,
-                    })
-                } else if imported.provider != provider || imported.model != model {
-                    AgentCompletion::Failed(AgentFailure {
-                        kind: "agent-model-mismatch",
-                        boundary: FailureBoundaryCode::Evidence,
-                    })
-                } else {
-                    AgentCompletion::Completed { artifacts }
-                }
-            }
-        };
+        let completion = imported.settle(provider, model);
         (usage, completion)
     }
 }
@@ -305,6 +280,51 @@ struct ImportedPi {
     provider: String,
     model: String,
     usage: UsageProjection,
+    terminal_message: serde_json::Value,
+}
+
+impl ImportedPi {
+    fn settle(self, provider: &str, model: &str) -> AgentCompletion {
+        match self.completion {
+            AgentCompletion::Failed(failure) => AgentCompletion::Failed(failure),
+            AgentCompletion::Completed { artifacts } => {
+                if self.stop_reason == "error" {
+                    // The client's own typed terminal evidence rules even
+                    // at process exit zero: no speculative provider cause
+                    // is claimed beyond the client's typed status prefixes.
+                    AgentCompletion::Failed(AgentFailure {
+                        kind: pi_provider_failure_kind(&self.error_message),
+                        boundary: FailureBoundaryCode::AgentProcess,
+                    })
+                } else if self.stop_reason != "stop" {
+                    AgentCompletion::Failed(AgentFailure {
+                        kind: "agent-outcome-not-success",
+                        boundary: FailureBoundaryCode::AgentProcess,
+                    })
+                } else if self.provider != provider || self.model != model {
+                    AgentCompletion::Failed(AgentFailure {
+                        kind: "agent-model-mismatch",
+                        boundary: FailureBoundaryCode::Evidence,
+                    })
+                } else {
+                    AgentCompletion::Completed { artifacts }
+                }
+            }
+        }
+    }
+}
+
+/// Interprets captured native pi output with the same parser and terminal
+/// predicate as the process adapter, without mutating the captured stream.
+/// The validated last assistant message is retained for terminal-only evidence.
+pub(crate) fn native_terminal_completion(
+    stdout: &crate::process::OutputCapture,
+    provider_model: &str,
+) -> (AgentCompletion, serde_json::Value) {
+    let imported = PiImporter.parse_stream(stdout);
+    let message = imported.terminal_message.clone();
+    let (provider, model) = provider_model.split_once(':').expect("validated selection");
+    (imported.settle(provider, model), message)
 }
 
 /// Private importer for pi's documented stdout JSON protocol: one session
@@ -336,6 +356,31 @@ impl PiImporter {
         stdout: &crate::process::OutputCapture,
         trace_root: &std::path::Path,
     ) -> ImportedPi {
+        let mut imported = self.parse_stream(stdout);
+        if matches!(imported.completion, AgentCompletion::Completed { .. }) {
+            let artifact_path = trace_root.join("pi-events.jsonl");
+            imported.completion = if std::fs::create_dir_all(trace_root)
+                .and_then(|_| std::fs::write(&artifact_path, &stdout.bytes))
+                .is_err()
+            {
+                AgentCompletion::Failed(AgentFailure {
+                    kind: "import-evidence-missing",
+                    boundary: FailureBoundaryCode::Evidence,
+                })
+            } else {
+                AgentCompletion::Completed {
+                    artifacts: vec![NativeArtifact {
+                        role: "events/stdout".to_owned(),
+                        sha256: sha256_hex(&stdout.bytes),
+                        path: artifact_path,
+                    }],
+                }
+            };
+        }
+        imported
+    }
+
+    fn parse_stream(&self, stdout: &crate::process::OutputCapture) -> ImportedPi {
         let failed = |kind: &'static str, boundary| ImportedPi {
             completion: AgentCompletion::Failed(AgentFailure { kind, boundary }),
             stop_reason: String::new(),
@@ -343,6 +388,7 @@ impl PiImporter {
             provider: String::new(),
             model: String::new(),
             usage: UsageProjection::default(),
+            terminal_message: serde_json::Value::Null,
         };
 
         // A cap-truncated stream cannot contain a provably terminal event.
@@ -506,25 +552,9 @@ impl PiImporter {
             }),
         };
 
-        // Terminal facts are complete; the requested-identity and stopReason
-        // checks belong to the adapter's completion predicate. Retain the raw stream as a
-        // content-addressed native artifact (EVAL-AGT-007: native facts are
-        // kept, never dropped to make Agents look alike).
-        let artifact_path = trace_root.join("pi-events.jsonl");
-        if std::fs::create_dir_all(trace_root)
-            .and_then(|_| std::fs::write(&artifact_path, &stdout.bytes))
-            .is_err()
-        {
-            return failed("import-evidence-missing", FailureBoundaryCode::Evidence);
-        }
         ImportedPi {
-            completion: AgentCompletion::Completed {
-                artifacts: vec![NativeArtifact {
-                    role: "events/stdout".to_owned(),
-                    sha256: sha256_hex(&stdout.bytes),
-                    path: artifact_path,
-                }],
-            },
+            completion: AgentCompletion::Completed { artifacts: vec![] },
+            terminal_message: message,
             stop_reason,
             error_message,
             provider,

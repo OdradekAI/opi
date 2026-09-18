@@ -995,12 +995,23 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
         }
         None => None,
     };
-    let fixture_package = match &native_material {
-        Some(material) => material
-            .benchmark(material_key(revision.adapter))
-            .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
-            .task_package
-            .clone(),
+    let native_task = native_material
+        .as_ref()
+        .map(|material| {
+            let benchmark = material
+                .benchmark(material_key(revision.adapter))
+                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
+            if benchmark.tasks.len() != 1 {
+                return Err(ConformanceError::Unsupported(
+                    "benchmark diagnostics require exactly one selected task in native material"
+                        .to_owned(),
+                ));
+            }
+            Ok(benchmark.tasks.values().next().expect("one task"))
+        })
+        .transpose()?;
+    let fixture_package = match native_task {
+        Some(task) => task.task_package.clone(),
         None => args
             .fixtures
             .join("benchmarks")
@@ -1021,14 +1032,8 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
         .join("benchmarks")
         .join(revision.fixture_dir)
         .join("profile/synthetic.toml");
-    let profile_text: String = match &native_material {
-        Some(material) => std::fs::read_to_string(
-            material
-                .benchmark(material_key(revision.adapter))
-                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?
-                .profile
-                .clone(),
-        )?,
+    let profile_text: String = match native_task {
+        Some(task) => std::fs::read_to_string(&task.profile.path)?,
         None => match args.case.as_str() {
             "production-pin-drift" | "package-not-materialized" => match revision.adapter {
                 "terminal-bench-2.1" => {
@@ -1136,8 +1141,12 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
                     ("pier", _) => "pier.agents.nop:NopAgent".to_owned(),
                     _ => unreachable!("family pinned above"),
                 },
-                task_name: witness_task_name(revision, &benchmark.profile, &task_dir)
-                    .map_err(ConformanceError::Unsupported)?,
+                task_name: witness_task_name(
+                    revision,
+                    &native_task.expect("native material").profile.path,
+                    &task_dir,
+                )
+                .map_err(ConformanceError::Unsupported)?,
                 model: "scripted:eval".to_owned(),
                 reward_metric: "reward".to_owned(),
                 module_dir: integration.module_dir.clone(),
@@ -1418,6 +1427,8 @@ async fn finish_benchmark_case<A: BenchmarkAdapter>(
         task_dir,
         task_id,
         native_selection: witness_selection,
+        agent_timeout_seconds: None,
+        verifier_timeout_seconds: None,
         trace_root,
         admitted_lock_digest,
         integrity,

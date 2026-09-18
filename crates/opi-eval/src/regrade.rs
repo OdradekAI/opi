@@ -465,6 +465,13 @@ fn regrade_one(
                 .find(|entry| entry.get("id").and_then(|id| id.as_str()) == Some(trial))
         })
         .ok_or("sealed-experiment-missing-trial")?;
+    let sealed_task = subject
+        .get("task")
+        .and_then(|value| value.as_str())
+        .ok_or("sealed-trial-missing-task")?;
+    let task_material = benchmark
+        .task(sealed_task)
+        .map_err(|_| format!("material-missing-task:{sealed_task}"))?;
     let subject_id = subject
         .get("subject")
         .and_then(|value| value.as_str())
@@ -515,7 +522,7 @@ fn regrade_one(
     for dir in [&task_dir, &collected_root, &trace_root] {
         std::fs::create_dir_all(dir).map_err(|error| format!("staging-failed:{error}"))?;
     }
-    copy_tree(&benchmark.task_package, &task_dir)
+    copy_tree(&task_material.task_package, &task_dir)
         .map_err(|error| format!("task-package-copy-failed:{error}"))?;
     let lifecycle = crate::benchmark::task_lifecycle::parse_task_lifecycle(&task_dir, family)
         .map_err(|error| format!("task-package-invalid:{}", error.token()))?;
@@ -551,8 +558,8 @@ fn regrade_one(
     }
     // The task identity the sealed trial graded must still resolve from
     // the fresh material's profile.
-    let profile_bytes =
-        std::fs::read(&benchmark.profile).map_err(|error| format!("profile-unreadable:{error}"))?;
+    let profile_bytes = std::fs::read(&task_material.profile.path)
+        .map_err(|error| format!("profile-unreadable:{error}"))?;
     let material_task_id = match adapter_key.as_str() {
         "terminal-bench-2.1" => {
             crate::benchmark::terminal_bench_21::Tb21Profile::parse(profile_bytes.as_slice())
@@ -757,12 +764,8 @@ fn regrade_one(
     let mut command = std::process::Command::new(&benchmark.verifier_executable.path);
     command
         .current_dir(&trace_root)
-        .env_remove("OPI_EVAL_NATIVE_HANDOFF")
-        .env_remove("OPI_EVAL_SCRIPTED_KEY")
-        .env_remove("OPENAI_API_KEY");
-    for (key, value) in &projected {
-        command.env(key, value);
-    }
+        .env_clear()
+        .envs(&projected);
     let status = command
         .status()
         .map_err(|error| format!("verifier-spawn-failed:{error}"))?;
@@ -776,7 +779,10 @@ fn regrade_one(
     // The same binding reader as initial execution validates the fresh
     // job: identity, declared lifecycle, delivered-vs-collected bytes.
     let selection = crate::benchmark::process::NativeSelection {
-        kind: crate::benchmark::process::SelectionKind::Integration,
+        kind: crate::benchmark::process::SelectionKind::Integration {
+            product: product.to_owned(),
+            executable_sha256: agent.executable.sha256.clone(),
+        },
         lifecycle: crate::benchmark::process::TaskLifecycleSelection {
             environment_mode: lifecycle.environment_mode,
             declared: lifecycle.declared_artifacts.clone(),

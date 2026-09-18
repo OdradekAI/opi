@@ -276,19 +276,48 @@ class _OpiEvalAgent(BaseAgent):
             raise
         exit_code = 0
         cancelled = False
+        # The pinned Docker exec uses Bash. Job control gives this launch its
+        # own process group; the private pid file lives only until cleanup.
+        command = (
+            "set -m\n"
+            f"{self._agent_command(instruction, stage)}"
+            f" > {shlex.quote(f'{self._capture_root}/stdout.log')}"
+            f" 2> {shlex.quote(f'{self._capture_root}/stderr.log')} &\n"
+            "opi_eval_pid=$!\n"
+            f"printf '%s\\n' \"$opi_eval_pid\" > {shlex.quote(f'{stage}/agent.pid')}\n"
+            "wait \"$opi_eval_pid\""
+        )
+        launch = asyncio.create_task(environment.exec(
+            command=f"bash -c {shlex.quote(command)}",
+            env=self._agent_env(),
+        ))
         try:
-            result = await environment.exec(
-                command=(
-                    f"{self._agent_command(instruction, stage)}"
-                    f" > {shlex.quote(f'{self._capture_root}/stdout.log')}"
-                    f" 2> {shlex.quote(f'{self._capture_root}/stderr.log')}"
-                ),
-                env=self._agent_env(),
-            )
+            result = await asyncio.shield(launch)
             exit_code = int(result.return_code)
         except asyncio.CancelledError:
-            # Preserve cancellation without publishing a successful exit.
             cancelled = True
+            if not launch.cancelled():
+                # Keep the transport alive to observe the actual exit. Killing
+                # its client alone can leave the Agent running in the container.
+                async with asyncio.timeout(5):
+                    if not launch.done():
+                        pid_file = shlex.quote(f"{stage}/agent.pid")
+                        stop = (
+                            f"for i in {{1..100}}; do test -f {pid_file} && break; sleep 0.01; done; "
+                            f"read -r pid < {pid_file}; "
+                            "[[ $pid =~ ^[1-9][0-9]*$ ]] && "
+                            "kill -KILL -- -\"$pid\""
+                        )
+                        stopped = await environment.exec(
+                            command=f"bash -c {shlex.quote(stop)}", user="root",
+                        )
+                        if stopped.return_code != 0:
+                            raise _OpiEvalAgentError("Agent process-group termination failed")
+                    result = await asyncio.shield(launch)
+                    exit_code = int(result.return_code)
+                    cancelled = False
+            # Only the runner distinguishes a stage deadline from other
+            # cancellation. Preserve that signal; do not invent a timeout.
             raise
         except Exception as exc:  # noqa: BLE001 - settle every terminal shape
             name = type(exc).__name__

@@ -35,6 +35,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tarfile
@@ -568,7 +569,7 @@ def verify_material(stage: Path, f: Findings) -> dict | None:
                          f, "material")
     if material is None:
         return None
-    if material.get("schema") != "opi-eval-native-material/4":
+    if material.get("schema") != "opi-eval-native-material/5":
         f.reject("material", "the material is not the admitted schema "
                              f"{material.get('schema')!r}")
     agents = material.get("agents")
@@ -602,6 +603,34 @@ def verify_material(stage: Path, f: Findings) -> dict | None:
     if not isinstance(benchmarks, dict) or sorted(benchmarks) != sorted(BENCHMARKS):
         f.reject("material", "the material does not declare the three "
                              "admitted benchmark revisions")
+    else:
+        for adapter, benchmark in benchmarks.items():
+            if not isinstance(benchmark, dict):
+                f.reject("material", f"{adapter}: benchmark binding must be an object")
+                continue
+            corpus = benchmark.get("corpus", {})
+            if not isinstance(corpus, dict):
+                f.reject("material", f"{adapter}: corpus binding must be an object")
+                continue
+            if (not isinstance(corpus.get("root"), str)
+                    or not re.fullmatch(r"[0-9a-f]{40}", str(corpus.get("source_commit")))
+                    or not re.fullmatch(r"[0-9a-f]{40}", str(corpus.get("tasks_tree")))):
+                f.reject("material", f"{adapter}: complete corpus identity missing")
+            tasks = benchmark.get("tasks")
+            if not isinstance(tasks, dict) or not tasks:
+                f.reject("material", f"{adapter}: selected task bindings missing")
+                continue
+            for task_id, task in tasks.items():
+                if not isinstance(task, dict) or not isinstance(task.get("profile"), dict):
+                    f.reject("material", f"{adapter}/{task_id}: task/profile binding must be objects")
+                    continue
+                if (not re.fullmatch(r"[A-Za-z0-9_.-]+", task_id) or ".." in task_id
+                        or not task.get("native_task_name")
+                        or not task.get("task_package")
+                        or not is_hex64(task.get("task_package_manifest_sha256"))
+                        or not task.get("profile", {}).get("path")
+                        or not is_hex64(task.get("profile", {}).get("sha256"))):
+                    f.reject("material", f"{adapter}/{task_id}: exact task binding missing")
     return material
 
 

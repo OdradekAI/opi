@@ -29,8 +29,7 @@ enum Command {
         #[arg(long)]
         native_material: Option<std::path::PathBuf>,
     },
-    /// Run one assembled hermetic experiment end to end through the
-    /// paired evaluation runner.
+    /// Run a frozen native or hermetic experiment through the evaluation runner.
     Run {
         /// Path to the experiment document.
         #[arg(long, conflicts_with = "plan")]
@@ -43,9 +42,9 @@ enum Command {
         /// Fresh run root for trial directories and receipts.
         #[arg(long)]
         root: std::path::PathBuf,
-        /// Repository `crates/opi-eval/tests/fixtures` root.
+        /// Repository fixtures root (required for hermetic execution only).
         #[arg(long)]
-        fixtures: std::path::PathBuf,
+        fixtures: Option<std::path::PathBuf>,
         /// Hermetic staging behavior (helper-process selection).
         #[arg(long, default_value = "happy")]
         behavior: String,

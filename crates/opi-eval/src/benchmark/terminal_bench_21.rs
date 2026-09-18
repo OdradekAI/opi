@@ -785,10 +785,15 @@ impl BenchmarkAdapter for TerminalBench21Adapter {
         }
         let mut env = request.extra_env.clone();
         if let Some(selection) = &request.native_selection {
-            argv.push("--agent".into());
-            argv.push(selection.agent_import_path.clone().into());
-            argv.push("--model".into());
-            argv.push(selection.model.clone().into());
+            argv.truncate(4);
+            argv.extend([
+                "run".into(),
+                "--config".into(),
+                request
+                    .trace_root
+                    .join("native-job-config.json")
+                    .into_os_string(),
+            ]);
             let module_dir = selection.module_dir.clone().into_os_string();
             let handoff = selection.handoff_path.clone().into_os_string();
             let pythonpath = match env.get(std::ffi::OsStr::new("PYTHONPATH")) {
@@ -1022,6 +1027,8 @@ mod adapter_tests {
             task_dir,
             task_id: adapter.profile().task_id.clone(),
             native_selection: None,
+            agent_timeout_seconds: None,
+            verifier_timeout_seconds: None,
             trace_root,
             admitted_lock_digest: "a".repeat(64),
             integrity: integrity_for("2.1", &adapter.profile().task_id),

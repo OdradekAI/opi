@@ -143,6 +143,8 @@ class FakeEnvironment:
     async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None):
         self.exec_envs.append((command, env))
         args = shlex.split(command)
+        if args[:2] == ["bash", "-c"] and args[2].startswith("set -m\n"):
+            args = shlex.split(args[2].splitlines()[1].removesuffix(" &"))
         result = types.SimpleNamespace(return_code=0, stdout="", stderr="")
         if args[0] == "mkdir":
             if self.setup_code:
@@ -366,7 +368,7 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
         await self.outer_kill_capture()
 
     @unittest.skipUnless(os.name == "posix" and "--docker" in sys.argv,
-                         "opt in with --docker; requires cached busybox")
+                         "opt in with --docker; requires the cached Python witness image")
     async def test_docker_outer_kill_preserves_partial_capture_without_terminal(self):
         await self.outer_kill_capture(docker=True)
 
@@ -382,7 +384,8 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                             "docker", "run", "--detach", "--network", "none", "--pull", "never",
                             "--mount", f"type=bind,source={root / 'logs'},target=/logs/agent",
                             "--label", f"opi-eval-capture-fixture={root}",
-                            "busybox", "sh", "-c", "mkdir /work; sleep 300",
+                            "python@sha256:272efc3f94bec901e2bc7a5c9984b3d113c317839edca2714c6a388b9476f8fc",
+                            "sh", "-c", "mkdir /work; sleep 300",
                         ], check=True, capture_output=True, text=True, timeout=30)
                         container = started.stdout.strip()
                         self.assertRegex(container, r"^[a-f0-9]{64}$")
@@ -405,6 +408,16 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                                     self.fail((await proc.communicate())[1].decode())
                                 await asyncio.sleep(0.02)
                     finally:
+                        # Model owned-container removal for the local fixture:
+                        # its Agent has a separate process group inside this
+                        # test's private environment.
+                        pid_file = root / "environment/stage" / product / "agent.pid"
+                        if not container and pid_file.is_file():
+                            child_pid = int(pid_file.read_text())
+                            try:
+                                os.killpg(child_pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
                         if proc.returncode is None:
                             os.killpg(proc.pid, signal.SIGKILL)
                         await proc.communicate()
@@ -595,6 +608,36 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(terminal["exit_code"], {"exit-code": 7, "timeout": 124}[failure])
                     self.assertEqual(terminal["timed_out"], failure == "timeout")
                     self.assertTrue(environment.cleaned)
+
+    @unittest.skipUnless(os.name == "posix", "requires Linux process groups and shell")
+    async def test_stage_cancellation_observes_exit_and_stops_descendants(self):
+        for family in INTEGRATIONS:
+            for product in ("opi", "pi"):
+                with self.subTest(family=family, product=product):
+                    root, runtime, logs, handoff = self.prepare(family, product, package=False)
+                    executable = runtime / "pi"
+                    executable.write_text(
+                        "#!/bin/sh\n"
+                        "echo started\n"
+                        "(sleep 2; touch escaped) &\n"
+                        "wait\n", encoding="utf-8",
+                    )
+                    handoff["agent_executable_sha256"] = hashlib.sha256(executable.read_bytes()).hexdigest()
+                    agent = self.agent(family, root, logs, handoff)
+                    environment = MountedShellEnvironment(root / "environment", logs)
+                    await agent.setup(environment)
+                    with self.assertRaises(TimeoutError):
+                        await asyncio.wait_for(agent.run("work", environment, object()), timeout=0.3)
+                    terminal_path = logs / "opi-eval-terminal.json"
+                    observed = json.loads(terminal_path.read_text()) if terminal_path.exists() else None
+                    # Allow an escaped child to expose itself before temp cleanup.
+                    await asyncio.sleep(2)
+                    self.assertFalse((environment.work / "escaped").exists())
+                    self.assertIsNotNone(observed, "stage cancellation lost observed terminal identity")
+                    self.assertEqual(observed["exit_code"], 137)
+                    self.assertFalse(observed["timed_out"], "only the runner knows cancellation's cause")
+                    self.assertEqual(observed["agent_executable_sha256"], handoff["agent_executable_sha256"])
+                    self.assertFalse(environment.local(f"/opi-eval-agent/{product}").exists())
 
     async def test_cleanup_failure_never_publishes_success(self):
         for family in INTEGRATIONS:

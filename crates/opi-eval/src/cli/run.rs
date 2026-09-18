@@ -38,8 +38,8 @@ pub struct RunArgs {
     pub plan: Option<PathBuf>,
     /// Fresh run root for trial directories, helpers, and receipts.
     pub root: PathBuf,
-    /// Repository `crates/opi-eval/tests/fixtures` root.
-    pub fixtures: PathBuf,
+    /// Repository fixtures root, required only for hermetic execution.
+    pub fixtures: Option<PathBuf>,
     /// Hermetic staging behavior (helper-process selection).
     pub behavior: String,
     /// Recovery mode: classify durable trial states instead of running.
@@ -65,6 +65,81 @@ pub struct RunArgs {
 /// and lets the run render its interrupted report instead of dying
 /// mid-settlement (P19-D07).
 pub fn run(args: &RunArgs) -> Result<serde_json::Value, RunCliError> {
+    let config_path = match (&args.config, &args.plan) {
+        (Some(config), None) => config,
+        (None, Some(plan)) => plan,
+        _ => {
+            return Err(RunCliError::Rejected(
+                "run requires exactly one of --config or --plan".to_owned(),
+            ));
+        }
+    };
+    let mut material_path = args.native_material.clone();
+    let source = match &args.plan {
+        Some(plan_path) => {
+            let plan: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(plan_path)
+                    .map_err(|error| RunCliError::Rejected(error.to_string()))?,
+            )
+            .map_err(|error| RunCliError::Rejected(format!("plan parse failed: {error}")))?;
+            let source = crate::runner::plan::plan_source(&plan)
+                .map_err(|error| RunCliError::Rejected(error.to_string()))?;
+            match plan["material"].as_object() {
+                Some(record) => {
+                    let recorded = record
+                        .get("path")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or_else(|| {
+                            RunCliError::Rejected("run plan material record has no path".to_owned())
+                        })?;
+                    let path = material_path.unwrap_or_else(|| {
+                        crate::runner::plan::resolve_plan_path(
+                            plan_path,
+                            std::path::Path::new(recorded),
+                        )
+                    });
+                    let bytes = std::fs::read(&path)
+                        .map_err(|error| RunCliError::Rejected(error.to_string()))?;
+                    if Some(crate::runner::material::sha256_hex(&bytes).as_str())
+                        != record
+                            .get("manifest_sha256")
+                            .and_then(serde_json::Value::as_str)
+                    {
+                        return Err(RunCliError::Rejected(format!(
+                            "run-plan material drift at {}",
+                            path.display()
+                        )));
+                    }
+                    material_path = Some(path);
+                }
+                None if material_path.is_some() => {
+                    return Err(RunCliError::Rejected(
+                        "run plan does not bind native material".to_owned(),
+                    ));
+                }
+                None => {}
+            }
+            source
+        }
+        None => std::fs::read_to_string(config_path).map_err(|error| {
+            RunCliError::Rejected(format!("cannot read experiment document: {error}"))
+        })?,
+    };
+    let experiment = crate::experiment::ResolvedExperiment::resolve(&source)
+        .map_err(|error| RunCliError::Rejected(error.to_string()))?;
+    let material = material_path
+        .as_ref()
+        .map(|path| {
+            let products = selected_products_from(&experiment).map_err(RunCliError::Rejected)?;
+            crate::runner::material::NativeMaterial::load_for(path, &products)
+                .map_err(|error| RunCliError::Rejected(error.to_string()))
+        })
+        .transpose()?;
+    if material.is_none() && args.fixtures.is_none() {
+        return Err(RunCliError::Rejected(
+            "--fixtures is required for hermetic execution".to_owned(),
+        ));
+    }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -74,15 +149,7 @@ pub fn run(args: &RunArgs) -> Result<serde_json::Value, RunCliError> {
         install_signal_cancellation(&cancel);
         experiment::run_experiment(
             &RunRequest {
-                config_path: match (&args.config, &args.plan) {
-                    (Some(config), _) => config.clone(),
-                    (None, Some(plan)) => plan.clone(),
-                    (None, None) => {
-                        return Err(RunCliError::Rejected(
-                            "run requires exactly one of --config or --plan".to_owned(),
-                        ));
-                    }
-                },
+                config_path: config_path.clone(),
                 root: args.root.clone(),
                 fixtures: args.fixtures.clone(),
                 behavior: args.behavior.clone(),
@@ -90,79 +157,7 @@ pub fn run(args: &RunArgs) -> Result<serde_json::Value, RunCliError> {
                 replacement_for: args.replacement_for.clone(),
                 canaries: read_canaries(args.canaries.as_deref())
                     .map_err(|error| RunCliError::Rejected(error.to_string()))?,
-                material: match (&args.native_material, &args.plan) {
-                    (Some(path), _) => {
-                        let config = args
-                            .config
-                            .as_ref()
-                            .expect("checked above: --native-material pairs with --config");
-                        let products = selected_products(config)?;
-                        Some(
-                            crate::runner::material::NativeMaterial::load_for(path, &products)
-                                .map_err(|error| RunCliError::Rejected(error.to_string()))?,
-                        )
-                    }
-                    (None, Some(plan_path)) => {
-                        let plan: serde_json::Value = serde_json::from_str(
-                            &std::fs::read_to_string(plan_path)
-                                .map_err(|error| RunCliError::Rejected(error.to_string()))?,
-                        )
-                        .map_err(|error| {
-                            RunCliError::Rejected(format!("plan parse failed: {error}"))
-                        })?;
-                        crate::runner::plan::verify_plan(&plan)
-                            .map_err(|error| RunCliError::Rejected(error.to_string()))?;
-                        match plan["material"].as_object() {
-                            Some(record) => {
-                                let recorded_path = std::path::PathBuf::from(
-                                    record["path"]
-                                        .as_str()
-                                        .ok_or_else(|| {
-                                            RunCliError::Rejected(
-                                                "run plan material record has no path".to_owned(),
-                                            )
-                                        })?
-                                        .to_owned(),
-                                );
-                                let path = crate::runner::plan::resolve_plan_path(
-                                    plan_path,
-                                    &recorded_path,
-                                );
-                                let digest = {
-                                    use sha2::{Digest, Sha256};
-                                    let bytes = std::fs::read(&path).map_err(|error| {
-                                        RunCliError::Rejected(error.to_string())
-                                    })?;
-                                    let hash = Sha256::digest(&bytes);
-                                    hash.iter().map(|b| format!("{b:02x}")).collect::<String>()
-                                };
-                                if digest != record["manifest_sha256"].as_str().unwrap_or("") {
-                                    return Err(RunCliError::Rejected(format!(
-                                        "run-plan material drift at {}",
-                                        path.display()
-                                    )));
-                                }
-                                let source = crate::runner::plan::plan_source(&plan)
-                                    .map_err(|error| RunCliError::Rejected(error.to_string()))?;
-                                let experiment =
-                                    crate::experiment::ResolvedExperiment::resolve(&source)
-                                        .map_err(|error| {
-                                            RunCliError::Rejected(error.to_string())
-                                        })?;
-                                let products = selected_products_from(&experiment)
-                                    .map_err(RunCliError::Rejected)?;
-                                Some(
-                                    crate::runner::material::NativeMaterial::load_for(
-                                        &path, &products,
-                                    )
-                                    .map_err(|error| RunCliError::Rejected(error.to_string()))?,
-                                )
-                            }
-                            None => None,
-                        }
-                    }
-                    (None, None) => None,
-                },
+                material,
                 plan: args.plan.clone(),
             },
             &cancel,
@@ -220,33 +215,6 @@ pub(crate) fn selected_products_from(
     products.dedup();
     if products.is_empty() {
         return Err("the experiment selects no supported agent product".to_owned());
-    }
-    Ok(products)
-}
-
-/// The sorted unique agent products the experiment document selects; a
-/// pi-only document prepares and runs without any Opi material.
-fn selected_products(config: &std::path::Path) -> Result<Vec<&'static str>, RunCliError> {
-    let source = std::fs::read_to_string(config).map_err(|error| {
-        RunCliError::Rejected(format!("cannot read experiment document: {error}"))
-    })?;
-    let experiment = crate::experiment::ResolvedExperiment::resolve(&source)
-        .map_err(|error| RunCliError::Rejected(error.to_string()))?;
-    let mut products: Vec<&'static str> = experiment
-        .subjects()
-        .iter()
-        .filter_map(|subject| match subject.product.as_str() {
-            "opi" => Some("opi"),
-            "pi" => Some("pi"),
-            _ => None,
-        })
-        .collect();
-    products.sort_unstable();
-    products.dedup();
-    if products.is_empty() {
-        return Err(RunCliError::Rejected(
-            "the experiment selects no supported agent product".to_owned(),
-        ));
     }
     Ok(products)
 }

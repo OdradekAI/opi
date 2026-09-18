@@ -107,12 +107,40 @@ seeded (plan and captured log under the output root); otherwise the
 failure names the missing identity and how to acquire it. The full
 operator walkthrough lives under `examples/local-evaluation/`.
 
+The cache holds each complete, clean pinned Git corpus at
+`corpora/<adapter>/tasks`. Preparation creates the selected tasks' packages at
+`packages/<adapter>/<task-id>` and SHA-256-bound profiles at
+`profiles/<adapter>/<task-id>.toml`. Material/5 records the full corpus
+root/commit/tasks-tree separately from its selected `tasks` map; each entry
+binds its canonical ID, native name, profile and package. Task images and
+Dockerfile bases must resolve to immutable digests and already be observable
+in the selected engine cache. Missing identities reject with acquisition
+guidance; preparation and preview never pull or start task images.
+
+Requirements retain separate Agent and verifier CPU, memory, storage, GPU
+count/types, network policy, collection and stage deadlines, including their
+pinned defaults and origins. CPU and memory come from the selected Docker
+engine. Storage checks cover the cache, output and engine storage namespace;
+remote or Docker Desktop engine storage stays unknown when that namespace
+cannot be observed. An NVIDIA runtime registration does not establish GPU
+capacity. A required unknown rejects selection before jobs or models start.
+The full inventory and exclusion reasons remain visible for an explicit subset.
+
+Material/4 and run-plan/1 must be regenerated; no implicit conversion is
+performed. Existing sealed bundles remain readable without rewriting them.
+
 ### 0b. Preview and freeze a selection plan
 
 ```sh
 cargo run -p opi-eval -- plan --config experiment.toml   --native-material "$DEMO_DIR/material/material.json"   --out "$DEMO_DIR/plan.json"
-cargo run -p opi-eval -- run --plan "$DEMO_DIR/plan.json"   --root "$DEMO_DIR/run" --native-material "$DEMO_DIR/material/material.json"
+cargo run -p opi-eval -- run --plan "$DEMO_DIR/plan.json" --root "$DEMO_DIR/run"
 ```
+
+`run` requires exactly one of `--config` or `--plan`. A native plan reuses its
+recorded material; an explicit `--native-material` must match the frozen
+manifest digest. Native execution needs no `--fixtures`; hermetic execution
+still requires it. Missing or changed plan/material inputs reject before any
+run effects.
 
 `plan` enumerates the pinned corpus task inventory from `task.toml`
 metadata (no image is pulled or started), expands the document's
@@ -122,9 +150,9 @@ and checks every selected task's declared resource requirements against
 the locally observed resources: an unmet or unobservable requirement
 rejects the whole request - the set never silently shrinks - while the
 preview keeps the full inventory's per-task statuses visible. The
-preview JSON shows subjects, connection, task list, selection, trial
+`opi-eval-plan-preview/2` JSON shows subjects, connection, task list, selection, trial
 count, concurrency, bounds, and the unmet/unknown preflight summary;
-the frozen `opi-eval-run-plan/1` file is digest-bound over the embedded
+the frozen `opi-eval-run-plan/2` file is digest-bound over the embedded
 experiment source, material identity, corpus entries, and exact trials.
 `[execution]` bounds are explicit: `concurrency` (default 1, an upper
 bound; hermetic trials run in parallel waves up to it, native trials
@@ -296,7 +324,7 @@ case fails closed.
 | Mode | Inputs and behavior | What it proves |
 |------|---------------------|----------------|
 | Hermetic fixture mode | Default. Uses bounded deterministic helpers and pinned repository fixtures. | Adapter, lifecycle, sealing, reporting, and failure-path conformance. It does not prove real-product or real-provider fidelity. |
-| Native-material mode | Add `--native-material <MANIFEST>` to `validate`, `run`, or `conformance`. The manifest (schema `opi-eval-native-material/4`) resolves exact Agent executables, the pinned integration modules that run each Agent inside the task environment (one per runner family: Harbor for the Terminal-Bench route, Pier for DeepSWE), task packages, verifier/oracle entry points, and the scripted-provider endpoint. | For `run`, one explicitly selected upstream job per trial runs the selected Agent inside the graded task environment and grades that same trial; the imported result must bind to the selected Agent, task, and job identity before anything seals. Terminal-Bench 3.0 runs through its declared separate-verifier handoff: the task's own `task.toml` lifecycle is parsed and bound (unsupported shapes, including multi-step tasks, disabled verifiers, verifier collect hooks on the Harbor route, and non-Linux tasks, reject before any verifier spawn), and for separate-verifier tasks only the declared artifacts cross into the fresh verifier - undeclared, missing, or substituted collections reject and an unrelated canary file stays outside. DeepSWE runs through its declared committed-patch handoff: the Pier task's collect hook extracts the committed patch beyond the task's base revision and the pristine no-network verifier grades exactly that patch (uncommitted work can never be substituted for it); the bound job must record the task's declared lifecycle together with the base revision and environment image, an empty nop patch still collects and grades zero, and undeclared collection rejects. The sealed bundle records the verifier-input identity (`native/verifier-input.json`: the environment mode, the DeepSWE base revision and image, plus every declared artifact with the digests of exactly the collected bytes). `conformance` restricts native mode to its registered native case subset (including the explicitly selected `oracle-witness`/`nop-witness` artifact witnesses for all three families). |
+| Native-material mode | Add `--native-material <MANIFEST>` to `validate`, `run`, or `conformance`. The manifest (schema `opi-eval-native-material/5`) resolves exact Agent executables, the pinned integration modules that run each Agent inside the task environment (one per runner family: Harbor for the Terminal-Bench route, Pier for DeepSWE), task packages, verifier/oracle entry points, and the scripted-provider endpoint. | For `run`, one explicitly selected upstream job per trial runs the selected Agent inside the graded task environment and grades that same trial; the imported result must bind to the selected Agent, task, and job identity before anything seals. Terminal-Bench 3.0 runs through its declared separate-verifier handoff: the task's own `task.toml` lifecycle is parsed and bound (unsupported shapes, including multi-step tasks, disabled verifiers, verifier collect hooks on the Harbor route, and non-Linux tasks, reject before any verifier spawn), and for separate-verifier tasks only the declared artifacts cross into the fresh verifier - undeclared, missing, or substituted collections reject and an unrelated canary file stays outside. DeepSWE runs through its declared committed-patch handoff: the Pier task's collect hook extracts the committed patch beyond the task's base revision and the pristine no-network verifier grades exactly that patch (uncommitted work can never be substituted for it); the bound job must record the task's declared lifecycle together with the base revision and environment image, an empty nop patch still collects and grades zero, and undeclared collection rejects. The sealed bundle records the verifier-input identity (`native/verifier-input.json`: the environment mode, the DeepSWE base revision and image, plus every declared artifact with the digests of exactly the collected bytes). `conformance` restricts native mode to its registered native case subset (including the explicitly selected `oracle-witness`/`nop-witness` artifact witnesses for all three families). |
 
 An Agent may carry a `runtime_package` with an absolute `path`, sorted-file
 `manifest_sha256`, and relative `entrypoint` bound to its pinned executable.
@@ -444,7 +472,7 @@ budget and evidence separately from the hermetic CLI examples.
 | Command | Required inputs | Important options | Output and exit behavior |
 |---------|-----------------|-------------------|--------------------------|
 | `validate` | `--config PATH` | `--native-material PATH` adds native integrity identity. | Summary line; 0 resolved, 1 invalid. |
-| `run` | `--config PATH --root PATH --fixtures PATH` | `--recover`, `--replacement-for TRIAL`, `--canaries PATH`, `--native-material PATH`; `--behavior` selects hermetic fault fixtures. | One-line JSON; 0 completed, 1 settled non-success, 2 rejected request. |
+| `run` | Exactly one of `--config PATH` or `--plan PATH`, plus `--root PATH`; `--fixtures PATH` for hermetic execution. | `--recover`, `--replacement-for TRIAL`, `--canaries PATH`, `--native-material PATH` (must match a plan's frozen digest); `--behavior` selects hermetic fault fixtures. | One-line JSON; 0 completed, 1 settled non-success, 2 rejected request. |
 | `verify` | `--root PATH` | None. | One-line JSON; 0 verified, 1 mutation/unsealed failure, 2 rejected command request. |
 | `regrade` | `--root PATH --native-material PATH --out PATH` | None. | One-line JSON; 0 all native trials regraded, 1 typed per-trial rejections, 2 rejected command request. |
 | `report` | `--root PATH` | `--out PATH`, `--canaries PATH`. | One-line JSON; 0 published, 1 blocked/unverified, 2 rejected command request. |

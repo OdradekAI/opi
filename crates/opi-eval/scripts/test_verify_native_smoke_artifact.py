@@ -230,7 +230,7 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
             },
         }
     material_json = {
-        "schema": "opi-eval-native-material/4",
+        "schema": "opi-eval-native-material/5",
         "static_lock": {"path": str(material / "external-lock.json"),
                         "sha256": sha(lock_bytes)},
         "provider": {
@@ -255,9 +255,10 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
         (package / "task.yaml").write_text("official: true\n", encoding="utf-8")
         digest = sha(b"task-package:" + short.encode())
         material_json["benchmarks"][bench] = {
-            "profile": f"crates/opi-eval/profiles/benchmarks/{bench}.toml",
-            "task_package": str(package),
-            "task_package_manifest_sha256": digest,
+            "corpus": {"root": str(material / "corpora" / short / "tasks"), "source_commit": "a" * 40, "tasks_tree": "b" * 40},
+            "tasks": {short: {"native_task_name": short,
+                "profile": {"path": f"profiles/{bench}/{short}.toml", "sha256": "c" * 64},
+                "task_package": str(package), "task_package_manifest_sha256": digest}},
             "verifier_executable": {"path": str(wrappers / f"verifier-{bench}.sh"),
                                     "sha256": sha(f"verifier-{bench}\n".encode())},
             "verifier_env": {},
@@ -460,6 +461,31 @@ class ArtifactVerifier(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         for criterion in CRITERIA[:-1]:
             self.assertIn(f"{criterion} verified", result.stdout)
+
+    def test_material_requires_full_corpus_and_exact_task_bindings(self) -> None:
+        path = self.stage / "06-material" / "material.json"
+        original = json.loads(path.read_text("utf-8"))
+        for case in ("old-schema", "corpus", "tasks", "profile", "malformed-task"):
+            with self.subTest(case=case):
+                material = json.loads(json.dumps(original))
+                benchmark = material["benchmarks"]["terminal-bench-2.1"]
+                if case == "old-schema":
+                    material["schema"] = "opi-eval-native-material/4"
+                elif case == "corpus":
+                    benchmark["corpus"].pop("tasks_tree")
+                elif case == "tasks":
+                    benchmark["tasks"] = {}
+                elif case == "profile":
+                    next(iter(benchmark["tasks"].values()))["profile"].pop("sha256")
+                else:
+                    benchmark["tasks"] = {"task": []}
+                write_json(path, material)
+                sealed = seal(self.stage, self.tmp)
+                zip_path, _ = package_zip(sealed["tar"], dict(sealed["upload"]))
+                result = self.verify(artifact=zip_path)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("material", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
 
     def test_bare_tar_accepted(self) -> None:
         result = self.verify(

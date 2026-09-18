@@ -17,7 +17,7 @@ use std::path::Path;
 /// One declared artifact collect entry: where the agent environment file
 /// lives and where the collected copy lands under the trial's
 /// `artifacts/` tree (destination empty for source-mirrored entries).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct DeclaredArtifact {
     pub source: String,
     pub destination: Option<String>,
@@ -37,7 +37,8 @@ pub(crate) enum TaskFamily {
 
 /// Whether the verifier runs in the agent's environment or receives only
 /// the declared collected artifacts in its own fresh container.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum VerifierEnvironmentMode {
     Shared,
     Separate,
@@ -53,7 +54,7 @@ impl VerifierEnvironmentMode {
 }
 
 /// The parsed lifecycle of one admitted task package.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct TaskLifecycle {
     /// The task's declared schema version (identity evidence).
     pub schema_version: String,
@@ -165,6 +166,8 @@ struct VerifierDoc {
     collect: Option<Vec<toml::Value>>,
     #[serde(default)]
     network_mode: Option<String>,
+    #[serde(default)]
+    allowed_hosts: Option<Vec<String>>,
 }
 
 /// An environment section's `os` field, when it declares one.
@@ -215,6 +218,7 @@ pub(crate) fn parse_task_lifecycle_bytes(
         disable: None,
         collect: None,
         network_mode: None,
+        allowed_hosts: None,
     });
     if verifier.disable == Some(true) {
         return Err(LifecycleError::Unsupported("disabled verifier"));
@@ -225,9 +229,8 @@ pub(crate) fn parse_task_lifecycle_bytes(
     }
     let verifier_network = match verifier.network_mode.as_deref() {
         // Pier enforces exactly these two network policies.
-        Some("no-network" | "public") if family == TaskFamily::Pier => {
-            Some(verifier.network_mode.clone().expect("matched"))
-        }
+        Some("no-network" | "public") => Some(verifier.network_mode.clone().expect("matched")),
+        Some("allowlist") if family == TaskFamily::Harbor => Some("allowlist".to_owned()),
         Some(_) => {
             return Err(LifecycleError::Unsupported(
                 "verifier network mode other than no-network or public",

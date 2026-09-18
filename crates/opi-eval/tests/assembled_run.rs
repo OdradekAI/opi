@@ -508,6 +508,20 @@ fn effect_unknown_reopen() {
     assert!(!crashed.join("settlement.json").exists());
     assert!(!crashed.join("manifest.json").exists());
     let intent_before = std::fs::read(crashed.join("intent.json")).unwrap();
+    let control_before = std::fs::read(root.path().join("run-control.json")).unwrap();
+    let (code, _, _) = run_experiment("local-paired.toml", "happy", root.path());
+    assert_eq!(
+        code, 2,
+        "crashed roots require explicit recovery or replacement"
+    );
+    assert_eq!(
+        std::fs::read(root.path().join("run-control.json")).unwrap(),
+        control_before
+    );
+    assert_eq!(
+        std::fs::read(crashed.join("intent.json")).unwrap(),
+        intent_before
+    );
 
     // Reopen: the durable files prove effect-unknown with the original
     // identity; the trial is never classified not-started or retryable
@@ -546,12 +560,13 @@ fn effect_unknown_reopen() {
 
     // The replacement re-runs the whole group under fresh trial identities
     // and a new paired trial group; prior evidence is never rewritten.
+    let replacement_root = tempfile::tempdir().unwrap();
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_opi-eval"))
         .arg("run")
         .arg("--config")
         .arg(fixtures_dir().join("experiment/local-paired.toml"))
         .arg("--root")
-        .arg(root.path().canonicalize().unwrap())
+        .arg(replacement_root.path().canonicalize().unwrap())
         .arg("--fixtures")
         .arg(fixtures_dir().canonicalize().unwrap())
         .arg("--behavior")
@@ -593,10 +608,8 @@ fn effect_unknown_reopen() {
     assert!(!crashed.join("settlement.json").exists());
 
     // The prior attempt classification survives the replacement (P19-AC-010):
-    // recovery still reports the crashed trial as effect-unknown under its
-    // original identity and the replacement group as sealed, and the
-    // offline report keeps the prior attempt as explicit missing coverage
-    // instead of merging or rewriting it.
+    // recovery retains the crashed root independently of the replacement
+    // root; offline reports preserve both scopes without merging them.
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_opi-eval"))
         .arg("run")
         .arg("--config")
@@ -631,13 +644,17 @@ fn effect_unknown_reopen() {
     // The never-started baseline left no trial root: its durable state is
     // the absence of any attempted evidence, never a fabricated row.
     assert!(!statuses.contains_key("trial-pi-1"), "{statuses:?}");
-    assert_eq!(statuses.get("trial-opi-1.r2").copied(), Some("sealed"));
-    assert_eq!(statuses.get("trial-pi-1.r2").copied(), Some("sealed"));
+    assert!(!statuses.contains_key("trial-opi-1.r2"));
+    assert!(!statuses.contains_key("trial-pi-1.r2"));
+    assert_eq!(
+        std::fs::read(root.path().join("run-control.json")).unwrap(),
+        control_before
+    );
     // The offline report publishes the replacement scope (same frozen
     // scope, fresh identities); the prior attempt is never merged into it
     // - it stays explicit and immutable in the recovery classification
     // above, with its unsealed evidence untouched on disk.
-    let (code, offline, stderr) = offline_report(root.path());
+    let (code, offline, stderr) = offline_report(replacement_root.path());
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(offline["run_outcome"], "completed", "{offline}");
     let counts = &offline["coverage_counts"];
@@ -1317,6 +1334,18 @@ fn pi_only_selection_runs_without_an_artificial_edge() {
         serde_json::json!([{"id": "pi", "product": "pi"}])
     );
     assert_eq!(preview["trial_count"], 1);
+
+    let missing_fixtures_root = work.path().join("missing-fixtures");
+    let rejected = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .args(["run", "--plan"])
+        .arg(&plan_path)
+        .arg("--root")
+        .arg(&missing_fixtures_root)
+        .output()
+        .unwrap();
+    assert_eq!(rejected.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("--fixtures is required"));
+    assert!(!missing_fixtures_root.exists());
 
     let root = tempfile::tempdir().unwrap();
     let run_output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))

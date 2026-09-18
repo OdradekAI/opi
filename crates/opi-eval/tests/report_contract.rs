@@ -177,6 +177,26 @@ fn asymmetric_native_facts() {
         serde_json::to_string(usage).unwrap(),
         "parity must not be fabricated"
     );
+
+    // The report leaves timing in its sealed source. Both host-supervised
+    // Agents have a real observation, independent of their asymmetric usage.
+    for entry in std::fs::read_dir(root.path().join("trials")).unwrap() {
+        let trajectory = entry
+            .unwrap()
+            .path()
+            .join("bundle/artifacts/evidence/trajectory.json");
+        let trajectory: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(trajectory).unwrap()).unwrap();
+        let execution = trajectory["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["provenance"]["rule"] == "agent-execution/1")
+            .unwrap();
+        let timing = &execution["facts"]["wall_time_ms"]["Known"];
+        assert_eq!(timing["origin"], "supervisor-wall-clock");
+        assert!(timing["value"].as_u64().is_some());
+    }
 }
 
 /// `P19-AC-008`: the published report keeps native metric meanings,

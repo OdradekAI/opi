@@ -98,6 +98,24 @@ provenance：upload receipt 仍然只是 CI 的 transport claim。缓存缺失�
 日志位于输出根下）；否则失败会点名缺失的身份及其获取方式。完整的
 operator 演练见 `examples/local-evaluation/`。
 
+缓存中的 `corpora/<adapter>/tasks` 必须是完整、干净且版本固定的 Git 语料。
+prepare 为选中任务生成 `packages/<adapter>/<task-id>` 和绑定 SHA-256 的
+`profiles/<adapter>/<task-id>.toml`。material/5 分开记录完整语料的
+root/commit/tasks-tree 与所选 `tasks` 映射；每项绑定 canonical ID、原生名称、
+profile 和任务包。任务镜像及 Dockerfile 基础镜像必须解析为不可变摘要，并已能在
+所选 engine 的缓存中观测到。缺失身份会拒绝并提示获取方式；prepare 和 preview
+不会拉取或启动任务镜像。
+
+需求记录分别保留 Agent/verifier 的 CPU、内存、存储、GPU 数量及类型、网络策略、
+收集行为和阶段时限，以及固定版本默认值和来源。CPU、内存取自所选 Docker engine；
+存储检查覆盖缓存、输出和 engine 存储命名空间。无法观测远程或 Docker Desktop
+engine 的存储命名空间时保留 unknown。注册 NVIDIA runtime 不能证明 GPU 容量。
+必需的 unknown 在 job 或 model 启动前拒绝所选集合；显式子集预览仍保留完整清单
+与排除原因。
+
+material/4 与 run-plan/1 必须重新生成，不做隐式转换；已有密封 bundle 继续可读，
+不改写其原始证据。
+
 ### 0b. 预览并冻结 selection 计划
 
 ```sh
@@ -105,17 +123,22 @@ cargo run -p opi-eval -- plan --config experiment.toml \
   --native-material "$DEMO_DIR/material/material.json" \
   --out "$DEMO_DIR/plan.json"
 cargo run -p opi-eval -- run --plan "$DEMO_DIR/plan.json" \
-  --root "$DEMO_DIR/run" --native-material "$DEMO_DIR/material/material.json"
+  --root "$DEMO_DIR/run"
 ```
+
+`run` 必须且只能提供 `--config` 或 `--plan` 中的一个。原生计划复用其记录的
+material；显式提供的 `--native-material` 必须匹配冻结的 manifest 摘要。
+原生执行无需 `--fixtures`，hermetic 执行仍要求提供。计划或 material 输入
+缺失、变更时，在任何 run 副作用发生前拒绝。
 
 `plan` 仅依据 `task.toml` 元数据枚举 pinned corpus 任务清单（不拉取
 也不启动任何 image），将文档 `[selection]`（`scope=full|subset`、显式
 `task_ids`、记录的 `reason`、`repetitions`、可选按任务 `seeds`）展开
 为精确的 trial 集合，并把每个被选任务的声明资源需求与本地观测比对：
 未满足或无法观测都会整体拒绝——集合绝不静默收缩——同时预览保留完整
-清单的逐任务状态。预览 JSON 展示 subjects、connection、任务清单、
+清单的逐任务状态。`opi-eval-plan-preview/2` 预览 JSON 展示 subjects、connection、任务清单、
 selection、trial 总数、concurrency、bounds 以及 unmet/unknown 预检
-摘要；冻结的 `opi-eval-run-plan/1` 文件以 digest 绑定内嵌的实验源、
+摘要；冻结的 `opi-eval-run-plan/2` 文件以 digest 绑定内嵌的实验源、
 material 身份、corpus 条目与精确 trials。`[execution]` bounds 全部显
 式：`concurrency`（默认 1，为上限；hermetic trial 按其并行分波执行，
 native trial 保持串行）、`max_trials`（展开超出即拒绝）、
@@ -253,7 +276,7 @@ conformance matrix 定义；不受支持的 suite、adapter 或 case 会 fail-cl
 | 模式 | 输入与行为 | 能够证明什么 |
 |------|------------|--------------|
 | Hermetic fixture 模式 | 默认模式。使用有界的确定性 helper 和仓库内固定 fixture。 | 能证明 adapter、lifecycle、sealing、reporting 和失败路径的 conformance；不能证明真实产品或真实 Provider 的 fidelity。 |
-| Native-material 模式 | 给 `validate`、`run` 或 `conformance` 添加 `--native-material <MANIFEST>`。manifest（schema `opi-eval-native-material/4`）会解析精确的 Agent executable、在任务环境内运行 Agent 的固定 integration module（按 runner 家族各一份：Terminal-Bench 路线用 Harbor，DeepSWE 用 Pier）、task package、verifier/oracle 入口和 scripted-provider endpoint。 | 对 `run`：每个 trial 由一个显式选择的 upstream job 在被评分的任务环境内运行所选 Agent，并对同一个 trial 评分；导入的结果必须先绑定到所选 Agent、task 与 job 身份，之后才能 seal。Terminal-Bench 3.0 走其声明的独立 verifier 交接：解析并绑定任务自身 `task.toml` 的生命周期（不支持的形态——多步任务、禁用 verifier、Harbor 路线上的 verifier collect 钩子、非 Linux 任务——在任何 verifier 启动之前拒绝）；对独立 verifier 任务，只有声明过的 artifact 进入全新 verifier——未声明、缺失或被替换的收集一律拒绝，无关的 canary 文件留在 verifier 之外。DeepSWE 走其声明的已提交补丁交接：Pier 任务的 collect 钩子提取超出任务 base revision 的已提交补丁，无网络的全新 pristine verifier 只对这份补丁评分（未提交的工作绝不可能被替换进来）；被绑定的 job 必须记录任务声明的生命周期以及 base revision 与环境镜像，nop 的空补丁照样收集并评零分，未声明的收集一律拒绝。密封 bundle 记录 verifier 输入身份（`native/verifier-input.json`：环境模式、DeepSWE 的 base revision 与镜像，加上每个声明 artifact 及其被收集字节的精确摘要）。`conformance` 只允许已注册的 native case 子集（含三个家族显式选择的 `oracle-witness`/`nop-witness` artifact witness）。 |
+| Native-material 模式 | 给 `validate`、`run` 或 `conformance` 添加 `--native-material <MANIFEST>`。manifest（schema `opi-eval-native-material/5`）会解析精确的 Agent executable、在任务环境内运行 Agent 的固定 integration module（按 runner 家族各一份：Terminal-Bench 路线用 Harbor，DeepSWE 用 Pier）、task package、verifier/oracle 入口和 scripted-provider endpoint。 | 对 `run`：每个 trial 由一个显式选择的 upstream job 在被评分的任务环境内运行所选 Agent，并对同一个 trial 评分；导入的结果必须先绑定到所选 Agent、task 与 job 身份，之后才能 seal。Terminal-Bench 3.0 走其声明的独立 verifier 交接：解析并绑定任务自身 `task.toml` 的生命周期（不支持的形态——多步任务、禁用 verifier、Harbor 路线上的 verifier collect 钩子、非 Linux 任务——在任何 verifier 启动之前拒绝）；对独立 verifier 任务，只有声明过的 artifact 进入全新 verifier——未声明、缺失或被替换的收集一律拒绝，无关的 canary 文件留在 verifier 之外。DeepSWE 走其声明的已提交补丁交接：Pier 任务的 collect 钩子提取超出任务 base revision 的已提交补丁，无网络的全新 pristine verifier 只对这份补丁评分（未提交的工作绝不可能被替换进来）；被绑定的 job 必须记录任务声明的生命周期以及 base revision 与环境镜像，nop 的空补丁照样收集并评零分，未声明的收集一律拒绝。密封 bundle 记录 verifier 输入身份（`native/verifier-input.json`：环境模式、DeepSWE 的 base revision 与镜像，加上每个声明 artifact 及其被收集字节的精确摘要）。`conformance` 只允许已注册的 native case 子集（含三个家族显式选择的 `oracle-witness`/`nop-witness` artifact witness）。 |
 
 Agent 可携带 `runtime_package`，其中包含绝对 `path`、排序文件清单的
 `manifest_sha256`，以及绑定到固定 executable 的相对 `entrypoint`。
@@ -375,7 +398,7 @@ hermetic CLI 示例相互独立。
 | 命令 | 必需输入 | 重要选项 | 输出与退出行为 |
 |------|----------|----------|----------------|
 | `validate` | `--config PATH` | `--native-material PATH` 会加入 native integrity identity。 | 一行摘要；解析成功为 0，无效为 1。 |
-| `run` | `--config PATH --root PATH --fixtures PATH` | `--recover`、`--replacement-for TRIAL`、`--canaries PATH`、`--native-material PATH`；`--behavior` 用于选择 hermetic 故障 fixture。 | 单行 JSON；完成为 0，已落定但未成功为 1，请求被拒绝为 2。 |
+| `run` | `--config PATH` 与 `--plan PATH` 二选一，加上 `--root PATH`；hermetic 执行需 `--fixtures PATH`。 | `--recover`、`--replacement-for TRIAL`、`--canaries PATH`、`--native-material PATH`（必须匹配计划冻结的摘要）；`--behavior` 用于选择 hermetic 故障 fixture。 | 单行 JSON；完成为 0，已落定但未成功为 1，请求被拒绝为 2。 |
 | `verify` | `--root PATH` | 无。 | 单行 JSON；验证成功为 0，发现变更或未 seal 为 1，命令请求被拒绝为 2。 |
 | `regrade` | `--root PATH --native-material PATH --out PATH` | 无。 | 单行 JSON；全部原生 trial 完成重评为 0，逐 trial 类型化拒绝为 1，命令请求被拒绝为 2。 |
 | `report` | `--root PATH` | `--out PATH`、`--canaries PATH`。 | 单行 JSON；发布成功为 0，被阻止或未通过验证为 1，命令请求被拒绝为 2。 |

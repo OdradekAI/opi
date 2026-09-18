@@ -832,7 +832,7 @@ cmd_materialize_configs() {
   # lock; nothing is resolved from ambient state.
   python3 - "$STATIC_LOCK" "$external_root" "$agents_out" "$provider_out" \
     "$out" "$REPO_ROOT" "$OPI_EVAL_EXECUTABLE" "$PROVIDER_NETWORK" <<'MATEOF'
-import hashlib, json, os, shutil, subprocess, sys
+import hashlib, json, os, re, shutil, subprocess, sys, tomllib
 from pathlib import Path
 
 lock_path, external, agents_out, provider_out, out, repo, opi_eval, network = sys.argv[1:9]
@@ -877,6 +877,89 @@ def package_manifest_digest(root):
                          sha(path)))
     canonical = "".join(f"{p}\n{d}\n" for p, d in rows)
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+def resolve_image(reference):
+    if re.fullmatch(r".+@sha256:[0-9a-f]{64}", reference):
+        return reference
+    image = next((entry for entry in lock["images"] if entry["reference"] == reference), None)
+    resolved = f"{reference}@{image.get('manifest', '')}" if image else ""
+    if not re.fullmatch(r".+@sha256:[0-9a-f]{64}", resolved):
+        raise SystemExit(f"unbound task image {reference!r}; resolve immutable material first")
+    return resolved
+
+
+def materialize_task(benchmark):
+    subject = next(entry for entry in lock["subjects"] if entry["id"] == benchmark)
+    task_id = task_ids[benchmark]
+    corpus_root = Path(external) / clone_index[benchmark] / "tasks"
+    source = corpus_root / task_id
+    package = out / "packages" / benchmark / task_id
+    shutil.copytree(source, package, symlinks=True)
+    for path in sorted(package.rglob("*")):
+        if path.is_symlink():
+            raise SystemExit(f"unsupported task link: {path}")
+        if not path.is_file():
+            continue
+        relative = path.relative_to(package).as_posix()
+        if relative == "task.toml":
+            text = path.read_text()
+            doc = tomllib.loads(text)
+            replacements = {}
+            for section, environment in (("environment", doc.get("environment", {})),
+                    ("verifier.environment", doc.get("verifier", {}).get("environment", {}))):
+                if "docker_image" in environment:
+                    image = environment["docker_image"]
+                    resolved = resolve_image(image)
+                    if resolved != image:
+                        replacements[section] = resolved
+            lines, section = [], ""
+            for line in text.splitlines(keepends=True):
+                stripped = line.strip()
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    section = stripped[1:-1]
+                if line.partition("=")[0].strip() == "docker_image" and section in replacements:
+                    lines.append("docker_image = " + json.dumps(replacements.pop(section)) + "\n")
+                else:
+                    lines.append(line)
+            if replacements:
+                raise SystemExit("unsupported task image declaration layout")
+            path.write_text("".join(lines))
+        elif path.name == "Dockerfile":
+            lines, stages = [], set()
+            for line in path.read_text().splitlines():
+                words = line.split()
+                if words and words[0].lower() == "from":
+                    if len(words) != 2 and not (len(words) == 4 and words[2].lower() == "as"):
+                        raise SystemExit("unsupported Dockerfile FROM shape")
+                    image = words[1] if words[1] == "scratch" or words[1] in stages else resolve_image(words[1])
+                    line = "FROM " + image
+                    if len(words) == 4:
+                        stages.add(words[3])
+                        line += " AS " + words[3]
+                lines.append(line)
+            path.write_text("\n".join(lines) + "\n")
+    rows = [{"path": path.relative_to(package).as_posix(),
+             "mode": "100755" if path.stat().st_mode & 0o111 else "100644",
+             "size": path.stat().st_size, "sha256": sha(path)}
+            for path in sorted(package.rglob("*")) if path.is_file()]
+    template = Path(profile_paths[benchmark]).read_text().split("[[package]]", 1)[0]
+    identity = {"source_commit": subject["commit"], "tasks_tree": subject["tasks_tree"],
+                "task_id": task_id, "task_tree": subject["task"]["tree"],
+                "package_manifest_sha256": hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest()}
+    for key, value in identity.items():
+        template, count = re.subn(r"(?m)^" + key + r" = .*?$", key + " = " + json.dumps(value), template)
+        if count != 1:
+            raise SystemExit(f"profile template identity {key} is ambiguous")
+    for row in rows:
+        template += "\n[[package]]\n" + "".join(f"{key} = {json.dumps(value)}\n" for key, value in row.items())
+    profile = out / "profiles" / benchmark / (task_id + ".toml")
+    profile.parent.mkdir(parents=True, exist_ok=True)
+    profile.write_text(template)
+    task_doc = tomllib.loads((source / "task.toml").read_text()).get("task", {})
+    return ({"root": str(corpus_root), "source_commit": subject["commit"], "tasks_tree": subject["tasks_tree"]},
+            {task_id: {"native_task_name": task_doc.get("name", task_doc.get("id", task_id)),
+                       "profile": {"path": str(profile), "sha256": sha(profile)},
+                       "task_package": str(package), "task_package_manifest_sha256": package_manifest_digest(package)}})
 
 def agent_wrapper(product, benchmark, real_argv0, env_keys):
     # Contract form: the wrapper runs the exact built agent inside the
@@ -942,7 +1025,7 @@ env_keys = {"opi": ["HOME", "OPI_EVAL_SCRIPTED_KEY"],
             "pi": ["HOME", "PI_CODING_AGENT_DIR"]}
 for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
     adapter = benchmark
-    task_package = Path(external) / clone_index[benchmark] / "tasks" / task_ids[benchmark]
+    corpus, tasks = materialize_task(benchmark)
     uv = subprocess.run(["sh", "-c", "command -v uv"], capture_output=True,
                         text=True).stdout.strip()
     if not uv:
@@ -1022,9 +1105,8 @@ exit $rc
                                        str(out / "uv-cache")),
     }
     benchmarks[adapter] = {
-        "profile": profile_paths[benchmark],
-        "task_package": str(task_package),
-        "task_package_manifest_sha256": package_manifest_digest(task_package),
+        "corpus": corpus,
+        "tasks": tasks,
         "verifier_executable": {"path": str(out / "wrappers" / f"verifier-{benchmark}.sh"),
                                 "sha256": verifier},
         "verifier_env": verifier_env,
@@ -1072,7 +1154,7 @@ exec "$agent_root/node" "$agent_root/dist/bundle/cli.js" "$@"
 """)
 
 manifest = {
-    "schema": "opi-eval-native-material/4",
+    "schema": "opi-eval-native-material/5",
     "static_lock": {"path": lock_path, "sha256": sha(lock_path)},
     "provider": {
         "script": {"path": f"{repo}/crates/opi-eval/scripts/scripted-provider.py",

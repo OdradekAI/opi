@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- `opi-eval`: native material moves to `opi-eval-native-material/5`, and
+  frozen plans/previews to `opi-eval-run-plan/2` / `opi-eval-plan-preview/2`.
+  Complete pinned corpora are independent of the per-task material map;
+  each selected task binds its own native name, profile, package and immutable
+  images. Prepare caches per-task profiles and packages, and both run entry
+  paths dispatch exactly the selected tasks. Material/4 and plan/1 require
+  regeneration; existing sealed bundles are preserved.
+
+- `opi-eval`: executing into a previously claimed run root now rejects before
+  replacing control or trial evidence. Replacement executions require a fresh
+  output root; `--recover` continues to inspect the original root. Concurrent
+  requests for one root admit only one execution.
+
+- `opi-eval`: `RunArgs.fixtures` is now optional. Native `run --plan` reuses
+  its frozen material without fixtures; an explicit material must match the
+  recorded digest. Exactly one of `--config` and `--plan` is required, and
+  missing inputs reject with exit 2 instead of panicking. Hermetic runs still
+  require `--fixtures`.
+
 - `opi-agent`: `AgentLoopConfig.max_turns` is removed. The generic loop has
   no intrinsic turn ceiling; embedders provide explicit budgets through hooks
   or cancellation. `PrepareNextTurnContext.turn` is now `u64`. Stop hooks
@@ -86,6 +105,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handoffs land; their hermetic fixture conformance is unchanged.
 
 ### Changed
+
+- `opi-eval`: native preparation, planning and dispatch retain effective
+  Agent/verifier resource, network, lifecycle and deadline requirements with
+  pinned default origins. Required unobserved or insufficient engine resources,
+  cache/output/engine storage, GPU devices/types and immutable image material
+  reject before jobs start. Preview keeps the full pinned task inventory and
+  explicit exclusion reasons without starting or pulling images.
+
+- `opi-eval`: sealed native Agent timing now records an explicit unknown
+  reason when Agent-only duration was not observed. Host-supervised Agent
+  measurements retain their wall-clock origin, including measured zero.
+
+- `opi-eval`: native jobs carry accepted Agent and verifier deadlines in a
+  single pinned runner configuration. Agent bounds narrow each other and
+  retain stricter task limits, including tasks without a default deadline.
+  Trial configuration drift rejects scoring; whole-job supervision remains
+  independent of the stage caps. Stage cancellation stops the integration's
+  Agent process group and preserves its observed exit; the runner's typed
+  timeout keeps an interrupted client stream eligible for native grading.
+
+- `opi-eval`: native scoring now uses Opi's provider exit diagnostics and pi's
+  validated terminal JSON, including errors reported at exit zero. Terminal
+  provider failures are excluded from graded denominators; recovered retries,
+  ordinary task failures and timeouts retain their eligibility. Both capture
+  policies seal the client terminal cause and its supporting evidence.
+
+- `opi-eval`: native grading now rejects missing or substituted terminal
+  product, executable digest and model identities before admitting a score.
+  The model comparison follows the pinned Harbor/Pier provider/name split;
+  diagnostic oracle results remain separate from Agent results.
+
+- `opi-eval`: offline regrade verifier processes now start with only their
+  validated material environment. Ambient provider credentials, including
+  arbitrary selected credential names, no longer reach the verifier; explicit
+  credential-shaped verifier variables remain rejected.
 
 - `opi-eval`: native Opi configuration omits `max_iterations`, using the
   client's default loop without a fixed turn ceiling. Native deadlines and

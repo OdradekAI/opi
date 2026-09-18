@@ -18,10 +18,10 @@ use crate::experiment::{DeclaredTrial, ResolvedExperiment};
 use crate::runner::material::NativeMaterial;
 
 /// The one admitted run-plan schema identity.
-pub(crate) const RUN_PLAN_SCHEMA: &str = "opi-eval-run-plan/1";
+pub(crate) const RUN_PLAN_SCHEMA: &str = "opi-eval-run-plan/2";
 
 /// The one admitted preview schema identity.
-pub(crate) const PLAN_PREVIEW_SCHEMA: &str = "opi-eval-plan-preview/1";
+pub(crate) const PLAN_PREVIEW_SCHEMA: &str = "opi-eval-plan-preview/2";
 
 /// Typed plan-path rejections (no partial freeze ever persists).
 #[derive(Debug, thiserror::Error)]
@@ -123,7 +123,7 @@ pub(crate) fn task_package_root(
         let benchmark = material
             .benchmark(&adapter_key)
             .map_err(|error| PlanError::Rejected(error.to_string()))?;
-        return Ok(benchmark.task_package.clone());
+        return Ok(benchmark.corpus.root.clone());
     }
     let fixtures = fixtures.ok_or_else(|| {
         PlanError::Rejected(
@@ -233,28 +233,35 @@ pub(crate) struct Expansion {
 /// A canonical task id and its exact upstream name, admitted together by
 /// the selected profile's complete task-package file table.
 pub(crate) struct ProfileTaskBinding {
-    id: String,
-    native_name: String,
-    dir: PathBuf,
+    tasks: std::collections::BTreeMap<String, (String, PathBuf)>,
 }
 
 impl ProfileTaskBinding {
     fn canonicalize(&self, corpus: &mut [CorpusTask]) -> Result<(), PlanError> {
-        let mut matched = 0;
-        for task in corpus.iter_mut().filter(|task| task.dir == self.dir) {
-            if task.requirements.task_id != self.native_name {
+        let mut ids = std::collections::BTreeSet::new();
+        for task in corpus {
+            // Source directories define canonical IDs; task metadata defines
+            // native names. Selected material has already bound both.
+            let id = task
+                .dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| PlanError::Rejected("invalid corpus task directory".to_owned()))?
+                .to_owned();
+            if !ids.insert(id.clone()) {
                 return Err(PlanError::Rejected(
-                    "profile-bound task metadata drift".to_owned(),
+                    "duplicate corpus task identity".to_owned(),
                 ));
             }
-            task.id.clone_from(&self.id);
-            matched += 1;
-        }
-        let mut ids = std::collections::BTreeSet::new();
-        if matched != 1 || corpus.iter().any(|task| !ids.insert(&task.id)) {
-            return Err(PlanError::Rejected(
-                "profile-bound task has no unique corpus identity".to_owned(),
-            ));
+            if let Some((name, package)) = self.tasks.get(&id) {
+                if &task.requirements.task_id != name {
+                    return Err(PlanError::Rejected(
+                        "profile-bound task metadata drift".to_owned(),
+                    ));
+                }
+                task.dir.clone_from(package);
+            }
+            task.id = id;
         }
         Ok(())
     }
@@ -269,6 +276,8 @@ pub(crate) fn expand_selection(
     experiment: &ResolvedExperiment,
     corpus: &[CorpusTask],
     profile_bound_task: Option<&ProfileTaskBinding>,
+    material: Option<&NativeMaterial>,
+    output: &Path,
 ) -> Result<Expansion, PlanError> {
     let mut canonical_corpus = corpus.to_vec();
     if let Some(bound) = profile_bound_task {
@@ -291,7 +300,12 @@ pub(crate) fn expand_selection(
             .task_ids
             .iter()
             .map(|id| match profile_bound_task {
-                Some(bound) if id == &bound.native_name => bound.id.clone(),
+                Some(bound) => bound
+                    .tasks
+                    .iter()
+                    .find(|(_, (name, _))| id == name)
+                    .map(|(id, _)| id.clone())
+                    .unwrap_or_else(|| id.clone()),
                 _ => id.clone(),
             })
             .collect(),
@@ -314,35 +328,97 @@ pub(crate) fn expand_selection(
         }
     }
 
+    let native_observations = material
+        .map(|material| {
+            let adapter = super::experiment::adapter_key_for(experiment)
+                .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            let benchmark = material
+                .benchmark(&adapter)
+                .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            let cache = benchmark
+                .verifier_env
+                .get("UV_CACHE_DIR")
+                .map(Path::new)
+                .unwrap_or(&benchmark.corpus.root);
+            Ok::<_, PlanError>(super::prepare::observe_resources(
+                cache,
+                output,
+                Some(&benchmark.verifier_env),
+            ))
+        })
+        .transpose()?;
+    let family = if experiment.benchmark().name == "deepswe" {
+        crate::benchmark::task_lifecycle::TaskFamily::Pier
+    } else {
+        crate::benchmark::task_lifecycle::TaskFamily::Harbor
+    };
     let mut preflight = Vec::new();
     let mut rejections = Vec::new();
     for task in corpus {
         let selected = selected_ids.contains(&task.id);
-        let (status, reason) = classify(task);
-        preflight.push(json!({
-            "id": task.id,
-            "requirements": task.requirements_json(),
-            "status": status.as_str(),
-            "reason": reason,
-            "selected": selected,
-        }));
-        if selected && status != RequirementStatus::Ok {
-            rejections.push(format!(
-                "task {} {}: {}",
-                task.id,
-                status.as_str(),
-                reason.unwrap_or_else(|| "requirement contradicts the observations".to_owned())
-            ));
+        let entry = if let Some(observations) = &native_observations {
+            match super::prepare::effective_task_requirements(
+                &task.dir,
+                family,
+                experiment.execution(),
+            ) {
+                Ok(requirements) => super::prepare::check_requirements(&requirements, observations),
+                Err(error) => json!({"status": "unmet", "reason": error.to_string()}),
+            }
+        } else {
+            let (status, reason) = classify(task);
+            json!({"status": status.as_str(), "reason": reason, "requirements": task.requirements_json()})
+        };
+        let mut entry = entry;
+        if let Some(material) = material {
+            let adapter = super::experiment::adapter_key_for(experiment)
+                .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            let benchmark = material
+                .benchmark(&adapter)
+                .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            let lock: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&material.static_lock.path)?)
+                    .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            let images =
+                super::material::image_preflight(&task.dir, &lock, &benchmark.verifier_env);
+            if entry["status"] == "ok" && images["status"] != "ok" {
+                entry["status"] = images["status"].clone();
+                entry["reason"] = images["reason"].clone();
+            }
+            entry["image_material"] = images;
+        }
+        let status = entry["status"].as_str().unwrap_or("unknown").to_owned();
+        let reason = entry["reason"]
+            .as_str()
+            .unwrap_or("requirement contradicts the observations")
+            .to_owned();
+        entry["id"] = json!(task.id);
+        entry["selected"] = json!(selected);
+        if let Some(material) = material {
+            let adapter = super::experiment::adapter_key_for(experiment)
+                .map_err(|error| PlanError::Rejected(error.to_string()))?;
+            let binding = material
+                .benchmark(&adapter)
+                .map_err(|error| PlanError::Rejected(error.to_string()))?
+                .tasks
+                .get(&task.id);
+            entry["material"] = match binding {
+                Some(binding) => json!({"status": "bound", "binding": binding}),
+                None => {
+                    json!({"status": "missing", "reason": "task is in the pinned corpus; prepare its profile and package before selection"})
+                }
+            };
+        }
+        preflight.push(entry);
+        if selected && status != "ok" {
+            rejections.push(format!("task {} {}: {}", task.id, status, reason));
         }
     }
     if let Some(bound) = profile_bound_task {
         for id in &selected_ids {
-            if id != &bound.id {
-                let bound = &bound.id;
+            if !bound.tasks.contains_key(id) {
                 rejections.push(format!(
-                    "task {id:?} is not bound by the pinned native profile \
-                     (the profile binds {bound:?}); per-task native profiles are not \
-                     materialized yet"
+                    "task {id:?} has no selected byte-bound native material; prepare that task"
                 ));
             }
         }
@@ -385,66 +461,57 @@ pub(crate) fn expand_selection(
     })
 }
 
-/// The profile-bound task id for a native material's pinned benchmark
-/// profile (native execution admits exactly the task the production
-/// profile binds; per-task profiles are future material work).
+/// Exact profile, package and native name for every selected material entry.
 pub(crate) fn profile_bound_task(
     experiment: &ResolvedExperiment,
     material: &NativeMaterial,
 ) -> Result<ProfileTaskBinding, PlanError> {
-    let adapter_key = crate::runner::experiment::adapter_key_for(experiment)
+    let adapter = super::experiment::adapter_key_for(experiment)
         .map_err(|error| PlanError::Rejected(error.to_string()))?;
     let benchmark = material
-        .benchmark(&adapter_key)
+        .benchmark(&adapter)
         .map_err(|error| PlanError::Rejected(error.to_string()))?;
-    let profile_bytes = std::fs::read(&benchmark.profile)?;
-    let package_dir = |id: &str| {
-        if benchmark.task_package.join("task.toml").is_file() {
-            benchmark.task_package.clone()
-        } else {
-            benchmark.task_package.join(id)
-        }
-    };
-    let (id, dir) = match adapter_key.as_str() {
-        "terminal-bench-2.1" => {
-            let profile =
-                crate::benchmark::terminal_bench_21::Tb21Profile::parse(profile_bytes.as_slice())
-                    .map_err(|error| PlanError::Rejected(error.to_string()))?;
-            let dir = package_dir(&profile.task_id);
-            profile
-                .validate_task_package(&dir)
-                .map_err(|error| PlanError::Rejected(error.to_string()))?;
-            (profile.task_id, dir)
-        }
-        "terminal-bench-3.0" => {
-            let profile =
-                crate::benchmark::terminal_bench_30::Tb30Profile::parse(profile_bytes.as_slice())
-                    .map_err(|error| PlanError::Rejected(error.to_string()))?;
-            let dir = package_dir(&profile.task_id);
-            profile
-                .admit_task_package(&dir)
-                .map_err(|error| PlanError::Rejected(error.to_string()))?;
-            (profile.task_id, dir)
-        }
-        _ => {
-            let profile =
-                crate::benchmark::deepswe::DeepSweProfile::parse(profile_bytes.as_slice())
-                    .map_err(|error| PlanError::Rejected(error.to_string()))?;
-            let dir = package_dir(&profile.task_id);
-            profile
-                .admit_task_package(&dir)
-                .map_err(|error| PlanError::Rejected(error.to_string()))?;
-            (profile.task_id, dir)
-        }
-    };
-    let native_name = crate::runner::prepare::parse_task_requirements(&dir)
-        .map_err(|error| PlanError::Rejected(error.to_string()))?
-        .task_id;
-    Ok(ProfileTaskBinding {
-        id,
-        native_name,
-        dir,
-    })
+    let mut tasks = std::collections::BTreeMap::new();
+    for (id, task) in &benchmark.tasks {
+        super::material::verify_pinned(&task.profile)
+            .map_err(|error| PlanError::Rejected(error.to_string()))?;
+        let bytes = std::fs::read(&task.profile.path)?;
+        let admitted = match adapter.as_str() {
+            "terminal-bench-2.1" => {
+                crate::benchmark::terminal_bench_21::Tb21Profile::parse(&bytes[..])
+                    .map_err(|error| error.to_string())
+                    .and_then(|profile| {
+                        profile
+                            .validate_task_package(&task.task_package)
+                            .map_err(|error| error.to_string())
+                    })
+            }
+            "terminal-bench-3.0" => {
+                crate::benchmark::terminal_bench_30::Tb30Profile::parse(&bytes[..])
+                    .map_err(|error| error.to_string())
+                    .and_then(|profile| {
+                        profile
+                            .admit_task_package(&task.task_package)
+                            .map(|_| ())
+                            .map_err(|error| error.to_string())
+                    })
+            }
+            _ => crate::benchmark::deepswe::DeepSweProfile::parse(&bytes[..])
+                .map_err(|error| error.to_string())
+                .and_then(|profile| {
+                    profile
+                        .admit_task_package(&task.task_package)
+                        .map(|_| ())
+                        .map_err(|error| error.to_string())
+                }),
+        };
+        admitted.map_err(PlanError::Rejected)?;
+        tasks.insert(
+            id.clone(),
+            (task.native_task_name.clone(), task.task_package.clone()),
+        );
+    }
+    Ok(ProfileTaskBinding { tasks })
 }
 
 /// Builds the digest-bound run plan and its preview.
@@ -502,32 +569,28 @@ pub(crate) fn build_plan(
             .map_err(|error| PlanError::Rejected(error.to_string()))?;
     }
     let root = task_package_root(&experiment, fixtures, material.as_ref().map(|(_, m)| m))?;
-    let mut corpus = enumerate_corpus(&root)?;
+    let corpus = enumerate_corpus(&root)?;
     let bound = material
         .as_ref()
         .map(|(_, m)| profile_bound_task(&experiment, m))
         .transpose()?;
-    if let Some(bound) = &bound {
-        bound.canonicalize(&mut corpus)?;
-    }
-    let expansion = expand_selection(&experiment, &corpus, bound.as_ref())?;
+    let expansion = expand_selection(
+        &experiment,
+        &corpus,
+        bound.as_ref(),
+        material.as_ref().map(|(_, m)| m),
+        out,
+    )?;
 
     let execution = experiment.execution();
     // Declared supervision bounds combine by narrowing: the per-stage
     // timeout never widens the existing per-process wall-clock limit,
     // and the model controls stay authoritative (an output-token bound
     // is admitted only as the equal pinned control value).
-    let narrowed_agent_timeout = match (
-        execution.agent_timeout_seconds,
-        execution.time_limit_seconds,
-    ) {
-        (Some(agent), Some(limit)) => Some(agent.min(limit)),
-        (agent, limit) => agent.or(limit),
-    };
     let bounds = json!({
         "concurrency": execution.concurrency,
         "max_trials": execution.max_trials,
-        "agent_timeout_seconds": narrowed_agent_timeout,
+        "agent_timeout_seconds": narrowed_agent_timeout(execution),
         "verifier_timeout_seconds": execution.verifier_timeout_seconds,
         "max_output_tokens": execution.max_output_tokens,
         "time_limit_seconds": execution.time_limit_seconds,
@@ -541,16 +604,7 @@ pub(crate) fn build_plan(
         }
         None => serde_json::Value::Null,
     };
-    let corpus_json: Vec<serde_json::Value> = corpus
-        .iter()
-        .map(|task| {
-            json!({
-                "id": task.id,
-                "dir": task.dir,
-                "requirements": task.requirements_json(),
-            })
-        })
-        .collect();
+    let corpus_json = expansion.preflight.clone();
     let mut plan = json!({
         "schema": RUN_PLAN_SCHEMA,
         "experiment": {
@@ -639,7 +693,7 @@ pub(crate) fn build_plan(
 pub(crate) fn verify_plan(plan: &serde_json::Value) -> Result<(), PlanError> {
     if plan["schema"] != RUN_PLAN_SCHEMA {
         return Err(PlanError::Rejected(format!(
-            "unknown run-plan schema {:?} (expected {RUN_PLAN_SCHEMA:?})",
+            "unknown run-plan schema {:?}; regenerate as {RUN_PLAN_SCHEMA:?}",
             plan["schema"]
         )));
     }
@@ -691,6 +745,19 @@ fn sha256_hex(bytes: &[u8]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// Common Agent bounds narrow one another before the native task deadline applies.
+pub(crate) fn narrowed_agent_timeout(
+    execution: &crate::experiment::ResolvedExecution,
+) -> Option<u64> {
+    match (
+        execution.agent_timeout_seconds,
+        execution.time_limit_seconds,
+    ) {
+        (Some(agent), Some(limit)) => Some(agent.min(limit)),
+        (agent, limit) => agent.or(limit),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -726,7 +793,12 @@ mod tests {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/benchmarks")
             .join(adapter);
-        let package = root.join("package");
+        let corpus_root = root.join("corpus");
+        let package = corpus_root.join(if adapter == "terminal-bench-2.1" {
+            "fixture-task"
+        } else {
+            "synthetic-fixture-task"
+        });
         copy(&fixture.join("task-package"), &package);
         let text = std::fs::read_to_string(fixture.join("profile/synthetic.toml")).unwrap();
         let mut profile: toml::Value = toml::from_str(&text).unwrap();
@@ -756,11 +828,12 @@ mod tests {
         std::fs::write(&profile_path, toml::to_string(&profile).unwrap()).unwrap();
         let pinned = json!({"path": "/unused", "sha256": "unused"});
         let material = serde_json::from_value(json!({
-            "schema": "opi-eval-native-material/4", "static_lock": pinned,
+            "schema": "opi-eval-native-material/5", "static_lock": pinned,
             "provider": {"script": pinned, "endpoint": "unused", "request_log": "/unused"},
             "agents": {}, "benchmarks": {adapter: {
-                "profile": profile_path, "task_package": package,
-                "task_package_manifest_sha256": "unused", "verifier_executable": pinned,
+                "corpus": {"root": corpus_root, "source_commit": "unused", "tasks_tree": "unused"},
+                "tasks": {id.clone(): {"native_task_name": name, "profile": {"path": profile_path, "sha256": sha256_hex(&std::fs::read(&profile_path).unwrap())}, "task_package": package,
+                "task_package_manifest_sha256": "unused"}}, "verifier_executable": pinned,
                 "verifier_env": {}, "oracle": pinned, "oracle_env": {}
             }}
         }))
@@ -779,7 +852,9 @@ mod tests {
                 let package = task_package_root(&experiment, None, Some(&material)).unwrap();
                 let corpus = enumerate_corpus(&package).unwrap();
                 let bound = profile_bound_task(&experiment, &material).unwrap();
-                let expansion = expand_selection(&experiment, &corpus, Some(&bound)).unwrap();
+                let expansion =
+                    expand_selection(&experiment, &corpus, Some(&bound), None, root.path())
+                        .unwrap();
                 assert_eq!(expansion.selected_ids, std::slice::from_ref(&id));
                 assert_eq!(expansion.trials.len(), 2);
                 assert!(
@@ -799,13 +874,12 @@ mod tests {
             let (mut material, id, name) = stage_profile(root.path(), adapter);
             let corpus_root = root.path().join("corpus");
             std::fs::create_dir_all(&corpus_root).unwrap();
-            std::fs::rename(root.path().join("package"), corpus_root.join(&id)).unwrap();
-            material.benchmarks.get_mut(adapter).unwrap().task_package = corpus_root.clone();
+            material.benchmarks.get_mut(adapter).unwrap().corpus.root = corpus_root.clone();
             let valid = ResolvedExperiment::resolve(&selection_source(adapter, &[&name])).unwrap();
             let corpus = enumerate_corpus(&corpus_root).unwrap();
             let bound = profile_bound_task(&valid, &material).unwrap();
             assert_eq!(
-                expand_selection(&valid, &corpus, Some(&bound))
+                expand_selection(&valid, &corpus, Some(&bound), None, root.path())
                     .unwrap()
                     .selected_ids,
                 std::slice::from_ref(&id)
@@ -814,7 +888,9 @@ mod tests {
             for tasks in [&[forged.as_str()][..], &[id.as_str(), name.as_str()][..]] {
                 let invalid =
                     ResolvedExperiment::resolve(&selection_source(adapter, tasks)).unwrap();
-                assert!(expand_selection(&invalid, &corpus, Some(&bound)).is_err());
+                assert!(
+                    expand_selection(&invalid, &corpus, Some(&bound), None, root.path()).is_err()
+                );
             }
             std::fs::write(
                 corpus_root.join(&id).join("task.toml"),

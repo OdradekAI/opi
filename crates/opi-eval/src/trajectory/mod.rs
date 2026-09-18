@@ -620,13 +620,7 @@ impl TrajectoryBuilder {
                 },
             );
         }
-        facts.insert(
-            "wall_time_ms".to_owned(),
-            Fact::Known {
-                value: agent.wall_time.as_millis() as u64,
-                origin: "supervisor-wall-clock".to_owned(),
-            },
-        );
+        facts.insert("wall_time_ms".to_owned(), agent.wall_time.clone());
         for (name, fact) in [
             ("input_tokens", &agent.usage.input_tokens),
             ("output_tokens", &agent.usage.output_tokens),
@@ -1273,7 +1267,10 @@ mod tests {
                 truncated: false,
             },
             cleanup: CleanupEvidence::NotRequired,
-            wall_time: Duration::from_millis(1200),
+            wall_time: Fact::Known {
+                value: 1200,
+                origin: "supervisor-wall-clock".to_owned(),
+            },
             usage: UsageProjection::default(),
             completion: AgentCompletion::Completed { artifacts },
         }
@@ -1285,6 +1282,41 @@ mod tests {
             role: role.to_owned(),
             sha256: sha256_hex(&bytes),
             path,
+        }
+    }
+
+    #[test]
+    fn agent_duration_preserves_measured_zero_and_unknown_reason() {
+        for fact in [
+            Fact::Known {
+                value: 0,
+                origin: "supervisor-wall-clock".to_owned(),
+            },
+            Fact::Known {
+                value: 1200,
+                origin: "supervisor-wall-clock".to_owned(),
+            },
+            Fact::Unknown {
+                reason: "native-agent-duration-unobserved".to_owned(),
+            },
+        ] {
+            let mut agent = agent_record("opi", vec![]);
+            agent.wall_time = fact.clone();
+            let (lifecycle, _intent_dir) = settled_lifecycle();
+            let trajectory = ProjectionPipeline::project(&TrialInputs {
+                agent: &agent,
+                benchmark: None,
+                lifecycle: &lifecycle,
+                workspace: None,
+            })
+            .unwrap();
+            trajectory.validate().unwrap();
+            let node = trajectory
+                .nodes
+                .iter()
+                .find(|node| node.kind == NodeKind::AgentExecution)
+                .unwrap();
+            assert_eq!(node.facts["wall_time_ms"], fact);
         }
     }
 
