@@ -203,6 +203,15 @@ class PrepareAcquisitionTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
+    def test_repository_workspace_input_matches_static_pin(self):
+        repository = SCRIPTS.parents[2]
+        lock = json.loads((SCRIPTS.parent / "external-locks/static/linux-x86_64.json").read_text())
+        cargo_lock = (repository / "Cargo.lock").read_bytes().replace(b"\r\n", b"\n")
+        self.assertEqual(
+            hashlib.sha256(cargo_lock).hexdigest(),
+            lock["workspace_input"]["cargo_lock_sha256"],
+        )
+
     def test_selected_products_and_full_corpus_for_each_runner(self):
         for family in FAMILIES:
             for products in (["opi"], ["pi"], ["opi", "pi"]):

@@ -127,6 +127,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `opi-eval`: the local preparation workspace-input pin now matches the
+  committed Cargo.lock, allowing cold Opi builds to pass source admission.
+  Mismatched source locks still reject before building or publishing material.
+
 - `opi-eval`: material acquisition now settles under a whole-invocation
   deadline and signal cancellation, bounds diagnostic output, records owned
   cleanup, and prevents material publication after unsuccessful settlement.
