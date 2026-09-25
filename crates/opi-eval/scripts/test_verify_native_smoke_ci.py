@@ -19,6 +19,7 @@ This is the smoke-addendum gate for the native-smoke producer contract
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -302,6 +303,40 @@ class NativeSmokeCiVerifier(unittest.TestCase):
         self.assertNotIn('"cases_run": 2', text)
 
     # -- build/locator script contract families -------------------------------
+    def test_build_agents_forwards_static_lock_and_records_exact_argv(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="native-smoke-caller-") as temporary:
+            root = Path(temporary)
+            scripts = root / "crates/opi-eval/scripts"
+            scripts.mkdir(parents=True)
+            producer = scripts / PRODUCER.name
+            shutil.copyfile(PRODUCER, producer)
+            lock = root / "crates/opi-eval/external-locks/static/linux-x86_64.json"
+            lock.parent.mkdir(parents=True)
+            lock.write_text('{"subjects": []}\n')
+            subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "-c", "user.name=Caller Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "--allow-empty", "-m", "test: caller fixture"], check=True)
+            builder = scripts / "record-builder.sh"
+            builder.write_text('''#!/usr/bin/env bash
+set -euo pipefail
+python3 - "$@" <<'PY'
+import json, pathlib, sys
+args = sys.argv[1:]
+out = pathlib.Path(args[args.index("--out") + 1])
+out.mkdir(parents=True)
+(out / "argv.json").write_text(json.dumps(args))
+(out / "opi-identity.json").write_text(json.dumps({"canonical_executable": "/fixture/opi", "checkout_commit": args[args.index("--opi-commit") + 1]}))
+(out / "pi-identity.json").write_text(json.dumps({"node_executable": "/fixture/node", "bundle_path": "/fixture/pi.js"}))
+PY
+''', newline="\n")
+            out = root / "output"
+            pi_source = root / "pi-source"
+            result = subprocess.run(["bash", str(producer), "build-agents", "--build-script", str(builder), "--pi-source", str(pi_source), "--out", str(out)], cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            args = json.loads((out / "argv.json").read_text())
+            self.assertEqual(args[args.index("--static-lock") + 1], str(lock))
+            receipt = json.loads((out / "receipt.json").read_text())
+            self.assertEqual(receipt["build_script_invocation"], ["bash", str(builder), *args])
+
     def test_build_without_locked_release_rejects(self) -> None:
         self.assert_rejects(
             self.ws(builder_text=BUILDER.read_text(encoding="utf-8").replace(

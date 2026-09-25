@@ -105,18 +105,35 @@ operator 演练见 `examples/local-evaluation/`。
 客户端、完整固定语料及锁定的 Harbor/Pier 环境。种子集合必须包含 materializer
 与 `build-agent-artifacts.sh`。Agent 运行时资源和构建身份保留在已验证包中。
 
+pi 模型数据从静态锁的 `subjects[id=pi].model_data_archive` 获取：包名和版本
+必须匹配源码，并在解包和离线构建前验证精确归档 URL 与 SHA-256；不要求上游
+shrinkwrap 提供 SRI。直接调用 pi 构建器时必须传入
+`--static-lock /absolute/linux-x86_64.json`；本地 prepare 和 native-smoke
+会显式传入各自声明的锁。仅构建 Opi 时不需要 pi 归档 pin。
+
 缓存中的 `corpora/<adapter>/tasks` 必须是完整、干净且版本固定的 Git 语料。
 prepare 为选中任务生成 `packages/<adapter>/<task-id>` 和绑定 SHA-256 的
 `profiles/<adapter>/<task-id>.toml`。material/5 分开记录完整语料的
 root/commit/tasks-tree 与所选 `tasks` 映射；每项绑定 canonical ID、原生名称、
-profile 和任务包。任务镜像及 Dockerfile 基础镜像必须解析为不可变摘要，并已能在
-所选 engine 的缓存中观测到。缺失身份会拒绝并提示获取方式；prepare 和 preview
-不会拉取或启动任务镜像。
+profile 和任务包。任务镜像及 Dockerfile 基础镜像必须解析为不可变摘要。已种子化
+固定 materializer 时，prepare 按准入摘要拉取所选任务缺失的镜像，并在同一所选
+engine 中复核后冻结；缺失或无效 pin 在拉取前拒绝。暖准备复用已验证镜像。
+preview 保持只读；prepare 不构建镜像、不启动容器。
+
+`tasks/` 的直接子项可以是固定的惰性元数据链接，例如
+`tasks/README.md -> ../README.md`，但目标必须是同一固定 commit 中受跟踪的普通文件。
+prepare 在写入清单前核对链接原文、目标字节和执行权限；语料摘要使用链接原文。
+这些条目不会成为任务，也不会进入任务包。越界、链接链、链接祖先、任务目录内链接、
+子模块及特殊文件均拒绝；运行时包和任务包仍禁止链接。相对配置/缓存路径保留配置
+指定的位置，并生成绝对路径的冻结包身份。
 
 需求记录分别保留 Agent/verifier 的 CPU、内存、存储、GPU 数量及类型、网络策略、
 收集行为和阶段时限，以及固定版本默认值和来源。CPU、内存取自所选 Docker engine；
-存储检查覆盖缓存、输出和 engine 存储命名空间。无法观测远程或 Docker Desktop
-engine 的存储命名空间时保留 unknown。注册 NVIDIA runtime 不能证明 GPU 容量。
+存储检查覆盖缓存、输出和 engine 存储命名空间。在 Linux/WSL 上，若所选本地 Unix
+engine ID 唯一匹配一个 dockerd 命名空间，可通过有界、只读的 `wsl.exe` 观测读取
+已运行 Docker Desktop 的存储。采样绑定 engine 根目录、进程和挂载身份，并再次
+核验所选端点；不会启动发行版或容器。远程 engine、身份歧义、访问被拒以及失败
+或超时的观测继续保留 unknown。注册 NVIDIA runtime 不能证明 GPU 容量。
 必需的 unknown 在 job 或 model 启动前拒绝所选集合；显式子集预览仍保留完整清单
 与排除原因。
 
@@ -335,7 +352,9 @@ Opi 任务进程使用隔离且不可用的会话总线地址，使固定客户�
 能够通过既有的环境凭据回退路径使用所投影的连接。
 
 上游 oracle 是显式选择的 conformance 诊断（`conformance --case oracle-witness` /
-`--case nop-witness`），绝不是被 `run` 静默执行的前置条件。
+`--case nop-witness`），绝不是被 `run` 静默执行的前置条件。诊断作业选择固定
+runner 注册的 `oracle` 或 `nop` 名称，不携带自定义 import path。结果绑定要求
+名称精确匹配，并拒绝缺失、替换或双重选择；集成 Agent 保持固定 import 选择。
 
 请求身份来自 experiment 文档中选定的命名 connection（schema
 `opi-eval-experiment/2`）：顶层 `connection` 选择一个 `[[connections]]` id，
@@ -455,7 +474,8 @@ hermetic CLI 示例相互独立。
 ## 输出与故障恢复
 
 材料获取整次调用限时 3,600 秒，每个输出流最多保留 1 MiB。
-`acquisition.log` 记录退出、超时/取消、截断及自有资源清理状态。
+`acquisition.log` 记录源码材料获取，`image-acquisition/acquisition.log` 记录所选
+镜像获取；两者均记录退出、超时/取消、截断及自有资源清理状态。
 SIGINT/SIGTERM 取消自有进程树；失败或未验证落定的调用不能发布材料。
 仅清理本次调用自有的临时 staging，保留已验证的缓存条目。
 

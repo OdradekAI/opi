@@ -117,22 +117,44 @@ pinned corpus and locked Harbor/Pier environment. Seed both the materializer
 and `build-agent-artifacts.sh` from the pin set. Agent runtime resources and
 build identities remain in the verified package.
 
+Pi model data is fetched from `subjects[id=pi].model_data_archive` in the
+static lock: package and version must match the source, and the exact archive
+URL and SHA-256 are checked before extraction or offline building. Upstream
+shrinkwrap SRI is not required. Direct pi builder calls require
+`--static-lock /absolute/linux-x86_64.json`; local prepare and native-smoke
+pass their declared lock explicitly. Opi-only builds need no pi archive pin.
+
 The cache holds each complete, clean pinned Git corpus at
 `corpora/<adapter>/tasks`. Preparation creates the selected tasks' packages at
 `packages/<adapter>/<task-id>` and SHA-256-bound profiles at
 `profiles/<adapter>/<task-id>.toml`. Material/5 records the full corpus
 root/commit/tasks-tree separately from its selected `tasks` map; each entry
 binds its canonical ID, native name, profile and package. Task images and
-Dockerfile bases must resolve to immutable digests and already be observable
-in the selected engine cache. Missing identities reject with acquisition
-guidance; preparation and preview never pull or start task images.
+Dockerfile bases must resolve to immutable digests. With the pinned materializer
+seeded, preparation pulls missing selected images by their admitted digest and
+verifies them in the same selected engine before freezing. Missing or invalid
+pins reject before pulling. Warm preparation reuses verified images. Preview
+remains read-only, and preparation never builds images or starts containers.
+
+Corpus metadata links directly beneath `tasks/` may refer to a regular tracked
+file in the same pinned commit, such as `tasks/README.md -> ../README.md`.
+Preparation verifies the exact link text and target bytes/mode before writing
+the inventory; the corpus digest hashes link text. These inert entries are
+never tasks or task-package content. Escapes, chains, linked ancestors, links
+inside task directories, submodules and special files reject. Runtime and task
+packages retain their no-link rule. Relative configuration/cache paths keep
+their configured location and produce absolute frozen package identities.
 
 Requirements retain separate Agent and verifier CPU, memory, storage, GPU
 count/types, network policy, collection and stage deadlines, including their
 pinned defaults and origins. CPU and memory come from the selected Docker
-engine. Storage checks cover the cache, output and engine storage namespace;
-remote or Docker Desktop engine storage stays unknown when that namespace
-cannot be observed. An NVIDIA runtime registration does not establish GPU
+engine. Storage checks cover the cache, output and engine storage namespace.
+On Linux/WSL, an already running Docker Desktop can expose storage through a
+bounded read-only `wsl.exe` observation when the selected local Unix engine ID
+matches exactly one dockerd namespace. The sample binds the engine root,
+process and mount identity and rechecks the selected endpoint; it starts no
+distribution or container. Remote engines, ambiguous identities, denied access
+and failed or timed-out observations remain unknown. An NVIDIA runtime registration does not establish GPU
 capacity. A required unknown rejects selection before jobs or models start.
 The full inventory and exclusion reasons remain visible for an explicit subset.
 
@@ -379,7 +401,10 @@ client's environment-credential fallback works in headless containers.
 
 The upstream oracle is an explicitly selected conformance diagnostic
 (`conformance --case oracle-witness` / `--case nop-witness`), never a
-prerequisite silently run by `run`.
+prerequisite silently run by `run`. Diagnostic jobs select the pinned runner's
+registered `oracle` or `nop` name without a custom import path. Result binding
+requires that exact name and rejects missing, substituted or dual selectors;
+integration Agents retain their pinned import selection.
 
 Request identity comes from the experiment document's selected named
 connection (schema `opi-eval-experiment/2`): the top-level `connection`
@@ -523,7 +548,9 @@ reference. The CLI and its formats remain unstable 0.x contracts.
 ## Outputs and failure recovery
 
 Material acquisition uses a 3,600-second deadline for the whole invocation
-and retains at most 1 MiB per output stream. `acquisition.log` records exit,
+and retains at most 1 MiB per output stream. `acquisition.log` records source
+acquisition; `image-acquisition/acquisition.log` records selected-image acquisition.
+Both record exit,
 timeout/cancellation, truncation and owned cleanup. SIGINT/SIGTERM cancel the
 owned process tree; failed or unverified settlement cannot publish material.
 Only invocation-owned temporary staging is removed; verified cache entries remain.

@@ -178,8 +178,10 @@ for entry in entries:
     parts = Path(identity).parts
     if not parts or Path(identity).is_absolute() or any(part in (".", "..") for part in parts):
         fail("invalid cache-relative acquisition identity")
-    if parts[0] not in ("agents", "corpora", "runners", "tools") or len(parts) < 2:
+    if parts[0] not in ("agents", "corpora", "runners", "tools", "images") or len(parts) < 2:
         fail(f"{identity}: required pin must be explicitly seeded")
+    if parts[0] == "images" and (len(parts) != 2 or not re.fullmatch(r"[A-Za-z0-9_.-]+", parts[1])):
+        fail("invalid image acquisition identity")
     missing.add((parts[0], parts[1]))
 if not entries:
     raise SystemExit(0)
@@ -191,6 +193,21 @@ if any(product not in ("opi", "pi") for product in products):
     fail("unsupported Agent product")
 runner = "pier" if benchmark == "deepswe-v1.1" else "harbor"
 allowed = {("agents", product) for product in products} | {("corpora", benchmark), ("runners", runner), ("tools", "uv")}
+selected_images = {}
+for kind, identity in missing:
+    if kind != "images":
+        continue
+    matches = [image for image in lock.get("images", []) if image.get("id") == identity]
+    if len(matches) != 1:
+        fail(f"{identity}: image requires one exact static pin")
+    image = matches[0]
+    reference, manifest = image.get("reference"), image.get("manifest")
+    if not isinstance(reference, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:@-]*", reference):
+        fail(f"{identity}: invalid image reference")
+    if not isinstance(manifest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", manifest):
+        fail(f"{identity}: image has no immutable manifest")
+    selected_images[identity] = (f"{reference}@{manifest}", manifest)
+    allowed.add((kind, identity))
 if not missing <= allowed:
     fail("acquisition plan exceeds its selected materials")
 
@@ -241,7 +258,7 @@ with tempfile.TemporaryDirectory(prefix="opi-eval-acquire-") as temporary:
             if subprocess.check_output([str(node), "--version"], text=True).strip() != "v" + tools["node"]["version"]:
                 fail("Node version drift")
             environment = dict(os.environ, PATH=str(node.parent) + os.pathsep + os.environ.get("PATH", ""))
-            run("bash", builder, "--pi-source", source, "--out", output, env=environment)
+            run("bash", builder, "--pi-source", source, "--static-lock", cache / "pins/static/linux-x86_64.json", "--out", output, env=environment)
             identity = json.loads((output / "pi-identity.json").read_text())
             bundle = Path(identity["bundle_path"])
             if identity["checkout_commit"] != pin["commit"] or sha(bundle) != identity["bundle_sha256"] or sha(node) != identity["node_sha256"]:
@@ -296,6 +313,25 @@ with tempfile.TemporaryDirectory(prefix="opi-eval-acquire-") as temporary:
             if created:
                 shutil.rmtree(target)
             raise
+
+    for identity, (reference, manifest) in sorted(selected_images.items()):
+        def present():
+            result = subprocess.run(["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", reference], capture_output=True, text=True, timeout=15)
+            if result.returncode != 0:
+                return False
+            try:
+                digests = json.loads(result.stdout)
+            except ValueError:
+                return False
+            return isinstance(digests, list) and any(isinstance(value, str) and value.rsplit("@", 1)[-1] == manifest for value in digests)
+
+        if not present():
+            run("docker", "pull", "--quiet", reference)
+            if not present():
+                fail(f"{identity}: pulled image digest is unverified")
+            print(f"prepare: acquired images/{identity}; manifest={manifest}", flush=True)
+        else:
+            print(f"prepare: reused images/{identity}; manifest={manifest}", flush=True)
 
 print("prepare: selected acquisition settled", flush=True)
 PREPARE_PY

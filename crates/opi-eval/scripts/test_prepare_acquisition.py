@@ -91,20 +91,18 @@ class Fixture:
         for name in ("docs/usage.md", "examples/example.js", "README.md", "CHANGELOG.md"):
             write(pi / "packages/coding-agent" / name, "pinned resource\n")
         pi_commit = commit(pi)
-        subjects.append({"id": "pi", "kind": "agent-source", "repository_url": str(pi), "commit": pi_commit, "blobs": [blob(pi, name) for name in ("package-lock.json", "packages/coding-agent/npm-shrinkwrap.json", "packages/coding-agent/package.json")]})
+        subjects.append({"id": "pi", "kind": "agent-source", "repository_url": str(pi), "commit": pi_commit, "blobs": [blob(pi, name) for name in ("package-lock.json", "packages/coding-agent/npm-shrinkwrap.json", "packages/coding-agent/package.json")], "model_data_archive": {"package": "@earendil-works/pi-ai", "version": "0.84.1", "url": data.as_uri(), "sha256": sha(data)}})
         node = "#!/bin/sh\necho v22.19.0\n"
         npm = f'''#!/usr/bin/env python3
-import json, pathlib, shutil, sys
+import json, pathlib, sys
 args = sys.argv[1:]
 if args == ["--version"]:
     print("10.9.3")
 elif args[0] == "ci":
     pathlib.Path("node_modules").mkdir()
     pathlib.Path("node_modules/pinned").write_text("locked dependencies")
-elif args[0] == "pack":
-    target = pathlib.Path(args[args.index("--pack-destination") + 1]) / "earendil-works-pi-ai-0.84.1.tgz"
-    shutil.copyfile({str(data)!r}, target)
 elif args == ["run", "build:offline"]:
+    assert pathlib.Path("packages/ai/src/providers/data/models.json").read_text() == "{{}}\\n"
     path = pathlib.Path("packages/coding-agent/dist/bundle/cli.js")
     path.parent.mkdir(parents=True)
     path.write_text("// pinned fixture bundle")
@@ -246,6 +244,115 @@ class PrepareAcquisitionTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((fixture.cache / "agents/opi").exists())
                 self.assertFalse(fixture.events.exists())
+
+    def test_static_pi_data_pin_accepts_source_without_shrinkwrap_integrity(self):
+        fixture = Fixture(self.base / "absent-sri")
+        source = fixture.root / "sources/pi"
+        relative = "packages/coding-agent/npm-shrinkwrap.json"
+        shrinkwrap = json.loads((source / relative).read_text())
+        del shrinkwrap["packages"]["node_modules/@earendil-works/pi-ai"]["integrity"]
+        write(source / relative, json.dumps(shrinkwrap))
+        revision = commit(source)
+        subject = next(row for row in fixture.lock["subjects"] if row["id"] == "pi")
+        subject["commit"] = revision
+        subject["blobs"] = [blob(source, row["path"]) for row in subject["blobs"]]
+        fixture.save_lock()
+        result = fixture.prepare(FAMILIES[0], ["pi"], with_source=False)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertTrue((fixture.cache / "agents/pi/pi").is_file())
+        self.assertEqual(json.loads(fixture.events.read_text())["product"], "pi")
+
+    def test_invalid_pi_data_pins_reject_before_build_or_publication(self):
+        for case in ("missing", "malformed", "duplicate-subject", "duplicate-field", "package", "version", "url", "digest", "uppercase-digest", "tampered"):
+            with self.subTest(case=case):
+                fixture = Fixture(self.base / case)
+                subject = next(row for row in fixture.lock["subjects"] if row["id"] == "pi")
+                pin = subject["model_data_archive"]
+                if case == "missing":
+                    del subject["model_data_archive"]
+                elif case == "malformed":
+                    subject["model_data_archive"] = []
+                elif case == "duplicate-subject":
+                    fixture.lock["subjects"].append(subject.copy())
+                elif case == "package":
+                    pin["package"] = "wrong-package"
+                elif case == "version":
+                    pin["version"] = "0.0.0"
+                elif case == "url":
+                    pin["url"] = "relative/archive.tgz"
+                elif case == "digest":
+                    pin["sha256"] = "invalid"
+                elif case == "uppercase-digest":
+                    pin["sha256"] = "A" * 64
+                elif case == "tampered":
+                    (fixture.root / "pi-data.tgz").write_bytes(b"untrusted archive bytes")
+                fixture.save_lock()
+                if case == "duplicate-field":
+                    text = fixture.lock_path.read_text()
+                    write(fixture.lock_path, text.replace('"model_data_archive":', '"model_data_archive": {}, "model_data_archive":', 1))
+                result = fixture.prepare(FAMILIES[0], ["pi"], with_source=False)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("pi build data:", result.stderr)
+                self.assertFalse((fixture.cache / "agents/pi").exists())
+                self.assertFalse(fixture.events.exists())
+
+    def test_pi_builder_requires_explicit_static_lock(self):
+        fixture = Fixture(self.base / "missing-static-lock")
+        result = subprocess.run(
+            ["bash", str(SCRIPTS / "build-agent-artifacts.sh"), "--pi-source", str(fixture.root / "sources/pi"), "--out", str(fixture.root / "build")],
+            cwd=fixture.cwd, env=fixture.environment(), text=True, capture_output=True, timeout=60,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--static-lock is required", result.stderr)
+        self.assertFalse(fixture.events.exists())
+
+    def test_selected_image_pulls_are_immutable_verified_and_reusable(self):
+        for case in ("cold-warm", "missing", "duplicate", "manifest", "reference", "pull-failed", "digest"):
+            with self.subTest(case=case):
+                room = self.base / case
+                cache = room / "cache"
+                bin_dir = room / "bin"
+                marker = room / "pulled"
+                events = room / "pulls"
+                manifest = "sha256:" + "a" * 64
+                image = {"id": "selected", "reference": "selected:1", "manifest": manifest}
+                lock = {"subjects": [], "tools": [], "images": [image]}
+                if case == "missing":
+                    lock["images"] = []
+                elif case == "duplicate":
+                    lock["images"].append(image.copy())
+                elif case == "manifest":
+                    image["manifest"] = "sha256:bad"
+                elif case == "reference":
+                    image["reference"] = "--unsafe"
+                write(cache / "pins/static/linux-x86_64.json", json.dumps(lock))
+                write(room / "plan.json", json.dumps([{"id": "images/selected", "products": ["pi"], "benchmark": FAMILIES[1]}]))
+                write(bin_dir / "docker", f'''#!/usr/bin/python3
+import json, pathlib, sys
+args = sys.argv[1:]
+marker = pathlib.Path({str(marker)!r})
+if args[:2] == ["image", "inspect"]:
+    if not marker.exists(): sys.exit(1)
+    print(json.dumps(["selected:1@" + ("sha256:"+"0"*64 if {case!r} == "digest" else {manifest!r})]))
+elif args[0] == "pull":
+    assert args == ["pull", "--quiet", "selected:1@"+{manifest!r}], args
+    with open({str(events)!r}, "a") as output: output.write("pull\\n")
+    if {case!r} == "pull-failed": sys.exit(9)
+    marker.write_text("pulled")
+else: raise SystemExit("unexpected Docker command")
+''', True)
+                argv = ["bash", str(SCRIPTS / "materialize-external-locks.sh"), "prepare", "--cache", str(cache), "--plan", str(room / "plan.json")]
+                environment = {"HOME": str(room), "PATH": str(bin_dir) + ":/usr/bin:/bin"}
+                result = subprocess.run(argv, env=environment, capture_output=True, text=True, timeout=20)
+                if case == "cold-warm":
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    warm = subprocess.run(argv, env=environment, capture_output=True, text=True, timeout=20)
+                    self.assertEqual(warm.returncode, 0, warm.stderr)
+                    self.assertEqual(events.read_text(), "pull\n")
+                else:
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    if case not in ("pull-failed", "digest"):
+                        self.assertFalse(events.exists())
 
 
 if __name__ == "__main__":

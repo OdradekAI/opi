@@ -415,7 +415,7 @@ cmd_build_agents() {
   require_file "$build_script"
   opi_commit=$(git -C "$REPO_ROOT" rev-parse HEAD)
   bash "$build_script" --opi-source "$REPO_ROOT" --opi-commit "$opi_commit" --pi-source "$pi_source" \
-    --out "$out"
+    --static-lock "$STATIC_LOCK" --out "$out"
   # Adapter manifest: the exact argv, cwd, environment allowlist, and
   # configuration projection each agent phase will receive.
   python3 - "$out" "$pi_source" > "$out/adapter-manifest.json" <<'PYEOF'
@@ -478,17 +478,18 @@ PYEOF
   write_receipt "$out" build-agents \
     "$(python3 -c '
 import json, sys
-out = sys.argv[1]
+out, build_script, repo, pi_source, static_lock = sys.argv[1:6]
 print(json.dumps({
-    "build_script_invocation": ["bash", "crates/opi-eval/scripts/build-agent-artifacts.sh",
-        "--opi-source", "<repo>", "--opi-commit", json.load(open(f"{out}/opi-identity.json"))["checkout_commit"], "--pi-source", "<pi>", "--out", "<out>"],
+    "build_script_invocation": ["bash", build_script,
+        "--opi-source", repo, "--opi-commit", json.load(open(f"{out}/opi-identity.json"))["checkout_commit"], "--pi-source", pi_source,
+        "--static-lock", static_lock, "--out", out],
     "opi_identity_sha256": __import__("hashlib").sha256(
         open(f"{out}/opi-identity.json", "rb").read()).hexdigest(),
     "pi_identity_sha256": __import__("hashlib").sha256(
         open(f"{out}/pi-identity.json", "rb").read()).hexdigest(),
     "adapter_manifest_sha256": __import__("hashlib").sha256(
         open(f"{out}/adapter-manifest.json", "rb").read()).hexdigest(),
-}))' "$out")"
+}))' "$out" "$build_script" "$REPO_ROOT" "$pi_source" "$STATIC_LOCK")"
 }
 
 # ---------------------------------------------------------------------------

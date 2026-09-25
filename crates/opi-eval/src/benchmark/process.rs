@@ -177,8 +177,8 @@ pub(crate) struct NativeSelection {
     /// `agent_info.name` (the integration's `name()`); `oracle` or any
     /// other name is a typed rejection even on job exit 0.
     pub(crate) agent_name: String,
-    /// Import path selected on the upstream argv (`module:ClassName`) and
-    /// recorded in the trial config's agent selection.
+    /// Integration import path (`module:ClassName`), or the pinned diagnostic
+    /// class whose registered name is selected in the upstream job config.
     pub(crate) agent_import_path: String,
     /// The admitted task name every bound trial must report
     /// (`task_name`).
@@ -538,25 +538,44 @@ pub(crate) fn import_bound_native_job(
         .and_then(|t| t.as_str())
         .map(str::to_owned);
 
-    // The trial config's explicit Agent selection: the import path this
-    // dispatch selected, never an implicit default or oracle.
+    // Bind the trial's explicit selection according to its dispatch kind.
+    // Diagnostics use registered names; integrations use their pinned import.
     let config_path = trial_dir.join("config.json");
     let config: serde_json::Value = serde_json::from_slice(
         &std::fs::read(&config_path).map_err(|_| NativeBindingError::TrialResultMissing)?,
     )
     .map_err(|_| NativeBindingError::TrialInvalid("json-parse"))?;
     let agent_config = config.get("agent").and_then(|a| a.as_object());
-    let selected = agent_config.and_then(|a| {
-        a.get("import_path")
-            .and_then(|p| p.as_str())
-            .or_else(|| a.get("name").and_then(|n| n.as_str()))
-    });
+    let (expected, selected) = match selection.kind {
+        SelectionKind::Integration { .. } => (
+            selection.agent_import_path.as_str(),
+            agent_config.and_then(|a| {
+                a.get("import_path")
+                    .and_then(|p| p.as_str())
+                    .or_else(|| a.get("name").and_then(|n| n.as_str()))
+            }),
+        ),
+        SelectionKind::DiagnosticWitness => {
+            let name = diagnostic_agent_name(selection).ok_or(NativeBindingError::TrialInvalid(
+                "diagnostic-selection-invalid",
+            ))?;
+            if agent_config
+                .and_then(|a| a.get("import_path"))
+                .is_some_and(|value| !value.is_null())
+            {
+                return Err(NativeBindingError::TrialInvalid(
+                    "diagnostic-selection-ambiguous",
+                ));
+            }
+            (name, agent_config.and_then(|a| a.get("name")?.as_str()))
+        }
+    };
     match selected {
         None => return Err(NativeBindingError::AgentSelectionMissing),
-        Some(observed) if observed == selection.agent_import_path => {}
+        Some(observed) if observed == expected => {}
         Some(observed) => {
             return Err(NativeBindingError::AgentSelectionMismatch {
-                expected: selection.agent_import_path.clone(),
+                expected: expected.to_owned(),
                 observed: observed.to_owned(),
             });
         }
@@ -1186,6 +1205,19 @@ fn is_sha256_hex(value: &str) -> bool {
 /// every path.
 pub(crate) struct BenchmarkExecution;
 
+fn diagnostic_agent_name(selection: &NativeSelection) -> Option<&'static str> {
+    match (
+        selection.agent_name.as_str(),
+        selection.agent_import_path.as_str(),
+    ) {
+        ("oracle", "harbor.agents.oracle:OracleAgent" | "pier.agents.oracle:OracleAgent") => {
+            Some("oracle")
+        }
+        ("nop", "harbor.agents.nop:NopAgent" | "pier.agents.nop:NopAgent") => Some("nop"),
+        _ => None,
+    }
+}
+
 /// Materialize the pinned runners' single-trial JobConfig without CLI Agent
 /// flags, which would replace the configured Agent and discard its stage caps.
 fn native_job_config(request: &BenchmarkRunRequest) -> Result<serde_json::Value, ExecutionError> {
@@ -1212,6 +1244,27 @@ fn native_job_config(request: &BenchmarkRunRequest) -> Result<serde_json::Value,
         return Err(reject());
     }
     let task_path = request.task_dir.canonicalize().map_err(|_| reject())?;
+    let mut agent = serde_json::json!({
+        "model_name": selection.model,
+        "max_timeout_sec": request.agent_timeout_seconds,
+        "override_timeout_sec": if agent_default.is_none() {
+            request.agent_timeout_seconds
+        } else {
+            None
+        },
+    });
+    match selection.kind {
+        SelectionKind::Integration { .. } => {
+            agent["import_path"] = selection.agent_import_path.clone().into();
+        }
+        SelectionKind::DiagnosticWitness => {
+            agent["name"] = diagnostic_agent_name(selection)
+                .ok_or(ExecutionError {
+                    token: "native-diagnostic-selection-invalid",
+                })?
+                .into();
+        }
+    }
     Ok(serde_json::json!({
         "jobs_dir": "jobs",
         "n_attempts": 1,
@@ -1220,16 +1273,7 @@ fn native_job_config(request: &BenchmarkRunRequest) -> Result<serde_json::Value,
         "timeout_multiplier": 1.0,
         "agent_timeout_multiplier": 1.0,
         "verifier_timeout_multiplier": 1.0,
-        "agents": [{
-            "import_path": selection.agent_import_path,
-            "model_name": selection.model,
-            "max_timeout_sec": request.agent_timeout_seconds,
-            "override_timeout_sec": if agent_default.is_none() {
-                request.agent_timeout_seconds
-            } else {
-                None
-            },
-        }],
+        "agents": [agent],
         "verifier": {"max_timeout_sec": request.verifier_timeout_seconds},
         "environment": {
             "type": "docker",
@@ -1546,6 +1590,50 @@ mod tests {
             admitted_lock_digest: "a".repeat(64),
             integrity,
             extra_env: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn diagnostic_job_config_selects_only_registered_names() {
+        for family in ["harbor", "pier"] {
+            for (name, class) in [("oracle", "OracleAgent"), ("nop", "NopAgent")] {
+                let root = tempfile::tempdir().unwrap();
+                let mut selection = stage_bound_job(root.path(), "j1", name);
+                selection.kind = SelectionKind::DiagnosticWitness;
+                selection.agent_import_path = format!("{family}.agents.{name}:{class}");
+                let mut request = request(integrity(
+                    RevisionStatus::Admitted,
+                    TaskClassification::ValidAgentOutcome,
+                ));
+                request.task_dir = root.path().join("task-packages/j1");
+                request.native_selection = Some(selection);
+                request.agent_timeout_seconds = Some(7);
+                request.verifier_timeout_seconds = Some(9);
+                let job = native_job_config(&request).unwrap();
+                assert_eq!(job["agents"][0]["name"], name);
+                assert!(job["agents"][0].get("import_path").is_none());
+                assert_eq!(job["agents"][0]["model_name"], "scripted:eval");
+                assert_eq!(job["agents"][0]["max_timeout_sec"], 7);
+                assert_eq!(job["agents"][0]["override_timeout_sec"], 7);
+                assert_eq!(job["verifier"]["max_timeout_sec"], 9);
+                assert_eq!(job["retry"]["max_retries"], 0);
+                assert_eq!(job["n_attempts"], 1);
+                assert!(job["environment"]["import_path"].is_null());
+                let admitted = request.native_selection.as_ref().unwrap().clone();
+                for (bad_name, bad_import) in [
+                    ("default", admitted.agent_import_path.as_str()),
+                    (name, "other.agents.oracle:OracleAgent"),
+                    ("nop", "harbor.agents.oracle:OracleAgent"),
+                ] {
+                    let selected = request.native_selection.as_mut().unwrap();
+                    selected.agent_name = bad_name.to_owned();
+                    selected.agent_import_path = bad_import.to_owned();
+                    assert_eq!(
+                        native_job_config(&request).unwrap_err().token,
+                        "native-diagnostic-selection-invalid"
+                    );
+                }
+            }
         }
     }
 
@@ -2508,6 +2596,52 @@ fn native_result_binding_admits_one_bound_job() {
 }
 
 #[test]
+fn diagnostic_result_binding_requires_an_unambiguous_registered_name() {
+    for family in ["harbor", "pier"] {
+        for (name, class) in [("oracle", "OracleAgent"), ("nop", "NopAgent")] {
+            let root = tempfile::tempdir().unwrap();
+            let mut selection = stage_bound_job(root.path(), "j1", name);
+            selection.kind = SelectionKind::DiagnosticWitness;
+            selection.agent_import_path = format!("{family}.agents.{name}:{class}");
+            let trial = root.path().join("jobs/j1/fixture-task__bZZeEkw");
+            std::fs::remove_file(trial.join("agent/opi-eval-terminal.json")).unwrap();
+            let path = trial.join("config.json");
+            let mut config: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            for agent in [
+                serde_json::json!({"name": name}),
+                serde_json::json!({"name": name, "import_path": null}),
+            ] {
+                config["agent"] = agent;
+                std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+                let binding = import_bound_native_job(root.path(), &selection).unwrap();
+                assert_eq!(binding.agent_name, name);
+                assert!(binding.terminal.is_none());
+            }
+            for agent in [
+                serde_json::json!({}),
+                serde_json::json!({"name": null, "import_path": null}),
+                serde_json::json!({"name": "default"}),
+                serde_json::json!({"name": if name == "oracle" { "nop" } else { "oracle" }}),
+                serde_json::json!({"name": selection.agent_import_path}),
+                serde_json::json!({"import_path": selection.agent_import_path}),
+                serde_json::json!({"name": name, "import_path": selection.agent_import_path}),
+                serde_json::json!({"name": name, "import_path": ""}),
+                serde_json::json!({"name": name, "import_path": false}),
+                serde_json::json!({"name": false}),
+            ] {
+                config["agent"] = agent;
+                std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+                assert!(
+                    import_bound_native_job(root.path(), &selection).is_err(),
+                    "{config}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn native_result_binding_rejects_every_substitution() {
     // Missing new job (only stale ones exist).
     let dir = tempfile::tempdir().unwrap();
@@ -2688,7 +2822,7 @@ fn native_result_binding_rejects_every_substitution() {
     let witness_config = dir.path().join("jobs/j1/fixture-task__bZZeEkw/config.json");
     let mut config_value: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&witness_config).unwrap()).unwrap();
-    config_value["agent"] = serde_json::json!({"import_path": "harbor.agents.oracle:OracleAgent"});
+    config_value["agent"] = serde_json::json!({"name": "oracle", "import_path": null});
     std::fs::write(&witness_config, serde_json::to_vec(&config_value).unwrap()).unwrap();
     std::fs::remove_file(
         dir.path()

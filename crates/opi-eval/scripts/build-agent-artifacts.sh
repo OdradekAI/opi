@@ -12,7 +12,7 @@
 #   checkout commit and dirty state, target triple, profile, feature set,
 #   and the Cargo.lock SHA-256 recomputed from the checkout.
 # - pi: locked source build (`npm ci --ignore-scripts`,
-#   `npm run build:offline` over the checked-in model data),
+#   `npm run build:offline` over statically pinned model data),
 #   bundle existence check). The identity records the canonical Node
 #   executable path, SHA-256, file(1), ldd, --version, the npm identity,
 #   the checkout commit and dirty state, the package manifest, package
@@ -20,7 +20,7 @@
 #   and the canonical bundle path and digest.
 #
 # Usage:
-#   crates/opi-eval/scripts/build-agent-artifacts.sh --opi-source DIR --opi-commit COMMIT --pi-source DIR --out DIR
+#   crates/opi-eval/scripts/build-agent-artifacts.sh --opi-source DIR --opi-commit COMMIT --pi-source DIR --static-lock PATH --out DIR
 #
 # Emits <out>/opi-identity.json and <out>/pi-identity.json
 # (schema `opi-eval-agent-identity/1`). Fails closed on any drift.
@@ -30,12 +30,14 @@ set -euo pipefail
 OPI_SOURCE=""
 OPI_COMMIT=""
 PI_SOURCE=""
+STATIC_LOCK=""
 OUT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --opi-source) OPI_SOURCE=$2; shift 2 ;;
     --opi-commit) OPI_COMMIT=$2; shift 2 ;;
     --pi-source) PI_SOURCE=$2; shift 2 ;;
+    --static-lock) STATIC_LOCK=$2; shift 2 ;;
     --out) OUT=$2; shift 2 ;;
     *) echo "opi-eval-build-agent-artifacts: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -52,7 +54,11 @@ if [ -n "$OPI_SOURCE" ]; then
   [[ "$OPI_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid Opi commit" >&2; exit 2; }
   OPI_SOURCE=$(readlink -f "$OPI_SOURCE")
 fi
-if [ -n "$PI_SOURCE" ]; then PI_SOURCE=$(readlink -f "$PI_SOURCE"); fi
+if [ -n "$PI_SOURCE" ]; then
+  PI_SOURCE=$(readlink -f "$PI_SOURCE")
+  [ -n "$STATIC_LOCK" ] && [ -f "$STATIC_LOCK" ] || { echo "pi build data: --static-lock is required" >&2; exit 2; }
+  STATIC_LOCK=$(readlink -f "$STATIC_LOCK")
+fi
 OUT=$(realpath -m "$OUT")
 mkdir -p "$OUT"
 
@@ -167,35 +173,44 @@ npm_cache="$OUT/npm-cache"
 mkdir -p "$npm_cache"
 (
   cd "$PI_SOURCE"
+  # Generated data comes only from the reviewed static archive pin, never
+  # live registry resolution or the default catalog-generating build.
+  pi_ai_tarball="$npm_cache/pi-ai-data.tgz"
+  python3 - "$STATIC_LOCK" "$pi_ai_tarball" <<'DATA_PIN'
+import hashlib, json, pathlib, re, sys, urllib.parse, urllib.request
+lock_path, archive = sys.argv[1:]
+def unique_fields(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise SystemExit("pi build data: duplicate static lock field")
+        result[key] = value
+    return result
+lock = json.loads(pathlib.Path(lock_path).read_text(), object_pairs_hook=unique_fields)
+subjects = [row for row in lock.get("subjects", []) if row.get("id") == "pi"]
+if len(subjects) != 1 or not isinstance(subjects[0].get("model_data_archive"), dict):
+    raise SystemExit("pi build data: exactly one static archive pin is required")
+pin = subjects[0]["model_data_archive"]
+version = json.loads(pathlib.Path("packages/ai/package.json").read_text())["version"]
+if pin.get("package") != "@earendil-works/pi-ai" or pin.get("version") != version:
+    raise SystemExit("pi build data: package or source version mismatch")
+url = pin.get("url")
+digest = pin.get("sha256")
+if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+    raise SystemExit("pi build data: invalid static archive SHA-256")
+if not isinstance(url, str) or not url or any(char.isspace() for char in url):
+    raise SystemExit("pi build data: invalid static archive URL")
+parsed = urllib.parse.urlsplit(url)
+if not ((parsed.scheme == "https" and parsed.netloc) or
+        (parsed.scheme == "file" and not parsed.netloc and parsed.path.startswith("/"))):
+    raise SystemExit("pi build data: invalid static archive URL")
+urllib.request.urlretrieve(url, archive)
+if hashlib.sha256(pathlib.Path(archive).read_bytes()).hexdigest() != digest:
+    raise SystemExit("pi build data: archive digest drift")
+DATA_PIN
+  pi_ai_tarball_sha=$(sha256sum "$pi_ai_tarball" | cut -d' ' -f1)
   HOME="$OUT/npm-home" npm_config_cache="$npm_cache" \
     npm ci --ignore-scripts
-  # The model-data directory is generated, never checked in: hydrate it
-  # from the same-version official registry tarball of @earendil-works/
-  # pi-ai so the pinned source compiles exactly as released. The default
-  # build regenerates the tables from live upstream catalogs, whose drift
-  # breaks this pinned commit (TS2353 on cloudflare-ai-gateway).
-  pi_ai_version=$(python3 -c 'import json; print(json.load(open("packages/ai/package.json"))["version"])')
-  HOME="$OUT/npm-home" npm_config_cache="$npm_cache" \
-    npm pack "@earendil-works/pi-ai@${pi_ai_version}" \
-    --pack-destination "$npm_cache" >&2
-  pi_ai_tarball=$(ls "$npm_cache"/earendil-works-pi-ai-"${pi_ai_version}".tgz)
-  pi_ai_tarball_sha=$(sha256sum "$pi_ai_tarball" | cut -d' ' -f1)
-  # The released data archive is admitted only by the committed shrinkwrap SRI.
-  python3 - "$pi_ai_tarball" packages/coding-agent/npm-shrinkwrap.json "$pi_ai_version" <<'DATA_PIN'
-import base64, hashlib, json, pathlib, sys
-archive, shrinkwrap, version = sys.argv[1:]
-lock = json.loads(pathlib.Path(shrinkwrap).read_text())
-entry = lock.get("packages", {}).get("node_modules/@earendil-works/pi-ai", {})
-if entry.get("version") != version or not entry.get("integrity"):
-    raise SystemExit("pi build data: no exact committed shrinkwrap integrity")
-content = pathlib.Path(archive).read_bytes()
-for token in entry["integrity"].split():
-    algorithm, digest = token.split("-", 1)
-    if algorithm not in ("sha256", "sha384", "sha512"):
-        raise SystemExit("pi build data: unsupported integrity algorithm")
-    if base64.b64encode(hashlib.new(algorithm, content).digest()).decode() != digest:
-        raise SystemExit("pi build data: archive integrity drift")
-DATA_PIN
   mkdir -p "$npm_cache/pi-ai-data"
   tar -xzf "$pi_ai_tarball" -C "$npm_cache/pi-ai-data" \
     package/dist/providers/data

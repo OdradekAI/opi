@@ -127,6 +127,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `opi-eval`: oracle/nop conformance diagnostics select the pinned native
+  runner's registered Agent name and bind results to that explicit selection.
+  Missing, substituted or dual diagnostic selectors are rejected; integration
+  Agent import selection is unchanged.
+
+- `opi-eval`: corpus preparation admits pinned inert metadata links directly
+  beneath `tasks/` only when their relative targets are regular tracked files
+  in the same commit. It hashes link text, verifies target bytes and modes,
+  and rejects unsafe links before inventory publication. Task and runtime
+  packages still reject links; link-free corpus digests remain unchanged.
+
+- `opi-eval`: preparation acquires missing selected task and Dockerfile images
+  by admitted immutable digest, verifies the selected engine before and after,
+  and retains separate supervised image-acquisition logs. Source and image
+  acquisition share one deadline; invalid pins, failed pulls and digest drift
+  prevent publication. Preview remains read-only and warm preparation reuses
+  verified images. The TB2.1 Python 3.13 base image now has an exact static pin.
+  Relative experiment paths now resolve the cache to an absolute path before
+  runtime-package verification and material publication.
+
+- `opi-eval`: selected local Docker Desktop storage can now be observed on WSL
+  through a bounded read-only probe of the already running engine namespace.
+  Engine, process, mount and endpoint identity must agree; unavailable, remote,
+  ambiguous or failed observations remain unknown without starting containers.
+
+- `opi-eval`: pi preparation now verifies model data against an explicit
+  static archive URL and SHA-256 matched to its source version. Cold builds
+  no longer require missing upstream shrinkwrap integrity; invalid pins and
+  changed archive bytes reject before extraction, offline build or publication.
+
 - `opi-eval`: the local preparation workspace-input pin now matches the
   committed Cargo.lock, allowing cold Opi builds to pass source admission.
   Mismatched source locks still reject before building or publishing material.

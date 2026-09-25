@@ -500,6 +500,12 @@ impl BenchmarkMaterial {
 
 /// Git reads use no user configuration, hooks, external diff, or network.
 pub(crate) fn git_text(root: &Path, args: &[&str]) -> Result<String, MaterialError> {
+    String::from_utf8(git_bytes(root, args)?)
+        .map(|text| text.trim_end_matches('\n').to_owned())
+        .map_err(|_| MaterialError::Rejected("corpus paths must be UTF-8".to_owned()))
+}
+
+fn git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, MaterialError> {
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(root)
@@ -516,9 +522,7 @@ pub(crate) fn git_text(root: &Path, args: &[&str]) -> Result<String, MaterialErr
             root.display()
         )));
     }
-    String::from_utf8(output.stdout)
-        .map(|text| text.trim_end_matches('\n').to_owned())
-        .map_err(|_| MaterialError::Rejected("corpus paths must be UTF-8".to_owned()))
+    Ok(output.stdout)
 }
 
 impl CorpusMaterial {
@@ -527,6 +531,16 @@ impl CorpusMaterial {
         adapter: &str,
         lock: &serde_json::Value,
     ) -> Result<(), MaterialError> {
+        self.verified_manifest_digest(adapter, lock).map(|_| ())
+    }
+
+    /// Verifies the complete pinned corpus before hashing regular bytes and
+    /// inert root metadata links. Link targets are checked, never transported.
+    pub(crate) fn verified_manifest_digest(
+        &self,
+        adapter: &str,
+        lock: &serde_json::Value,
+    ) -> Result<String, MaterialError> {
         let pin = lock["subjects"]
             .as_array()
             .and_then(|subjects| subjects.iter().find(|subject| subject["id"] == adapter))
@@ -539,6 +553,13 @@ impl CorpusMaterial {
             return Err(MaterialError::Rejected(format!(
                 "{adapter} corpus identity differs from static lock"
             )));
+        }
+        for path in self.root.ancestors() {
+            if !std::fs::symlink_metadata(path)?.file_type().is_dir() {
+                return Err(MaterialError::Rejected(
+                    "corpus root traverses a link or non-directory".to_owned(),
+                ));
+            }
         }
         let project = PathBuf::from(git_text(&self.root, &["rev-parse", "--show-toplevel"])?);
         if project.join("tasks").canonicalize()? != self.root.canonicalize()?
@@ -570,36 +591,165 @@ impl CorpusMaterial {
                 ));
             }
         }
-        // This also rejects links and special files before metadata is read.
-        runtime_package_manifest_digest(&self.root)?;
-        let tree = git_text(&self.root, &["ls-tree", "-r", "-z", &self.tasks_tree])?;
+        // Enumerate without following links, including unselected task trees.
+        fn entries(
+            root: &Path,
+            dir: &Path,
+            files: &mut BTreeMap<String, PathBuf>,
+        ) -> Result<(), MaterialError> {
+            for entry in std::fs::read_dir(dir)? {
+                let entry = entry?;
+                let name = entry.file_name();
+                if name.to_str().is_none_or(|name| {
+                    name.chars()
+                        .any(|ch| ch.is_control() || matches!(ch, '\\' | ':'))
+                }) {
+                    return Err(MaterialError::Rejected("ambiguous corpus path".to_owned()));
+                }
+                let path = entry.path();
+                let kind = entry.file_type()?;
+                if kind.is_dir() {
+                    entries(root, &path, files)?;
+                } else if kind.is_file() || kind.is_symlink() {
+                    files.insert(
+                        path.strip_prefix(root)
+                            .expect("corpus entry")
+                            .to_str()
+                            .expect("checked UTF-8")
+                            .to_owned(),
+                        path,
+                    );
+                } else {
+                    return Err(MaterialError::Rejected("special corpus file".to_owned()));
+                }
+            }
+            Ok(())
+        }
+        let mut files = BTreeMap::new();
+        entries(&self.root, &self.root, &mut files)?;
+        let tree = git_text(&project, &["ls-tree", "-r", "-z", &self.tasks_tree])?;
         let mut expected = Vec::new();
         let mut paths = Vec::new();
+        let mut rows = Vec::new();
         for row in tree.split('\0').filter(|row| !row.is_empty()) {
             let (identity, relative) = row
                 .split_once('\t')
                 .ok_or_else(|| MaterialError::Rejected("invalid corpus Git entry".to_owned()))?;
             let fields = identity.split_whitespace().collect::<Vec<_>>();
-            if fields.len() != 3 || fields[1] != "blob" || !matches!(fields[0], "100644" | "100755")
+            if fields.len() != 3
+                || fields[1] != "blob"
+                || !matches!(fields[0], "100644" | "100755" | "120000")
             {
                 return Err(MaterialError::Rejected(
                     "unsupported corpus source entry".to_owned(),
                 ));
             }
-            let file = self.root.join(relative);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if (std::fs::metadata(&file)?.permissions().mode() & 0o111 != 0)
-                    != (fields[0] == "100755")
+            let file = files.remove(relative).ok_or_else(|| {
+                MaterialError::Rejected("corpus file set differs from pinned tree".to_owned())
+            })?;
+            if fields[0] == "120000" {
+                if relative.contains('/')
+                    || !std::fs::symlink_metadata(&file)?.file_type().is_symlink()
                 {
                     return Err(MaterialError::Rejected(
-                        "corpus source mode drift".to_owned(),
+                        "only pinned corpus-root metadata links are admitted".to_owned(),
                     ));
                 }
+                let link = std::fs::read_link(&file)?;
+                let text = link.to_str().ok_or_else(|| {
+                    MaterialError::Rejected("metadata link target must be UTF-8".to_owned())
+                })?;
+                if text.is_empty()
+                    || text.starts_with('/')
+                    || text
+                        .chars()
+                        .any(|ch| ch.is_control() || matches!(ch, '\\' | ':'))
+                {
+                    return Err(MaterialError::Rejected(
+                        "unsafe corpus metadata target".to_owned(),
+                    ));
+                }
+                if git_bytes(&project, &["cat-file", "blob", fields[2]])? != text.as_bytes() {
+                    return Err(MaterialError::Rejected(
+                        "corpus metadata link text drift".to_owned(),
+                    ));
+                }
+                let mut parts = vec!["tasks"];
+                let mut components = text.split('/').peekable();
+                while let Some(part) = components.next() {
+                    match part {
+                        "" | "." => {
+                            return Err(MaterialError::Rejected(
+                                "ambiguous corpus metadata target".to_owned(),
+                            ));
+                        }
+                        ".." => {
+                            if parts.pop().is_none() {
+                                return Err(MaterialError::Rejected(
+                                    "corpus metadata target escapes checkout".to_owned(),
+                                ));
+                            }
+                        }
+                        _ => parts.push(part),
+                    }
+                    if components.peek().is_some()
+                        && !std::fs::symlink_metadata(project.join(parts.join("/")))?
+                            .file_type()
+                            .is_dir()
+                    {
+                        return Err(MaterialError::Rejected(
+                            "metadata target traverses a link or non-directory".to_owned(),
+                        ));
+                    }
+                }
+                let target_relative = parts.join("/");
+                let target_tree =
+                    git_text(&project, &["ls-tree", "-z", "HEAD", "--", &target_relative])?;
+                let (identity, pinned_path) = target_tree
+                    .trim_end_matches('\0')
+                    .split_once('\t')
+                    .ok_or_else(|| {
+                    MaterialError::Rejected(
+                        "metadata target is not a pinned regular file".to_owned(),
+                    )
+                })?;
+                let target_fields = identity.split_whitespace().collect::<Vec<_>>();
+                if pinned_path != target_relative
+                    || target_fields.len() != 3
+                    || target_fields[1] != "blob"
+                    || !matches!(target_fields[0], "100644" | "100755")
+                {
+                    return Err(MaterialError::Rejected(
+                        "metadata target is not a pinned regular file".to_owned(),
+                    ));
+                }
+                let mut target = project.clone();
+                for (index, part) in parts.iter().enumerate() {
+                    target.push(part);
+                    let kind = std::fs::symlink_metadata(&target)?.file_type();
+                    if (index + 1 < parts.len() && !kind.is_dir())
+                        || (index + 1 == parts.len() && !kind.is_file())
+                    {
+                        return Err(MaterialError::Rejected(
+                            "metadata target traverses a link or non-regular entry".to_owned(),
+                        ));
+                    }
+                }
+                verify_corpus_mode(&target, target_fields[0])?;
+                expected.push(target_fields[2].to_owned());
+                paths.push(target);
+                rows.push((relative.to_owned(), sha256_hex(text.as_bytes())));
+            } else {
+                verify_corpus_mode(&file, fields[0])?;
+                expected.push(fields[2].to_owned());
+                rows.push((relative.to_owned(), sha256_hex(&std::fs::read(&file)?)));
+                paths.push(file);
             }
-            expected.push(fields[2]);
-            paths.push(file);
+        }
+        if !files.is_empty() {
+            return Err(MaterialError::Rejected(
+                "corpus contains untracked entries".to_owned(),
+            ));
         }
         let mut observed = Vec::new();
         for batch in paths.chunks(128) {
@@ -629,8 +779,35 @@ impl CorpusMaterial {
                 "corpus working bytes differ from pinned Git blobs".to_owned(),
             ));
         }
-        Ok(())
+        rows.sort();
+        Ok(sha256_hex(
+            rows.iter()
+                .map(|(path, digest)| format!("{path}\n{digest}\n"))
+                .collect::<String>()
+                .as_bytes(),
+        ))
     }
+}
+
+fn verify_corpus_mode(path: &Path, mode: &str) -> Result<(), MaterialError> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() {
+        return Err(MaterialError::Rejected(
+            "corpus regular file replaced by link or special file".to_owned(),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if (metadata.permissions().mode() & 0o111 != 0) != (mode == "100755") {
+            return Err(MaterialError::Rejected(
+                "corpus source mode drift".to_owned(),
+            ));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    Ok(())
 }
 
 /// Image resolution may replace a declared image reference with the exact
@@ -809,6 +986,56 @@ fn verify_materialized_package(
     Ok(())
 }
 
+/// Resolve every task and Dockerfile image through the admitted immutable lock.
+pub(crate) fn task_images(
+    package: &Path,
+    lock: &serde_json::Value,
+) -> Result<std::collections::BTreeSet<String>, MaterialError> {
+    let mut images = std::collections::BTreeSet::new();
+    let metadata = materialized_task_file(
+        "task.toml",
+        &std::fs::read(package.join("task.toml"))?,
+        lock,
+    )?;
+    let doc: toml::Value = std::str::from_utf8(&metadata)
+        .map_err(|_| MaterialError::Rejected("task metadata UTF-8".to_owned()))?
+        .parse()
+        .map_err(|error| MaterialError::Rejected(format!("task metadata: {error}")))?;
+    for env in [
+        doc.get("environment"),
+        doc.get("verifier")
+            .and_then(|value| value.get("environment")),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if let Some(image) = env.get("docker_image").and_then(toml::Value::as_str) {
+            images.insert(image.to_owned());
+        }
+    }
+    let mut files = Vec::new();
+    visit_files(package, package, &mut files)?;
+    for (relative, _) in files {
+        if Path::new(&relative)
+            .file_name()
+            .is_none_or(|name| name != "Dockerfile")
+        {
+            continue;
+        }
+        let bytes =
+            materialized_task_file(&relative, &std::fs::read(package.join(&relative))?, lock)?;
+        for line in String::from_utf8_lossy(&bytes).lines() {
+            let words = line.split_whitespace().collect::<Vec<_>>();
+            if words.first() == Some(&"FROM")
+                && words.get(1).is_some_and(|image| image.contains("@sha256:"))
+            {
+                images.insert(words[1].to_owned());
+            }
+        }
+    }
+    Ok(images)
+}
+
 /// Inspect immutable image identities already present at the selected engine.
 /// This observation never pulls an image or starts a container.
 pub(crate) fn image_preflight(
@@ -816,60 +1043,15 @@ pub(crate) fn image_preflight(
     lock: &serde_json::Value,
     environment: &BTreeMap<String, String>,
 ) -> serde_json::Value {
-    let collect = || -> Result<std::collections::BTreeSet<String>, MaterialError> {
-        let mut images = std::collections::BTreeSet::new();
-        let metadata = materialized_task_file(
-            "task.toml",
-            &std::fs::read(package.join("task.toml"))?,
-            lock,
-        )?;
-        let doc: toml::Value = std::str::from_utf8(&metadata)
-            .map_err(|_| MaterialError::Rejected("task metadata UTF-8".to_owned()))?
-            .parse()
-            .map_err(|error| MaterialError::Rejected(format!("task metadata: {error}")))?;
-        for env in [
-            doc.get("environment"),
-            doc.get("verifier")
-                .and_then(|value| value.get("environment")),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            if let Some(image) = env.get("docker_image").and_then(toml::Value::as_str) {
-                images.insert(image.to_owned());
-            }
-        }
-        let mut files = Vec::new();
-        visit_files(package, package, &mut files)?;
-        for (relative, _) in files {
-            if Path::new(&relative)
-                .file_name()
-                .is_none_or(|name| name != "Dockerfile")
-            {
-                continue;
-            }
-            let bytes =
-                materialized_task_file(&relative, &std::fs::read(package.join(&relative))?, lock)?;
-            for line in String::from_utf8_lossy(&bytes).lines() {
-                let words = line.split_whitespace().collect::<Vec<_>>();
-                if words.first() == Some(&"FROM")
-                    && words.get(1).is_some_and(|image| image.contains("@sha256:"))
-                {
-                    images.insert(words[1].to_owned());
-                }
-            }
-        }
-        Ok(images)
-    };
-    let images = match collect() {
+    let images = match task_images(package, lock) {
         Ok(images) => images,
         Err(error) => return serde_json::json!({"status": "unmet", "reason": error.to_string()}),
     };
     let entries = images.iter().map(|image| {
-        let output = std::process::Command::new("docker").args(["image", "inspect", "--format", "{{json .RepoDigests}}", image])
-            .env_clear().envs(environment).output();
-        let digests = output.ok().filter(|output| output.status.success())
-            .and_then(|output| serde_json::from_slice::<Vec<String>>(&output.stdout).ok());
+        let output = super::prepare::observation_command(
+            ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", image]
+                .into_iter().map(Into::into).collect(), environment, std::time::Duration::from_secs(5));
+        let digests = output.and_then(|output| serde_json::from_slice::<Vec<String>>(&output).ok());
         let present = digests.as_ref().is_some_and(|digests| digests.iter().any(|digest| digest.rsplit_once('@').map(|(_, digest)| digest) == image.rsplit_once('@').map(|(_, digest)| digest)));
         serde_json::json!({"image": image, "status": if present {"known"} else {"unknown"}, "source": "selected-engine:docker-image-inspect",
             "reason": if present { None } else { Some("immutable image missing or unobservable; populate the selected engine cache before freezing") }})

@@ -33,8 +33,13 @@ workspace input before building. Uncommitted source bytes never enter the build.
 A missing local commit rejects without fetching. Pi-only selections require no
 Opi source, and verified warm packages require no source arguments.
 
-Pi preparation verifies its source blobs, locked dependencies, model-data archive
-against the committed shrinkwrap integrity and pinned Node distribution. Its
+Pi preparation verifies its source blobs, locked dependencies, pinned Node
+distribution and model-data archive against the static lock's
+`subjects[id=pi].model_data_archive` package/version/URL/SHA-256 tuple. It checks
+the source version and archive bytes before extraction or offline building,
+including when upstream shrinkwrap has no SRI. Both prepare and native-smoke
+pass the static lock explicitly; direct pi builder calls require
+`--static-lock /absolute/linux-x86_64.json`. Its
 complete runtime package includes Node, bundle, metadata, docs and assets.
 Harbor/Pier are installed with pinned uv and locked dependencies at their final
 cache paths, preserving interpreter and console-script paths. No manual producer
@@ -77,6 +82,13 @@ Reports engine reachability, architecture, WSL/Docker-observed
 CPU/memory/GPU/disk, and missing materials. Unknown observations carry
 reasons; diagnosis starts no model.
 
+For a selected local Unix Docker Desktop engine on WSL, storage observation
+uses the already running `docker-desktop` distribution when its unique dockerd
+namespace matches the engine ID. The bounded read-only probe verifies engine,
+process and mount identities before accepting capacity; it neither starts a
+distribution nor pulls or starts an image. Unavailable or ambiguous observations
+remain unknown and cannot satisfy a required capacity.
+
 ## 3. Prepare
 
 ```sh
@@ -97,6 +109,23 @@ supervised acquisition through the pinned materializer when it is
 seeded (`prepare --cache ... --plan ...`, log captured under the output
 root); without it, the failure names the missing identity and how to
 acquire it.
+
+Once the selected task sources verify, preparation resolves their task and
+Dockerfile image references against the static lock and pulls missing images
+by immutable digest into the selected engine. It verifies the resulting
+RepoDigests and rejects endpoint or engine drift before publishing material.
+Source and image acquisition share the 3,600-second deadline and retain
+separate logs (`acquisition.log` and `image-acquisition/acquisition.log`).
+Warm preparation performs no pull; diagnosis and preview remain read-only.
+No preparation step builds an image or starts a container.
+
+Corpus verification permits only pinned inert links immediately under `tasks/`
+whose relative target is a tracked regular file in the same commit. It checks
+link text, target bytes and executable mode before inventory publication, and
+hashes the link text without copying the target into a task package. Links in
+task directories, linked roots or ancestors, escapes, chains, submodules and
+special files reject. Relative config/cache paths resolve to absolute frozen
+package identities without changing the configured cache location.
 
 If registry access needs a host proxy, configure it before freezing the plan.
 Native runner processes receive only the material's explicit environment;

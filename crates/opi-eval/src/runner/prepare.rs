@@ -92,9 +92,10 @@ pub(crate) struct PreparedContext {
 impl PreparedContext {
     /// Resolves the document and its cache location.
     pub(crate) fn load(config_path: &Path) -> Result<Self, PrepareError> {
-        let source = std::fs::read_to_string(config_path)?;
+        let config_path = std::path::absolute(config_path)?;
+        let source = std::fs::read_to_string(&config_path)?;
         let experiment = ResolvedExperiment::resolve(&source)?;
-        let cache = resolve_cache(config_path, &experiment);
+        let cache = resolve_cache(&config_path, &experiment);
         Ok(Self { experiment, cache })
     }
 }
@@ -484,6 +485,280 @@ mod tests {
     }
 
     #[test]
+    fn desktop_sample_rejects_unbound_or_malformed_capacity() {
+        let good = "engine\t42\t123\tmnt:[9]\t10240\t/var/lib/docker\n";
+        assert_eq!(
+            desktop_storage_sample(good.as_bytes(), "engine", "/var/lib/docker"),
+            Some(10485760)
+        );
+        for bad in [
+            good.replace("engine", "other"),
+            good.replace("/var/lib/docker", "/other"),
+            good.replace("42", "0"),
+            good.replace("123", "-1"),
+            good.replace("mnt:[9]", "mnt:[]"),
+            good.replace("10240", "-1"),
+            good.replace("10240", "+1"),
+            good.replace("10240", "NaN"),
+            good.replace("10240", "18446744073709551615"),
+            good.trim_end().to_owned(),
+            format!("{good}{good}"),
+            good.replace('\t', " "),
+        ] {
+            assert_eq!(
+                desktop_storage_sample(bad.as_bytes(), "engine", "/var/lib/docker"),
+                None,
+                "{bad:?}"
+            );
+        }
+        for root in [
+            "relative",
+            "/var/../lib",
+            "/var/./lib",
+            "/var//lib",
+            "/var/lib/",
+            "/var\n/lib",
+        ] {
+            assert!(!normalized_absolute(root), "{root:?}");
+        }
+        assert!(normalized_absolute("/var/lib/docker"));
+        assert!(desktop_is_running(b"Ubuntu\ndocker-desktop\n"));
+        let utf16: Vec<_> = "\u{feff}Ubuntu\r\ndocker-desktop\r\n"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        assert!(desktop_is_running(&utf16));
+        for names in [b"Ubuntu\n".as_slice(), b"docker-desktop-stopped\n", b"d\0x"] {
+            assert!(!desktop_is_running(names));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn desktop_fixture() -> (
+        tempfile::TempDir,
+        BTreeMap<String, String>,
+        serde_json::Value,
+    ) {
+        use std::os::unix::fs::PermissionsExt;
+        let room = tempfile::tempdir().unwrap();
+        let info = serde_json::json!({"ID":"engine", "DockerRootDir":"/var/lib/docker", "OperatingSystem":"Docker Desktop", "NCPU":2, "MemTotal":4096});
+        std::fs::write(room.path().join("info.json"), info.to_string()).unwrap();
+        std::fs::write(
+            room.path().join("endpoint"),
+            "unix:///nonexistent/desktop.sock\n",
+        )
+        .unwrap();
+        for (name, script) in [
+            (
+                "docker",
+                "#!/bin/sh\ncd -- \"${0%/*}\"\ncase $1 in info) /bin/cat info.json;; context) /bin/cat endpoint;; *) exit 9;; esac\n",
+            ),
+            (
+                "wsl.exe",
+                "#!/bin/sh\ncd -- \"${0%/*}\"\n[ -z \"$SECRET_CANARY\" ] && [ -z \"$DOCKER_HOST\" ] || exit 9\nif [ \"$1\" = --list ]; then /bin/cat running; else /bin/sh action; fi\n",
+            ),
+        ] {
+            let path = room.path().join(name);
+            std::fs::write(&path, script).unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        std::fs::write(room.path().join("running"), "docker-desktop\n").unwrap();
+        std::fs::write(
+            room.path().join("action"),
+            "printf 'engine\\t42\\t123\\tmnt:[9]\\t10240\\t/var/lib/docker\\n'\n",
+        )
+        .unwrap();
+        let env = BTreeMap::from([
+            ("PATH".into(), room.path().display().to_string()),
+            ("HOME".into(), room.path().display().to_string()),
+            (
+                "DOCKER_HOST".into(),
+                "unix:///nonexistent/desktop.sock".into(),
+            ),
+            (
+                "SECRET_CANARY".into(),
+                "synthetic-observation-canary".into(),
+            ),
+        ]);
+        (room, env, info)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn desktop_observation_binds_selection_and_rejects_failures() {
+        let (room, mut env, info) = desktop_fixture();
+        assert_eq!(
+            observe_resources(room.path(), room.path(), Some(&env))
+                .engine_storage
+                .value,
+            Some(10485760)
+        );
+        // Context takes precedence over a conflicting host, including the recheck.
+        env.insert("DOCKER_CONTEXT".into(), "chosen".into());
+        env.insert("DOCKER_HOST".into(), "tcp://ignored:2375".into());
+        assert_eq!(
+            observe_resources(room.path(), room.path(), Some(&env))
+                .engine_storage
+                .value,
+            Some(10485760)
+        );
+        env.remove("DOCKER_CONTEXT");
+        for endpoint in [
+            "tcp://remote:2375",
+            "ssh://remote",
+            "npipe:////pipe/docker",
+            "unix://relative",
+            "unix:///var/../run/docker.sock",
+        ] {
+            assert_eq!(desktop_storage(&info, Some(endpoint), &env), None);
+        }
+        let endpoint = "unix:///nonexistent/desktop.sock";
+        for (key, value) in [
+            ("ID", ""),
+            ("ID", "bad\tidentity"),
+            ("DockerRootDir", "/var/../lib"),
+            ("OperatingSystem", "Linux"),
+        ] {
+            let mut invalid = info.clone();
+            invalid[key] = value.into();
+            assert_eq!(desktop_storage(&invalid, Some(endpoint), &env), None);
+        }
+        env.insert("DOCKER_HOST".into(), endpoint.into());
+        for script in [
+            "exit 17",
+            "exit 19",
+            "printf truncated",
+            "printf 'wrong\\t42\\t123\\tmnt:[9]\\t1\\t/var/lib/docker\\n'",
+            "/usr/bin/head -c 20000 /dev/zero",
+            "/usr/bin/head -c 20000 /dev/zero >&2",
+            "printf 'engine\\t42\\t123\\tmnt:[9]\\t1\\t/var/lib/docker\\n'; echo '{}' > info.json",
+        ] {
+            std::fs::write(room.path().join("info.json"), info.to_string()).unwrap();
+            std::fs::write(room.path().join("action"), script).unwrap();
+            assert_eq!(
+                desktop_storage(&info, Some(endpoint), &env),
+                None,
+                "{script}"
+            );
+        }
+        std::fs::write(room.path().join("action"), "printf 'engine\\t42\\t123\\tmnt:[9]\\t1\\t/var/lib/docker\\n'; echo tcp://changed > endpoint").unwrap();
+        env.insert("DOCKER_CONTEXT".into(), "chosen".into());
+        std::fs::write(room.path().join("info.json"), info.to_string()).unwrap();
+        assert_eq!(desktop_storage(&info, Some(endpoint), &env), None);
+        std::fs::write(room.path().join("running"), "Ubuntu\n").unwrap();
+        std::fs::write(room.path().join("action"), "touch should-not-enter").unwrap();
+        assert_eq!(desktop_storage(&info, Some(endpoint), &env), None);
+        assert!(!room.path().join("should-not-enter").exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn desktop_observation_supports_tokio_and_bounds_commands() {
+        let (room, env, _) = desktop_fixture();
+        assert_eq!(
+            observe_resources(room.path(), room.path(), Some(&env))
+                .engine_storage
+                .value,
+            Some(10485760)
+        );
+        let deadline = std::time::Duration::from_millis(50);
+        let started = std::time::Instant::now();
+        assert_eq!(
+            observation_command(vec!["/bin/sleep".into(), "30".into()], &env, deadline),
+            None
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        for argv in [
+            vec!["/absent-observer".into()],
+            vec![room.path().join("action").into_os_string()],
+        ] {
+            assert_eq!(observation_command(argv, &env, deadline), None);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn desktop_remote_script_rejects_namespace_and_process_drift() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::fs::symlink;
+        for case in [
+            "ok",
+            "no-match",
+            "ambiguous",
+            "missing",
+            "identity",
+            "process",
+            "mount",
+            "negative",
+            "nonnumeric",
+        ] {
+            let room = tempfile::tempdir().unwrap();
+            let proc = room.path().join("proc");
+            for pid in [42, 43] {
+                let dir = proc.join(pid.to_string());
+                std::fs::create_dir_all(dir.join("root/var/lib/docker")).unwrap();
+                std::fs::create_dir_all(dir.join("ns")).unwrap();
+                std::fs::write(dir.join("comm"), "dockerd\n").unwrap();
+                std::fs::write(
+                    dir.join("stat"),
+                    format!("{} 123\n", vec!["0"; 21].join(" ")),
+                )
+                .unwrap();
+                symlink("mnt:[9]", dir.join("ns/mnt")).unwrap();
+                std::fs::write(
+                    dir.join("root/var/lib/docker/engine-id"),
+                    if case == "no-match" || (pid == 43 && case != "ambiguous") {
+                        "other\n"
+                    } else {
+                        "engine\n"
+                    },
+                )
+                .unwrap();
+            }
+            let dir = proc.join("42");
+            let effect = match case {
+                "missing" => format!(
+                    "rm '{}'",
+                    dir.join("root/var/lib/docker/engine-id").display()
+                ),
+                "identity" => format!(
+                    "echo replacement > '{}'",
+                    dir.join("root/var/lib/docker/engine-id").display()
+                ),
+                "process" => format!("echo replaced > '{}'", dir.join("stat").display()),
+                "mount" => format!(
+                    "rm '{0}'; ln -s 'mnt:[10]' '{0}'",
+                    dir.join("ns/mnt").display()
+                ),
+                _ => ":".into(),
+            };
+            let available = match case {
+                "negative" => "-1",
+                "nonnumeric" => "NaN",
+                _ => "10240",
+            };
+            let df = room.path().join("df");
+            std::fs::write(&df, format!("#!/bin/sh\n{effect}\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted\\nfixture 20000 1 {available} 1%% /\\n'\n")).unwrap();
+            std::fs::set_permissions(&df, std::fs::Permissions::from_mode(0o755)).unwrap();
+            // The production script is unchanged apart from its test-only proc tree.
+            let script = DESKTOP_STORAGE_SCRIPT.replace("/proc/", &format!("{}/", proc.display()));
+            let out = Command::new("/bin/sh")
+                .args(["-c", &script, "test", "engine", "/var/lib/docker"])
+                .env_clear()
+                .env("PATH", format!("{}:/usr/bin:/bin", room.path().display()))
+                .output()
+                .unwrap();
+            assert_eq!(out.status.success(), case == "ok", "{case}: {out:?}");
+            if case == "ok" {
+                assert_eq!(
+                    desktop_storage_sample(&out.stdout, "engine", "/var/lib/docker"),
+                    Some(10485760)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn pinned_requirement_defaults_and_role_inheritance_are_explicit() {
         use crate::benchmark::task_lifecycle::TaskFamily::{Harbor, Pier};
         for family in [Harbor, Pier] {
@@ -764,8 +1039,8 @@ struct InventoryEntry {
 /// the pinned static lock, freezes the selected benchmark's and agents'
 /// identities plus every requested image identity, and emits the
 /// local-origin native-material manifest plus this report. Never starts
-/// a model, never reads credentials, and never writes outside the
-/// declared cache and output tree.
+/// a model or reads provider credentials. Writes are limited to the declared
+/// cache/output tree and admitted immutable images in the selected engine.
 pub(crate) async fn prepare(
     config_path: &Path,
     out: &Path,
@@ -783,6 +1058,7 @@ pub(crate) async fn prepare(
     {
         return Err(PrepareError::Rejected("--opi-source and --opi-commit require a paired local directory and full lowercase 40-hex commit".to_owned()));
     }
+    let acquisition_deadline = std::time::Instant::now() + std::time::Duration::from_secs(3600);
     let opi_source = opi_source.map(std::fs::canonicalize).transpose()?;
     let context = PreparedContext::load(config_path)?;
     let adapter = crate::runner::experiment::adapter_key_for(&context.experiment)
@@ -967,7 +1243,7 @@ pub(crate) async fn prepare(
         .collect();
 
     // Supervised acquisition: with the pinned materializer seeded, a
-    // cache miss invokes it exactly once under supervision - the plan
+    // source cache miss invokes it under supervision - the plan
     // names every missing identity, the invocation log is captured
     // under the output root, and every acquired byte is re-verified by
     // the normal freeze below. Without a seeded materializer the miss
@@ -1031,7 +1307,7 @@ pub(crate) async fn prepare(
             env: acquisition_environment(),
             stdout_cap: 1_048_576,
             stderr_cap: 1_048_576,
-            timeout: std::time::Duration::from_secs(3600),
+            timeout: acquisition_deadline.saturating_duration_since(std::time::Instant::now()),
         };
         settle_acquisition(&spec, out, cancel).await?;
         for (key, original_path) in &missing {
@@ -1074,6 +1350,22 @@ pub(crate) async fn prepare(
 
     // 6. Verify every identity and freeze it into the reusable
     //    inventory; any drift against a prior freeze rejects.
+    let lock_value: serde_json::Value = serde_json::from_slice(&lock_bytes)
+        .map_err(|error| PrepareError::Rejected(error.to_string()))?;
+    let pin = lock_value["subjects"]
+        .as_array()
+        .and_then(|subjects| subjects.iter().find(|subject| subject["id"] == adapter))
+        .ok_or_else(|| {
+            PrepareError::Rejected(format!("static lock has no {adapter} corpus pin"))
+        })?;
+    let corpus = super::material::CorpusMaterial {
+        root: corpus_root,
+        source_commit: pin["commit"].as_str().unwrap_or_default().to_owned(),
+        tasks_tree: pin["tasks_tree"].as_str().unwrap_or_default().to_owned(),
+    };
+    let corpus_digest = corpus
+        .verified_manifest_digest(&adapter, &lock_value)
+        .map_err(|error| PrepareError::Rejected(error.to_string()))?;
     let version = Command::new(&verifier)
         .arg("--version")
         .env_clear()
@@ -1107,6 +1399,8 @@ pub(crate) async fn prepare(
                 &runner_lock.sha256,
             )
             .map_err(|error| PrepareError::Rejected(error.to_string()))?
+        } else if key == &format!("corpora:{adapter}") {
+            corpus_digest.clone()
         } else if key.starts_with("runtime:") {
             runtime_package_manifest_digest(path)
                 .map_err(|error| PrepareError::Rejected(error.to_string()))?
@@ -1181,22 +1475,6 @@ pub(crate) async fn prepare(
             verifier_env.insert("DOCKER_HOST".to_owned(), endpoint);
         }
     }
-    let lock_value: serde_json::Value = serde_json::from_slice(&lock_bytes)
-        .map_err(|error| PrepareError::Rejected(error.to_string()))?;
-    let pin = lock_value["subjects"]
-        .as_array()
-        .and_then(|subjects| subjects.iter().find(|subject| subject["id"] == adapter))
-        .ok_or_else(|| {
-            PrepareError::Rejected(format!("static lock has no {adapter} corpus pin"))
-        })?;
-    let corpus = super::material::CorpusMaterial {
-        root: corpus_root.canonicalize()?,
-        source_commit: pin["commit"].as_str().unwrap_or_default().to_owned(),
-        tasks_tree: pin["tasks_tree"].as_str().unwrap_or_default().to_owned(),
-    };
-    corpus
-        .verify(&adapter, &lock_value)
-        .map_err(|error| PrepareError::Rejected(error.to_string()))?;
     let inventory_tasks = super::plan::enumerate_corpus(&corpus.root)
         .map_err(|error| PrepareError::Rejected(error.to_string()))?;
     let requested = match context.experiment.selection() {
@@ -1251,7 +1529,144 @@ pub(crate) async fn prepare(
     } else {
         crate::benchmark::task_lifecycle::TaskFamily::Harbor
     };
-    let observations = observe_resources(&context.cache, out, Some(&verifier_env));
+    let image_environment: BTreeMap<String, String> = [
+        "HOME",
+        "PATH",
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT",
+        "DOCKER_CONFIG",
+        "DOCKER_TLS_VERIFY",
+        "DOCKER_CERT_PATH",
+    ]
+    .into_iter()
+    .filter_map(|key| std::env::var(key).ok().map(|value| (key.to_owned(), value)))
+    .collect();
+    let observations = observe_resources(&context.cache, out, Some(&image_environment));
+    let mut image_plan = BTreeMap::new();
+    for task in &inventory_tasks {
+        let id = task.dir.file_name().unwrap().to_string_lossy();
+        if !selected.iter().any(|selected| selected == id.as_ref()) {
+            continue;
+        }
+        let requirements =
+            effective_task_requirements(&task.dir, family, context.experiment.execution())
+                .map_err(|error| PrepareError::Rejected(error.to_string()))?;
+        let checked = check_requirements(&requirements, &observations);
+        if checked["status"] != "ok" {
+            return Err(PrepareError::Rejected(format!(
+                "task {id} resource preflight: {}",
+                checked["reason"]
+            )));
+        }
+        let preflight =
+            super::material::image_preflight(&task.dir, &lock_value, &image_environment);
+        if preflight["status"] == "unmet" {
+            return Err(PrepareError::Rejected(format!(
+                "task {id} image preflight: {}",
+                preflight["reason"]
+            )));
+        }
+        for image in preflight["images"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|image| image["status"] != "known")
+        {
+            let reference = image["image"].as_str().expect("preflight image reference");
+            let pins: Vec<_> = lock_value["images"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|pin| {
+                    pin["reference"].as_str().is_some_and(|name| {
+                        super::material::resolved_image(name, &lock_value)
+                            .ok()
+                            .as_deref()
+                            == Some(reference)
+                    })
+                })
+                .collect();
+            if pins.len() != 1 {
+                return Err(PrepareError::Rejected(format!(
+                    "image {reference} requires one exact static acquisition pin"
+                )));
+            }
+            let pin_id = pins[0]["id"]
+                .as_str()
+                .filter(|id| {
+                    !id.is_empty()
+                        && id
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+                })
+                .ok_or_else(|| {
+                    PrepareError::Rejected("image acquisition pin has an invalid id".to_owned())
+                })?;
+            image_plan.insert(pin_id.to_owned(), serde_json::json!({"id":format!("images/{pin_id}"),"key":format!("images:{pin_id}"),"products":products,"benchmark":adapter,"task_ids":selected}));
+        }
+    }
+    if !image_plan.is_empty() {
+        let materializer = context
+            .cache
+            .join("pins/scripts/materialize-external-locks.sh");
+        if !materializer.is_file()
+            || !lock
+                .authority
+                .producers
+                .iter()
+                .any(|pin| Path::new(&pin.path).file_name() == materializer.file_name())
+        {
+            return Err(PrepareError::Rejected(
+                "missing images require the pinned acquisition materializer".to_owned(),
+            ));
+        }
+        let identity = image_engine_identity(&image_environment)?;
+        if observations.engine_id.as_deref() != Some(identity.0.as_str()) {
+            return Err(PrepareError::Rejected(
+                "selected engine changed before image acquisition".to_owned(),
+            ));
+        }
+        let image_out = out.join("image-acquisition");
+        std::fs::create_dir(&image_out)?;
+        let plan_path = image_out.join("acquisition-plan.json");
+        std::fs::write(
+            &plan_path,
+            serde_json::to_vec_pretty(&image_plan.values().collect::<Vec<_>>())
+                .expect("image plan serializes"),
+        )?;
+        let timeout = acquisition_deadline.saturating_duration_since(std::time::Instant::now());
+        if timeout.is_zero() {
+            return Err(PrepareError::Rejected(
+                "material acquisition deadline elapsed".to_owned(),
+            ));
+        }
+        let spec = SpawnSpec {
+            argv: vec![
+                materializer.into_os_string(),
+                "prepare".into(),
+                "--cache".into(),
+                context.cache.as_os_str().to_owned(),
+                "--plan".into(),
+                plan_path.into_os_string(),
+            ],
+            cwd: None,
+            env: image_environment
+                .iter()
+                .map(|(key, value)| (key.into(), value.into()))
+                .collect(),
+            stdout_cap: 1_048_576,
+            stderr_cap: 1_048_576,
+            timeout,
+        };
+        settle_acquisition(&spec, &image_out, cancel).await?;
+        if image_engine_identity(&image_environment)? != identity {
+            return Err(PrepareError::Rejected(
+                "selected engine changed during image acquisition".to_owned(),
+            ));
+        }
+        acquired.extend(image_plan.keys().map(|id| format!("images:{id}")));
+        acquired.sort();
+    }
     let mut tasks = BTreeMap::new();
     let mut entries = Vec::new();
     for task in &inventory_tasks {
@@ -1266,7 +1681,7 @@ pub(crate) async fn prepare(
                 Ok(requirements) => check_requirements(&requirements, &observations),
                 Err(error) => serde_json::json!({"status": "unmet", "reason": error.to_string()}),
             };
-        let images = super::material::image_preflight(&task.dir, &lock_value, &verifier_env);
+        let images = super::material::image_preflight(&task.dir, &lock_value, &image_environment);
         if entry["status"] == "ok" && images["status"] != "ok" {
             entry["status"] = images["status"].clone();
             entry["reason"] = images["reason"].clone();
@@ -1388,6 +1803,39 @@ pub(crate) async fn prepare(
         "acquired": acquired,
         "inventory": context.cache.join("inventory.json"),
     }))
+}
+
+/// Bind image acquisition to the same selected endpoint, engine and storage root.
+fn image_engine_identity(
+    environment: &BTreeMap<String, String>,
+) -> Result<(String, String, String), PrepareError> {
+    let docker = |args: &[&str]| {
+        observation_command(
+            std::iter::once("docker")
+                .chain(args.iter().copied())
+                .map(Into::into)
+                .collect(),
+            environment,
+            std::time::Duration::from_secs(5),
+        )
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .map(|text| text.trim().to_owned())
+    };
+    let snapshot = || -> Option<(String, String, String)> {
+        let endpoint = selected_endpoint(environment, &docker)?;
+        let info: serde_json::Value =
+            serde_json::from_str(&docker(&["info", "--format", ENGINE_INFO_FORMAT])?).ok()?;
+        let id = info["ID"].as_str().filter(|id| !id.is_empty())?;
+        let root = info["DockerRootDir"]
+            .as_str()
+            .filter(|root| normalized_absolute(root))?;
+        Some((id.to_owned(), root.to_owned(), endpoint))
+    };
+    snapshot().ok_or_else(|| {
+        PrepareError::Rejected(
+            "selected engine identity is unobservable for image acquisition".to_owned(),
+        )
+    })
 }
 
 /// Build-tool inputs projected over the supervisor's empty environment.
@@ -1599,61 +2047,331 @@ fn local_engine_pid(endpoint: &str) -> Option<u32> {
     None
 }
 
+// Every command observes only the selected engine/host, with bounded captures.
+// A dedicated runtime also permits callers already inside Tokio to stay synchronous.
+const ENGINE_INFO_FORMAT: &str = r#"{"ID":{{json .ID}},"DockerRootDir":{{json .DockerRootDir}},"OperatingSystem":{{json .OperatingSystem}},"NCPU":{{json .NCPU}},"MemTotal":{{json .MemTotal}},"Runtimes":{{json .Runtimes}}}"#;
+
+pub(super) fn observation_command(
+    argv: Vec<std::ffi::OsString>,
+    environment: &BTreeMap<String, String>,
+    timeout: std::time::Duration,
+) -> Option<Vec<u8>> {
+    if timeout.is_zero() {
+        return None;
+    }
+    let spec = SpawnSpec {
+        argv,
+        cwd: None,
+        env: environment
+            .iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect(),
+        stdout_cap: 16 * 1024,
+        stderr_cap: 16 * 1024,
+        timeout,
+    };
+    std::thread::Builder::new()
+        .name("engine-observation".into())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .ok()?;
+            let result = runtime.block_on(ProcessSupervisor::run(
+                &spec,
+                &tokio_util::sync::CancellationToken::new(),
+            ));
+            (result.exit == (ExitState::Exited { code: 0 })
+                && !result.stdout.truncated
+                && !result.stderr.truncated
+                && matches!(
+                    result.cleanup,
+                    CleanupEvidence::NotRequired
+                        | CleanupEvidence::TreeTerminated { verified: true, .. }
+                ))
+            .then_some(result.stdout.bytes)
+        })
+        .ok()?
+        .join()
+        .ok()?
+}
+
+fn normalized_absolute(path: &str) -> bool {
+    path.starts_with('/')
+        && !path.bytes().any(|byte| byte.is_ascii_control())
+        && (path == "/"
+            || path[1..]
+                .split('/')
+                .all(|part| !matches!(part, "" | "." | "..")))
+}
+
+// The remote timeout bounds work even if the local WSL bridge is terminated.
+// ID/root are arguments, never interpolated shell source. No container is started.
+const DESKTOP_STORAGE_SCRIPT: &str = r#"
+set -eu
+engine=$1
+root=$2
+case "$root" in /*) ;; *) exit 16;; esac
+case "$root" in /) ;; */) exit 16;; esac
+case "$root/" in *"/../"*|*"/./"*|*"//"*) exit 16;; esac
+match=""
+count=0
+for comm in /proc/[0-9]*/comm; do
+    [ "$(cat "$comm" 2>/dev/null || true)" = dockerd ] || continue
+    pid=${comm#/proc/}; pid=${pid%/comm}
+    candidate="/proc/$pid/root$root"
+    actual=$(cat "$candidate/engine-id" 2>/dev/null || true)
+    [ -n "$actual" ] && [ "$actual" = "$engine" ] || continue
+    match=$pid
+    count=$((count + 1))
+done
+[ "$count" -eq 1 ] || exit 17
+pid=$match
+target="/proc/$pid/root$root"
+start=$(awk '{print $22}' "/proc/$pid/stat")
+mount=$(readlink "/proc/$pid/ns/mnt")
+before=$(cat "$target/engine-id")
+space=$(df -Pk "$target" | awk 'NR==2 {print $4}')
+case "$space" in ""|*[!0-9]*) exit 18;; esac
+[ "$before" = "$engine" ] || exit 19
+[ "$(cat "/proc/$pid/comm")" = dockerd ] || exit 19
+[ "$(cat "$target/engine-id")" = "$before" ] || exit 19
+[ "$(awk '{print $22}' "/proc/$pid/stat")" = "$start" ] || exit 19
+[ "$(readlink "/proc/$pid/ns/mnt")" = "$mount" ] || exit 19
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$engine" "$pid" "$start" "$mount" "$space" "$root"
+"#;
+
+fn desktop_storage_sample(bytes: &[u8], engine: &str, root: &str) -> Option<u64> {
+    let line = std::str::from_utf8(bytes).ok()?.strip_suffix('\n')?;
+    let fields: Vec<_> = line.split('\t').collect();
+    let numeric = |value: &str| {
+        (!value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| value.parse::<u64>().ok())
+            .flatten()
+    };
+    if fields.len() != 6
+        || fields[0] != engine
+        || fields[5] != root
+        || numeric(fields[1])? == 0
+        || numeric(fields[2])? == 0
+        || numeric(fields[3].strip_prefix("mnt:[")?.strip_suffix(']')?)? == 0
+    {
+        return None;
+    }
+    numeric(fields[4])?.checked_mul(1024)
+}
+
+fn desktop_is_running(bytes: &[u8]) -> bool {
+    let text = if bytes.contains(&0) {
+        if !bytes.len().is_multiple_of(2) {
+            return false;
+        }
+        let units: Vec<_> = bytes
+            .chunks_exact(2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        String::from_utf16(&units).ok()
+    } else {
+        String::from_utf8(bytes.to_vec()).ok()
+    };
+    text.is_some_and(|text| {
+        text.trim_start_matches('\u{feff}')
+            .lines()
+            .any(|name| name.trim() == "docker-desktop")
+    })
+}
+
+fn desktop_storage(
+    info: &serde_json::Value,
+    endpoint: Option<&str>,
+    environment: &BTreeMap<String, String>,
+) -> Option<u64> {
+    if !cfg!(target_os = "linux") || info["OperatingSystem"] != "Docker Desktop" {
+        return None;
+    }
+    let endpoint = endpoint?;
+    let engine = info["ID"].as_str()?;
+    let root = info["DockerRootDir"].as_str()?;
+    if engine.is_empty()
+        || engine.len() > 256
+        || !engine
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_:".contains(&b))
+        || !normalized_absolute(root)
+        || !normalized_absolute(endpoint.strip_prefix("unix://")?)
+    {
+        return None;
+    }
+    let executable = |path: &Path| {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            path.metadata()
+                .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        }
+        #[cfg(not(unix))]
+        {
+            path.is_file()
+        }
+    };
+    let wsl = std::env::split_paths(environment.get("PATH")?)
+        .map(|dir| dir.join("wsl.exe"))
+        .chain([PathBuf::from("/mnt/c/Windows/system32/wsl.exe")])
+        .find(|path| executable(path))?;
+    let host_environment = environment
+        .iter()
+        .filter(|(k, _)| matches!(k.as_str(), "HOME" | "PATH"))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
+    let remaining = || deadline.saturating_duration_since(std::time::Instant::now());
+    let running = observation_command(
+        vec![
+            wsl.clone().into_os_string(),
+            "--list".into(),
+            "--running".into(),
+            "--quiet".into(),
+        ],
+        &host_environment,
+        remaining(),
+    )?;
+    if !desktop_is_running(&running) {
+        return None;
+    }
+    let sample = observation_command(
+        [wsl.into_os_string()]
+            .into_iter()
+            .chain(
+                [
+                    "--distribution",
+                    "docker-desktop",
+                    "--user",
+                    "root",
+                    "--exec",
+                    "timeout",
+                    "-k",
+                    "1",
+                    "5",
+                    "sh",
+                    "-c",
+                    DESKTOP_STORAGE_SCRIPT,
+                    "observe-storage",
+                    engine,
+                    root,
+                ]
+                .into_iter()
+                .map(Into::into),
+            )
+            .collect(),
+        &host_environment,
+        remaining(),
+    )?;
+    let available = desktop_storage_sample(&sample, engine, root)?;
+    let docker = |args: &[&str]| {
+        let bytes = observation_command(
+            std::iter::once("docker")
+                .chain(args.iter().copied())
+                .map(Into::into)
+                .collect(),
+            environment,
+            remaining(),
+        )?;
+        String::from_utf8(bytes)
+            .ok()
+            .map(|text| text.trim().to_owned())
+    };
+    let after: serde_json::Value =
+        serde_json::from_str(&docker(&["info", "--format", ENGINE_INFO_FORMAT])?).ok()?;
+    let after_endpoint = selected_endpoint(environment, &docker)?;
+    (["ID", "DockerRootDir", "OperatingSystem"]
+        .iter()
+        .all(|key| after[*key] == info[*key])
+        && after_endpoint == endpoint
+        && !remaining().is_zero())
+    .then_some(available)
+}
+
+fn selected_endpoint(
+    environment: &BTreeMap<String, String>,
+    docker: &impl Fn(&[&str]) -> Option<String>,
+) -> Option<String> {
+    if environment
+        .get("DOCKER_CONTEXT")
+        .is_none_or(String::is_empty)
+        && let Some(host) = environment
+            .get("DOCKER_HOST")
+            .filter(|host| !host.is_empty())
+    {
+        return Some(host.clone());
+    }
+    docker(&[
+        "context",
+        "inspect",
+        "--format",
+        "{{(index .Endpoints \"docker\").Host}}",
+    ])
+}
+
 pub(crate) fn observe_resources(
     cache: &Path,
     output: &Path,
     environment: Option<&BTreeMap<String, String>>,
 ) -> ResourceObservations {
+    let environment: BTreeMap<String, String> = [
+        "HOME",
+        "PATH",
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT",
+        "DOCKER_CONFIG",
+        "DOCKER_TLS_VERIFY",
+        "DOCKER_CERT_PATH",
+    ]
+    .into_iter()
+    .filter_map(|key| {
+        let value = match environment {
+            Some(env) => env.get(key).cloned(),
+            None => std::env::var(key).ok(),
+        };
+        value.map(|value| (key.to_owned(), value))
+    })
+    .collect();
     let docker = |args: &[&str]| -> Option<String> {
-        let mut command = Command::new("docker");
-        command.args(args);
-        if let Some(environment) = environment {
-            command.env_clear().envs(environment);
-        }
-        let output = command.output().ok()?;
-        output
-            .status
-            .success()
-            .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        let bytes = observation_command(
+            std::iter::once("docker")
+                .chain(args.iter().copied())
+                .map(Into::into)
+                .collect(),
+            &environment,
+            std::time::Duration::from_secs(12),
+        )?;
+        String::from_utf8(bytes)
+            .ok()
+            .map(|text| text.trim().to_owned())
     };
-    let info: serde_json::Value = docker(&["info", "--format", "{{json .}}"])
+    let info: serde_json::Value = docker(&["info", "--format", ENGINE_INFO_FORMAT])
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or_default();
-    let variable = |key: &str| {
-        environment
-            .and_then(|env| env.get(key).cloned())
-            .or_else(|| {
-                environment
-                    .is_none()
-                    .then(|| std::env::var(key).ok())
-                    .flatten()
-            })
-    };
-    let endpoint = if variable("DOCKER_CONTEXT").is_some_and(|value| !value.is_empty()) {
-        docker(&[
-            "context",
-            "inspect",
-            "--format",
-            "{{(index .Endpoints \"docker\").Host}}",
-        ])
-    } else {
-        variable("DOCKER_HOST").or_else(|| {
-            docker(&[
-                "context",
-                "inspect",
-                "--format",
-                "{{(index .Endpoints \"docker\").Host}}",
-            ])
-        })
-    };
+    let endpoint = selected_endpoint(&environment, &docker);
     let pid = endpoint.as_deref().and_then(local_engine_pid);
     let engine_root = pid.zip(info["DockerRootDir"].as_str()).map(|(pid, root)| {
         PathBuf::from(format!("/proc/{pid}/root")).join(root.trim_start_matches('/'))
     });
+    let local_storage = engine_root.as_deref().and_then(available_disk_bytes);
+    let desktop = local_storage
+        .is_none()
+        .then(|| desktop_storage(&info, endpoint.as_deref(), &environment))
+        .flatten();
     let engine_storage = ResourceObservation::observed(
-        engine_root.as_deref().and_then(available_disk_bytes),
+        local_storage.or(desktop),
         engine_root.as_ref().map_or_else(
-            || "selected-docker-engine".to_owned(),
+            || {
+                if desktop.is_some() {
+                    "selected-docker-engine:desktop-namespace"
+                } else {
+                    "selected-docker-engine"
+                }
+                .to_owned()
+            },
             |path| path.display().to_string(),
         ),
         "selected engine storage namespace is not locally observable",

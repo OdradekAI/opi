@@ -13,7 +13,7 @@
       {
         "path": "crates/opi-eval/scripts/materialize-external-locks.sh",
         "role": "materializer",
-        "sha256": "a46e7ab7beafef95e70990da0f290bda1c2da59513b90f105018d00bc4ace8e3"
+        "sha256": "f4ef0c23577223044f7860415e1966c23d2105a5f8b38590c013a593f861ce69"
       },
       {
         "path": "crates/opi-eval/scripts/verify-external-lock-ci.py",
@@ -23,7 +23,7 @@
       {
         "path": "crates/opi-eval/scripts/build-agent-artifacts.sh",
         "role": "agent-builder",
-        "sha256": "4f32214af9fc34abc142365ca0d88ac0918e771d2d94a7e394303cd13d3ef490"
+        "sha256": "c9be8cb3e9afff89193253f68ce929226647d924a954ed889ed61283dce9f2ab"
       }
     ],
     "actions": [
@@ -81,7 +81,13 @@
           "git_blob": "572af1e947bf8b827389ecafae428a13b4957fa9",
           "sha256": "f1738e4b42203e5f22bcb513f13fb2fb224f1e98d1f129ff042f87048665a94c"
         }
-      ]
+      ],
+      "model_data_archive": {
+        "package": "@earendil-works/pi-ai",
+        "version": "0.85.1",
+        "url": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.85.1.tgz",
+        "sha256": "af7d11986179445ce6fe88b37d57de22f823c0ffd3a65cae31c555b7f5e99253"
+      }
     },
     {
       "id": "terminal-bench-2.1",
@@ -259,6 +265,12 @@
       "reference": "moby/buildkit:buildx-stable-1",
       "manifest": "sha256:040d34121c27906c4ff9ac152a30d52bf2c5d328d3bb748916bb3d2743c02528",
       "observed_version": "v0.32.2"
+    },
+    {
+      "id": "tb21-python-base",
+      "role": "build-input",
+      "reference": "python:3.13-slim-bookworm",
+      "manifest": "sha256:3e2de9c40ca4e3d73240059f9d48baff27908f10293e985a2f382a0378e6df4a"
     }
   ],
   "closures": [

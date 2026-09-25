@@ -1,178 +1,220 @@
-# Phase 19 remediation result — apply blocked
+# Phase 19 remediation apply result
 
 **Status**: COMPLETE
 **Audit index SHA-256**: `702853fe37c1779c38612f7979a7e995395d1890954c4d3d8d6205592625e6d3`
-**Plan SHA-256**: `fae8e65ee3dfcf4f8803c0abd5cf574e7286e48cdf48a5367f2b811179d441b9`
-**Remediation head**: `2e2bd806d25e95a722b72ca7f4482753cb6d048b`
-**Disposition artifact**: `remediation.result.dispositions.jsonl`
-**Changed paths**: ["CHANGELOG.md", "crates/opi-eval/README.md", "crates/opi-eval/README.zh.md", "crates/opi-eval/examples/local-evaluation/README.md", "crates/opi-eval/external-locks/static/linux-x86_64.json", "crates/opi-eval/scripts/materialize-external-locks.sh", "crates/opi-eval/scripts/test_prepare_acquisition.py", "crates/opi-eval/tests/native_driver.rs", "crates/opi-eval/tests/support/native_witness_material.rs"]
-**Apply outcome**: BLOCKED — B1 Not closed; B2 and B3 not started.
+**Plan SHA-256**: `d7e2b928415d8653455d03ab1f1b24a931af75bc903ce4687b3bb08409e3d50c`
+**Remediation head**: `e834271d7ea6d114d67d9fc7e5298919fc7cb11e`
+**Changed paths**: ["CHANGELOG.md", "crates/opi-eval/README.md", "crates/opi-eval/README.zh.md", "crates/opi-eval/examples/local-evaluation/README.md", "crates/opi-eval/external-locks/static/linux-x86_64.json", "crates/opi-eval/scripts/build-agent-artifacts.sh", "crates/opi-eval/scripts/materialize-external-locks.sh", "crates/opi-eval/scripts/native-smoke.sh", "crates/opi-eval/scripts/test_prepare_acquisition.py", "crates/opi-eval/scripts/test_verify_native_smoke_ci.py", "crates/opi-eval/src/benchmark/process.rs", "crates/opi-eval/src/runner/material.rs", "crates/opi-eval/src/runner/prepare.rs", "crates/opi-eval/tests/native_driver.rs", "crates/opi-eval/tests/support/native_witness_material.rs"]
+**Dispositions**: `remediation.result.dispositions.jsonl`
+**Execution date**: 2026-09-25–2026-09-26 (Asia/Shanghai)
 
-COMPLETE denotes completed disposition accounting under the fixed result
-schema. It does not mean the approved repair program, acceptance, or Phase
-is complete. All 11 approved source keys appear once: eight remain Refuted
-at the approved remediation head and three are Not closed. Incidental repair
-I1 is Closed. The active aggregate audit verdict remains FAIL.
+## Outcome and stop boundary
 
-The immutable plan dispositions retain their original path attribution,
-including unexecuted B2/B3 paths in the required Changed paths union above.
-That union is not an assertion that those files were edited. Actual edits
-and carried-in state are listed separately below.
+Closure is incomplete: B1 and B2 met their approved predicates; B3 is **Not closed**.
+Eight independently refuted source findings remain Refuted. The COMPLETE header
+means that this fixed result covers all 11 approved source keys; it does not mean
+that B3, the Final Verification union, or Phase 19 passed. The live aggregate
+verdict remains FAIL. No commit, branch, push, new audit, provider run, or other
+explicit-only workflow was performed.
 
-## Applied scope and admission
+B3 exposed a new real-client packaging defect. The exact pi 0.85.1 runtime emitted
+by each B1 cold preparation contains `dist/`, documentation and package metadata,
+but no external dependency closure. The bundle imports `@earendil-works/chord`
+(declared in its package.json as `^0.85.1`). Both the direct pinned Node/bundle test
+and each package's own wrapper fail with `ERR_MODULE_NOT_FOUND` before pi sends a
+request. No package bytes were patched to conceal that failure.
 
-The current explicit apply invocation approved the exact fixed plan digest
-above. Audit-set, dispositions and plan admission passed; HEAD matched exactly.
-Staged and untracked inventories were empty at admission. The only carried-in
-unstaged changes were the approved remediation.plan.md and
-remediation.plan.dispositions.jsonl. Their bytes, the audit index and all indexed
-member bytes are preserved. Neither historical results nor operator/eval
-artifacts were used to establish current closure.
+The causal packaging path is `crates/opi-eval/scripts/materialize-external-locks.sh`.
+Repairing it also requires updating its producer SHA-256 in
+`crates/opi-eval/external-locks/static/linux-x86_64.json`; preparation rejects producer
+hash drift. The execution protocol's bounded incidental rule forbids a
+`manifest/lockfile` change. Its instruction, “If any condition fails, stop and
+create a new plan,” applies here. B1.1 also limited the approved producer change
+to propagating its admitted model-data archive pin. This additional runtime
+closure repair therefore needs a new explicit plan; the approved plan is unchanged.
+No incidental repair was made or claimed.
 
-Actual task edits:
+## Active source coverage
 
-- `crates/opi-eval/external-locks/static/linux-x86_64.json`: only
-  workspace_input.cargo_lock_sha256 now equals
-  `261a3ec501be2e045dc6c9b2b9a940adc1c56305f477008eea940f26545925f3`.
-- `crates/opi-eval/scripts/test_prepare_acquisition.py`: add the planned
-  repository Cargo.lock LF-byte regression; observed FAIL before and PASS after.
-- `CHANGELOG.md`: record the workspace-input preparation repair under Unreleased.
-- `crates/opi-eval/scripts/materialize-external-locks.sh`: I1 changes only
-  Git mode 100644 to 100755. It is staged because this Windows checkout does
-  not carry the executable bit in working-tree metadata. Content remains
-  `a46e7ab7beafef95e70990da0f290bda1c2da59513b90f105018d00bc4ace8e3`.
+- C: `phase19-codex-gpt6-d915e4a-20260918t084558z`, findings SHA-256
+  `01c32b1bc87f7a4a3cb42c965b817f2c4c6d229343303673ddeb149d3e0b77ac`.
+- P: `phase19-pi-glm53-ad67cb8-20260918t101920z`, findings SHA-256
+  `fa4d61c10efa6cb9d68146fab9f5f28eaf970393f941ba97119a1c68e5fd8301`.
 
-The fixed result Markdown and JSONL pair are generated by this apply.
-The two approved plan files are carried in and untouched. No B2/B3 source,
-test or README edits were made. Cargo.lock, all dependency declarations,
-upstream/image pins, producer content/digests, specifications and implementation
-ledgers are unchanged. No commit, branch, push or publication was made.
+| Source / finding | Verification | Batch | Remediation |
+|---|---|---|---|
+| C / P19-AUD-001 | Partially confirmed | B1 | Closed |
+| C / P19-AUD-002 | Refuted | Exclusion | Refuted |
+| C / P19-AUD-003 | Refuted | Exclusion | Refuted |
+| C / P19-AUD-004 | Refuted | Exclusion | Refuted |
+| C / P19-AUD-005 | Refuted | Exclusion | Refuted |
+| C / P19-AUD-006 | Refuted | Exclusion | Refuted |
+| C / P19-AUD-007 | Refuted | Exclusion | Refuted |
+| C / P19-AUD-008 | Refuted | Exclusion | Refuted |
+| C / P19-AUD-009 | Partially confirmed | B3 | Not closed |
+| P / P19-AUD-001 | Refuted | Exclusion | Refuted |
+| P / P19-AUD-002 | Partially confirmed | B2 | Closed |
 
-## Closure batches
+The result sidecar copies each plan disposition verbatim except for
+`green_after.observed` and `remediation_status`. There are no extra finding keys.
 
-| Batch | Result | Evidence and next boundary |
-| --- | --- | --- |
-| B1 | Not closed | Source-lock regression and focused checks pass; real public cold preparation fails on the admitted pi archive integrity input. No three-family cold/warm proof. |
-| B2 | Not closed; not started | Depends on B1 real materials. All three official native artifact contrasts remain unexecuted. |
-| B3 | Not closed; not started | Depends on B1 and B2. The seven native checks, independent CLI replay and final workspace gates remain unexecuted. |
-| I1 | Closed | The exact production materializer fails direct launch without execute permission and succeeds after mode-only repair. Public prepare then reaches the real client builders. |
+## Evidence locations and execution identity
 
-### B1 blocker: missing pi archive integrity
+External durable evidence root (Windows):
+`D:/Luiz/Odradek/opi-remediation-evidence/phase19-apply-20260925-d7e2b928`.
 
-The first faithful ext4 public replay failed before starting the producer:
-`FailedToSpawn { reason: PermissionDenied }`. The committed production
-materializer was 100644; the two already-refuted packaging scripts were distinct
-and remain 100755. I1 is within B1's acquisition causal surface and changes no
-public API, durable format, dependency graph, specification, or authority.
-Its focused empty-plan invocation provides an independent observed FAIL/PASS.
+The same root in WSL is `/mnt/d/Luiz/Odradek/opi-remediation-evidence/phase19-apply-20260925-d7e2b928`. It contains raw stdout/stderr, exact argv/cwd and
+closed environment projections, exit codes, timings and SHA-256 records in
+`logs/`; admission bytes in `baseline/` and `baseline.json`; B1/B2 candidate
+snapshots; `b2-official-verified.json`; and `b3-pi-package-diagnosis.json`.
 
-The next fresh public replay built Opi from the exact approved commit and
-published its cache package, then failed inside the unchanged pi builder:
+The faithful executable-bit-preserving candidate export is `/home/luiz/.local/state/opi-remediation-evidence/phase19-apply-20260925-d7e2b928/source`. It started
+from a fresh Git archive of the remediation head and overlaid exactly the 17
+admitted unstaged paths. New task edits were synchronized explicitly. No Git
+worktree or per-session Cargo target was created. The retained incremental Cargo
+cache is `/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e`.
 
-```text
-pi build data: no exact committed shrinkwrap integrity
-```
+Real material/native roots are beneath `/home/luiz/.local/state/opi-remediation-evidence/phase19-apply-20260925-d7e2b928`:
+`cold-v2/{terminal-bench-2.1,terminal-bench-3.0,deepswe-v1.1}`,
+`official-witnesses/`, and `b3/`. The selected Docker Desktop engine was
+`f7640520-9a9f-4acb-bd58-62c5b388982a`. No paid models or live provider credentials
+were used. Official conformance diagnostics ran the fixed upstream graders;
+client protocol checks used isolated loopback scripts and synthetic credentials.
 
-The selected pi source is
-`d981de1229ef899957bbe968bc8dcda02a21f477`. Its
-`packages/coding-agent/npm-shrinkwrap.json` bytes exactly match the static pin
-`5ff461d87e0a7ccac07e6a9eb3edcd18841d3373d375bed043606b51082f1a26`.
-The `node_modules/@earendil-works/pi-ai` entry has version 0.85.1 and a registry
-URL, but no `integrity` field. The builder therefore cannot authenticate the
-model-data archive using its declared source. This is not a transient download
-failure or an Opi Cargo.lock mismatch.
+## B1: selected pinned preparation — Closed
 
-The retry acquisition settled with exit 1, no truncated streams, and
-`staging_removed: true`; the public CLI returned 2 and published no
-material.json. The failure log is retained. No pi package, corpus or runner
-was installed; the retained cache contains the declared pins, uv and the
-successfully built Opi package. No manual producer execution replaces replay.
+Retained all approved carried-in B1 repairs. The task additionally isolated the
+resource-admission test from the ambient Docker endpoint with a recording stub
+covering unknown, sufficient and insufficient resources. No required task was
+silently removed.
 
-Changing the archive pin or its admission source would change the approved
-input/authority decision; skipping integrity would weaken validation.
-Neither is an incidental permission-mode repair. Per the execution protocol,
-dependent batches stop and the material decision must return to a new plan.
-The approved plan has not been rewritten retroactively.
+The six discriminating probes passed: exact pi archive pin, selected-engine
+storage identity, selected-image bindings, image acquisition, corpus/relative
+preparation and closed-endpoint resource admission. Available/closed ambient
+resource tests both passed. Source pins, target bytes/modes, unsupported images
+and resource failures retain their rejection checks.
 
-## Current verification
+All three official selected families completed independent-directory
+`doctor → prepare → validate → plan`, then warm `prepare → validate → plan`:
+21 commands, all exit 0. Warm preparation acquired nothing and preserved the
+selected task, complete corpus identity, requirements, clients and material
+identities; only observation/output locations vary. Per-family
+`warm-identity-check.json` records the comparisons. TB2.1 selected
+`openssl-selfsigned-cert`, TB3 selected `batched-eval-parity`, and DeepSWE selected
+`abs-module-cache-flags`.
 
-All commands below ran against the current source, with the indicated exception
-for the pre-repair red check. The Rust checks used a faithful git archive plus
-the exact B1 overlay in `/tmp/opi-p19-apply-5eio8dqc/source`, CARGO_INCREMENTAL=1 and the existing
-external target `/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e`.
-No cache was deleted. No real auth file or paid provider was used.
+This closes the approved preparation predicates. The later B3 failure expressly
+limits the meaning of this success: successful preparation and byte binding did
+not prove that the emitted pi runtime had all of its executable dependencies.
 
-| Exact command | Observed result | Raw command/exit/stream record |
-| --- | --- | --- |
-| `python3 -m unittest discover -s crates/opi-eval/scripts -p test_prepare_acquisition.py -k test_repository_workspace_input_matches_static_pin` | Expected FAIL: 1 regression exposes stale workspace-input digest. | `logs/b1-pin-red.json` |
-| `python3 -m unittest discover -s crates/opi-eval/scripts -p test_prepare_acquisition.py` | PASS: 3 tests, including the new repository pin regression and existing mismatch/product cases. | `logs/b1-acquisition-green.json` |
-| `python3 -m unittest discover -s crates/opi-eval/scripts -p test_verify_external_lock_ci.py` | PASS: 15 tests. | `logs/b1-external-lock.json` |
-| `cargo test -p opi-eval --locked --test native_driver prepare_ -- --nocapture` | PASS: 7 tests. | `logs/b1-native-prepare.json` |
-| `cargo build -p opi-eval --bin opi-eval --locked --message-format=json-render-diagnostics` | PASS: compiler-selected executable retained and hashed. | `logs/b1-companion-build.json` |
-| `/tmp/opi-p19-apply-5eio8dqc/bin/opi-eval doctor --config /tmp/opi-p19-apply-5eio8dqc/inputs/terminal-bench-2.1.toml` | PASS: no model; Docker 29.7.2, x86_64, 32 CPUs, 16611233792 bytes. | `logs/b1-doctor.json` |
-| `/tmp/opi-p19-apply-5eio8dqc/bin/opi-eval prepare --config /tmp/opi-p19-apply-5eio8dqc/inputs/terminal-bench-2.1.toml --out /tmp/opi-p19-apply-5eio8dqc/materials/tb21-cold --opi-source /mnt/d/Luiz/Odradek/opi --opi-commit 2e2bd806d25e95a722b72ca7f4482753cb6d048b` | FAIL: exit 2; materializer PermissionDenied. | `logs/b1-tb21-cold.json` |
-| `python3 /tmp/opi-p19-apply-5eio8dqc/inputs/check-materializer-executable.py` | Expected FAIL: exit 1; direct production entry PermissionError. | `logs/i1-executable-red.json` |
-| `python3 /tmp/opi-p19-apply-5eio8dqc/inputs/check-materializer-executable.py` | PASS: exit 0 after executable-mode-only repair. | `logs/i1-executable-green.json` |
-| `/tmp/opi-p19-apply-5eio8dqc/bin/opi-eval prepare --config /tmp/opi-p19-apply-5eio8dqc/inputs/terminal-bench-2.1.toml --out /tmp/opi-p19-apply-5eio8dqc/materials/tb21-cold-retry --opi-source /mnt/d/Luiz/Odradek/opi --opi-commit 2e2bd806d25e95a722b72ca7f4482753cb6d048b` | FAIL: exit 2; Opi builds, pinned pi data archive lacks committed integrity. | `logs/b1-tb21-cold-retry.json` |
-| `python3 /tmp/opi-p19-apply-5eio8dqc/inputs/diagnose-pi-pin.py` | PASS: exact pinned upstream shrinkwrap reproduced; missing integrity confirmed. | `logs/b1-pi-pin-diagnostic.json` |
-| `cargo test -p opi-eval --locked --test agent_integration_conformance --test native_driver --test assembled_run -- --nocapture` | PASS: 2 + 15 + 74 tests; 9 native tests ignored. | `logs/exclusions-current.json` |
-| `cargo test -p opi-eval --locked --lib runner::prepare` | PASS: 7 tests. | `logs/exclusions-prepare-unit.json` |
-| `python3 -m unittest discover -s crates/opi-eval/scripts -p test_verify_local_acceptance.py` | PASS: 42 tests. | `logs/exclusions-acceptance-checker.json` |
-| `python3 scripts/opi-doc-check.py` | PASS. | `logs/b1-doc-check.json` |
-| `git diff --check` | PASS. | `logs/b1-diff-check.json` |
-| `git diff --cached --check` | PASS. | `logs/b1-staged-diff-check.json` |
+## B2: explicit native diagnostics — Closed
 
-The owning binaries cover the eight approved current-head exclusions without
-claiming execution of their nine ignored native witnesses. Fixture success
-does not close B1, B2 or B3. The final workspace fmt/clippy/test/doc union was
-not executed because B1 did not close.
+`native_job_config` now chooses registered `oracle`/`nop` names without a custom
+import path. Its reader requires the exact selected diagnostic name and an
+absent/null import path. Missing, wrong, malformed and dual selectors reject;
+unsupported internal selectors fail before spawn. Integration import selection,
+model/trial/cap/retry/environment behavior and the absence of diagnostic Agent
+scores/terminal observations are preserved. Updated Unreleased and both README
+languages together; this snapshot has no bilingual counterpart.
 
-Test impact: **add** one repository-input regression; **retain** all current
-regressions; **delete** none. I1 also has a retained private launch probe.
-The changed test suite ran in full. B2/B3 test additions and retention changes
-were not made. The changelog and fixed result have no Chinese counterparts;
-the bilingual crate READMEs remain unchanged together.
+The two approved Rust probes passed with newly generated configs. The exact
+Harbor and Pier constructors both instantiated the production configs and their
+registered-name controls. Four process-module tests, two new focused selection
+regressions and the existing substitution matrix passed. The default native
+binary passed 78 tests, with nine opt-in tests ignored.
 
-## Retained evidence and cleanup
+| Official task family | Exact ignored test | Raw oracle reward | Raw nop reward | Exit |
+|---|---|---|---|---|
+| TB2.1 | `native_tb21_artifact_witness` | 1 | 0 | 0 |
+| TB3.0 | `native_tb3_artifact_witness` | 1 | 0 | 0 |
+| DeepSWE v1.1 | `native_deepswe_patch_witness` | 1 | 0 | 0 |
 
-Private evidence root: `/tmp/opi-p19-apply-5eio8dqc` (WSL Ubuntu, mode 0700).
+Each command was `OPI_EVAL_NATIVE_WITNESS_MATERIAL=<its B1 cold material>
+cargo test -p opi-eval --test native_driver <test> -- --ignored --exact --nocapture
+--test-threads=1`. Raw logs are `b2-official-<family>`. Six retained
+`witness-evidence.json` records bind CLI exit, executable/material hashes,
+job/trial output and every retained file digest. All those hashes were rechecked.
+TB3's declared `/app/evalbench/` and DeepSWE's `/logs/artifacts/model.patch`
+changed digest between oracle/nop; no undeclared canary entered the bound
+collection. Official tasks and upstream runners were not modified.
 
-- `inputs/admission.json`, `baseline-status.txt`, `source.tar` and
-  `archive.sha256` bind HEAD, exact approved bytes and the committed export.
-- `inputs/b1-changes.json`, `companion-identity.json` and
-  `i1-mode-proof.json` bind the source overlay, compiler-selected Companion
-  and mode-only repair.
-- `inputs/pin-only-cache-inventory.json` records all ten seeded files before
-  acquisition; the first attempt has no prepopulated Agent/corpus/runner.
-- `inputs/terminal-bench-2.1.toml`, its two sibling family configs and
-  `materials/tb21-cold*/` preserve preparation inputs and both failed attempts.
-  These preparation configs do not claim frozen native trial plans.
-- `inputs/pi-build-data-mismatch.json`, `pi-npm-shrinkwrap.json`,
-  `pi-package.json` and `pi-source-diagnostic/` preserve independently fetched
-  exact-commit evidence of the missing integrity; no alternate pin is adopted.
-- `cache/agents/opi/build-identity.json` binds exact commit, locked release
-  build and executable SHA256
-  `5919a27f262c6d90515c70f43f7f76e51b76daba48a96cc855960e2b5af040ad`.
-- `logs/*.json` retain argv, cwd, timestamps, exits, selected environment and
-  stdout/stderr file hashes before result interpretation.
-- `inputs/resource-comparison.json` shows unchanged Docker container and
-  image inventories. All three declared task/base image digests were already
-  present. The real preparation replays started no image pull, task container,
-  provider or native grader; the separate regression suite used its local
-  scripted fixtures.
-- `inputs/evidence-index.json` indexes the retained evidence and hashes.
+## B3: current native diagnostic union — Not closed
 
-Both acquisition invocations settled. Failed-attempt logs survive; owned
-acquisition staging was removed by production supervision. No neighboring
-container, shared image or Cargo cache was removed.
+Implemented only the retention work reached before the blocker:
 
-## Materialization and return
+- Protocol/turn-budget roots now survive the test. Client configs, executable
+  and package identities, stdout/stderr, argv, isolated environment, exits and
+  tool-effect hashes are retained by the private test helper.
+- The owned-resource test selects the admitted immutable Python image with
+  `--pull never`, retains its root/output and checks neighboring-container and
+  shared-image survival. This updated ignored test has not run yet.
 
-Application is incomplete and cannot advance B2/B3 under this approval.
-Review the missing pi data-archive integrity decision in a new remediation
-plan; do not revise the approved plan or weaken the check during apply.
+The first command, `OPI_EVAL_NATIVE_CLIENT_MATERIAL=<b3/clients.json>
+cargo test -p opi-eval --test native_driver native_protocol_client_matrix --
+--ignored --exact --nocapture --test-threads=1`, exited **101**. Evidence is in
+`logs/b3-native_protocol_client_matrix.*` and `/home/luiz/.local/state/opi-remediation-evidence/phase19-apply-20260925-d7e2b928/b3/.tmpiobuIY`.
+The pi Anthropic case exited 1 because `@earendil-works/chord` was absent. Earlier
+Opi loopback cases do not establish a complete protocol matrix.
 
-No fresh audit/re-run or Phase PASS is authorized here. Fixes and the current
-live assurance set require an explicitly requested commit, a clean assurance
-directory, resolution of external material evidence and completion of the
-owning-workflow return before a fresh audit can be admitted.
+To distinguish packaging failure from client-test configuration, each B1 pi
+wrapper was run as `<exact package>/pi --version` in its own fresh directory,
+with isolated HOME/config and no credentials. All three exited **1** with the
+same missing-package error. Logs are `b3-pi-launch-<family>.*`; byte identities
+and the missing dependency directory are recorded in
+`b3-pi-package-diagnosis.json`.
+
+Stopped here. The five remaining B3 ignored filters, the controlled task/material
+builder, real grader privacy inspections, deadline/regrade matrices and the
+three-family independent assembled CLI rows were not executed/completed. No
+bound was increased and no synthetic substitute was counted as native success.
+The workspace-wide Clippy/test/doctest/rustdoc gates from Final Verification
+were not run during this apply; there is no claim that its complete union passed.
+
+## Current-source handoff checks
+
+The following checks verify the retained changes and refutation counterevidence;
+they do not close the failed native matrix. The default Rust union yielded
+153 passed/0 ignored, 2 passed/0 ignored, 15 passed/0 ignored, 78 passed/9 ignored, in lib, agent-integration, assembled-run and native-driver order.
+The three Python suites passed 7, 35 and 42 tests respectively.
+
+| Raw log | Exact command | Exit |
+|---|---|---|
+| `handoff-current-eval-union` | `cargo test -p opi-eval --lib --test native_driver --test assembled_run --test agent_integration_conformance -- --test-threads=4` | 0 |
+| `handoff-prepare-tests` | `python3 crates/opi-eval/scripts/test_prepare_acquisition.py` | 0 |
+| `handoff-smoke-ci-tests` | `python3 crates/opi-eval/scripts/test_verify_native_smoke_ci.py` | 0 |
+| `handoff-acceptance-tests` | `python3 crates/opi-eval/scripts/test_verify_local_acceptance.py` | 0 |
+| `handoff-fmt` | `cargo fmt --check --all` | 0 |
+| `handoff-eval-clippy` | `cargo clippy -p opi-eval --all-targets -- -D warnings` | 0 |
+| `handoff-script-modes` | `git ls-tree HEAD crates/opi-eval/scripts/scripted-provider.py crates/opi-eval/tests/fixtures/external-locks/local-cache/scripts/materialize-external-locks.sh` | 0 |
+
+`python scripts/opi-doc-check.py`, `git diff --check`, the active audit-set/plan
+validators and the fixed result validator are run after this report is installed;
+their final command records are retained under `logs/handoff-*`.
+
+Test impact: **add** two diagnostic-selection regressions and the shared private
+evidence helper; **update** the isolated resource test, affected diagnostic
+fixtures and opt-in retention/owned-image checks; **retain** official reward
+contrasts and all refutation regressions; **delete** none.
+
+## Preservation and materialization boundary
+
+Worktree-only delivery: committed=none-for-this-task; staged=none. HEAD remains
+`e834271d7ea6d114d67d9fc7e5298919fc7cb11e`. The 17-path admission inventory is preserved in `baseline.json`.
+Carried-in paths touched during this apply are the two READMEs, CHANGELOG,
+`native_driver.rs` and the authorized fixed result pair. The newly modified
+tracked source is `benchmark/process.rs`; the only new source file is
+`tests/support/native_witness_material.rs`. All other admission bytes, including
+the fixed plan pair, producer scripts and static lock, remain unchanged.
+Final inventory/hashes are in `preservation-final.json`. The original fixed
+result bytes were backed up opaquely, never consumed as evidence.
+
+The Changed paths header is the exact union attributed by approved dispositions;
+it includes retained B1 work and the partially implemented B3 helper, not a claim
+that every listed path was first edited in this apply. The fixed result pair is
+an authorized assurance output, separate from source-path attribution.
+
+A new explicit plan is required for the pi runtime dependency closure and its
+static producer pin before B3 can resume. A fresh audit/reviewer rerun additionally
+requires fixes and the live assurance set committed, assurance clean, external
+evidence resolved and any owning-workflow return complete. Nothing was committed
+automatically and no Phase PASS is granted.
