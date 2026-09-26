@@ -6,19 +6,17 @@ disable-model-invocation: true
 
 # opi-eval
 
-Produce evidence through the Rust CLI in `crates/opi-eval`. The skill owns
-operator input, authorized execution, private evidence staging, readable
-reports, and post-evaluation environment cleanup; the Companion owns frozen
-trials, native grading, seals, and offline reconstruction. Opi source fixes follow the
+Use the Rust CLI in `crates/opi-eval` for native trials, grading, seals and
+offline reconstruction. This skill owns operator scope, execution, evidence
+privacy, reports and cleanup. Opi source fixes follow the
 [user-confirmed repair branch](#user-confirmed-source-repairs). Only
 `opi-implement` owns `.opi-impl-state.json` and Phase exit.
 
 ## Inputs and routing
 
-These are skill inputs, not additional CLI flags. Accept natural-language
-software names, versions, benchmark selections, and models, then resolve them
-to the following contract. Ask only for unresolved choices that affect the
-run; reuse explicit authorization and selections already supplied.
+Resolve natural-language requests to these skill inputs, not extra CLI flags.
+Reuse supplied selections and authorization; ask only for unresolved choices
+that affect the run. Load only the selected branch's references.
 
 ```text
 mode=benchmark|acceptance|verify|fidelity
@@ -55,11 +53,11 @@ experiment and plan. `verify` derives identities from evidence, not new inputs.
 
 ## Step 1: Resolve the operator request
 
-Read the [crate README](../../../crates/opi-eval/README.md),
-[local walkthrough](../../../crates/opi-eval/examples/local-evaluation/README.md),
-and [native run reference](references/native-run.md). For acceptance, also use
-the registered source linked by that branch; inspect task 19.11 read-only to
-identify its handoff, never to generate benchmark cases or update progress.
+For benchmark/acceptance, read [native run](references/native-run.md), which
+links command/build authorities. Consult the crate README and walkthrough for
+the selected operation. For acceptance, also read its registered source and
+task 19.11 handoff read-only; never derive benchmark cases or update progress
+from the ledger.
 
 Present the available pinned benchmark families and the selected corpus task
 inventory. Bind each software version to its actual source/build/executable
@@ -67,12 +65,11 @@ identity; `software` currently admits only Opi and pi native integrations.
 An unsupported version/adapter is an explicit preparation gap, not permission
 to substitute the current build. A pi-only selection needs no Opi executable.
 
-Resolve one named connection and [model controls](references/native-run.md#model-controls),
-then full/subset tasks and reasons,
-repetitions, concurrency, enforceable bounds, storage, capture, and failure
-policy. Explicitly distinguish the evaluated software version from the
-Companion build version. Keep credential values out of conversation and reports;
-only the selected Agent launch resolves their declared reference.
+Resolve the connection, [model controls](references/native-run.md#model-controls),
+task scope/reasons, repetitions, concurrency, enforceable bounds, storage,
+capture and failure policy. Distinguish subject and Companion build identities.
+Only the selected Agent launch resolves credential references; keep values out
+of conversation and reports.
 
 **Completion criterion**: every input is resolved or named as a blocking input;
 the chosen branch and exact software/model/benchmark scope are visible. Missing
@@ -80,18 +77,16 @@ live authorization still permits preparation, never a provider call.
 
 ## Step 2: Prepare and freeze
 
-Follow [native run](references/native-run.md) for cached builds, WSL/Linux
-execution, material acquisition, configuration projection, and exact commands.
-Use the built Companion for `doctor`, `prepare`, `validate`, and `plan` from
-the independent directory. Each benchmark family has its own experiment,
-material manifest and plan. Keep the full inventory and rejected requirements;
-resource failures never silently shrink a requested full run.
+Follow [native run](references/native-run.md) for builds, materials, projection
+and `doctor` / `prepare` / `validate` / `plan` in the independent directory.
+Each benchmark family gets its own experiment, material manifest and plan.
+Preserve the full requested inventory and rejected requirements; resource
+failures do not authorize a smaller run.
 
-Before freezing capture, read the privacy section of
-[evidence root](references/evidence-root.md); sealed bytes cannot be edited
-later to make an unsafe capture shareable.
-Before acquisition/builds create resources, record the resource baseline and
-protected locations required by [environment cleanup](references/environment-cleanup.md).
+Before resources are created, record ownership/protected locations under
+[environment cleanup](references/environment-cleanup.md). Before capture is
+frozen, apply [evidence privacy](references/evidence-root.md#privacy-without-breaking-seals);
+sealed bytes cannot later be edited for sharing.
 
 Show the resulting plan digests, subjects/builds, task IDs, model connection,
 effective/unsupported controls, exact trial count, concurrency,
@@ -107,11 +102,10 @@ accounted for, with authorization bound to that scope before Step 3.
 
 ## Step 3: Run the exact plans
 
-Execute `run --plan` through the Companion's native path as documented in
-[native run](references/native-run.md). Preserve each command's cwd, sanitized
-argv, start/end time, exit, stdout/stderr, plan and material identity. Let the
-selected Agent operate in the task environment and the native grader consume
-that same trial's declared artifacts. Shell exit alone is not a score.
+Execute `run --plan` as documented in [native run](references/native-run.md).
+Preserve cwd, sanitized argv, timing, exit, stdout/stderr and plan/material
+identity. The selected Agent and native grader must operate on the same trial's
+environment and declared artifacts; shell exit alone is not a score.
 
 Retain every failed, cancelled and unstarted trial and its typed settlement.
 On authority, privacy or budget breach, cancel owned execution and stop affected
@@ -125,20 +119,19 @@ of the run operation does not imply acceptance.
 
 ## Step 4: Verify and stage shareable evidence
 
-Read [evidence root](references/evidence-root.md). Run Companion `verify` and
-`report` for each run root, preserving exits and typed failures. Reconstruct
-each successful report twice to distinct external paths and compare bytes.
+Follow [evidence root](references/evidence-root.md) for privacy and offline
+checks. Run Companion `verify` and `report` for each root, preserving exits and
+typed failures. Reconstruct each successful report twice to distinct external
+paths and compare bytes.
 `regrade` is a separate, explicitly requested native-grader operation; byte
 verification and report reconstruction never imply regrading occurred.
 
-Stage privacy-reviewed evidence without changing sealed bytes. Produce the
-acceptance manifest, repository-qualified upstream cache, and exact Opi-only
-capture view only for the acceptance branch. Then run its offline acceptance
-verifier and generic artifact audit against that view. For `mode=verify`, use
-the [local acceptance](references/local-acceptance.md) route only when the
-supplied manifest has the acceptance schema; otherwise verify the supplied
-ordinary run roots. Never reconstruct a missing
-trial or approval from a template, source code, or historical run.
+Stage privacy-reviewed originals unchanged. Acceptance alone requires its
+manifest, repository-qualified upstream cache, exact Opi-only capture view,
+offline acceptance verifier and generic artifact audit. In `mode=verify`,
+use [local acceptance](references/local-acceptance.md) only for a supplied
+acceptance-schema manifest; otherwise verify ordinary run roots. Never invent
+missing trials or approvals from templates, code or historical runs.
 
 **Completion criterion**: all selected roots have explicit verification results;
 shareable roots retain their original seals and pass the privacy review. Any
@@ -147,44 +140,31 @@ acceptance handoff.
 
 ## Step 5: Report and hand off
 
-Use [benchmark report](references/benchmark-report.md) for native/acceptance
-and verify results. Write unique English/Chinese reports under `docs/eval/`
-and retain machine reports beside the external evidence. Keep native metrics
-per benchmark, with denominator, coverage, missing pairs and unknown telemetry.
-Report each requested criterion as evidenced, missing or rejected with an
-artifact link; acceptance readiness is distinct from Phase completion.
+Use [benchmark report](references/benchmark-report.md) for native, acceptance
+and verify results: unique bilingual `docs/eval/` reports, external machine
+evidence, native metrics/denominators, complete coverage, criterion status and
+exact artifact/check links. Acceptance readiness is separate from Phase exit.
+Eval findings use the [finding contract](../_shared/references/finding-contract.md);
+only a later independent audit can admit them to the live remediation set.
 
-The final handoff gives the evidence-root path, manifest digest, report paths,
-exact verification commands/exits, six-trial coverage when applicable, and
-remaining gaps. Eval findings follow the shared
-[finding contract](../_shared/references/finding-contract.md); only a subsequent
-independent audit can admit them to the live remediation set. Do not commit
-reports or invoke another user-only workflow without an explicit request.
-
-**Completion criterion**: readable reports agree with verified native JSON and
-all attempted/planned coverage; a blocked run has a useful gap report without
-invented evidence. Complete [post-evaluation cleanup](#post-evaluation-cleanup)
-and include its result before final handoff. The user can locate the evidence
-and repeat its offline checks.
+**Completion criterion**: reports agree with verified native JSON and account
+for all planned/attempted trials, including blocked runs. Hand off locatable
+evidence, manifest digest where applicable, report paths, exact checks/results,
+remaining gaps and [cleanup](#post-evaluation-cleanup). Commits and another
+explicit-only workflow still require a user request.
 
 ## Post-evaluation cleanup
 
-After execution, evidence preservation and report preparation, follow
-[environment cleanup](references/environment-cleanup.md). Inspect Docker images
-and other evaluation leftovers; retain reusable evaluation materials and all
-evidence needed to trace, verify or reproduce results. Automatically remove
-only proven run-owned disposable resources under the authorized evaluation
-scope. Apply this on success, failure, cancellation, and completed repair
-checks; preserve resources needed by an active or resumable run.
+After preserving evidence and preparing reports, follow
+[environment cleanup](references/environment-cleanup.md) on success, failure,
+cancellation and completed repair checks. Remove only proven invocation-owned
+disposable resources; preserve reusable materials, evidence and active/resumable
+work. `mode=verify` cleans only its own scratch, keeping supplied evidence and
+shared Docker state read-only.
 
-This is an operator procedure, not a new Companion CLI command. `mode=verify`
-keeps supplied evidence and shared Docker resources read-only; it may clean
-only disposable scratch created by that verification invocation.
-
-**Completion criterion**: a retained cleanup record identifies removed resources,
-kept resources and reasons, unresolved failures, and post-cleanup evidence
-checks. An uncertain resource stays intact with its reason; incomplete cleanup
-is explicit and never changes a trial's score or verification status.
+**Completion criterion**: the cleanup record accounts for removed/retained
+resources, reasons, failures and preservation checks. Uncertain resources stay
+intact; cleanup never changes scores or evidence verification status.
 
 ## User-confirmed source repairs
 
@@ -196,29 +176,25 @@ the user explicitly confirms that repair scope, proceed directly; a separate
 existing clear approval for the same scope; ask again only for a material scope
 expansion. Authorization to run trials alone does not authorize source fixes.
 
-1. Reproduce the defect offline where possible and define an observable success
-   criterion. Keep the repair consistent with the normative specification;
-   product-direction changes still require human-led specification revision.
-2. Make the minimum Opi runtime, product or Companion source change needed for
-   the approved repair, with affected regression tests and documentation. Use
+1. Reproduce offline where possible and define observable success. Keep the
+   repair within the normative specification; direction changes require
+   human-led revision.
+2. Make the minimum approved runtime, product or Companion repair with affected
+   regression tests and documentation. Use
    [change-scope and check selection](../_shared/references/change-scope-and-check-selection.md)
    to select checks, including workspace gates for cross-crate runtime changes.
    Repair approval covers offline reproduction, builds and verification with
    mocks, synthetic credentials and isolated fixtures.
-3. Preserve prior trials, sealed evidence and their frozen executables/materials.
-   Build the repair as a separately identified candidate; record source revision,
-   dirty diff, executable and affected material identities. Changes to a candidate
-   do not retroactively repair or regrade an existing result.
-4. Record the approval, reproduction, changed scope, test impact, exact check
-   commands/results and remaining gaps in the eval handoff. Repair evidence
-   remains outside the live audit set; independent audit admission, implementation
-   ledger updates and Phase exit retain their existing owners.
-   Apply post-evaluation cleanup to completed repair-check scratch as well,
-   preserving the separate candidate and regression evidence.
-5. Return to preparation for any subsequent evaluation. Repair approval does not
-   authorize additional paid trials, new credential use, commits or publication;
-   obtain any missing authorization for the new frozen execution scope under
-   Step 2. Do not present offline regression success as a new benchmark result.
+3. Preserve prior trials, seals and frozen executables/materials. Identify the
+   repair candidate separately by source revision, dirty diff, executable and
+   affected material identities; it cannot retroactively repair/regrade a result.
+4. Hand off approval, reproduction, changed scope, test impact, exact checks and
+   gaps. Preserve candidate/regression evidence before cleaning repair scratch.
+   Audit admission, ledger updates and Phase exit retain their existing owners.
+5. Return to Step 2 for a new evaluation. Repair approval covers no additional
+   paid trials, new credential use, commits or publication. Reuse authorization
+   only for its exact frozen scope; offline regression success is not a new
+   benchmark result.
 
 **Completion criterion**: the approved repair has reproducible verification or
 explicit remaining failures, its candidate identity is distinct, and prior

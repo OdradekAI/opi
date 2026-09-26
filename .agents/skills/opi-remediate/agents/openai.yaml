@@ -1,6 +1,6 @@
 interface:
   display_name: "Opi Remediate"
   short_description: "Plan or apply finding closure"
-  default_prompt: "Use $opi-remediate mode=plan phase=<N> to validate the live audit.index.json, consume the strict union from every indexed reviewer/model member, and prepare index-digest-bound closure evidence."
+  default_prompt: "Use $opi-remediate mode=plan phase=<N> to validate audit.index.json and plan closure for its strict union of findings."
 policy:
   allow_implicit_invocation: false

@@ -1,75 +1,70 @@
 ---
 name: opi-workflow
-description: Route opi work among inward pi realignment, outward capability research, human-led shaping, delivery, assurance, documentation, and release without creating a second state machine.
+description: Recommend the next Opi workflow for an explicitly requested routing decision.
 disable-model-invocation: true
 ---
 
 # Opi Workflow Router
 
-Route work to the skill that owns the next decision or artifact. This skill is
-an index, not an orchestrator: open the selected skill before making any
-load-bearing claim, and stop at human decision and irreversible boundaries.
+Return one next action, its owning source and any unmet entry gate. Read only
+the selected skill before making claims about its behavior. Routing does not
+invoke that skill, edit files or create another delivery ledger.
 
 ## Design direction
 
-- **Inward:** pi is opi's design reference. Use `opi-realign` to measure the
-  latest pi direction against the Rust implementation and selected opi scope.
-- **Outward:** optional capabilities beyond or poorly served by pi are researched
-  for plugin/package placement before expanding core. Use `opi-research`.
-- **Implementation:** `.opi-impl-state.json` and `opi-implement` are the only
-  delivery state machine. Do not introduce another ticket, plan, worktree, or
-  commit protocol inside it.
+Inward evidence compares a pinned pi revision with Opi; outward evidence studies
+external capabilities. Human shaping turns evidence into reviewed requirements.
+`opi-implement` alone owns the implementation ledger and delivery state machine.
 
 ## Routes
 
-| Situation | Open and use |
+| Requested outcome | Next action |
 |---|---|
-| Compare current opi with the latest pi design or implementation | `opi-realign` |
-| Investigate an external or non-pi capability | `opi-research` |
-| Resolve a large, multi-session decision space with fog | Recommend explicit Matt `wayfinder`, after the tracker adapter check below |
-| Sharpen bounded ambiguity in the current session | Recommend explicit Matt `grill-with-docs`, with the opi glossary adapter below |
-| Synthesize settled decisions when no reviewed spec exists | Recommend explicit Matt `to-spec`, producing a non-normative tracker candidate |
-| Admit a reviewed, registered source and construct its task graph | `opi-implement plan` |
-| Execute an admitted ledger task | `opi-implement` |
-| Diagnose a hard bug or performance regression | Matt `diagnosing-bugs`, then return to the owning delivery route |
-| Audit a completed phase | `opi-audit` |
-| Validate and optionally fix normalized findings | `opi-remediate` |
-| Gather release-candidate runtime evidence | `opi-eval` |
-| Synchronize product documentation | `opi-document` |
+| Compare Opi with pi's design or implementation | `opi-realign` with an exact revision |
+| Investigate an external capability | `opi-research` |
+| Resolve unsettled product meaning | Human-led shaping; optional adapters below |
+| Admit a reviewed, registered source and task graph | `opi-implement plan` |
+| Execute an admitted task | `opi-implement` |
+| Diagnose a hard bug or regression | Evidence-led diagnosis, then the owning repair/delivery route |
+| Audit a completed Phase | `opi-audit` |
+| Verify and optionally fix normalized findings | `opi-remediate` |
+| Run native benchmarks or fidelity cases; repair confirmed eval findings | `opi-eval` |
+| Audit/synchronize product documentation | `opi-document` |
 | Publish a verified release | `opi-release` |
-| Reduce integration-test binary count | `opi-slim-tests` |
+| Reduce redundant integration-test binaries | `opi-slim-tests` |
 
-Direct invocation of any routed skill is valid. Do not call a skill merely to
-make the route look complete: skip `to-spec` when wayfinding already produced a
-reviewed spec, and skip assurance or release work whose entry gate is not met.
+A bounded ordinary edit can proceed under AGENTS.md when no specialized
+workflow or product-admission gate applies. Do not add lifecycle steps merely
+to complete the diagram. Direct explicit invocation of any Opi skill is valid.
 
 ## Matt adapter contract
 
-- `wayfinder`, `grill-with-docs`, `to-spec`, and
-  `setup-matt-pocock-skills` are user-invoked Matt skills. Return the exact
-  recommended invocation and stop; do not claim to invoke or compose them from
-  this router.
-- Before recommending `wayfinder` or `to-spec`, require
-  `docs/agents/issue-tracker.md`. If it is absent, recommend explicit Matt
-  `setup-matt-pocock-skills` and stop until the tracker is configured. Do not
-  invent tracker conventions inside an opi skill.
-- When `wayfinder` or `grill-with-docs` invokes Matt `domain-modeling`, bind its
-  glossary target to opi's existing `docs/CONTEXT.md` and its ADR target to
-  `docs/adr/`. Do not create a competing root `CONTEXT.md`.
-- A wayfinder map, decision ticket, or `to-spec` tracker issue is shaping
-  evidence, not an `opi-implement` source. Human review must materialize the
-  settled result into `docs/opi-spec.md` or a supplemental spec registered by
-  `opi-implement`; only then may `opi-implement plan` admit it.
+Use these optional shaping adapters only when installed and requested:
+
+- `wayfinder`: a broad, multi-session decision space.
+- `grill-with-docs`: bounded ambiguity.
+- `to-spec`: materialize settled decisions into a non-normative candidate.
+- `diagnosing-bugs`: evidence-led diagnosis, without authorizing delivery.
+
+Before recommending tracker-backed `wayfinder` or `to-spec`, check
+`docs/agents/issue-tracker.md`. If absent, identify the missing adapter and
+offer explicit `setup-matt-pocock-skills` only if available. Human-led shaping
+can proceed in the current conversation without installing a tracker or skill.
+Never claim an unavailable command works or silently substitute another package.
+
+Bind domain modeling to `docs/CONTEXT.md` and ADRs to `docs/adr/`.
+Tracker artifacts remain evidence until human review materializes and registers
+a normative source. Optional adapters cannot bypass that admission.
 
 ## Phase boundaries
 
-- Research and realignment produce evidence, not product decisions.
-- Human-led shaping may return to either evidence path repeatedly.
-- `opi-implement plan` is an adversarial admission check, not a shaping tool.
-- `opi-implement` cannot silently amend a normative source when meaning is
-  missing or wrong; it returns to the owning shaping artifact.
-- Audit does not fix, eval does not fix, documentation does not release, and
-  release does not cross an irreversible boundary without explicit approval.
-
-When a required routed skill is unavailable, stop with a setup error. Do not
-silently substitute a similarly named workflow from another skill package.
+- Evidence does not authorize product decisions or implementation.
+- Plan admission checks readiness; missing meaning returns to human shaping.
+- Audit diagnoses without fixes. Eval repairs use only its
+  [user-confirmed source-repair branch](../opi-eval/SKILL.md#user-confirmed-source-repairs).
+- Documentation does not authorize release. Source repair, live trial budgets,
+  graph approval, commit permission and irreversible publication are distinct
+  gates owned by their respective skills.
+- Preserve existing authorization for the same scope/object; stop only at an
+  unmet gate, changed approval binding or material ambiguity. Explain the exact
+  source of a blocking rule and the concrete next action.

@@ -1,6 +1,6 @@
 ---
 name: opi-research
-description: Research capabilities beyond or poorly served by pi, using Matt research against primary sources and evaluating Rust feasibility plus plugin-first placement for the opi ecosystem.
+description: Research capabilities beyond pi against primary sources, assessing Rust feasibility and Opi placement.
 disable-model-invocation: true
 ---
 
@@ -13,15 +13,15 @@ against a concrete pi revision.
 
 ## Input
 
-Require a bounded research question. If the user supplies only a feature name,
-clarify the capability, target users, and decision the evidence must inform
-before dispatching research.
+Establish a bounded question, target users, and decision the evidence must
+inform from the request and existing context. Ask only when missing information
+would materially change the research scope.
 
 ## Subskill
 
-Open and invoke Matt `research`. It owns background fact gathering, primary
-source preference, claim-level citations, and the Markdown research artifact.
-Do not replace it with a secondary web summary.
+Open and invoke Matt `research` for background fact gathering, primary-source
+evidence, claim-level citations, and the Markdown artifact. Supply the bounded
+question and the Opi evidence contract below.
 
 Write the report under:
 
@@ -48,27 +48,25 @@ The report must cover:
    hooks, custom tools/providers, or process adapters can express the feature.
 7. **Smallest missing core seam** — only when the feature cannot be expressed
    through existing extension points.
-8. **Placement candidates** — Minimal Runtime, core extension seam, official
-   plugin/package, or external example. Optional, provider-specific,
-   experimental, and non-pi capabilities default toward plugin/package form.
+8. **Placement candidates** — use the Agent Core, Reference Product,
+   Extension Ecosystem, and Independent Companion boundaries in
+   `docs/opi-spec.md` Chapters 4 and 8. Opi-specific optional capabilities
+   default to plugins/packages; Agent-neutral capabilities begin as Independent
+   Companions. A missing core seam still requires the core admission gates.
 9. **Unresolved decisions** — product and architecture choices the evidence
    cannot settle.
 10. **Limitations and non-findings** — unavailable sources, uncertainty, and
     claims the research could not support.
 
-Placement is a recommendation, not an approved product decision. Feed the
-report into direct human deliberation, Matt `wayfinder`, or Matt
-`grill-with-docs` as appropriate. The Matt shaping skills are user-invoked:
-recommend the exact explicit invocation and stop rather than claiming research
-invoked them.
+Complete when every item above has cited findings or an explicit limitation.
+Link the report and summarize the decision-relevant findings and unresolved
+choices. Placement remains a recommendation. Human-led shaping may use Matt
+`wayfinder` or Matt `grill-with-docs`; recommend an exact invocation when useful,
+but these user-invoked skills require the user's request.
 
 ## Boundaries
 
-Do not:
-
-- modify `docs/opi-spec.md` or a supplemental design;
-- create implementation tickets or `.opi-impl-state.json` tasks;
-- select the product direction on the user's behalf;
-- treat every interesting external capability as core work;
-- merge this workflow into `opi-realign`;
-- implement, commit, push, or publish the researched capability.
+The report is non-normative outward evidence. This workflow does not authorize
+specification or supplemental-design edits, implementation tickets or ledger
+tasks, product decisions, implementation, commits, pushes, or publication.
+Keep inward pi alignment in `opi-realign`.

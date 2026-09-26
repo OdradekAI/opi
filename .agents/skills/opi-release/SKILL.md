@@ -1,6 +1,6 @@
 ---
 name: opi-release
-description: Release the opi Rust workspace through explicit local, public GitHub, and irreversible crates.io gates.
+description: Publish a verified lockstep Opi release through explicit GitHub and crates.io gates.
 arguments: "<version> [--fix] [--skip-cross]"
 disable-model-invocation: true
 ---
@@ -18,10 +18,9 @@ the corresponding GitHub release. Invoke explicitly with a target version.
 - `--skip-cross`: source/crate release with no locally built cross-platform
   binaries. It does not weaken crate or documentation checks.
 
-Use the host's native progress and user-interaction mechanisms when available.
-The workflow must not depend on product-specific task or question tool names.
-Shell examples are illustrative: use equivalent PowerShell commands on Windows
-and POSIX commands on Unix without changing their safety semantics.
+Use host-native shell commands with the same safety semantics. Complete
+authorized preparation through a reviewable release diff; pause at the public
+and irreversible gates below or an unresolved release failure.
 
 ## Boundaries
 
@@ -40,7 +39,7 @@ or automatic workspace-wide `cargo clean`.
 ## Resume state
 
 Before Phase 1, inspect `.opi-release-state.json`. If it matches the requested
-version, validate every recorded remote fact before offering to resume. Write
+version, validate every recorded remote fact before resuming. Write
 state atomically after each public or irreversible transition:
 
 ```json
@@ -118,16 +117,6 @@ members, build internal path-dependency edges, and topologically sort them.
 Reuse this graph in both dry-run and live publication; do not maintain a second
 hand-written order.
 
-Current expected batches are an assertion to verify, not the source of truth:
-
-- Batch 1: `opi-ai`, `opi-tui`, `opi-protocol`
-- Batch 2: `opi-agent`, `opi-sandbox`
-- Batch 3: `opi-coding-agent`
-
-The expected edges include `opi-agent -> opi-ai`,
-`opi-sandbox -> opi-protocol`, and
-`opi-coding-agent -> opi-ai, opi-agent, opi-protocol, opi-tui`.
-
 Run `cargo publish --dry-run --allow-dirty -p <crate>` in computed order.
 Before the new internal versions exist on crates.io, a dependent crate may fail
 only because that exact internal version is unavailable; classify that as an
@@ -155,12 +144,17 @@ was affected.
 
 ## Phase 4: build and artifact evidence
 
-Ask the user to select one strategy:
+Use the requested build strategy; if none was supplied, ask the user to select:
 
 1. CI-driven builds (recommended): local native smoke only; `release.yml`
    builds supported `opi` and `opi-sandbox` archives.
 2. Local cross-build: build only targets supported by the host/toolchain.
 3. `--skip-cross`: no binary release artifacts.
+
+Before Phase 5, verify that the tag-triggered workflow honors the selected
+asset strategy. If automatic binary uploads conflict with `--skip-cross`, stop
+before pushing for an explicit strategy or CI decision; do not silently disable
+CI or remove assets.
 
 Always run a release build and release tests appropriate to the selected
 strategy. For every locally produced archive:
@@ -222,15 +216,18 @@ delete the published version.
 
 ## Phase 7: finalize and verify
 
-Before publishing the draft:
+Before publishing the draft, verify binary artifacts when the selected strategy
+produces them (`--skip-cross` instead verifies that no binary assets are
+claimed or attached):
 
 1. Download the GitHub release assets into a fresh temporary directory.
 2. Verify every downloaded archive using the downloaded `SHA256SUMS.txt`.
 3. Extract and smoke the host-native `opi` binary; audit the declared
    `opi-sandbox` platform assets.
-4. Verify all six crates at `<version>`:
-   `opi-ai`, `opi-tui`, `opi-agent`, `opi-protocol`, `opi-sandbox`, and
-   `opi-coding-agent`.
+
+For every strategy:
+
+4. Verify every publishable crate in the computed dependency graph at `<version>`.
 5. Install `opi-coding-agent --version <version>` into an isolated cargo root
    and verify `opi --version`.
 6. Report docs.rs state as eventual/non-blocking unless repository policy says
@@ -257,7 +254,7 @@ deletion is a separate user decision with an explicit, resolved target path.
 
 ## Completion report
 
-Report the release commit/tag, GitHub URL, all six crate URLs/versions, artifact
+Report the release commit/tag, GitHub URL, all published crate URLs/versions, artifact
 count, checksum verification, selected build strategy, any tier-2 omissions,
 and the final state-file disposition. A release is not complete merely because
 the commands exited zero; remote versions and downloaded assets must agree.

@@ -1,6 +1,6 @@
 ---
 name: opi-slim-tests
-description: Reduce Rust integration-test binary and link cost while preserving current behavior, architecture, and platform coverage.
+description: Consolidate Rust integration-test binaries while preserving behavioral and platform coverage.
 disable-model-invocation: true
 ---
 
@@ -10,9 +10,8 @@ Reduce integration-test **binary count**, not useful behavioral coverage. Every
 top-level `tests/*.rs` is a separate Cargo target and link step; modules below a
 suite directory do not create another binary.
 
-Stop at a verified working-tree diff. Git safety and commit authorization come
-from the always-loaded `AGENTS.md` / `CLAUDE.md`; this skill never stages or
-commits automatically.
+Complete a verified working-tree diff and evidence map. Follow repository Git
+safety; this skill never stages or commits automatically.
 
 When an `opi-implement` live ledger or Phase snapshot is available, seed the
 candidate inventory from non-null `slim_candidate` entries. A candidate is a
@@ -37,17 +36,13 @@ Read
 in full. Apply its primary candidate classifications to every candidate and
 cite the retained Interface or execution contract.
 
-Names are not evidence. Read candidate bodies in full and cite the retained
-behavioral seam. “Documentation guard” is not automatically load-bearing.
+Names and a “documentation guard” label do not establish retained behavior.
 
 ## 3. Record test impact for the product change
 
-Apply the shared reference's test-impact actions to each product change that
-created a candidate. Preserve its replace-don't-layer ordering and proof.
-
-This prevents a refactor from accumulating old and new tests for mutually
-exclusive designs. A later phase that replaces an earlier contract should
-delete or rewrite the earlier test in the same change.
+Apply the shared reference's `add|update|delete|retain|none` actions and
+replace-don't-layer proof. Account for every affected behavior and identify
+passing replacement evidence before removing a current contract test.
 
 ## 4. Choose the smallest safe form
 
@@ -111,7 +106,7 @@ workspace all-target test solely because test files were reorganized.
 
 ## 7. Handoff
 
-Report the binary count delta, classification and retained-evidence mapping,
-files removed/created/modified, commands and outcomes, unproven platform
-coverage, and remaining risks. Leave changes uncommitted unless separately
-authorized.
+Report binary/test count deltas, candidate classifications, test-impact actions,
+retained evidence, changed files, exact checks and outcomes, and any unproven
+platform coverage or remaining risk. Leave the verified diff uncommitted unless
+separately authorized.

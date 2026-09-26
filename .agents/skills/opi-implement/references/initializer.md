@@ -118,9 +118,8 @@ Source admission does not edit the source. Return one of these stop verdicts
 when evidence or product meaning is missing:
 
 - `RESEARCH_REQUIRED` — route to `opi-research` or `opi-realign`.
-- `DESIGN_DECISION_REQUIRED` — apply the `SKILL.md` Source-return rule and
-  recommend the exact explicit user invocation of Matt `wayfinder` or
-  `grill-with-docs`.
+- `DESIGN_DECISION_REQUIRED` — return to human-led shaping under the `SKILL.md`
+  Source-return rule; optional adapters require availability and user request.
 
 Do not write `.opi-impl-state.json` on either verdict.
 

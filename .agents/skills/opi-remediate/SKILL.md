@@ -1,14 +1,14 @@
 ---
 name: opi-remediate
 disable-model-invocation: true
-description: Plan or apply closure for every finding in the current live indexed Opi audit set, bound to its exact active index digest.
+description: Plan or apply finding closure against exact Opi audit-set and plan digests.
 ---
 
 # Opi Remediate
 
-Turn the current live indexed audit set into independently reviewable closure
-evidence. Plan and apply are separate branches bound to the same exact
-`audit.index.json` digest, fixed plan, and approved plan digest.
+Close the current live audit set with reviewable evidence. Planning and applying
+are separate branches; apply requires the exact `audit.index.json` and approved
+plan digests.
 
 ## Invocation and inputs
 
@@ -19,23 +19,21 @@ $opi-remediate mode=plan phase=<N>
 $opi-remediate mode=apply phase=<N> plan_sha256=<64 lowercase hex>
 ```
 
-Validate the complete indexed active audit set before either branch. Once
-valid, consume `audit.index.json` plus every indexed member metadata,
-requirements, and findings sidecar. Reports establish integrity but are not a
-substitute for machine records. Findings are the strict union of all indexed
-`(audit_run_id, id)` source keys; no peer is canonical.
+Validate the complete indexed active audit set before consuming semantic inputs
+in either branch. Use `audit.index.json` and every indexed member's metadata,
+requirements and findings sidecar. Findings are the strict union of indexed
+`(audit_run_id, id)` keys; reports cannot substitute for machine records and no
+peer is canonical.
 
-Apply approval is the current explicit invocation plus the exact
-validator-emitted `plan_sha256`. The shared remediation disposition contract
-owns these fixed machine outputs:
+Apply approval is the current explicit invocation plus the validator-emitted
+`plan_sha256`. The shared disposition contract owns the fixed outputs:
 
 ```text
 remediation.plan.dispositions.jsonl
 remediation.result.dispositions.jsonl
 ```
 
-Their paired Markdown paths, record schemas, replacement rules, and
-materialization boundary remain in the shared contracts.
+It also owns paired Markdown paths, schemas, replacement and materialization.
 
 ## Common references
 
@@ -45,10 +43,9 @@ Read before branching:
 - `../_shared/references/finding-contract.md`
 - `../_shared/references/remediation-disposition-contract.md`
 
-Use the exact active index SHA-256 and every member's full `audit_run_id` and
-`findings_sha256`. Keep history runs, prior task conclusions, eval artifacts,
-recurrence/lineage data, and alternate source or plan paths outside the
-context.
+Bind the exact active index SHA-256 and each member's full `audit_run_id` and
+`findings_sha256`. Keep history, prior conclusions, eval artifacts, lineage
+and alternate source/plan paths outside context.
 
 ## `mode=plan`
 
@@ -66,10 +63,9 @@ expand ownership beyond this live audit set.
 
 ### 1. Admit the current set and baseline
 
-Run `validate_assurance_artifact.py audit-set` against the assurance directory
-before consuming semantic inputs. The validator recovers interrupted
-installations under the assurance lock, validates every indexed group, and
-recomputes the exact `audit.index.json` digest used by plan/result headers.
+Run `validate_assurance_artifact.py audit-set` against the assurance directory.
+It recovers interrupted installations under lock and emits the exact index
+digest for plan/result headers.
 
 Record full committed `remediation_head` and the staged, unstaged, and untracked
 path inventory. Inspect committed code and run plan-stage checks in a unique
@@ -79,30 +75,26 @@ without reading its earlier content.
 
 ### 2. Verify and dispose every current finding
 
-Preserve every source identity and evidence, then assign `Confirmed`,
-`Partially confirmed`, `Cannot confirm`, or `Refuted` from current committed
-evidence. Give each finding one falsifiable closure key, family key, and exact
-plan disposition. Duplicate textual IDs in different runs remain separate.
-Resolve conflicting current claims by evidence, not reviewer vote; schedule at
-the highest source severity without rewriting any source record.
+Use the cross-reference matrix to verify every source key against current
+committed evidence and assign its disposition, falsifiable closure key and
+family key. Preserve source identities/evidence; textual ID duplicates remain
+separate. Resolve disagreement by evidence and schedule at the highest source
+severity.
 
-Cluster findings into one closure batch only when one root change and one
-closure predicate prove all members closed. Record decisions explicitly. A
-change requiring new product meaning, public contract, authority, scope, or a
+One closure batch requires one root change and one predicate proving every
+member closed. New product meaning, public contract, authority, scope or
 contested trade-off remains `DRAFT-UNRESOLVED` for the owning authority.
 
-Each behavioral fix needs a discriminating red-before observation before
-production edits and a matching green-after check. One fix and evidence pair
-may close several source keys only when their closure key is identical, but
-every current finding still appears in exactly one disposition.
+Behavioral fixes require discriminating red-before evidence before production
+edits and a matching green-after check. Shared evidence may close identical
+closure keys; every source key still needs exactly one disposition.
 
 ### 3. Seal and validate the fixed plan
 
-Write the plan and plan dispositions using the plan template. Use
-`READY-FOR-APPLY` only with exact strict-union coverage, complete decisions and
-closure proofs, all required red-before evidence, no unresolved decision, and
-plan headers bound to the exact active index digest. Otherwise
-publish a validated `DRAFT-UNRESOLVED`.
+Use the plan template. `READY-FOR-APPLY` requires exact strict-union coverage,
+complete closure decisions/proofs, required red-before evidence, no unresolved
+decision and exact active-index binding. Otherwise produce a validated
+`DRAFT-UNRESOLVED`.
 
 Run the dispositions validator, then:
 
@@ -118,12 +110,11 @@ defined by the disposition contract.
 
 ### Apply-only reference
 
-Load `references/execution-protocol.md` only for apply and follow it in full.
-It owns plan admission, dependency-ordered closure batches, incidental-repair
-bounds, result validation, and the materialization handoff. Apply remains bound
-to the exact index digest, approved plan digest, exact
-remediation head, and non-overlapping path inventory. Any membership, member,
-or index-byte change invalidates approval before production edits.
+Load `references/execution-protocol.md` only for apply. It owns admission,
+closure batches, incidental repairs, result validation and materialization.
+Proceed through the approved batches without renewed permission inside that
+scope. Changed index/member bytes, plan digest, remediation head or overlapping
+unowned paths fail admission before production edits.
 
 ## Completion criterion
 

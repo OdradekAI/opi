@@ -1,16 +1,14 @@
 ---
 name: opi-audit
 disable-model-invocation: true
-description: Run a fresh-context, read-only conformance audit of one registered Phase and install its validated report into the live indexed assurance set.
+description: Independently audit one committed Phase and install its validated assurance report.
 ---
 
 # Opi Audit
 
-Run a fresh-context, read-only conformance audit of one registered Phase. The
-Phase selects scope; the latest committed normative sources select expected
-behavior. Prior audit and remediation conclusions are outside the evidence
-boundary. The completed report installs independently into the live indexed
-assurance set; it never waits for another reviewer.
+Audit one registered Phase without changing production code. The Phase selects
+scope; the latest committed normative sources select expected behavior. Install
+this peer's report independently, without waiting for another reviewer.
 
 ## Invocation and contract ownership
 
@@ -23,24 +21,19 @@ optional narrow `focus=<area>` as an ordering hint; it never reduces Phase
 proof obligations. `model` is a file-identity slug for the model already
 selected by the runtime, never a model selector.
 
-The shared `audit-set-contract.md` owns the index, suffixed member paths,
-schemas, verdict derivation, rotation, installation, recovery, and migration.
-This skill owns one peer's ordered execution and completion criteria.
-`references/finding-template.md` owns Markdown rendering.
+The shared `audit-set-contract.md` owns the index, member schemas, verdicts,
+rotation, installation, and recovery. This skill owns one peer's execution.
 
 After rotation admission, read:
 
-1. `../../../AGENTS.md` and `../../../README.md` for repository authority;
+1. `../../../AGENTS.md` for repository rules;
 2. `../_shared/references/audit-set-contract.md` for the live-set contract;
-3. `references/audit-proof-obligations.md` for the requirement matrix and
-   anti-vacuity rules;
-4. `../_shared/references/finding-contract.md` for finding records; and
-5. `references/finding-template.md` when rendering the member files.
+3. `references/audit-proof-obligations.md` before sealing requirements.
 
 Obtain the committed root and pointed Phase scope through the Step 2 reader,
 then read the latest committed `docs/opi-spec.md` and every registered
-supplemental source. Load implementation files only when a sealed proof
-obligation points to them.
+supplemental source. After sealing obligations, follow their implementation
+surfaces and relevant current-product documentation.
 
 ## Context boundary
 
@@ -49,18 +42,15 @@ surfaces. Begin without prior audit/remediation conclusions in context. If the
 task already contains an earlier report or conclusion, stop with
 `AUDIT-INCOMPLETE: history-contaminated context` and request a fresh audit task.
 
-Use the `rotation` validator for prior-set path existence and Git cleanliness.
 Keep prior Phase-level audit/remediation content, its Git history, copied
 conclusions, and every sibling peer's staged or installed output outside the
-run. If a broad search exposes any such conclusion, invalidate this peer and
-restart in fresh context.
+run. Exposure invalidates this peer and requires a fresh context.
 
-Ledger files also contain historical conclusions. Read them only through
-`scripts/read_audit_scope.py` and use that projection when inspecting the
-source export; exclude raw ledgers from broad searches and never print their
-full content. Filtering after tool output reaches the auditor cannot restore
-independence. A reader failure is `AUDIT-INCOMPLETE`; do not fall back to a raw
-ledger dump.
+Read ledgers only through `scripts/read_audit_scope.py`, including in the
+source export; exclude raw ledgers from searches. Filtering after tool output
+cannot restore independence. Reader failure or missing scope is
+`AUDIT-INCOMPLETE`; repair the reader in a separate maintenance context rather
+than exposing excluded fields.
 
 ## Workflow
 
@@ -85,30 +75,23 @@ From the repository root, run:
 python .agents/skills/opi-audit/scripts/read_audit_scope.py --phase <N>
 ```
 
-The reader resolves HEAD once; use its full `audit_head` for this run. Pass
-`--head <committed-ancestor>` when the operator selects an explicit baseline.
-It reads committed bytes internally and emits only an allowlisted projection:
-source registrations, the target snapshot pointer, and target-Phase task
-requirements, acceptance scenarios, verification declarations, and planning
-notes needed for minimum-change review. Other Phases, execution status,
-evidence, evaluator summaries, journals, and unknown fields are withheld,
-including nested fields. These declarations are scope, not proof of conformance.
+Use the reader's full `audit_head`; it resolves HEAD once. Pass
+`--head <committed-ancestor>` only for an operator-selected baseline. Its
+allowlisted projection supplies registrations, snapshot pointer and target-Phase
+requirements, scenarios, verification declarations and planning notes. These
+declarations establish scope, not conformance.
 
 Use its ordered `baseline_sources` and `stored_hash_mismatches`. Baseline hashes
-cover the complete original committed files, including withheld fields, never
-the projection or a reserialized ledger. A stored hash mismatch is current
-metadata evidence; missing or malformed registered scope is `AUDIT-INCOMPLETE`.
-Stored v2 hashes are compared using the ledger's CRLF-normalized convention.
-The projection is read-only input, not a replacement ledger or audit artifact.
-If required scope is absent from the allowlist, stop and repair the reader in
-a separate maintenance context instead of reading excluded fields.
+cover complete committed bytes, never the projection or a reserialized ledger.
+The reader compares stored v2 hashes with the ledger's CRLF-normalized
+convention; mismatches are current metadata evidence. Keep the projection as
+read-only scope input.
 
-Record the full `audit_head` this peer inspects (the current committed HEAD at
-seal time unless the operator names an explicit committed ancestor), reviewer
-and model identity, `model_identity_source`, independence class, and a unique
-Phase-scoped `audit_run_id`. Never infer an exact model identity. The head
-must satisfy `git merge-base --is-ancestor <audit_head> HEAD` at completion;
-mixed heads across the live set are expected and valid.
+Record `audit_head`, reviewer and model identity, `model_identity_source`,
+independence class, and a unique Phase-scoped `audit_run_id`. Never infer an
+exact model identity. The head must satisfy
+`git merge-base --is-ancestor <audit_head> HEAD` at completion; mixed heads
+across the live set are valid.
 
 Export `audit_head` to a unique temporary directory with `git archive`.
 Do not use a Git worktree. Inspect and run checks only in that export, with
@@ -128,13 +111,9 @@ sealed requirement set unchanged in response to implementation discoveries.
 
 ### 4. Inspect the complete committed implementation
 
-Run Standards and Spec as separate axes. Inspect security/authority,
-invariants, integration, test quality, residuals, and minimum-change
-conformance. Trace declarations through production consumers, durable formats,
-adapters, commands, and tests.
-
-Run the narrowest sufficient checks in the export and apply the anti-vacuity
-rules. This step is complete only when:
+Apply the review axes and anti-vacuity rules from
+`references/audit-proof-obligations.md`, keeping Standards and Spec separate.
+Run the narrowest sufficient checks in the export. Completion requires:
 
 - Every sealed requirement has current evidence or an explicit limitation.
 - Every durable or public seam is traced to production consumers and
@@ -144,11 +123,10 @@ rules. This step is complete only when:
 
 ### 5. Render, validate, and install
 
-Write current findings only from `audit_head` evidence. Render exactly this
-peer's `audit.<reviewer-id>.<model-id>.*` four-file group in the member
-directory with `references/finding-template.md`; let the shared contracts own
-record shape, reciprocal links, hashes, and verdict derivation. The staged
-files must use LF line endings only.
+Read `../_shared/references/finding-contract.md` for finding records and
+`references/finding-template.md` for rendering. Write findings only from
+`audit_head` evidence, producing this peer's LF-only
+`audit.<reviewer-id>.<model-id>.*` four-file group in the member directory.
 
 Install the completed report into the live set under the assurance lock:
 
@@ -157,13 +135,9 @@ python .agents/skills/_shared/scripts/assurance_set.py complete docs/snapshots/p
 python .agents/skills/_shared/scripts/validate_assurance_artifact.py audit-set docs/snapshots/phase<N>/assurance
 ```
 
-`complete` validates the member, admits it against rotation cleanliness and
-the ancestor rule, installs the four files, and advances the index; a re-run
-of the same reviewer/model replaces its own entry and archives the superseded
-run under `history/<audit-run-id>/`. On interruption, run
-`assurance_set.py recover` before retrying. Do not copy active files manually.
-Failed member validation produces `AUDIT-INCOMPLETE`; do not report an
-aggregate verdict for the set.
+`complete` validates and installs under the shared contract. On interruption,
+run `assurance_set.py recover` before retrying; never copy active files
+manually. Failed validation or installation produces `AUDIT-INCOMPLETE`.
 
 ## Completion criterion
 

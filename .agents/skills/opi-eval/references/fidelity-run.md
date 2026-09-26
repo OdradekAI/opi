@@ -5,14 +5,10 @@ Paths beginning `references/` or `../_shared/` below resolve from the skill
 directory. Repository command paths resolve from the checkout. These
 Opi-only canaries are separate from native benchmark trials and their scores.
 
-End-to-end real-provider fidelity eval for the opi runtime. It compiles opi,
-runs structured cases against a real LLM provider, collects NDJSON traces, and
-dispatches an independent evaluator subagent to detect fidelity degradation.
-
-Existing public-seam Rust tests and CI remain the
-sole deterministic acceptance baseline. `opi-eval` supplements them only when
-a registered criterion requires real-provider evidence; a generic canary is
-never acceptance proof.
+Build Opi, execute authorized real-provider cases in isolated workspaces, and
+give preserved NDJSON evidence to a readonly evaluator subagent. Public-seam
+Rust tests and CI remain the deterministic acceptance baseline; generic
+canaries cannot establish acceptance.
 
 ## Evidence authority
 
@@ -43,38 +39,23 @@ recorded in the report regardless of how it was resolved.
 Record resource ownership and protected locations using
 `references/environment-cleanup.md` before builds or cases create scratch.
 
-Build the opi binary in release mode using the same persistent external-cache
-policy as `opi-implement`:
-
-1. Respect an existing `CARGO_TARGET_DIR`.
-2. Otherwise set it to the single path printed by `python
-   scripts/opi-cargo-cache.py resolve`.
-3. For a resolver-managed cache, acquire a lease with
-   `scripts/opi-cargo-cache.py lease start` for the current process, and release
-   it in `finally`/`trap` after the build. An explicitly supplied unmarked
-   target remains externally managed and is never eligible for Opi pruning.
-4. Retain Cargo's incremental default and run:
+Respect an existing `CARGO_TARGET_DIR`; otherwise resolve it with
+`python scripts/opi-cargo-cache.py resolve` and acquire a resolver-managed
+lease for the current process. Read the helper's lease arguments and release
+the lease in `finally`/`trap`. Keep incremental compilation enabled and run:
 
 ```text
 cargo build --release -p opi-coding-agent
 ```
 
-Do not use a GUID/`mktemp` target, set `CARGO_INCREMENTAL=0`, run `cargo clean`,
-or delete the target after the eval. Different worktrees/toolchains must not
-share a target. Cache pruning is an explicit maintenance action outside an
-eval: report inactive marked-cache paths, age, and size; remove oldest caches
-only after confirming no Cargo process uses them. Inspect with `python
-scripts/opi-cargo-cache.py status`; `prune` is dry-run by default and requires
-both age/size thresholds plus `--execute` to delete marked inactive caches.
+Preserve persistent Cargo caches; pruning is separate maintenance, outside
+eval. Inspect cache state with `python scripts/opi-cargo-cache.py status`.
 
 On Unix the binary is `$CARGO_TARGET_DIR/release/opi`; on Windows
 `$env:CARGO_TARGET_DIR\release\opi.exe`.
 
-**Completion criterion**: the build exits 0 and the resolved cached binary file
-exists.
-
-If the build fails, stop and report the error. Do not proceed with stale
-binaries.
+**Completion criterion**: the build exits 0 and the resolved cached binary
+exists. Build failure blocks execution; stale binaries cannot substitute.
 
 ## Step 2: Execute test cases
 
@@ -127,9 +108,11 @@ output. Cases marked `ERROR` get a minimal extraction noting the failure.
 
 ## Step 4: Evaluate
 
-Dispatch a **readonly** evaluator subagent. The evaluator receives only data and
-criteria. Prefer a different model family from the provider model under test;
-record the actual relationship using the shared finding-contract vocabulary.
+Dispatch a **readonly** evaluator subagent with criteria and evidence only.
+Prefer an available different model family and record `independent-family`.
+With the same family, use fresh context, record `fresh-context-same-family`,
+mark the overall verdict `DEGRADED` and disclose self-grade risk. Unknown model
+identity means `unknown` independence and `DEGRADED`; never infer an identity.
 
 Feed the evaluator:
 - The test case definitions (from `references/test-cases.md`)
@@ -139,11 +122,11 @@ Feed the evaluator:
 Read `references/evaluator-prompt.md` now and include its full content as the
 evaluator's task prompt, appending the runtime data.
 
-The evaluator produces per-case verdicts across six dimensions and an overall
-assessment. Wait for its response before proceeding.
+`references/evaluator-prompt.md` owns all six dimensions and scoring rules,
+including `record-only` resources and comparable-cohort thresholds.
 
-**Completion criterion**: evaluator returns structured verdicts for all
-dimensions on all evaluated cases.
+**Completion criterion**: receive structured verdicts for every dimension and
+case before reporting the assessment.
 
 ## Step 5: Report
 
@@ -192,8 +175,7 @@ Append one JSON line to `docs/eval/history.jsonl` with:
 }
 ```
 
-Keep `evaluator_model` and `independence` truthful according to the model
-independence guardrail below.
+Record the actual `evaluator_model` and `independence` from Step 4.
 
 ### Delta analysis
 
@@ -228,89 +210,13 @@ reproduction command. A source fix follows the
 Only a later independent audit can admit reproduced eval findings into the
 live audit set. `opi-remediate` does not ingest eval reports directly.
 
-## Evaluation dimensions
-
-Six dimensions, applied to every test case:
-
-### 1. Answer correctness
-
-Does the final output solve the problem? Checked against the expected answer
-defined in the test case. Scoring:
-- PASS: correct answer present
-- DEGRADED: partially correct or correct with extraneous errors
-- FAIL: wrong answer or no answer
-
-### 2. Tool call correctness
-
-Were the right tools called with valid arguments? Were results handled properly?
-- PASS: correct tools, correct args, results used appropriately
-- DEGRADED: unnecessary extra calls, minor arg issues, unused results
-- FAIL: wrong tools, malformed args, critical results ignored
-- N/A: test case does not involve tools
-
-### 3. Context integrity
-
-Is information preserved across the conversation? Particularly after compaction.
-- PASS: all relevant information retained and used
-- DEGRADED: minor detail loss that did not affect the answer
-- FAIL: critical information lost, answer affected
-
-### 4. Chain efficiency
-
-Is the execution path efficient? No dead loops, no redundant operations.
-- PASS: direct path to solution
-- DEGRADED: minor redundancy (1-2 unnecessary steps)
-- FAIL: loops, repeated failures, excessive steps
-
-### 5. Resource consumption
-
-Always record token usage, elapsed time, and tool-call count. By default score
-this dimension `N/A` with resource status `record-only`; it does not change
-the case or overall verdict.
-
-A resource threshold is allowed only when a registered performance criterion
-defines the budget, or when at least three prior samples share the comparison
-identity and the resource policy is explicitly enabled. Historical thresholds
-use the comparable cohort median, never the first run.
-
-### 6. Error handling
-
-Does the runtime handle errors gracefully?
-- PASS: no errors, or errors handled with recovery
-- DEGRADED: errors occurred but runtime continued correctly
-- FAIL: crash, hang, or unhandled error corrupting output
-
 ## Guardrails
 
-- This skill consumes real API credits. Never fire without user invocation.
-- Always record the model in every output artifact.
-- Generic `provider-fidelity` cases are fidelity signals, not deterministic
-  acceptance evidence.
-- Admit a `runtime-fidelity` case only for a registered-source fidelity gap;
-  do not duplicate a deterministic test for convenience.
-- Never compare metrics across different case revisions, provider/models,
-  OS/architectures, run modes, or effective tool sets.
-- **Model independence (preferred and truthful).** Use a different model family
-  when available and record `independent-family`. If only the same family is
-  available, use a fresh evaluator context, record
-  `fresh-context-same-family`, mark the overall verdict `DEGRADED`, and disclose
-  the self-grade risk. If identity cannot be established, record `unknown` and
-  mark the run `DEGRADED`.
-- The evaluator subagent must be readonly -- it analyzes, never executes.
-- Test fixtures use isolated temp directories. Never write fixtures into the
-  workspace root.
+- Resolve live scope, budget and stop conditions before spending API credits;
+  reuse authorization only within that scope. Record the model in every output.
 - Do not commit results unless the user explicitly asks.
 - If a test case fails to run (opi crashes), record it as ERROR and continue
-  with remaining cases rather than aborting the entire eval.
+  with remaining authorized cases unless an authority, privacy or budget breach
+  requires stopping affected execution.
 - Opi source changes require the user-confirmed repair branch; the diagnostic
   evaluator subagent remains readonly.
-
-## References
-
-- Read `references/test-cases.md` for test case definitions (prompts, expected
-  answers, fixture requirements, evaluation criteria).
-- Read `references/evaluator-prompt.md` for the evaluator's full task prompt
-  and scoring protocol.
-- Read `references/report-template.md` for the output report format.
-- Read `../_shared/references/finding-contract.md` for normalized runtime
-  regression vocabulary and the independent audit admission boundary.

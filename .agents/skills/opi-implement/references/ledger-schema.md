@@ -42,9 +42,7 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
       "evaluator_required": false,
       "verification": {
         "library_gates": [
-          "cargo test -p opi-coding-agent --test phase17_provider_runtime",
-          "cargo clippy --workspace --all-targets -- -D warnings",
-          "RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --no-deps"
+          "scripts/opi-impl-smoke.sh full"
         ],
         "behavioral_tests": ["crates/opi-coding-agent/tests/phase17_provider_runtime.rs"],
         "snapshot_tests": [],
@@ -109,7 +107,7 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
 | `tasks[].id` | string | const | Stable task ID derived from the registered Phase delivery source. Pattern: `^\d+\.\d+(\.\d+)?$`. A third component denotes a reviewed split and uses `parent_spec_row` when the source item has a stable identifier. |
 | `tasks[].phase` | int | const | Registered Phase number. |
 | `tasks[].title` | string | const | Registered source title or a review-confirmed split title. |
-| `tasks[].crate` | string | const | One of opi's six workspace crates (`opi-ai`, `opi-agent`, `opi-coding-agent`, `opi-protocol`, `opi-sandbox`, `opi-tui`), `workspace`, or any free-string packaging identifier (e.g. `examples`, `package-template`) when the reviewed source uses an open identifier. The review gate warns for unknown values but does not refuse solely on that basis. |
+| `tasks[].crate` | string | const | A workspace crate from Cargo metadata, `workspace`, or a free-string packaging identifier (e.g. `examples`, `package-template`) used by the reviewed source. The review gate warns for unknown values but does not refuse solely on that basis. |
 | `tasks[].parent_spec_row` | string/null | const | Stable source item ID when a bundled delivery item is split into independently demonstrable tasks. `null` for direct tasks and for reviewed sources without row identifiers. Retained for v2 and snapshot compatibility; it does not imply a parent-spec roadmap table. |
 | `tasks[].definition_of_done` | string | const | Observable completion contract from the registered source or confirmed task-graph expansion; provenance is declared by `definition_source`. |
 | `tasks[].definition_source` | enum | const | `verbatim`, `inferred`, or `draft-reviewed`; inferred values require review gate confirmation |
@@ -319,6 +317,10 @@ normal checkpoint writes use the guard's transient replacement backup.
 - Reinit after task-graph review gate confirmed
 
 **Checkpoint boundaries:**
+
+Checkpoint requirements do not grant Git authorization; use the applicable
+task, graph-checkpoint, or archive gate before committing.
+
 - Phase B and failed-attempt writes may remain dirty and are not committed as
   standalone progress noise.
 - A successful task first commits task-owned files, then records that commit SHA

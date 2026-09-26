@@ -2,11 +2,8 @@
 name: opi-document
 disable-model-invocation: true
 description: >-
-  Independently audit every maintained current-product README against shipped
-  implementation by default, repair documentation drift, and keep English and
-  Chinese counterparts synchronized. Use for full README truth audits,
-  targeted README/doc refreshes, localized mirrors, or the documentation phase
-  before a release.
+  Audit current-product READMEs against shipped implementation, or refresh a
+  targeted documentation scope, keeping English and Chinese mirrors synchronized.
 ---
 
 # Opi Document
@@ -43,11 +40,11 @@ worktree, the current branch diff, or the most recent implementation change.
 
 ## 1. Establish the documentation delta
 
-For `scope=full`, first build the complete README coverage matrix required by
-`references/readme-audit.md`, then read every included README in full. For
-other scopes, read the affected source and relevant current docs. In every
-scope, also read `[Unreleased]` plus the latest release in `CHANGELOG.md` and
-the workspace version. Classify candidate edits as:
+For `scope=full`, build the coverage matrix from `references/readme-audit.md`
+and read every included README in full. Otherwise read the affected source
+and current docs. Check Cargo metadata for version claims and `[Unreleased]`
+plus the latest release in `CHANGELOG.md` for release/currentness claims.
+Classify candidate edits as:
 
 - **drift**: a current claim is false, stale, or unverifiable;
 - **noise**: internal milestone language that a user cannot act on;
@@ -57,26 +54,15 @@ the workspace version. Classify candidate edits as:
 Every drift item cites its source of truth. Do not infer shipped behavior from
 a design plan or test name.
 
-When the requested scope contains human-facing prose, read the affected passage
-as a complete proposition before editing it. Preserve its actor, behavior,
-conditions, timing, modality, negative guarantees, exceptions, ownership,
-failure behavior, and consequences. Classify the candidate as keep, add, trim,
-restore, restructure, or defer; a smaller word count is not evidence of a
-better contract.
-
 ## 2. Load only applicable constraints
 
-Read [`references/documentation-checks.md`](references/documentation-checks.md). Use source code,
-Cargo metadata, behavior tests, and the normative spec as authority. Do not
-preserve narrative wording solely because an obsolete prose test once matched
-it.
+Use [`references/documentation-checks.md`](references/documentation-checks.md)
+to select evidence and surface-specific checks.
 
-For human-facing prose or agent-facing instructions, also read
-[`references/prose-contract.md`](references/prose-contract.md). It owns
-semantic judgment, owner-first editing, current-state wording, and the
-exclusions for frozen or derivative material. Load it for the human-facing or
-agent-facing prose selected by the active scope; a targeted scope never expands
-into an automatic repository-wide prose audit.
+For human-facing prose or agent-facing instructions, read
+[`references/prose-contract.md`](references/prose-contract.md) before editing.
+It owns complete proposition review, semantic judgment, edit classifications,
+owner-first editing, and exclusions. A targeted scope stays targeted.
 
 For agent-facing instructions, also apply the project-local contract: keep the
 repository as source of truth, expose completion criteria near the action, and
@@ -89,10 +75,6 @@ regenerating whole files.
 Update each English file and its `*.zh.md` counterpart together. Preserve
 identifiers, CLI flags, provider IDs, schema constants, file paths, and version
 numbers exactly. Translate explanations, not code vocabulary.
-
-`CLAUDE.md` is a symlink to `AGENTS.md`: edit `AGENTS.md` only and never
-`CLAUDE.md` directly. A version bump changes documentation only after
-`opi-release` has changed the workspace version.
 
 If `docs/opi-spec.md` changes, also update `docs/opi-spec.zh.md` and route the
 live `.opi-impl-state.json` hash through the guarded `opi-implement` plan/reinit
@@ -117,11 +99,9 @@ python scripts/opi-doc-check.py
 git diff --check
 ```
 
-The Python check validates current workspace/crate versions, source-derived
-wire-schema versions, EN/ZH counterpart presence for the root/spec and every
-Cargo package under `crates/`, project-local skill frontmatter, Codex sidecars,
-EN/ZH skill-index membership, local links, root-guidance lockstep, UTF-8, and
-selected stale-current-claim exclusions. It does not compile Rust.
+These are the no-compile documentation checks; their claim coverage is defined
+in `references/documentation-checks.md`. Mechanical checks do not establish
+semantic quality.
 
 Run extra verification only when the edited surface requires it:
 
@@ -138,8 +118,4 @@ Do not run the workspace test suite for a prose-only edit.
 
 - No runtime source, manifest, version, commit, push, PR, or release mutation.
 - No weakening behavior tests to accommodate documentation.
-- No resurrection of phase-numbered prose guards.
-- No full-file Chinese regeneration.
-- No claim that a mechanical prose or documentation check proves semantic
-  quality.
 - Report exact checks run and any platform/runtime evidence not exercised.
