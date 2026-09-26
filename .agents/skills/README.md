@@ -75,7 +75,10 @@ flowchart TD
   meaning. Graph confirmation and Git commit authorization are separate gates.
 - `opi-audit` diagnoses without editing production code. Each audit uses the
   latest committed registered sources and never reads prior audit or
-  remediation conclusions.
+  remediation conclusions. Its [scope reader](opi-audit/SKILL.md#2-seal-this-peers-baseline)
+  filters root and Phase ledgers before they enter context; hashes cover the
+  complete committed files. Exposure to historical conclusions requires a
+  fresh audit context.
 - `opi-eval` may repair Opi source within a user-confirmed scope through its
   [repair branch](opi-eval/SKILL.md#user-confirmed-source-repairs), without a
   separate implementation-skill invocation. Source repair and additional live

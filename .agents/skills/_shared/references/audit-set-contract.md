@@ -45,6 +45,11 @@ remediation conclusion, history run, or another peer's staged output. Each
 peer derives requirements and inspects a sealed source export in an
 independent context. Exposure to a sibling conclusion invalidates that peer.
 
+Root and Phase ledgers can embed earlier conclusions. The
+[audit workflow's scope reader](../../opi-audit/SKILL.md#2-seal-this-peers-baseline)
+projects allowed fields before they reach the auditor; baseline digests still
+cover the complete committed bytes. Ledger files are not direct context input.
+
 ## Active index
 
 The index uses schema version 2:

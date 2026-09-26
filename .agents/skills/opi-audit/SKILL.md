@@ -37,9 +37,10 @@ After rotation admission, read:
 4. `../_shared/references/finding-contract.md` for finding records; and
 5. `references/finding-template.md` when rendering the member files.
 
-Then read the committed root state, pointed Phase state, latest committed
-`docs/opi-spec.md`, and every currently registered supplemental source. Load
-implementation files only when a sealed proof obligation points to them.
+Obtain the committed root and pointed Phase scope through the Step 2 reader,
+then read the latest committed `docs/opi-spec.md` and every registered
+supplemental source. Load implementation files only when a sealed proof
+obligation points to them.
 
 ## Context boundary
 
@@ -53,6 +54,13 @@ Keep prior Phase-level audit/remediation content, its Git history, copied
 conclusions, and every sibling peer's staged or installed output outside the
 run. If a broad search exposes any such conclusion, invalidate this peer and
 restart in fresh context.
+
+Ledger files also contain historical conclusions. Read them only through
+`scripts/read_audit_scope.py` and use that projection when inspecting the
+source export; exclude raw ledgers from broad searches and never print their
+full content. Filtering after tool output reaches the auditor cannot restore
+independence. A reader failure is `AUDIT-INCOMPLETE`; do not fall back to a raw
+ledger dump.
 
 ## Workflow
 
@@ -71,10 +79,29 @@ before any member installs.
 
 ### 2. Seal this peer's baseline
 
-Resolve all registered sources from the committed ledgers and hash their exact
-committed bytes as required by the live-set contract. A stored hash mismatch
-is current metadata evidence; missing or malformed registered scope is
-`AUDIT-INCOMPLETE`.
+From the repository root, run:
+
+```text
+python .agents/skills/opi-audit/scripts/read_audit_scope.py --phase <N>
+```
+
+The reader resolves HEAD once; use its full `audit_head` for this run. Pass
+`--head <committed-ancestor>` when the operator selects an explicit baseline.
+It reads committed bytes internally and emits only an allowlisted projection:
+source registrations, the target snapshot pointer, and target-Phase task
+requirements, acceptance scenarios, verification declarations, and planning
+notes needed for minimum-change review. Other Phases, execution status,
+evidence, evaluator summaries, journals, and unknown fields are withheld,
+including nested fields. These declarations are scope, not proof of conformance.
+
+Use its ordered `baseline_sources` and `stored_hash_mismatches`. Baseline hashes
+cover the complete original committed files, including withheld fields, never
+the projection or a reserialized ledger. A stored hash mismatch is current
+metadata evidence; missing or malformed registered scope is `AUDIT-INCOMPLETE`.
+Stored v2 hashes are compared using the ledger's CRLF-normalized convention.
+The projection is read-only input, not a replacement ledger or audit artifact.
+If required scope is absent from the allowlist, stop and repair the reader in
+a separate maintenance context instead of reading excluded fields.
 
 Record the full `audit_head` this peer inspects (the current committed HEAD at
 seal time unless the operator names an explicit committed ancestor), reviewer

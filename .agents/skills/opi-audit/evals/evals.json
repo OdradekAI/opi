@@ -66,6 +66,28 @@
         "Moves only the superseded run's four files to history/<audit-run-id>/ and bumps the index revision.",
         "Does not overwrite, merge, or vote across other members and does not copy files manually."
       ]
+    },
+    {
+      "id": 7,
+      "prompt": "Use $opi-audit phase=19. The committed root ledger contains Phase 17/18 evaluator_summary fields, and the Phase 19 snapshot contains nested execution evidence, verify_runs, scenario statuses, and unfamiliar future fields. How do you read scope and seal baseline hashes without importing those conclusions?",
+      "expected_output": "After rotation, run read_audit_scope.py --phase 19 and consume only its allowlisted projection. Preserve target requirements and planning notes, use its audit_head and exact full-byte baseline_sources, and keep raw ledgers out of tool output and broad searches. Reader failure stops the audit without a raw fallback.",
+      "files": [],
+      "expectations": [
+        "Uses read_audit_scope.py before any root or Phase ledger content reaches context.",
+        "Excludes other Phases and nested execution conclusions without dropping target requirement declarations or minimum-change planning notes.",
+        "Hashes complete committed bytes rather than filtered JSON and uses one sealed audit_head.",
+        "Reports AUDIT-INCOMPLETE if the reader cannot resolve scope; never prints raw ledgers as a fallback."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "During $opi-audit phase=19, a tool accidentally printed Phase 17/18 audit conclusions embedded in the root ledger. Can running the filtered scope reader now make this same audit context independent again?",
+      "expected_output": "No. Report AUDIT-INCOMPLETE: history-contaminated context and restart in a fresh context. Repairing or rerunning the reader cannot remove conclusions already received.",
+      "files": [],
+      "expectations": [
+        "Invalidates the current peer rather than continuing with filtered output.",
+        "Requires a fresh audit context and does not install a report from the contaminated run."
+      ]
     }
   ]
 }

@@ -69,6 +69,9 @@ flowchart TD
   Git commit 授权是两个不同关卡。
 - `opi-audit` 只诊断，不编辑生产代码。每次 audit 只使用最新已提交的登记来源，
   绝不读取先前 audit 或 remediation 结论。
+  [范围读取脚本](opi-audit/SKILL.md#2-seal-this-peers-baseline) 在根台账和 Phase
+  台账进入上下文前过滤字段，哈希仍覆盖完整已提交文件。暴露历史结论后必须换用
+  全新的审计上下文。
 - `opi-eval` 可按[修复分支](opi-eval/SKILL.md#user-confirmed-source-repairs)，
   在用户确认的范围内直接修复 Opi 源码，无需另行调用实现技能。源码修复与
   新增真实试次分别授权，实现台账和 Phase 归属保持不变。
