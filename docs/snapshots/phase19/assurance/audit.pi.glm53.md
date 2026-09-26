@@ -1,114 +1,154 @@
 # Phase 19 Audit
 
-**Audit run ID**: `phase19-pi-glm53-ad67cb8-20260918t101920z`
-**Audit head**: `ad67cb8e1d9e824f270b549e4fdea0072cd7b539`
+**Audit run ID**: `phase19-pi-glm53-e079780-20260926t192024z`
+**Audit head**: `e079780bda6681ec466f79bd15f3248baf0f2eb8`
 **Reviewer ID**: `pi`
 **Model ID**: `glm53`
-**Reviewer identity**: pi (pi-coding-agent terminal coding agent)
-**Reviewer model ID**: `glm53`
-**Model identity source**: operator-declared
-**Independence**: fresh-context-same-family - fresh audit context begun from rotation admission; a prior pi/glm53 member exists in the live set and its content, history, and the sibling codex.gpt6 member were never read or searched
+**Reviewer identity**: pi terminal coding agent (earendil-works pi)
+**Reviewer model ID**: `glm-5.3`
+**Model identity source**: request-config
+**Independence**: fresh-context-same-family — fresh task context; no prior audit, remediation, history, or sibling-peer output read; same reviewer/model family as the superseded `audit.pi.glm53` entry
 **Baseline policy**: latest-committed-spec
 **Verdict**: FAIL
+
+Operator-pinned baseline: the supplied evidence root (`E:\opi\evaluations\phase19-codex-gpt6-e079780-20260926`, acceptance tree `fresh-portable/`) seals `audit_head` `e079780` in its manifest and `identity.json`; `e079780` is a committed ancestor of HEAD and differs from HEAD only in assurance-set files.
 
 ## Baseline Sources
 
 | Path | SHA-256 | Registration note |
 |---|---|---|
-| .opi-impl-state.json | d9b84dd2d85d64f0fa7b3462dbfd00f6f0a464b02393684e70840a9ecdc642a0 | current committed source; spec_files_sha256 entries all match committed bytes |
-| docs/snapshots/phase19/opi-impl-state.json | 35b3378bd902cc976bb348d794dd1b5d3c5f160a58769c3aeb62fea175a7b7a9 | current committed source; 11 tasks recorded passing |
-| docs/opi-spec.md | 1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db | current committed source; parent clauses CTRL-004..007, PRIN/PLACE/GATE mapping read in full |
-| docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md | 5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a | current committed source; English document owns Phase meaning |
-| docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md | d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194 | current committed source; identifiers P19-AC-001..013 and P19-D01..D08 verified in sync |
+| .opi-impl-state.json | c65c10635c4bb8b1754625b94e8a0a15459eef6d65634610ba9b65ea9ba5337e | current committed source (reader projection only) |
+| docs/snapshots/phase19/opi-impl-state.json | 35b3378bd902cc976bb348d794dd1b5d3c5f160a58769c3aeb62fea175a7b7a9 | current committed source (reader projection only) |
+| docs/opi-spec.md | 1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db | current committed source |
+| docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md | 5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a | current committed source |
+| docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md | d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194 | current committed source |
+
+No stored hash mismatches. All seals were written before production inspection; requirement identities were not revised afterwards.
 
 ## Requirement Conformance
 
 | Requirement ID | Criterion | Current evidence | State | Finding IDs |
 |---|---|---|---|---|
-| P19-AC-001 | Independent local directory operation | independent-directory prepare, fixture-free frozen plan, pi-only preparation tests pass; operator workspace outside the checkout | met | |
-| P19-AC-002 | Native result identity binding | import_bound_native_job rejects oracle/wrong-agent/wrong-task/substituted/no-terminal/no-job/two-jobs with typed errors and no seal; all substitution tests pass | met | |
-| P19-AC-003 | TB2.1 native lifecycle grading | six real trials graded by the pinned Harbor grader and verifier-accepted; real-grader correct/incorrect witness not durably evidenced | partially-met | P19-AUD-002 |
-| P19-AC-004 | TB3 declared collection / separate verifier | real traversal by both agents plus deterministic declared/substituted rejections pass; real-grader witness not durably evidenced | partially-met | P19-AUD-002 |
-| P19-AC-005 | DeepSWE committed patch in pristine verifier | real patch binding plus deterministic base-drift/undeclared/nop-zero tests pass; real-grader witness not durably evidenced | partially-met | P19-AUD-002 |
-| P19-AC-006 | Provider projection per Agent | three-API enum with exactly-one credential reference; client matrices (ledger-recorded local-material run), missing-credential rejection, and six real zhipu glm-5.3-flash trials with sealed output-control witness | met | |
-| P19-AC-007 | Resource preflight and explicit scope | full-inventory preflight, unmet-resource rejection without silent shrink, frozen subset, and plan contradiction tests pass | met | |
-| P19-AC-008 | Native-metric-honest reporting | report contract, end-to-end, containment, pairing suites (28 tests) and native metric-meaning/test-count tests pass | met | |
-| P19-AC-009 | Distinct offline verify/recompute/regrade | verify/report/regrade are separate commands; bundle recompute, offline regrade family, and every fail-closed regrade rejection pass with zero Agent/provider invocations | met | |
-| P19-AC-010 | Credentials, supervision, cancellation, recovery | credential settlement removal, ambient-secret-free regrade child, bounded cancellation, retained failed attempts with fresh replacement identities; verifier-accepted | met | |
-| P19-AC-011 | Deterministic credential-free defaults, explicit acceptance | 216 python tests OK and full default suite credential-free with identical results; real acceptance independently identified in docs/audits | met | |
-| P19-AC-012 | Six real trials with native grading | offline verifier re-run at audit_head: accepted:true exit 0, six attributable trials across three families matching the committed acceptance audit | met | |
-| P19-AC-013 | Independent placement, recorded 0.x changes | no internal crate dependencies either direction, publish=false, pi-only tests pass, bilingual READMEs, comprehensive Unreleased entries, doc-check PASS | met | |
-| P19-EXIT-GATES | Repository verification union | doc-check PASS, fmt clean, clippy(-p) clean, but cargo test -p opi-eval fails on a faithful checkout (2 exec-bit failures); workspace-wide test/doc-test/rustdoc not run (fail-dominant crate failure already establishes the union broken) | not-met | P19-AUD-001 |
+| P19-AC-002 | P19-AC-002 §7; 19.1 | `import_bound_native_job` + 7-mode substitution test (exact failure kinds, no seal) | met | — |
+| P19-AC-003-native | P19-AC-003 §7; 19.1 | auditor-run `native_tb21_artifact_witness --ignored --exact`: pass | met | — |
+| P19-AC-008-outcome | P19-AC-008 §7; 19.1 | `native_trial_outcome_classifies_every_terminal_shape` + report consumers | met | — |
+| P19-AC-006-fixture | P19-AC-006 §7; 19.2 | auditor-run protocol/turn-budget/output-control client matrices: pass | met | — |
+| P19-AC-010-credentials | P19-AC-010 §7; 19.2 | `authority_boundaries` suite; sealed receipts `credential-material:removed` | met | — |
+| P19-AC-004-native | P19-AC-004 §7; 19.3 | auditor-run `native_tb3_artifact_witness --ignored --exact`: pass | met | — |
+| P19-AC-005-native | P19-AC-005 §7; 19.4 | auditor-run `native_deepswe_patch_witness --ignored --exact`: pass | met | — |
+| P19-AC-001-prepare | P19-AC-001 §7; 19.5 | `independent_directory_prepare`, `fail_closed_cli`, 228 python tests | met | — |
+| P19-AC-007-material | P19-AC-007 §7; 19.5 | `local_material_integrity` + package/module drift rejection tests | met | — |
+| P19-AC-007-selection | P19-AC-007 §7; 19.6 | `full_inventory_preflight`, `frozen_subset_execution` | met | — |
+| P19-AC-001-plan | P19-AC-001 §7; 19.6 | `frozen_subset_execution` (plan+run from independent dir); declared filter drifted | met | P19-AUD-003 |
+| P19-AC-008 | P19-AC-008 §7; 19.7 | report suites + auditor-run real-data reports (honest coverage) | met | — |
+| P19-AC-009-verify | P19-AC-009 §7; 19.7 | `bundle_recompute` etc. + auditor-run `verify`/`report` on 3 real family roots: exit 0 | met | — |
+| P19-AC-009-regrade | P19-AC-009 §7; 19.8 | `native_offline_regrade` (3 families) in default suite; declared flags drifted; long witness variant incomplete | met | P19-AUD-003, P19-AUD-004 |
+| P19-AC-010-lifecycle | P19-AC-010 §7; 19.9 | cancellation/recovery suites + auditor-run `native_owned_resource_cancellation` | met | P19-AUD-005 |
+| P19-AC-011 | P19-AC-011 §7; 19.10 | `fail_closed_cli`; 228 python tests deterministic | met | — |
+| P19-AC-013 | P19-AC-013 §7; 19.10 | no internal deps, publish=false, package list, bilingual READMEs, Unreleased entries | met | — |
+| P19-AC-001-live | P19-AC-001 §7; 19.11 | workflow assembly + offline reconstruction evidenced; acceptance verifier exits 2 | partially-met | P19-AUD-001 |
+| P19-AC-003-live | P19-AC-003 §7; 19.11 | pi trial passes acceptance predicate; opi trial stream truncated (trace manifest sealed) | partially-met | P19-AUD-001 |
+| P19-AC-004-live | P19-AC-004 §7; 19.11 | both TB3 trials crossed verifier boundary; pi trial invalid-execution | partially-met | P19-AUD-001 |
+| P19-AC-005-live | P19-AC-005 §7; 19.11 | both DeepSWE trials graded natively; pi trial invalid-execution | partially-met | P19-AUD-001 |
+| P19-AC-006-live | P19-AC-006 §7; 19.11 | output-control snapshots sealed in all six bundles; 5/6 live streams truncated | partially-met | P19-AUD-001, P19-AUD-002 |
+| P19-AC-012 | P19-AC-012 §7; 19.11 | acceptance verifier rejects root; two pi trials invalid-execution; 5/6 streams truncated | not-met | P19-AUD-001, P19-AUD-002 |
 
 ## Standards Review
 
-Workspace hygiene at the sealed head is strong: clean worktree, edition-2024 manifests, no internal dependency in either direction for opi-eval, publish=false, and error typing via thiserror throughout the inspected modules. Repository standards are violated in one durable way recorded as P19-AUD-001: executable content committed without the executable bit (one regression at c8d6dea on a previously-correct file, one since introduction) is invisible on the development mount, which silently downgraded every recorded verification run that included those two tests.
+opi-eval declares no internal workspace dependencies, `publish = false`, edition/rust-version via workspace: Independent Companion placement holds (PLACE-001..004, CTRL-007). `cargo clippy -p opi-eval --all-targets -- -D warnings` and `cargo fmt --check -p opi-eval` are clean at the sealed head; `scripts/opi-doc-check.py` passes. Zero TODO/FIXME/todo! markers in `crates/opi-eval/src`. CHANGELOG `[Unreleased]` records the deliberate 0.x schema cutover (material/5, plan/2, report/2, regrade/2, prepare args) with updated callers — no compatibility shims. Bilingual READMEs ship in the package list.
 
 ## Spec Review
 
-The 13 acceptance criteria are implemented with unusual care on the binding side: the native result reader enforces agent/task/model/config-selection identity, oracle exclusion through the eval key, stale-job defense, declared-artifact manifest equality, and delivered-artifact byte cross-checks, each as typed rejections with no seal. The reporting, offline-operations, and supervision criteria are covered by discriminating tests that pass at the sealed head. Two spec-level gaps remain: the verification-union claim does not survive a faithful checkout (P19-AC/EXIT-GATES), and the correct/incorrect artifact-witness routes for the three benchmark families have no durable execution evidence, so the 13/13 exit closure overstates AC-003/004/005 (P19-AUD-002).
+Deterministic obligations (19.1–19.10) trace to typed production seams and discriminating tests (see table). The live obligations (19.11) fail on the supplied evidence: `verify-local-acceptance.py` exits 2. The product's own reporting behaves conformantly under CTRL-005/CTRL-006 — invalid trials are classified `invalid-execution`, pairs marked non-comparable, no invented scores, offline verify/report succeed on every family root — but P19-AC-012 requires six *valid* real trials and the root carries at most four (two pi trials are product-classified invalid; five of six event streams are cap-truncated). Per the spec ("Until actual evidence is present and verified, P19-AC-012 remains not met and Phase exit is unavailable"), Phase exit evidence is unavailable at this head.
 
 ## Security, Invariants, Integration, Test Quality, and Residuals
 
-Security/authority: credential references are exactly-one and fail-closed; settlement removes actual credentials; regrade children run without ambient secrets; canary gating blocks sealing; grader inputs are restricted to declared artifacts. Invariants/integration: typed lifecycle states distinguish valid zero, invalid-execution, cancelled, and effect-unknown; verifier timeout stays Unknown without manufacturing a score; run roots admit one owner. Test quality: assertions observe behavior (typed failure kinds, bundle absence, byte digests), and the acceptance verifier was independently re-executed during this audit. Residuals: nine ignored tests exist; the ledger records explicit local-material runs for the client matrix and the 19.9 Docker witness, and the three family witnesses plus stage-deadline/verifier-only-regrade filters are exactly the unevidenced set named in P19-AUD-002. The acceptance audit honestly discloses a manifest exit-code correction (attempt-3 stale exits corrected to the final batch, verifier re-accepted).
+- **Security/authority**: credential canaries, env-marker filtering, fail-closed CLI, and credential-material removal are test-enforced (`authority_boundaries`, `fail_closed_cli`) and visible in real receipts. No secret-shaped content crossed into my companion invocations (verifier filters credential markers from the spawned environment).
+- **Invariants**: native binding (`NativeBindingError`) rejects every substitution class even on exit 0; the single classifier lives at the `run_trial` join; reward domains are typed.
+- **Integration**: the one residual integration defect is the failure-path container orphaning (P19-AUD-005): harbor compose-down fails after its temp project dir is removed and the leaked environment container carries no trial-owned label, so owned-container cleanup cannot see it. Passing/cancelling paths leave zero containers (auditor-verified `docker ps -aq` empty after each run).
+- **Test quality**: 328 Rust tests pass (0 failed, 9 ignored); I additionally ran seven of the nine ignored native tests to green (tb21/tb3/deepswe witnesses, protocol/turn-budget/output-control client matrices, owned-resource cancellation) against the operator's pinned materials. Two ledger-declared verification commands are vacuous as written (P19-AUD-003). The two longest ignored tests panic opaquely on single-family material and exceeded the audit time budget (P19-AUD-004).
+- **Residuals**: no dead branches or duplicate grading paths found; one classifier, one supervisor, one verifier-only regrade entry.
 
 ## Minimum-change Conformance
 
-| Task | Recorded reuse/surface/ceiling vs current code | Status |
-|---|---|---|
-| 19.1 | import_bound_native_job, NativeTrialBinding, RunBundle seal, oracle-as-diagnostic all present as recorded | conforming |
-| 19.2 | named connections, three-API enum, exactly-one credential reference; fixed scripted/OpenAI-only projection gone from production config (remnants only in #[cfg(test)]) | conforming |
-| 19.3 | terminal_bench_30.rs + task_lifecycle.rs declared collect/separate verifier as recorded | conforming |
-| 19.4 | deepswe.rs committed-patch binding and Pier base identity as recorded | conforming |
-| 19.5 | surfaces match, but its scoped-smoke PASS record includes supervised_acquisition_runs_the_pinned_materializer, which fails on faithful checkouts (P19-AUD-001) | drifted |
-| 19.6 | frozen plan, subset selection, resource checks as recorded | conforming |
-| 19.7 | verify/report split and regrade handoff to 19.8 as recorded | conforming |
-| 19.8 | NativeRegrader with fail-closed rejections as recorded | conforming |
-| 19.9 | supervisor/lifecycle ownership, recorded explicit Docker-witness run consistent with the ignored filter | conforming |
-| 19.10 | thin workflows, offline acceptance verifier, deterministic CI as recorded | conforming |
-| 19.11 | offline verifier acceptance reproduces (accepted:true), but the recorded smoke-full/workspace-test PASS does not reproduce on a faithful checkout (P19-AUD-001) | drifted |
+`reuse_search`/`surface_necessity`/`simplification_ceiling` are not recorded in the ledger projection (`not-recorded`); I performed direct current inspection instead. All 11 tasks: `conforming` — each task's owned paths exist at the head, changes trace to its scenario obligations, no speculative abstraction/feature flag was added, the 0.x cutover replaced (not appended) the former default/oracle scoring path, and no second classifier or competing grading route remains. 19.11's code surface (the offline verifier) conforms; its *evidence* outcome is the not-met requirement above, which is a finding, not a scope drift.
 
 ## Findings
 
-### P19-AUD-001: Non-executable script modes break the default test suite on faithful checkouts
-
-- Axis: test-quality
-- Severity: Major
-- Conformance effect: blocks
-- Requirement IDs: P19-EXIT-GATES
-- Claim: Two scripts that production paths execute directly are committed with git mode 100644, so `cargo test -p opi-eval --all-targets` (and therefore the workspace union and the CI test job) fails on any checkout whose filesystem honors git modes; recorded phase-exit gate PASSes were masked by the all-executable DrvFs working tree.
-- Evidence: scripted-provider.py lost 100755 at c8d6dea (R095 rename) and is direct-executed by the conformance helper (src/cli/conformance.rs:338), producing provider-fixture-response-drift with met:false; tests/fixtures/external-locks/local-cache/scripts/materialize-external-locks.sh is 100644 since introduction and is direct-executed by runner::prepare (src/runner/prepare.rs:930), failing supervised acquisition with os error 13; both failures reproduced twice in the sealed ext4 export plus a direct CLI reproduction; /mnt/d DrvFs shows both files rwxrwxrwx regardless of git mode.
-- Refutation attempted: no chmod step exists in any workflow; actions/checkout preserves 644; both call sites are direct exec, not interpreter-invoked; `python3 <script>` produces the exact expected response bytes, isolating mode as the sole cause; CI ci.yml runs the affected tests on ubuntu-latest and macos-latest where they cannot pass in this state.
-- Suggested closure: restore the executable bit on both files (git update-index --chmod=+x) or route both invocations through the interpreter, then re-run the workspace test union on a mode-faithful filesystem and record the result.
-
-### P19-AUD-002: No durable evidence that per-family correct/incorrect artifact witnesses ran through the real native graders
+### P19-AUD-001: Six-trial local acceptance evidence is rejected by the offline verifier
 
 - Axis: spec
 - Severity: Major
 - Conformance effect: blocks
-- Requirement IDs: P19-AC-003, P19-AC-004, P19-AC-005
-- Claim: The registered mechanical verification routes for P19-AC-003/004/005 require a controlled correct/incorrect artifact witness through the same production handoff and the real pinned native grader; no executed witness run is recorded anywhere in the committed handoff, the operator evidence root, or CI dispatch records, so the 13/13 phase-exit closure overstates these criteria.
-- Evidence: native_tb21_artifact_witness / native_tb3_artifact_witness / native_deepswe_patch_witness are ignored filters with no recorded execution; the operator evidence-root manifest contains zero witness/conformance/oracle entries; the CI native-smoke workflow contains the witness steps but is manually dispatched with no committed dispatch or receipt record; the six real trials grade tb21 1/1 and tb30/deepswe 0/0, giving no within-family correct/incorrect contrast; ledger tasks 19.1/19.3/19.4 themselves recorded these witnesses as open pending pinned material, and 19.11 closed the criteria via the six trials alone.
-- Refutation attempted: searched the phase19 ledger, both acceptance audit documents, the operator workspace (runs, reports, material, output-control, evidence root), and all committed smoke fixtures and workflows for witness-execution records; deterministic stand-in-verifier witnesses pass and prove the binding path, but they do not exercise the pinned real graders, and grader-sensitivity to artifact variation therefore remains unproven by the real graders.
-- Suggested closure: run the three family witness filters with the pinned material (or dispatch the native-smoke workflow) and commit the redacted witness records, then re-derive AC-003/004/005 closure from that evidence.
+- Requirement IDs: P19-AC-012, P19-AC-001-live, P19-AC-003-live, P19-AC-004-live, P19-AC-005-live, P19-AC-006-live
+- Claim: the supplied acceptance root does not verify; fewer than six valid real trials exist; Phase exit evidence is unavailable at `e079780`.
+- Evidence: pi DeepSWE/TB3 trials sealed with `failure_kind=import-evidence-incomplete`, `stdout_truncated=true`, stdout exactly 1048576 bytes; run reports classify both pi trials `invalid-execution` with non-comparable pairs; 5/6 streams truncated; `attempt-history.json` shows prior attempts with the same causes and no valid replacements.
+- Refutation attempted: ran the built Companion `verify`/`report` on all three family roots (all exit 0 — bundles and offline reconstruction are sound, so the rejection is not a bundle-integrity artifact); replayed the verifier's agent-observation predicate per trial (tb21-pi passes; the failures are exactly truncation/terminal-fact violations, not verifier over-strictness for the pi trials the product itself classifies invalid); confirmed the manifest's six-trial/binding structure is otherwise intact. The product's own invalid-execution classification defeats any claim that the two pi trials are valid real trials.
+- Suggested closure: complete six valid real trials (after P19-AUD-002) and re-submit a redacted root that `verify-local-acceptance.py` accepts.
+
+### P19-AUD-002: Pinned 1 MiB agent stdout capture ceiling invalidates real trials on TB3/DeepSWE
+
+- Axis: invariants
+- Severity: Major
+- Conformance effect: blocks
+- Requirement IDs: P19-AC-012, P19-AC-006-live
+- Claim: the repo-pinned 1 MiB agent event-stream cap structurally truncates real Agent streams on the selected TB3/DeepSWE tasks; the pi adapter then fail-closes the trial to invalid-execution, so the acceptance loop cannot complete without a repository change.
+- Evidence: `profiles/agents/pi.toml:28` / `profiles/agents/opi.toml:25` (`stdout_cap_bytes = 1048576`), embedded via `include_str!`; `agent/pi.rs` `parse_stream` rejects truncated streams as `import-evidence-incomplete`; five of six real streams are exactly 1048576 bytes.
+- Refutation attempted: searched for a runtime override of the agent spawn caps (none — `SpawnSpec` caps come only from the embedded declarative profile); considered that opi's authoritative evidence is its on-disk trace manifest (true, and why opi trials still grade) — but the pi event stream *is* the trajectory evidence, so truncation loses the required binding for pi; the fail-closed classification itself is conformant, the ceiling is the defect.
+- Suggested closure: raise the agent stream caps for real trials and/or stream pi events to a file artifact instead of a bounded stdout capture, then re-run acceptance.
+
+### P19-AUD-003: Ledger-declared verification filters drifted to vacuous commands
+
+- Axis: test-quality
+- Severity: Minor
+- Conformance effect: advisory
+- Requirement IDs: P19-AC-001-plan, P19-AC-009-regrade
+- Claim: `independent_plan_run` names no existing test, and `native_offline_regrade` is declared with `--ignored` although the test is no longer ignored; both declared commands select zero tests as written.
+- Evidence: filter runs report `0 passed; N filtered out`; the behaviors are covered by `frozen_subset_execution`, `hermetic_paired_group_runs_end_to_end`, and the default-suite `native_offline_regrade`.
+- Suggested closure: correct the ledger's verification routes in the owning workflow.
+
+### P19-AUD-004: Witness-material helper panics opaquely on single-family material; two long ignored tests lack saved run evidence
+
+- Axis: test-quality
+- Severity: Minor
+- Conformance effect: advisory
+- Requirement IDs: P19-AC-009-regrade
+- Claim: `native_witness_material.rs` unwraps the three-family benchmark map without a diagnostic, so single-family material panics with a bare `Option::unwrap()` message; `native_verifier_only_regrade_witness` exceeded a 1500 s auditor timeout and no preserved operator log was located for either long test.
+- Evidence: panic at `tests/support/native_witness_material.rs:97` under tb21-only material; timed-out auditor run under combined material.
+- Suggested closure: fail with a named error listing missing families; preserve a run log for the two long ignored tests or bound their material requirements.
+
+### P19-AUD-005: Failed native witness runs orphaned task environment containers
+
+- Axis: integration
+- Severity: Minor
+- Conformance effect: advisory
+- Requirement IDs: P19-AC-010-lifecycle
+- Claim: on the failed nop-witness attempts, harbor compose-down failed after its temp project directory removal and the environment container survived; it carries no opi-eval trial-owned label, so owned-container cleanup reports none-found.
+- Evidence: two captured containers `Status=Running` after the failed attempts (`native-tb21-nop-cleanup.json`, `native-tb21-nop-retry-cleanup.json`); compose-down `getwd: no such file or directory` in the preserved stderr; both later removed manually.
+- Suggested closure: surface runner-reported compose-down failures as retained cleanup diagnostics and consider labeling or sweeping task-environment containers created under the trial root.
 
 ## Verification Commands
 
 | Command | Result | Requirement/finding |
 |---|---|---|
-| python .agents/skills/_shared/scripts/validate_assurance_artifact.py rotation docs/snapshots/phase19 | PASS | rotation admission |
-| git archive ad67cb8 to ext4 export; committed-source hash comparison against .opi-impl-state.json | match | baseline seal |
-| python3 scripts/opi-doc-check.py (export) | PASS | P19-AC-013, P19-EXIT-GATES |
-| cargo test -p opi-eval --all-targets --no-fail-fast (export) | FAIL: 307 passed, 2 failed | P19-EXIT-GATES, P19-AUD-001 |
-| cargo clippy -p opi-eval --all-targets -- -D warnings (export) | PASS | P19-EXIT-GATES |
-| cargo fmt --check --all (export) | PASS | P19-EXIT-GATES |
-| python3 -m unittest discover -s crates/opi-eval/scripts -p 'test_*.py' (export) | OK (216, 1 skip) | P19-AC-011 |
-| python3 crates/opi-eval/scripts/verify-local-acceptance.py --root <operator evidence root> --companion <operator bin> (from export) | accepted:true, exit 0 | P19-AC-012 |
-| opi-eval conformance --suite agent --adapter opi --case provider-fixture (export binary, direct) | exit 1, provider-fixture-response-drift | P19-AUD-001 reproduction |
-| git ls-files -s on both scripts | 100644 both | P19-AUD-001 |
-| cargo test --workspace / --doc / cargo doc --workspace | NOT RUN (fail-dominant crate failure already establishes the union broken) | P19-EXIT-GATES limitation |
-| git diff --check | NOT RUN (clean worktree at seal; vacuous) | P19-EXIT-GATES limitation |
+| `python3 .agents/skills/_shared/scripts/validate_assurance_artifact.py rotation docs/snapshots/phase19` | PASS | admission |
+| `python3 .agents/skills/opi-audit/scripts/read_audit_scope.py --phase 19 --head e079780…` | PASS (no mismatches) | baseline seal |
+| `cargo test -p opi-eval --all-targets` (sealed export) | PASS 328/0/9 ignored | 19.1–19.10 requirements |
+| `cargo test -p opi-eval --test native_driver native_tb21_artifact_witness -- --ignored --exact` | PASS (235.54s) | P19-AC-003-native |
+| `cargo test -p opi-eval --test native_driver native_tb3_artifact_witness -- --ignored --exact` | PASS (675.32s) | P19-AC-004-native |
+| `cargo test -p opi-eval --test native_driver native_deepswe_patch_witness -- --ignored --exact` | PASS (327.56s) | P19-AC-005-native |
+| `cargo test -p opi-eval --test native_driver native_protocol_client_matrix -- --ignored --exact` | PASS (222.45s) | P19-AC-006-fixture |
+| `cargo test -p opi-eval --test native_driver native_client_turn_budgets -- --ignored --exact` | PASS (27.45s) | P19-AC-006-fixture |
+| `cargo test -p opi-eval --test native_driver native_output_control_client_matrix -- --ignored --exact` | PASS (18.99s) | P19-AC-006-fixture |
+| `cargo test -p opi-eval --test native_driver native_owned_resource_cancellation -- --ignored --exact` | PASS (2.87s) | P19-AC-010-lifecycle |
+| `python3 -m unittest discover -s crates/opi-eval/scripts -p 'test_*.py'` | PASS 228 (1 skip) | P19-AC-011, P19-AC-001-prepare |
+| `python3 scripts/opi-doc-check.py` | PASS | P19-AC-013 |
+| `cargo clippy -p opi-eval --all-targets -- -D warnings` / `cargo fmt --check -p opi-eval` | clean | standards |
+| `cargo metadata --no-deps` / `cargo package -p opi-eval --list --allow-dirty` | PASS (185 files) | P19-AC-013 |
+| `python3 crates/opi-eval/scripts/verify-local-acceptance.py --root <fresh-portable> --out <audit-out> --companion <built opi-eval>` | **REJECTED (exit 2)** | P19-AUD-001, P19-AC-012 |
+| `opi-eval verify` / `opi-eval report` on the three `fresh-portable/runs/<family>` roots | PASS (exit 0 each) | P19-AC-009-verify, AC-008 |
+| `cargo test -p opi-eval --test native_driver native_verifier_only_regrade_witness -- --ignored --exact` | NOT COMPLETED (>1500s) | P19-AUD-004 |
 
 ## Verdict Rationale
 
-Two mandatory requirements are not fully met at the sealed head: P19-EXIT-GATES is not-met because the default opi-eval test suite fails on any mode-faithful checkout (P19-AUD-001, Major, blocking), and P19-AC-003/004/005 are partially-met because their registered witness routes lack durable real-grader execution evidence (P19-AUD-002, Major, blocking). The remaining eleven criteria are met with discriminating, credential-free evidence, including an independently re-executed offline acceptance verification of the six real trials. The member verdict is therefore FAIL.
+Mandatory requirement `P19-AC-012` is `not-met` and five live scenarios are `partially-met` because the supplied six-trial acceptance evidence is rejected by the declared offline verifier (root cause: the repo-pinned 1 MiB agent stream cap truncates five of six real streams and invalidates the two pi TB3/DeepSWE trials). Every deterministic 19.1–19.10 obligation is met with current, auditor-re-run evidence. With a mandatory requirement not met, the member verdict is FAIL.

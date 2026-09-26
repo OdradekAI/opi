@@ -1,0 +1,38 @@
+{
+  "schema_version": 3,
+  "audit_run_id": "phase19-pi-glm53-ad67cb8-20260918t101920z",
+  "phase": 19,
+  "audit_head": "ad67cb8e1d9e824f270b549e4fdea0072cd7b539",
+  "reviewer_id": "pi",
+  "reviewer_identity": "pi (pi-coding-agent terminal coding agent)",
+  "model_id": "glm53",
+  "reviewer_model_id": "glm53",
+  "model_identity_source": "operator-declared",
+  "independence": "fresh-context-same-family",
+  "baseline_policy": "latest-committed-spec",
+  "baseline_sources": [
+    {
+      "path": ".opi-impl-state.json",
+      "sha256": "d9b84dd2d85d64f0fa7b3462dbfd00f6f0a464b02393684e70840a9ecdc642a0"
+    },
+    {
+      "path": "docs/snapshots/phase19/opi-impl-state.json",
+      "sha256": "35b3378bd902cc976bb348d794dd1b5d3c5f160a58769c3aeb62fea175a7b7a9"
+    },
+    {
+      "path": "docs/opi-spec.md",
+      "sha256": "1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md",
+      "sha256": "5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md",
+      "sha256": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
+    }
+  ],
+  "requirements_sha256": "9713bac1875426c726105fa65062b2515cb927fb31836e851636d2a7f51d1f46",
+  "findings_sha256": "fa4d61c10efa6cb9d68146fab9f5f28eaf970393f941ba97119a1c68e5fd8301",
+  "verdict": "FAIL"
+}

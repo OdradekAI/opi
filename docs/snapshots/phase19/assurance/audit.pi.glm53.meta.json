@@ -1,19 +1,11 @@
 {
-  "schema_version": 3,
-  "audit_run_id": "phase19-pi-glm53-ad67cb8-20260918t101920z",
-  "phase": 19,
-  "audit_head": "ad67cb8e1d9e824f270b549e4fdea0072cd7b539",
-  "reviewer_id": "pi",
-  "reviewer_identity": "pi (pi-coding-agent terminal coding agent)",
-  "model_id": "glm53",
-  "reviewer_model_id": "glm53",
-  "model_identity_source": "operator-declared",
-  "independence": "fresh-context-same-family",
+  "audit_head": "e079780bda6681ec466f79bd15f3248baf0f2eb8",
+  "audit_run_id": "phase19-pi-glm53-e079780-20260926t192024z",
   "baseline_policy": "latest-committed-spec",
   "baseline_sources": [
     {
       "path": ".opi-impl-state.json",
-      "sha256": "d9b84dd2d85d64f0fa7b3462dbfd00f6f0a464b02393684e70840a9ecdc642a0"
+      "sha256": "c65c10635c4bb8b1754625b94e8a0a15459eef6d65634610ba9b65ea9ba5337e"
     },
     {
       "path": "docs/snapshots/phase19/opi-impl-state.json",
@@ -32,7 +24,15 @@
       "sha256": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
     }
   ],
-  "requirements_sha256": "9713bac1875426c726105fa65062b2515cb927fb31836e851636d2a7f51d1f46",
-  "findings_sha256": "fa4d61c10efa6cb9d68146fab9f5f28eaf970393f941ba97119a1c68e5fd8301",
+  "findings_sha256": "f2e7acaffe724a0fa6dbf28ca767b163a3cd664a905a17e6b17924d1fedd582c",
+  "independence": "fresh-context-same-family",
+  "model_id": "glm53",
+  "model_identity_source": "request-config",
+  "phase": 19,
+  "requirements_sha256": "242cf8169780e7758833bad3f8e5f32f81f69884d21a6243adffd1be8df64332",
+  "reviewer_id": "pi",
+  "reviewer_identity": "pi terminal coding agent (earendil-works pi)",
+  "reviewer_model_id": "glm-5.3",
+  "schema_version": 3,
   "verdict": "FAIL"
 }
