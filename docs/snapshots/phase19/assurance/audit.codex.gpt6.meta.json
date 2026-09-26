@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
-  "audit_run_id": "phase19-codex-gpt6-d915e4a-20260918t084558z",
+  "audit_run_id": "phase19-codex-gpt6-e079780-20260926t093335z",
   "phase": 19,
-  "audit_head": "d915e4a22509c0f60c2651dbccfd054f0abc73d4",
+  "audit_head": "e079780bda6681ec466f79bd15f3248baf0f2eb8",
   "reviewer_id": "codex",
   "reviewer_identity": "Codex",
   "model_id": "gpt6",
@@ -13,7 +13,7 @@
   "baseline_sources": [
     {
       "path": ".opi-impl-state.json",
-      "sha256": "d9b84dd2d85d64f0fa7b3462dbfd00f6f0a464b02393684e70840a9ecdc642a0"
+      "sha256": "c65c10635c4bb8b1754625b94e8a0a15459eef6d65634610ba9b65ea9ba5337e"
     },
     {
       "path": "docs/snapshots/phase19/opi-impl-state.json",
@@ -32,7 +32,7 @@
       "sha256": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
     }
   ],
-  "requirements_sha256": "b6a22c22c405752ef9ed51e55944a01745da6dfb64f24986fd8788b704cd45d1",
-  "findings_sha256": "01c32b1bc87f7a4a3cb42c965b817f2c4c6d229343303673ddeb149d3e0b77ac",
+  "requirements_sha256": "50f4438f43331ae2e7a5965094c0f97997ffa520d44d192b59ef8970247f50da",
+  "findings_sha256": "7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8",
   "verdict": "FAIL"
 }
