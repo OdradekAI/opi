@@ -1469,7 +1469,6 @@
     "19": {
       "completed_at": "2026-09-17T18:00:00+08:00",
       "exit_criteria_met": true,
-      "evaluator_summary": "Phase 19 exit passed: 13/13 criteria met (P19-AC-001..013) via sequential six-lens audit (L-F1..L-F6, degraded single-reviewer path); two non-blocking human flags (degraded independence, consolidated-commit provenance); five shared decisions closed; opi-eval 273/0 + smoke full PASSED on 4bf5fc0; offline verifier accepted six-trial evidence root; artifact audit PASS",
       "snapshot_path": "docs/snapshots/phase19/opi-impl-state.json",
       "task_summary": [
         {
