@@ -678,7 +678,7 @@ class PiAgent(_OpiEvalAgent):
 
 def _regrade_manifest(root: Path) -> str:
     rows = []
-    for path in sorted(root.rglob("*")):
+    for path in sorted(root.rglob("*"), key=lambda path: path.relative_to(root).as_posix()):
         mode = path.lstat().st_mode
         if stat.S_ISREG(mode):
             rows.append(f"{path.relative_to(root).as_posix()}\n{hashlib.sha256(path.read_bytes()).hexdigest()}\n")

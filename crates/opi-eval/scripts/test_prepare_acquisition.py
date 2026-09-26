@@ -55,7 +55,7 @@ def archive(path, entries):
 
 
 class Fixture:
-    def __init__(self, root):
+    def __init__(self, root, runtime_case=None):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True)
         self.cache = self.root / "cache"
@@ -84,6 +84,14 @@ class Fixture:
         pi = self.root / "sources/pi"
         for name in ("package.json", "package-lock.json", "packages/ai/package.json", "packages/coding-agent/package.json"):
             write(pi / name, json.dumps({"name": "fixture", "version": "0.84.1"}))
+        runtime_versions = {"@earendil-works/chord": "0.84.1", "@silvia-odwyer/photon-node": "0.3.4", "jiti": "2.7.0", "esbuild": "0.28.1", "@esbuild/linux-x64": "0.28.1"}
+        runtime_lock = {"node_modules/" + name: {"version": version} for name, version in runtime_versions.items()}
+        runtime_lock["node_modules/@earendil-works/chord"] = {"link": True, "resolved": "packages/chord"}
+        runtime_lock["packages/chord"] = {"version": "0.84.1", "dependencies": {"esbuild": "0.28.1"}}
+        write(pi / "package-lock.json", json.dumps({"packages": runtime_lock}))
+        write(pi / "packages/chord/package.json", json.dumps({"name": "@earendil-works/chord", "version": "0.84.1", "dependencies": {"esbuild": "0.28.1"}}))
+        write(pi / "packages/chord/README.md", "chord runtime\n")
+        write(pi / "LICENSE", "MIT fixture license\n")
         integrity = "sha512-" + base64.b64encode(hashlib.sha512(data.read_bytes()).digest()).decode()
         write(pi / "packages/coding-agent/npm-shrinkwrap.json", json.dumps({"packages": {"node_modules/@earendil-works/pi-ai": {"version": "0.84.1", "integrity": integrity}}}))
         write(pi / ".gitignore", "node_modules/\npackages/*/dist/\npackages/ai/src/providers/data/\n")
@@ -92,7 +100,24 @@ class Fixture:
             write(pi / "packages/coding-agent" / name, "pinned resource\n")
         pi_commit = commit(pi)
         subjects.append({"id": "pi", "kind": "agent-source", "repository_url": str(pi), "commit": pi_commit, "blobs": [blob(pi, name) for name in ("package-lock.json", "packages/coding-agent/npm-shrinkwrap.json", "packages/coding-agent/package.json")], "model_data_archive": {"package": "@earendil-works/pi-ai", "version": "0.84.1", "url": data.as_uri(), "sha256": sha(data)}})
-        node = "#!/bin/sh\necho v22.19.0\n"
+        node = f'''#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+if args == ["--version"]:
+    print("v22.19.0")
+else:
+    assert "NODE_PATH" not in os.environ and "NODE_OPTIONS" not in os.environ
+    assert "API_KEY" not in os.environ
+    assert pathlib.Path.home() != pathlib.Path({str(self.root)!r})
+    assert pathlib.Path.cwd().name != "pi-source"
+    with open({str(self.root / 'runtime-checks.jsonl')!r}, "a") as output:
+        output.write(json.dumps(args) + "\\n")
+    if args[-1] == "--version":
+        if {runtime_case!r} == "startup-failure": sys.exit(9)
+        print("wrong-version" if {runtime_case!r} == "startup-version" else "0.84.1")
+    elif {runtime_case!r} == "import-failure":
+        sys.exit(8)
+'''
         npm = f'''#!/usr/bin/env python3
 import json, pathlib, sys
 args = sys.argv[1:]
@@ -101,11 +126,49 @@ if args == ["--version"]:
 elif args[0] == "ci":
     pathlib.Path("node_modules").mkdir()
     pathlib.Path("node_modules/pinned").write_text("locked dependencies")
+    for name, version in {runtime_versions!r}.items():
+        target = pathlib.Path("node_modules") / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if name == "@earendil-works/chord":
+            target.symlink_to("../../packages/chord")
+        else:
+            target.mkdir()
+            (target / "package.json").write_text(json.dumps({{"name": name, "version": version}}))
+            (target / "LICENSE").write_text("locked license")
+            (target / "runtime.js").write_text("locked runtime")
+            if name == "@esbuild/linux-x64":
+                (target / "bin").mkdir()
+                binary = target / "bin/esbuild"
+                binary.write_text("native executable")
+                binary.chmod(0o755)
 elif args == ["run", "build:offline"]:
     assert pathlib.Path("packages/ai/src/providers/data/models.json").read_text() == "{{}}\\n"
     path = pathlib.Path("packages/coding-agent/dist/bundle/cli.js")
     path.parent.mkdir(parents=True)
     path.write_text("// pinned fixture bundle")
+    chord = pathlib.Path("packages/chord/dist")
+    chord.mkdir()
+    (chord / "index.js").write_text("// built chord")
+    case = {runtime_case!r}
+    if case and case.startswith("missing:"):
+        import shutil
+        target = pathlib.Path("node_modules") / case.split(":", 1)[1]
+        if target.is_symlink(): target.unlink()
+        else: shutil.rmtree(target)
+    elif case in ("identity", "chord-identity"):
+        target = pathlib.Path("node_modules/jiti/package.json" if case == "identity" else "packages/chord/package.json")
+        doc = json.loads(target.read_text())
+        doc["version"] = "0.0.0"
+        target.write_text(json.dumps(doc))
+    elif case in ("workspace-escape", "workspace-target"):
+        target = pathlib.Path("node_modules/@earendil-works/chord")
+        target.unlink()
+        target.symlink_to("/tmp" if case == "workspace-escape" else "../../packages/ai")
+    elif case == "nested-link":
+        pathlib.Path("node_modules/jiti/escape").symlink_to("/etc/passwd")
+    elif case == "special-file":
+        import os
+        os.mkfifo("packages/chord/dist/fifo")
     with open({str(self.events)!r}, "a") as output:
         output.write(json.dumps({{"product": "pi", "cwd": str(pathlib.Path.cwd())}}) + "\\n")
 else:
@@ -224,10 +287,29 @@ class PrepareAcquisitionTests(unittest.TestCase):
                     self.assertEqual(sorted(path.name for path in (fixture.cache / "corpora" / family / "tasks").iterdir()), ["openssl-selfsigned-cert", "unselected-task"])
                     if "pi" in products:
                         self.assertTrue((fixture.cache / "agents/pi/docs/usage.md").is_file())
+                        package = fixture.cache / "agents/pi"
+                        for name in ("@earendil-works/chord", "@silvia-odwyer/photon-node", "jiti", "esbuild", "@esbuild/linux-x64"):
+                            self.assertTrue((package / "node_modules" / name / "package.json").is_file())
+                        self.assertTrue((package / "node_modules/@earendil-works/chord/LICENSE").is_file())
+                        self.assertTrue((package / "node_modules/@esbuild/linux-x64/bin/esbuild").stat().st_mode & 0o111)
+                        self.assertFalse((package / "node_modules/pinned").exists())
+                        self.assertFalse(any(path.is_symlink() for path in package.rglob("*")))
+                        checks = [json.loads(line) for line in (fixture.root / "runtime-checks.jsonl").read_text().splitlines()]
+                        self.assertEqual(len(checks), 2)
                     before = fixture.events.read_bytes()
                     warm = fixture.prepare(family, products, with_source=False)
                     self.assertEqual(warm.returncode, 0, warm.stderr)
                     self.assertEqual(fixture.events.read_bytes(), before)
+
+    def test_pi_runtime_closure_rejects_before_publication(self):
+        cases = ["missing:" + name for name in ("@earendil-works/chord", "@silvia-odwyer/photon-node", "jiti", "esbuild", "@esbuild/linux-x64")]
+        cases += ["identity", "chord-identity", "workspace-escape", "workspace-target", "nested-link", "special-file", "startup-failure", "startup-version", "import-failure"]
+        for index, case in enumerate(cases):
+            with self.subTest(case=case):
+                fixture = Fixture(self.base / str(index), runtime_case=case)
+                result = fixture.prepare(FAMILIES[0], ["pi"], with_source=False)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertFalse((fixture.cache / "agents/pi").exists())
 
     def test_source_lock_and_producer_drift_reject_before_build(self):
         for case in ("missing-source", "missing-commit", "lock", "builder"):

@@ -13,7 +13,7 @@
       {
         "path": "crates/opi-eval/scripts/materialize-external-locks.sh",
         "role": "materializer",
-        "sha256": "f4ef0c23577223044f7860415e1966c23d2105a5f8b38590c013a593f861ce69"
+        "sha256": "edaae15faa05eb21b237f763af5d552ab43bc7c0e90f434cb23982f4bf1883cd"
       },
       {
         "path": "crates/opi-eval/scripts/verify-external-lock-ci.py",

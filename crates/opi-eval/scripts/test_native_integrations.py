@@ -258,6 +258,19 @@ class VerifierOnlyEnvironmentTest(unittest.IsolatedAsyncioTestCase):
                             await environment._run_docker_compose_command(command)
                 self.assertEqual(environment.commands, [])
 
+    async def test_task_manifest_uses_relative_string_order(self):
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                (root / "git").mkdir()
+                (root / "git-command").write_bytes(b"wrapper")
+                (root / "git/runtime").write_bytes(b"runtime")
+                rows = (
+                    f"git-command\n{hashlib.sha256(b'wrapper').hexdigest()}\n"
+                    f"git/runtime\n{hashlib.sha256(b'runtime').hexdigest()}\n"
+                )
+                self.assertEqual(module._regrade_manifest(root), hashlib.sha256(rows.encode()).hexdigest())
+
     async def test_restored_bytes_bind_file_and_directory_contents(self):
         for family, (module, _) in INTEGRATIONS.items():
             with self.subTest(family=family), tempfile.TemporaryDirectory() as root:

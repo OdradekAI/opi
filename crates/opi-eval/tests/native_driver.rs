@@ -859,6 +859,13 @@ exit 0
         }
         fs::write(&metadata, toml::to_string(&doc).unwrap()).unwrap();
         pin_fixture_images(package);
+        if mode == "owned-container" {
+            fs::write(
+                package.join("environment/Dockerfile"),
+                format!("FROM {}\n", native_witness_material::IMAGE),
+            )
+            .unwrap();
+        }
         let project = mat.join("corpora").join(adapter);
         copy_dir(package, &project.join("tasks").join(id));
         let (corpus, pin) = fixture_corpus_pin(&project, adapter);
@@ -8392,15 +8399,16 @@ fn remediation_005_native_stage_deadlines_reach_runner() {
 }
 
 /// Exercises the unchanged pinned runners and real Docker stages with
-/// independently byte-bound, no-model delay tasks. The supplied material
-/// names the controlled cases below; it is not benchmark acceptance evidence.
+/// independently byte-bound, no-model delay tasks constructed from supplied
+/// three-family runner material. This is not benchmark acceptance evidence.
 #[test]
-#[ignore = "requires verified no-model delay material/5 and the real Docker engine"]
+#[ignore = "requires verified three-family material/5 and the real Docker engine"]
 fn remediation_native_stage_deadlines() {
-    let material = PathBuf::from(
+    let source_material = PathBuf::from(
         std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL")
             .expect("OPI_EVAL_NATIVE_WITNESS_MATERIAL is required"),
     );
+    let material = native_witness_material::controlled_material(&source_material, true);
     let input = fs::read(&material).unwrap();
     let manifest: serde_json::Value = serde_json::from_slice(&input).unwrap();
     assert_eq!(manifest["schema"], "opi-eval-native-material/5");
@@ -8555,14 +8563,17 @@ fn remediation_native_stage_deadlines() {
             }
             let path = root.join("experiment.toml");
             fs::write(&path, &config).unwrap();
-            let validation = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
-                .args(["validate", "--config"])
-                .arg(&path)
-                .arg("--native-material")
-                .arg(&material)
-                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
-                .output()
-                .unwrap();
+            let validation = native_witness_material::run_cli(
+                Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                    .args(["validate", "--config"])
+                    .arg(&path)
+                    .arg("--native-material")
+                    .arg(&material)
+                    .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                    .current_dir(&root),
+                &root,
+                "validate",
+            );
             assert!(
                 validation.status.success(),
                 "{family}/{case}: {}",
@@ -8576,19 +8587,22 @@ fn remediation_native_stage_deadlines() {
             fs::write(&path, config.replace("pending", digest)).unwrap();
             let run = root.join("run");
             let started = std::time::Instant::now();
-            let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
-                .args(["run", "--config"])
-                .arg(&path)
-                .arg("--root")
-                .arg(&run)
-                .arg("--native-material")
-                .arg(&material)
-                .env_clear()
-                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
-                .env("HOME", &root)
-                .env("OPI_EVAL_SCRIPTED_KEY", "no-model-witness")
-                .output()
-                .unwrap();
+            let output = native_witness_material::run_cli(
+                Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                    .args(["run", "--config"])
+                    .arg(&path)
+                    .arg("--root")
+                    .arg(&run)
+                    .arg("--native-material")
+                    .arg(&material)
+                    .env_clear()
+                    .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                    .env("HOME", &root)
+                    .env("OPI_EVAL_SCRIPTED_KEY", "no-model-witness")
+                    .current_dir(&root),
+                &root,
+                "source-run",
+            );
             eprintln!(
                 "{family}/{case}: exit {:?}, elapsed {:?}",
                 output.status.code(),
@@ -8598,11 +8612,14 @@ fn remediation_native_stage_deadlines() {
                 started.elapsed() < std::time::Duration::from_secs(if pier { 510 } else { 270 }),
                 "stage witness exceeded two whole-job bounds plus 30s settlement"
             );
-            let publication = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
-                .args(["report", "--root"])
-                .arg(&run)
-                .output()
-                .unwrap();
+            let publication = native_witness_material::run_cli(
+                Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                    .args(["report", "--root"])
+                    .arg(&run)
+                    .current_dir(&root),
+                &root,
+                "report",
+            );
             assert!(
                 publication.status.success(),
                 "{family}/{case}: {} {} {}",
@@ -8944,9 +8961,10 @@ fn native_simultaneous_run_root_claim_has_one_owner() {
 }
 
 #[test]
-#[ignore = "requires independently prepared Git/Python native regrade material and Docker"]
+#[ignore = "requires verified three-family material/5 for Git/Python diagnostics and Docker"]
 fn native_verifier_only_regrade_witness() {
-    let material = PathBuf::from(std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL").unwrap());
+    let source_material = PathBuf::from(std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL").unwrap());
+    let material = native_witness_material::controlled_material(&source_material, false);
     let frozen = fs::read(&material).unwrap();
     let guard = tempfile::tempdir().unwrap();
     let evidence = guard.keep();
@@ -9008,21 +9026,22 @@ fn native_verifier_only_regrade_witness() {
                 .unwrap();
             fs::write(&config_path, config.replace("pending", digest)).unwrap();
             let run = root.join("run");
-            let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
-                .args(["run", "--config"])
-                .arg(&config_path)
-                .arg("--root")
-                .arg(&run)
-                .arg("--native-material")
-                .arg(&material)
-                .env_clear()
-                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
-                .env("HOME", &root)
-                .env("OPI_EVAL_SCRIPTED_KEY", "no-model-witness")
-                .output()
-                .unwrap();
-            fs::write(root.join("source-stdout.json"), &output.stdout).unwrap();
-            fs::write(root.join("source-stderr.log"), &output.stderr).unwrap();
+            let output = native_witness_material::run_cli(
+                Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                    .args(["run", "--config"])
+                    .arg(&config_path)
+                    .arg("--root")
+                    .arg(&run)
+                    .arg("--native-material")
+                    .arg(&material)
+                    .env_clear()
+                    .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                    .env("HOME", &root)
+                    .env("OPI_EVAL_SCRIPTED_KEY", "no-model-witness")
+                    .current_dir(&root),
+                &root,
+                "source-run",
+            );
             assert_eq!(
                 output.status.code(),
                 Some(i32::from(case == "timeout")),
@@ -9032,23 +9051,24 @@ fn native_verifier_only_regrade_witness() {
             );
             let before = directory_manifest_digest(&run);
             let out = root.join("regrade");
-            let fresh = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
-                .args(["regrade", "--root"])
-                .arg(&run)
-                .arg("--native-material")
-                .arg(&material)
-                .arg("--out")
-                .arg(&out)
-                .env_clear()
-                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
-                .env("OPENAI_API_KEY", "synthetic-regrade-canary")
-                .env("ANTHROPIC_API_KEY", "synthetic-regrade-canary")
-                .env("ACCESS_TOKEN", "synthetic-regrade-canary")
-                .env("SERVICE_SECRET", "synthetic-regrade-canary")
-                .output()
-                .unwrap();
-            fs::write(root.join("regrade-stdout.json"), &fresh.stdout).unwrap();
-            fs::write(root.join("regrade-stderr.log"), &fresh.stderr).unwrap();
+            let fresh = native_witness_material::run_cli(
+                Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                    .args(["regrade", "--root"])
+                    .arg(&run)
+                    .arg("--native-material")
+                    .arg(&material)
+                    .arg("--out")
+                    .arg(&out)
+                    .env_clear()
+                    .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                    .env("OPENAI_API_KEY", "synthetic-regrade-canary")
+                    .env("ANTHROPIC_API_KEY", "synthetic-regrade-canary")
+                    .env("ACCESS_TOKEN", "synthetic-regrade-canary")
+                    .env("SERVICE_SECRET", "synthetic-regrade-canary")
+                    .current_dir(&root),
+                &root,
+                "regrade",
+            );
             let report: serde_json::Value = serde_json::from_slice(&fresh.stdout).unwrap();
             eprintln!("{family}/{case}: {report}");
             assert_eq!(

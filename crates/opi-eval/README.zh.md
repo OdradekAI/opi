@@ -111,6 +111,11 @@ shrinkwrap 提供 SRI。直接调用 pi 构建器时必须传入
 `--static-lock /absolute/linux-x86_64.json`；本地 prepare 和 native-smoke
 会显式传入各自声明的锁。仅构建 Opi 时不需要 pi 归档 pin。
 
+本地 pi 包包含固定 bundle 的外部 chord、photon-node、jiti，以及 chord 所需的
+esbuild 和 Linux x64 二进制。这些文件来自锁定的离线构建，安装钩子保持禁用。
+prepare 校验包身份并拒绝越界链接或缺失的运行时文件，然后在隔离配置下执行有界的
+独立版本、导入和原生 esbuild 检查，通过后才将运行包安装到缓存。
+
 缓存中的 `corpora/<adapter>/tasks` 必须是完整、干净且版本固定的 Git 语料。
 prepare 为选中任务生成 `packages/<adapter>/<task-id>` 和绑定 SHA-256 的
 `profiles/<adapter>/<task-id>.toml`。material/5 分开记录完整语料的

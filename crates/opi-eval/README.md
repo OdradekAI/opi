@@ -124,6 +124,13 @@ shrinkwrap SRI is not required. Direct pi builder calls require
 `--static-lock /absolute/linux-x86_64.json`; local prepare and native-smoke
 pass their declared lock explicitly. Opi-only builds need no pi archive pin.
 
+The local pi package includes the pinned bundle's external chord, photon-node
+and jiti packages, plus chord's esbuild and Linux x64 binary. They come from
+the locked offline build; installation hooks stay disabled. Preparation checks
+package identities and rejects escaping links or missing runtime files, then
+runs bounded standalone version, import and native esbuild checks in an isolated
+configuration before installing the package in the cache.
+
 The cache holds each complete, clean pinned Git corpus at
 `corpora/<adapter>/tasks`. Preparation creates the selected tasks' packages at
 `packages/<adapter>/<task-id>` and SHA-256-bound profiles at

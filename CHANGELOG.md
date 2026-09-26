@@ -127,6 +127,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `opi-eval`: offline regrading orders task-package manifest entries by their
+  relative path strings, matching the sealed digest and preventing false drift
+  rejection when a filename sorts before a sibling directory's contents.
+
+- `opi-eval`: local pi preparation includes the locked external runtime
+  dependencies and Linux x64 esbuild binary. Package identity, link containment,
+  standalone startup and runtime import checks reject incomplete packages
+  before cache installation; dependency versions and disabled install hooks
+  remain unchanged.
+
 - `opi-eval`: oracle/nop conformance diagnostics select the pinned native
   runner's registered Agent name and bind results to that explicit selection.
   Missing, substituted or dual diagnostic selectors are rejected; integration

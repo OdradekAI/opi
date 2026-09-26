@@ -170,6 +170,84 @@ def package_digest(root):
     return hashlib.sha256("".join(f"{name}\n{digest}\n" for name, digest in sorted(rows)).encode()).hexdigest()
 
 
+def pi_runtime_closure(source, package):
+    # These are the pinned bundle's external imports and chord's Linux x64
+    # esbuild dependency. Keep development and other-platform packages out.
+    locked = json.loads((source / "package-lock.json").read_text())["packages"]
+    names = ("@earendil-works/chord", "@silvia-odwyer/photon-node", "jiti", "esbuild", "@esbuild/linux-x64")
+    for name in names:
+        relative = "node_modules/" + name
+        origin = source / relative
+        pin = locked.get(relative, {})
+        for ancestor in origin.parents:
+            if ancestor == source:
+                break
+            if ancestor.is_symlink():
+                fail(f"pi runtime {name}: linked ancestor")
+        if name == "@earendil-works/chord":
+            if pin != {"resolved": "packages/chord", "link": True} or not origin.is_symlink():
+                fail("pi runtime chord: unexpected workspace link")
+            target = source / "packages/chord"
+            if target.is_symlink() or target.parent.is_symlink() or origin.resolve() != target:
+                fail("pi runtime chord: workspace link target drift")
+            origin = target
+            pin = locked.get("packages/chord", {})
+        elif origin.is_symlink():
+            fail(f"pi runtime {name}: unexpected package link")
+        if not origin.is_dir():
+            fail(f"pi runtime {name}: missing locked package")
+        metadata = origin / "package.json"
+        if metadata.is_symlink() or not metadata.is_file():
+            fail(f"pi runtime {name}: missing regular metadata")
+        manifest = json.loads(metadata.read_text())
+        if manifest.get("name") != name or not pin.get("version") or manifest.get("version") != pin["version"]:
+            fail(f"pi runtime {name}: locked package identity drift")
+        destination = package / relative
+        if name == "@earendil-works/chord":
+            # The workspace package contains source and tests beside its built
+            # runtime. Resolve its one known link, then copy only release files.
+            if (origin / "dist").is_symlink() or not (origin / "dist").is_dir():
+                fail("pi runtime chord: missing regular distribution")
+            package_digest(origin / "dist")
+            shutil.copytree(origin / "dist", destination / "dist", symlinks=True)
+            shutil.copy2(metadata, destination / "package.json")
+            for item in (origin / "README.md", source / "LICENSE"):
+                if item.is_symlink() or not item.is_file():
+                    fail("pi runtime chord: missing regular notice")
+                shutil.copy2(item, destination / item.name)
+        else:
+            package_digest(origin)
+            shutil.copytree(origin, destination, symlinks=True)
+
+
+def validate_pi_runtime(package, room):
+    # No ambient provider config, Node injection or source-tree module lookup.
+    home = room / "pi-smoke-home"
+    home.mkdir()
+    environment = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / "config"), "PI_CODING_AGENT_DIR": str(home / "pi"), "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
+    node = package / "node"
+    version = json.loads((package / "package.json").read_text())["version"]
+    observed = subprocess.check_output([str(node), str(package / "dist/bundle/cli.js"), "--version"], cwd=room, env=environment, text=True, timeout=30).strip()
+    if observed != version:
+        fail("pi runtime: standalone version drift")
+    smoke = '''
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+const root = process.argv[1];
+const require = createRequire(root + "/package.json");
+for (const name of ["@earendil-works/chord", "@earendil-works/chord/bundler", "@earendil-works/chord/context", "@earendil-works/chord/delta", "@earendil-works/chord/node", "@silvia-odwyer/photon-node", "jiti"]) {
+    const resolved = import.meta.resolve(name);
+    if (!resolved.startsWith(pathToFileURL(root + "/node_modules/").href)) throw new Error("external runtime resolution: " + name);
+    await import(resolved);
+}
+const esbuild = require("esbuild");
+if (!require.resolve("@esbuild/linux-x64/bin/esbuild").startsWith(root + "/node_modules/")) throw new Error("external esbuild binary");
+const result = esbuild.transformSync("const n: number = 1", { loader: "ts" });
+if (!result.code.includes("const n = 1")) throw new Error("esbuild transform failed");
+'''
+    subprocess.run([str(node), "--input-type=module", "--eval", smoke, str(package)], cwd=package, env=environment, check=True, timeout=30)
+
+
 if not isinstance(entries, list):
     fail("acquisition plan must be a list")
 missing = set()
@@ -269,10 +347,13 @@ with tempfile.TemporaryDirectory(prefix="opi-eval-acquire-") as temporary:
                 shutil.copytree(source_package / name, package / name, symlinks=True)
             for name in ("package.json", "README.md", "CHANGELOG.md"):
                 shutil.copy2(source_package / name, package / name)
+            pi_runtime_closure(source, package)
             (package / "pi").write_text('#!/bin/sh\nagent_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$agent_root/node" "$agent_root/dist/bundle/cli.js" "$@"\n')
             (package / "pi").chmod(0o755)
         shutil.copy2(output / f"{product}-identity.json", package / "build-identity.json")
         digest = package_digest(package)
+        if product == "pi":
+            validate_pi_runtime(package, room)
         install(package, cache / "agents" / product)
         print(f"prepare: acquired agents/{product}; package_sha256={digest}", flush=True)
 

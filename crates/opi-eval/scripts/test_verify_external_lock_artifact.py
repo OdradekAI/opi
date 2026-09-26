@@ -28,6 +28,7 @@ STATIC_LOCK = "crates/opi-eval/external-locks/static/linux-x86_64.json"
 WORKFLOW_PATH = ".github/workflows/opi-eval-external-lock-materialization.yml"
 MATERIALIZER = "crates/opi-eval/scripts/materialize-external-locks.sh"
 CI_VERIFIER = "crates/opi-eval/scripts/verify-external-lock-ci.py"
+AGENT_BUILDER = "crates/opi-eval/scripts/build-agent-artifacts.sh"
 RESOLVED_LOCK = "crates/opi-eval/external-locks/resolved/linux-x86_64.json"
 
 EXPECTED_COMMIT = "a" * 40
@@ -62,7 +63,7 @@ class Workspace:
 
     def __init__(self, root: Path | None = None) -> None:
         self.root = root or Path(tempfile.mkdtemp(prefix="opi-eval-artifact-verify-"))
-        for name in (STATIC_LOCK, WORKFLOW_PATH, MATERIALIZER, CI_VERIFIER):
+        for name in (STATIC_LOCK, WORKFLOW_PATH, MATERIALIZER, CI_VERIFIER, AGENT_BUILDER):
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes((REPO_ROOT / name).read_bytes())
