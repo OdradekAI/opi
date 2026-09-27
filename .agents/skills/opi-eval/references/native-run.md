@@ -144,15 +144,20 @@ serial even with a larger concurrency ceiling. `max_total_tokens`, `max_cost`,
 and monetary/usage declarations under `[execution.caps]` reject.
 
 Check enforcement in the selected build, not just accepted config/help text.
-In the current source, `time_limit_seconds`, `agent_timeout_seconds`,
-`verifier_timeout_seconds` and `max_output_bytes` reach configuration/plan
-preview but are not applied by native dispatch; it uses pinned adapter/task
-limits. Do not promise those requested overrides. Record the actual pinned
-limits and their execution-path evidence; a required smaller limit blocks live
-execution until the user explicitly accepts the actual bounds or an admitted
-fix supplies enforcement. Do not improvise an outer timeout that bypasses owned
-cleanup. Wall time and per-response output limits are not total-spend
-guarantees. Record estimates, provider usage, billed cost and unknowns
+Native dispatch uses the smaller supplied `time_limit_seconds` and
+`agent_timeout_seconds` as the Agent-stage cap, and applies
+`verifier_timeout_seconds` as the verifier-stage cap. Existing narrower task
+limits remain in force; persisted stage configuration is checked against the
+dispatched caps. The pinned adapter profile supplies a separate outer deadline
+for each whole native job, not the whole experiment. `max_output_bytes` is
+recorded in the plan preview but does not override native capture limits:
+outer job stdout/stderr use the profile bounds, and native client capture uses
+the separate 64 MiB per-stream artifact bound. Record the effective limits and
+their execution-path evidence; a required smaller unsupported bound blocks
+live execution until the user explicitly accepts the actual bounds or an
+admitted fix supplies enforcement. Do not improvise an outer timeout that
+bypasses owned cleanup. Wall time and per-response output limits are not
+total-spend guarantees. Record estimates, provider usage, billed cost and unknowns
 separately. Finish preparation before requesting revised unsupported bounds;
 never silently omit the user's requirement.
 

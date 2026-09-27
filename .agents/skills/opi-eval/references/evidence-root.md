@@ -92,7 +92,7 @@ Keep digests of redacted derivatives distinct from their private originals.
 | `trials` | Exactly six rows with actual `id`, `agent`, `family`, `run_root`, `bundle_digest`, and `attribution.agent_executable_sha256`. Bind actual task/repetition/job, connection/tool-loop/native handoff evidence alongside. |
 | `trials[].bundle_digest` | SHA-256 of that trial's `bundle/manifest.json` bytes, not the manifest's internal bundle identity or a directory digest. |
 | `material` | Exactly three rows with `family` and `material_sha256`, computed from each preserved `runs/<family>/material.json`. |
-| `command_exits` | Real records with `family`, `command`, `exit`; include `run`, `verify`, `report` for every family plus preparation/plan records. The verifier requires the first three commands to have exited zero; retain nonzero attempts and report the blocker. |
+| `command_exits` | Real records with `family`, `command`, `exit`; include `run`, `verify`, `report` for every family plus preparation/plan records. `verify` and `report` must exit 0. `run` may exit 0, or exit 1 only when that family's `run-report.json` has a nonempty `trials` list whose entries all have `status = "sealed"` and a `verifier.completion` string starting with `verified`. Other verifier checks still apply; other run exits reject. Retain nonzero attempts and report any blocker. |
 | `preserved` | Exhaustive inventory of referenced preserved files using `path` and `sha256`, with optional `role`. Include controls, plans, builds, logs, native inputs/outputs, reports and upstream cache; exclude `manifest.json` itself to avoid self-hashing. |
 
 Fill fields from native material, original `run-control.json`, sealed

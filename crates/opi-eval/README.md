@@ -424,9 +424,14 @@ absent credentials and required-but-unsupported `[model_controls]` reject
 before any model effect, and remote base URLs require the explicit
 `[execution].mode = "live"` (loopback routes only otherwise). Requested
 monetary/usage caps in `[execution.caps]` are rejected - the native route
-cannot enforce them - while the enforceable `time_limit_seconds` and
-`max_output_bytes` bounds are recorded with their limits. Both pinned
-clients (Opi and pi) are projected from the same connection for all three
+cannot enforce them. Native Agent time uses the smaller supplied
+`time_limit_seconds` and `agent_timeout_seconds`; `verifier_timeout_seconds`
+caps the verifier stage. Narrower task limits remain in force, and each native
+job retains the pinned adapter profile's outer deadline. Requested
+`max_output_bytes` is recorded but does not override the profile's outer-job
+stdout/stderr capture bounds or the separate 64 MiB per-stream native client
+artifact bound. Both pinned clients (Opi and pi) are projected from the same
+connection for all three
 protocols by the local
 [scripted provider](scripts/scripted-provider.py) (deterministic tool
 loops plus model-keyed `auth-fail`, `rate-limit`, `retry`, and

@@ -369,8 +369,12 @@ runner 注册的 `oracle` 或 `nop` 名称，不携带自定义 import path。�
 计费产品的回退：credential 只在受监督的 Agent 启动内解析；缺失的 credential
 与 required-but-unsupported 的 `[model_controls]` 控件在任何模型效果之前拒绝；
 远程 base URL 必须显式声明 `[execution].mode = "live"`（否则只允许回环地址）。
-`[execution.caps]` 中请求的货币/用量上限会被拒绝——native 路由无法强制执行——
-而可强制的 `time_limit_seconds` 与 `max_output_bytes` 边界会连同其限制一起记录。
+`[execution.caps]` 中请求的货币/用量上限会被拒绝，因为 native 路由无法强制执行。
+native Agent 时间采用已提供的 `time_limit_seconds` 与 `agent_timeout_seconds`
+中的较小值；`verifier_timeout_seconds` 限制 verifier 阶段。任务原有的更窄
+限制仍然生效，每个 native job 还受固定 adapter profile 的外层 deadline 约束。
+请求的 `max_output_bytes` 会被记录，但不会覆盖 profile 的外层 job stdout/stderr
+捕获上限，也不会覆盖 native client 每条流独立的 64 MiB 工件上限。
 两个固定客户端（Opi 与 pi）由同一个 connection 对全部三种协议投影，本地
 [scripted provider](scripts/scripted-provider.py) 提供确定性工具循环以及按模型
 选择的 `auth-fail`、`rate-limit`、`retry`、`protocol-error` 脚本，通过
