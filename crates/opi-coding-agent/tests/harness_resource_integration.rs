@@ -1464,3 +1464,217 @@ async fn adapter_startup_failure_diagnostic_includes_command_and_disabled_state(
         "failed-startup package must not register an adapter"
     );
 }
+
+#[tokio::test]
+async fn startup_thinking_defaults_choose_a_supported_level_before_first_dispatch() {
+    use opi_ai::{
+        ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping,
+    };
+
+    for (supported, capacity, enabled, expected_level, expected_budget) in [
+        (
+            vec![ThinkingLevel::Low, ThinkingLevel::High, ThinkingLevel::Max],
+            32_768,
+            true,
+            ThinkingLevel::High,
+            Some(16_384),
+        ),
+        (
+            vec![ThinkingLevel::Low],
+            32_768,
+            true,
+            ThinkingLevel::Low,
+            Some(2_048),
+        ),
+        (
+            vec![ThinkingLevel::Max],
+            32_768,
+            true,
+            ThinkingLevel::Max,
+            Some(16_384),
+        ),
+        (
+            vec![ThinkingLevel::High],
+            4_096,
+            true,
+            ThinkingLevel::High,
+            Some(3_072),
+        ),
+        (
+            vec![ThinkingLevel::None],
+            32_768,
+            true,
+            ThinkingLevel::None,
+            None,
+        ),
+        (
+            vec![ThinkingLevel::High],
+            32_768,
+            false,
+            ThinkingLevel::None,
+            None,
+        ),
+    ] {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let mut map = ThinkingLevelMap::disabled()
+            .with_mapping(ThinkingLevel::None, ThinkingLevelMapping::Unsupported);
+        for level in supported {
+            map = map.with_mapping(level, ThinkingLevelMapping::Identity);
+        }
+        let model = ModelInfo::new(
+            "selected",
+            "Selected model",
+            opi_ai::WireApi::OpenAiCompletions,
+            ModelCapabilities::new(128_000, capacity).with_thinking(true),
+        )
+        .with_thinking_level_map(map);
+        let provider = MockProvider::new_with_models(
+            "mock",
+            vec![model],
+            vec![opi_ai::test_support::text_response(
+                "first request completed",
+            )],
+        );
+        let calls = provider.call_log_handle();
+        let mut config = OpiConfig::default();
+        config.thinking.enabled = enabled;
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:selected".into(),
+            config,
+            workspace.path().to_path_buf(),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .resume(empty_thinking_startup_session(workspace.path()))
+        .build();
+
+        harness.prompt("complete the first request").await.unwrap();
+        let requests = calls.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].thinking.enabled, expected_budget.is_some());
+        assert_eq!(requests[0].thinking.level, expected_level);
+        assert_eq!(requests[0].thinking.budget_tokens, expected_budget);
+        assert_eq!(requests[0].max_tokens, Some(capacity));
+        drop(requests);
+        let before = harness.thinking_config();
+        assert!(harness.set_thinking_level("medium").is_err());
+        let after = harness.thinking_config();
+        assert_eq!(after.enabled, before.enabled);
+        assert_eq!(after.level, before.level);
+        assert_eq!(after.budget_tokens, before.budget_tokens);
+        assert_eq!(calls.lock().unwrap().len(), 1);
+    }
+}
+
+fn empty_thinking_startup_session(workspace: &Path) -> ResumeInfo {
+    let path = workspace.join("thinking-session.jsonl");
+    let session_id = "sess-thinking".to_owned();
+    drop(
+        SessionWriter::create(
+            &path,
+            SessionHeader::new_for_test(
+                session_id.clone(),
+                "2026-09-27T00:00:00Z".into(),
+                workspace.display().to_string(),
+                None,
+            ),
+        )
+        .unwrap(),
+    );
+    ResumeInfo {
+        path,
+        session_id,
+        entries: Vec::new(),
+        original_cwd: workspace.to_path_buf(),
+        diagnostics: Vec::new(),
+        recorded_model: None,
+        recorded_thinking: None,
+    }
+}
+
+#[tokio::test]
+async fn startup_thinking_clamp_preserves_the_existing_custom_base_budget_policy() {
+    use opi_ai::{
+        ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping,
+    };
+
+    for (supported, base_budget, expected_level, expected_budget) in [
+        (
+            vec![ThinkingLevel::Medium],
+            12_346,
+            ThinkingLevel::Medium,
+            12_346,
+        ),
+        (
+            vec![ThinkingLevel::Medium],
+            8_192,
+            ThinkingLevel::Medium,
+            8_192,
+        ),
+        (
+            vec![ThinkingLevel::High],
+            20_000,
+            ThinkingLevel::High,
+            20_000,
+        ),
+        (
+            vec![ThinkingLevel::High],
+            6_000,
+            ThinkingLevel::High,
+            16_384,
+        ),
+    ] {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let config_path = workspace.path().join("startup.toml");
+        std::fs::write(
+            &config_path,
+            format!("[thinking]\nbudget_tokens = {base_budget}\n"),
+        )
+        .unwrap();
+        let config = opi_coding_agent::config::load_config_file(&config_path).unwrap();
+        let mut map = ThinkingLevelMap::disabled()
+            .with_mapping(ThinkingLevel::None, ThinkingLevelMapping::Unsupported);
+        for level in supported {
+            map = map.with_mapping(level, ThinkingLevelMapping::Identity);
+        }
+        let provider = MockProvider::new_with_models(
+            "mock",
+            vec![
+                ModelInfo::new(
+                    "selected",
+                    "Selected model",
+                    opi_ai::WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(128_000, 32_768).with_thinking(true),
+                )
+                .with_thinking_level_map(map),
+            ],
+            vec![opi_ai::test_support::text_response(
+                "configured request completed",
+            )],
+        );
+        let calls = provider.call_log_handle();
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:selected".into(),
+            config,
+            workspace.path().to_path_buf(),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .resume(empty_thinking_startup_session(workspace.path()))
+        .build();
+
+        harness
+            .prompt("complete the configured request")
+            .await
+            .unwrap();
+        let requests = calls.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].thinking.level, expected_level);
+        assert_eq!(requests[0].thinking.budget_tokens, Some(expected_budget));
+        assert_eq!(requests[0].max_tokens, Some(32_768));
+    }
+}

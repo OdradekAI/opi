@@ -543,10 +543,14 @@ fit the estimated remaining context with 4096 safety tokens. Thinking is fitted
 again when necessary. This safety reserve does not impose a 4096-token output
 limit or a cumulative limit on a long-running task.
 
-The default thinking level is medium with an 8192-token budget. Minimal and
-low use 1024 and 2048; high uses at least 16384. A configured thinking budget
-replaces the medium default and can raise the high budget. Unsupported model
-levels still reject before dispatch.
+The default thinking level is medium with an 8192-token budget. Startup fits
+that default to the selected model's supported levels, preferring the next
+higher level and then a lower level; a model exposing only low/high/max starts
+at high. Minimal and low use 1024 and 2048; high, xhigh and max use at least
+16384 on numeric-budget routes. A configured thinking budget replaces the
+medium default and can raise those higher budgets. Effort-based providers use
+the model's mapped effort instead; max does not imply a fixed token budget.
+Explicit unsupported enabled-level selections still reject before dispatch.
 
 This is a per-response limit, not a cumulative task budget. For paired
 benchmarks, explicitly freeze the same supported output, context and reasoning

@@ -167,6 +167,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `opi-coding-agent`: startup resolves the default thinking level against the
+  selected model's supported levels before dispatch, using the same numeric
+  budget policy as runtime selection. Models exposing only low/high/max now
+  start at high instead of rejecting medium. Explicit unsupported enabled-level
+  selections remain errors.
+
 - `opi-eval`: native oracle/nop conformance witnesses verify exact owned
   container cleanup before reporting, including setup failures and timeouts.
   Cleanup uncertainty remains non-success; neighboring containers and shared

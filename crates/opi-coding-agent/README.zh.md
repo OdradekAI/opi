@@ -484,9 +484,12 @@ Thinking 与回答共享响应预算，启用 thinking 不会把响应上限缩�
 必要时再次调整 thinking。该安全余量不是 4096 token 输出上限，也不是长程任务的
 累计预算。
 
-默认 thinking 等级为 medium，预算为 8192 token；minimal 和 low 分别使用 1024
-与 2048，high 至少使用 16384。显式 thinking 预算覆盖 medium 默认值，也可提高
-high 的预算。模型不支持的等级仍会在派发前被拒绝。
+默认 thinking 等级为 medium，预算为 8192 token。启动时按所选模型支持的等级
+调整默认值，优先选择更高的可用等级，其次选择更低等级；只提供 low/high/max 的
+模型默认使用 high。在数字预算路径中，minimal 和 low 分别使用 1024 与 2048，
+high、xhigh、max 至少使用 16384。显式 thinking 预算覆盖 medium 默认值，也可
+提高这些较高等级的预算。使用 effort 的 Provider 则发送模型映射后的强度，max
+不代表固定 token 数。显式启用模型不支持的 thinking 等级仍会在派发前被拒绝。
 
 这是每次响应的上限，不是整个任务的累计预算。配对 benchmark 应为两端显式冻结
 相同且受支持的输出、上下文及推理控制，并验证实际请求；不要依赖不同客户端的

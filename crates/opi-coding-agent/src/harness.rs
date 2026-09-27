@@ -2190,20 +2190,21 @@ impl CodingHarness {
 
     fn prepare_thinking_change(&self, level: &str) -> Result<PendingThinkingChange, String> {
         let default_budget = self.config.thinking.budget_tokens as u64;
-        let (persisted_level, budget_tokens) = match level {
-            "off" => (ThinkingLevel::None, None),
-            "minimal" => (ThinkingLevel::Minimal, Some(1_024)),
-            "low" => (ThinkingLevel::Low, Some(2_048)),
-            "medium" => (ThinkingLevel::Medium, Some(default_budget)),
-            "high" => (ThinkingLevel::High, Some(default_budget.max(16_384))),
-            "xhigh" => (ThinkingLevel::XHigh, Some(default_budget.max(16_384))),
-            "max" => (ThinkingLevel::Max, Some(default_budget.max(16_384))),
+        let persisted_level = match level {
+            "off" => ThinkingLevel::None,
+            "minimal" => ThinkingLevel::Minimal,
+            "low" => ThinkingLevel::Low,
+            "medium" => ThinkingLevel::Medium,
+            "high" => ThinkingLevel::High,
+            "xhigh" => ThinkingLevel::XHigh,
+            "max" => ThinkingLevel::Max,
             _ => {
                 return Err(format!(
                     "invalid thinking level '{level}': expected off, minimal, low, medium, high, xhigh, or max"
                 ));
             }
         };
+        let budget_tokens = thinking_budget_for_level(persisted_level, default_budget);
 
         let (thinking, max_tokens) = match budget_tokens {
             Some(budget_tokens) => {
@@ -4237,37 +4238,75 @@ fn initial_thinking_request_config(
         return (None, explicit_max_tokens);
     }
 
-    let budget_tokens = config.thinking.budget_tokens as u64;
+    let resolved_model = collection.resolve(model).ok().map(|(_, model)| model);
+    let level = match resolved_model {
+        Some(model) if !model.capabilities.supports_thinking => {
+            return (None, explicit_max_tokens);
+        }
+        Some(model) => default_thinking_level(model),
+        None => ThinkingLevel::Medium,
+    };
+    let Some(budget_tokens) =
+        thinking_budget_for_level(level, config.thinking.budget_tokens as u64)
+    else {
+        return (None, explicit_max_tokens);
+    };
     let Ok((mut thinking, minimum_tokens)) = request_config_for_thinking_budget(budget_tokens)
     else {
         return (None, explicit_max_tokens);
     };
 
-    if let Ok((_, model)) = collection.resolve(model) {
-        if !model.capabilities.supports_thinking {
-            return (None, explicit_max_tokens);
+    if let Some(model) = resolved_model
+        && explicit_max_tokens.is_none()
+        && minimum_tokens > model.capabilities.max_output_tokens
+    {
+        if model.capabilities.max_output_tokens <= 1 {
+            return (None, None);
         }
-        if explicit_max_tokens.is_none() && minimum_tokens > model.capabilities.max_output_tokens {
-            if model.capabilities.max_output_tokens <= 1 {
-                return (None, None);
-            }
-            // Fit an oversized startup thinking budget without consuming all
-            // but one output token. Tiny model ceilings still retain one token.
-            let answer_room = if model.capabilities.max_output_tokens > 1024 {
-                1024
-            } else {
-                1
-            };
-            let adjusted_budget = model.capabilities.max_output_tokens - answer_room;
-            let Ok((adjusted_thinking, _)) = request_config_for_thinking_budget(adjusted_budget)
-            else {
-                return (None, None);
-            };
-            thinking = adjusted_thinking;
-        }
+        // Fit an oversized startup thinking budget without consuming all
+        // but one output token. Tiny model ceilings still retain one token.
+        let answer_room = if model.capabilities.max_output_tokens > 1024 {
+            1024
+        } else {
+            1
+        };
+        let adjusted_budget = model.capabilities.max_output_tokens - answer_room;
+        let Ok((adjusted_thinking, _)) = request_config_for_thinking_budget(adjusted_budget) else {
+            return (None, None);
+        };
+        thinking = adjusted_thinking;
     }
+    thinking.level = level;
 
     (Some(thinking), explicit_max_tokens)
+}
+
+fn default_thinking_level(model: &ModelInfo) -> ThinkingLevel {
+    // Prefer the nearest supported level at or above medium, then below it.
+    [
+        ThinkingLevel::Medium,
+        ThinkingLevel::High,
+        ThinkingLevel::XHigh,
+        ThinkingLevel::Max,
+        ThinkingLevel::Low,
+        ThinkingLevel::Minimal,
+        ThinkingLevel::None,
+    ]
+    .into_iter()
+    .find(|level| model.thinking_level_map.resolve(*level).is_ok())
+    .unwrap_or(ThinkingLevel::None)
+}
+
+fn thinking_budget_for_level(level: ThinkingLevel, base_budget: u64) -> Option<u64> {
+    match level {
+        ThinkingLevel::None => None,
+        ThinkingLevel::Minimal => Some(1_024),
+        ThinkingLevel::Low => Some(2_048),
+        ThinkingLevel::Medium => Some(base_budget),
+        ThinkingLevel::High | ThinkingLevel::XHigh | ThinkingLevel::Max => {
+            Some(base_budget.max(16_384))
+        }
+    }
 }
 
 fn request_output_limit_diagnostic(message: &str) -> Diagnostic {
