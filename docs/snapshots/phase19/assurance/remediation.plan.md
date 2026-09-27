@@ -2,470 +2,575 @@
 
 **Status**: READY-FOR-APPLY
 **Audit index SHA-256**: `40c48da48a5192a8cfce2b32ce80dc91bf33e5435442e9facff169c0f4ec7b00`
-**Remediation head**: `075a046ebc585265c28a6c3f778dfcc501338ddc`
+**Remediation head**: `5bee4f28738412c6ae3e326e5bb3cf60e57230c2`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
-**Dirty-worktree baseline**: committed=none-for-this-task; staged=[]; unstaged=[]; untracked=[]; worktree-only planning.
+**Dirty-worktree baseline**: staged=[]; unstaged=[]; untracked=[]; committed=none-for-this-task.
 **Unresolved decisions**: none
 
-## Admission and source boundary
+## Admission and evidence boundary
 
-The complete active audit set passed `validate_assurance_artifact.py audit-set` before semantic consumption. Index schema 2, revision 6, aggregate verdict FAIL; 15 strict-union source keys (10 C, 5 P). The current validator prints `audit-set: PASS`; the exact raw index SHA-256 above was computed separately because this implementation does not emit it. Each member head is an ancestor of the remediation head. Current source/spec bytes relevant to these findings are unchanged since the members' audit head; no historical conclusion is used as a new proof.
+The current schema-2 index (revision 6, aggregate FAIL) passed `audit-set` validation before any semantic finding input. Its exact raw-byte digest above binds both indexed members. The current scope projection reports no stored-source hash mismatches. The 15 source keys remain distinct, including the repeated textual IDs; each has exactly one disposition.
 
-| Alias | Exact source run | Owning findings SHA-256 | Member audit head |
+| Alias | Current audit run | Findings SHA-256 | Audit head |
 |---|---|---|---|
-| C | `phase19-codex-gpt6-e079780-20260926t093335z` | `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` | `e079780bda6681ec466f79bd15f3248baf0f2eb8` |
-| P | `phase19-pi-glm53-e079780-20260926t192024z` | `f2e7acaffe724a0fa6dbf28ca767b163a3cd664a905a17e6b17924d1fedd582c` | `e079780bda6681ec466f79bd15f3248baf0f2eb8` |
+| C (audit.codex.gpt6) | `phase19-codex-gpt6-e079780-20260926t093335z` | `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` | `e079780bda6681ec466f79bd15f3248baf0f2eb8` |
+| P (audit.pi.glm53) | `phase19-pi-glm53-e079780-20260926t192024z` | `f2e7acaffe724a0fa6dbf28ca767b163a3cd664a905a17e6b17924d1fedd582c` | `e079780bda6681ec466f79bd15f3248baf0f2eb8` |
 
-`C001` means the C run's `P19-AUD-001`; `P001` means the P run's separate `P19-AUD-001`. This notation never merges source identity. Indexed metadata, requirements and findings remain unchanged and retain their source titles, claims, severities, evidence and independence fields. Only the current run/digest admits a finding; title similarity cannot substitute for identity, and no older source was consulted.
+Source inspection and all behavioral probes used unique temporary `git archive` exports of the remediation head. No production edit, provider call, real credential read, or Git worktree was used. No historical audit, earlier remediation conclusion, or external evaluation artifact was consumed. Source finding evidence remains immutable in its indexed sidecar; fresh probes below independently establish only their named claims.
 
-Committed code was inspected in a unique `git archive` export, not a Git worktree. History, earlier remediation conclusions, eval artifacts and alternate source/plan paths were not inputs. Ledger scope was read only through `opi-audit/scripts/read_audit_scope.py`'s allowlisted committed projection. Source registration and exact hashes match both member metadata; it confirms the supplemental English/Chinese design is registered, rather than treating an arbitrary design file as authority.
+The coordinating export is `C:\Users\Luiz\AppData\Local\Temp\opi-remediate-p19-gkm1aqyc\source`. Reusable probe files are retained outside the repository with hashes in the evidence manifest below. A probe path is diagnostic evidence, not an alternate source or plan. Before an eventual repair, verify its hash and reconstruct the same isolated test if the temporary file is unavailable; re-establish its named red outcome before a production edit.
 
-This continuation reseals the current fixed plan against the committed HEAD above after apply admission detected a head mismatch. Starting inventory: staged=[], unstaged=[], untracked=[]; committed=none-for-this-task. The current plan's closure decisions, batches, predicates and disposition bytes are retained. The only committed differences from the recorded evidence state are the fixed plan pair; all other tracked bytes, including source, tests, specifications, ledgers and indexed audit artifacts, are identical. Result artifacts are not inputs. Only the fixed plan Markdown is an outgoing repository edit; the paired JSONL is retained byte-identically. No product code, ledger, manifest, lockfile, branch or commit is changed.
+External incremental Cargo caches were retained. WSL checks explicitly selected the existing `/mnt/e/opi/cargo-targets/wsl-direct` and sanitized execution with `/usr/bin/env -i`, a known PATH, and offline mode. Parallel exports can replace same-named test executables in a shared target; counted evidence requires the intended test name and nonzero execution count, with full Cargo invocations serialized by `flock /tmp/opi-p19-remediate-cargo.lock` or a uniquely named temporary integration-test binary. Empty/zero-selected exploratory commands are not passes.
 
-## Observable completion
-
-1. Admit source set and clean-output baseline -> verify: whole-set validator, HEAD and separate staged/unstaged/untracked inventories.
-2. Verify each current source key -> verify: committed call paths, counter-evidence and isolated discriminating probes below.
-3. Seal the complete plan -> verify: 15/15 exact dispositions, dispositions validator, fixed-plan validator, documentation checker and whitespace check.
-
-Planning completion is a validated READY-FOR-APPLY plan, not execution or a Phase-conformance verdict. This reseal retains the accepted D1 direction and the existing artifact limit in B11 without a new design decision. The new validator-emitted digest needs a separate explicit `opi-remediate mode=apply phase=19 plan_sha256=<digest>` invocation.
+Plan-only commits may later store this exact pair without changing the source baseline. Any other intervening source change or active-index change requires a new plan under the source-baseline rule. Apply still requires a new explicit invocation containing the validator-emitted digest of this exact pair.
 
 ## Current Finding Verification
 
-| Source | Finding ID | Verification | Source → final severity and rationale | Closure key / family | Batch | Decision |
-|---|---|---|---|---|---|---|
-| C001 | `P19-AUD-001` | Confirmed | Major → Major: Major retained: an admitted credential reference cannot authenticate the selected actual client. | `connection.opi-file-credential-projection` / `connection.projection` | B1 | `fix:project-resolved-file-credential` |
-| C002 | `P19-AUD-002` | Confirmed | Major → Major: Major retained: provenance and unconfirmed cleanup must stop new affected execution under registered design Section 9. | `native.boundary-failure-stops-dispatch` / `native.supervision` | B2 | `fix:cancel-after-unsettled-boundary` |
-| C003 | `P19-AUD-003` | Confirmed | Major → Major: Major retained: byte verification must not silently discard tampered whole trials. | `offline.verify.reject-trial-links` / `offline.evidence` | B3 | `fix:reject-linked-trial-inventory` |
-| C004 | `P19-AUD-004` | Confirmed | Major → Major: Major retained: pi-only evaluation has independent value and must regrade without absent Opi material. | `offline.regrade.selected-products` / `offline.regrade` | B4 | `fix:load-only-source-selected-agent-material` |
-| C005 | `P19-AUD-005` | Confirmed | Major → Major: Major retained: selected=0 misstates a valid full experiment and its coverage. | `report.full-selected-count` / `report.coverage` | B5 | `fix:count-expanded-full-task-selection` |
-| C006 | `P19-AUD-006` | Partially confirmed | Major → Major: Major retained until all required final gates pass; the isolated failure is an environment defect, not established Bash product breakage. | `verification.final-workspace-gates` / `verification.environment` | B10 | `fix:reverify-with-known-system-tools` |
-| C007 | `P19-AUD-007` | Confirmed | Major → Major: Major retained: the registered actual-client public run-to-report acceptance seam has no assembled proof. | `native.report.actual-client-failure-matrix` / `native.report-integration` | B6 | `fix:add-real-client-public-report-matrix` |
-| C008 | `P19-AUD-008` | Confirmed | Major → Major: Major retained: infrastructure startup failure currently contributes a valid Agent zero. | `native.outcome.reject-unobserved-client-startup` / `native.outcome-classification` | B7 | `fix:separate-client-startup-failure-from-task-zero` |
-| C009 | `P19-AUD-009` | Confirmed | Major → Major: Major retained: correct first-connection native Opi evidence is rejected. | `acceptance.native-api-identity` / `acceptance.native-evidence` | B8 | `fix:interpret-api-by-native-product` |
-| C010 | `P19-AUD-010` | Confirmed | Major → Major: Major retained: truncation prevents actual completed trials from supplying required acceptance evidence. | `native.capture.complete-settled-streams` / `native.evidence-capture` | B11 | `fix:stream-complete-native-capture-with-existing-artifact-bound` |
-| P001 | `P19-AUD-001` | Cannot confirm | Major → Major: Major retained: successful synthetic checks cannot satisfy six real Agent trials; the historical external root was not read or re-adjudicated. | `acceptance.six-valid-real-trials` / `acceptance.operator-evidence` | — | `no-action:deferred-by-registered-source` |
-| P002 | `P19-AUD-002` | Partially confirmed | Major → Major: Major retained for the reproduced truncation/invalid-result effect. The profile-cap explanation is not the native-path root cause. | `native.capture.complete-settled-streams` / `native.evidence-capture` | B11 | `fix:stream-complete-native-capture-with-existing-artifact-bound` |
-| P003 | `P19-AUD-003` | Confirmed | Minor → Minor: Minor retained: declared commands have drifted while substantive behavior has separate test coverage. | `ledger.nonvacuous-verification-filters` / `verification.ledger` | — | `no-action:returned-to-shaping-ledger-owner` |
-| P004 | `P19-AUD-004` | Partially confirmed | Minor → Minor: Minor retained for opaque test-helper failure; the historical >25-minute and missing-log claims are unconfirmed. | `native.witness.material-prerequisite-diagnostics` / `native.witness-tests` | B9 | `fix:validate-witness-material-before-staging` |
-| P005 | `P19-AUD-005` | Cannot confirm | Minor → Minor: Minor retained; the historical orphan incident is not reproduced, and its proposed label mechanism conflicts with current code. | `native.witness.owned-resource-cleanup` / `native.supervision` | — | `no-action:cannot-confirm-diagnostic-cleanup-incident` |
+| Source run / Finding ID | Verification | Source → final severity; rationale | Closure key / family | Batch | Decision |
+|---|---|---|---|---|---|
+| C / P19-AUD-001 | Confirmed | Major → Major; Retain Major: admitted file credentials cannot reach the selected Opi process. | `connection.opi-file-credential-projection` / `native-connection-projection` | B1 | `fix:project-opi-file-credential` |
+| C / P19-AUD-002 | Confirmed | Major → Major; Two current deterministic subprocess probes reproduce serial dispatch after cleanup uncertainty and identity rejection; both are safety/provenance failures covered by registered source section 9. | `native-lifecycle.stop-after-boundary-breach` / `native-lifecycle.ownership` | B2 | `fix:stop-dispatch-after-native-boundary-breach` |
+| C / P19-AUD-003 | Confirmed | Major → Major; Retain Major: a linked sealed trial is silently omitted from successful byte verification. | `offline-verify.trial-link-rejection` / `offline-evidence-integrity` | B3 | `fix:reject-linked-trial-entry` |
+| C / P19-AUD-004 | Confirmed | Major → Major; Retain Major: valid single-product native evidence cannot be regraded with its own selected material. | `native-regrade.selected-product-material` / `offline-native-regrade` | B4 | `fix:load-selected-regrade-products` |
+| C / P19-AUD-005 | Confirmed | Major → Major; Retain Major: public full-run coverage reports the wrong selected-task denominator. | `report.full-selection-task-count` / `offline-report-coverage` | B5 | `fix:count-frozen-full-selection` |
+| C / P19-AUD-006 | Cannot confirm | Major → Major; Retain source Major: the exact current sanitized check passes, but no full final-workspace gate or historical-failure refutation is claimed. | `verification.final-workspace-gates` / `verification.phase-exit` | — | `no-action:cannot-confirm` |
+| C / P19-AUD-007 | Confirmed | Major → Major; Retain Major: the required actual-client public run-to-report acceptance path is missing. | `acceptance.actual-client-provider-outcome-run-report` / `acceptance.native-provider-outcomes` | B6 | `fix:actual-client-run-report-matrix` |
+| C / P19-AUD-008 | Partially confirmed | Major → Major; Current reproduction proves loader-shaped evidence is scored as Agent failure. The exact old GNU binary/container observation is outside current input boundary and was not reread. | `native-settlement.loader-failure-unscored` / `native-settlement.outcome-classification` | B11 | `fix:bind-native-runtime-preflight` |
+| C / P19-AUD-009 | Confirmed | Major → Major; Retain Major: the checker rejects the correct native Opi API representation in first-connection evidence. | `acceptance.native-api-attribution` / `acceptance.native-evidence` | B7 | `fix:interpret-product-native-api` |
+| C / P19-AUD-010 | Confirmed | Major → Major; Current complete >1MiB streams lose their suffix during native reading, invalidating pi and offline live evidence. Source live measurements are not reused. | `native-evidence.complete-within-artifact-bound` / `native-evidence.capture` | B8 | `fix:retain-native-stream-within-existing-artifact-bound` |
+| P / P19-AUD-001 | Partially confirmed | Major → Major; Retain Major: mandatory six-trial real acceptance remains an external verified-evidence obligation under the registered source. | `acceptance.six-real-native-trials` / `acceptance.native-evidence` | — | `no-action:deferred-by-registered-source` |
+| P / P19-AUD-002 | Partially confirmed | Major → Major; Current complete >1MiB streams lose their suffix during native reading, invalidating pi and offline live evidence. Source live measurements are not reused. | `native-evidence.complete-within-artifact-bound` / `native-evidence.capture` | B8 | `fix:retain-native-stream-within-existing-artifact-bound` |
+| P / P19-AUD-003 | Confirmed | Minor → Minor; Retain Minor: effective existing tests pass, but ledger-declared filters select zero tests. | `verification.ledger-selectors-nonvacuous` / `verification.acceptance-selectors` | — | `no-action:returned-to-shaping` |
+| P / P19-AUD-004 | Partially confirmed | Minor → Minor; Retain Minor: invalid witness input has an opaque test-helper panic; historical duration/log claims are not re-established. | `verification.native-witness-material-diagnostics` / `verification.native-witness-inputs` | B9 | `fix:witness-material-preflight-diagnostics` |
+| P / P19-AUD-005 | Partially confirmed | Minor → Minor; Retain advisory Minor from source. Current stand-in subprocess proves the diagnostic witness omits owned-container cleanup; exact earlier operator Docker instances and manual cleanup remain unconfirmed and were not accessed. | `native-witness.cleanup-owned-task-resources` / `native-lifecycle.ownership` | B10 | `fix:apply-owned-cleanup-to-native-witness` |
 
-### Current evidence and counter-evidence
+### Fresh evidence and counter-evidence
 
-- **C001**: experiment.rs:1135 inserts environment values only for variable(); FromFile returns None, while render_opi_config at :1263 references OPI_EVAL_AGENT_KEY. The current probe observes that exact missing value; configuration bytes remain secret-free. The existing environment-reference path is counter-evidence against a general projection failure.
-- **C002**: runner/experiment.rs:769 only checks the shared cancellation token; cleanup handling at :2000-2012 records a failure without cancelling; :2303 cancels for canary leakage only. Two public CLI probes each start the second serial trial after the first fails. Counter-evidence: benchmark/process.rs:1410 already cancels unknown native command termination; preserve that path.
-- **C003**: regrade.rs:113-125 filters DirEntry types with is_dir() before verification; :97 treats an empty failure list as verified. report.rs:291-310 already includes and rejects linked inputs. Bundle artifact-ancestor checks cannot validate a trial omitted before opening its bundle.
-- **C004**: regrade.rs:312 calls NativeMaterial::load before discovering sealed products at :491-505. runner/material.rs:257 fixes load to [opi,pi], while load_for at :265 and cli/run.rs:134 already support exact selected sets. The public pi-only source run exits 0; regrade exits 2 demanding both products.
-- **C005**: experiment.rs:152,203,858 intentionally encodes full scope with empty task_ids; runner/plan.rs:295-303 expands tasks correctly. report.rs:841-843 counts the original empty array. Validated planned_trials already carries expanded tasks (:592,1071). Changing run-control selection alone would violate its equality to the sealed experiment at :1065-1071.
-- **C006**: Exact WSL cargo filter reproduces 0 passed/1 failed at tools_read_write_edit_bash.rs:2121. Current login PATH resolves env to /mnt/e/opi/pi-debug/uv-bin/env; sh -c env exits 0 with zero bytes. The identical compiled test binary with PATH=/usr/bin:/bin, HOME=/tmp and a harmless canary passes 1/0 in 0.02s. BashTool faithfully inherits PATH and forwards output (tool/operations.rs:908-920,1220-1237; tool/bash.rs:298-315). No unrelated gate is inferred green from this control.
-- **C007**: native_driver.rs:2748-2959 launches actual clients directly (:2826-2834) without public run/report; :5719 uses stage(provider-error/zero), whose setup at :669,:709-809 installs stand-ins. The broader synthetic matrix at :6259 does not supply native-client provider behavior. Scope-reader projection of task 19.7 explicitly requires the same assembled path.
-- **C008**: runner/experiment.rs:1659 maps ordinary nonzero Opi exit to agent-non-zero-exit; classifier :1453 can therefore accept bound reward zero. An isolated runner injects empty stdout and a loader diagnostic and observes exit 0, sealed graded-native, reward=0 and agent_failed=true. A valid-zero control passes. The precise historical GNU binary/container incident is source testimony only; no external eval artifacts were read.
-- **C009**: opi-ai/src/lib.rs:62-67 serializes ApiKind::Anthropic as Anthropic; message.rs:30 carries it and anthropic.rs:683 produces it. verify-local-acceptance.py:439 compares both products to anthropic-messages; synthetic fixture :190 uses that string for both products. The isolated probe rejects native-shaped Opi, accepts native pi, and rejects unknown/wrong-product API controls.
-- **C010**: runner/experiment.rs:1715,1748-1751 hard-caps completed native capture; :2077-2090 seals that prefix in full mode; pi.rs:395-396 rejects truncated input and acceptance verifier :418-447 requires complete terminal/tool evidence. The current test at runner/experiment.rs:4523 asserts the cap, so silently raising/removing it is not a complete resource decision.
-- **P001**: Current verifier enforces six attributable trials and calls verify/report (verify-local-acceptance.py:check_trials and :run). New independent probes confirm capture and native-API blockers, but do not establish a current external acceptance outcome. Registered design Section 8 reserves real acceptance to a separately authorized local operator; P19-AC-012 remains unmet until supplied evidence is independently verified.
-- **P002**: The native handoff at runner/experiment.rs:1554-1571 carries no profile capture cap. Host adapters use profile caps (agent/pi.rs:225; agent/opi.rs:197), but Harbor :416-417 and Pier :455-456 redirect native streams to files. The independent capture probe confirms the later hard reader cap. Therefore C010/P002 share the B11 root repair and predicate, while their source identities and rationales remain separate.
-- **P003**: The committed allowlisted scope projection for 19.6 names assembled_run independent_plan_run, absent from that source; existing candidates are frozen_subset_execution (:1424) and hermetic_paired_group_runs_end_to_end (:242). Task 19.8 names native_offline_regrade -- --ignored --exact, but native_driver.rs:5838-5839 has #[test] without #[ignore]. This is checked without reading ledger conclusions.
-- **P004**: native_witness_material.rs:94-102 unconditionally unwraps family/tasks/profile data after side effects at :13-73. Both callers already declare three-family input (:8405,8964); missing-family support is not required. run_cli at helper :381-410 already saves command/output/digest/elapsed evidence and both long callers use it. No historical operator logs were read.
-- **P005**: runner/experiment.rs:3651-3663 discovers standard com.docker.compose.project.working_dir labels and :3806-3869 validates/removes exact immutable IDs, not an opi-eval-only label. Diagnostic witnesses do omit OwnedDockerEnvironment (benchmark/process.rs:1280-1284), which identifies a separate path needing a controlled failure reproduction. The cited stage-neighbor is explicitly outside trial cleanup (native_driver.rs:8438-8479), so it surviving an externally killed test does not prove a trial-owned leak.
+**C / P19-AUD-001 — Opi 丢弃 credential_file 解析出的凭据**
+
+- `crates/opi-eval/src/experiment.rs:1135` — Opi adds an environment credential only when variable() is Some.
+- `crates/opi-eval/src/experiment.rs:1263` — render_opi_config uses OPI_EVAL_AGENT_KEY for file-backed references.
+- `crates/opi-eval/src/experiment.rs:1561` — FromFile returns None from variable().
+- `crates/opi-eval/src/runner/experiment.rs:1249` — The actual launcher resolves declared file contents into FromFile, so the branch is admitted and reachable.
+- `crates/opi-eval/src/runner/experiment.rs:1575` — Native handoff forwards exactly projection.agent_env; no later repair fills in the missing file credential.
+- `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md:132` — Selected environment references and private local files are both valid credential sources; resolution is Agent-process scoped.
+- Limit: Pi intentionally carries the resolved value in isolated models.json (experiment.rs:1141,1337) and leaves agent_env empty. Env-backed Opi works; existing tests at experiment.rs:1861 cover Env only. Native handoff identity explicitly strips agent_env at runner/experiment.rs:1586, retaining the required privacy boundary.
+- Limit: No README contract change required: English/Chinese already admit credential_file. Record behavior correction in Unreleased.
+
+**C / P19-AUD-002 — 完整性或清理失败后仍继续原生 trial 调度**
+
+- `crates/opi-eval/src/runner/experiment.rs:769` — Dispatch checks only run_cancel; a failed receipt alone never cancels.
+- `crates/opi-eval/src/runner/experiment.rs:2012` — Cleanup failure sets Infrastructure ledger failure but not run_cancel.
+- `crates/opi-eval/src/runner/experiment.rs:2300` — Only canary leak cancels here; absent binding refuses seal at 2311 without stopping subsequent dispatch.
+- `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md:342` — On budget, authority, provenance, or privacy breach stop new affected trials and cancel only owned execution.
+
+**C / P19-AUD-003 — verify 将符号链接 trial 静默排除后仍返回成功**
+
+- `crates/opi-eval/src/regrade.rs:117` — Trial enumeration silently skips every non-directory DirEntry; a symlink's is_dir() is false.
+- `crates/opi-eval/src/regrade.rs:86` — Only the filtered IDs reach RunBundle::verify.
+- `crates/opi-eval/src/regrade.rs:97` — Empty failures produces outcome=verified even when a linked trial was omitted.
+- `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md:262` — P19-AC-009 requires offline byte verification, tamper rejection, and immutable source evidence.
+- Limit: Report already includes directory/symlink entries and rejects linked ancestors through checked_input_path (report.rs:279-308,603-626). Bundle verification rejects links inside its artifact tree, but it is never invoked on the omitted trial. Neither path rescues verify enumeration. NativeRegrader also uses read_trial_ids at regrade.rs:298.
+- Limit: No README contract change required: both counterparts already promise every sealed bundle is checked and tamper rejected. Record bug fix in Unreleased.
+
+**C / P19-AUD-004 — pi-only 原生运行无法使用自己的材料重评分**
+
+- `crates/opi-eval/src/regrade.rs:312` — Native regrade calls NativeMaterial::load before reading sealed trial product requirements.
+- `crates/opi-eval/src/runner/material.rs:257` — load hardcodes load_for(path, &[opi, pi]).
+- `crates/opi-eval/src/runner/material.rs:305` — load_for correctly requires an exact agent identity set, so pi-only material is rejected by the wrong caller selection.
+- `crates/opi-eval/src/regrade.rs:470` — Per-trial regrade already resolves the product from sealed trial/subject evidence and selects material.agent(product); the required product source exists.
+- `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md:70` — Independent Companion pi-only evaluation has complete value without an Opi executable.
+- `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md:236` — Actual offline regrade consumes preserved Agent artifacts with the pinned native grader and emits new derived records.
+- Limit: Run/native_integrity_identity already uses NativeMaterial::load_for with actual selected products (runner/experiment.rs:1282-1288). The native driver has paired regrade tests but its pi-only test at native_driver.rs:8240 covers hermetic run/report, not pi-only native regrade.
+- Limit: No contract revision required: current bilingual README already describes selected subjects and verifier-only regrading. Add explanation only if implementation changes documented rejection classification; otherwise Unreleased suffices.
+
+**C / P19-AUD-005 — full 选择的离线报告将 selected 计为零**
+
+- `crates/opi-eval/src/runner/plan.rs:296` — Full selection expands to every canonical corpus task ID.
+- `crates/opi-eval/src/runner/experiment.rs:582` — The expanded trials replace original declared trials before run-control generation.
+- `crates/opi-eval/src/runner/experiment.rs:702` — Frozen run-control already records corpus_tasks and expanded planned_trials, while selection.task_ids preserves original request syntax.
+- `crates/opi-eval/src/report.rs:841` — Report selected count always uses original selection.task_ids length, including legal full selections with no explicit IDs.
+- `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md:226` — Reports must show corpus size, selected tasks and separate planned/attempted/valid counts; full and subset meanings stay honest.
+- Limit: The producer and plan already correctly expand full scope and preserve all trial/task identities (runner/plan.rs:295-312; runner/experiment.rs:708-717). Existing subset test native_driver.rs:6095 asserts selected=1 but its full-dispatch counterpart at :6983 does not assert report selected count. This is a report interpretation defect, not a need for a new durable format.
+- Limit: No README contract change needed: both already distinguish corpus/selected/trial counts and full/subset. Record correction in Unreleased.
+
+**C / P19-AUD-006 — 最终工作区测试门禁未通过**
+
+- At current head the exact WSL/Linux bash_tool_env_inheritance_reporting test passes: 1 passed, 94 filtered out, 0.05s; command below used absolute /usr/bin/env with a clean PATH and the existing shared external Cargo target.
+- Local command resolution showed bare env resolves to a host PATH shim. Commands initially attempted with bare env did not execute Cargo and are explicitly not evidence; no shim contents or external eval artifacts were read.
+- Current tests/tools_read_write_edit_bash.rs:2104 executes env through normal BashTool; src/tool/operations.rs:908 build_bash_command uses envs without clearing inherited environment. No source defect is demonstrated by the clean-PATH exact run.
+- The complete final workspace gate was not rerun at plan stage. The earlier audit failure is not refuted.
+- Current check: `/usr/bin/env -i HOME=/home/luiz PATH=/home/luiz/.cargo/bin:/usr/bin:/bin SHELL=/bin/bash CARGO_NET_OFFLINE=true CARGO_INCREMENTAL=1 CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct cargo test --offline --locked -p opi-coding-agent --test tools_read_write_edit_bash bash_tool_env_inheritance_reporting -- --exact --nocapture` → PASS: 1 passed, 0 failed, 94 filtered out; test finished 0.05s
+- Limit: No full-gate claim or historical-failure refutation.
+
+**C / P19-AUD-007 — 真实客户端失败矩阵尚未贯通公开 run-to-report 验收链**
+
+- Scope reader project_task on committed export task 19.7 P19-AC-008 explicitly requires the same public run-to-report path with actual Opi/pi clients and local fixture provider for final provider failure, native zero and transient 429 success.
+- native_driver.rs:2748 native_protocol_client_matrix runs actual clients directly via run_opi_client/run_pi_client, then inspects exit/messages/provider requests, never public run/report.
+- native_driver.rs:5719 native_provider_failure_report runs public run/report but obtains material from stage("provider-error") and stage("zero"); stage at :669 constructs stand-in agents/integrations/runner.
+- native_driver.rs:6256 remediation_004_native_provider_error_is_not_scored adds broader family/capture/terminal coverage but still uses stage and rewrites synthetic terminal artifacts. It is counterevidence to missing classification coverage, not the required actual-client assembled path.
+- Limit: Exact local client material must be prepared for the new opt-in check; no old eval material was consulted and no paid/live provider was invoked.
+- Limit: English/Chinese synchronization unnecessary for test-only edits.
+
+**C / P19-AUD-008 — Opi 加载器失败被计为有效原生零分**
+
+- `crates/opi-eval/src/runner/experiment.rs:1653` — Opi provider classifier recognizes exits 3/4; any other nonzero becomes agent-non-zero-exit.
+- `crates/opi-eval/src/runner/experiment.rs:1453` — No native exception or NonZeroAgentExitCodeError yields graded-native after authority check.
+- `crates/opi-eval/src/agent/process.rs:157` — agent-non-zero-exit and agent-timeout are ScoredAgentOutcome.
+- `crates/opi-eval/integrations/harbor/opi_eval_harbor.py:470` — Every nonzero launch result raises NonZeroAgentExitCodeError; equivalent Pier path at 509.
+- `crates/opi-eval/src/benchmark/process.rs:1010` — Native terminal /1 parses product, executable digest, exit_code, timed_out and delivered only; no trusted started/not-started observation.
+- `crates/opi-eval/tests/native_driver.rs:1556` — Valid agent-nonzero counterexample must remain graded-native and agent_failed=true.
+- `docs/opi-spec.md:305` — CTRL-005 prohibits scoring invalid/infrastructure-failed trials as Agent success or failure.
+- `crates/opi-coding-agent/src/runner.rs:399` — run_json accumulates header and events into Arc<Mutex<String>> and awaits harness.prompt at 498 before returning captured stdout at 512-527; AgentStart is not an independently flushed startup witness.
+- `crates/opi-coding-agent/src/main.rs:961` — The CLI writes result.stdout only after awaited runner operation finishes; a post-start crash/abort can therefore leave no stdout.
+- `crates/opi-eval/src/agent/process.rs:134` — Contract explicitly includes the Agent own crash as a scored Agent outcome, so empty stdout cannot alone distinguish loader refusal from started crash.
+- `fresh plan-stage loader probe` — CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline -p opi-eval --test native_driver plan_p19_loader_failure_is_unscored -- --exact --nocapture --test-threads=1 -> Named test ran 1 failed, exit 101; classification was {agent_failed:true,class:graded-native,reward:0,timed_out:false}, expected invalid-execution. Diagnostic-shaped evidence establishes the existing defect, not proof of the selected new contract.
+- `crates/opi-eval/integrations/harbor/opi_eval_harbor.py:331` — setup verifies and uploads the exact runtime, then projects configuration at 367; this is the existing boundary for a pre-configuration compatibility probe. Pier has the same integration-owned boundary.
+- `crates/opi-eval/integrations/harbor/opi_eval_harbor.py:101` — OwnedDockerEnvironment.exec already supervises execution and bounds group termination; equivalent Pier implementation supplies the 30-second preflight transport.
+- `crates/opi-coding-agent/src/main.rs:14` — Clap parses --version before normal command/provider construction. The pinned pi materializer already executes its exact Node/bundled CLI --version in an isolated environment (materialize-external-locks.sh:223-232); the staged pi wrapper selects that package runtime.
+- `crates/opi-eval/src/runner/experiment.rs:1563` — Current handoff/3 carries logical trial, product, executable SHA and optional runtime package; bind these to independently retained NativeSelection expectations rather than trusting echoed proof.
+- `C:\Users\Luiz\AppData\Local\Temp\opi-remediate-p19-gkm1aqyc\startup-contract-red.log` — Fresh exact-baseline offline Python probe ran 2 test methods and 8 Harbor/Pier x Opi/pi subcases, all FAIL, exit 1. Refusal cases launched one task instead of zero; passed-preflight/nonzero-task cases observed no preflight. No shell, container, provider or real credential was used.
+- Limit: No old evaluation artifact or exact GNU binary/image was opened; current evidence is a bounded stand-in native job. Fresh separately authorized evidence is still required for actual-client/official-image acceptance.
+- Limit: The probe proves missing integration behavior with controlled transport results. It does not claim actual image compatibility or real-provider acceptance; a passed version probe does not prove later task startup or all lazily loaded dependencies.
+
+**C / P19-AUD-009 — 离线验收器把 Opi 原生 API 枚举误当作 pi 协议字符串**
+
+- `crates/opi-ai/src/lib.rs:62` — ApiKind derives Serialize without variant renaming; the Anthropic variant is serialized as Anthropic. No Opi schema change is needed.
+- `crates/opi-eval/scripts/verify-local-acceptance.py:439` — Both products compare message.api directly with FIRST_CONNECTION[api]=anthropic-messages, rejecting the Opi native enum.
+- `crates/opi-eval/scripts/test_verify_local_acceptance.py:190` — Existing synthetic Opi fixture copies the pi connection API string, hiding the production-shaped mismatch.
+- `C:\Users\Luiz\AppData\Local\Temp\opi-remediate-p19-gkm1aqyc\native-api-red.log` — Fresh offline probe: 7 cases, correct Opi Anthropic rejected, 6 controls passed (pi positive and wrong/unknown API, provider, model negatives). Synthetic native-shaped events; not real-provider acceptance.
+
+**C / P19-AUD-010 — 固定 1 MiB 封存上限使真实客户端循环无法完整进入验收材料**
+
+- `crates/opi-eval/src/runner/experiment.rs:1715` — Native reader hard-codes CAP=1024*1024 and reads CAP+1 then truncates to CAP at 1750-1753.
+- `crates/opi-eval/src/runner/experiment.rs:2077` — Full policy stages only capture.bytes, already truncated by native reader.
+- `crates/opi-eval/src/agent/pi.rs:320` — Native interpretation calls PiImporter directly; it does not create a profile SpawnSpec.
+- `crates/opi-eval/src/agent/pi.rs:395` — Cap-truncated pi input is rejected as import-evidence-incomplete.
+- `crates/opi-eval/src/agent/pi.rs:224` — Profile caps apply to host process SpawnSpec. Those caps are not the native post-job read cap.
+- `crates/opi-eval/scripts/verify-local-acceptance.py:418` — Acceptance requires non-truncated sealed logs plus terminal and tool events.
+- `crates/opi-eval/src/experiment.rs:436` — Full is every capturable evidence stream.
+- `crates/opi-eval/src/bundle/mod.rs:1164` — Existing MAX_ARTIFACT_BYTES=64MiB bounds one artifact; insert explicitly rejects oversize at 1202 rather than truncating.
+- Limit: Probe uses a valid pi fixture padded with blank NDJSON lines and bounded fake native jobs. It proves loss/interpretation mechanically, not the six real task/client acceptance criteria. Fresh authorized real evidence remains separate.
+- Limit: The indexed pi finding is a separate source identity despite title similarity. Its truncated-native behavior shares this proven root/predicate/red pair with codex010; its causal claim that embedded profile caps produced these native files is refuted by current native call path. Do not edit profiles based on this claim.
+
+**P / P19-AUD-001 — Six-trial local acceptance evidence is rejected by the offline verifier**
+
+- `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md:292` — Section 8 reserves real acceptance to a separately authorized local operator run. Until real evidence is present and verified, P19-AC-012 remains not met; credential presence/source registration gives no spending authority.
+- `crates/opi-eval/scripts/verify-local-acceptance.py:418` — The offline acceptance predicate rejects truncation or terminal/model mismatch; fresh API probe independently confirms an additional rejection on valid Opi native-shaped API events.
+- `current indexed pi findings P19-AUD-001` — The source reports rejection of supplied six-trial evidence. Those external eval artifacts were not admitted or read in this plan; original saved-run counts and no-replacement claims are not independently re-established.
+
+**P / P19-AUD-002 — Pinned 1 MiB agent stdout capture ceiling invalidates real trials on TB3/DeepSWE**
+
+- `crates/opi-eval/src/runner/experiment.rs:1715` — Native reader hard-codes CAP=1024*1024 and reads CAP+1 then truncates to CAP at 1750-1753.
+- `crates/opi-eval/src/runner/experiment.rs:2077` — Full policy stages only capture.bytes, already truncated by native reader.
+- `crates/opi-eval/src/agent/pi.rs:320` — Native interpretation calls PiImporter directly; it does not create a profile SpawnSpec.
+- `crates/opi-eval/src/agent/pi.rs:395` — Cap-truncated pi input is rejected as import-evidence-incomplete.
+- `crates/opi-eval/src/agent/pi.rs:224` — Profile caps apply to host process SpawnSpec. Those caps are not the native post-job read cap.
+- `crates/opi-eval/scripts/verify-local-acceptance.py:418` — Acceptance requires non-truncated sealed logs plus terminal and tool events.
+- `crates/opi-eval/src/experiment.rs:436` — Full is every capturable evidence stream.
+- `crates/opi-eval/src/bundle/mod.rs:1164` — Existing MAX_ARTIFACT_BYTES=64MiB bounds one artifact; insert explicitly rejects oversize at 1202 rather than truncating.
+- Limit: Probe uses a valid pi fixture padded with blank NDJSON lines and bounded fake native jobs. It proves loss/interpretation mechanically, not the six real task/client acceptance criteria. Fresh authorized real evidence remains separate.
+- Limit: The indexed pi finding is a separate source identity despite title similarity. Its truncated-native behavior shares this proven root/predicate/red pair with codex010; its causal claim that embedded profile caps produced these native files is refuted by current native call path. Do not edit profiles based on this claim.
+
+**P / P19-AUD-003 — Ledger-declared verification filters drifted to vacuous commands**
+
+- Committed scope projection task 19.6 P19-AC-001-plan declares assembled_run independent_plan_run; rg finds no such function. Exact Cargo selector executes 0 tests, 15 filtered out.
+- Committed scope projection task 19.8 P19-AC-009-regrade declares native_offline_regrade with --ignored --exact. The function at native_driver.rs:5839 has #[test] and no #[ignore]; exact ignored selector executes 0 tests.
+- Existing assembled_run.rs:1424 frozen_subset_execution covers independent-directory public plan/run and frozen cardinality; :242 hermetic_paired_group_runs_end_to_end covers paired execution. Native regrade actual test remains present.
+- AGENTS.md Skills and workflow assigns ledger writes to opi-implement; opi-implement/SKILL.md explicitly prohibits edits to frozen snapshots. This invocation authorizes neither ledger ownership transfer nor snapshot rewriting.
+- Corrected existing selectors verified in this export under shared flock and clean offline WSL environment: frozen_subset_execution PASS 1 executed (67.77s); hermetic_paired_group_runs_end_to_end PASS 1 executed (0.54s); native_offline_regrade without --ignored PASS 1 executed (5.02s). Existing behavior is covered; correction belongs to metadata ownership, not redundant implementation tests.
+- Limit: Remediation has no authority to edit the ledger or frozen snapshot; the exclusion is explicit, not an ownership transfer.
+
+**P / P19-AUD-004 — Witness-material helper panics opaquely on single-family material; two long ignored tests lack saved run evidence**
+
+- support/native_witness_material.rs:91-106 iterates all three required families then unwraps material[benchmarks][family][tasks].as_object(), the first task and profile path. Missing TB3 after a valid TB2.1 family panics at :97.
+- A scratch-only probe in the unique export uses stage("ok"), removes TB3 and DeepSWE entries, calls controlled_material(false) under catch_unwind, and asserts the diagnostic names terminal-bench-3.0. No Docker operations, models, credentials, network listener, or historical material are used.
+- After flock serialization and touching the scratch test to ensure correct shared-cache binary, cargo executed 1 probe and failed: Option::unwrap at support/native_witness_material.rs:97, followed by named-family diagnostic assertion failure.
+- Current native_witness_material::run_cli saves each command stdout/stderr/metadata JSON, while both witnesses retain temp roots and announce them. Source thus already supports saved evidence. The specific duration and absence-of-historical-log claim was not independently verified; old eval artifacts are excluded.
+- Limit: No new claim about completion/duration of the two Docker witnesses or historical saved logs; no new retention subsystem is warranted.
+- Limit: English/Chinese synchronization unnecessary for private test-helper/test edits.
+
+**P / P19-AUD-005 — Failed native witness runs orphaned task environment containers**
+
+- `crates/opi-eval/src/cli/conformance.rs:1447` — Diagnostic witness finishes by directly running BenchmarkExecution; on observed record it immediately builds report at 1481 without owned-resource cleanup.
+- `crates/opi-eval/src/benchmark/process.rs:1394` — BenchmarkExecution supervises runner process tree and imports outcome; no container enumeration/removal occurs before returning at 1439.
+- `crates/opi-eval/src/runner/experiment.rs:1966` — The ordinary native run invokes owned cleanup itself, so its good cleanup tests do not prove conformance-witness coverage.
+- `crates/opi-eval/src/runner/experiment.rs:3656` — Current ordinary-run cleanup discovers exact com.docker.compose.project.working_dir labels; the source claim that it requires an opi-eval label is not true at remediation head.
+- `crates/opi-eval/tests/native_driver.rs:1136` — Positive control native_settlement_cleans_root_bound_containers preserves neighbors and removes exact owned resources even when setup fails.
+- `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md:342` — Cleanup is limited to identified trial-owned resources; neighboring/shared resources are not targets.
+- Limit: No Docker workload ran and no old E: evaluation artifact was opened. The exact historic operator leaks remain unconfirmed; the current diagnostic witness cleanup gap has independent red-before evidence.
 
 ## Unresolved Decisions
 
 none
 
-### D1 resolution: complete files within the existing artifact bound
+### Resolved D1: user-selected option A — trusted runtime compatibility observation
 
-The accepted file-backed, bounded-memory direction remains unchanged. Inspection of the committed archive establishes an existing concrete bound: `bundle/mod.rs:1164-1166` defines `MAX_ARTIFACT_BYTES = 64 * 1024 * 1024`; insertion at `:1202-1206` rejects larger artifacts with `ArtifactTooLarge`. B11 reuses that **per-artifact** limit and its existing rejection meaning. It introduces no new numeric limit, total-trial quota, CLI/config key, schema version, dependency or public adapter seam. The existing raw source log can exceed the bound, but it cannot be admitted as a complete sealed artifact by truncating it.
+The user explicitly selected option A in this invocation. B11 adopts an integration-owned `runtime_preflight`, using the existing task-environment execution boundary and exact material identities. This resolves the evidence-contract decision without changing the Agent Core event stream. It detects the cited persistent loader/runtime incompatibility; it does not prove that the later task process started or that every lazily loaded dependency will work.
 
-Complete settled stdout/stderr up to that limit is copied, hashed and checked through bounded file IO. Above the limit, read/write exhaustion, malformed terminal evidence or unsafe/changing input fails the affected evidence/settlement explicitly; private raw diagnostics remain unmodified where available, and no successful partial artifact/seal or fabricated Agent score is published. This is a repair of evidence handling inside the existing Companion contract. Changing the bound, public evidence shape, authority or new resource policy is outside B11 and would require a new plan.
-
-Normal complete capture and the separate timeout diagnostic-copy path remain distinct. The latter's 1 MiB/file, 16 MiB-total, 256-file private-copy limits are not changed. Host process-adapter profile caps are not changed. C010 and P002 have one root repair, one combined predicate and shared before/after evidence, while retaining separate source records.
-
-P003 has a resolved ownership disposition (Returned to shaping), not permission for this workflow to write an implementation ledger. P001 has a registered operator-evidence deferral; no spending or real credentials are authorized. P005 remains an explicit Cannot confirm exclusion with a concrete evidence gap.
+1. Exact runtime -> verify: after verified runtime staging and before `_project_configuration`, run the staged Opi executable or staged pi wrapper/package with `--version`. The pi wrapper must select its packaged Node and bundled CLI, never host Node or bare `pi`. Use the same task environment, task user/cwd and loader-relevant nonsecret settings as the task command; supply no projected credentials, task prompt, provider call, network fetch or ambient user configuration. Revalidate the staged executable/package identities before task dispatch if intervening operations could alter them. Existing handoff/3 supplies identity; no new public handoff or runtime configuration is needed.
+2. Bounded observation -> verify: use `OwnedDockerEnvironment.exec(timeout_sec=30)` within the enclosing lifecycle deadline, with observed/bounded process-group termination. Observe one result. `passed` requires observed exit 0, complete readable bounded output and valid identity. Observed nonzero is `failed`; timeout, transport/termination uncertainty, missing/invalid output or capture overflow is `unknown`. Failed and unknown both prevent task dispatch. Keep the existing stronger uncertainty/cancellation/cleanup behavior; a fabricated exit code is never evidence.
+3. Private terminal /2 -> verify: synchronize both pinned writers and the Rust reader on `schema: opi-eval-native-agent-terminal/2`. Retain `product` and `agent_executable_sha256`; add logical `trial`, `runtime_preflight`, and boolean `task_dispatched`; make the task `exit_code` nullable. `runtime_preflight` has `kind: version`, `status: passed|failed|unknown`, its own nullable observed `exit_code`, exact executable SHA-256 and optional runtime package manifest SHA-256/entrypoint, exact command SHA-256, separate stdout/stderr SHA-256 plus completeness/truncation state, and a bounded static reason token for unknown. Failed/unknown preflight requires `task_dispatched=false`, task `exit_code=null`, task `timed_out=false` and no delivered Agent files. Passed preflight alone never supplies a task exit. Malformed or contradictory combinations reject.
+4. Bind and preserve -> verify: compare logical trial, product and runtime identity with dispatch-owned `NativeSelection` expectations; validate the fixed version command and hashes against captured bytes. Reuse the existing one-new-job, selected-trial and stale-job guards, rather than accepting self-reported identity as authority. The host-side pinned integration writes proof; task output cannot authorize scoring. Keep preflight captures separate from Agent stdout/stderr under runtime-preflight artifact keys, safe-file checks, bounded capture and privacy/canary rules. Preserve typed proof and bounded diagnostics even when setup failure leaves no reward binding. A missing reward, terminal or Agent process observation must never be fabricated to make that path bind. Terminal-only capture retains the proof and permitted bounded diagnostics; full capture follows B8's existing artifact bound.
+5. One settlement owner -> verify: failed/unknown preflight is attempted but invalid/unscored; if effects or cleanup are uncertain, retain the stronger existing no-outcome/failed-seal handling. Do not manufacture an AgentRecord with the preflight's exit. Bound passed preflight permits ordinary task processing: real nonzero/crash and task-timeout controls retain their current semantics, with required pi terminal evidence still enforced. Provider failures, unobserved task transport/termination, missing required native evidence and failed binding stay invalid. Propagate proof into sealed normalized `native/agent-terminal.json` where that observation exists and into settlement evidence; offline report reads settlement and does not add a stderr/empty-stream classifier.
+6. Reader and version boundary -> verify: fresh native imports and the local acceptance checker require /2 proof; /1 or absent proof cannot be silently upgraded. Existing sealed bundle byte verification, offline reporting and verifier-only regrade retain their original versioned meaning, never invent startup proof and do not certify new live acceptance. Regrade does not rerun the Agent or its preflight. Update /2 fixture writers/readers together, including the DeepSWE selection constructor; retain explicit legacy rejection cases. Document the bounded 0.x private contract change in both READMEs and Unreleased. No public Agent SDK, manifest/dependency, implementation-ledger or registered-spec edit is admitted.
+7. Discrimination -> verify: the same recorded Python probe must turn green for Harbor/Pier x Opi/pi, then new `native_runtime_preflight` Rust cases exercise sealed classification and public report with failed/unknown/passed proof, timeout and uncertain transport, identity/trial/command/log substitution, stale proof, missing /1 proof and contradictory task state. Pair nonzero/crash/timeout outcomes after passed proof with invalid provider/evidence controls. Update the original loader-shaped fixture to supply actually observed preflight refusal; diagnostic text alone is not proof. Run full modified Python and Rust suites and B6's actual-client assembled path. Real-provider acceptance remains separately authorized under P / P19-AUD-001.
 
 ## Closure Batches
 
-These bounded batches are the sealed plan scope. Production edits require the separate exact-digest apply invocation; the user's D1 agreement resolves the design choice and does not replace that invocation. Severity order is Major batches first, then the Minor helper repair; final verification follows every admitted source change. Shared files do not merge predicates. B6 may reuse B9's validated helper when that creates a real dependency, so the execution order can put B9 immediately before B6.
+Execute Major batches B1, B2, B3, B4, B5, B7, B8, B11, B6, then Minor B9 and B10. B8 shares a repair only because its two source records have the same native capture predicate; their identities and the incorrect profile-root attribution stay separate. Apply shared-file edits sequentially. The initial clean baseline still applies to this continued planning invocation; only its own fixed plan pair was revised after the user selected D1 option A.
 
-### Batch B1: connection.opi-file-credential-projection
+### Batch B1: Project file credentials to the selected Opi process
 
-**Closure predicate**: A matching File/FromFile connection supplies its resolved value under the same private environment key named in Opi configuration; the value never enters config, grader or exported evidence.
+**Closure predicate**: A matching File/FromFile projection for Opi carries the resolved value in agent_env[config.api_key_env], uses OPI_EVAL_AGENT_KEY, keeps it out of config/exported evidence, and retained Env/Pi behavior still passes.
 **Dependencies**: none
-**Verification union**: the matching regression below plus the deduplicated final verification union. Test impact: add/update; retain existing guards.
+**Verification union**: `cargo test --offline --locked -p opi-eval --all-targets (WSL/Linux; no ignored live tests)`; `cargo clippy --offline --locked -p opi-eval --all-targets -- -D warnings`; `cargo fmt --check --all`; `python scripts/opi-doc-check.py`; `git diff --check`
 
-#### Fix B1.1: project-resolved-file-credential
+#### Fix B1.1: Project file credentials to the selected Opi process
 
-- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-001` (C001).
-- **Decision**: `fix:project-resolved-file-credential`
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-eval/src/experiment.rs`, `crates/opi-eval/tests/native_driver.rs`, `CHANGELOG.md`
+- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-001`
+- **Decision**: fix:project-opi-file-credential
+- **Verification status**: C/P19-AUD-001: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/experiment.rs`, `crates/opi-eval/tests/native_driver.rs`
 - **Change kind**: behavioral
-- **Change**: Reuse the existing fallback name when building the Opi agent_env map. Add file-reference projection and selected-client CLI coverage; retain mismatch, privacy and credential cleanup cases. No new credential source or config field.
-- **Closure predicate**: A matching File/FromFile connection supplies its resolved value under the same private environment key named in Opi configuration; the value never enters config, grader or exported evidence.
-- **Red-before**: `cargo test --offline --locked -p opi-eval --test plan_native_probe --test plan_offline_probe --test plan_capture_probe --no-fail-fast plan_ -- --nocapture --test-threads=1` — FAIL: config references OPI_EVAL_AGENT_KEY; projected env names=[]; actual None instead of the dummy resolved value.
-- **Green-after**: `cargo test --offline --locked -p opi-eval --test native_driver file_credential_projection -- --nocapture --test-threads=1` — PASS with the same discriminating assertion and retained controls; not run during planning.
-- **Transfer rule**: for an archive-only probe, port the minimal new assertions into the named maintained test seam, without copying the whole probe scaffold. Preserve its before/after predicate; record both commands and exact outcomes.
-### Batch B2: native.boundary-failure-stops-dispatch
+- **Change**: Populate Opi agent_env under the same environment name used by its rendered config for both Env and File values (existing OPI_EVAL_AGENT_KEY fallback for File). Keep secret out of config bytes and exportable handoff identity. Add regression coverage for Env/File on both clients, mismatch rejection, and process-only file credential handoff/cleanup using dummy values. No new config key or public API.
+- **Closure predicate**: A matching File/FromFile projection for Opi carries the resolved value in agent_env[config.api_key_env], uses OPI_EVAL_AGENT_KEY, keeps it out of config/exported evidence, and retained Env/Pi behavior still passes.
+- **Red-before**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline --locked -p opi-eval --test p19_projection_probe p19_plan_probe_file_credential_projection -- --exact --nocapture --test-threads=1` → FAIL: Cargo exit 101; exactly 1 executed test, 1 failed. Config api_key_env=OPI_EVAL_AGENT_KEY, env_names=[], assertion left None versus Some(dummy-file-key).; expected: FAIL: Opi file credential is absent from the environment selected by its config.
+- **Green-after**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline --locked -p opi-eval --test p19_projection_probe p19_plan_probe_file_credential_projection -- --exact --nocapture --test-threads=1` → expected PASS: exactly one test; selected environment key contains dummy-file-key and config excludes the value.; observed `not-run`.
+- **Test impact**: add: file-backed Opi credential projection and private handoff regression; update: projection matrix to include Env/File for both clients; delete: none; retain: environment credential matching and privacy/cleanup tests
 
-**Closure predicate**: After an integrity/provenance rejection or unconfirmed owned/credential/partial-capture cleanup, settlement preserves the failure and the next queued trial never starts; valid Agent zero and settled provider outcomes retain their specified treatment.
+### Batch B2: Stop native dispatch after integrity or cleanup boundary failure
+
+**Closure predicate**: In a serial two-trial native run, cleanup uncertainty or rejected identity in the first attempt settles that attempt and prevents the second stage=start; legitimate Agent failures remain graded and permit the next trial.
 **Dependencies**: none
-**Verification union**: the matching regression below plus the deduplicated final verification union. Test impact: add/update; retain existing guards.
+**Verification union**: `cargo test --offline -p opi-eval --test native_driver`; `cargo clippy --offline -p opi-eval --all-targets -- -D warnings`; `cargo fmt --check --all`; `python scripts/opi-doc-check.py`; `git diff --check`
 
-#### Fix B2.1: cancel-after-unsettled-boundary
+#### Fix B2.1: Stop native dispatch after integrity or cleanup boundary failure
 
-- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-002` (C002).
-- **Decision**: `fix:cancel-after-unsettled-boundary`
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/tests/native_driver.rs`, `CHANGELOG.md`
+- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-002`
+- **Decision**: fix:stop-dispatch-after-native-boundary-breach
+- **Verification status**: C/P19-AUD-002: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/tests/native_driver.rs`
 - **Change kind**: behavioral
-- **Change**: Propagate the existing run cancellation token from the failed boundary after recording observed settlement; reuse supervision for in-flight owned work. Cover both failure reasons in one predicate matrix, with queued and already-running behavior. Do not cancel merely because a valid Agent outcome is zero.
-- **Closure predicate**: After an integrity/provenance rejection or unconfirmed owned/credential/partial-capture cleanup, settlement preserves the failure and the next queued trial never starts; valid Agent zero and settled provider outcomes retain their specified treatment.
-- **Red-before**: `cargo test --offline --locked -p opi-eval --test plan_native_probe --test plan_offline_probe --test plan_capture_probe --no-fail-fast plan_ -- --nocapture --test-threads=1` — FAIL: cleanup-unconfirmed probe starts 2 trials; provenance-mismatch probe starts 2 trials and the second seals. Expected only the first dispatch. Valid-zero control PASS.
-- **Green-after**: `cargo test --offline --locked -p opi-eval --test native_driver boundary_failure_stops_dispatch -- --nocapture --test-threads=1` — PASS with the same discriminating assertion and retained controls; not run during planning.
-- **Transfer rule**: for an archive-only probe, port the minimal new assertions into the named maintained test seam, without copying the whole probe scaffold. Preserve its before/after predicate; record both commands and exact outcomes.
-### Batch B3: offline.verify.reject-trial-links
+- **Change**: Propagate cleanup/credential-removal uncertainty and integrity/provenance failure to the existing run-level cancellation owner before the next wave. Preserve the failed attempt receipt and missing/unexecuted planned coverage. Do not cancel merely because an ordinary native task outcome has reward zero or a legitimate Agent nonzero exit.
+- **Closure predicate**: In a serial two-trial native run, cleanup uncertainty or rejected identity in the first attempt settles that attempt and prevents the second stage=start; legitimate Agent failures remain graded and permit the next trial.
+- **Red-before**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline -p opi-eval --test native_driver plan_p19_cleanup_stops_dispatch -- --exact --nocapture --test-threads=1 ; CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline -p opi-eval --test native_driver plan_p19_identity_stops_dispatch -- --exact --nocapture --test-threads=1` → FAIL: Both named tests ran individually, 1 failed each, Cargo exit 101. Each observed trial-opi-native settled=failed followed by trial-pi-native stage=start; assertion left=2 attempted receipts, right=1.; expected: Both fail because the next trial starts after the boundary breach.
+- **Green-after**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline -p opi-eval --test native_driver plan_p19_cleanup_stops_dispatch -- --exact --nocapture --test-threads=1 ; CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline -p opi-eval --test native_driver plan_p19_identity_stops_dispatch -- --exact --nocapture --test-threads=1` → expected PASS each; one attempted receipt, no second dispatch, retained failed settlement and visible unexecuted coverage.; observed `not-run`.
+- **Test impact**: add: dispatch-after-cleanup-failure and dispatch-after-identity-rejection cases; update: native_result_binding_rejects_every_substitution and cleanup tests currently expect both trial receipts; adjust fixture isolation/expectations without losing each rejection case; retain: valid native zero/nonzero/timeouts; signal cancellation; unknown termination; recovery evidence
 
-**Closure predicate**: An intact two-trial source verifies; replacing a trial directory with a symlink to identical bytes yields an explicit nonzero verification failure without following the link or reducing a successful inventory.
+### Batch B3: Reject unsafe entries in the trial inventory
+
+**Closure predicate**: Replacing a sealed trial directory with a symlink to its unchanged original bytes cannot produce verify exit 0/outcome verified; the linked trial is explicitly rejected, no source bytes are rewritten, and ordinary sealed/unsealed cases retain their existing outcomes.
 **Dependencies**: none
-**Verification union**: the matching regression below plus the deduplicated final verification union. Test impact: add/update; retain existing guards.
+**Verification union**: `cargo test --offline --locked -p opi-eval --all-targets (WSL/Linux; no ignored live tests)`; `cargo clippy --offline --locked -p opi-eval --all-targets -- -D warnings`; `cargo fmt --check --all`; `python scripts/opi-doc-check.py`; `git diff --check`; `cargo test --offline --locked -p opi-eval --test bundle_recompute (included in all-targets; run on WSL/Linux so symlink cases execute)`; `Windows platform-specific link/junction regression if reparse detection is introduced; use existing non-privileged junction fixture style`
 
-#### Fix B3.1: reject-linked-trial-inventory
+#### Fix B3.1: Reject unsafe entries in the trial inventory
 
-- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-003` (C003).
-- **Decision**: `fix:reject-linked-trial-inventory`
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-eval/src/regrade.rs`, `crates/opi-eval/tests/native_driver.rs`, `CHANGELOG.md`
+- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-003`
+- **Decision**: fix:reject-linked-trial-entry
+- **Verification status**: C/P19-AUD-003: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/regrade.rs`, `crates/opi-eval/tests/bundle_recompute.rs`
 - **Change kind**: behavioral
-- **Change**: Reject unsafe trial directory entries at discovery and retain existing source containment semantics for verify/regrade. Add directory-link, file-replacement and ordinary-directory controls at the public CLI seam; preserve source bytes.
-- **Closure predicate**: An intact two-trial source verifies; replacing a trial directory with a symlink to identical bytes yields an explicit nonzero verification failure without following the link or reducing a successful inventory.
-- **Red-before**: `cargo test --offline --locked -p opi-eval --test plan_offline_probe plan_offline_verify_rejects_trial_symlink -- --exact --nocapture --test-threads=1` — FAIL: intact source verifies 2 bundles; after replacing trial-opi-native with a symlink to preserved identical bytes, verify exits 0 with outcome=verified, 1 bundle and failures=[]. Corrected exact filter: 0 passed/1 failed.
-- **Green-after**: `cargo test --offline --locked -p opi-eval --test native_driver verify_rejects_trial_links -- --nocapture --test-threads=1` — PASS with the same discriminating assertion and retained controls; not run during planning.
-- **Transfer rule**: for an archive-only probe, port the minimal new assertions into the named maintained test seam, without copying the whole probe scaffold. Preserve its before/after predicate; record both commands and exact outcomes.
-### Batch B4: offline.regrade.selected-products
+- **Change**: Make trial enumeration fail closed on linked trial entries instead of silently filtering them. Inspect link metadata (including Windows reparse points) before following descendants; a symlink/junction substitution must cause a documented existing nonzero verify outcome. Keep ordinary unsealed directories visible. Exercise the shared native-regrade enumeration path without broadening into a new inventory format. Retain read-only behavior.
+- **Closure predicate**: Replacing a sealed trial directory with a symlink to its unchanged original bytes cannot produce verify exit 0/outcome verified; the linked trial is explicitly rejected, no source bytes are rewritten, and ordinary sealed/unsealed cases retain their existing outcomes.
+- **Red-before**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline --locked -p opi-eval --test p19_projection_probe p19_plan_probe_verify_trial_symlink -- --exact --nocapture --test-threads=1` → FAIL: Cargo exit 101; exactly 1 executed test, 1 failed. Before substitution verify has 2 bundles/exit 0. Afterwards verify exit 0, bundles contains only trial-pi-native, failures=[], outcome=verified.; expected: FAIL: replacing one of two sealed trial directories with a link still succeeds.
+- **Green-after**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline --locked -p opi-eval --test p19_projection_probe p19_plan_probe_verify_trial_symlink -- --exact --nocapture --test-threads=1` → expected PASS: exactly one test; whole-trial link substitution has nonzero verify exit, while pre-substitution 2-bundle verification succeeds.; observed `not-run`.
+- **Test impact**: add: whole-trial symlink substitution regression, Windows junction variant for corresponding metadata check; update: none; delete: none; retain: sealed artifact tamper tests, unsealed bundle verification, report input containment
 
-**Closure predicate**: A verified pi-only run produces one source-linked derived grade from its unchanged pi-only material, invokes zero Agents/providers and preserves the original source bytes; missing selected material still rejects.
+### Batch B4: Regrade only the products required by the source trials
+
+**Closure predicate**: A valid sealed pi-only native run regrades successfully with its pi-only material, producing exactly its derived trial record with no Opi dependency or Agent/provider invocation; corresponding selected-product identity/material drift remains rejected.
 **Dependencies**: none
-**Verification union**: the matching regression below plus the deduplicated final verification union. Test impact: add/update; retain existing guards.
+**Verification union**: `cargo test --offline --locked -p opi-eval --all-targets (WSL/Linux; no ignored live tests)`; `cargo clippy --offline --locked -p opi-eval --all-targets -- -D warnings`; `cargo fmt --check --all`; `python scripts/opi-doc-check.py`; `git diff --check`
 
-#### Fix B4.1: load-only-source-selected-agent-material
+#### Fix B4.1: Regrade only the products required by the source trials
 
-- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-004` (C004).
-- **Decision**: `fix:load-only-source-selected-agent-material`
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-eval/src/regrade.rs`, `crates/opi-eval/tests/native_driver.rs`, `CHANGELOG.md`
+- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-004`
+- **Decision**: fix:load-selected-regrade-products
+- **Verification status**: C/P19-AUD-004: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/regrade.rs`, `crates/opi-eval/tests/native_driver.rs`
 - **Change kind**: behavioral
-- **Change**: Determine the required product set from verified source control/subject identities before using existing load_for. Retain both-product loader semantics for unrelated consumers and retain selected identity validation.
-- **Closure predicate**: A verified pi-only run produces one source-linked derived grade from its unchanged pi-only material, invokes zero Agents/providers and preserves the original source bytes; missing selected material still rejects.
-- **Red-before**: `cargo test --offline --locked -p opi-eval --test plan_native_probe --test plan_offline_probe --test plan_capture_probe --no-fail-fast plan_ -- --nocapture --test-threads=1` — FAIL: source run exit 0; regrade exit 2, agent set must be exactly [opi, pi], found [pi].
-- **Green-after**: `cargo test --offline --locked -p opi-eval --test native_driver pi_only_native_regrade -- --exact --nocapture --test-threads=1` — PASS with the same discriminating assertion and retained controls; not run during planning.
-- **Transfer rule**: for an archive-only probe, port the minimal new assertions into the named maintained test seam, without copying the whole probe scaffold. Preserve its before/after predicate; record both commands and exact outcomes.
-### Batch B5: report.full-selected-count
+- **Change**: Derive the exact required product set from verified sealed source trial/subject identities and call existing NativeMaterial::load_for with that set instead of the two-product default. Preserve per-trial tamper/identity rejection, verifier-only execution, missing selected material rejection, source immutability and cleanup semantics. Add pi-only and Opi-only regrade cases with no unselected executable/material, keep paired success and substitution negatives. No material schema or new public seam.
+- **Closure predicate**: A valid sealed pi-only native run regrades successfully with its pi-only material, producing exactly its derived trial record with no Opi dependency or Agent/provider invocation; corresponding selected-product identity/material drift remains rejected.
+- **Red-before**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline --locked -p opi-eval --test p19_projection_probe p19_plan_probe_pi_only_regrade -- --exact --nocapture --test-threads=1` → FAIL: Cargo exit 101; exactly 1 executed test, 1 failed. Validation, native pi-only run, and offline report succeeded; regrade exit 2 with 'agent set must be exactly [opi, pi], found [pi]'.; expected: FAIL: valid pi-only run cannot regrade with its own valid selected material.
+- **Green-after**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline --locked -p opi-eval --test p19_projection_probe p19_plan_probe_pi_only_regrade -- --exact --nocapture --test-threads=1` → expected PASS: exactly one test; pi-only regrade exit 0 and one derived trial.; observed `not-run`.
+- **Test impact**: add: native pi-only and Opi-only offline regrade with absent unselected material; update: selected-product material drift/rejection coverage; delete: none; retain: paired all-family native_offline_regrade, native_offline_regrade_rejects_every_fail_closed_case, credential-free/source-immutable/cleanup regrade tests
 
-**Closure predicate**: Full selected counts distinct expanded task identities, independent of subject/repetition count; corpus, scope, planned, attempted and valid coverage remain consistent for full, partial-full and explicit subset runs.
+### Batch B5: Report the frozen full-selection task count
+
+**Closure predicate**: For a legal full selection, selected equals the complete frozen corpus task count, independent of subject count, repetitions, attempted trials, or surviving bundles; subset selected count and separate planned/attempted/valid/unexecuted counts remain correct.
 **Dependencies**: none
-**Verification union**: the matching regression below plus the deduplicated final verification union. Test impact: add/update; retain existing guards.
+**Verification union**: `cargo test --offline --locked -p opi-eval --all-targets (WSL/Linux; no ignored live tests)`; `cargo clippy --offline --locked -p opi-eval --all-targets -- -D warnings`; `cargo fmt --check --all`; `python scripts/opi-doc-check.py`; `git diff --check`
 
-#### Fix B5.1: count-expanded-full-task-selection
+#### Fix B5.1: Report the frozen full-selection task count
 
-- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-005` (C005).
-- **Decision**: `fix:count-expanded-full-task-selection`
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-eval/src/report.rs`, `crates/opi-eval/tests/native_driver.rs`, `CHANGELOG.md`
+- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-005`
+- **Decision**: fix:count-frozen-full-selection
+- **Verification status**: C/P19-AUD-005: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/report.rs`, `crates/opi-eval/tests/bundle_recompute.rs`, `crates/opi-eval/tests/native_driver.rs`
 - **Change kind**: behavioral
-- **Change**: Derive full selected count from validated planned trial task identities in ReportBuilder. Keep the full task_ids=[] durable representation and existing subset semantics; no schema or format change is needed.
-- **Closure predicate**: Full selected counts distinct expanded task identities, independent of subject/repetition count; corpus, scope, planned, attempted and valid coverage remain consistent for full, partial-full and explicit subset runs.
-- **Red-before**: `cargo test --offline --locked -p opi-eval --test plan_offline_probe plan_offline_full_selection_reports_selected_tasks -- --exact --nocapture --test-threads=1` — FAIL: valid full run has corpus=1, planned=2, attempted=2, valid=2, but selected=0 instead of 1. Corrected exact filter: 0 passed/1 failed.
-- **Green-after**: `cargo test --offline --locked -p opi-eval --test native_driver full_selection_reports_selected_tasks -- --nocapture --test-threads=1` — PASS with the same discriminating assertion and retained controls; not run during planning.
-- **Transfer rule**: for an archive-only probe, port the minimal new assertions into the named maintained test seam, without copying the whole probe scaffold. Preserve its before/after predicate; record both commands and exact outcomes.
-### Batch B7: native.outcome.reject-unobserved-client-startup
+- **Change**: Compute full-scope selected task count from the existing frozen corpus/task inventory rather than the raw optional request task_ids array. The minimal path is full -> run-control.corpus_tasks, subset -> explicit selected IDs length; preserve separate trial counts and no-selection/null behavior. Add full/subset coverage regressions with multiple subjects/repetitions and missing or zero sealed bundles. Do not revise run-control or report schemas.
+- **Closure predicate**: For a legal full selection, selected equals the complete frozen corpus task count, independent of subject count, repetitions, attempted trials, or surviving bundles; subset selected count and separate planned/attempted/valid/unexecuted counts remain correct.
+- **Red-before**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline --locked -p opi-eval --test p19_projection_probe p19_plan_probe_full_selection_report -- --exact --nocapture --test-threads=1` → FAIL: Cargo exit 101; exactly 1 executed test, 1 failed. Successful full run/offline report produced corpus=1, selected=0, planned=2, attempted=2, valid=2, invalid=0, unexecuted=0.; expected: FAIL: a one-task successful full run reports selected=0.
+- **Green-after**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline --locked -p opi-eval --test p19_projection_probe p19_plan_probe_full_selection_report -- --exact --nocapture --test-threads=1` → expected PASS: exactly one test; corpus=selected=1 and planned=attempted=valid=2 for the same full run.; observed `not-run`.
+- **Test impact**: add: full selection report denominator regression including repetitions and total bundle loss; update: existing subset/full native coverage matrix assertions; delete: none; retain: planned_coverage_survives_total_bundle_loss, subset/pair/native failure coverage tests
 
-**Closure predicate**: A non-timeout process failure with no native Opi startup evidence is invalid infrastructure and unscored; a real started client task failure/zero and benchmark-valid timeout remain scored with their native meanings.
-**Dependencies**: none
-**Verification union**: the matching regression below plus the deduplicated final verification union. Test impact: add/update; retain existing guards.
+### Batch B6: Exercise actual clients through the public failure-to-report path
 
-#### Fix B7.1: separate-client-startup-failure-from-task-zero
+**Closure predicate**: One opt-in test invocation proves both actual clients, local provider fixture, sealed settlement and public run/report agree on each final provider outcome, native zero, and retry-success, with executed test count and exact binary/material identities retained.
+**Dependencies**: B2, B8 and B11; actual-client acceptance uses the repaired lifecycle, capture and preflight contract
+**Verification union**: `cargo test --offline --locked -p opi-eval --test native_driver native_client_provider_failure_report -- --ignored --exact --nocapture --test-threads=1`; `cargo test --offline --locked -p opi-eval --test native_driver`; `cargo clippy --offline --locked -p opi-eval --test native_driver -- -D warnings`; `cargo fmt --check --all`; `git diff --check`
 
-- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-008` (C008).
-- **Decision**: `fix:separate-client-startup-failure-from-task-zero`
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/src/agent/opi.rs`, `crates/opi-eval/tests/native_driver.rs`, `CHANGELOG.md`
-- **Change kind**: behavioral
-- **Change**: Require positive existing native Opi event/startup evidence before classifying an ordinary nonzero exit as a task failure. Preserve typed provider-error precedence and timeout semantics; use the native Agent/AgentStart envelope already emitted by Opi. Do not key classification solely on GLIBC stderr strings or make every nonzero exit invalid. Update synthetic fixtures to carry truthful native startup evidence and add absence/malformed/provider/zero/timeout controls. No new launch schema or Opi product serialization is proposed.
-- **Closure predicate**: A non-timeout process failure with no native Opi startup evidence is invalid infrastructure and unscored; a real started client task failure/zero and benchmark-valid timeout remain scored with their native meanings.
-- **Red-before**: `cargo test --offline --locked -p opi-eval --test plan_native_probe --test plan_offline_probe --test plan_capture_probe --no-fail-fast plan_ -- --nocapture --test-threads=1` — FAIL: empty client stdout plus loader-only stderr produces sealed graded-native/reward=0/agent_failed=true and run exit 0; valid native-zero control PASS.
-- **Green-after**: `cargo test --offline --locked -p opi-eval --test native_driver native_client_startup_classification -- --nocapture --test-threads=1` — PASS with the same discriminating assertion and retained controls; not run during planning.
-- **Transfer rule**: for an archive-only probe, port the minimal new assertions into the named maintained test seam, without copying the whole probe scaffold. Preserve its before/after predicate; record both commands and exact outcomes.
-### Batch B8: acceptance.native-api-identity
+#### Fix B6.1: Exercise actual clients through the public failure-to-report path
 
-**Closure predicate**: Offline acceptance recognizes Opi Anthropic and pi anthropic-messages as their exact native representations of the selected protocol, while provider/model and invalid-product/API cases remain strict.
-**Dependencies**: none
-**Verification union**: the matching regression below plus the deduplicated final verification union. Test impact: add/update; retain existing guards.
-
-#### Fix B8.1: interpret-api-by-native-product
-
-- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-009` (C009).
-- **Decision**: `fix:interpret-api-by-native-product`
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-eval/scripts/verify-local-acceptance.py`, `crates/opi-eval/scripts/test_verify_local_acceptance.py`, `CHANGELOG.md`
-- **Change kind**: behavioral
-- **Change**: Make interpretation product-specific in the existing verifier and give fixtures actual native shapes. Retain all tamper, endpoint/control and evidence-completeness checks. Preserve Opi serialization and the selected first-connection policy. Update the public CLI subprocess negative test and reject unknown representations.
-- **Closure predicate**: Offline acceptance recognizes Opi Anthropic and pi anthropic-messages as their exact native representations of the selected protocol, while provider/model and invalid-product/API cases remain strict.
-- **Red-before**: `python C:\Users\Luiz\AppData\Local\Temp\opi-phase19-remediation-plan-hldp4vqx\probe-native-api-offline.py C:\Users\Luiz\AppData\Local\Temp\opi-phase19-remediation-plan-hldp4vqx\source` — FAIL exit 1: Opi Anthropic rejected as provider response differs; pi anthropic-messages accepted; unknown Opi API and pi Anthropic rejected.
-- **Green-after**: `python crates/opi-eval/scripts/test_verify_local_acceptance.py` — PASS with the same discriminating assertion and retained controls; not run during planning.
-- **Transfer rule**: for an archive-only probe, port the minimal new assertions into the named maintained test seam, without copying the whole probe scaffold. Preserve its before/after predicate; record both commands and exact outcomes.
-### Batch B11: native.capture.complete-settled-streams
-
-**Closure predicate**: For both products, a completed native stdout/stderr stream within the existing 64 MiB per-artifact limit is preserved byte-for-byte with complete digests and terminal interpretation, including streams above 1 MiB; copy/hash/scan/verification use fixed-size buffers and parsing retains bounded current/terminal state rather than a whole event history. Oversize, unsafe, changing, unreadable or unwritable evidence cannot become a truncated successful seal or an invented Agent score; existing privacy and terminal-only rules hold.
-**Dependencies**: B2 (failed boundary propagation), B7 (startup classification) and B8 (product-specific API predicate); B6 consumes the corrected capture path. This Major batch precedes B9/B6 and the final B10 gates.
-**Verification union**: public `full_capture_` regression matrix; focused pi/bundle/scanner unit tests; bundle recomputation/tamper tests; offline-verifier unit and CLI-negative tests; retained terminal-only, native-zero, timeout, privacy and ownership controls; final workspace gates. The unchanged committed red is reused rather than rerun without a source change.
-
-#### Fix B11.1: stream-complete-native-capture-with-existing-artifact-bound
-
-- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-010` (C010); `phase19-pi-glm53-e079780-20260926t192024z` + `f2e7acaffe724a0fa6dbf28ca767b163a3cd664a905a17e6b17924d1fedd582c` + `P19-AUD-002` (P002).
-- **Decision**: `fix:stream-complete-native-capture-with-existing-artifact-bound`
-- **Verification status**: Confirmed for C010; Partially confirmed for P002 (effect confirmed; profile-cap attribution corrected).
-- **File(s)**: `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/src/agent/pi.rs`, `crates/opi-eval/src/bundle/mod.rs`, `crates/opi-eval/tests/native_driver.rs`, `crates/opi-eval/tests/bundle_recompute.rs`, `crates/opi-eval/scripts/verify-local-acceptance.py`, `crates/opi-eval/scripts/test_verify_local_acceptance.py`, `crates/opi-eval/README.md`, `crates/opi-eval/README.zh.md`, `CHANGELOG.md`
-- **Change kind**: behavioral
-- **Change**: Replace native prefix-as-evidence handling with safe, complete, file-backed capture under the existing per-artifact bound; carry full-file digest/length separately from any private diagnostic preview; stream through the necessary consumers below. Reuse existing failure boundaries, artifact keys, native terminal fields and manifest identity rules.
-- **Closure predicate**: For both products, a completed native stdout/stderr stream within the existing 64 MiB per-artifact limit is preserved byte-for-byte with complete digests and terminal interpretation, including streams above 1 MiB; copy/hash/scan/verification use fixed-size buffers and parsing retains bounded current/terminal state rather than a whole event history. Oversize, unsafe, changing, unreadable or unwritable evidence cannot become a truncated successful seal or an invented Agent score; existing privacy and terminal-only rules hold.
-- **Red-before**: `cargo test --offline --locked -p opi-eval --test plan_native_probe --test plan_offline_probe --test plan_capture_probe --no-fail-fast plan_ -- --nocapture --test-threads=1` — FAIL in `plan_full_capture_preserves_large_settled_streams`: both 1,050,479-byte source streams seal only 1,048,576 bytes; pi becomes `import-evidence-incomplete`, and valid report coverage is 1/2. The 1,966-byte controls retain complete bytes and valid 2/2 coverage. Exact archive/probe/log hashes remain listed below.
-- **Green-after**: `cargo test --offline --locked -p opi-eval --test native_driver full_capture_ -- --nocapture --test-threads=1` — PASS with the same complete-byte and final-outcome assertions for both products, plus the failure matrix below; not run during planning.
-- **Transfer rule**: Port the existing isolated capture assertion into maintained `native_driver.rs`; use genuine per-product native fixtures when extending the matrix. The earlier synthetic probe proves byte retention and pi settlement, not actual Opi/pi-client acceptance. B6 remains separate.
-
-Implementation and failure requirements are part of this single closure batch:
-
-1. **Acquire settled files safely.** In `runner/experiment.rs`, preserve directory containment, no-follow open, regular-file/single-link validation and stopped-owned-writer precondition. Track the opened file's identity/size and reject observed growth, replacement or drift; do not trust a size precheck alone. Read at most the shared artifact limit plus a checked overflow observation. Missing or malformed required terminal evidence cannot be upgraded to a completed client. Keep raw sources unchanged.
-2. **Stage atomically without raw-stream Vec copies.** Add only a private file/reader insertion path to the existing `RunBundle` state machine, reusing artifact-role/source/classification/causal-edge checks, duplicate checks, sealed-state rejection, atomic temporary-file publication and durability syncing. Compute size and SHA-256 during fixed-buffer copy; enforce the existing 64 MiB per-artifact limit before publishing the artifact. Preserve the existing bytes API for its current consumers; do not add a trait, public storage abstraction or second bundle format. An incomplete write/sync/rename cannot register a successful artifact or publish a manifest. Remove only transaction-owned temporary files.
-3. **Interpret the whole stream with bounded retained state.** Refactor pi parsing to share one event/state validation core between the current in-memory host input and native file input. Retain the current schema/terminal/provider/model checks and count exactly one terminal; process one event at a time instead of collecting all lines/events. Bound decoded current/terminal payload and total input by the existing artifact admission bound; explicitly reject overflow/parse failure rather than truncating a line or inventing a smaller event-limit configuration. Opi startup and typed provider interpretation retain B7's semantics. `stdout_sha256`/`stderr_sha256` describe the complete validated file, and truncation fields must truthfully distinguish full evidence from a private preview. Terminal-only mode still omits raw streams while preserving its existing terminal facts, diagnostic and classification.
-4. **Scan every byte before seal.** Replace the staged canary scanner's whole-file read in `runner/experiment.rs:404-425` with bounded chunk scanning; retain enough overlap for canaries spanning chunks, including a canary longer than a buffer. Memory for matching is bounded by configured canary inputs, not stream length. File/read/identity errors fail evidence admission rather than being treated as a clean scan. A leak or failed privacy check blocks seal/export and propagates the already-approved affected-run cancellation; no secret bytes enter error text. Preserve behavior of other callers of the shared scanner.
-5. **Hash sealed evidence incrementally.** Change only the covered-artifact hashing passes in `bundle/mod.rs` (seal `:1291-1294`, verify `:1435-1443`) to bounded readers; retain reservation equality, sidecar comparison, unmanifested/missing-file rejection, immutable source handling and exact digest/manifest semantics. Native newly admitted stream files must not be reloaded wholesale by these passes. Existing unrelated sidecar/metadata parsing and old bundle identity semantics remain unchanged.
-6. **Keep offline acceptance bounded.** In `verify-local-acceptance.py`, stream hashes for the native logs and walk validated native events without building the whole `rows/events/messages` history. Preserve B8's API interpretation, complete-terminal/tool matching, digest checks and strict rejection of malformed/ambiguous evidence. Tool correlation state and each event/terminal payload remain bounded by the admitted artifact size; reuse the existing per-artifact contract rather than inventing a new public cutoff. Bound/check the native inputs before decoding, and cover >1 MiB acceptance and tamper through the existing Python test file. Do not broaden this into unrelated upstream-material or build artifact processing.
-7. **Preserve explicit failures and coverage.** Oversize, disk exhaustion, permission/read failures, malformed/unsafe input or failed flush/scan/seal are evidence/infrastructure failures, never graded Agent failures. If evidence sufficient for an invalid diagnostic seal remains, label it invalid; otherwise keep an explicit unsealed failure and private diagnostics. Never claim complete capture or successful seal for a prefix, and never rewrite an old sealed bundle or repair its hash. B2 governs cancellation for privacy/integrity/unknown-cleanup breaches; an ordinary settled resource rejection must not be misreported as a breach or an Agent score.
-
-Required tests add behavior absent from the current suite:
-
-- Public full capture for both products below 1 MiB, above 1 MiB, and at the existing artifact-size boundary; verify exact raw/sealed digest and length, final terminal/valid-zero/provider-error interpretation, `verify` and deterministic `report`. Cover both many small events and a large single event within the admitted bound.
-- Reject a stream just above 64 MiB and a source that grows during reading; retain unsafe symlink/hardlink/nonregular-file negatives and missing/malformed-terminal cases. The negative must exercise the stream path, not merely assert the limit constant.
-- Inject read/write/sync failure into a bounded reader/writer or isolated staging path and assert no successful partial artifact, manifest or score. Use deterministic fault injection rather than filling the real disk or changing host quotas.
-- Exercise a canary after the old 1 MiB boundary, across chunk boundaries, longer than one buffer and in stderr; assert privacy failure, no exported secret and no subsequent affected dispatch. A late reader error must not be accepted as a clean privacy scan.
-- Cover streamed bundle insertion/seal/verify and source tamper with existing bundle recomputation cases; retain the bytes-insertion conformance cases. Test bounded read requests/state directly with a recording reader, rather than a brittle timing or RSS-only assertion.
-- In Python, verify complete native-shaped >1 MiB observations, malformed/truncated/oversize/tampered negatives and the public verifier's rejection exit. Run the entire modified Python test file. Preserve separately authorized six-real-trial acceptance as P001's exclusion.
-
-Document the complete-capture and resource-failure behavior in both Companion READMEs, including the existing per-artifact bound and the distinct timeout-copy contract. Read the complete Unreleased section and add the visible fix there. Test impact: **add/update** capture/parser/bundle/scanner/verifier regressions; **retain** host-profile, privacy, strict-identity, terminal-only, timeout and native-outcome guards; **delete** none.
-
-### Batch B9: native.witness.material-prerequisite-diagnostics
-
-**Closure predicate**: Missing family, empty tasks and malformed profile inputs fail before staging with a diagnostic naming the invalid prerequisite; valid three-family inputs still support existing witnesses.
-**Dependencies**: none
-**Verification union**: the matching regression below plus the deduplicated final verification union. Test impact: add/update; retain existing guards.
-
-#### Fix B9.1: validate-witness-material-before-staging
-
-- **Finding source(s)**: `phase19-pi-glm53-e079780-20260926t192024z` + `f2e7acaffe724a0fa6dbf28ca767b163a3cd664a905a17e6b17924d1fedd582c` + `P19-AUD-004` (P004).
-- **Decision**: `fix:validate-witness-material-before-staging`
-- **Verification status**: Partially confirmed
-- **File(s)**: `crates/opi-eval/tests/support/native_witness_material.rs`, `crates/opi-eval/tests/native_driver.rs`
+- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-007`
+- **Decision**: fix:actual-client-run-report-matrix
+- **Verification status**: C/P19-AUD-007: Confirmed
+- **File(s)**: `crates/opi-eval/tests/native_driver.rs`
 - **Change kind**: test-only
-- **Change**: Validate the existing three-family prerequisite before tempdir/git/material effects and reuse the result in the helper. Add a focused default deterministic negative matrix; retain both opt-in real native witnesses. Do not introduce arbitrary witness timeouts or a second logging feature.
-- **Closure predicate**: Missing family, empty tasks and malformed profile inputs fail before staging with a diagnostic naming the invalid prerequisite; valid three-family inputs still support existing witnesses.
-- **Red-before**: N/A — Test-helper-only repair; the unchecked as_object()/next()/as_str() chain supplies a direct static proof of the missing input diagnostic. No production runtime behavior is changed.
-- **Green-after**: `cargo test --offline --locked -p opi-eval --test native_driver native_witness_material_rejects_incomplete_families -- --exact --nocapture --test-threads=1` — PASS with the same discriminating assertion and retained controls; not run during planning.
-- **Transfer rule**: for an archive-only probe, port the minimal new assertions into the named maintained test seam, without copying the whole probe scaffold. Preserve its before/after predicate; record both commands and exact outcomes.
-### Batch B6: native.report.actual-client-failure-matrix
+- **Change**: Add an explicitly opt-in local fixture integration test, proposed native_client_provider_failure_report. Reuse production configuration projection, current exact-client material and local scripted provider, but drive actual Opi/pi through public opi-eval run then offline report. Preserve real client terminal evidence and provider request logs in the same trial bundles; assert final auth/rate-limit/protocol failures attempted/invalid/unscored, native zero valid/denominator/Agent failure, and transient 429 followed by success valid/final success. Retain the existing stand-in tests. Use the pinned native runner/integration and grading route with the local no-model provider fixture; do not synthesize terminal records for the real-client assertions.
+- **Closure predicate**: One opt-in test invocation proves both actual clients, local provider fixture, sealed settlement and public run/report agree on each final provider outcome, native zero, and retry-success, with executed test count and exact binary/material identities retained.
+- **Red-before**: N/A — This repairs a missing assembled acceptance test; current production misbehavior is not alleged. Static call-path evidence distinguishes the existing disjoint tests, so no invented red production assertion is appropriate.
+- **Green-after**: `OPI_EVAL_NATIVE_CLIENT_MATERIAL=<prepared-exact-client-material> OPI_EVAL_NATIVE_WITNESS_MATERIAL=<prepared-three-family-material> cargo test --offline --locked -p opi-eval --test native_driver native_client_provider_failure_report -- --ignored --exact --nocapture --test-threads=1` → expected 1 executed test passes for actual Opi/pi across final failure, native zero and retry-success through public run/report; no remote endpoint or real credential.; observed `not-run`.
+- **Test impact**: add; retain existing stand-in report and protocol tests
 
-**Closure predicate**: Both actual Opi/pi clients traverse public native run, settlement and offline report against a loopback fixture provider: final auth/rate/protocol failures are attempted/invalid/unscored, native zero stays valid, and transient 429 followed by success yields a final valid outcome.
-**Dependencies**: B1, B2, B7, B11, and B9 if its helper is reused
-**Verification union**: the matching regression below plus the deduplicated final verification union. Test impact: add/update; retain existing guards.
+### Batch B7: Interpret each product native API representation
 
-#### Fix B6.1: add-real-client-public-report-matrix
+**Closure predicate**: Byte-bound Opi Anthropic events and pi anthropic-messages events pass for the selected first connection; unknown/wrong API, provider/model substitution and broken tool/terminal evidence reject.
+**Dependencies**: none
+**Verification union**: `python crates/opi-eval/scripts/test_verify_local_acceptance.py`; `cargo test --offline --locked -p opi-eval --test native_driver p19_plan_acceptance_rejects_fixture_evidence -- --exact`; `python scripts/opi-doc-check.py`; `git diff --check`
 
-- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-007` (C007).
-- **Decision**: `fix:add-real-client-public-report-matrix`
-- **Verification status**: Confirmed
+#### Fix B7.1: Interpret each product native API representation
+
+- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-009`
+- **Decision**: fix:interpret-product-native-api
+- **Verification status**: C/P19-AUD-009: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/scripts/test_verify_local_acceptance.py`, `crates/opi-eval/scripts/verify-local-acceptance.py`
+- **Change kind**: behavioral
+- **Change**: Interpret the native API field according to the selected product in the existing offline checker. For the fixed first Anthropic connection, require Opi ApiKind Anthropic and pi anthropic-messages while retaining exact provider/model and seal checks. Correct Opi synthetic fixtures to native serialization; add product-specific positive and mismatch negatives. Do not alter Opi serialization, loosen arbitrary aliases, import an Opi crate dependency, or treat unit fixtures as real acceptance.
+- **Closure predicate**: Byte-bound Opi Anthropic events and pi anthropic-messages events pass for the selected first connection; unknown/wrong API, provider/model substitution and broken tool/terminal evidence reject.
+- **Red-before**: `python "C:\Users\Luiz\AppData\Local\Temp\opi-remediate-p19-gkm1aqyc/probe_native_api.py" "C:\Users\Luiz\AppData\Local\Temp\opi-remediate-p19-gkm1aqyc/source"` → FAIL (exit 1): 7 tests, 1 error and 6 passed; Opi Anthropic raised Rejection: provider response differs from the first connection.; expected: FAIL only the valid Opi-native Anthropic admission; retain pi and mismatch controls.
+- **Green-after**: `python <evidence-root>/probe_native_api.py <apply-export>; python crates/opi-eval/scripts/test_verify_local_acceptance.py` → expected All 7 native-shape cases and the complete offline verifier suite pass; rejected cases remain rejected.; observed `not-run`.
+- **Test impact**: update existing synthetic Opi shape; add native API mapping/mismatch cases; retain seal, first-connection, terminal and tool-pair negatives.
+
+### Batch B8: Preserve full native capture within the existing artifact bound
+
+**Closure predicate**: For each product, a complete native stream over 1MiB but at or below the existing 64MiB artifact ceiling seals byte-identically with its full digest and non-truncated status; above that ceiling the attempt is explicitly invalid/unscored, retains private diagnostics, and cannot claim complete full evidence.
+**Dependencies**: none
+**Verification union**: `cargo test --offline -p opi-eval --test native_driver`; `cargo clippy --offline -p opi-eval --all-targets -- -D warnings`; `cargo fmt --check --all`; `python scripts/opi-doc-check.py`; `git diff --check`; `cargo test --offline -p opi-eval --lib bundle`
+
+#### Fix B8.1: Preserve full native capture within the existing artifact bound
+
+- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-010`; `phase19-pi-glm53-e079780-20260926t192024z` + `f2e7acaffe724a0fa6dbf28ca767b163a3cd664a905a17e6b17924d1fedd582c` + `P19-AUD-002`
+- **Decision**: fix:retain-native-stream-within-existing-artifact-bound
+- **Verification status**: C/P19-AUD-010: Confirmed; P/P19-AUD-002: Partially confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/README.md`, `crates/opi-eval/README.zh.md`, `crates/opi-eval/src/bundle/mod.rs`, `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/tests/native_driver.rs`
+- **Change kind**: behavioral
+- **Change**: Use the existing 64MiB per-artifact admission ceiling as the native capture bound through a crate-private shared constant, read at most bound+1, preserve and seal the entire safe stream when within bound, and explicitly classify capacity overflow as evidence failure without scoring or presenting a prefix as full evidence. Keep original private raw logs for diagnostics; keep link/special-file, privacy and integrity checks. Preserve terminal-only policy. Do not change unrelated agent/benchmark profile caps or relax the acceptance checker.
+- **Closure predicate**: For each product, a complete native stream over 1MiB but at or below the existing 64MiB artifact ceiling seals byte-identically with its full digest and non-truncated status; above that ceiling the attempt is explicitly invalid/unscored, retains private diagnostics, and cannot claim complete full evidence.
+- **Red-before**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline -p opi-eval --test native_driver plan_p19_full_capture_preserves_long_native_stream -- --exact --nocapture --test-threads=1` → FAIL: Named test ran 1 failed, exit 101. Each sealed log was 1048576 bytes and stdout_truncated=true. Opi still classified graded-native reward1; pi classified invalid-execution/import-evidence-incomplete.; expected: FAIL: both >2MiB native streams lose their suffix during full capture.
+- **Green-after**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline -p opi-eval --test native_driver plan_p19_full_capture_preserves_long_native_stream -- --exact --nocapture --test-threads=1` → expected PASS: both complete >1MiB streams are retained without truncation and the pi stream remains valid. Add exact-64MiB/over-bound, privacy, identity, unsafe-file and terminal-only controls in the affected native_driver binary.; observed `not-run`.
+- **Test impact**: add: complete >1MiB stream for Opi/pi, exact 64MiB admission and over-bound explicit failure; update: full-capture assertions to compare exact original bytes/digest rather than a length only; retain: terminal-only policy, bounded cancellation capture, unsafe link/special-file and canary rejection
+
+### Batch B9: Name invalid witness-material inputs before effects
+
+**Closure predicate**: A single-family/empty-task/missing-profile witness manifest fails before materialization with a named family/field diagnostic, while valid three-family input passes preflight and existing callers consume the same profiles.
+**Dependencies**: none
+**Verification union**: `cargo test --offline --locked -p opi-eval --test native_driver witness_material -- --nocapture --test-threads=1`; `cargo test --offline --locked -p opi-eval --test native_driver`; `cargo clippy --offline --locked -p opi-eval --test native_driver -- -D warnings`; `cargo fmt --check --all`; `git diff --check`
+
+#### Fix B9.1: Name invalid witness-material inputs before effects
+
+- **Finding source(s)**: `phase19-pi-glm53-e079780-20260926t192024z` + `f2e7acaffe724a0fa6dbf28ca767b163a3cd664a905a17e6b17924d1fedd582c` + `P19-AUD-004`
+- **Decision**: fix:witness-material-preflight-diagnostics
+- **Verification status**: P/P19-AUD-004: Partially confirmed
 - **File(s)**: `crates/opi-eval/tests/native_driver.rs`, `crates/opi-eval/tests/support/native_witness_material.rs`
 - **Change kind**: test-only
-- **Change**: Add one explicitly ignored native_provider_failure_client_report_matrix using existing pinned native witness and scripted-provider helpers, with distinct terminal/retry cases rather than a duplicate protocol cross-product. Keep default tests credential-free and do not invoke remote inference. Reuse helper improvements from B9 where necessary.
-- **Closure predicate**: Both actual Opi/pi clients traverse public native run, settlement and offline report against a loopback fixture provider: final auth/rate/protocol failures are attempted/invalid/unscored, native zero stays valid, and transient 429 followed by success yields a final valid outcome.
-- **Red-before**: N/A — Test-only missing integration proof: current source call-path inspection establishes the absent assembled seam; existing production behavior is not edited by this batch.
-- **Green-after**: `cargo test --offline --locked -p opi-eval --test native_driver native_provider_failure_client_report_matrix -- --exact --ignored --nocapture --test-threads=1` — PASS with the same discriminating assertion and retained controls; not run during planning.
-- **Transfer rule**: for an archive-only probe, port the minimal new assertions into the named maintained test seam, without copying the whole probe scaffold. Preserve its before/after predicate; record both commands and exact outcomes.
-### Batch B10: verification.final-workspace-gates
+- **Change**: Preflight all required three-family task/profile inputs at the beginning of controlled_material, before retained directories, git/tar work or Docker. Reject missing family, empty task map or missing profile path with a diagnostic naming the family and required field; reuse the validated profile paths. Add focused no-Docker invalid-material cases and a valid three-family preflight case. Keep existing evidence retention behavior unchanged.
+- **Closure predicate**: A single-family/empty-task/missing-profile witness manifest fails before materialization with a named family/field diagnostic, while valid three-family input passes preflight and existing callers consume the same profiles.
+- **Red-before**: `/usr/bin/env -i HOME=/home/luiz PATH=/home/luiz/.cargo/bin:/usr/bin:/bin SHELL=/bin/bash CARGO_NET_OFFLINE=true CARGO_INCREMENTAL=1 CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct cargo test --offline --locked -p opi-eval --test native_driver plan_probe_single_family_witness_reports_missing_family -- --exact --nocapture (scratch-only test; serialized by flock /tmp/opi-p19-remediate-cargo.lock)` → FAIL: 1 executed, 0 passed, 1 failed, 87 filtered; Option::unwrap panic at support/native_witness_material.rs:97; diagnostic must name the missing family assertion fails; 0.36s.; expected: FAIL because the single-family material is rejected by opaque Option::unwrap instead of naming terminal-bench-3.0.
+- **Green-after**: `cargo test --offline --locked -p opi-eval --test native_driver witness_material -- --nocapture --test-threads=1` → expected New missing-family, empty-task, missing-profile and valid-three-family preflight tests execute and pass, with no Docker/provider operations and no input mutation.; observed `not-run`.
+- **Test impact**: add negative/valid preflight cases; update helper; retain opt-in witnesses
 
-**Closure predicate**: All final workspace gates pass for the final relevant source using known system tools, with real Unix tests executed and no environment-shim or archive-metadata false failures.
-**Dependencies**: all source batches, including B11
-**Verification union**: the matching regression below plus the deduplicated final verification union. Test impact: retain; none to production tests.
+### Batch B10: Clean exact witness-owned containers on conformance failure
 
-#### Fix B10.1: reverify-with-known-system-tools
+**Closure predicate**: A native nop/oracle witness whose runner leaves an exact owned task-environment container is settled only after attempting and verifying that owned cleanup; a neighboring container is retained, and cleanup uncertainty is explicit non-success.
+**Dependencies**: B2 for shared cancellation/cleanup failure propagation
+**Verification union**: `cargo test --offline -p opi-eval --test native_driver`; `cargo clippy --offline -p opi-eval --all-targets -- -D warnings`; `cargo fmt --check --all`; `python scripts/opi-doc-check.py`; `git diff --check`
 
-- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-006` (C006).
-- **Decision**: `fix:reverify-with-known-system-tools`
-- **Verification status**: Partially confirmed
-- **File(s)**: none; validation environment/evidence only.
-- **Change kind**: metadata
-- **Change**: Correct the validation command environment, resolve and lease the existing external Cargo cache, and run the verification union after source repairs. Do not change Bash runtime behavior or the existing test just to accommodate the shadowing executable. For tests requiring commit objects, supply read-only Git object access while preserving the archive as the source under test.
-- **Closure predicate**: All final workspace gates pass for the final relevant source using known system tools, with real Unix tests executed and no environment-shim or archive-metadata false failures.
-- **Red-before**: `cargo test --offline --locked -p opi-coding-agent --test tools_read_write_edit_bash bash_tool_env_inheritance_reporting -- --exact --nocapture` — FAIL: 0 passed/1 failed under inherited login PATH; same binary PASS: 1 passed/0 failed with PATH=/usr/bin:/bin. Full final workspace union not run during planning.
-- **Green-after**: `env PATH=/home/luiz/.cargo/bin:/usr/bin:/bin bash scripts/opi-impl-smoke.sh full` — PASS with the same discriminating assertion and retained controls; not run during planning.
-- **Transfer rule**: for an archive-only probe, port the minimal new assertions into the named maintained test seam, without copying the whole probe scaffold. Preserve its before/after predicate; record both commands and exact outcomes.
+#### Fix B10.1: Clean exact witness-owned containers on conformance failure
 
-## Exclusions
+- **Finding source(s)**: `phase19-pi-glm53-e079780-20260926t192024z` + `f2e7acaffe724a0fa6dbf28ca767b163a3cd664a905a17e6b17924d1fedd582c` + `P19-AUD-005`
+- **Decision**: fix:apply-owned-cleanup-to-native-witness
+- **Verification status**: P/P19-AUD-005: Partially confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/src/cli/conformance.rs`, `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/src/runner/mod.rs`, `crates/opi-eval/src/runner/native_cleanup.rs`, `crates/opi-eval/tests/native_driver.rs`
+- **Change kind**: behavioral
+- **Change**: Give the conformance witness the same exact task-root ownership and Docker context cleanup used by ordinary native trials, including observed setup/failure/timeout exits. Extract the minimum existing crate-private cleanup mechanism into native_cleanup for the two real consumers; persist identified resource cleanup evidence before reporting. A failed/unconfirmed cleanup must remain non-success. Never infer ownership from project-name prefixes or remove a neighbor/shared resource.
+- **Closure predicate**: A native nop/oracle witness whose runner leaves an exact owned task-environment container is settled only after attempting and verifying that owned cleanup; a neighboring container is retained, and cleanup uncertainty is explicit non-success.
+- **Red-before**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline -p opi-eval --test native_driver plan_p19_failed_witness_cleans_owned_resources -- --exact --nocapture --test-threads=1` → FAIL: Named test ran 1 failed, Cargo exit101. Fake state retained one environment container rooted under this witness task-package/environment and one -neighbor. Conformance returned failed/native-binding-no-new-job with compose-down getwd diagnostic; owned cleanup was never attempted.; expected: FAIL: failed nop witness leaves its exact owned fake container.
+- **Green-after**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/wsl-direct flock /tmp/opi-p19-remediate-cargo.lock cargo test --offline -p opi-eval --test native_driver plan_p19_failed_witness_cleans_owned_resources -- --exact --nocapture --test-threads=1` → expected PASS: exact owned fake container removed and neighbor retained; add successful witness, timeout, failed inspect/remove, and Docker context controls.; observed `not-run`.
+- **Test impact**: add: failed witness owned cleanup with neighbor preservation, cleanup uncertainty and context; retain: ordinary native run cleanup and shared cache preservation
 
-Every excluded source is still represented exactly once in the disposition sidecar. Exclusion is not closure of its requirement.
+### Batch B11: Bind exact-runtime preflight before native task dispatch
 
-| Source | Finding ID | Disposition | Current evidence/authority |
-|---|---|---|---|
-| P001 | `P19-AUD-001` | Deferred by registered source | Explicit exclusion from source apply: retain as Deferred by registered source, never Closed. B8 and D1 do not automatically close P001. No provider dispatch, credential access or evidence rewrite is authorized by this plan. |
-| P003 | `P19-AUD-003` | Returned to shaping | Return exact correction evidence to opi-implement, the sole ledger writer. No ledger edit or new competing ledger in this remediation. Do not add a meaningless test alias or mark a default deterministic test ignored merely to satisfy stale prose. |
-| P005 | `P19-AUD-005` | Cannot confirm | No speculative cleanup change. Retain Cannot confirm pending a fresh no-model fault reproduction on the current diagnostic path with exact pre/post container IDs. Do not broaden discovery, prune Docker globally, or merge this finding into the proven run-dispatch cancellation fix merely because the family matches. |
+**Closure predicate**: For Harbor and Pier with Opi and pi, a failed or unknown exact-runtime preflight yields zero task launches, no task exit/delivered output invented, preserved attempted coverage and bounded diagnostics, and no graded Agent outcome. A bound passed preflight permits normal task execution: valid zero/nonzero/crash/timeout controls retain existing graded semantics while provider failures, transport/termination uncertainty, missing evidence, malformed proof and substituted trial/runtime/capture identities remain unscored. Reporting agrees with sealed settlement; fresh acceptance requires the bound proof. This proves runtime compatibility, not that a later task process started or that every lazy task dependency can load.
+**Dependencies**: B8 for bounded proof capture; B7 before shared offline-checker changes
+**Verification union**: `python <evidence-root>/probe_startup_contract.py <apply-export>`; `python crates/opi-eval/scripts/test_native_integrations.py`; `python crates/opi-eval/scripts/test_verify_local_acceptance.py`; `python crates/opi-eval/scripts/test_verify_native_smoke_artifact.py`; `cargo test --offline --locked -p opi-eval --lib`; `cargo test --offline --locked -p opi-eval --test native_driver native_runtime_preflight -- --nocapture --test-threads=1`; `cargo test --offline --locked -p opi-eval --test native_driver`; `cargo fmt --check --all`; `python scripts/opi-doc-check.py`; `git diff --check`
 
-## Plan-stage checks and evidence identity
+#### Fix B11.1: Bind exact-runtime preflight before native task dispatch
 
-Current committed source was exported with `git archive 075a046ebc585265c28a6c3f778dfcc501338ddc` into a unique temporary archive, without a Git worktree. Its faithful Linux extraction is `/tmp/opi-remediate-p19-reseal-nlhf3rj2/source`; `python3 scripts/opi-doc-check.py` there returned exit 0, `opi documentation contracts: PASS`. The initial Windows extraction could not preserve the `.claude/skills` directory alias and its doc check returned exit 1; the Linux extraction preserves the archive-declared symlink and resolves that export defect without changing source. The current index raw-byte digest matches the header. The committed scope reader reports no stored-hash mismatches and confirms both registered supplemental sources.
+- **Finding source(s)**: `phase19-codex-gpt6-e079780-20260926t093335z` + `7be02185ae78c5c6b6ffcc508c231e1c42a7614e92cd79526d751eff2bc607a8` + `P19-AUD-008`
+- **Decision**: fix:bind-native-runtime-preflight
+- **Verification status**: C/P19-AUD-008: Partially confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-eval/README.md`, `crates/opi-eval/README.zh.md`, `crates/opi-eval/integrations/harbor/opi_eval_harbor.py`, `crates/opi-eval/integrations/pier/opi_eval_pier.py`, `crates/opi-eval/scripts/test_native_integrations.py`, `crates/opi-eval/scripts/test_verify_local_acceptance.py`, `crates/opi-eval/scripts/test_verify_native_smoke_artifact.py`, `crates/opi-eval/scripts/verify-local-acceptance.py`, `crates/opi-eval/src/benchmark/deepswe.rs`, `crates/opi-eval/src/benchmark/process.rs`, `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/tests/native_driver.rs`
+- **Change kind**: behavioral
+- **Change**: Implement the user-selected D1 option A as the bounded runtime_preflight contract in Resolved D1. Both pinned integrations run the exact staged executable or pi wrapper/package with --version inside the same task environment before task dispatch and before credential/config projection. Use the existing supervised exec with a 30-second bound; failed or unknown preflight prevents task dispatch and settles as attempted but invalid/unscored. Version the private native terminal as /2 and bind logical trial, executable/package identity, command and separate capture digests against dispatch-owned expectations. Distinguish preflight exit from nullable task exit and task_dispatched. Preserve successful-preflight ordinary nonzero/crash/timeout semantics, existing provider-failure and uncertainty rejection, and offline report consumption of sealed classification. Synchronize normalized sealed proof, both writers, importer/classifier, acceptance checker, native fixtures and bilingual behavior documentation. deepswe.rs changes are limited to the existing SelectionKind::Integration test constructor. No Agent Core hook, stderr heuristic, public SDK, dependency or new configuration knob.
+- **Closure predicate**: For Harbor and Pier with Opi and pi, a failed or unknown exact-runtime preflight yields zero task launches, no task exit/delivered output invented, preserved attempted coverage and bounded diagnostics, and no graded Agent outcome. A bound passed preflight permits normal task execution: valid zero/nonzero/crash/timeout controls retain existing graded semantics while provider failures, transport/termination uncertainty, missing evidence, malformed proof and substituted trial/runtime/capture identities remain unscored. Reporting agrees with sealed settlement; fresh acceptance requires the bound proof. This proves runtime compatibility, not that a later task process started or that every lazy task dependency can load.
+- **Red-before**: `python "C:\Users\Luiz\AppData\Local\Temp\opi-remediate-p19-gkm1aqyc\probe_startup_contract.py" "C:\Users\Luiz\AppData\Local\Temp\opi-remediate-p19-gkm1aqyc\source"` → FAIL (exit 1): 2 methods, 8 subcase failures. Four refusal cases launched one task; four passed-preflight/nonzero-task cases recorded zero runtime probes.; expected: FAIL across both integration families and products because compatibility refusal is not observed before task dispatch; positive preflight and later nonzero task exit are not distinguished.
+- **Green-after**: `python <evidence-root>/probe_startup_contract.py <apply-export>; python crates/opi-eval/scripts/test_native_integrations.py; cargo test --offline --locked -p opi-eval --test native_driver native_runtime_preflight -- --nocapture --test-threads=1; python crates/opi-eval/scripts/test_verify_local_acceptance.py` → expected Same 2-method/8-subcase probe passes. Complete integration suite and new native_runtime_preflight end-to-end cases cover failed/unknown/passed, mismatched or stale proof, nullable task exit, cleanup, preserved nonzero/crash/timeout and invalid provider/uncertainty controls. Loader fixture supplies observed preflight failure instead of relying on diagnostic text. Offline report and acceptance match the sealed proof; every named filter executes nonzero tests.; observed `not-run`.
+- **Test impact**: add runtime-preflight dispatch/classification and tamper/unknown/timeout tests; update /2 integration/native-driver/benchmark/deepswe/acceptance/smoke fixtures; retain valid native zero, task nonzero/crash/timeout, provider-error, cleanup, stale-job, identity and capture-policy controls; delete none.
 
-Evidence reuse check: `git diff --quiet eb930fbcfc16384555edcbae6e6026ba7b763c37..075a046ebc585265c28a6c3f778dfcc501338ddc -- . ':(exclude)docs/snapshots/phase19/assurance/remediation.plan.md' ':(exclude)docs/snapshots/phase19/assurance/remediation.plan.dispositions.jsonl'` returned exit 0. All 15 planned source paths also match the retained probe archive byte-for-byte, and all nine probe/log SHA-256 entries below were rechecked successfully. The change-scope contract requires retaining evidence against the same relevant state rather than repeating unchanged checks. Accordingly, behavioral red-before commands and outcomes below are retained evidence, not newly executed tests; the dispositions keep their truthful `verified_at=eb930fbcfc16384555edcbae6e6026ba7b763c37`. No conclusion from a history run, earlier result, eval artifact or alternate plan is used as proof. Every source remains bound to the current index and owning findings digest.
+## Final Verification
 
-Retained red-before source archive (evidence state `eb930fbcfc16384555edcbae6e6026ba7b763c37`): `C:/Users/Luiz/AppData/Local/Temp/opi-phase19-remediation-plan-hldp4vqx/source`.
-Its native Linux path is `/mnt/c/Users/Luiz/AppData/Local/Temp/opi-phase19-remediation-plan-hldp4vqx/source`.
-The initial ZIP extraction materialized symlinks as pointer files; reconstructing archive-declared symlinks and executable modes fixed that export artifact without changing committed source bytes. The archive documentation checker then passed. This setup issue is not a product finding.
+These are future checks for the final repaired state, not plan-stage pass claims. Execute every added/modified test binary and named filter; zero tests or an ignored filter with no selected test cannot close a finding. Reuse completed checks for the identical relevant state and rerun only invalidated evidence. The final union includes the current workspace-gate finding even though no Bash source fix is justified.
 
-Cargo reused and leased `/mnt/opi-audit-e-20260926/opi/cargo-targets/opi-8abcf38f9871653e`, whose marker identifies Linux rustc 1.97.1 and the original workspace. `python scripts/opi-cargo-cache.py status` passed; no cache clean/delete or per-session target was used.
-
-The following probes exist only in the archive/scratch and use dummy credentials, local fixtures and isolated temporary run roots. They do not prove actual native-client or paid-provider acceptance. They copy existing test scaffolding solely to access private fixture helpers; production integration must port only their new cases. All commands use the recorded source state; matching green assertions are still pending source repair.
-
-| Check | Observed planning outcome |
-|---|---|
-| `cargo test --offline --locked -p opi-eval --test plan_native_probe --test plan_offline_probe --test plan_capture_probe --no-fail-fast plan_ -- --nocapture --test-threads=1` | Native: 11 pass/4 intended failures. Capture: 10 pass/1 intended failure. Initial offline: 10 pass/1 intended pi-only failure plus 2 probe-setup failures; those setup failures are not accepted as product red evidence. The corrected exact checks below supersede only their two setup results. The broad filter also ran retained plan-related controls. |
-| Corrected `plan_offline_verify_rejects_trial_symlink` and `plan_offline_full_selection_reports_selected_tasks` | See each disposition's observed red; exact corrected filters were rerun after fixing only the probe's trial ID and required selection.reason. |
-| Python native API predicate probe | Expected red, exit 1; product-shaped positive/negative controls recorded above. |
-| Exact Bash env filter | Reproduced red with inherited PATH; identical binary passed with system PATH. Whole final workspace gates remain unverified. |
-| `python scripts/opi-doc-check.py` in faithful source archive | PASS. |
-
-Probe and diagnostic artifacts are listed with exact SHA-256 below so their test-only provenance is inspectable. Temporary artifacts are reproduction aids, not new authoritative findings or a competing progress ledger. If they are unavailable later, reconstruct the named assertions against a fresh committed archive and observe red again before editing production.
-
-| Scratch-relative artifact | SHA-256 |
-|---|---|
-| `source/crates/opi-eval/tests/plan_native_probe.rs` | `aa8836b3eaa260ab12cae39fe98140937d18d1e7f9b3409b5ce756b2a90f6ea1` |
-| `source/crates/opi-eval/tests/plan_offline_probe.rs` | `ecb785f83ef4a76442ee583c089bdde8b5137398b431e96bba8d0ed8aeb32782` |
-| `source/crates/opi-eval/tests/plan_capture_probe.rs` | `cb20fafef411294743b764da65a03d3ce928b66f81e15fdecc07747edd6f904e` |
-| `probe-native-api-offline.py` | `9ac6b315572baa45f3678dcf9e4462d231535fbf5d6ab5589a28f1f6a1aaa3fe` |
-| `probe-native-api-offline.log` | `d23f6823c801fe843410268c0d19669faa27ab7c021ad601d60df8e77ba2fac0` |
-| `regression-probes.log` | `fe54877f215f26560c36392749011c4301b307c858f51058ddc5885dd9c440d0` |
-| `offline-corrected-probes.log` | `db32ac6ac68985b691fd3494b5bddb9c34a343c15cc546918011383a5bb133d9` |
-| `native-test_inherited.log` | `3737601b24defc6a6799072df6c22e38c655403f876a57c2aef92b1d0c041b49` |
-| `native-test_minimal.log` | `0d34d1eb757d03c62be0309837c0a33349c8555518c59cf6a92e180ab985b7d5` |
-
-## Change inventory and final verification
-
-Current outgoing change: documentation/assurance metadata only, the fixed plan Markdown; the paired JSONL is retained byte-identically. This continuation changes the head binding and records its verification without changing D1 or any approved closure scope. Reused red-before evidence remains bound to its original verified commit and proven identical relevant source bytes at the new remediation head. No English/Chinese maintained product document is edited; the assurance contract fixes a single Markdown path and has no localized plan counterpart. Future user-visible changes require Unreleased entries after reading the complete existing Unreleased section. If a repair changes maintained explanatory documentation, edit its English/Chinese counterpart in the same batch. No manifests, feature defaults, dependency edges or lockfile changes are proposed.
-
-Derived apply surfaces: local Companion runtime; public CLI run/verify/regrade/report; evidence/seal containment; Python offline-verifier behavior; native witness/test helper; gate environment. Their union requires focused CLI/integration/conformance regressions, Python unit and subprocess negatives, and the final workspace gates explicitly required by C006. B11 adds bounded streaming through native capture, pi parsing, privacy scan, bundle insertion/seal/verify and the offline acceptance reader; its exact causal paths and failure tests below are included in this union. No broader storage or parser refactor is admitted.
+1. Each resolved closure probe -> verify: its recorded red case turns green with the stated counterexamples retained.
+2. Modified Rust tests -> verify: the workspace all-target gate below runs all affected default binaries; run each affected ignored native test explicitly on WSL/Linux with pinned offline materials and actual local clients.
+3. Script/native seams -> verify: the complete offline acceptance-verifier, native-integration and native-smoke-artifact Python suites, and public CLI rejection/cleanup negatives execute; run native process-group tests on WSL/Linux so platform skips cannot stand in for execution.
+4. Final repository state -> verify:
 
 ```sh
-# Planning artifact checks, from the repository:
-python .agents/skills/_shared/scripts/validate_assurance_artifact.py audit-set docs/snapshots/phase19/assurance
-python .agents/skills/_shared/scripts/validate_assurance_artifact.py dispositions docs/snapshots/phase19/assurance/remediation.plan.dispositions.jsonl
-python .agents/skills/_shared/scripts/validate_assurance_artifact.py plan docs/snapshots/phase19/assurance/remediation.plan.md
-python scripts/opi-doc-check.py
-git diff --check
-
-# Apply-stage union, after the final relevant source changes; not run by this plan:
-python crates/opi-eval/scripts/test_verify_local_acceptance.py
-cargo test --offline --locked -p opi-eval --test native_driver native_provider_failure_client_report_matrix -- --exact --ignored --nocapture --test-threads=1
-cargo test --offline --locked -p opi-eval --test native_driver remediation_native_stage_deadlines -- --exact --ignored --nocapture --test-threads=1
-cargo test --offline --locked -p opi-eval --test native_driver native_verifier_only_regrade_witness -- --exact --ignored --nocapture --test-threads=1
 python scripts/opi-doc-check.py
 git diff --check
 cargo fmt --check --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
-cargo test --workspace --doc
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+cargo clippy --offline --locked --workspace --all-targets -- -D warnings
+cargo test --offline --locked --workspace --all-targets
+cargo test --offline --locked --workspace --doc
+RUSTDOCFLAGS="-D warnings" cargo doc --offline --locked --workspace --no-deps
+python crates/opi-eval/scripts/test_verify_local_acceptance.py
+python crates/opi-eval/scripts/test_native_integrations.py
+python crates/opi-eval/scripts/test_verify_native_smoke_artifact.py
 ```
 
-Use known system-tool resolution and the repository's external cache workflow for these commands. The two existing ignored witness checks are required if B9 changes their shared prerequisite path; supply verified three-family material, no live model, and preserve logs. B6's actual client matrix additionally needs exact native clients and the local fixture provider; missing material is a concrete verification gap, never a skipped pass. Workspace all-targets covers every newly ported default Rust case; do not repeat default binaries once equivalent evidence has passed on the same relevant state. The new Python tests must include a real CLI negative invocation, not only helper calls. B11's default tests and unit tests are included in the same workspace all-targets pass; this includes the modified native_driver and bundle_recompute binaries and pi/bundle/scanner library cases. Run each new or modified exact regression filter as its matching green proof when not already covered by an equivalent recorded final-state run.
+Run the newly added `native_client_provider_failure_report` opt-in test with its exact prepared local-client material input; assert one executed test and both clients/cases. Native witnesses affected by the helper or conformance-cleanup changes must also run explicitly with a verified three-family material manifest: `native_verifier_only_regrade_witness`, `remediation_native_stage_deadlines`, and the corrected affected witness failure path. Preserve exact commands, exit codes, material identities and output logs. Their duration and completion are not inferred from the fast fixture probes.
 
-Test impact now: **none** to repository test files; **retain** all repository tests and the identified isolated probes. Planned test impact: **add/update** the named regressions/native-shape fixtures, streaming capture/bundle/privacy cases and test-helper diagnostics; **retain** privacy, unsafe-path, paired/subset, native-zero, timeout, native-witness and strict-identity guards; **delete** none.
+Do not introduce a new dependency, Cargo feature, public Agent Core seam or unbounded capture. User-selected D1 admits the bounded private terminal /2 contract in B11; synchronize its writers/readers/fixtures and bilingual documentation as specified above. For other batches, synchronize English/Chinese README text only where current user-facing promises change, and add user-visible fixes to the complete current Unreleased section. This fixed workflow plan has no separate Chinese counterpart; source specifications and their translations are unchanged.
 
-After required checks pass, rerun only invalidated evidence. Preserve unrelated work; recheck the head and all three worktree inventories at handoff. A final result must not declare Phase 19 conformant: P001, P003 and P005 have explicit remaining ownership/evidence boundaries, and the live audit aggregate remains FAIL until a later independently admitted audit.
+## Exclusions
 
-## Criterion cross-reference matrix
+| Source run / Finding ID | Disposition | Current evidence / authority |
+|---|---|---|
+| C / P19-AUD-006 | Cannot confirm | No source or test change justified from the exact current check. Preserve final workspace verification as an apply-stage obligation, without asserting Phase conformance. |
+| P / P19-AUD-001 | Deferred by registered source | Exclude from code-closure claims as Deferred by registered source. After applicable fixes, the Evaluation product owner/local operator must separately authorize and freeze real run scope and preserve fresh six-trial evidence; a later admitted offline verification must pass the unmodified corrected checker. This plan neither calls providers nor declares real acceptance. |
+| P / P19-AUD-003 | Returned to shaping | No ledger edits under remediation. Return the metadata disposition to the owning opi-implement authority: document/admit correct executable checks without rewriting a frozen snapshot. Proposed effective selectors are frozen_subset_execution plus hermetic_paired_group_runs_end_to_end, and native_offline_regrade without --ignored. |
 
-This table projects every current requirement record without changing its state. Criterion identity is the exact `(path, sha256, citation)` tuple. Unequal citation strings remain separate rows even when acceptance IDs resemble each other; the table makes no voting or consensus inference. Source aliases above resolve full run IDs and sidecar digests. Related state disagreements (notably outcome, report, verify, regrade, lifecycle and independent placement) are decided by the current evidence above, not by which peer reports met.
+The excluded keys still have one exact disposition and retain their source severity. None is a closed finding. The registered source (§8, P19-AC-012) reserves six real-provider trials to a separately authorized local operator run with frozen tasks, builds/materials, controls, bounds and credential references. A future unmodified corrected offline verifier must accept that supplied evidence. This plan does not authorize that run or reinterpret deterministic/native-fixture evidence as real acceptance. Ledger metadata returns to `opi-implement` ownership under `AGENTS.md`; remediation does not rewrite frozen snapshots.
 
-| Source | Requirement | Criterion path | SHA-256 | Exact citation | Source state | Source finding IDs |
-|---|---|---|---|---|---|---|
-| C | P19-AC-002 | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.1 / P19-AC-002 | met | none |
-| C | P19-AC-003-native | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.1 / P19-AC-003-native | met | none |
-| C | P19-AC-008-outcome | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.1 / P19-AC-008-outcome | partially-met | P19-AUD-008 |
-| C | P19-AC-006-fixture | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.2 / P19-AC-006-fixture | met | none |
-| C | P19-AC-010-credentials | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.2 / P19-AC-010-credentials | met | none |
-| C | P19-AC-004-native | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.3 / P19-AC-004-native | met | none |
-| C | P19-AC-005-native | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.4 / P19-AC-005-native | met | none |
-| C | P19-AC-001-prepare | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.5 / P19-AC-001-prepare | met | none |
-| C | P19-AC-007-material | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.5 / P19-AC-007-material | met | none |
-| C | P19-AC-007-selection | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.6 / P19-AC-007-selection | met | none |
-| C | P19-AC-001-plan | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.6 / P19-AC-001-plan | met | none |
-| C | P19-AC-008 | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.7 / P19-AC-008 | partially-met | P19-AUD-005, P19-AUD-007 |
-| C | P19-AC-009-verify | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.7 / P19-AC-009-verify | partially-met | P19-AUD-003 |
-| C | P19-AC-009-regrade | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.8 / P19-AC-009-regrade | partially-met | P19-AUD-004 |
-| C | P19-AC-010-lifecycle | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.9 / P19-AC-010-lifecycle | partially-met | P19-AUD-002 |
-| C | P19-AC-011 | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.10 / P19-AC-011 | met | none |
-| C | P19-AC-013 | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.10 / P19-AC-013 | partially-met | P19-AUD-004 |
-| C | P19-AC-001-live | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.11 / P19-AC-001-live | partially-met | P19-AUD-010 |
-| C | P19-AC-003-live | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.11 / P19-AC-003-live | partially-met | P19-AUD-009, P19-AUD-010 |
-| C | P19-AC-004-live | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.11 / P19-AC-004-live | partially-met | P19-AUD-009, P19-AUD-010 |
-| C | P19-AC-005-live | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.11 / P19-AC-005-live | partially-met | P19-AUD-009, P19-AUD-010 |
-| C | P19-AC-006-live | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.11 / P19-AC-006-live | partially-met | P19-AUD-009 |
-| C | P19-AC-012 | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7; task 19.11 / P19-AC-012 | partially-met | P19-AUD-006, P19-AUD-009, P19-AUD-010 |
-| C | P19-001-doctor | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 4 / task 19.5 | met | none |
-| C | P19-001-acquire | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 4-5 / task 19.5 | met | none |
-| C | P19-002-settlement | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 5-6 / task 19.1 | partially-met | P19-AUD-008 |
-| C | P19-002-failed-capture | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 6 / task 19.1 | met | none |
-| C | P19-003-no-legacy-route | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 5 / task 19.1 | met | none |
-| C | P19-004-declarations | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 5 / task 19.3 | met | none |
-| C | P19-005-patch | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 5 / task 19.4 | met | none |
-| C | P19-006-config | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 4 / task 19.2 | partially-met | P19-AUD-001 |
-| C | P19-006-controls | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 4 / task 19.2 | met | none |
-| C | P19-006-terminal | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 4,6 / task 19.2 | met | none |
-| C | P19-006-unknown | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 4,6 | met | none |
-| C | P19-007-inventory | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 5 / task 19.6 | met | none |
-| C | P19-007-plan | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 4-5 / task 19.6 | met | none |
-| C | P19-007-bounds | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 4 / tasks 19.2,19.6,19.9 | met | none |
-| C | P19-008-coverage | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 6 / task 19.7 | met | none |
-| C | P19-008-metrics | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 6 / task 19.7 | partially-met | P19-AUD-005, P19-AUD-008 |
-| C | P19-008-pairs | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 6 / task 19.7 | met | none |
-| C | P19-009-derived | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 6 / task 19.8 | partially-met | P19-AUD-004 |
-| C | P19-010-isolation | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 4 / tasks 19.2,19.9 | met | none |
-| C | P19-010-cancel | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 9 / task 19.9 | partially-met | P19-AUD-002 |
-| C | P19-010-recovery | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 4,6 / task 19.9 | met | none |
-| C | P19-011-ci-policy | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 8 / task 19.10 | met | none |
-| C | P19-012-offline-verifier | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 8 / tasks 19.10-19.11 | partially-met | P19-AUD-009 |
-| C | P19-012-provenance | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 8 / tasks 19.10-19.11 | met | none |
-| C | P19-012-final-gates | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 8 / task 19.11 | partially-met | P19-AUD-006 |
-| C | P19-013-placement | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 3 / P19-AC-013 | met | none |
-| C | P19-013-contracts | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 9 / P19-AC-013 | met | none |
-| C | P19-OPTIONAL-ORACLE | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 5 | met | none |
-| C | P19-OPTIONAL-CONNECTIONS | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 4 | met | none |
-| C | P19-ARCH-MINIMUM | `docs/opi-spec.md` | `1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db` | PRIN-001, PRIN-002, PRIN-003, PLACE-001, PLACE-004 | met | none |
-| P | P19-AC-002 | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-002; task 19.1 acceptance scenario P19-AC-002 | met | none |
-| P | P19-AC-003-native | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-003; task 19.1 acceptance scenario P19-AC-003-native | met | none |
-| P | P19-AC-008-outcome | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-008; task 19.1 acceptance scenario P19-AC-008-outcome | met | none |
-| P | P19-AC-006-fixture | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-006; task 19.2 acceptance scenario P19-AC-006-fixture | met | none |
-| P | P19-AC-010-credentials | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-010; task 19.2 acceptance scenario P19-AC-010-credentials | met | none |
-| P | P19-AC-004-native | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-004; task 19.3 acceptance scenario P19-AC-004-native | met | none |
-| P | P19-AC-005-native | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-005; task 19.4 acceptance scenario P19-AC-005-native | met | none |
-| P | P19-AC-001-prepare | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-001; task 19.5 acceptance scenario P19-AC-001-prepare | met | none |
-| P | P19-AC-007-material | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-007; task 19.5 acceptance scenario P19-AC-007-material | met | none |
-| P | P19-AC-007-selection | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-007; task 19.6 acceptance scenario P19-AC-007-selection | met | none |
-| P | P19-AC-001-plan | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-001; task 19.6 acceptance scenario P19-AC-001-plan | met | P19-AUD-003 |
-| P | P19-AC-008 | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-008; task 19.7 acceptance scenario P19-AC-008 | met | none |
-| P | P19-AC-009-verify | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-009; task 19.7 acceptance scenario P19-AC-009-verify | met | none |
-| P | P19-AC-009-regrade | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-009; task 19.8 acceptance scenario P19-AC-009-regrade | met | P19-AUD-003, P19-AUD-004 |
-| P | P19-AC-010-lifecycle | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-010; task 19.9 acceptance scenario P19-AC-010-lifecycle | met | P19-AUD-005 |
-| P | P19-AC-011 | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-011; task 19.10 acceptance scenario P19-AC-011 | met | none |
-| P | P19-AC-013 | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-013; task 19.10 acceptance scenario P19-AC-013 | met | none |
-| P | P19-AC-001-live | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-001; task 19.11 acceptance scenario P19-AC-001-live | partially-met | P19-AUD-001 |
-| P | P19-AC-003-live | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-003; task 19.11 acceptance scenario P19-AC-003-live | partially-met | P19-AUD-001 |
-| P | P19-AC-004-live | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-004; task 19.11 acceptance scenario P19-AC-004-live | partially-met | P19-AUD-001 |
-| P | P19-AC-005-live | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-005; task 19.11 acceptance scenario P19-AC-005-live | partially-met | P19-AUD-001 |
-| P | P19-AC-006-live | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-006; task 19.11 acceptance scenario P19-AC-006-live | partially-met | P19-AUD-001, P19-AUD-002 |
-| P | P19-AC-012 | `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` | `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a` | Section 7 P19-AC-012; task 19.11 acceptance scenario P19-AC-012 | not-met | P19-AUD-001, P19-AUD-002 |
+## Exact Criterion Matrix
+
+Criterion identity is the exact `(path, sha256, citation)` tuple. Both members reference the same bytes but use different citation strings, so their rows remain unaligned rather than being silently merged by similar requirement IDs. Each column retains the original requirement ID/state and finding links from its sidecar. A peer `met` state is counter-evidence to assess, never a vote that refutes another peer. The active fail-dominant verdict remains FAIL.
+
+- S1: `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md`; SHA-256 `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a`.
+- S2: `docs/opi-spec.md`; SHA-256 `1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db`.
+
+| Exact source / citation | C original requirement / state / findings | P original requirement / state / findings |
+|---|---|---|
+| S1: Section 7; task 19.1 / P19-AC-002 | `P19-AC-002` / met / none (sidecar line 1) | — |
+| S1: Section 7; task 19.1 / P19-AC-003-native | `P19-AC-003-native` / met / none (sidecar line 2) | — |
+| S1: Section 7; task 19.1 / P19-AC-008-outcome | `P19-AC-008-outcome` / partially-met / P19-AUD-008 (sidecar line 3) | — |
+| S1: Section 7; task 19.2 / P19-AC-006-fixture | `P19-AC-006-fixture` / met / none (sidecar line 4) | — |
+| S1: Section 7; task 19.2 / P19-AC-010-credentials | `P19-AC-010-credentials` / met / none (sidecar line 5) | — |
+| S1: Section 7; task 19.3 / P19-AC-004-native | `P19-AC-004-native` / met / none (sidecar line 6) | — |
+| S1: Section 7; task 19.4 / P19-AC-005-native | `P19-AC-005-native` / met / none (sidecar line 7) | — |
+| S1: Section 7; task 19.5 / P19-AC-001-prepare | `P19-AC-001-prepare` / met / none (sidecar line 8) | — |
+| S1: Section 7; task 19.5 / P19-AC-007-material | `P19-AC-007-material` / met / none (sidecar line 9) | — |
+| S1: Section 7; task 19.6 / P19-AC-007-selection | `P19-AC-007-selection` / met / none (sidecar line 10) | — |
+| S1: Section 7; task 19.6 / P19-AC-001-plan | `P19-AC-001-plan` / met / none (sidecar line 11) | — |
+| S1: Section 7; task 19.7 / P19-AC-008 | `P19-AC-008` / partially-met / P19-AUD-005, P19-AUD-007 (sidecar line 12) | — |
+| S1: Section 7; task 19.7 / P19-AC-009-verify | `P19-AC-009-verify` / partially-met / P19-AUD-003 (sidecar line 13) | — |
+| S1: Section 7; task 19.8 / P19-AC-009-regrade | `P19-AC-009-regrade` / partially-met / P19-AUD-004 (sidecar line 14) | — |
+| S1: Section 7; task 19.9 / P19-AC-010-lifecycle | `P19-AC-010-lifecycle` / partially-met / P19-AUD-002 (sidecar line 15) | — |
+| S1: Section 7; task 19.10 / P19-AC-011 | `P19-AC-011` / met / none (sidecar line 16) | — |
+| S1: Section 7; task 19.10 / P19-AC-013 | `P19-AC-013` / partially-met / P19-AUD-004 (sidecar line 17) | — |
+| S1: Section 7; task 19.11 / P19-AC-001-live | `P19-AC-001-live` / partially-met / P19-AUD-010 (sidecar line 18) | — |
+| S1: Section 7; task 19.11 / P19-AC-003-live | `P19-AC-003-live` / partially-met / P19-AUD-009, P19-AUD-010 (sidecar line 19) | — |
+| S1: Section 7; task 19.11 / P19-AC-004-live | `P19-AC-004-live` / partially-met / P19-AUD-009, P19-AUD-010 (sidecar line 20) | — |
+| S1: Section 7; task 19.11 / P19-AC-005-live | `P19-AC-005-live` / partially-met / P19-AUD-009, P19-AUD-010 (sidecar line 21) | — |
+| S1: Section 7; task 19.11 / P19-AC-006-live | `P19-AC-006-live` / partially-met / P19-AUD-009 (sidecar line 22) | — |
+| S1: Section 7; task 19.11 / P19-AC-012 | `P19-AC-012` / partially-met / P19-AUD-006, P19-AUD-009, P19-AUD-010 (sidecar line 23) | — |
+| S1: Section 4 / task 19.5 | `P19-001-doctor` / met / none (sidecar line 24) | — |
+| S1: Section 4-5 / task 19.5 | `P19-001-acquire` / met / none (sidecar line 25) | — |
+| S1: Section 5-6 / task 19.1 | `P19-002-settlement` / partially-met / P19-AUD-008 (sidecar line 26) | — |
+| S1: Section 6 / task 19.1 | `P19-002-failed-capture` / met / none (sidecar line 27) | — |
+| S1: Section 5 / task 19.1 | `P19-003-no-legacy-route` / met / none (sidecar line 28) | — |
+| S1: Section 5 / task 19.3 | `P19-004-declarations` / met / none (sidecar line 29) | — |
+| S1: Section 5 / task 19.4 | `P19-005-patch` / met / none (sidecar line 30) | — |
+| S1: Section 4 / task 19.2 | `P19-006-config` / partially-met / P19-AUD-001 (sidecar line 31); `P19-006-controls` / met / none (sidecar line 32) | — |
+| S1: Section 4,6 / task 19.2 | `P19-006-terminal` / met / none (sidecar line 33) | — |
+| S1: Section 4,6 | `P19-006-unknown` / met / none (sidecar line 34) | — |
+| S1: Section 5 / task 19.6 | `P19-007-inventory` / met / none (sidecar line 35) | — |
+| S1: Section 4-5 / task 19.6 | `P19-007-plan` / met / none (sidecar line 36) | — |
+| S1: Section 4 / tasks 19.2,19.6,19.9 | `P19-007-bounds` / met / none (sidecar line 37) | — |
+| S1: Section 6 / task 19.7 | `P19-008-coverage` / met / none (sidecar line 38); `P19-008-metrics` / partially-met / P19-AUD-005, P19-AUD-008 (sidecar line 39); `P19-008-pairs` / met / none (sidecar line 40) | — |
+| S1: Section 6 / task 19.8 | `P19-009-derived` / partially-met / P19-AUD-004 (sidecar line 41) | — |
+| S1: Section 4 / tasks 19.2,19.9 | `P19-010-isolation` / met / none (sidecar line 42) | — |
+| S1: Section 9 / task 19.9 | `P19-010-cancel` / partially-met / P19-AUD-002 (sidecar line 43) | — |
+| S1: Section 4,6 / task 19.9 | `P19-010-recovery` / met / none (sidecar line 44) | — |
+| S1: Section 8 / task 19.10 | `P19-011-ci-policy` / met / none (sidecar line 45) | — |
+| S1: Section 8 / tasks 19.10-19.11 | `P19-012-offline-verifier` / partially-met / P19-AUD-009 (sidecar line 46); `P19-012-provenance` / met / none (sidecar line 47) | — |
+| S1: Section 8 / task 19.11 | `P19-012-final-gates` / partially-met / P19-AUD-006 (sidecar line 48) | — |
+| S1: Section 3 / P19-AC-013 | `P19-013-placement` / met / none (sidecar line 49) | — |
+| S1: Section 9 / P19-AC-013 | `P19-013-contracts` / met / none (sidecar line 50) | — |
+| S1: Section 5 | `P19-OPTIONAL-ORACLE` / met / none (sidecar line 51) | — |
+| S1: Section 4 | `P19-OPTIONAL-CONNECTIONS` / met / none (sidecar line 52) | — |
+| S2: PRIN-001, PRIN-002, PRIN-003, PLACE-001, PLACE-004 | `P19-ARCH-MINIMUM` / met / none (sidecar line 53) | — |
+| S1: Section 7 P19-AC-002; task 19.1 acceptance scenario P19-AC-002 | — | `P19-AC-002` / met / none (sidecar line 1) |
+| S1: Section 7 P19-AC-003; task 19.1 acceptance scenario P19-AC-003-native | — | `P19-AC-003-native` / met / none (sidecar line 2) |
+| S1: Section 7 P19-AC-008; task 19.1 acceptance scenario P19-AC-008-outcome | — | `P19-AC-008-outcome` / met / none (sidecar line 3) |
+| S1: Section 7 P19-AC-006; task 19.2 acceptance scenario P19-AC-006-fixture | — | `P19-AC-006-fixture` / met / none (sidecar line 4) |
+| S1: Section 7 P19-AC-010; task 19.2 acceptance scenario P19-AC-010-credentials | — | `P19-AC-010-credentials` / met / none (sidecar line 5) |
+| S1: Section 7 P19-AC-004; task 19.3 acceptance scenario P19-AC-004-native | — | `P19-AC-004-native` / met / none (sidecar line 6) |
+| S1: Section 7 P19-AC-005; task 19.4 acceptance scenario P19-AC-005-native | — | `P19-AC-005-native` / met / none (sidecar line 7) |
+| S1: Section 7 P19-AC-001; task 19.5 acceptance scenario P19-AC-001-prepare | — | `P19-AC-001-prepare` / met / none (sidecar line 8) |
+| S1: Section 7 P19-AC-007; task 19.5 acceptance scenario P19-AC-007-material | — | `P19-AC-007-material` / met / none (sidecar line 9) |
+| S1: Section 7 P19-AC-007; task 19.6 acceptance scenario P19-AC-007-selection | — | `P19-AC-007-selection` / met / none (sidecar line 10) |
+| S1: Section 7 P19-AC-001; task 19.6 acceptance scenario P19-AC-001-plan | — | `P19-AC-001-plan` / met / P19-AUD-003 (sidecar line 11) |
+| S1: Section 7 P19-AC-008; task 19.7 acceptance scenario P19-AC-008 | — | `P19-AC-008` / met / none (sidecar line 12) |
+| S1: Section 7 P19-AC-009; task 19.7 acceptance scenario P19-AC-009-verify | — | `P19-AC-009-verify` / met / none (sidecar line 13) |
+| S1: Section 7 P19-AC-009; task 19.8 acceptance scenario P19-AC-009-regrade | — | `P19-AC-009-regrade` / met / P19-AUD-003, P19-AUD-004 (sidecar line 14) |
+| S1: Section 7 P19-AC-010; task 19.9 acceptance scenario P19-AC-010-lifecycle | — | `P19-AC-010-lifecycle` / met / P19-AUD-005 (sidecar line 15) |
+| S1: Section 7 P19-AC-011; task 19.10 acceptance scenario P19-AC-011 | — | `P19-AC-011` / met / none (sidecar line 16) |
+| S1: Section 7 P19-AC-013; task 19.10 acceptance scenario P19-AC-013 | — | `P19-AC-013` / met / none (sidecar line 17) |
+| S1: Section 7 P19-AC-001; task 19.11 acceptance scenario P19-AC-001-live | — | `P19-AC-001-live` / partially-met / P19-AUD-001 (sidecar line 18) |
+| S1: Section 7 P19-AC-003; task 19.11 acceptance scenario P19-AC-003-live | — | `P19-AC-003-live` / partially-met / P19-AUD-001 (sidecar line 19) |
+| S1: Section 7 P19-AC-004; task 19.11 acceptance scenario P19-AC-004-live | — | `P19-AC-004-live` / partially-met / P19-AUD-001 (sidecar line 20) |
+| S1: Section 7 P19-AC-005; task 19.11 acceptance scenario P19-AC-005-live | — | `P19-AC-005-live` / partially-met / P19-AUD-001 (sidecar line 21) |
+| S1: Section 7 P19-AC-006; task 19.11 acceptance scenario P19-AC-006-live | — | `P19-AC-006-live` / partially-met / P19-AUD-001, P19-AUD-002 (sidecar line 22) |
+| S1: Section 7 P19-AC-012; task 19.11 acceptance scenario P19-AC-012 | — | `P19-AC-012` / not-met / P19-AUD-001, P19-AUD-002 (sidecar line 23) |
+
+## Probe and planning evidence manifest
+
+The following fresh evidence was produced at the remediation head. Historical audit reproduction paths are source claims only; they were not used as probe implementations.
+
+- `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-p19-gkm1aqyc/probe_native_api.py` — SHA-256 `a4e10d36a13be419fb96894ba78f2294f5448697157ec21f5335fb7be5e3d6a2`; C009: seven native-shape attribution cases; run against an explicitly selected source export.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-p19-gkm1aqyc/native-api-red.log` — SHA-256 `0dcf1a2bba642fb59f8fb15561a358db0c2c996d0edcc458b29de18e804404ce`; C009 observed red: one rejection error plus six passing controls.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-projection-5c62d8c65df54214bfa345c67258dbd8/crates/opi-eval/tests/p19_plan_probes.inc` — SHA-256 `68d00b928793c5e77b331deb47e5734ec593bf17b3e087c85efc2cd1039fd6e2`; C001/C003/C004/C005 isolated regression setup. Export remediation_head with git archive to a new temporary directory, copy p19_plan_probes.inc into crates/opi-eval/tests, copy that export's committed tests/native_driver.rs to tests/p19_projection_probe.rs and append LF + include!("p19_plan_probes.inc"); + LF. Execute each red_before command from that export under WSL/Linux with /usr/bin/env -i HOME=/home/luiz PATH=/home/luiz/.cargo/bin:/usr/local/bin:/usr/bin:/bin and existing external CARGO_TARGET_DIR. For green-after use the same fragment on applied source in a separate temporary export, not this immutable baseline export. Unique test target name avoids sibling temporary probes sharing native_driver executable artifacts.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-projection-5c62d8c65df54214bfa345c67258dbd8/crates/opi-eval/tests/p19_projection_probe.rs` — SHA-256 `af859edc229a24813d014367f4cd5bb1f28efccd6956b03ec5c35bd87a3aeba1`; Projection/offline-operation reproducible probe setup.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-projection-5c62d8c65df54214bfa345c67258dbd8/run-probes.sh` — SHA-256 `209a3fefa1704e45e481045f6405eaf5d5e12e45062f2eb1522cd70ae8e8b106`; Projection/offline-operation reproducible probe setup.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-projection-5c62d8c65df54214bfa345c67258dbd8/red-file_credential_projection.log` — SHA-256 `07d250cf944aef9a8e47e8d1f86c2e41e101b9bd54895741386e87f518a1c86a`; Final exact single-test red output; matching .exit file records Cargo exit 101.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-projection-5c62d8c65df54214bfa345c67258dbd8/red-full_selection_report.log` — SHA-256 `56a42122a2d4affad915e74fd9baab1b7f49f879f0ab8a08247aff000233481d`; Final exact single-test red output; matching .exit file records Cargo exit 101.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-projection-5c62d8c65df54214bfa345c67258dbd8/red-pi_only_regrade.log` — SHA-256 `dee96bed64aed13f7045ba5b7fa4ce4f318e66e82d6813847d7d858d7ac276d5`; Final exact single-test red output; matching .exit file records Cargo exit 101.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-projection-5c62d8c65df54214bfa345c67258dbd8/red-verify_trial_symlink.log` — SHA-256 `a20fcc5aed4b0e21f3fda4e0ef5cfa8ed59457d09db27d611d23749d3973dc1d`; Final exact single-test red output; matching .exit file records Cargo exit 101.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-lifecycle-10898ea8c62d415a810cc38c02c2ea0a/plan_p19_probes.rs` — SHA-256 `2e69c173fb66121f0cc1253cc7c2c632c38f9a68e0907955235c0a6a8bc8503c`; C002/C008/C010/P002/P005 exact red proof. Append UTF-8 bytes of plan_p19_probes.rs and plan_p19_witness_probe.rs to crates/opi-eval/tests/native_driver.rs in a fresh export of remediation_head. Use shared external target and lock across each full cargo command. Do not install tests into shared checkout during plan. Both snippets depend only on current committed native_driver helpers.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-lifecycle-10898ea8c62d415a810cc38c02c2ea0a/plan_p19_witness_probe.rs` — SHA-256 `34aef29ef265b0d7d859db46e24da5daae4e16e0e014fd75fc50c48c67da1f47`; C002/C008/C010/P002/P005 exact red proof. Append UTF-8 bytes of plan_p19_probes.rs and plan_p19_witness_probe.rs to crates/opi-eval/tests/native_driver.rs in a fresh export of remediation_head. Use shared external target and lock across each full cargo command. Do not install tests into shared checkout during plan. Both snippets depend only on current committed native_driver helpers.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-lifecycle-10898ea8c62d415a810cc38c02c2ea0a/plan_p19_exact_red.py` — SHA-256 `ef97fa868285cb7cf37d405b5feb1db4880200836b35d3966985590d312b616e`; Final serialized single-test command runner/log; five named failures.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-lifecycle-10898ea8c62d415a810cc38c02c2ea0a/plan-p19-exact-red.log` — SHA-256 `66eae0a7ce35f459d88b6b6a36e52d4a9773a9597c75b51f3d509f305df9e1c6`; Final serialized single-test command runner/log; five named failures.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-p19-gkm1aqyc/witness-input-probe.rs` — SHA-256 `3760cce2026259b55317a5e1e743d1da8ea7669b015f2ef87c9dc138ce07e785`; P004: append this test-only fragment to committed native_driver.rs in an isolated export; run the exact recorded test under the shared Cargo lock.
+- `C:/Users/Luiz/AppData/Local/Temp/opi-p19-verification-7b0b59a78306434d8afbb1b399dbfc58/verification-handoff.json` — SHA-256 `ed7004e9e66766225be8736214e11e840997d764dacdd996ed444bd47eeb4bac`; Exact current WSL check/selector outcomes and single-family witness red command/diagnostic; source of this invocation evidence only.
+- `C:\Users\Luiz\AppData\Local\Temp\opi-remediate-p19-gkm1aqyc\probe_startup_contract.py` — SHA-256 `06ff709a3876628e9cccd578f815c6968dd2ba852722550fd65f09dc22414236`; D1 option A unchanged-source two-method/eight-subcase runtime-preflight regression probe
+- `C:\Users\Luiz\AppData\Local\Temp\opi-remediate-p19-gkm1aqyc\startup-contract-red.log` — SHA-256 `ab30daa625f234732f77b870df23d051ed2ff4c909dab352c10e8b3a545e416e`; D1 option A observed red: 8 failed subcases, exit 1
+
+## Planning completion and materialization
+
+Observable completion: fixed plan plus strict-union dispositions -> verify: dispositions validator and plan validator pass; docs -> verify: doc checker passes in the sealed export with this plan pair; task diff -> verify: only the two fixed plan files are modified and `git diff --check` passes. The digest emitted by the plan validator is reported externally and is not embedded here.
+
+Actual task test impact: none in the repository; fresh tests/probes were added only to temporary exports. Planned impact is add/update/retain as recorded per batch; no test deletion is proposed. Actual committed changes=none-for-this-task, staged=[], untracked=[]; the outgoing uncommitted paths are the fixed Markdown/JSONL plan pair. D1 is resolved by the user-selected option A; this READY-FOR-APPLY pair requires a new explicit digest-bound apply invocation before production edits. No Phase-conformance or closure result is claimed.

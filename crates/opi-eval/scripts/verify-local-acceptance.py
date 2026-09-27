@@ -20,6 +20,8 @@ import hashlib
 import json
 import os
 import re
+import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -39,9 +41,11 @@ FIRST_CONNECTION = {
     "model": "glm-5.3-flash",
 }
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
 HEX40_TOKEN = re.compile(r"\b[0-9a-f]{40}\b")
 NATIVE_GATE = Path("bundle/artifacts/native/verifier-input.json")
 NATIVE_CAPTURES = Path("bundle/artifacts/native")
+MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 # Credential-shaped names never cross into the spawned Companion.
 CREDENTIAL_MARKERS = ("API_KEY", "TOKEN", "SECRET", "CREDENTIAL", "OPI_EVAL_SCRIPTED_KEY")
 
@@ -402,13 +406,71 @@ class Acceptance:
             raise Rejection(f"agent evidence: {trial['id']!r} {reason}")
 
         def sealed(key):
-            raw = (bundle / "artifacts" / key).read_bytes()
+            path = bundle / "artifacts" / key
+            for parent in (bundle, bundle / "artifacts", path.parent):
+                if parent.is_symlink() or not stat.S_ISDIR(parent.lstat().st_mode):
+                    reject(f"{key} has a linked or invalid artifact directory")
+            metadata = path.lstat()
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > MAX_ARTIFACT_BYTES:
+                reject(f"{key} is not a bounded regular artifact")
+            with path.open("rb") as stream:
+                raw = stream.read(MAX_ARTIFACT_BYTES + 1)
+            if len(raw) > MAX_ARTIFACT_BYTES:
+                reject(f"{key} exceeds the artifact bound")
             if sha256(raw) != entries.get(key, {}).get("digest"):
                 reject(f"{key} differs from its seal")
             return raw
 
         try:
             terminal = json.loads(sealed("native/agent-terminal.json"))
+            material = load_json(
+                self.resolve_run_root(trial) / "material.json", "agent evidence material"
+            )
+            agent = material["agents"][trial["agent"]]
+            executable = agent["executable"]["sha256"]
+            if not isinstance(executable, str) or HEX64.fullmatch(executable) is None:
+                reject("runtime executable identity is malformed")
+            package = agent.get("runtime_package")
+            package_digest, entrypoint = None, None
+            if package is not None:
+                package_digest, entrypoint = package["manifest_sha256"], package["entrypoint"]
+                if (
+                    not isinstance(package_digest, str)
+                    or HEX64.fullmatch(package_digest) is None
+                    or not isinstance(entrypoint, str)
+                    or "\\" in entrypoint or "\x00" in entrypoint
+                    or any(part in ("", ".", "..") for part in entrypoint.split("/"))
+                ):
+                    reject("runtime package identity is malformed")
+            executable_path = f"/opi-eval-agent/{trial['agent']}/agent"
+            if entrypoint is not None:
+                executable_path = f"/opi-eval-agent/{trial['agent']}/runtime/{entrypoint}"
+            command = shlex.quote(executable_path) + " --version"
+            proof = terminal["runtime_preflight"]
+            preflight_stdout = sealed("native/runtime-preflight-stdout.log")
+            preflight_stderr = sealed("native/runtime-preflight-stderr.log")
+            version = preflight_stdout.decode("utf-8") + preflight_stderr.decode("utf-8")
+            if (
+                terminal["schema"] != "opi-eval-native-agent-terminal/2"
+                or terminal["trial"] != trial["id"]
+                or terminal["agent_executable_sha256"] != executable
+                or executable != trial["attribution"]["agent_executable_sha256"]
+                or terminal["task_dispatched"] is not True
+                or not isinstance(terminal["delivered"], list)
+                or proof["kind"] != "version" or proof["status"] != "passed"
+                or type(proof["exit_code"]) is not int or proof["exit_code"] != 0
+                or proof["reason"] is not None
+                or proof["agent_executable_sha256"] != executable
+                or proof["runtime_package_manifest_sha256"] != package_digest
+                or proof["runtime_package_entrypoint"] != entrypoint
+                or proof["command_sha256"] != sha256(command.encode())
+                or proof["stdout_sha256"] != sha256(preflight_stdout)
+                or proof["stderr_sha256"] != sha256(preflight_stderr)
+                or proof["stdout_complete"] is not True or proof["stderr_complete"] is not True
+                or proof["stdout_truncated"] is not False or proof["stderr_truncated"] is not False
+                or not version.strip() or "\x00" in version
+            ):
+                reject("runtime preflight is not passed and bound to this trial")
             stdout = sealed("native/agent-stdout.log")
             stderr = sealed("native/agent-stderr.log")
             result = json.loads(sealed("native/trial-result.json"))
@@ -436,7 +498,11 @@ class Acceptance:
             if not assistants or not any(event.get("type") == agent_end for event in events):
                 reject("missing provider response or Agent terminal event")
             for message in assistants:
-                if any(message.get(key) != FIRST_CONNECTION[key] for key in ("provider", "api", "model")):
+                expected_api = "Anthropic" if opi else FIRST_CONNECTION["api"]
+                if (
+                    message.get("api") != expected_api
+                    or any(message.get(key) != FIRST_CONNECTION[key] for key in ("provider", "model"))
+                ):
                     reject("provider response differs from the first connection")
             call_key = "tool_call_id" if opi else "toolCallId"
             starts = {event.get(call_key) for event in events if event.get("type") == tool_start}

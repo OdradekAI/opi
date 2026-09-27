@@ -350,6 +350,17 @@ fn pi_provider_failure_kind(error_message: &str) -> &'static str {
 
 struct PiImporter;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PiRetryPhase {
+    None,
+    AwaitingRetryStart,
+    AwaitingAgentStart,
+    Retrying,
+    Recovered,
+    Ended,
+    Settled,
+}
+
 impl PiImporter {
     fn import_stream(
         &self,
@@ -423,10 +434,16 @@ impl PiImporter {
             return failed("import-unsupported-schema", FailureBoundaryCode::Adapter);
         }
 
-        // Event lines: known `type` vocabulary, exactly one `agent_end`,
-        // and a deeply validated terminal assistant `message_end`.
+        // v2 has one end. v3 may precede its final end with explicit failed
+        // attempts; an uncorrelated error is usable only inside that proven
+        // retry chain. The final message still requires correlation.
+        let v3 = header["version"].as_u64() == Some(3);
         let mut agent_ends = 0usize;
         let mut terminal: Option<serde_json::Value> = None;
+        let mut retry_phase = PiRetryPhase::None;
+        let mut retry_attempt = 0u64;
+        let mut retry_max = None;
+        let mut retry_identity: Option<(String, String, String)> = None;
         for line in lines {
             let value: serde_json::Value = match serde_json::from_str(line) {
                 Ok(value) => value,
@@ -438,9 +455,63 @@ impl PiImporter {
             let Some(kind) = fields.get("type").and_then(|v| v.as_str()) else {
                 return failed("import-parse-failure", FailureBoundaryCode::Adapter);
             };
+            if matches!(retry_phase, PiRetryPhase::AwaitingRetryStart) && kind != "auto_retry_start"
+                || matches!(retry_phase, PiRetryPhase::AwaitingAgentStart) && kind != "agent_start"
+                || matches!(retry_phase, PiRetryPhase::Ended) && kind != "agent_settled"
+                || matches!(retry_phase, PiRetryPhase::Settled)
+            {
+                return failed("import-unsupported-schema", FailureBoundaryCode::Adapter);
+            }
             match kind {
-                "agent_start"
-                | "turn_start"
+                "agent_start" => {
+                    if retry_phase == PiRetryPhase::AwaitingAgentStart {
+                        retry_phase = PiRetryPhase::Retrying;
+                        terminal = None;
+                    } else if retry_phase != PiRetryPhase::None {
+                        return failed("import-unsupported-schema", FailureBoundaryCode::Adapter);
+                    }
+                }
+                "auto_retry_start" if v3 => {
+                    let attempt = fields.get("attempt").and_then(|v| v.as_u64());
+                    let max = fields.get("maxAttempts").and_then(|v| v.as_u64());
+                    if retry_phase != PiRetryPhase::AwaitingRetryStart
+                        || attempt != retry_attempt.checked_add(1)
+                        || !matches!((attempt, max), (Some(attempt), Some(max)) if max > 0 && attempt <= max)
+                        || retry_max.is_some_and(|previous| Some(previous) != max)
+                        || !fields.get("delayMs").is_some_and(|v| v.is_u64())
+                        || fields.get("errorMessage")
+                            != terminal.as_ref().and_then(|m| m.get("errorMessage"))
+                    {
+                        return failed("import-unsupported-schema", FailureBoundaryCode::Adapter);
+                    }
+                    retry_attempt = attempt.expect("validated retry attempt");
+                    retry_max = max;
+                    retry_phase = PiRetryPhase::AwaitingAgentStart;
+                }
+                "auto_retry_end" if v3 => {
+                    if retry_phase != PiRetryPhase::Retrying
+                        || fields.get("attempt").and_then(|v| v.as_u64()) != Some(retry_attempt)
+                        || fields.get("success").and_then(|v| v.as_bool()) != Some(true)
+                        || fields.contains_key("finalError")
+                        || !terminal.as_ref().is_some_and(|message| {
+                            matches!(
+                                message["stopReason"].as_str(),
+                                Some("stop" | "length" | "toolUse")
+                            )
+                        })
+                    {
+                        return failed("import-unsupported-schema", FailureBoundaryCode::Adapter);
+                    }
+                    retry_phase = PiRetryPhase::Recovered;
+                }
+                "agent_settled" if v3 => {
+                    if retry_phase == PiRetryPhase::Ended {
+                        retry_phase = PiRetryPhase::Settled;
+                    } else if retry_phase != PiRetryPhase::None {
+                        return failed("import-unsupported-schema", FailureBoundaryCode::Adapter);
+                    }
+                }
+                "turn_start"
                 | "turn_end"
                 | "message_start"
                 | "tool_execution_start"
@@ -505,15 +576,108 @@ impl PiImporter {
                     // user and toolResult message_end events whose shapes
                     // differ by design.
                     if message.get("role").and_then(|v| v.as_str()) == Some("assistant") {
-                        if let Err(kind) = validate_terminal_message(message) {
+                        // Do not overwrite an unproven error with a later
+                        // assistant turn. Its end/start boundaries must first
+                        // establish a retry of the same provider/model/API.
+                        if terminal.as_ref().is_some_and(|previous| {
+                            previous.get("id").is_none() && previous.get("responseId").is_none()
+                        }) {
+                            return failed(
+                                "import-unsupported-schema",
+                                FailureBoundaryCode::Adapter,
+                            );
+                        }
+                        let validation = if v3
+                            && message.get("id").is_none()
+                            && message.get("responseId").is_none()
+                        {
+                            validate_retry_error(message)
+                        } else {
+                            validate_terminal_message(message)
+                        };
+                        if let Err(kind) = validation {
                             return failed(kind, FailureBoundaryCode::Adapter);
+                        }
+                        if retry_identity
+                            .as_ref()
+                            .is_some_and(|(provider, model, api)| {
+                                message["provider"].as_str() != Some(provider.as_str())
+                                    || message["model"].as_str() != Some(model.as_str())
+                                    || message["api"].as_str() != Some(api.as_str())
+                            })
+                        {
+                            return failed(
+                                "import-unsupported-schema",
+                                FailureBoundaryCode::Adapter,
+                            );
                         }
                         terminal = Some(message.clone());
                     }
                 }
                 "agent_end" => {
-                    if !fields.get("messages").is_some_and(|m| m.is_array()) {
+                    let Some(messages) = fields.get("messages").and_then(|m| m.as_array()) else {
                         return failed("import-unsupported-schema", FailureBoundaryCode::Adapter);
+                    };
+                    if v3 {
+                        let will_retry = match fields.get("willRetry") {
+                            None => false,
+                            Some(value) => match value.as_bool() {
+                                Some(value) => value,
+                                None => {
+                                    return failed(
+                                        "import-unsupported-schema",
+                                        FailureBoundaryCode::Adapter,
+                                    );
+                                }
+                            },
+                        };
+                        if will_retry {
+                            let Some(message) = terminal.as_ref() else {
+                                return failed(
+                                    "import-evidence-missing",
+                                    FailureBoundaryCode::Evidence,
+                                );
+                            };
+                            if !matches!(retry_phase, PiRetryPhase::None | PiRetryPhase::Retrying)
+                                || agent_ends != 0
+                                || messages.last() != Some(message)
+                                || validate_retry_error(message).is_err()
+                            {
+                                return failed(
+                                    "import-unsupported-schema",
+                                    FailureBoundaryCode::Adapter,
+                                );
+                            }
+                            retry_identity.get_or_insert_with(|| {
+                                (
+                                    message["provider"].as_str().expect("validated").to_owned(),
+                                    message["model"].as_str().expect("validated").to_owned(),
+                                    message["api"].as_str().expect("validated").to_owned(),
+                                )
+                            });
+                            retry_phase = PiRetryPhase::AwaitingRetryStart;
+                            continue;
+                        }
+                        if let Some(message) = terminal.as_ref()
+                            && validate_terminal_message(message).is_err()
+                        {
+                            return failed(
+                                "import-unsupported-schema",
+                                FailureBoundaryCode::Adapter,
+                            );
+                        }
+                        if retry_identity.is_some() {
+                            if retry_phase != PiRetryPhase::Recovered
+                                || messages.last() != terminal.as_ref()
+                                || fields.get("willRetry").and_then(|v| v.as_bool()) != Some(false)
+                            {
+                                return failed(
+                                    "import-unsupported-schema",
+                                    FailureBoundaryCode::Adapter,
+                                );
+                            }
+                            retry_phase = PiRetryPhase::Ended;
+                        }
                     }
                     agent_ends += 1;
                 }
@@ -521,6 +685,9 @@ impl PiImporter {
             }
         }
 
+        if retry_identity.is_some() && retry_phase != PiRetryPhase::Settled {
+            return failed("import-evidence-incomplete", FailureBoundaryCode::Evidence);
+        }
         if agent_ends != 1 {
             return if agent_ends == 0 {
                 failed("import-evidence-missing", FailureBoundaryCode::Evidence)
@@ -531,6 +698,9 @@ impl PiImporter {
         let Some(message) = terminal else {
             return failed("import-evidence-missing", FailureBoundaryCode::Evidence);
         };
+        if let Err(kind) = validate_terminal_message(&message) {
+            return failed(kind, FailureBoundaryCode::Adapter);
+        }
         let fields = message.as_object().expect("validated terminal message");
         let stop_reason = fields["stopReason"].as_str().expect("validated").to_owned();
         let error_message = fields
@@ -567,6 +737,31 @@ impl PiImporter {
 /// Deep validation of the terminal assistant `message_end` message: exact
 /// projection fields with presence-only opaque fields.
 fn validate_terminal_message(message: &serde_json::Value) -> Result<(), &'static str> {
+    validate_assistant_message(message)?;
+    // Correlation identity: v2 samples carry `id`, the pinned 0.85.1
+    // stream carries `responseId`; one of the two must be present.
+    if message.get("id").is_none() && message.get("responseId").is_none() {
+        return Err("import-unsupported-schema");
+    }
+    Ok(())
+}
+
+/// A deferred v3 error must have the full assistant projection and a
+/// nonempty client diagnostic. Only explicit retry boundaries can use it.
+fn validate_retry_error(message: &serde_json::Value) -> Result<(), &'static str> {
+    validate_assistant_message(message)?;
+    if message["stopReason"].as_str() != Some("error")
+        || !message["errorMessage"]
+            .as_str()
+            .is_some_and(|error| !error.is_empty())
+        || !message["api"].is_string()
+    {
+        return Err("import-unsupported-schema");
+    }
+    Ok(())
+}
+
+fn validate_assistant_message(message: &serde_json::Value) -> Result<(), &'static str> {
     let Some(fields) = message.as_object() else {
         return Err("import-unsupported-schema");
     };
@@ -577,11 +772,6 @@ fn validate_terminal_message(message: &serde_json::Value) -> Result<(), &'static
         if !fields.contains_key(key) {
             return Err("import-unsupported-schema");
         }
-    }
-    // Correlation identity: v2 samples carry `id`, the pinned 0.85.1
-    // stream carries `responseId`; one of the two must be present.
-    if !(fields.contains_key("id") || fields.contains_key("responseId")) {
-        return Err("import-unsupported-schema");
     }
     if !fields.get("provider").is_some_and(|v| v.is_string())
         || !fields.get("model").is_some_and(|v| v.is_string())
@@ -768,6 +958,224 @@ mod tests {
             stdout: fixture_bytes(name),
             stderr: crate::process::OutputCapture::default(),
             cleanup: crate::process::CleanupEvidence::NotRequired,
+        }
+    }
+
+    fn pinned_v3_retry_rows() -> Vec<serde_json::Value> {
+        use serde_json::json;
+        let usage = |input, output| {
+            json!({
+                "input": input, "output": output, "cacheRead": 0, "cacheWrite": 0,
+                "totalTokens": input + output, "cost": {},
+            })
+        };
+        let error = json!({"role": "assistant", "content": [], "api": "openai-completions",
+            "timestamp": 1, "provider": "scripted", "model": "retry", "stopReason": "error",
+            "errorMessage": "429: retryable rate limit", "usage": usage(100, 200)});
+        let tool = json!({"role": "assistant", "content": [], "api": "openai-completions",
+            "timestamp": 2, "provider": "scripted", "model": "retry", "stopReason": "toolUse",
+            "responseId": "retry-tool-response", "usage": usage(2, 4)});
+        let final_message = json!({"role": "assistant", "content": [], "api": "openai-completions",
+            "timestamp": 3, "provider": "scripted", "model": "retry", "stopReason": "stop",
+            "responseId": "retry-final-response", "usage": usage(12, 34)});
+        vec![
+            json!({"type": "session", "version": 3, "id": "retry-session", "timestamp": "2026-09-27T00:00:00Z", "cwd": "/work"}),
+            json!({"type": "agent_start"}),
+            json!({"type": "message_end", "message": error}),
+            json!({"type": "agent_end", "messages": [error], "willRetry": true}),
+            json!({"type": "auto_retry_start", "attempt": 1, "maxAttempts": 3, "delayMs": 2000, "errorMessage": "429: retryable rate limit"}),
+            json!({"type": "agent_start"}),
+            json!({"type": "message_end", "message": tool}),
+            json!({"type": "auto_retry_end", "attempt": 1, "success": true}),
+            json!({"type": "tool_execution_start", "toolCallId": "call"}),
+            json!({"type": "tool_execution_end", "toolCallId": "call"}),
+            json!({"type": "message_end", "message": final_message}),
+            json!({"type": "agent_end", "messages": [tool, final_message], "willRetry": false}),
+            json!({"type": "agent_settled"}),
+        ]
+    }
+
+    fn rows_capture(rows: &[serde_json::Value]) -> crate::process::OutputCapture {
+        crate::process::OutputCapture {
+            bytes: (rows
+                .iter()
+                .map(serde_json::Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n")
+                .into_bytes(),
+            truncated: false,
+        }
+    }
+
+    #[test]
+    fn importer_pinned_v3_retry_keeps_only_final_correlated_outcome() {
+        let capture = rows_capture(&pinned_v3_retry_rows());
+        let source = capture.bytes.clone();
+        let directory = tempfile::tempdir().unwrap();
+        let imported = PiImporter.import_stream(&capture, directory.path());
+        assert!(
+            matches!(imported.completion, AgentCompletion::Completed { .. }),
+            "{:?}",
+            imported.completion
+        );
+        assert_eq!(
+            imported.terminal_message["responseId"],
+            "retry-final-response"
+        );
+        assert_eq!(
+            imported.usage.input_tokens,
+            Some(Fact::Known {
+                value: 12,
+                origin: "provider_reported".to_owned()
+            })
+        );
+        assert_eq!(
+            imported.usage.output_tokens,
+            Some(Fact::Known {
+                value: 34,
+                origin: "provider_reported".to_owned()
+            })
+        );
+        assert!(matches!(
+            imported.settle("scripted", "retry"),
+            AgentCompletion::Completed { .. }
+        ));
+        assert_eq!(
+            std::fs::read(directory.path().join("pi-events.jsonl")).unwrap(),
+            source
+        );
+        assert_eq!(capture.bytes, source);
+    }
+
+    #[test]
+    fn importer_pinned_v3_retry_rejects_drift_and_incomplete_chains() {
+        for case in [
+            "v2",
+            "unmarked-end",
+            "missing-start",
+            "missing-agent-start",
+            "missing-retry-end",
+            "missing-settled",
+            "duplicate-final",
+            "wrong-attempt",
+            "zero-max",
+            "wrong-error",
+            "nonbool-retry",
+            "retry-on-success",
+            "contradictory-success",
+            "missing-final-id",
+            "uncorrelated-success",
+            "final-error-no-id",
+            "unknown",
+            "truncated",
+            "missing-error",
+            "empty-error",
+            "bad-error-usage",
+            "bad-error-api",
+            "other-provider",
+            "other-model",
+            "other-api",
+            "other-final-model",
+            "wrong-end-attempt",
+            "success-with-error",
+            "bad-delay",
+            "wrong-end-message",
+            "early-retry-end",
+        ] {
+            let mut rows = pinned_v3_retry_rows();
+            match case {
+                "v2" => rows[0]["version"] = 2.into(),
+                "unmarked-end" => {
+                    rows[3].as_object_mut().unwrap().remove("willRetry");
+                }
+                "missing-start" => {
+                    rows.remove(4);
+                }
+                "missing-agent-start" => {
+                    rows.remove(5);
+                }
+                "missing-retry-end" => {
+                    rows.remove(7);
+                }
+                "missing-settled" => {
+                    rows.pop();
+                }
+                "duplicate-final" => {
+                    rows.insert(12, rows[11].clone());
+                }
+                "wrong-attempt" => rows[4]["attempt"] = 2.into(),
+                "zero-max" => rows[4]["maxAttempts"] = 0.into(),
+                "wrong-error" => rows[4]["errorMessage"] = "substituted".into(),
+                "nonbool-retry" => rows[3]["willRetry"] = "true".into(),
+                "retry-on-success" => {
+                    rows[2]["message"] = rows[6]["message"].clone();
+                    rows[3]["messages"] = serde_json::json!([rows[2]["message"]]);
+                }
+                "contradictory-success" => rows[7]["success"] = false.into(),
+                "missing-final-id" => {
+                    rows[10]["message"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("responseId");
+                    rows[11]["messages"][1] = rows[10]["message"].clone();
+                }
+                "uncorrelated-success" => {
+                    rows[6]["message"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("responseId");
+                }
+                "final-error-no-id" => {
+                    rows[10]["message"] = rows[2]["message"].clone();
+                    rows[11]["messages"][1] = rows[10]["message"].clone();
+                }
+                "missing-error" => {
+                    rows[2]["message"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("errorMessage");
+                    rows[3]["messages"][0] = rows[2]["message"].clone();
+                }
+                "empty-error" => {
+                    rows[2]["message"]["errorMessage"] = "".into();
+                    rows[3]["messages"][0] = rows[2]["message"].clone();
+                    rows[4]["errorMessage"] = "".into();
+                }
+                "bad-error-usage" => {
+                    rows[2]["message"]["usage"]["input"] = "100".into();
+                    rows[3]["messages"][0] = rows[2]["message"].clone();
+                }
+                "bad-error-api" => {
+                    rows[2]["message"]["api"] = serde_json::Value::Null;
+                    rows[3]["messages"][0] = rows[2]["message"].clone();
+                }
+                "other-provider" => rows[6]["message"]["provider"] = "substituted".into(),
+                "other-model" => rows[6]["message"]["model"] = "substituted".into(),
+                "other-api" => rows[6]["message"]["api"] = "substituted".into(),
+                "other-final-model" => {
+                    rows[10]["message"]["model"] = "substituted".into();
+                    rows[11]["messages"][1] = rows[10]["message"].clone();
+                }
+                "wrong-end-attempt" => rows[7]["attempt"] = 2.into(),
+                "success-with-error" => rows[7]["finalError"] = "429: retryable rate limit".into(),
+                "bad-delay" => rows[4]["delayMs"] = (-1).into(),
+                "wrong-end-message" => {
+                    rows[3]["messages"][0]["errorMessage"] = "substituted".into()
+                }
+                "early-retry-end" => rows.swap(6, 7),
+                "unknown" => rows[8]["type"] = "future_event".into(),
+                "truncated" => {}
+                _ => unreachable!(),
+            }
+            let mut capture = rows_capture(&rows);
+            capture.truncated = case == "truncated";
+            let imported = PiImporter.parse_stream(&capture);
+            assert!(
+                matches!(imported.completion, AgentCompletion::Failed(_)),
+                "{case}: {:?}",
+                imported.completion
+            );
         }
     }
 

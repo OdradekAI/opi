@@ -17,7 +17,11 @@ improvises or falls back to another provider, protocol, or model.
 Credentials are applied only to the Agent process inside the task
 environment and removed before the verifier phase runs.
 
-After the Agent phase the integration writes a typed terminal observation
+Before projecting credentials, the integration checks the staged runtime with
+a bounded, supervised `--version` command. Separate captures bind the
+compatibility proof; failure or uncertainty prevents task dispatch.
+
+After refusal or the Agent phase, the integration writes a /2 terminal observation
 (``opi-eval-terminal.json`` next to its Agent logs): the observed exit
 code, whether the Agent hit its timeout, the sha256 of the exact Agent
 executable it executed, and the bounded manifest of files the Agent
@@ -32,6 +36,7 @@ library.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import os
@@ -39,6 +44,7 @@ import re
 import shlex
 import stat
 import time
+import types
 import uuid
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -52,8 +58,9 @@ from pier.models.agent.network import NetworkAllowlist
 
 _HANDOFF_ENV = "OPI_EVAL_NATIVE_HANDOFF"
 _HANDOFF_SCHEMA = "opi-eval-native-handoff/3"
-_TERMINAL_SCHEMA = "opi-eval-native-agent-terminal/1"
+_TERMINAL_SCHEMA = "opi-eval-native-agent-terminal/2"
 _TERMINAL_FILENAME = "opi-eval-terminal.json"
+_PREFLIGHT_CAPTURE_BYTES = 64 * 1024 * 1024
 
 # Where the exact built Agent executable and its projected configuration
 # are staged inside the task environment. The directory is removed again
@@ -69,6 +76,14 @@ _MAX_DELIVERED_BYTES = 64 * 1024 * 1024
 
 class _OpiEvalAgentError(RuntimeError):
     """Raised for integration contract violations (fail-closed)."""
+
+
+class _RuntimePreflightOutputError(RuntimeError):
+    """The supervised version command ended without readable capture proof."""
+
+
+class _NativeCommandTerminationError(RuntimeError):
+    """Owned supervision could not observe the container-command termination."""
 
 
 
@@ -96,7 +111,8 @@ class OwnedDockerEnvironment(DockerEnvironment):
             reason + "\n", encoding="utf-8",
         )
 
-    async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None):
+    async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None,
+                   *, _capture_limit=None):
         identity = uuid.uuid4().hex
         state = f"/tmp/opi-eval-exec-{identity}"
         # Bash job control creates one process group for this invocation.
@@ -112,6 +128,31 @@ class OwnedDockerEnvironment(DockerEnvironment):
             f"rm -f {state}/pid; rmdir {state}\n"
             "exit \"$opi_eval_code\""
         )
+        marker = f"opi-eval-runtime-capture-{identity}"
+        if _capture_limit is not None:
+            # Bound the streams before the upstream Docker transport merges
+            # stderr. The extra byte proves overflow without retaining an
+            # unbounded stream; only this invocation owns these private files.
+            wrapped = (
+                f"(umask 077; mkdir {state}) || exit 125\n"
+                "set -m\n"
+                f"exec 3> >(head -c {_capture_limit + 1} > {state}/stdout)\n"
+                "opi_eval_stdout_pid=$!\n"
+                f"exec 4> >(head -c {_capture_limit + 1} 3>&- > {state}/stderr)\n"
+                "opi_eval_stderr_pid=$!\n"
+                f"bash -c {shlex.quote(command)} >&3 2>&4 &\n"
+                "opi_eval_pid=$!\n"
+                f"printf '%s\\n' \"$opi_eval_pid\" > {state}/pid\n"
+                "exec 3>&- 4>&-\n"
+                "wait \"$opi_eval_pid\"\n"
+                "opi_eval_code=$?\n"
+                "wait \"$opi_eval_stdout_pid\" \"$opi_eval_stderr_pid\"\n"
+                f"printf '\\n{marker}\\n'\n"
+                f"base64 -w 0 {state}/stdout; printf '\\n'\n"
+                f"base64 -w 0 {state}/stderr; printf '\\n'\n"
+                f"rm -f {state}/pid {state}/stdout {state}/stderr; rmdir {state}\n"
+                "exit \"$opi_eval_code\""
+            )
         started = time.monotonic()
         launch = asyncio.create_task(super().exec(
             wrapped, cwd=cwd, env=env, timeout_sec=None, user=user,
@@ -123,7 +164,7 @@ class OwnedDockerEnvironment(DockerEnvironment):
                 result = await asyncio.shield(launch)
             else:
                 result = await asyncio.wait_for(asyncio.shield(launch), timeout_sec)
-            return result
+            return self._runtime_capture_result(result, marker) if _capture_limit is not None else result
         except (asyncio.CancelledError, TimeoutError) as cause:
             termination = "cancelled" if isinstance(cause, asyncio.CancelledError) else "timeout"
 
@@ -150,9 +191,16 @@ class OwnedDockerEnvironment(DockerEnvironment):
                         await asyncio.wait_for(asyncio.shield(launch), 5)
                     except Exception:
                         pass
-                    raise RuntimeError("native command termination is uncertain") from exc
+                    raise _NativeCommandTerminationError("native command termination is uncertain") from exc
 
             result = await self._settle_shielded(asyncio.create_task(settle()))
+            if _capture_limit is not None:
+                try:
+                    cause.runtime_capture = self._runtime_capture_result(result, marker)
+                except _RuntimePreflightOutputError:
+                    pass
+            raise
+        except _RuntimePreflightOutputError:
             raise
         except Exception:
             self._effect_unknown("native exec transport failed")
@@ -169,6 +217,21 @@ class OwnedDockerEnvironment(DockerEnvironment):
                 "a", encoding="utf-8",
             ) as log:
                 log.write(json.dumps(record, sort_keys=True) + "\n")
+
+    @staticmethod
+    def _runtime_capture_result(result, marker):
+        output = result.stdout
+        if not isinstance(output, str):
+            raise _RuntimePreflightOutputError("runtime preflight capture is unreadable")
+        _, found, encoded = output.rpartition(marker + "\n")
+        rows = encoded.split("\n")
+        if not found or len(rows) != 3 or rows[-1] != "":
+            raise _RuntimePreflightOutputError("runtime preflight capture is incomplete")
+        try:
+            stdout, stderr = (base64.b64decode(row, validate=True) for row in rows[:2])
+        except (ValueError, UnicodeError) as exc:
+            raise _RuntimePreflightOutputError("runtime preflight capture is invalid") from exc
+        return types.SimpleNamespace(return_code=result.return_code, stdout=stdout, stderr=stderr)
 
     async def _run_docker_compose_command(self, command, **kwargs):
         command = list(command)
@@ -224,6 +287,8 @@ class _OpiEvalAgent(BaseAgent):
         self._executable_sha256: str | None = None
         self._capture_root = self._stage_dir()
         self._capture_mounted = False
+        self._runtime_preflight: dict[str, Any] | None = None
+        self._task_dispatched = False
 
     def _load_handoff(self) -> tuple[Path, dict[str, Any]]:
         path = os.environ.get(_HANDOFF_ENV)
@@ -246,6 +311,11 @@ class _OpiEvalAgent(BaseAgent):
                 f"handoff integration identity {name!r} does not select "
                 f"{self.name()}"
             )
+        trial = handoff.get("trial")
+        if (not isinstance(trial, str) or not trial
+                or any(not (char.isascii() and (char.isalnum() or char in "-_.")) for char in trial)
+                or ".." in trial):
+            raise _OpiEvalAgentError("handoff trial identity is missing or unsafe")
         return handoff_path, handoff
 
     @staticmethod
@@ -404,15 +474,117 @@ class _OpiEvalAgent(BaseAgent):
             )
             if result.return_code != 0:
                 raise _OpiEvalAgentError("agent executable staging failed")
+            await self._runtime_preflight_check(environment, stage)
             await self._project_configuration(environment, stage)
+            # Configuration upload owns fixed sibling paths, never runtime
+            # files. Recheck source identities before allowing task dispatch.
+            self._verify_runtime()
         except BaseException:  # Cleanup also applies when the runner cancels setup.
-            await self._cleanup(environment, stage)
+            try:
+                if (self._runtime_preflight is not None
+                        and not any(path.is_symlink() for path in (self.logs_dir, *self.logs_dir.parents))
+                        and not (self.logs_dir / _TERMINAL_FILENAME).exists()):
+                    self._write_terminal_observation(environment, None, [])
+            finally:
+                await self._cleanup(environment, stage)
             raise
 
     async def _project_configuration(
         self, environment: BaseEnvironment, stage: PurePosixPath
     ) -> None:
         raise NotImplementedError
+
+    async def _runtime_preflight_check(self, environment, stage):
+        command = self._staged_executable(stage) + " --version"
+        home = f"{stage}/runtime-preflight-home"
+        env = {
+            "HOME": home, "XDG_CONFIG_HOME": f"{home}/config",
+            "XDG_DATA_HOME": f"{home}/data", "XDG_CACHE_HOME": f"{home}/cache",
+            "PI_CODING_AGENT_DIR": home,
+        }
+        if self._PRODUCT == "opi":
+            env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:abstract={stage}/no-keyring"
+        package = self._handoff.get("runtime_package")
+        proof = {
+            "kind": "version", "status": "unknown", "exit_code": None,
+            "agent_executable_sha256": self._executable_sha256,
+            "runtime_package_manifest_sha256": package["manifest_sha256"] if package else None,
+            "runtime_package_entrypoint": package["entrypoint"] if package else None,
+            "command_sha256": hashlib.sha256(command.encode()).hexdigest(),
+            "stdout_sha256": hashlib.sha256(b"").hexdigest(),
+            "stderr_sha256": hashlib.sha256(b"").hexdigest(),
+            "stdout_complete": False, "stderr_complete": False,
+            "stdout_truncated": False, "stderr_truncated": False,
+            "reason": None,
+        }
+        result = None
+        interrupted = None
+        try:
+            kwargs = {"command": command, "env": env, "timeout_sec": 30}
+            if isinstance(environment, OwnedDockerEnvironment):
+                kwargs["_capture_limit"] = _PREFLIGHT_CAPTURE_BYTES
+            result = await environment.exec(**kwargs)
+        except BaseException as exc:
+            interrupted = exc
+            result = getattr(exc, "runtime_capture", None)
+            proof["reason"] = (
+                "timeout" if isinstance(exc, TimeoutError)
+                else "termination" if isinstance(exc, (asyncio.CancelledError, _NativeCommandTerminationError))
+                else "invalid-output" if isinstance(exc, _RuntimePreflightOutputError)
+                else "transport"
+            )
+        captures = {}
+        for stream in ("stdout", "stderr"):
+            raw = getattr(result, stream, None)
+            try:
+                if isinstance(raw, str):
+                    raw = raw.encode("utf-8", errors="strict")
+                if not isinstance(raw, bytes):
+                    raise ValueError("missing stream")
+                overflow = len(raw) > _PREFLIGHT_CAPTURE_BYTES
+                raw = raw[:_PREFLIGHT_CAPTURE_BYTES + 1]
+                bounded = raw[:_PREFLIGHT_CAPTURE_BYTES]
+                proof[f"{stream}_sha256"] = hashlib.sha256(bounded).hexdigest()
+                proof[f"{stream}_truncated"] = overflow
+                if overflow:
+                    proof["reason"] = proof["reason"] or "capture-overflow"
+                bounded.decode("utf-8", errors="strict")
+                if b"\0" in bounded:
+                    raise ValueError("invalid stream")
+                proof[f"{stream}_complete"] = interrupted is None and not overflow
+            except (ValueError, UnicodeError):
+                raw = raw if isinstance(raw, bytes) else b""
+                raw = raw[:_PREFLIGHT_CAPTURE_BYTES + 1]
+                proof[f"{stream}_sha256"] = hashlib.sha256(raw[:_PREFLIGHT_CAPTURE_BYTES]).hexdigest()
+                proof["reason"] = proof["reason"] or "invalid-output"
+            captures[stream] = raw
+        code = getattr(result, "return_code", None)
+        if type(code) is int and -(2**31) <= code < 2**31:
+            proof["exit_code"] = code
+        elif interrupted is None:
+            proof["reason"] = proof["reason"] or "invalid-output"
+        complete = proof["stdout_complete"] and proof["stderr_complete"]
+        if complete and proof["exit_code"] is not None and proof["reason"] is None:
+            if code != 0:
+                proof["status"] = "failed"
+            elif (captures["stdout"] + captures["stderr"]).strip():
+                proof["status"] = "passed"
+            else:
+                proof["reason"] = "invalid-output"
+        self._runtime_preflight = proof
+        if any(path.is_symlink() for path in (self.logs_dir, *self.logs_dir.parents)):
+            raise _OpiEvalAgentError("unsafe runtime preflight capture directory")
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        for stream, raw in captures.items():
+            path = self.logs_dir / f"runtime-preflight-{stream}.log"
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            with os.fdopen(os.open(path, flags, 0o600), "wb") as output:
+                output.write(raw)
+        if proof["status"] != "passed":
+            self._write_terminal_observation(environment, None, [])
+            if interrupted is not None:
+                raise interrupted
+            raise _OpiEvalAgentError(f"runtime preflight {proof['status']}")
 
     def _agent_command(self, instruction: str, stage: PurePosixPath) -> str:
         raise NotImplementedError
@@ -434,6 +606,7 @@ class _OpiEvalAgent(BaseAgent):
         # download from that staging directory before owned-container removal.
         self._capture_mounted = environment.capabilities.mounted
         try:
+            self._verify_runtime()
             if self._capture_mounted:
                 if any(path.is_symlink() for path in (self.logs_dir, *self.logs_dir.parents)):
                     raise _OpiEvalAgentError("unsafe mounted capture directory")
@@ -445,8 +618,9 @@ class _OpiEvalAgent(BaseAgent):
         except BaseException:
             await self._cleanup(environment, stage)
             raise
-        exit_code = 0
+        exit_code = None
         cancelled = False
+        launch_error = None
         # The pinned Docker exec uses Bash. Job control gives this launch its
         # own process group; the private pid file lives only until cleanup.
         command = (
@@ -458,6 +632,10 @@ class _OpiEvalAgent(BaseAgent):
             f"printf '%s\\n' \"$opi_eval_pid\" > {shlex.quote(f'{stage}/agent.pid')}\n"
             "wait \"$opi_eval_pid\""
         )
+        if self._runtime_preflight is None or self._runtime_preflight["status"] != "passed":
+            await self._cleanup(environment, stage)
+            raise _OpiEvalAgentError("task dispatch requires passed runtime preflight")
+        self._task_dispatched = True
         launch = asyncio.create_task(environment.exec(
             command=f"bash -c {shlex.quote(command)}",
             env=environment.agent_process_env(self._agent_env()),
@@ -492,11 +670,9 @@ class _OpiEvalAgent(BaseAgent):
             raise
         except Exception as exc:  # noqa: BLE001 - settle every terminal shape
             name = type(exc).__name__
-            if "Timeout" in name:
+            if isinstance(exc, TimeoutError):
                 self._timed_out = True
-                exit_code = 124
-            else:
-                exit_code = 125
+            launch_error = exc
             self.logger.warning("agent phase ended with %s", name)
         finally:
             try:
@@ -506,6 +682,8 @@ class _OpiEvalAgent(BaseAgent):
                 await self._cleanup(environment, stage)
             if not cancelled:
                 self._write_terminal_observation(environment, exit_code, delivered)
+        if launch_error is not None:
+            raise launch_error
         if exit_code not in (0,):
             # The Agent's own non-zero exit or timeout is a graded Agent
             # outcome: the verifier still grades the collected patch.
@@ -578,21 +756,25 @@ class _OpiEvalAgent(BaseAgent):
     def _write_terminal_observation(
         self,
         environment: BaseEnvironment,
-        exit_code: int,
+        exit_code: int | None,
         delivered: list[dict[str, Any]],
     ) -> None:
         del environment  # the observation is host-side, from logs_dir
         observation = {
             "schema": _TERMINAL_SCHEMA,
             "product": self._PRODUCT,
+            "trial": self._handoff["trial"],
             "agent_executable_sha256": self._executable_sha256,
+            "runtime_preflight": self._runtime_preflight,
+            "task_dispatched": self._task_dispatched,
             "exit_code": exit_code,
             "timed_out": self._timed_out,
             "delivered": delivered,
         }
-        (self.logs_dir / _TERMINAL_FILENAME).write_text(
-            json.dumps(observation, sort_keys=True) + "\n", encoding="utf-8"
-        )
+        path = self.logs_dir / _TERMINAL_FILENAME
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        with os.fdopen(os.open(path, flags, 0o600), "w", encoding="utf-8") as output:
+            output.write(json.dumps(observation, sort_keys=True) + "\n")
 
 
 class OpiAgent(_OpiEvalAgent):

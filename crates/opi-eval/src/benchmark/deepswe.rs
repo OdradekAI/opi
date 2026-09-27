@@ -1569,6 +1569,9 @@ mod adapter_tests {
             kind: crate::benchmark::process::SelectionKind::Integration {
                 product: "opi".to_owned(),
                 executable_sha256: "a".repeat(64),
+                trial: "logical-trial".to_owned(),
+                runtime_package_manifest_sha256: None,
+                runtime_package_entrypoint: None,
             },
             lifecycle: crate::benchmark::process::TaskLifecycleSelection {
                 environment_mode: crate::benchmark::task_lifecycle::VerifierEnvironmentMode::Shared,

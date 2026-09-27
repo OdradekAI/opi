@@ -1132,9 +1132,8 @@ pub fn project_connection(
         NativeClient::Opi => {
             let text = render_opi_config(connection, &controls, &credential)?;
             let mut agent_env = BTreeMap::new();
-            if let Some(variable) = credential.variable() {
-                agent_env.insert(variable.to_owned(), credential.value().to_owned());
-            }
+            let variable = credential.variable().unwrap_or("OPI_EVAL_AGENT_KEY");
+            agent_env.insert(variable.to_owned(), credential.value().to_owned());
             ("config.toml", text.into_bytes(), agent_env)
         }
         NativeClient::Pi => {

@@ -114,7 +114,26 @@ fn read_trial_ids(run_root: &Path) -> Result<Vec<String>, std::io::Error> {
     let mut ids = Vec::new();
     for entry in std::fs::read_dir(run_root.join("trials"))? {
         let entry = entry?;
-        if entry.file_type()?.is_dir()
+        let metadata = std::fs::symlink_metadata(entry.path())?;
+        #[cfg(windows)]
+        let reparse_point = {
+            use std::os::windows::fs::MetadataExt;
+            metadata.file_attributes()
+                & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+                != 0
+        };
+        #[cfg(not(windows))]
+        let reparse_point = false;
+        if metadata.file_type().is_symlink() || reparse_point {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "linked trial entry is not admissible: {}",
+                    entry.file_name().to_string_lossy()
+                ),
+            ));
+        }
+        if metadata.is_dir()
             && let Ok(id) = entry.file_name().into_string()
         {
             ids.push(id);
@@ -248,7 +267,7 @@ impl NativeRegradeReport {
     }
 }
 
-/// Request-level regrade failures (before any trial is examined).
+/// Request-level regrade failures before any verifier dispatch.
 #[derive(Debug)]
 pub(crate) enum NativeRegradeError {
     /// The output root already exists; a regrade never overwrites.
@@ -309,7 +328,51 @@ impl NativeRegrader {
         if out.exists() {
             return Err(NativeRegradeError::OutputExists(out.to_owned()));
         }
-        let material = crate::runner::material::NativeMaterial::load(material_path)
+        let mut products = std::collections::BTreeSet::new();
+        let mut source_rejections = std::collections::BTreeMap::new();
+        for trial in &trial_ids {
+            let bundle = run_root.join("trials").join(trial).join("bundle");
+            let evidence = (|| {
+                RunBundle::verify(&bundle)
+                    .map_err(|error| format!("bundle-{}", classify(trial, error).kind))?;
+                if !bundle
+                    .join("artifacts/native/verifier-input.json")
+                    .is_file()
+                {
+                    return Err("not-native".to_owned());
+                }
+                let experiment = bundle_json(&bundle, "control/experiment.json")?;
+                sealed_trial_product(&experiment, trial)?;
+                Ok(experiment)
+            })();
+            match evidence {
+                Ok(experiment) => {
+                    // One verified experiment also binds the identities of its
+                    // damaged sibling trials; their own seals still reject below.
+                    for source_trial in &trial_ids {
+                        if let Ok(product) = sealed_trial_product(&experiment, source_trial) {
+                            products.insert(product.to_owned());
+                        }
+                    }
+                }
+                Err(reason) => {
+                    source_rejections.insert(trial.clone(), reason);
+                }
+            }
+        }
+        if products.is_empty() {
+            return Ok(NativeRegradeReport {
+                schema: NATIVE_REGRADE_SCHEMA,
+                outcome: "rejected",
+                trials: Vec::new(),
+                rejections: source_rejections
+                    .into_iter()
+                    .map(|(trial, reason)| RegradeRejection { trial, reason })
+                    .collect(),
+            });
+        }
+        let products: Vec<&str> = products.iter().map(String::as_str).collect();
+        let material = crate::runner::material::NativeMaterial::load_for(material_path, &products)
             .map_err(|error| NativeRegradeError::Material(error.to_string()))?;
         if let Some(parent) = out.parent() {
             std::fs::create_dir_all(parent).map_err(NativeRegradeError::Io)?;
@@ -331,6 +394,10 @@ impl NativeRegrader {
                     trial,
                     reason: "not-dispatched-after-unsettled-verifier".to_owned(),
                 });
+                continue;
+            }
+            if let Some(reason) = source_rejections.remove(&trial) {
+                rejections.push(RegradeRejection { trial, reason });
                 continue;
             }
             match regrade_one(&run_root, &material, &out, &trial, cancel).await {
@@ -361,6 +428,37 @@ fn bundle_json(bundle_root: &Path, key: &str) -> Result<serde_json::Value, Strin
         .map_err(|error| format!("sealed artifact {key} unreadable: {error}"))?;
     serde_json::from_slice(&bytes)
         .map_err(|error| format!("sealed artifact {key} invalid: {error}"))
+}
+
+/// Resolve one trial's product from its verified sealed experiment.
+fn sealed_trial_product<'a>(
+    experiment: &'a serde_json::Value,
+    trial: &str,
+) -> Result<&'a str, String> {
+    let subject = experiment
+        .get("trials")
+        .and_then(|value| value.as_array())
+        .and_then(|trials| {
+            trials
+                .iter()
+                .find(|entry| entry.get("id").and_then(|id| id.as_str()) == Some(trial))
+        })
+        .ok_or("sealed-experiment-missing-trial")?;
+    let subject_id = subject
+        .get("subject")
+        .and_then(|value| value.as_str())
+        .ok_or("sealed-trial-missing-subject")?;
+    experiment
+        .get("subjects")
+        .and_then(|value| value.as_array())
+        .and_then(|subjects| {
+            subjects.iter().find_map(|entry| {
+                (entry.get("id").and_then(|id| id.as_str()) == Some(subject_id))
+                    .then(|| entry.get("product").and_then(|value| value.as_str()))
+                    .flatten()
+            })
+        })
+        .ok_or_else(|| "sealed-experiment-missing-product".to_owned())
 }
 
 /// The adapter key of one sealed experiment document.
@@ -488,19 +586,7 @@ async fn regrade_one(
         .get("subject")
         .and_then(|value| value.as_str())
         .ok_or("sealed-trial-missing-subject")?;
-    let product = experiment
-        .get("subjects")
-        .and_then(|subjects| subjects.as_array())
-        .and_then(|subjects| {
-            subjects.iter().find_map(|entry| {
-                if entry.get("id").and_then(|id| id.as_str()) == Some(subject_id) {
-                    entry.get("product").and_then(|value| value.as_str())
-                } else {
-                    None
-                }
-            })
-        })
-        .ok_or("sealed-experiment-missing-product")?;
+    let product = sealed_trial_product(&experiment, trial)?;
     let agent = material
         .agent(product)
         .map_err(|_| format!("material-missing-agent:{product}"))?;

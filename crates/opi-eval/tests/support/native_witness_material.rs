@@ -5,11 +5,50 @@ use super::*;
 pub(super) const IMAGE: &str =
     "python@sha256:272efc3f94bec901e2bc7a5c9984b3d113c317839edca2714c6a388b9476f8fc";
 
+/// Validates all required families before retained material or subprocesses
+/// are created. Each family uses its first task's profile as the template.
+pub(super) fn witness_material_profiles(
+    material: &serde_json::Value,
+) -> Result<Vec<(&'static str, PathBuf)>, String> {
+    let mut profiles = Vec::new();
+    for family in ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"] {
+        let entry = material
+            .get("benchmarks")
+            .and_then(|b| b.get(family))
+            .ok_or_else(|| format!("benchmarks.{family}: required family is missing"))?;
+        let tasks = entry
+            .get("tasks")
+            .and_then(|t| t.as_object())
+            .filter(|tasks| !tasks.is_empty())
+            .ok_or_else(|| format!("benchmarks.{family}.tasks: expected a nonempty task map"))?;
+        let (task_id, task) = tasks.iter().next().expect("validated nonempty tasks");
+        let field = format!("benchmarks.{family}.tasks.{task_id}.profile.path");
+        let path = task
+            .get("profile")
+            .and_then(|p| p.get("path"))
+            .and_then(|p| p.as_str())
+            .filter(|p| !p.is_empty())
+            .ok_or_else(|| format!("{field}: expected a nonempty string"))?;
+        let path = PathBuf::from(path);
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|error| format!("{field}: cannot inspect profile file: {error}"))?;
+        if !metadata.file_type().is_file() {
+            return Err(format!("{field}: expected a regular profile file"));
+        }
+        fs::File::open(&path)
+            .map_err(|error| format!("{field}: cannot read profile file: {error}"))?;
+        profiles.push((family, path));
+    }
+    Ok(profiles)
+}
+
 /// Builds private tasks and diagnostic clients around the supplied real runners.
 /// These materials exercise lifecycle mechanics, never benchmark Agent scores.
 pub(super) fn controlled_material(input: &Path, deadlines: bool) -> PathBuf {
     let original = fs::read(input).unwrap();
     let mut material: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    let profiles = witness_material_profiles(&material)
+        .unwrap_or_else(|reason| panic!("controlled material: {reason}"));
     let root = tempfile::Builder::new()
         .prefix(if deadlines {
             "opi-eval-delays-"
@@ -87,20 +126,10 @@ pub(super) fn controlled_material(input: &Path, deadlines: bool) -> PathBuf {
     } else {
         &["positive", "negative", "timeout"]
     };
-    for family in ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"] {
+    for (family, template) in profiles {
         let pier = family == "deepswe-v1.1";
         let separate = family != "terminal-bench-2.1";
         let project = root.join("corpora").join(family);
-        let template = PathBuf::from(
-            material["benchmarks"][family]["tasks"]
-                .as_object()
-                .unwrap()
-                .values()
-                .next()
-                .unwrap()["profile"]["path"]
-                .as_str()
-                .unwrap(),
-        );
         for case in cases {
             let task = project.join("tasks").join(case);
             fs::create_dir_all(task.join("environment")).unwrap();
@@ -298,29 +327,7 @@ pub(super) fn controlled_material(input: &Path, deadlines: bool) -> PathBuf {
     for product in ["opi", "pi"] {
         let package = root.join("agents").join(product);
         let executable = package.join(product);
-        write_exec(&executable, &r#"#!/usr/bin/env python3
-import json, subprocess, sys, time
-from pathlib import Path
-case = json.loads(sys.argv[-1])
-assert case['diagnostic'] is True
-print('stage-witness-start', file=sys.stderr, flush=True)
-time.sleep(case['delay'])
-if case['family'] == 'deepswe-v1.1':
-    Path('/app/answer.txt').write_text(case['answer'] + '\n')
-    subprocess.run(['git', 'add', 'answer.txt'], cwd='/app', check=True)
-    subprocess.run(['git', 'commit', '--quiet', '--allow-empty', '-m', 'diagnostic answer'], cwd='/app', check=True, stdout=subprocess.DEVNULL)
-else:
-    directory = Path('/app/evalbench' if case['family'] == 'terminal-bench-3.0' else '/work')
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory/'answer.txt').write_text(case['answer'] + '\n')
-    (directory/'completed').write_text('completed')
-if '$PRODUCT' == 'pi':
-    message = {'id': 'diagnostic', 'role': 'assistant', 'content': [{'type': 'text', 'text': 'diagnostic task completed'}], 'api': 'openai-completions', 'provider': 'scripted', 'model': 'eval', 'usage': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0, 'totalTokens': 0, 'cost': {}}, 'stopReason': 'stop', 'timestamp': int(time.time()*1000)}
-    for event in [{'type': 'session', 'version': 3, 'id': 'diagnostic', 'timestamp': '2026-01-01T00:00:00Z', 'cwd': str(Path.cwd())}, {'type': 'message_end', 'message': message}, {'type': 'agent_end', 'messages': [message]}]:
-        print(json.dumps(event))
-else:
-    print('diagnostic task completed')
-"#.replace("$PRODUCT", product));
+        write_exec(&executable, &diagnostic_client_script(product));
         material["agents"][product]["executable"] = serde_json::json!({"path": executable, "sha256": sha256_hex(&fs::read(&executable).unwrap())});
         material["agents"][product]["runtime_package"] = serde_json::json!({"path": package, "entrypoint": product, "manifest_sha256": directory_manifest_digest(&package)});
         material["agents"][product]
@@ -341,6 +348,35 @@ else:
     assert_eq!(fs::read(input).unwrap(), original);
     eprintln!("native controlled material: {}", path.display());
     path
+}
+
+pub(super) fn diagnostic_client_script(product: &str) -> String {
+    r#"#!/usr/bin/env python3
+import json, subprocess, sys, time
+from pathlib import Path
+if sys.argv[1:] == ['--version']:
+    print('$PRODUCT diagnostic client version 1')
+    sys.exit(0)
+case = json.loads(sys.argv[-1])
+assert case['diagnostic'] is True
+print('stage-witness-start', file=sys.stderr, flush=True)
+time.sleep(case['delay'])
+if case['family'] == 'deepswe-v1.1':
+    Path('/app/answer.txt').write_text(case['answer'] + '\n')
+    subprocess.run(['git', 'add', 'answer.txt'], cwd='/app', check=True)
+    subprocess.run(['git', 'commit', '--quiet', '--allow-empty', '-m', 'diagnostic answer'], cwd='/app', check=True, stdout=subprocess.DEVNULL)
+else:
+    directory = Path('/app/evalbench' if case['family'] == 'terminal-bench-3.0' else '/work')
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory/'answer.txt').write_text(case['answer'] + '\n')
+    (directory/'completed').write_text('completed')
+if '$PRODUCT' == 'pi':
+    message = {'id': 'diagnostic', 'role': 'assistant', 'content': [{'type': 'text', 'text': 'diagnostic task completed'}], 'api': 'openai-completions', 'provider': 'scripted', 'model': 'eval', 'usage': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0, 'totalTokens': 0, 'cost': {}}, 'stopReason': 'stop', 'timestamp': int(time.time()*1000)}
+    for event in [{'type': 'session', 'version': 3, 'id': 'diagnostic', 'timestamp': '2026-01-01T00:00:00Z', 'cwd': str(Path.cwd())}, {'type': 'message_end', 'message': message}, {'type': 'agent_end', 'messages': [message]}]:
+        print(json.dumps(event))
+else:
+    print('diagnostic task completed')
+"#.replace("$PRODUCT", product)
 }
 
 pub(super) fn retain_clients(root: &Path, clients: &serde_json::Value) {

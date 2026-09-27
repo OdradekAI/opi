@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import stat
 import subprocess
 import sys
@@ -188,6 +189,8 @@ class EvidenceRoot:
                 {"environment_mode": "separate", "collected": []},
             )
             message = {"role": "assistant", **{key: CONNECTION[key] for key in ("provider", "api", "model")}}
+            if product == "opi":
+                message["api"] = "Anthropic"
             events = (
                 [{"type": "MessageEnd", "message": message}, {"type": "ToolExecutionStart", "tool_call_id": "call"}, {"type": "ToolExecutionEnd", "tool_call_id": "call"}, {"type": "AgentEnd", "messages": [message]}]
                 if product == "opi" else
@@ -197,8 +200,24 @@ class EvidenceRoot:
             stdout = "".join(json.dumps(row) + "\n" for row in rows).encode()
             (native / "agent-stdout.log").write_bytes(stdout)
             (native / "agent-stderr.log").write_bytes(b"")
+            preflight_stdout = f"{product} fixture-version\n".encode()
+            (native / "runtime-preflight-stdout.log").write_bytes(preflight_stdout)
+            (native / "runtime-preflight-stderr.log").write_bytes(b"")
             write_json(native / "agent-terminal.json", {
-                "product": product, "exit_code": 0, "timed_out": False, "failure_kind": None,
+                "schema": "opi-eval-native-agent-terminal/2", "trial": trial,
+                "product": product, "agent_executable_sha256": "e" * 64,
+                "runtime_preflight": {
+                    "kind": "version", "status": "passed", "exit_code": 0,
+                    "agent_executable_sha256": "e" * 64,
+                    "runtime_package_manifest_sha256": None,
+                    "runtime_package_entrypoint": None,
+                    "command_sha256": sha256((shlex.quote(f"/opi-eval-agent/{product}/agent") + " --version").encode()),
+                    "stdout_sha256": sha256(preflight_stdout), "stderr_sha256": sha256(b""),
+                    "stdout_complete": True, "stderr_complete": True,
+                    "stdout_truncated": False, "stderr_truncated": False, "reason": None,
+                },
+                "task_dispatched": True, "exit_code": 0, "timed_out": False, "failure_kind": None,
+                "delivered": [],
                 "stdout_truncated": False, "stderr_truncated": False,
                 "stdout_sha256": sha256(stdout), "stderr_sha256": sha256(b""),
             })
@@ -454,7 +473,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
 
     def test_live_agent_observations_cannot_be_substituted(self) -> None:
         for product in ("opi", "pi"):
-            for case in ("missing", "terminal", "stream", "model", "provider", "tools"):
+            for case in ("missing", "terminal", "stream", "model", "provider", "tools", "api", "unknown-api", "wrong-api"):
                 with self.subTest(product=product, case=case):
                     self.evidence = EvidenceRoot(self.base / f"observed-{product}-{case}")
                     entry = self.evidence.runs[FAMILIES[0]]
@@ -477,6 +496,14 @@ class AcceptanceVerifierTest(unittest.TestCase):
                         raw = path.read_text()
                         if case == "provider":
                             raw = raw.replace('"zhipu"', '"scripted"')
+                        elif case in ("api", "unknown-api", "wrong-api"):
+                            expected = "Anthropic" if product == "opi" else "anthropic-messages"
+                            replacement = {
+                                "api": "anthropic-messages" if product == "opi" else "Anthropic",
+                                "unknown-api": "invented",
+                                "wrong-api": "OpenAi" if product == "opi" else "openai-completions",
+                            }[case]
+                            raw = raw.replace(json.dumps(expected), json.dumps(replacement))
                         elif case == "tools":
                             raw = "\n".join(line for line in raw.splitlines() if "oolExecution" not in line and "tool_execution" not in line) + "\n"
                         else:
@@ -492,6 +519,128 @@ class AcceptanceVerifierTest(unittest.TestCase):
                     write_json(manifest_path, manifest)
                     self.evidence._write_manifest()
                     self.reject("agent evidence")
+
+    def test_runtime_preflight_is_required_and_bound(self) -> None:
+        cases = (
+            "legacy", "missing", "unknown", "failed", "trial", "product",
+            "terminal-executable", "preflight-executable", "command", "log",
+            "missing-log", "incomplete", "truncated", "unreadable", "nul", "empty",
+            "exit-bool", "reason", "dispatched", "package", "entrypoint",
+            "missing-field",
+        )
+        for product in ("opi", "pi"):
+            for case in cases:
+                with self.subTest(product=product, case=case):
+                    self.evidence = EvidenceRoot(self.base / f"preflight-{product}-{case}")
+                    entry = self.evidence.runs[FAMILIES[0]]
+                    bundle = entry["run"] / "trials" / entry[product] / "bundle"
+                    native = bundle / "artifacts/native"
+                    terminal_path = native / "agent-terminal.json"
+                    terminal = json.loads(terminal_path.read_text())
+                    proof = terminal["runtime_preflight"]
+                    if case == "legacy":
+                        terminal["schema"] = "opi-eval-native-agent-terminal/1"
+                    elif case == "missing":
+                        del terminal["runtime_preflight"]
+                    elif case in ("unknown", "failed"):
+                        proof.update(status=case, exit_code=None if case == "unknown" else 127)
+                        terminal.update(task_dispatched=False, exit_code=None, delivered=[])
+                    elif case == "trial":
+                        terminal["trial"] = "stale-trial"
+                    elif case == "product":
+                        terminal["product"] = "pi" if product == "opi" else "opi"
+                    elif case == "terminal-executable":
+                        terminal["agent_executable_sha256"] = "f" * 64
+                    elif case == "preflight-executable":
+                        proof["agent_executable_sha256"] = "f" * 64
+                    elif case == "command":
+                        proof["command_sha256"] = "f" * 64
+                    elif case in ("log", "unreadable", "nul", "empty"):
+                        data = {"log": b"substituted\n", "unreadable": b"\xff", "nul": b"fixture\x00version\n", "empty": b""}[case]
+                        (native / "runtime-preflight-stdout.log").write_bytes(data)
+                        if case != "log":
+                            proof["stdout_sha256"] = sha256(data)
+                    elif case == "missing-log":
+                        (native / "runtime-preflight-stderr.log").unlink()
+                    elif case == "incomplete":
+                        proof["stderr_complete"] = False
+                    elif case == "truncated":
+                        proof["stdout_truncated"] = True
+                    elif case == "exit-bool":
+                        proof["exit_code"] = False
+                    elif case == "reason":
+                        proof["reason"] = "transport"
+                    elif case == "dispatched":
+                        terminal["task_dispatched"] = False
+                    elif case == "package":
+                        proof["runtime_package_manifest_sha256"] = "f" * 64
+                    elif case == "entrypoint":
+                        proof["runtime_package_entrypoint"] = "agent"
+                    else:
+                        del proof["stderr_complete"]
+                    write_json(terminal_path, terminal)
+                    manifest_path = bundle / "manifest.json"
+                    manifest = json.loads(manifest_path.read_text())
+                    for path in native.iterdir():
+                        manifest["entries"][f"native/{path.name}"] = {"digest": sha256(path.read_bytes())}
+                    write_json(manifest_path, manifest)
+                    self.evidence._write_manifest()
+                    if case == "nul" and product == "opi":
+                        view = self.evidence.root / "opi-artifact-audit" / entry[product]
+                        for path in native.iterdir():
+                            (view / path.name).write_bytes(path.read_bytes())
+                    self.reject("agent evidence")
+
+    def test_packaged_runtime_preflight_binds_entrypoint_and_manifest(self) -> None:
+        entry = self.evidence.runs[FAMILIES[0]]
+        bundle = entry["run"] / "trials" / entry["pi"] / "bundle"
+        package = {"manifest_sha256": "f" * 64, "entrypoint": "bin/pi wrapper"}
+        material_path = entry["run"] / "material.json"
+        material = json.loads(material_path.read_text())
+        material["agents"]["pi"]["runtime_package"] = package
+        snapshot_path = bundle / "artifacts/control/output-control.json"
+        snapshot = json.loads(snapshot_path.read_text())
+        output_proof = json.loads(snapshot["evidence"])
+        output_proof.update(runtime_package_manifest_sha256=package["manifest_sha256"],
+                            runtime_package_entrypoint=package["entrypoint"])
+        snapshot["evidence"] = json.dumps(output_proof)
+        snapshot["evidence_sha256"] = sha256(snapshot["evidence"].encode())
+        material["agents"]["pi"]["output_control_evidence"]["sha256"] = snapshot["evidence_sha256"]
+        write_json(material_path, material)
+        write_json(snapshot_path, snapshot)
+        terminal_path = bundle / "artifacts/native/agent-terminal.json"
+        terminal = json.loads(terminal_path.read_text())
+        proof = terminal["runtime_preflight"]
+        proof.update(runtime_package_manifest_sha256=package["manifest_sha256"],
+                     runtime_package_entrypoint=package["entrypoint"],
+                     command_sha256=sha256((shlex.quote("/opi-eval-agent/pi/runtime/" + package["entrypoint"]) + " --version").encode()))
+        write_json(terminal_path, terminal)
+        manifest_path = bundle / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        for key in ("control/output-control.json", "native/agent-terminal.json"):
+            manifest["entries"][key] = {"digest": sha256((bundle / "artifacts" / key).read_bytes())}
+        write_json(manifest_path, manifest)
+        self.evidence._write_manifest()
+        self.accept()
+        proof["runtime_package_entrypoint"] = "bin/other"
+        write_json(terminal_path, terminal)
+        manifest["entries"]["native/agent-terminal.json"]["digest"] = sha256(terminal_path.read_bytes())
+        write_json(manifest_path, manifest)
+        self.evidence._write_manifest()
+        self.evidence.outside = self.base / "substituted-package-out"
+        self.reject("agent evidence")
+
+    def test_runtime_preflight_capture_links_are_rejected(self) -> None:
+        for product in ("opi", "pi"):
+            with self.subTest(product=product):
+                self.evidence = EvidenceRoot(self.base / f"linked-preflight-{product}")
+                entry = self.evidence.runs[FAMILIES[0]]
+                capture = entry["run"] / "trials" / entry[product] / "bundle/artifacts/native/runtime-preflight-stdout.log"
+                target = self.base / f"outside-preflight-{product}.log"
+                target.write_bytes(capture.read_bytes())
+                capture.unlink()
+                capture.symlink_to(target)
+                self.reject("agent evidence")
 
     # -- request-level rejections -------------------------------------------
 

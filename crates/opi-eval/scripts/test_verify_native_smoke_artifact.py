@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shlex
 import subprocess
 import sys
 import tarfile
@@ -121,12 +122,30 @@ def build_trial(stage: Path, cfg: str, trial: str, product: str, task: str,
     write_json(bundle / "intent.json",
                {"schema": "opi-eval-run-bundle-intent/1", "trial": trial})
     artifacts = bundle / "artifacts"
+    preflight_stdout = f"{product} fixture-version\n"
+    executable = receipt["agent"]["executable_sha256"]
+    terminal = {
+        "schema": "opi-eval-native-agent-terminal/2", "trial": trial,
+        "product": product, "agent_executable_sha256": executable,
+        "runtime_preflight": {
+            "kind": "version", "status": "passed", "exit_code": 0,
+            "agent_executable_sha256": executable,
+            "runtime_package_manifest_sha256": None, "runtime_package_entrypoint": None,
+            "command_sha256": sha((shlex.quote(f"/opi-eval-agent/{product}/agent") + " --version").encode()),
+            "stdout_sha256": sha(preflight_stdout.encode()), "stderr_sha256": sha(b""),
+            "stdout_complete": True, "stderr_complete": True,
+            "stdout_truncated": False, "stderr_truncated": False, "reason": None,
+        },
+        "task_dispatched": True, "exit_code": 0, "timed_out": False,
+        "delivered": [{"source": "/root/answer.txt", "sha256": sha(b"answer\n")}],
+    }
     for key, body in (("native/job-stdout.log", f"{trial} stdout\n"),
                       ("native/job-stderr.log", ""),
                       ("native/trial-result.json", '{"agent_info": {}}'),
                       ("native/trial-config.json", '{"agent": {}}'),
-                      ("native/agent-terminal",
-                       '{"schema": "opi-eval-native-agent-terminal/1"}'),
+                      ("native/agent-terminal", json.dumps(terminal)),
+                      ("native/runtime-preflight-stdout.log", preflight_stdout),
+                      ("native/runtime-preflight-stderr.log", ""),
                       ("normalized/expected-output", '{"trial": "%s"}' % trial)):
         target = artifacts / key
         target.parent.mkdir(parents=True, exist_ok=True)

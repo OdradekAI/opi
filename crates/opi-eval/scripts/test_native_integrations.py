@@ -121,6 +121,28 @@ INTEGRATIONS = {family: load_integration(family) for family in ("harbor", "pier"
 
 @unittest.skipUnless(os.name == "posix", "requires Linux process groups and shell")
 class NativeEnvironmentTest(unittest.IsolatedAsyncioTestCase):
+    async def test_runtime_capture_separates_bounds_and_observes_timeout(self):
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                environment = module.OwnedDockerEnvironment(Path(root))
+                observed = await environment.exec(
+                    "printf 'version\\n'; printf 'diagnostic\\n' >&2; exit 7",
+                    timeout_sec=2, _capture_limit=64)
+                self.assertEqual(observed.return_code, 7)
+                self.assertEqual(observed.stdout, b"version\n")
+                self.assertEqual(observed.stderr, b"diagnostic\n")
+                overflow = await environment.exec(
+                    "printf '123456789abcdef'", timeout_sec=2, _capture_limit=8)
+                self.assertEqual(overflow.stdout, b"123456789")
+                with self.assertRaises(TimeoutError) as failure:
+                    await environment.exec(
+                        "printf partial; sleep 1; touch escaped", timeout_sec=0.05,
+                        _capture_limit=64)
+                self.assertEqual(failure.exception.runtime_capture.stdout, b"partial")
+                self.assertEqual(failure.exception.runtime_capture.return_code, 137)
+                await asyncio.sleep(1.1)
+                self.assertFalse((Path(root) / "escaped").exists())
+
     async def test_native_exec_preserves_command_umask(self):
         for family, (module, _) in INTEGRATIONS.items():
             with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
@@ -307,6 +329,11 @@ class FakeEnvironment:
         self.proxy_env = {}
         self.proxy_inputs = []
         self.exec_envs = []
+        self.preflight_calls = []
+        self.preflight_code = 0
+        self.preflight_stdout = "0.85.1\n"
+        self.preflight_stderr = ""
+        self.preflight_error = None
 
     def agent_process_env(self, env):
         self.proxy_inputs.append(dict(env))
@@ -348,6 +375,12 @@ class FakeEnvironment:
         if args[:2] == ["bash", "-c"] and args[2].startswith("set -m\n"):
             args = shlex.split(args[2].splitlines()[1].removesuffix(" &"))
         result = types.SimpleNamespace(return_code=0, stdout="", stderr="")
+        if args[-1] == "--version":
+            self.preflight_calls.append((command, env, timeout_sec, user))
+            if self.preflight_error:
+                raise self.preflight_error
+            return types.SimpleNamespace(return_code=self.preflight_code,
+                                         stdout=self.preflight_stdout, stderr=self.preflight_stderr)
         if args[0] == "mkdir":
             if self.setup_code:
                 result.return_code = self.setup_code
@@ -492,6 +525,7 @@ async def capture_child(root, family, product, container=None):
     executable = root / "client"
     executable.write_text(
         "#!/bin/sh\n"
+        "if [ \"$1\" = --version ]; then printf '0.85.1\\n'; exit 0; fi\n"
         "while [ $# -gt 0 ]; do\n"
         "  if [ \"$1\" = --trace ]; then shift; mkdir -p \"$1/run-1\"; "
         "printf 'trace-progress\\n' > \"$1/run-1/evidence.jsonl\"; fi\n"
@@ -503,7 +537,7 @@ async def capture_child(root, family, product, container=None):
         "sleep 300\n", encoding="utf-8",
     )
     handoff = {
-        "schema": "opi-eval-native-handoff/3", "product": product,
+        "schema": "opi-eval-native-handoff/3", "product": product, "trial": "capture-child",
         "integration_agent_name": f"opi-eval-{product}",
         "agent_executable": str(executable),
         "agent_executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
@@ -540,6 +574,7 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
         (root / "unbound-neighbor").write_bytes(b"must not upload")
         handoff = {
             "schema": "opi-eval-native-handoff/3",
+            "trial": "fixture-native-trial",
             "product": product,
             "integration_agent_name": f"opi-eval-{product}",
             "agent_executable": str(runtime / "pi"),
@@ -685,9 +720,150 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual((logs / "stdout.log").read_bytes(), STDOUT)
                     self.assertEqual((logs / "stderr.log").read_bytes(), STDERR)
                     terminal = json.loads((logs / "opi-eval-terminal.json").read_text())
+                    self.assertEqual(terminal["schema"], "opi-eval-native-agent-terminal/2")
+                    self.assertEqual(terminal["trial"], handoff["trial"])
+                    self.assertTrue(terminal["task_dispatched"])
+                    self.assertEqual(terminal["runtime_preflight"]["status"], "passed")
                     self.assertEqual(terminal["agent_executable_sha256"], AGENT_SHA)
                     self.assertEqual(terminal["delivered"], [{"source": "/work/answer.txt", "sha256": "a" * 64}])
                     self.assertTrue(environment.cleaned)
+
+    async def test_runtime_preflight_binds_command_captures_and_no_secret_projection(self):
+        for family in INTEGRATIONS:
+            for product, package in (("opi", False), ("pi", True)):
+                with self.subTest(family=family, product=product):
+                    root, _, logs, handoff = self.prepare(family, product, package)
+                    environment = FakeEnvironment()
+                    agent = self.agent(family, root, logs, handoff)
+                    await agent.setup(environment)
+                    self.assertEqual(environment.launches, [])
+                    self.assertEqual(len(environment.preflight_calls), 1)
+                    command, env, timeout, user = environment.preflight_calls[0]
+                    executable = f"/opi-eval-agent/{product}/runtime/pi" if package else f"/opi-eval-agent/{product}/agent"
+                    self.assertEqual(command, shlex.quote(executable) + " --version")
+                    self.assertEqual(timeout, 30)
+                    self.assertIsNone(user)
+                    self.assertNotIn("TEST_PROJECTED", env)
+                    self.assertNotIn("HTTPS_PROXY", env)
+                    self.assertTrue(all(value.startswith(f"/opi-eval-agent/{product}/")
+                                        or value.startswith("unix:abstract=") for value in env.values()))
+                    await agent.run("work", environment, object())
+                    terminal = json.loads((logs / "opi-eval-terminal.json").read_text())
+                    proof = terminal["runtime_preflight"]
+                    self.assertEqual(proof["kind"], "version")
+                    self.assertEqual(proof["status"], "passed")
+                    self.assertEqual(proof["exit_code"], 0)
+                    self.assertEqual(proof["agent_executable_sha256"], AGENT_SHA)
+                    self.assertEqual(proof["runtime_package_manifest_sha256"], PACKAGE_SHA if package else None)
+                    self.assertEqual(proof["runtime_package_entrypoint"], "pi" if package else None)
+                    self.assertEqual(proof["command_sha256"], hashlib.sha256(command.encode()).hexdigest())
+                    for stream in ("stdout", "stderr"):
+                        raw = (logs / f"runtime-preflight-{stream}.log").read_bytes()
+                        self.assertEqual(proof[f"{stream}_sha256"], hashlib.sha256(raw).hexdigest())
+                        self.assertTrue(proof[f"{stream}_complete"])
+                        self.assertFalse(proof[f"{stream}_truncated"])
+
+    async def test_runtime_preflight_refusals_never_dispatch_or_project_credentials(self):
+        cases = (
+            ("nonzero", 1, b"", b"loader refused\n", "failed", None),
+            ("empty", 0, b"", b"", "unknown", "invalid-output"),
+            ("missing", 0, None, b"", "unknown", "invalid-output"),
+            ("invalid", 0, bytes([255]), b"", "unknown", "invalid-output"),
+            ("overflow", 0, b"123456789", b"", "unknown", "capture-overflow"),
+            ("missing-exit", None, b"version\n", b"", "unknown", "invalid-output"),
+        )
+        for family, (module, _) in INTEGRATIONS.items():
+            for product in ("opi", "pi"):
+                for case, code, stdout, stderr, status, reason in cases:
+                    with self.subTest(family=family, product=product, case=case):
+                        root, _, logs, handoff = self.prepare(family, product)
+                        environment = FakeEnvironment()
+                        environment.preflight_code = code
+                        environment.preflight_stdout = stdout
+                        environment.preflight_stderr = stderr
+                        with patch.object(module, "_PREFLIGHT_CAPTURE_BYTES", 8 if case == "overflow" else 64):
+                            with self.assertRaisesRegex(RuntimeError, f"runtime preflight {status}"):
+                                await self.agent(family, root, logs, handoff).setup(environment)
+                        terminal = json.loads((logs / "opi-eval-terminal.json").read_text())
+                        self.assertFalse(terminal["task_dispatched"])
+                        self.assertIsNone(terminal["exit_code"])
+                        self.assertFalse(terminal["timed_out"])
+                        self.assertEqual(terminal["delivered"], [])
+                        self.assertEqual(terminal["runtime_preflight"]["status"], status)
+                        self.assertEqual(terminal["runtime_preflight"]["reason"], reason)
+                        self.assertEqual(environment.launches, [])
+                        self.assertTrue(environment.cleaned)
+                        self.assertFalse(any(path.endswith(("/config.toml", "/models.json"))
+                                             for path in environment.uploads))
+                        self.assertNotIn("TEST_PROJECTED", environment.preflight_calls[0][1])
+                        if case == "overflow":
+                            proof = terminal["runtime_preflight"]
+                            self.assertTrue(proof["stdout_truncated"])
+                            self.assertFalse(proof["stdout_complete"])
+                            self.assertEqual((logs / "runtime-preflight-stdout.log").read_bytes(), stdout)
+                            self.assertEqual(proof["stdout_sha256"], hashlib.sha256(stdout[:8]).hexdigest())
+
+    async def test_runtime_preflight_transport_timeout_and_cancellation_remain_unknown(self):
+        for family in INTEGRATIONS:
+            for product in ("opi", "pi"):
+                for error, reason in ((TimeoutError("deadline"), "timeout"),
+                                      (RuntimeError("transport failed"), "transport"),
+                                      (INTEGRATIONS[family][0]._NativeCommandTerminationError("unconfirmed"),
+                                       "termination"),
+                                      (asyncio.CancelledError("cancelled"), "termination")):
+                    with self.subTest(family=family, product=product, reason=reason):
+                        root, _, logs, handoff = self.prepare(family, product)
+                        environment = FakeEnvironment()
+                        environment.preflight_error = error
+                        with self.assertRaises(type(error)):
+                            await self.agent(family, root, logs, handoff).setup(environment)
+                        terminal = json.loads((logs / "opi-eval-terminal.json").read_text())
+                        self.assertEqual(terminal["runtime_preflight"]["status"], "unknown")
+                        self.assertEqual(terminal["runtime_preflight"]["reason"], reason)
+                        self.assertIsNone(terminal["runtime_preflight"]["exit_code"])
+                        self.assertFalse(terminal["task_dispatched"])
+                        self.assertIsNone(terminal["exit_code"])
+                        self.assertFalse(terminal["timed_out"])
+                        self.assertEqual(environment.launches, [])
+                        self.assertTrue(environment.cleaned)
+
+    async def test_missing_or_unsafe_trial_identity_rejects_before_upload(self):
+        for family in INTEGRATIONS:
+            for trial in (None, "", "../trial", "bad/trial", "trial\n"):
+                with self.subTest(family=family, trial=trial):
+                    root, _, logs, handoff = self.prepare(family)
+                    handoff["trial"] = trial
+                    with self.assertRaisesRegex(RuntimeError, "trial identity"):
+                        self.agent(family, root, logs, handoff)
+
+    async def test_runtime_identity_drift_after_preflight_prevents_task_dispatch(self):
+        for family in INTEGRATIONS:
+            for change in ("executable", "resource"):
+                with self.subTest(family=family, change=change):
+                    root, runtime, logs, handoff = self.prepare(family)
+                    environment = FakeEnvironment()
+                    agent = self.agent(family, root, logs, handoff)
+                    await agent.setup(environment)
+                    (runtime / ("pi" if change == "executable" else "theme/dark.json")).write_bytes(b"changed")
+                    with self.assertRaisesRegex(RuntimeError, "digest mismatch"):
+                        await agent.run("never dispatch changed runtime", environment, object())
+                    self.assertEqual(environment.launches, [])
+                    self.assertTrue(environment.cleaned)
+                    self.assertFalse((logs / "opi-eval-terminal.json").exists())
+
+    @unittest.skipUnless(os.name == "posix", "requires Linux symlinks")
+    async def test_runtime_capture_does_not_follow_existing_symlink(self):
+        for family in INTEGRATIONS:
+            root, _, logs, handoff = self.prepare(family)
+            neighbor = root / "neighbor"
+            neighbor.write_bytes(b"unrelated")
+            (logs / "runtime-preflight-stdout.log").symlink_to(neighbor)
+            environment = FakeEnvironment()
+            with self.assertRaises(FileExistsError):
+                await self.agent(family, root, logs, handoff).setup(environment)
+            self.assertEqual(neighbor.read_bytes(), b"unrelated")
+            self.assertEqual(environment.launches, [])
+            self.assertTrue(environment.cleaned)
 
     async def test_rejects_runtime_drift_before_any_upload(self):
         for family in INTEGRATIONS:
@@ -797,7 +973,8 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     agent = self.agent(family, root, logs, handoff)
                     await agent.setup(environment)
                     with patch.dict(sys.modules, INTEGRATIONS[family][1]):
-                        error = asyncio.CancelledError if failure == "cancelled" else NonZeroAgentExitCodeError
+                        error = (asyncio.CancelledError if failure == "cancelled"
+                                 else TimeoutError if failure == "timeout" else NonZeroAgentExitCodeError)
                         with self.assertRaises(error):
                             await agent.run("work", environment, object())
                     self.assertEqual((logs / "stdout.log").read_bytes(), STDOUT)
@@ -807,7 +984,7 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                         self.assertFalse((logs / "opi-eval-terminal.json").exists())
                         continue
                     terminal = json.loads((logs / "opi-eval-terminal.json").read_text())
-                    self.assertEqual(terminal["exit_code"], {"exit-code": 7, "timeout": 124}[failure])
+                    self.assertEqual(terminal["exit_code"], {"exit-code": 7, "timeout": None}[failure])
                     self.assertEqual(terminal["timed_out"], failure == "timeout")
                     self.assertTrue(environment.cleaned)
 
@@ -820,6 +997,7 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     executable = runtime / "pi"
                     executable.write_text(
                         "#!/bin/sh\n"
+                        "if [ \"$1\" = --version ]; then printf '0.85.1\\n'; exit 0; fi\n"
                         "echo started\n"
                         "(sleep 2; touch escaped) &\n"
                         "wait\n", encoding="utf-8",
@@ -897,9 +1075,8 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
             environment = FakeEnvironment()
             environment.capabilities.mounted = True
             agent = self.agent(family, root, logs, handoff)
-            await agent.setup(environment)
-            with self.assertRaisesRegex(RuntimeError, "unsafe mounted capture"):
-                await agent.run("work", environment, object())
+            with self.assertRaisesRegex(RuntimeError, "unsafe runtime preflight capture"):
+                await agent.setup(environment)
             self.assertTrue(environment.cleaned)
             self.assertEqual(list(outside.iterdir()), [])
 
@@ -924,7 +1101,8 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                 await agent.run("work", environment, object())
                 expected = {"TEST_PROJECTED": "yes", "DBUS_SESSION_BUS_ADDRESS": HEADLESS_BUS}
                 self.assertEqual(environment.launches[0][1], expected)
-                self.assertEqual([env for _, env in environment.exec_envs if env is not None], [expected])
+                self.assertEqual([env for _, env in environment.exec_envs if env is not None],
+                                 [environment.preflight_calls[0][1], expected])
                 self.assertEqual(handoff["agent_env"]["DBUS_SESSION_BUS_ADDRESS"], "unix:path=/unbound/session-bus")
                 self.assertTrue(environment.cleaned)
 
@@ -950,7 +1128,7 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     **environment.proxy_env, **projected,
                 })
                 scoped = [env for _, env in environment.exec_envs if env is not None]
-                self.assertEqual(scoped, [environment.launches[0][1]])
+                self.assertEqual(scoped, [environment.preflight_calls[0][1], environment.launches[0][1]])
                 self.assertEqual(handoff["agent_env"], {"TEST_PROJECTED": "yes"})
                 self.assertTrue(environment.cleaned)
 
@@ -997,6 +1175,8 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     "assert (package / 'theme/dark.json').read_text() == 'dark'\n"
                     "assert (package / 'theme/light.json').read_text() == 'light'\n"
                     "metadata = json.loads((package / 'package.json').read_text())\n"
+                    "if sys.argv[1:] == ['--version']:\n"
+                    "    print(metadata['version']); sys.exit(0)\n"
                     "subprocess.run(['/bin/sh', '-c', 'printf delivered > answer.txt'], check=True)\n"
                     "print(json.dumps({'type': 'tool_execution_end', 'toolName': 'bash',\n"
                     "                  'version': metadata['version'], 'argv': sys.argv[1:]}))\n"
@@ -1037,15 +1217,22 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
         for family in INTEGRATIONS:
             for failure in (RuntimeError, asyncio.CancelledError):
                 with self.subTest(family=family, failure=failure):
-                    root, _, logs, handoff = self.prepare(family)
+                    root, runtime, logs, handoff = self.prepare(family, package=False)
                     environment = LocalShellEnvironment(root / "environment")
+                    (runtime / "pi").write_text(
+                        "#!/bin/sh\nif [ \"$1\" = --version ]; then printf '0.85.1\\n'; exit 0; fi\n",
+                        encoding="utf-8")
+                    handoff["agent_executable_sha256"] = hashlib.sha256((runtime / "pi").read_bytes()).hexdigest()
                     environment.fail_config_upload = True
                     environment.config_upload_error = failure("partial config write")
                     agent = self.agent(family, root, logs, handoff)
                     with self.assertRaisesRegex(failure, "partial config write"):
                         await agent.setup(environment)
                     self.assertFalse(environment.local("/opi-eval-agent/pi").exists())
-                    self.assertFalse((logs / "opi-eval-terminal.json").exists())
+                    terminal = json.loads((logs / "opi-eval-terminal.json").read_text())
+                    self.assertEqual(terminal["runtime_preflight"]["status"], "passed")
+                    self.assertFalse(terminal["task_dispatched"])
+                    self.assertIsNone(terminal["exit_code"])
 
 
 if __name__ == "__main__":

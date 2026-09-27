@@ -53,6 +53,7 @@ use crate::integrity::{
     IntegrityRecord, IntegrityReview, OraclePreflight, RevisionStatus, TaskClassification,
 };
 use crate::process::{ExitState, SpawnReason};
+use crate::runner::native_cleanup::{cleanup_docker_spec, cleanup_owned_resources};
 
 /// Bounded sleep for helper processes in timeout/cancellation cases. The
 /// helper outlives every bounded limit; only the supervisor settles it.
@@ -1422,7 +1423,7 @@ async fn finish_benchmark_case<A: BenchmarkAdapter>(
         reviewer: "conformance-fixture".to_owned(),
     })
     .map_err(|e| ConformanceError::Unsupported(format!("fixture integrity rejected: {e}")))?;
-    let request = BenchmarkRunRequest {
+    let mut request = BenchmarkRunRequest {
         verifier_executable,
         task_dir,
         task_id,
@@ -1433,6 +1434,39 @@ async fn finish_benchmark_case<A: BenchmarkAdapter>(
         admitted_lock_digest,
         integrity,
         extra_env,
+    };
+
+    let witness_cleanup = if request.native_selection.as_ref().is_some_and(|selection| {
+        matches!(
+            selection.kind,
+            crate::benchmark::process::SelectionKind::DiagnosticWitness
+        )
+    }) {
+        // The runner receives the copied task package's canonical path as
+        // Compose's project directory. Source material and neighboring roots
+        // never authorize removal.
+        let task_root = request.task_dir.canonicalize()?;
+        request.trace_root = request.trace_root.canonicalize()?;
+        let directories = [task_root.join("environment"), task_root.join("tests")];
+        let integration_root = args.root.join("benchmark/integration");
+        std::fs::create_dir_all(&integration_root)?;
+        let evidence_path = integration_root.join("owned-resources.json");
+        let trial = format!("conformance-{}", args.case);
+        std::fs::write(
+            &evidence_path,
+            serde_json::to_vec(&serde_json::json!({
+                "schema": "opi-eval-owned-resources/2",
+                "trial": trial,
+                "compose_working_directories": directories,
+                "cleanup": serde_json::Value::Null,
+            }))
+            .expect("resource intent serializes"),
+        )?;
+        // This is the final projection, including the oracle's overlays.
+        let docker = cleanup_docker_spec(&request.extra_env, &request.trace_root);
+        Some((trial, directories, evidence_path, docker))
+    } else {
+        None
     };
 
     let identity = adapter.identity();
@@ -1453,12 +1487,36 @@ async fn finish_benchmark_case<A: BenchmarkAdapter>(
     } else {
         BenchmarkExecution::run(&request, adapter, &CancellationToken::new()).await
     };
-    match settled {
+    // An observed runner exit does not prove its task environment is gone.
+    // Persist exact owned cleanup before publishing any witness verdict.
+    let (mut cleanup_notes, cleanup_confirmed) =
+        if let Some((trial, directories, evidence_path, docker)) = &witness_cleanup {
+            let exit = settled.as_ref().ok().map(|record| &record.exit);
+            let capture = exit
+                .filter(|exit| matches!(exit, ExitState::TimedOut | ExitState::Cancelled))
+                .map(|_| request.trace_root.as_path());
+            let cleanup =
+                cleanup_owned_resources(trial, directories, evidence_path, exit, docker, capture)
+                    .await;
+            (
+                vec![
+                    format!("owned-resource-cleanup:{}", cleanup.token()),
+                    format!("owned-resource-evidence:{}", evidence_path.display()),
+                ],
+                cleanup.confirmed(),
+            )
+        } else {
+            (Vec::new(), true)
+        };
+    let mut report = match settled {
         Err(rejection) => {
             // Pre-spawn admission refusal: no process ever existed.
             let token = rejection.token;
             let met = matches!(expect, Expect::Rejected(expected) if *expected == token);
-            Ok(ConformanceReport {
+            if !cleanup_confirmed {
+                cleanup_notes.push(format!("native-failure-before-cleanup:{token}"));
+            }
+            ConformanceReport {
                 schema: "opi-eval-conformance-report/1",
                 suite: "benchmark".to_owned(),
                 adapter: args.adapter.clone(),
@@ -1474,10 +1532,22 @@ async fn finish_benchmark_case<A: BenchmarkAdapter>(
                 artifact_roles: Vec::new(),
                 stdout_truncated: false,
                 stderr_truncated: false,
-                notes: Vec::new(),
+                notes: cleanup_notes,
                 met,
-            })
+            }
         }
-        Ok(record) => Ok(report_for_record(record, identity_json, Vec::new(), true)),
+        Ok(record) => {
+            if !cleanup_confirmed && let BenchmarkCompletion::Failed(failure) = &record.completion {
+                cleanup_notes.push(format!("native-failure-before-cleanup:{}", failure.kind));
+            }
+            report_for_record(record, identity_json, cleanup_notes, cleanup_confirmed)
+        }
+    };
+    if !cleanup_confirmed {
+        report.met = false;
+        report.outcome = "failed".to_owned();
+        report.failure_kind = Some("owned-resource-cleanup-unconfirmed".to_owned());
+        report.boundary = Some("Infrastructure".to_owned());
     }
+    Ok(report)
 }

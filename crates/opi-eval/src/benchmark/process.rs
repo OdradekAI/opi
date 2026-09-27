@@ -141,6 +141,9 @@ pub(crate) enum SelectionKind {
     Integration {
         product: String,
         executable_sha256: String,
+        trial: String,
+        runtime_package_manifest_sha256: Option<String>,
+        runtime_package_entrypoint: Option<String>,
     },
     DiagnosticWitness,
 }
@@ -203,7 +206,8 @@ pub(crate) struct NativeSelection {
 
 /// One file the selected Agent delivered inside the task environment, as
 /// observed by the integration after the Agent phase.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DeliveredFile {
     /// Absolute source path inside the task environment.
     pub(crate) source: String,
@@ -215,18 +219,63 @@ pub(crate) struct DeliveredFile {
 /// records next to its Agent logs (host side, never inside the task
 /// environment). This is the integration's own contract, so it parses
 /// deterministically.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct NativeTerminalObservation {
+    pub(crate) schema: String,
+    /// Logical trial identity retained independently of the upstream job name.
+    pub(crate) trial: String,
     /// Selected Agent product (`opi` or `pi`).
     pub(crate) product: String,
     /// sha256 of the exact Agent executable the integration executed.
     pub(crate) agent_executable_sha256: String,
     /// Observed Agent process exit code.
-    pub(crate) exit_code: i64,
+    pub(crate) exit_code: Option<i64>,
+    /// Whether the integration issued the task command after runtime admission.
+    pub(crate) task_dispatched: bool,
+    /// Exact staged-runtime version probe, separate from the task outcome.
+    pub(crate) runtime_preflight: RuntimePreflightObservation,
     /// Whether the Agent phase hit the task's Agent timeout.
     pub(crate) timed_out: bool,
     /// Files the Agent delivered, with observed digests.
     pub(crate) delivered: Vec<DeliveredFile>,
+}
+
+/// Integration-owned runtime compatibility proof. Closed vocabularies and
+/// state combinations are validated before any proof is admitted.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RuntimePreflightObservation {
+    pub(crate) kind: String,
+    pub(crate) status: String,
+    pub(crate) exit_code: Option<i64>,
+    pub(crate) agent_executable_sha256: String,
+    pub(crate) runtime_package_manifest_sha256: Option<String>,
+    pub(crate) runtime_package_entrypoint: Option<String>,
+    pub(crate) command_sha256: String,
+    pub(crate) stdout_sha256: String,
+    pub(crate) stderr_sha256: String,
+    pub(crate) stdout_complete: bool,
+    pub(crate) stderr_complete: bool,
+    pub(crate) stdout_truncated: bool,
+    pub(crate) stderr_truncated: bool,
+    pub(crate) reason: Option<String>,
+}
+
+/// Bound job and integration observations without a reward or collection
+/// requirement. Setup refusal can retain this evidence without inventing a grade.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NativeTrialObservation {
+    pub(crate) job_name: OsString,
+    pub(crate) trial_name: String,
+    pub(crate) agent_name: String,
+    pub(crate) agent_version: String,
+    pub(crate) model_name: Option<String>,
+    pub(crate) task_name: String,
+    pub(crate) exception_type: Option<String>,
+    pub(crate) terminal: Option<NativeTerminalObservation>,
+    pub(crate) results_path: PathBuf,
+    pub(crate) config_path: PathBuf,
 }
 
 /// The bound identity of one imported native job: everything the sealed
@@ -411,25 +460,19 @@ fn new_job_dir(
     }
 }
 
-/// Imports and binds one dispatched native job against `selection`
-/// (P19-AC-002). The authority chain: the job aggregate proves the
-/// one-trial shape; the per-trial `result.json` proves the actual Agent,
-/// task, and native reward of that exact trial; the trial `config.json`
-/// proves the explicit Agent selection; the integration's terminal
-/// observation proves the delivered artifacts; the collected-artifacts
-/// manifest cross-checks the delivered bytes. Any drift is a typed
-/// rejection, never a silent score.
-pub(crate) fn import_bound_native_job(
+/// Bind the unique fresh job and actual trial/Agent selection, then validate
+/// the integration's separate runtime proof before examining any grade.
+fn bound_native_identity(
     trace_root: &std::path::Path,
     selection: &NativeSelection,
-) -> Result<NativeTrialBinding, NativeBindingError> {
+) -> Result<NativeIdentityEvidence, NativeBindingError> {
     let (job_name, job_dir) = new_job_dir(trace_root, &selection.stale_job_names)?;
 
-    // Job aggregate: one trial, with the selected primary reward attributed
-    // to that trial. Pier also records auxiliary metrics such as test counts.
+    // The job aggregate must contain exactly one selected Agent attribution.
     let aggregate_path = job_dir.join("result.json");
     let aggregate: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(&aggregate_path).map_err(|_| NativeBindingError::AggregateUnreadable)?,
+        &read_native_evidence(trace_root, &aggregate_path)
+            .map_err(|_| NativeBindingError::AggregateUnreadable)?,
     )
     .map_err(|_| NativeBindingError::AggregateInvalid("json-parse"))?;
     if aggregate.get("n_total_trials").and_then(|n| n.as_u64()) != Some(1) {
@@ -444,14 +487,6 @@ pub(crate) fn import_bound_native_job(
         return Err(NativeBindingError::AggregateInvalid("eval-count"));
     }
     let eval_key = evals.keys().next().expect("len checked").to_owned();
-    let reward_stats = evals
-        .values()
-        .next()
-        .expect("len checked")
-        .get("reward_stats")
-        .and_then(|r| r.as_object())
-        .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
-
     // The single per-trial result: the authoritative native identity.
     let mut trial_dirs: Vec<PathBuf> = std::fs::read_dir(&job_dir)
         .map_err(|_| NativeBindingError::TrialResultMissing)?
@@ -467,7 +502,8 @@ pub(crate) fn import_bound_native_job(
         .ok_or(NativeBindingError::TrialResultMissing)?;
     let results_path = trial_dir.join("result.json");
     let results: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(&results_path).map_err(|_| NativeBindingError::TrialResultMissing)?,
+        &read_native_evidence(trace_root, &results_path)
+            .map_err(|_| NativeBindingError::TrialResultMissing)?,
     )
     .map_err(|_| NativeBindingError::TrialInvalid("json-parse"))?;
     let trial_name = results
@@ -475,6 +511,9 @@ pub(crate) fn import_bound_native_job(
         .and_then(|n| n.as_str())
         .ok_or(NativeBindingError::TrialInvalid("trial-name"))?
         .to_owned();
+    if trial_dir.file_name().and_then(|name| name.to_str()) != Some(trial_name.as_str()) {
+        return Err(NativeBindingError::TrialInvalid("trial-name"));
+    }
     let agent_info = results
         .get("agent_info")
         .and_then(|a| a.as_object())
@@ -542,7 +581,8 @@ pub(crate) fn import_bound_native_job(
     // Diagnostics use registered names; integrations use their pinned import.
     let config_path = trial_dir.join("config.json");
     let config: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(&config_path).map_err(|_| NativeBindingError::TrialResultMissing)?,
+        &read_native_evidence(trace_root, &config_path)
+            .map_err(|_| NativeBindingError::TrialResultMissing)?,
     )
     .map_err(|_| NativeBindingError::TrialInvalid("json-parse"))?;
     let agent_config = config.get("agent").and_then(|a| a.as_object());
@@ -580,6 +620,103 @@ pub(crate) fn import_bound_native_job(
             });
         }
     }
+
+    let terminal = if matches!(selection.kind, SelectionKind::Integration { .. }) {
+        let terminal_path = trial_dir.join("agent/opi-eval-terminal.json");
+        let terminal = parse_terminal_observation(
+            &read_native_evidence(trace_root, &terminal_path)
+                .map_err(|_| NativeBindingError::TrialInvalid("terminal-observation"))?,
+        )?;
+        bind_runtime_preflight(trace_root, &trial_dir, selection, &terminal)?;
+        Some(terminal)
+    } else {
+        None
+    };
+    let agent_version = agent_info
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_owned();
+    let observation = NativeTrialObservation {
+        job_name,
+        trial_name,
+        agent_name: agent_name.to_owned(),
+        agent_version,
+        model_name,
+        task_name: task_name.to_owned(),
+        exception_type,
+        terminal,
+        results_path,
+        config_path,
+    };
+    Ok(NativeIdentityEvidence {
+        observation,
+        aggregate,
+        results,
+        config,
+        trial_dir,
+    })
+}
+
+struct NativeIdentityEvidence {
+    observation: NativeTrialObservation,
+    aggregate: serde_json::Value,
+    results: serde_json::Value,
+    config: serde_json::Value,
+    trial_dir: PathBuf,
+}
+
+/// Admit the new job's actual identity and runtime proof without requiring a
+/// reward, lifecycle collection, or Agent outcome after setup refusal.
+pub(crate) fn import_bound_native_observation(
+    trace_root: &std::path::Path,
+    selection: &NativeSelection,
+) -> Result<NativeTrialObservation, NativeBindingError> {
+    Ok(bound_native_identity(trace_root, selection)?.observation)
+}
+
+/// Bind the native grade after shared identity admission, requiring the
+/// observed task, native reward, lifecycle, collection and delivered bytes.
+pub(crate) fn import_bound_native_job(
+    trace_root: &std::path::Path,
+    selection: &NativeSelection,
+) -> Result<NativeTrialBinding, NativeBindingError> {
+    let NativeIdentityEvidence {
+        observation,
+        aggregate,
+        results,
+        config,
+        trial_dir,
+    } = bound_native_identity(trace_root, selection)?;
+    let NativeTrialObservation {
+        job_name,
+        trial_name,
+        agent_name,
+        agent_version,
+        model_name,
+        task_name,
+        exception_type,
+        terminal,
+        results_path,
+        config_path,
+    } = observation;
+    if terminal.as_ref().is_some_and(|terminal| {
+        terminal.runtime_preflight.status != "passed"
+            || !terminal.task_dispatched
+            || terminal.exit_code.is_none()
+    }) {
+        return Err(NativeBindingError::TrialInvalid("task-not-observed"));
+    }
+    let evals = aggregate["stats"]["evals"]
+        .as_object()
+        .expect("identity validated");
+    let reward_stats = evals
+        .values()
+        .next()
+        .expect("identity validated")
+        .get("reward_stats")
+        .and_then(|value| value.as_object())
+        .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
 
     // A timed-out verifier has no reward in either pinned runner. Bind its
     // exact exception attribution without manufacturing a zero score.
@@ -663,29 +800,6 @@ pub(crate) fn import_bound_native_job(
             ),
         });
     }
-
-    // The integration's typed terminal observation: required evidence for
-    // an integration dispatch; a diagnostic witness (upstream oracle or
-    // nop agent) produces none, so its binding rests on the job's own
-    // identities and collected artifacts and never becomes an Agent
-    // score.
-    let terminal = if let SelectionKind::Integration {
-        product,
-        executable_sha256,
-    } = &selection.kind
-    {
-        let terminal_path = trial_dir.join("agent/opi-eval-terminal.json");
-        let terminal = parse_terminal_observation(
-            &std::fs::read(&terminal_path)
-                .map_err(|_| NativeBindingError::TrialInvalid("terminal-observation"))?,
-        )?;
-        if terminal.product != *product || terminal.agent_executable_sha256 != *executable_sha256 {
-            return Err(NativeBindingError::TrialInvalid("selected-agent-mismatch"));
-        }
-        Some(terminal)
-    } else {
-        None
-    };
 
     // Declared-collection binding (P19-D03, P19-AC-004). The trial's
     // collected-artifacts manifest is the record of what left the agent
@@ -792,18 +906,13 @@ pub(crate) fn import_bound_native_job(
         }
     }
 
-    let agent_version = agent_info
-        .get("version")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_owned();
     Ok(NativeTrialBinding {
         job_name,
         trial_name,
-        agent_name: agent_name.to_owned(),
+        agent_name,
         agent_version,
         model_name,
-        task_name: task_name.to_owned(),
+        task_name,
         reward,
         exception_type,
         terminal,
@@ -1006,59 +1115,293 @@ fn parse_recorded_lifecycle(
         docker_image: task.docker_image,
     })
 }
-/// Parses the integration's typed terminal observation.
+/// Read only a bounded regular file beneath the owned trace, without
+/// following links or consuming special files. Missing evidence is an error.
+fn read_native_evidence(
+    trace_root: &std::path::Path,
+    path: &std::path::Path,
+) -> std::io::Result<Vec<u8>> {
+    let capture = read_native_checked_file(trace_root, path, false)?;
+    if capture.truncated {
+        return Err(std::io::Error::other(
+            "native evidence exceeds artifact bound",
+        ));
+    }
+    Ok(capture.bytes)
+}
+
+fn read_native_proof_capture(
+    trace_root: &std::path::Path,
+    path: &std::path::Path,
+) -> std::io::Result<OutputCapture> {
+    // Native task environments require the existing Unix/WSL single-link
+    // capture contract; no Windows runtime proof is admitted by this reader.
+    read_native_checked_file(trace_root, path, true)
+}
+
+fn read_native_checked_file(
+    trace_root: &std::path::Path,
+    path: &std::path::Path,
+    require_single_link: bool,
+) -> std::io::Result<OutputCapture> {
+    use std::io::Read;
+    if !path.starts_with(trace_root) || path == trace_root {
+        return Err(std::io::Error::other("native evidence outside owned trace"));
+    }
+    for ancestor in path
+        .parent()
+        .into_iter()
+        .flat_map(std::path::Path::ancestors)
+    {
+        let metadata = std::fs::symlink_metadata(ancestor)?;
+        if !metadata.is_dir() || native_reparse_or_link(&metadata) {
+            return Err(std::io::Error::other("unsafe native evidence ancestor"));
+        }
+        if ancestor == trace_root {
+            break;
+        }
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    #[cfg(unix)]
+    let single_link = {
+        use std::os::unix::fs::MetadataExt;
+        metadata.nlink() == 1
+    };
+    #[cfg(not(unix))]
+    let single_link = false;
+    if !metadata.is_file()
+        || native_reparse_or_link(&metadata)
+        || (!single_link && (require_single_link || cfg!(unix)))
+    {
+        return Err(std::io::Error::other("unsafe native evidence file"));
+    }
+    let mut bytes = Vec::new();
+    file.take(crate::bundle::MAX_ARTIFACT_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    let truncated = bytes.len() > crate::bundle::MAX_ARTIFACT_BYTES;
+    bytes.truncate(crate::bundle::MAX_ARTIFACT_BYTES);
+    Ok(OutputCapture { bytes, truncated })
+}
+
+fn native_reparse_or_link(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes()
+            & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+            != 0
+        {
+            return true;
+        }
+    }
+    metadata.is_symlink()
+}
+
+/// Parse only the current proof schema and coherent runtime/task states.
 fn parse_terminal_observation(
     bytes: &[u8],
 ) -> Result<NativeTerminalObservation, NativeBindingError> {
-    let value: serde_json::Value = serde_json::from_slice(bytes)
-        .map_err(|_| NativeBindingError::TrialInvalid("terminal-observation"))?;
-    if value.get("schema").and_then(|s| s.as_str()) != Some("opi-eval-native-agent-terminal/1") {
-        return Err(NativeBindingError::TrialInvalid("terminal-observation"));
+    let invalid = || NativeBindingError::TrialInvalid("terminal-observation");
+    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| invalid())?;
+    // Nullable observations must still be present: absence is not an observed null.
+    for field in ["exit_code", "delivered", "runtime_preflight"] {
+        if value.get(field).is_none() {
+            return Err(invalid());
+        }
     }
-    let product = value
-        .get("product")
-        .and_then(|p| p.as_str())
-        .ok_or(NativeBindingError::TrialInvalid("terminal-observation"))?
-        .to_owned();
-    let agent_executable_sha256 = value
-        .get("agent_executable_sha256")
-        .and_then(|p| p.as_str())
-        .ok_or(NativeBindingError::TrialInvalid("terminal-observation"))?
-        .to_owned();
-    let exit_code = value
-        .get("exit_code")
-        .and_then(|c| c.as_i64())
-        .ok_or(NativeBindingError::TrialInvalid("terminal-observation"))?;
-    let timed_out = value
-        .get("timed_out")
-        .and_then(|t| t.as_bool())
-        .unwrap_or(false);
-    let mut delivered = Vec::new();
-    for entry in value
-        .get("delivered")
-        .and_then(|d| d.as_array())
-        .unwrap_or(&Vec::new())
+    let proof = value.get("runtime_preflight").ok_or_else(invalid)?;
+    for field in [
+        "exit_code",
+        "runtime_package_manifest_sha256",
+        "runtime_package_entrypoint",
+        "reason",
+    ] {
+        if proof.get(field).is_none() {
+            return Err(invalid());
+        }
+    }
+    let terminal: NativeTerminalObservation =
+        serde_json::from_slice(bytes).map_err(|_| invalid())?;
+    let proof = &terminal.runtime_preflight;
+    if terminal.schema != "opi-eval-native-agent-terminal/2"
+        || terminal.trial.is_empty()
+        || !matches!(terminal.product.as_str(), "opi" | "pi")
+        || !is_sha256_hex(&terminal.agent_executable_sha256)
+        || proof.kind != "version"
+        || [
+            &proof.agent_executable_sha256,
+            &proof.command_sha256,
+            &proof.stdout_sha256,
+            &proof.stderr_sha256,
+        ]
+        .iter()
+        .any(|digest| !is_sha256_hex(digest))
+        || proof
+            .runtime_package_manifest_sha256
+            .as_ref()
+            .is_some_and(|digest| !is_sha256_hex(digest))
+        || proof.runtime_package_manifest_sha256.is_some()
+            != proof.runtime_package_entrypoint.is_some()
+        || proof
+            .runtime_package_entrypoint
+            .as_ref()
+            .is_some_and(|path| {
+                path.is_empty()
+                    || path.starts_with('/')
+                    || path.contains('\\')
+                    || path
+                        .split('/')
+                        .any(|part| part.is_empty() || part == "." || part == "..")
+            })
+        || (proof.stdout_truncated && proof.stdout_complete)
+        || (proof.stderr_truncated && proof.stderr_complete)
+        || terminal
+            .delivered
+            .iter()
+            .any(|file| !file.source.starts_with('/') || !is_sha256_hex(&file.sha256))
     {
-        let source = entry
-            .get("source")
-            .and_then(|s| s.as_str())
-            .ok_or(NativeBindingError::TrialInvalid("terminal-observation"))?;
-        let sha256 = entry
-            .get("sha256")
-            .and_then(|s| s.as_str())
-            .ok_or(NativeBindingError::TrialInvalid("terminal-observation"))?;
-        delivered.push(DeliveredFile {
-            source: source.to_owned(),
-            sha256: sha256.to_owned(),
-        });
+        return Err(invalid());
     }
-    Ok(NativeTerminalObservation {
+    let complete = proof.stdout_complete
+        && proof.stderr_complete
+        && !proof.stdout_truncated
+        && !proof.stderr_truncated;
+    match proof.status.as_str() {
+        "passed" if proof.exit_code == Some(0) && complete && proof.reason.is_none() => {}
+        "failed"
+            if proof.exit_code.is_some_and(|code| code != 0)
+                && complete
+                && proof.reason.is_none() => {}
+        "unknown"
+            if proof.reason.as_deref().is_some_and(|reason| {
+                matches!(
+                    reason,
+                    "timeout" | "transport" | "termination" | "invalid-output" | "capture-overflow"
+                )
+            }) =>
+        {
+            if proof.reason.as_deref() == Some("capture-overflow")
+                && !proof.stdout_truncated
+                && !proof.stderr_truncated
+            {
+                return Err(invalid());
+            }
+        }
+        _ => return Err(invalid()),
+    }
+    if (proof.status != "passed" || !terminal.task_dispatched)
+        && (terminal.task_dispatched
+            || terminal.exit_code.is_some()
+            || terminal.timed_out
+            || !terminal.delivered.is_empty())
+    {
+        return Err(invalid());
+    }
+    Ok(terminal)
+}
+
+fn bind_runtime_preflight(
+    trace_root: &std::path::Path,
+    trial_dir: &std::path::Path,
+    selection: &NativeSelection,
+    terminal: &NativeTerminalObservation,
+) -> Result<(), NativeBindingError> {
+    let SelectionKind::Integration {
         product,
-        agent_executable_sha256,
-        exit_code,
-        timed_out,
-        delivered,
-    })
+        executable_sha256,
+        trial,
+        runtime_package_manifest_sha256,
+        runtime_package_entrypoint,
+    } = &selection.kind
+    else {
+        return Ok(());
+    };
+    let proof = &terminal.runtime_preflight;
+    if terminal.product != *product
+        || terminal.agent_executable_sha256 != *executable_sha256
+        || terminal.trial != *trial
+        || proof.agent_executable_sha256 != *executable_sha256
+        || proof.runtime_package_manifest_sha256 != *runtime_package_manifest_sha256
+        || proof.runtime_package_entrypoint != *runtime_package_entrypoint
+    {
+        return Err(NativeBindingError::TrialInvalid("selected-agent-mismatch"));
+    }
+    let executable = match runtime_package_entrypoint {
+        Some(entrypoint) => format!("/opi-eval-agent/{product}/runtime/{entrypoint}"),
+        None => format!("/opi-eval-agent/{product}/agent"),
+    };
+    let quoted = if executable
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || b"_@%+=:,./-".contains(&byte))
+    {
+        executable
+    } else {
+        format!("'{}'", executable.replace('\'', "'\"'\"'"))
+    };
+    let command = format!("{quoted} --version");
+    if proof.command_sha256 != crate::runner::material::sha256_hex(command.as_bytes()) {
+        return Err(NativeBindingError::TrialInvalid(
+            "runtime-preflight-command",
+        ));
+    }
+    let mut captures = Vec::new();
+    for (name, digest, complete, truncated) in [
+        (
+            "stdout",
+            &proof.stdout_sha256,
+            proof.stdout_complete,
+            proof.stdout_truncated,
+        ),
+        (
+            "stderr",
+            &proof.stderr_sha256,
+            proof.stderr_complete,
+            proof.stderr_truncated,
+        ),
+    ] {
+        let path = trial_dir
+            .join("agent")
+            .join(format!("runtime-preflight-{name}.log"));
+        let capture = read_native_proof_capture(trace_root, &path)
+            .map_err(|_| NativeBindingError::TrialInvalid("runtime-preflight-capture"))?;
+        if capture.truncated != truncated
+            || (capture.truncated && complete)
+            || crate::runner::material::sha256_hex(&capture.bytes) != *digest
+        {
+            return Err(NativeBindingError::TrialInvalid(
+                "runtime-preflight-capture",
+            ));
+        }
+        captures.push(capture.bytes);
+    }
+    if matches!(proof.status.as_str(), "passed" | "failed") {
+        let mut readable = false;
+        for bytes in &captures {
+            let text = std::str::from_utf8(bytes)
+                .map_err(|_| NativeBindingError::TrialInvalid("runtime-preflight-output"))?;
+            if text.contains('\0') {
+                return Err(NativeBindingError::TrialInvalid("runtime-preflight-output"));
+            }
+            readable |= !text.trim().is_empty();
+        }
+        if proof.status == "passed" && !readable {
+            return Err(NativeBindingError::TrialInvalid("runtime-preflight-output"));
+        }
+    }
+    Ok(())
 }
 
 /// Typed failure carried on a settled record. A failed verification run is
@@ -1416,9 +1759,19 @@ impl BenchmarkExecution {
                 boundary: FailureBoundaryCode::Infrastructure,
             });
         }
-        if let (Some(expected), BenchmarkCompletion::VerifiedNative { binding, .. }) =
-            (&native_config, &completion)
-            && !native_stage_config_matches(&binding.config_path, expected)
+        let bound_config = match &completion {
+            BenchmarkCompletion::VerifiedNative { binding, .. } => {
+                Some(binding.config_path.clone())
+            }
+            _ => request.native_selection.as_ref().and_then(|selection| {
+                import_bound_native_observation(&request.trace_root, selection)
+                    .ok()
+                    .map(|observation| observation.config_path)
+            }),
+        };
+        if !termination_unknown
+            && let (Some(expected), Some(config)) = (&native_config, &bound_config)
+            && !native_stage_config_matches(config, expected)
         {
             reward = Fact::Unknown {
                 reason: "native-stage-configuration-drift".to_owned(),
@@ -1918,6 +2271,39 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+fn write_test_terminal(
+    trial_dir: &std::path::Path,
+    product: &str,
+    executable_sha256: &str,
+    delivered: serde_json::Value,
+) {
+    let stdout = b"fixture version\n";
+    let stderr = b"";
+    std::fs::write(trial_dir.join("agent/runtime-preflight-stdout.log"), stdout).unwrap();
+    std::fs::write(trial_dir.join("agent/runtime-preflight-stderr.log"), stderr).unwrap();
+    let terminal = serde_json::json!({
+        "schema": "opi-eval-native-agent-terminal/2", "trial": "logical-trial",
+        "product": product, "agent_executable_sha256": executable_sha256,
+        "exit_code": 0, "task_dispatched": true, "timed_out": false, "delivered": delivered,
+        "runtime_preflight": {
+            "kind": "version", "status": "passed", "exit_code": 0,
+            "agent_executable_sha256": executable_sha256,
+            "runtime_package_manifest_sha256": null, "runtime_package_entrypoint": null,
+            "command_sha256": crate::runner::material::sha256_hex(format!("/opi-eval-agent/{product}/agent --version").as_bytes()),
+            "stdout_sha256": crate::runner::material::sha256_hex(stdout),
+            "stderr_sha256": crate::runner::material::sha256_hex(stderr),
+            "stdout_complete": true, "stderr_complete": true,
+            "stdout_truncated": false, "stderr_truncated": false, "reason": null,
+        },
+    });
+    std::fs::write(
+        trial_dir.join("agent/opi-eval-terminal.json"),
+        serde_json::to_vec(&terminal).unwrap(),
+    )
+    .unwrap();
+}
+
 /// Stages one complete bound native job tree under `root/jobs/<job>`
 /// and returns the selection the tree satisfies (test staging for the
 /// binding matrix).
@@ -1971,20 +2357,12 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
         serde_json::to_vec(&config).unwrap(),
     )
     .unwrap();
-    // The integration's typed terminal observation.
-    let terminal = serde_json::json!({
-        "schema": "opi-eval-native-agent-terminal/1",
-        "product": "opi",
-        "agent_executable_sha256": "a".repeat(64),
-        "exit_code": 0,
-        "timed_out": false,
-        "delivered": [{"source": "/root/answer.txt", "sha256": answer_digest}],
-    });
-    std::fs::write(
-        trial_dir.join("agent/opi-eval-terminal.json"),
-        serde_json::to_vec(&terminal).unwrap(),
-    )
-    .unwrap();
+    write_test_terminal(
+        &trial_dir,
+        "opi",
+        &"a".repeat(64),
+        serde_json::json!([{"source": "/root/answer.txt", "sha256": answer_digest}]),
+    );
     // Collected artifacts: the delivered file, byte-identical, mirrored
     // at its source-relative host path exactly as the pinned runner
     // collects it.
@@ -2003,6 +2381,9 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
         kind: SelectionKind::Integration {
             product: "opi".to_owned(),
             executable_sha256: "a".repeat(64),
+            trial: "logical-trial".to_owned(),
+            runtime_package_manifest_sha256: None,
+            runtime_package_entrypoint: None,
         },
         lifecycle: TaskLifecycleSelection {
             environment_mode: super::task_lifecycle::VerifierEnvironmentMode::Shared,
@@ -2025,6 +2406,8 @@ fn stage_bound_job(root: &std::path::Path, job: &str, agent_name: &str) -> Nativ
     }
 }
 
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
 #[test]
 fn native_verifier_timeout_binds_without_inventing_reward() {
     for mutation in [
@@ -2098,6 +2481,8 @@ fn native_verifier_timeout_binds_without_inventing_reward() {
     }
 }
 
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
 #[test]
 fn native_model_binding_uses_only_the_pinned_slash_split() {
     for (selector, model, accepted) in [
@@ -2152,6 +2537,8 @@ fn native_model_binding_uses_only_the_pinned_slash_split() {
     }
 }
 
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
 #[test]
 fn native_result_binding_imports_harbor_pi_zero_reward() {
     let dir = tempfile::tempdir().unwrap();
@@ -2199,18 +2586,20 @@ fn native_result_binding_imports_harbor_pi_zero_reward() {
         .unwrap(),
     )
     .unwrap();
-    std::fs::write(
-        trial_dir.join("agent/opi-eval-terminal.json"),
-        r#"{"schema": "opi-eval-native-agent-terminal/1", "product": "pi",
-            "agent_executable_sha256": "443bd83f30e4dbc7bac2eed9c6aa2461b9a15016fd555f48c92a0591d028c403",
-            "exit_code": 0, "timed_out": false, "delivered": []}"#,
-    )
-    .unwrap();
+    write_test_terminal(
+        &trial_dir,
+        "pi",
+        "443bd83f30e4dbc7bac2eed9c6aa2461b9a15016fd555f48c92a0591d028c403",
+        serde_json::json!([]),
+    );
     let selection = NativeSelection {
         kind: SelectionKind::Integration {
             product: "pi".to_owned(),
             executable_sha256: "443bd83f30e4dbc7bac2eed9c6aa2461b9a15016fd555f48c92a0591d028c403"
                 .to_owned(),
+            trial: "logical-trial".to_owned(),
+            runtime_package_manifest_sha256: None,
+            runtime_package_entrypoint: None,
         },
         lifecycle: TaskLifecycleSelection {
             environment_mode: super::task_lifecycle::VerifierEnvironmentMode::Shared,
@@ -2243,7 +2632,7 @@ fn native_result_binding_imports_harbor_pi_zero_reward() {
     );
     let terminal = binding.terminal.unwrap();
     assert_eq!(terminal.product, "pi");
-    assert_eq!(terminal.exit_code, 0);
+    assert_eq!(terminal.exit_code, Some(0));
     assert_eq!(
         terminal.agent_executable_sha256,
         "443bd83f30e4dbc7bac2eed9c6aa2461b9a15016fd555f48c92a0591d028c403"
@@ -2251,6 +2640,8 @@ fn native_result_binding_imports_harbor_pi_zero_reward() {
     assert!(binding.exception_type.is_none());
 }
 
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
 #[test]
 fn native_result_binding_imports_pinned_separate_collection() {
     use super::task_lifecycle::{DeclaredArtifact, VerifierEnvironmentMode};
@@ -2403,6 +2794,8 @@ fn native_result_binding_imports_pinned_separate_collection() {
     }
 }
 
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
 #[test]
 fn native_result_binding_requires_one_direct_trial_result() {
     let dir = tempfile::tempdir().unwrap();
@@ -2440,6 +2833,8 @@ fn native_result_binding_requires_one_direct_trial_result() {
     );
 }
 
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
 #[test]
 fn native_result_binding_imports_multi_metric_primary_reward() {
     for (metric, reward) in [("reward", 1), ("reward", 0), ("custom_primary", 1)] {
@@ -2464,7 +2859,7 @@ fn native_result_binding_imports_multi_metric_primary_reward() {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn stage_multi_metric_job(root: &std::path::Path, metric: &str, reward: u64) -> NativeSelection {
     let mut selection = stage_bound_job(root, "j1", "opi-eval-opi");
     selection.reward_metric = metric.to_owned();
@@ -2491,6 +2886,8 @@ fn stage_multi_metric_job(root: &std::path::Path, metric: &str, reward: u64) -> 
     selection
 }
 
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
 #[test]
 fn native_result_binding_rejects_invalid_multi_metric_primary_reward() {
     let trial = "fixture-task__bZZeEkw";
@@ -2551,6 +2948,8 @@ fn native_result_binding_rejects_invalid_multi_metric_primary_reward() {
     }
 }
 
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
 #[test]
 fn native_result_binding_admits_one_bound_job() {
     let dir = tempfile::tempdir().unwrap();
@@ -2566,7 +2965,7 @@ fn native_result_binding_admits_one_bound_job() {
             origin: "native-trial-result".to_owned()
         }
     );
-    assert_eq!(binding.terminal.as_ref().unwrap().exit_code, 0);
+    assert_eq!(binding.terminal.as_ref().unwrap().exit_code, Some(0));
     assert_eq!(binding.terminal.as_ref().unwrap().delivered.len(), 1);
     // The declared artifact binds as the verifier-input identity with the
     // digest of exactly the collected bytes.
@@ -2641,6 +3040,8 @@ fn diagnostic_result_binding_requires_an_unambiguous_registered_name() {
     }
 }
 
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
 #[test]
 fn native_result_binding_rejects_every_substitution() {
     // Missing new job (only stale ones exist).
@@ -2880,5 +3281,230 @@ fn native_result_binding_rejects_every_substitution() {
             .unwrap()
             .job_name,
         "j-new"
+    );
+}
+
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
+#[test]
+fn native_runtime_preflight_rejects_substituted_and_malformed_proofs() {
+    for case in [
+        "legacy",
+        "missing-field",
+        "extra-field",
+        "trial",
+        "executable",
+        "runtime",
+        "command",
+        "stdout",
+        "stderr",
+        "missing-capture",
+        "passed-nonzero",
+        "failed-zero",
+        "unknown-reason",
+        "overflow-without-truncation",
+        "incomplete-pass",
+        "refusal-task",
+        "refusal-exit",
+        "refusal-timeout",
+        "refusal-delivered",
+        "invalid-output",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let selection = stage_bound_job(root.path(), "j1", "opi-eval-opi");
+        let agent = root.path().join("jobs/j1/fixture-task__bZZeEkw/agent");
+        let path = agent.join("opi-eval-terminal.json");
+        let mut terminal: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        match case {
+            "legacy" => terminal["schema"] = "opi-eval-native-agent-terminal/1".into(),
+            "missing-field" => {
+                terminal["runtime_preflight"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("exit_code");
+            }
+            "extra-field" => terminal["runtime_preflight"]["invented"] = true.into(),
+            "trial" => terminal["trial"] = "other-trial".into(),
+            "executable" => {
+                terminal["runtime_preflight"]["agent_executable_sha256"] = "b".repeat(64).into()
+            }
+            "runtime" => {
+                terminal["runtime_preflight"]["runtime_package_manifest_sha256"] =
+                    "b".repeat(64).into();
+                terminal["runtime_preflight"]["runtime_package_entrypoint"] = "bin/pi".into();
+            }
+            "command" => terminal["runtime_preflight"]["command_sha256"] = "b".repeat(64).into(),
+            "stdout" | "stderr" => std::fs::write(
+                agent.join(format!("runtime-preflight-{case}.log")),
+                b"substituted\n",
+            )
+            .unwrap(),
+            "missing-capture" => {
+                std::fs::remove_file(agent.join("runtime-preflight-stdout.log")).unwrap()
+            }
+            "passed-nonzero" => terminal["runtime_preflight"]["exit_code"] = 1.into(),
+            "failed-zero" => terminal["runtime_preflight"]["status"] = "failed".into(),
+            "unknown-reason" | "overflow-without-truncation" => {
+                terminal["runtime_preflight"]["status"] = "unknown".into();
+                terminal["runtime_preflight"]["reason"] = if case == "unknown-reason" {
+                    "unregistered"
+                } else {
+                    "capture-overflow"
+                }
+                .into();
+            }
+            "incomplete-pass" => terminal["runtime_preflight"]["stdout_complete"] = false.into(),
+            "refusal-task" | "refusal-exit" | "refusal-timeout" | "refusal-delivered" => {
+                terminal["runtime_preflight"]["status"] = "failed".into();
+                terminal["runtime_preflight"]["exit_code"] = 1.into();
+                terminal["task_dispatched"] = (case == "refusal-task").into();
+                terminal["exit_code"] = if case == "refusal-exit" {
+                    0.into()
+                } else {
+                    serde_json::Value::Null
+                };
+                terminal["timed_out"] = (case == "refusal-timeout").into();
+                if case != "refusal-delivered" {
+                    terminal["delivered"] = serde_json::json!([]);
+                }
+            }
+            "invalid-output" => {
+                std::fs::write(agent.join("runtime-preflight-stdout.log"), [0xff]).unwrap();
+                terminal["runtime_preflight"]["stdout_sha256"] =
+                    crate::runner::material::sha256_hex(&[0xff]).into();
+            }
+            _ => unreachable!(),
+        }
+        std::fs::write(&path, serde_json::to_vec(&terminal).unwrap()).unwrap();
+        assert!(
+            import_bound_native_observation(root.path(), &selection).is_err(),
+            "{case}"
+        );
+        assert!(
+            import_bound_native_job(root.path(), &selection).is_err(),
+            "{case}"
+        );
+    }
+}
+
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
+#[test]
+fn native_runtime_preflight_refusal_binds_without_reward_or_collection() {
+    for status in ["failed", "unknown", "passed"] {
+        let root = tempfile::tempdir().unwrap();
+        let selection = stage_bound_job(root.path(), "j1", "opi-eval-opi");
+        let trial = root.path().join("jobs/j1/fixture-task__bZZeEkw");
+        let terminal_path = trial.join("agent/opi-eval-terminal.json");
+        let mut terminal: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&terminal_path).unwrap()).unwrap();
+        terminal["runtime_preflight"]["status"] = status.into();
+        terminal["runtime_preflight"]["exit_code"] = match status {
+            "failed" => 1.into(),
+            "unknown" => serde_json::Value::Null,
+            _ => 0.into(),
+        };
+        if status == "unknown" {
+            terminal["runtime_preflight"]["reason"] = "transport".into();
+            terminal["runtime_preflight"]["stdout_complete"] = false.into();
+            terminal["runtime_preflight"]["stderr_complete"] = false.into();
+        }
+        terminal["task_dispatched"] = false.into();
+        terminal["exit_code"] = serde_json::Value::Null;
+        terminal["delivered"] = serde_json::json!([]);
+        std::fs::write(&terminal_path, serde_json::to_vec(&terminal).unwrap()).unwrap();
+        let result_path = trial.join("result.json");
+        let mut result: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&result_path).unwrap()).unwrap();
+        result["verifier_result"] = serde_json::Value::Null;
+        std::fs::write(&result_path, serde_json::to_vec(&result).unwrap()).unwrap();
+        std::fs::remove_dir_all(trial.join("artifacts")).unwrap();
+        let observation = import_bound_native_observation(root.path(), &selection).unwrap();
+        let terminal = observation.terminal.unwrap();
+        assert_eq!(terminal.runtime_preflight.status, status);
+        assert!(!terminal.task_dispatched);
+        assert_eq!(terminal.exit_code, None);
+        assert!(terminal.delivered.is_empty());
+        assert_eq!(
+            import_bound_native_job(root.path(), &selection),
+            Err(NativeBindingError::TrialInvalid("task-not-observed"))
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn native_runtime_preflight_capture_rejects_links_and_special_files() {
+    for case in ["symlink", "hardlink", "fifo"] {
+        let root = tempfile::tempdir().unwrap();
+        let selection = stage_bound_job(root.path(), "j1", "opi-eval-opi");
+        let capture = root
+            .path()
+            .join("jobs/j1/fixture-task__bZZeEkw/agent/runtime-preflight-stdout.log");
+        std::fs::remove_file(&capture).unwrap();
+        let outside = root.path().join("outside");
+        std::fs::write(&outside, b"fixture version\n").unwrap();
+        match case {
+            "symlink" => std::os::unix::fs::symlink(&outside, &capture).unwrap(),
+            "hardlink" => std::fs::hard_link(&outside, &capture).unwrap(),
+            "fifo" => {
+                assert!(
+                    std::process::Command::new("mkfifo")
+                        .arg(&capture)
+                        .status()
+                        .unwrap()
+                        .success()
+                );
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            import_bound_native_observation(root.path(), &selection),
+            Err(NativeBindingError::TrialInvalid(
+                "runtime-preflight-capture"
+            )),
+            "{case}"
+        );
+    }
+}
+
+// Native integration proof captures require the Unix/WSL single-link boundary.
+#[cfg(unix)]
+#[test]
+fn native_runtime_preflight_rejects_unreadable_completed_capture() {
+    let mut accepted = Vec::new();
+    for (status, bytes) in [
+        ("failed", vec![0xff]),
+        ("passed", b"fixture\0version\n".to_vec()),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let selection = stage_bound_job(root.path(), "j1", "opi-eval-opi");
+        let agent = root.path().join("jobs/j1/fixture-task__bZZeEkw/agent");
+        let path = agent.join("opi-eval-terminal.json");
+        let mut terminal: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        terminal["runtime_preflight"]["status"] = status.into();
+        terminal["runtime_preflight"]["exit_code"] = if status == "failed" {
+            1.into()
+        } else {
+            0.into()
+        };
+        terminal["runtime_preflight"]["stdout_sha256"] =
+            crate::runner::material::sha256_hex(&bytes).into();
+        if status == "failed" {
+            terminal["task_dispatched"] = false.into();
+            terminal["exit_code"] = serde_json::Value::Null;
+            terminal["delivered"] = serde_json::json!([]);
+        }
+        std::fs::write(agent.join("runtime-preflight-stdout.log"), bytes).unwrap();
+        std::fs::write(&path, serde_json::to_vec(&terminal).unwrap()).unwrap();
+        if import_bound_native_observation(root.path(), &selection).is_ok() {
+            accepted.push(status);
+        }
+    }
+    assert!(
+        accepted.is_empty(),
+        "completed unreadable runtime captures were admitted: {accepted:?}"
     );
 }

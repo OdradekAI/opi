@@ -1163,7 +1163,7 @@ enum BundleState {
 
 /// Upper bound for one staged artifact. Oversized artifacts are rejected at
 /// insertion rather than silently truncated.
-const MAX_ARTIFACT_BYTES: usize = 64 * 1024 * 1024;
+pub(crate) const MAX_ARTIFACT_BYTES: usize = 64 * 1024 * 1024;
 
 /// A staged or sealed trial bundle rooted at one directory.
 pub(crate) struct RunBundle {

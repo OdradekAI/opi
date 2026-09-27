@@ -11,6 +11,75 @@
 //! native-smoke workflow.
 
 #[cfg(unix)]
+#[test]
+fn verify_rejects_linked_trial_without_mutating_source() {
+    let root = tempfile::tempdir().unwrap();
+    let (code, _, stderr) = run_experiment("local-paired.toml", "happy", root.path());
+    assert_eq!(code, 0, "{stderr}");
+    let (code, stdout, stderr) = invoke("verify", &[("--root", root.path().as_os_str())]);
+    assert_eq!(code, 0, "{stderr}");
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(report["bundles"].as_array().unwrap().len(), 2);
+    let saved = root.path().join("original-trial");
+    let replaced = root.path().join("trials/trial-opi-1");
+    std::fs::rename(&replaced, &saved).unwrap();
+    let manifest = std::fs::read(saved.join("bundle/manifest.json")).unwrap();
+    std::os::unix::fs::symlink(&saved, &replaced).unwrap();
+    let (code, _, stderr) = invoke("verify", &[("--root", root.path().as_os_str())]);
+    assert_eq!(code, 2, "{stderr}");
+    assert!(stderr.contains("linked trial entry"), "{stderr}");
+    let out = root.path().join("derived");
+    let missing = root.path().join("missing-material.json");
+    let (code, _, stderr) = invoke(
+        "regrade",
+        &[
+            ("--root", root.path().as_os_str()),
+            ("--native-material", missing.as_os_str()),
+            ("--out", out.as_os_str()),
+        ],
+    );
+    assert_eq!(code, 2, "{stderr}");
+    assert!(stderr.contains("linked trial entry"), "{stderr}");
+    assert!(!out.exists());
+    assert_eq!(
+        std::fs::read(saved.join("bundle/manifest.json")).unwrap(),
+        manifest
+    );
+    assert_eq!(std::fs::read_link(&replaced).unwrap(), saved);
+}
+
+#[cfg(windows)]
+#[test]
+fn verify_rejects_trial_junction_without_following_it() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let trials = root.path().join("trials");
+    std::fs::create_dir(&trials).unwrap();
+    let marker = outside.path().join("untouched.txt");
+    std::fs::write(&marker, "untouched").unwrap();
+    let link = trials.join("trial-junction");
+    let output = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&link)
+        .arg(outside.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .args(["verify", "--root"])
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("linked trial entry"));
+    assert_eq!(std::fs::read_to_string(marker).unwrap(), "untouched");
+}
+
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::process::Command;
@@ -122,6 +191,7 @@ fn planned_coverage_survives_total_bundle_loss() {
     assert_eq!(published["outcome"], "published", "{published}");
     assert_eq!(published["run_outcome"], "incomplete", "{published}");
     let counts = &published["coverage_counts"];
+    assert!(counts["selected"].is_null(), "{published}");
     assert_eq!(counts["planned"], 2, "{published}");
     assert_eq!(counts["attempted"], 0, "{published}");
     assert_eq!(counts["unexecuted"], 2, "{published}");

@@ -719,6 +719,25 @@ exercises the real Docker removal locally. Unenforceable required bounds
 reject before any effect, and a currency cap can never be promised from
 unknown prices.
 
+Complete native Agent stdout/stderr streams are sealed byte-for-byte up to
+the existing 64 MiB per-artifact limit. Exceeding that limit makes the attempt
+invalid and unscored; its private raw logs remain diagnostic evidence, and a
+truncated prefix is never sealed as a complete stream. Terminal-only capture
+continues to omit intermediate streams.
+
+Before projecting configuration or credentials, both native integrations run
+the exact staged executable (including pi's packaged runtime) with `--version`
+in the task environment, with a 30-second supervised bound. The private
+`opi-eval-native-agent-terminal/2` record binds that preflight to the logical
+trial, executable/package, command and separate capture digests. Failed or
+unknown preflight prevents task dispatch and remains attempted, invalid and
+unscored; its exit is never a task exit. Passed preflight proves bounded runtime
+compatibility. Later task dispatch and observed exit still need their own
+evidence, and valid task zero/nonzero/timeout outcomes retain their meanings.
+Terminal-only capture keeps the proof and permitted diagnostics. Fresh imports
+and local acceptance require `/2`; existing sealed byte verification, reports
+and verifier-only regrade do not invent a proof or rerun the Agent.
+
 On the pinned mounted Docker routes, Agent streams and Opi traces are written
 directly to the trial's log mount, so an outer timeout does not depend on a
 final download. After owned writers are removed, full-capture runs retain a

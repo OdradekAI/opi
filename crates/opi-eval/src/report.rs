@@ -839,8 +839,14 @@ impl ReportBuilder {
                 "corpus": normalized.run_control.as_ref()
                     .and_then(|control| control["corpus_tasks"].as_u64()),
                 "selected": normalized.run_control.as_ref()
-                    .and_then(|control| control["selection"]["task_ids"].as_array())
-                    .map(|ids| ids.len()),
+                    .and_then(|control| {
+                        if control["selection"]["scope"] == "full" {
+                            control["corpus_tasks"].as_u64()
+                        } else {
+                            control["selection"]["task_ids"].as_array()
+                                .map(|ids| ids.len() as u64)
+                        }
+                    }),
                 "planned": planned_count,
                 "attempted": normalized.attempted_ids.len(),
                 "valid": valid,

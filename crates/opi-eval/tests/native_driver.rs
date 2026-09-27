@@ -59,6 +59,260 @@ fn write_exec(path: &Path, body: &str) {
     fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
+#[test]
+fn witness_material_refusal_child() {
+    let Some(input) = std::env::var_os("OPI_EVAL_WITNESS_REFUSAL_INPUT") else {
+        return;
+    };
+    native_witness_material::controlled_material(Path::new(&input), false);
+    panic!("invalid witness material was accepted");
+}
+
+#[test]
+fn witness_material_refuses_invalid_inputs_before_effects() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let root = tempfile::tempdir().unwrap();
+    let families = ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"];
+    let mut material = serde_json::json!({"benchmarks": {}});
+    let mut profiles = Vec::new();
+    for family in families {
+        let profile = root.path().join(format!("{family}.toml"));
+        let bytes = format!("unchanged profile for {family}\n").into_bytes();
+        fs::write(&profile, &bytes).unwrap();
+        material["benchmarks"][family] = serde_json::json!({"tasks": {
+            "a-selected": {"profile": {"path": profile}},
+        }});
+        profiles.push((profile, bytes));
+    }
+    for family in families {
+        for case in [
+            "missing-family",
+            "single-family",
+            "missing-tasks",
+            "empty-tasks",
+            "wrong-tasks",
+            "missing-profile-path",
+            "nonstring-profile-path",
+            "empty-profile-path",
+            "missing-profile-file",
+            "directory-profile-path",
+            "linked-profile-path",
+            "unreadable-profile-path",
+        ] {
+            let case_root = root.path().join(format!("{family}-{case}"));
+            fs::create_dir(&case_root).unwrap();
+            let temporary = case_root.join("tmp");
+            fs::create_dir(&temporary).unwrap();
+            let mut invalid = material.clone();
+            let selected = &mut invalid["benchmarks"][family];
+            let field = if matches!(case, "missing-family" | "single-family") {
+                let missing = if case == "single-family" {
+                    families
+                        .into_iter()
+                        .find(|candidate| *candidate != family)
+                        .unwrap()
+                } else {
+                    family
+                };
+                format!("benchmarks.{missing}")
+            } else if case.ends_with("tasks") {
+                format!("benchmarks.{family}.tasks")
+            } else {
+                format!("benchmarks.{family}.tasks.a-selected.profile.path")
+            };
+            match case {
+                "missing-family" => {
+                    invalid["benchmarks"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove(family);
+                }
+                "single-family" => {
+                    invalid["benchmarks"] = serde_json::json!({family: selected.clone()});
+                }
+                "missing-tasks" => {
+                    selected.as_object_mut().unwrap().remove("tasks");
+                }
+                "empty-tasks" => selected["tasks"] = serde_json::json!({}),
+                "wrong-tasks" => selected["tasks"] = serde_json::json!([]),
+                "missing-profile-path" => {
+                    selected["tasks"]["a-selected"]["profile"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("path");
+                }
+                "nonstring-profile-path" => {
+                    selected["tasks"]["a-selected"]["profile"]["path"] = 7.into()
+                }
+                "empty-profile-path" => {
+                    selected["tasks"]["a-selected"]["profile"]["path"] = "".into()
+                }
+                "missing-profile-file" => {
+                    selected["tasks"]["a-selected"]["profile"]["path"] = case_root
+                        .join("absent.toml")
+                        .to_string_lossy()
+                        .into_owned()
+                        .into()
+                }
+                "directory-profile-path" => {
+                    selected["tasks"]["a-selected"]["profile"]["path"] =
+                        temporary.to_string_lossy().into_owned().into()
+                }
+                "linked-profile-path" => {
+                    let link = case_root.join("profile-link.toml");
+                    symlink(
+                        selected["tasks"]["a-selected"]["profile"]["path"]
+                            .as_str()
+                            .unwrap(),
+                        &link,
+                    )
+                    .unwrap();
+                    selected["tasks"]["a-selected"]["profile"]["path"] =
+                        link.to_string_lossy().into_owned().into();
+                }
+                "unreadable-profile-path" => fs::set_permissions(
+                    Path::new(
+                        selected["tasks"]["a-selected"]["profile"]["path"]
+                            .as_str()
+                            .unwrap(),
+                    ),
+                    fs::Permissions::from_mode(0o000),
+                )
+                .unwrap(),
+                _ => unreachable!(),
+            }
+            let input = case_root.join("material.json");
+            let original = serde_json::to_vec_pretty(&invalid).unwrap();
+            fs::write(&input, &original).unwrap();
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "witness_material_refusal_child",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .current_dir(&case_root)
+                .env_clear()
+                .env("PATH", "")
+                .env("TMPDIR", &temporary)
+                .env("OPI_EVAL_WITNESS_REFUSAL_INPUT", &input)
+                .output()
+                .unwrap();
+            if case == "unreadable-profile-path" {
+                let profile =
+                    material["benchmarks"][family]["tasks"]["a-selected"]["profile"]["path"]
+                        .as_str()
+                        .unwrap();
+                fs::set_permissions(profile, fs::Permissions::from_mode(0o644)).unwrap();
+            }
+            let diagnostic = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(!output.status.success(), "{family}/{case}: {diagnostic}");
+            assert!(diagnostic.contains(&field), "{family}/{case}: {diagnostic}");
+            assert_eq!(
+                fs::read_dir(&temporary).unwrap().count(),
+                0,
+                "{family}/{case}: retained material before refusal"
+            );
+            assert_eq!(fs::read(&input).unwrap(), original);
+            for (path, bytes) in &profiles {
+                assert_eq!(fs::read(path).unwrap(), *bytes);
+            }
+        }
+    }
+}
+
+#[test]
+fn witness_material_preflight_consumes_each_selected_profile_without_effects() {
+    let root = tempfile::tempdir().unwrap();
+    let families = ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"];
+    let mut material = serde_json::json!({"benchmarks": {}});
+    let mut originals = Vec::new();
+    for family in families {
+        let profile = root.path().join(format!("{family}.toml"));
+        fs::copy(
+            fixtures()
+                .join("benchmarks")
+                .join(family)
+                .join("profile/synthetic.toml"),
+            &profile,
+        )
+        .unwrap();
+        originals.push(fs::read(&profile).unwrap());
+        material["benchmarks"][family] = serde_json::json!({"tasks": {
+            "a-selected": {"profile": {"path": profile}},
+            "z-unselected": {"profile": {"path": root.path().join("absent-unselected.toml")}},
+        }});
+    }
+    let input = root.path().join("material.json");
+    let original = serde_json::to_vec_pretty(&material).unwrap();
+    fs::write(&input, &original).unwrap();
+    let profiles = native_witness_material::witness_material_profiles(&material).unwrap();
+    assert_eq!(profiles.len(), families.len());
+    for ((expected, bytes), (family, path)) in families.into_iter().zip(originals).zip(profiles) {
+        assert_eq!(family, expected);
+        assert_eq!(path, root.path().join(format!("{expected}.toml")));
+        let consumed = fs::read_to_string(&path).unwrap();
+        let _: toml::Value = consumed.parse().unwrap();
+        assert_eq!(consumed.as_bytes(), bytes);
+    }
+    assert_eq!(fs::read(&input).unwrap(), original);
+    assert_eq!(serde_json::to_vec_pretty(&material).unwrap(), original);
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 4);
+}
+
+#[test]
+fn witness_material_diagnostic_version_probe_is_task_free() {
+    let root = tempfile::tempdir().unwrap();
+    let mut failures = Vec::new();
+    for product in ["opi", "pi"] {
+        let directory = root.path().join(product);
+        fs::create_dir(&directory).unwrap();
+        let executable = directory.join(product);
+        let script = native_witness_material::diagnostic_client_script(product);
+        write_exec(&executable, &script);
+        let output = Command::new(&executable)
+            .arg("--version")
+            .current_dir(&directory)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("HOME", &directory)
+            .env("TMPDIR", &directory)
+            .env("PYTHONDONTWRITEBYTECODE", "1")
+            .env("PYTHONNOUSERSITE", "1")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        if !output.status.success()
+            || stdout != format!("{product} diagnostic client version 1\n")
+            || !stderr.is_empty()
+        {
+            failures.push(format!(
+                "{product}: status={} stdout={stdout:?} stderr={stderr:?}",
+                output.status
+            ));
+        }
+        assert!(
+            !stderr.contains("stage-witness-start"),
+            "{product}: task marker emitted"
+        );
+        assert_eq!(fs::read(&executable).unwrap(), script.as_bytes());
+        assert_eq!(
+            fs::read_dir(&directory)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>(),
+            vec![std::ffi::OsString::from(product)],
+            "{product}: version probe created files"
+        );
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// A private Docker daemon stand-in. It implements only the scoped lifecycle
 /// exercised here; any other command fails without contacting a real engine.
 fn stage_cleanup_docker(root: &Path) -> std::ffi::OsString {
@@ -76,6 +330,9 @@ if (root / 'require-dispatch-context').exists():
     assert os.environ.get('HOME') == str(root / 'runner-home')
     assert os.environ.get('DOCKER_CONTEXT') == 'fixture-job-context'
     assert os.environ.get('DOCKER_HOST') == 'unix:///fixture-job.sock'
+if (root / 'expected-docker-environment.json').exists():
+    expected = json.loads((root / 'expected-docker-environment.json').read_text())
+    assert all(os.environ.get(key) == value for key, value in expected.items()), 'dispatch Docker context drift'
 label = 'label=com.docker.compose.project.working_dir='
 if args[0] == 'info':
     print(json.dumps(dict(ID='fixture-engine', NCPU=8, MemTotal=17179869184, Runtimes={'nvidia': {}}, DockerRootDir='/unobserved-engine')))
@@ -102,6 +359,12 @@ elif args[0] == 'ps':
 elif args[0] == 'inspect':
     identity = args[-1]
     assert '--format' in args, 'never inspect container environment or secrets'
+    if (root / 'inspect-failed').exists(): sys.exit(1)
+    template = args[args.index('--format') + 1]
+    if '"sources"' in template:
+        assert '"image"' in template and identity in state
+        print(json.dumps(dict(image='sha256:' + '1' * 64, sources=[])))
+        sys.exit(0)
     entry = state[identity].copy()
     if (root / 'inspect-drift').exists():
         entry['working_dir'] += '-neighbor'
@@ -195,6 +458,31 @@ fn verifier_stand_in_script() -> String {
     r#"#!/bin/sh
 # native stand-in for the pinned upstream runner entry (test staging)
 set -eu
+write_runtime_preflight() {
+  python3 - "$1" "$OPI_EVAL_NATIVE_HANDOFF" <<'RUNTIME_PREFLIGHT'
+import hashlib,json,pathlib,shlex,sys
+path=pathlib.Path(sys.argv[1])
+terminal=json.loads(path.read_text())
+handoff=json.loads(pathlib.Path(sys.argv[2]).read_text())
+if handoff.get('diagnostic'):
+    sys.exit(0)
+package=handoff.get('runtime_package')
+executable='/opi-eval-agent/'+handoff['product']+('/runtime/'+package['entrypoint'] if package else '/agent')
+stdout=b'fixture runtime version\n'
+stderr=b''
+path.with_name('runtime-preflight-stdout.log').write_bytes(stdout)
+path.with_name('runtime-preflight-stderr.log').write_bytes(stderr)
+terminal.update(schema='opi-eval-native-agent-terminal/2',trial=handoff['trial'],task_dispatched=True,
+    runtime_preflight=dict(kind='version',status='passed',exit_code=0,
+        agent_executable_sha256=handoff['agent_executable_sha256'],
+        runtime_package_manifest_sha256=package['manifest_sha256'] if package else None,
+        runtime_package_entrypoint=package['entrypoint'] if package else None,
+        command_sha256=hashlib.sha256((shlex.quote(executable)+' --version').encode()).hexdigest(),
+        stdout_sha256=hashlib.sha256(stdout).hexdigest(),stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+        stdout_complete=True,stderr_complete=True,stdout_truncated=False,stderr_truncated=False,reason=None))
+path.write_text(json.dumps(terminal))
+RUNTIME_PREFLIGHT
+}
 # The verifier-only path validates argv and grades only the preserved inputs.
 if [ "${OPI_EVAL_REGRADE:-0}" = "1" ]; then
   [ "$#" = 7 ] && [ "$1" = run ] && [ "$2" = --locked ] \
@@ -282,8 +570,14 @@ if [ -z "$diagnostic" ]; then
   grep -q "http://127.0.0.1:48127/v1" "$handoff_dir/$config_rel" \
     || { echo "projected configuration lost the selected endpoint" >&2; exit 9; }
   if [ "$product" = "opi" ]; then
-    agent_key=$(sed -n 's/.*"OPI_EVAL_SCRIPTED_KEY":"\([^"]*\)".*/\1/p' "$OPI_EVAL_NATIVE_HANDOFF")
-    [ -n "$agent_key" ] || { echo "handoff agent environment lost the credential" >&2; exit 9; }
+    python3 - "$OPI_EVAL_NATIVE_HANDOFF" "$handoff_dir/$config_rel" <<'CREDENTIAL'
+import json, pathlib, sys, tomllib
+handoff = json.loads(pathlib.Path(sys.argv[1]).read_text())
+config = tomllib.loads(pathlib.Path(sys.argv[2]).read_text())
+key = config['providers']['custom']['scripted']['api_key_env']
+assert handoff['agent_env'][key] == '<dummy-scripted-credential>'
+assert len(handoff['agent_env']) == 1
+CREDENTIAL
   fi
 fi
 if [ "$OPI_EVAL_STANDIN_MODE" = "owned-container" ]; then
@@ -462,6 +756,8 @@ if [ "$product" = "pi" ]; then
   cat > "$job/$trial/agent/stdout.log" <<'PI_SUCCESS'
 OPI_EVAL_PI_SUCCESS_STREAM
 PI_SUCCESS
+else
+  printf '{"type":"Agent","event":{"type":"AgentEnd","messages":[]}}\n' > "$job/$trial/agent/stdout.log"
 fi
 answer="native stand-in answer"
 answer_sha=$(printf '%s\n' "$answer" | sha256sum | cut -d' ' -f1)
@@ -475,6 +771,7 @@ if [ -n "$tb30_profile" ]; then
   printf '{"schema": "opi-eval-native-agent-terminal/1", "product": "%s", "agent_executable_sha256": "%s", "exit_code": 0, "timed_out": false, "delivered": [{"source": "/app/evalbench/schema.py", "sha256": "%s"}, {"source": "/app/unrelated-canary.txt", "sha256": "%s"}]}\n' \
     "$product" "$(sed -n 's/.*"agent_executable_sha256":"\([^"]*\)".*/\1/p' "$OPI_EVAL_NATIVE_HANDOFF")" "$schema_sha" "$canary_sha" \
     > "$job/$trial/agent/opi-eval-terminal.json"
+  write_runtime_preflight "$job/$trial/agent/opi-eval-terminal.json"
   mkdir -p "$job/$trial/artifacts/app/evalbench"
   printf '%s' "$schema" > "$job/$trial/artifacts/app/evalbench/schema.py"
   manifest='[{"source": "/app/evalbench/", "destination": "artifacts/app/evalbench", "type": "directory", "status": "ok", "service": null}]'
@@ -500,6 +797,7 @@ if [ -n "$pier_profile" ]; then
     printf '{"schema": "opi-eval-native-agent-terminal/1", "product": "%s", "agent_executable_sha256": "%s", "exit_code": 0, "timed_out": false, "delivered": []}\n' \
       "$product" "$(sed -n 's/.*"agent_executable_sha256":"\([^"]*\)".*/\1/p' "$OPI_EVAL_NATIVE_HANDOFF")" \
       > "$job/$trial/agent/opi-eval-terminal.json"
+    write_runtime_preflight "$job/$trial/agent/opi-eval-terminal.json"
   fi
   mkdir -p "$job/$trial/artifacts"
   patch="fixture committed patch bytes"
@@ -525,6 +823,7 @@ if [ "$OPI_EVAL_STANDIN_MODE" != "no-terminal" ]; then
     "$( [ "$OPI_EVAL_STANDIN_MODE" = "agent-nonzero" ] && echo 1 || echo 0 )" \
     "$( [ "$OPI_EVAL_STANDIN_MODE" = "agent-timeout" ] && echo true || echo false )" \
     "$answer_sha" > "$job/$trial/agent/opi-eval-terminal.json"
+  write_runtime_preflight "$job/$trial/agent/opi-eval-terminal.json"
 fi
 if [ "$OPI_EVAL_STANDIN_MODE" = "substituted" ]; then
   answer="substituted answer"
@@ -1106,14 +1405,53 @@ fn run_native(staged: &Staged, config: &Path, run_root: &Path) -> (i32, String, 
 
 #[test]
 fn native_settlement_removes_actual_credentials() {
-    for mode in ["ok", "no-job", "provider-error"] {
+    for (mode, file_backed) in [
+        ("ok", false),
+        ("no-job", false),
+        ("provider-error", false),
+        ("ok", true),
+        ("no-job", true),
+        ("provider-error", true),
+    ] {
         let staged = stage(mode);
         let config = write_config(&staged);
+        if file_backed {
+            let key = staged.root.join("private-key.txt");
+            fs::write(&key, "<dummy-scripted-credential>").unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).unwrap();
+            let text = fs::read_to_string(&config).unwrap().replace(
+                "credential_env = \"OPI_EVAL_SCRIPTED_KEY\"",
+                &format!("credential_file = {:?}", key.to_str().unwrap()),
+            );
+            fs::write(&config, text).unwrap();
+        }
         let run_root = staged.root.join("run");
-        let (_, stdout, stderr) = run_native(&staged, &config, &run_root);
+        let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
         let report: serde_json::Value =
             serde_json::from_str(stdout.trim()).unwrap_or_else(|_| panic!("{stderr}"));
+        assert_eq!(
+            code,
+            if mode == "ok" { 0 } else { 1 },
+            "{mode}, file_backed={file_backed}: {stderr}"
+        );
+        assert_eq!(
+            report["trials"].as_array().unwrap().len(),
+            if mode == "no-job" { 1 } else { 2 }
+        );
         for trial in report["trials"].as_array().unwrap() {
+            assert_eq!(
+                trial["status"],
+                if mode == "no-job" { "failed" } else { "sealed" }
+            );
+            assert_eq!(
+                trial["classification"]["class"],
+                if mode == "ok" {
+                    "graded-native"
+                } else {
+                    "invalid-execution"
+                }
+            );
             let integration = run_root
                 .join("trials")
                 .join(trial["id"].as_str().unwrap())
@@ -1133,6 +1471,84 @@ fn native_settlement_removes_actual_credentials() {
 }
 
 #[test]
+fn p19_plan_probe_file_credential_projection() {
+    use opi_eval::experiment::{
+        CredentialReference, NativeClient, ProjectionError, ResolvedCredential, ResolvedExperiment,
+    };
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    let experiment = ResolvedExperiment::resolve(&fs::read_to_string(config).unwrap()).unwrap();
+    for file_backed in [false, true] {
+        let mut connection = experiment.selected_connection().clone();
+        let credential = if file_backed {
+            connection.credential = CredentialReference::File {
+                path: "private-key.txt".into(),
+            };
+            ResolvedCredential::FromFile {
+                path: "private-key.txt".into(),
+                value: "dummy-file-key".into(),
+            }
+        } else {
+            ResolvedCredential::FromEnv {
+                variable: "OPI_EVAL_SCRIPTED_KEY".into(),
+                value: "dummy-file-key".into(),
+            }
+        };
+        for client in [NativeClient::Opi, NativeClient::Pi] {
+            let projected = opi_eval::experiment::project_connection(
+                &connection,
+                experiment.model_controls(),
+                client,
+                credential.clone(),
+            )
+            .unwrap();
+            if client == NativeClient::Opi {
+                let config: toml::Value =
+                    toml::from_str(std::str::from_utf8(&projected.config_bytes).unwrap()).unwrap();
+                let variable = config["providers"]["custom"]["scripted"]["api_key_env"]
+                    .as_str()
+                    .unwrap();
+                assert_eq!(
+                    variable,
+                    if file_backed {
+                        "OPI_EVAL_AGENT_KEY"
+                    } else {
+                        "OPI_EVAL_SCRIPTED_KEY"
+                    }
+                );
+                assert_eq!(
+                    projected.agent_env.get(variable).map(String::as_str),
+                    Some("dummy-file-key")
+                );
+                assert!(
+                    !String::from_utf8(projected.config_bytes)
+                        .unwrap()
+                        .contains("dummy-file-key")
+                );
+            } else {
+                let config: serde_json::Value =
+                    serde_json::from_slice(&projected.config_bytes).unwrap();
+                assert_eq!(config["providers"]["scripted"]["apiKey"], "dummy-file-key");
+                assert!(projected.agent_env.is_empty());
+            }
+            let mismatch = ResolvedCredential::FromFile {
+                path: "another-private-key.txt".into(),
+                value: "dummy-file-key".into(),
+            };
+            assert!(matches!(
+                opi_eval::experiment::project_connection(
+                    &connection,
+                    experiment.model_controls(),
+                    client,
+                    mismatch
+                ),
+                Err(ProjectionError::CredentialMismatch)
+            ));
+        }
+    }
+}
+
+#[test]
 fn native_settlement_cleans_root_bound_containers() {
     for mode in ["owned-settled", "owned-setup-failed"] {
         let staged = stage(mode);
@@ -1144,8 +1560,8 @@ fn native_settlement_cleans_root_bound_containers() {
         let state = read_cleanup_json(&staged.root.join("docker-state.json"));
         assert_eq!(
             state.as_object().unwrap().len(),
-            2,
-            "only the two neighbors survive"
+            report["trials"].as_array().unwrap().len(),
+            "only neighbors of dispatched trials survive"
         );
         assert!(state.as_object().unwrap().values().all(|entry| {
             entry["working_dir"]
@@ -1179,6 +1595,8 @@ fn native_settlement_cleanup_uncertainty_blocks_success() {
         assert_eq!(code, 1, "{failure}: {stdout} {stderr}");
         let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
         assert_eq!(report["outcome"], "incomplete");
+        assert_eq!(report["trials"].as_array().unwrap().len(), 1);
+        assert_eq!(stderr.matches("stage=start").count(), 1);
         let calls = fs::read_to_string(staged.root.join("docker-calls.jsonl")).unwrap();
         if failure == "inspect-drift" {
             assert!(
@@ -1200,6 +1618,41 @@ fn native_settlement_cleanup_uncertainty_blocks_success() {
             assert!(!integration.join("handoff.json").exists());
         }
     }
+}
+
+#[test]
+fn plan_p19_cleanup_stops_dispatch() {
+    let staged = stage("owned-settled");
+    fs::write(staged.root.join("remove-failed"), "").unwrap();
+    let config = write_config(&staged);
+    let root = staged.root.join("run");
+    let (code, stdout, stderr) = run_native(&staged, &config, &root);
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(code, 1);
+    assert_eq!(
+        report["trials"][0]["classification"]["reason"],
+        "owned-resource-cleanup-unconfirmed"
+    );
+    assert_eq!(report["trials"].as_array().unwrap().len(), 1);
+    assert_eq!(stderr.matches("stage=start").count(), 1);
+    assert!(!root.join("trials/trial-pi-native/receipt.json").exists());
+}
+
+#[test]
+fn plan_p19_identity_stops_dispatch() {
+    let staged = stage("oracle");
+    let config = write_config(&staged);
+    let root = staged.root.join("run");
+    let (code, stdout, stderr) = run_native(&staged, &config, &root);
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(code, 1);
+    assert_eq!(
+        report["trials"][0]["classification"]["boundary"],
+        "integrity"
+    );
+    assert_eq!(report["trials"].as_array().unwrap().len(), 1);
+    assert_eq!(stderr.matches("stage=start").count(), 1);
+    assert!(!root.join("trials/trial-pi-native/receipt.json").exists());
 }
 
 fn read_cleanup_json(path: &Path) -> serde_json::Value {
@@ -2133,6 +2586,676 @@ fn run_conformance_native(
     )
 }
 
+#[test]
+fn plan_p19_failed_witness_cleans_owned_resources() {
+    let staged = stage("owned-setup-failed");
+    let (code, stdout, stderr) =
+        run_conformance_native(&staged, "benchmark", "terminal-bench-2.1", "nop-witness");
+    assert_eq!(code, 1, "{stdout} {stderr}");
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["outcome"], "failed");
+    let state = read_cleanup_json(&staged.root.join("docker-state.json"));
+    let survivors: Vec<_> = state
+        .as_object()
+        .unwrap()
+        .values()
+        .filter(|entry| {
+            !entry["working_dir"]
+                .as_str()
+                .unwrap()
+                .ends_with("-neighbor")
+        })
+        .collect();
+    eprintln!("witness state={state}; report={report}");
+    assert!(
+        survivors.is_empty(),
+        "failed witness retained owned task environment: {survivors:?}"
+    );
+}
+
+fn conformance_cleanup_receipt(staged: &Staged, adapter: &str, case: &str) -> serde_json::Value {
+    let root = staged.root.join(format!("conf-benchmark-{adapter}-{case}"));
+    let copied = root.join("benchmark/task-package").canonicalize().unwrap();
+    let receipt = read_cleanup_json(&root.join("benchmark/integration/owned-resources.json"));
+    assert_eq!(receipt["schema"], "opi-eval-owned-resources/2");
+    assert_eq!(receipt["trial"], format!("conformance-{case}"));
+    assert_eq!(
+        receipt["compose_working_directories"],
+        serde_json::json!([copied.join("environment"), copied.join("tests"),])
+    );
+    receipt
+}
+
+fn assert_conformance_cleanup_removed(
+    staged: &Staged,
+    adapter: &str,
+    case: &str,
+    report: &serde_json::Value,
+    count: usize,
+) {
+    let receipt = conformance_cleanup_receipt(staged, adapter, case);
+    assert!(receipt["error"].is_null(), "{receipt}");
+    let containers = receipt["containers"].as_array().unwrap();
+    assert_eq!(containers.len(), count, "{receipt}");
+    for container in containers {
+        let id = container["id"].as_str().unwrap();
+        assert!(id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert_eq!(container["status"], "removed", "{receipt}");
+        assert!(
+            receipt["compose_working_directories"]
+                .as_array()
+                .unwrap()
+                .contains(&container["working_dir"])
+        );
+        assert!(
+            receipt["cleanup"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("{id}:removed"))
+        );
+    }
+    let state = read_cleanup_json(&staged.root.join("docker-state.json"));
+    assert_eq!(state.as_object().unwrap().len(), count);
+    assert!(state.as_object().unwrap().values().all(|entry| {
+        receipt["compose_working_directories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|directory| {
+                entry["working_dir"].as_str()
+                    == Some(&format!("{}-neighbor", directory.as_str().unwrap()))
+            })
+    }));
+    let path = staged.root.join(format!(
+        "conf-benchmark-{adapter}-{case}/benchmark/integration/owned-resources.json"
+    ));
+    let notes = report["notes"].as_array().unwrap();
+    assert!(
+        notes
+            .iter()
+            .any(|note| note.as_str()
+                == Some(&format!("owned-resource-evidence:{}", path.display())))
+    );
+    assert!(notes.iter().any(|note| note.as_str()
+        == Some(&format!(
+            "owned-resource-cleanup:{}",
+            receipt["cleanup"].as_str().unwrap()
+        ))));
+}
+
+#[test]
+fn native_conformance_owned_cleanup_preserves_failed_setup() {
+    for case in ["oracle-witness", "nop-witness"] {
+        let staged = stage("owned-setup-failed");
+        let (code, stdout, stderr) =
+            run_conformance_native(&staged, "benchmark", "terminal-bench-2.1", case);
+        assert_eq!(code, 1, "{stdout} {stderr}");
+        let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(report["outcome"], "failed");
+        assert_eq!(report["failure_kind"], "native-binding-no-new-job");
+        assert_eq!(report["exit_state"], "exited:0");
+        assert_eq!(report["met"], false);
+        assert_eq!(report["reward"]["state"], "unknown");
+        assert_conformance_cleanup_removed(&staged, "terminal-bench-2.1", case, &report, 1);
+    }
+}
+
+#[test]
+fn native_conformance_owned_cleanup_preserves_success_and_separate_roots() {
+    for adapter in ["terminal-bench-2.1", "terminal-bench-3.0"] {
+        for case in ["oracle-witness", "nop-witness"] {
+            let separate = adapter == "terminal-bench-3.0";
+            let staged = stage(if separate { "tb30-ok" } else { "owned-settled" });
+            if separate {
+                remediation_runner(&staged, |body| {
+                    body.replace(
+                    "case \"$OPI_EVAL_STANDIN_MODE\" in\n  owned-settled|owned-setup-failed)",
+                    "if [ \"$OPI_EVAL_STANDIN_MODE\" = \"tb30-ok\" ]; then\n  docker compose --project-name witness-env --project-directory \"$task_dir/environment\" up -d\n  docker compose --project-name witness-tests --project-directory \"$task_dir/tests\" up -d\nfi\ncase \"$OPI_EVAL_STANDIN_MODE\" in\n  owned-settled|owned-setup-failed)",
+                )
+                });
+            }
+            let (code, stdout, stderr) =
+                run_conformance_native(&staged, "benchmark", adapter, case);
+            assert_eq!(code, 0, "{adapter}/{case}: {stdout} {stderr}");
+            let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(report["met"], true);
+            assert_eq!(report["outcome"], "verified-native");
+            assert_eq!(
+                report["reward"]["value"],
+                u64::from(case == "oracle-witness")
+            );
+            assert_conformance_cleanup_removed(
+                &staged,
+                adapter,
+                case,
+                &report,
+                if separate { 2 } else { 1 },
+            );
+        }
+    }
+}
+
+#[test]
+fn native_conformance_owned_cleanup_keeps_timeout_unscored() {
+    let staged = stage("owned-setup-failed");
+    remediation_runner(&staged, |body| {
+        body.replace(
+            "echo 'trial setup failed; compose down: getwd: no such file or directory' >&2",
+            "sleep 30",
+        )
+    });
+    let mut material = read_cleanup_json(&staged.material);
+    let profile = PathBuf::from(
+        material["benchmarks"]["terminal-bench-2.1"]["tasks"]["fixture-task"]["profile"]["path"]
+            .as_str()
+            .unwrap(),
+    );
+    let mut doc: toml::Value = fs::read_to_string(&profile).unwrap().parse().unwrap();
+    doc["limits"]["timeout_secs"] = 2.into();
+    fs::write(&profile, toml::to_string(&doc).unwrap()).unwrap();
+    material["benchmarks"]["terminal-bench-2.1"]["tasks"]["fixture-task"]["profile"]["sha256"] =
+        sha256_hex(&fs::read(&profile).unwrap()).into();
+    fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+    let (code, stdout, stderr) =
+        run_conformance_native(&staged, "benchmark", "terminal-bench-2.1", "nop-witness");
+    assert_eq!(code, 1, "{stdout} {stderr}");
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(report["met"], false);
+    assert_eq!(report["outcome"], "failed");
+    assert_eq!(report["exit_state"], "timed-out");
+    assert_eq!(report["failure_kind"], "native-job-timeout");
+    assert_eq!(report["boundary"], "Infrastructure");
+    assert_eq!(report["reward"]["state"], "unknown");
+    assert_conformance_cleanup_removed(&staged, "terminal-bench-2.1", "nop-witness", &report, 1);
+}
+
+#[test]
+fn native_conformance_owned_cleanup_uncertainty_refuses_a_verdict() {
+    for mode in ["owned-settled", "owned-setup-failed"] {
+        for failure in [
+            "inspect-drift",
+            "inspect-failed",
+            "remove-failed",
+            "remove-lied",
+        ] {
+            let staged = stage(mode);
+            fs::write(staged.root.join(failure), "").unwrap();
+            let (code, stdout, stderr) =
+                run_conformance_native(&staged, "benchmark", "terminal-bench-2.1", "nop-witness");
+            assert_eq!(code, 1, "{mode}/{failure}: {stdout} {stderr}");
+            let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(report["met"], false);
+            assert_eq!(report["outcome"], "failed");
+            assert_eq!(report["failure_kind"], "owned-resource-cleanup-unconfirmed");
+            assert_eq!(report["boundary"], "Infrastructure");
+            assert_eq!(report["exit_state"], "exited:0");
+            if mode == "owned-setup-failed" {
+                assert!(
+                    report["notes"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|note| note
+                            == "native-failure-before-cleanup:native-binding-no-new-job")
+                );
+            }
+            let receipt = conformance_cleanup_receipt(&staged, "terminal-bench-2.1", "nop-witness");
+            assert!(
+                receipt["cleanup"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("unconfirmed:")
+            );
+            assert!(!receipt["error"].is_null());
+            let state = read_cleanup_json(&staged.root.join("docker-state.json"));
+            assert_eq!(state.as_object().unwrap().len(), 2, "{failure}: {state}");
+            if failure.starts_with("inspect") {
+                assert!(
+                    !fs::read_to_string(staged.root.join("docker-calls.jsonl"))
+                        .unwrap()
+                        .lines()
+                        .any(
+                            |line| serde_json::from_str::<serde_json::Value>(line).unwrap()[0]
+                                == "rm"
+                        )
+                );
+            } else {
+                assert_eq!(receipt["containers"][0]["status"], "unconfirmed");
+            }
+        }
+    }
+}
+
+#[test]
+fn native_conformance_owned_cleanup_uses_the_selected_docker_context() {
+    for case in ["oracle-witness", "nop-witness"] {
+        let staged = stage("owned-settled");
+        let mut material = read_cleanup_json(&staged.material);
+        let benchmark = &mut material["benchmarks"]["terminal-bench-2.1"];
+        for (field, kind) in [("verifier_env", "verifier"), ("oracle_env", "oracle")] {
+            for (key, value) in [
+                (
+                    "HOME",
+                    staged
+                        .root
+                        .join(format!("{kind}-home"))
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+                (
+                    "DOCKER_CONFIG",
+                    staged
+                        .root
+                        .join(format!("{kind}-docker"))
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+                ("DOCKER_CONTEXT", format!("fixture-{kind}-context")),
+                ("DOCKER_HOST", format!("unix:///fixture-{kind}.sock")),
+            ] {
+                benchmark[field][key] = value.into();
+            }
+        }
+        let field = if case == "oracle-witness" {
+            "oracle_env"
+        } else {
+            "verifier_env"
+        };
+        let expected: serde_json::Map<String, serde_json::Value> = benchmark[field]
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(key, _)| {
+                matches!(
+                    key.as_str(),
+                    "HOME" | "DOCKER_CONFIG" | "DOCKER_CONTEXT" | "DOCKER_HOST"
+                )
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        fs::write(
+            staged.root.join("expected-docker-environment.json"),
+            serde_json::to_vec(&expected).unwrap(),
+        )
+        .unwrap();
+        fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+        let (code, stdout, stderr) =
+            run_conformance_native(&staged, "benchmark", "terminal-bench-2.1", case);
+        assert_eq!(code, 0, "{case}: {stdout} {stderr}");
+        let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(report["met"], true);
+        assert_conformance_cleanup_removed(&staged, "terminal-bench-2.1", case, &report, 1);
+    }
+}
+
+/// A real verifier command outlives the native job's outer watchdog. Cleanup
+/// must retain its start evidence and remove only the copied task's resources.
+#[test]
+#[ignore = "requires frozen three-family material/5 and the real Docker engine"]
+fn native_conformance_owned_cleanup_witness() {
+    use std::collections::BTreeMap;
+    use std::os::unix::fs::MetadataExt;
+
+    fn full_id(id: &str) -> bool {
+        id.len() == 64 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }
+    struct OwnedDocker {
+        root: PathBuf,
+        environment: BTreeMap<String, String>,
+        directories: Vec<PathBuf>,
+        neighbor: Option<String>,
+    }
+    impl OwnedDocker {
+        fn command(&self) -> Command {
+            let mut command = Command::new("/usr/bin/docker");
+            command
+                .env_clear()
+                .envs(&self.environment)
+                .current_dir(&self.root);
+            command
+        }
+    }
+    impl Drop for OwnedDocker {
+        fn drop(&mut self) {
+            for path in &self.directories {
+                let Ok(directory) = path.canonicalize() else {
+                    continue;
+                };
+                if !directory.starts_with(&self.root) {
+                    continue;
+                }
+                let Ok(listed) = self
+                    .command()
+                    .args(["ps", "--all", "--quiet", "--no-trunc", "--filter"])
+                    .arg(format!(
+                        "label=com.docker.compose.project.working_dir={}",
+                        directory.display()
+                    ))
+                    .output()
+                else {
+                    continue;
+                };
+                if !listed.status.success() {
+                    continue;
+                }
+                let Ok(ids) = std::str::from_utf8(&listed.stdout) else {
+                    continue;
+                };
+                for id in ids.lines().filter(|id| full_id(id)) {
+                    let Ok(inspected) = self.command().args(["inspect", "--type", "container", "--format",
+                        r#"{"id":{{json .Id}},"working_dir":{{json (index .Config.Labels "com.docker.compose.project.working_dir")}},"project":{{json (index .Config.Labels "com.docker.compose.project")}}}"#, id]).output() else { continue; };
+                    if !inspected.status.success() {
+                        continue;
+                    }
+                    let Ok(identity) =
+                        serde_json::from_slice::<serde_json::Value>(&inspected.stdout)
+                    else {
+                        continue;
+                    };
+                    let project = identity["project"].as_str().unwrap_or_default();
+                    if identity["id"].as_str() == Some(id)
+                        && identity["working_dir"]
+                            .as_str()
+                            .is_some_and(|path| Path::new(path) == directory)
+                        && project
+                            .as_bytes()
+                            .first()
+                            .is_some_and(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+                        && project.bytes().all(|byte| {
+                            byte.is_ascii_lowercase()
+                                || byte.is_ascii_digit()
+                                || matches!(byte, b'-' | b'_')
+                        })
+                    {
+                        let _ = self.command().args(["rm", "--force", id]).output();
+                    }
+                }
+            }
+            if let Some(id) = &self.neighbor {
+                let _ = self.command().args(["rm", "--force", id]).output();
+            }
+        }
+    }
+
+    let source = PathBuf::from(std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL").unwrap());
+    let source_bytes = fs::read(&source).unwrap();
+    let original: serde_json::Value = serde_json::from_slice(&source_bytes).unwrap();
+    let material_path = native_witness_material::controlled_material(&source, false);
+    let material_root = material_path.parent().unwrap();
+    let evidence = material_root.join("conformance-owned-cleanup");
+    fs::create_dir(&evidence).unwrap();
+    let evidence = evidence.canonicalize().unwrap();
+    eprintln!(
+        "native conformance cleanup evidence: {}",
+        evidence.display()
+    );
+    fs::write(evidence.join("source-material.json"), &source_bytes).unwrap();
+    let clients = serde_json::json!({
+        "opi": original["agents"]["opi"]["executable"]["path"],
+        "pi": original["agents"]["pi"]["executable"]["path"],
+        "opi_package": original["agents"]["opi"]["runtime_package"]["path"],
+        "pi_package": original["agents"]["pi"]["runtime_package"]["path"],
+    });
+    native_witness_material::retain_clients(&evidence, &clients);
+    let mut material = read_cleanup_json(&material_path);
+    let family = "terminal-bench-2.1";
+    let project = material_root.join("corpora").join(family);
+    let task = project.join("tasks/timeout");
+    let metadata_path = task.join("task.toml");
+    let mut metadata: toml::Value = fs::read_to_string(&metadata_path).unwrap().parse().unwrap();
+    metadata["verifier"]["timeout_sec"] = 240.into();
+    fs::write(&metadata_path, toml::to_string(&metadata).unwrap()).unwrap();
+    let verifier = task.join("tests/test.sh");
+    let body = fs::read_to_string(&verifier).unwrap();
+    assert!(body.contains("time.sleep(6)"));
+    fs::write(&verifier, body.replace("time.sleep(6)", "time.sleep(180)")).unwrap();
+    let (corpus, pin) = fixture_corpus_pin(&project, family);
+    let profile = PathBuf::from(
+        material["benchmarks"][family]["tasks"]["timeout"]["profile"]["path"]
+            .as_str()
+            .unwrap(),
+    );
+    let mut doc: toml::Value = fs::read_to_string(&profile).unwrap().parse().unwrap();
+    doc["limits"]["timeout_secs"] = 90.into();
+    fs::write(&profile, toml::to_string(&doc).unwrap()).unwrap();
+    let package = material_root.join("packages").join(family).join("timeout");
+    copy_dir(&task, &package);
+    let binding = fixture_task_binding(&project, "timeout", &package, &profile);
+    material["benchmarks"][family]["corpus"] = corpus;
+    material["benchmarks"][family]["tasks"] = serde_json::json!({"timeout": binding});
+    let lock_path = PathBuf::from(material["static_lock"]["path"].as_str().unwrap());
+    let mut lock = read_cleanup_json(&lock_path);
+    let subject = lock["subjects"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["id"] == family)
+        .unwrap();
+    subject["commit"] = pin["commit"].clone();
+    subject["tasks_tree"] = pin["tasks_tree"].clone();
+    fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    material["static_lock"]["sha256"] = sha256_hex(&fs::read(&lock_path).unwrap()).into();
+    fs::write(
+        &material_path,
+        serde_json::to_vec_pretty(&material).unwrap(),
+    )
+    .unwrap();
+    let frozen = fs::read(&material_path).unwrap();
+    fs::write(evidence.join("material.json"), &frozen).unwrap();
+    for field in ["verifier_executable", "runner_project", "verifier_env"] {
+        assert_eq!(
+            material["benchmarks"][family][field],
+            original["benchmarks"][family][field]
+        );
+    }
+    let provider_log = PathBuf::from(material["provider"]["request_log"].as_str().unwrap());
+    let provider_before = fs::read(&provider_log).ok();
+    let mut environment = BTreeMap::from([
+        ("PATH".to_owned(), "/usr/local/bin:/usr/bin:/bin".to_owned()),
+        ("HOME".to_owned(), evidence.to_string_lossy().into_owned()),
+    ]);
+    for (key, value) in material["benchmarks"][family]["verifier_env"]
+        .as_object()
+        .unwrap()
+    {
+        environment.insert(key.clone(), value.as_str().unwrap().to_owned());
+    }
+    let run = evidence.join("run");
+    let copied = run.join("benchmark/task-package");
+    let mut docker = OwnedDocker {
+        root: evidence.clone(),
+        environment,
+        directories: vec![copied.join("environment"), copied.join("tests")],
+        neighbor: None,
+    };
+    let neighbor_root = evidence.join("neighbor-root");
+    fs::create_dir(&neighbor_root).unwrap();
+    let neighbor = native_witness_material::run_cli(
+        docker
+            .command()
+            .args([
+                "create",
+                "--pull",
+                "never",
+                "--network",
+                "none",
+                "--read-only",
+                "--cap-drop",
+                "ALL",
+                "--label",
+            ])
+            .arg(format!(
+                "com.docker.compose.project.working_dir={}",
+                neighbor_root.display()
+            ))
+            .args([
+                "--label",
+                "com.docker.compose.project=opi-eval-conformance-neighbor",
+                native_witness_material::IMAGE,
+                "sleep",
+                "300",
+            ]),
+        &evidence,
+        "neighbor-create",
+    );
+    assert!(
+        neighbor.status.success(),
+        "{}",
+        String::from_utf8_lossy(&neighbor.stderr)
+    );
+    let neighbor_id = String::from_utf8(neighbor.stdout)
+        .unwrap()
+        .trim()
+        .to_owned();
+    assert!(full_id(&neighbor_id));
+    docker.neighbor = Some(neighbor_id.clone());
+    let output = native_witness_material::run_cli(
+        Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .args([
+                "conformance",
+                "--suite",
+                "benchmark",
+                "--adapter",
+                family,
+                "--case",
+                "nop-witness",
+                "--root",
+            ])
+            .arg(&run)
+            .arg("--fixtures")
+            .arg(fixtures())
+            .arg("--provider")
+            .arg(manifest_dir().join("scripts/scripted-provider.py"))
+            .arg("--native-material")
+            .arg(&material_path)
+            .env_clear()
+            .envs(&docker.environment)
+            .current_dir(&evidence),
+        &evidence,
+        "conformance",
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["outcome"], "failed");
+    assert_eq!(report["met"], false);
+    assert_eq!(report["exit_state"], "timed-out");
+    assert_eq!(report["failure_kind"], "native-job-timeout");
+    assert_eq!(report["boundary"], "Infrastructure");
+    assert_eq!(report["reward"]["state"], "unknown");
+    let receipt_path = run.join("benchmark/integration/owned-resources.json");
+    let receipt = read_cleanup_json(&receipt_path);
+    let environment_root = copied.join("environment").canonicalize().unwrap();
+    let tests_root = copied.join("tests").canonicalize().unwrap();
+    assert_eq!(receipt["schema"], "opi-eval-owned-resources/2");
+    assert_eq!(receipt["trial"], "conformance-nop-witness");
+    assert_eq!(
+        receipt["compose_working_directories"],
+        serde_json::json!([environment_root, tests_root])
+    );
+    assert!(receipt["error"].is_null(), "{receipt}");
+    let containers = receipt["containers"].as_array().unwrap();
+    assert!(
+        !containers.is_empty(),
+        "daemon-inspected owned containers must be removed: {receipt}"
+    );
+    for container in containers {
+        let id = container["id"].as_str().unwrap();
+        assert!(full_id(id));
+        assert_eq!(container["status"], "removed");
+        assert_eq!(
+            Path::new(container["working_dir"].as_str().unwrap()),
+            environment_root
+        );
+        assert!(!container["project"].as_str().unwrap().is_empty());
+        assert!(
+            receipt["cleanup"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("{id}:removed"))
+        );
+    }
+    assert!(
+        receipt["capture_helpers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|helper| helper["removed"] == true)
+    );
+    fs::copy(&receipt_path, evidence.join("owned-resources.json")).unwrap();
+    for (index, directory) in [environment_root, tests_root].into_iter().enumerate() {
+        let listed = native_witness_material::run_cli(
+            docker
+                .command()
+                .args(["ps", "--all", "--quiet", "--no-trunc", "--filter"])
+                .arg(format!(
+                    "label=com.docker.compose.project.working_dir={}",
+                    directory.display()
+                )),
+            &evidence,
+            &format!("owned-{index}-remaining"),
+        );
+        assert!(listed.status.success() && listed.stdout.is_empty());
+    }
+    let survivor = native_witness_material::run_cli(
+        docker.command().args(["inspect", "--type", "container", "--format", r#"{"id":{{json .Id}},"running":{{json .State.Running}},"working_dir":{{json (index .Config.Labels "com.docker.compose.project.working_dir")}}}"#, &neighbor_id]),
+        &evidence, "neighbor-survives",
+    );
+    assert!(survivor.status.success());
+    let neighbor: serde_json::Value = serde_json::from_slice(&survivor.stdout).unwrap();
+    assert_eq!(neighbor["id"], neighbor_id);
+    assert_eq!(neighbor["running"], false);
+    assert_eq!(
+        Path::new(neighbor["working_dir"].as_str().unwrap()),
+        neighbor_root
+    );
+    let trace = run.join("benchmark/trace");
+    let mut pending = vec![trace];
+    let mut markers = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(directory).unwrap() {
+            let entry = entry.unwrap();
+            let kind = entry.file_type().unwrap();
+            let name = entry.file_name();
+            assert!(
+                name != "verifier-complete" && name != "reward.txt",
+                "timed-out verifier completed or graded"
+            );
+            if kind.is_dir() {
+                pending.push(entry.path());
+            } else if name == "verifier-start" {
+                let metadata = fs::symlink_metadata(entry.path()).unwrap();
+                assert!(
+                    metadata.file_type().is_file() && metadata.nlink() == 1 && metadata.len() == 7
+                );
+                let bytes = fs::read(entry.path()).unwrap();
+                assert_eq!(bytes, b"started");
+                let retained = evidence.join(format!("verifier-start-{}.bin", markers.len()));
+                fs::write(&retained, &bytes).unwrap();
+                markers.push(serde_json::json!({"source": entry.path(), "retained": retained, "sha256": sha256_hex(&bytes), "links": metadata.nlink()}));
+            }
+        }
+    }
+    assert!(!markers.is_empty(), "genuine verifier did not start");
+    fs::write(
+        evidence.join("verifier-markers.json"),
+        serde_json::to_vec_pretty(&markers).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(fs::read(&source).unwrap(), source_bytes);
+    assert_eq!(fs::read(&material_path).unwrap(), frozen);
+    assert_eq!(
+        fs::read(&provider_log).ok(),
+        provider_before,
+        "provider was invoked"
+    );
+}
+
 fn remove_agent_answer_output(staged: &Staged, agent: &str) {
     let executable = staged.root.join("material/agents").join(agent);
     let source = fs::read_to_string(&executable).unwrap();
@@ -2188,7 +3311,7 @@ fn native_conformance_reruns_the_admitted_cases_through_the_material() {
         for (case, agent, reward) in cases {
             let (code, stdout, stderr) =
                 run_conformance_native(&staged, "benchmark", adapter, case);
-            assert_eq!(code, 0, "{adapter}/{case}: {stderr}");
+            assert_eq!(code, 0, "{adapter}/{case}: {stderr} {stdout}");
             let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
             assert_eq!(report["met"], true, "{adapter}/{case}: {stdout}");
             assert_eq!(
@@ -5787,6 +6910,666 @@ fn native_provider_failure_report() {
     assert_eq!(published["run_outcome"], "completed", "{published}");
 }
 
+/// Exercises actual pinned clients, the local scripted provider and native
+/// grading through public validate/run/report. Optional numeric capabilities
+/// keep custom models runnable; this witness does not prove output-control
+/// support or comparable model controls.
+#[test]
+#[ignore = "requires exact client material, verified three-family native material and Docker"]
+fn native_client_provider_failure_report() {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let client_path = PathBuf::from(
+        std::env::var("OPI_EVAL_NATIVE_CLIENT_MATERIAL")
+            .expect("OPI_EVAL_NATIVE_CLIENT_MATERIAL is required"),
+    );
+    let source_path = PathBuf::from(
+        std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL")
+            .expect("OPI_EVAL_NATIVE_WITNESS_MATERIAL is required"),
+    );
+    let client_bytes = fs::read(&client_path).unwrap();
+    let source_bytes = fs::read(&source_path).unwrap();
+    let clients: serde_json::Value = serde_json::from_slice(&client_bytes).unwrap();
+    let original: serde_json::Value = serde_json::from_slice(&source_bytes).unwrap();
+    assert_eq!(clients["opi_version"], "0.8.2");
+    assert_eq!(clients["pi_version"], "0.85.1");
+    assert_eq!(
+        clients["source_commit"],
+        "5bee4f28738412c6ae3e326e5bb3cf60e57230c2"
+    );
+    for product in ["opi", "pi"] {
+        let executable = Path::new(clients[product].as_str().unwrap());
+        let agent = &original["agents"][product];
+        assert!(executable.is_absolute() && executable.is_file());
+        assert_eq!(agent["executable"]["path"], clients[product]);
+        assert_eq!(
+            agent["executable"]["sha256"],
+            sha256_hex(&fs::read(executable).unwrap())
+        );
+        if !agent["runtime_package"].is_null() {
+            let package = Path::new(clients[format!("{product}_package")].as_str().unwrap());
+            assert_eq!(
+                agent["runtime_package"]["path"],
+                package.to_string_lossy().as_ref()
+            );
+            assert_eq!(
+                agent["runtime_package"]["manifest_sha256"],
+                directory_manifest_digest(package)
+            );
+        }
+    }
+    let pi_package = Path::new(clients["pi_package"].as_str().unwrap());
+    for (key, relative) in [("node", "node"), ("pi_bundle", "dist/bundle/cli.js")] {
+        assert_eq!(
+            sha256_hex(&fs::read(clients[key].as_str().unwrap()).unwrap()),
+            sha256_hex(&fs::read(pi_package.join(relative)).unwrap())
+        );
+    }
+    let material_path = native_witness_material::controlled_material(&source_path, false);
+    let material_root = material_path.parent().unwrap();
+    let evidence = material_root.join("client-provider-report");
+    fs::create_dir_all(&evidence).unwrap();
+    native_witness_material::retain_clients(&evidence, &clients);
+    fs::write(evidence.join("source-clients.json"), &client_bytes).unwrap();
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&material_path).unwrap()).unwrap();
+    // controlled_material supplies private tasks, never the clients under test.
+    material["agents"] = original["agents"].clone();
+    for product in ["opi", "pi"] {
+        material["agents"][product]
+            .as_object_mut()
+            .unwrap()
+            .remove("output_control_evidence");
+    }
+    for family in ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"] {
+        for field in ["verifier_executable", "runner_project", "verifier_env"] {
+            assert_eq!(
+                material["benchmarks"][family][field],
+                original["benchmarks"][family][field]
+            );
+        }
+    }
+    let provider_path = Path::new(material["provider"]["script"]["path"].as_str().unwrap());
+    let provider_bytes = fs::read(provider_path).unwrap();
+    let provider_sha = sha256_hex(&provider_bytes);
+    assert_eq!(material["provider"]["script"]["sha256"], provider_sha);
+    assert_eq!(
+        provider_bytes,
+        fs::read(manifest_dir().join("scripts/scripted-provider.py")).unwrap()
+    );
+    let project = material_root.join("corpora/terminal-bench-2.1");
+    let observer = project.join("tasks/positive/tests/sitecustomize.py");
+    let observer_body = r#"import atexit, hashlib, json, os, stat, sys
+from pathlib import Path
+
+def _read(path, cap, root):
+    if not path.is_relative_to(root):
+        raise ValueError('outside owned job')
+    for parent in (path.parent, *path.parent.parents):
+        entry = parent.lstat()
+        if not stat.S_ISDIR(entry.st_mode) or stat.S_ISLNK(entry.st_mode):
+            raise ValueError('unsafe parent')
+        if parent == root:
+            break
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        entry = os.fstat(descriptor)
+        if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1 or entry.st_size > cap:
+            raise ValueError('unsafe capture')
+        chunks = []
+        size = 0
+        while size <= cap:
+            part = os.read(descriptor, min(8192, cap + 1 - size))
+            if not part:
+                break
+            chunks.append(part)
+            size += len(part)
+        if size > cap:
+            raise ValueError('capture overflow')
+        return b''.join(chunks)
+    finally:
+        os.close(descriptor)
+
+def _retain_provider_requests():
+    try:
+        root = Path.cwd()
+        paths = list(root.glob('jobs/*/*/agent/provider-requests.jsonl'))
+        if len(paths) != 1:
+            return
+        path = paths[0]
+        raw = _read(path, 128 * 1024, root)
+        rows = raw.decode('utf-8').splitlines()
+        if not 1 <= len(rows) <= 64 or not raw.endswith(b'\n'):
+            return
+        if any(json.loads(row).get('schema') != 'opi-eval-scripted-provider-log/1' for row in rows):
+            return
+        terminal = json.loads(_read(path.with_name('opi-eval-terminal.json'), 64 * 1024, root))
+        relative = path.relative_to(root).parts
+        observer_sha = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        metadata = {'schema': 'opi-eval-b6-provider-capture/1',
+                    'observer_sha256': observer_sha, 'provider_sha256': '$PROVIDER_SHA',
+                    'job': relative[1], 'native_trial': relative[2],
+                    'trial': terminal['trial'], 'product': terminal['product'],
+                    'bytes': len(raw), 'rows': len(rows),
+                    'sha256': hashlib.sha256(raw).hexdigest()}
+        output = sys.stdout.buffer
+        output.write(('\nOPI-EVAL-B6-PROVIDER-BEGIN ' + observer_sha + '\n').encode())
+        output.write((json.dumps(metadata, sort_keys=True, separators=(',', ':')) + '\n').encode())
+        output.write(raw)
+        output.write(('OPI-EVAL-B6-PROVIDER-END ' + observer_sha + '\n').encode())
+        output.flush()
+    except Exception:
+        # Observation failure changes no native result or process exit.
+        return
+
+atexit.register(_retain_provider_requests)
+"#
+    .replace("$PROVIDER_SHA", &provider_sha);
+    fs::write(&observer, &observer_body).unwrap();
+    let observer_sha = sha256_hex(observer_body.as_bytes());
+    let bootstrap = r#"import subprocess, sys, time
+from pathlib import Path
+logs = Path('/logs/agent')
+logs.mkdir(parents=True, exist_ok=True)
+with (logs/'provider-listener.log').open('wb') as output:
+    provider = subprocess.Popen(
+        [sys.executable, '/opi-eval-fixture/scripted-provider.py',
+         '--listen', '127.0.0.1:48127',
+         '--request-log', str(logs/'provider-requests.jsonl')],
+        stdout=output, stderr=subprocess.STDOUT)
+    command = subprocess.Popen(sys.argv[1:] or ['sleep', 'infinity'])
+    deadline = time.monotonic() + 150
+    try:
+        while command.poll() is None and provider.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+    finally:
+        for child in (provider, command):
+            if child.poll() is None:
+                child.terminate()
+            try:
+                child.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait(timeout=2)
+"#;
+    let cases = [
+        ("retry-success", "retry", true),
+        ("auth-fail", "auth-fail", false),
+        ("rate-limit", "rate-limit", false),
+        ("protocol-error", "protocol-error", false),
+        ("native-zero", "eval", true),
+    ];
+    let template: toml::Value = fs::read_to_string(
+        material["benchmarks"]["terminal-bench-2.1"]["tasks"]["positive"]["profile"]["path"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .parse()
+    .unwrap();
+    for (case, _, _) in cases {
+        let task = project.join("tasks").join(case);
+        copy_dir(&project.join("tasks/positive"), &task);
+        fs::write(
+            task.join("instruction.md"),
+            "Use bash to write answer.txt with the requested result, then finish the task.\n",
+        )
+        .unwrap();
+        fs::write(
+            task.join("task.toml"),
+            format!(
+                "schema_version = \"1.0\"\nartifacts = [\"/work/\"]\n\
+             [task]\nname = \"b6/{case}\"\n\
+             [agent]\nnetwork_mode = \"no-network\"\ntimeout_sec = 90\n\
+             [environment]\nnetwork_mode = \"no-network\"\nbuild_timeout_sec = 60\n\
+             cpus = 1\nmemory_mb = 1024\nstorage_mb = 256\ngpus = 0\n\
+             [verifier]\nnetwork_mode = \"no-network\"\ntimeout_sec = 30\n"
+            ),
+        )
+        .unwrap();
+        let context = task.join("environment");
+        fs::write(context.join("scripted-provider.py"), &provider_bytes).unwrap();
+        fs::write(context.join("provider-bootstrap.py"), bootstrap).unwrap();
+        fs::write(context.join("Dockerfile"), format!(
+            "FROM {}\nWORKDIR /work\nRUN printf 'initial\\n' > answer.txt\n\
+             COPY scripted-provider.py provider-bootstrap.py /opi-eval-fixture/\n\
+             ENTRYPOINT [\"python3\", \"/opi-eval-fixture/provider-bootstrap.py\"]\n\
+             HEALTHCHECK --interval=1s --timeout=2s --start-period=1s --retries=30 \
+             CMD [\"python3\", \"-c\", \"import socket; socket.create_connection(('127.0.0.1', 48127), timeout=1).close()\"]\n",
+            native_witness_material::IMAGE,
+        )).unwrap();
+        let expected = if case == "native-zero" {
+            "intentionally-different-result\n"
+        } else {
+            "scripted-integration-result\n"
+        };
+        write_exec(
+            &task.join("tests/test.sh"),
+            &format!(
+                "#!/usr/bin/env python3\nimport json, time\nfrom pathlib import Path\n\
+             logs = Path('/logs/verifier')\nlogs.mkdir(parents=True, exist_ok=True)\n\
+             answer = Path('/work/answer.txt')\n\
+             passed = answer.is_file() and answer.read_bytes() == {expected:?}.encode()\n\
+             (logs/'reward.txt').write_text(str(int(passed)))\n\
+             (logs/'ctrf.json').write_text(json.dumps({{'results': {{'tool': {{'name': 'b6-local-provider'}}, \
+             'summary': {{'tests': 1, 'passed': int(passed), 'failed': int(not passed), 'skipped': 0, \
+             'pending': 0, 'other': 0, 'start': 0, 'stop': int(time.time()*1000)}}, \
+             'tests': [{{'name': 'actual-client-delivered-result', 'status': 'passed' if passed else 'failed'}}]}}}}))\n"
+            ),
+        );
+    }
+    let (corpus, pin) = fixture_corpus_pin(&project, "terminal-bench-2.1");
+    material["benchmarks"]["terminal-bench-2.1"]["corpus"] = corpus;
+    let mut lock: serde_json::Value = serde_json::from_slice(
+        &fs::read(material["static_lock"]["path"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    let subject = lock["subjects"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|subject| subject["id"] == "terminal-bench-2.1")
+        .unwrap();
+    for key in ["commit", "tasks_tree"] {
+        subject[key] = pin[key].clone();
+    }
+    let task_ids = [
+        "positive",
+        "negative",
+        "timeout",
+        "auth-fail",
+        "rate-limit",
+        "protocol-error",
+        "native-zero",
+        "retry-success",
+    ];
+    for case in task_ids {
+        let package = material_root.join("packages/terminal-bench-2.1").join(case);
+        copy_dir(&project.join("tasks").join(case), &package);
+        let profile = material_root
+            .join("profiles/terminal-bench-2.1")
+            .join(format!("{case}.toml"));
+        fs::write(&profile, toml::to_string(&template).unwrap()).unwrap();
+        material["benchmarks"]["terminal-bench-2.1"]["tasks"][case] =
+            fixture_task_binding(&project, case, &package, &profile);
+    }
+    let observer =
+        material_root.join("packages/terminal-bench-2.1/positive/tests/sitecustomize.py");
+    let inherited_pythonpath =
+        original["benchmarks"]["terminal-bench-2.1"]["verifier_env"]["PYTHONPATH"]
+            .as_str()
+            .filter(|path| !path.is_empty());
+    let pythonpath = match inherited_pythonpath {
+        Some(path) => format!("{}:{path}", observer.parent().unwrap().display()),
+        None => observer.parent().unwrap().to_string_lossy().into_owned(),
+    };
+    material["benchmarks"]["terminal-bench-2.1"]["verifier_env"]["PYTHONPATH"] = pythonpath.into();
+    let lock_path = PathBuf::from(material["static_lock"]["path"].as_str().unwrap());
+    fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    material["static_lock"]["sha256"] = sha256_hex(&fs::read(&lock_path).unwrap()).into();
+    fs::write(
+        &material_path,
+        serde_json::to_vec_pretty(&material).unwrap(),
+    )
+    .unwrap();
+    fs::write(evidence.join("fixture-identities.json"), serde_json::to_vec_pretty(&serde_json::json!({
+        "client_material_sha256": sha256_hex(&client_bytes),
+        "source_material_sha256": sha256_hex(&source_bytes),
+        "material_sha256": sha256_hex(&fs::read(&material_path).unwrap()),
+        "provider_sha256": provider_sha, "observer_sha256": observer_sha,
+        "bootstrap_sha256": sha256_hex(bootstrap.as_bytes()), "image": native_witness_material::IMAGE,
+        "actual_agents": material["agents"],
+    })).unwrap()).unwrap();
+    eprintln!(
+        "actual client provider/report evidence: {}",
+        evidence.display()
+    );
+    for (case, model, valid) in cases {
+        let root = evidence.join(case);
+        fs::create_dir_all(&root).unwrap();
+        let staged = Staged {
+            _guard: tempfile::tempdir().unwrap(),
+            root: root.clone(),
+            material: material_path.clone(),
+        };
+        let config = experiment_text(&staged, "pending")
+            .replace(
+                "version = \"0.84.3\"",
+                &format!("version = {:?}", clients["pi_version"].as_str().unwrap()),
+            )
+            .replace(
+                "version = \"0.1.0\"",
+                &format!("version = {:?}", clients["opi_version"].as_str().unwrap()),
+            )
+            .replace("fixture-task", case)
+            .replace("model = \"eval\"", &format!("model = {model:?}"))
+            .replace("http://127.0.0.1:48127/v1", "http://127.0.0.1:48127")
+            .replace("max_output_tokens = 4096", "max_output_tokens = 512");
+        let config_path = root.join("experiment.toml");
+        fs::write(&config_path, &config).unwrap();
+        let validation = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["validate", "--config"])
+                .arg(&config_path)
+                .arg("--native-material")
+                .arg(&material_path)
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env("HOME", &root)
+                .current_dir(&root),
+            &root,
+            "validate",
+        );
+        assert!(
+            validation.status.success(),
+            "{case}: {}",
+            String::from_utf8_lossy(&validation.stderr)
+        );
+        let validation = String::from_utf8(validation.stdout).unwrap();
+        let digest = validation
+            .split_whitespace()
+            .find_map(|word| word.strip_prefix("native_integrity="))
+            .unwrap();
+        fs::write(&config_path, config.replace("pending", digest)).unwrap();
+        let run = root.join("run");
+        let output = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["run", "--config"])
+                .arg(&config_path)
+                .arg("--root")
+                .arg(&run)
+                .arg("--native-material")
+                .arg(&material_path)
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env("HOME", &root)
+                .env("OPI_EVAL_SCRIPTED_KEY", "dummy-scripted-credential")
+                .current_dir(&root),
+            &root,
+            "run",
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{case}: {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let run_report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            run_report["trials"].as_array().unwrap().len(),
+            2,
+            "{case}: {run_report}"
+        );
+        let publication = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["report", "--root"])
+                .arg(&run)
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env("HOME", &root)
+                .current_dir(&root),
+            &root,
+            "report",
+        );
+        assert!(
+            publication.status.success(),
+            "{case}: {}",
+            String::from_utf8_lossy(&publication.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&publication.stdout).unwrap();
+        let counts = &report["coverage_counts"];
+        assert_eq!(counts["attempted"], 2, "{case}: {report}");
+        assert_eq!(
+            counts["valid"],
+            if valid { 2 } else { 0 },
+            "{case}: {report}"
+        );
+        assert_eq!(
+            counts["invalid"],
+            if valid { 0 } else { 2 },
+            "{case}: {report}"
+        );
+        assert_eq!(
+            counts["agent_failure"],
+            if case == "native-zero" { 2 } else { 0 },
+            "{case}: {report}"
+        );
+        assert_eq!(counts["unexecuted"], 0, "{case}: {report}");
+        assert_eq!(
+            report["metrics"][0]["denominator"],
+            if valid { 2 } else { 0 },
+            "{case}: {report}"
+        );
+        if valid {
+            assert!(report["control_pairs"].as_array().unwrap().is_empty());
+            assert_eq!(
+                run_report["pairs"][0]["comparability"],
+                "unsupported-control:max_output_tokens"
+            );
+            assert_eq!(report["coverage"].as_array().unwrap().len(), 1);
+            assert_eq!(
+                report["coverage"][0]["comparability"],
+                "unsupported-control:max_output_tokens"
+            );
+        }
+        for trial in run_report["trials"].as_array().unwrap() {
+            let product = trial["agent"]["product"].as_str().unwrap();
+            assert_eq!(trial["status"], "sealed", "{case}: {trial}");
+            assert_eq!(
+                trial["classification"]["class"],
+                if valid {
+                    "graded-native"
+                } else {
+                    "invalid-execution"
+                }
+            );
+            if valid {
+                assert_eq!(
+                    trial["classification"]["reward"],
+                    if case == "native-zero" { 0 } else { 1 }
+                );
+            } else {
+                let expected = match case {
+                    "auth-fail" => "provider-auth-failure",
+                    "rate-limit" => "provider-rate-limit-exhausted",
+                    "protocol-error" => "provider-protocol-error",
+                    _ => unreachable!(),
+                };
+                let reason = trial["classification"]["reason"].as_str().unwrap();
+                assert!(
+                    reason == expected
+                        || reason == "provider-failure"
+                        || (product == "pi" && reason == "import-unsupported-schema"),
+                    "{case}/{product}: {trial}"
+                );
+            }
+            let id = trial["id"].as_str().unwrap();
+            let trial_root = run.join("trials").join(id);
+            let native = trial_root.join("bundle/artifacts/native");
+            assert!(
+                !trial_root
+                    .join("bundle/artifacts/control/output-control.json")
+                    .exists()
+            );
+            let terminal = read_cleanup_json(&native.join("agent-terminal.json"));
+            assert_eq!(terminal["schema"], "opi-eval-native-agent-terminal/2");
+            assert_eq!(terminal["trial"], id);
+            assert_eq!(terminal["product"], product);
+            assert_eq!(
+                terminal["agent_executable_sha256"],
+                original["agents"][product]["executable"]["sha256"]
+            );
+            assert_eq!(terminal["runtime_preflight"]["status"], "passed");
+            assert_eq!(terminal["task_dispatched"], true);
+            assert!(terminal["exit_code"].is_number());
+            assert_eq!(terminal["timed_out"], false);
+            if valid {
+                assert_eq!(terminal["exit_code"], 0);
+                assert!(terminal["failure_kind"].is_null());
+            } else {
+                assert_eq!(terminal["failure_kind"], trial["classification"]["reason"]);
+                if product == "pi" && terminal["failure_kind"] == "import-unsupported-schema" {
+                    let stream = fs::read_to_string(native.join("agent-stdout.log")).unwrap();
+                    let events = stream
+                        .lines()
+                        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                        .collect::<Vec<_>>();
+                    let message = &events
+                        .iter()
+                        .rev()
+                        .find(|event| {
+                            event["type"] == "message_end"
+                                && event["message"]["role"] == "assistant"
+                        })
+                        .unwrap()["message"];
+                    assert_eq!(message["stopReason"], "error");
+                    assert_eq!(message["api"], "openai-completions");
+                    assert_eq!(message["provider"], "scripted");
+                    assert_eq!(message["model"], model);
+                    assert!(message.get("id").is_none() && message.get("responseId").is_none());
+                    let error = message["errorMessage"].as_str().unwrap();
+                    assert!(!error.is_empty());
+                    match case {
+                        "auth-fail" => assert!(error.starts_with("401")),
+                        "rate-limit" => assert!(error.starts_with("429")),
+                        "protocol-error" => {}
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            let settlement =
+                read_cleanup_json(&trial_root.join("bundle/artifacts/control/settlement.json"));
+            assert_eq!(settlement["graded"], valid);
+            assert_eq!(settlement["agent_failure"], case == "native-zero");
+            let published = report["trials"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|published| published["id"] == id)
+                .unwrap();
+            assert_eq!(
+                published["outcome"]["class"],
+                if valid { "graded" } else { "invalid" }
+            );
+            if !valid {
+                assert_eq!(published["outcome"]["reason"], settlement["failure_kind"]);
+            }
+            let captures = walk_files_matching(&trial_root, "provider-requests.jsonl");
+            assert_eq!(
+                captures.len(),
+                1,
+                "{case}/{product}: provider log must belong to one native trial"
+            );
+            let metadata = fs::symlink_metadata(&captures[0]).unwrap();
+            assert!(metadata.is_file() && metadata.nlink() == 1 && metadata.len() <= 128 * 1024);
+            let raw = fs::read(&captures[0]).unwrap();
+            let rows = std::str::from_utf8(&raw)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                .collect::<Vec<_>>();
+            assert!(!rows.is_empty() && rows.len() <= 64);
+            for (index, row) in rows.iter().enumerate() {
+                assert_eq!(row["schema"], "opi-eval-scripted-provider-log/1");
+                assert_eq!(row["seq"], index + 1);
+                assert_eq!(row["method"], "POST");
+                assert!(matches!(
+                    row["path"].as_str(),
+                    Some("/chat/completions" | "/v1/chat/completions")
+                ));
+                assert_eq!(row["model"], model);
+                assert_eq!(row["auth"], "bearer");
+                assert_eq!(row["response_script"], "scripted-turn-plan/1");
+                assert_eq!(row["request_sha256"].as_str().unwrap().len(), 64);
+                assert_wire_output_limit(row, "openai-completions", 512);
+            }
+            let statuses = rows
+                .iter()
+                .map(|row| row["status"].as_u64().unwrap())
+                .collect::<Vec<_>>();
+            match case {
+                "auth-fail" => assert!(statuses.iter().all(|status| *status == 401)),
+                "rate-limit" => assert!(statuses.iter().all(|status| *status == 429)),
+                "protocol-error" => assert!(statuses.iter().all(|status| *status == 200)),
+                "native-zero" => {
+                    assert!(statuses.len() >= 2 && statuses.iter().all(|status| *status == 200))
+                }
+                "retry-success" => {
+                    assert_eq!(statuses.first(), Some(&429));
+                    assert!(
+                        statuses.len() >= 3 && statuses[1..].iter().all(|status| *status == 200)
+                    );
+                }
+                _ => unreachable!(),
+            }
+            let sealed = fs::read(native.join("job-stdout.log")).unwrap();
+            let begin = format!("OPI-EVAL-B6-PROVIDER-BEGIN {observer_sha}\n");
+            let end = format!("OPI-EVAL-B6-PROVIDER-END {observer_sha}\n");
+            let start = sealed
+                .windows(begin.len())
+                .position(|window| window == begin.as_bytes())
+                .unwrap();
+            assert_eq!(
+                sealed
+                    .windows(begin.len())
+                    .filter(|window| *window == begin.as_bytes())
+                    .count(),
+                1
+            );
+            let body = &sealed[start + begin.len()..];
+            let split = body.iter().position(|byte| *byte == b'\n').unwrap();
+            let provenance: serde_json::Value = serde_json::from_slice(&body[..split]).unwrap();
+            assert_eq!(provenance["schema"], "opi-eval-b6-provider-capture/1");
+            assert_eq!(provenance["observer_sha256"], observer_sha);
+            assert_eq!(provenance["provider_sha256"], provider_sha);
+            assert_eq!(provenance["trial"], id);
+            assert_eq!(provenance["product"], product);
+            assert_eq!(provenance["sha256"], sha256_hex(&raw));
+            assert_eq!(provenance["bytes"], raw.len());
+            assert_eq!(provenance["rows"], rows.len());
+            assert_eq!(
+                provenance["native_trial"],
+                captures[0]
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .as_ref()
+            );
+            assert_eq!(
+                provenance["job"],
+                captures[0]
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .as_ref()
+            );
+            assert_eq!(provenance["job"], trial["verifier"]["binding"]["job"]);
+            assert_eq!(
+                provenance["native_trial"],
+                trial["verifier"]["binding"]["trial"]
+            );
+            let body = &body[split + 1..];
+            assert!(body.starts_with(&raw));
+            assert!(body[raw.len()..].starts_with(end.as_bytes()));
+        }
+        assert_eq!(sha256_hex(&fs::read(&observer).unwrap()), observer_sha);
+        eprintln!("actual client provider/report case passed: {case}");
+    }
+    assert_eq!(fs::read(&source_path).unwrap(), source_bytes);
+    assert_eq!(fs::read(&client_path).unwrap(), client_bytes);
+}
+
 /// Runs one native family to completion and returns its root plus the
 /// pre-regrade offline report bytes (the immutability baseline).
 fn regrade_family_root(
@@ -7053,6 +8836,16 @@ fn material_five_dispatches_two_exact_tasks_per_family_from_both_entries() {
             );
             let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(report["trials"].as_array().unwrap().len(), 4);
+            let published = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["report", "--root"])
+                .arg(&root)
+                .output()
+                .unwrap();
+            assert!(published.status.success());
+            let published: serde_json::Value = serde_json::from_slice(&published.stdout).unwrap();
+            assert_eq!(published["coverage_counts"]["corpus"], 2);
+            assert_eq!(published["coverage_counts"]["selected"], 2);
+            assert_eq!(published["coverage_counts"]["planned"], 4);
             for trial in report["trials"].as_array().unwrap() {
                 assert_eq!(trial["status"], "sealed");
                 assert_eq!(trial["classification"]["class"], "graded-native");
@@ -9369,4 +11162,884 @@ fn native_verifier_only_regrade_witness() {
     assert_eq!(directory_manifest_digest(&source), original);
     assert_eq!(fs::read(&material).unwrap(), frozen);
     assert_eq!(fs::read(&provider_log).ok(), provider_before);
+}
+
+#[test]
+fn p19_plan_probe_pi_only_regrade() {
+    for product in ["pi", "opi"] {
+        let unselected = if product == "pi" { "opi" } else { "pi" };
+        let staged = stage("ok");
+        let config = write_config(&staged);
+        let mut doc: toml::Value = toml::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
+        doc["subjects"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|s| s["product"].as_str() == Some(product));
+        doc.as_table_mut().unwrap().remove("edges");
+        doc["trials"].as_array_mut().unwrap().retain(|t| {
+            t["subject"].as_str()
+                == Some(if product == "pi" {
+                    "baseline-pi"
+                } else {
+                    "candidate-opi"
+                })
+        });
+        let mut material: serde_json::Value =
+            serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+        material["agents"]
+            .as_object_mut()
+            .unwrap()
+            .remove(unselected);
+        fs::remove_file(staged.root.join("material/agents").join(unselected)).unwrap();
+        fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+        fs::write(&config, toml::to_string(&doc).unwrap()).unwrap();
+        let validate = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .args(["validate", "--config"])
+            .arg(&config)
+            .arg("--native-material")
+            .arg(&staged.material)
+            .output()
+            .unwrap();
+        assert!(
+            validate.status.success(),
+            "{}",
+            String::from_utf8_lossy(&validate.stderr)
+        );
+        let stdout = String::from_utf8(validate.stdout).unwrap();
+        let digest = stdout
+            .split_whitespace()
+            .find(|t| t.starts_with("native_integrity="))
+            .unwrap()
+            .trim_start_matches("native_integrity=");
+        doc["benchmark"]["integrity_digest"] = toml::Value::String(digest.to_owned());
+        fs::write(&config, toml::to_string(&doc).unwrap()).unwrap();
+        let (run_root, _) = regrade_family_root(&staged, &config, "pi-only-source");
+        let trial = if product == "pi" {
+            "trial-pi-native"
+        } else {
+            "trial-opi-native"
+        };
+        let manifest_path = run_root
+            .join("trials")
+            .join(trial)
+            .join("bundle/manifest.json");
+        let source_before = fs::read(&manifest_path).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .args(["regrade", "--root"])
+            .arg(&run_root)
+            .arg("--native-material")
+            .arg(&staged.material)
+            .arg("--out")
+            .arg(staged.root.join("regrade"))
+            .output()
+            .unwrap();
+        eprintln!(
+            "pi-only regrade exit={:?} stdout={} stderr={}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "pi-only regrade must consume its own selected material: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["trials"].as_array().unwrap().len(), 1);
+        assert_eq!(report["trials"][0]["trial"], trial);
+        assert_eq!(fs::read(&manifest_path).unwrap(), source_before);
+        let selected = material["agents"][product].clone();
+        material["agents"].as_object_mut().unwrap().remove(product);
+        fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+        let missing_out = staged.root.join("missing-selected-material");
+        let missing = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .args(["regrade", "--root"])
+            .arg(&run_root)
+            .arg("--native-material")
+            .arg(&staged.material)
+            .arg("--out")
+            .arg(&missing_out)
+            .output()
+            .unwrap();
+        assert_eq!(missing.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&missing.stderr).contains("agent set"));
+        assert!(!missing_out.exists());
+        assert_eq!(fs::read(&manifest_path).unwrap(), source_before);
+        material["agents"][product] = selected;
+        fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+        let executable = staged.root.join("material/agents").join(product);
+        let mut bytes = fs::read(&executable).unwrap();
+        bytes.push(b' ');
+        fs::write(executable, bytes).unwrap();
+        let drift = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .args(["regrade", "--root"])
+            .arg(&run_root)
+            .arg("--native-material")
+            .arg(&staged.material)
+            .arg("--out")
+            .arg(&missing_out)
+            .output()
+            .unwrap();
+        assert_eq!(drift.status.code(), Some(2));
+        assert!(!missing_out.exists());
+        assert_eq!(fs::read(&manifest_path).unwrap(), source_before);
+    }
+}
+
+#[test]
+fn native_offline_regrade_rejects_all_tampered_sources_before_effects() {
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    let (root, _) = regrade_family_root(&staged, &config, "all-tampered");
+    for trial in ["trial-opi-native", "trial-pi-native"] {
+        let path = root
+            .join("trials")
+            .join(trial)
+            .join("bundle/artifacts/native/trial-result.json");
+        let mut bytes = fs::read(&path).unwrap();
+        bytes.push(b' ');
+        fs::write(path, bytes).unwrap();
+    }
+    let out = staged.root.join("rejected-derived");
+    let (code, report, stderr) = regrade_run(&staged, &root, &out);
+    assert_eq!(code, 1, "{stderr}: {report}");
+    assert_eq!(report["rejections"].as_array().unwrap().len(), 2);
+    assert!(report["trials"].as_array().unwrap().is_empty());
+    assert!(
+        report["rejections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["reason"].as_str().unwrap().starts_with("bundle-"))
+    );
+    assert!(!out.exists());
+}
+
+#[test]
+fn native_offline_regrade_preserves_missing_sibling_input_rejection() {
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    let (root, _) = regrade_family_root(&staged, &config, "missing-sibling-input");
+    fs::remove_file(
+        root.join("trials/trial-opi-native/bundle/artifacts/native/verifier-input.json"),
+    )
+    .unwrap();
+    let before = directory_manifest_digest(&root);
+    let out = staged.root.join("sibling-derived");
+    let (code, report, stderr) = regrade_run(&staged, &root, &out);
+    assert_eq!(code, 1, "{stderr}: {report}");
+    assert_eq!(report["rejections"].as_array().unwrap().len(), 1);
+    assert_eq!(report["rejections"][0]["trial"], "trial-opi-native");
+    assert!(
+        report["rejections"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("bundle-")
+    );
+    assert_eq!(report["trials"].as_array().unwrap().len(), 1);
+    assert_eq!(report["trials"][0]["trial"], "trial-pi-native");
+    assert_eq!(directory_manifest_digest(&root), before);
+}
+
+#[test]
+fn full_selection_report_counts_frozen_tasks_after_bundle_loss() {
+    for full in [false, true] {
+        let staged = stage("ok");
+        let (first, _) = stage_two_task_family(&staged, "terminal-bench-2.1");
+        let config = write_config(&staged);
+        let explicit = fs::read_to_string(&config).unwrap();
+        let head = explicit.split("[[trials]]").next().unwrap();
+        let selection = if full {
+            "scope = \"full\"\n".to_owned()
+        } else {
+            format!("scope = \"subset\"\ntask_ids = [{first:?}]\n")
+        };
+        fs::write(
+            &config,
+            format!(
+                "{head}[selection]\n{selection}reason = \"frozen coverage\"\nrepetitions = 2\n"
+            ),
+        )
+        .unwrap();
+        let (root, published) = regrade_family_root(&staged, &config, "coverage-source");
+        let selected = if full { 2 } else { 1 };
+        let planned = selected * 4;
+        let published: serde_json::Value = serde_json::from_str(&published).unwrap();
+        assert_eq!(published["coverage_counts"]["corpus"], 2);
+        assert_eq!(published["coverage_counts"]["selected"], selected);
+        assert_eq!(published["coverage_counts"]["planned"], planned);
+        assert_eq!(published["coverage_counts"]["attempted"], planned);
+        assert_eq!(published["coverage_counts"]["valid"], planned);
+        let first_trial = fs::read_dir(root.join("trials"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        fs::remove_dir_all(first_trial).unwrap();
+        for total_loss in [false, true] {
+            if total_loss {
+                fs::remove_dir_all(root.join("trials")).unwrap();
+            }
+            let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["report", "--root"])
+                .arg(&root)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            let attempted = if total_loss { 0 } else { planned - 1 };
+            assert_eq!(report["coverage_counts"]["corpus"], 2);
+            assert_eq!(report["coverage_counts"]["selected"], selected);
+            assert_eq!(report["coverage_counts"]["planned"], planned);
+            assert_eq!(report["coverage_counts"]["attempted"], attempted);
+            assert_eq!(report["coverage_counts"]["valid"], attempted);
+            assert_eq!(report["coverage_counts"]["unexecuted"], planned - attempted);
+        }
+    }
+}
+
+fn plan_p19_inject(staged: &Staged, script: &str) {
+    let mutation = staged.root.join("plan_mutation.py");
+    fs::write(&mutation, script).unwrap();
+    remediation_runner(staged, |body| {
+        body.replacen(
+            "set -eu",
+            &format!("set -eu\ntrap 'python3 \"{}\"' EXIT", mutation.display()),
+            1,
+        )
+    });
+}
+
+#[test]
+fn plan_p19_full_capture_preserves_long_native_stream() {
+    let staged = stage("ok");
+    plan_p19_inject(
+        &staged,
+        r#"import pathlib
+for terminal in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
+    path=terminal.with_name('stdout.log')
+    before=path.read_bytes() if path.exists() else b''
+    path.write_bytes(b'\n'*(2*1024*1024)+before)
+"#,
+    );
+    let config = write_config(&staged);
+    let root = staged.root.join("run");
+    let (_, stdout, stderr) = run_native(&staged, &config, &root);
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let mut lost = Vec::new();
+    for trial in report["trials"].as_array().unwrap() {
+        let id = trial["id"].as_str().unwrap();
+        let trial_root = root.join("trials").join(id);
+        let log = trial_root.join("bundle/artifacts/native/agent-stdout.log");
+        let terminal =
+            read_cleanup_json(&trial_root.join("bundle/artifacts/native/agent-terminal.json"));
+        let bytes = fs::read(&log).unwrap();
+        let original = native_raw_capture(&trial_root, "stdout.log");
+        assert_eq!(bytes, original);
+        assert_eq!(terminal["stdout_sha256"], sha256_hex(&original));
+        assert_eq!(trial["classification"]["class"], "graded-native");
+        eprintln!(
+            "{id}: sealed_bytes={} truncated={} class={}",
+            bytes.len(),
+            terminal["stdout_truncated"],
+            trial["classification"]
+        );
+        if bytes.len() <= 2 * 1024 * 1024 || terminal["stdout_truncated"] != false {
+            lost.push(id.to_owned());
+        }
+    }
+    eprintln!("{stderr}");
+    assert!(
+        lost.is_empty(),
+        "full capture lost completed native stream(s): {lost:?}"
+    );
+}
+
+fn native_raw_capture(trial_root: &Path, name: &str) -> Vec<u8> {
+    let jobs = trial_root.join("verifier-trace/jobs");
+    let mut paths = Vec::new();
+    for job in fs::read_dir(jobs)
+        .unwrap()
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+    {
+        for trial in fs::read_dir(job.path()).unwrap().flatten() {
+            let path = trial.path().join("agent").join(name);
+            if path.is_file() {
+                paths.push(path);
+            }
+        }
+    }
+    assert_eq!(paths.len(), 1);
+    fs::read(&paths[0]).unwrap()
+}
+
+#[test]
+fn native_capture_artifact_limit() {
+    const CAP: usize = 64 * 1024 * 1024;
+    for name in ["stdout.log", "stderr.log"] {
+        for overflow in [false, true] {
+            let staged = stage("ok");
+            let target = CAP + usize::from(overflow);
+            plan_p19_inject(
+                &staged,
+                &format!(
+                    r#"import pathlib
+for terminal in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
+    path=terminal.with_name({name:?})
+    before=path.read_bytes() if path.exists() else b''
+    path.write_bytes(b' '*({target}-len(before)-1)+b'\n'+before)
+"#
+                ),
+            );
+            let config = write_config(&staged);
+            let root = staged.root.join("run");
+            let (code, stdout, stderr) = run_native(&staged, &config, &root);
+            assert_eq!(code, i32::from(overflow), "{stderr} {stdout}");
+            let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(report["trials"].as_array().unwrap().len(), 2);
+            for trial in report["trials"].as_array().unwrap() {
+                let trial_root = root.join("trials").join(trial["id"].as_str().unwrap());
+                let raw = native_raw_capture(&trial_root, name);
+                assert_eq!(raw.len(), target);
+                let native = trial_root.join("bundle/artifacts/native");
+                let terminal = read_cleanup_json(&native.join("agent-terminal.json"));
+                let field = if name == "stdout.log" {
+                    "stdout_truncated"
+                } else {
+                    "stderr_truncated"
+                };
+                assert_eq!(terminal[field], overflow);
+                let sealed = native.join(format!("agent-{name}"));
+                if overflow {
+                    assert_eq!(trial["classification"]["class"], "invalid-execution");
+                    assert_eq!(trial["classification"]["boundary"], "evidence");
+                    assert!(!sealed.exists(), "overflow prefix must remain private");
+                } else {
+                    assert_eq!(trial["classification"]["class"], "graded-native");
+                    assert_eq!(fs::read(sealed).unwrap(), raw);
+                    let digest_field = if name == "stdout.log" {
+                        "stdout_sha256"
+                    } else {
+                        "stderr_sha256"
+                    };
+                    assert_eq!(terminal[digest_field], sha256_hex(&raw));
+                }
+            }
+            let published = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["report", "--root"])
+                .arg(&root)
+                .output()
+                .unwrap();
+            assert!(published.status.success());
+            let published: serde_json::Value = serde_json::from_slice(&published.stdout).unwrap();
+            assert_eq!(
+                published["coverage_counts"]["valid"],
+                if overflow { 0 } else { 2 }
+            );
+            assert_eq!(
+                published["coverage_counts"]["invalid"],
+                if overflow { 2 } else { 0 }
+            );
+        }
+    }
+}
+
+#[test]
+fn native_capture_bounds_provider_diagnostic() {
+    for exit in [3, 4] {
+        for overflow in [false, true] {
+            let staged = stage("ok");
+            let target = 64 * 1024 * 1024 + usize::from(overflow);
+            let diagnostic = if exit == 3 {
+                "provider authentication failed"
+            } else {
+                "provider stream failed"
+            };
+            plan_p19_inject(
+                &staged,
+                &format!(
+                    r#"import pathlib,json
+for terminal in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
+    value=json.loads(terminal.read_text())
+    if value['product'] != 'opi': continue
+    value['exit_code']={exit}
+    terminal.write_text(json.dumps(value))
+    prefix={diagnostic:?}.encode()+b'\n'
+    terminal.with_name('stderr.log').write_bytes(prefix+b' '*({target}-len(prefix)))
+"#
+                ),
+            );
+            let config = write_config(&staged);
+            let root = staged.root.join("run");
+            let (code, stdout, stderr) = run_native(&staged, &config, &root);
+            assert_eq!(code, 1, "{stderr} {stdout}");
+            let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+            let opi = &report["trials"][0];
+            assert_eq!(opi["status"], "sealed");
+            assert_eq!(opi["classification"]["class"], "invalid-execution");
+            let native = root.join("trials/trial-opi-native/bundle/artifacts/native");
+            let terminal = read_cleanup_json(&native.join("agent-terminal.json"));
+            assert_eq!(terminal["stderr_truncated"], overflow);
+            if overflow {
+                assert!(terminal["diagnostic"].is_null());
+                assert!(!native.join("agent-stderr.log").exists());
+            } else {
+                assert!(terminal["diagnostic"].as_str().unwrap().len() <= 1024 * 1024);
+                assert_eq!(
+                    fs::read(native.join("agent-stderr.log")).unwrap().len(),
+                    target
+                );
+            }
+            let published = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["report", "--root"])
+                .arg(&root)
+                .output()
+                .unwrap();
+            assert!(published.status.success());
+            let published: serde_json::Value = serde_json::from_slice(&published.stdout).unwrap();
+            assert_eq!(published["coverage_counts"]["valid"], 1);
+            assert_eq!(published["coverage_counts"]["invalid"], 1);
+            assert_eq!(published["coverage_counts"]["agent_failure"], 0);
+        }
+    }
+}
+
+#[test]
+fn native_runtime_preflight_refusal_is_unscored() {
+    for family in ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"] {
+        for status in ["failed", "unknown"] {
+            let staged = stage("ok");
+            plan_p19_inject(
+                &staged,
+                &format!(
+                    r#"import hashlib,json,pathlib
+for terminal in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
+    value=json.loads(terminal.read_text())
+    out=b''
+    err=b"opi: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.39' not found (required by opi)\n" if {status:?} == 'failed' else b''
+    terminal.with_name('runtime-preflight-stdout.log').write_bytes(out)
+    terminal.with_name('runtime-preflight-stderr.log').write_bytes(err)
+    value.update(task_dispatched=False,exit_code=None,timed_out=False,delivered=[])
+    value['runtime_preflight'].update(status={status:?},exit_code=127 if {status:?} == 'failed' else 0,
+        reason=None if {status:?} == 'failed' else 'invalid-output',
+        stdout_sha256=hashlib.sha256(out).hexdigest(),stderr_sha256=hashlib.sha256(err).hexdigest())
+    terminal.write_text(json.dumps(value))
+    result=terminal.parent.parent/'result.json'
+    record=json.loads(result.read_text())
+    record['verifier_result']=None
+    record['exception_info']={{'exception_type':'AgentSetupError'}}
+    result.write_text(json.dumps(record))
+    aggregate=result.parent.parent/'result.json'
+    stats=json.loads(aggregate.read_text())
+    for evaluation in stats['stats']['evals'].values():
+        evaluation['reward_stats']={{}}
+    aggregate.write_text(json.dumps(stats))
+"#
+                ),
+            );
+            let config = match family {
+                "terminal-bench-2.1" => write_config(&staged),
+                "terminal-bench-3.0" => write_tb30_config(&staged),
+                _ => write_deepswe_config(&staged),
+            };
+            let root = staged.root.join("run");
+            let (code, stdout, stderr) = run_native(&staged, &config, &root);
+            assert_eq!(code, 1, "{family} {status}: {stderr} {stdout}");
+            let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(report["trials"].as_array().unwrap().len(), 2);
+            for trial in report["trials"].as_array().unwrap() {
+                assert_eq!(trial["status"], "sealed", "{trial}");
+                assert_eq!(trial["classification"]["class"], "invalid-execution");
+                assert_eq!(
+                    trial["classification"]["reason"],
+                    format!("runtime-preflight-{status}")
+                );
+                let bundle = root
+                    .join("trials")
+                    .join(trial["id"].as_str().unwrap())
+                    .join("bundle/artifacts");
+                let terminal = read_cleanup_json(&bundle.join("native/agent-terminal.json"));
+                assert_eq!(terminal["runtime_preflight"]["status"], status);
+                assert_eq!(terminal["task_dispatched"], false);
+                assert!(terminal["exit_code"].is_null());
+                assert_eq!(terminal["timed_out"], false);
+                assert!(terminal["delivered"].as_array().unwrap().is_empty());
+                assert!(!bundle.join("native/agent-stdout.log").exists());
+                let trajectory =
+                    fs::read_to_string(bundle.join("evidence/trajectory.json")).unwrap();
+                assert!(!trajectory.contains("agent-execution") && !trajectory.contains("grader/"));
+                for stream in ["stdout", "stderr"] {
+                    let capture =
+                        fs::read(bundle.join(format!("native/runtime-preflight-{stream}.log")))
+                            .unwrap();
+                    assert_eq!(
+                        terminal["runtime_preflight"][format!("{stream}_sha256")],
+                        sha256_hex(&capture)
+                    );
+                }
+            }
+            let published = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["report", "--root"])
+                .arg(&root)
+                .output()
+                .unwrap();
+            assert!(
+                published.status.success(),
+                "{}",
+                String::from_utf8_lossy(&published.stderr)
+            );
+            let published: serde_json::Value = serde_json::from_slice(&published.stdout).unwrap();
+            assert_eq!(published["coverage_counts"]["attempted"], 2);
+            assert_eq!(published["coverage_counts"]["invalid"], 2);
+            assert_eq!(published["coverage_counts"]["valid"], 0);
+            assert_eq!(published["coverage_counts"]["agent_failure"], 0);
+            assert_eq!(published["metrics"][0]["denominator"], 0);
+        }
+    }
+}
+
+#[test]
+fn native_runtime_preflight_rejects_substituted_proof() {
+    for product in ["opi", "pi"] {
+        for case in [
+            "legacy",
+            "missing",
+            "trial",
+            "runtime",
+            "package",
+            "command",
+            "stdout",
+            "missing-capture",
+            "task-state",
+        ] {
+            let staged = stage("ok");
+            plan_p19_inject(
+                &staged,
+                &format!(
+                    r#"import json,pathlib
+for path in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
+    value=json.loads(path.read_text())
+    if value['product'] != {product:?}: continue
+    case={case:?}
+    if case == 'legacy': value['schema']='opi-eval-native-agent-terminal/1'
+    elif case == 'missing': value.pop('runtime_preflight')
+    elif case == 'trial': value['trial']='another-trial'
+    elif case == 'runtime': value['runtime_preflight']['agent_executable_sha256']='0'*64
+    elif case == 'package': value['runtime_preflight']['runtime_package_entrypoint']='substituted'
+    elif case == 'command': value['runtime_preflight']['command_sha256']='0'*64
+    elif case == 'stdout': path.with_name('runtime-preflight-stdout.log').write_bytes(b'substituted version\n')
+    elif case == 'missing-capture': path.with_name('runtime-preflight-stderr.log').unlink()
+    elif case == 'task-state': value['task_dispatched']=False
+    path.write_text(json.dumps(value))
+"#
+                ),
+            );
+            let config = write_config(&staged);
+            let root = staged.root.join("run");
+            let (code, stdout, stderr) = run_native(&staged, &config, &root);
+            assert_eq!(code, 1, "{product} {case}: {stderr} {stdout}");
+            let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+            let failed = report["trials"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|trial| {
+                    trial["subject"]
+                        == if product == "opi" {
+                            "candidate-opi"
+                        } else {
+                            "baseline-pi"
+                        }
+                })
+                .unwrap();
+            assert_eq!(
+                failed["classification"]["class"], "invalid-execution",
+                "{case} {failed}"
+            );
+            assert_eq!(failed["status"], "failed");
+        }
+    }
+}
+
+#[test]
+fn native_runtime_preflight_passed_keeps_task_outcomes_distinct() {
+    for mode in [
+        "ok",
+        "zero",
+        "agent-nonzero",
+        "agent-crash",
+        "agent-timeout",
+        "provider-error",
+    ] {
+        let staged = stage(if mode == "agent-crash" {
+            "agent-nonzero"
+        } else {
+            mode
+        });
+        if mode == "agent-crash" {
+            plan_p19_inject(
+                &staged,
+                r#"import json,pathlib
+for path in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
+    value=json.loads(path.read_text())
+    value['exit_code']=139
+    path.write_text(json.dumps(value))
+"#,
+            );
+        }
+        let config = write_config(&staged);
+        let root = staged.root.join("run");
+        let (code, stdout, stderr) = run_native(&staged, &config, &root);
+        assert_eq!(
+            code,
+            i32::from(mode == "provider-error"),
+            "{mode}: {stderr} {stdout}"
+        );
+        let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(report["trials"].as_array().unwrap().len(), 2);
+        for trial in report["trials"].as_array().unwrap() {
+            let native = root
+                .join("trials")
+                .join(trial["id"].as_str().unwrap())
+                .join("bundle/artifacts/native");
+            let terminal = read_cleanup_json(&native.join("agent-terminal.json"));
+            assert_eq!(terminal["runtime_preflight"]["exit_code"], 0);
+            assert_eq!(terminal["runtime_preflight"]["status"], "passed");
+            assert_eq!(terminal["task_dispatched"], true);
+            assert!(terminal["exit_code"].is_number());
+            assert!(terminal["delivered"].is_array());
+            assert_eq!(
+                trial["classification"]["class"],
+                if mode == "provider-error" {
+                    "invalid-execution"
+                } else {
+                    "graded-native"
+                }
+            );
+        }
+    }
+}
+
+fn inject_preflight_refusal(staged: &Staged, status: &str, reason: &str) {
+    plan_p19_inject(
+        staged,
+        &format!(
+            r#"import hashlib,json,pathlib
+for terminal in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
+    value=json.loads(terminal.read_text())
+    status={status:?}
+    reason={reason:?}
+    overflow=reason == 'capture-overflow'
+    out=b'v'*(64*1024*1024+1) if overflow else (b'fixture version\n' if status == 'passed' else b'')
+    err=b'fixture runtime refused\n' if status == 'failed' else b''
+    terminal.with_name('runtime-preflight-stdout.log').write_bytes(out)
+    terminal.with_name('runtime-preflight-stderr.log').write_bytes(err)
+    complete=status != 'unknown' or reason == 'invalid-output'
+    value.update(task_dispatched=False,exit_code=None,timed_out=False,delivered=[])
+    value['runtime_preflight'].update(status=status,exit_code=127 if status == 'failed' else (0 if status == 'passed' or reason == 'invalid-output' else (137 if reason == 'timeout' else None)),
+        reason=reason if status == 'unknown' else None,
+        stdout_sha256=hashlib.sha256(out[:64*1024*1024]).hexdigest(),stderr_sha256=hashlib.sha256(err).hexdigest(),
+        stdout_complete=complete and not overflow,stderr_complete=complete,
+        stdout_truncated=overflow,stderr_truncated=False)
+    terminal.write_text(json.dumps(value))
+    result=terminal.parent.parent/'result.json'
+    record=json.loads(result.read_text())
+    record['verifier_result']=None
+    record['exception_info']={{'exception_type':'AgentSetupError'}}
+    result.write_text(json.dumps(record))
+    aggregate=result.parent.parent/'result.json'
+    stats=json.loads(aggregate.read_text())
+    for evaluation in stats['stats']['evals'].values(): evaluation['reward_stats']={{}}
+    aggregate.write_text(json.dumps(stats))
+"#
+        ),
+    );
+}
+
+#[test]
+fn native_runtime_preflight_unknown_preserves_bounded_proof() {
+    for (reason, policy) in [
+        ("timeout", "full"),
+        ("timeout", "terminal-only"),
+        ("transport", "full"),
+        ("termination", "full"),
+        ("capture-overflow", "full"),
+    ] {
+        let staged = stage("ok");
+        inject_preflight_refusal(&staged, "unknown", reason);
+        let config = write_config(&staged);
+        if policy == "terminal-only" {
+            fs::write(
+                &config,
+                fs::read_to_string(&config).unwrap().replace(
+                    "capture_policy = \"full\"",
+                    "capture_policy = \"terminal-only\"",
+                ),
+            )
+            .unwrap();
+        }
+        let root = staged.root.join("run");
+        let (code, stdout, stderr) = run_native(&staged, &config, &root);
+        assert_eq!(code, 1, "{reason}/{policy}: {stdout} {stderr}");
+        let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(report["trials"].as_array().unwrap().len(), 2);
+        for trial in report["trials"].as_array().unwrap() {
+            assert_eq!(trial["status"], "sealed", "{trial}");
+            assert_eq!(
+                trial["classification"]["reason"],
+                "runtime-preflight-unknown"
+            );
+            let native = root
+                .join("trials")
+                .join(trial["id"].as_str().unwrap())
+                .join("bundle/artifacts/native");
+            let terminal = read_cleanup_json(&native.join("agent-terminal.json"));
+            assert_eq!(terminal["runtime_preflight"]["reason"], reason);
+            assert_eq!(terminal["task_dispatched"], false);
+            assert!(terminal["exit_code"].is_null());
+            assert_eq!(terminal["timed_out"], false);
+            assert!(!native.join("agent-stdout.log").exists());
+            if policy == "terminal-only" {
+                assert!(!native.join("job-stdout.log").exists());
+                assert!(!native.join("job-stderr.log").exists());
+            }
+            let capture = fs::read(native.join("runtime-preflight-stdout.log")).unwrap();
+            assert_eq!(
+                capture.len(),
+                if reason == "capture-overflow" {
+                    64 * 1024 * 1024
+                } else {
+                    0
+                }
+            );
+            assert_eq!(
+                terminal["runtime_preflight"]["stdout_sha256"],
+                sha256_hex(&capture)
+            );
+            if reason == "capture-overflow" {
+                assert_eq!(terminal["runtime_preflight"]["stdout_truncated"], true);
+                assert_eq!(
+                    native_raw_capture(
+                        &root.join("trials").join(trial["id"].as_str().unwrap()),
+                        "runtime-preflight-stdout.log"
+                    )
+                    .len(),
+                    64 * 1024 * 1024 + 1
+                );
+            }
+        }
+        let published = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .args(["report", "--root"])
+            .arg(&root)
+            .output()
+            .unwrap();
+        assert!(published.status.success());
+        let published: serde_json::Value = serde_json::from_slice(&published.stdout).unwrap();
+        assert_eq!(published["coverage_counts"]["invalid"], 2);
+        assert_eq!(published["coverage_counts"]["valid"], 0);
+        assert_eq!(published["coverage_counts"]["agent_failure"], 0);
+    }
+}
+
+#[test]
+fn native_runtime_preflight_setup_refusal_preserves_passed_proof() {
+    let staged = stage("ok");
+    inject_preflight_refusal(&staged, "passed", "");
+    let config = write_config(&staged);
+    let root = staged.root.join("run");
+    let (code, stdout, stderr) = run_native(&staged, &config, &root);
+    assert_eq!(code, 1, "{stdout} {stderr}");
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(report["trials"].as_array().unwrap().len(), 2);
+    for trial in report["trials"].as_array().unwrap() {
+        assert_eq!(trial["status"], "sealed", "{trial}");
+        assert_eq!(trial["classification"]["class"], "invalid-execution");
+        let bundle = root
+            .join("trials")
+            .join(trial["id"].as_str().unwrap())
+            .join("bundle/artifacts");
+        let terminal = read_cleanup_json(&bundle.join("native/agent-terminal.json"));
+        assert_eq!(terminal["runtime_preflight"]["status"], "passed");
+        assert_eq!(terminal["task_dispatched"], false);
+        assert!(terminal["exit_code"].is_null());
+        assert!(!bundle.join("native/agent-stdout.log").exists());
+        let trajectory = fs::read_to_string(bundle.join("evidence/trajectory.json")).unwrap();
+        assert!(!trajectory.contains("agent-execution") && !trajectory.contains("grader/"));
+    }
+}
+
+#[test]
+fn native_runtime_preflight_refusal_keeps_uncertainty_stronger() {
+    for uncertain in ["termination", "cleanup"] {
+        let staged = stage(if uncertain == "cleanup" {
+            "owned-settled"
+        } else {
+            "ok"
+        });
+        inject_preflight_refusal(&staged, "failed", "");
+        if uncertain == "cleanup" {
+            fs::write(staged.root.join("remove-failed"), "").unwrap();
+        } else {
+            let mutation = staged.root.join("plan_mutation.py");
+            let mut script = fs::read_to_string(&mutation).unwrap();
+            script.push_str("\nfor path in pathlib.Path('jobs').glob('*/*/result.json'): (path.parent/'opi-eval-effect-unknown').write_text('command exit unobserved')\n");
+            fs::write(mutation, script).unwrap();
+        }
+        let config = write_config(&staged);
+        let root = staged.root.join("run");
+        let (code, stdout, stderr) = run_native(&staged, &config, &root);
+        assert_eq!(code, 1, "{uncertain}: {stdout} {stderr}");
+        let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(report["trials"].as_array().unwrap().len(), 1);
+        assert_eq!(report["trials"][0]["status"], "failed");
+        assert_eq!(
+            report["trials"][0]["classification"]["reason"],
+            if uncertain == "cleanup" {
+                "owned-resource-cleanup-unconfirmed"
+            } else {
+                "native-command-termination-unconfirmed"
+            }
+        );
+        assert!(
+            !root
+                .join("trials/trial-opi-native/bundle/manifest.json")
+                .exists()
+        );
+        assert!(!root.join("trials/trial-pi-native/receipt.json").exists());
+    }
+}
+
+#[test]
+fn native_runtime_preflight_refusal_rejects_stage_configuration_drift() {
+    for status in ["passed", "failed"] {
+        let staged = stage("ok");
+        inject_preflight_refusal(&staged, status, "");
+        let mutation = staged.root.join("plan_mutation.py");
+        let mut script = fs::read_to_string(&mutation).unwrap();
+        script.push_str("\nfor path in pathlib.Path('jobs').glob('*/*/config.json'):\n    value=json.loads(path.read_text())\n    value['agent']['max_timeout_sec']=1000\n    path.write_text(json.dumps(value))\n");
+        fs::write(mutation, script).unwrap();
+        let config = write_config(&staged);
+        let root = staged.root.join("run");
+        let (code, stdout, stderr) = run_native(&staged, &config, &root);
+        assert_eq!(code, 1, "{stdout} {stderr}");
+        let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(report["trials"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            report["trials"][0]["classification"]["reason"],
+            "native-stage-configuration-drift"
+        );
+        assert_eq!(report["trials"][0]["status"], "failed");
+        assert!(
+            !root
+                .join("trials/trial-opi-native/bundle/manifest.json")
+                .exists()
+        );
+    }
 }
