@@ -1490,6 +1490,8 @@ async fn pkce_total_budget_includes_manual_wait_and_token_response_for_both_prov
 #[tokio::test]
 async fn pkce_total_budget_bounds_token_response_body_after_headers() {
     for provider_kind in BROWSER_PKCE_PROVIDERS {
+        // Leave headroom for reaching the response boundary under parallel test
+        // scheduling, while keeping the response body later than the flow budget.
         let (token_route, token_probe) = raw_json_route(
             "POST",
             "/oauth/token",
@@ -1498,12 +1500,12 @@ async fn pkce_total_budget_bounds_token_response_body_after_headers() {
                 "delayed-body-refresh",
                 3600,
             ),
-            Duration::from_millis(250),
+            Duration::from_secs(2),
         );
         let server = RawBodyDelayServer::start(vec![token_route]).await;
         let provider = provider_kind.build_with_timeout(
             format!("{}/oauth/token", server.uri()),
-            Duration::from_millis(100),
+            Duration::from_secs(1),
         );
         let presenter = MockLoginPresenter::new();
         presenter.supply_manual_code("one-use-code");
