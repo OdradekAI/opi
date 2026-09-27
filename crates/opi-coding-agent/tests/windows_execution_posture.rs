@@ -84,7 +84,7 @@ async fn local_exec_reports_supervised_guarantee() {
     let request = BashRequest {
         command: command.to_string(),
         cwd: workspace.path().to_path_buf(),
-        timeout: Duration::from_secs(5),
+        timeout: Some(Duration::from_secs(5)),
         signal: CancellationToken::new(),
         env: Vec::new(),
         backend: None,
@@ -249,7 +249,7 @@ fn request(command: &str) -> BashRequest {
     BashRequest {
         command: command.to_string(),
         cwd: PathBuf::from("."),
-        timeout: Duration::from_secs(5),
+        timeout: Some(Duration::from_secs(5)),
         signal: CancellationToken::new(),
         env: Vec::new(),
         backend: None,

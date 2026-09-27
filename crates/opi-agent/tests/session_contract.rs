@@ -81,6 +81,7 @@ fn compaction_entry(
         first_kept_entry_id: first_kept.into(),
         tokens_before,
         tokens_after,
+        summary_usage: None,
     })
 }
 

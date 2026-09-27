@@ -35,7 +35,7 @@ pub const MAX_BASH_TIMEOUT_SECS: u64 = 86_400;
 pub struct BashArgs {
     /// Command to execute.
     pub command: String,
-    /// Timeout in seconds (optional, defaults to 30).
+    /// Timeout in seconds (optional; no deadline unless configured).
     #[schemars(range(min = 1, max = 86400))]
     pub timeout_secs: Option<u64>,
 }
@@ -76,6 +76,7 @@ pub struct BashTool {
     workspace_root: PathBuf,
     ops: Arc<dyn BashOperations>,
     schema: serde_json::Value,
+    default_timeout: Option<Duration>,
 }
 
 impl BashTool {
@@ -105,7 +106,15 @@ impl BashTool {
             workspace_root,
             ops,
             schema,
+            default_timeout: None,
         }
+    }
+
+    /// Set the product-configured deadline used when a call omits `timeout_secs`.
+    /// `None` leaves local execution bounded only by cancellation and cleanup.
+    pub fn with_default_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.default_timeout = timeout;
+        self
     }
 }
 
@@ -255,7 +264,10 @@ impl BashTool {
                 });
             }
         };
-        let timeout = Duration::from_secs(args.timeout_secs.unwrap_or(30));
+        let timeout = args
+            .timeout_secs
+            .map(Duration::from_secs)
+            .or(self.default_timeout);
         let command = args.command;
         let backend = args.backend;
         let cwd = self.workspace_root.clone();
@@ -560,6 +572,172 @@ fn with_env_policy(mut details: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    async fn wait_for_process_marker(path: &Path) -> u32 {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Ok(text) = std::fs::read_to_string(path)
+                && let Ok(pid) = text.trim().parse()
+            {
+                return pid;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "process marker missing"
+            );
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn assert_process_stopped(pid: u32) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let running = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+                .ok()
+                .and_then(|stat| stat.rsplit_once(") ").map(|(_, fields)| fields.to_owned()))
+                .is_some_and(|fields| !fields.starts_with('Z'));
+            if !running {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "process {pid} survived cleanup"
+            );
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test(start_paused = true)]
+    async fn local_bash_deadline_omission_survives_elapsed_virtual_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = BashTool::new(dir.path().to_path_buf());
+        let task = tokio::spawn(async move {
+            tool.execute(
+                "call",
+                json!({"command": "echo $$ > started.pid; while [ ! -f release ]; do sleep 0.01; done; printf completed"}),
+                CancellationToken::new(),
+                None,
+            )
+            .await
+        });
+        let pid = wait_for_process_marker(&dir.path().join("started.pid")).await;
+        tokio::time::advance(Duration::from_secs(31)).await;
+        tokio::task::yield_now().await;
+        tokio::time::resume();
+        std::fs::write(dir.path().join("release"), b"release").unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(
+            !result.is_error,
+            "omitted timeout ended the command: {:?}",
+            result.details
+        );
+        let details = result.details.unwrap();
+        assert_eq!(details["timed_out"], false);
+        assert_eq!(details["exit_code"], 0);
+        assert_process_stopped(pid).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test(start_paused = true)]
+    async fn local_bash_deadline_explicit_timeout_terminates_process_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = BashTool::new(dir.path().to_path_buf());
+        let task = tokio::spawn(async move {
+            tool.execute(
+                "call",
+                json!({"command": "echo $$ > started.pid; sleep 60 & echo $! > child.pid; wait", "timeout_secs": 1}),
+                CancellationToken::new(),
+                None,
+            )
+            .await
+        });
+        let pid = wait_for_process_marker(&dir.path().join("started.pid")).await;
+        let child = wait_for_process_marker(&dir.path().join("child.pid")).await;
+        tokio::time::advance(Duration::from_secs(2)).await;
+        tokio::time::resume();
+        let result = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(result.is_error);
+        let details = result.details.unwrap();
+        assert_eq!(details["timed_out"], true);
+        assert_eq!(details["cancelled"], false);
+        assert_process_stopped(pid).await;
+        assert_process_stopped(child).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn local_bash_deadline_cancellation_without_timeout_terminates_process_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = BashTool::new(dir.path().to_path_buf());
+        let signal = CancellationToken::new();
+        let request_signal = signal.clone();
+        let task = tokio::spawn(async move {
+            tool.execute(
+                "call",
+                json!({"command": "echo $$ > started.pid; sleep 60 & echo $! > child.pid; wait"}),
+                request_signal,
+                None,
+            )
+            .await
+        });
+        let pid = wait_for_process_marker(&dir.path().join("started.pid")).await;
+        let child = wait_for_process_marker(&dir.path().join("child.pid")).await;
+        signal.cancel();
+        let result = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(result.is_error);
+        let details = result.details.unwrap();
+        assert_eq!(details["cancelled"], true);
+        assert_eq!(details["timed_out"], false);
+        assert_process_stopped(pid).await;
+        assert_process_stopped(child).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn local_bash_deadline_configured_timeout_and_call_override() {
+        for call_timeout in [None, Some(3)] {
+            let dir = tempfile::tempdir().unwrap();
+            let tool = BashTool::new(dir.path().to_path_buf())
+                .with_default_timeout(Some(Duration::from_millis(1000)));
+            let mut arguments = json!({"command": "echo $$ > started.pid; while [ ! -f release ]; do sleep 0.01; done; printf completed"});
+            if let Some(timeout) = call_timeout {
+                arguments["timeout_secs"] = json!(timeout);
+            }
+            tokio::time::pause();
+            let task = tokio::spawn(async move {
+                tool.execute("call", arguments, CancellationToken::new(), None)
+                    .await
+            });
+            let pid = wait_for_process_marker(&dir.path().join("started.pid")).await;
+            tokio::time::advance(Duration::from_secs(2)).await;
+            tokio::task::yield_now().await;
+            tokio::time::resume();
+            std::fs::write(dir.path().join("release"), b"release").unwrap();
+            let result = tokio::time::timeout(Duration::from_secs(5), task)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert_eq!(result.is_error, call_timeout.is_none());
+            assert_eq!(result.details.unwrap()["timed_out"], call_timeout.is_none());
+            assert_process_stopped(pid).await;
+        }
+    }
 
     struct PanicOperations;
 

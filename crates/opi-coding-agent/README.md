@@ -335,7 +335,7 @@ product with no registered tools. Otherwise the mode default applies.
 | Shell | `cmd /C` on Windows, `sh -c` on Unix. |
 | Working directory | Workspace root. |
 | Execution backend | Built-in `local` by default; `[execution]` or the execution CLI flags can select an eligible external `command.execute` adapter. |
-| Timeout | 30 seconds by default; `timeout_secs` overrides. |
+| Timeout | No deadline by default for local execution. Positive `defaults.tool_timeout_ms` supplies a default; a call's `timeout_secs` overrides it. External adapters require one of these explicit finite deadlines. |
 | Cancellation | A cancellation token reports `cancelled=true` / `timed_out=false`; a timeout reports `timed_out=true` / `cancelled=false`. |
 | Effective contract | Local execution reports `placement=host`, `guarantee=supervised`; external placement, guarantee, policy, and limitations come from the backend's `started` event. Adapter identity alone is not a security guarantee. |
 | Path confinement | The local backend does not restrict `bash` to the workspace. An external backend is limited only by its reported effective contract. |
@@ -531,9 +531,27 @@ the selected model's output capability, and exceed any enabled thinking budget.
 Invalid combinations fail before a provider request. The explicit limit remains
 in effect through retries, tool continuation, and compatible model or thinking
 changes, including turning thinking off. Incompatible runtime changes reject
-without persisting the change. Omission retains the existing provider/thinking
-defaults. A custom model's `max_output_tokens` describes its capability ceiling;
-it does not select this request limit.
+without persisting the change. Omission uses the selected model's
+`max_output_tokens` capability as the response limit, including after model
+changes and tool continuation. Thinking shares this response budget; enabling
+it does not reduce the response limit to the thinking budget plus one. When an
+oversized startup thinking budget must be fitted to the model, it leaves 1024
+tokens for the answer where the model ceiling permits.
+
+Before dispatch, both default and explicit response ceilings are reduced to
+fit the estimated remaining context with 4096 safety tokens. Thinking is fitted
+again when necessary. This safety reserve does not impose a 4096-token output
+limit or a cumulative limit on a long-running task.
+
+The default thinking level is medium with an 8192-token budget. Minimal and
+low use 1024 and 2048; high uses at least 16384. A configured thinking budget
+replaces the medium default and can raise the high budget. Unsupported model
+levels still reject before dispatch.
+
+This is a per-response limit, not a cumulative task budget. For paired
+benchmarks, explicitly freeze the same supported output, context and reasoning
+controls for both clients and verify their actual requests; do not rely on
+different client defaults or copy synthetic smoke-test limits into live runs.
 
 Hook-proposed next-turn states must retain the explicit limit and compatible
 model/thinking settings. Invalid proposals reject before the state is applied,
@@ -541,6 +559,28 @@ including between provider requests during tool continuation.
 
 For embedders, `CodingHarness::set_model` returns `Result<(), String>`; handle
 rejection before assuming that the active model changed.
+
+Automatic compaction is enabled by default. Before the first model request and
+between continued tool turns, it compares current context occupancy with the
+selected model's context window minus 16384 tokens. An explicit
+`[compaction] threshold_tokens` overrides that threshold; `enabled = false`
+disables automatic compaction. The retained tail is selected by approximately
+20000 tokens, preserving tool-call/result groups. If no older prefix can be
+removed, compaction is a no-op.
+
+Compaction asks the active model for a structured summary of the older prefix,
+including any previous summary. It inherits the prepared thinking settings and
+configured retry policy, with an output ceiling of 80% of the reserve (13107
+tokens), further bounded by model capacity and remaining context. Image bytes
+are omitted from the summary transcript and individual tool results are
+limited to 2000 UTF-16 units. It does not use a clipped transcript as a
+fallback. A failed, empty, truncated or cancelled summary cannot replace the
+conversation. Completed messages, the summary marker and the active Leaf are
+committed together before the next request; the same logical run and turn
+budget continue. Summary token usage is recorded separately in the marker for
+resume accounting. `CodingHarness::compact` and `compact_with_diagnostic` are
+asynchronous and must be awaited; manual compaction uses the same transaction.
+RPC compaction remains cancellable through `abort` while the summary runs.
 
 User config paths:
 

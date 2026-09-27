@@ -100,6 +100,18 @@ credential-needed/revoked，则 prepared call 以 `CredentialTerminated` 关闭�
 `ProviderError::CredentialNeeded` 和 `ProviderError::CredentialRevoked`。
 按调用凭据仍不在范围内：`extra_headers` 会拒绝 Provider 管理的鉴权 header。
 
+`prepare_call` 在鉴权前把省略的 `Request.max_tokens` 解析为所选 registry model 的
+`max_output_tokens` 容量，包含 model override 和刷新后的 catalog。显式 request 上限
+仍作为上限。若已启用 thinking 的 budget 大于或等于该默认输出上限，preparation 会在
+鉴权和派发前返回类型化 capability 错误。每次 attempt 都复用解析后的上限。
+隐式与显式上限都会按估算的剩余上下文收缩，预留 4096 token 安全余量，最少保留一个
+输出 token。无法装入收缩后上限的 thinking 会缩小，尽可能留出 1024 token 回答空间。
+非 adaptive Anthropic 按 thinking 等级解析省略的预算；无法同时容纳最小 thinking
+预算和回答空间的上限会在鉴权前被拒绝。adaptive effort 不使用该数字预算下限。
+`context` 模块估算消息、system 文本和工具 schema，并使用适用的同模型 usage 加新增
+消息计算当前占用，而非会话累计用量。直接调用 provider adapter 仍保留原有默认行为；
+这是每个 request 的输出上限，与产品的轮数预算相互独立。
+
 `ProviderError::AccountIdMissing { provider_id }` 是独立且不可重试的情形：凭据存在，
 但缺少所选 wire 要求的 account identity。产品层通过显式 `/login <provider>` 修复；
 它不表示凭据已撤销。

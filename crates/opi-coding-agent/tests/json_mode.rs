@@ -1852,6 +1852,7 @@ async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
         session_id: &str,
         config: OpiConfig,
         tools: ToolSelection,
+        compactable: bool,
     ) -> NonInteractiveRunner {
         let session_path = session_dir.join(format!("{session_id}.jsonl"));
         SessionWriter::create(
@@ -1864,6 +1865,46 @@ async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
             ),
         )
         .unwrap();
+        if compactable {
+            let mut writer = SessionWriter::open(&session_path).unwrap();
+            let mut assistant = test_support::base_assistant();
+            assistant.content = vec![opi_ai::message::AssistantContent::Text {
+                text: "r".repeat(80_000),
+            }];
+            for (id, parent, message) in [
+                (
+                    "old-user",
+                    None,
+                    opi_ai::message::Message::User(opi_ai::message::UserMessage {
+                        content: vec![opi_ai::message::InputContent::Text {
+                            text: "o".repeat(80_000),
+                        }],
+                        timestamp_ms: 0,
+                    }),
+                ),
+                (
+                    "kept-assistant",
+                    Some("old-user".to_owned()),
+                    opi_ai::message::Message::Assistant(assistant),
+                ),
+            ] {
+                writer
+                    .append(&opi_agent::session::SessionEntry::Message(
+                        opi_agent::session::MessageEntry {
+                            id: id.to_owned(),
+                            parent_id: parent,
+                            timestamp: "2026-08-19T00:00:01Z".to_owned(),
+                            message,
+                        },
+                    ))
+                    .unwrap();
+            }
+        }
+        let (_, entries) = opi_agent::session::SessionReader::read_all(&session_path).unwrap();
+        let context = opi_agent::session_context::reconstruct_context(
+            &entries,
+            &opi_agent::session::CrashRecovery::default(),
+        );
         NonInteractiveRunner::new_with_resume(
             provider,
             "mock-model".to_owned(),
@@ -1871,11 +1912,11 @@ async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
             workspace.to_path_buf(),
             false,
             None,
-            Vec::new(),
+            context.messages,
             Some(ResumeInfo {
                 path: session_path,
                 session_id: session_id.to_owned(),
-                entries: Vec::new(),
+                entries,
                 original_cwd: workspace.to_path_buf(),
                 diagnostics: Vec::new(),
                 recorded_model: None,
@@ -1902,6 +1943,9 @@ async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
     let provider = MockProvider::new_with_errors(
         "mock",
         vec![
+            MockResponse::Events(test_support::text_response(&format!(
+                "{prompt_canary} {tool_canary} {path_canary} {credential_canary}"
+            ))),
             MockResponse::Events(test_support::tool_call_response(
                 "ndjson-canary-read",
                 "read",
@@ -1911,7 +1955,7 @@ async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
         ],
     );
     let mut config = OpiConfig::default();
-    config.compaction.threshold_tokens = 0;
+    config.compaction.threshold_tokens = Some(30_000);
     let mut runner = resumed_runner(
         Box::new(provider),
         workspace.path(),
@@ -1919,6 +1963,7 @@ async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
         "ndjson-compaction",
         config,
         ToolSelection::Allowlist(vec!["read".to_owned()]),
+        true,
     );
     let result = runner
         .run_json(&format!(
@@ -1961,6 +2006,7 @@ async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
         &persist_path_id,
         OpiConfig::default(),
         ToolSelection::Default,
+        false,
     );
     let source_path = persist_runner
         .session()

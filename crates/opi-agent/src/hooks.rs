@@ -77,6 +77,50 @@ pub struct PrepareNextTurnContext {
     pub turn: u64,
 }
 
+/// Complete initial state, including input selected for the first dispatch.
+#[derive(Clone)]
+pub struct InitialTurnContext {
+    pub state: NextTurnState,
+}
+
+/// External persistence reported by a settled preparation commit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreparationCommit {
+    /// No external state changed; ordinary run rollback remains unchanged.
+    NoExternalCommit,
+    /// The validated candidate was committed to external durable state.
+    ExternalStateCommitted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PreparationCompactionIdentity {
+    pub run: crate::evidence::RunId,
+    pub turn: crate::evidence::TurnId,
+    pub call: crate::evidence::CallId,
+    pub trigger: crate::evidence::CompactionTrigger,
+}
+
+/// Opaque start token retained across preparation and its commit callback.
+#[must_use = "a started compaction must receive a terminal outcome"]
+#[derive(Debug)]
+pub struct PendingPreparationCompaction {
+    pub(crate) identity: PreparationCompactionIdentity,
+}
+
+/// Borrowed access to the active run's preparation evidence lifecycle.
+///
+/// The allocator and health remain owned by Core. Operations use the same run
+/// and turn as the preparation and cannot outlive its awaited callback.
+pub struct PreparationEvidence<'a> {
+    pub(crate) events: &'a crate::event::AgentEventSink,
+    pub(crate) sink: &'a Option<std::sync::Arc<dyn crate::evidence::EvidenceSink>>,
+    pub(crate) identities: &'a mut crate::evidence::IdentityAllocator,
+    pub(crate) health: &'a mut crate::evidence::EvidenceHealth,
+    pub(crate) turn: crate::evidence::TurnId,
+    pub(crate) pending: &'a mut Vec<PreparationCompactionIdentity>,
+    pub(crate) uncertain_outcome: &'a mut Option<crate::evidence::TerminalOutcome>,
+}
+
 /// Hook trait for customizing agent loop behavior.
 ///
 /// Default implementations are no-ops or basic conversions.
@@ -140,5 +184,58 @@ pub trait AgentHooks: Send + Sync {
         >,
     > {
         Box::pin(async { Ok(None) })
+    }
+
+    /// Prepare the initial state before transformation and provider dispatch.
+    /// Selected queue messages must remain an unchanged suffix of a replacement.
+    fn prepare_initial_turn<'a>(
+        &'a self,
+        _ctx: InitialTurnContext,
+        _cancel: CancellationToken,
+        _evidence: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send + 'a>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// Prepare an already-warranted next turn with active run evidence.
+    /// The default preserves the existing preparation hook contract.
+    fn prepare_next_turn_transaction<'a>(
+        &'a self,
+        ctx: PrepareNextTurnContext,
+        _cancel: CancellationToken,
+        _evidence: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send + 'a>> {
+        self.prepare_next_turn(ctx)
+    }
+
+    /// Validate product-owned constraints after intrinsic Core validation.
+    /// No external state may be committed here.
+    fn validate_prepared_state(&self, _candidate: &NextTurnState) -> Result<(), AgentError> {
+        Ok(())
+    }
+
+    /// Whether this hook owns external persistence for preparation commits.
+    /// Wrappers forward this fact; independent commit owners must reject an
+    /// overlapping transaction during validation, before either owner writes.
+    fn owns_preparation_commit(&self) -> bool {
+        false
+    }
+
+    /// Settle external persistence for a fully validated candidate.
+    ///
+    /// Core does not drop this future when cancellation arrives. An `Ok` result
+    /// always installs the candidate before cancellation is observed; reporting
+    /// an external commit retains that baseline on later ordinary failure.
+    /// Once durable persistence completes, return `ExternalStateCommitted` even
+    /// if subsequent evidence emission fails; Core installs the candidate and
+    /// withholds dispatch on incomplete evidence. `Err` reports no completed
+    /// external commit, with any partial effect recorded separately in evidence.
+    fn commit_prepared_state<'a>(
+        &'a self,
+        _candidate: NextTurnState,
+        _cancel: CancellationToken,
+        _evidence: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<PreparationCommit, AgentError>> + Send + 'a>> {
+        Box::pin(async { Ok(PreparationCommit::NoExternalCommit) })
     }
 }

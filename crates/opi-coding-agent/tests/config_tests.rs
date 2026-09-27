@@ -69,7 +69,7 @@ theme = "dark"
     let config = load_config_file(&path).unwrap();
     assert_eq!(config.defaults.model, "anthropic:claude-sonnet-4");
     assert_eq!(config.defaults.max_iterations, Some(100));
-    assert_eq!(config.defaults.tool_timeout_ms, 60000);
+    assert_eq!(config.defaults.tool_timeout_ms, Some(60000));
     assert_eq!(config.defaults.theme, "dark");
 }
 
@@ -97,6 +97,82 @@ fn request_output_limit_rejects_zero() {
         .to_string();
     assert!(error.contains("defaults.max_output_tokens"), "{error}");
     assert!(error.contains("greater than zero"), "{error}");
+}
+
+#[test]
+fn bash_timeout_default_rejects_zero() {
+    let file = write_toml("[defaults]\ntool_timeout_ms = 0\n");
+    let error = load_config_file(file.path())
+        .expect_err("an explicit default bash deadline must be positive")
+        .to_string();
+    assert!(error.contains("defaults.tool_timeout_ms"), "{error}");
+    assert!(error.contains("greater than zero"), "{error}");
+    assert_eq!(OpiConfig::default().defaults.tool_timeout_ms, None);
+}
+
+#[test]
+fn bash_timeout_default_validation_obeys_final_precedence_and_project_trust() {
+    let root = tempfile::tempdir().unwrap();
+    let user = root.path().join("user.toml");
+    let explicit = root.path().join("explicit.toml");
+    let project = root.path().join("project");
+    fs::create_dir_all(project.join(".opi")).unwrap();
+    let project_config = project.join(".opi/config.toml");
+    fs::write(&user, "[defaults]\ntool_timeout_ms = 0\n").unwrap();
+    fs::write(&project_config, "[defaults]\ntool_timeout_ms = 2000\n").unwrap();
+    fs::write(&explicit, "[defaults]\ntool_timeout_ms = 3000\n").unwrap();
+    let source = |config_path| ConfigSource {
+        user_config_path: Some(user.clone()),
+        project_dir: Some(project.clone()),
+        config_path,
+        cli_model: None,
+        env_model: None,
+    };
+
+    let staged = stage_config(source(None)).unwrap();
+    assert!(staged.clone().finalize_with_project(false).is_err());
+    assert_eq!(
+        staged
+            .finalize_with_project(true)
+            .unwrap()
+            .defaults
+            .tool_timeout_ms,
+        Some(2000),
+        "a valid higher-priority project value overrides the invalid user value"
+    );
+    for include_project in [false, true] {
+        assert_eq!(
+            stage_config(source(Some(explicit.clone())))
+                .unwrap()
+                .finalize_with_project(include_project)
+                .unwrap()
+                .defaults
+                .tool_timeout_ms,
+            Some(3000)
+        );
+    }
+
+    fs::write(&user, "[defaults]\ntool_timeout_ms = 1000\n").unwrap();
+    fs::write(&project_config, "[defaults]\ntool_timeout_ms = 0\n").unwrap();
+    let global = stage_config(source(None))
+        .unwrap()
+        .finalize_with_project(false)
+        .unwrap();
+    assert_eq!(global.defaults.tool_timeout_ms, Some(1000));
+    assert!(resolve_config(source(None)).is_err());
+    assert!(opi_coding_agent::config::merge_project_config(global, &project).is_err());
+    assert_eq!(
+        resolve_config(source(Some(explicit.clone())))
+            .unwrap()
+            .defaults
+            .tool_timeout_ms,
+        Some(3000),
+        "a valid explicit value overrides the invalid project value"
+    );
+
+    fs::write(&project_config, "[defaults]\ntool_timeout_ms = 2000\n").unwrap();
+    fs::write(&explicit, "[defaults]\ntool_timeout_ms = 0\n").unwrap();
+    assert!(resolve_config(source(Some(explicit))).is_err());
 }
 
 #[test]

@@ -73,6 +73,7 @@ fn compaction(id: &str, parent: Option<&str>, first_kept: &str) -> SessionEntry 
         first_kept_entry_id: first_kept.into(),
         tokens_before: 5000,
         tokens_after: 1000,
+        summary_usage: None,
     })
 }
 

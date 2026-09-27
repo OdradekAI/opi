@@ -508,7 +508,7 @@ async fn rpc_set_model_revalidates_existing_thinking_before_switching() {
         "mock",
         vec![
             rpc_model_info_with_max_output("large-model", true, 100_000),
-            rpc_model_info_with_max_output("small-model", true, 20_000),
+            rpc_model_info_with_max_output("small-model", true, 16_384),
         ],
         vec![text_response("still large")],
     );
@@ -527,7 +527,7 @@ async fn rpc_set_model_revalidates_existing_thinking_before_switching() {
         .unwrap();
     let thinking = recv_response(&mut output_rx, "set_thinking_level").await;
     assert_eq!(thinking["success"], true);
-    assert_eq!(thinking["data"]["budget_tokens"], 20_000);
+    assert_eq!(thinking["data"]["budget_tokens"], 16_384);
 
     command_tx
         .send(RpcCommand::set_model {
@@ -539,7 +539,7 @@ async fn rpc_set_model_revalidates_existing_thinking_before_switching() {
     assert_eq!(rejected["success"], false);
     assert_eq!(
         rejected["error"],
-        "thinking budget 20000 requires max_tokens 20001, exceeding max output tokens 20000 for model 'small-model'"
+        "thinking budget 16384 requires max_tokens 16385, exceeding max output tokens 16384 for model 'small-model'"
     );
 
     command_tx
@@ -556,8 +556,8 @@ async fn rpc_set_model_revalidates_existing_thinking_before_switching() {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].model, "mock:large-model");
-        assert_eq!(calls[0].thinking.budget_tokens, Some(20_000));
-        assert_eq!(calls[0].max_tokens, Some(20_001));
+        assert_eq!(calls[0].thinking.budget_tokens, Some(16_384));
+        assert_eq!(calls[0].max_tokens, Some(100_000));
     }
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -621,7 +621,7 @@ async fn rpc_set_model_rejects_switch_to_non_thinking_model_with_active_thinking
         assert_eq!(calls[0].model, "mock:thinking-model");
         assert!(calls[0].thinking.enabled);
         assert_eq!(calls[0].thinking.budget_tokens, Some(2048));
-        assert_eq!(calls[0].max_tokens, Some(2049));
+        assert_eq!(calls[0].max_tokens, Some(100_000));
     }
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -755,7 +755,7 @@ async fn rpc_set_thinking_level_off_medium_high_change_runtime_config() {
     assert_eq!(resp["success"], true);
     assert_eq!(resp["data"]["level"], "high");
     assert_eq!(resp["data"]["enabled"], true);
-    assert_eq!(resp["data"]["budget_tokens"], 20_000);
+    assert_eq!(resp["data"]["budget_tokens"], 16_384);
     command_tx
         .send(RpcCommand::prompt {
             id: Some("prompt-high".into()),
@@ -775,7 +775,7 @@ async fn rpc_set_thinking_level_off_medium_high_change_runtime_config() {
         assert!(calls[1].thinking.enabled);
         assert_eq!(calls[1].thinking.budget_tokens, Some(12_345));
         assert!(calls[2].thinking.enabled);
-        assert_eq!(calls[2].thinking.budget_tokens, Some(20_000));
+        assert_eq!(calls[2].thinking.budget_tokens, Some(16_384));
     }
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -828,7 +828,7 @@ async fn rpc_set_thinking_level_medium_and_high_keep_request_token_budget_valid(
         .unwrap();
     let resp = recv_response(&mut output_rx, "set_thinking_level").await;
     assert_eq!(resp["success"], true);
-    assert_eq!(resp["data"]["budget_tokens"], 20_000);
+    assert_eq!(resp["data"]["budget_tokens"], 16_384);
     command_tx
         .send(RpcCommand::prompt {
             id: Some("prompt-high".into()),
@@ -856,9 +856,9 @@ async fn rpc_set_thinking_level_medium_and_high_keep_request_token_budget_valid(
             );
         }
         assert_eq!(calls[0].thinking.budget_tokens, Some(12_345));
-        assert_eq!(calls[0].max_tokens, Some(12_346));
-        assert_eq!(calls[1].thinking.budget_tokens, Some(20_000));
-        assert_eq!(calls[1].max_tokens, Some(20_001));
+        assert_eq!(calls[0].max_tokens, Some(100_000));
+        assert_eq!(calls[1].thinking.budget_tokens, Some(16_384));
+        assert_eq!(calls[1].max_tokens, Some(100_000));
     }
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -897,7 +897,7 @@ async fn rpc_startup_thinking_config_sets_valid_first_request_token_budget() {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 1);
         assert!(calls[0].thinking.enabled);
-        assert_eq!(calls[0].thinking.budget_tokens, Some(12_345));
+        assert_eq!(calls[0].thinking.budget_tokens, Some(12_346 - 1_024));
         assert_eq!(calls[0].max_tokens, Some(12_346));
     }
 
@@ -938,7 +938,7 @@ async fn rpc_startup_thinking_config_disables_known_non_thinking_model() {
         assert_eq!(calls.len(), 1);
         assert!(!calls[0].thinking.enabled);
         assert_eq!(calls[0].thinking.budget_tokens, None);
-        assert_eq!(calls[0].max_tokens, None);
+        assert_eq!(calls[0].max_tokens, Some(100_000));
     }
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -968,7 +968,7 @@ async fn rpc_set_thinking_level_rejects_budget_above_known_model_limit() {
     assert_eq!(resp["success"], false);
     assert_eq!(
         resp["error"],
-        "thinking budget 20000 requires max_tokens 20001, exceeding max output tokens 8192 for model 'mock-model'"
+        "thinking budget 16384 requires max_tokens 16385, exceeding max output tokens 8192 for model 'mock-model'"
     );
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -1017,7 +1017,7 @@ async fn rpc_set_thinking_level_rejects_known_non_thinking_model() {
         assert_eq!(calls.len(), 1);
         assert!(!calls[0].thinking.enabled);
         assert_eq!(calls[0].thinking.budget_tokens, None);
-        assert_eq!(calls[0].max_tokens, None);
+        assert_eq!(calls[0].max_tokens, Some(100_000));
     }
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
@@ -1875,7 +1875,7 @@ fn rpc_model_info_with_max_output(
         id,
         id,
         opi_ai::WireApi::OpenAiCompletions,
-        ModelCapabilities::new(100_000, max_output_tokens)
+        ModelCapabilities::new(200_000, max_output_tokens)
             .with_images(true)
             .with_streaming(true)
             .with_thinking(supports_thinking),
@@ -4624,7 +4624,14 @@ mod phase7 {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn phase7_rpc_manual_compaction_response_carries_diagnostic() {
-        let provider = MockProvider::new("mock", vec![test_support::text_response("hi")]);
+        let provider = MockProvider::new(
+            "mock",
+            vec![
+                test_support::text_response(&"recent context".repeat(7_000)),
+                test_support::text_response("manual checkpoint"),
+            ],
+        );
+        let calls = provider.call_log_handle();
         let runtime = RuntimePackageStartup {
             extension_registry: ExtensionRegistry::new(),
             installed_packages: Vec::new(),
@@ -4658,7 +4665,7 @@ mod phase7 {
         command_tx
             .send(RpcCommand::prompt {
                 id: Some("p1".into()),
-                message: "hi".into(),
+                message: "older context".repeat(7_000),
             })
             .unwrap();
         assert_eq!(
@@ -4675,6 +4682,8 @@ mod phase7 {
             .unwrap();
         let compact = recv_response(&mut output_rx, "compact").await;
         assert_eq!(compact["success"], true, "manual compaction should succeed");
+        assert_eq!(compact["data"]["summary"], "manual checkpoint");
+        assert_eq!(calls.lock().unwrap().len(), 2, "task and summary calls");
         let diagnostics = compact["data"]["diagnostics"]
             .as_array()
             .expect("compact response should include diagnostics");

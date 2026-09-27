@@ -10,6 +10,7 @@ pub mod auth;
 pub mod azure_openai;
 pub mod bedrock;
 pub mod config;
+pub mod context;
 pub mod credential;
 mod endpoint;
 pub mod gemini;

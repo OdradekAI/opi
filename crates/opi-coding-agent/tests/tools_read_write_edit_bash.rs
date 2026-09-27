@@ -2759,6 +2759,10 @@ fn bash_tool_no_background_shell_symbols_guard() {
     let bash = phase11_strip_comments(&bash_src);
     let ops = phase11_strip_comments(&ops_src);
     let sup = phase11_strip_comments(&sup_src);
+    let bash = bash
+        .split("mod tests {")
+        .next()
+        .expect("production bash source");
     let ops = ops
         .split("mod tests {")
         .next()

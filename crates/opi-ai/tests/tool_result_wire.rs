@@ -397,6 +397,7 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
     // `api_mapped` and `provider_headers` for custom mapped routing; Phase
     // 14.18 added the dedicated public `openai_codex_responses` provider while
     // its wire-neutral shared implementation remains private.)
+    // Context estimation is shared by request budgeting and product compaction.
     let baseline_modules = vec![
         "anthropic",
         "api_mapped",
@@ -404,6 +405,7 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "azure_openai",
         "bedrock",
         "config",
+        "context",
         "credential",
         "gemini",
         "http",

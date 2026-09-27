@@ -385,6 +385,42 @@ fn config_scope_surfaces_config_error_as_error_severity() {
 }
 
 #[test]
+fn config_scope_reports_zero_bash_timeout_with_remediation() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[defaults]\ntool_timeout_ms = 0\n").unwrap();
+    let error = opi_coding_agent::config::load_config_file(&path)
+        .expect_err("zero must not become an immediate bash timeout");
+    let config = OpiConfig::default();
+    let context = DoctorContext {
+        config_error: Some(&error),
+        ..ctx(&config, dir.path(), &no_env)
+    };
+    let report = run_doctor(&[DoctorScope::Config], &context);
+    assert_eq!(report.exit_code(), 2);
+    let diagnostic = &report
+        .entries
+        .iter()
+        .find(|entry| {
+            entry.diagnostic.code == opi_agent::diagnostic::code::CODE_CONFIG_PARSE_FAILED
+        })
+        .expect("config failure must retain its startup diagnostic")
+        .diagnostic;
+    assert_eq!(diagnostic.severity, Severity::Error);
+    assert_eq!(diagnostic.source, opi_agent::diagnostic::SOURCE_CONFIG);
+    assert!(diagnostic.message.contains("defaults.tool_timeout_ms"));
+    assert!(
+        diagnostic
+            .action
+            .as_ref()
+            .unwrap()
+            .contains("no bash deadline"),
+        "omission must give an actionable alternative to a positive deadline"
+    );
+    assert!(format_json(&report).contains("defaults.tool_timeout_ms"));
+}
+
+#[test]
 fn doctor_json_redacts_absolute_path_in_config_details() {
     // A config error carries the config file path in `details`; the public
     // --json boundary must redact it (Phase 7 design: details are redacted

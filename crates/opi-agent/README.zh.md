@@ -145,6 +145,14 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
 | `should_stop_after_turn` | 在队列轮询和准备之前观察已完成轮次；返回 `true` 立即结束运行。 |
 | `prepare_next_turn` | 仅在停止决定和输入选择后确实需要续轮时运行；返回的可选完整候选在下一次 provider 派发前校验并原子应用。 |
 
+持久化上下文变更使用 `prepare_initial_turn` 或 `prepare_next_turn_transaction`，
+随后经过 Core 内建校验和产品 `validate_prepared_state` 校验，再调用
+`commit_prepared_state`。每次转换只有一个外部提交所有者，通过
+`owns_preparation_commit` 声明。取消可以中断准备阶段；提交开始后，Core 会等待其
+确认，安装已提交的候选，再处理取消或后续失败。`PreparationEvidence` 在同一 run
+中记录压缩和真实摘要请求，不消耗任务轮次；`prepare_context_armed` 只执行该转换，
+不派发任务请求。扩展包装器转发这些方法并保留正常的准备顺序。
+
 扩展组合：`ExtensionRegistry::wrap_hooks` 先运行基础 `AgentHooks` 方法，再按注册顺序依次运行每个扩展。
 扩展的 `on_before_tool_call` 返回 `Block` 会在首个 block 处中断链路；后续扩展不会被调用。
 扩展的 `on_after_tool_call` 观察者不能修改结果；只有基础 hook 可以 `Replace`。
@@ -168,6 +176,10 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
   与完成顺序无关。
 - 当批次中所有已完成结果均设置 `terminate` 时，仅抑制自动工具续轮；停止 hook
   仍会运行，排队消息仍可推动下一轮。只要有一个非终止结果，就保留自动续轮。
+
+以 `length` 结束的 assistant 响应不能启动其中任何工具调用，即使参数是合法 JSON。
+循环会按源顺序为每个调用生成错误结果，不运行工具 hook、authorization 或执行。
+这些非终止失败保留正常的停止与续轮处理；没有工具调用的 length 响应不会凭空创建下一轮。
 
 对于已解析的工具，`before_tool_call` 先运行；随后参数校验会在强制 authorization 与
 `Tool::execute` 之前执行。校验失败是正常的运行时结果，而非循环错误：会持久化一个

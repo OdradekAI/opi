@@ -16,7 +16,9 @@ use crate::diagnostic_sink::DiagnosticSink;
 use crate::event::{AgentEvent, AgentEventSink};
 use crate::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
-    BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
+    BeforeToolCallResult, InitialTurnContext, PendingPreparationCompaction, PreparationCommit,
+    PreparationCompactionIdentity, PreparationEvidence, PrepareNextTurnContext,
+    ShouldStopAfterTurnContext,
 };
 use crate::loop_types::{
     AgentError, AgentLoopConfig, AgentLoopContext, AgentProviderFailure, NextTurnState,
@@ -75,6 +77,7 @@ pub async fn agent_loop(
 #[must_use = "inspect execution outcome and evidence health before discarding a loop result"]
 pub struct AgentLoopResult {
     pub(crate) state: NextTurnState,
+    pub(crate) committed_state: Option<NextTurnState>,
     pub(crate) identities: crate::evidence::IdentityAllocator,
     pub(crate) evidence_health: crate::evidence::EvidenceHealth,
     pub(crate) terminal_outcome: crate::evidence::TerminalOutcome,
@@ -98,6 +101,12 @@ impl AgentLoopResult {
     /// result produced before a partial-side-effect or cleanup-unknown error.
     pub fn state(&self) -> &NextTurnState {
         &self.state
+    }
+
+    /// Most recent externally committed preparation, if one settled successfully.
+    /// Undelivered selected queue input is excluded from this rollback baseline.
+    pub fn committed_state(&self) -> Option<&NextTurnState> {
+        self.committed_state.as_ref()
     }
 
     /// The owning execution error, if the loop did not complete normally.
@@ -170,6 +179,27 @@ pub(crate) async fn agent_loop_with_identities(
     events: AgentEventSink,
     cancel: CancellationToken,
 ) -> AgentLoopResult {
+    run_operation(context, config, hooks, events, cancel, false).await
+}
+
+pub(crate) async fn prepare_context_with_identities(
+    context: AgentLoopContext,
+    config: AgentLoopConfig,
+    hooks: &dyn AgentHooks,
+    events: AgentEventSink,
+    cancel: CancellationToken,
+) -> AgentLoopResult {
+    run_operation(context, config, hooks, events, cancel, true).await
+}
+
+async fn run_operation(
+    context: AgentLoopContext,
+    config: AgentLoopConfig,
+    hooks: &dyn AgentHooks,
+    events: AgentEventSink,
+    cancel: CancellationToken,
+    preparation_only: bool,
+) -> AgentLoopResult {
     // Clone the sink/collector/collection handles up front (before any partial
     // move out of `context`) so every failure path below can record an
     // observation and prepare the next route. `None` means emission is disabled
@@ -189,10 +219,24 @@ pub(crate) async fn agent_loop_with_identities(
     let mut identities = crate::evidence::IdentityAllocator::new();
     let run = identities.run_id();
     let mut state = context.state;
+    let mut committed_state = None;
+    let mut pending_preparation = Vec::new();
+    let mut preparation_uncertainty = None;
 
     macro_rules! finish_with_error {
         ($error:expr) => {{
             let error = $error;
+            abandon_preparation(
+                &evidence_sink,
+                &mut identities,
+                &mut evidence_health,
+                &mut pending_preparation,
+                if matches!(&error, AgentError::Cancelled) {
+                    crate::evidence::CompactionOutcome::Aborted
+                } else {
+                    crate::evidence::CompactionOutcome::Failed
+                },
+            );
             if matches!(&error, AgentError::MaxTurnsExceeded(_)) {
                 observe(&diagnostic_sink, Diagnostic::from(&error));
             }
@@ -217,9 +261,11 @@ pub(crate) async fn agent_loop_with_identities(
             }
             return AgentLoopResult {
                 state,
+                committed_state,
                 identities,
                 evidence_health,
-                terminal_outcome: terminal_outcome_for_error(&error),
+                terminal_outcome: preparation_uncertainty
+                    .unwrap_or_else(|| terminal_outcome_for_error(&error)),
                 error: Some(error),
             };
         }};
@@ -227,8 +273,14 @@ pub(crate) async fn agent_loop_with_identities(
 
     macro_rules! finish_success {
         () => {{
+            if !pending_preparation.is_empty() || preparation_uncertainty.is_some() {
+                finish_with_error!(AgentError::Hook(
+                    "preparation has no confirmed terminal outcome".to_owned(),
+                ));
+            }
             return AgentLoopResult {
                 state,
+                committed_state,
                 identities,
                 evidence_health,
                 terminal_outcome: crate::evidence::TerminalOutcome::Success,
@@ -251,13 +303,15 @@ pub(crate) async fn agent_loop_with_identities(
             emit_agent_end(&events, &state.context);
             finish_with_error!(AgentError::Cancelled);
         }
-        if completed_turns == 0 {
+        if completed_turns == 0 && !preparation_only {
             pending_steering = drain_queue(&context.steering_queue);
         }
 
-        emit_public_event(&events, AgentEvent::TurnStart);
+        if !preparation_only {
+            emit_public_event(&events, AgentEvent::TurnStart);
+        }
 
-        let input_context_start = state.context.len();
+        let mut input_context_start = state.context.len();
         macro_rules! fail_before_dispatch {
             ($error:expr) => {{
                 // Selected input is only delivered once an attempt starts.
@@ -294,6 +348,95 @@ pub(crate) async fn agent_loop_with_identities(
                     .cloned()
                     .map(user_text_message),
             );
+        }
+
+        if completed_turns == 0 {
+            let preparation_health_generation = evidence_health.generation();
+            let mut externally_committed = false;
+            let selected_input = state.context[input_context_start..].to_vec();
+            let initial_ctx = InitialTurnContext {
+                state: state.clone(),
+            };
+            let prepared = {
+                let evidence = PreparationEvidence {
+                    events: &events,
+                    sink: &evidence_sink,
+                    identities: &mut identities,
+                    health: &mut evidence_health,
+                    turn,
+                    pending: &mut pending_preparation,
+                    uncertain_outcome: &mut preparation_uncertainty,
+                };
+                tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => Err(AgentError::Cancelled),
+                    candidate = hooks.prepare_initial_turn(initial_ctx, cancel.clone(), evidence) => candidate,
+                }
+            };
+            let prepared = match prepared {
+                Ok(candidate) => {
+                    commit_preparation(
+                        hooks,
+                        &collection,
+                        candidate,
+                        &selected_input,
+                        cancel.clone(),
+                        PreparationEvidence {
+                            events: &events,
+                            sink: &evidence_sink,
+                            identities: &mut identities,
+                            health: &mut evidence_health,
+                            turn,
+                            pending: &mut pending_preparation,
+                            uncertain_outcome: &mut preparation_uncertainty,
+                        },
+                    )
+                    .await
+                }
+                Err(error) => Err(error),
+            };
+            match prepared {
+                Ok(Some((candidate, commit))) => {
+                    input_context_start = candidate.context.len() - selected_input.len();
+                    if commit == PreparationCommit::ExternalStateCommitted {
+                        externally_committed = true;
+                        let mut baseline = candidate.clone();
+                        baseline.context.truncate(input_context_start);
+                        committed_state = Some(baseline);
+                    }
+                    // Commit settlement is authoritative even when cancellation
+                    // arrived while external persistence was in progress.
+                    state = candidate;
+                }
+                Ok(None) => {}
+                Err(error) => fail_before_dispatch!(error),
+            }
+            if !pending_preparation.is_empty() {
+                fail_before_dispatch!(AgentError::Hook(
+                    "preparation did not settle its compaction".to_owned(),
+                ));
+            }
+            if preparation_uncertainty.is_some() {
+                fail_before_dispatch!(AgentError::Hook(
+                    "preparation left an uncertain external effect".to_owned(),
+                ));
+            }
+            if !evidence_health.is_healthy()
+                && (externally_committed
+                    || evidence_health.generation() != preparation_health_generation)
+            {
+                fail_before_dispatch!(AgentError::EvidenceFinalization(
+                    "preparation evidence is incomplete; next dispatch withheld".to_owned(),
+                ));
+            }
+            if cancel.is_cancelled() {
+                fail_before_dispatch!(AgentError::Cancelled);
+            }
+        }
+
+        if preparation_only {
+            emit_agent_end(&events, &state.context);
+            finish_success!();
         }
 
         let transformed = match hooks
@@ -568,7 +711,52 @@ pub(crate) async fn agent_loop_with_identities(
                                 let mut terminate_flags = Vec::new();
                                 let mut tool_terminal_error = None;
 
-                                let batch_is_sequential = tool_calls.iter().any(|tc| {
+                                if matches!(
+                                    &agent_msg,
+                                    AgentMessage::Llm(Message::Assistant(message))
+                                        if message.stop_reason == opi_ai::stream::StopReason::Length
+                                ) {
+                                    // The terminal applies to the whole response, including calls
+                                    // whose arguments happen to parse. None may cross preflight.
+                                    for (tool_index, tc) in tool_calls.iter().enumerate() {
+                                        let parsed = parse_tool_call_arguments(tc.clone());
+                                        emit_public_event(
+                                            &events,
+                                            AgentEvent::ToolExecutionStart {
+                                                tool_call_id: parsed.tool_call.id.clone(),
+                                                tool_name: parsed.tool_call.name.clone(),
+                                                args: parsed.args_for_event.clone(),
+                                            },
+                                        );
+                                        let executed = ExecutedTool::ordinary(error_text_result(
+                                            format!(
+                                                "Tool call \"{}\" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.",
+                                                parsed.tool_call.name,
+                                            ),
+                                        ));
+                                        let mut completion = ToolCompletion {
+                                            events: &events,
+                                            evidence_sink: &evidence_sink,
+                                            identities: &mut identities,
+                                            registry: &registry,
+                                            evidence_health: &mut evidence_health,
+                                            run,
+                                            turn,
+                                            provider_call,
+                                            invocation_context: &invocation_context,
+                                            tool_results: &mut tool_results,
+                                            terminate_flags: &mut terminate_flags,
+                                            tool_terminal_error: &mut tool_terminal_error,
+                                            context: &mut state.context,
+                                        };
+                                        complete_tool_call(
+                                            &mut completion,
+                                            &parsed,
+                                            tool_call_ids[tool_index],
+                                            executed,
+                                        );
+                                    }
+                                } else if tool_calls.iter().any(|tc| {
                                     registry
                                         .get(tc.name.as_str())
                                         .map(|r| {
@@ -576,9 +764,7 @@ pub(crate) async fn agent_loop_with_identities(
                                                 == ExecutionMode::Sequential
                                         })
                                         .unwrap_or(true)
-                                });
-
-                                if batch_is_sequential {
+                                }) {
                                     for (tool_index, tc) in tool_calls.iter().enumerate() {
                                         let parsed = parse_tool_call_arguments(tc.clone());
 
@@ -1113,23 +1299,79 @@ pub(crate) async fn agent_loop_with_identities(
             terminate: turn_terminate,
             turn: completed_turns,
         };
-        let prepared_next_turn = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => Err(AgentError::Cancelled),
-            prepared = hooks.prepare_next_turn(prep_ctx) => prepared,
-        }
-        .and_then(|candidate| {
-            if let Some(candidate) = &candidate {
-                validate_next_turn_candidate(&collection, candidate)?;
+        let preparation_health_generation = evidence_health.generation();
+        let prepared_next_turn = {
+            let evidence = PreparationEvidence {
+                events: &events,
+                sink: &evidence_sink,
+                identities: &mut identities,
+                health: &mut evidence_health,
+                turn,
+                pending: &mut pending_preparation,
+                uncertain_outcome: &mut preparation_uncertainty,
+            };
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Err(AgentError::Cancelled),
+                prepared = hooks.prepare_next_turn_transaction(prep_ctx, cancel.clone(), evidence) => prepared,
+            }
+        };
+        let prepared_next_turn = match prepared_next_turn {
+            Ok(candidate) => {
+                commit_preparation(
+                    hooks,
+                    &collection,
+                    candidate,
+                    &[],
+                    cancel.clone(),
+                    PreparationEvidence {
+                        events: &events,
+                        sink: &evidence_sink,
+                        identities: &mut identities,
+                        health: &mut evidence_health,
+                        turn,
+                        pending: &mut pending_preparation,
+                        uncertain_outcome: &mut preparation_uncertainty,
+                    },
+                )
+                .await
+            }
+            Err(error) => Err(error),
+        };
+        let prepared_next_turn = prepared_next_turn.and_then(|prepared| {
+            let mut externally_committed = false;
+            if let Some((candidate, commit)) = prepared {
+                if commit == PreparationCommit::ExternalStateCommitted {
+                    externally_committed = true;
+                    committed_state = Some(candidate.clone());
+                }
+                state = candidate;
+            }
+            if !pending_preparation.is_empty() {
+                return Err(AgentError::Hook(
+                    "preparation did not settle its compaction".to_owned(),
+                ));
+            }
+            if preparation_uncertainty.is_some() {
+                return Err(AgentError::Hook(
+                    "preparation left an uncertain external effect".to_owned(),
+                ));
+            }
+            if !evidence_health.is_healthy()
+                && (externally_committed
+                    || evidence_health.generation() != preparation_health_generation)
+            {
+                return Err(AgentError::EvidenceFinalization(
+                    "preparation evidence is incomplete; next dispatch withheld".to_owned(),
+                ));
             }
             if cancel.is_cancelled() {
                 return Err(AgentError::Cancelled);
             }
-            Ok(candidate)
+            Ok(())
         });
         match prepared_next_turn {
-            Ok(Some(candidate)) => state = candidate,
-            Ok(None) => {}
+            Ok(()) => {}
             Err(error) => {
                 // Preserve dequeued, undelivered user input ahead of anything
                 // queued while preparation ran, including on validation failure.
@@ -1151,6 +1393,298 @@ pub(crate) async fn agent_loop_with_identities(
         if pending_steering.is_empty() && pending_follow_up.is_empty() {
             pending_steering = drain_queue(&context.steering_queue);
         }
+    }
+}
+
+async fn commit_preparation(
+    hooks: &dyn AgentHooks,
+    collection: &opi_ai::ProviderCollection,
+    candidate: Option<NextTurnState>,
+    selected_input: &[AgentMessage],
+    cancel: CancellationToken,
+    evidence: PreparationEvidence<'_>,
+) -> Result<Option<(NextTurnState, PreparationCommit)>, AgentError> {
+    if cancel.is_cancelled() {
+        return Err(AgentError::Cancelled);
+    }
+    let Some(candidate) = candidate else {
+        return Ok(None);
+    };
+    validate_next_turn_candidate(collection, &candidate)?;
+    if candidate.context.len() < selected_input.len()
+        || !candidate.context[candidate.context.len() - selected_input.len()..]
+            .iter()
+            .zip(selected_input)
+            .all(|(actual, selected)| match (actual, selected) {
+                (
+                    AgentMessage::Llm(Message::User(actual)),
+                    AgentMessage::Llm(Message::User(selected)),
+                ) => {
+                    actual.timestamp_ms == selected.timestamp_ms
+                        && actual.content.len() == 1
+                        && matches!(
+                            (actual.content.first(), selected.content.first()),
+                            (Some(InputContent::Text { text: actual }), Some(InputContent::Text { text: selected }))
+                                if actual == selected
+                        )
+                }
+                _ => false,
+            })
+    {
+        return Err(AgentError::Hook(
+            "initial preparation must preserve selected queue input".to_owned(),
+        ));
+    }
+    hooks.validate_prepared_state(&candidate)?;
+    if cancel.is_cancelled() {
+        return Err(AgentError::Cancelled);
+    }
+    let commit = hooks
+        .commit_prepared_state(candidate.clone(), cancel, evidence)
+        .await?;
+    Ok(Some((candidate, commit)))
+}
+
+fn abandon_preparation(
+    sink: &Option<Arc<dyn crate::evidence::EvidenceSink>>,
+    identities: &mut crate::evidence::IdentityAllocator,
+    health: &mut crate::evidence::EvidenceHealth,
+    pending: &mut Vec<PreparationCompactionIdentity>,
+    outcome: crate::evidence::CompactionOutcome,
+) {
+    for identity in pending.drain(..) {
+        emit_evidence(
+            sink,
+            identities,
+            health,
+            identity.run,
+            Some(identity.turn),
+            identity.call,
+            None,
+            crate::evidence::CallKind::Compaction,
+            crate::evidence::EvidencePayload::Compaction(
+                crate::evidence::CompactionEvidenceFacts::terminal(identity.trigger, outcome),
+            ),
+        );
+    }
+}
+
+impl PreparationEvidence<'_> {
+    /// Temporarily lend the same run scope to a nested preparation hook.
+    pub fn reborrow(&mut self) -> PreparationEvidence<'_> {
+        PreparationEvidence {
+            events: self.events,
+            sink: self.sink,
+            identities: self.identities,
+            health: self.health,
+            turn: self.turn,
+            pending: self.pending,
+            uncertain_outcome: self.uncertain_outcome,
+        }
+    }
+
+    /// Emit an observable lifecycle event through the active public boundary.
+    pub fn emit_event(&self, event: AgentEvent) {
+        emit_public_event(self.events, event);
+    }
+
+    /// Start compaction evidence before any summary call or durable mutation.
+    pub fn begin_compaction(
+        &mut self,
+        trigger: crate::evidence::CompactionTrigger,
+    ) -> Result<PendingPreparationCompaction, crate::evidence::EvidenceError> {
+        if !self.health.is_healthy() {
+            return Err(crate::evidence::EvidenceError::Emission {
+                detail: "incomplete evidence prohibits compaction start".to_owned(),
+            });
+        }
+        let identity = PreparationCompactionIdentity {
+            run: self.identities.run_id(),
+            turn: self.turn,
+            call: self.identities.next_call(),
+            trigger,
+        };
+        self.emit_record(
+            identity.call,
+            None,
+            crate::evidence::CallKind::Compaction,
+            crate::evidence::EvidencePayload::Compaction(
+                crate::evidence::CompactionEvidenceFacts::started(trigger),
+            ),
+        )?;
+        self.pending.push(identity.clone());
+        Ok(PendingPreparationCompaction { identity })
+    }
+
+    /// Settle a tracked compaction exactly once, preserving uncertainty before emission.
+    pub fn finish_compaction(
+        &mut self,
+        pending: PendingPreparationCompaction,
+        outcome: crate::evidence::CompactionOutcome,
+    ) -> Result<(), crate::evidence::EvidenceError> {
+        let Some(index) = self
+            .pending
+            .iter()
+            .position(|identity| identity == &pending.identity)
+        else {
+            return Err(crate::evidence::EvidenceError::Emission {
+                detail: "compaction token does not match an active preparation".to_owned(),
+            });
+        };
+        if pending.identity.run != self.identities.run_id() || pending.identity.turn != self.turn {
+            return Err(crate::evidence::EvidenceError::Emission {
+                detail: "compaction token belongs to another preparation scope".to_owned(),
+            });
+        }
+        self.pending.remove(index);
+        match outcome {
+            crate::evidence::CompactionOutcome::CleanupUnknown => {
+                *self.uncertain_outcome = Some(crate::evidence::TerminalOutcome::CleanupUnknown);
+            }
+            crate::evidence::CompactionOutcome::PartialSideEffect
+                if !matches!(
+                    self.uncertain_outcome,
+                    Some(crate::evidence::TerminalOutcome::CleanupUnknown)
+                ) =>
+            {
+                *self.uncertain_outcome = Some(crate::evidence::TerminalOutcome::PartialSideEffect);
+            }
+            _ => {}
+        }
+        self.emit_record(
+            pending.identity.call,
+            None,
+            crate::evidence::CallKind::Compaction,
+            crate::evidence::EvidencePayload::Compaction(
+                crate::evidence::CompactionEvidenceFacts::terminal(
+                    pending.identity.trigger,
+                    outcome,
+                ),
+            ),
+        )
+    }
+
+    /// Execute one real summary call through the registered collection.
+    ///
+    /// Preparation/authentication precedes the start record; the attempt starts
+    /// only after that record is emitted. The terminal route uses actual provider
+    /// response facts. The response is returned to policy and is never inserted
+    /// into Agent conversation state or treated as a completed task turn.
+    pub async fn run_provider_call(
+        &mut self,
+        collection: &opi_ai::ProviderCollection,
+        mut request: Request,
+        parent: &PendingPreparationCompaction,
+        cancel: CancellationToken,
+    ) -> Result<opi_ai::message::AssistantMessage, AgentError> {
+        if !self.pending.contains(&parent.identity)
+            || parent.identity.run != self.identities.run_id()
+            || parent.identity.turn != self.turn
+        {
+            return Err(AgentError::Hook(
+                "summary call requires an active compaction in this preparation".to_owned(),
+            ));
+        }
+        if cancel.is_cancelled() {
+            return Err(AgentError::Cancelled);
+        }
+        request.cancel = cancel.clone();
+        let requested_spec = request.model.clone();
+        let prepared = collection
+            .prepare_call(&requested_spec, request)
+            .await
+            .map_err(AgentError::from)?;
+        let facts = crate::evidence::ProviderEvidenceFacts::from_prepared(
+            &requested_spec,
+            prepared.route(),
+            prepared.auth_provenance(),
+        )
+        .map_err(|_| {
+            self.health
+                .advance_on_failure(crate::evidence::EvidenceFailureCode::Emission);
+            AgentError::Hook("prepared summary provenance is invalid".to_owned())
+        })?;
+        let call = self.identities.next_call();
+        self.emit_record(
+            call,
+            Some(parent.identity.call),
+            crate::evidence::CallKind::Provider,
+            crate::evidence::EvidencePayload::Provider(facts.clone()),
+        )
+        .map_err(|_| AgentError::Hook("summary start evidence could not be emitted".to_owned()))?;
+        let mut stream = prepared.start_attempt().map_err(AgentError::from)?;
+        loop {
+            let item = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+                item = stream.next() => item,
+            };
+            let Some(event) = item else {
+                return Err(AgentError::ProviderProtocol {
+                    detail: opi_ai::provider::ProviderErrorSummary::redacted(),
+                });
+            };
+            let event = event.map_err(AgentError::from)?;
+            let (message, failed) = match event {
+                opi_ai::stream::AssistantStreamEvent::Done { message, .. } => (message, false),
+                opi_ai::stream::AssistantStreamEvent::Error { message, .. } => (message, true),
+                _ => continue,
+            };
+            let actual = crate::evidence::ActualRoute::from_reported_provider_model(
+                message.provider.clone(),
+                message
+                    .response_model
+                    .as_deref()
+                    .unwrap_or(&message.model)
+                    .to_owned(),
+                crate::evidence::UnknownReason::NotReported,
+            )
+            .map_err(|_| {
+                self.health
+                    .advance_on_failure(crate::evidence::EvidenceFailureCode::Emission);
+                AgentError::Hook("summary terminal provenance is invalid".to_owned())
+            })?;
+            self.emit_record(
+                call,
+                Some(parent.identity.call),
+                crate::evidence::CallKind::Provider,
+                crate::evidence::EvidencePayload::Provider(facts.with_actual(actual)),
+            )
+            .map_err(|_| {
+                AgentError::Hook("summary terminal evidence could not be emitted".to_owned())
+            })?;
+            if failed {
+                return Err(AgentError::from(ProviderError::StreamError(
+                    opi_ai::provider::ProviderErrorSummary::redacted(),
+                )));
+            }
+            return Ok(message);
+        }
+    }
+
+    fn emit_record(
+        &mut self,
+        call: crate::evidence::CallId,
+        parent: Option<crate::evidence::CallId>,
+        kind: crate::evidence::CallKind,
+        payload: crate::evidence::EvidencePayload,
+    ) -> Result<(), crate::evidence::EvidenceError> {
+        if let Some(sink) = self.sink.as_ref() {
+            let record = crate::evidence::EvidenceRecord {
+                run: self.identities.run_id(),
+                turn: Some(self.turn),
+                call,
+                parent,
+                sequence: self.identities.next_sequence(),
+                kind,
+                payload,
+            };
+            if let Err(error) = sink.emit(&record) {
+                self.health.advance_on_failure(error.failure_code());
+                return Err(error);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1603,7 +2137,7 @@ struct ToolCompletion<'a> {
     context: &'a mut Vec<AgentMessage>,
 }
 
-/// Complete one executed tool call: surface its terminal error, emit the
+/// Finalize one proposed tool call: surface its terminal error, emit the
 /// public completion event, assemble the tool-result message, emit its
 /// outcome evidence, and push the result into the turn's context. Returns
 /// whether this call produced a terminal error.

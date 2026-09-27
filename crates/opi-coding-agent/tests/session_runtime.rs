@@ -827,6 +827,7 @@ fn reconstruct_context_includes_compaction_summaries() {
             first_kept_entry_id: "e2".into(),
             tokens_before: 100,
             tokens_after: 50,
+            summary_usage: None,
         }))
         .unwrap();
     writer
@@ -889,6 +890,7 @@ fn reconstruct_context_missing_first_kept_id_emits_summary_and_keeps_prior() {
             first_kept_entry_id: "missing".into(),
             tokens_before: 100,
             tokens_after: 50,
+            summary_usage: None,
         }))
         .unwrap();
     writer
@@ -1420,7 +1422,10 @@ fn embedded_model_pricing_updates_on_model_switch_and_resume() {
     let mut coord = SessionCoordinator::new_for_test(
         dir.path(),
         "/test",
-        CompactionConfig::default(),
+        CompactionConfig {
+            enabled: false,
+            ..CompactionConfig::default()
+        },
         "future:first",
     )
     .unwrap();
@@ -1462,7 +1467,10 @@ fn embedded_model_pricing_updates_on_model_switch_and_resume() {
         session_id,
         &entries,
         0,
-        CompactionConfig::default(),
+        CompactionConfig {
+            enabled: false,
+            ..CompactionConfig::default()
+        },
         "future:second",
     )
     .unwrap();
@@ -1528,13 +1536,18 @@ async fn harness_emits_compaction_events_on_threshold() {
     let dir = tempfile::tempdir().unwrap();
     set_sessions_dir(dir.path());
 
-    // Use threshold=0 so compaction triggers regardless of MockProvider usage
-    // (which is zero by default).
+    // Explicit threshold is evaluated before a request, against current context.
     let mut config = OpiConfig::default();
-    config.compaction.threshold_tokens = 0;
+    config.compaction.threshold_tokens = Some(0);
 
-    let response = test_support::text_response("ok");
-    let provider = MockProvider::new("mock", vec![response]);
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            test_support::text_response(&"r".repeat(80_000)),
+            test_support::text_response("checkpoint"),
+            test_support::text_response("ok"),
+        ],
+    );
     let mut harness = CodingHarness::new(
         Box::new(provider),
         "mock-model".into(),
@@ -1557,13 +1570,18 @@ async fn harness_emits_compaction_events_on_threshold() {
         _ => {}
     }));
 
-    // Need at least two messages for compaction to be possible.
-    harness.prompt("first prompt").await.unwrap();
+    harness.prompt(&"o".repeat(80_000)).await.unwrap();
+    assert_eq!(
+        *starts.lock().unwrap(),
+        0,
+        "a final turn cannot fabricate compaction"
+    );
+    harness.prompt("next prompt").await.unwrap();
 
     let s = *starts.lock().unwrap();
     let e = *ends.lock().unwrap();
     assert_eq!(s, e, "every CompactionStart should have a matching End");
-    assert!(s >= 1, "expected at least one CompactionStart");
+    assert_eq!(s, 1, "one real summary before the next task request");
 
     clear_sessions_dir();
 }
@@ -1576,9 +1594,16 @@ async fn threshold_compaction_is_counted_in_diagnostics() {
     set_sessions_dir(dir.path());
 
     let mut config = OpiConfig::default();
-    config.compaction.threshold_tokens = 0;
+    config.compaction.threshold_tokens = Some(0);
 
-    let provider = MockProvider::new("mock", vec![test_support::text_response("ok")]);
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            test_support::text_response(&"r".repeat(80_000)),
+            test_support::text_response("checkpoint"),
+            test_support::text_response("ok"),
+        ],
+    );
     let mut harness = CodingHarness::builder(
         Box::new(provider),
         "mock-model".into(),
@@ -1589,7 +1614,8 @@ async fn threshold_compaction_is_counted_in_diagnostics() {
     .record_diagnostics(true)
     .build();
 
-    harness.prompt("first prompt").await.unwrap();
+    harness.prompt(&"o".repeat(80_000)).await.unwrap();
+    harness.prompt("next prompt").await.unwrap();
 
     let counts = harness
         .diagnostic_counts()
@@ -1610,9 +1636,15 @@ async fn manual_compaction_is_counted_in_diagnostics() {
     set_sessions_dir(dir.path());
 
     let mut config = OpiConfig::default();
-    config.compaction.threshold_tokens = u64::MAX;
+    config.compaction.threshold_tokens = Some(u64::MAX);
 
-    let provider = MockProvider::new("mock", vec![test_support::text_response("ok")]);
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            test_support::text_response(&"r".repeat(80_000)),
+            test_support::text_response("checkpoint"),
+        ],
+    );
     let mut harness = CodingHarness::builder(
         Box::new(provider),
         "mock-model".into(),
@@ -1623,9 +1655,10 @@ async fn manual_compaction_is_counted_in_diagnostics() {
     .record_diagnostics(true)
     .build();
 
-    harness.prompt("first prompt").await.unwrap();
+    harness.prompt(&"o".repeat(80_000)).await.unwrap();
     let result = harness
         .compact(opi_agent::session_event::CompactionReason::Manual)
+        .await
         .unwrap();
     assert!(result.is_some(), "manual compaction should produce output");
 
@@ -1761,6 +1794,7 @@ fn open_existing_preserves_kept_tail_after_compaction() {
             first_kept_entry_id: "msg-2".into(),
             tokens_before: 100,
             tokens_after: 30,
+            summary_usage: None,
         }))
         .unwrap();
     drop(writer);
@@ -2350,6 +2384,7 @@ fn reconstruct_context_active_branch_with_compaction() {
             first_kept_entry_id: "e2".into(),
             tokens_before: 100,
             tokens_after: 30,
+            summary_usage: None,
         }))
         .unwrap();
     writer.append(&user("e3", Some("c1"), "post")).unwrap();
@@ -2605,7 +2640,10 @@ fn phase14_usage_subsets_survive_session_resume() {
     let mut coordinator = SessionCoordinator::new_for_test(
         dir.path(),
         "/repo",
-        CompactionConfig::default(),
+        CompactionConfig {
+            enabled: false,
+            ..CompactionConfig::default()
+        },
         "anthropic:claude-sonnet-4",
     )
     .unwrap();
@@ -4065,16 +4103,19 @@ async fn phase17_compaction_replaces_provider_visible_context() {
     let dir = tempfile::tempdir().unwrap();
     set_sessions_dir(dir.path());
 
-    // Threshold 0 so every turn end compacts.
+    // Threshold 0 checks each request; the 20k-token kept assistant remains intact.
     let mut config = OpiConfig::default();
-    config.compaction.threshold_tokens = 0;
+    config.compaction.threshold_tokens = Some(0);
 
     let provider = MockProvider::new(
         "mock",
         vec![
-            test_support::text_response("ok one"),
+            test_support::text_response(&"r".repeat(80_000)),
+            test_support::text_response("checkpoint two"),
             test_support::text_response("ok two"),
+            test_support::text_response("checkpoint three"),
             test_support::text_response("ok three"),
+            test_support::text_response("checkpoint four"),
             test_support::text_response("ok four"),
         ],
     );
@@ -4098,7 +4139,10 @@ async fn phase17_compaction_replaces_provider_visible_context() {
     // turn's marker must have been compacted away (superseded), while the
     // current turn's marker is present.
     harness
-        .prompt("superseded-marker-one please")
+        .prompt(&format!(
+            "superseded-marker-one please{}",
+            "o".repeat(80_000)
+        ))
         .await
         .unwrap();
     harness
@@ -4112,11 +4156,19 @@ async fn phase17_compaction_replaces_provider_visible_context() {
     harness.prompt("current-marker-four please").await.unwrap();
 
     assert!(
-        *compactions.lock().unwrap() >= 1,
+        *compactions.lock().unwrap() == 3,
         "threshold compaction ran during the run"
     );
     let calls = calls.lock().unwrap();
-    assert_eq!(calls.len(), 4, "four provider dispatches");
+    assert_eq!(
+        calls.len(),
+        7,
+        "four task requests and three genuine summary requests"
+    );
+    for idx in [1, 3, 5] {
+        assert!(calls[idx].tools.is_empty());
+        assert!(!calls[idx].thinking.enabled);
+    }
     let request_text = |idx: usize| -> String {
         use opi_ai::message::{AssistantContent, InputContent, Message};
         let mut out = String::new();
@@ -4148,16 +4200,16 @@ async fn phase17_compaction_replaces_provider_visible_context() {
     );
     // The post-compaction request is the REPLACED context: a summary message
     // leading the buffer, the kept tail, and the current turn — never the
-    // appended history. The message count stays bounded instead of growing
-    // with turn count, and no standalone superseded message object survives
+    // appended history. The 20k-token tail keeps recent message objects intact,
+    // and no standalone superseded message object survives
     // (its content may legitimately be referenced inside the summary text).
-    let last = &calls[3];
+    let last = &calls[6];
     assert_eq!(
         last.messages.len(),
-        3,
-        "the replaced context is [summary, kept tail, current turn], not the appended history"
+        7,
+        "the replaced context retains the complete 20k-token assistant and subsequent turns"
     );
-    let summary_text = request_text(3);
+    let summary_text = request_text(6);
     assert!(
         summary_text.contains("[Context was compacted."),
         "the replaced context leads with the compaction summary"
@@ -4171,10 +4223,10 @@ async fn phase17_compaction_replaces_provider_visible_context() {
         .iter()
         .any(|m| match m {
             opi_ai::message::Message::User(u) => u.content.iter().any(
-                |c| matches!(c, opi_ai::message::InputContent::Text { text } if text == "superseded-marker-one please"),
+                |c| matches!(c, opi_ai::message::InputContent::Text { text } if text.starts_with("superseded-marker-one please")),
             ),
             opi_ai::message::Message::Assistant(a) => a.content.iter().any(
-                |c| matches!(c, opi_ai::message::AssistantContent::Text { text } if text == "superseded-marker-one please"),
+                |c| matches!(c, opi_ai::message::AssistantContent::Text { text } if text.starts_with("superseded-marker-one please")),
             ),
             _ => false,
         });

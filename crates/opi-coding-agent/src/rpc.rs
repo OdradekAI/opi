@@ -111,9 +111,24 @@ enum RpcInput {
 enum ActiveRun {
     Prompt(String),
     Continue(String),
+    Compact { id: Option<String> },
 }
 
-type RunResult = (CodingHarness, Result<Vec<AgentMessage>, AgentError>);
+enum RunOutput {
+    Agent(Result<Vec<AgentMessage>, AgentError>),
+    Compact {
+        id: Option<String>,
+        result: Result<
+            (
+                Option<opi_agent::session_event::CompactionResult>,
+                Diagnostic,
+            ),
+            String,
+        >,
+    },
+}
+
+type RunResult = (CodingHarness, RunOutput);
 
 /// RPC runner that owns the harness and processes commands.
 pub struct RpcRunner {
@@ -675,7 +690,13 @@ impl RpcRunner {
         match joined {
             Ok((harness, result)) => {
                 self.harness = Some(harness);
-                if !self.handle_agent_result(result, emit) {
+                let emitted = match result {
+                    RunOutput::Agent(result) => self.handle_agent_result(result, emit),
+                    RunOutput::Compact { id, result } => {
+                        emit(&compact_response(id.as_deref(), result))
+                    }
+                };
+                if !emitted {
                     return false;
                 }
                 // Emit a run-summary event with structured
@@ -815,59 +836,13 @@ impl RpcRunner {
                     Err(e) => emit(&response_error(cmd_id.as_deref(), cmd_name, &e)),
                 }
             }
-            SdkCommand::compact { .. } => {
-                if self.running {
-                    return emit(&response_error_with_code(
-                        cmd_id.as_deref(),
-                        cmd_name,
-                        ERR_AGENT_BUSY,
-                        "cannot compact while agent is running",
-                    ));
-                }
-                let Some(harness) = self.harness.as_mut() else {
-                    return emit(&response_error_with_code(
-                        cmd_id.as_deref(),
-                        cmd_name,
-                        ERR_HARNESS_UNAVAILABLE,
-                        "agent harness is unavailable",
-                    ));
-                };
-                match harness.compact_with_diagnostic(CompactionReason::Manual) {
-                    Ok((Some(result), diagnostic)) => {
-                        let diagnostic = diagnostic.redacted_payload(RedactionMode::Summary);
-                        let data = serde_json::json!({
-                            "summary": result.summary,
-                            "first_kept_entry_id": result.first_kept_entry_id,
-                            "tokens_before": result.tokens_before,
-                            "tokens_after": result.tokens_after,
-                            "diagnostics": [diagnostic],
-                        });
-                        emit(&response_success_with_data(
-                            cmd_id.as_deref(),
-                            cmd_name,
-                            data,
-                        ))
-                    }
-                    Ok((None, diagnostic)) => {
-                        let diagnostic = diagnostic.redacted_payload(RedactionMode::Summary);
-                        let data = serde_json::json!({
-                            "compacted": false,
-                            "diagnostics": [diagnostic],
-                        });
-                        emit(&response_success_with_data(
-                            cmd_id.as_deref(),
-                            cmd_name,
-                            data,
-                        ))
-                    }
-                    Err(e) => emit(&response_error_with_code(
-                        cmd_id.as_deref(),
-                        cmd_name,
-                        ERR_COMPACTION_FAILED,
-                        &e,
-                    )),
-                }
-            }
+            SdkCommand::compact { .. } => self.start_run(
+                ActiveRun::Compact { id: cmd_id.clone() },
+                cmd_id.as_deref(),
+                cmd_name,
+                run_task,
+                emit,
+            ),
             SdkCommand::session_info { .. } => {
                 if self.running {
                     return emit(&response_error_with_code(
@@ -1062,7 +1037,11 @@ impl RpcRunner {
                 id,
                 command,
                 ERR_AGENT_BUSY,
-                "agent is already running; use steer or follow_up to queue messages",
+                if matches!(&run, ActiveRun::Compact { .. }) {
+                    "cannot compact while agent is running"
+                } else {
+                    "agent is already running; use steer or follow_up to queue messages"
+                },
             ));
         }
 
@@ -1075,7 +1054,7 @@ impl RpcRunner {
             ));
         }
 
-        if !emit(&response_success(id, command)) {
+        if !matches!(&run, ActiveRun::Compact { .. }) && !emit(&response_success(id, command)) {
             return false;
         }
 
@@ -1085,8 +1064,14 @@ impl RpcRunner {
 
         *run_task = Some(tokio::spawn(async move {
             let result = match run {
-                ActiveRun::Prompt(message) => harness.prompt(&message).await,
-                ActiveRun::Continue(message) => harness.continue_(&message).await,
+                ActiveRun::Prompt(message) => RunOutput::Agent(harness.prompt(&message).await),
+                ActiveRun::Continue(message) => RunOutput::Agent(harness.continue_(&message).await),
+                ActiveRun::Compact { id } => RunOutput::Compact {
+                    id,
+                    result: harness
+                        .compact_with_diagnostic(CompactionReason::Manual)
+                        .await,
+                },
             };
             (harness, result)
         }));
@@ -1136,6 +1121,37 @@ fn parse_rpc_line(line: &str) -> Option<RpcInput> {
         Ok(command) => RpcInput::Command(command),
         Err(error) => RpcInput::ParseError(format!("failed to parse command: {error}")),
     })
+}
+
+fn compact_response(
+    id: Option<&str>,
+    result: Result<
+        (
+            Option<opi_agent::session_event::CompactionResult>,
+            Diagnostic,
+        ),
+        String,
+    >,
+) -> serde_json::Value {
+    match result {
+        Ok((Some(result), diagnostic)) => response_success_with_data(
+            id,
+            "compact",
+            serde_json::json!({
+                "summary": result.summary, "first_kept_entry_id": result.first_kept_entry_id,
+                "tokens_before": result.tokens_before, "tokens_after": result.tokens_after,
+                "diagnostics": [diagnostic.redacted_payload(RedactionMode::Summary)],
+            }),
+        ),
+        Ok((None, diagnostic)) => response_success_with_data(
+            id,
+            "compact",
+            serde_json::json!({
+                "compacted":false,"diagnostics":[diagnostic.redacted_payload(RedactionMode::Summary)],
+            }),
+        ),
+        Err(error) => response_error_with_code(id, "compact", ERR_COMPACTION_FAILED, &error),
+    }
 }
 
 fn response_success(id: Option<&str>, command: &str) -> serde_json::Value {
@@ -1188,8 +1204,174 @@ mod tests {
     use secrecy::ExposeSecret;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+    struct GatedCompactionProvider {
+        inner: opi_ai::test_support::MockProvider,
+        started: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+    }
+
+    impl Provider for GatedCompactionProvider {
+        fn id(&self) -> &str {
+            self.inner.id()
+        }
+        fn models(&self) -> &[opi_ai::provider::ModelInfo] {
+            self.inner.models()
+        }
+        fn stream_prepared(
+            &self,
+            request: opi_ai::provider::Request,
+            auth: opi_ai::auth::ResolvedAuth,
+        ) -> opi_ai::provider::EventStream {
+            use futures_util::StreamExt;
+            let summary = request.tools.is_empty()
+                && request
+                    .system
+                    .as_deref()
+                    .is_some_and(|s| s.starts_with("Summarize the conversation"));
+            let stream = self.inner.stream_prepared(request, auth);
+            if summary {
+                self.started.notify_one();
+                let release = self.release.clone();
+                Box::pin(
+                    futures_util::stream::once(async move {
+                        release.notified().await;
+                        stream
+                    })
+                    .flatten(),
+                )
+            } else {
+                stream
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn rpc_manual_compaction_remains_busy_abortable_and_returns_completed_data() {
+        for abort in [false, true] {
+            let workspace = tempfile::tempdir().unwrap();
+            let global = tempfile::tempdir().unwrap();
+            let sessions = tempfile::tempdir().unwrap();
+            let provider = opi_ai::test_support::MockProvider::new(
+                "mock",
+                vec![
+                    opi_ai::test_support::text_response(&"r".repeat(80_000)),
+                    opi_ai::test_support::text_response("RPC actual checkpoint"),
+                ],
+            );
+            let calls = provider.call_log_handle();
+            let started = Arc::new(tokio::sync::Notify::new());
+            let release = Arc::new(tokio::sync::Notify::new());
+            let mut config = OpiConfig::default();
+            config.thinking.enabled = false;
+            config.compaction.enabled = false;
+            let mut harness = CodingHarness::builder(
+                Box::new(GatedCompactionProvider {
+                    inner: provider,
+                    started: started.clone(),
+                    release: release.clone(),
+                }),
+                "mock:mock-model".into(),
+                config,
+                workspace.path().to_path_buf(),
+                TrustDecision::Trusted,
+            )
+            .global_config_dir(global.path().to_path_buf())
+            .session_dir_for_test(sessions.path().to_path_buf())
+            .build();
+            harness.prompt(&"o".repeat(80_000)).await.unwrap();
+            let mut runner = RpcRunner {
+                control: harness.control_handle(),
+                harness: Some(harness),
+                running: false,
+                evidence_recorder: None,
+            };
+            let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+            let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+            let task =
+                tokio::spawn(async move { runner.run_with_channels(command_rx, output_tx).await });
+            command_tx
+                .send(SdkCommand::compact {
+                    id: Some("compact-1".into()),
+                })
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(2), started.notified())
+                .await
+                .expect("real summary request starts");
+            command_tx
+                .send(SdkCommand::set_model {
+                    id: Some("busy-1".into()),
+                    model: "mock:mock-model".into(),
+                })
+                .unwrap();
+            let mut output = Vec::new();
+            loop {
+                let line = tokio::time::timeout(Duration::from_secs(2), output_rx.recv())
+                    .await
+                    .expect("RPC keeps reading commands during summary")
+                    .unwrap();
+                let busy = line["id"] == "busy-1";
+                output.push(line.clone());
+                if busy {
+                    assert_eq!(line["error_code"], ERR_AGENT_BUSY);
+                    break;
+                }
+            }
+            if abort {
+                command_tx
+                    .send(SdkCommand::abort {
+                        id: Some("abort-1".into()),
+                    })
+                    .unwrap();
+            } else {
+                release.notify_one();
+            }
+            loop {
+                let line = tokio::time::timeout(Duration::from_secs(2), output_rx.recv())
+                    .await
+                    .expect("summary completion is bounded")
+                    .unwrap();
+                let compact = line["id"] == "compact-1";
+                output.push(line.clone());
+                if compact {
+                    assert_eq!(line["success"], !abort);
+                    if abort {
+                        assert_eq!(line["error_code"], ERR_COMPACTION_FAILED);
+                    } else {
+                        assert_eq!(line["data"]["summary"], "RPC actual checkpoint");
+                    }
+                    break;
+                }
+            }
+            assert_eq!(
+                output
+                    .iter()
+                    .filter(|line| line["id"] == "compact-1")
+                    .count(),
+                1
+            );
+            assert_eq!(
+                calls.lock().unwrap().len(),
+                2,
+                "manual compaction never dispatches a task turn"
+            );
+            command_tx
+                .send(SdkCommand::quit {
+                    id: Some("quit-1".into()),
+                })
+                .unwrap();
+            assert_eq!(
+                join_run_loop_task(task, Duration::from_secs(2), "manual compact RPC")
+                    .await
+                    .unwrap(),
+                ExitCode::Success as i32
+            );
+        }
+    }
+
     struct CredentialObservingToolProvider {
+        compaction_context: bool,
         expected_credential: String,
+        prompt_canary: String,
         tool_path: String,
         auth_observations: Arc<AtomicUsize>,
         provider_calls: Arc<AtomicUsize>,
@@ -1223,11 +1405,24 @@ mod tests {
             self.auth_observations.fetch_add(1, Ordering::SeqCst);
             let call = self.provider_calls.fetch_add(1, Ordering::SeqCst);
             let events = if call == 0 {
-                opi_ai::test_support::tool_call_response(
+                let mut events = opi_ai::test_support::tool_call_response(
                     "writer-read-call",
                     "read",
                     &serde_json::json!({ "path": self.tool_path }).to_string(),
-                )
+                );
+                if self.compaction_context {
+                    for event in &mut events {
+                        if let opi_ai::AssistantStreamEvent::Done { message, .. } = event {
+                            message.content.insert(
+                                0,
+                                opi_ai::message::AssistantContent::Text {
+                                    text: "r".repeat(80_000),
+                                },
+                            );
+                        }
+                    }
+                }
+                events
             } else {
                 if request
                     .messages
@@ -1236,7 +1431,10 @@ mod tests {
                 {
                     self.saw_tool_result.store(true, Ordering::SeqCst);
                 }
-                opi_ai::test_support::text_response("rpc-writer-terminal-control")
+                opi_ai::test_support::text_response(&format!(
+                    "rpc-writer-terminal-control {}",
+                    self.prompt_canary
+                ))
             };
             Box::pin(futures_util::stream::iter(events.into_iter().map(Ok)))
         }
@@ -1361,7 +1559,9 @@ mod tests {
         let provider_calls = Arc::new(AtomicUsize::new(0));
         let saw_tool_result = Arc::new(AtomicBool::new(false));
         let provider = CredentialObservingToolProvider {
+            compaction_context: terminal_event == "CompactionEnd",
             expected_credential: canaries.credential.to_owned(),
+            prompt_canary: canaries.prompt.to_owned(),
             tool_path: canaries.tool.to_owned(),
             auth_observations: auth_observations.clone(),
             provider_calls: provider_calls.clone(),
@@ -1438,12 +1638,21 @@ mod tests {
         input_tx
             .send(RpcInput::Command(RpcCommand::prompt {
                 id: Some("writer-prompt-control".to_owned()),
-                message: canaries.prompt.to_owned(),
+                message: if terminal_event == "CompactionEnd" {
+                    format!("{} {}", canaries.prompt, "o".repeat(80_000))
+                } else {
+                    canaries.prompt.to_owned()
+                },
             }))
             .unwrap();
         tokio::time::timeout(Duration::from_secs(2), saw_terminal_event.notified())
             .await
             .unwrap_or_else(|_| panic!("{terminal_event} reaches the production JSONL writer"));
+        if terminal_event == "CompactionEnd" {
+            tokio::time::timeout(Duration::from_secs(2), saw_run_end.notified())
+                .await
+                .expect("summary is followed by the actual task continuation");
+        }
         input_tx
             .send(RpcInput::Command(RpcCommand::quit {
                 id: Some("writer-quit-control".to_owned()),
@@ -1525,7 +1734,7 @@ mod tests {
         let path_canary = "path-arbitrary-rpc-compaction";
         let credential_canary = "credential-arbitrary-rpc-compaction";
         let mut config = OpiConfig::default();
-        config.compaction.threshold_tokens = 0;
+        config.compaction.threshold_tokens = Some(0);
         let scenario = run_jsonl_writer_scenario(
             config,
             false,
@@ -1539,8 +1748,8 @@ mod tests {
         )
         .await;
 
-        assert_eq!(scenario.auth_observations, 2);
-        assert_eq!(scenario.provider_calls, 2);
+        assert_eq!(scenario.auth_observations, 3);
+        assert_eq!(scenario.provider_calls, 3);
         assert!(scenario.saw_tool_result);
         assert!(scenario.output.contains(prompt_canary));
         assert!(scenario.output.contains(tool_canary));

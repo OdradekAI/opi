@@ -162,6 +162,19 @@ pub struct CompactionEntry {
     pub first_kept_entry_id: String,
     pub tokens_before: u64,
     pub tokens_after: u64,
+    /// Provider-reported accounting for the summary call. Legacy markers lack
+    /// this metadata; absence means unrecorded usage rather than a free call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_usage: Option<CompactionSummaryUsage>,
+}
+
+/// Billing provenance for a generated compaction summary. This metadata is
+/// excluded from the reconstructed conversational context.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompactionSummaryUsage {
+    pub provider: String,
+    pub model: String,
+    pub usage: opi_ai::stream::Usage,
 }
 
 /// A leaf pointer entry (S9.3 `leaf` type).
@@ -816,6 +829,7 @@ mod tests {
                 first_kept_entry_id: "m1".into(),
                 tokens_before: 10,
                 tokens_after: 5,
+                summary_usage: None,
             }),
             SessionEntry::Leaf(LeafEntry {
                 id: "l1".into(),

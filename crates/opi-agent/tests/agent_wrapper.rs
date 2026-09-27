@@ -825,7 +825,7 @@ async fn phase17_agent_persists_complete_next_turn_state() {
     let log = call_log.lock().unwrap();
     assert_eq!(log.len(), 3, "three provider calls across two prompts");
     // First call (turn one) ran before prepare applied the inference change.
-    assert_eq!(log[0].max_tokens, None);
+    assert_eq!(log[0].max_tokens, Some(4096));
     // Second call (turn two) carries max_tokens == 9999 — the prepare-applied
     // inference persisted across the Agent::prompt boundary.
     assert_eq!(

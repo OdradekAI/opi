@@ -188,6 +188,69 @@ fn empty_resume_info(workspace: &Path, sessions: &Path, session_id: &str) -> Res
     }
 }
 
+/// A compactable durable prefix: summarize the old user and retain the
+/// assistant, whose text alone exceeds the 20k-token retention floor.
+fn compactable_resume_info(
+    workspace: &std::path::Path,
+    sessions: &std::path::Path,
+    session_id: &str,
+    old_user: &str,
+    kept_assistant: &str,
+) -> (ResumeInfo, Vec<AgentMessage>) {
+    let resume = empty_resume_info(workspace, sessions, session_id);
+    let mut writer = opi_agent::session::SessionWriter::open(&resume.path).unwrap();
+    let mut assistant = opi_ai::test_support::base_assistant();
+    assistant.content = vec![opi_ai::message::AssistantContent::Text {
+        text: format!("{kept_assistant}{}", "r".repeat(80_000)),
+    }];
+    for (id, parent, message) in [
+        (
+            "old-user",
+            None,
+            Message::User(opi_ai::message::UserMessage {
+                content: vec![opi_ai::message::InputContent::Text {
+                    text: format!("{old_user}{}", "o".repeat(80_000)),
+                }],
+                timestamp_ms: 0,
+            }),
+        ),
+        (
+            "kept-assistant",
+            Some("old-user".to_owned()),
+            Message::Assistant(assistant),
+        ),
+    ] {
+        writer
+            .append(&opi_agent::session::SessionEntry::Message(
+                opi_agent::session::MessageEntry {
+                    id: id.to_owned(),
+                    parent_id: parent,
+                    timestamp: "2026-08-20T00:00:01Z".to_owned(),
+                    message,
+                },
+            ))
+            .unwrap();
+    }
+    drop(writer);
+    let (header, entries) = opi_agent::session::SessionReader::read_all(&resume.path).unwrap();
+    let context = opi_agent::session_context::reconstruct_context(
+        &entries,
+        &opi_agent::session::CrashRecovery::default(),
+    );
+    (
+        ResumeInfo {
+            path: resume.path,
+            session_id: header.id,
+            entries,
+            original_cwd: workspace.to_path_buf(),
+            diagnostics: context.diagnostics,
+            recorded_model: context.model,
+            recorded_thinking: context.thinking_level,
+        },
+        context.messages,
+    )
+}
+
 fn resume_snapshot_from_path(path: &Path) -> (ResumeInfo, Vec<AgentMessage>) {
     let (header, entries) = opi_agent::session::SessionReader::read_all(path).unwrap();
     let reconstructed = opi_agent::session_context::reconstruct_context(
@@ -1861,7 +1924,13 @@ async fn harness_compaction_emits_correlated_evidence_record() {
     let sink = Arc::new(InMemoryEvidenceSink::new());
     let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
     let mut harness = CodingHarness::builder(
-        Box::new(MockProvider::new("mock", vec![text_response("done")])),
+        Box::new(MockProvider::new(
+            "mock",
+            vec![
+                text_response(&"r".repeat(80_000)),
+                text_response("checkpoint"),
+            ],
+        )),
         "mock:mock-model".to_owned(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
@@ -1880,7 +1949,7 @@ async fn harness_compaction_emits_correlated_evidence_record() {
     })
     .build();
 
-    harness.prompt("first prompt").await.unwrap();
+    harness.prompt(&"o".repeat(80_000)).await.unwrap();
     let provider_run = sink
         .records()
         .into_iter()
@@ -1895,14 +1964,13 @@ async fn harness_compaction_emits_correlated_evidence_record() {
     // immutable evidence run rather than appending after the prompt manifest.
     let result = harness
         .compact(opi_agent::session_event::CompactionReason::Manual)
+        .await
         .expect("manual compaction succeeds");
     assert!(result.is_some(), "manual compaction produces output");
 
     let records = sink.records();
     assert!(
-        records
-            .iter()
-            .all(|record| record.kind != CallKind::Provider),
+        records.iter().all(|record| record.run != provider_run),
         "the manual compaction run cannot mutate the finalized prompt run"
     );
     let compaction = records
@@ -1910,6 +1978,12 @@ async fn harness_compaction_emits_correlated_evidence_record() {
         .find(|r| r.kind == CallKind::Compaction)
         .expect("a Compaction record is emitted");
     assert_ne!(compaction.run, provider_run);
+    let summary_provider = records
+        .iter()
+        .find(|record| record.kind == CallKind::Provider)
+        .expect("the manual summary has actual Provider evidence");
+    assert_eq!(summary_provider.run, compaction.run);
+    assert_eq!(summary_provider.parent, Some(compaction.call));
     let compaction_manifest = sink
         .completed_manifest()
         .expect("manual compaction finalizes its own run");
@@ -2262,14 +2336,10 @@ async fn phase17_one_run_graph_includes_tool_execution_record() {
     config.retry.max_attempts = 2;
     config.retry.initial_delay_ms = 0;
     config.retry.max_delay_ms = 0;
-    config.compaction.threshold_tokens = 0;
+    config.compaction.threshold_tokens = Some(30_000);
     let sink = Arc::new(FileEvidenceSink::new(evidence.path()));
-    // One run, four legs: a retryable provider error (Retry record), a real
-    // built-in `read` tool call over a workspace file (Tool record), then the
-    // terminal text turn (Provider record), followed by threshold compaction
-    // during persistence. The read tool and automatic compaction execute
-    // through the production harness path before the one prompt manifest is
-    // finalized.
+    // Summarize the durable prefix before task dispatch, then provider retry,
+    // real read execution and the terminal response share one run graph.
     let target = workspace.path().join("graph-fixture.txt");
     std::fs::write(&target, "phase17 one-run graph fixture\n").unwrap();
     let tool_call = opi_ai::test_support::tool_call_response(
@@ -2283,12 +2353,20 @@ async fn phase17_one_run_graph_includes_tool_execution_record() {
     let provider = MockProvider::new_with_errors(
         "mock",
         vec![
+            MockResponse::Events(text_response("checkpoint")),
             MockResponse::Error(opi_ai::provider::ProviderError::RateLimited {
                 retry_after_ms: Some(0),
             }),
             MockResponse::Events(tool_call),
             MockResponse::Events(text_response("done")),
         ],
+    );
+    let (resume, initial_messages) = compactable_resume_info(
+        workspace.path(),
+        sessions.path(),
+        "a09-one-run-graph",
+        "old graph prefix",
+        "kept graph assistant",
     );
     let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
     let mut harness = CodingHarness::builder(
@@ -2299,11 +2377,8 @@ async fn phase17_one_run_graph_includes_tool_execution_record() {
         TrustDecision::Trusted,
     )
     .global_config_dir(user.path().to_path_buf())
-    .resume(empty_resume_info(
-        workspace.path(),
-        sessions.path(),
-        "a09-one-run-graph",
-    ))
+    .initial_messages(initial_messages)
+    .resume(resume)
     .evidence(EvidenceBuilderConfig {
         recorder,
         source: opi_coding_agent::evidence::SDK_ASSEMBLY.clone(),
@@ -2349,10 +2424,18 @@ async fn phase17_one_run_graph_includes_tool_execution_record() {
         2,
         "automatic compaction emits one start and one terminal record"
     );
-    // The retry is parented to the provider call it retries.
+    // Provider start/end records share a call id. Select the first task
+    // call independently of the number of records for the summary.
+    let first_task_provider = provider_recs
+        .iter()
+        .find(|provider| provider.call != provider_recs[0].call)
+        .expect("a separate task request follows summary completion");
+    // The summary and task retry retain distinct, exact parents.
+    assert_eq!(provider_recs[0].parent, Some(compaction_recs[0].call));
+    assert_ne!(retry_rec.parent, Some(provider_recs[0].call));
     assert_eq!(
         retry_rec.parent,
-        Some(provider_recs[0].call),
+        Some(first_task_provider.call),
         "the Retry record is parented to the Provider record"
     );
     // The tool call is correlated into the same run graph: same run identity,
@@ -2689,6 +2772,9 @@ async fn direct_subscriber_redacts_real_compaction_and_session_persist_events() 
     let provider = MockProvider::new_with_errors(
         "mock",
         vec![
+            MockResponse::Events(text_response(&format!(
+                "{prompt_canary} {tool_canary} {path_canary} {credential_canary}"
+            ))),
             MockResponse::Events(opi_ai::test_support::tool_call_response(
                 "direct-canary-read",
                 "read",
@@ -2697,8 +2783,15 @@ async fn direct_subscriber_redacts_real_compaction_and_session_persist_events() 
             MockResponse::Events(text_response("direct-safe-control")),
         ],
     );
+    let (resume, initial_messages) = compactable_resume_info(
+        workspace.path(),
+        sessions.path(),
+        "subscriber-compaction",
+        prompt_canary,
+        tool_canary,
+    );
     let mut config = OpiConfig::default();
-    config.compaction.threshold_tokens = 0;
+    config.compaction.threshold_tokens = Some(30_000);
     let mut harness = CodingHarness::builder(
         Box::new(provider),
         "mock:mock-model".to_owned(),
@@ -2707,11 +2800,8 @@ async fn direct_subscriber_redacts_real_compaction_and_session_persist_events() 
         TrustDecision::Trusted,
     )
     .global_config_dir(user.path().to_path_buf())
-    .resume(empty_resume_info(
-        workspace.path(),
-        sessions.path(),
-        "subscriber-compaction",
-    ))
+    .initial_messages(initial_messages)
+    .resume(resume)
     .tool_selection(opi_coding_agent::policy::ToolSelection::Allowlist(vec![
         "read".to_owned(),
     ]))

@@ -227,15 +227,29 @@ async fn phase8_harness_command_contract_extension_dispatch_unhandled_returns_no
 }
 
 /// `compact_with_diagnostic` on a fresh session with no turns returns Ok with
-/// no compaction result plus a structured diagnostic (the documented no-op /
-/// failure response), not an error.
-#[test]
-fn phase8_harness_command_contract_compact_noop_returns_structured_diagnostic() {
+/// no compaction result plus a structured diagnostic. A short committed
+/// history remains a no-op and does not dispatch a summary request.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn phase8_harness_command_contract_compact_noop_returns_structured_diagnostic() {
     let _lock = session_lock();
     let _dir = isolate_sessions_dir();
-    let mut harness = mock_harness();
+    let provider = MockProvider::new(
+        "mock",
+        vec![opi_ai::test_support::text_response("short answer")],
+    );
+    let calls = provider.call_log_handle();
+    let mut harness = CodingHarness::new(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        std::env::current_dir().expect("cwd"),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    );
 
-    let result = harness.compact_with_diagnostic(CompactionReason::Manual);
+    let result = harness
+        .compact_with_diagnostic(CompactionReason::Manual)
+        .await;
     assert!(result.is_ok(), "compaction no-op is Ok: {result:?}");
     let (compacted, diagnostic) = result.unwrap();
     assert!(
@@ -247,5 +261,20 @@ fn phase8_harness_command_contract_compact_noop_returns_structured_diagnostic() 
         "compaction diagnostic must carry a structured code"
     );
 
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "fresh manual no-op does not dispatch"
+    );
+    harness.prompt("short committed prompt").await.unwrap();
+    let (short_result, short_diagnostic) = harness
+        .compact_with_diagnostic(CompactionReason::Manual)
+        .await
+        .unwrap();
+    assert!(
+        short_result.is_none(),
+        "history below the retention floor is not summarized"
+    );
+    assert_eq!(short_diagnostic.code, diagnostic.code);
+    assert_eq!(calls.lock().unwrap().len(), 1, "only the task request ran");
     clear_sessions_dir();
 }

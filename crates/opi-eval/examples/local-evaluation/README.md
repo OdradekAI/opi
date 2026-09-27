@@ -5,6 +5,15 @@ local cache. Nothing here calls a model or reads real credentials; the
 provider connection is declared in the experiment document and resolved
 only for the selected Agent processes at run time.
 
+For real evaluations, resolve model controls from the selected model and
+endpoint's supported capabilities, with explicit user controls taking precedence.
+Smoke and fixture values such as `max_output_tokens = 4096` are synthetic
+controls and must not be inherited as real model budgets. `max_output_tokens`
+limits each response, including thinking; it is not a cumulative task budget.
+Follow the existing [Model controls](../../../../.agents/skills/opi-eval/references/native-run.md#model-controls)
+rules. Changed controls require fresh exact-client proof, material and plan
+identities; preserve existing sealed runs unchanged.
+
 ## 1. Seed the local cache once
 
 From a repository checkout, copy the pin set into the cache directory

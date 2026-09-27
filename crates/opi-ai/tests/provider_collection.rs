@@ -1553,6 +1553,313 @@ mod phase17 {
     }
 
     #[tokio::test]
+    async fn prepare_call_resolves_output_limit_per_model_and_freezes_attempts() {
+        let model = |id: &str, limit| {
+            ModelInfo::new(
+                id,
+                id,
+                WireApi::OpenAiCompletions,
+                ModelCapabilities::new(200_000, limit),
+            )
+        };
+        let provider = MockProvider::new_with_models(
+            "budget",
+            vec![
+                model("wide", 131_072),
+                model("narrow", 8_192),
+                model("overridden", 4_096),
+            ],
+            (0..8).map(|_| text_response("done")).collect(),
+        );
+        let calls = provider.call_log_handle();
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let mut registry = ProviderRegistry::new();
+        registry
+            .register_model("budget", model("overridden", 65_536))
+            .unwrap();
+        let mut collection = ProviderCollection::from_registry(registry);
+        collection
+            .register_route(
+                Box::new(provider),
+                Arc::new(CountingResolver {
+                    count: resolve_hits.clone(),
+                    secret: SecretString::from(SECRET_VALUE),
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .unwrap();
+
+        for (id, explicit_limit, expected_limit) in [
+            ("wide", None, 131_072),
+            ("narrow", None, 8_192),
+            ("overridden", None, 65_536),
+            ("wide", Some(4_096), 4_096),
+        ] {
+            let spec = format!("budget:{id}");
+            let mut request = minimal_request(&spec);
+            request.max_tokens = explicit_limit;
+            let prepared = collection.prepare_call(&spec, request).await.unwrap();
+            for _ in 0..2 {
+                let stream = prepared.start_attempt().unwrap();
+                drain_to_completion(stream).await.unwrap();
+            }
+            let calls = calls.lock().unwrap();
+            for call in &calls[calls.len() - 2..] {
+                assert_eq!(call.model, spec);
+                assert_eq!(call.max_tokens, Some(expected_limit));
+            }
+        }
+        assert_eq!(resolve_hits.load(Ordering::SeqCst), 4);
+        assert_eq!(calls.lock().unwrap().len(), 8);
+    }
+
+    #[tokio::test]
+    async fn prepare_call_clamps_response_to_current_context_and_fits_thinking() {
+        use opi_ai::message::{InputContent, Message, UserMessage};
+        let provider = MockProvider::new_with_models(
+            "budget",
+            vec![ModelInfo::new(
+                "wide",
+                "Wide",
+                WireApi::OpenAiCompletions,
+                ModelCapabilities::new(32_768, 32_768).with_thinking(true),
+            )],
+            (0..4).map(|_| text_response("done")).collect(),
+        );
+        let calls = provider.call_log_handle();
+        let mut collection = ProviderCollection::new();
+        collection
+            .register_route(
+                Box::new(provider),
+                Arc::new(CountingResolver {
+                    count: Arc::new(AtomicUsize::new(0)),
+                    secret: SecretString::from("test"),
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .unwrap();
+        for explicit in [None, Some(30_000), Some(2_000)] {
+            let mut request = minimal_request("budget:wide");
+            request.system = Some("s".repeat(4_000));
+            request.messages = vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "u".repeat(80_000),
+                }],
+                timestamp_ms: 1,
+            })];
+            request.max_tokens = explicit;
+            request.thinking = ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(8_192),
+                level: opi_ai::ThinkingLevel::Medium,
+            };
+            let prepared = collection
+                .prepare_call("budget:wide", request)
+                .await
+                .unwrap();
+            drain_to_completion(prepared.start_attempt().unwrap())
+                .await
+                .unwrap();
+        }
+        let mut exhausted = minimal_request("budget:wide");
+        exhausted.messages = vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "u".repeat(140_000),
+            }],
+            timestamp_ms: 1,
+        })];
+        let prepared = collection
+            .prepare_call("budget:wide", exhausted)
+            .await
+            .unwrap();
+        drain_to_completion(prepared.start_attempt().unwrap())
+            .await
+            .unwrap();
+        let calls = calls.lock().unwrap();
+        assert_eq!(
+            calls.iter().map(|c| c.max_tokens).collect::<Vec<_>>(),
+            vec![Some(7_672), Some(7_672), Some(2_000), Some(1)]
+        );
+        assert_eq!(calls[0].thinking.budget_tokens, Some(6_648));
+        assert_eq!(calls[1].thinking.budget_tokens, Some(6_648));
+        assert_eq!(calls[2].thinking.budget_tokens, Some(976));
+    }
+
+    #[tokio::test]
+    async fn prepare_call_anthropic_thinking_keeps_answer_room_and_rejects_tiny_context() {
+        let mut adaptive = ModelInfo::new(
+            "adaptive",
+            "Adaptive",
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(32_768, 32_768).with_thinking(true),
+        );
+        if let opi_ai::WireCompat::AnthropicMessages(compat) = &mut adaptive.compat {
+            compat.force_adaptive_thinking = true;
+        }
+        let provider = MockProvider::new_with_models(
+            "budget",
+            vec![
+                ModelInfo::new(
+                    "anthropic",
+                    "Anthropic",
+                    WireApi::AnthropicMessages,
+                    ModelCapabilities::new(32_768, 32_768).with_thinking(true),
+                ),
+                adaptive,
+            ],
+            (0..3).map(|_| text_response("summary")).collect(),
+        );
+        let calls = provider.call_log_handle();
+        let resolutions = Arc::new(AtomicUsize::new(0));
+        let mut collection = ProviderCollection::new();
+        collection
+            .register_route(
+                Box::new(provider),
+                Arc::new(CountingResolver {
+                    count: resolutions.clone(),
+                    secret: SecretString::from("test"),
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .unwrap();
+        for budget in [Some(8_192), None] {
+            let mut request = minimal_request("budget:anthropic");
+            request.max_tokens = Some(9_000);
+            request.thinking = ThinkingConfig {
+                enabled: true,
+                budget_tokens: budget,
+                level: opi_ai::ThinkingLevel::Medium,
+            };
+            let prepared = collection
+                .prepare_call("budget:anthropic", request)
+                .await
+                .unwrap();
+            drain_to_completion(prepared.start_attempt().unwrap())
+                .await
+                .unwrap();
+        }
+        {
+            let calls = calls.lock().unwrap();
+            assert_eq!(calls[0].thinking.budget_tokens, Some(7_976));
+            assert_eq!(calls[1].thinking.budget_tokens, Some(7_976));
+        }
+        for limit in [1, 1_024, 2_000] {
+            let mut request = minimal_request("budget:anthropic");
+            request.max_tokens = Some(limit);
+            request.thinking = ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(8_192),
+                level: opi_ai::ThinkingLevel::Medium,
+            };
+            let result = collection.prepare_call("budget:anthropic", request).await;
+            assert!(matches!(
+                result,
+                Err(CollectionError::Provider(
+                    ProviderError::UnsupportedCapability(_)
+                ))
+            ));
+        }
+        assert_eq!(resolutions.load(Ordering::SeqCst), 2);
+        assert_eq!(calls.lock().unwrap().len(), 2);
+        let mut request = minimal_request("budget:adaptive");
+        request.max_tokens = Some(1_024);
+        request.thinking = ThinkingConfig {
+            enabled: true,
+            budget_tokens: None,
+            level: opi_ai::ThinkingLevel::Medium,
+        };
+        let prepared = collection
+            .prepare_call("budget:adaptive", request)
+            .await
+            .unwrap();
+        drain_to_completion(prepared.start_attempt().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            calls.lock().unwrap()[2].thinking.budget_tokens,
+            None,
+            "adaptive thinking uses effort rather than a numeric minimum"
+        );
+    }
+
+    #[tokio::test]
+    async fn prepare_call_rejects_default_thinking_budget_before_auth_or_dispatch() {
+        let provider = MockProvider::new_with_models(
+            "budget",
+            vec![
+                ModelInfo::new(
+                    "wide",
+                    "Wide",
+                    WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(200_000, 131_072).with_thinking(true),
+                ),
+                ModelInfo::new(
+                    "narrow",
+                    "Narrow",
+                    WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(200_000, 8_192).with_thinking(true),
+                ),
+            ],
+            vec![text_response("done")],
+        );
+        let calls = provider.call_log_handle();
+        let resolve_hits = Arc::new(AtomicUsize::new(0));
+        let mut collection = ProviderCollection::new();
+        collection
+            .register_route(
+                Box::new(provider),
+                Arc::new(CountingResolver {
+                    count: resolve_hits.clone(),
+                    secret: SecretString::from(SECRET_VALUE),
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .unwrap();
+
+        for (spec, budget) in [("budget:wide", 131_072), ("budget:narrow", 20_000)] {
+            let mut request = minimal_request(spec);
+            request.thinking = ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(budget),
+                level: opi_ai::ThinkingLevel::Medium,
+            };
+            let error = match collection.prepare_call(spec, request).await {
+                Ok(_) => panic!("an incompatible default thinking budget was prepared"),
+                Err(error) => error,
+            };
+            assert!(matches!(
+                error,
+                CollectionError::Provider(ProviderError::UnsupportedCapability(_))
+            ));
+            assert!(!error.to_string().contains(SECRET_VALUE));
+        }
+        assert_eq!(resolve_hits.load(Ordering::SeqCst), 0);
+        assert!(calls.lock().unwrap().is_empty());
+
+        let mut request = minimal_request("budget:narrow");
+        request.thinking = ThinkingConfig {
+            enabled: true,
+            budget_tokens: Some(7_168),
+            level: opi_ai::ThinkingLevel::Medium,
+        };
+        let prepared = collection
+            .prepare_call("budget:narrow", request)
+            .await
+            .unwrap();
+        drain_to_completion(prepared.start_attempt().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resolve_hits.load(Ordering::SeqCst), 1);
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls[0].max_tokens, Some(8_192));
+        assert_eq!(calls[0].thinking.budget_tokens, Some(7_168));
+    }
+
+    #[tokio::test]
     async fn prepare_call_resolves_route_and_auth_once_and_streams_via_prepared_seam() {
         let prepared_hits = Arc::new(AtomicUsize::new(0));
         let legacy_hits = Arc::new(AtomicUsize::new(0));

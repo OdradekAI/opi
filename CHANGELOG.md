@@ -9,6 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- `opi-ai`: `ProviderCollection::prepare_call` now resolves an omitted response
+  output limit from the selected model's capacity before authentication and
+  rejects default thinking budgets that cannot fit. Both implicit and explicit
+  ceilings are clamped to estimated remaining context with 4096 safety tokens;
+  thinking is fitted inside a reduced ceiling. Direct adapters retain their
+  behavior. The shared `context` estimator counts system/tools, images and
+  applicable same-model usage plus new messages rather than lifetime usage.
+- `opi-coding-agent`: omitted response limits now follow model capacity instead
+  of provider fallbacks or thinking-budget-plus-one. Default medium/high
+  thinking budgets are 8192/16384 tokens; oversized startup thinking budgets
+  leave answer room. Explicit output controls remain binding across model
+  changes and tool continuation.
+- `opi-coding-agent`: local bash execution has no default deadline, matching
+  Pi. `DefaultsConfig::tool_timeout_ms` and `BashRequest::timeout` are optional;
+  an explicit default or per-call timeout still applies, and cancellation
+  retains process-tree cleanup. External adapters require an explicit finite
+  timeout before activation because their protocol requires a deadline.
+- `opi-coding-agent`: automatic compaction now runs before model requests,
+  using current context occupancy, a default 16384-token reserve, roughly
+  20000 retained tokens and a real model summary. `threshold_tokens` is optional
+  and explicit thresholds remain binding. Summary generation and atomic
+  message/marker/Leaf commits preserve the current run, cancellation and turn
+  budget. Summaries inherit thinking and retry settings, omit image bytes and
+  bound individual tool-result text. Manual compaction methods are asynchronous
+  and RPC compaction remains cancellable. Session compaction
+  markers add optional provider/model/usage metadata for summary accounting;
+  older records remain readable with unrecorded usage treated as unknown.
+- `opi-agent`: validated preparation supports an acknowledged external commit
+  before installing context, with run-scoped summary evidence and a
+  preparation-only operation. A durable acknowledgement remains the rollback
+  boundary when cancellation or a later request fails. Hook wrappers forward
+  the transaction methods and their single-committer declaration.
+
+- `opi-eval`: fresh native imports and local acceptance require the private
+  `opi-eval-native-agent-terminal/2` runtime-preflight proof. Both integrations
+  run the exact staged runtime with `--version` before configuration or
+  credential projection; failed or unknown preflight prevents task dispatch
+  and remains attempted, invalid and unscored. Preflight and task exits are
+  distinct. Existing sealed bundles retain their offline meaning.
+
 - `opi-eval`: `PrepareArgs` adds paired optional `opi_source` and `opi_commit`
   fields, exposed as `prepare --opi-source` and `--opi-commit`. A selected
   cold Opi build requires an explicit local repository and exact commit;
@@ -126,6 +166,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handoffs land; their hermetic fixture conformance is unchanged.
 
 ### Changed
+
+- `opi-eval`: native oracle/nop conformance witnesses verify exact owned
+  container cleanup before reporting, including setup failures and timeouts.
+  Cleanup uncertainty remains non-success; neighboring containers and shared
+  resources are preserved.
+
+- `opi-eval`: Pi retry streams retain explicit retry boundaries and accept
+  final correlated success after a transient provider error. Incomplete or
+  contradictory retry evidence remains invalid.
+
+- `opi-eval`: complete native client streams now retain their full bytes up
+  to the existing 64 MiB artifact limit. Overflow is invalid and unscored,
+  with private raw diagnostics retained and no prefix sealed as full evidence.
+
+- `opi-eval`: offline local acceptance interprets Opi's native `Anthropic`
+  API value and pi's `anthropic-messages` value for the first connection,
+  retaining exact provider/model and settled tool evidence requirements.
+
+- `opi-eval`: full-selection reports use the frozen corpus task count for
+  selected coverage, independently of subjects, repetitions or surviving
+  bundles. Subset and planned/attempted trial counts retain their meanings.
+
+- `opi-eval`: offline regrade loads the products bound by verified source
+  trial identities, allowing pi-only and Opi-only material. Tampered source
+  trials remain explicit rejections and never launch a verifier.
+
+- `opi-eval`: offline verification and regrade reject linked trial entries,
+  including Windows junctions, instead of silently omitting them from the
+  verified inventory. Source evidence remains unchanged.
+
+- `opi-eval`: native cleanup uncertainty and rejected execution identity now
+  cancel further dispatch. The failed attempt and planned missing coverage stay
+  visible; valid Agent failures retain their native grading and continuation.
+
+- `opi-eval`: file-backed Opi credentials now reach the environment variable
+  selected by the isolated client configuration. Secrets remain private launch
+  material and are removed before verifier execution and evidence export.
 
 - Assurance tooling: remediation apply now checks the exact approved plan and
   live audit digests against its committed source baseline. Commits touching
@@ -556,6 +633,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Independent Companion owns its project-specific tooling.
 
 ### Fixed
+
+- `opi-agent`: a response ending with `length` rejects its entire tool-call
+  batch before preflight, hooks, authorization or execution, including calls
+  whose arguments happen to parse. Ordered error results preserve normal
+  stop/queue/continuation behavior so later complete calls can execute.
 
 - `opi-eval`: regrading now fails closed when the run's trials directory
   cannot be enumerated instead of publishing an empty verified report.

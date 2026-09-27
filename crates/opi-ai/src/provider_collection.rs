@@ -407,10 +407,16 @@ impl ProviderCollection {
     /// model-request dispatch in that order; a failure at any step returns a
     /// typed error without selecting another provider, model, wire, credential
     /// policy, or local implementation.
+    /// An omitted output limit resolves to the selected registry model's output
+    /// capacity before authentication. An enabled thinking budget must fit
+    /// below that default limit. Implicit and explicit ceilings are then clamped
+    /// to remaining context with 4,096 safety tokens (minimum one output token).
+    /// Thinking that no longer fits is reduced to leave 1,024 answer tokens
+    /// where possible. The caller's request is not mutated.
     pub async fn prepare_call(
         &self,
         spec: &str,
-        request: Request,
+        mut request: Request,
     ) -> Result<PreparedProviderCall, CollectionError> {
         let (provider_ref, model) = self.registry.resolve(spec)?;
         let provider_id = provider_ref.id().to_owned();
@@ -423,6 +429,72 @@ impl ProviderCollection {
                 route_provider: provider_id,
                 route_model: model_id,
             });
+        }
+        if request.max_tokens.is_none() {
+            let limit = model.capabilities.max_output_tokens;
+            if request.thinking.enabled
+                && request
+                    .thinking
+                    .budget_tokens
+                    .is_some_and(|budget| budget >= limit)
+            {
+                return Err(
+                    ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(
+                        "thinking budget must be below the resolved model's default output limit",
+                    ))
+                    .into(),
+                );
+            }
+            request.max_tokens = Some(limit);
+        }
+        let context_limit = model.capabilities.context_window;
+        if context_limit > 0 {
+            let occupied = crate::context::estimate_context_tokens(
+                request.system.as_deref(),
+                &request.messages,
+                &request.tools,
+                &request.model,
+            )
+            .tokens;
+            let available = context_limit
+                .saturating_sub(occupied)
+                .saturating_sub(4_096)
+                .max(1);
+            request.max_tokens = request.max_tokens.map(|limit| limit.min(available));
+        }
+        if request.thinking.enabled {
+            let numeric_anthropic = matches!(
+                &model.compat,
+                crate::WireCompat::AnthropicMessages(compat) if !compat.force_adaptive_thinking
+            );
+            if numeric_anthropic && request.thinking.budget_tokens.is_none() {
+                request.thinking.budget_tokens = Some(match request.thinking.level {
+                    crate::ThinkingLevel::Minimal => 1_024,
+                    crate::ThinkingLevel::Low => 2_048,
+                    crate::ThinkingLevel::Medium => 8_192,
+                    crate::ThinkingLevel::High
+                    | crate::ThinkingLevel::XHigh
+                    | crate::ThinkingLevel::Max => 16_384,
+                    // Preserve the adapter's fallback for legacy callers that
+                    // enable thinking without selecting a level or budget.
+                    crate::ThinkingLevel::None => 10_000,
+                });
+            }
+            if let (Some(budget), Some(limit)) =
+                (request.thinking.budget_tokens, request.max_tokens)
+            {
+                request.thinking.budget_tokens = Some(budget.min(limit.saturating_sub(1_024)));
+            }
+            if numeric_anthropic
+                && request
+                    .thinking
+                    .budget_tokens
+                    .is_some_and(|budget| budget < 1_024)
+            {
+                return Err(ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(
+                    "response limit cannot fit the minimum Anthropic thinking budget and answer room",
+                )).into());
+            }
         }
         crate::provider::validate_request_for_model(&provider_id, Some(model), &request)?;
 

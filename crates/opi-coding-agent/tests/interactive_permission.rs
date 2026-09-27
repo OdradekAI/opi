@@ -117,7 +117,7 @@ fn request(command: &str) -> BashRequest {
         authorized_backend: None,
         command: command.to_string(),
         cwd: PathBuf::from("."),
-        timeout: Duration::from_secs(5),
+        timeout: Some(Duration::from_secs(5)),
         signal: CancellationToken::new(),
         env: Vec::new(),
         backend: None,

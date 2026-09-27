@@ -22,6 +22,44 @@ use crate::pricing::lookup_pricing;
 static ENTRY_SEQ: AtomicU64 = AtomicU64::new(1);
 static SESSION_SEQ: AtomicU64 = AtomicU64::new(1);
 
+/// A read-only preparation. IDs are reserved here, but no session bytes or
+/// coordinator state change until the validated candidate is committed.
+pub(crate) struct PreparedCompaction {
+    pub compacted: Vec<AgentMessage>,
+    pub kept: Vec<AgentMessage>,
+    pub tail: Vec<AgentMessage>,
+    pub first_kept_entry_id: String,
+    pub tokens_before: u64,
+    prepared: Vec<(SessionEntry, Entry)>,
+    kept_entries: Vec<Entry>,
+    kept_indices: Vec<usize>,
+    expected_tip: Option<String>,
+    usage: Usage,
+    user_count: u32,
+}
+
+impl PreparedCompaction {
+    pub fn persisted_messages(&self) -> Vec<AgentMessage> {
+        self.prepared
+            .iter()
+            .map(|(_, entry)| entry.message.clone())
+            .collect()
+    }
+    pub fn candidate_context(&self, summary: &str) -> Vec<AgentMessage> {
+        let tokens_after = crate::compaction::estimate_messages(&self.kept)
+            .saturating_add(opi_ai::context::estimate_text_tokens(summary));
+        let mut context = vec![AgentMessage::CompactionSummary(CompactionSummaryMessage {
+            summary: summary.to_owned(),
+            first_kept_entry_id: self.first_kept_entry_id.clone(),
+            tokens_before: self.tokens_before,
+            tokens_after,
+        })];
+        context.extend(self.kept.clone());
+        context.extend(self.tail.clone());
+        context
+    }
+}
+
 /// Result of a compaction triggered during `on_turn_end`.
 ///
 /// The harness uses these fields to (a) install `[summary, ...kept]` as the
@@ -288,11 +326,36 @@ impl SessionCoordinator {
                     agent_idx += 1;
                 }
                 SessionEntry::Compaction(c) => {
+                    if let Some(summary) = &c.summary_usage {
+                        let usage = &summary.usage;
+                        total_input += u64::from(usage.input_tokens);
+                        total_output += u64::from(usage.output_tokens);
+                        total_cache_read += u64::from(usage.cache_read_tokens);
+                        total_cache_write += u64::from(usage.cache_write_tokens);
+                        if let Some(tokens) = usage.cache_write_1h_tokens {
+                            total_cache_write_1h =
+                                Some(total_cache_write_1h.unwrap_or(0).saturating_add(tokens));
+                        }
+                        if let Some(tokens) = usage.reasoning_tokens {
+                            total_reasoning =
+                                Some(total_reasoning.unwrap_or(0).saturating_add(tokens));
+                        }
+                        if !usage.is_reported() {
+                            unknown_turns += 1;
+                        }
+                    } else {
+                        unknown_turns += 1;
+                    }
                     let kept_start = entries.iter().position(|e| e.id == c.first_kept_entry_id);
-                    let kept: Vec<Entry> = match kept_start {
+                    let mut kept: Vec<Entry> = match kept_start {
                         Some(idx) => entries.split_off(idx),
                         None => Vec::new(),
                     };
+                    for entry in &mut kept {
+                        crate::compaction::invalidate_usage(std::slice::from_mut(
+                            &mut entry.message,
+                        ));
+                    }
                     let kept_count = kept.len();
                     // Rebuild entries with the compaction summary at index 0,
                     // followed by the kept tail. This mirrors the runtime
@@ -531,6 +594,7 @@ impl SessionCoordinator {
                     first_kept_entry_id: output.first_kept_entry_id.clone(),
                     tokens_before: output.tokens_before,
                     tokens_after: output.tokens_after,
+                    summary_usage: None,
                 });
 
                 // Persist the compaction marker and its Leaf before mutating
@@ -587,6 +651,208 @@ impl SessionCoordinator {
 
     pub fn session_id(&self) -> &str {
         &self.session_id
+    }
+
+    pub(crate) fn prepare_compaction(
+        &self,
+        context: &[AgentMessage],
+        persisted_len: usize,
+        include_new_messages: bool,
+        tokens_before: u64,
+    ) -> Result<Option<PreparedCompaction>, std::io::Error> {
+        self.ensure_session_path_available()?;
+        if persisted_len != self.agent_message_count || persisted_len > context.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "compaction preparation does not match the committed message boundary",
+            ));
+        }
+        let end = if include_new_messages {
+            context.len()
+        } else {
+            persisted_len
+        };
+        let new_messages = &context[persisted_len..end];
+        let mut parent = self.active_tip_entry_id.clone();
+        let mut prepared = Vec::new();
+        let mut entries = self.entries.clone();
+        let mut indices = self.agent_message_indices.clone();
+        for (index, message) in new_messages.iter().enumerate() {
+            if let AgentMessage::Llm(message) = message {
+                let id = format!("msg-{}", ENTRY_SEQ.fetch_add(1, Ordering::Relaxed));
+                let tracked = Entry {
+                    id: id.clone(),
+                    message: AgentMessage::Llm(message.clone()),
+                };
+                prepared.push((
+                    SessionEntry::Message(MessageEntry {
+                        id: id.clone(),
+                        parent_id: parent.clone(),
+                        timestamp: now_iso(),
+                        message: message_for_session(message),
+                    }),
+                    tracked.clone(),
+                ));
+                parent = Some(id);
+                entries.push(tracked);
+                indices.push(persisted_len + index);
+            }
+        }
+        let Some(split) = crate::compaction::find_cut(&entries) else {
+            return Ok(None);
+        };
+        let kept_start = indices[split];
+        let mut kept = context[kept_start..end].to_vec();
+        crate::compaction::invalidate_usage(&mut kept);
+        let mut kept_entries = entries[split..].to_vec();
+        for entry in &mut kept_entries {
+            crate::compaction::invalidate_usage(std::slice::from_mut(&mut entry.message));
+        }
+        Ok(Some(PreparedCompaction {
+            compacted: context[..kept_start].to_vec(),
+            kept,
+            tail: context[end..].to_vec(),
+            first_kept_entry_id: entries[split].id.clone(),
+            tokens_before,
+            prepared,
+            kept_entries,
+            expected_tip: self.active_tip_entry_id.clone(),
+            kept_indices: indices[split..]
+                .iter()
+                .map(|index| 1 + index - kept_start)
+                .collect(),
+            usage: crate::harness::CodingHarness::aggregate_turn_usage(new_messages),
+            user_count: new_messages
+                .iter()
+                .filter(|m| matches!(m, AgentMessage::Llm(Message::User(_))))
+                .count() as u32,
+        }))
+    }
+
+    /// Commit new completed messages and the compaction marker in one rollback
+    /// unit. The caller has already validated the complete runtime candidate.
+    pub(crate) fn commit_compaction(
+        &mut self,
+        plan: PreparedCompaction,
+        summary: &str,
+        summary_response: &opi_ai::message::AssistantMessage,
+        reason: CompactionReason,
+    ) -> Result<CompactionResultOutput, std::io::Error> {
+        self.ensure_session_path_available()?;
+        if self.active_tip_entry_id != plan.expected_tip {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "compaction preparation became stale",
+            ));
+        }
+        let mut context = plan.candidate_context(summary);
+        context.truncate(context.len() - plan.tail.len());
+        let AgentMessage::CompactionSummary(summary_message) = &context[0] else {
+            unreachable!()
+        };
+        let summary_message = summary_message.clone();
+        let id = format!("cmp-{}", ENTRY_SEQ.fetch_add(1, Ordering::Relaxed));
+        let parent_id = plan
+            .prepared
+            .last()
+            .map(|(_, e)| e.id.clone())
+            .or_else(|| self.active_tip_entry_id.clone());
+        let marker = SessionEntry::Compaction(CompactionEntry {
+            id: id.clone(),
+            parent_id,
+            timestamp: now_iso(),
+            summary: summary.to_owned(),
+            first_kept_entry_id: plan.first_kept_entry_id.clone(),
+            tokens_before: plan.tokens_before,
+            tokens_after: summary_message.tokens_after,
+            summary_usage: Some(opi_agent::session::CompactionSummaryUsage {
+                provider: summary_response.provider.clone(),
+                model: summary_response.model.clone(),
+                usage: summary_response.usage.clone(),
+            }),
+        });
+        let checkpoint = self.writer.checkpoint()?;
+        let appended = (|| {
+            for (entry, _) in &plan.prepared {
+                self.append_entry(entry)?;
+            }
+            self.append_entry(&marker)?;
+            self.append_leaf_for_tip(&id)
+        })();
+        if let Err(error) = appended {
+            return Err(self.rollback_or_poison(checkpoint, error));
+        }
+        if !plan.prepared.is_empty() {
+            self.accumulate_prepared_usage(&plan.usage, plan.user_count);
+        }
+        self.accumulate_prepared_usage(&summary_response.usage, 0);
+        self.entries = vec![Entry {
+            id: format!("sum-{}", ENTRY_SEQ.fetch_add(1, Ordering::Relaxed)),
+            message: AgentMessage::CompactionSummary(summary_message.clone()),
+        }];
+        self.entries.extend(plan.kept_entries);
+        self.agent_message_count = context.len();
+        self.agent_message_indices = vec![0];
+        self.agent_message_indices.extend(plan.kept_indices);
+        self.active_tip_entry_id = Some(id);
+        self.compaction_watermark_tokens = self.usage.as_usage().total_tokens();
+        let diagnostic = opi_agent::diagnostic::Diagnostic::new(
+            opi_agent::diagnostic::Severity::Info, opi_agent::diagnostic::code::CODE_SESSION_COMPACTED,
+            opi_agent::diagnostic::SOURCE_SESSION, "conversation compacted",
+        ).details(serde_json::json!({"tokens_before":plan.tokens_before,"tokens_after":summary_message.tokens_after,"summary_source":"provider"}));
+        Ok(CompactionResultOutput {
+            summary: summary_message.clone(),
+            new_agent_messages: context,
+            reason,
+            tokens_before: plan.tokens_before,
+            tokens_after: summary_message.tokens_after,
+            first_kept_entry_id: plan.first_kept_entry_id,
+            diagnostic,
+        })
+    }
+
+    fn accumulate_prepared_usage(&mut self, incoming: &Usage, user_count: u32) {
+        let old = &self.usage;
+        let merge = |old: Option<u64>, new: Option<u64>| match (old, new) {
+            (None, None) => None,
+            (old, new) => Some(old.unwrap_or(0).saturating_add(new.unwrap_or(0))),
+        };
+        self.usage = CumulativeUsage::from_totals(
+            old.total_input_tokens()
+                .saturating_add(u64::from(incoming.input_tokens)),
+            old.total_output_tokens()
+                .saturating_add(u64::from(incoming.output_tokens)),
+            old.total_cache_read_tokens()
+                .saturating_add(u64::from(incoming.cache_read_tokens)),
+            old.total_cache_write_tokens()
+                .saturating_add(u64::from(incoming.cache_write_tokens)),
+            merge(
+                old.total_cache_write_1h_tokens(),
+                incoming.cache_write_1h_tokens,
+            ),
+            merge(old.total_reasoning_tokens(), incoming.reasoning_tokens),
+            old.turn_count().saturating_add(user_count),
+            u32::from(old.has_unknown_usage() || !incoming.is_reported()),
+        );
+    }
+
+    pub(crate) fn persist_prepared_messages(
+        &mut self,
+        messages: &[AgentMessage],
+        start: usize,
+    ) -> Result<(), std::io::Error> {
+        let old_usage = self.usage.clone();
+        let usage = crate::harness::CodingHarness::aggregate_turn_usage(messages);
+        self.on_turn_end(messages, &usage, start)?;
+        self.usage = old_usage;
+        if !messages.is_empty() {
+            let user_count = messages
+                .iter()
+                .filter(|m| matches!(m, AgentMessage::Llm(Message::User(_))))
+                .count() as u32;
+            self.accumulate_prepared_usage(&usage, user_count);
+        }
+        Ok(())
     }
 
     pub fn session_path(&self) -> &Path {

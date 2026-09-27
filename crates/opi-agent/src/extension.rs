@@ -72,7 +72,8 @@ use opi_ai::provider::{ModelInfo, Provider};
 use crate::event::AgentEvent;
 use crate::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
-    BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
+    BeforeToolCallResult, InitialTurnContext, PreparationCommit, PreparationEvidence,
+    PrepareNextTurnContext, ShouldStopAfterTurnContext,
 };
 use crate::loop_types::{AgentError, NextTurnState};
 use crate::message::AgentMessage;
@@ -575,6 +576,10 @@ struct CompositeHooks {
 }
 
 impl AgentHooks for CompositeHooks {
+    fn owns_preparation_commit(&self) -> bool {
+        self.base.owns_preparation_commit()
+    }
+
     fn convert_to_llm(
         &self,
         messages: &[AgentMessage],
@@ -685,5 +690,47 @@ impl AgentHooks for CompositeHooks {
             }
             Ok(candidate)
         })
+    }
+
+    fn prepare_initial_turn<'a>(
+        &'a self,
+        ctx: InitialTurnContext,
+        cancel: CancellationToken,
+        evidence: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send + 'a>> {
+        self.base.prepare_initial_turn(ctx, cancel, evidence)
+    }
+
+    fn prepare_next_turn_transaction<'a>(
+        &'a self,
+        ctx: PrepareNextTurnContext,
+        cancel: CancellationToken,
+        evidence: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut candidate = self
+                .base
+                .prepare_next_turn_transaction(ctx.clone(), cancel, evidence)
+                .await?;
+            for extension in self.extensions.iter() {
+                if let Some(replacement) = extension.prepare_next_turn(&ctx).await? {
+                    candidate = Some(replacement);
+                }
+            }
+            Ok(candidate)
+        })
+    }
+
+    fn validate_prepared_state(&self, candidate: &NextTurnState) -> Result<(), AgentError> {
+        self.base.validate_prepared_state(candidate)
+    }
+
+    fn commit_prepared_state<'a>(
+        &'a self,
+        candidate: NextTurnState,
+        cancel: CancellationToken,
+        evidence: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<PreparationCommit, AgentError>> + Send + 'a>> {
+        self.base.commit_prepared_state(candidate, cancel, evidence)
     }
 }

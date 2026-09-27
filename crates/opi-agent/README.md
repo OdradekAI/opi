@@ -161,6 +161,17 @@ these effects:
 | `should_stop_after_turn` | Observes the completed turn before queue polling and preparation; `true` ends the run immediately. |
 | `prepare_next_turn` | Runs only for warranted continuation after the stop decision and input selection; returns an optional complete candidate validated and applied before the next provider dispatch. |
 
+Persistent context changes use `prepare_initial_turn` or
+`prepare_next_turn_transaction`, followed by intrinsic and product
+`validate_prepared_state` checks, then `commit_prepared_state`. A transition
+has one external commit owner, declared by `owns_preparation_commit`.
+Cancellation may interrupt preparation; once commit starts, Core awaits its
+acknowledgement and installs a committed candidate before handling cancellation
+or later failure. `PreparationEvidence` records compaction and real summary
+calls under the same run without consuming a task turn. `prepare_context_armed`
+uses this transition without dispatching a task request. Extension wrappers
+forward these methods and retain the normal preparation ordering.
+
 Extension composition: `ExtensionRegistry::wrap_hooks` runs the base
 `AgentHooks` method first, then each extension in registration order. A
 `Block` from an extension's `on_before_tool_call` stops the chain at the first
@@ -191,6 +202,12 @@ each batch by these rules:
 - When every finalized result sets `terminate`, the batch suppresses automatic
   tool continuation. The stop hook still runs, and queued messages can continue
   the run. A single non-terminating result preserves automatic continuation.
+
+An assistant response ending with `length` cannot launch any of its tool calls,
+even when their arguments are valid JSON. The loop emits an error result for
+every call in source order without invoking tool hooks, authorization, or
+execution. These non-terminating failures preserve normal stop and continuation
+handling; a length response without tool calls does not create another turn.
 
 For a resolved tool, `before_tool_call` runs first; argument validation then
 runs before mandatory authorization and `Tool::execute`. A validation failure

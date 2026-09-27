@@ -2,6 +2,7 @@ pub mod adapter_extension;
 pub mod adapter_host;
 pub mod adapter_protocol;
 pub mod cli;
+mod compaction;
 pub mod config;
 pub mod context_files;
 pub mod credential_store;

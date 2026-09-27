@@ -210,7 +210,7 @@ fn request(command: &str) -> BashRequest {
         authorized_backend: None,
         command: command.to_string(),
         cwd: PathBuf::from("."),
-        timeout: Duration::from_secs(5),
+        timeout: Some(Duration::from_secs(5)),
         signal: CancellationToken::new(),
         env: Vec::new(),
         backend: None,
@@ -484,7 +484,7 @@ async fn stable_failure_code_lifts_into_tool_result_diagnostics() {
         Arc::new(RecordingOps::new()),
     );
     let tool = BashTool::new_with_ops(PathBuf::from("."), ops);
-    let result_json = serde_json::json!({ "command": "echo hi" });
+    let result_json = serde_json::json!({ "command": "echo hi", "timeout_secs": 5 });
     let outcome = tool
         .execute("call-1", result_json, CancellationToken::new(), None)
         .await

@@ -304,7 +304,7 @@ WORKSPACE_WRITE_CAPABILITY, COMMAND_EXECUTE_CAPABILITY}` 是内置
 | Shell | Windows 使用 `cmd /C`，Unix 使用 `sh -c`。 |
 | 工作目录 | 工作区根目录。 |
 | 执行 backend | 默认使用内置 `local`；`[execution]` 或 execution CLI 参数可以选择合格的外部 `command.execute` adapter。 |
-| 超时 | 默认 30 秒；`timeout_secs` 可覆盖。 |
+| 超时 | 本地执行默认无超时。正数 `defaults.tool_timeout_ms` 可提供默认值，单次 `timeout_secs` 优先覆盖；外部 adapter 必须通过其中一项显式指定有限超时。 |
 | 取消 | 取消令牌报告 `cancelled=true` / `timed_out=false`；超时报告 `timed_out=true` / `cancelled=false`。 |
 | 有效执行契约 | 本地执行报告 `placement=host`、`guarantee=supervised`；外部 placement、guarantee、policy 与 limitations 来自 backend 的 `started` 事件。仅凭 adapter 身份不能证明安全保证。 |
 | 路径限制 | `local` backend 不会把 `bash` 限制在工作区内；外部 backend 只受其报告的有效执行契约约束。 |
@@ -474,15 +474,44 @@ max_output_tokens = 16384
 该可选值遵循配置层优先级，必须为正数、不超过所选模型的输出能力上限，并大于
 已启用的 thinking budget。不兼容的组合会在发送 Provider 请求前失败。显式上限
 会贯穿重试、工具续接及兼容的模型或 thinking 切换，关闭 thinking 后也保留。
-不兼容的运行时切换会被拒绝，且不会持久化该变更。省略此项时沿用原有 Provider／
-thinking 默认行为。自定义模型的 `max_output_tokens` 描述模型能力上限，不用于
-选择每次请求的输出限制。
+不兼容的运行时切换会被拒绝，且不会持久化该变更。省略此项时，使用所选模型的
+`max_output_tokens` 能力上限作为响应上限；模型切换及工具续跑后同样如此。
+Thinking 与回答共享响应预算，启用 thinking 不会把响应上限缩成 thinking 预算
+加一。启动时若 thinking 预算过大而必须缩小，会在模型上限允许的情况下为回答
+保留 1024 token。
+
+派发前，默认与显式响应上限都会按估算的剩余上下文收缩，预留 4096 token 安全余量，
+必要时再次调整 thinking。该安全余量不是 4096 token 输出上限，也不是长程任务的
+累计预算。
+
+默认 thinking 等级为 medium，预算为 8192 token；minimal 和 low 分别使用 1024
+与 2048，high 至少使用 16384。显式 thinking 预算覆盖 medium 默认值，也可提高
+high 的预算。模型不支持的等级仍会在派发前被拒绝。
+
+这是每次响应的上限，不是整个任务的累计预算。配对 benchmark 应为两端显式冻结
+相同且受支持的输出、上下文及推理控制，并验证实际请求；不要依赖不同客户端的
+默认值，也不要把合成 smoke 测试的小预算照搬到真实运行。
 
 Hook 提议的下一轮状态也必须保留显式上限及兼容的模型／thinking 设置。不兼容的
 提议会在状态应用前被拒绝，工具续接中的 Provider 请求之间同样执行该检查。
 
 嵌入方调用 `CodingHarness::set_model` 会得到 `Result<(), String>`，需先处理
 拒绝结果，再确认当前模型是否已切换。
+
+自动压缩默认开启。在首个模型请求前及工具续轮之间，产品把当前上下文占用与所选模型
+的 context window 减去 16384 token 比较。显式 `[compaction] threshold_tokens`
+覆盖该阈值；`enabled = false` 关闭自动压缩。保留尾部按约 20000 token 选择，并保持
+工具调用和结果成组完整；没有可删除的较早前缀时不执行压缩。
+
+压缩通过当前模型生成较早前缀的结构化摘要，包含已有摘要，并继承准备后的 thinking
+设置及配置的重试策略。摘要输出上限为预留量的 80%（13107 token），还受模型容量和
+剩余上下文约束。摘要输入省略图片原始数据，单条工具结果限制为 2000 个 UTF-16 单元，
+不会回退为截短原文。
+摘要失败、为空、被截断或取消时不能替换会话。已完成消息、摘要 marker 和活动 Leaf
+会在下一次请求前一起提交，同一个逻辑 run 和轮次预算继续使用。摘要 token 用量作为
+独立 metadata 写入 marker，以便恢复时统计。`CodingHarness::compact` 和
+`compact_with_diagnostic` 已改为异步，需要 await；手动压缩使用同一事务路径。
+RPC 压缩在等待摘要时仍可通过 `abort` 取消。
 
 用户配置路径：
 

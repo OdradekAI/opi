@@ -128,7 +128,7 @@ fn quick_request(cwd: &Path) -> BashRequest {
     BashRequest {
         command: "echo hi".to_string(),
         cwd: cwd.to_path_buf(),
-        timeout: Duration::from_secs(5),
+        timeout: Some(Duration::from_secs(5)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
@@ -152,7 +152,7 @@ async fn bash_l0_kills_process_tree_in_off_mode() {
     let req = BashRequest {
         command: bash_command_for_script(&script),
         cwd: dir.path().to_path_buf(),
-        timeout: Duration::from_millis(1500),
+        timeout: Some(Duration::from_millis(1500)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
@@ -186,7 +186,7 @@ async fn bash_l0_kills_process_tree_on_cancel() {
     let req = BashRequest {
         command: bash_command_for_script(&script),
         cwd: dir.path().to_path_buf(),
-        timeout: Duration::from_secs(60),
+        timeout: Some(Duration::from_secs(60)),
         signal: token.clone(),
         env: vec![],
         backend: None,
@@ -223,7 +223,7 @@ async fn dropped_exec_future_kills_process_tree() {
     let req = BashRequest {
         command: bash_command_for_script(&script),
         cwd: dir.path().to_path_buf(),
-        timeout: Duration::from_secs(60),
+        timeout: Some(Duration::from_secs(60)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
@@ -328,7 +328,7 @@ async fn bash_l0_kills_process_tree_in_off_mode() {
     let req = BashRequest {
         command: unix_grandchild_command(&pidfile),
         cwd: dir.path().to_path_buf(),
-        timeout: Duration::from_millis(1500),
+        timeout: Some(Duration::from_millis(1500)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
@@ -354,7 +354,7 @@ async fn bash_l0_kills_process_tree_on_cancel() {
     let req = BashRequest {
         command: unix_grandchild_command(&pidfile),
         cwd: dir.path().to_path_buf(),
-        timeout: Duration::from_secs(60),
+        timeout: Some(Duration::from_secs(60)),
         signal: token.clone(),
         env: vec![],
         backend: None,
@@ -389,7 +389,7 @@ async fn dropped_exec_future_kills_process_tree() {
     let req = BashRequest {
         command: unix_grandchild_command(&pidfile),
         cwd: dir.path().to_path_buf(),
-        timeout: Duration::from_secs(60),
+        timeout: Some(Duration::from_secs(60)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
@@ -462,7 +462,7 @@ async fn clean_exit_kills_surviving_background_descendants() {
             spawner.to_string_lossy()
         ),
         cwd: dir.path().to_path_buf(),
-        timeout: Duration::from_secs(10),
+        timeout: Some(Duration::from_secs(10)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
@@ -494,7 +494,7 @@ async fn clean_exit_kills_surviving_background_descendants() {
     let req = BashRequest {
         command: unix_clean_exit_command(&pidfile),
         cwd: dir.path().to_path_buf(),
-        timeout: Duration::from_secs(10),
+        timeout: Some(Duration::from_secs(10)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
@@ -537,7 +537,7 @@ async fn pipe_holding_descendant_drains_within_bounded_grace() {
             spawner.to_string_lossy()
         ),
         cwd: dir.path().to_path_buf(),
-        timeout: Duration::from_secs(10),
+        timeout: Some(Duration::from_secs(10)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
@@ -565,7 +565,7 @@ async fn pipe_holding_descendant_drains_within_bounded_grace() {
     let req = BashRequest {
         command: unix_clean_exit_command(&pidfile),
         cwd: dir.path().to_path_buf(),
-        timeout: Duration::from_secs(10),
+        timeout: Some(Duration::from_secs(10)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,

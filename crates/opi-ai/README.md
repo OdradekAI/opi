@@ -111,6 +111,23 @@ and a prior credential-needed/revoked attempt closes the prepared call with
 variants. Per-call credentials remain out of scope: `extra_headers` rejects
 provider-managed auth headers.
 
+Before authentication, `prepare_call` resolves an omitted `Request.max_tokens`
+to the selected registry model's `max_output_tokens` capacity, including model
+overrides and refreshed catalogs. An explicit request limit remains a ceiling.
+If enabled thinking has a budget at or above that default output limit,
+preparation fails with a typed capability error before auth or dispatch. Both
+implicit and explicit ceilings are then reduced to fit estimated remaining
+context with 4096 safety tokens and a minimum output of one token. Thinking that
+no longer fits is reduced to leave 1024 answer tokens where possible. The
+non-adaptive Anthropic wire resolves an omitted thinking budget from its level
+and rejects ceilings that cannot fit its minimum thinking and answer room
+before authentication; adaptive effort does not use a numeric minimum. The
+`context` module estimates messages, system text and tool schemas; applicable
+same-model usage plus new messages replaces cumulative session usage. Every
+attempt reuses the resolved limit. Direct provider adapter calls retain their
+existing default behavior; this is a per-request output limit, independent of
+any product turn-count budget.
+
 `ProviderError::AccountIdMissing { provider_id }` is the separate,
 non-retryable case where a credential exists but the selected wire requires
 account identity absent from it. Product layers remediate it with an explicit

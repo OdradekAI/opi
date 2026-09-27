@@ -346,6 +346,7 @@ fn compaction_entry_round_trip() {
         first_kept_entry_id: "b2c3".into(),
         tokens_before: 45000,
         tokens_after: 8000,
+        summary_usage: None,
     });
     let json = serde_json::to_string(&entry).unwrap();
     let val: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -823,6 +824,7 @@ fn known_entry_types_match_session_entry_serde_tags() {
             first_kept_entry_id: "msg-1".into(),
             tokens_before: 10,
             tokens_after: 4,
+            summary_usage: None,
         }),
         SessionEntry::Leaf(LeafEntry {
             id: "leaf-1".into(),

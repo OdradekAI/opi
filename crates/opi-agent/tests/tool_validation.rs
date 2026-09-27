@@ -1013,3 +1013,324 @@ async fn phase8_malformed_tool_arguments_do_not_execute_parallel_permissive_tool
         |c| matches!(c, OutputContent::Text { text } if text.contains("tool arguments were not valid JSON"))
     ));
 }
+
+struct LengthProbeTool {
+    mode: ExecutionMode,
+    executions: Arc<AtomicUsize>,
+}
+
+impl Tool for LengthProbeTool {
+    fn definition(&self) -> ToolDef {
+        ToolDef {
+            name: "length_probe".into(),
+            description: "Count actual tool executions.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "value": { "type": "string" } },
+                "required": ["value"]
+            }),
+        }
+    }
+
+    fn execution_mode(&self) -> ExecutionMode {
+        self.mode
+    }
+
+    fn execute(
+        &self,
+        _call_id: &str,
+        _arguments: serde_json::Value,
+        _signal: CancellationToken,
+        _on_update: Option<opi_agent::tool::UpdateCallback>,
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
+        self.executions.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {
+            Ok(ToolResult {
+                content: vec![OutputContent::Text {
+                    text: "executed".into(),
+                }],
+                details: None,
+                is_error: false,
+                terminate: false,
+                truncated: false,
+                diagnostics: vec![],
+            })
+        })
+    }
+}
+
+#[derive(Default)]
+struct LengthProbeHooks {
+    before: AtomicUsize,
+    after: AtomicUsize,
+    prepare: AtomicUsize,
+    completed: Mutex<Vec<ShouldStopAfterTurnContext>>,
+    stop: bool,
+}
+
+impl AgentHooks for LengthProbeHooks {
+    fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+        Ok(messages
+            .iter()
+            .filter_map(|message| match message {
+                AgentMessage::Llm(message) => Some(message.clone()),
+                _ => None,
+            })
+            .collect())
+    }
+
+    fn before_tool_call(
+        &self,
+        _: BeforeToolCallContext,
+    ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
+        self.before.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { BeforeToolCallResult::Continue })
+    }
+
+    fn after_tool_call(
+        &self,
+        _: AfterToolCallContext,
+    ) -> Pin<Box<dyn Future<Output = AfterToolCallResult> + Send>> {
+        self.after.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { AfterToolCallResult::Keep })
+    }
+
+    fn should_stop_after_turn(
+        &self,
+        context: ShouldStopAfterTurnContext,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        self.completed.lock().unwrap().push(context);
+        let stop = self.stop;
+        Box::pin(async move { stop })
+    }
+
+    fn prepare_next_turn(
+        &self,
+        _: opi_agent::hooks::PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        self.prepare.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(None) })
+    }
+}
+
+fn length_response(arguments: &[&str]) -> Vec<AssistantStreamEvent> {
+    let mut message = base_msg();
+    message.stop_reason = StopReason::Length;
+    message.content = arguments
+        .iter()
+        .enumerate()
+        .map(|(index, arguments)| AssistantContent::ToolCall {
+            tool_call: ToolCall {
+                id: format!("partial-{index}"),
+                name: "length_probe".into(),
+                arguments: (*arguments).into(),
+            },
+        })
+        .collect();
+    vec![
+        AssistantStreamEvent::Start {
+            partial: base_msg(),
+        },
+        AssistantStreamEvent::Done {
+            reason: StopReason::Length,
+            message,
+        },
+    ]
+}
+
+fn length_context(
+    provider: ScriptedProvider,
+    mode: ExecutionMode,
+    executions: Arc<AtomicUsize>,
+    authorizations: Arc<AtomicUsize>,
+) -> AgentLoopContext {
+    AgentLoopContext {
+        collection: Arc::new(single_route_collection(Box::new(provider))),
+        registry: common::test_registry(vec![Box::new(LengthProbeTool { mode, executions })]),
+        authorizer: Some(Arc::new(CountingAuthorizer {
+            calls: authorizations,
+        })),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
+        state: NextTurnState::new(
+            Vec::new(),
+            ModelSelection::new("scripted", "mock"),
+            InferenceConfig::default(),
+        ),
+        system: None,
+        steering_queue: None,
+        follow_up_queue: None,
+        diagnostic_sink: None,
+        session_id: None,
+        evidence_sink: None,
+    }
+}
+
+async fn check_length_tool_batch(mode: ExecutionMode, final_arguments: &str) {
+    use opi_agent::event::AgentEvent;
+
+    let provider = ScriptedProvider::new(vec![
+        length_response(&[r#"{"value":"complete-looking"}"#, final_arguments]),
+        tool_call_response("fresh", "length_probe", r#"{"value":"complete"}"#),
+        text_response("done"),
+    ]);
+    let provider_calls = provider.call_count.clone();
+    let executions = Arc::new(AtomicUsize::new(0));
+    let authorizations = Arc::new(AtomicUsize::new(0));
+    let hooks = LengthProbeHooks::default();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let result = opi_agent::agent_loop(
+        length_context(provider, mode, executions.clone(), authorizations.clone()),
+        AgentLoopConfig::default(),
+        &hooks,
+        Box::new({
+            let events = events.clone();
+            move |event| events.lock().unwrap().push(event)
+        }),
+        CancellationToken::new(),
+    )
+    .await;
+
+    assert!(result.error().is_none(), "{result:?}");
+    assert_eq!(
+        executions.load(Ordering::SeqCst),
+        1,
+        "only the fresh call executes"
+    );
+    assert_eq!(authorizations.load(Ordering::SeqCst), 1);
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 1);
+    assert_eq!(hooks.after.load(Ordering::SeqCst), 1);
+    assert_eq!(*provider_calls.lock().unwrap(), 3);
+    assert_eq!(hooks.prepare.load(Ordering::SeqCst), 2);
+    let completed = hooks.completed.lock().unwrap();
+    assert_eq!(completed.len(), 3);
+    let rejected = &completed[0].tool_results;
+    assert_eq!(rejected.len(), 2);
+    for (index, result) in rejected.iter().enumerate() {
+        assert_eq!(result.tool_call_id, format!("partial-{index}"));
+        assert!(result.is_error);
+        assert!(!result.truncated, "the synthetic failure text is complete");
+        assert!(result.content.iter().any(|content| matches!(
+            content,
+            OutputContent::Text { text } if text.contains("output token limit") && text.contains("not executed")
+        )));
+    }
+    assert!(!completed[1].tool_results[0].is_error);
+    let batch_events: Vec<String> = events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::ToolExecutionStart { tool_call_id, .. }
+                if tool_call_id.starts_with("partial-") =>
+            {
+                Some(format!("start:{tool_call_id}"))
+            }
+            AgentEvent::ToolExecutionEnd {
+                tool_call_id,
+                is_error,
+                ..
+            } if tool_call_id.starts_with("partial-") => {
+                assert!(*is_error);
+                Some(format!("end:{tool_call_id}"))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        batch_events,
+        [
+            "start:partial-0",
+            "end:partial-0",
+            "start:partial-1",
+            "end:partial-1"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn length_sequential_batch_never_executes_complete_looking_calls() {
+    check_length_tool_batch(ExecutionMode::Sequential, r#"{"value":"salvaged"}"#).await;
+}
+
+#[tokio::test]
+async fn length_parallel_batch_never_executes_complete_looking_calls() {
+    check_length_tool_batch(ExecutionMode::Parallel, r#"{"value":"salvaged"}"#).await;
+}
+
+#[tokio::test]
+async fn length_sequential_batch_rejects_earlier_valid_call_with_malformed_tail() {
+    check_length_tool_batch(ExecutionMode::Sequential, r#"{"value":"cut"#).await;
+}
+
+#[tokio::test]
+async fn length_parallel_batch_rejects_earlier_valid_call_with_malformed_tail() {
+    check_length_tool_batch(ExecutionMode::Parallel, r#"{"value":"cut"#).await;
+}
+
+#[tokio::test]
+async fn length_without_tools_does_not_create_continuation() {
+    let provider = ScriptedProvider::new(vec![length_response(&[])]);
+    let provider_calls = provider.call_count.clone();
+    let hooks = LengthProbeHooks::default();
+    let result = opi_agent::agent_loop(
+        length_context(
+            provider,
+            ExecutionMode::Parallel,
+            Arc::new(AtomicUsize::new(0)),
+            Arc::new(AtomicUsize::new(0)),
+        ),
+        AgentLoopConfig::default(),
+        &hooks,
+        Box::new(|_| {}),
+        CancellationToken::new(),
+    )
+    .await;
+    assert!(result.error().is_none(), "{result:?}");
+    assert_eq!(*provider_calls.lock().unwrap(), 1);
+    assert_eq!(hooks.prepare.load(Ordering::SeqCst), 0);
+    assert!(hooks.completed.lock().unwrap()[0].tool_results.is_empty());
+    assert!(
+        matches!(result.state().context.last(), Some(AgentMessage::Llm(Message::Assistant(message))) if message.stop_reason == StopReason::Length)
+    );
+}
+
+#[tokio::test]
+async fn length_tool_failures_reach_stop_hook_before_queues_and_preparation() {
+    use std::collections::VecDeque;
+
+    let provider = ScriptedProvider::new(vec![length_response(&[r#"{"value":"salvaged"}"#])]);
+    let provider_calls = provider.call_count.clone();
+    let executions = Arc::new(AtomicUsize::new(0));
+    let authorizations = Arc::new(AtomicUsize::new(0));
+    let mut context = length_context(
+        provider,
+        ExecutionMode::Parallel,
+        executions.clone(),
+        authorizations.clone(),
+    );
+    let follow_up = Arc::new(Mutex::new(VecDeque::from(["queued".into()])));
+    context.follow_up_queue = Some(follow_up.clone());
+    let hooks = LengthProbeHooks {
+        stop: true,
+        ..LengthProbeHooks::default()
+    };
+    let result = opi_agent::agent_loop(
+        context,
+        AgentLoopConfig::default(),
+        &hooks,
+        Box::new(|_| {}),
+        CancellationToken::new(),
+    )
+    .await;
+    assert!(result.error().is_none(), "{result:?}");
+    assert_eq!(executions.load(Ordering::SeqCst), 0);
+    assert_eq!(authorizations.load(Ordering::SeqCst), 0);
+    assert_eq!(hooks.before.load(Ordering::SeqCst), 0);
+    assert_eq!(hooks.after.load(Ordering::SeqCst), 0);
+    assert_eq!(hooks.prepare.load(Ordering::SeqCst), 0);
+    assert_eq!(*provider_calls.lock().unwrap(), 1);
+    assert_eq!(follow_up.lock().unwrap().len(), 1);
+    let completed = hooks.completed.lock().unwrap();
+    assert_eq!(completed.len(), 1);
+    assert!(completed[0].tool_results[0].is_error);
+}

@@ -84,6 +84,69 @@ fn empty_resume_info(
     }
 }
 
+/// A compactable durable prefix: summarize the old user and retain the
+/// assistant, whose text alone exceeds the 20k-token retention floor.
+fn compactable_resume_info(
+    workspace: &std::path::Path,
+    sessions: &std::path::Path,
+    session_id: &str,
+    old_user: &str,
+    kept_assistant: &str,
+) -> (ResumeInfo, Vec<AgentMessage>) {
+    let resume = empty_resume_info(workspace, sessions, session_id);
+    let mut writer = opi_agent::session::SessionWriter::open(&resume.path).unwrap();
+    let mut assistant = opi_ai::test_support::base_assistant();
+    assistant.content = vec![opi_ai::message::AssistantContent::Text {
+        text: format!("{kept_assistant}{}", "r".repeat(80_000)),
+    }];
+    for (id, parent, message) in [
+        (
+            "old-user",
+            None,
+            Message::User(opi_ai::message::UserMessage {
+                content: vec![opi_ai::message::InputContent::Text {
+                    text: format!("{old_user}{}", "o".repeat(80_000)),
+                }],
+                timestamp_ms: 0,
+            }),
+        ),
+        (
+            "kept-assistant",
+            Some("old-user".to_owned()),
+            Message::Assistant(assistant),
+        ),
+    ] {
+        writer
+            .append(&opi_agent::session::SessionEntry::Message(
+                opi_agent::session::MessageEntry {
+                    id: id.to_owned(),
+                    parent_id: parent,
+                    timestamp: "2026-08-20T00:00:01Z".to_owned(),
+                    message,
+                },
+            ))
+            .unwrap();
+    }
+    drop(writer);
+    let (header, entries) = opi_agent::session::SessionReader::read_all(&resume.path).unwrap();
+    let context = opi_agent::session_context::reconstruct_context(
+        &entries,
+        &opi_agent::session::CrashRecovery::default(),
+    );
+    (
+        ResumeInfo {
+            path: resume.path,
+            session_id: header.id,
+            entries,
+            original_cwd: workspace.to_path_buf(),
+            diagnostics: context.diagnostics,
+            recorded_model: context.model,
+            recorded_thinking: context.thinking_level,
+        },
+        context.messages,
+    )
+}
+
 fn resume_snapshot_from_path(
     path: &std::path::Path,
 ) -> (
@@ -1333,8 +1396,8 @@ async fn manual_file_emission_failure_is_classified_abandoned_and_one_shot() {
     );
 }
 
-#[test]
-fn manual_compaction_emission_failure_is_classified_abandoned_and_one_shot() {
+#[tokio::test]
+async fn manual_compaction_emission_failure_is_classified_abandoned_and_one_shot() {
     let sessions = tempfile::tempdir().unwrap();
 
     let evidence = tempfile::tempdir().unwrap();
@@ -1363,9 +1426,10 @@ fn manual_compaction_emission_failure_is_classified_abandoned_and_one_shot() {
 
     let error = harness
         .compact(opi_agent::session_event::CompactionReason::Manual)
+        .await
         .expect_err("the injected manual emission failure owns the evidence result");
     assert!(
-        error.starts_with("evidence emission failed:"),
+        error.starts_with("evidence finalization failed: evidence emission failed:"),
         "manual emission retains its typed lifecycle classification: {error}"
     );
     assert!(matches!(
@@ -1382,6 +1446,7 @@ fn manual_compaction_emission_failure_is_classified_abandoned_and_one_shot() {
     assert!(
         harness
             .compact(opi_agent::session_event::CompactionReason::Manual)
+            .await
             .expect("a fresh compaction can reuse the file sink")
             .is_none(),
         "an empty session has nothing to compact"
@@ -1406,19 +1471,21 @@ async fn automatic_compaction_start_failure_preserves_boundary_and_recovers_next
     ));
     let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
     let mut config = OpiConfig::default();
-    config.compaction.threshold_tokens = 0;
+    config.compaction.threshold_tokens = Some(0);
     let provider = MockProvider::new(
         "mock",
         vec![
-            text_response("first response"),
+            text_response("recovered checkpoint"),
             text_response("recovered response"),
         ],
     );
     let calls = provider.call_log_handle();
-    let resume = empty_resume_info(
+    let (resume, initial_messages) = compactable_resume_info(
         workspace.path(),
         sessions.path(),
         "automatic-compaction-start",
+        "old durable prefix",
+        "kept durable assistant",
     );
     let source_session_path = resume.path.clone();
     let mut harness = CodingHarness::builder(
@@ -1429,6 +1496,7 @@ async fn automatic_compaction_start_failure_preserves_boundary_and_recovers_next
         TrustDecision::Trusted,
     )
     .global_config_dir(user.path().to_path_buf())
+    .initial_messages(initial_messages.clone())
     .resume(resume)
     .evidence(EvidenceBuilderConfig {
         recorder,
@@ -1456,7 +1524,20 @@ async fn automatic_compaction_start_failure_preserves_boundary_and_recovers_next
         sink.has_failure(),
         "the failed automatic-compaction emission poisons recorder health"
     );
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "start failure precedes summary and task dispatch"
+    );
     let (_, entries) = opi_agent::session::SessionReader::read_all(&session_path).unwrap();
+    let reconstructed = opi_agent::session_context::reconstruct_context(
+        &entries,
+        &opi_agent::session::CrashRecovery::default(),
+    );
+    assert_eq!(
+        serde_json::to_value(&reconstructed.messages).unwrap(),
+        serde_json::to_value(&initial_messages).unwrap(),
+        "the complete durable prefix is unchanged"
+    );
     assert!(
         entries
             .iter()
@@ -1472,7 +1553,7 @@ async fn automatic_compaction_start_failure_preserves_boundary_and_recovers_next
             .all(|entry| !matches!(&entry.message, AgentMessage::CompactionSummary(_))),
         "the live compaction buffer remains unmutated"
     );
-    assert_eq!(sink.abandoned_outcomes(), [TerminalOutcome::Success]);
+    assert_eq!(sink.abandoned_outcomes(), [TerminalOutcome::Failed]);
     assert!(
         std::fs::read_dir(evidence.path())
             .unwrap()
@@ -1493,7 +1574,7 @@ async fn automatic_compaction_start_failure_preserves_boundary_and_recovers_next
             .filter(|message| matches!(message, Message::User(_)))
             .count(),
         2,
-        "the next prompt resumes from the exact un-compacted live offset"
+        "recovery summarizes the preserved prefix before dispatching the pending task"
     );
     assert!(sink.inner.completed_manifest().is_some());
 
@@ -1532,19 +1613,21 @@ async fn incomplete_health_blocks_automatic_compaction_and_recovers_next_prompt(
     let sink = Arc::new(FailFileEmissionOnceSink::new(evidence.path()));
     let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
     let mut config = OpiConfig::default();
-    config.compaction.threshold_tokens = 0;
+    config.compaction.threshold_tokens = Some(0);
     let provider = MockProvider::new(
         "mock",
         vec![
-            text_response("first response"),
+            text_response("recovered checkpoint"),
             text_response("second response"),
         ],
     );
     let calls = provider.call_log_handle();
-    let resume = empty_resume_info(
+    let (resume, initial_messages) = compactable_resume_info(
         workspace.path(),
         sessions.path(),
         "incomplete-health-compaction",
+        "old durable prefix",
+        "kept durable assistant",
     );
     let session_path = resume.path.clone();
     let mut harness = CodingHarness::builder(
@@ -1555,6 +1638,7 @@ async fn incomplete_health_blocks_automatic_compaction_and_recovers_next_prompt(
         TrustDecision::Trusted,
     )
     .global_config_dir(user.path().to_path_buf())
+    .initial_messages(initial_messages.clone())
     .resume(resume)
     .evidence(EvidenceBuilderConfig {
         recorder,
@@ -1566,7 +1650,20 @@ async fn incomplete_health_blocks_automatic_compaction_and_recovers_next_prompt(
         harness.prompt("first prompt").await,
         Err(AgentError::EvidenceFinalization(_))
     ));
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "start failure precedes summary and task dispatch"
+    );
     let (_, entries) = opi_agent::session::SessionReader::read_all(&session_path).unwrap();
+    let reconstructed = opi_agent::session_context::reconstruct_context(
+        &entries,
+        &opi_agent::session::CrashRecovery::default(),
+    );
+    assert_eq!(
+        serde_json::to_value(&reconstructed.messages).unwrap(),
+        serde_json::to_value(&initial_messages).unwrap(),
+        "the complete durable prefix is unchanged"
+    );
     assert!(
         entries
             .iter()
@@ -1593,7 +1690,7 @@ async fn incomplete_health_blocks_automatic_compaction_and_recovers_next_prompt(
             .filter(|message| matches!(message, Message::User(_)))
             .count(),
         2,
-        "the first turn remains the committed next-run prefix"
+        "recovery preserves the kept assistant and current pending user"
     );
     assert!(sink.inner.completed_manifest().is_some());
 }
@@ -1606,17 +1703,24 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
     let user = tempfile::tempdir().unwrap();
     let prompt_sentinel = "a11-auto-compaction-prompt-sentinel";
     let assistant_sentinel = "a11-auto-compaction-assistant-sentinel";
-    let expected_summary = format!("Compacted 1 messages: {prompt_sentinel}");
+    let expected_summary = format!("LLM checkpoint: {prompt_sentinel}");
     let sink = Arc::new(FailAutomaticCompactionEmissionOnceSink::new(
         evidence.path(),
         AutomaticCompactionFailurePhase::Terminal,
     ));
     let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
     let mut config = OpiConfig::default();
-    config.compaction.threshold_tokens = 0;
+    config.compaction.threshold_tokens = Some(0);
     let recovery_config = config.clone();
-    let provider = MockProvider::new("mock", vec![text_response(assistant_sentinel)]);
-    let resume = empty_resume_info(workspace.path(), sessions.path(), "a11-auto-compaction");
+    let provider = MockProvider::new("mock", vec![text_response(&expected_summary)]);
+    let calls = provider.call_log_handle();
+    let (resume, initial_messages) = compactable_resume_info(
+        workspace.path(),
+        sessions.path(),
+        "a11-auto-compaction",
+        prompt_sentinel,
+        assistant_sentinel,
+    );
     let source_session_path = resume.path.clone();
     let mut harness = CodingHarness::builder(
         Box::new(provider),
@@ -1626,6 +1730,7 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
         TrustDecision::Trusted,
     )
     .global_config_dir(user.path().to_path_buf())
+    .initial_messages(initial_messages)
     .resume(resume)
     .evidence(EvidenceBuilderConfig {
         recorder,
@@ -1640,9 +1745,18 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
     }));
 
     assert!(matches!(
-        harness.prompt(prompt_sentinel).await,
+        harness.prompt("pending task never dispatched").await,
         Err(AgentError::EvidenceFinalization(_))
     ));
+    assert_eq!(
+        calls.lock().unwrap().len(),
+        1,
+        "only the summary dispatch completed"
+    );
+    assert!(
+        calls.lock().unwrap()[0].tools.is_empty(),
+        "pending task never dispatched"
+    );
     let session_path = harness
         .session()
         .expect("a binding mismatch creates an active child before the run")
@@ -1669,12 +1783,12 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
                         if serde_json::to_string(assistant).unwrap().contains(assistant_sentinel)
                 ))
         )),
-        "the live public terminal event retains the completed assistant outcome"
+        "the live terminal event retains the same durable assistant prefix as resume"
     );
     assert_eq!(
         sink.abandoned_outcomes(),
-        [TerminalOutcome::Success],
-        "cleanup retains the actual successful session outcome"
+        [TerminalOutcome::Failed],
+        "a committed summary does not invent success for the pending task"
     );
     assert!(
         std::fs::read_dir(evidence.path())
@@ -1724,8 +1838,13 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
     ));
     drop(harness);
 
-    let recovery_provider =
-        MockProvider::new("mock", vec![text_response("a11-auto-recovered-control")]);
+    let recovery_provider = MockProvider::new(
+        "mock",
+        vec![
+            text_response(&expected_summary),
+            text_response("a11-auto-recovered-control"),
+        ],
+    );
     let recovery_calls = recovery_provider.call_log_handle();
     let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
     let mut reloader = CodingHarness::builder(
@@ -1748,8 +1867,13 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
         .await
         .expect("terminal failure cleanup leaves the sink reusable");
     let requests = recovery_calls.lock().unwrap();
-    assert_eq!(requests.len(), 1);
-    assert!(requests[0].messages.iter().any(|message| matches!(
+    assert_eq!(
+        requests.len(),
+        2,
+        "recovery summary then correlated task request"
+    );
+    assert!(requests[0].tools.is_empty());
+    assert!(requests[1].messages.iter().any(|message| matches!(
         message,
         Message::User(user) if user.content.iter().any(|content| matches!(
             content,
@@ -1757,7 +1881,7 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
                 if text.contains(&expected_summary)
         ))
     )));
-    assert!(requests[0].messages.iter().any(|message| matches!(
+    assert!(requests[1].messages.iter().any(|message| matches!(
         message,
         Message::Assistant(assistant)
             if serde_json::to_string(assistant).unwrap().contains(assistant_sentinel)
@@ -1844,14 +1968,54 @@ async fn dropping_active_error_result_abandons_file_evidence_run() {
 
 #[tokio::test]
 async fn manual_compaction_preserves_primary_error_when_evidence_completion_fails() {
+    struct RemoveSessionOnSummaryProvider {
+        inner: MockProvider,
+        path: Arc<Mutex<Option<std::path::PathBuf>>>,
+        removed: Arc<AtomicBool>,
+    }
+    impl Provider for RemoveSessionOnSummaryProvider {
+        fn id(&self) -> &str {
+            self.inner.id()
+        }
+        fn models(&self) -> &[opi_ai::provider::ModelInfo] {
+            self.inner.models()
+        }
+        fn stream_prepared(&self, request: Request, auth: ResolvedAuth) -> EventStream {
+            if request.tools.is_empty()
+                && let Some(path) = self.path.lock().unwrap().take()
+            {
+                // Prepare has already validated this exact active file; fail
+                // the later durable commit, after the summary graph exists.
+                std::fs::remove_file(path).unwrap();
+                self.removed.store(true, Ordering::SeqCst);
+            }
+            self.inner.stream_prepared(request, auth)
+        }
+    }
+
     let sessions = tempfile::tempdir().unwrap();
 
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
     let sink = Arc::new(InMemoryEvidenceSink::new());
     let recorder: Arc<dyn EvidenceRecorder> = sink.clone();
+    let path_to_remove = Arc::new(Mutex::new(None));
+    let removed = Arc::new(AtomicBool::new(false));
+    let inner = MockProvider::new(
+        "mock",
+        vec![
+            text_response(&"r".repeat(80_000)),
+            text_response("genuine checkpoint"),
+        ],
+    );
+    let calls = inner.call_log_handle();
+    let provider = RemoveSessionOnSummaryProvider {
+        inner,
+        path: path_to_remove.clone(),
+        removed: removed.clone(),
+    };
     let mut harness = CodingHarness::builder(
-        Box::new(MockProvider::new("mock", vec![text_response("baseline")])),
+        Box::new(provider),
         "mock:mock-model".to_owned(),
         OpiConfig::default(),
         workspace.path().to_path_buf(),
@@ -1869,21 +2033,32 @@ async fn manual_compaction_preserves_primary_error_when_evidence_completion_fail
         source: opi_coding_agent::evidence::CLI_ASSEMBLY.clone(),
     })
     .build();
-    harness.prompt("persist a compactable turn").await.unwrap();
+    harness.prompt(&"o".repeat(80_000)).await.unwrap();
 
     sink.inject_failure(EvidenceError::Finalization {
         detail: "standalone evidence completion also failed".to_owned(),
     });
     let session_path = harness.session().unwrap().session_path().to_path_buf();
-    std::fs::remove_file(&session_path).unwrap();
+    *path_to_remove.lock().unwrap() = Some(session_path.clone());
     let expected = format!(
-        "compaction failed: session file missing: {}",
+        "session persistence failed: session file missing: {}",
         session_path.display()
     );
 
     let error = harness
         .compact(opi_agent::session_event::CompactionReason::Manual)
+        .await
         .expect_err("session compaction persistence owns the operation");
+    assert!(
+        removed.load(Ordering::SeqCst),
+        "the summary dispatch reached the commit fault"
+    );
+    assert_eq!(
+        calls.lock().unwrap().len(),
+        2,
+        "task primer then genuine manual summary"
+    );
+    assert!(calls.lock().unwrap()[1].tools.is_empty());
     assert_eq!(
         error, expected,
         "secondary evidence errors cannot be appended"

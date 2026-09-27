@@ -96,7 +96,7 @@ pub(crate) struct SupervisionOutcome {
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) async fn supervise(
     child: &mut Child,
-    timeout: Duration,
+    timeout: Option<Duration>,
     signal: CancellationToken,
     cap: usize,
 ) -> SupervisionOutcome {
@@ -119,7 +119,7 @@ pub(crate) async fn supervise(
 #[cfg(test)]
 pub(crate) async fn supervise_with_faults(
     child: &mut Child,
-    timeout: Duration,
+    timeout: Option<Duration>,
     signal: CancellationToken,
     cap: usize,
     tree_faults: super::process_tree::TestTreeFaults,
@@ -130,7 +130,7 @@ pub(crate) async fn supervise_with_faults(
 
 async fn supervise_inner(
     child: &mut Child,
-    timeout: Duration,
+    timeout: Option<Duration>,
     signal: CancellationToken,
     cap: usize,
     wait_fault: bool,
@@ -232,7 +232,12 @@ async fn supervise_inner(
         SupervisionKind::WaitFailed
     } else {
         let cancel_future = signal.cancelled();
-        let timeout_future = tokio::time::sleep(timeout);
+        let timeout_future = async {
+            match timeout {
+                Some(timeout) => tokio::time::sleep(timeout).await,
+                None => std::future::pending::<()>().await,
+            }
+        };
         tokio::pin!(cancel_future);
         tokio::pin!(timeout_future);
         async {
@@ -498,7 +503,7 @@ mod tests {
             Duration::from_secs(3),
             supervise_with_faults(
                 &mut child,
-                Duration::from_secs(10),
+                Some(Duration::from_secs(10)),
                 CancellationToken::new(),
                 64 * 1024,
                 super::super::process_tree::TestTreeFaults::attach(),
@@ -584,7 +589,7 @@ mod tests {
 
         let outcome = supervise_with_faults(
             &mut child,
-            Duration::from_secs(10),
+            Some(Duration::from_secs(10)),
             CancellationToken::new(),
             64 * 1024,
             super::super::process_tree::TestTreeFaults::terminate(),

@@ -104,6 +104,11 @@ pub struct Request {
     pub system: Option<String>,
     pub messages: Vec<Message>,
     pub tools: Vec<ToolDef>,
+    /// Per-request output limit. `ProviderCollection::prepare_call` resolves
+    /// `None` to the selected registry model's output capacity. Both implicit
+    /// and explicit ceilings are reduced to fit the estimated remaining context
+    /// with 4,096 tokens of safety room. Direct provider adapter calls do not
+    /// perform this collection-owned resolution.
     pub max_tokens: Option<u64>,
     pub temperature: Option<f64>,
     pub thinking: ThinkingConfig,

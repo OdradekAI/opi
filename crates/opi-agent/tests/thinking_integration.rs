@@ -84,7 +84,7 @@ async fn thinking_config_passed_to_provider() {
             "test-model",
             "Test Model",
             WireApi::OpenAiCompletions,
-            ModelCapabilities::new(8192, 1024).with_thinking(true),
+            ModelCapabilities::new(32_768, 20_000).with_thinking(true),
         )],
     };
     let context = AgentLoopContext {
@@ -113,9 +113,10 @@ async fn thinking_config_passed_to_provider() {
     };
     let config = AgentLoopConfig::default();
     let cancel = tokio_util::sync::CancellationToken::new();
-    let _ = agent_loop(context, config, &NoopHooks, noop_sink(), cancel)
+    agent_loop(context, config, &NoopHooks, noop_sink(), cancel)
         .await
-        .into_execution_result();
+        .into_execution_result()
+        .expect("valid thinking configuration reaches the provider");
     let reqs = captured.lock().unwrap();
     assert_eq!(reqs.len(), 1);
     assert!(reqs[0].thinking.enabled);
@@ -153,9 +154,10 @@ async fn thinking_disabled_by_default() {
     };
     let config = AgentLoopConfig::default();
     let cancel = tokio_util::sync::CancellationToken::new();
-    let _ = agent_loop(context, config, &NoopHooks, noop_sink(), cancel)
+    agent_loop(context, config, &NoopHooks, noop_sink(), cancel)
         .await
-        .into_execution_result();
+        .into_execution_result()
+        .expect("default thinking configuration reaches the provider");
     let reqs = captured.lock().unwrap();
     assert_eq!(reqs.len(), 1);
     assert!(!reqs[0].thinking.enabled);

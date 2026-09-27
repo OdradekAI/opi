@@ -217,7 +217,8 @@ pub struct ToolDiagnostic {
 pub struct BashRequest {
     pub command: String,
     pub cwd: PathBuf,
-    pub timeout: Duration,
+    /// Optional command deadline. Omission leaves local execution cancellation-bound.
+    pub timeout: Option<Duration>,
     pub signal: CancellationToken,
     pub env: Vec<(String, String)>,
     pub backend: Option<String>,
@@ -1386,7 +1387,7 @@ mod tests {
         let request = BashRequest {
             command: pipe_holding_descendant_command(dir.path(), &pidfile),
             cwd: dir.path().to_path_buf(),
-            timeout: Duration::from_secs(10),
+            timeout: Some(Duration::from_secs(10)),
             signal: CancellationToken::new(),
             env: vec![],
             backend: None,
@@ -1449,7 +1450,7 @@ mod tests {
             .exec(BashRequest {
                 command: "echo must-not-run".to_string(),
                 cwd: dir.path().to_path_buf(),
-                timeout: Duration::from_secs(5),
+                timeout: Some(Duration::from_secs(5)),
                 signal: CancellationToken::new(),
                 env: vec![],
                 backend: None,
@@ -1477,7 +1478,7 @@ mod tests {
             .exec(BashRequest {
                 command: pipe_holding_descendant_command(dir.path(), &pidfile),
                 cwd: dir.path().to_path_buf(),
-                timeout: Duration::from_secs(10),
+                timeout: Some(Duration::from_secs(10)),
                 signal: CancellationToken::new(),
                 env: vec![],
                 backend: None,

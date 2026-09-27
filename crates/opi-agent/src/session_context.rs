@@ -360,6 +360,14 @@ fn apply_compaction(
     if let Some(&kept_idx) = chain_index.get(c.first_kept_entry_id.as_str()) {
         accumulated.retain(|(idx, _)| *idx >= kept_idx);
     }
+    // Retained responses were billed against the old context. Keep the
+    // immutable entries intact, but do not reuse their usage as a context
+    // occupancy anchor in this new projection.
+    for (_, message) in accumulated.iter_mut() {
+        if let AgentMessage::Llm(opi_ai::message::Message::Assistant(message)) = message {
+            message.usage = opi_ai::stream::Usage::default();
+        }
+    }
     let this_idx = chain_index.get(c.id.as_str()).copied().unwrap_or(0);
     let summary = AgentMessage::CompactionSummary(CompactionSummaryMessage {
         summary: c.summary.clone(),

@@ -37,7 +37,8 @@ use opi_agent::event::AgentEvent;
 use opi_agent::extension::ExtensionRegistry;
 use opi_agent::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
-    BeforeToolCallResult, PrepareNextTurnContext, ShouldStopAfterTurnContext,
+    BeforeToolCallResult, InitialTurnContext, PreparationCommit, PreparationEvidence,
+    PrepareNextTurnContext, ShouldStopAfterTurnContext,
 };
 use opi_agent::loop_types::{AgentError, AgentLoopConfig, NextTurnState};
 use opi_agent::message::AgentMessage;
@@ -122,7 +123,7 @@ pub(crate) fn provider_auth_failure(error: &AgentError) -> Option<ProviderAuthFa
         _ => None,
     }
 }
-use crate::session_coordinator::{SessionBatchRollbackError, SessionCoordinator, to_wire_result};
+use crate::session_coordinator::SessionCoordinator;
 use crate::tool::{
     BashOperations, BashTool, EditTool, FileOperations, FindTool, GlobTool, GrepTool,
     LocalBashOperations, LocalFileOperations, LsTool, ReadTool, WriteTool, default_bash_schema,
@@ -691,6 +692,9 @@ pub struct CodingHarness {
     dispatchable_provider_ids: Vec<String>,
     extension_registry: Option<ExtensionRegistry>,
     session: Option<SessionCoordinator>,
+    compaction_requests: mpsc::UnboundedReceiver<crate::compaction::BridgeRequest>,
+    manual_compaction_reason:
+        Arc<std::sync::Mutex<Option<opi_agent::session_event::CompactionReason>>>,
     /// Deferred typed failure from a requested builder-driven resume. Public
     /// operations surface it before dispatch instead of silently running
     /// without the requested session.
@@ -1129,7 +1133,7 @@ impl CodingHarnessBuilder {
     /// Unit-test-only instance seam for isolating session persistence without
     /// mutating the process-global `OPI_SESSIONS_DIR` environment variable.
     #[cfg(test)]
-    fn session_dir_for_test(mut self, dir: PathBuf) -> Self {
+    pub(crate) fn session_dir_for_test(mut self, dir: PathBuf) -> Self {
         self.session_dir_override = Some(dir);
         self
     }
@@ -1542,8 +1546,14 @@ impl CodingHarness {
             command_authorization,
         ) = match execution {
             HarnessExecution::DirectLocal => {
-                let (tools, diagnostics) =
-                    Self::build_minimal_runtime_tools(&workspace_root, &tool_config);
+                let (tools, diagnostics) = Self::build_minimal_runtime_tools(
+                    &workspace_root,
+                    &tool_config,
+                    config
+                        .defaults
+                        .tool_timeout_ms
+                        .map(std::time::Duration::from_millis),
+                );
                 let policy = PermissionPolicy::from_map(config.execution.permissions.clone());
                 let command = crate::tool_authority::CommandAuthorizationContext::new(
                     config.execution.clone(),
@@ -1585,8 +1595,15 @@ impl CodingHarness {
                 } else {
                     None
                 };
-                let (tools, diagnostics) =
-                    Self::build_tools(&workspace_root, &tool_config, &execution);
+                let (tools, diagnostics) = Self::build_tools_with_timeout(
+                    &workspace_root,
+                    &tool_config,
+                    &execution,
+                    config
+                        .defaults
+                        .tool_timeout_ms
+                        .map(std::time::Duration::from_millis),
+                );
                 let package_names = execution
                     .enabled
                     .iter()
@@ -1658,7 +1675,7 @@ impl CodingHarness {
             Some(command_authorization),
         ));
 
-        let mut builder = SystemPromptBuilder::new().tools(tool_defs);
+        let mut builder = SystemPromptBuilder::new().tools(tool_defs.clone());
         if let Some(content) = user_system_prompt {
             builder = builder.user_system(content);
         }
@@ -1770,6 +1787,20 @@ impl CodingHarness {
             });
         }
 
+        let (compaction_sender, compaction_requests) = mpsc::unbounded_channel();
+        let manual_compaction_reason = Arc::new(std::sync::Mutex::new(None));
+        hooks = Box::new(
+            crate::compaction::ProductCompactionHooks::new(
+                hooks,
+                dispatch_collection.clone(),
+                system_prompt.clone(),
+                tool_defs,
+                &config,
+                compaction_sender,
+                manual_compaction_reason.clone(),
+            )
+            .with_diagnostics(diagnostics.clone()),
+        );
         let mut agent = Agent::new(
             dispatch_collection.clone(),
             registrations,
@@ -1807,7 +1838,7 @@ impl CodingHarness {
         };
         let compaction_config = opi_agent::compaction::CompactionConfig {
             enabled: config.compaction.enabled,
-            threshold_tokens: config.compaction.threshold_tokens,
+            threshold_tokens: config.compaction.threshold_tokens.unwrap_or(100_000),
         };
         let initial_runtime_input = resolve_runtime_input(
             &runtime_input_source,
@@ -1918,6 +1949,8 @@ impl CodingHarness {
             dispatchable_provider_ids,
             extension_registry: active_extension_registry,
             session,
+            compaction_requests,
+            manual_compaction_reason,
             session_resume_error,
             turn_offset: initial_len,
             pending_images: Vec::new(),
@@ -2162,9 +2195,9 @@ impl CodingHarness {
             "minimal" => (ThinkingLevel::Minimal, Some(1_024)),
             "low" => (ThinkingLevel::Low, Some(2_048)),
             "medium" => (ThinkingLevel::Medium, Some(default_budget)),
-            "high" => (ThinkingLevel::High, Some(default_budget.max(20_000))),
-            "xhigh" => (ThinkingLevel::XHigh, Some(default_budget.max(20_000))),
-            "max" => (ThinkingLevel::Max, Some(default_budget.max(20_000))),
+            "high" => (ThinkingLevel::High, Some(default_budget.max(16_384))),
+            "xhigh" => (ThinkingLevel::XHigh, Some(default_budget.max(16_384))),
+            "max" => (ThinkingLevel::Max, Some(default_budget.max(16_384))),
             _ => {
                 return Err(format!(
                     "invalid thinking level '{level}': expected off, minimal, low, medium, high, xhigh, or max"
@@ -2195,7 +2228,9 @@ impl CodingHarness {
                         ));
                     }
                 }
-                (Some(thinking), Some(max_tokens))
+                // An omitted product limit follows the selected model at dispatch.
+                // The minimum above validates thinking; it is not an answer budget.
+                (Some(thinking), self.config.defaults.max_output_tokens)
             }
             None => {
                 if let Some(model) = self.active_model_info() {
@@ -2335,7 +2370,7 @@ impl CodingHarness {
             .config
             .defaults
             .max_output_tokens
-            .unwrap_or(max_tokens_for_thinking_budget(budget_tokens)?);
+            .unwrap_or(minimum_output_for_thinking_budget(budget_tokens)?);
         validate_thinking_budget_for_model(model, budget_tokens, max_tokens)
     }
 
@@ -2573,7 +2608,7 @@ impl CodingHarness {
 
         let compaction_config = opi_agent::compaction::CompactionConfig {
             enabled: self.config.compaction.enabled,
-            threshold_tokens: self.config.compaction.threshold_tokens,
+            threshold_tokens: self.config.compaction.threshold_tokens.unwrap_or(100_000),
         };
         self.session = Some(
             SessionCoordinator::open_existing(
@@ -2877,15 +2912,26 @@ impl CodingHarness {
         // failed-turn user message after an interactive login.)
         self.rewind_agent_context(self.turn_offset)?;
         self.setup_evidence_run()?;
-        let offset = self.turn_offset;
-        let pre_run_state = self.agent.state_snapshot();
-        let result = self.agent.prompt_armed(text, run).await;
+        let mut boundary = crate::compaction::RunBoundary {
+            offset: self.turn_offset,
+            state: self.agent.state_snapshot(),
+            accounted_messages: Vec::new(),
+            summary_usage_unknown: false,
+            committed: false,
+        };
+        let result = crate::compaction::drive_run(
+            self.agent.prompt_armed(text, run),
+            &mut self.compaction_requests,
+            &mut self.session,
+            &mut boundary,
+        )
+        .await;
+        self.turn_offset = boundary.offset;
         self.complete_agent_run(
             result,
             opi_agent::evidence::ExecutionTrigger::Invocation,
             text,
-            offset,
-            pre_run_state,
+            boundary,
         )
         .await
     }
@@ -2904,16 +2950,27 @@ impl CodingHarness {
         // fresh turn (see `prompt`).
         self.rewind_agent_context(self.turn_offset)?;
         self.setup_evidence_run()?;
-        let offset = self.turn_offset;
-        let pre_run_state = self.agent.state_snapshot();
+        let mut boundary = crate::compaction::RunBoundary {
+            offset: self.turn_offset,
+            state: self.agent.state_snapshot(),
+            accounted_messages: Vec::new(),
+            summary_usage_unknown: false,
+            committed: false,
+        };
         let prompt_text = Self::render_input_content(&content);
-        let result = self.agent.prompt_with_content_armed(content, run).await;
+        let result = crate::compaction::drive_run(
+            self.agent.prompt_with_content_armed(content, run),
+            &mut self.compaction_requests,
+            &mut self.session,
+            &mut boundary,
+        )
+        .await;
+        self.turn_offset = boundary.offset;
         self.complete_agent_run(
             result,
             opi_agent::evidence::ExecutionTrigger::Invocation,
             &prompt_text,
-            offset,
-            pre_run_state,
+            boundary,
         )
         .await
     }
@@ -2928,16 +2985,27 @@ impl CodingHarness {
         self.ensure_request_output_limit()?;
         self.restore_pending_extension_state().await;
         self.setup_evidence_run()?;
-        let offset = self.turn_offset;
-        let pre_run_state = self.agent.state_snapshot();
+        let mut boundary = crate::compaction::RunBoundary {
+            offset: self.turn_offset,
+            state: self.agent.state_snapshot(),
+            accounted_messages: Vec::new(),
+            summary_usage_unknown: false,
+            committed: false,
+        };
         let prompt_text = Self::last_user_prompt_text(&self.agent.messages_snapshot());
-        let result = self.agent.retry_last_turn_armed(run).await;
+        let result = crate::compaction::drive_run(
+            self.agent.retry_last_turn_armed(run),
+            &mut self.compaction_requests,
+            &mut self.session,
+            &mut boundary,
+        )
+        .await;
+        self.turn_offset = boundary.offset;
         self.complete_agent_run(
             result,
             opi_agent::evidence::ExecutionTrigger::Retry,
             &prompt_text,
-            offset,
-            pre_run_state,
+            boundary,
         )
         .await
     }
@@ -2952,15 +3020,26 @@ impl CodingHarness {
         // prompt/retry before appending its new user message.
         self.rewind_agent_context(self.turn_offset)?;
         self.setup_evidence_run()?;
-        let offset = self.turn_offset;
-        let pre_run_state = self.agent.state_snapshot();
-        let result = self.agent.continue_armed(text, run).await;
+        let mut boundary = crate::compaction::RunBoundary {
+            offset: self.turn_offset,
+            state: self.agent.state_snapshot(),
+            accounted_messages: Vec::new(),
+            summary_usage_unknown: false,
+            committed: false,
+        };
+        let result = crate::compaction::drive_run(
+            self.agent.continue_armed(text, run),
+            &mut self.compaction_requests,
+            &mut self.session,
+            &mut boundary,
+        )
+        .await;
+        self.turn_offset = boundary.offset;
         self.complete_agent_run(
             result,
             opi_agent::evidence::ExecutionTrigger::Continuation,
             text,
-            offset,
-            pre_run_state,
+            boundary,
         )
         .await
     }
@@ -2974,9 +3053,15 @@ impl CodingHarness {
         mut result: opi_agent::AgentRunResult,
         trigger: opi_agent::evidence::ExecutionTrigger,
         prompt_text: &str,
-        offset: usize,
-        pre_run_state: opi_agent::loop_types::NextTurnState,
+        boundary: crate::compaction::RunBoundary,
     ) -> Result<Vec<AgentMessage>, AgentError> {
+        let crate::compaction::RunBoundary {
+            state: pre_run_state,
+            offset,
+            mut accounted_messages,
+            summary_usage_unknown,
+            committed: preparation_committed,
+        } = boundary;
         let run_messages = result.messages().to_vec();
         let committed_prefix_preserved =
             Self::committed_prefix_is_preserved(&run_messages, &pre_run_state, offset);
@@ -3025,11 +3110,31 @@ impl CodingHarness {
             self.turn_offset = committed.len();
             Some(committed)
         } else {
+            if preparation_committed
+                && !matches!(
+                    result.terminal_outcome(),
+                    opi_agent::evidence::TerminalOutcome::PartialSideEffect
+                        | opi_agent::evidence::TerminalOutcome::CleanupUnknown
+                )
+            {
+                // Initial preparation can carry a new, still unpersisted user
+                // suffix. An ordinary failure retains the acknowledged session
+                // projection, without turning that suffix into durable history.
+                if let Err(error) = self.agent.replace_state(pre_run_state) {
+                    self.record_harness_diagnostic(Diagnostic::from(&error));
+                }
+            }
             None
         };
 
-        let evidence_result =
-            self.finalize_evidence_run(&mut result, trigger, new_messages, prompt_text);
+        accounted_messages.extend_from_slice(new_messages);
+        let evidence_result = self.finalize_evidence_run(
+            &mut result,
+            trigger,
+            &accounted_messages,
+            prompt_text,
+            summary_usage_unknown,
+        );
         let execution_result = result.into_execution_result();
         match execution_result {
             Err(error) => Err(error),
@@ -3046,7 +3151,7 @@ impl CodingHarness {
     /// tool-call response followed by a final response). Each emitted
     /// assistant message carries its own `usage`; the cumulative session
     /// total must include all of them, not just the last one.
-    fn aggregate_turn_usage(messages: &[AgentMessage]) -> opi_ai::stream::Usage {
+    pub(crate) fn aggregate_turn_usage(messages: &[AgentMessage]) -> opi_ai::stream::Usage {
         let mut saw_assistant = false;
         let mut all_reported = true;
         let mut input_tokens = 0u32;
@@ -3095,126 +3200,22 @@ impl CodingHarness {
         }
     }
 
-    /// Aggregate usage across all assistant messages in a turn and persist.
-    ///
-    /// If compaction was triggered during persistence, this also rewrites
-    /// the Agent's message buffer to `[summary, ...kept]` so subsequent
-    /// provider calls no longer carry the compacted history. The run's typed
-    /// compaction start must complete before that mutation; its matching
-    /// terminal records the actual result. Public `CompactionStart`/
-    /// `CompactionEnd` events mirror, but do not replace, that lifecycle.
+    /// Persist the completed tail after any request-boundary compaction.
     async fn persist_turn(
         &mut self,
-        run: &mut opi_agent::AgentRunResult,
+        _run: &mut opi_agent::AgentRunResult,
         messages: &[AgentMessage],
         turn_start_agent_index: usize,
     ) -> Result<(), AgentError> {
         if let Some(session) = &mut self.session {
-            let usage = Self::aggregate_turn_usage(messages);
-            let compaction_reason =
-                match session.on_turn_end(messages, &usage, turn_start_agent_index) {
-                    Ok(reason) => reason,
-                    Err(e) => {
-                        self.agent.emit_event(AgentEvent::SessionPersistError {
-                            message: format!("session write failed: {e}"),
-                        });
-                        return Err(AgentError::SessionPersist(e.to_string()));
-                    }
-                };
-
-            if let Some(reason) = compaction_reason {
-                match run.begin_compaction(compaction_trigger(reason)) {
-                    Ok(pending) => {
-                        self.agent
-                            .emit_event(AgentEvent::CompactionStart { reason });
-                        let (outcome, event, session_error) = match session
-                            .execute_compaction(reason)
-                        {
-                            Ok(Some(out)) => {
-                                let wire = to_wire_result(&out);
-                                self.record_harness_diagnostic(out.diagnostic.clone());
-                                let mut candidate = self.agent.state_snapshot();
-                                candidate.context = out.new_agent_messages;
-                                self.agent
-                                    .replace_state(candidate)
-                                    .expect("compaction must preserve the dispatchable route");
-                                (
-                                    opi_agent::evidence::CompactionOutcome::Succeeded,
-                                    AgentEvent::CompactionEnd {
-                                        reason,
-                                        result: Some(wire),
-                                        aborted: false,
-                                        error_message: None,
-                                    },
-                                    None,
-                                )
-                            }
-                            Ok(None) => (
-                                opi_agent::evidence::CompactionOutcome::Aborted,
-                                AgentEvent::CompactionEnd {
-                                    reason,
-                                    result: None,
-                                    aborted: true,
-                                    error_message: Some("compaction produced no output".to_owned()),
-                                },
-                                None,
-                            ),
-                            Err(error) => {
-                                let outcome = if error
-                                    .get_ref()
-                                    .and_then(|source| {
-                                        source.downcast_ref::<SessionBatchRollbackError>()
-                                    })
-                                    .is_some()
-                                {
-                                    opi_agent::evidence::CompactionOutcome::CleanupUnknown
-                                } else {
-                                    opi_agent::evidence::CompactionOutcome::Failed
-                                };
-                                let message = format!("compaction write failed: {error}");
-                                (
-                                    outcome,
-                                    AgentEvent::CompactionEnd {
-                                        reason,
-                                        result: None,
-                                        aborted: true,
-                                        error_message: Some(format!(
-                                            "compaction persist failed: {error}"
-                                        )),
-                                    },
-                                    Some(AgentEvent::SessionPersistError { message }),
-                                )
-                            }
-                        };
-                        let terminal_emission_failed = if let Err(error) =
-                            run.finish_compaction(&pending, outcome)
-                        {
-                            self.record_harness_diagnostic(Self::evidence_error_diagnostic(&error));
-                            true
-                        } else {
-                            false
-                        };
-                        self.agent.emit_event(event);
-                        if let Some(session_error) = session_error {
-                            self.agent.emit_event(session_error);
-                        }
-                        if terminal_emission_failed {
-                            // The actual compaction result is already retained.
-                            // Stop before any unrelated post-compaction session
-                            // mutation; finalization owns the one abandonment.
-                            return Ok(());
-                        }
-                    }
-                    Err(error) => {
-                        // No token means the typed start did not complete, so
-                        // no later session/context mutation or public lifecycle
-                        // is emitted. Finalization performs the single explicit
-                        // abandonment before the caller observes the failure.
-                        self.record_harness_diagnostic(Self::evidence_error_diagnostic(&error));
-                        return Ok(());
-                    }
-                }
-            }
+            session
+                .persist_prepared_messages(messages, turn_start_agent_index)
+                .map_err(|error| {
+                    self.agent.emit_event(AgentEvent::SessionPersistError {
+                        message: format!("session write failed: {error}"),
+                    });
+                    AgentError::SessionPersist(error.to_string())
+                })?;
         }
         self.persist_extension_state().await;
         Ok(())
@@ -3333,7 +3334,7 @@ impl CodingHarness {
             message_count,
             opi_agent::compaction::CompactionConfig {
                 enabled: self.config.compaction.enabled,
-                threshold_tokens: self.config.compaction.threshold_tokens,
+                threshold_tokens: self.config.compaction.threshold_tokens.unwrap_or(100_000),
             },
             model,
         )
@@ -3393,6 +3394,7 @@ impl CodingHarness {
         trigger: opi_agent::evidence::ExecutionTrigger,
         messages: &[AgentMessage],
         prompt_text: &str,
+        summary_usage_unknown: bool,
     ) -> Result<(), AgentError> {
         let Some(capture) = self.evidence.as_ref() else {
             return Ok(());
@@ -3414,7 +3416,11 @@ impl CodingHarness {
                     detail: "evidence recorder produced no records".to_owned(),
                 });
             }
-            let (input_tokens, output_tokens) = Self::reported_token_usage(messages);
+            let (input_tokens, output_tokens) = if summary_usage_unknown {
+                (None, None)
+            } else {
+                Self::reported_token_usage(messages)
+            };
             let usage = usage_facts(input_tokens, output_tokens);
             let session = match self
                 .session
@@ -3472,79 +3478,6 @@ impl CodingHarness {
             }
             owning
         })
-    }
-
-    fn finalize_standalone_compaction_evidence(
-        &self,
-        outcome: opi_agent::evidence::TerminalOutcome,
-        reason: opi_agent::session_event::CompactionReason,
-        prompt_text: &str,
-    ) -> Result<(), opi_agent::evidence::EvidenceError> {
-        let Some(capture) = self.evidence.as_ref() else {
-            return Ok(());
-        };
-        let records = capture.recorder.records();
-        let session =
-            match self
-                .session
-                .as_ref()
-                .and_then(SessionCoordinator::active_branch_id)
-            {
-                Some(tip) => opi_agent::evidence::SessionBinding::branch(tip.to_owned()).map_err(
-                    |error| opi_agent::evidence::EvidenceError::Finalization {
-                        detail: error.to_string(),
-                    },
-                )?,
-                None => opi_agent::evidence::SessionBinding::NoSession,
-            };
-        let dynamic = RunDynamicFacts {
-            outcome,
-            usage: usage_facts(None, None),
-            session,
-            prompt_digest: opi_agent::evidence::ContentDigest::from_hex(
-                crate::tool_authority::digest_of(prompt_text),
-            )
-            .expect("digest_of returns canonical SHA-256 hex"),
-            trigger: opi_agent::evidence::ExecutionTrigger::Compaction {
-                reason: compaction_trigger(reason),
-            },
-        };
-        let manifest = build_finalized_manifest(capture, &records, dynamic)?;
-        capture.recorder.finalize_run(&manifest)
-    }
-
-    fn complete_standalone_compaction_evidence(
-        &mut self,
-        reason: opi_agent::session_event::CompactionReason,
-        compaction_outcome: opi_agent::evidence::CompactionOutcome,
-        terminal_outcome: opi_agent::evidence::TerminalOutcome,
-        prompt_text: &str,
-    ) -> Result<(), opi_agent::evidence::EvidenceError> {
-        let result = self
-            .emit_manual_compaction_evidence(reason, compaction_outcome)
-            .and_then(|()| {
-                self.finalize_standalone_compaction_evidence(
-                    terminal_outcome.clone(),
-                    reason,
-                    prompt_text,
-                )
-            });
-        let Err(owning) = result else {
-            return Ok(());
-        };
-
-        let recorder = self
-            .evidence
-            .as_ref()
-            .map(|capture| capture.recorder.clone());
-        if let Some(recorder) = recorder
-            && let Err(cleanup) = recorder.abandon_run(&terminal_outcome)
-        {
-            self.record_harness_diagnostic(Diagnostic::from(&AgentError::EvidenceFinalization(
-                format!("evidence cleanup failed after standalone compaction failure: {cleanup}"),
-            )));
-        }
-        Err(owning)
     }
 
     /// Render user input content to a stable prompt-identity string (text parts
@@ -3801,9 +3734,8 @@ impl CodingHarness {
         self.agent.set_session_id(id);
     }
 
-    /// Execute compaction on the session and return the public result plus the
-    /// diagnostic that describes the compaction outcome.
-    pub fn compact_with_diagnostic(
+    /// Generate and atomically commit a summary without dispatching a task turn.
+    pub async fn compact_with_diagnostic(
         &mut self,
         reason: opi_agent::session_event::CompactionReason,
     ) -> Result<
@@ -3818,94 +3750,74 @@ impl CodingHarness {
         if self.session.is_none() {
             return Err("no active session".into());
         }
+        self.rewind_agent_context(self.turn_offset)
+            .map_err(|error| error.to_string())?;
         self.setup_evidence_run()
             .map_err(|error| error.to_string())?;
-        let result = self
-            .session
-            .as_mut()
-            .expect("active session checked above")
-            .execute_compaction(reason);
-        let result = match result {
-            Ok(result) => result,
-            Err(error) => {
-                let original = format!("compaction failed: {error}");
-                if let Err(evidence) = self.complete_standalone_compaction_evidence(
-                    reason,
-                    opi_agent::evidence::CompactionOutcome::Failed,
-                    opi_agent::evidence::TerminalOutcome::Failed,
-                    &format!("manual-compaction:{}", compaction_reason_name(reason)),
-                ) {
-                    self.record_harness_diagnostic(Self::evidence_error_diagnostic(&evidence));
+        let original = self.agent.state_snapshot();
+        let run = self.take_or_arm_run();
+        *self
+            .manual_compaction_reason
+            .lock()
+            .expect("manual compaction mutex") = Some(reason);
+        let mut boundary = crate::compaction::RunBoundary {
+            offset: self.turn_offset,
+            state: original.clone(),
+            accounted_messages: Vec::new(),
+            summary_usage_unknown: false,
+            committed: false,
+        };
+        let mut run_result = crate::compaction::drive_run(
+            self.agent.prepare_context_armed(run),
+            &mut self.compaction_requests,
+            &mut self.session,
+            &mut boundary,
+        )
+        .await;
+        *self
+            .manual_compaction_reason
+            .lock()
+            .expect("manual compaction mutex") = None;
+        self.turn_offset = boundary.offset;
+        let changed = serde_json::to_value(&original.context).ok()
+            != serde_json::to_value(&boundary.state.context).ok();
+        let output = if changed {
+            match boundary.state.context.first() {
+                Some(AgentMessage::CompactionSummary(summary)) => {
+                    Some(opi_agent::session_event::CompactionResult {
+                        summary: summary.summary.clone(),
+                        first_kept_entry_id: summary.first_kept_entry_id.clone(),
+                        tokens_before: summary.tokens_before,
+                        tokens_after: summary.tokens_after,
+                    })
                 }
-                return Err(original);
+                _ => None,
             }
+        } else {
+            None
         };
-        match result {
-            Some(out) => {
-                let wire = crate::session_coordinator::to_wire_result(&out);
-                let diagnostic = out.diagnostic.clone();
-                self.record_harness_diagnostic(diagnostic.clone());
-                self.replace_agent_context(out.new_agent_messages)?;
-                self.complete_standalone_compaction_evidence(
-                    reason,
-                    opi_agent::evidence::CompactionOutcome::Succeeded,
-                    opi_agent::evidence::TerminalOutcome::Success,
-                    &format!("manual-compaction:{}", compaction_reason_name(reason)),
-                )
-                .map_err(|error| error.to_string())?;
-                Ok((Some(wire), diagnostic))
-            }
-            None => {
-                let error = opi_agent::compaction::CompactionError::NothingToCompact;
-                let diagnostic = Diagnostic::from(&error);
-                self.record_harness_diagnostic(diagnostic.clone());
-                self.complete_standalone_compaction_evidence(
-                    reason,
-                    opi_agent::evidence::CompactionOutcome::Aborted,
-                    opi_agent::evidence::TerminalOutcome::Success,
-                    &format!("manual-compaction:{}", compaction_reason_name(reason)),
-                )
-                .map_err(|error| error.to_string())?;
-                Ok((None, diagnostic))
-            }
-        }
-    }
-
-    fn emit_manual_compaction_evidence(
-        &self,
-        reason: opi_agent::session_event::CompactionReason,
-        outcome: opi_agent::evidence::CompactionOutcome,
-    ) -> Result<(), opi_agent::evidence::EvidenceError> {
-        let Some(capture) = self.evidence.as_ref() else {
-            return Ok(());
+        let diagnostic = match &output {
+            Some(output) => Diagnostic::new(Severity::Info, opi_agent::diagnostic::code::CODE_SESSION_COMPACTED,
+                SOURCE_SESSION, "conversation compacted").details(serde_json::json!({
+                    "tokens_before":output.tokens_before,"tokens_after":output.tokens_after,"summary_source":"provider",
+                })),
+            None => Diagnostic::from(&opi_agent::compaction::CompactionError::NothingToCompact),
         };
-        let mut identities = opi_agent::evidence::IdentityAllocator::new();
-        let call = identities.next_call();
-        let trigger = compaction_trigger(reason);
-        let started = opi_agent::evidence::EvidenceRecord {
-            run: identities.run_id(),
-            turn: None,
-            call,
-            parent: None,
-            sequence: identities.next_sequence(),
-            kind: opi_agent::evidence::CallKind::Compaction,
-            payload: opi_agent::evidence::EvidencePayload::Compaction(
-                opi_agent::evidence::CompactionEvidenceFacts::started(trigger),
-            ),
-        };
-        capture.recorder.emit(&started)?;
-        let terminal = opi_agent::evidence::EvidenceRecord {
-            run: identities.run_id(),
-            turn: None,
-            call,
-            parent: None,
-            sequence: identities.next_sequence(),
-            kind: opi_agent::evidence::CallKind::Compaction,
-            payload: opi_agent::evidence::EvidencePayload::Compaction(
-                opi_agent::evidence::CompactionEvidenceFacts::terminal(trigger, outcome),
-            ),
-        };
-        capture.recorder.emit(&terminal)
+        self.record_harness_diagnostic(diagnostic.clone());
+        let finalization = self.finalize_evidence_run(
+            &mut run_result,
+            opi_agent::evidence::ExecutionTrigger::Compaction {
+                reason: compaction_trigger(reason),
+            },
+            &boundary.accounted_messages,
+            &format!("manual-compaction:{}", compaction_reason_name(reason)),
+            boundary.summary_usage_unknown,
+        );
+        run_result
+            .into_execution_result()
+            .map_err(|error| error.to_string())?;
+        finalization.map_err(|error| error.to_string())?;
+        Ok((output, diagnostic))
     }
 
     fn evidence_error_diagnostic(error: &opi_agent::evidence::EvidenceError) -> Diagnostic {
@@ -3930,11 +3842,12 @@ impl CodingHarness {
     /// Execute manual compaction on the session, if one is active.
     /// Returns the compaction result, or None if compaction produced no output
     /// or no session exists.
-    pub fn compact(
+    pub async fn compact(
         &mut self,
         reason: opi_agent::session_event::CompactionReason,
     ) -> Result<Option<opi_agent::session_event::CompactionResult>, String> {
         self.compact_with_diagnostic(reason)
+            .await
             .map(|(result, _)| result)
     }
 
@@ -3954,9 +3867,18 @@ impl CodingHarness {
         tool_config: &ToolRuntimeConfig,
         execution: &ExecutionWiring,
     ) -> (Vec<Box<dyn Tool>>, Vec<Diagnostic>) {
+        Self::build_tools_with_timeout(workspace_root, tool_config, execution, None)
+    }
+
+    fn build_tools_with_timeout(
+        workspace_root: &Path,
+        tool_config: &ToolRuntimeConfig,
+        execution: &ExecutionWiring,
+        default_timeout: Option<std::time::Duration>,
+    ) -> (Vec<Box<dyn Tool>>, Vec<Diagnostic>) {
         let local_ops: Arc<dyn BashOperations> = Arc::new(LocalBashOperations::new());
         let (bash_tool, exec_diagnostics) =
-            Self::build_bash_tool(workspace_root, local_ops, execution);
+            Self::build_bash_tool(workspace_root, local_ops, execution, default_timeout);
         Self::build_tools_from_resolved_bash(
             workspace_root,
             tool_config,
@@ -3970,13 +3892,17 @@ impl CodingHarness {
     fn build_minimal_runtime_tools(
         workspace_root: &Path,
         tool_config: &ToolRuntimeConfig,
+        default_timeout: Option<std::time::Duration>,
     ) -> (Vec<Box<dyn Tool>>, Vec<Diagnostic>) {
         let local_ops: Arc<dyn BashOperations> = Arc::new(LocalBashOperations::new());
-        let bash: Box<dyn Tool> = Box::new(BashTool::new_with_ops_and_schema(
-            workspace_root.to_path_buf(),
-            local_ops,
-            default_bash_schema(),
-        ));
+        let bash: Box<dyn Tool> = Box::new(
+            BashTool::new_with_ops_and_schema(
+                workspace_root.to_path_buf(),
+                local_ops,
+                default_bash_schema(),
+            )
+            .with_default_timeout(default_timeout),
+        );
         Self::build_tools_from_resolved_bash(workspace_root, tool_config, Some(bash), Vec::new())
     }
 
@@ -4067,6 +3993,7 @@ impl CodingHarness {
         workspace_root: &Path,
         local_ops: Arc<dyn BashOperations>,
         execution: &ExecutionWiring,
+        default_timeout: Option<std::time::Duration>,
     ) -> (Option<Box<dyn Tool>>, Vec<Diagnostic>) {
         let Some(schema) =
             bash_input_schema(&execution.config, &execution.enabled, &execution.policy)
@@ -4091,11 +4018,10 @@ impl CodingHarness {
             execution.broker.clone(),
         ) {
             Ok(ops) => (
-                Some(Box::new(BashTool::new_with_ops_and_schema(
-                    workspace_root.to_path_buf(),
-                    ops,
-                    schema,
-                ))),
+                Some(Box::new(
+                    BashTool::new_with_ops_and_schema(workspace_root.to_path_buf(), ops, schema)
+                        .with_default_timeout(default_timeout),
+                )),
                 Vec::new(),
             ),
             Err(failure) => (None, vec![diagnostic_from_execution_failure(&failure)]),
@@ -4312,7 +4238,7 @@ fn initial_thinking_request_config(
     }
 
     let budget_tokens = config.thinking.budget_tokens as u64;
-    let Ok((mut thinking, mut max_tokens)) = request_config_for_thinking_budget(budget_tokens)
+    let Ok((mut thinking, minimum_tokens)) = request_config_for_thinking_budget(budget_tokens)
     else {
         return (None, explicit_max_tokens);
     };
@@ -4321,22 +4247,27 @@ fn initial_thinking_request_config(
         if !model.capabilities.supports_thinking {
             return (None, explicit_max_tokens);
         }
-        if explicit_max_tokens.is_none() && max_tokens > model.capabilities.max_output_tokens {
+        if explicit_max_tokens.is_none() && minimum_tokens > model.capabilities.max_output_tokens {
             if model.capabilities.max_output_tokens <= 1 {
                 return (None, None);
             }
-            let adjusted_budget = model.capabilities.max_output_tokens - 1;
-            let Ok((adjusted_thinking, adjusted_max_tokens)) =
-                request_config_for_thinking_budget(adjusted_budget)
+            // Fit an oversized startup thinking budget without consuming all
+            // but one output token. Tiny model ceilings still retain one token.
+            let answer_room = if model.capabilities.max_output_tokens > 1024 {
+                1024
+            } else {
+                1
+            };
+            let adjusted_budget = model.capabilities.max_output_tokens - answer_room;
+            let Ok((adjusted_thinking, _)) = request_config_for_thinking_budget(adjusted_budget)
             else {
                 return (None, None);
             };
             thinking = adjusted_thinking;
-            max_tokens = adjusted_max_tokens;
         }
     }
 
-    (Some(thinking), explicit_max_tokens.or(Some(max_tokens)))
+    (Some(thinking), explicit_max_tokens)
 }
 
 fn request_output_limit_diagnostic(message: &str) -> Diagnostic {
@@ -4406,6 +4337,61 @@ struct ConfiguredLimitHooks {
 }
 
 impl AgentHooks for ConfiguredLimitHooks {
+    fn owns_preparation_commit(&self) -> bool {
+        self.inner.owns_preparation_commit()
+    }
+    fn prepare_initial_turn<'a>(
+        &'a self,
+        ctx: InitialTurnContext,
+        cancel: tokio_util::sync::CancellationToken,
+        evidence: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send + 'a>> {
+        if self.turn_limit == Some(0) {
+            return Box::pin(async { Err(AgentError::MaxTurnsExceeded(0)) });
+        }
+        self.inner.prepare_initial_turn(ctx, cancel, evidence)
+    }
+
+    fn prepare_next_turn_transaction<'a>(
+        &'a self,
+        ctx: PrepareNextTurnContext,
+        cancel: tokio_util::sync::CancellationToken,
+        evidence: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send + 'a>> {
+        if let Some(limit) = self.turn_limit
+            && ctx.turn >= u64::from(limit)
+        {
+            return Box::pin(async move { Err(AgentError::MaxTurnsExceeded(limit)) });
+        }
+        self.inner
+            .prepare_next_turn_transaction(ctx, cancel, evidence)
+    }
+
+    fn validate_prepared_state(&self, candidate: &NextTurnState) -> Result<(), AgentError> {
+        self.inner.validate_prepared_state(candidate)?;
+        if let Some(limit) = self.output_limit {
+            validate_request_output_state(limit, &self.collection, candidate).map_err(
+                |message| {
+                    if let Some(sink) = &self.diagnostics {
+                        sink.record(request_output_limit_diagnostic(&message));
+                    }
+                    AgentError::Hook(message)
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    fn commit_prepared_state<'a>(
+        &'a self,
+        candidate: NextTurnState,
+        cancel: tokio_util::sync::CancellationToken,
+        evidence: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<PreparationCommit, AgentError>> + Send + 'a>> {
+        self.inner
+            .commit_prepared_state(candidate, cancel, evidence)
+    }
+
     fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
         self.inner.convert_to_llm(messages)
     }
@@ -4473,7 +4459,7 @@ impl AgentHooks for ConfiguredLimitHooks {
 }
 
 fn request_config_for_thinking_budget(budget_tokens: u64) -> Result<(ThinkingConfig, u64), String> {
-    let max_tokens = max_tokens_for_thinking_budget(budget_tokens)?;
+    let max_tokens = minimum_output_for_thinking_budget(budget_tokens)?;
     Ok((
         ThinkingConfig {
             enabled: true,
@@ -4484,7 +4470,7 @@ fn request_config_for_thinking_budget(budget_tokens: u64) -> Result<(ThinkingCon
     ))
 }
 
-fn max_tokens_for_thinking_budget(budget_tokens: u64) -> Result<u64, String> {
+fn minimum_output_for_thinking_budget(budget_tokens: u64) -> Result<u64, String> {
     budget_tokens.checked_add(1).ok_or_else(|| {
         format!("thinking budget {budget_tokens} cannot fit a valid max_tokens value")
     })
@@ -4553,7 +4539,7 @@ pub(crate) fn agent_messages_to_llm(messages: &[AgentMessage]) -> Vec<Message> {
                             summary.summary
                         ),
                     }],
-                    timestamp_ms: opi_ai::time::now_ms(),
+                    timestamp_ms: 0,
                 }));
             }
             AgentMessage::BranchSummary(summary) => {
@@ -4561,7 +4547,7 @@ pub(crate) fn agent_messages_to_llm(messages: &[AgentMessage]) -> Vec<Message> {
                     content: vec![opi_ai::message::InputContent::Text {
                         text: format!("[Context from parent branch: {}]", summary.summary),
                     }],
-                    timestamp_ms: opi_ai::time::now_ms(),
+                    timestamp_ms: 0,
                 }));
             }
             _ => {}
@@ -4594,6 +4580,770 @@ impl InteractiveCodingHooks {
 impl AgentHooks for InteractiveCodingHooks {
     fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
         Ok(agent_messages_to_llm(messages))
+    }
+}
+
+#[cfg(test)]
+mod request_compaction_tests {
+    use super::*;
+    use opi_ai::test_support::{MockProvider, text_response, tool_call_response};
+
+    struct TerminalFailureSink(opi_agent::evidence::InMemoryEvidenceSink);
+    impl opi_agent::evidence::EvidenceSink for TerminalFailureSink {
+        fn setup(
+            &self,
+            binding: &opi_agent::evidence::RuntimeInputBinding,
+        ) -> Result<(), opi_agent::evidence::EvidenceError> {
+            self.0.setup(binding)
+        }
+        fn emit(
+            &self,
+            record: &opi_agent::evidence::EvidenceRecord,
+        ) -> Result<(), opi_agent::evidence::EvidenceError> {
+            if matches!(&record.payload, opi_agent::evidence::EvidencePayload::Compaction(facts)
+                if facts.outcome().is_some())
+            {
+                self.0
+                    .inject_failure(opi_agent::evidence::EvidenceError::Emission {
+                        detail: "summary terminal write refused".into(),
+                    });
+            }
+            self.0.emit(record)
+        }
+        fn finalize_artifact(
+            &self,
+            artifact: &opi_agent::evidence::ArtifactReference,
+        ) -> Result<(), opi_agent::evidence::EvidenceError> {
+            self.0.finalize_artifact(artifact)
+        }
+        fn finalize_run(
+            &self,
+            manifest: &opi_agent::evidence::FinalizedManifest,
+        ) -> Result<(), opi_agent::evidence::EvidenceError> {
+            self.0.finalize_run(manifest)
+        }
+        fn abandon_run(
+            &self,
+            outcome: &opi_agent::evidence::TerminalOutcome,
+        ) -> Result<(), opi_agent::evidence::EvidenceError> {
+            self.0.abandon_run(outcome)
+        }
+    }
+    impl opi_agent::evidence::EvidenceRecorder for TerminalFailureSink {
+        fn records(&self) -> Vec<opi_agent::evidence::EvidenceRecord> {
+            self.0.records()
+        }
+        fn has_failure(&self) -> bool {
+            self.0.has_failure()
+        }
+        fn completed_manifest(&self) -> Option<opi_agent::evidence::FinalizedManifest> {
+            self.0.completed_manifest()
+        }
+    }
+
+    struct GatedSummaryProvider {
+        inner: MockProvider,
+        started: Arc<tokio::sync::Notify>,
+    }
+    impl Provider for GatedSummaryProvider {
+        fn id(&self) -> &str {
+            self.inner.id()
+        }
+        fn models(&self) -> &[ModelInfo] {
+            self.inner.models()
+        }
+        fn stream_prepared(
+            &self,
+            request: opi_ai::provider::Request,
+            auth: opi_ai::auth::ResolvedAuth,
+        ) -> opi_ai::provider::EventStream {
+            let summary = request.tools.is_empty()
+                && request
+                    .system
+                    .as_deref()
+                    .is_some_and(|s| s.starts_with("Summarize the conversation"));
+            let stream = self.inner.stream_prepared(request, auth);
+            if summary {
+                self.started.notify_one();
+                Box::pin(futures_util::stream::pending())
+            } else {
+                stream
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn summary_cancellation_keeps_the_committed_prefix_and_stops_dispatch() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new(
+            "mock",
+            vec![
+                text_response(&"r".repeat(80_000)),
+                text_response("never finishes"),
+            ],
+        );
+        let calls = provider.call_log_handle();
+        let started = Arc::new(tokio::sync::Notify::new());
+        let sink = Arc::new(opi_agent::evidence::InMemoryEvidenceSink::new());
+        let mut config = OpiConfig::default();
+        config.thinking.enabled = false;
+        config.compaction.threshold_tokens = Some(0);
+        let mut harness = CodingHarness::builder(
+            Box::new(GatedSummaryProvider {
+                inner: provider,
+                started: started.clone(),
+            }),
+            "mock:mock-model".into(),
+            config,
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .evidence(EvidenceBuilderConfig {
+            recorder: sink.clone(),
+            source: crate::evidence::CLI_ASSEMBLY.clone(),
+        })
+        .build();
+        harness.prompt(&"o".repeat(80_000)).await.unwrap();
+        let path = harness.session().unwrap().session_path().to_path_buf();
+        let before = std::fs::read(&path).unwrap();
+        let cancel = harness.cancel_token();
+        let (result, ()) = tokio::join!(harness.prompt("next"), async {
+            started.notified().await;
+            cancel.cancel();
+        });
+        assert!(matches!(result, Err(AgentError::Cancelled)));
+        assert_eq!(std::fs::read(path).unwrap(), before);
+        assert_eq!(calls.lock().unwrap().len(), 2);
+        let manifest = sink.completed_manifest().unwrap();
+        assert_eq!(
+            manifest.outcome,
+            opi_agent::evidence::TerminalOutcome::Cancelled
+        );
+        assert!(manifest.usage.input_tokens.is_unknown());
+    }
+
+    #[tokio::test]
+    async fn terminal_evidence_failure_preserves_the_committed_projection_and_stops_next_call() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new(
+            "mock",
+            vec![
+                text_response(&"r".repeat(80_000)),
+                text_response("durable checkpoint"),
+            ],
+        );
+        let calls = provider.call_log_handle();
+        let sink = Arc::new(TerminalFailureSink(
+            opi_agent::evidence::InMemoryEvidenceSink::new(),
+        ));
+        let mut config = OpiConfig::default();
+        config.thinking.enabled = false;
+        config.compaction.threshold_tokens = Some(0);
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".into(),
+            config,
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .evidence(EvidenceBuilderConfig {
+            recorder: sink,
+            source: crate::evidence::CLI_ASSEMBLY.clone(),
+        })
+        .build();
+        harness.prompt(&"o".repeat(80_000)).await.unwrap();
+        assert!(matches!(
+            harness.prompt("next").await,
+            Err(AgentError::EvidenceFinalization(_))
+        ));
+        assert_eq!(
+            calls.lock().unwrap().len(),
+            2,
+            "incomplete evidence forbids another task call"
+        );
+        let (_, entries) =
+            opi_agent::session::SessionReader::read_all(harness.session().unwrap().session_path())
+                .unwrap();
+        let projection =
+            reconstruct_context(&entries, &opi_agent::session::CrashRecovery::default());
+        assert_eq!(
+            serde_json::to_value(harness.current_messages()).unwrap(),
+            serde_json::to_value(projection.messages).unwrap()
+        );
+        assert!(
+            matches!(harness.current_messages().first(), Some(AgentMessage::CompactionSummary(summary)) if summary.summary == "durable checkpoint")
+        );
+    }
+
+    #[tokio::test]
+    async fn compaction_rollback_uncertainty_owns_the_error_when_terminal_evidence_also_fails() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new(
+            "mock",
+            vec![
+                text_response(&"r".repeat(80_000)),
+                text_response("uncertain checkpoint"),
+            ],
+        );
+        let calls = provider.call_log_handle();
+        let sink = Arc::new(TerminalFailureSink(
+            opi_agent::evidence::InMemoryEvidenceSink::new(),
+        ));
+        let mut config = OpiConfig::default();
+        config.thinking.enabled = false;
+        config.compaction.threshold_tokens = Some(0);
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".into(),
+            config,
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .evidence(EvidenceBuilderConfig {
+            recorder: sink.clone(),
+            source: crate::evidence::CLI_ASSEMBLY.clone(),
+        })
+        .build();
+        harness.prompt(&"o".repeat(80_000)).await.unwrap();
+        harness
+            .session
+            .as_mut()
+            .unwrap()
+            .inject_append_failure_after_for_test(1);
+        harness
+            .session
+            .as_mut()
+            .unwrap()
+            .inject_rollback_failure_for_test();
+        assert!(matches!(
+            harness.prompt("next").await,
+            Err(AgentError::Tool(
+                opi_agent::tool::ToolError::CleanupUnknown(_)
+            ))
+        ));
+        assert_eq!(calls.lock().unwrap().len(), 2);
+        assert!(sink.0.completed_manifest().is_none());
+        assert!(
+            std::fs::read_to_string(harness.session().unwrap().session_path())
+                .unwrap()
+                .contains("\"type\":\"compaction\"")
+        );
+        assert!(
+            harness
+                .session()
+                .unwrap()
+                .compaction_entries()
+                .iter()
+                .all(|entry| !matches!(entry.message, AgentMessage::CompactionSummary(_))),
+            "uncertain commit cannot adopt the proposed summary"
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_next_provider_keeps_the_latest_compacted_baseline() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new_with_errors(
+            "mock",
+            vec![
+                opi_ai::test_support::MockResponse::Events(text_response(&"r".repeat(80_000))),
+                opi_ai::test_support::MockResponse::Events(text_response("latest checkpoint")),
+                opi_ai::test_support::MockResponse::Error(
+                    opi_ai::provider::ProviderError::CredentialNeeded {
+                        provider_id: "mock".into(),
+                    },
+                ),
+                opi_ai::test_support::MockResponse::Events(text_response("recovered")),
+            ],
+        );
+        let mut config = OpiConfig::default();
+        config.thinking.enabled = false;
+        config.compaction.threshold_tokens = Some(30_000);
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".into(),
+            config,
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .build();
+        harness.prompt(&"o".repeat(80_000)).await.unwrap();
+        assert!(harness.prompt("failed input").await.is_err());
+        let (_, entries) =
+            opi_agent::session::SessionReader::read_all(harness.session().unwrap().session_path())
+                .unwrap();
+        let projection =
+            reconstruct_context(&entries, &opi_agent::session::CrashRecovery::default());
+        assert_eq!(
+            serde_json::to_value(harness.current_messages()).unwrap(),
+            serde_json::to_value(&projection.messages).unwrap()
+        );
+        assert!(
+            matches!(harness.current_messages().first(), Some(AgentMessage::CompactionSummary(summary)) if summary.summary == "latest checkpoint")
+        );
+        harness.prompt("recovered input").await.unwrap();
+        let raw = std::fs::read_to_string(harness.session().unwrap().session_path()).unwrap();
+        assert!(!raw.contains("failed input"));
+        assert!(raw.contains("recovered input"));
+    }
+
+    fn reported_response(text: &str, input: u32, output: u32) -> Vec<opi_ai::AssistantStreamEvent> {
+        let mut response = text_response(text);
+        for event in &mut response {
+            if let opi_ai::AssistantStreamEvent::Done { message, .. } = event {
+                message.usage = opi_ai::stream::Usage::reported(input, output, 0, 0, None, None);
+            }
+        }
+        response
+    }
+
+    #[tokio::test]
+    async fn summary_retry_preserves_known_tokens_but_marks_unreported_attempt_cost_unknown_on_resume()
+     {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new_with_errors(
+            "mock",
+            vec![
+                opi_ai::test_support::MockResponse::Events(reported_response(
+                    &"r".repeat(80_000),
+                    100,
+                    10,
+                )),
+                opi_ai::test_support::MockResponse::Error(
+                    opi_ai::provider::ProviderError::RateLimited {
+                        retry_after_ms: Some(0),
+                    },
+                ),
+                opi_ai::test_support::MockResponse::Events(reported_response(
+                    "retry checkpoint",
+                    200,
+                    20,
+                )),
+            ],
+        );
+        let calls = provider.call_log_handle();
+        let mut config = OpiConfig::default();
+        config.thinking.enabled = false;
+        config.compaction.enabled = false;
+        config.retry.max_attempts = 1;
+        config.retry.initial_delay_ms = 0;
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".into(),
+            config,
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .build();
+        harness.prompt(&"o".repeat(80_000)).await.unwrap();
+        assert!(
+            harness
+                .compact(opi_agent::session_event::CompactionReason::Manual)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(calls.lock().unwrap().len(), 3);
+        let session = harness.session().unwrap();
+        assert_eq!(session.usage().total_input_tokens(), 300);
+        assert!(session.usage().has_unknown_usage());
+        let (header, entries) =
+            opi_agent::session::SessionReader::read_all(session.session_path()).unwrap();
+        let marker = entries
+            .iter()
+            .find_map(|entry| match entry {
+                opi_agent::session::SessionEntry::Compaction(c) => Some(c),
+                _ => None,
+            })
+            .unwrap();
+        let usage = &marker.summary_usage.as_ref().unwrap().usage;
+        assert_eq!(usage.input_tokens, 200);
+        assert!(!usage.is_reported());
+        let reopened = SessionCoordinator::open_existing(
+            session.session_path().to_path_buf(),
+            header.id,
+            &entries,
+            harness.current_messages().len(),
+            opi_agent::compaction::CompactionConfig::default(),
+            "mock:mock-model",
+        )
+        .unwrap();
+        assert_eq!(reopened.usage().total_input_tokens(), 300);
+        assert!(reopened.usage().has_unknown_usage());
+    }
+
+    #[tokio::test]
+    async fn automatic_compaction_includes_new_user_input_in_current_context_threshold() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new(
+            "mock",
+            vec![
+                text_response(&format!("KEPT_RECENT {}", "r".repeat(80_000))),
+                text_response("real initial checkpoint"),
+                text_response("continued"),
+            ],
+        );
+        let calls = provider.call_log_handle();
+        let mut config = OpiConfig::default();
+        config.thinking.enabled = false;
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".into(),
+            config,
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .build();
+        harness
+            .prompt(&format!("ARCHIVED {}", "o".repeat(80_000)))
+            .await
+            .unwrap();
+        assert_eq!(
+            calls.lock().unwrap().len(),
+            1,
+            "idle final turns do not summarize"
+        );
+        let new_prompt = format!("NEW_INPUT {}", "n".repeat(200_000));
+        harness.prompt(&new_prompt).await.unwrap();
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 3);
+        assert!(calls[1].tools.is_empty());
+        let wire = serde_json::to_string(&calls[2].messages).unwrap();
+        assert!(
+            wire.contains("real initial checkpoint")
+                && wire.contains("KEPT_RECENT")
+                && wire.contains(&new_prompt)
+        );
+        assert!(!wire.contains("ARCHIVED"));
+    }
+
+    #[tokio::test]
+    async fn compaction_uses_the_prepared_model_context_and_caps_its_summary_output() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let models = [("wide", 200_000, 32_768), ("small", 90_000, 4096)]
+            .into_iter()
+            .map(|(id, context, output)| {
+                ModelInfo::new(
+                    id,
+                    id,
+                    opi_ai::WireApi::OpenAiCompletions,
+                    opi_ai::ModelCapabilities::new(context, output),
+                )
+            })
+            .collect();
+        let provider = MockProvider::new_with_models(
+            "mock",
+            models,
+            vec![
+                text_response(&"r".repeat(80_000)),
+                text_response("small model checkpoint"),
+                text_response("continued"),
+            ],
+        );
+        let calls = provider.call_log_handle();
+        let mut config = OpiConfig::default();
+        config.thinking.enabled = false;
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:wide".into(),
+            config,
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .build();
+        harness.prompt(&"o".repeat(80_000)).await.unwrap();
+        harness.set_model_validated("mock:small".into()).unwrap();
+        harness.prompt(&"n".repeat(140_000)).await.unwrap();
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[1].model, "mock:small");
+        assert_eq!(calls[1].max_tokens, Some(4096));
+        assert!(
+            serde_json::to_string(&calls[2].messages)
+                .unwrap()
+                .contains("small model checkpoint")
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_threshold_and_short_retention_do_not_fabricate_summaries() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new(
+            "mock",
+            vec![text_response("first"), text_response("second")],
+        );
+        let calls = provider.call_log_handle();
+        let mut config = OpiConfig::default();
+        config.thinking.enabled = false;
+        config.compaction.threshold_tokens = Some(0);
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".into(),
+            config,
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .build();
+        harness.prompt("small first").await.unwrap();
+        harness.prompt("small second").await.unwrap();
+        assert_eq!(calls.lock().unwrap().len(), 2);
+        assert!(
+            harness
+                .current_messages()
+                .iter()
+                .all(|m| !matches!(m, AgentMessage::CompactionSummary(_)))
+        );
+        assert!(
+            harness
+                .compact(opi_agent::session_event::CompactionReason::Manual)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            calls.lock().unwrap().len(),
+            2,
+            "no summary call is needed when all history fits the kept tail"
+        );
+    }
+
+    #[tokio::test]
+    async fn manual_summary_preserves_immutable_usage_and_resume_accounting() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new(
+            "mock",
+            vec![
+                reported_response(&"r".repeat(80_000), 100, 10),
+                reported_response("billing checkpoint", 200, 20),
+            ],
+        );
+        let calls = provider.call_log_handle();
+        let mut config = OpiConfig::default();
+        config.thinking.enabled = false;
+        config.compaction.enabled = false;
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".into(),
+            config,
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .build();
+        harness.prompt(&"o".repeat(80_000)).await.unwrap();
+        let output = harness
+            .compact(opi_agent::session_event::CompactionReason::Manual)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(output.summary, "billing checkpoint");
+        assert_eq!(
+            calls.lock().unwrap().len(),
+            2,
+            "manual preparation cannot dispatch an extra task turn"
+        );
+        let session = harness.session().unwrap();
+        assert_eq!(session.usage().total_input_tokens(), 300);
+        assert_eq!(session.usage().total_output_tokens(), 30);
+        assert_eq!(session.usage().turn_count(), 1);
+        let (header, entries) =
+            opi_agent::session::SessionReader::read_all(session.session_path()).unwrap();
+        let projection =
+            reconstruct_context(&entries, &opi_agent::session::CrashRecovery::default());
+        assert_eq!(
+            serde_json::to_value(&projection.messages).unwrap(),
+            serde_json::to_value(harness.current_messages()).unwrap()
+        );
+        assert!(entries.iter().any(
+            |entry| matches!(entry, opi_agent::session::SessionEntry::Message(message)
+            if matches!(&message.message, Message::Assistant(a) if a.usage.input_tokens == 100))
+        ));
+        assert!(entries.iter().any(
+            |entry| matches!(entry, opi_agent::session::SessionEntry::Compaction(c)
+            if c.summary_usage.as_ref().is_some_and(|summary| summary.usage.input_tokens == 200))
+        ));
+        assert!(projection.messages.iter().all(|message| !matches!(message, AgentMessage::Llm(Message::Assistant(a)) if a.usage.is_reported())));
+        let reopened = SessionCoordinator::open_existing(
+            session.session_path().to_path_buf(),
+            header.id,
+            &entries,
+            projection.messages.len(),
+            opi_agent::compaction::CompactionConfig::default(),
+            "mock:mock-model",
+        )
+        .unwrap();
+        assert_eq!(reopened.usage().total_input_tokens(), 300);
+        assert_eq!(reopened.usage().total_output_tokens(), 30);
+        assert_eq!(reopened.usage().turn_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn failed_or_truncated_summary_keeps_the_durable_prefix_and_bills_observed_usage() {
+        for truncated in [false, true] {
+            let workspace = tempfile::tempdir().unwrap();
+            let global = tempfile::tempdir().unwrap();
+            let sessions = tempfile::tempdir().unwrap();
+            let mut summary = reported_response(
+                if truncated {
+                    "truncated checkpoint"
+                } else {
+                    ""
+                },
+                200,
+                20,
+            );
+            if truncated {
+                for event in &mut summary {
+                    if let opi_ai::AssistantStreamEvent::Done { reason, message } = event {
+                        *reason = opi_ai::stream::StopReason::Length;
+                        message.stop_reason = *reason;
+                    }
+                }
+            }
+            let provider = MockProvider::new(
+                "mock",
+                vec![reported_response(&"r".repeat(80_000), 100, 10), summary],
+            );
+            let calls = provider.call_log_handle();
+            let sink = Arc::new(opi_agent::evidence::InMemoryEvidenceSink::new());
+            let mut config = OpiConfig::default();
+            config.thinking.enabled = false;
+            config.compaction.threshold_tokens = Some(0);
+            let mut harness = CodingHarness::builder(
+                Box::new(provider),
+                "mock:mock-model".into(),
+                config,
+                workspace.path().to_path_buf(),
+                TrustDecision::Trusted,
+            )
+            .global_config_dir(global.path().to_path_buf())
+            .session_dir_for_test(sessions.path().to_path_buf())
+            .evidence(EvidenceBuilderConfig {
+                recorder: sink.clone(),
+                source: crate::evidence::CLI_ASSEMBLY.clone(),
+            })
+            .build();
+            harness.prompt(&"o".repeat(80_000)).await.unwrap();
+            let path = harness.session().unwrap().session_path().to_path_buf();
+            let before = std::fs::read(&path).unwrap();
+            assert!(harness.prompt("next input").await.is_err());
+            assert_eq!(std::fs::read(path).unwrap(), before);
+            assert_eq!(
+                calls.lock().unwrap().len(),
+                2,
+                "failed summaries prevent another task call"
+            );
+            let manifest = sink.completed_manifest().unwrap();
+            assert_eq!(
+                manifest.usage.input_tokens,
+                opi_agent::evidence::Measurement::provider_reported(200)
+            );
+            assert_eq!(
+                manifest.usage.output_tokens,
+                opi_agent::evidence::Measurement::provider_reported(20)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn automatic_compaction_summarizes_before_tool_continuation() {
+        let workspace = tempfile::tempdir().unwrap();
+        std::fs::write(workspace.path().join("note.txt"), "read result").unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let mut tool_response = tool_call_response("read-1", "read", r#"{"path":"note.txt"}"#);
+        for event in &mut tool_response {
+            if let opi_ai::AssistantStreamEvent::Done { message, .. } = event {
+                message.content.insert(
+                    0,
+                    opi_ai::message::AssistantContent::Text {
+                        text: format!("RETAIN_RECENT {}", "r".repeat(80_000)),
+                    },
+                );
+            }
+        }
+        let provider = MockProvider::new_with_models(
+            "mock",
+            vec![ModelInfo::new(
+                "wide",
+                "Wide",
+                opi_ai::WireApi::OpenAiCompletions,
+                opi_ai::ModelCapabilities::new(200_000, 32_768),
+            )],
+            vec![
+                tool_response,
+                text_response("generated checkpoint marker"),
+                text_response("finished"),
+            ],
+        );
+        let calls = provider.call_log_handle();
+        let mut config = OpiConfig::default();
+        config.thinking.enabled = false;
+        config.compaction.threshold_tokens = Some(0);
+        config.defaults.max_iterations = Some(2);
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:wide".into(),
+            config,
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .build();
+        harness
+            .prompt(&format!("ARCHIVED_OLD_CONTEXT {}", "o".repeat(80_000)))
+            .await
+            .unwrap();
+        let calls = calls.lock().unwrap();
+        assert_eq!(
+            calls.len(),
+            3,
+            "two task turns require a separate summary call"
+        );
+        assert!(
+            calls[1].tools.is_empty(),
+            "the summary cannot execute tools"
+        );
+        let final_context = serde_json::to_string(&calls[2].messages).unwrap();
+        assert!(final_context.contains("generated checkpoint marker"));
+        assert!(final_context.contains("RETAIN_RECENT"));
+        assert!(final_context.contains("read-1"));
+        assert!(!final_context.contains("ARCHIVED_OLD_CONTEXT"));
     }
 }
 
@@ -4898,17 +5648,30 @@ mod request_output_limit_tests {
     }
 
     #[tokio::test]
-    async fn request_output_limit_omission_preserves_legacy_thinking_defaults() {
+    async fn request_output_limit_omission_uses_model_capacity_with_answer_room() {
         for (enabled, budget, expected_limit, expected_budget) in [
-            (false, 1024, None, None),
-            (true, 1024, Some(1025), Some(1024)),
-            (true, 40_000, Some(32_768), Some(32_767)),
+            (false, 1024, Some(32_768), None),
+            (true, 1024, Some(32_768), Some(1024)),
+            (true, 40_000, Some(32_768), Some(31_744)),
         ] {
             let workspace = tempfile::tempdir().unwrap();
+            std::fs::write(workspace.path().join("note.txt"), "local read").unwrap();
             let global = tempfile::tempdir().unwrap();
             let sessions = tempfile::tempdir().unwrap();
-            let provider =
-                MockProvider::new_with_models("mock", models(), vec![text_response("done")]);
+            let provider = MockProvider::new_with_models(
+                "mock",
+                models(),
+                vec![
+                    opi_ai::test_support::tool_call_response(
+                        "read-1",
+                        "read",
+                        r#"{"path":"note.txt"}"#,
+                    ),
+                    text_response("done"),
+                    text_response("other model"),
+                    text_response("thinking enabled"),
+                ],
+            );
             let calls = provider.call_log_handle();
             let mut config = OpiConfig::default();
             config.thinking.enabled = enabled;
@@ -4923,10 +5686,103 @@ mod request_output_limit_tests {
             .global_config_dir(global.path().to_path_buf())
             .session_dir_for_test(sessions.path().to_path_buf())
             .build();
-            harness.prompt("legacy").await.unwrap();
+            harness
+                .prompt("use the selected model response budget")
+                .await
+                .unwrap();
+            harness.set_thinking_level("off").unwrap();
+            harness.set_model_validated("mock:small".into()).unwrap();
+            harness.continue_("use the smaller model").await.unwrap();
+            harness.set_thinking_level("low").unwrap();
+            harness.continue_("leave room for an answer").await.unwrap();
             let calls = calls.lock().unwrap();
-            assert_eq!(calls[0].max_tokens, expected_limit);
-            assert_eq!(calls[0].thinking.budget_tokens, expected_budget);
+            assert_eq!(calls.len(), 4);
+            for call in &calls[..2] {
+                assert_eq!(call.max_tokens, expected_limit);
+                assert_eq!(call.thinking.budget_tokens, expected_budget);
+            }
+            for call in &calls[2..] {
+                assert_eq!(call.model, "mock:small");
+                assert_eq!(call.max_tokens, Some(4096));
+            }
+            assert!(!calls[2].thinking.enabled);
+            assert_eq!(calls[3].thinking.budget_tokens, Some(2048));
+        }
+    }
+
+    #[tokio::test]
+    async fn request_output_default_thinking_levels_follow_pi_budgets() {
+        let workspace = tempfile::tempdir().unwrap();
+        let global = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new_with_models(
+            "mock",
+            models(),
+            (0..5).map(|_| text_response("done")).collect(),
+        );
+        let calls = provider.call_log_handle();
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:wide".into(),
+            OpiConfig::default(),
+            workspace.path().to_path_buf(),
+            TrustDecision::Trusted,
+        )
+        .global_config_dir(global.path().to_path_buf())
+        .session_dir_for_test(sessions.path().to_path_buf())
+        .build();
+        harness.prompt("default thinking level").await.unwrap();
+        for level in ["minimal", "low", "medium", "high"] {
+            harness.set_thinking_level(level).unwrap();
+            harness.continue_(level).await.unwrap();
+        }
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 5);
+        assert_eq!(
+            calls
+                .iter()
+                .map(|call| call.thinking.budget_tokens)
+                .collect::<Vec<_>>(),
+            [8192, 1024, 2048, 8192, 16_384].map(Some),
+        );
+        assert!(calls.iter().all(|call| call.max_tokens == Some(32_768)));
+    }
+
+    #[tokio::test]
+    async fn request_output_default_follows_prepared_model_but_preserves_hook_limit() {
+        for (change, model, limit) in [(2, "mock:small", 4096), (1, "mock:wide", 8192)] {
+            let workspace = tempfile::tempdir().unwrap();
+            let global = tempfile::tempdir().unwrap();
+            let sessions = tempfile::tempdir().unwrap();
+            let provider = MockProvider::new_with_models(
+                "mock",
+                models(),
+                vec![text_response("first"), text_response("second")],
+            );
+            let calls = provider.call_log_handle();
+            let mut config = OpiConfig::default();
+            config.thinking.enabled = false;
+            let mut harness = CodingHarness::builder(
+                Box::new(provider),
+                "mock:wide".into(),
+                config,
+                workspace.path().to_path_buf(),
+                TrustDecision::Trusted,
+            )
+            .global_config_dir(global.path().to_path_buf())
+            .session_dir_for_test(sessions.path().to_path_buf())
+            .hooks(Box::new(ReplaceOutputSettings {
+                change,
+                used: false.into(),
+            }))
+            .build();
+            harness.follow_up("continue with the prepared state".into());
+            harness.prompt("first").await.unwrap();
+            let calls = calls.lock().unwrap();
+            assert_eq!(calls.len(), 2);
+            assert_eq!(calls[0].max_tokens, Some(32_768));
+            assert_eq!(calls[1].model, model);
+            assert_eq!(calls[1].max_tokens, Some(limit));
         }
     }
 
@@ -5520,11 +6376,14 @@ mod permission_boundary_tests {
         let sink = Arc::new(opi_agent::evidence::InMemoryEvidenceSink::new());
         let recorder: Arc<dyn opi_agent::evidence::EvidenceRecorder> = sink.clone();
         let mut config = OpiConfig::default();
-        config.compaction.threshold_tokens = 0;
+        config.compaction.threshold_tokens = Some(0);
         let mut harness = CodingHarness::builder(
             Box::new(opi_ai::test_support::MockProvider::new(
                 "mock",
-                vec![opi_ai::test_support::text_response("response")],
+                vec![
+                    opi_ai::test_support::text_response(&"r".repeat(80_000)),
+                    opi_ai::test_support::text_response("checkpoint"),
+                ],
             )),
             "mock:mock-model".to_owned(),
             config,
@@ -5538,18 +6397,19 @@ mod permission_boundary_tests {
             source: crate::evidence::CLI_ASSEMBLY.clone(),
         })
         .build();
-        // The turn writes user + assistant + Leaf. Fail the next append, which
-        // is the compaction marker, and let the checkpoint rollback succeed.
+        harness.prompt(&"o".repeat(80_000)).await.unwrap();
+        // At the next initial request only the marker and Leaf are new.
+        // Fail the marker and let the checkpoint rollback succeed.
         harness
             .session
             .as_mut()
             .unwrap()
-            .inject_append_failure_after_for_test(3);
+            .inject_append_failure_after_for_test(0);
 
         harness
             .prompt("prompt")
             .await
-            .expect("turn remains committed");
+            .expect_err("failed compaction must prevent the next task dispatch");
 
         let compaction = sink
             .records()
@@ -5592,11 +6452,14 @@ mod permission_boundary_tests {
         let sink = Arc::new(opi_agent::evidence::InMemoryEvidenceSink::new());
         let recorder: Arc<dyn opi_agent::evidence::EvidenceRecorder> = sink.clone();
         let mut config = OpiConfig::default();
-        config.compaction.threshold_tokens = 0;
+        config.compaction.threshold_tokens = Some(0);
         let mut harness = CodingHarness::builder(
             Box::new(opi_ai::test_support::MockProvider::new(
                 "mock",
-                vec![opi_ai::test_support::text_response("response")],
+                vec![
+                    opi_ai::test_support::text_response(&"r".repeat(80_000)),
+                    opi_ai::test_support::text_response("checkpoint"),
+                ],
             )),
             "mock:mock-model".to_owned(),
             config,
@@ -5610,14 +6473,14 @@ mod permission_boundary_tests {
             source: crate::evidence::CLI_ASSEMBLY.clone(),
         })
         .build();
-        // The turn writes user + assistant + Leaf, then the compaction marker.
-        // Fail its Leaf and the real checkpoint rollback, leaving cleanup truth
-        // unknown and the writer poisoned.
+        harness.prompt(&"o".repeat(80_000)).await.unwrap();
+        // Fail the prepared marker's Leaf and its real checkpoint rollback,
+        // leaving the durable tail uncertain and the writer poisoned.
         harness
             .session
             .as_mut()
             .unwrap()
-            .inject_append_failure_after_for_test(4);
+            .inject_append_failure_after_for_test(1);
         harness
             .session
             .as_mut()
@@ -5627,7 +6490,7 @@ mod permission_boundary_tests {
         harness
             .prompt("prompt")
             .await
-            .expect("turn remains committed");
+            .expect_err("failed compaction must prevent the next task dispatch");
 
         let compaction = sink
             .records()

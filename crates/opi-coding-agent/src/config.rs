@@ -39,9 +39,10 @@ pub struct DefaultsConfig {
     pub model: String,
     /// Optional per-run provider-turn budget; omission imposes no turn-count ceiling.
     pub max_iterations: Option<u32>,
-    /// Explicit per-request output limit; omission preserves provider and thinking defaults.
+    /// Explicit per-request output limit; omission uses the selected model's output capacity.
     pub max_output_tokens: Option<u64>,
-    pub tool_timeout_ms: u64,
+    /// Optional default bash deadline; omission permits execution until completion or cancellation.
+    pub tool_timeout_ms: Option<u64>,
     pub max_image_bytes: u64,
     pub theme: String,
     pub allow_mutating_tools: bool,
@@ -76,7 +77,7 @@ impl Default for DefaultsConfig {
             model: "anthropic:claude-sonnet-4".into(),
             max_iterations: None,
             max_output_tokens: None,
-            tool_timeout_ms: 30_000,
+            tool_timeout_ms: None,
             max_image_bytes: crate::image::DEFAULT_MAX_IMAGE_BYTES,
             theme: "default".into(),
             allow_mutating_tools: false,
@@ -243,7 +244,7 @@ impl Default for ThinkingConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            budget_tokens: 10_000,
+            budget_tokens: 8192,
         }
     }
 }
@@ -485,14 +486,15 @@ impl Default for KeybindingsConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompactionConfigSection {
     pub enabled: bool,
-    pub threshold_tokens: u64,
+    /// Explicit context-occupancy threshold; omission reserves 16,384 tokens in the selected model.
+    pub threshold_tokens: Option<u64>,
 }
 
 impl Default for CompactionConfigSection {
     fn default() -> Self {
         Self {
             enabled: true,
-            threshold_tokens: 100_000,
+            threshold_tokens: None,
         }
     }
 }
@@ -867,7 +869,7 @@ impl TomlConfig {
             config.defaults.max_output_tokens = Some(v);
         }
         if let Some(v) = self.defaults.tool_timeout_ms {
-            config.defaults.tool_timeout_ms = v;
+            config.defaults.tool_timeout_ms = Some(v);
         }
         if let Some(v) = self.defaults.max_image_bytes {
             config.defaults.max_image_bytes = v;
@@ -1143,7 +1145,7 @@ impl TomlConfig {
             config.compaction.enabled = v;
         }
         if let Some(v) = self.compaction.threshold_tokens {
-            config.compaction.threshold_tokens = v;
+            config.compaction.threshold_tokens = Some(v);
         }
         if let Some(paths) = self.extensions.paths {
             config.extensions.paths.extend(paths);
@@ -1808,6 +1810,8 @@ pub enum ConfigError {
     InvalidExecutionConfig { field: String, message: String },
     #[error("defaults.max_output_tokens must be greater than zero")]
     InvalidMaxOutputTokens,
+    #[error("defaults.tool_timeout_ms must be greater than zero")]
+    InvalidToolTimeout,
     #[error("{remediation}", remediation = crate::diagnostics::LEGACY_SANDBOX_REMEDIATION)]
     LegacySandboxSection,
 }
@@ -1842,12 +1846,20 @@ fn parse_toml(contents: &str, path: &Path) -> Result<OpiConfig, ConfigError> {
     validate_provider_namespace(&config)?;
     validate_execution_config(&config)?;
     validate_max_output_tokens(&config)?;
+    validate_tool_timeout(&config)?;
     Ok(config)
 }
 
 fn validate_max_output_tokens(config: &OpiConfig) -> Result<(), ConfigError> {
     if config.defaults.max_output_tokens == Some(0) {
         return Err(ConfigError::InvalidMaxOutputTokens);
+    }
+    Ok(())
+}
+
+fn validate_tool_timeout(config: &OpiConfig) -> Result<(), ConfigError> {
+    if config.defaults.tool_timeout_ms == Some(0) {
+        return Err(ConfigError::InvalidToolTimeout);
     }
     Ok(())
 }
@@ -1935,6 +1947,7 @@ impl StagedConfig {
         validate_provider_namespace(&config)?;
         validate_execution_config(&config)?;
         validate_max_output_tokens(&config)?;
+        validate_tool_timeout(&config)?;
         Ok(config)
     }
 }
@@ -2005,6 +2018,7 @@ pub fn merge_project_config(
     validate_provider_namespace(&config)?;
     validate_execution_config(&config)?;
     validate_max_output_tokens(&config)?;
+    validate_tool_timeout(&config)?;
     Ok(config)
 }
 

@@ -665,6 +665,15 @@ impl Agent {
         self.prompt_armed(text, run).await
     }
 
+    /// Prepare and commit context for an armed run without dispatching a task call.
+    /// The hook owns the preparation policy; Core owns validation and settlement.
+    pub async fn prepare_context_armed(&mut self, run: ArmedAgentRun) -> AgentRunResult {
+        if let Err(error) = self.validate_armed_run(&run) {
+            return self.preflight_failure(error);
+        }
+        self.run_operation(run.cancel, true).await
+    }
+
     /// Run a prompt with the cancellation generation already armed by a caller
     /// that performs awaited preflight before entering the Agent loop.
     #[doc(hidden)]
@@ -923,6 +932,14 @@ impl Agent {
     }
 
     async fn run_with_token(&mut self, cancel: CancellationToken) -> AgentRunResult {
+        self.run_operation(cancel, false).await
+    }
+
+    async fn run_operation(
+        &mut self,
+        cancel: CancellationToken,
+        preparation_only: bool,
+    ) -> AgentRunResult {
         let context = AgentLoopContext {
             collection: self.collection.clone(),
             registry: self.registry.clone(),
@@ -938,17 +955,29 @@ impl Agent {
         };
 
         let sink = self.build_event_sink();
-        let run = crate::agent_loop::agent_loop_with_identities(
-            context,
-            self.config.clone(),
-            &*self.hooks,
-            sink,
-            cancel,
-        )
-        .await;
+        let run = if preparation_only {
+            crate::agent_loop::prepare_context_with_identities(
+                context,
+                self.config.clone(),
+                &*self.hooks,
+                sink,
+                cancel,
+            )
+            .await
+        } else {
+            crate::agent_loop::agent_loop_with_identities(
+                context,
+                self.config.clone(),
+                &*self.hooks,
+                sink,
+                cancel,
+            )
+            .await
+        };
 
-        // Preserve the existing rollback contract for ordinary failures and
-        // cancellation. A partial side effect or cleanup uncertainty is
+        // Ordinary failure/cancellation rolls back to the most recent acknowledged
+        // external preparation commit, or the original state when none committed.
+        // A partial side effect or cleanup uncertainty is
         // different: its terminal tool result is actual lower-boundary truth
         // and must remain in the durable state instead of being discarded.
         let messages = run.state.context.clone();
@@ -960,6 +989,8 @@ impl Agent {
             )
         {
             self.state = run.state;
+        } else if let Some(committed_state) = run.committed_state {
+            self.state = committed_state;
         }
         AgentRunResult {
             messages,

@@ -611,6 +611,13 @@ impl BashOperations for ProcessCommandAdapter {
         let workspace_root = self.workspace_root.clone();
         let adapter_id = self.adapter_id.clone();
         Box::pin(async move {
+            // The existing external protocol requires a finite execution timeout.
+            // Reject omission before activation or spawn rather than inventing one.
+            let timeout = request.timeout.ok_or_else(|| BashOpError::Other {
+                message:
+                    "external bash execution requires timeout_secs or defaults.tool_timeout_ms"
+                        .to_string(),
+            })?;
             // 1. Pre-spawn revalidation. activate() is synchronous file I/O
             //    (trust-file + manifest + lock + hash recompute); offload it to
             //    the blocking pool so it never stalls the async worker.
@@ -658,7 +665,7 @@ impl BashOperations for ProcessCommandAdapter {
                 .collect();
             let supported_protocols =
                 vec![ProtocolId::new(WIRE_IDENTITY).expect("v1 wire identity is non-empty")];
-            let deadline = host_deadline(request.timeout).map_err(exec_failure_to_bash_op_error)?;
+            let deadline = host_deadline(timeout).map_err(exec_failure_to_bash_op_error)?;
             let launch_path = contribution.bound_launch_path();
             let launch = BackendLaunch {
                 program: &launch_path,
@@ -669,7 +676,7 @@ impl BashOperations for ProcessCommandAdapter {
                 command: &request.command,
                 workspace: &workspace_root,
                 cwd: &request.cwd,
-                timeout: request.timeout,
+                timeout,
                 deadline,
                 handshake_timeout: Duration::from_millis(contribution.handshake_timeout_ms),
                 expected_implementation: &contribution.id,
@@ -1121,6 +1128,33 @@ mod tests {
 
     /// A store that panics if activated (Minimal-Runtime / branch-1 sentinel).
     struct PanicStore;
+
+    #[tokio::test]
+    async fn external_bash_without_deadline_refuses_before_activation() {
+        let adapter = ProcessCommandAdapter {
+            adapter_id: "external".into(),
+            package_name: "package".into(),
+            store: Arc::new(PanicStore),
+            workspace_root: PathBuf::from("."),
+            host_target: "test-target".into(),
+            host_opi_version: "0.8.2".into(),
+        };
+        let error = adapter
+            .exec(BashRequest {
+                command: "echo never-dispatched".into(),
+                cwd: PathBuf::from("."),
+                timeout: None,
+                signal: tokio_util::sync::CancellationToken::new(),
+                env: Vec::new(),
+                backend: None,
+                authorized_backend: None,
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(error, BashOpError::Other { message }
+            if message == "external bash execution requires timeout_secs or defaults.tool_timeout_ms"));
+    }
+
     impl IdentitySource for PanicStore {
         fn activate(
             &self,

@@ -511,6 +511,126 @@ fn adapter_test_config() -> OpiConfig {
     config
 }
 
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn harness_bash_timeout_configuration_reaches_local_execution() {
+    use std::time::Duration;
+
+    for (configured_timeout_ms, call_timeout_secs, elapsed_secs, expected_timeout) in [
+        (None, None, 31, false),
+        (Some(1000), None, 2, true),
+        (Some(1000), Some(3), 2, false),
+    ] {
+        let workspace = tempfile::tempdir().unwrap();
+        let global_config = tempfile::tempdir().unwrap();
+        let config_path = workspace.path().join("defaults.toml");
+        let timeout_line = configured_timeout_ms
+            .map(|timeout| format!("tool_timeout_ms = {timeout}\n"))
+            .unwrap_or_default();
+        std::fs::write(
+            &config_path,
+            format!("[defaults]\n{timeout_line}[compaction]\nenabled = false\n"),
+        )
+        .unwrap();
+        let config = opi_coding_agent::config::load_config_file(&config_path).unwrap();
+        let mut arguments = serde_json::json!({
+            "command": "echo $$ > started.pid; while [ ! -f release ]; do sleep 0.01; done; printf completed"
+        });
+        if let Some(timeout) = call_timeout_secs {
+            arguments["timeout_secs"] = serde_json::json!(timeout);
+        }
+        let provider = MockProvider::new_with_models(
+            "mock",
+            vec![opi_ai::ModelInfo::new(
+                "mock-model",
+                "Mock Model",
+                opi_ai::WireApi::AnthropicMessages,
+                opi_ai::ModelCapabilities::new(1_000_000, 32_768).with_thinking(true),
+            )],
+            vec![
+                opi_ai::test_support::tool_call_response(
+                    "bash-deadline",
+                    "bash",
+                    &arguments.to_string(),
+                ),
+                opi_ai::test_support::text_response("done"),
+            ],
+        );
+        let session_path = workspace.path().join("deadline-session.jsonl");
+        drop(
+            SessionWriter::create(
+                &session_path,
+                SessionHeader::new_for_test(
+                    "sess-deadline".into(),
+                    "2026-09-27T00:00:00Z".into(),
+                    workspace.path().display().to_string(),
+                    None,
+                ),
+            )
+            .unwrap(),
+        );
+        let mut harness = CodingHarness::builder(
+            Box::new(provider),
+            "mock:mock-model".into(),
+            config,
+            workspace.path().to_path_buf(),
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
+        )
+        .global_config_dir(global_config.path().to_path_buf())
+        .tool_selection(ToolSelection::Allowlist(vec!["bash".into()]))
+        .resume(ResumeInfo {
+            path: session_path,
+            session_id: "sess-deadline".into(),
+            entries: Vec::new(),
+            original_cwd: workspace.path().to_path_buf(),
+            diagnostics: Vec::new(),
+            recorded_model: None,
+            recorded_thinking: None,
+        })
+        .build();
+
+        tokio::time::pause();
+        let task = tokio::spawn(async move { harness.prompt("execute the bash call").await });
+        let started = workspace.path().join("started.pid");
+        let marker_deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !started.exists() {
+            assert!(
+                std::time::Instant::now() < marker_deadline,
+                "harness did not dispatch local bash"
+            );
+            tokio::task::yield_now().await;
+        }
+        tokio::time::advance(Duration::from_secs(elapsed_secs)).await;
+        tokio::task::yield_now().await;
+        tokio::time::resume();
+        std::fs::write(workspace.path().join("release"), b"release").unwrap();
+        let messages = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let result = messages
+            .iter()
+            .find_map(|message| match message {
+                opi_agent::message::AgentMessage::Llm(Message::ToolResult(result))
+                    if result.tool_call_id == "bash-deadline" =>
+                {
+                    Some(result)
+                }
+                _ => None,
+            })
+            .expect("harness must return the actual bash tool result");
+        assert_eq!(result.is_error, expected_timeout);
+        assert_eq!(
+            result.details.as_ref().unwrap()["timed_out"],
+            expected_timeout
+        );
+        if !expected_timeout {
+            assert_eq!(result.details.as_ref().unwrap()["exit_code"], 0);
+        }
+    }
+}
+
 /// Build a mock provider for harness construction.
 fn adapter_mock_provider() -> Box<dyn opi_ai::provider::Provider> {
     Box::new(MockProvider::new("anthropic", vec![]))

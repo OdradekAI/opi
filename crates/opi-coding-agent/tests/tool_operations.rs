@@ -687,7 +687,7 @@ fn bash_request_carries_command_cwd_env_timeout_signal_fields() {
     let req = BashRequest {
         command: "echo hello".to_string(),
         cwd: PathBuf::from("/tmp/work"),
-        timeout: Duration::from_secs(42),
+        timeout: Some(Duration::from_secs(42)),
         signal: token.clone(),
         env: vec![("OPI_TEST".to_string(), "v1".to_string())],
         backend: None,
@@ -695,7 +695,7 @@ fn bash_request_carries_command_cwd_env_timeout_signal_fields() {
     };
     assert_eq!(req.command, "echo hello");
     assert_eq!(req.cwd, PathBuf::from("/tmp/work"));
-    assert_eq!(req.timeout, Duration::from_secs(42));
+    assert_eq!(req.timeout, Some(Duration::from_secs(42)));
     assert_eq!(req.env.len(), 1);
     assert_eq!(req.env[0].0, "OPI_TEST");
     // CancellationToken is Send + Sync + Clone (threads through the trait).
@@ -718,7 +718,7 @@ fn bash_request_is_clone_when_signal_is_clone() {
     let req = BashRequest {
         command: "cmd".to_string(),
         cwd: PathBuf::from("/cwd"),
-        timeout: Duration::from_secs(1),
+        timeout: Some(Duration::from_secs(1)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
@@ -789,7 +789,7 @@ async fn mock_bash_operations_returns_injected_result_through_dyn() {
     let request = BashRequest {
         command: "echo".to_string(),
         cwd: PathBuf::from("/cwd"),
-        timeout: Duration::from_secs(5),
+        timeout: Some(Duration::from_secs(5)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
@@ -810,7 +810,7 @@ async fn mock_bash_operations_malformed_result_propagates_through_dyn() {
     let request = BashRequest {
         command: "x".to_string(),
         cwd: PathBuf::from("/cwd"),
-        timeout: Duration::from_secs(1),
+        timeout: Some(Duration::from_secs(1)),
         signal: CancellationToken::new(),
         env: vec![],
         backend: None,
@@ -1311,7 +1311,7 @@ async fn bash_injected_ops_receive_request_fields_once() {
     );
     assert_eq!(
         req.timeout,
-        Duration::from_secs(42),
+        Some(Duration::from_secs(42)),
         "timeout threads through"
     );
     assert!(req.env.is_empty(), "env is empty in current usage");

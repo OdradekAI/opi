@@ -21,13 +21,163 @@ use opi_agent::extension::{
 };
 use opi_agent::hooks::{
     AfterToolCallContext, AfterToolCallResult, AgentHooks, BeforeToolCallContext,
-    BeforeToolCallResult, PrepareNextTurnContext,
+    BeforeToolCallResult, InitialTurnContext, PreparationCommit, PreparationEvidence,
+    PrepareNextTurnContext,
 };
 use opi_agent::loop_types::{AgentError, InferenceConfig, ModelSelection, NextTurnState};
 use opi_agent::message::{AgentMessage, CustomAgentMessage};
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_ai::message::{OutputContent, ToolDef};
 use tokio_util::sync::CancellationToken;
+
+struct TransactionBase {
+    reject: bool,
+    order: Arc<Mutex<Vec<String>>>,
+}
+
+impl AgentHooks for TransactionBase {
+    fn owns_preparation_commit(&self) -> bool {
+        true
+    }
+
+    fn convert_to_llm(
+        &self,
+        messages: &[AgentMessage],
+    ) -> Result<Vec<opi_ai::message::Message>, AgentError> {
+        TestHooks.convert_to_llm(messages)
+    }
+
+    fn prepare_initial_turn<'a>(
+        &'a self,
+        ctx: InitialTurnContext,
+        _: CancellationToken,
+        _: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.order.lock().unwrap().push("initial".into());
+            let mut state = ctx.state;
+            state.inference.max_tokens = Some(321);
+            Ok(Some(state))
+        })
+    }
+
+    fn prepare_next_turn_transaction<'a>(
+        &'a self,
+        ctx: PrepareNextTurnContext,
+        _: CancellationToken,
+        _: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.order.lock().unwrap().push("next".into());
+            let mut state = ctx.state;
+            state.inference.max_tokens = Some(654);
+            Ok(Some(state))
+        })
+    }
+
+    fn validate_prepared_state(&self, state: &NextTurnState) -> Result<(), AgentError> {
+        self.order
+            .lock()
+            .unwrap()
+            .push(format!("validate:{}", state.inference.max_tokens.unwrap()));
+        if self.reject {
+            Err(AgentError::Hook("base rejected".into()))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn commit_prepared_state<'a>(
+        &'a self,
+        state: NextTurnState,
+        _: CancellationToken,
+        _: PreparationEvidence<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<PreparationCommit, AgentError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.order
+                .lock()
+                .unwrap()
+                .push(format!("commit:{}", state.inference.max_tokens.unwrap()));
+            Ok(PreparationCommit::NoExternalCommit)
+        })
+    }
+}
+
+struct TransactionExtension(Arc<Mutex<Vec<String>>>);
+
+impl Extension for TransactionExtension {
+    fn name(&self) -> &str {
+        "transaction-observer"
+    }
+    fn prepare_next_turn(
+        &self,
+        ctx: &PrepareNextTurnContext,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<NextTurnState>, AgentError>> + Send>> {
+        self.0.lock().unwrap().push("extension".into());
+        let mut candidate = ctx.state.clone();
+        candidate.inference.max_tokens = Some(111);
+        Box::pin(async move { Ok(Some(candidate)) })
+    }
+}
+
+#[tokio::test]
+async fn composite_forwards_transaction_preparation_validation_and_commit() {
+    use opi_ai::test_support::{MockProvider, single_route_collection, text_response};
+    for reject in [false, true] {
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let mut registry = ExtensionRegistry::new();
+        registry
+            .register(Box::new(TransactionExtension(order.clone())))
+            .unwrap();
+        let hooks = registry.wrap_hooks(Box::new(TransactionBase {
+            reject,
+            order: order.clone(),
+        }));
+        assert!(hooks.owns_preparation_commit());
+        let provider = MockProvider::new(
+            "mock",
+            vec![text_response("first"), text_response("second")],
+        );
+        let calls = provider.call_log_handle();
+        let mut agent = opi_agent::Agent::new(
+            Arc::new(single_route_collection(Box::new(provider))),
+            vec![],
+            None,
+            "mock:mock-model".into(),
+            None,
+            InferenceConfig::default(),
+            opi_agent::AgentLoopConfig::default(),
+            hooks,
+        )
+        .unwrap();
+        agent.follow_up("follow up".into());
+        let result = agent.prompt("start").await.into_execution_result();
+        let calls = calls.lock().unwrap();
+        if reject {
+            assert!(matches!(result, Err(AgentError::Hook(_))));
+            assert!(calls.is_empty());
+            assert_eq!(*order.lock().unwrap(), ["initial", "validate:321"]);
+        } else {
+            result.unwrap();
+            assert_eq!(
+                calls.iter().map(|call| call.max_tokens).collect::<Vec<_>>(),
+                [Some(321), Some(111)]
+            );
+            assert_eq!(
+                *order.lock().unwrap(),
+                [
+                    "initial",
+                    "validate:321",
+                    "commit:321",
+                    "next",
+                    "extension",
+                    "validate:111",
+                    "commit:111"
+                ]
+            );
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Test helper extensions
