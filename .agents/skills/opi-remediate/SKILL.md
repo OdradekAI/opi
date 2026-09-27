@@ -68,7 +68,9 @@ It recovers interrupted installations under lock and emits the exact index
 digest for plan/result headers.
 
 Record full committed `remediation_head` and the staged, unstaged, and untracked
-path inventory. Inspect committed code and run plan-stage checks in a unique
+path inventory. Use the shared disposition contract's source-baseline rule
+when the user commits the fixed plan; do not reseal solely for plan-only commits.
+Inspect committed code and run plan-stage checks in a unique
 temporary `git archive` export; do not use a Git worktree. Refuse overlap with
 uncommitted fixed remediation outputs. A clean tracked group may be replaced
 without reading its earlier content.
@@ -113,8 +115,9 @@ defined by the disposition contract.
 Load `references/execution-protocol.md` only for apply. It owns admission,
 closure batches, incidental repairs, result validation and materialization.
 Proceed through the approved batches without renewed permission inside that
-scope. Changed index/member bytes, plan digest, remediation head or overlapping
-unowned paths fail admission before production edits.
+scope. Changed index/member bytes, plan digest, source drift after the remediation
+head or overlapping unowned paths fail admission before production edits. The
+shared disposition contract admits committed fixed plans without a HEAD-reseal loop.
 
 ## Completion criterion
 

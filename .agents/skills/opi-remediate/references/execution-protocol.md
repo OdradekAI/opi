@@ -11,11 +11,19 @@ Before editing:
 2. compare the emitted `plan_sha256` byte-for-byte with the invocation;
 3. verify the exact `Audit index SHA-256` still matches the live index and
    every indexed member still validates;
-4. verify current committed HEAD equals the full `Remediation head`;
+4. verify the committed source boundary from `Remediation head` under the
+   shared disposition contract's plan-only commit rule;
 5. reproduce staged, unstaged, and untracked baseline and stop on overlapping
    unowned changes;
 6. verify `READY-FOR-APPLY`, no unresolved decision, complete strict-union
    coverage, and observed behavioral red-before.
+
+Run `validate_assurance_artifact.py apply` with the invocation's exact
+`--plan-sha256` using the shared disposition contract's command. It checks
+steps 1–4 and 6 under the assurance lock; step 5 remains an ownership check.
+An unchanged fixed plan may be committed before apply without rewriting its
+head or asking for the same approval again. Record both the source baseline
+and current HEAD; apply admission itself neither commits nor starts a batch.
 
 Approval provenance is the current apply invocation, fixed plan path, plan
 digest, active index digest, and task context. Any index, member, sidecar, or

@@ -66,3 +66,7 @@ and in exactly one plan disposition. Similar IDs never merge. After
 validation, present the emitted `plan_sha256`; never write that digest into the
 plan itself because it hashes the exact plan bytes. Any active-index byte change
 invalidates the plan binding and its approval.
+
+`Remediation head` records the source evidence baseline. If the user commits
+the fixed plan pair afterward, retain that baseline and use the shared
+disposition contract's apply admission check; plan-only commits need no reseal.

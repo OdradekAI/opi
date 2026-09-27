@@ -95,6 +95,27 @@ It prints `plan: PASS plan_sha256=<digest>`. Apply requires explicit user
 approval of the fixed plan path and that digest. Any plan byte or active-index
 byte change invalidates the approval.
 
+`Remediation head` is the committed source evidence baseline, not the commit
+that stores the finished plan. Apply requires it to be a committed ancestor
+of current HEAD. Every intervening commit, including each merge-parent diff,
+may touch only this Phase's `remediation.plan.md` and
+`remediation.plan.dispositions.jsonl`. These plan-only commits do not require
+resealing an unchanged plan or new approval. Changed plan bytes still require
+their new exact digest; changes to any other path require a new plan, even if
+a later commit restores the original bytes. Other Phases' plans, result files,
+audit artifacts, specifications, ledgers and source are outside this exception.
+
+Run the locked admission check before production edits:
+
+```text
+python .agents/skills/_shared/scripts/validate_assurance_artifact.py apply docs/snapshots/phase<N>/assurance/remediation.plan.md --plan-sha256 <approved-digest>
+```
+
+It validates the fixed plan, live set, ready status, exact approved digest and
+committed source boundary. The execution protocol still owns carried-in path
+inventory and overlapping unowned-change admission. Planning and applying do
+not grant commit authorization; commit only on an explicit user request.
+
 ## Bounded incidental repair
 
 An apply run may add an incidental result record only when a recorded

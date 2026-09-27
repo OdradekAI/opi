@@ -127,6 +127,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Assurance tooling: remediation apply now checks the exact approved plan and
+  live audit digests against its committed source baseline. Commits touching
+  only the current Phase's fixed plan pair no longer force a HEAD reseal;
+  other committed changes, including changed-then-restored source, still reject.
+
 - `opi-eval`: offline regrading orders task-package manifest entries by their
   relative path strings, matching the sealed digest and preventing false drift
   rejection when a filename sorts before a sibling directory's contents.

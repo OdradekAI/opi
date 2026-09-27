@@ -66,6 +66,29 @@
         "Rejects the stale Audit index SHA-256 even when plan_sha256 still matches the plan files.",
         "Makes no production change and returns to a plan bound to the current live set."
       ]
+    },
+    {
+      "id": 7,
+      "prompt": "Use $opi-remediate mode=apply phase=17 with the exact approved plan_sha256. The user committed only this Phase's fixed plan pair, so HEAD advanced from Remediation head, but all approved plan and live-index bytes are unchanged. Must the plan be resealed again?",
+      "expected_output": "No. Treat Remediation head as the committed source baseline and run the apply admission validator. Plan-only commits are admitted without resealing; preserve the exact approved digest and still check carried-in path ownership before edits.",
+      "files": [],
+      "expectations": [
+        "Uses validate_assurance_artifact.py apply with --plan-sha256 from the explicit invocation.",
+        "Checks committed ancestry and permits only the current Phase's fixed plan pair in intervening commits.",
+        "Keeps the approved plan bytes and source baseline unchanged rather than requesting a HEAD-reseal loop.",
+        "Does not treat commit authorization as permission to apply a different digest."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Use $opi-remediate mode=apply phase=17 with the exact approved digest. After the source baseline, one commit changed source and another restored it; the final source tree equals the baseline. Does the plan-only commit exception permit apply?",
+      "expected_output": "No. Check every intervening commit, including merge-parent diffs, rather than final tree equality. Source history outside the fixed plan pair requires a new plan even when later restored.",
+      "files": [],
+      "expectations": [
+        "Rejects changed-then-restored source after Remediation head.",
+        "Rejects changes to another Phase's plan, result files, or audit artifacts under the same exception.",
+        "Preserves evidence and stops before production edits instead of rewriting the approved plan."
+      ]
     }
   ]
 }

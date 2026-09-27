@@ -1376,6 +1376,69 @@ def validate_plan(path: Path) -> list[str]:
     return errors
 
 
+def validate_apply(path: Path, approved_digest: str) -> list[str]:
+    errors = validate_plan(path)
+    if errors:
+        return errors
+    text = read_text(path, errors)
+    if header_value(text, "Status") != "READY-FOR-APPLY":
+        errors.append("apply requires READY-FOR-APPLY")
+    dispositions = path.with_name("remediation.plan.dispositions.jsonl")
+    if plan_digest(path, dispositions) != approved_digest:
+        errors.append("approved plan_sha256 does not match the fixed plan bytes")
+    if errors:
+        return errors
+
+    root = run_git(path.parent, "rev-parse", "--show-toplevel")
+    if root.returncode != 0:
+        return ["apply plan must be inside a Git repository"]
+    repository = Path(root.stdout.strip()).resolve()
+    try:
+        allowed_paths = {
+            item.resolve().relative_to(repository).as_posix()
+            for item in (path, dispositions)
+        }
+    except ValueError:
+        return ["apply plan files must be inside the Git repository"]
+    head_result = run_git(repository, "rev-parse", "HEAD")
+    if head_result.returncode != 0:
+        return ["apply requires a committed HEAD"]
+    head = head_result.stdout.strip()
+    baseline = unquote_code(header_value(text, "Remediation head"))
+    assert baseline is not None  # validate_plan checked the full commit SHA.
+    ancestor = run_git(repository, "merge-base", "--is-ancestor", baseline, head)
+    if ancestor.returncode != 0:
+        return ["Remediation head must be a committed ancestor of HEAD"]
+    commits = run_git(repository, "rev-list", f"{baseline}..{head}")
+    if commits.returncode != 0:
+        return ["cannot inspect commits after Remediation head"]
+    for commit in commits.stdout.splitlines():
+        changed = run_git(
+            repository,
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "--name-only",
+            "--no-renames",
+            "-r",
+            "-m",
+            "-z",
+            commit,
+        )
+        if changed.returncode != 0:
+            return ["cannot inspect paths changed after Remediation head"]
+        outside_plan = set(changed.stdout.split("\0")) - allowed_paths - {""}
+        if outside_plan:
+            return [
+                "paths changed after Remediation head outside the fixed plan pair: "
+                + ", ".join(sorted(outside_plan))
+            ]
+    current_head = run_git(repository, "rev-parse", "HEAD")
+    if current_head.returncode != 0 or current_head.stdout.strip() != head:
+        return ["HEAD changed during apply admission"]
+    return []
+
+
 def stable_disposition_drift(
     plan_record: dict[str, Any],
     result_record: dict[str, Any],
@@ -1623,22 +1686,32 @@ def main() -> int:
             "requirements",
             "dispositions",
             "plan",
+            "apply",
             "result",
             "rotation",
         ),
     )
     parser.add_argument("path", type=Path)
+    parser.add_argument("--plan-sha256")
     args = parser.parse_args()
+    if args.kind == "apply":
+        if args.plan_sha256 is None:
+            parser.error("apply requires --plan-sha256")
+        if SHA256_RE.fullmatch(args.plan_sha256) is None:
+            parser.error("--plan-sha256 must be a lowercase SHA-256")
+    elif args.plan_sha256 is not None:
+        parser.error("--plan-sha256 is only valid for apply")
     validators = {
         "audit-set": validate_audit_set,
         "findings": validate_findings,
         "requirements": validate_requirements,
         "dispositions": validate_dispositions,
         "plan": validate_plan,
+        "apply": lambda path: validate_apply(path, args.plan_sha256),
         "result": validate_result,
         "rotation": validate_rotation,
     }
-    lock_recovery_kinds = {"audit-set", "rotation", "dispositions", "plan", "result"}
+    lock_recovery_kinds = {"audit-set", "rotation", "dispositions", "plan", "apply", "result"}
     if args.kind in lock_recovery_kinds:
         import assurance_set
 
@@ -1647,7 +1720,7 @@ def main() -> int:
                 args.path
                 if args.kind == "rotation"
                 else args.path.parent
-                if args.kind in {"dispositions", "plan", "result"}
+                if args.kind in {"dispositions", "plan", "apply", "result"}
                 else args.path
             )
             if phase_directory.name == "assurance":

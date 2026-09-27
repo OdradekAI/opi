@@ -33,9 +33,9 @@ def member_run_id(reviewer_id: str, model_id: str) -> str:
     return f"phase17-{reviewer_id}-{model_id}-136c380-20260824t010203z"
 
 
-def run_validator(kind: str, path: Path) -> subprocess.CompletedProcess[str]:
+def run_validator(kind: str, path: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(VALIDATOR), kind, str(path)],
+        [sys.executable, str(VALIDATOR), kind, str(path), *args],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -1347,6 +1347,216 @@ class RemediationValidatorTests(AssuranceFixture):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("drifts from plan-stage disposition", result.stderr)
+
+
+class ApplyAdmissionTests(AssuranceFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.source_path = self.root / "crates/opi-agent/src/session.rs"
+        self.source_path.parent.mkdir(parents=True)
+        self.source_path.write_text("original source\n", encoding="utf-8")
+        self.commit_paths(self.source_path)
+        audit_head = run_git(self.root, "rev-parse", "HEAD").stdout.strip()
+        run_id = member_run_id("codex", "gpt56")
+        member = self.write_audit_member(
+            "codex",
+            "gpt56",
+            "gpt-5.6",
+            audit_head=audit_head,
+            requirements=[
+                requirement_record(
+                    audit_run_id=run_id,
+                    state="not-met",
+                    finding_ids=["P17-AUD-001"],
+                )
+            ],
+            findings=[finding_record(audit_run_id=run_id, observed_at=audit_head)],
+        )
+        self.write_audit_index([member])
+        self.commit_paths(self.assurance_dir)
+        self.source_head = run_git(self.root, "rev-parse", "HEAD").stdout.strip()
+        self.plan_path, self.dispositions_path = self.write_plan()
+        self.plan_path.write_text(
+            self.plan_path.read_text(encoding="utf-8").replace(
+                REMEDIATION_HEAD, self.source_head
+            ),
+            encoding="utf-8",
+        )
+        self.digest = self.plan_digest()
+
+    def commit_paths(self, *paths: Path) -> None:
+        for args in (
+            ("add", "--", *(path.relative_to(self.root).as_posix() for path in paths)),
+            ("commit", "-m", "test: commit fixture paths"),
+        ):
+            result = run_git(self.root, *args)
+            self.assertEqual(0, result.returncode, result.stderr)
+
+    def plan_digest(self) -> str:
+        return hashlib.sha256(
+            self.plan_path.read_bytes() + b"\0" + self.dispositions_path.read_bytes()
+        ).hexdigest()
+
+    def admission(self, digest: str | None = None) -> subprocess.CompletedProcess[str]:
+        return run_validator(
+            "apply", self.plan_path, "--plan-sha256", digest or self.digest
+        )
+
+    def test_commit_approved_plan_then_apply_without_resealing(self) -> None:
+        sealed = run_validator("plan", self.plan_path)
+        self.assertEqual(0, sealed.returncode, sealed.stderr)
+        self.assertIn(self.digest, sealed.stdout)
+        before = self.admission()
+        self.assertEqual(0, before.returncode, before.stderr)
+
+        self.commit_paths(self.plan_path, self.dispositions_path)
+        self.assertNotEqual(
+            self.source_head, run_git(self.root, "rev-parse", "HEAD").stdout.strip()
+        )
+        self.assertEqual(self.digest, self.plan_digest())
+        after = self.admission()
+        self.assertEqual(0, after.returncode, after.stderr)
+        self.assertIn("apply: PASS", after.stdout)
+        self.assertEqual("", run_git(self.root, "status", "--porcelain").stdout)
+
+    def test_multiple_current_plan_only_commits_are_admitted(self) -> None:
+        self.commit_paths(self.plan_path, self.dispositions_path)
+        self.plan_path.write_bytes(self.plan_path.read_bytes() + b"\n")
+        self.digest = self.plan_digest()
+        self.commit_paths(self.plan_path)
+        result = self.admission()
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_source_change_in_plan_commit_is_rejected(self) -> None:
+        self.source_path.write_text("changed source\n", encoding="utf-8")
+        self.commit_paths(self.plan_path, self.dispositions_path, self.source_path)
+        result = self.admission()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("changed after Remediation head", result.stderr)
+        self.assertIn("crates/opi-agent/src/session.rs", result.stderr)
+
+    def test_source_change_then_restore_still_requires_replanning(self) -> None:
+        self.commit_paths(self.plan_path, self.dispositions_path)
+        original = self.source_path.read_bytes()
+        self.source_path.write_text("changed source\n", encoding="utf-8")
+        self.commit_paths(self.source_path)
+        self.source_path.write_bytes(original)
+        self.commit_paths(self.source_path)
+        result = self.admission()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("changed after Remediation head", result.stderr)
+
+    def test_other_phase_plan_commit_is_rejected(self) -> None:
+        other = self.root / "docs/snapshots/phase18/assurance/remediation.plan.md"
+        other.parent.mkdir(parents=True)
+        other.write_text("other phase\n", encoding="utf-8")
+        self.commit_paths(self.plan_path, self.dispositions_path, other)
+        result = self.admission()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("phase18/assurance/remediation.plan.md", result.stderr)
+
+    def test_source_changed_only_in_merge_is_rejected(self) -> None:
+        self.commit_paths(self.plan_path, self.dispositions_path)
+        first_parent = run_git(self.root, "rev-parse", "HEAD").stdout.strip()
+        sibling = run_git(
+            self.root,
+            "commit-tree",
+            "HEAD^{tree}",
+            "-p",
+            self.source_head,
+            "-m",
+            "test: alternate plan materialization",
+        )
+        self.assertEqual(0, sibling.returncode, sibling.stderr)
+        self.source_path.write_text("merge changed source\n", encoding="utf-8")
+        staged = run_git(
+            self.root, "add", "--", self.source_path.relative_to(self.root).as_posix()
+        )
+        self.assertEqual(0, staged.returncode, staged.stderr)
+        tree = run_git(self.root, "write-tree")
+        self.assertEqual(0, tree.returncode, tree.stderr)
+        merged = run_git(
+            self.root,
+            "commit-tree",
+            tree.stdout.strip(),
+            "-p",
+            first_parent,
+            "-p",
+            sibling.stdout.strip(),
+            "-m",
+            "test: source changed only by merge",
+        )
+        self.assertEqual(0, merged.returncode, merged.stderr)
+        advanced = run_git(
+            self.root, "update-ref", "HEAD", merged.stdout.strip(), first_parent
+        )
+        self.assertEqual(0, advanced.returncode, advanced.stderr)
+        result = self.admission()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("changed after Remediation head", result.stderr)
+
+    def test_stale_approval_rejects_changes_to_either_plan_file(self) -> None:
+        self.commit_paths(self.plan_path, self.dispositions_path)
+        for path in (self.plan_path, self.dispositions_path):
+            with self.subTest(path=path.name):
+                original = path.read_bytes()
+                path.write_bytes(original + b"\n")
+                result = self.admission()
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("approved plan_sha256 does not match", result.stderr)
+                path.write_bytes(original)
+
+    def test_changed_audit_index_rejects_unchanged_plan_approval(self) -> None:
+        self.commit_paths(self.plan_path, self.dispositions_path)
+        path = self.assurance_dir / "audit.index.json"
+        index = json.loads(path.read_text(encoding="utf-8"))
+        index["revision"] += 1
+        write_json(path, index)
+        result = self.admission()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Audit index SHA-256 does not match", result.stderr)
+
+    def test_changed_audit_member_rejects_unchanged_plan_approval(self) -> None:
+        path = self.assurance_dir / "audit.codex.gpt56.md"
+        path.write_bytes(path.read_bytes() + b"\n")
+        result = self.admission()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("report_sha256 does not match", result.stderr)
+
+    def test_missing_or_nonancestor_source_head_is_rejected(self) -> None:
+        independent = run_git(
+            self.root, "commit-tree", "HEAD^{tree}", "-m", "test: independent root"
+        )
+        self.assertEqual(0, independent.returncode, independent.stderr)
+        for head in ("0" * 40, independent.stdout.strip()):
+            with self.subTest(head=head):
+                text = self.plan_path.read_text(encoding="utf-8")
+                self.plan_path.write_text(
+                    text.replace(self.source_head, head), encoding="utf-8"
+                )
+                result = self.admission(self.plan_digest())
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("committed ancestor of HEAD", result.stderr)
+                self.plan_path.write_text(text, encoding="utf-8")
+
+    def test_draft_plan_cannot_be_applied(self) -> None:
+        self.plan_path.write_text(
+            self.plan_path.read_text(encoding="utf-8").replace(
+                "READY-FOR-APPLY", "DRAFT-UNRESOLVED"
+            ),
+            encoding="utf-8",
+        )
+        result = self.admission(self.plan_digest())
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("apply requires READY-FOR-APPLY", result.stderr)
+
+    def test_apply_requires_explicit_valid_digest_argument(self) -> None:
+        missing = run_validator("apply", self.plan_path)
+        self.assertNotEqual(0, missing.returncode)
+        self.assertIn("apply requires --plan-sha256", missing.stderr)
+        malformed = self.admission("A" * 64)
+        self.assertNotEqual(0, malformed.returncode)
+        self.assertIn("lowercase SHA-256", malformed.stderr)
 
 
 class RotationValidatorTests(AssuranceFixture):

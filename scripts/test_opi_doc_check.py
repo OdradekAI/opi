@@ -202,6 +202,9 @@ ASSURANCE_WORKFLOW_REQUIRED = {
     ),
     ".claude/skills/opi-remediate/references/execution-protocol.md": (
         "plan_sha256",
+        "validate_assurance_artifact.py apply",
+        "--plan-sha256",
+        "plan-only commit rule",
         "Bounded verification-blocking incidental repair",
         "changes no public API",
         "remediation.result.md",
@@ -252,6 +255,12 @@ ASSURANCE_WORKFLOW_REQUIRED = {
         "materialized",
         "`within_causal_surface` are `true`",
         "protected `changes_*` fields",
+        "committed source evidence baseline",
+        "committed ancestor",
+        "Every intervening commit",
+        "merge-parent diff",
+        "plan-only commits",
+        "validate_assurance_artifact.py apply",
     ),
     ".claude/skills/opi-audit/agents/openai.yaml": (
         "$opi-audit phase=<N>",
@@ -328,6 +337,7 @@ ASSURANCE_WORKFLOW_FORBIDDEN_REQUIRED = {
         "**Audit run ID**",
         "**Findings SHA-256**",
         "**Audit generation ID**",
+        "current committed HEAD equals the full",
     ),
     ".claude/skills/opi-audit/agents/openai.yaml": (
         "immutable normalized findings",

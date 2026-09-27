@@ -75,6 +75,9 @@ Open the selected `SKILL.md`, then only references required by its active mode.
 - `opi-remediate mode=plan` verifies every live indexed member and the strict
   finding union. `mode=apply` requires both exact digest bindings and permits
   only contract-bounded incidental repairs. Neither writes the live ledger.
+  Committing only that Phase's fixed plan pair preserves its source baseline
+  and approval; the [disposition contract](_shared/references/remediation-disposition-contract.md#plan-approval-identity)
+  defines the checked boundary, so a plan commit needs no HEAD reseal.
 - Local preparation and verification continue within existing authorization.
   Reconfirm when the authorized object, scope or required binding changes,
   or a workflow explicitly requires a fresh final gate. Public, destructive,

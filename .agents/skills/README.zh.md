@@ -68,6 +68,9 @@ flowchart TD
 - `opi-remediate mode=plan` 核验全部活动成员与 findings 严格并集；
   `mode=apply` 需要两个精确摘要绑定，仅允许契约限定的顺手修复。
   两种模式均不写正式台账。
+  仅提交该 Phase 的固定计划文件对，会保留源码基线与批准；
+  [disposition 契约](_shared/references/remediation-disposition-contract.md#plan-approval-identity)
+  定义机械校验边界，无需因计划 commit 重新封存 HEAD。
 - 在已有授权内继续本地准备与验证。授权对象、范围、必要绑定改变，或所属工作流明确
   要求新的最终关卡时才重新确认。公开、破坏性、凭据及付费操作始终受其所属授权限制。
 
