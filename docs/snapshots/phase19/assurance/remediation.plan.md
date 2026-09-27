@@ -2,7 +2,7 @@
 
 **Status**: READY-FOR-APPLY
 **Audit index SHA-256**: `40c48da48a5192a8cfce2b32ce80dc91bf33e5435442e9facff169c0f4ec7b00`
-**Remediation head**: `eb930fbcfc16384555edcbae6e6026ba7b763c37`
+**Remediation head**: `075a046ebc585265c28a6c3f778dfcc501338ddc`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
 **Dirty-worktree baseline**: committed=none-for-this-task; staged=[]; unstaged=[]; untracked=[]; worktree-only planning.
 **Unresolved decisions**: none
@@ -20,7 +20,7 @@ The complete active audit set passed `validate_assurance_artifact.py audit-set` 
 
 Committed code was inspected in a unique `git archive` export, not a Git worktree. History, earlier remediation conclusions, eval artifacts and alternate source/plan paths were not inputs. Ledger scope was read only through `opi-audit/scripts/read_audit_scope.py`'s allowlisted committed projection. Source registration and exact hashes match both member metadata; it confirms the supplemental English/Chinese design is registered, rather than treating an arbitrary design file as authority.
 
-The initial clean tracked fixed plan pair was replaced without reading its earlier contents. This continuation updates that same task-owned draft after the user accepted D1; its starting inventory is staged=[], unstaged=[the two fixed plan files], untracked=[]. Both are carried-in-and-touched by this continuation, with no unowned overlap; the remediation head and active index are unchanged. Result artifacts are not planning inputs and are not asserted to describe this new plan. Only the two fixed plan files are outgoing repository edits. No product code, ledger, manifest, lockfile, branch or commit is changed.
+This continuation reseals the current fixed plan against the committed HEAD above after apply admission detected a head mismatch. Starting inventory: staged=[], unstaged=[], untracked=[]; committed=none-for-this-task. The current plan's closure decisions, batches, predicates and disposition bytes are retained. The only committed differences from the recorded evidence state are the fixed plan pair; all other tracked bytes, including source, tests, specifications, ledgers and indexed audit artifacts, are identical. Result artifacts are not inputs. Only the fixed plan Markdown is an outgoing repository edit; the paired JSONL is retained byte-identically. No product code, ledger, manifest, lockfile, branch or commit is changed.
 
 ## Observable completion
 
@@ -28,7 +28,7 @@ The initial clean tracked fixed plan pair was replaced without reading its earli
 2. Verify each current source key -> verify: committed call paths, counter-evidence and isolated discriminating probes below.
 3. Seal the complete plan -> verify: 15/15 exact dispositions, dispositions validator, fixed-plan validator, documentation checker and whitespace check.
 
-Planning completion is a validated READY-FOR-APPLY plan, not execution or a Phase-conformance verdict. The user accepted the recommended D1 direction in the current conversation ("同意"); the concrete resolution below uses the existing artifact limit and is sealed into B11. The new validator-emitted digest needs a separate explicit `opi-remediate mode=apply phase=19 plan_sha256=<digest>` invocation.
+Planning completion is a validated READY-FOR-APPLY plan, not execution or a Phase-conformance verdict. This reseal retains the accepted D1 direction and the existing artifact limit in B11 without a new design decision. The new validator-emitted digest needs a separate explicit `opi-remediate mode=apply phase=19 plan_sha256=<digest>` invocation.
 
 ## Current Finding Verification
 
@@ -74,7 +74,7 @@ none
 
 ### D1 resolution: complete files within the existing artifact bound
 
-The user accepted the recommended file-backed, bounded-memory direction in the current conversation. Further inspection of the same committed archive establishes an existing concrete bound: `bundle/mod.rs:1164-1166` defines `MAX_ARTIFACT_BYTES = 64 * 1024 * 1024`; insertion at `:1202-1206` rejects larger artifacts with `ArtifactTooLarge`. B11 reuses that **per-artifact** limit and its existing rejection meaning. It introduces no new numeric limit, total-trial quota, CLI/config key, schema version, dependency or public adapter seam. The existing raw source log can exceed the bound, but it cannot be admitted as a complete sealed artifact by truncating it.
+The accepted file-backed, bounded-memory direction remains unchanged. Inspection of the committed archive establishes an existing concrete bound: `bundle/mod.rs:1164-1166` defines `MAX_ARTIFACT_BYTES = 64 * 1024 * 1024`; insertion at `:1202-1206` rejects larger artifacts with `ArtifactTooLarge`. B11 reuses that **per-artifact** limit and its existing rejection meaning. It introduces no new numeric limit, total-trial quota, CLI/config key, schema version, dependency or public adapter seam. The existing raw source log can exceed the bound, but it cannot be admitted as a complete sealed artifact by truncating it.
 
 Complete settled stdout/stderr up to that limit is copied, hashed and checked through bounded file IO. Above the limit, read/write exhaustion, malformed terminal evidence or unsafe/changing input fails the affected evidence/settlement explicitly; private raw diagnostics remain unmodified where available, and no successful partial artifact/seal or fabricated Agent score is published. This is a repair of evidence handling inside the existing Companion contract. Changing the bound, public evidence shape, authority or new resource policy is outside B11 and would require a new plan.
 
@@ -319,7 +319,11 @@ Every excluded source is still represented exactly once in the disposition sidec
 
 ## Plan-stage checks and evidence identity
 
-Source archive: `C:/Users/Luiz/AppData/Local/Temp/opi-phase19-remediation-plan-hldp4vqx/source`.
+Current committed source was exported with `git archive 075a046ebc585265c28a6c3f778dfcc501338ddc` into a unique temporary archive, without a Git worktree. Its faithful Linux extraction is `/tmp/opi-remediate-p19-reseal-nlhf3rj2/source`; `python3 scripts/opi-doc-check.py` there returned exit 0, `opi documentation contracts: PASS`. The initial Windows extraction could not preserve the `.claude/skills` directory alias and its doc check returned exit 1; the Linux extraction preserves the archive-declared symlink and resolves that export defect without changing source. The current index raw-byte digest matches the header. The committed scope reader reports no stored-hash mismatches and confirms both registered supplemental sources.
+
+Evidence reuse check: `git diff --quiet eb930fbcfc16384555edcbae6e6026ba7b763c37..075a046ebc585265c28a6c3f778dfcc501338ddc -- . ':(exclude)docs/snapshots/phase19/assurance/remediation.plan.md' ':(exclude)docs/snapshots/phase19/assurance/remediation.plan.dispositions.jsonl'` returned exit 0. All 15 planned source paths also match the retained probe archive byte-for-byte, and all nine probe/log SHA-256 entries below were rechecked successfully. The change-scope contract requires retaining evidence against the same relevant state rather than repeating unchanged checks. Accordingly, behavioral red-before commands and outcomes below are retained evidence, not newly executed tests; the dispositions keep their truthful `verified_at=eb930fbcfc16384555edcbae6e6026ba7b763c37`. No conclusion from a history run, earlier result, eval artifact or alternate plan is used as proof. Every source remains bound to the current index and owning findings digest.
+
+Retained red-before source archive (evidence state `eb930fbcfc16384555edcbae6e6026ba7b763c37`): `C:/Users/Luiz/AppData/Local/Temp/opi-phase19-remediation-plan-hldp4vqx/source`.
 Its native Linux path is `/mnt/c/Users/Luiz/AppData/Local/Temp/opi-phase19-remediation-plan-hldp4vqx/source`.
 The initial ZIP extraction materialized symlinks as pointer files; reconstructing archive-declared symlinks and executable modes fixed that export artifact without changing committed source bytes. The archive documentation checker then passed. This setup issue is not a product finding.
 
@@ -351,7 +355,7 @@ Probe and diagnostic artifacts are listed with exact SHA-256 below so their test
 
 ## Change inventory and final verification
 
-Current outgoing change: documentation/assurance metadata only, the fixed plan Markdown and JSONL; this continuation resolves D1 in those same task-owned files. Reused red-before evidence is bound to the unchanged remediation head and verified unchanged production-file bytes in the same archive. No English/Chinese maintained product document is edited; the assurance contract fixes a single Markdown path and has no localized plan counterpart. Future user-visible changes require Unreleased entries after reading the complete existing Unreleased section. If a repair changes maintained explanatory documentation, edit its English/Chinese counterpart in the same batch. No manifests, feature defaults, dependency edges or lockfile changes are proposed.
+Current outgoing change: documentation/assurance metadata only, the fixed plan Markdown; the paired JSONL is retained byte-identically. This continuation changes the head binding and records its verification without changing D1 or any approved closure scope. Reused red-before evidence remains bound to its original verified commit and proven identical relevant source bytes at the new remediation head. No English/Chinese maintained product document is edited; the assurance contract fixes a single Markdown path and has no localized plan counterpart. Future user-visible changes require Unreleased entries after reading the complete existing Unreleased section. If a repair changes maintained explanatory documentation, edit its English/Chinese counterpart in the same batch. No manifests, feature defaults, dependency edges or lockfile changes are proposed.
 
 Derived apply surfaces: local Companion runtime; public CLI run/verify/regrade/report; evidence/seal containment; Python offline-verifier behavior; native witness/test helper; gate environment. Their union requires focused CLI/integration/conformance regressions, Python unit and subprocess negatives, and the final workspace gates explicitly required by C006. B11 adds bounded streaming through native capture, pi parsing, privacy scan, bundle insertion/seal/verify and the offline acceptance reader; its exact causal paths and failure tests below are included in this union. No broader storage or parser refactor is admitted.
 
@@ -379,7 +383,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 Use known system-tool resolution and the repository's external cache workflow for these commands. The two existing ignored witness checks are required if B9 changes their shared prerequisite path; supply verified three-family material, no live model, and preserve logs. B6's actual client matrix additionally needs exact native clients and the local fixture provider; missing material is a concrete verification gap, never a skipped pass. Workspace all-targets covers every newly ported default Rust case; do not repeat default binaries once equivalent evidence has passed on the same relevant state. The new Python tests must include a real CLI negative invocation, not only helper calls. B11's default tests and unit tests are included in the same workspace all-targets pass; this includes the modified native_driver and bundle_recompute binaries and pi/bundle/scanner library cases. Run each new or modified exact regression filter as its matching green proof when not already covered by an equivalent recorded final-state run.
 
-Test impact now: **add** isolated archive probes; **retain** all repository tests; **none** to production test files. Planned test impact: **add/update** the named regressions/native-shape fixtures, streaming capture/bundle/privacy cases and test-helper diagnostics; **retain** privacy, unsafe-path, paired/subset, native-zero, timeout, native-witness and strict-identity guards; **delete** none.
+Test impact now: **none** to repository test files; **retain** all repository tests and the identified isolated probes. Planned test impact: **add/update** the named regressions/native-shape fixtures, streaming capture/bundle/privacy cases and test-helper diagnostics; **retain** privacy, unsafe-path, paired/subset, native-zero, timeout, native-witness and strict-identity guards; **delete** none.
 
 After required checks pass, rerun only invalidated evidence. Preserve unrelated work; recheck the head and all three worktree inventories at handoff. A final result must not declare Phase 19 conformant: P001, P003 and P005 have explicit remaining ownership/evidence boundaries, and the live audit aggregate remains FAIL until a later independently admitted audit.
 
