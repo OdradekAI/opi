@@ -167,6 +167,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `opi-coding-agent`: JSON mode now writes and flushes events during the run,
+  including image input, instead of buffering stdout until prompt completion.
+  A dedicated writer acknowledges each line to apply bounded backpressure;
+  output failures cancel the run with exit 1, and Ctrl-C remains observable
+  while waiting for a slow writer. Forced termination retains emitted bytes
+  without fabricating terminal events. New streaming runner methods leave
+  existing explicit in-memory capture APIs and NDJSON schema 2 intact. The CLI
+  allocates its one-shot future on the heap to avoid Windows debug-build
+  main-thread stack overflow before provider dispatch.
+
 - `opi-coding-agent`: startup resolves the default thinking level against the
   selected model's supported levels before dispatch, using the same numeric
   budget policy as runtime selection. Models exposing only low/high/max now

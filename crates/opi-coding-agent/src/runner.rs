@@ -3,6 +3,7 @@
 //! Takes a single prompt, runs it through the agent, captures assistant text
 //! for stdout, diagnostics for stderr, and returns an exit code.
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -25,6 +26,14 @@ use crate::harness::{CodingHarness, ProviderAuthFailure, ResumeInfo, provider_au
 use crate::policy::{RunMode, ToolPolicyError, ToolRuntimeConfig, ToolSelection, is_mutating_tool};
 use crate::project_trust::TrustDecision;
 use crate::runtime_packages::RuntimePackageStartup;
+
+mod json_output;
+use json_output::JsonOutput;
+
+enum JsonInput<'a> {
+    Text(&'a str),
+    Content(Vec<InputContent>),
+}
 
 /// NDJSON output schema version.
 pub const NDJSON_SCHEMA_VERSION: u32 = 2;
@@ -395,41 +404,79 @@ impl NonInteractiveRunner {
         self
     }
 
-    /// Run a single prompt in JSON mode, returning NDJSON output in stdout.
+    /// Capture a prompt's complete NDJSON output in memory.
+    /// Use [`Self::run_json_to`] to publish events before the prompt finishes.
     pub async fn run_json(&mut self, prompt: &str) -> NonInteractiveResult {
-        let output: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let output = JsonOutput::capture(self.cancel_token());
+        self.run_json_inner(JsonInput::Text(prompt), output).await
+    }
 
-        // Schema version header line
-        {
-            let header = serde_json::json!({
+    /// Stream and flush each NDJSON line to an owned writer. The returned
+    /// stdout is empty. Writes use one dedicated thread and one acknowledged
+    /// line at a time: slow consumers apply backpressure without a queue limit
+    /// or a growing transcript. I/O failures cancel the run and return code 1.
+    ///
+    /// Cancellation must be driven independently while synchronous event
+    /// subscribers wait for output. A blocked OS write cannot be interrupted;
+    /// cancellation stops waiting for it and still settles the Agent lifecycle.
+    /// The writer thread exits when that write returns (or the CLI process exits).
+    pub async fn run_json_to(
+        &mut self,
+        prompt: &str,
+        writer: impl Write + Send + 'static,
+    ) -> NonInteractiveResult {
+        let output = JsonOutput::stream(writer, self.cancel_token());
+        self.run_json_inner(JsonInput::Text(prompt), output).await
+    }
+
+    /// Stream content-input NDJSON with the same output contract as
+    /// [`Self::run_json_to`].
+    pub async fn run_json_with_content_to(
+        &mut self,
+        content: Vec<InputContent>,
+        writer: impl Write + Send + 'static,
+    ) -> NonInteractiveResult {
+        let output = JsonOutput::stream(writer, self.cancel_token());
+        self.run_json_inner(JsonInput::Content(content), output)
+            .await
+    }
+
+    async fn run_json_inner(
+        &mut self,
+        input: JsonInput<'_>,
+        output: JsonOutput,
+    ) -> NonInteractiveResult {
+        let output = Arc::new(Mutex::new(output));
+        output.lock().expect("JSON output").line(
+            serde_json::json!({
                 "type": "session_header",
                 "schema_version": NDJSON_SCHEMA_VERSION,
-            });
-            let mut out = output.lock().unwrap();
-            out.push_str(&header.to_string());
-            out.push('\n');
-        }
-
-        // Surface startup diagnostics BEFORE accepted prompt
-        // output (the first agent event is AgentStart). Additive NDJSON line.
-        {
-            let startup = AgentSessionEvent::StartupDiagnostics {
-                diagnostics: self
-                    .harness
-                    .resource_metadata()
-                    .diagnostic_payloads(RedactionMode::Summary),
-            };
-            if let Ok(json) = serde_json::to_string(&startup)
-                && let Ok(mut guard) = output.lock()
-            {
-                guard.push_str(&json);
-                guard.push('\n');
-            }
+            })
+            .to_string(),
+        );
+        let startup = AgentSessionEvent::StartupDiagnostics {
+            diagnostics: self
+                .harness
+                .resource_metadata()
+                .diagnostic_payloads(RedactionMode::Summary),
+        };
+        if let Ok(json) = serde_json::to_string(&startup) {
+            output.lock().expect("JSON output").line(json);
         }
 
         let compact = self.compact_ndjson;
-        let out = output.clone();
+        // Subscriptions live with the harness; an old subscription must neither
+        // retain the completed transcript nor write into a later run's sink.
+        let out = Arc::downgrade(&output);
+        let provider_turns = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let turn_counter = Arc::clone(&provider_turns);
         self.harness.subscribe(Box::new(move |event| {
+            let Some(out) = out.upgrade() else {
+                return;
+            };
+            if matches!(event, AgentEvent::TurnStart) {
+                turn_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
             let session_event = match event {
                 AgentEvent::AutoRetryStart {
                     attempt,
@@ -475,60 +522,46 @@ impl NonInteractiveRunner {
             } else {
                 serde_json::to_string(&session_event).ok()
             };
-            if let Some(json) = json_opt
-                && let Ok(mut guard) = out.lock()
-            {
-                guard.push_str(&json);
-                guard.push('\n');
+            if let Some(json) = json_opt {
+                out.lock().expect("JSON output").line(json);
             }
         }));
 
-        let provider_turns = Arc::new(std::sync::atomic::AtomicU32::new(0));
-        let turn_counter = Arc::clone(&provider_turns);
-        self.harness.subscribe(Box::new(move |event| {
-            if matches!(event, AgentEvent::TurnStart) {
-                turn_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
-        }));
-
-        let prompt_result = self.harness.prompt(prompt).await;
-
-        // Emit a final `SessionSummary` event with cumulative token totals
-        // and (when known) cost breakdown. Emitted before the result match so
-        // even error paths surface what the user spent before failing.
-        if let Some(summary_event) =
+        let prompt_result = match input {
+            JsonInput::Text(prompt) => self.harness.prompt(prompt).await,
+            JsonInput::Content(content) => self.harness.prompt_with_content(content).await,
+        };
+        if let Some(summary) =
             self.session_summary(provider_turns.load(std::sync::atomic::Ordering::Relaxed))
-            && let Ok(json) = serde_json::to_string(&summary_event)
-            && let Ok(mut guard) = output.lock()
+            && let Ok(json) = serde_json::to_string(&summary)
         {
-            guard.push_str(&json);
-            guard.push('\n');
+            output.lock().expect("JSON output").line(json);
         }
-
-        match prompt_result {
-            Ok(messages) => {
-                if let Some(error) = find_error_message(&messages) {
-                    return NonInteractiveResult {
-                        stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
-                        stderr: error,
-                        exit_code: ExitCode::ProviderFailure as i32,
-                    };
-                }
-                NonInteractiveResult {
-                    stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
-                    stderr: String::new(),
-                    exit_code: ExitCode::Success as i32,
-                }
-            }
+        let (stderr, exit_code) = match prompt_result {
+            Ok(messages) => match find_error_message(&messages) {
+                Some(error) => (error, ExitCode::ProviderFailure as i32),
+                None => (String::new(), ExitCode::Success as i32),
+            },
             Err(error) => {
-                append_credential_remediation(&output, &error);
-                NonInteractiveResult {
-                    stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
-                    stderr: stderr_for_agent_error(&self.harness, &error, ""),
-                    exit_code: exit_code_for_agent_error(&error),
+                if let Some(event) = credential_remediation(&error)
+                    && let Ok(json) = serde_json::to_string(&event)
+                {
+                    output.lock().expect("JSON output").line(json);
                 }
+                (
+                    stderr_for_agent_error(&self.harness, &error, ""),
+                    exit_code_for_agent_error(&error),
+                )
             }
-        }
+        };
+        output
+            .lock()
+            .expect("JSON output")
+            .complete(NonInteractiveResult {
+                stdout: String::new(),
+                stderr,
+                exit_code,
+            })
     }
 
     /// Run with arbitrary content (text + images) and return captured output.
@@ -622,139 +655,15 @@ impl NonInteractiveRunner {
         }
     }
 
-    /// Run with arbitrary content in JSON mode, returning NDJSON output.
+    /// Capture content-input NDJSON in memory. For incremental output use
+    /// [`Self::run_json_with_content_to`].
     pub async fn run_json_with_content(
         &mut self,
         content: Vec<InputContent>,
     ) -> NonInteractiveResult {
-        let output: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-
-        {
-            let header = serde_json::json!({
-                "type": "session_header",
-                "schema_version": NDJSON_SCHEMA_VERSION,
-            });
-            let mut out = output.lock().unwrap();
-            out.push_str(&header.to_string());
-            out.push('\n');
-        }
-
-        // Surface startup diagnostics BEFORE accepted prompt
-        // output (the first agent event is AgentStart). Additive NDJSON line.
-        {
-            let startup = AgentSessionEvent::StartupDiagnostics {
-                diagnostics: self
-                    .harness
-                    .resource_metadata()
-                    .diagnostic_payloads(RedactionMode::Summary),
-            };
-            if let Ok(json) = serde_json::to_string(&startup)
-                && let Ok(mut guard) = output.lock()
-            {
-                guard.push_str(&json);
-                guard.push('\n');
-            }
-        }
-
-        let compact = self.compact_ndjson;
-        let out = output.clone();
-        self.harness.subscribe(Box::new(move |event| {
-            let session_event = match event {
-                AgentEvent::AutoRetryStart {
-                    attempt,
-                    max_attempts,
-                    delay_ms,
-                    error_message,
-                } => AgentSessionEvent::AutoRetryStart {
-                    attempt: *attempt,
-                    max_attempts: *max_attempts,
-                    delay_ms: *delay_ms,
-                    error_message: error_message.clone(),
-                },
-                AgentEvent::AutoRetryEnd {
-                    success,
-                    attempt,
-                    final_error,
-                } => AgentSessionEvent::AutoRetryEnd {
-                    success: *success,
-                    attempt: *attempt,
-                    final_error: final_error.clone(),
-                },
-                AgentEvent::CompactionStart { reason } => {
-                    AgentSessionEvent::CompactionStart { reason: *reason }
-                }
-                AgentEvent::CompactionEnd {
-                    reason,
-                    result,
-                    aborted,
-                    error_message,
-                } => AgentSessionEvent::CompactionEnd {
-                    reason: *reason,
-                    result: result.clone(),
-                    aborted: *aborted,
-                    will_retry: false,
-                    error_message: error_message.clone(),
-                },
-                _ => AgentSessionEvent::Agent {
-                    event: event.clone(),
-                },
-            };
-            let json_opt = if compact {
-                compact_ndjson_line(&session_event)
-            } else {
-                serde_json::to_string(&session_event).ok()
-            };
-            if let Some(json) = json_opt
-                && let Ok(mut guard) = out.lock()
-            {
-                guard.push_str(&json);
-                guard.push('\n');
-            }
-        }));
-
-        let provider_turns = Arc::new(std::sync::atomic::AtomicU32::new(0));
-        let turn_counter = Arc::clone(&provider_turns);
-        self.harness.subscribe(Box::new(move |event| {
-            if matches!(event, AgentEvent::TurnStart) {
-                turn_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
-        }));
-
-        let prompt_result = self.harness.prompt_with_content(content).await;
-
-        if let Some(summary_event) =
-            self.session_summary(provider_turns.load(std::sync::atomic::Ordering::Relaxed))
-            && let Ok(json) = serde_json::to_string(&summary_event)
-            && let Ok(mut guard) = output.lock()
-        {
-            guard.push_str(&json);
-            guard.push('\n');
-        }
-
-        match prompt_result {
-            Ok(messages) => {
-                if let Some(error) = find_error_message(&messages) {
-                    return NonInteractiveResult {
-                        stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
-                        stderr: error,
-                        exit_code: ExitCode::ProviderFailure as i32,
-                    };
-                }
-                NonInteractiveResult {
-                    stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
-                    stderr: String::new(),
-                    exit_code: ExitCode::Success as i32,
-                }
-            }
-            Err(error) => {
-                append_credential_remediation(&output, &error);
-                NonInteractiveResult {
-                    stdout: output.lock().map(|g| g.clone()).unwrap_or_default(),
-                    stderr: stderr_for_agent_error(&self.harness, &error, ""),
-                    exit_code: exit_code_for_agent_error(&error),
-                }
-            }
-        }
+        let output = JsonOutput::capture(self.cancel_token());
+        self.run_json_inner(JsonInput::Content(content), output)
+            .await
     }
 
     /// Arm the next run and return its clonable cancellation token.
@@ -919,7 +828,7 @@ fn provider_error_stderr(error: &str) -> String {
         .message
 }
 
-fn append_credential_remediation(output: &Arc<Mutex<String>>, error: &AgentError) {
+fn credential_remediation(error: &AgentError) -> Option<AgentSessionEvent> {
     let event = match provider_auth_failure(error) {
         Some(ProviderAuthFailure::CredentialNeeded(provider_id)) => {
             AgentSessionEvent::CredentialNeeded {
@@ -942,14 +851,9 @@ fn append_credential_remediation(output: &Arc<Mutex<String>>, error: &AgentError
                 diagnostic: Diagnostic::from(error).redacted_payload(RedactionMode::Summary),
             }
         }
-        None => return,
+        None => return None,
     };
-    if let Ok(json) = serde_json::to_string(&event)
-        && let Ok(mut guard) = output.lock()
-    {
-        guard.push_str(&json);
-        guard.push('\n');
-    }
+    Some(event)
 }
 
 fn stderr_for_agent_error(harness: &CodingHarness, error: &AgentError, suffix: &str) -> String {

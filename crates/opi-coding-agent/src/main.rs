@@ -168,7 +168,9 @@ fn main() {
             let (config, trust_decision) =
                 resolve_headless_trust_config(&cli, project_dir.clone(), user_config_dir.clone())
                     .await;
-            run_non_interactive(
+            // Keep the large one-shot future off the Windows main-thread stack,
+            // including in unoptimized builds used by subprocess checks.
+            Box::pin(run_non_interactive(
                 &cli,
                 &config,
                 &prompt_text,
@@ -176,7 +178,7 @@ fn main() {
                 resume_info,
                 tool_selection,
                 trust_decision,
-            )
+            ))
             .await
         });
         std::process::exit(exit_code);
@@ -544,14 +546,31 @@ struct CommandOutcome {
 }
 
 struct CommandOutput {
-    stdout: Box<dyn FnMut(&str)>,
+    stdout: Box<dyn std::io::Write + Send>,
     stderr: Box<dyn FnMut(&str)>,
+}
+
+#[cfg(test)]
+struct CapturedStdout(std::sync::Arc<std::sync::Mutex<String>>);
+
+#[cfg(test)]
+impl std::io::Write for CapturedStdout {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .expect("stdout capture")
+            .push_str(&String::from_utf8_lossy(bytes));
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 impl CommandOutput {
     fn stdio() -> Self {
         Self {
-            stdout: Box::new(|text| print!("{text}")),
+            stdout: Box::new(std::io::stdout()),
             stderr: Box::new(|text| eprintln!("{text}")),
         }
     }
@@ -559,7 +578,7 @@ impl CommandOutput {
     #[cfg(test)]
     fn discard() -> Self {
         Self {
-            stdout: Box::new(|_| {}),
+            stdout: Box::new(std::io::sink()),
             stderr: Box::new(|_| {}),
         }
     }
@@ -576,12 +595,7 @@ impl CommandOutput {
         let stderr_capture = std::sync::Arc::clone(&stderr);
         (
             Self {
-                stdout: Box::new(move |text| {
-                    stdout_capture
-                        .lock()
-                        .expect("stdout capture")
-                        .push_str(text)
-                }),
+                stdout: Box::new(CapturedStdout(stdout_capture)),
                 stderr: Box::new(move |text| {
                     stderr_capture
                         .lock()
@@ -595,7 +609,13 @@ impl CommandOutput {
     }
 
     fn write_stdout(&mut self, text: &str) {
-        (self.stdout)(text);
+        self.stdout
+            .write_all(text.as_bytes())
+            .expect("stdout write");
+    }
+
+    fn take_stdout(&mut self) -> Box<dyn std::io::Write + Send> {
+        std::mem::replace(&mut self.stdout, Box::new(std::io::sink()))
     }
 
     fn write_stderr(&mut self, text: &str) {
@@ -752,6 +772,14 @@ fn merge_provider_diagnostics(
     startup.diagnostics.extend(diagnostics);
 }
 
+struct InterruptListener(tokio::task::JoinHandle<()>);
+
+impl Drop for InterruptListener {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 async fn complete_non_interactive_after_interrupt<Operation, Interrupt>(
     operation: Operation,
     interrupt: Interrupt,
@@ -759,18 +787,16 @@ async fn complete_non_interactive_after_interrupt<Operation, Interrupt>(
 ) -> opi_coding_agent::runner::NonInteractiveResult
 where
     Operation: std::future::Future<Output = opi_coding_agent::runner::NonInteractiveResult>,
-    Interrupt: std::future::Future<Output = ()>,
+    Interrupt: std::future::Future<Output = ()> + Send + 'static,
 {
-    tokio::pin!(operation);
-    tokio::pin!(interrupt);
-    tokio::select! {
-        biased;
-        result = &mut operation => result,
-        () = &mut interrupt => {
-            cancellation.cancel();
-            operation.await
-        }
-    }
+    // JSON event subscribers synchronously wait for the output writer. Listen
+    // independently on the CLI's multi-thread runtime so a slow consumer cannot
+    // prevent cancellation, then await the Agent's ordinary cleanup lifecycle.
+    let _listener = InterruptListener(tokio::spawn(async move {
+        interrupt.await;
+        cancellation.cancel();
+    }));
+    operation.await
 }
 
 async fn wait_for_process_interrupt() {
@@ -945,9 +971,13 @@ where
             let cancellation = runner.cancel_token();
             let operation = async {
                 match (cli.json, content) {
-                    (true, None) => runner.run_json(prompt_text).await,
+                    (true, None) => runner.run_json_to(prompt_text, output.take_stdout()).await,
                     (false, None) => runner.run(prompt_text).await,
-                    (true, Some(content)) => runner.run_json_with_content(content).await,
+                    (true, Some(content)) => {
+                        runner
+                            .run_json_with_content_to(content, output.take_stdout())
+                            .await
+                    }
                     (false, Some(content)) => runner.run_with_content(content).await,
                 }
             };
@@ -2240,6 +2270,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn interrupt_listener_runs_while_the_cli_operation_waits_synchronously() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let observed = cancellation.clone();
+        let (started, waiting) = tokio::sync::oneshot::channel();
+        let operation = async move {
+            started.send(()).unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while !observed.is_cancelled() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            assert!(
+                observed.is_cancelled(),
+                "interrupt must progress independently of output backpressure"
+            );
+            opi_coding_agent::runner::NonInteractiveResult {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 130,
+            }
+        };
+        let result = runtime.block_on(super::complete_non_interactive_after_interrupt(
+            operation,
+            async move {
+                waiting.await.unwrap();
+            },
+            cancellation,
+        ));
+        assert_eq!(result.exit_code, 130);
+    }
+
     struct OrderingKeyringBackend {
         inner: FakeKeyringBackend,
         events: Arc<Mutex<Vec<&'static str>>>,
@@ -3000,6 +3066,8 @@ mod tests {
         let observed = Arc::new(AtomicBool::new(false));
         let observed_result = Arc::clone(&observed);
 
+        let (output, stdout, _) = CommandOutput::capturing();
+
         let exit_code =
             tokio::runtime::Runtime::new()
                 .expect("runtime")
@@ -3018,12 +3086,13 @@ mod tests {
                         "anthropic",
                         vec![text_response("done")],
                     ))),
-                    CommandOutput::discard(),
+                    output,
                     move |result| {
                         observed_result.store(true, Ordering::SeqCst);
                         assert_eq!(result.exit_code, ExitCode::Success as i32);
-                        let lines: Vec<serde_json::Value> = result
-                            .stdout
+                        assert!(result.stdout.is_empty());
+                        let captured = stdout.lock().expect("streamed stdout");
+                        let lines: Vec<serde_json::Value> = captured
                             .lines()
                             .map(|line| serde_json::from_str(line).expect("NDJSON line"))
                             .collect();
@@ -3198,7 +3267,7 @@ mod tests {
     }
 
     #[test]
-    fn real_opi_subprocesses_are_pre_provider_early_exits_only() {
+    fn real_opi_subprocesses_are_early_exits_or_isolated_loopback() {
         let tests_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
         let allowed = [
             (
@@ -3287,6 +3356,29 @@ mod tests {
                 .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("");
+            // The streaming regression must exercise real stdout while a local
+            // response is open. It is the only provider-capable CLI fixture:
+            // an empty environment and explicit loopback-only synthetic auth
+            // replace every ambient provider/configuration source.
+            if file == "json_streaming_cli.rs" {
+                for marker in [
+                    "Command::new(env!(\"CARGO_BIN_EXE_opi\"))",
+                    ".env_clear()",
+                    "TcpListener::bind((\"127.0.0.1\", 0))",
+                    "command.env(\"OPI_TEST_STREAM_KEY\", \"synthetic-loopback-only-key\")",
+                    ".all(|parent| !parent.join(\".env\").exists())",
+                ] {
+                    if source.matches(marker).count() != 1 {
+                        failures.push(format!(
+                            "{file} must retain exactly one isolation marker `{marker}`"
+                        ));
+                    }
+                }
+                if source.matches("Command::new(").count() != 1 {
+                    failures.push(format!("{file} must have only its isolated launch site"));
+                }
+                continue;
+            }
             let Some((
                 _,
                 launch_marker,
@@ -3364,7 +3456,7 @@ mod tests {
 
         assert!(
             failures.is_empty(),
-            "real opi subprocesses must be proven pre-provider early exits:\n{}",
+            "real opi subprocesses must be proven early exits or isolated loopback:\n{}",
             failures.join("\n")
         );
     }

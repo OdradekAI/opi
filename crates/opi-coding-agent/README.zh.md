@@ -416,6 +416,16 @@ Token 合计包含每条完成的 assistant 响应，包括失败提示词产生
 类型化 `CredentialNeeded` 失败以 code `3` 退出，点名 provider 与
 `/login <provider>` 修复提示，绝不启动 OAuth flow 或阻塞等待输入。
 
+文本和图片输入的 JSON 事件都会在 prompt 运行期间逐行写出并刷新。独立写入线程
+最多处理一条尚未确认的行；慢速读取会让生产者等待，不引入整段轨迹缓冲、队列
+溢出失败或累计输出上限。写入或刷新失败会取消 Agent 生命周期并以 code `1`
+退出。Ctrl-C 的监听独立于输出等待，以 code `130` 退出，不会无限等待被阻塞的
+系统写入。强制终止保留已写出的前缀，但可能打断一行，也无法补出缺失的终态事件
+或最终摘要。嵌入者可通过 `run_json_to` / `run_json_with_content_to` 流式输出；
+`run_json` / `run_json_with_content` 仍是显式内存捕获 API。同步事件回调期间的
+取消需要独立驱动 token，例如 CLI 的多线程运行时；阻塞的写入线程会在系统写入
+返回或进程退出时结束。
+
 `--json-compact` 会在 `text_delta`、`thinking_delta` 和 `tool_call_delta` 更新中
 省略 `assistant_event.partial`。这些更新保留内容块位置与工具标识，清空
 `event.message` 中累积的文本、thinking、不透明数据和工具参数；签名随对应的

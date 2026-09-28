@@ -455,6 +455,21 @@ Typed `CredentialNeeded` failures exit with code `3`, name the provider and
 `/login <provider>` remediation, and never start an OAuth flow or block for
 input.
 
+JSON output is written and flushed one complete line at a time while the prompt
+runs, for both text and image input. Slow consumers apply backpressure through
+a dedicated writer with at most one unacknowledged line; no transcript-sized
+buffer, queue-overflow failure, or cumulative output cap is introduced. A write
+or flush failure cancels the Agent lifecycle and exits with code `1`. Ctrl-C is
+observed independently of output waits and exits with code `130`; it does not
+wait indefinitely for a blocked OS write. Forced termination preserves the
+already-written prefix but can interrupt a line, and cannot create missing
+terminal events or a final summary. Embedders can use `run_json_to` /
+`run_json_with_content_to` for streaming; `run_json` / `run_json_with_content`
+remain explicit in-memory capture APIs. Cancellation during synchronous event
+callbacks needs an independently driven token, as in the CLI's multi-thread
+runtime; a blocked writer thread exits when its OS write returns or the process
+exits.
+
 `--json-compact` is an opt-in flag that omits `assistant_event.partial` from
 `text_delta`, `thinking_delta`, and `tool_call_delta` updates. Those updates
 retain block positions and tool identity while emptying cumulative text,

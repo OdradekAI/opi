@@ -28,6 +28,260 @@ fn parse_ndjson(output: &str) -> Vec<serde_json::Value> {
         .collect()
 }
 
+#[derive(Clone, Default)]
+struct StreamingCapture(std::sync::Arc<std::sync::Mutex<(Vec<u8>, usize)>>);
+
+impl std::io::Write for StreamingCapture {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().0.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.lock().unwrap().1 += 1;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn json_stream_writer_flushes_every_line_and_does_not_retain_previous_runs() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            test_support::text_response("first"),
+            test_support::text_response("second"),
+        ],
+    );
+    let mut runner =
+        runner_with_isolated_session(Box::new(provider), "mock-model", &session_dir, None);
+    let first = StreamingCapture::default();
+    let result = runner.run_json_to("one", first.clone()).await;
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+    assert!(
+        result.stdout.is_empty(),
+        "streamed bytes must not accumulate in the result"
+    );
+    let original = first.0.lock().unwrap().0.clone();
+    let second = StreamingCapture::default();
+    let result = runner
+        .run_json_with_content_to(
+            vec![opi_ai::message::InputContent::Text { text: "two".into() }],
+            second.clone(),
+        )
+        .await;
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+    assert_eq!(
+        first.0.lock().unwrap().0,
+        original,
+        "an old sink must be detached"
+    );
+    for capture in [first, second] {
+        let (bytes, flushes) = &*capture.0.lock().unwrap();
+        let lines = parse_ndjson(std::str::from_utf8(bytes).unwrap());
+        assert_eq!(*flushes, lines.len());
+        assert_eq!(lines[0]["type"], "session_header");
+        assert_eq!(lines[1]["type"], "StartupDiagnostics");
+        assert_eq!(lines.last().unwrap()["type"], "session_summary");
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line["event"]["type"] == "AgentEnd")
+                .count(),
+            1
+        );
+    }
+}
+
+struct FailingJsonWriter {
+    fail_flush: bool,
+}
+
+struct FailAfterTool;
+
+impl std::io::Write for FailAfterTool {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if String::from_utf8_lossy(bytes).contains("ToolExecutionEnd") {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "private-late-output-error",
+            ));
+        }
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn json_stream_failure_after_tool_cancels_before_provider_continuation() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            test_support::tool_call_response(
+                "call1",
+                "read",
+                r#"{"path":"missing-stream-test.txt"}"#,
+            ),
+            test_support::text_response("must not continue"),
+        ],
+    );
+    let calls = provider.call_log_handle();
+    let mut runner =
+        runner_with_isolated_session(Box::new(provider), "mock-model", &session_dir, None);
+    let result = runner.run_json_to("one", FailAfterTool).await;
+    assert_eq!(
+        result.exit_code,
+        ExitCode::RuntimeFailure as i32,
+        "{}",
+        result.stderr
+    );
+    assert!(result.stderr.contains("BrokenPipe"));
+    assert!(!result.stderr.contains("private-late-output-error"));
+    assert_eq!(calls.lock().unwrap().len(), 1);
+}
+
+struct PausedJsonWriter {
+    started: std::sync::mpsc::Sender<()>,
+    release: std::sync::mpsc::Receiver<()>,
+}
+
+impl std::io::Write for PausedJsonWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if String::from_utf8_lossy(bytes).contains("AgentStart") {
+            self.started.send(()).unwrap();
+            self.release.recv().unwrap();
+        }
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn json_stream_cancellation_does_not_join_a_blocked_writer() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let provider = MockProvider::new("mock", vec![test_support::text_response("unused")]);
+    let calls = provider.call_log_handle();
+    let mut runner =
+        runner_with_isolated_session(Box::new(provider), "mock-model", &session_dir, None);
+    let cancel = runner.cancel_token();
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let (returned_tx, returned_rx) = std::sync::mpsc::channel();
+    let control = std::thread::spawn(move || {
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        cancel.cancel();
+        // Always release the owned writer, even on a regression, so the test
+        // demonstrates a failure without abandoning its blocked thread.
+        let returned_before_release = returned_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .is_ok();
+        release_tx.send(()).unwrap();
+        returned_before_release
+    });
+    let result = runner
+        .run_json_to(
+            "one",
+            PausedJsonWriter {
+                started: started_tx,
+                release: release_rx,
+            },
+        )
+        .await;
+    let _ = returned_tx.send(());
+    assert!(
+        control.join().unwrap(),
+        "run waited for the blocked writer instead of cancellation"
+    );
+    assert_eq!(
+        result.exit_code,
+        ExitCode::Interrupted as i32,
+        "{}",
+        result.stderr
+    );
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn json_stream_slow_writer_backpressures_without_dropping_or_failing() {
+    let session_dir = tempfile::tempdir().unwrap();
+    let provider = MockProvider::new("mock", vec![test_support::text_response("done")]);
+    let calls = provider.call_log_handle();
+    let mut runner =
+        runner_with_isolated_session(Box::new(provider), "mock-model", &session_dir, None);
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let control = std::thread::spawn(move || {
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let dispatched_while_blocked = calls.lock().unwrap().len();
+        release_tx.send(()).unwrap();
+        dispatched_while_blocked
+    });
+    let result = runner
+        .run_json_to(
+            "one",
+            PausedJsonWriter {
+                started: started_tx,
+                release: release_rx,
+            },
+        )
+        .await;
+    assert_eq!(
+        control.join().unwrap(),
+        0,
+        "provider must wait for the preceding event to flush"
+    );
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+}
+
+impl std::io::Write for FailingJsonWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if self.fail_flush {
+            Ok(bytes.len())
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "private-io-error-canary",
+            ))
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "private-io-error-canary",
+        ))
+    }
+}
+
+#[tokio::test]
+async fn json_stream_write_or_flush_failure_prevents_dispatch_without_exposing_io_text() {
+    for fail_flush in [false, true] {
+        let session_dir = tempfile::tempdir().unwrap();
+        let provider = MockProvider::new("mock", vec![test_support::text_response("must not run")]);
+        let calls = provider.call_log_handle();
+        let mut runner =
+            runner_with_isolated_session(Box::new(provider), "mock-model", &session_dir, None);
+        let result = runner
+            .run_json_to("one", FailingJsonWriter { fail_flush })
+            .await;
+        assert_eq!(result.exit_code, ExitCode::RuntimeFailure as i32);
+        assert!(result.stderr.contains("JSON output"), "{}", result.stderr);
+        assert!(!result.stderr.contains("private-io-error-canary"));
+        assert!(calls.lock().unwrap().is_empty());
+        assert!(result.stdout.is_empty());
+    }
+}
+
 fn runner_with_isolated_session(
     provider: Box<dyn Provider>,
     model: &str,
