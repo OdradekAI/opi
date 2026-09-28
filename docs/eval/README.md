@@ -26,8 +26,12 @@ audit. They do not mark task 19.11 complete or substitute for its independent
 audit/workspace gates. A blocked run produces a gap report without fabricated
 trials. Native runs do not use the case-based `history.jsonl` schema below.
 
-No native benchmark or acceptance reports are currently indexed. Add each new
-bilingual report pair here after its evaluation and verification.
+- [2026-09-27: Opi 0.8.2 / Pi 0.85.1 long-running validation](20260927t195503z-opi082-pi0851-glm53flash-longrun.md)
+  ([中文](20260927t195503z-opi082-pi0851-glm53flash-longrun.zh.md)): six native
+  trials completed and sealed; both TB2.1 trials succeeded, while both TB3 and
+  DeepSWE pairs reached the Agent-stage deadline. Formal acceptance remains
+  blocked; the report preserves the original infrastructure failure and the
+  Opi JSON-output buffering finding.
 
 ## Fidelity contents
 
