@@ -1,6 +1,14 @@
 {
-  "audit_head": "e079780bda6681ec466f79bd15f3248baf0f2eb8",
-  "audit_run_id": "phase19-pi-glm53-e079780-20260926t192024z",
+  "schema_version": 3,
+  "audit_run_id": "phase19-pi-glm53-ac80281-20260928t070222z",
+  "phase": 19,
+  "audit_head": "ac802811f2f0216ceddc9d802906570d9f4d67e8",
+  "reviewer_id": "pi",
+  "reviewer_identity": "pi coding agent (pi-coding-agent CLI session)",
+  "model_id": "glm53",
+  "reviewer_model_id": "glm-5.3",
+  "model_identity_source": "runtime-attested",
+  "independence": "fresh-context-same-family",
   "baseline_policy": "latest-committed-spec",
   "baseline_sources": [
     {
@@ -24,15 +32,7 @@
       "sha256": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
     }
   ],
-  "findings_sha256": "f2e7acaffe724a0fa6dbf28ca767b163a3cd664a905a17e6b17924d1fedd582c",
-  "independence": "fresh-context-same-family",
-  "model_id": "glm53",
-  "model_identity_source": "request-config",
-  "phase": 19,
-  "requirements_sha256": "242cf8169780e7758833bad3f8e5f32f81f69884d21a6243adffd1be8df64332",
-  "reviewer_id": "pi",
-  "reviewer_identity": "pi terminal coding agent (earendil-works pi)",
-  "reviewer_model_id": "glm-5.3",
-  "schema_version": 3,
-  "verdict": "FAIL"
+  "requirements_sha256": "ba9ef009c749e312b0fd522f6765d2447a457890deae8fc6733a5b280d8e5fd8",
+  "findings_sha256": "8e47b6f1d2a5d74d6514568731c03e7a4ba99f31c638de369c6125a91f7b8435",
+  "verdict": "PASS-WITH-FINDINGS"
 }
