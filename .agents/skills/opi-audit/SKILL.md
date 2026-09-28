@@ -1,14 +1,15 @@
 ---
 name: opi-audit
 disable-model-invocation: true
-description: Independently audit one committed Phase and install its validated assurance report.
+description: Independently audit one committed Phase, then append a bounded historical reference.
 ---
 
 # Opi Audit
 
 Audit one registered Phase without changing production code. The Phase selects
 scope; the latest committed normative sources select expected behavior. Install
-this peer's report independently, without waiting for another reviewer.
+this peer's report independently, without waiting for another reviewer, then
+append a historical reference without revising the independent core.
 
 ## Invocation and contract ownership
 
@@ -22,7 +23,7 @@ proof obligations. `model` is a file-identity slug for the model already
 selected by the runtime, never a model selector.
 
 The shared `audit-set-contract.md` owns the index, member schemas, verdicts,
-rotation, installation, and recovery. This skill owns one peer's execution.
+rotation, installation, advisory history, and recovery. This skill owns one peer's execution.
 
 After rotation admission, read:
 
@@ -37,14 +38,18 @@ surfaces and relevant current-product documentation.
 
 ## Context boundary
 
-Eligible evidence comes from a sealed committed baseline and its implementation
-surfaces. Begin without prior audit/remediation conclusions in context. If the
-task already contains an earlier report or conclusion, stop with
+Independent-core evidence comes from a sealed committed baseline and its
+implementation surfaces. Begin without prior audit/remediation conclusions in
+context. Before successful `complete`, if the task contains an earlier report
+or conclusion, stop with
 `AUDIT-INCOMPLETE: history-contaminated context` and request a fresh audit task.
 
 Keep prior Phase-level audit/remediation content, its Git history, copied
 conclusions, and every sibling peer's staged or installed output outside the
-run. Exposure invalidates this peer and requires a fresh context.
+independent stages (Steps 1–5). Exposure before installation invalidates this
+peer and requires a fresh context. After successful installation, Step 6 is the
+only historical-input exception: the installed core remains byte-identical and
+the compiler cannot resume independent finding or verdict work in that context.
 
 Read ledgers only through `scripts/read_audit_scope.py`, including in the
 source export; exclude raw ledgers from searches. Filtering after tool output
@@ -138,12 +143,32 @@ python .agents/skills/_shared/scripts/validate_assurance_artifact.py audit-set d
 `complete` validates and installs under the shared contract. On interruption,
 run `assurance_set.py recover` before retrying; never copy active files
 manually. Failed validation or installation produces `AUDIT-INCOMPLETE`.
+Do not include the reserved historical appendix in the staged member.
+
+### 6. Append the post-audit historical reference
+
+Only after `complete` succeeds, follow the shared contract's
+[post-audit historical reference](../_shared/references/audit-set-contract.md#post-audit-historical-reference).
+Compare relevant same-Phase reports and repairs pinned to commits available at
+`audit_head`; exclude concurrent sibling output. Keep current behavior anchored
+to `audit_head`. Distinguish persistent defects, missed branches, proven
+regressions, new omissions, evidence gaps and preserved repairs. Attribute old
+closure claims and record uncertainty; history never rewrites the installed core.
+
+Prepare the contract's comparison JSON and use its locked `append-history`
+command with the exact target run and current expected index SHA-256. Install a
+bounded `no-history` result when no relevant history is found. Validate the live
+set afterward. If comparison cannot finish, retain the valid core and report
+`HISTORY-SUPPLEMENT-INCOMPLETE` with the missing evidence or tool failure; do not
+change the audit verdict or claim full workflow completion.
 
 ## Completion criterion
 
-This peer completes when its sealed `audit_head` remains a committed ancestor
-of HEAD, every sealed requirement meets the Step 4 evidence criteria, and its
-four files are installed in the live `audit.index.json`. The live set is
-consumable at any membership count; only the validator's fail-dominant
-aggregate describes the set. Otherwise report `AUDIT-INCOMPLETE` with the
-exact blocking evidence; do not report an aggregate verdict.
+The independent core completes when its sealed `audit_head` remains a committed
+ancestor of HEAD, every sealed requirement meets Step 4, and its four files are
+installed in the live `audit.index.json`. Otherwise report `AUDIT-INCOMPLETE`
+with exact blocking evidence. Full workflow completion also requires the
+installed `compared` or `no-history` appendix. An incomplete supplement leaves
+the valid core consumable, as are legacy reports without appendices. Only the
+validator's fail-dominant aggregate describes the set; historical comparison
+does not grant a different verdict or authorize remediation.

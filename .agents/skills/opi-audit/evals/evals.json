@@ -4,11 +4,11 @@
     {
       "id": 1,
       "prompt": "Use $opi-audit phase=17 reviewer=codex model=gpt56 reviewer_model_id=gpt-5.6 model_identity_source=request-config member=<path>. A claude:glm53 report is already installed in the live set at a different audit_head. Explain the peer input boundary and installation.",
-      "expected_output": "Codex audits independently in a fresh context, writes only audit.codex.gpt56.*, never reads the installed Claude output, and installs its own report immediately; the two members coexist at their own heads under the fail-dominant index.",
+      "expected_output": "Codex audits independently in a fresh context, writes only audit.codex.gpt56.*, does not read the installed Claude output during the independent stages, and installs its own core immediately. Only after complete succeeds may it compile bounded historical reference from committed inputs available at audit_head; it never ingests concurrent sibling output or changes the core.",
       "files": [],
       "expectations": [
         "Runs rotation before reading requirements and derives its own latest-committed-spec baseline at its own audit_head.",
-        "States that old content, history, and audit.claude.glm53.* conclusions are not read or compared.",
+        "Keeps old content, history, and audit.claude.glm53.* conclusions outside Steps 1–5; only the post-install advisory stage has the bounded exception.",
         "Names audit.codex.gpt56.* and uses assurance_set.py complete rather than manual copying, without waiting for any other reviewer."
       ]
     },
@@ -81,12 +81,68 @@
     },
     {
       "id": 8,
-      "prompt": "During $opi-audit phase=19, a tool accidentally printed Phase 17/18 audit conclusions embedded in the root ledger. Can running the filtered scope reader now make this same audit context independent again?",
+      "prompt": "Before successful complete during $opi-audit phase=19, a tool accidentally printed Phase 17/18 audit conclusions embedded in the root ledger. Can running the filtered scope reader now make this same audit context independent again?",
       "expected_output": "No. Report AUDIT-INCOMPLETE: history-contaminated context and restart in a fresh context. Repairing or rerunning the reader cannot remove conclusions already received.",
       "files": [],
       "expectations": [
         "Invalidates the current peer rather than continuing with filtered output.",
         "Requires a fresh audit context and does not install a report from the contaminated run."
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "The independent $opi-audit phase=19 core has just passed complete and is installed but uncommitted. May this same context now inspect committed same-Phase historical reports to add the requested reference? A concurrent sibling has also just produced a draft.",
+      "expected_output": "Yes, only for the post-install advisory stage: pin historical inputs to commits available at audit_head, exclude the concurrent draft, preserve all installed core bytes and sidecars, and use append-history with the exact target run and expected index SHA-256. No intermediate commit or renewed independent finding work is allowed.",
+      "files": [],
+      "expectations": [
+        "Treats successful complete as the observable independence freeze boundary.",
+        "Allows the bounded historical compiler without invalidating the already installed core or exposing a concurrent sibling conclusion.",
+        "Uses the locked append-history operation, not manual report/index edits or another complete.",
+        "Does not require a commit solely to pass rotation for append-history."
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "After complete, a historical remediation result says Closed for a sampling-control finding. Current frozen evidence shows sampling still rejects correctly, but required reasoning executes with thinking off. How should the appendix classify this and can the current finding be removed?",
+      "expected_output": "Record a missed-branch of the same invariant, attribute the historical Closed claim, preserve evidence that the original sampling branch remains repaired, and retain the current finding unchanged. This is not a demonstrated regression of the repaired branch.",
+      "files": [],
+      "expectations": [
+        "Separates exact recurrence from a missed sibling branch and a preserved repair.",
+        "Binds prior run/finding/source digests and the current finding through the owning envelope.",
+        "Does not remove, lower or refute the installed current finding using historical closure."
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "After independent installation for a Phase, the compiler inspected the available committed history at audit_head and found no relevant prior findings. Can it stop without a supplement?",
+      "expected_output": "Install a no-history comparison with the inspected scope and limitations. Normal workflow completion requires this bounded result, while legacy reports and the intermediate core remain valid without it.",
+      "files": [],
+      "expectations": [
+        "Does not invent prior findings or claim universal absence outside the inspected scope.",
+        "Installs no-history through append-history rather than silently omitting the step.",
+        "Keeps no-history distinct from inaccessible or unavailable history."
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "complete succeeded and the live core validates, but the historical comparison cannot be finished because its referenced evidence is unavailable. What status and verdict should the handoff report?",
+      "expected_output": "Preserve the valid installed core and its verdict, report HISTORY-SUPPLEMENT-INCOMPLETE with the missing evidence, and do not claim full workflow completion. A history-processing failure is not an audit FAIL or a reason to delete the core.",
+      "files": [],
+      "expectations": [
+        "Distinguishes independent-core completion from supplement completion.",
+        "Does not label unavailable history as no-history.",
+        "Does not alter the already installed verdict or core sidecars."
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "During the post-install comparison, an old report reveals a possible new defect absent from the current findings sidecar. May the compiler add a finding or update the original verdict while appending history?",
+      "expected_output": "No. The core is frozen and this context has historical exposure. Record a bounded advisory lead in comparison limitations for fresh independent verification; append-history may change only the advisory suffix and index binding, not current findings, requirements, metadata or verdict.",
+      "files": [],
+      "expectations": [
+        "Keeps post-install historical discovery outside current finding authority.",
+        "Does not create an invented current finding ID or revise the core.",
+        "Uses a fresh independent context for a later requested audit rather than restarting core work here."
       ]
     }
   ]

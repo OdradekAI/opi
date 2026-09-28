@@ -2,8 +2,11 @@
 
 `opi-remediate` consumes `audit.index.json` and every indexed member of the
 current live audit set. Findings are a strict union keyed by
-`(audit_run_id, id)`. It records one decision for every source key without
-consulting history or earlier remediation artifacts.
+`(audit_run_id, id)`. It records one decision for every source key. Historical
+records and earlier remediation conclusions are not source or closure authority.
+The only advisory input exception is a validated indexed report appendix and its
+exact raw proofs under the
+[audit-set contract](audit-set-contract.md#post-audit-historical-reference).
 
 The fixed files are:
 
@@ -65,6 +68,11 @@ current evidence; another peer's contrary conclusion is insufficient.
 `closure_key` names one falsifiable behavior. `family_key` clusters adjacent
 findings only inside the current set. Historical `lineage`,
 `prior_occurrences`, and `prior_disposition` fields are forbidden.
+An appendix may suggest verification work, but cannot assign a disposition,
+severity, closure batch or new source key. Independently verify any candidate raw
+proof and its applicability at `remediation_head`; record the resulting current
+evidence through the existing fields. Reports without appendices remain valid,
+and consumers do not reconstruct missing historical comparisons.
 
 `verification_status` is `Confirmed`, `Partially confirmed`, `Cannot confirm`,
 or `Refuted`. `change_kind` is `behavioral`, `test-only`, `documentation`, or
@@ -93,7 +101,10 @@ sha256(remediation.plan.md exact bytes + NUL + remediation.plan.dispositions.jso
 
 It prints `plan: PASS plan_sha256=<digest>`. Apply requires explicit user
 approval of the fixed plan path and that digest. Any plan byte or active-index
-byte change invalidates the approval.
+byte change invalidates the approval. Appending advisory history changes the
+member report digest and index even though its independent core is unchanged;
+an already approved plan therefore becomes stale. Do not waive this binding for
+an appendix or retroactively alter the approved plan.
 
 `Remediation head` is the committed source evidence baseline, not the commit
 that stores the finished plan. Apply requires it to be a committed ancestor

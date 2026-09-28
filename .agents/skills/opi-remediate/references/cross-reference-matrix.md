@@ -1,8 +1,10 @@
 # Current Finding Verification and Closure Matrix
 
 Use the strict union of findings from every member of the validated active
-`audit.index.json`. Preserve source records unchanged; do not load history or
-derive lineage. The same textual ID in two run IDs is two source keys.
+`audit.index.json`. Preserve source records unchanged; do not load history to
+derive source keys or lineage. The same textual ID in two run IDs is two source
+keys. The sole advisory exception is defined in the
+[shared historical-reference contract](../../_shared/references/audit-set-contract.md#post-audit-historical-reference).
 
 ## Criterion matrix
 
@@ -35,8 +37,26 @@ conclusion appeared earlier.
 
 When rejecting a source identity, state all three boundaries explicitly: the
 current run/digest controls admission, title similarity cannot substitute for
-identity, and no older source is consulted. No history or recurrence
-classification enters that decision.
+identity, and an older source cannot enter the current finding union. No history
+or recurrence classification enters that admission decision.
+
+## Advisory history and raw proofs
+
+Only after current-set validation, read any validated appendix in its indexed
+report. Use it to identify candidate code paths, missed regressions and exact raw
+proofs; do not search historical reports to fill missing rows. Legacy reports
+without appendices are fully consumable. Appendix rows, including old-only
+preserved repairs, never become matrix sources or determine verification status,
+severity, closure or clustering.
+
+Independently recheck each used raw proof at `remediation_head`: exact bytes and
+digest, command/result and executed test count, source/build/client/material
+identities, and the predicate actually proved. Prove relevant dependencies
+unchanged or rerun invalidated checks within existing authorization. Matching
+hashes with changed client bytes do not establish current applicability. Missing
+proof remains unconfirmed; attributed historical `Closed` is not current closure.
+Record the resulting current verification evidence in the existing disposition,
+without `lineage`, `prior_occurrences` or `prior_disposition` fields.
 
 ## Closure clustering
 

@@ -47,7 +47,7 @@ flowchart TD
 | `opi-realign` | `docs/realign/` 中固定 pi 修订版的对照 | 包含目标设计视野的证据，不授予产品权限 |
 | `opi-research` | `docs/research/` 中的一手资料调研 | 非规范性的能力与归属证据 |
 | `opi-implement` | 准入任务图、交付、正式台账与 Phase 快照 | 登记来源；任务图、任务/台账 commit 与失败关卡 |
-| `opi-audit` | 活动 indexed assurance set 中独立带后缀报告组 | 最新已提交来源；不读取历史结论、不修复生产代码 |
+| `opi-audit` | 独立带后缀报告组，随后追加绑定的历史参考 | 先用最新已提交来源完成核心，安装后才作历史参考；不修复生产代码 |
 | `opi-eval` | 外部封存证据、双语 `docs/eval/` 报告、限定源码修复 | 真实运行范围/预算与用户确认的修复分别授权 |
 | `opi-remediate` | 集合级固定计划、disposition、结果与批准的修复 | apply 绑定已批准计划摘要与精确活动 index 摘要 |
 | `opi-document` | 审计并同步产品文档 | 默认审计每份受维护的当前产品 README；targeted/version-bump 范围须显式指定 |
@@ -62,7 +62,10 @@ flowchart TD
   不在规范中记录进度。
 - `opi-audit` 封存每位 peer 的已提交基线，并在上下文暴露前
   [过滤台账输入](opi-audit/SKILL.md#2-seal-this-peers-baseline)。
-  接触历史结论后须使用全新审计上下文。
+  独立安装前接触历史结论须使用全新审计上下文。`complete` 后，
+  [历史参考契约](_shared/references/audit-set-contract.md#post-audit-historical-reference)
+  允许追加限定范围的建议附录，但不能修改核心。完整工作流须安装 `compared` 或
+  `no-history` 结果；附录未完成时保留有效核心，并与 verdict 分开报告。
 - `opi-eval` 的[用户确认源码修复分支](opi-eval/SKILL.md#user-confirmed-source-repairs)
   无需另行调用实现技能，但不改变台账/Phase 所有权，也不授权新增真实试次。
 - `opi-remediate mode=plan` 核验全部活动成员与 findings 严格并集；
@@ -71,6 +74,8 @@ flowchart TD
   仅提交该 Phase 的固定计划文件对，会保留源码基线与批准；
   [disposition 契约](_shared/references/remediation-disposition-contract.md#plan-approval-identity)
   定义机械校验边界，无需因计划 commit 重新封存 HEAD。
+  已验证的 indexed 历史附录只能引导当前核验与精确原始证明查找，不能决定来源或关闭。
+  批准后追加附录会改变 index 绑定，使原计划失效。
 - 在已有授权内继续本地准备与验证。授权对象、范围、必要绑定改变，或所属工作流明确
   要求新的最终关卡时才重新确认。公开、破坏性、凭据及付费操作始终受其所属授权限制。
 
@@ -103,8 +108,12 @@ audit set 进入 remediation。各报告地位平等，分别持有已提交的 
 [审计集合契约](_shared/references/audit-set-contract.md) 定义入集、锁、替换/历史与
 干净已提交状态下的重新审计入口；
 [disposition 契约](_shared/references/remediation-disposition-contract.md) 定义来源绑定
-和关闭规则：一个证明可关闭多个来源，但每个来源都保留 disposition。
+和关闭规则：一个当前证明可关闭多个来源，但每个来源都保留 disposition。
 保真度 canary 只有实现已登记的 runtime-fidelity case，才能关闭产品条件。
+
+历史报告与修复声明仅供参考。remediation 须在当前基线独立核验所引用的原始证明，
+以及源码、客户端和材料的适用性。没有附录的旧报告仍可消费；不重建缺失历史，
+旧 ID 也不进入当前 finding 严格并集。
 
 条件允许时采用独立评审器/模型并披露独立性降级。reviewer/model ID 记录实际 runtime
 身份，不选择 provider。项目契约不固定首选 provider 或模型。
@@ -119,7 +128,7 @@ audit set 进入 remediation。各报告地位平等，分别持有已提交的 
 | `.opi-impl-state.json` | `opi-implement`；正式受跟踪进度 |
 | `.opi-impl-state.draft.json` | 被忽略的计划草稿；仅评审/恢复需要时保留 |
 | `docs/snapshots/phase<N>/` | 冻结台账与 Phase 证据 |
-| `docs/snapshots/phase<N>/assurance/` | 活动审计集合与 remediation；被替代组移至 `history/`，不参与语义输入 |
+| `docs/snapshots/phase<N>/assurance/` | 活动审计集合与 remediation；不可变的旧 `history/` 组不参与独立核心或 finding 权威，仅允许安装后的限定建议参考例外 |
 | `docs/eval/` | 双语评测摘要/保真度历史；大文件和私密证据留在外部 |
 | `.opi-release-state.json` | 被忽略的发布恢复状态；仅未完成时保留 |
 

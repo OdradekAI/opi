@@ -121,6 +121,10 @@ ASSURANCE_WORKFLOW_REQUIRED = {
         "Every sealed requirement has current evidence or an explicit limitation",
         "Every durable or public seam is traced",
         "Every Blocker or Major finding includes current refutation evidence",
+        "Exposure before installation invalidates",
+        "Only after `complete` succeeds",
+        "append-history",
+        "HISTORY-SUPPLEMENT-INCOMPLETE",
     ),
     ".claude/skills/opi-audit/references/audit-proof-obligations.md": (
         "anti-vacuity",
@@ -147,6 +151,8 @@ ASSURANCE_WORKFLOW_REQUIRED = {
         "**Model identity source**",
         "## Minimum-change Conformance",
         "AUDIT-INCOMPLETE",
+        "Post-audit historical reference — advisory",
+        "HISTORY-SUPPLEMENT-INCOMPLETE",
     ),
     ".claude/skills/opi-audit/evals/evals.json": (
         '"skill_name": "opi-audit"',
@@ -189,7 +195,10 @@ ASSURANCE_WORKFLOW_REQUIRED = {
         "highest source severity",
         "one falsifiable closure predicate",
         "Coverage",
-        "do not load history",
+        "do not load history to",
+        "Advisory history and raw proofs",
+        "at `remediation_head`",
+        "without `lineage`, `prior_occurrences` or `prior_disposition`",
     ),
     ".claude/skills/opi-remediate/references/remediation-plan-template.md": (
         "remediation.plan.md",
@@ -236,7 +245,15 @@ ASSURANCE_WORKFLOW_REQUIRED = {
         "rotation",
         "audit-set",
         "latest-committed-spec",
-        "Exposure to a sibling conclusion invalidates that peer",
+        "Historical exposure before installation invalidates",
+        "Post-audit historical reference",
+        "opi-audit-history/1",
+        "append-history",
+        "--expected-index-sha256",
+        "An identical installed comparison is a no-op",
+        "no-history",
+        "HISTORY-SUPPLEMENT-INCOMPLETE",
+        "independently verify bytes/digests",
     ),
     ".claude/skills/_shared/references/finding-contract.md": (
         "(audit_run_id, id)",
@@ -278,7 +295,6 @@ ASSURANCE_WORKFLOW_REQUIRED = {
 ASSURANCE_WORKFLOW_FORBIDDEN_REQUIRED = {
     ".claude/skills/opi-audit/SKILL.md": (
         "audit.<model>.<head7>",
-        "history comparison",
         "`audit.meta.json`",
         "`audit.findings.jsonl`",
         "majority vote",

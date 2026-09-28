@@ -89,6 +89,50 @@
         "Rejects changes to another Phase's plan, result files, or audit artifacts under the same exception.",
         "Preserves evidence and stops before production edits instead of rewriting the approved plan."
       ]
+    },
+    {
+      "id": 9,
+      "prompt": "Use $opi-remediate mode=plan phase=19. A validated indexed appendix points to a prior Closed finding and a retained raw test log. The current independent finding reports a failing sibling path. May the old finding join the source union or close the current one?",
+      "expected_output": "No. Preserve the strict union of current sidecar keys and use the appendix only to guide current verification. Recheck the exact named raw proof at remediation_head and distinguish the repaired branch from the current failure; historical Closed and old IDs have no disposition authority.",
+      "files": [],
+      "expectations": [
+        "Validates the current set before reading its advisory appendix.",
+        "Does not add old source keys, merge findings by historical similarity or add lineage/prior_occurrences/prior_disposition fields.",
+        "Bases confirmation, severity, closure and clustering on independently verified current evidence."
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "Use $opi-remediate mode=plan phase=19. The appendix names a raw exact-client matrix log whose SHA-256 matches and whose test passed. The selected client bytes have changed since that run. Is the current finding refuted?",
+      "expected_output": "Not from that log alone. Recheck command results and executed count, source/build/client/material identities and the proved predicate at remediation_head. Prove relevant dependencies unchanged or rerun invalidated checks within existing authorization; otherwise retain the applicability limitation.",
+      "files": [],
+      "expectations": [
+        "Distinguishes raw-byte authenticity from current behavioral applicability.",
+        "Does not inherit a historical success or start paid/provider calls without their existing authorization.",
+        "Keeps unavailable or inapplicable proof unconfirmed rather than Refuted."
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "Use $opi-remediate mode=plan phase=17. The valid current indexed report is a legacy report without a historical appendix. Should remediation browse history/ or refuse the report?",
+      "expected_output": "Neither. The report remains fully consumable. Verify every current source key normally and do not search history or prior remediation artifacts to reconstruct missing advisory rows.",
+      "files": [],
+      "expectations": [
+        "Accepts valid legacy report groups without requiring retrofit.",
+        "Does not turn the bounded appendix exception into general historical browsing.",
+        "Preserves complete current finding coverage."
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "Use $opi-remediate mode=apply phase=19 with the approved digest. After approval, append-history added an advisory section while preserving all core bytes and findings. The index now binds the new report hash. May apply proceed because the findings are unchanged?",
+      "expected_output": "No. The full report and exact live index are approval inputs. The appendix invalidates the old Audit index SHA-256 binding even with unchanged findings, so stop before production edits and return to a plan bound to the current set.",
+      "files": [],
+      "expectations": [
+        "Rejects stale approval rather than exempting advisory-only changes.",
+        "Does not rewrite the approved plan retroactively.",
+        "Retains the unchanged independent finding authority while requiring a new plan binding."
+      ]
     }
   ]
 }

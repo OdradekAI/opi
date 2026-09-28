@@ -126,6 +126,10 @@ ASSURANCE_WORKFLOW_CONTRACT = {
         "Every sealed requirement has current evidence or an explicit limitation",
         "Every durable or public seam is traced",
         "Every Blocker or Major finding includes current refutation evidence",
+        "Exposure before installation invalidates",
+        "Only after `complete` succeeds",
+        "append-history",
+        "HISTORY-SUPPLEMENT-INCOMPLETE",
     ),
     ".claude/skills/opi-audit/references/audit-proof-obligations.md": (
         "anti-vacuity",
@@ -152,6 +156,8 @@ ASSURANCE_WORKFLOW_CONTRACT = {
         "**Model identity source**",
         "## Minimum-change Conformance",
         "AUDIT-INCOMPLETE",
+        "Post-audit historical reference — advisory",
+        "HISTORY-SUPPLEMENT-INCOMPLETE",
     ),
     ".claude/skills/opi-audit/evals/evals.json": (
         '"skill_name": "opi-audit"',
@@ -194,7 +200,10 @@ ASSURANCE_WORKFLOW_CONTRACT = {
         "highest source severity",
         "one falsifiable closure predicate",
         "Coverage",
-        "do not load history",
+        "do not load history to",
+        "Advisory history and raw proofs",
+        "at `remediation_head`",
+        "without `lineage`, `prior_occurrences` or `prior_disposition`",
     ),
     ".claude/skills/opi-remediate/references/remediation-plan-template.md": (
         "remediation.plan.md",
@@ -241,7 +250,15 @@ ASSURANCE_WORKFLOW_CONTRACT = {
         "rotation",
         "audit-set",
         "latest-committed-spec",
-        "Exposure to a sibling conclusion invalidates that peer",
+        "Historical exposure before installation invalidates",
+        "Post-audit historical reference",
+        "opi-audit-history/1",
+        "append-history",
+        "--expected-index-sha256",
+        "An identical installed comparison is a no-op",
+        "no-history",
+        "HISTORY-SUPPLEMENT-INCOMPLETE",
+        "independently verify bytes/digests",
     ),
     ".claude/skills/_shared/references/finding-contract.md": (
         "(audit_run_id, id)",
@@ -283,7 +300,6 @@ ASSURANCE_WORKFLOW_CONTRACT = {
 ASSURANCE_WORKFLOW_FORBIDDEN = {
     ".claude/skills/opi-audit/SKILL.md": (
         "audit.<model>.<head7>",
-        "history comparison",
         "`audit.meta.json`",
         "`audit.findings.jsonl`",
         "majority vote",
@@ -570,7 +586,15 @@ def check_assurance_workflow_contract() -> None:
         )
     for rel, tokens in ASSURANCE_WORKFLOW_FORBIDDEN.items():
         text = read(rel)
-        found = [token for token in tokens if token in text]
+        found = [
+            token
+            for token in tokens
+            if (
+                re.search(rf"(?<![\w-]){re.escape(token)}(?![\w-])", text)
+                if token.startswith("--")
+                else token in text
+            )
+        ]
         if found:
             ERRORS.append(
                 f"{rel}: assurance workflow contract contains forbidden legacy tokens {found!r}"

@@ -44,8 +44,10 @@ Read before branching:
 - `../_shared/references/remediation-disposition-contract.md`
 
 Bind the exact active index SHA-256 and each member's full `audit_run_id` and
-`findings_sha256`. Keep history, prior conclusions, eval artifacts, lineage
-and alternate source/plan paths outside context.
+`findings_sha256`. Keep history, prior conclusions, eval artifacts, lineage and
+alternate source/plan paths outside context except for the shared contract's
+validated indexed advisory appendix and its exact candidate raw proofs. That
+exception supplies inspection leads, never finding or closure authority.
 
 ## `mode=plan`
 
@@ -82,6 +84,14 @@ committed evidence and assign its disposition, falsifiable closure key and
 family key. Preserve source identities/evidence; textual ID duplicates remain
 separate. Resolve disagreement by evidence and schedule at the highest source
 severity.
+
+After current-set validation, an indexed report's validated historical appendix
+may guide regression checks and exact raw-proof lookup under the shared
+contract. Reverify applicability at `remediation_head`; an old `Closed` or a
+matching log hash cannot replace current evidence. Do not search history to
+reconstruct missing appendices, and do not add historical disposition fields.
+Reports without appendices remain fully consumable. A later appendix changes
+the index binding and invalidates an already approved plan.
 
 One closure batch requires one root change and one predicate proving every
 member closed. New product meaning, public contract, authority, scope or

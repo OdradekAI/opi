@@ -167,6 +167,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Assurance tooling: `opi-audit` now installs its independent core before
+  compiling a bounded historical reference. The locked `append-history`
+  operation preserves core bytes and sidecars, validates the advisory suffix,
+  and recovers interrupted report/index updates. `opi-remediate` may use this
+  reference to locate evidence and design current checks; current findings
+  retain scope authority and report updates invalidate prior plan approval.
+
 - `opi-coding-agent`: JSON mode now writes and flushes events during the run,
   including image input, instead of buffering stdout until prompt completion.
   A dedicated writer acknowledges each line to apply bounded backpressure;

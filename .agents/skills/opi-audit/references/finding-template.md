@@ -18,7 +18,9 @@ valid; do not invent an Info finding to make it non-empty. Every file must use
 LF line endings only.
 
 The Markdown report references machine record IDs and adds explanation. It is
-not a second editable copy of the JSONL records.
+not a second editable copy of the JSONL records. The template below is the
+independent core; staged input to `complete` must not contain a historical
+appendix or its reserved envelope.
 
 ```markdown
 # Phase <N> Audit
@@ -90,4 +92,14 @@ If member validation or installation fails, do not copy any staged file
 manually and do not put a PASS/FAIL set verdict in the user-facing completion
 message. Report `AUDIT-INCOMPLETE` with the validator errors and, on
 interruption, run `assurance_set.py recover` before retrying. No member may
-read a sibling peer report while auditing.
+read a sibling peer report during the independent stages.
+
+After successful `complete`, use the
+[shared historical-reference contract](../../_shared/references/audit-set-contract.md#post-audit-historical-reference)
+to compile comparison JSON and run `append-history`. The tool adds the terminal
+section **Post-audit historical reference — advisory** and its core-bound
+envelope; do not render or edit that section by hand. Record a bounded
+`no-history` result when appropriate. If the supplement cannot be completed,
+preserve the installed core and report `HISTORY-SUPPLEMENT-INCOMPLETE` separately
+from its unchanged verdict. The full workflow is complete only after a validated
+appendix is installed; existing reports without one remain valid inputs.

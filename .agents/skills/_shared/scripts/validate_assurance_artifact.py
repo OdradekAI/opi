@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from audit_history import HistoryError, RESERVED as HISTORY_RESERVED, split_report
+
 
 sys.dont_write_bytecode = True
 
@@ -722,6 +724,8 @@ def validate_staged_member(
     if meta.get("findings_sha256") != findings_digest:
         errors.append("findings_sha256 does not match member sidecar")
     report = read_text(paths.report, errors)
+    if HISTORY_RESERVED in paths.report.read_bytes():
+        errors.append("staged independent report must not contain a reserved history envelope")
     report_expectations = {
         "Audit run ID": meta.get("audit_run_id"),
         "Audit head": meta.get("audit_head"),
@@ -890,6 +894,14 @@ def validate_indexed_audit_set(
             errors.append(prefix + "baseline paths do not match the other active members")
 
         report = read_text(paths.report, errors)
+        try:
+            core, _ = split_report(
+                paths.report.read_bytes(), member,
+                {finding["id"] for finding in findings if isinstance(finding.get("id"), str)},
+            )
+            report = core.decode("utf-8")
+        except (HistoryError, UnicodeDecodeError) as exc:
+            errors.append(prefix + f"history appendix: {exc}")
         report_expectations = {
             "Audit run ID": run_id,
             "Audit head": member_head,

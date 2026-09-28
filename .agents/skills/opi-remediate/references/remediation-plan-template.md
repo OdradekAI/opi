@@ -21,6 +21,11 @@ directory. The JSONL contract is
 |---|---|---|---|---|---|
 | ... | ... | ... | ... | ... | ... |
 
+If an indexed report has a validated historical appendix, cite useful leads in
+the current evidence rationale only after independently checking their raw
+proofs and applicability at `remediation_head`. Do not add old source rows or
+historical disposition fields. An absent appendix requires no reconstruction.
+
 ## Unresolved Decisions
 
 | ID | Required decision | Why evidence cannot decide | Alternatives | Authority needed |
@@ -65,7 +70,9 @@ Every source key in the indexed strict union must appear in a fix or exclusion
 and in exactly one plan disposition. Similar IDs never merge. After
 validation, present the emitted `plan_sha256`; never write that digest into the
 plan itself because it hashes the exact plan bytes. Any active-index byte change
-invalidates the plan binding and its approval.
+invalidates the plan binding and its approval, including a later advisory
+`append-history` installation. Complete available historical enrichment before
+planning; do not exempt report-only changes from the index binding.
 
 `Remediation head` records the source evidence baseline. If the user commits
 the fixed plan pair afterward, retain that baseline and use the shared

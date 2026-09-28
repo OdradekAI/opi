@@ -579,6 +579,339 @@ class RecoveryTests(SetFixture):
         self.assertEqual(0, validation.returncode, validation.stderr)
 
 
+class AppendHistoryTests(SetFixture):
+    def comparison(self) -> dict[str, object]:
+        return {
+            "schema": "opi-audit-history/1",
+            "status": "no-history",
+            "scope": "No earlier reports in this fixture.",
+            "sources": [],
+            "comparisons": [],
+            "limitations": "Bounded fixture search.",
+        }
+
+    def snapshot(self) -> dict[str, bytes]:
+        return {
+            path.relative_to(self.assurance_dir).as_posix(): path.read_bytes()
+            for path in self.assurance_dir.rglob("*")
+            if path.is_file()
+        }
+
+    def append(self, entry, *, expected=None, run_id=None, comparison=None):
+        source = self.root / "comparison.json"
+        write_json(source, self.comparison() if comparison is None else comparison)
+        return self.append_file(source, entry, expected=expected, run_id=run_id)
+
+    def append_file(self, source, entry, *, expected=None, run_id=None):
+        return run_generation(
+            "append-history",
+            str(self.phase_dir),
+            str(source),
+            "--reviewer", str(entry["reviewer_id"]),
+            "--model", str(entry["model_id"]),
+            "--audit-run-id", run_id or str(entry["audit_run_id"]),
+            "--expected-index-sha256", expected or sha256(
+                self.assurance_dir / "audit.index.json"
+            ),
+        )
+
+    def test_append_changes_only_report_and_index_without_intermediate_commit(self):
+        self.install("claude", "glm53")
+        self.commit_assurance("sibling")
+        entry = self.install("codex", "gpt56")
+        before = self.snapshot()
+        head = run_git(self.root, "rev-parse", "HEAD").stdout
+        index = self.live_index()
+
+        result = self.append(entry)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(head, run_git(self.root, "rev-parse", "HEAD").stdout)
+        after = self.snapshot()
+        report_name = "audit.codex.gpt56.md"
+        self.assertEqual(set(before), set(after))
+        self.assertEqual(
+            {report_name, "audit.index.json"},
+            {name for name in before if before[name] != after[name]},
+        )
+        self.assertTrue(after[report_name].startswith(before[report_name]))
+        updated = self.live_index()
+        self.assertEqual(index["revision"] + 1, updated["revision"])
+        self.assertEqual(index["aggregate_verdict"], updated["aggregate_verdict"])
+        expected_entry = json.loads(json.dumps(entry))
+        expected_entry["digests"]["report_sha256"] = sha256(
+            self.assurance_dir / report_name
+        )
+        self.assertEqual([index["members"][0], expected_entry], updated["members"])
+        validation = run_validator("audit-set", self.assurance_dir)
+        self.assertEqual(0, validation.returncode, validation.stderr)
+
+    def test_identical_retry_accepts_original_index_and_changes_no_bytes(self):
+        entry = self.install("codex", "gpt56")
+        original_index = sha256(self.assurance_dir / "audit.index.json")
+        result = self.append(entry, expected=original_index)
+        self.assertEqual(0, result.returncode, result.stderr)
+        appended = self.snapshot()
+
+        retry = self.append(entry, expected=original_index)
+
+        self.assertEqual(0, retry.returncode, retry.stderr)
+        self.assertIn("no-op", retry.stdout)
+        self.assertEqual(appended, self.snapshot())
+
+    def test_different_second_appendix_is_refused_without_changes(self):
+        entry = self.install("codex", "gpt56")
+        result = self.append(entry)
+        self.assertEqual(0, result.returncode, result.stderr)
+        before = self.snapshot()
+        changed = self.comparison()
+        changed["limitations"] = "A different historical search."
+
+        result = self.append(entry, comparison=changed)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("different history appendix", result.stderr)
+        self.assertEqual(before, self.snapshot())
+
+    def test_stale_index_wrong_run_and_unknown_member_refuse_before_writes(self):
+        entry = self.install("codex", "gpt56")
+        before = self.snapshot()
+        unknown = {**entry, "reviewer_id": "missing"}
+        for selected, options, diagnostic in (
+            (entry, {"expected": "0" * 64}, "index digest"),
+            (entry, {"expected": "not-a-digest"}, "SHA-256"),
+            (entry, {"run_id": member_run_id("codex", "gpt56", "other")}, "run"),
+            (unknown, {}, "member"),
+        ):
+            with self.subTest(diagnostic=diagnostic):
+                result = self.append(selected, **options)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(diagnostic, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(before, self.snapshot())
+
+    def test_malformed_comparison_refuses_cleanly_without_changes(self):
+        entry = self.install("codex", "gpt56")
+        before = self.snapshot()
+        source = self.root / "malformed.json"
+        for contents in (b"{", b"[]", b'{"schema":"unknown"}', b"\xff"):
+            with self.subTest(contents=contents):
+                source.write_bytes(contents)
+                result = self.append_file(source, entry)
+                self.assertNotEqual(0, result.returncode)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(before, self.snapshot())
+
+    def test_unknown_current_finding_is_rejected_before_transaction(self):
+        entry = self.install("codex", "gpt56")
+        before = self.snapshot()
+        comparison = {
+            "schema": "opi-audit-history/1",
+            "status": "compared",
+            "scope": "Prior committed reports only.",
+            "sources": [{
+                "id": "old", "path": "docs/snapshots/phase17/old.md",
+                "commit": "a" * 40, "sha256": "b" * 64,
+                "audit_run_id": "phase17-old",
+            }],
+            "comparisons": [{
+                "current_finding_id": "P17-AUD-999",
+                "prior_findings": [{
+                    "source_id": "old", "finding_id": "P17-OLD-001",
+                    "audit_run_id": "phase17-old",
+                }],
+                "relationship": "missed-branch",
+                "prior_claim": "Old case closed.",
+                "repair_commits": ["c" * 40],
+                "current_evidence": "Another branch still fails.",
+                "cause": "Negative case omitted.",
+                "raw_evidence": [],
+                "verification": "Exercise the invalid branch.",
+            }],
+            "limitations": "Historical claim requires current verification.",
+        }
+
+        result = self.append(entry, comparison=comparison)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("finding", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(before, self.snapshot())
+
+    def test_tampered_live_member_refuses_even_with_matching_index_argument(self):
+        entry = self.install("codex", "gpt56")
+        report = self.assurance_dir / "audit.codex.gpt56.md"
+        report.write_bytes(report.read_bytes() + b"unindexed edit\n")
+        before = self.snapshot()
+
+        result = self.append(entry)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("current live audit set is invalid", result.stderr)
+        self.assertEqual(before, self.snapshot())
+
+    def test_append_refuses_symlinked_output_without_rewriting_history(self):
+        entry = self.install("codex", "gpt56")
+        history = self.assurance_dir / "history" / "protected"
+        history.mkdir(parents=True)
+        for name in ("audit.codex.gpt56.md", "audit.index.json"):
+            with self.subTest(name=name):
+                live = self.assurance_dir / name
+                original = live.read_bytes()
+                preserved = history / name
+                preserved.write_bytes(original)
+                live.unlink()
+                try:
+                    live.symlink_to(preserved)
+                except OSError as exc:
+                    live.write_bytes(original)
+                    self.skipTest(f"symbolic links unavailable: {exc}")
+                before = self.snapshot()
+
+                result = self.append(entry)
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("symbolic link", result.stderr)
+                self.assertTrue(live.is_symlink())
+                self.assertEqual(before, self.snapshot())
+                live.unlink()
+                live.write_bytes(original)
+
+    def test_rotation_archives_appended_report_and_old_run_cannot_append(self):
+        entry = self.install("codex", "gpt56")
+        result = self.append(entry)
+        self.assertEqual(0, result.returncode, result.stderr)
+        report = (self.assurance_dir / "audit.codex.gpt56.md").read_bytes()
+        self.commit_assurance("appended member")
+        self.install("codex", "gpt56", run_id=member_run_id("codex", "gpt56", "new"))
+        history = self.assurance_dir / "history" / entry["audit_run_id"]
+        self.assertEqual(report, (history / "audit.codex.gpt56.md").read_bytes())
+        before = self.snapshot()
+
+        result = self.append(entry)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("run", result.stderr)
+        self.assertEqual(before, self.snapshot())
+
+    def test_append_transaction_recovers_all_switch_boundaries(self):
+        entry = self.install("codex", "gpt56")
+        before = self.snapshot()
+        result = self.append(entry)
+        self.assertEqual(0, result.returncode, result.stderr)
+        appended = self.snapshot()
+        sys.path.insert(0, str(SCRIPTS))
+        try:
+            import assurance_set as module
+        finally:
+            sys.path.remove(str(SCRIPTS))
+        report_name = "audit.codex.gpt56.md"
+        for state in ("prepared", "report", "index", "switched", "invalid-switched"):
+            with self.subTest(state=state):
+                for name, data in before.items():
+                    (self.assurance_dir / name).write_bytes(data)
+                with module.AssuranceLock(self.root, 17):
+                    transaction, journal = module.prepare_history_append(
+                        self.root, self.phase_dir, entry, appended[report_name]
+                    )
+                    if state != "prepared":
+                        journal["state"] = "installing"
+                        module.atomic_write_json(transaction / "journal.json", journal)
+                        module.atomic_copy(
+                            transaction / "new" / report_name,
+                            self.assurance_dir / report_name,
+                        )
+                    if state in {"index", "switched", "invalid-switched"}:
+                        module.atomic_copy(
+                            transaction / "new" / "audit.index.json",
+                            self.assurance_dir / "audit.index.json",
+                        )
+                    if state in {"switched", "invalid-switched"}:
+                        journal["state"] = "switched"
+                        module.atomic_write_json(transaction / "journal.json", journal)
+                    if state == "invalid-switched":
+                        (self.assurance_dir / report_name).write_bytes(b"partial report\n")
+                # Live consumers must recover before reading membership.
+                validation = run_validator("audit-set", self.assurance_dir)
+                self.assertEqual(0, validation.returncode, validation.stderr)
+                self.assertEqual(
+                    appended if state == "switched" else before, self.snapshot()
+                )
+                self.assertFalse(transaction.exists())
+
+    def check_post_prepare_link(self, operation: str) -> None:
+        entry = self.install("codex", "gpt56")
+        report_name = "audit.codex.gpt56.md"
+        sys.path.insert(0, str(SCRIPTS))
+        try:
+            import assurance_set as module
+            import audit_history
+            import validate_assurance_artifact as validator
+        finally:
+            sys.path.remove(str(SCRIPTS))
+        self.assertEqual([], validator.validate_audit_set(self.assurance_dir))
+        core = (self.assurance_dir / report_name).read_bytes()
+        appended = audit_history.build_report(core, self.comparison(), entry, set())
+        before = self.snapshot()
+        history = self.assurance_dir / "history" / "protected-after-prepare"
+        history.mkdir(parents=True)
+        for name in (report_name, "audit.index.json"):
+            with self.subTest(operation=operation, destination=name):
+                for original_name, data in before.items():
+                    (self.assurance_dir / original_name).write_bytes(data)
+                with module.AssuranceLock(self.root, 17):
+                    transaction, journal = module.prepare_history_append(
+                        self.root, self.phase_dir, entry, appended
+                    )
+                    if operation == "switched-recovery":
+                        module.install_history_append(self.assurance_dir, transaction, journal)
+                        journal["state"] = "switched"
+                        module.atomic_write_json(transaction / "journal.json", journal)
+                    live = self.assurance_dir / name
+                    original = live.read_bytes()
+                    protected = history / name
+                    protected.write_bytes(
+                        original if operation == "switched-recovery" else b"immutable history\n"
+                    )
+                    live.unlink()
+                    try:
+                        live.symlink_to(protected)
+                    except OSError as exc:
+                        live.write_bytes(original)
+                        self.skipTest(f"symbolic links unavailable: {exc}")
+                    snapshot = self.snapshot()
+                    journal_before = (transaction / "journal.json").read_bytes()
+                    try:
+                        with self.assertRaisesRegex(module.AssuranceSetError, "symbolic link"):
+                            if operation == "install":
+                                module.install_history_append(
+                                    self.assurance_dir, transaction, journal
+                                )
+                            else:
+                                module.recover_history_transaction(
+                                    self.root, self.assurance_dir, transaction, journal
+                                )
+                        self.assertTrue(live.is_symlink())
+                        self.assertEqual(snapshot, self.snapshot())
+                        self.assertEqual(
+                            journal_before, (transaction / "journal.json").read_bytes()
+                        )
+                    finally:
+                        live.unlink()
+                        live.write_bytes(original)
+                        if transaction.exists():
+                            module.remove_transaction(transaction, self.root)
+
+    def test_install_refuses_post_prepare_link_before_any_write(self):
+        self.check_post_prepare_link("install")
+
+    def test_rollback_refuses_post_prepare_link_and_retains_journal(self):
+        self.check_post_prepare_link("rollback")
+
+    def test_switched_recovery_refuses_link_before_journal_cleanup(self):
+        self.check_post_prepare_link("switched-recovery")
+
+
 class MigrateTests(SetFixture):
     def test_migrate_converts_v1_generation_to_live_set_v2(self) -> None:
         self.build_v1_set()

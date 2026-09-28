@@ -25,8 +25,10 @@ a provider model. There is no unsuffixed compatibility alias.
 
 `audit.index.json` is the only active-membership authority. An active-style
 file absent from the index is an orphan and makes the set invalid. Content in
-`history/` is immutable evidence and is never an audit, verdict, or remediation
-input.
+`history/` is immutable evidence and is never an independent-core, verdict or
+remediation source input. The post-install advisory exception below permits
+bounded historical comparison and exact raw-proof lookup without changing those
+authority boundaries.
 
 ## Independent input boundary
 
@@ -40,10 +42,12 @@ with `git merge-base --is-ancestor <audit_head> HEAD`; a one-member live set
 is valid and consumable at any time, and no consumer may assume a roster.
 
 Run `rotation` before requirements are read. It inspects Git path state and
-names only. No auditor may read, search, summarize, or compare a prior audit,
-remediation conclusion, history run, or another peer's staged output. Each
-peer derives requirements and inspects a sealed source export in an
-independent context. Exposure to a sibling conclusion invalidates that peer.
+names only. Before successful `complete`, no auditor may read, search, summarize,
+or compare a prior audit, remediation conclusion, history run, or another peer's
+staged output. Each peer derives requirements and inspects a sealed source export
+in an independent context. Historical exposure before installation invalidates
+that peer. Exposure after installation cannot authorize revision of its core;
+only the advisory compiler described below may proceed in that context.
 
 Root and Phase ledgers can embed earlier conclusions. The
 [audit workflow's scope reader](../../opi-audit/SKILL.md#2-seal-this-peers-baseline)
@@ -159,7 +163,9 @@ validates the staged member (exactly the four suffixed files, LF-only bytes,
 self-describing metadata), requires rotation admission — the live assurance
 paths must be tracked and clean — requires the member's `audit_head` to be a
 committed ancestor of HEAD, and requires the current live set to validate
-before any mutation. It then installs the member files and writes
+before any mutation. A staged report containing the reserved
+`<!-- opi-audit-history/` marker is rejected: independent installation must precede
+historical compilation. It then installs the member files and writes
 `audit.index.json` last as the membership switch. `revision` advances by one
 per accepted install.
 
@@ -182,6 +188,122 @@ findings sidecars stay byte-identical, and the digests and index are rebuilt.
 A pre-existing history target, admission failure, or validation failure
 leaves the prior set active and reports `AUDIT-INCOMPLETE`.
 
+## Post-audit historical reference
+
+Successful `complete` freezes the independent core: the original report bytes,
+metadata, requirements, findings and verdict. Only afterward may the compiler
+read relevant same-Phase reports and repairs pinned to committed versions
+available at `audit_head`. It does not ingest concurrent sibling output or wait
+for a roster. Current behavior remains anchored to `audit_head`. Discoveries
+after historical exposure are leads for fresh independent verification, never
+edits or additions to the installed core.
+Record any newly noticed post-install defect absent from the current sidecar
+only as a bounded lead in comparison `limitations` for fresh independent
+verification; do not invent a current finding ID or an old-only comparison row.
+
+Normal workflow completion requires an installed `compared` or bounded
+`no-history` supplement. If comparison cannot finish, preserve the valid core and
+report `HISTORY-SUPPLEMENT-INCOMPLETE` with the missing evidence or failure. This
+does not change its verdict or invalidate the intermediate core. Legacy reports
+without appendices remain valid and fully consumable. Fresh independent auditors
+exclude prior complete reports, including their appendices.
+
+### Comparison input
+
+Supply UTF-8 JSON with exactly these fields; all descriptive strings are
+non-empty. Hashes are lowercase SHA-256 and commits are full lowercase 40-hex
+identities. There is no fifth member file or historical findings ledger.
+
+| Field | Shape / meaning |
+|---|---|
+| `schema` | `opi-audit-history/1` |
+| `status` | `compared` or `no-history` |
+| `scope` | Inspected same-Phase history and the boundary of any absence claim |
+| `sources` | List of `{id, path, commit, sha256, audit_run_id}`; unique source IDs, exact committed source bytes, and owning historical run or `null` for a non-audit source |
+| `comparisons` | Comparison rows defined below; empty for `no-history` |
+| `limitations` | Missing inputs, applicability limits, or an explicit statement that none were found within scope |
+
+Each comparison has exactly these fields:
+
+| Field | Shape / meaning |
+|---|---|
+| `current_finding_id` | Finding in this member's current sidecar, or `null` for an old-only preserved repair; the envelope supplies its owning run and findings digest |
+| `prior_findings` | List of `{source_id, finding_id, audit_run_id}`; each source ID resolves to the pinned historical source with that run |
+| `relationship` | `persistent`, `missed-branch`, `regression`, `new-omission`, `evidence-gap`, `insufficient-information`, or `preserved-repair` |
+| `prior_claim` | Attributed historical claim or repair promise; do not adopt old `Closed` as current closure |
+| `repair_commits` | List of full commit identities; empty when none is established |
+| `current_evidence` | Current `audit_head` code/check evidence and what remains uncertain |
+| `cause` | Supported explanation or explicitly bounded inference |
+| `raw_evidence` | List of `{path, sha256, checked, limitations}`; exact candidate raw proof, checks actually performed, and remaining applicability limits |
+| `verification` | Current checks or applicability proof suggested for remediation |
+
+`persistent` means the same defect remains; `missed-branch` identifies a different
+path violating the same invariant. `regression` requires evidence of a working
+repaired state and a later failing state. `evidence-gap` distinguishes unassessed
+proof from a reproduced failure; `preserved-repair` records a verified retained
+fix. Use `insufficient-information` rather than infer recurrence from matching
+titles. `no-history` asserts only the inspected scope; unavailable inputs are a
+limitation, not proof of absence. Historical-only rows remain outside repair scope.
+
+### Envelope and locked append
+
+Run after independently installing the member:
+
+```text
+python .agents/skills/_shared/scripts/assurance_set.py append-history docs/snapshots/phase<N> <comparison-json> --reviewer <id> --model <id> --audit-run-id <run> --expected-index-sha256 <digest>
+python .agents/skills/_shared/scripts/validate_assurance_artifact.py audit-set docs/snapshots/phase<N>/assurance
+```
+
+The tool derives the envelope from the installed report. Its fields are
+`schema`, `audit_run_id`, `audit_head`, `core`, and `comparison`. `core` contains
+`report_bytes`, `report_sha256`, `meta_sha256`, `requirements_sha256` and
+`findings_sha256`; `comparison` contains the input above. The reserved envelope
+marker is `<!-- opi-audit-history/`. The tool renders the terminal section
+**Post-audit historical reference — advisory**, escaping record text. Do not
+construct or edit this suffix by hand. Validation checks its canonical rendering,
+the exact prefix length/digest, owning identities, sidecar digests and current
+finding references; it does not establish the truth of historical prose.
+
+Under the existing Phase lock, recover interrupted transactions, validate the
+live set and exact target run, and check `--expected-index-sha256` before any
+write. Only the target report and live index may change. Preserve the complete
+core prefix, all three sidecars, every other member, metadata independence class
+and all verdicts. The report digest changes and index revision advances once.
+The existing index schema 2 and metadata schema 3 stay unchanged.
+
+This operation does not require rotation's clean-worktree gate: a freshly
+installed core is normally uncommitted. Exact validated bytes and index identity
+admit the append without an intermediate commit. Arbitrary report/index edits
+remain invalid. Before a validated transaction switch, recovery restores exact
+prior report/index bytes; after it, recovery retains the complete append. No
+immutable history directory is rewritten.
+
+An identical installed comparison is a no-op after live-set and exact-target
+validation, including a retry with its original pre-append index digest. Every
+operation that would write requires the current expected digest. A different
+second appendix is rejected; no replacement/edit-history operation is admitted.
+
+### Remediation use
+
+After validating the current index and strict finding union, remediation may
+read an indexed report's validated appendix for candidate code paths, regression
+cases and raw proofs. It cannot confirm, refute or close a finding, lower
+severity, add or remove source keys, or determine closure clustering. Historical
+`lineage`, `prior_occurrences` and `prior_disposition` fields remain forbidden.
+Do not search history to reconstruct a missing appendix.
+
+The only raw-proof exception permits reading exact proofs named by the appendix.
+Before using them at `remediation_head`, independently verify bytes/digests,
+commands/results and executed counts, source/build/client/material identities,
+and the predicate proved. Prove relevant dependencies unchanged or rerun
+invalidated checks within existing authorization. Missing evidence remains
+unconfirmed; historical success and matching hashes alone are insufficient.
+Live calls, credentials and paid runs retain their existing authorization limits.
+
+The full report remains bound by `report_sha256`, so appending changes the index
+and invalidates an already approved remediation plan. Complete available
+enrichment before planning; never waive the binding for an advisory-only change.
+
 ## Durability
 
 Assurance digests are exact raw bytes, so artifacts must be byte-stable
@@ -200,4 +322,5 @@ python .agents/skills/_shared/scripts/validate_assurance_artifact.py audit-set d
 Rotation requires the current assurance paths to be tracked and clean and
 rejects legacy Phase-level siblings without reading conclusions. Direct file
 copying, glob-discovered membership, vote-based aggregation, unsuffixed
-fallback, and prior-conclusion input are forbidden.
+fallback, and prior-conclusion input to the independent core are forbidden.
+The post-install advisory exception does not weaken these installation rules.

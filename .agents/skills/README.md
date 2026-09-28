@@ -51,7 +51,7 @@ Open the selected `SKILL.md`, then only references required by its active mode.
 | `opi-realign` | Pinned pi comparison in `docs/realign/` | Evidence, including target-design horizon; no product authority |
 | `opi-research` | Primary-source research in `docs/research/` | Non-normative capability/placement evidence |
 | `opi-implement` | Admitted graph, task delivery, canonical ledger and Phase snapshots | Registered sources; graph, task/ledger commit and failure gates |
-| `opi-audit` | Independent suffixed report group in the live indexed assurance set | Latest committed sources; no prior conclusions or production fixes |
+| `opi-audit` | Independent suffixed report group, then a bound historical reference | Latest committed core first; advisory history only after installation; no production fixes |
 | `opi-eval` | Sealed external evidence, bilingual `docs/eval/` reports, scoped source repairs | Live scope/budgets and user-confirmed repairs are separate |
 | `opi-remediate` | Set-wide fixed plan, dispositions, results and approved fixes | Apply binds the approved plan digest and exact live-index digest |
 | `opi-document` | Audit and synchronize product documentation | By default audits every maintained current-product README; targeted/version-bump scope must be explicit |
@@ -67,7 +67,12 @@ Open the selected `SKILL.md`, then only references required by its active mode.
   create a competing ledger nor record progress in the normative spec.
 - `opi-audit` seals each peer's committed baseline and
   [filters ledger inputs](opi-audit/SKILL.md#2-seal-this-peers-baseline)
-  before context exposure. Historical conclusions require a fresh audit context.
+  before context exposure. Historical conclusions before independent installation
+  require a fresh audit context. After `complete`, the
+  [historical-reference contract](_shared/references/audit-set-contract.md#post-audit-historical-reference)
+  permits a bounded advisory appendix without changing the core. Full workflow
+  completion requires `compared` or `no-history`; an incomplete supplement leaves
+  the installed core valid and is reported separately from its verdict.
 - `opi-eval` has a
   [user-confirmed source-repair exception](opi-eval/SKILL.md#user-confirmed-source-repairs)
   to separate implementation-skill invocation; it does not change ledger/Phase
@@ -78,6 +83,9 @@ Open the selected `SKILL.md`, then only references required by its active mode.
   Committing only that Phase's fixed plan pair preserves its source baseline
   and approval; the [disposition contract](_shared/references/remediation-disposition-contract.md#plan-approval-identity)
   defines the checked boundary, so a plan commit needs no HEAD reseal.
+  A validated indexed history appendix may guide current verification and exact
+  raw-proof lookup, never source membership or closure. An appendix added after
+  approval changes the index binding and makes that plan stale.
 - Local preparation and verification continue within existing authorization.
   Reconfirm when the authorized object, scope or required binding changes,
   or a workflow explicitly requires a fresh final gate. Public, destructive,
@@ -115,9 +123,14 @@ set is valid. Aggregation is fail-dominant; remediation consumes every finding.
 The [audit-set contract](_shared/references/audit-set-contract.md) owns installation,
 locking, replacement/history and clean committed re-audit entry. The
 [disposition contract](_shared/references/remediation-disposition-contract.md)
-owns source binding and closure: shared proof may close several sources, but
+owns source binding and closure: shared current proof may close several sources, but
 each keeps a disposition. Fidelity canaries close a product criterion only when
 they implement a registered runtime-fidelity case.
+
+Historical report and repair claims stay advisory. Remediation independently
+checks any named raw proof and its source/client/material applicability at its
+current baseline. Legacy reports without appendices remain consumable; missing
+history is not reconstructed and old IDs never enter the current finding union.
 
 Use independent reviewers/models when practical; disclose degraded independence.
 Reviewer/model IDs report actual runtime identity, never select a provider.
@@ -133,7 +146,7 @@ No preferred provider or model is a project contract.
 | `.opi-impl-state.json` | `opi-implement`; canonical tracked progress |
 | `.opi-impl-state.draft.json` | Plan scratch, ignored; retain only for review/resume |
 | `docs/snapshots/phase<N>/` | Frozen ledger and Phase evidence |
-| `docs/snapshots/phase<N>/assurance/` | Live audit set and remediation; superseded groups in `history/`, excluded from semantic input |
+| `docs/snapshots/phase<N>/assurance/` | Live audit set and remediation; immutable superseded `history/` groups are excluded from independent-core and finding authority, with only the bounded post-install advisory exception |
 | `docs/eval/` | Bilingual eval summaries/fidelity history; large/private evidence stays external |
 | `.opi-release-state.json` | Ignored release resume state; retain only while incomplete |
 

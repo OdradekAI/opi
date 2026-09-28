@@ -9,6 +9,8 @@ the four files land in place and `audit.index.json` is written last as the
 membership switch. A re-run of the same reviewer/model replaces its own entry
 and archives the superseded run under `history/<audit-run-id>/`. `migrate`
 converts one legacy schema-1 generation set into the live schema-2 set.
+`append-history` adds an advisory appendix to an installed independent core,
+changing only its report and the index under the same lock and recovery rules.
 """
 
 from __future__ import annotations
@@ -516,6 +518,105 @@ def recover_member_transaction(
     remove_transaction(transaction, repository)
 
 
+def history_append_destinations(
+    assurance_directory: Path, stem: str
+) -> tuple[Path, Path]:
+    paths = (assurance_directory / f"{stem}.md", assurance_directory / "audit.index.json")
+    # Inspect both exact live names before resolving either or changing any bytes.
+    for path in paths:
+        if path.is_symlink():
+            raise AssuranceSetError("history append target must not be a symbolic link")
+    return tuple(
+        ensure_within(path, assurance_directory, "history append target")
+        for path in paths
+    )
+
+
+def prepare_history_append(
+    repository: Path,
+    phase_directory: Path,
+    member: dict[str, Any],
+    report: bytes,
+) -> tuple[Path, dict[str, Any]]:
+    assurance_directory = assurance_root(phase_directory)
+    phase = parse_phase(phase_directory)
+    report_name = f"{member['artifact_stem']}.md"
+    _, index_path = history_append_destinations(
+        assurance_directory, member["artifact_stem"]
+    )
+    live_index = json.loads(index_path.read_text(encoding="utf-8"))
+    entry = {
+        **member,
+        "digests": {
+            **member["digests"],
+            "report_sha256": hashlib.sha256(report).hexdigest(),
+        },
+    }
+    next_index = build_next_index(live_index, entry, phase)
+    transaction = new_transaction(repository, phase)
+    for name in (report_name, "audit.index.json"):
+        source = ensure_within(
+            assurance_directory / name, assurance_directory, "history append input"
+        )
+        atomic_copy(source, transaction / "prior" / name)
+    with (transaction / "new" / report_name).open("wb") as handle:
+        handle.write(report)
+        handle.flush()
+        os.fsync(handle.fileno())
+    atomic_write_json(transaction / "new" / "audit.index.json", next_index)
+    journal = {
+        "schema_version": 2,
+        "mode": "history-append",
+        "state": "prepared",
+        "phase_directory": str(phase_directory.resolve()),
+        "member_stem": member["artifact_stem"],
+        "audit_run_id": member["audit_run_id"],
+        "next_revision": next_index["revision"],
+        "intended_index_sha256": raw_sha256(transaction / "new" / "audit.index.json"),
+    }
+    atomic_write_json(transaction / "journal.json", journal)
+    return transaction, journal
+
+
+def install_history_append(
+    assurance_directory: Path,
+    transaction: Path,
+    journal: dict[str, Any],
+) -> None:
+    destinations = history_append_destinations(assurance_directory, journal["member_stem"])
+    journal["state"] = "installing"
+    atomic_write_json(transaction / "journal.json", journal)
+    # The report is written first; the index is the final membership switch.
+    for destination in destinations:
+        atomic_copy(transaction / "new" / destination.name, destination)
+
+
+def recover_history_transaction(
+    repository: Path,
+    assurance_directory: Path,
+    transaction: Path,
+    journal: dict[str, Any],
+) -> None:
+    destinations = history_append_destinations(assurance_directory, journal["member_stem"])
+    index_path = destinations[1]
+    intended = journal.get("intended_index_sha256")
+    if (
+        journal.get("state") == "switched"
+        and isinstance(intended, str)
+        and SHA256_RE.fullmatch(intended) is not None
+        and index_path.is_file()
+        and raw_sha256(index_path) == intended
+    ):
+        import validate_assurance_artifact as validator
+
+        if not validator.validate_audit_set(assurance_directory):
+            remove_transaction(transaction, repository)
+            return
+    for destination in destinations:
+        atomic_copy(transaction / "prior" / destination.name, destination)
+    remove_transaction(transaction, repository)
+
+
 def strip_generation_header(data: bytes) -> bytes:
     lines = data.replace(b"\r\n", b"\n").split(b"\n")
     kept = [
@@ -691,6 +792,10 @@ def recover_transaction(
         )
     elif mode == "set-rewrite":
         recover_set_transaction(repository, assurance_directory, transaction, journal)
+    elif mode == "history-append":
+        recover_history_transaction(
+            repository, assurance_directory, transaction, journal
+        )
     else:
         raise AssuranceSetError("assurance recovery journal mode is invalid")
 
@@ -817,6 +922,97 @@ def complete_member(args: argparse.Namespace) -> None:
     )
 
 
+def append_history(args: argparse.Namespace) -> None:
+    import audit_history
+    import validate_assurance_artifact as validator
+
+    if SHA256_RE.fullmatch(args.expected_index_sha256) is None:
+        raise AssuranceSetError("expected index digest must be a lowercase SHA-256")
+    if any(SLUG_RE.fullmatch(value) is None for value in (args.reviewer, args.model)):
+        raise AssuranceSetError("reviewer/model must be file-safe member IDs")
+    try:
+        comparison = json.loads(args.comparison_json.read_text(encoding="utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise AssuranceSetError(f"invalid comparison JSON: {exc}") from exc
+    if not isinstance(comparison, dict):
+        raise AssuranceSetError("comparison JSON must be an object")
+
+    phase_directory = args.phase_directory.resolve()
+    repository = repository_root(phase_directory)
+    phase = parse_phase(phase_directory)
+    assurance_directory = assurance_root(phase_directory)
+    with AssuranceLock(repository, phase):
+        recover_locked(repository, phase_directory)
+        errors = validator.validate_audit_set(assurance_directory)
+        if errors:
+            raise AssuranceSetError(
+                "current live audit set is invalid: " + "; ".join(errors)
+            )
+        index_path = assurance_directory / "audit.index.json"
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        member = next(
+            (
+                entry
+                for entry in index["members"]
+                if (entry["reviewer_id"], entry["model_id"])
+                == (args.reviewer, args.model)
+            ),
+            None,
+        )
+        if member is None:
+            raise AssuranceSetError("requested history member is not installed")
+        if member["audit_run_id"] != args.audit_run_id:
+            raise AssuranceSetError("requested audit run does not match the installed member")
+        if not is_ancestor(repository, member["audit_head"]):
+            raise AssuranceSetError("audit head is not a committed ancestor of HEAD")
+        stem = member["artifact_stem"]
+        paths = validator.member_paths(assurance_directory, stem)
+        finding_ids = {
+            json.loads(line)["id"]
+            for line in paths.findings.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        }
+        try:
+            core, envelope = audit_history.split_report(
+                paths.report.read_bytes(), member, finding_ids
+            )
+            if envelope is not None:
+                if envelope["comparison"] != comparison:
+                    raise AssuranceSetError("a different history appendix is already installed")
+                print(
+                    "append-history: PASS no-op "
+                    f"audit_run_id={args.audit_run_id} revision={index['revision']}"
+                )
+                return
+            if raw_sha256(index_path) != args.expected_index_sha256:
+                raise AssuranceSetError("expected index digest does not match the current index")
+            report = audit_history.build_report(core, comparison, member, finding_ids)
+        except audit_history.HistoryError as exc:
+            raise AssuranceSetError(f"history appendix validation failed: {exc}") from exc
+
+        transaction, journal = prepare_history_append(
+            repository, phase_directory, member, report
+        )
+        try:
+            install_history_append(assurance_directory, transaction, journal)
+            errors = validator.validate_audit_set(assurance_directory)
+            if errors:
+                raise AssuranceSetError("appended live audit set is invalid: " + "; ".join(errors))
+            journal["state"] = "switched"
+            atomic_write_json(transaction / "journal.json", journal)
+            remove_transaction(transaction, repository)
+        except (AssuranceSetError, OSError):
+            if transaction.is_dir():
+                recover_transaction(
+                    repository, phase_directory, transaction, read_journal(transaction)
+                )
+            raise
+    print(
+        "append-history: PASS "
+        f"audit_run_id={args.audit_run_id} revision={journal['next_revision']}"
+    )
+
+
 def migrate_set(args: argparse.Namespace) -> None:
     phase_directory = args.phase_directory.resolve()
     repository = repository_root(phase_directory)
@@ -878,6 +1074,14 @@ def build_parser() -> argparse.ArgumentParser:
     complete.add_argument("--reviewer", required=True)
     complete.add_argument("--model", required=True)
     complete.set_defaults(handler=complete_member)
+    append = subparsers.add_parser("append-history")
+    append.add_argument("phase_directory", type=Path)
+    append.add_argument("comparison_json", type=Path)
+    append.add_argument("--reviewer", required=True)
+    append.add_argument("--model", required=True)
+    append.add_argument("--audit-run-id", required=True)
+    append.add_argument("--expected-index-sha256", required=True)
+    append.set_defaults(handler=append_history)
     recover = subparsers.add_parser("recover")
     recover.add_argument("phase_directory", type=Path)
     recover.set_defaults(handler=recover_set)
