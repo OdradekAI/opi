@@ -1865,6 +1865,20 @@ async fn run_native_trial(
     // supervised Agent launch boundary, before any model effect.
     let connection = experiment.selected_connection();
     let credential = resolve_connection_credential(connection)?;
+    // The resolved secret value joins a trial-local in-memory scan set
+    // before the projection consumes the credential (P19-AUD-001):
+    // without --canaries, an exact echo of the selected credential in
+    // any staged native export blocks sealing through the same
+    // fail-closed guard. The value is never serialized into a guard
+    // list or artifact; it exists only here and in the private launch
+    // handoff.
+    let mut seal_scan_secrets = request.canaries.clone();
+    match &credential {
+        crate::experiment::ResolvedCredential::FromEnv { value, .. }
+        | crate::experiment::ResolvedCredential::FromFile { value, .. } => {
+            seal_scan_secrets.push(value.clone());
+        }
+    }
     let client = match product {
         "opi" => crate::experiment::NativeClient::Opi,
         _ => crate::experiment::NativeClient::Pi,
@@ -2528,7 +2542,7 @@ async fn run_native_trial(
     )?);
 
     let canary_leak =
-        scan_staged_for_canaries(&trial_root.join("bundle"), &staged_keys, &request.canaries);
+        scan_staged_for_canaries(&trial_root.join("bundle"), &staged_keys, &seal_scan_secrets);
     if canary_leak.is_some() {
         run_cancel.cancel();
     }
@@ -3950,8 +3964,13 @@ fn replace_group(
     );
     let mut trials = original.trials().to_vec();
     for trial in &mut trials {
+        // Every trial the replacement actually re-executes takes a fresh
+        // identity (CTRL-006), including retained unrelated groups; only
+        // the targeted comparison group carries the attempt suffix, so
+        // unrelated groups keep their frozen group identities while the
+        // whole declared scope stays dispatched.
+        trial.id = format!("{}.r{token}", trial.id);
         if trial.group == *group {
-            trial.id = format!("{}.r{token}", trial.id);
             trial.group = format!("{}.r{token}", trial.group);
         }
     }

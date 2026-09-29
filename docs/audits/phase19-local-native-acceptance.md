@@ -104,6 +104,15 @@ A manifest correction is recorded for honesty: during staging the
 they were corrected to the final batch's actual 0 and the offline verifier
 re-accepted (exit 0).
 
+The published report view was reconstructed by read-only per-execution
+staging: for each family, a fresh root received byte-exact copies of exactly
+`run-control.json` plus the trial directories its `planned_trials` declares
+for the final execution; `verify` and `report` ran against each staged copy
+with outputs written outside both the staged and original roots. The whole
+mixed run roots remain fail-closed (`report` exits 1 on them), every
+superseded attempt stays retained in the original roots, and the original
+`run-control.json` / `run-report.json` bytes are unchanged.
+
 ## Operator setup repairs (pre-trial, no model calls)
 
 Recorded in `phase19-operator/setup-repair/`: DrvFs small-file upload

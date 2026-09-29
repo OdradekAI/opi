@@ -26,8 +26,8 @@ VERIFIER = SCRIPTS / "verify-local-acceptance.py"
 
 FAMILIES = ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1")
 PI_REPO = "https://github.com/badlogic/pi-mono"
-HARBOR_REPO = "https://github.com/harbor/harbor"
-PIER_REPO = "https://github.com/princeton-nlp/SWE-agent"
+HARBOR_REPO = "https://github.com/harbor-framework/harbor"
+PIER_REPO = "https://github.com/datacurve-ai/pier"
 PI_COMMIT = "a" * 40
 HARBOR_COMMIT = "b" * 40
 PIER_COMMIT = "c" * 40
@@ -153,6 +153,25 @@ class EvidenceRoot:
         self._write_manifest()
 
     def _stage_family(self, run: Path, family: str, opi_id: str, pi_id: str) -> None:
+        lock = {
+            "schema": "fixture-static-lock",
+            "lock_id": f"fixture-lock-{family}",
+            "subjects": [
+                {
+                    "id": "pi",
+                    "kind": "agent-source",
+                    "repository_url": PI_REPO,
+                    "commit": PI_COMMIT,
+                }
+            ],
+            "tools": [
+                {"id": "harbor", "commit": HARBOR_COMMIT},
+                {"id": "pier", "commit": PIER_COMMIT},
+            ],
+        }
+        lock_path = run / "static-lock.json"
+        write_json(lock_path, lock)
+        lock_sha256 = sha256(lock_path.read_bytes())
         declared = [
             {"id": opi_id, "subject": self.subject_ids[0], "task": family, "group": "g"},
             {"id": pi_id, "subject": self.subject_ids[1], "task": family, "group": "g"},
@@ -180,7 +199,11 @@ class EvidenceRoot:
                 "planned_trials": declared,
             },
         )
-        material = {"schema": "preserved-material", "agents": {}}
+        material = {
+            "schema": "preserved-material",
+            "agents": {},
+            "static_lock": {"path": str(lock_path), "sha256": lock_sha256},
+        }
         for trial, product in ((opi_id, "opi"), (pi_id, "pi")):
             bundle = run / "trials" / trial / "bundle"
             native = bundle / "artifacts" / "native"
@@ -237,6 +260,14 @@ class EvidenceRoot:
             wire_path = bundle / "artifacts/control/output-control.json"
             write_json(wire_path, snapshot)
             material["agents"][product] = {"executable": {"sha256": "e" * 64}, "output_control_evidence": {"sha256": snapshot["evidence_sha256"]}}
+            integrity_path = bundle / "artifacts/control/integrity.json"
+            write_json(
+                integrity_path,
+                {
+                    "schema": "fixture-integrity",
+                    "upstream_identity": f"{family}@{lock_sha256}",
+                },
+            )
             write_json(
                 bundle / "manifest.json",
                 {
@@ -244,6 +275,9 @@ class EvidenceRoot:
                     "entries": {
                         **{f"native/{path.name}": {"digest": sha256(path.read_bytes())} for path in native.iterdir()},
                         "control/output-control.json": {"digest": sha256(wire_path.read_bytes())},
+                        "control/integrity.json": {
+                            "digest": sha256(integrity_path.read_bytes())
+                        },
                         "control/experiment.json": {
                             "digest": sha256(
                                 (bundle / "artifacts/control/experiment.json").read_bytes()
@@ -346,6 +380,13 @@ class EvidenceRoot:
                     "role": "material",
                     "path": f"runs/{family}/material.json",
                     "sha256": sha256((entry["run"] / "material.json").read_bytes()),
+                }
+            )
+            manifest["preserved"].append(
+                {
+                    "role": "static-lock",
+                    "path": f"runs/{family}/static-lock.json",
+                    "sha256": sha256((entry["run"] / "static-lock.json").read_bytes()),
                 }
             )
             manifest["material"].append(
@@ -1028,6 +1069,100 @@ class AcceptanceVerifierTest(unittest.TestCase):
         del value["repositories"][PIER_REPO]
         write_json(cache, value)
         self.reject("upstream identity")
+
+    def test_coordinated_source_and_cache_substitution_is_rejected(self) -> None:
+        """A coordinated substitution of manifest sources and the operator
+        cache must still fail against the lock-derived identity."""
+        manifest = self.evidence.load_manifest()
+        substituted_pi = "e" * 40
+        substituted_harbor = "f" * 40
+        substituted_pier = "9" * 40
+        manifest["sources"]["pi"]["commit"] = substituted_pi
+        manifest["sources"]["harbor"]["commit"] = substituted_harbor
+        manifest["sources"]["pier"]["commit"] = substituted_pier
+        self.evidence.save_manifest(manifest)
+        cache = self.evidence.root / "upstream-identity-cache.json"
+        value = json.loads(cache.read_text(encoding="utf-8"))
+        value["repositories"][PI_REPO]["commits"][substituted_pi] = {"tree": "4" * 40}
+        value["repositories"][HARBOR_REPO]["commits"][substituted_harbor] = {
+            "tree": "5" * 40
+        }
+        value["repositories"][PIER_REPO]["commits"][substituted_pier] = {"tree": "6" * 40}
+        write_json(cache, value)
+        self.reject("admitted lock identity")
+
+    def test_empty_material_inventory_is_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        manifest["material"] = []
+        self.evidence.save_manifest(manifest)
+        self.reject("material")
+
+    def test_empty_preserved_inventory_is_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        manifest["preserved"] = []
+        self.evidence.save_manifest(manifest)
+        self.reject("admitted static lock")
+
+    def test_duplicate_material_entry_is_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        manifest["material"].append(dict(manifest["material"][0]))
+        self.evidence.save_manifest(manifest)
+        self.reject("exactly one")
+
+    def test_duplicate_preserved_path_is_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        manifest["preserved"].append(dict(manifest["preserved"][0]))
+        self.evidence.save_manifest(manifest)
+        self.reject("duplicate path")
+
+    def test_missing_required_preserved_reference_is_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        manifest["preserved"] = [
+            entry
+            for entry in manifest["preserved"]
+            if entry.get("role") != "static-lock"
+        ]
+        self.evidence.save_manifest(manifest)
+        self.reject("admitted static lock")
+
+    def test_admitted_lock_digest_tamper_is_rejected(self) -> None:
+        lock = self.evidence.runs[FAMILIES[0]]["run"] / "static-lock.json"
+        write_json(lock, {"schema": "tampered"})
+        self.reject("admitted lock")
+
+    def test_cross_family_lock_binding_is_rejected(self) -> None:
+        """One family's sealed integrity must bind its own admitted lock,
+        not another family's."""
+        first = self.evidence.runs[FAMILIES[0]]["run"]
+        second = self.evidence.runs[FAMILIES[1]]["run"]
+        other_lock_sha = sha256((second / "static-lock.json").read_bytes())
+        self.rebind_upstream_identity(FAMILIES[0], f"{FAMILIES[0]}@{other_lock_sha}")
+        self.reject("sealed upstream identity")
+
+    def test_sealed_upstream_identity_drift_is_rejected(self) -> None:
+        self.rebind_upstream_identity(
+            FAMILIES[2], f"{FAMILIES[2]}@{'0' * 64}"
+        )
+        self.reject("sealed upstream identity")
+
+    def rebind_upstream_identity(self, family: str, identity: str) -> None:
+        """Rewrite one family's sealed integrity with intact digests so the
+        identity binding itself is the only drift."""
+        entry = self.evidence.runs[family]
+        manifest = self.evidence.load_manifest()
+        for trial in entry["run"].joinpath("trials").iterdir():
+            integrity = trial / "bundle/artifacts/control/integrity.json"
+            write_json(integrity, {"schema": "fixture-integrity", "upstream_identity": identity})
+            bundle_manifest = trial / "bundle/manifest.json"
+            value = json.loads(bundle_manifest.read_text(encoding="utf-8"))
+            value["entries"]["control/integrity.json"]["digest"] = sha256(
+                integrity.read_bytes()
+            )
+            write_json(bundle_manifest, value)
+            for row in manifest["trials"]:
+                if row["id"] == trial.name:
+                    row["bundle_digest"] = sha256(bundle_manifest.read_bytes())
+        self.evidence.save_manifest(manifest)
 
 
 if __name__ == "__main__":

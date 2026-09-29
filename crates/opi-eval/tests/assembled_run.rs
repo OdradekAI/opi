@@ -148,12 +148,16 @@ fn replacement_fresh_resolved_pairs_preserve_original_scope() {
             assert_eq!(rows.len(), planned.len());
             for old in planned {
                 let old_id = old["id"].as_str().unwrap();
+                // Every re-executed trial carries a fresh identity,
+                // including retained unrelated groups (CTRL-006).
+                assert!(
+                    !rows.iter().any(|row| row["id"] == old["id"]),
+                    "new execution reused prior trial identity {} in group {}",
+                    old["id"],
+                    old["group"]
+                );
                 let changed = old["group"] == group;
-                let new_id = if changed {
-                    format!("{old_id}.r{token}")
-                } else {
-                    old_id.to_owned()
-                };
+                let new_id = format!("{old_id}.r{token}");
                 let row = rows.iter().find(|row| row["id"] == new_id).unwrap();
                 assert_eq!(row["subject"], old["subject"]);
                 assert_eq!(row["task"], old["task"]);

@@ -248,47 +248,72 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
                 "agent_name": f"opi-eval-{product}",
             },
         }
-    material_json = {
-        "schema": "opi-eval-native-material/5",
-        "static_lock": {"path": str(material / "external-lock.json"),
-                        "sha256": sha(lock_bytes)},
-        "provider": {
-            "script": {"path": "crates/opi-eval/scripts/scripted-provider.py",
-                       "sha256": sha(b"provider\n")},
-            "endpoint": "http://127.0.0.1:48127/v1",
-            "request_log": str(stage / "05-provider" / "requests.jsonl"),
-        },
-        "agents": {
-            product: {
-                "executable": {"path": str(wrappers / f"agent-{product}-generic.sh"),
-                               "sha256": sha(f"agent-{product}\n".encode())},
-                "integrations": integration_entry(product),
-            }
-            for product in ("opi", "pi")
-        },
-        "benchmarks": {},
-    }
+    routing_adapters = {}
     for bench, short in BENCHMARKS.items():
+        prepared = material / f"prepared-{bench}"
+        prepared.mkdir(parents=True, exist_ok=True)
         package = material / "packages" / short
         package.mkdir(parents=True, exist_ok=True)
         (package / "task.yaml").write_text("official: true\n", encoding="utf-8")
         digest = sha(b"task-package:" + short.encode())
-        material_json["benchmarks"][bench] = {
-            "corpus": {"root": str(material / "corpora" / short / "tasks"), "source_commit": "a" * 40, "tasks_tree": "b" * 40},
-            "tasks": {short: {"native_task_name": short,
-                "profile": {"path": f"profiles/{bench}/{short}.toml", "sha256": "c" * 64},
-                "task_package": str(package), "task_package_manifest_sha256": digest}},
-            "verifier_executable": {"path": str(wrappers / f"verifier-{bench}.sh"),
-                                    "sha256": sha(f"verifier-{bench}\n".encode())},
-            "verifier_env": {},
-            "oracle": {"path": str(wrappers / f"oracle-{bench}.sh"),
-                       "sha256": sha(f"oracle-{bench}\n".encode())},
-            "oracle_env": {},
+        material_json = {
+            "schema": "opi-eval-native-material/6",
+            "origin": "local",
+            "static_lock": {"path": str(material / "external-lock.json"),
+                            "sha256": sha(lock_bytes)},
+            "provider": {
+                "script": {"path": "crates/opi-eval/scripts/scripted-provider.py",
+                           "sha256": sha(b"provider\n")},
+                "endpoint": "http://127.0.0.1:48127/v1",
+                "request_log": str(stage / "05-provider" / "requests.jsonl"),
+            },
+            "agents": {
+                product: {
+                    "executable": {"path": str(wrappers / f"agent-{product}-generic.sh"),
+                                   "sha256": sha(f"agent-{product}\n".encode())},
+                    "integrations": integration_entry(product),
+                }
+                for product in ("opi", "pi")
+            },
+            "benchmarks": {
+                bench: {
+                    "corpus": {"root": str(material / "corpora" / short / "tasks"),
+                               "source_commit": "a" * 40, "tasks_tree": "b" * 40},
+                    "tasks": {short: {"native_task_name": short,
+                        "profile": {"path": f"profiles/{bench}/{short}.toml",
+                                    "sha256": "c" * 64},
+                        "task_package": str(package),
+                        "task_package_manifest_sha256": digest}},
+                    "verifier_executable": {"path": str(wrappers / f"verifier-{bench}.sh"),
+                                            "sha256": sha(f"verifier-{bench}\n".encode())},
+                    "verifier_env": {},
+                    "runner_project": {
+                        "path": str(material / "runners" / short),
+                        "source_manifest_sha256": "d" * 64,
+                        "interpreter": {"path": str(material / "runners" / short
+                                                    / ".venv/bin/python"),
+                                        "sha256": "1" * 64},
+                        "entrypoint": {"path": str(material / "runners" / short
+                                                   / ".venv/bin/runner"),
+                                       "sha256": "2" * 64},
+                    },
+                    "oracle": {"path": str(wrappers / f"oracle-{bench}.sh"),
+                               "sha256": sha(f"oracle-{bench}\n".encode())},
+                    "oracle_env": {},
+                }
+            },
         }
-    write_json(material / "material.json", material_json)
+        material_path = prepared / "material.json"
+        write_json(material_path, material_json)
+        routing_adapters[bench] = {"path": f"06-material/prepared-{bench}/material.json",
+                                   "sha256": sha(material_path.read_bytes())}
+    write_json(material / "material-routing.json",
+               {"schema": "opi-eval-native-material-routing/1",
+                "adapters": routing_adapters})
     stage_receipt(stage, "06-material", {"material": True})
     write_json(material / "materialize-receipt.json",
-               {"schema": "opi-eval-materialize-receipt/1", "wrappers": {}})
+               {"schema": "opi-eval-materialize-receipt/1",
+                "preparation": "shared-local-prepare"})
 
     conformance = material / "conformance"
     for suite, adapter, case in CONFORMANCE_CASES:
@@ -482,12 +507,26 @@ class ArtifactVerifier(unittest.TestCase):
             self.assertIn(f"{criterion} verified", result.stdout)
 
     def test_material_requires_full_corpus_and_exact_task_bindings(self) -> None:
-        path = self.stage / "06-material" / "material.json"
-        original = json.loads(path.read_text("utf-8"))
-        for case in ("old-schema", "corpus", "tasks", "profile", "malformed-task"):
+        base = self.stage / "06-material"
+        routing_path = base / "material-routing.json"
+        routing = json.loads(routing_path.read_text("utf-8"))
+        original_path = self.stage / routing["adapters"]["terminal-bench-2.1"]["path"]
+        original = json.loads(original_path.read_text("utf-8"))
+
+        def reroute(path: Path, material) -> None:
+            write_json(path, material)
+            routing["adapters"]["terminal-bench-2.1"]["sha256"] = sha(
+                path.read_bytes())
+            write_json(routing_path, routing)
+
+        for case in ("old-schema", "corpus", "tasks", "profile",
+                     "malformed-task", "missing-runner-project",
+                     "missing-installed-pins", "second-benchmark",
+                     "routing-drift"):
             with self.subTest(case=case):
                 material = json.loads(json.dumps(original))
                 benchmark = material["benchmarks"]["terminal-bench-2.1"]
+                path = original_path
                 if case == "old-schema":
                     material["schema"] = "opi-eval-native-material/4"
                 elif case == "corpus":
@@ -496,15 +535,30 @@ class ArtifactVerifier(unittest.TestCase):
                     benchmark["tasks"] = {}
                 elif case == "profile":
                     next(iter(benchmark["tasks"].values()))["profile"].pop("sha256")
-                else:
+                elif case == "malformed-task":
                     benchmark["tasks"] = {"task": []}
-                write_json(path, material)
+                elif case == "missing-runner-project":
+                    benchmark.pop("runner_project")
+                elif case == "missing-installed-pins":
+                    benchmark["runner_project"].pop("interpreter")
+                elif case == "second-benchmark":
+                    material["benchmarks"]["terminal-bench-3.0"] = json.loads(
+                        json.dumps(benchmark))
+                reroute(path, material)
+                if case == "routing-drift":
+                    routing["adapters"]["terminal-bench-2.1"]["sha256"] = "0" * 64
+                    write_json(routing_path, routing)
                 sealed = seal(self.stage, self.tmp)
                 zip_path, _ = package_zip(sealed["tar"], dict(sealed["upload"]))
                 result = self.verify(artifact=zip_path)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("material", result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
+                routing = json.loads(routing_path.read_text("utf-8"))
+                write_json(original_path, original)
+                routing["adapters"]["terminal-bench-2.1"]["sha256"] = sha(
+                    original_path.read_bytes())
+                write_json(routing_path, routing)
 
     def test_bare_tar_accepted(self) -> None:
         result = self.verify(

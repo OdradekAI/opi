@@ -95,6 +95,13 @@ deepswe 在纯净 verifier 中将提交补丁摘要绑定到声明基线。
 仍携带第 3 次尝试的陈旧 exit 1；已更正为最终批次的真实值 0，离线
 校验器重新接受（exit 0）。
 
+已发布的报告视图通过每次执行只读 staging 重构：为每个家族创建新 root，
+逐字节复制恰好 `run-control.json` 及其 `planned_trials` 为最终执行声明的那些
+trial 目录；对每个 staging 副本运行 `verify` 与 `report`，输出写入 staging root
+与原始 root 之外。整个混合运行 root 仍然 fail-closed（`report` 在其上 exit 1），
+所有被取代的尝试保留在原始 root 中，原始 `run-control.json` / `run-report.json`
+字节不变。
+
 ## 操作员启动修复（试跑前，无模型调用）
 
 记录于 `phase19-operator/setup-repair/`：DrvFs 小文件上传超出 Harbor

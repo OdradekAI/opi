@@ -157,10 +157,13 @@ jobs:
             --provider crates/opi-eval/scripts/scripted-provider.py \
             --out "$OPI_EVAL_NATIVE_STAGE/06-canaries"
 
-      # Materializes the resolved-material manifest, the launch wrappers,
-      # and the three experiment configs with pinned integrity digests
-      # bound to the fetched sources, built agents, and provider endpoint.
-      - name: Materialize the native material and experiment configs
+      # Delegates task/image/profile/runner-material production to the
+      # same public local preparation path: the fetched external inputs,
+      # built agents and repository pins are transported into the admitted
+      # pinned cache, and one shared `opi-eval prepare` per family emits
+      # the per-family prepared material plus the three experiment
+      # configs with pinned integrity digests.
+      - name: Prepare the per-family native material and experiment configs
         run: |
           set -euo pipefail
           bash crates/opi-eval/scripts/native-smoke.sh materialize-configs \
@@ -177,7 +180,7 @@ jobs:
         run: |
           set -euo pipefail
           bash crates/opi-eval/scripts/native-smoke.sh conformance-rerun \
-            --material "$OPI_EVAL_NATIVE_STAGE/06-material/material.json" \
+            --material-root "$OPI_EVAL_NATIVE_STAGE/06-material" \
             --out "$OPI_EVAL_NATIVE_STAGE/06-material/conformance"
 
       # The explicitly selected TB2.1 artifact witnesses: the oracle
@@ -189,7 +192,7 @@ jobs:
         run: |
           set -euo pipefail
           bash crates/opi-eval/scripts/native-smoke.sh oracle-preflight \
-            --material "$OPI_EVAL_NATIVE_STAGE/06-material/material.json" \
+            --material-root "$OPI_EVAL_NATIVE_STAGE/06-material" \
             --out "$OPI_EVAL_NATIVE_STAGE/06-material/oracle"
 
       # The paired selected-Agent trials (Opi and pi on the pinned TB2.1
@@ -203,7 +206,7 @@ jobs:
           set -euo pipefail
           bash crates/opi-eval/scripts/native-smoke.sh run-trials \
             --config-root "$OPI_EVAL_NATIVE_STAGE/06-material" \
-            --material "$OPI_EVAL_NATIVE_STAGE/06-material/material.json" \
+            --material-root "$OPI_EVAL_NATIVE_STAGE/06-material" \
             --canary-out "$OPI_EVAL_NATIVE_STAGE/06-canaries" \
             --out "$OPI_EVAL_NATIVE_STAGE/07-trials"
 

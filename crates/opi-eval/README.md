@@ -386,7 +386,7 @@ case fails closed.
 | Mode | Inputs and behavior | What it proves |
 |------|---------------------|----------------|
 | Hermetic fixture mode | Default. Uses bounded deterministic helpers and pinned repository fixtures. | Adapter, lifecycle, sealing, reporting, and failure-path conformance. It does not prove real-product or real-provider fidelity. |
-| Native-material mode | Add `--native-material <MANIFEST>` to `validate`, `run`, or `conformance`. The manifest (schema `opi-eval-native-material/5`) resolves exact Agent executables, the pinned integration modules that run each Agent inside the task environment (one per runner family: Harbor for the Terminal-Bench route, Pier for DeepSWE), task packages, verifier/oracle entry points, and the scripted-provider endpoint. | For `run`, one explicitly selected upstream job per trial runs the selected Agent inside the graded task environment and grades that same trial; the imported result must bind to the selected Agent, task, and job identity before anything seals. Terminal-Bench 3.0 runs through its declared separate-verifier handoff: the task's own `task.toml` lifecycle is parsed and bound (unsupported shapes, including multi-step tasks, disabled verifiers, verifier collect hooks on the Harbor route, and non-Linux tasks, reject before any verifier spawn), and for separate-verifier tasks only the declared artifacts cross into the fresh verifier - undeclared, missing, or substituted collections reject and an unrelated canary file stays outside. DeepSWE runs through its declared committed-patch handoff: the Pier task's collect hook extracts the committed patch beyond the task's base revision and the pristine no-network verifier grades exactly that patch (uncommitted work can never be substituted for it); the bound job must record the task's declared lifecycle together with the base revision and environment image, an empty nop patch still collects and grades zero, and undeclared collection rejects. The sealed bundle records the verifier-input identity (`native/verifier-input.json`: the environment mode, the DeepSWE base revision and image, plus every declared artifact with the digests of exactly the collected bytes). `conformance` restricts native mode to its registered native case subset (including the explicitly selected `oracle-witness`/`nop-witness` artifact witnesses for all three families). |
+| Native-material mode | Add `--native-material <MANIFEST>` to `validate`, `run`, or `conformance`. The manifest (schema `opi-eval-native-material/6`) resolves exact Agent executables, the pinned integration modules that run each Agent inside the task environment (one per runner family: Harbor for the Terminal-Bench route, Pier for DeepSWE), task packages, verifier/oracle entry points, and the scripted-provider endpoint. | For `run`, one explicitly selected upstream job per trial runs the selected Agent inside the graded task environment and grades that same trial; the imported result must bind to the selected Agent, task, and job identity before anything seals. Terminal-Bench 3.0 runs through its declared separate-verifier handoff: the task's own `task.toml` lifecycle is parsed and bound (unsupported shapes, including multi-step tasks, disabled verifiers, verifier collect hooks on the Harbor route, and non-Linux tasks, reject before any verifier spawn), and for separate-verifier tasks only the declared artifacts cross into the fresh verifier - undeclared, missing, or substituted collections reject and an unrelated canary file stays outside. DeepSWE runs through its declared committed-patch handoff: the Pier task's collect hook extracts the committed patch beyond the task's base revision and the pristine no-network verifier grades exactly that patch (uncommitted work can never be substituted for it); the bound job must record the task's declared lifecycle together with the base revision and environment image, an empty nop patch still collects and grades zero, and undeclared collection rejects. The sealed bundle records the verifier-input identity (`native/verifier-input.json`: the environment mode, the DeepSWE base revision and image, plus every declared artifact with the digests of exactly the collected bytes). `conformance` restricts native mode to its registered native case subset (including the explicitly selected `oracle-witness`/`nop-witness` artifact witnesses for all three families). |
 
 An Agent may carry a `runtime_package` with an absolute `path`, sorted-file
 `manifest_sha256`, and relative `entrypoint` bound to its pinned executable.
@@ -397,8 +397,14 @@ For local preparation, `cache/agents/<product>` is either the executable or
 a package directory containing the `<product>` executable and its resources.
 
 Local material also binds a `runner_project` to the static runner commit,
-lockfile and tracked source bytes. Loading rechecks those identities and the
-absolute `UV_PROJECT`, `UV_PROJECT_ENVIRONMENT` and `UV_PYTHON` selections.
+lockfile, tracked source bytes, and the installed runner executables: the
+pinned `.venv/bin/python` interpreter and `.venv/bin/<runner>` console
+entrypoint carry exact byte identities. Loading rechecks those identities,
+the installed bytes, and the
+absolute `UV_PROJECT`, `UV_PROJECT_ENVIRONMENT` and `UV_PYTHON` selections;
+missing or changed installed bytes reject material use before any
+validate/plan/run effect or frozen-plan acceptance. Material/5 and older
+manifests require regeneration.
 Preparation uses the same pinned uv executable
 for explicit oracle diagnostics. Pier derives its inference allowlist from the
 handoff's selected `inference_endpoint` and scopes the upstream proxy environment
@@ -422,7 +428,11 @@ reference. There is no provider, protocol, model, or billing-product
 fallback: the credential resolves only inside the supervised Agent launch,
 absent credentials and required-but-unsupported `[model_controls]` reject
 before any model effect, and remote base URLs require the explicit
-`[execution].mode = "live"` (loopback routes only otherwise). Requested
+`[execution].mode = "live"` (loopback routes only otherwise). A required
+`reasoning` value rejects at `validate`, `plan` and `run` for every native
+selection shape and protocol, because current native execution cannot prove
+that control effective; an optional supplied reasoning value stays
+admissible and is reported as explicitly non-comparable. Requested
 monetary/usage caps in `[execution.caps]` are rejected - the native route
 cannot enforce them. Native Agent time uses the smaller supplied
 `time_limit_seconds` and `agent_timeout_seconds`; `verifier_timeout_seconds`
@@ -528,11 +538,21 @@ or seal is rewritten. Each admitted trial seals a self-contained snapshot as
 `control/output-control.json`.
 
 The CLI consumes a resolved native-material manifest; it does not improvise or
-silently replace missing native inputs. Native materialization and fidelity
-verification belong to the repository's
-[native-smoke workflow](../../.github/workflows/opi-eval-native-smoke.yml).
-Its materialization stage runs the same loopback producer with a required
-4096-token limit before pinning material and freezing configs. Opi uses the
+silently replace missing native inputs. Native materialization is owned by the
+public local `prepare` path with explicit exact-client output-control proof;
+the repository's
+[native-smoke workflow](../../.github/workflows/opi-eval-native-smoke.yml)
+is the regression caller over that same shared preparation.
+Its materialization stage delegates every task/image/profile/runner-material
+decision to the same public local `prepare` path: the fetched external
+checkouts, built agents and repository pins are transported into the admitted
+pinned cache, one shared preparation per benchmark family emits the
+per-family prepared material, and every CI consumer (conformance rerun,
+oracle preflight, trials) resolves its material through the published
+per-family routing map - CI keeps no independent transform or admission rule,
+and any shared prepare rejection stops materialization before any material is
+published. The stage runs the same loopback producer with a required
+4096-token limit before pinning evidence and freezing configs. Opi uses the
 located build executable; pi transports the built Node interpreter, package
 metadata, distribution and assets behind a relative launcher. The package and
 entrypoint bound by the probe are the ones declared in trial material. Failed
@@ -584,7 +604,11 @@ $RUN_ROOT/
 Treat a sealed bundle as immutable. Changing a covered byte causes `verify`,
 `regrade`, and `report` verification to fail; none of them repairs or silently
 rehashes the evidence. A canary listed one per line in `--canaries PATH` blocks sealing
-or publication if it appears in exportable content. A native canary breach also
+or publication if it appears in exportable content. In native runs the resolved selected
+connection credential is guarded the same way even without `--canaries`: an exact echo of
+it in any staged native export blocks that trial's sealing, cancels the run before another
+trial starts, and never serializes the secret into a guard list or artifact. A native canary
+breach also
 cancels the run before another trial starts; observed evidence remains private
 and unsealed, and undispatched trials remain in planned coverage.
 Offline comparisons require the sealed output-control snapshot for a requested
@@ -595,7 +619,7 @@ mutable run reports cannot upgrade comparability or supply missing proof.
 |---------|------------|
 | Configuration is rejected | Run `validate` first and follow its typed stderr diagnostic. There is no implicit control default or fallback. |
 | Run root already contains durable state | Do not delete or edit trial evidence. Use `run --recover` to classify durable states, or follow the explicit replacement flow for a crashed trial group. |
-| Native material is rejected | Regenerate and resolve it through the native workflow; do not substitute unpinned executables or task packages. |
+| Native material is rejected | Regenerate it through the public local `prepare` path from the admitted pinned cache, then refresh the exact-client output-control proof; do not substitute unpinned executables or task packages. |
 | `verify`/`regrade` reports `mutation-detected` or a typed rejection | Preserve the bundle and preserved artifacts for diagnosis. Do not repair, rewrite, or rehash them. |
 | `report` is blocked | Inspect bundle-verification and canary failures, then use a new outside-root `--out` path after correcting the input source. |
 
@@ -608,7 +632,31 @@ rejects inconsistent identities instead of relabelling them.
 trial's whole comparison group using one new attempt token per invocation.
 The original plan is verified and its selection expanded before replacement;
 the new experiment retains its frozen scope, controls and unrelated groups.
+Every trial the replacement actually re-executes - including retained
+unrelated groups - runs under a fresh trial ID; only the targeted comparison
+group carries the attempt suffix, so unrelated groups keep their frozen group
+identities while the whole declared scope stays dispatched.
 Use a fresh output root; original plans and run evidence remain unchanged.
+
+Durable roots that retain superseded attempts cannot publish directly - `report`
+rejects control drift, undeclared trials and run-control drift on the whole
+mixed root, and that rejection is intentional. To reconstruct the report view
+of exactly one run-control-declared execution without touching the originals,
+stage a read-only copy per execution:
+
+1. Preserve the original mixed root unchanged; never delete or relabel a
+   superseded attempt there.
+2. Create a new staging root for exactly one `run-control.json` execution and
+   copy that `run-control.json` plus exactly the trial directories its
+   `planned_trials` declares, byte for byte.
+3. Run `verify` and `report` against the staged copy, writing outputs outside
+   both the staged and the original roots.
+4. Retain every superseded attempt in the original root and identify the
+   staged copy in your records; the staged view is a report reconstruction,
+   never a replacement of the retained evidence.
+
+This staging procedure never weakens validation: a staged root still verifies
+byte-for-byte, and the whole mixed root still rejects.
 
 ### Local operator acceptance and its offline verifier
 
@@ -637,7 +685,14 @@ exits and provider/tool/native artifacts, the Opi-only
 `opi-artifact-audit` scoped capture view (byte-bound to the three
 original Opi native captures and exhaustive for them), and a cached
 upstream repository-identity inventory for the pi/Harbor/Pier source
-records. Anyone can verify that evidence offline:
+records. The preserved inventory must carry exactly one material entry
+per trial family with unique paths, plus the admitted static-lock bytes
+located by each preserved material's `static_lock` pin; the pi,
+Harbor, and Pier identities are derived from those admitted lock bytes
+(repository-qualified commit identities from the lock's subject and
+locked runner tools), never from mutual agreement of supplied maps, and
+the cached inventory is corroborating evidence only. Anyone can verify
+that evidence offline:
 
 ```sh
 python3 crates/opi-eval/scripts/verify-local-acceptance.py \
@@ -648,11 +703,14 @@ python3 crates/opi-eval/scripts/verify-local-acceptance.py \
 
 The verifier never launches an Agent, reads credentials, or contacts a
 provider. It rejects substituted, oracle, missing, or fixture-only
-evidence, refuses an empty generic-audit success, validates upstream
-commits only against the supplied cached identities (never by resolving
-commits in this checkout), and invokes the built Companion `verify` and
-`report` only against the supplied family run roots. Exit 0 accepts the
-evidence; exit 2 prints one typed rejection.
+evidence, refuses an empty generic-audit success, requires every sealed
+control/integrity upstream identity to bind its family's admitted lock
+digest, validates upstream commits against the identities derived from
+the admitted lock bytes (cross-checked with the supplied cached
+inventories, never by resolving commits in this checkout), and invokes
+the built Companion `verify` and `report` only against the supplied
+family run roots. Exit 0 accepts the evidence; exit 2 prints one typed
+rejection.
 
 Acceptance requires Python 3.11 or later. Its manifest's
 `controls.connection_controls` contains `connection` (the selected `provider`,
@@ -675,7 +733,7 @@ selection and the effective stage caps. Teardown preserves shared images and
 neighboring resources. Changed integration bytes require fresh material and
 plan identities; existing source bundles are never rewritten.
 
-Run the explicit no-model stage witness with prepared material/5:
+Run the explicit no-model stage witness with prepared material/6:
 
 ```sh
 OPI_EVAL_NATIVE_WITNESS_MATERIAL=/absolute/material.json \

@@ -280,6 +280,225 @@ class NativeSmokeCiVerifier(unittest.TestCase):
                 '"ambient_credentials": os.environ.get("OPENAI_API_KEY", "none"),')),
             "credential")
 
+
+    # -- shared local preparation contract ------------------------------------
+    def test_materialize_without_shared_prepare_rejects(self) -> None:
+        self.assert_rejects(
+            self.ws(producer_text=PRODUCER.read_text(encoding="utf-8").replace(
+                '"prepare", "--config"', '"validate", "--config"')),
+            "materialize")
+
+    def test_materialize_with_duplicate_task_transform_rejects(self) -> None:
+        self.assert_rejects(
+            self.ws(producer_text=PRODUCER.read_text(encoding="utf-8").replace(
+                "def sha(path):",
+                "def materialize_task(benchmark):\n"
+                "    raise SystemExit('duplicate policy')\n\n\n"
+                "def sha(path):")),
+            "materialize")
+
+    def test_workflow_with_synthesized_material_path_rejects(self) -> None:
+        self.assert_rejects(
+            self.ws(workflow_text=WORKFLOW.read_text(encoding="utf-8").replace(
+                '--material-root "$OPI_EVAL_NATIVE_STAGE/06-material"',
+                '--material "$OPI_EVAL_NATIVE_STAGE/06-material/material.json"')),
+            "materialize")
+
+    def test_materialize_configs_delegates_to_shared_prepare(self) -> None:
+        """The public Bash stage routes materialization through the shared
+        local prepare path: an accepted offline fixture preparation
+        publishes per-family prepared material with identical
+        task/runner identities, and a shared prepare refusal stops the
+        stage before any material is published."""
+        import hashlib
+        for refuse in (False, True):
+            with tempfile.TemporaryDirectory(prefix="native-smoke-bash-") as temporary:
+                root = Path(temporary)
+                bin_dir = root / "bin"
+                external = root / "external"
+                agents = root / "agents"
+                provider = root / "provider"
+                out = root / "out"
+                calls = root / "calls.jsonl"
+                bin_dir.mkdir()
+                lock = json.loads(
+                    (REPO_ROOT / "crates/opi-eval/external-locks/static"
+                     / "linux-x86_64.json").read_text(encoding="utf-8"))
+                clone_index = {"terminal-bench-2.1": "terminal-bench-2-1",
+                               "terminal-bench-3.0": "terminal-bench",
+                               "deepswe-v1.1": "deep-swe"}
+                for family, clone in clone_index.items():
+                    pin = next(s for s in lock["subjects"] if s["id"] == family)
+                    task = external / clone / "tasks" / pin["task"]["id"]
+                    source = REPO_ROOT / "crates/opi-eval/tests/fixtures/benchmarks" / family / "task-package"
+                    shutil.copytree(source, task)
+                    (task / "task.toml").write_text(
+                        "[task]\nid = " + json.dumps(pin["task"]["id"])
+                        + "\n[environment]\n[verifier]\ntimeout_sec = 1\n",
+                        encoding="utf-8")
+                    for dockerfile in task.rglob("Dockerfile"):
+                        dockerfile.write_text("FROM scratch\n", encoding="utf-8")
+                for runner in ("harbor", "pier"):
+                    runner_dir = external / runner
+                    runner_dir.mkdir()
+                    (runner_dir / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+                opi = root / "opi"
+                node = root / "node"
+                package = root / "pi-package"
+                bundle = package / "dist/bundle/cli.js"
+                opi.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                opi.chmod(0o755)
+                node.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                node.chmod(0o755)
+                bundle.parent.mkdir(parents=True)
+                bundle.write_text("fixture", encoding="utf-8")
+                for name in ("docs", "examples"):
+                    (package / name).mkdir()
+                for name in ("package.json", "README.md", "CHANGELOG.md"):
+                    (package / name).write_text("fixture", encoding="utf-8")
+
+                def sha(path):
+                    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+                agents.mkdir()
+                provider.mkdir()
+                (agents / "opi-identity.json").write_text(json.dumps({
+                    "canonical_executable": str(opi),
+                    "executable_sha256": sha(opi)}), encoding="utf-8")
+                (agents / "pi-identity.json").write_text(json.dumps({
+                    "node_executable": str(node), "node_sha256": sha(node),
+                    "bundle_path": str(bundle), "bundle_sha256": sha(bundle)}),
+                    encoding="utf-8")
+                (provider / "endpoint.txt").write_text("127.0.0.1:48127", encoding="utf-8")
+                lock_file = (REPO_ROOT / "crates/opi-eval/external-locks/static"
+                             / "linux-x86_64.json")
+                template = {
+                    "schema": "opi-eval-native-material/6", "origin": "local",
+                    "static_lock": {"path": str(lock_file), "sha256": sha(lock_file)},
+                    "provider": {
+                        "script": {"path": "unused",
+                                   "sha256": sha(REPO_ROOT / "crates/opi-eval/scripts/scripted-provider.py")},
+                        "endpoint": "http://127.0.0.1:48127", "request_log": "unused"},
+                    "agents": {
+                        "opi": {"executable": {"path": str(opi), "sha256": sha(opi)},
+                                "integrations": {}},
+                        "pi": {"executable": {"path": str(package / "pi"), "sha256": "fixture"},
+                               "integrations": {}},
+                    },
+                    "benchmark": {
+                        "corpus": {"root": "unused", "source_commit": "a" * 40,
+                                   "tasks_tree": "b" * 40},
+                        "tasks": {"fixture-task": {
+                            "native_task_name": "fixture-task",
+                            "profile": {"path": "unused", "sha256": "c" * 64},
+                            "task_package": "unused",
+                            "task_package_manifest_sha256": "d" * 64}},
+                        "verifier_executable": {"path": "unused", "sha256": "e" * 64},
+                        "verifier_env": {},
+                        "runner_project": {
+                            "path": "/fixture/runners",
+                            "source_manifest_sha256": "f" * 64,
+                            "interpreter": {"path": "/fixture/runners/.venv/bin/python",
+                                            "sha256": "1" * 64},
+                            "entrypoint": {"path": "/fixture/runners/.venv/bin/runner",
+                                           "sha256": "2" * 64}},
+                        "oracle": {"path": "unused", "sha256": "e" * 64},
+                        "oracle_env": {},
+                    },
+                }
+                template_path = root / "identity-template.json"
+                template_path.write_text(json.dumps(template, indent=2, sort_keys=True),
+                                         encoding="utf-8")
+                stub_body = (
+                    "#!/usr/bin/env python3\n"
+                    "import json, pathlib, sys\n"
+                    "template = pathlib.Path(__TEMPLATE__)\n"
+                    "calls = pathlib.Path(__CALLS__)\n"
+                    "refuse = __REFUSE__\n"
+                    "argv = sys.argv[1:]\n"
+                    "with calls.open('a') as log:\n"
+                    "    log.write(json.dumps(argv) + chr(10))\n"
+                    "if argv[0] == 'prepare':\n"
+                    "    if refuse:\n"
+                    "        raise SystemExit('shared-preparation-refused')\n"
+                    "    config = pathlib.Path(argv[argv.index('--config') + 1])\n"
+                    "    out = pathlib.Path(argv[argv.index('--out') + 1])\n"
+                    "    out.mkdir(parents=True, exist_ok=True)\n"
+                    "    identity = json.loads(template.read_text())\n"
+                    "    identity['benchmarks'] = {config.stem: identity.pop('benchmark')}\n"
+                    "    (out / 'material.json').write_text(json.dumps(identity, indent=2, sort_keys=True))\n"
+                    "elif argv[0] == 'validate':\n"
+                    "    print('native_integrity=' + 'a' * 64)\n"
+                    "else:\n"
+                    "    raise SystemExit('unexpected CLI call: ' + str(argv))\n"
+                ).replace("__TEMPLATE__", repr(str(template_path))
+                ).replace("__CALLS__", repr(str(calls))
+                ).replace("__REFUSE__", str(int(refuse)))
+                companion = bin_dir / "opi-eval"
+                companion.write_text(stub_body, encoding="utf-8")
+                companion.chmod(0o755)
+                cargo = bin_dir / "cargo"
+                cargo.write_text(
+                    "#!/usr/bin/env python3\n"
+                    "import os, pathlib, sys\n"
+                    "if sys.argv[1] == 'test':\n"
+                    "    root = pathlib.Path(os.environ['OPI_EVAL_OUTPUT_CONTROL_OUT'])\n"
+                    "    for product in ('opi', 'pi'):\n"
+                    "        (root / product).mkdir(parents=True)\n"
+                    "        (root / product / 'output-control.json').write_text('{}')\n"
+                    "else:\n"
+                    "    import json as _json\n"
+                    "    print(_json.dumps({'reason': 'compiler-artifact',\n"
+                    "                       'target': {'name': 'opi-eval'},\n"
+                    "                       'executable': " + repr(str(companion)) + "}))\n",
+                    encoding="utf-8")
+                cargo.chmod(0o755)
+                for name, body in (
+                        ("git", "#!/bin/sh\nprintf '%s\\n' " + "a" * 40 + "\n"),
+                        ("uv", "#!/bin/sh\nexit 0\n")):
+                    stub = bin_dir / name
+                    stub.write_text(body, encoding="utf-8")
+                    stub.chmod(0o755)
+                env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(root)}
+                result = subprocess.run(
+                    ["bash", str(PRODUCER), "materialize-configs",
+                     "--external-root", str(external),
+                     "--agents-out", str(agents),
+                     "--provider-out", str(provider),
+                     "--out", str(out)],
+                    env=env, text=True, capture_output=True, cwd=str(REPO_ROOT))
+                if refuse:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("shared-preparation-refused", result.stderr)
+                    self.assertFalse((out / "material-routing.json").exists(),
+                                     "CI published material after a shared prepare refusal")
+                    continue
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                invocations = [json.loads(line) for line in calls.read_text().splitlines()]
+                self.assertTrue(any(argv[0] == "prepare" for argv in invocations),
+                                "materialization did not delegate to shared preparation")
+                routing = json.loads((out / "material-routing.json").read_text(encoding="utf-8"))
+                self.assertEqual(routing["schema"], "opi-eval-native-material-routing/1")
+                self.assertEqual(sorted(routing["adapters"]),
+                                 ["deepswe-v1.1", "terminal-bench-2.1", "terminal-bench-3.0"])
+                runner_projects = {}
+                for adapter, entry in routing["adapters"].items():
+                    material_path = Path(entry["path"])
+                    self.assertTrue(material_path.is_file())
+                    self.assertEqual(sha(material_path), entry["sha256"])
+                    material = json.loads(material_path.read_text(encoding="utf-8"))
+                    self.assertEqual(material["schema"], "opi-eval-native-material/6")
+                    self.assertEqual(material["origin"], "local")
+                    runner_projects[adapter] = material["benchmarks"][adapter]["runner_project"]
+                # One shared preparation identity: identical runner source
+                # admission across every family.
+                first = runner_projects["terminal-bench-2.1"]
+                for adapter in ("terminal-bench-3.0", "deepswe-v1.1"):
+                    self.assertEqual(runner_projects[adapter]["source_manifest_sha256"],
+                                     first["source_manifest_sha256"])
+                receipt = json.loads((out / "materialize-receipt.json").read_text(encoding="utf-8"))
+                self.assertEqual(receipt["preparation"], "shared-local-prepare")
+
     # -- conformance receipt count -------------------------------------------
     def test_conformance_receipt_count_derives_from_the_case_list(self) -> None:
         text = PRODUCER.read_text(encoding="utf-8")

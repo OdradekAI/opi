@@ -118,7 +118,7 @@ prepare 校验包身份并拒绝越界链接或缺失的运行时文件，然后
 
 缓存中的 `corpora/<adapter>/tasks` 必须是完整、干净且版本固定的 Git 语料。
 prepare 为选中任务生成 `packages/<adapter>/<task-id>` 和绑定 SHA-256 的
-`profiles/<adapter>/<task-id>.toml`。material/5 分开记录完整语料的
+`profiles/<adapter>/<task-id>.toml`。material/6 分开记录完整语料的
 root/commit/tasks-tree 与所选 `tasks` 映射；每项绑定 canonical ID、原生名称、
 profile 和任务包。任务镜像及 Dockerfile 基础镜像必须解析为不可变摘要。已种子化
 固定 materializer 时，prepare 按准入摘要拉取所选任务缺失的镜像，并在同一所选
@@ -338,7 +338,7 @@ conformance matrix 定义；不受支持的 suite、adapter 或 case 会 fail-cl
 | 模式 | 输入与行为 | 能够证明什么 |
 |------|------------|--------------|
 | Hermetic fixture 模式 | 默认模式。使用有界的确定性 helper 和仓库内固定 fixture。 | 能证明 adapter、lifecycle、sealing、reporting 和失败路径的 conformance；不能证明真实产品或真实 Provider 的 fidelity。 |
-| Native-material 模式 | 给 `validate`、`run` 或 `conformance` 添加 `--native-material <MANIFEST>`。manifest（schema `opi-eval-native-material/5`）会解析精确的 Agent executable、在任务环境内运行 Agent 的固定 integration module（按 runner 家族各一份：Terminal-Bench 路线用 Harbor，DeepSWE 用 Pier）、task package、verifier/oracle 入口和 scripted-provider endpoint。 | 对 `run`：每个 trial 由一个显式选择的 upstream job 在被评分的任务环境内运行所选 Agent，并对同一个 trial 评分；导入的结果必须先绑定到所选 Agent、task 与 job 身份，之后才能 seal。Terminal-Bench 3.0 走其声明的独立 verifier 交接：解析并绑定任务自身 `task.toml` 的生命周期（不支持的形态——多步任务、禁用 verifier、Harbor 路线上的 verifier collect 钩子、非 Linux 任务——在任何 verifier 启动之前拒绝）；对独立 verifier 任务，只有声明过的 artifact 进入全新 verifier——未声明、缺失或被替换的收集一律拒绝，无关的 canary 文件留在 verifier 之外。DeepSWE 走其声明的已提交补丁交接：Pier 任务的 collect 钩子提取超出任务 base revision 的已提交补丁，无网络的全新 pristine verifier 只对这份补丁评分（未提交的工作绝不可能被替换进来）；被绑定的 job 必须记录任务声明的生命周期以及 base revision 与环境镜像，nop 的空补丁照样收集并评零分，未声明的收集一律拒绝。密封 bundle 记录 verifier 输入身份（`native/verifier-input.json`：环境模式、DeepSWE 的 base revision 与镜像，加上每个声明 artifact 及其被收集字节的精确摘要）。`conformance` 只允许已注册的 native case 子集（含三个家族显式选择的 `oracle-witness`/`nop-witness` artifact witness）。 |
+| Native-material 模式 | 给 `validate`、`run` 或 `conformance` 添加 `--native-material <MANIFEST>`。manifest（schema `opi-eval-native-material/6`）会解析精确的 Agent executable、在任务环境内运行 Agent 的固定 integration module（按 runner 家族各一份：Terminal-Bench 路线用 Harbor，DeepSWE 用 Pier）、task package、verifier/oracle 入口和 scripted-provider endpoint。 | 对 `run`：每个 trial 由一个显式选择的 upstream job 在被评分的任务环境内运行所选 Agent，并对同一个 trial 评分；导入的结果必须先绑定到所选 Agent、task 与 job 身份，之后才能 seal。Terminal-Bench 3.0 走其声明的独立 verifier 交接：解析并绑定任务自身 `task.toml` 的生命周期（不支持的形态——多步任务、禁用 verifier、Harbor 路线上的 verifier collect 钩子、非 Linux 任务——在任何 verifier 启动之前拒绝）；对独立 verifier 任务，只有声明过的 artifact 进入全新 verifier——未声明、缺失或被替换的收集一律拒绝，无关的 canary 文件留在 verifier 之外。DeepSWE 走其声明的已提交补丁交接：Pier 任务的 collect 钩子提取超出任务 base revision 的已提交补丁，无网络的全新 pristine verifier 只对这份补丁评分（未提交的工作绝不可能被替换进来）；被绑定的 job 必须记录任务声明的生命周期以及 base revision 与环境镜像，nop 的空补丁照样收集并评零分，未声明的收集一律拒绝。密封 bundle 记录 verifier 输入身份（`native/verifier-input.json`：环境模式、DeepSWE 的 base revision 与镜像，加上每个声明 artifact 及其被收集字节的精确摘要）。`conformance` 只允许已注册的 native case 子集（含三个家族显式选择的 `oracle-witness`/`nop-witness` artifact witness）。 |
 
 Agent 可携带 `runtime_package`，其中包含绝对 `path`、排序文件清单的
 `manifest_sha256`，以及绑定到固定 executable 的相对 `entrypoint`。
@@ -347,9 +347,12 @@ native handoff schema 为 `opi-eval-native-handoff/3`；Harbor 和 Pier 在使�
 穿越均拒绝。对于本地准备，`cache/agents/<product>` 可以是 executable，
 也可以是包含 `<product>` executable 及其资源的目录。
 
-本地 material 还通过 `runner_project` 绑定静态 runner 提交、锁文件和已跟踪
-源码字节；加载时重新校验这些身份及绝对 `UV_PROJECT`、
-`UV_PROJECT_ENVIRONMENT` 和 `UV_PYTHON` 选择。准备流程对显式
+本地 material 还通过 `runner_project` 绑定静态 runner 提交、锁文件、已跟踪源码
+字节以及已安装的 runner 可执行文件：固定的 `.venv/bin/python` 解释器与
+`.venv/bin/<runner>` 控制台入口都携带精确字节身份。加载时重新校验这些身份、
+已安装字节及绝对 `UV_PROJECT`、`UV_PROJECT_ENVIRONMENT` 和 `UV_PYTHON` 选择；
+已安装字节缺失或被更改时，在任何 validate/plan/run 效果或冻结计划接受之前
+拒绝使用该 material。material/5 及更早版本需要重新生成。准备流程对显式
 oracle 诊断复用同一固定 uv executable。Pier 从 handoff 的选定
 `inference_endpoint` 推导推理域名白名单，并只向 Agent 进程投影上游代理环境；
 独立 verifier 不接收白名单或代理凭据。
@@ -368,7 +371,9 @@ runner 注册的 `oracle` 或 `nop` 名称，不携带自定义 import path。�
 `credential_env`/`credential_file` 引用之一。不存在 provider、协议、模型或
 计费产品的回退：credential 只在受监督的 Agent 启动内解析；缺失的 credential
 与 required-but-unsupported 的 `[model_controls]` 控件在任何模型效果之前拒绝；
-远程 base URL 必须显式声明 `[execution].mode = "live"`（否则只允许回环地址）。
+required 的 `reasoning` 值在任何 native 选择形态与协议下都会在 `validate`、
+`plan` 和 `run` 中被拒绝，因为当前 native 执行无法证明该控件生效；可选的已
+提供 reasoning 值仍可被接受，并显式报告为不可比较。远程 base URL 必须显式声明 `[execution].mode = "live"`（否则只允许回环地址）。
 `[execution.caps]` 中请求的货币/用量上限会被拒绝，因为 native 路由无法强制执行。
 native Agent 时间采用已提供的 `time_limit_seconds` 与 `agent_timeout_seconds`
 中的较小值；`verifier_timeout_seconds` 限制 verifier 阶段。任务原有的更窄
@@ -454,15 +459,22 @@ provider/API/model、冻结控制、投影 config 和独立监听器日志。保
 `control/output-control.json`。
 
 CLI 只消费已经解析的 native-material manifest；它不会临时拼凑或静默替换缺失的
-native input。Native materialization 和 fidelity 验证由仓库的
-[native-smoke workflow](../../.github/workflows/opi-eval-native-smoke.yml) 负责。
-其 materialization 阶段在固定 material 和冻结 config 前，通过同一回环探针
-验证 required 的 4096 token 上限。Opi 使用已定位的构建 executable；pi 通过
-相对路径 launcher 携带已构建的 Node 解释器、package 元数据、发行代码与资源。
-探针绑定的 package 和 entrypoint 与 trial material 声明一致。证据失败或不完整
-会停止 materialization；artifact verifier 仍要求 comparable pair。该阶段可能
-获取锁定的 Cargo 测试依赖，但客户端仅接收隔离的合成认证值与回环 URL。
-真实 Provider 行为评测使用显式调用的
+native input。Native materialization 由公共本地 `prepare` 路径拥有，并附带显式的
+exact-client 输出控制证明；仓库的
+[native-smoke workflow](../../.github/workflows/opi-eval-native-smoke.yml)
+只是基于同一共享准备的回归调用方。
+其 materialization 阶段把所有 task/image/profile/runner-material 决策委托给同一
+公共本地 `prepare` 路径：已获取的外部 checkout、构建好的 agent 与仓库 pin 被送入
+已准入的固定 cache，每个 benchmark 家族一次共享准备生成对应的 per-family
+prepared material，而每个 CI 消费方（conformance 重跑、oracle 预检、trial）都通过
+已发布的 per-family 路由表解析自己的 material——CI 不保留独立的变换或准入规则，
+任何共享 prepare 拒绝都会在任何 material 发布之前停止 materialization。该阶段在
+固定证据和冻结 config 前，通过同一回环探针验证 required 的 4096 token 上限。Opi
+使用已定位的构建 executable；pi 通过相对路径 launcher 携带已构建的 Node 解释器、
+package 元数据、发行代码与资源。探针绑定的 package 和 entrypoint 与 trial
+material 声明一致。证据失败或不完整会停止 materialization；artifact verifier
+仍要求 comparable pair。该阶段可能获取锁定的 Cargo 测试依赖，但客户端仅接收
+隔离的合成认证值与回环 URL。真实 Provider 行为评测使用显式调用的
 [opi-eval workflow](../../.agents/skills/opi-eval/SKILL.md)；其预算和证据管理与本文
 hermetic CLI 示例相互独立。
 
@@ -505,7 +517,10 @@ $RUN_ROOT/
 sealed bundle 一旦生成，就应视为不可变。修改任何受覆盖字节都会导致 `verify`、`regrade` 和
 `report` 验证失败；这两个命令都不会修复证据或静默重算摘要。`--canaries PATH`
 指定的文件每行声明一个 canary；如果 exportable content 中出现其中任意内容，
-sealing 或报告发布会被阻止。native canary 违约还会取消整个 run，阻止后续 trial
+sealing 或报告发布会被阻止。native 运行中，已解析的所选连接凭据本身也会受到同样保护，
+即使未指定 `--canaries`：它在任何已暂存 native 导出中的精确回显都会阻止该 trial 的
+sealing，取消整个 run 以阻止后续 trial 启动，且绝不会把该密钥序列化进任何守卫列表或
+artifact。native canary 违约还会取消整个 run，阻止后续 trial
 启动；已观察到的证据保持私有、未密封，未派发 trial 仍保留在计划覆盖范围内。
 离线比较要求已请求的 native 输出上限具备密封的 output-control 快照。缺少证明时
 仍标为不受支持，旧 bundle 也如此；可变的 run report 不能提升可比性或补充缺失证明。
@@ -514,7 +529,7 @@ sealing 或报告发布会被阻止。native canary 违约还会取消整个 run
 |------|----------|
 | 配置被拒绝 | 先运行 `validate`，再根据 stderr 中的类型化诊断处理。系统没有隐式控制默认值或回退。 |
 | run root 已包含 durable state | 不要删除或编辑 trial 证据。使用 `run --recover` 对 durable state 分类；若 trial 崩溃，则使用显式 replacement 流程。 |
-| native material 被拒绝 | 通过 native workflow 重新生成并解析；不要替换为未固定的 executable 或 task package。 |
+| native material 被拒绝 | 通过公共本地 `prepare` 路径从已准入的固定 cache 重新生成，并刷新 exact-client 输出控制证明；不要替换为未固定的 executable 或 task package。 |
 | `verify`/`regrade` 报告 `mutation-detected` 或类型化拒绝 | 保留 bundle 与保留 artifacts 以便诊断，不要修复、重写或重算摘要。 |
 | `report` 被阻止 | 检查 bundle verification 与 canary failure；修正输入来源后，使用新的、位于 run root 外的 `--out` 路径。 |
 
@@ -524,7 +539,24 @@ sealing 或报告发布会被阻止。native canary 违约还会取消整个 run
 
 `run --replacement-for <TRIAL_ID>` 每次调用使用同一个新 attempt token，为崩溃
 trial 所在的整个对比组创建新身份。替换前会校验原计划并展开 selection；新实验
-保留冻结范围、控制项及无关分组。必须使用新输出目录，原计划与运行证据保持不变。
+保留冻结范围、控制项及无关分组。替换实际重新执行的每一个 trial——包括保留的
+无关分组——都以全新 trial ID 运行；只有目标对比组携带 attempt 后缀，因此无关
+分组保留其冻结的分组身份，同时整个声明范围仍全部派发。
+必须使用新输出目录，原计划与运行证据保持不变。
+
+保留了被取代尝试的耐久 root 无法直接发布报告——对整个混合 root，`report` 会拒绝
+控制漂移、未声明 trial 和 run-control 漂移，这一拒绝是有意为之。要在不改动原始
+证据的前提下重构恰好一次 run-control 声明执行的报告视图，请按每次执行只读复制：
+
+1. 保持原始混合 root 不变；绝不删除或重新标记其中被取代的尝试。
+2. 为恰好一次 `run-control.json` 声明的执行创建新的 staging root，逐字节复制该
+   `run-control.json` 及其 `planned_trials` 声明的恰好那些 trial 目录。
+3. 对 staging 副本运行 `verify` 和 `report`，输出写入 staging root 与原始 root 之外。
+4. 原始 root 中保留全部被取代的尝试，并在记录中标明 staging 副本身份；staging
+   视图只是报告重构，绝不替代被保留的证据。
+
+该 staging 流程绝不削弱校验：staging root 仍需逐字节验证通过，而整个混合 root
+依旧被拒绝。
 
 ### 本地操作员验收与离线校验器
 
@@ -547,7 +579,12 @@ benchmark 家族）的 manifest、冻结的 controls、source/build/
 material/bundle 摘要、保留的命令退出码与 provider/tool/native
 工件、Opi 专属的 `opi-artifact-audit` 范围捕获视图（与三个原始
 Opi native 捕获逐字节绑定且恰好穷尽它们），以及 pi/Harbor/Pier
-来源记录的缓存上游仓库身份清单。任何人都可以离线校验该证据：
+来源记录的缓存上游仓库身份清单。保留清单必须为每个 trial 家族
+携带恰好一条 material 记录且路径唯一，并包含由各保留 material 的
+`static_lock` pin 定位的已准入 static-lock 字节；pi、Harbor 与
+Pier 的身份从这些已准入 lock 字节推导（来自 lock 的 subject 与
+固定的 runner tools 的仓库限定提交身份），绝不依赖多个提供的
+映射彼此印证，缓存清单仅作佐证。任何人都可以离线校验该证据：
 
 ```sh
 python3 crates/opi-eval/scripts/verify-local-acceptance.py \
@@ -558,8 +595,10 @@ python3 crates/opi-eval/scripts/verify-local-acceptance.py \
 
 校验器绝不启动 Agent、读取凭据或联系 provider。它拒绝被替换、
 oracle、缺失或仅 fixture 的证据，拒绝把空的一般审计成功当作验收，
-仅凭随证据提供的缓存身份校验上游提交（绝不在本 checkout 中
-解析提交），并且只针对随证据提供的家族 run 根调用构建出的
+要求每个封存的 control/integrity upstream identity 绑定其家族的
+已准入 lock 摘要，并依据从已准入 lock 字节推导出的身份校验上游
+提交（与随证据提供的缓存清单交叉核对，绝不在本 checkout 中
+解析提交），且只针对随证据提供的家族 run 根调用构建出的
 Companion `verify` 与 `report`。退出码 0 表示接受证据；退出码 2
 输出一个类型化的拒绝原因。
 
@@ -579,7 +618,7 @@ Docker 环境。每条命令保留自身的进程组身份；阶段取消必须�
 该环境选择和有效的阶段时限。销毁保留共享镜像与相邻资源。integration 字节变化
 要求新的 material 和 plan 身份；已有源 bundle 不会被改写。
 
-使用准备好的 material/5 显式运行无模型阶段见证：
+使用准备好的 material/6 显式运行无模型阶段见证：
 
 ```sh
 OPI_EVAL_NATIVE_WITNESS_MATERIAL=/absolute/material.json \

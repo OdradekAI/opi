@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// The one admitted manifest schema identity.
-pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/5";
+pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/6";
 
 /// Typed material rejections (exit-path failures, never settled outcomes).
 #[derive(Debug, Error)]
@@ -130,6 +130,14 @@ pub(crate) struct RunnerProject {
     pub(crate) path: PathBuf,
     /// Tracked Git entries and their working-file bytes, including uv.lock.
     pub(crate) source_manifest_sha256: String,
+    /// The installed interpreter the pinned environment selects
+    /// (`UV_PYTHON`): exact byte identity, re-verified on load so a
+    /// replaced `.venv/bin/python` rejects material use before any
+    /// validate/plan/run effect (P19-AUD-003).
+    pub(crate) interpreter: PinnedFile,
+    /// The installed runner console entrypoint (`.venv/bin/<family>`):
+    /// exact byte identity, re-verified on load for the same boundary.
+    pub(crate) entrypoint: PinnedFile,
 }
 
 impl RunnerProject {
@@ -148,6 +156,24 @@ impl RunnerProject {
         } else {
             "harbor"
         };
+        // The installed runner bytes must sit at the selected project's
+        // pinned locations; a pinned copy of another tree cannot stand in
+        // for the environment the dispatch actually selects.
+        if self.interpreter.path != self.path.join(".venv/bin/python") {
+            return Err(reject(
+                "interpreter pin must select the project's .venv/bin/python",
+            ));
+        }
+        if self.entrypoint.path != self.path.join(".venv/bin").join(family) {
+            return Err(reject(
+                "entrypoint pin must select the project's installed runner console script",
+            ));
+        }
+        verify_pinned(&self.interpreter)
+            .map_err(|_| reject("installed interpreter bytes drifted from the pinned identity"))?;
+        verify_pinned(&self.entrypoint).map_err(|_| {
+            reject("installed runner entrypoint bytes drifted from the pinned identity")
+        })?;
         let lock: serde_json::Value = serde_json::from_slice(&std::fs::read(static_lock)?)
             .map_err(|_| reject("cannot parse static lock"))?;
         let pin = lock

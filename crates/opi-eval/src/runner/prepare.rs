@@ -1773,6 +1773,14 @@ pub(crate) async fn prepare(
                 "runner_project": {
                     "path": runner_project.canonicalize()?,
                     "source_manifest_sha256": inventory.entries[&format!("runners:{runner}")].sha256,
+                    "interpreter": {
+                        "path": runner_project.canonicalize()?.join(".venv/bin/python"),
+                        "sha256": inventory.entries[&format!("runners:{runner}:python")].sha256,
+                    },
+                    "entrypoint": {
+                        "path": runner_project.canonicalize()?.join(".venv/bin").join(runner),
+                        "sha256": inventory.entries[&format!("runners:{runner}:entrypoint")].sha256,
+                    },
                 },
                 "oracle": {"path": oracle, "sha256": digest_of(&oracle)},
                 "oracle_env": verifier_env,

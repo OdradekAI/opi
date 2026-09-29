@@ -70,13 +70,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declared preserved inputs; uncertain cleanup blocks further dispatch.
   Original bundles and scores remain unchanged.
 
-- `opi-eval`: native material moves to `opi-eval-native-material/5`, and
+- `opi-eval`: native material moves to `opi-eval-native-material/6`, and
   frozen plans/previews to `opi-eval-run-plan/2` / `opi-eval-plan-preview/2`.
   Complete pinned corpora are independent of the per-task material map;
   each selected task binds its own native name, profile, package and immutable
   images. Prepare caches per-task profiles and packages, and both run entry
-  paths dispatch exactly the selected tasks. Material/4 and plan/1 require
-  regeneration; existing sealed bundles are preserved.
+  paths dispatch exactly the selected tasks. A local `runner_project` now
+  pins and re-verifies the installed `.venv/bin/python` interpreter and
+  `.venv/bin/<runner>` console entrypoint byte identities; missing or
+  changed installed bytes reject material loading before any validate, plan
+  or run effect and before accepting frozen plans. Material/4, material/5
+  and plan/1 require regeneration; existing sealed bundles are preserved.
 
 - `opi-eval`: executing into a previously claimed run root now rejects before
   replacing control or trial evidence. Replacement executions require a fresh
@@ -302,6 +306,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `opi-eval`: native canary detection cancels the run before another trial
   starts. Failed sealing retains private evidence and planned missing coverage.
+
+- `opi-eval`: native sealing now also guards the resolved selected
+  connection credential itself. Without `--canaries`, an exact echo of the
+  selected credential in any staged native export blocks sealing, cancels
+  the run before another trial starts, and keeps diagnostics private; the
+  secret is never serialized into a guard list or artifact.
+
+- `opi-eval`: replacement now gives every trial it actually re-executes a
+  fresh trial ID, including retained unrelated groups; only the targeted
+  comparison group carries the attempt suffix, and the declared replacement
+  scope, controls and original source/run bytes stay unchanged.
+
+- `opi-eval`: native result admission compares the observed task reference
+  to the exact absolute dispatched task package. A substituted package can
+  no longer be admitted as the selected dispatch or sealed, even when the
+  recorded task name and lifecycle fields still match; the rejection lands
+  on both the completed and setup-refusal paths.
+
+- `opi-eval`: offline local acceptance binds provenance to the admitted
+  material. The preserved inventory is mandatory and path-unique with
+  exactly one material entry per trial family; the admitted static-lock
+  bytes are located by each preserved material's `static_lock` pin and
+  must agree with every family's sealed control/integrity upstream
+  identity; pi/Harbor/Pier source identities derive from the admitted
+  lock bytes, with the operator identity cache demoted to corroborating
+  evidence. Coordinated substitutions, duplicates, cross-family bindings
+  and missing or tampered inventories reject before acceptance.
+
+- `opi-eval`: native validation, planning and execution now reject a
+  required `reasoning` value for every selection shape and protocol
+  before any Agent or verifier dispatch, because current native
+  execution cannot prove that control effective. Optional unsupported
+  reasoning remains explicitly non-comparable.
+
+- `opi-eval`: plan creation canonicalizes the accepted native-material
+  path before loading, hashing and recording it. A plan created from a
+  relative material path with a nested output loads that same unchanged
+  material by default from both the creation directory and an unrelated
+  working directory; drift and substitution checks are unchanged.
+
+- `opi-eval`: the native-smoke CI delegates materialization to the shared
+  local preparation path. The workflow transports the fetched external
+  checkouts, built agents and repository pins into the admitted pinned
+  cache, runs one `prepare` per benchmark family, and routes every CI
+  consumer through the published per-family prepared-material map. The
+  duplicate CI task/profile/verifier-wrapper machinery is removed, a
+  shared prepare rejection stops material publication, and the artifact
+  reader validates the exact per-family prepared-manifest references.
 
 - `opi-eval`: pinned Harbor/Pier jobs select an owned Docker execution
   environment for both Agent and verifier stages. Cancellation waits for the

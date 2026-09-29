@@ -48,6 +48,12 @@ NATIVE_CAPTURES = Path("bundle/artifacts/native")
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 # Credential-shaped names never cross into the spawned Companion.
 CREDENTIAL_MARKERS = ("API_KEY", "TOKEN", "SECRET", "CREDENTIAL", "OPI_EVAL_SCRIPTED_KEY")
+# Canonical locked acquisition routes for the pinned runners; the lock's
+# commit plus this route is the repository-qualified identity.
+RUNNER_REPOSITORIES = {
+    "harbor": "https://github.com/harbor-framework/harbor",
+    "pier": "https://github.com/datacurve-ai/pier",
+}
 
 
 class Rejection(Exception):
@@ -213,21 +219,135 @@ class Acceptance:
                     f"{trial['agent']} build is {expected}"
                 )
 
-    def check_material(self, manifest: dict) -> None:
-        for entry in manifest.get("material", []):
+    def check_material(self, manifest: dict, trials: list[dict]) -> None:
+        """Exactly one preserved material entry per trial family, each
+        recomputed against the preserved bytes, and each family's admitted
+        static lock bound through the preserved bytes and the sealed
+        control/integrity upstream identity (repository-qualified identity
+        derives from the admitted lock bytes, never from supplied maps)."""
+        entries = manifest.get("material", [])
+        if not isinstance(entries, list) or not entries:
+            raise Rejection("material digest: no preserved material inventory")
+        by_family: dict[str, list[dict]] = {}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise Rejection("material digest: malformed material entry")
             family = entry.get("family")
             if family not in FAMILIES:
                 raise Rejection(f"material digest: unknown family {family!r}")
+            by_family.setdefault(family, []).append(entry)
+        trial_families = {trial["family"] for trial in trials}
+        if set(by_family) != trial_families:
+            raise Rejection(
+                f"material digest: families {sorted(by_family)} do not cover the "
+                f"trial families {sorted(trial_families)} exactly"
+            )
+        self.lock_identities: dict[str, dict] = {}
+        for family, rows in by_family.items():
+            if len(rows) != 1:
+                raise Rejection(
+                    f"material digest: family {family!r} has {len(rows)} material "
+                    "entries, expected exactly one"
+                )
             preserved = self.root / "runs" / family / "material.json"
             if not preserved.is_file():
                 raise Rejection(f"material digest: family {family!r} preserved no material")
             observed = sha256(preserved.read_bytes())
-            if observed != entry.get("material_sha256"):
+            if observed != rows[0].get("material_sha256"):
                 raise Rejection(
                     f"material digest: family {family!r} declares "
-                    f"{entry.get('material_sha256')} but the preserved bytes hash to "
+                    f"{rows[0].get('material_sha256')} but the preserved bytes hash to "
                     f"{observed}"
                 )
+            material = load_json(preserved, f"material {family!r}")
+            pin = material.get("static_lock")
+            if (
+                not isinstance(pin, dict)
+                or not isinstance(pin.get("sha256"), str)
+                or not HEX64.match(pin["sha256"])
+            ):
+                raise Rejection(
+                    f"material provenance: family {family!r} pins no static-lock digest"
+                )
+            self.lock_identities[family] = self.check_admitted_lock(
+                manifest, family, pin["sha256"], trials
+            )
+
+    def check_admitted_lock(
+        self, manifest: dict, family: str, lock_sha256: str, trials: list[dict]
+    ) -> dict:
+        """Locate the preserved admitted static-lock bytes by the material's
+        pin, recompute the digest, agree it with every sealed
+        control/integrity upstream identity of this family, and derive the
+        repository-qualified upstream identities from the lock bytes."""
+        preserved = manifest.get("preserved", [])
+        if not isinstance(preserved, list):
+            raise Rejection("preserved artifact: inventory is malformed")
+        rows = [
+            entry
+            for entry in preserved
+            if isinstance(entry, dict) and entry.get("sha256") == lock_sha256
+        ]
+        if len(rows) != 1:
+            raise Rejection(
+                f"material provenance: family {family!r} preserves "
+                f"{len(rows)} copies of the admitted static lock, expected exactly one"
+            )
+        relative = rows[0].get("path", "")
+        candidate = (self.root / relative).resolve()
+        try:
+            candidate.relative_to(self.root.resolve())
+        except ValueError as error:
+            raise Rejection(
+                f"material provenance: admitted lock {relative!r} escapes the evidence root"
+            ) from error
+        if not candidate.is_file():
+            raise Rejection(f"material provenance: admitted lock {relative!r} is missing")
+        if sha256(candidate.read_bytes()) != lock_sha256:
+            raise Rejection(
+                f"material provenance: admitted lock {relative!r} does not hash to "
+                f"the pinned digest {lock_sha256}"
+            )
+        for trial in trials:
+            if trial["family"] != family:
+                continue
+            integrity = load_json(
+                self.resolve_run_root(trial)
+                / "trials"
+                / trial["id"]
+                / "bundle/artifacts/control/integrity.json",
+                f"sealed integrity {trial['id']!r}",
+            )
+            expected_identity = f"{family}@{lock_sha256}"
+            if integrity.get("upstream_identity") != expected_identity:
+                raise Rejection(
+                    f"material provenance: trial {trial['id']!r} sealed upstream "
+                    f"identity {integrity.get('upstream_identity')!r} does not bind the "
+                    f"admitted lock {expected_identity!r}"
+                )
+        lock = load_json(candidate, f"admitted lock {family!r}")
+        subjects = lock.get("subjects")
+        tools = lock.get("tools")
+        if not isinstance(subjects, list) or not isinstance(tools, list):
+            raise Rejection(
+                f"material provenance: admitted lock {family!r} lacks subjects or tools"
+            )
+        pi = unique_record(subjects, "pi", "admitted lock subjects")
+        harbor = unique_record(tools, "harbor", "admitted lock tools")
+        pier = unique_record(tools, "pier", "admitted lock tools")
+        identities = {}
+        for name, record, url in (
+            ("pi", pi, pi.get("repository_url")),
+            ("harbor", harbor, RUNNER_REPOSITORIES["harbor"]),
+            ("pier", pier, RUNNER_REPOSITORIES["pier"]),
+        ):
+            commit = record.get("commit")
+            if not isinstance(url, str) or not isinstance(commit, str) or not HEX40.match(commit):
+                raise Rejection(
+                    f"material provenance: admitted lock has no {name} identity"
+                )
+            identities[name] = {"repository_url": url, "commit": commit}
+        return identities
 
     def check_command_exits(self, manifest: dict) -> None:
         exits = manifest.get("command_exits", [])
@@ -280,8 +400,27 @@ class Acceptance:
                 )
 
     def check_preserved(self, manifest: dict) -> None:
-        for entry in manifest.get("preserved", []):
+        """The preserved inventory is mandatory, path-unique, and covers the
+        required material, admitted-lock and evidence references for every
+        family; every declared digest is recomputed."""
+        entries = manifest.get("preserved", [])
+        if not isinstance(entries, list) or not entries:
+            raise Rejection("preserved artifact: no preserved inventory")
+        seen: set[str] = set()
+        required: set[str] = set()
+        for family in FAMILIES:
+            required.add(f"runs/{family}/material.json")
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise Rejection("preserved artifact: malformed entry")
             relative = entry.get("path", "")
+            if not isinstance(relative, str) or not relative:
+                raise Rejection("preserved artifact: entry declares no path")
+            if relative in seen:
+                raise Rejection(
+                    f"preserved artifact: duplicate path {relative!r}"
+                )
+            seen.add(relative)
             candidate = (self.root / relative).resolve()
             try:
                 candidate.relative_to(self.root.resolve())
@@ -297,6 +436,11 @@ class Acceptance:
                     f"preserved artifact: {relative!r} declares {entry.get('sha256')} "
                     f"but the bytes hash to {observed}"
                 )
+        missing = sorted(required - seen)
+        if missing:
+            raise Rejection(
+                f"preserved artifact: required references missing {missing}"
+            )
 
     def check_controls(self, manifest: dict, trials: list[dict]) -> None:
         controls = manifest.get("controls", {})
@@ -698,6 +842,9 @@ class Acceptance:
     # -- upstream identities ---------------------------------------------------
 
     def check_upstream_identities(self, manifest: dict) -> None:
+        """Repository-qualified identities derive from the admitted lock
+        bytes (authority); the operator cache is corroborating evidence
+        only and can never substitute for or override the lock."""
         cache = load_json(
             self.root / "upstream-identity-cache.json", "upstream identity"
         )
@@ -708,6 +855,15 @@ class Acceptance:
             )
         repositories = cache.get("repositories", {})
         sources = manifest.get("sources", {})
+        derived = {}
+        for family in sorted(self.lock_identities):
+            for name, identity in self.lock_identities[family].items():
+                if name in derived and derived[name] != identity:
+                    raise Rejection(
+                        f"material provenance: families bind conflicting admitted "
+                        f"{name} identities {derived[name]!r} and {identity!r}"
+                    )
+                derived[name] = identity
         for name in ("pi", "harbor", "pier"):
             record = sources.get(name)
             if not isinstance(record, dict):
@@ -719,6 +875,17 @@ class Acceptance:
             if not HEX40.match(commit):
                 raise Rejection(
                     f"upstream identity: {name} commit {commit!r} is not a commit id"
+                )
+            authority = derived.get(name)
+            if (
+                authority is None
+                or url != authority["repository_url"]
+                or commit != authority["commit"]
+            ):
+                raise Rejection(
+                    f"upstream identity: {name} source record {url}@{commit} does "
+                    f"not match the admitted lock identity "
+                    f"{authority['repository_url'] if authority else None!r}"
                 )
             known = repositories.get(url)
             if not isinstance(known, dict):
@@ -782,7 +949,7 @@ class Acceptance:
         self.check_native_evidence(trials)
         self.check_bundle_digests(trials)
         self.check_builds(manifest, trials)
-        self.check_material(manifest)
+        self.check_material(manifest, trials)
         self.check_command_exits(manifest)
         self.check_preserved(manifest)
         self.check_controls(manifest, trials)

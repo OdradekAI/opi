@@ -121,6 +121,13 @@ def verify_workflow(text: str, f: Findings) -> None:
             family = ("canary-preflight" if stage == "preflight-canaries"
                       else "stage")
             f.reject(family, f"the workflow must invoke stage {stage}")
+    # Every material consumer routes through the shared per-family
+    # prepared-material map; nobody passes a synthesized manifest path.
+    f.require_count("materialize", text, "--material-root", 3,
+                    "every material consumer must route per-family "
+                    "prepared material through the material root")
+    f.forbid("materialize", text, "06-material/material.json",
+             "no stage may consume a single synthesized material manifest")
     if "crates/opi-eval/scripts/build-agent-artifacts.sh" not in text:
         f.reject("binding", "the workflow must bind the agent builder script")
     if "crates/opi-eval/scripts/scripted-provider.py" not in text:
@@ -147,13 +154,25 @@ def verify_producer(text: str, f: Findings) -> None:
     f.require("witness", text, "nop-witness",
               "the incorrect artifact witness must grade zero")
     f.require("materialize", text, "--native-material \"$material\"",
-              "the trial stage must consume the materialized manifest")
+              "the native stages must consume the routed prepared material")
     f.require("canary-preflight", text, "--canaries",
               "trials must gate sealing on the declared canary markers")
     f.require("upload", text, "opi-eval-upload-identity-receipt/1",
               "the upload identity receipt schema must be pinned")
     f.require("upload", text, '"artifact_digest"',
               "the upload receipt must bind the artifact digest")
+    # Shared local preparation: CI materialization delegates every
+    # task/image/profile/runner-material decision to the public prepare
+    # path and keeps no independent transform or admission rule.
+    f.require("materialize", text, '"prepare", "--config"',
+              "CI materialization must delegate to the shared local "
+              "prepare path")
+    f.require("materialize", text, "material-routing.json",
+              "materialization must publish the per-family routing map")
+    f.forbid("materialize", text, "def materialize_task",
+             "CI must not keep a duplicate task materialization policy")
+    f.forbid("materialize", text, 'out / "wrappers" / f"verifier-',
+             "CI must not keep duplicate verifier-wrapper machinery")
     # Workflow-byte binding: bytes are read from github.workflow_sha, not
     # from the mutable working tree or HEAD.
     f.require("workflow-sha", text,

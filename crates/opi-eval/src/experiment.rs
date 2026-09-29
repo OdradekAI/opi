@@ -1013,7 +1013,13 @@ impl ResolvedExperiment {
         &self.model_controls
     }
 
-    /// Reject required sampling values that a selected native client cannot express.
+    /// Reject required control values that a selected native client
+    /// cannot prove effective before any effect. Sampling admission covers
+    /// values the client cannot express; required reasoning additionally
+    /// rejects because current native execution cannot prove an effective
+    /// reasoning control (the pinned Pi command disables thinking and the
+    /// runner records supplied reasoning as unsupported only after
+    /// settlement, so a required value can never be enforced here).
     pub(crate) fn admit_native_controls(&self) -> Result<(), ResolveError> {
         for subject in self.subjects() {
             let client = match subject.product.as_str() {
@@ -1021,6 +1027,21 @@ impl ResolvedExperiment {
                 "pi" => NativeClient::Pi,
                 _ => continue,
             };
+            if self
+                .model_controls
+                .required
+                .iter()
+                .any(|name| name == "reasoning")
+                && matches!(self.model_controls.reasoning, ControlValue::Value(_))
+            {
+                return Err(ResolveError::RequiredControlUnsupported {
+                    control: "reasoning".to_owned(),
+                    reason: format!(
+                        "selected {} client cannot prove this control effective in native execution",
+                        subject.product
+                    ),
+                });
+            }
             for name in self.unsupported_native_sampling(client) {
                 if self.model_controls.required.contains(&name) {
                     return Err(ResolveError::RequiredControlUnsupported {
@@ -1951,5 +1972,151 @@ group = "hello"
                 ..
             }
         ));
+    }
+}
+
+#[cfg(test)]
+mod remediation_tests {
+    //! P19-AUD-006 admission probe: a required reasoning value must reject
+    //! before any native effect for every selection shape and protocol,
+    //! while an optional unsupported value stays admissible (it is only
+    //! reported as non-comparable after settlement).
+
+    use super::ResolvedExperiment;
+
+    fn document(api: &str, products: &str, reasoning: &str, required: bool) -> String {
+        let subjects: Vec<&str> = match products {
+            "opi" => vec!["opi"],
+            "pi" => vec!["pi"],
+            _ => vec!["opi", "pi"],
+        }
+        .into_iter()
+        .map(|product| match product {
+            "opi" => {
+                r#"[[subjects]]
+id = "candidate-opi"
+product = "opi"
+version = "0.1.0""#
+            }
+            _ => {
+                r#"[[subjects]]
+id = "baseline-pi"
+product = "pi"
+version = "0.84.3""#
+            }
+        })
+        .collect();
+        let trials: Vec<String> = subjects
+            .iter()
+            .enumerate()
+            .map(|(index, block)| {
+                format!(
+                    "[[trials]]\nid = \"trial-{index}\"\nsubject = \"{}\"\ntask = \"t\"\ngroup = \"g\"",
+                    if block.contains("candidate-opi") {
+                        "candidate-opi"
+                    } else {
+                        "baseline-pi"
+                    }
+                )
+            })
+            .collect();
+        let edges = if products == "paired" {
+            "[[edges]]\nid = \"edge-1\"\nbaseline = \"baseline-pi\"\ncandidate = \"candidate-opi\""
+        } else {
+            ""
+        };
+        let required = if required {
+            "\nrequired = [\"reasoning\"]"
+        } else {
+            ""
+        };
+        format!(
+            r#"schema = "opi-eval-experiment/2"
+experiment_id = "required-reasoning-probe"
+connection = "probe-local"
+
+[benchmark]
+name = "terminal-bench"
+revision = "2.1"
+dataset = "probe"
+integrity_digest = "{}"
+
+{subjects}
+
+[[connections]]
+id = "probe-local"
+provider = "p"
+api = "{api}"
+base_url = "http://127.0.0.1:48127/v1"
+model = "m"
+credential_env = "OPI_EVAL_PROBE_KEY"
+
+[model_controls]
+temperature = "omitted"
+top_p = "omitted"
+max_output_tokens = 4096
+context_window = 8192
+reasoning = "{reasoning}"{required}
+
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
+
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "isolated"
+
+{trials}
+
+{edges}
+"#,
+            "0".repeat(64),
+            subjects = subjects.join("\n\n"),
+            api = api,
+            reasoning = reasoning,
+            required = required,
+            trials = trials.join("\n\n"),
+            edges = edges
+        )
+    }
+
+    #[test]
+    fn current_required_reasoning_rejects_before_native_admission() {
+        for api in [
+            "anthropic-messages",
+            "openai-completions",
+            "openai-responses",
+        ] {
+            for products in ["paired", "opi", "pi"] {
+                let source = document(api, products, "high", true);
+                let experiment = ResolvedExperiment::resolve(&source)
+                    .unwrap_or_else(|error| panic!("{products} {api}: {error}"));
+                let error = experiment
+                    .admit_native_controls()
+                    .expect_err("required reasoning must reject before native admission");
+                assert!(
+                    error.to_string().contains("required control reasoning"),
+                    "{products} {api}: {error}"
+                );
+                assert!(
+                    error
+                        .to_string()
+                        .contains("cannot prove this control effective"),
+                    "{products} {api}: {error}"
+                );
+            }
+        }
+        // An optional supplied reasoning value stays admitted; its
+        // non-comparability is reported after settlement, not here.
+        for products in ["paired", "opi", "pi"] {
+            let source = document("anthropic-messages", products, "high", false);
+            let experiment = ResolvedExperiment::resolve(&source).unwrap();
+            assert!(
+                experiment.admit_native_controls().is_ok(),
+                "{products}: optional unsupported reasoning must stay admissible"
+            );
+        }
     }
 }

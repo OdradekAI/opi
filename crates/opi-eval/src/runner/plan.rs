@@ -536,9 +536,20 @@ pub(crate) fn build_plan(
                 crate::cli::run::selected_products_from(&experiment).map_err(|reason| {
                     PlanError::Rejected(format!("cannot select subject products: {reason}"))
                 })?;
+            // Freeze the canonical absolute material location before
+            // loading, hashing and recording it: a plan created from a
+            // relative material path must load the same unchanged bytes
+            // by default from any later working directory (P19-AUD-007).
+            // Exact material bytes and the existing drift checks are
+            // unchanged; there is no fallback path guessing.
+            let canonical = path.canonicalize().map_err(|error| {
+                PlanError::Rejected(format!(
+                    "native material path {path:?} cannot be resolved: {error}"
+                ))
+            })?;
             Some((
-                path.to_path_buf(),
-                crate::runner::material::NativeMaterial::load_for(path, &products)
+                canonical.clone(),
+                crate::runner::material::NativeMaterial::load_for(&canonical, &products)
                     .map_err(|error| PlanError::Rejected(error.to_string()))?,
             ))
         }
@@ -831,7 +842,7 @@ mod tests {
         std::fs::write(&profile_path, toml::to_string(&profile).unwrap()).unwrap();
         let pinned = json!({"path": "/unused", "sha256": "unused"});
         let material = serde_json::from_value(json!({
-            "schema": "opi-eval-native-material/5", "static_lock": pinned,
+            "schema": "opi-eval-native-material/6", "static_lock": pinned,
             "provider": {"script": pinned, "endpoint": "unused", "request_log": "/unused"},
             "agents": {}, "benchmarks": {adapter: {
                 "corpus": {"root": corpus_root, "source_commit": "unused", "tasks_tree": "unused"},

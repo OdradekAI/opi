@@ -1640,6 +1640,17 @@ fn native_stage_config_matches(config: &std::path::Path, expected: &serde_json::
     let Ok(observed) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
         return false;
     };
+    // The observed task reference must be exactly the absolute dispatched
+    // package (P19-AUD-004): a substituted absolute task package cannot be
+    // admitted as the selected dispatch, even when the task name and every
+    // lifecycle field still match.
+    match (
+        observed["task"]["path"].as_str(),
+        expected["tasks"][0]["path"].as_str(),
+    ) {
+        (Some(observed_path), Some(expected_path)) if observed_path == expected_path => {}
+        _ => return false,
+    }
     if observed["environment"]["import_path"] != expected["environment"]["import_path"] {
         return false;
     }
@@ -3507,4 +3518,50 @@ fn native_runtime_preflight_rejects_unreadable_completed_capture() {
         accepted.is_empty(),
         "completed unreadable runtime captures were admitted: {accepted:?}"
     );
+}
+
+// A substituted observed task package reference cannot be admitted as the
+// selected dispatch (P19-AUD-004), even when the task name and lifecycle
+// fields still match.
+#[cfg(all(test, unix))]
+#[test]
+fn remediation_p19_observed_task_substitution_rejected() {
+    for case in ["substituted-path", "missing-path", "non-string-path"] {
+        let dir = tempfile::tempdir().unwrap();
+        let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+        let config_path = dir.path().join("jobs/j1/fixture-task__bZZeEkw/config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&config_path).unwrap()).unwrap();
+        let original_path = config["task"]["path"].clone();
+        let other = dir.path().join("substituted-task-package");
+        std::fs::create_dir(&other).unwrap();
+        std::fs::write(
+            other.join("task.toml"),
+            "schema_version = '1.0'\n[task]\nname = 'different-task'\n",
+        )
+        .unwrap();
+        std::fs::write(other.join("test.sh"), "#!/bin/sh\necho 1\n").unwrap();
+        match case {
+            "substituted-path" => config["task"]["path"] = serde_json::json!(other),
+            "missing-path" => {
+                config["task"].as_object_mut().unwrap().remove("path");
+            }
+            _ => config["task"]["path"] = serde_json::json!(42),
+        }
+        config["agent_timeout_multiplier"] = serde_json::json!(1.0);
+        config["verifier_timeout_multiplier"] = serde_json::json!(1.0);
+        std::fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let expected = serde_json::json!({"tasks": [{"path": original_path}],
+            "agents": [{}], "verifier": {}, "environment": {}});
+        let imported = import_bound_native_job(dir.path(), &selection);
+        let config_matches = native_stage_config_matches(&config_path, &expected);
+        assert!(
+            imported.is_err() || !config_matches,
+            "{case}: substituted observed package was admitted"
+        );
+        assert!(
+            !config_matches,
+            "{case}: stage config comparison accepted the substituted reference"
+        );
+    }
 }

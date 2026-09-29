@@ -806,7 +806,7 @@ else:
     except OSError:
         pass
     sys.exit(f"no opi-eval compiler-artifact executable was reported "
-             f"(cargo rc={os.environ.get('CARGO_RC')}); stderr tail: {tail}")
+             f"(cargo rc={os.environ.get("CARGO_RC")}); stderr tail: {tail}")
 '
 }
 
@@ -827,11 +827,14 @@ cmd_materialize_configs() {
   OPI_EVAL_EXECUTABLE=$(resolve_opi_eval_executable \
     || die "materialize-configs: opi-eval executable not resolved")
   OPI_EVAL_EXECUTABLE=$(readlink -f "$OPI_EVAL_EXECUTABLE")
-  mkdir -p "$out/wrappers"
-  # Materialize the resolved-material manifest, the launch wrappers, and
-  # the three experiment configs with pinned integrity digests. Every
-  # identity comes from the already-verified stage outputs and the static
-  # lock; nothing is resolved from ambient state.
+  # CI delegates task/image/profile/runner-material production to the
+  # same public local preparation path local operators use: the already
+  # verified external checkouts, built agents, and repository pins are
+  # transported into the admitted pinned cache contract, and one
+  # `opi-eval prepare` per benchmark family produces the prepared
+  # material. CI keeps no independent transform or admission rule; any
+  # shared prepare rejection stops materialization before any material
+  # is published.
   python3 - "$STATIC_LOCK" "$external_root" "$agents_out" "$provider_out" \
     "$out" "$REPO_ROOT" "$OPI_EVAL_EXECUTABLE" "$PROVIDER_NETWORK" <<'MATEOF'
 import hashlib, json, os, re, shutil, subprocess, sys, tomllib
@@ -840,6 +843,7 @@ from pathlib import Path
 lock_path, external, agents_out, provider_out, out, repo, opi_eval, network = sys.argv[1:9]
 lock = json.loads(Path(lock_path).read_text(encoding="utf-8"))
 out = Path(out)
+repo = Path(repo)
 
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -852,281 +856,58 @@ def write_exec(path, body):
 clone_index = {"terminal-bench-2.1": "terminal-bench-2-1",
                "terminal-bench-3.0": "terminal-bench",
                "deepswe-v1.1": "deep-swe"}
-profile_paths = {
-    "terminal-bench-2.1": f"{repo}/crates/opi-eval/profiles/benchmarks/terminal-bench-2.1.toml",
-    "terminal-bench-3.0": f"{repo}/crates/opi-eval/profiles/benchmarks/terminal-bench-3.0.toml",
-    "deepswe-v1.1": f"{repo}/crates/opi-eval/profiles/benchmarks/deepswe-v1.1.toml",
-}
+adapters = ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1")
 task_ids = {}
 for subject in lock["subjects"]:
     if subject["kind"] == "benchmark-source":
         task_ids[subject["id"]] = subject["task"]["id"]
-images = {image["id"]: image for image in lock["images"]}
 
-opi_identity = json.loads(Path(agents_out, "opi-identity.json").read_text("utf-8"))
-pi_identity = json.loads(Path(agents_out, "pi-identity.json").read_text("utf-8"))
 endpoint = Path(provider_out, "endpoint.txt").read_text(encoding="utf-8").strip()
-# Bare endpoint: opi-ai's openai-completions wire joins /v1 itself and
-# pi's OpenAI SDK appends /chat/completions directly, so both products
-# reach an admitted path from one base.
 base_url = f"http://{endpoint}"
 
-def package_manifest_digest(root):
-    rows = []
-    for path in sorted(Path(root).rglob("*")):
-        if path.is_file():
-            rows.append((str(path.relative_to(root)).replace(os.sep, "/"),
-                         sha(path)))
-    canonical = "".join(f"{p}\n{d}\n" for p, d in rows)
-    return hashlib.sha256(canonical.encode()).hexdigest()
-
-def resolve_image(reference):
-    if re.fullmatch(r".+@sha256:[0-9a-f]{64}", reference):
-        return reference
-    image = next((entry for entry in lock["images"] if entry["reference"] == reference), None)
-    resolved = f"{reference}@{image.get('manifest', '')}" if image else ""
-    if not re.fullmatch(r".+@sha256:[0-9a-f]{64}", resolved):
-        raise SystemExit(f"unbound task image {reference!r}; resolve immutable material first")
-    return resolved
-
-
-def materialize_task(benchmark):
-    subject = next(entry for entry in lock["subjects"] if entry["id"] == benchmark)
-    task_id = task_ids[benchmark]
-    corpus_root = Path(external) / clone_index[benchmark] / "tasks"
-    source = corpus_root / task_id
-    package = out / "packages" / benchmark / task_id
-    shutil.copytree(source, package, symlinks=True)
-    for path in sorted(package.rglob("*")):
-        if path.is_symlink():
-            raise SystemExit(f"unsupported task link: {path}")
-        if not path.is_file():
-            continue
-        relative = path.relative_to(package).as_posix()
-        if relative == "task.toml":
-            text = path.read_text()
-            doc = tomllib.loads(text)
-            replacements = {}
-            for section, environment in (("environment", doc.get("environment", {})),
-                    ("verifier.environment", doc.get("verifier", {}).get("environment", {}))):
-                if "docker_image" in environment:
-                    image = environment["docker_image"]
-                    resolved = resolve_image(image)
-                    if resolved != image:
-                        replacements[section] = resolved
-            lines, section = [], ""
-            for line in text.splitlines(keepends=True):
-                stripped = line.strip()
-                if stripped.startswith("[") and stripped.endswith("]"):
-                    section = stripped[1:-1]
-                if line.partition("=")[0].strip() == "docker_image" and section in replacements:
-                    lines.append("docker_image = " + json.dumps(replacements.pop(section)) + "\n")
-                else:
-                    lines.append(line)
-            if replacements:
-                raise SystemExit("unsupported task image declaration layout")
-            path.write_text("".join(lines))
-        elif path.name == "Dockerfile":
-            lines, stages = [], set()
-            for line in path.read_text().splitlines():
-                words = line.split()
-                if words and words[0].lower() == "from":
-                    if len(words) != 2 and not (len(words) == 4 and words[2].lower() == "as"):
-                        raise SystemExit("unsupported Dockerfile FROM shape")
-                    image = words[1] if words[1] == "scratch" or words[1] in stages else resolve_image(words[1])
-                    line = "FROM " + image
-                    if len(words) == 4:
-                        stages.add(words[3])
-                        line += " AS " + words[3]
-                lines.append(line)
-            path.write_text("\n".join(lines) + "\n")
-    rows = [{"path": path.relative_to(package).as_posix(),
-             "mode": "100755" if path.stat().st_mode & 0o111 else "100644",
-             "size": path.stat().st_size, "sha256": sha(path)}
-            for path in sorted(package.rglob("*")) if path.is_file()]
-    template = Path(profile_paths[benchmark]).read_text().split("[[package]]", 1)[0]
-    identity = {"source_commit": subject["commit"], "tasks_tree": subject["tasks_tree"],
-                "task_id": task_id, "task_tree": subject["task"]["tree"],
-                "package_manifest_sha256": hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest()}
-    for key, value in identity.items():
-        template, count = re.subn(r"(?m)^" + key + r" = .*?$", key + " = " + json.dumps(value), template)
-        if count != 1:
-            raise SystemExit(f"profile template identity {key} is ambiguous")
-    for row in rows:
-        template += "\n[[package]]\n" + "".join(f"{key} = {json.dumps(value)}\n" for key, value in row.items())
-    profile = out / "profiles" / benchmark / (task_id + ".toml")
-    profile.parent.mkdir(parents=True, exist_ok=True)
-    profile.write_text(template)
-    task_doc = tomllib.loads((source / "task.toml").read_text()).get("task", {})
-    return ({"root": str(corpus_root), "source_commit": subject["commit"], "tasks_tree": subject["tasks_tree"]},
-            {task_id: {"native_task_name": task_doc.get("name", task_doc.get("id", task_id)),
-                       "profile": {"path": str(profile), "sha256": sha(profile)},
-                       "task_package": str(package), "task_package_manifest_sha256": package_manifest_digest(package)}})
-
-def agent_wrapper(product, benchmark, real_argv0, env_keys):
-    # Contract form: the wrapper runs the exact built agent inside the
-    # official task environment image with identical absolute paths, on
-    # the dedicated internal provider network only. The workspace cwd is
-    # preserved; the enclosing trial root is mounted at its own path so
-    # isolation, trace, and config directories survive verbatim.
-    # The static lock names each benchmark's environment image by its
-    # own id; the ids do not share one naming scheme.
-    image = images[{
-        "terminal-bench-2.1": "tb21-openssl-selfsigned-cert-task",
-        "terminal-bench-3.0": "tb30-python-base",
-        "deepswe-v1.1": "deepswe-task",
-    }[benchmark]]
-    image_ref = f"{image['reference']}@{image['manifest']}"
-    forward = " ".join(f"-e {key}" for key in env_keys)
-    body = f"""#!/bin/sh
-# eval agent-phase launch wrapper (native mode): {product} inside the
-# official {benchmark} task environment, identical paths, admitted network only.
-trial_root=$(CDPATH= cd -- "$(dirname "$PWD")" && pwd)
-exec docker run --rm --network {network} \\
-  -v "$trial_root":"$trial_root" -v "{real_argv0}":"{real_argv0}" \\
-  -w "$PWD" {forward} "{image_ref}" "{real_argv0}" "$@"
-"""
-    return write_exec(out / "wrappers" / f"agent-{product}-{benchmark}.sh", body)
-
-# The pinned integration module directories the selected import
-# paths resolve against, sealed by their sorted file-manifest
-# digests. The two runner surfaces are not module-compatible, so the
-# material pins one Harbor module and one Pier module per product
-# (P19-D04).
-harbor_integrations = Path(repo) / "crates/opi-eval/integrations/harbor"
-pier_integrations = Path(repo) / "crates/opi-eval/integrations/pier"
-if not (harbor_integrations / "opi_eval_harbor.py").is_file() \
-        or not (pier_integrations / "opi_eval_pier.py").is_file():
-    raise SystemExit(
-        "materialize-configs: pinned integration modules are missing")
-def integrations_digest(integrations_dir):
-    rows = []
-    for path in sorted(integrations_dir.rglob("*")):
-        if path.is_file() and "__pycache__" not in path.parts:
-            rows.append((str(path.relative_to(integrations_dir))
-                         .replace(os.sep, "/"), sha(path)))
-    canonical = "".join(f"{p}\n{d}\n" for p, d in rows)
-    return hashlib.sha256(canonical.encode()).hexdigest()
-integrations_entry = lambda product: {
-    "harbor": {
-        "module_dir": str(harbor_integrations),
-        "module_manifest_sha256": integrations_digest(harbor_integrations),
-        "import_path": f"opi_eval_harbor:{product.capitalize()}Agent",
-        "agent_name": f"opi-eval-{product}",
-    },
-    "pier": {
-        "module_dir": str(pier_integrations),
-        "module_manifest_sha256": integrations_digest(pier_integrations),
-        "import_path": f"opi_eval_pier:{product.capitalize()}Agent",
-        "agent_name": f"opi-eval-{product}",
-    },
-}
-
-benchmarks = {}
-env_keys = {"opi": ["HOME", "OPI_EVAL_SCRIPTED_KEY"],
-            "pi": ["HOME", "PI_CODING_AGENT_DIR"]}
-for benchmark in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
-    adapter = benchmark
-    corpus, tasks = materialize_task(benchmark)
-    uv = subprocess.run(["sh", "-c", "command -v uv"], capture_output=True,
-                        text=True).stdout.strip()
-    if not uv:
-        raise SystemExit("materialize-configs: uv was not resolved on PATH")
-    uv = str(Path(uv).resolve())
-    # `uv --project <runner-home> run --locked harbor|pier` resolves the
-    # locked environment from the fetched, blob-verified runner source
-    # while the working directory stays wherever the runner set it, so
-    # the verifier's own outputs (harbor's jobs/ tree) land in the run's
-    # trace root where the adapter reads them.
-    runner = "harbor" if benchmark.startswith("terminal-bench") else "pier"
-    runner_home = Path(external) / runner
-    if not (runner_home / "uv.lock").is_file():
-        raise SystemExit(
-            f"materialize-configs: {runner} checkout is missing uv.lock")
-    # Pin the interpreter deterministically: every green run of the
-    # locked Pier environment resolved under CPython 3.12, and the
-    # runner's default selection drifted to 3.13 without a pin.
-    # UV_PYTHON is a global uv setting, so the adapter's exact argv
-    # stays untouched while the pinned interpreter still resolves.
-    python_pin = "UV_PYTHON=3.12" if runner == "pier" else "UV_PYTHON="
-    # uv resolves the locked environment from the runner checkout, and
-    # its --project/--directory handling moves the working directory
-    # there; harbor then writes its jobs tree relative to that cwd. The
-    # wrapper runs the verifier inside the checkout and mirrors the
-    # newest job directory, byte for byte, back into the working
-    # directory the runner chose, which is where the adapter reads it.
-    verifier = write_exec(out / "wrappers" / f"verifier-{benchmark}.sh",
-        f"""#!/bin/sh
-# eval verifier wrapper (native mode): the pinned uv entrypoint drives
-# the unchanged {benchmark} native verifier from its locked runner source.
-# The child runs with a cleared environment: $PWD is not exported, so
-# resolve the working directory through pwd before entering the checkout.
-orig=$(pwd)
-cd "{runner_home}"
-export {python_pin}
-"{uv}" "$@"
-rc=$?
-newest=$(ls -1d jobs/*/ 2>/dev/null | LC_ALL=C sort | tail -1)
-if [ -n "$newest" ]; then
-  mkdir -p "$orig/jobs"
-  rm -rf "$orig/jobs/$(basename "$newest")"
-  cp -r "$newest" "$orig/jobs/"
-fi
-exit $rc
-""")
-    oracle = write_exec(out / "wrappers" / f"oracle-{benchmark}.sh",
-        f"""#!/bin/sh
-# eval upstream oracle wrapper: applies
-# the official reference solution of {benchmark} {task_ids[benchmark]} and
-# grades it with the unchanged native verifier through the same launch
-# surface the agent trials use.
-# The child runs with a cleared environment: $PWD is not exported, so
-# resolve the working directory through pwd before entering the checkout.
-orig=$(pwd)
-cd "{runner_home}"
-export {python_pin}
-"{uv}" "$@"
-rc=$?
-newest=$(ls -1d jobs/*/ 2>/dev/null | LC_ALL=C sort | tail -1)
-if [ -n "$newest" ]; then
-  mkdir -p "$orig/jobs"
-  rm -rf "$orig/jobs/$(basename "$newest")"
-  cp -r "$newest" "$orig/jobs/"
-fi
-exit $rc
-""")
-    # The runner spawns verifiers and oracles with a cleared environment:
-    # the projection is declared here, not inherited. The runner-side
-    # tools (docker for the task containers, the uv cache) live in the
-    # standard paths; each phase gets its own home under the material.
-    (out / "verifier-home").mkdir(parents=True, exist_ok=True)
-    verifier_env = {
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
-        "HOME": str(out / "verifier-home"),
-        "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR",
-                                       str(out / "uv-cache")),
-    }
-    benchmarks[adapter] = {
-        "corpus": corpus,
-        "tasks": tasks,
-        "verifier_executable": {"path": str(out / "wrappers" / f"verifier-{benchmark}.sh"),
-                                "sha256": verifier},
-        "verifier_env": verifier_env,
-        "oracle": {"path": str(out / "wrappers" / f"oracle-{benchmark}.sh"),
-                   "sha256": oracle},
-        "oracle_env": dict(verifier_env),
-        "_agent_wrappers": {
-            product: agent_wrapper(product, benchmark,
-                                   opi_identity["canonical_executable"] if product == "opi"
-                                   else pi_identity["node_executable"],
-                                   env_keys[product])
-            for product in ("opi", "pi")
-        },
-    }
+# 1. Transport the admitted pinned cache contract: repository pins
+#    (static lock, producer scripts, benchmark profiles, integrations),
+#    the fetched blob-verified corpora/runner checkouts, the pinned uv,
+#    and the exact built client bytes. Nothing is transformed here; the
+#    identities are exactly the stage inputs the local preparation
+#    contract admits.
+cache = out / "cache"
+(cache / "pins" / "static").mkdir(parents=True)
+shutil.copy2(lock_path, cache / "pins" / "static" / "linux-x86_64.json")
+(cache / "pins" / "scripts").mkdir(parents=True)
+for name in ("materialize-external-locks.sh", "verify-external-lock-ci.py",
+             "build-agent-artifacts.sh", "scripted-provider.py"):
+    source = repo / "crates/opi-eval/scripts" / name
+    shutil.copy2(source, cache / "pins" / "scripts" / name)
+    os.chmod(cache / "pins" / "scripts" / name,
+             source.stat().st_mode & 0o777)
+(cache / "pins" / "profiles" / "benchmarks").mkdir(parents=True)
+for adapter in adapters:
+    shutil.copy2(repo / "crates/opi-eval/profiles/benchmarks" / f"{adapter}.toml",
+                 cache / "pins" / "profiles" / "benchmarks" / f"{adapter}.toml")
+for family in ("harbor", "pier"):
+    shutil.copytree(repo / "crates/opi-eval/integrations" / family,
+                    cache / "pins" / "integrations" / family, symlinks=True)
+for adapter in adapters:
+    shutil.copytree(Path(external) / clone_index[adapter],
+                    cache / "corpora" / adapter, symlinks=True)
+for runner in ("harbor", "pier"):
+    shutil.copytree(Path(external) / runner,
+                    cache / "runners" / runner, symlinks=True)
+uv = subprocess.run(["sh", "-c", "command -v uv"], capture_output=True,
+                    text=True).stdout.strip()
+if not uv:
+    raise SystemExit("materialize-configs: uv was not resolved on PATH")
+uv = str(Path(uv).resolve())
+(cache / "tools").mkdir(parents=True, exist_ok=True)
+shutil.copy2(uv, cache / "tools" / "uv")
+os.chmod(cache / "tools" / "uv", 0o755)
 
 # Transport and probe the same client bytes. The pi package includes its
 # interpreter and bundle resources; a host-absolute launcher alone cannot
 # identify the code that will run inside the task environment.
+opi_identity = json.loads(Path(agents_out, "opi-identity.json").read_text("utf-8"))
+pi_identity = json.loads(Path(agents_out, "pi-identity.json").read_text("utf-8"))
 opi_executable = Path(opi_identity["canonical_executable"])
 node_executable = Path(pi_identity["node_executable"])
 pi_bundle = Path(pi_identity["bundle_path"])
@@ -1136,9 +917,14 @@ for path, expected in (
         (pi_bundle, pi_identity["bundle_sha256"])):
     if sha(path) != expected:
         raise SystemExit("materialize-configs: built client identity drift")
-pi_package = out / "runtime" / "pi"
+opi_cache = cache / "agents" / "opi"
+opi_cache.parent.mkdir(parents=True)
+shutil.copy2(opi_executable, opi_cache)
+os.chmod(opi_cache, opi_executable.stat().st_mode & 0o777)
+pi_package = cache / "agents" / "pi"
 pi_package.mkdir(parents=True)
 shutil.copy2(node_executable, pi_package / "node")
+os.chmod(pi_package / "node", node_executable.stat().st_mode & 0o777)
 # Preserve Node's package-root lookup and dist-relative assets from the
 # canonical packages/coding-agent/dist/bundle/cli.js build output.
 pi_source_package = pi_bundle.parents[2]
@@ -1149,51 +935,17 @@ for name in ("package.json", "README.md", "CHANGELOG.md"):
 if sha(pi_package / "node") != pi_identity["node_sha256"] \
         or sha(pi_package / "dist" / "bundle" / "cli.js") != pi_identity["bundle_sha256"]:
     raise SystemExit("materialize-configs: transported pi identity drift")
-pi_executable = pi_package / "pi"
-pi_executable_sha256 = write_exec(pi_executable, """#!/bin/sh
-agent_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+pi_executable_sha256 = write_exec(pi_package / "pi", """#!/bin/sh
+agent_root=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 exec "$agent_root/node" "$agent_root/dist/bundle/cli.js" "$@"
 """)
-
-manifest = {
-    "schema": "opi-eval-native-material/5",
-    "static_lock": {"path": lock_path, "sha256": sha(lock_path)},
-    "provider": {
-        "script": {"path": f"{repo}/crates/opi-eval/scripts/scripted-provider.py",
-                   "sha256": sha(f"{repo}/crates/opi-eval/scripts/scripted-provider.py")},
-        "endpoint": base_url,
-        "request_log": str(Path(provider_out) / "requests.jsonl"),
-    },
-    "agents": {
-        "opi": {
-            "executable": {"path": str(opi_executable),
-                           "sha256": opi_identity["executable_sha256"]},
-            "integrations": integrations_entry("opi"),
-        },
-        "pi": {
-            "executable": {"path": str(pi_executable),
-                           "sha256": pi_executable_sha256},
-            "runtime_package": {"path": str(pi_package),
-                                "manifest_sha256": package_manifest_digest(pi_package),
-                                "entrypoint": "pi"},
-            "integrations": integrations_entry("pi"),
-        },
-    },
-    "benchmarks": benchmarks,
-}
-
-# The wrapper launch surfaces are stage evidence, not manifest fields:
-# the crate-private material schema denies unknown fields, so they are
-# popped before the manifest is written and recorded in the receipt only.
-agent_wrappers = {adapter: entry.pop("_agent_wrappers")
-                  for adapter, entry in benchmarks.items()}
-material_path = out / "material.json"
+for runner in ("harbor", "pier"):
+    (cache / "runner-homes" / runner).mkdir(parents=True)
+(cache / "uv-cache").mkdir(parents=True)
 
 configs = {}
-# Native scoring runs Terminal-Bench 2.1 only; the TB3 and DeepSWE
-# handoffs are explicitly unavailable until their declared delivery
-# lands (their former default-job path no longer emits Agent scores).
-for adapter in ("terminal-bench-2.1",):
+materials = {}
+for adapter in adapters:
     benchmark = "terminal-bench" if adapter.startswith("terminal-bench") else "deepswe"
     revision = "2.1" if adapter.endswith("2.1") else "3.0" if adapter.endswith("3.0") else "v1.1"
     task_id = task_ids[adapter]
@@ -1244,7 +996,7 @@ required = ["max_output_tokens"]
 mode = "native-fixture"
 
 [storage]
-cache = "cache"
+cache = "{cache}"
 results = "results"
 capture_policy = "full"
 
@@ -1265,13 +1017,34 @@ subject = "candidate-opi"
 task = "{task_id}"
 group = "group-{adapter}"
 """, encoding="utf-8")
+    # Shared local preparation produces this family's material. A
+    # rejection here (including a shared prepare refusal) aborts the
+    # whole stage before any material is published.
+    prepared = out / f"prepared-{adapter}"
+    prepare = subprocess.run(
+        [str(opi_eval), "prepare", "--config", str(config), "--out", str(prepared)],
+        capture_output=True, text=True)
+    (out / f"prepare-{adapter}.stdout").write_text(prepare.stdout, encoding="utf-8")
+    (out / f"prepare-{adapter}.stderr").write_text(prepare.stderr, encoding="utf-8")
+    if prepare.returncode != 0:
+        sys.stderr.write(prepare.stderr)
+        raise SystemExit(f"materialize-configs: shared preparation rejected {adapter}")
+    material_path = prepared / "material.json"
+    if not material_path.is_file():
+        raise SystemExit(
+            f"materialize-configs: shared preparation published no material for {adapter}")
+    manifest = json.loads(material_path.read_text(encoding="utf-8"))
+    if manifest.get("schema") != "opi-eval-native-material/6":
+        raise SystemExit(
+            f"materialize-configs: shared preparation emitted "
+            f"{manifest.get('schema')!r} for {adapter}")
     # The existing producer observes both requests from each exact client
     # against a private loopback listener. Only successful evidence is pinned;
     # validation and config freezing cannot run after a failed/incomplete probe.
     clients_path = out / f"{adapter}-output-control-clients.json"
     proof_root = out / f"{adapter}-output-control"
     clients_path.write_text(json.dumps({
-        "opi": str(opi_executable), "pi": str(pi_executable),
+        "opi": str(opi_cache), "pi": str(pi_package / "pi"),
         "pi_package": str(pi_package), "experiment": str(config),
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     probe_env = {key: os.environ[key] for key in (
@@ -1283,7 +1056,7 @@ group = "group-{adapter}"
                   "--test", "native_driver", "native_output_control_client_matrix",
                   "--", "--ignored", "--exact"]
     (out / f"{adapter}-output-control-command.json").write_text(json.dumps({
-        "argv": probe_argv, "cwd": repo, "env": probe_env,
+        "argv": probe_argv, "cwd": str(repo), "env": probe_env,
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     probe = subprocess.run(probe_argv, cwd=repo, env=probe_env,
                            capture_output=True, text=True)
@@ -1303,7 +1076,7 @@ group = "group-{adapter}"
                              encoding="utf-8")
     # Pin the integrity digest through the production validate entry.
     summary = subprocess.run(
-        [opi_eval, "validate", "--config", str(config),
+        [str(opi_eval), "validate", "--config", str(config),
          "--native-material", str(material_path)],
         capture_output=True, text=True)
     if summary.returncode != 0:
@@ -1315,39 +1088,84 @@ group = "group-{adapter}"
         'integrity_digest = "pending"', f'integrity_digest = "{digest}"')
     config.write_text(text, encoding="utf-8")
     configs[adapter] = {"path": str(config), "integrity_digest": digest}
+    materials[adapter] = {"path": str(material_path), "sha256": sha(material_path)}
+
+# Shared identity fields must agree across the per-family prepared
+# material: one cache, one client set, one static lock. The pinned
+# exact-client output-control evidence is per-family stage proof and is
+# excluded from the shared-identity comparison.
+def shared_agent_identity(agents):
+    return {product: {key: value for key, value in agent.items()
+                      if key != "output_control_evidence"}
+            for product, agent in agents.items()}
+
+
+first = json.loads(Path(materials[adapters[0]]["path"]).read_text(encoding="utf-8"))
+for adapter in adapters[1:]:
+    other = json.loads(Path(materials[adapter]["path"]).read_text(encoding="utf-8"))
+    for field in ("schema", "origin", "static_lock"):
+        if other.get(field) != first.get(field):
+            raise SystemExit(
+                f"materialize-configs: prepared material {adapter} disagrees "
+                f"on shared identity {field}")
+    if shared_agent_identity(other.get("agents", {})) != shared_agent_identity(first.get("agents", {})):
+        raise SystemExit(
+            f"materialize-configs: prepared material {adapter} disagrees "
+            f"on shared client identity")
+routing = {"schema": "opi-eval-native-material-routing/1",
+           "adapters": materials}
+(out / "material-routing.json").write_text(
+    json.dumps(routing, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 receipt_extra = {
-    "material_path": str(material_path),
-    "material_sha256": sha(material_path),
-    "opi_eval_executable": opi_eval,
+    "material_routing": str(out / "material-routing.json"),
+    "prepared_materials": materials,
+    "cache": str(cache),
+    "opi_eval_executable": str(opi_eval),
     "opi_eval_executable_sha256": sha(opi_eval),
     "configs": configs,
-    "per_benchmark_agent_wrappers": agent_wrappers,
+    "preparation": "shared-local-prepare",
 }
 (out / "materialize-receipt.json").write_text(
     json.dumps(receipt_extra, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-print(json.dumps({"material": str(material_path), "configs": list(configs)},
+print(json.dumps({"prepared_materials": list(materials), "configs": list(configs)},
                  sort_keys=True), file=sys.stderr)
 MATEOF
   write_receipt "$out" materialize-configs \
-    "$(python3 -c 'import json,sys; print(json.dumps({"materialized": json.load(open(sys.argv[1]))["configs"]}))' "$out/materialize-receipt.json")"
+    "$(python3 -c 'import json,sys; print(json.dumps({"materialized": json.load(open(sys.argv[1]))["configs"], "preparation": "shared-local-prepare"}))' "$out/materialize-receipt.json")"
 }
 
 # ---------------------------------------------------------------------------
 # Stage: conformance-rerun
 # ---------------------------------------------------------------------------
+# Resolve one adapter's prepared material from the shared routing map
+# produced by materialize-configs: every caller consumes exactly the
+# per-family prepared manifest, never a second synthesized material.
+route_material() {
+  python3 - "$1" "$2" <<'ROUEOF'
+import json, sys
+routing = json.load(open(sys.argv[1], encoding="utf-8"))
+if routing.get("schema") != "opi-eval-native-material-routing/1":
+    raise SystemExit("material routing: unexpected schema")
+entry = routing.get("adapters", {}).get(sys.argv[2])
+if not entry:
+    raise SystemExit(f"material routing: no prepared material for {sys.argv[2]}")
+print(entry["path"])
+ROUEOF
+}
+
 cmd_conformance_rerun() {
-  material=""; out=""
+  material_root=""; out=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --material) material=$2; shift 2 ;;
+      --material-root) material_root=$2; shift 2 ;;
       --out) out=$2; shift 2 ;;
       *) die "conformance-rerun: unknown argument: $1" ;;
     esac
   done
-  [ -n "$material" ] && [ -n "$out" ] \
-    || die "conformance-rerun: --material and --out are required"
-  require_file "$material"
+  [ -n "$material_root" ] && [ -n "$out" ] \
+    || die "conformance-rerun: --material-root and --out are required"
+  require_file "$material_root/material-routing.json"
   OPI_EVAL_EXECUTABLE=$(resolve_opi_eval_executable \
     || die "conformance-rerun: opi-eval executable not resolved")
   OPI_EVAL_EXECUTABLE=$(readlink -f "$OPI_EVAL_EXECUTABLE")
@@ -1371,6 +1189,8 @@ cmd_conformance_rerun() {
     case_id=${rest#* }
     root="$out/reports/$suite-$adapter-$case_id"
     mkdir -p "$root"
+    material=$(route_material "$material_root/material-routing.json" "$adapter" \
+      || die "conformance-rerun: no prepared material routed for $adapter")
     # A native case that does not meet its contract exits 1 with the
     # details only in the JSON report, so a failure surfaces the report
     # instead of a bare exit status.
@@ -1395,16 +1215,19 @@ cmd_conformance_rerun() {
 # Stage: oracle-preflight (explicitly selected TB2.1 artifact witnesses)
 # ---------------------------------------------------------------------------
 cmd_oracle_preflight() {
-  material=""; out=""
+  material_root=""; out=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --material) material=$2; shift 2 ;;
+      --material-root) material_root=$2; shift 2 ;;
       --out) out=$2; shift 2 ;;
       *) die "oracle-preflight: unknown argument: $1" ;;
     esac
   done
-  [ -n "$material" ] && [ -n "$out" ] \
-    || die "oracle-preflight: --material and --out are required"
+  [ -n "$material_root" ] && [ -n "$out" ] \
+    || die "oracle-preflight: --material-root and --out are required"
+  require_file "$material_root/material-routing.json"
+  material=$(route_material "$material_root/material-routing.json" terminal-bench-2.1 \
+    || die "oracle-preflight: no prepared material routed for terminal-bench-2.1")
   require_file "$material"
   OPI_EVAL_EXECUTABLE=$(resolve_opi_eval_executable \
     || die "oracle-preflight: opi-eval executable not resolved")
@@ -1431,11 +1254,11 @@ cmd_oracle_preflight() {
 
 
 cmd_run_trials() {
-  config_root=""; out=""; material=""; canary_out=""
+  config_root=""; out=""; material_root=""; canary_out=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --config-root) config_root=$2; shift 2 ;;
-      --material) material=$2; shift 2 ;;
+      --material-root) material_root=$2; shift 2 ;;
       --canary-out) canary_out=$2; shift 2 ;;
       --out) out=$2; shift 2 ;;
       *) die "run-trials: unknown argument: $1" ;;
@@ -1480,7 +1303,9 @@ else:
     [ -e "$config" ] || die "run-trials: no experiment configs in $config_root"
     name=$(basename "$config" .toml)
     run_root="$out/$name"
-    if [ -n "$material" ]; then
+    if [ -n "$material_root" ]; then
+      material=$(route_material "$material_root/material-routing.json" "$name" \
+        || die "run-trials: no prepared material routed for $name")
       # The declared connection credential resolves from this exported
       # dummy only for the supervised Agent launch inside the trial.
       OPI_EVAL_SCRIPTED_KEY='<dummy-scripted-credential>' \

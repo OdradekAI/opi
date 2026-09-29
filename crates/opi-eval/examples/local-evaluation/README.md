@@ -72,8 +72,9 @@ and no ambient provider credentials enter this environment.
 Populate all required dependencies before freezing: an offline run cannot
 fetch missing dependencies. No host wrapper is needed to select the runner.
 The source manifest excludes `.git`, `.venv` and ignored generated files.
-Interpreter and console-script digests are checked during preparation;
-material loading does not yet verify the installed virtual environment's
+Interpreter and console-script digests are checked during preparation and
+re-verified against the material's pinned byte identities on every load;
+material loading does not verify the installed virtual environment's
 complete dependency bytes. The source and lock binding is not a complete
 runtime dependency closure.
 
@@ -152,7 +153,9 @@ Already frozen material and failed trials remain unchanged.
 ## 4. Preview, freeze, and run a selection plan
 
 ```sh
-opi-eval plan --config experiment.toml --out /path/to/plan.json
+opi-eval plan --config experiment.toml \
+  --native-material /path/to/material/material.json \
+  --out /path/to/plan.json
 cat /path/to/plan.json
 opi-eval run --plan /path/to/plan.json --root /path/to/run-root
 ```

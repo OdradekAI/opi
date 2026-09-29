@@ -565,73 +565,150 @@ def verify_agent_evidence(stage: Path, reports: list[dict],
 
 
 def verify_material(stage: Path, f: Findings) -> dict | None:
-    material = load_json(stage / "06-material" / "material.json",
-                         f, "material")
-    if material is None:
+    # CI delegates materialization to the shared local prepare path: the
+    # routing map binds one prepared manifest per benchmark family, and
+    # every consumer resolves its material through it - never a single
+    # synthesized manifest.
+    routing = load_json(stage / "06-material" / "material-routing.json",
+                        f, "material")
+    if routing is None:
         return None
-    if material.get("schema") != "opi-eval-native-material/5":
-        f.reject("material", "the material is not the admitted schema "
-                             f"{material.get('schema')!r}")
-    agents = material.get("agents")
-    if not isinstance(agents, dict) or sorted(agents) != ["opi", "pi"]:
-        f.reject("material", "the material does not declare exactly opi and pi")
+    if routing.get("schema") != "opi-eval-native-material-routing/1":
+        f.reject("material", "the material routing is not the admitted "
+                             f"schema {routing.get('schema')!r}")
         return None
-    opi_exec = agents["opi"].get("executable", {})
-    pi_exec = agents["pi"].get("executable", {})
-    if opi_exec.get("path") == pi_exec.get("path"):
-        f.reject("material", "both agents share one executable identity")
-    for product, agent in agents.items():
-        # The material pins one integration per runner family: the Terminal-
-        # Bench dispatches import the Harbor module and the DeepSWE
-        # dispatch the Pier module (P19-D04).
-        integrations = agent.get("integrations") or {}
-        if sorted(integrations) != ["harbor", "pier"]:
-            f.reject("material", f"{product}: integration families must be "
-                                 f"exactly harbor and pier")
-            continue
-        for family, integration in integrations.items():
-            if integration.get("agent_name") != AGENT_NAME_FOR.get(product):
-                f.reject("material", f"{product}: {family} integration does "
-                                     f"not pin the selected agent name")
-            if ":" not in str(integration.get("import_path")):
-                f.reject("material", f"{product}: {family} integration "
-                                     f"import path is not module:Class")
-            if not is_hex64(integration.get("module_manifest_sha256")):
-                f.reject("material", f"{product}: {family} integration "
-                                     f"module manifest digest is missing")
-    benchmarks = material.get("benchmarks")
-    if not isinstance(benchmarks, dict) or sorted(benchmarks) != sorted(BENCHMARKS):
-        f.reject("material", "the material does not declare the three "
+    adapters = routing.get("adapters")
+    if not isinstance(adapters, dict) or sorted(adapters) != sorted(BENCHMARKS):
+        f.reject("material", "the routing does not cover exactly the three "
                              "admitted benchmark revisions")
-    else:
-        for adapter, benchmark in benchmarks.items():
+        return None
+    materials: dict[str, dict] = {}
+    for adapter, entry in adapters.items():
+        if (not isinstance(entry, dict) or not isinstance(entry.get("path"), str)
+                or not is_hex64(entry.get("sha256"))):
+            f.reject("material", f"{adapter}: routing entry lacks the exact "
+                                 "prepared-manifest reference")
+            return None
+        recorded = Path(entry["path"])
+        if recorded.is_absolute():
+            f.reject("material", f"{adapter}: prepared material must be "
+                                 "referenced inside the sealed stage")
+            return None
+        material_path = stage / recorded
+        try:
+            material_path.resolve().relative_to(stage.resolve())
+        except (OSError, ValueError):
+            f.reject("material", f"{adapter}: prepared material escapes the "
+                                 "sealed stage")
+            return None
+        if not material_path.is_file():
+            f.reject("material", f"{adapter}: prepared material is missing "
+                                 f"at {entry['path']}")
+            return None
+        if sha(material_path.read_bytes()) != entry["sha256"]:
+            f.reject("material", f"{adapter}: prepared material bytes drift "
+                                 "from the routing digest")
+            return None
+        materials[adapter] = json.loads(material_path.read_text(encoding="utf-8"))
+    shared: dict[str, object] | None = None
+    for adapter, material in materials.items():
+        if material.get("schema") != "opi-eval-native-material/6":
+            f.reject("material", f"{adapter}: the prepared material is not "
+                                 f"the admitted schema {material.get('schema')!r}")
+            continue
+        agents = material.get("agents")
+        if not isinstance(agents, dict) or sorted(agents) != ["opi", "pi"]:
+            f.reject("material", f"{adapter}: the material does not declare "
+                                 "exactly opi and pi")
+            continue
+        opi_exec = agents["opi"].get("executable", {})
+        pi_exec = agents["pi"].get("executable", {})
+        if opi_exec.get("path") == pi_exec.get("path"):
+            f.reject("material", f"{adapter}: both agents share one "
+                                 "executable identity")
+        for product, agent in agents.items():
+            # The material pins one integration per runner family: the
+            # Terminal-Bench dispatches import the Harbor module and the
+            # DeepSWE dispatch the Pier module (P19-D04).
+            integrations = agent.get("integrations") or {}
+            if sorted(integrations) != ["harbor", "pier"]:
+                f.reject("material", f"{adapter}/{product}: integration "
+                                     "families must be exactly harbor and pier")
+                continue
+            for family, integration in integrations.items():
+                if integration.get("agent_name") != AGENT_NAME_FOR.get(product):
+                    f.reject("material", f"{adapter}/{product}: {family} "
+                                         "integration does not pin the "
+                                         "selected agent name")
+                if ":" not in str(integration.get("import_path")):
+                    f.reject("material", f"{adapter}/{product}: {family} "
+                                         "integration import path is not "
+                                         "module:Class")
+                if not is_hex64(integration.get("module_manifest_sha256")):
+                    f.reject("material", f"{adapter}/{product}: {family} "
+                                         "integration module manifest digest "
+                                         "is missing")
+        identity = {"static_lock": material.get("static_lock"),
+                    "agents": agents}
+        if shared is None:
+            shared = identity
+        elif identity != shared:
+            f.reject("material", f"{adapter}: prepared material disagrees "
+                                 "on the shared client/static identity")
+        benchmarks = material.get("benchmarks")
+        if not isinstance(benchmarks, dict) or sorted(benchmarks) != [adapter]:
+            f.reject("material", f"{adapter}: the prepared material must "
+                                 "declare exactly its own benchmark revision")
+            continue
+        for benchmark in benchmarks.values():
             if not isinstance(benchmark, dict):
-                f.reject("material", f"{adapter}: benchmark binding must be an object")
+                f.reject("material", f"{adapter}: benchmark binding must be "
+                                     "an object")
                 continue
             corpus = benchmark.get("corpus", {})
             if not isinstance(corpus, dict):
-                f.reject("material", f"{adapter}: corpus binding must be an object")
+                f.reject("material", f"{adapter}: corpus binding must be an "
+                                     "object")
                 continue
             if (not isinstance(corpus.get("root"), str)
-                    or not re.fullmatch(r"[0-9a-f]{40}", str(corpus.get("source_commit")))
-                    or not re.fullmatch(r"[0-9a-f]{40}", str(corpus.get("tasks_tree")))):
-                f.reject("material", f"{adapter}: complete corpus identity missing")
+                    or not re.fullmatch(r"[0-9a-f]{40}",
+                                        str(corpus.get("source_commit")))
+                    or not re.fullmatch(r"[0-9a-f]{40}",
+                                        str(corpus.get("tasks_tree")))):
+                f.reject("material",
+                         f"{adapter}: complete corpus identity missing")
+            runner_project = benchmark.get("runner_project")
+            if (not isinstance(runner_project, dict)
+                    or not is_hex64(runner_project.get("source_manifest_sha256"))):
+                f.reject("material", f"{adapter}: locally required runner "
+                                     "source admission identity missing")
+            elif (not isinstance(runner_project.get("interpreter"), dict)
+                    or not is_hex64(runner_project["interpreter"].get("sha256"))
+                    or not isinstance(runner_project.get("entrypoint"), dict)
+                    or not is_hex64(runner_project["entrypoint"].get("sha256"))):
+                f.reject("material", f"{adapter}: installed runner byte "
+                                     "pins missing")
             tasks = benchmark.get("tasks")
             if not isinstance(tasks, dict) or not tasks:
-                f.reject("material", f"{adapter}: selected task bindings missing")
+                f.reject("material", f"{adapter}: selected task bindings "
+                                     "missing")
                 continue
             for task_id, task in tasks.items():
-                if not isinstance(task, dict) or not isinstance(task.get("profile"), dict):
-                    f.reject("material", f"{adapter}/{task_id}: task/profile binding must be objects")
+                if not isinstance(task, dict) \
+                        or not isinstance(task.get("profile"), dict):
+                    f.reject("material", f"{adapter}/{task_id}: task/profile "
+                                         "binding must be objects")
                     continue
-                if (not re.fullmatch(r"[A-Za-z0-9_.-]+", task_id) or ".." in task_id
+                if (not re.fullmatch(r"[A-Za-z0-9_.-]+", task_id)
+                        or ".." in task_id
                         or not task.get("native_task_name")
                         or not task.get("task_package")
                         or not is_hex64(task.get("task_package_manifest_sha256"))
                         or not task.get("profile", {}).get("path")
                         or not is_hex64(task.get("profile", {}).get("sha256"))):
-                    f.reject("material", f"{adapter}/{task_id}: exact task binding missing")
-    return material
+                    f.reject("material", f"{adapter}/{task_id}: exact task "
+                                         "binding missing")
+    return materials
 
 
 def main() -> int:
