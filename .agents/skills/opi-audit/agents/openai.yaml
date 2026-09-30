@@ -1,6 +1,6 @@
 interface:
   display_name: "Opi Audit"
   short_description: "Audit one identified Opi peer slot"
-  default_prompt: "Use $opi-audit phase=<N> reviewer=<reviewer-id> model=<model-id> reviewer_model_id=<exact-runtime-model> model_identity_source=<source> member=<member-directory> to audit the Phase and install its validated report; identity fields do not select a model."
+  default_prompt: "Use $opi-audit phase=<N> reviewer=<reviewer-id> model=<model-id> to audit the Phase and install its validated report; identity fields do not select a model."
 policy:
   allow_implicit_invocation: false

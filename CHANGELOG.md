@@ -190,6 +190,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reference to locate evidence and design current checks; current findings
   retain scope authority and report updates invalidate prior plan approval.
 
+- Assurance tooling: `opi-audit` invocation now requires only `phase`,
+  `reviewer`, and `model`. `reviewer_model_id`, `model_identity_source`, and
+  `member` are optional overrides; unsupplied values default to a fresh
+  private member directory, the `model` slug recorded verbatim as
+  `reviewer_model_id`, and `model_identity_source=operator-declared`,
+  without inferring an exact model identity.
+
 - `opi-coding-agent`: JSON mode now writes and flushes events during the run,
   including image input, instead of buffering stdout until prompt completion.
   A dedicated writer acknowledges each line to apply bounded backpressure;

@@ -30,7 +30,7 @@ appendix or its reserved envelope.
 **Reviewer ID**: `<reviewer-id>`
 **Model ID**: `<model-id>`
 **Reviewer identity**: <human-readable reviewer/runtime identity>
-**Reviewer model ID**: `<exact runtime model identity>`
+**Reviewer model ID**: `<exact runtime model identity, or the operator-supplied model slug by default>`
 **Model identity source**: runtime-attested | request-config | operator-declared
 **Independence**: <class and rationale>
 **Baseline policy**: latest-committed-spec

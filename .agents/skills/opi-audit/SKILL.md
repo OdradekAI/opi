@@ -13,14 +13,20 @@ append a historical reference without revising the independent core.
 
 ## Invocation and contract ownership
 
-Require `phase=<N>`, `reviewer=<reviewer-id>`, `model=<model-id>`,
-`reviewer_model_id=<exact-runtime-model>`,
-`model_identity_source=runtime-attested|request-config|operator-declared`, and
-`member=<member-directory>` naming a private directory outside the live
-assurance directory that will hold this peer's four suffixed files. Accept
-optional narrow `focus=<area>` as an ordering hint; it never reduces Phase
-proof obligations. `model` is a file-identity slug for the model already
-selected by the runtime, never a model selector.
+Require `phase=<N>`, `reviewer=<reviewer-id>`, and `model=<model-id>`. Accept
+optional `focus=<area>` as an ordering hint; it never reduces Phase proof
+obligations. Accept optional overrides `reviewer_model_id=<exact-runtime-model>`
+with `model_identity_source=runtime-attested|request-config|operator-declared`,
+and `member=<member-directory>` naming a private directory outside the live
+assurance directory that will hold this peer's four suffixed files. `model`
+is a file-identity slug for the model already selected by the runtime, never
+a model selector.
+
+Without overrides, default during Step 2: create the member directory as a
+fresh unique private directory (for example with `mktemp -d`), record
+`reviewer_model_id` as the operator-supplied `model` slug verbatim, and set
+`model_identity_source=operator-declared`. Defaults transcribe supplied
+values; they never infer an exact model identity.
 
 The shared `audit-set-contract.md` owns the index, member schemas, verdicts,
 rotation, installation, advisory history, and recovery. This skill owns one peer's execution.
@@ -93,8 +99,9 @@ convention; mismatches are current metadata evidence. Keep the projection as
 read-only scope input.
 
 Record `audit_head`, reviewer and model identity, `model_identity_source`,
-independence class, and a unique Phase-scoped `audit_run_id`. Never infer an
-exact model identity. The head must satisfy
+independence class, and a unique Phase-scoped `audit_run_id`, applying the
+invocation defaults to any unsupplied identity or member field. Never infer
+an exact model identity. The head must satisfy
 `git merge-base --is-ancestor <audit_head> HEAD` at completion; mixed heads
 across the live set are valid.
 
