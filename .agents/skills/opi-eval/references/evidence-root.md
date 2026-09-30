@@ -124,6 +124,20 @@ directories, no pi captures and no hand-picked excerpts. The verifier checks
 non-emptiness, exhaustiveness and byte identity; generic auditor exit zero by
 itself can be an empty scan and is insufficient.
 
+## Evidence-root registry
+
+Every staged or retained evidence root must be recorded in
+`docs/eval/evidence-roots.jsonl` at handoff: one JSON line with the absolute
+path (WSL mount view plus Windows drive view when applicable), manifest
+SHA-256 and schema versions when a manifest exists, material schema, the
+Companion hash, collection date, current consumability status and the owning
+report. Never delete a record for a retained root - supersede it with a
+status change instead. Audits and offline reviewers resolve evidence
+locations through this registry rather than filesystem searches; a root
+missing from the registry is a handoff defect, not a search problem. The
+registry is language-neutral repo content and complements, never replaces,
+the bilingual report and returned manifest digest.
+
 ## Offline checks
 
 Resolve `REPO` to the Opi checkout used for the generic repository audit,

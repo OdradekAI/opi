@@ -83,7 +83,10 @@ report `blocked` with trial-level reasons and keep all live acceptance gaps open
 
 Write the operator's bilingual report in `docs/eval/`. Return the evidence root
 and its `manifest.json` SHA-256 so the user can separately resume
-`opi-implement 19.11`. That workflow owns the final workspace verification
-union and `docs/audits/phase19-local-native-acceptance.md` / `.zh.md`, verifies
-the supplied evidence offline, and retains its independent Phase archive gate.
+`opi-implement 19.11`, and append the staged root's record to
+`docs/eval/evidence-roots.jsonl` as the [evidence-root
+reference](evidence-root.md#evidence-root-registry) requires. That workflow
+owns the final workspace verification union and
+`docs/audits/phase19-local-native-acceptance.md` / `.zh.md`, verifies the
+supplied evidence offline, and retains its independent Phase archive gate.
 Do not write its ledger, final audit or archive status from this skill.

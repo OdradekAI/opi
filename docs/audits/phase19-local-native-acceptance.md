@@ -17,9 +17,19 @@ payload or private key appears here or in the staged evidence root.
 
 ## Final evidence and exact identity
 
-- Redacted evidence root `E`: `phase19-operator/evidence-root` (operator
-  workspace, outside this repository), manifest schema
-  `opi-eval-local-acceptance/1`.
+- Redacted evidence root `E`:
+  `/mnt/d/Luiz/Odradek/phase19-operator/evidence-root` (the
+  `phase19-operator` operator workspace beside this repository checkout;
+  Windows path `D:/Luiz/Odradek/phase19-operator/evidence-root`), manifest
+  schema `opi-eval-local-acceptance/1`, manifest SHA-256
+  `c7c0a2556b4e5d1dbe5626165590f5e831a218499fdc1dbc379d7029f214731a`.
+  Registered in [docs/eval/evidence-roots.jsonl](../eval/evidence-roots.jsonl).
+  The verifier of record at acceptance time (2026-09-15, companion
+  SHA-256 `f8bf959c1428c3e10c88a7f6ebcc37166043b3d1f3f74c40809a0f30775a861b`)
+  accepted this root; the current verifier rejects it because its
+  material/4 manifests and /1 native terminals predate the material/6 and
+  terminal-preflight /2 contracts - it is retained as historical
+  acceptance evidence, not as currently consumable input.
 - Run roots (retained failures included):
   `/home/luiz/.cache/opi/phase19-setup-repair/runs/{tb21,tb30,deepswe}`.
 - opi agent: static musl executable, SHA-256

@@ -9,7 +9,27 @@ identities. Generic canaries are runtime signals,
 not deterministic acceptance evidence; public-seam tests and CI remain the
 deterministic acceptance baseline.
 
+## Evidence-root registry
+
+[evidence-roots.jsonl](evidence-roots.jsonl) is the machine-readable index of
+every retained evaluation/acceptance evidence root: absolute path (WSL mount
+view plus Windows drive view), manifest SHA-256 and schema versions when a
+manifest exists, collection date, current consumability status and the owning
+report. The `opi-eval` skill appends one record per staged root at handoff and
+never deletes records for retained roots - a superseded root gets a status
+change instead. Audits and offline reviewers resolve evidence locations
+through this registry rather than filesystem searches; a root missing from
+the registry is a handoff defect, not a search problem. Historical report
+links to cleaned-up roots (the 2026-09-10..13 `E:/opi/evaluations/*` trees
+were removed before this registry existed) stay as prose in their reports.
+
 ## Native benchmark and acceptance reports
+
+- [2026-09-29: Opi 0.8.2 / Pi 0.85.1 acceptance re-collection](20260929t-opi082-pi0851-glm53flash-acceptance-recollection.md)
+  ([中文](20260929t-opi082-pi0851-glm53flash-acceptance-recollection.zh.md)): six
+  live trials under the current contracts (material/6, terminal preflight /2,
+  admission-bound provenance); `verify-local-acceptance` accepted:true.
+
 
 Select software/version, benchmark families and model through `mode=benchmark`.
 Use `mode=acceptance` for task 19.11's fixed Opi/pi six-trial scope or

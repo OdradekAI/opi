@@ -15,8 +15,18 @@ Opi 专属的限定制品审计非空、穷尽且逐字节绑定，通过。全�
 
 ## 最终证据与确切身份
 
-- 脱敏证据根 `E`：`phase19-operator/evidence-root`（操作员工作区，位于
-  本仓库之外），manifest schema `opi-eval-local-acceptance/1`。
+- 脱敏证据根 `E`：
+  `/mnt/d/Luiz/Odradek/phase19-operator/evidence-root`（与本仓库检出同级的
+  `phase19-operator` 操作员工作区；Windows 路径
+  `D:/Luiz/Odradek/phase19-operator/evidence-root`），manifest schema
+  `opi-eval-local-acceptance/1`，manifest SHA-256
+  `c7c0a2556b4e5d1dbe5626165590f5e831a218499fdc1dbc379d7029f214731a`。
+  已登记于 [docs/eval/evidence-roots.jsonl](../eval/evidence-roots.jsonl)。
+  验收当时（2026-09-15，companion SHA-256
+  `f8bf959c1428c3e10c88a7f6ebcc37166043b3d1f3f74c40809a0f30775a861b`）的校验器
+  接受了该根；当前校验器会拒绝它，因为它的 material/4 manifest 与 /1 native
+  terminal 早于 material/6 和 terminal-preflight /2 合同——它作为历史验收证据
+  保留，不作为当前可消费输入。
 - 运行根（含保留的失败尝试）：
   `/home/luiz/.cache/opi/phase19-setup-repair/runs/{tb21,tb30,deepswe}`。
 - opi agent：静态 musl 可执行文件，SHA-256
