@@ -52,7 +52,7 @@ Open the selected `SKILL.md`, then only references required by its active mode.
 | `opi-research` | Primary-source research in `docs/research/` | Non-normative capability/placement evidence |
 | `opi-implement` | Admitted graph, task delivery, canonical ledger and Phase snapshots | Registered sources; graph, task/ledger commit and failure gates |
 | `opi-audit` | Independent suffixed report group, then a bound historical reference | Latest committed core first; advisory history only after installation; no production fixes |
-| `opi-eval` | Sealed external evidence, bilingual `docs/eval/` reports, scoped source repairs | Live scope/budgets and user-confirmed repairs are separate |
+| `opi-eval` | Sealed external evidence, bilingual `docs/eval/` conclusion reports, scoped source repairs | Live scope/budgets and user-confirmed repairs are separate |
 | `opi-remediate` | Set-wide fixed plan, dispositions, results and approved fixes | Apply binds the approved plan digest and exact live-index digest |
 | `opi-document` | Audit and synchronize product documentation | By default audits every maintained current-product README; targeted/version-bump scope must be explicit |
 | `opi-release` | Version, packages, public Git and crates.io release | Public Git gate and separate last-moment irreversible publication gate |
@@ -147,7 +147,7 @@ No preferred provider or model is a project contract.
 | `.opi-impl-state.draft.json` | Plan scratch, ignored; retain only for review/resume |
 | `docs/snapshots/phase<N>/` | Frozen ledger and Phase evidence |
 | `docs/snapshots/phase<N>/assurance/` | Live audit set and remediation; immutable superseded `history/` groups are excluded from independent-core and finding authority, with only the bounded post-install advisory exception |
-| `docs/eval/` | Bilingual eval summaries/fidelity history; large/private evidence stays external |
+| `docs/eval/` | Bilingual conclusion reports and fidelity history; sealed evidence and full operator reports stay external |
 | `.opi-release-state.json` | Ignored release resume state; retain only while incomplete |
 
 ## Maintainer composition note

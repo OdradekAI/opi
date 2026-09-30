@@ -171,6 +171,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `opi-eval` skill: native runs now deliver a bilingual conclusion pair in
+  `docs/eval/` while full operator reports, sealed evidence and verification
+  output stay external; `version=pi:latest` resolves at preparation to the
+  static-lock pi pin and records the resolved package version (never a frozen
+  `latest` identity); and Opi-only benchmark runs may reuse a registered
+  sealed pi baseline under the new identity-tuple checks in
+  `.agents/skills/opi-eval/references/sealed-baseline.md`, with cross-run
+  pairing disclosed in the conclusion report. The detailed `docs/eval/`
+  operator reports from 2026-09-10 to 2026-09-29 were removed from the
+  checkout; they remain in Git history and their evidence roots stay
+  registered in `docs/eval/evidence-roots.jsonl`.
+
 - Assurance tooling: `opi-audit` now installs its independent core before
   compiling a bounded historical reference. The locked `append-history`
   operation preserves core bytes and sidecars, validates the advisory suffix,

@@ -6,11 +6,18 @@ preserved artifacts. Use `report-template.md` only for fidelity canaries.
 
 Choose a unique stem
 `<UTC-date-time>-<software-versions>-<model-short>-<run-id>` with filesystem-safe
-characters. Write `docs/eval/<stem>.md` and `<stem>.zh.md`, with counterpart
-links. Preserve the exact full identities in the report even when the filename
-uses abbreviations. Never overwrite an earlier report. For an independent
-operator directory without a checkout, keep both reports beside the evidence
-and name their intended `docs/eval/` handoff paths.
+characters. Build the full report (all sections below) beside the evidence in
+the external operator directory; the repository copy is only the bilingual
+**conclusion pair**: write `docs/eval/<stem>.md` and `<stem>.zh.md`, with
+counterpart links, as one compact standalone result per run - outcome, scope,
+verified coverage counts, key identities, the evidence-root and registry paths
+with manifest/report digests, and remaining gaps - linking the external full
+report by path and digest instead of restating per-trial tables. Preserve the
+exact full identities even when the filename uses abbreviations. Never
+overwrite an earlier report, and keep sealed evidence, full operator reports
+and verification output outside the checkout. For an independent operator
+directory without a checkout, keep both artifacts beside the evidence and name
+their intended `docs/eval/` handoff paths.
 
 Start with the result and paths, then fill the following sections. Missing
 evidence yields `blocked`/`incomplete` with reasons; omit unsupported scores.
@@ -45,7 +52,11 @@ from verified JSON. Never average different benchmarks into a headline score.
 Keep native zero and benchmark-defined valid Agent timeouts in the appropriate
 denominator. Separate provider, access, infrastructure, adapter, identity,
 invalid-grading and effect-unknown outcomes. Show all missing comparison sides,
-excluded pairs/reasons and repetition control pairs. A six-trial smoke is not
+excluded pairs/reasons and repetition control pairs. Cross-run pairs against
+a reused sealed pi baseline follow [sealed baseline](sealed-baseline.md):
+label every pair cross-run with the baseline root and bundle digests, keep
+repetition control pairs same-run only, and never present a reused baseline
+as a same-run edge. A six-trial smoke is not
 a statistical superiority claim or a full benchmark result.
 
 ## Trial traceability

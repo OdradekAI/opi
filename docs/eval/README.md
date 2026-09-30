@@ -1,11 +1,11 @@
 # opi eval results
 
-This directory stores reports produced by the
-[`opi-eval` skill](../../.agents/skills/opi-eval/SKILL.md): native benchmark
-summaries, six-trial operator handoffs, offline verification results, and
-explicit provider-fidelity cases. Large sealed run trees and private material
-stay in the operator's external evaluation storage; reports link their exact
-identities. Generic canaries are runtime signals,
+This directory stores the bilingual conclusion reports produced by the
+[`opi-eval` skill](../../.agents/skills/opi-eval/SKILL.md) for native
+benchmark, six-trial acceptance handoffs and offline verification, plus the
+evidence-root registry and provider-fidelity history below. Large sealed run
+trees, private material and full operator reports stay in the operator's
+external evaluation storage; conclusion reports link their exact identities. Generic canaries are runtime signals,
 not deterministic acceptance evidence; public-seam tests and CI remain the
 deterministic acceptance baseline.
 
@@ -25,11 +25,19 @@ were removed before this registry existed) stay as prose in their reports.
 
 ## Native benchmark and acceptance reports
 
-- [2026-09-29: Opi 0.8.2 / Pi 0.85.1 acceptance re-collection](20260929t-opi082-pi0851-glm53flash-acceptance-recollection.md)
-  ([中文](20260929t-opi082-pi0851-glm53flash-acceptance-recollection.zh.md)): six
-  live trials under the current contracts (material/6, terminal preflight /2,
-  admission-bound provenance); `verify-local-acceptance` accepted:true.
+Each new native run writes one bilingual conclusion pair
+`<UTC-date-time>-<software-versions>-<model-short>-<run-id>.md` and
+`.zh.md`: outcome, scope, verified coverage counts, key identities, the
+evidence-root and registry paths with digests, and remaining gaps. Full
+operator reports, sealed evidence and verification output stay external; the
+[report contract](../../.agents/skills/opi-eval/references/benchmark-report.md)
+defines both artifacts.
 
+The detailed operator reports written here between 2026-09-10 and 2026-09-29
+were removed from the checkout on 2026-10-01 when this conclusion-pair
+contract took effect. They remain readable in Git history at the removal
+commit; frozen snapshots that reference them resolve them through that
+history, and their evidence roots stay registered below.
 
 Select software/version, benchmark families and model through `mode=benchmark`.
 Use `mode=acceptance` for task 19.11's fixed Opi/pi six-trial scope or
@@ -45,13 +53,6 @@ per-family native JSON, offline verifier result and exhaustive Opi-only capture
 audit. They do not mark task 19.11 complete or substitute for its independent
 audit/workspace gates. A blocked run produces a gap report without fabricated
 trials. Native runs do not use the case-based `history.jsonl` schema below.
-
-- [2026-09-27: Opi 0.8.2 / Pi 0.85.1 long-running validation](20260927t195503z-opi082-pi0851-glm53flash-longrun.md)
-  ([中文](20260927t195503z-opi082-pi0851-glm53flash-longrun.zh.md)): six native
-  trials completed and sealed; both TB2.1 trials succeeded, while both TB3 and
-  DeepSWE pairs reached the Agent-stage deadline. Formal acceptance remains
-  blocked; the report preserves the original infrastructure failure and the
-  Opi JSON-output buffering finding.
 
 ## Fidelity contents
 

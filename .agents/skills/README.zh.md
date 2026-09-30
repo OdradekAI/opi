@@ -48,7 +48,7 @@ flowchart TD
 | `opi-research` | `docs/research/` 中的一手资料调研 | 非规范性的能力与归属证据 |
 | `opi-implement` | 准入任务图、交付、正式台账与 Phase 快照 | 登记来源；任务图、任务/台账 commit 与失败关卡 |
 | `opi-audit` | 独立带后缀报告组，随后追加绑定的历史参考 | 先用最新已提交来源完成核心，安装后才作历史参考；不修复生产代码 |
-| `opi-eval` | 外部封存证据、双语 `docs/eval/` 报告、限定源码修复 | 真实运行范围/预算与用户确认的修复分别授权 |
+| `opi-eval` | 外部封存证据、双语 `docs/eval/` 结论报告、限定源码修复 | 真实运行范围/预算与用户确认的修复分别授权 |
 | `opi-remediate` | 集合级固定计划、disposition、结果与批准的修复 | apply 绑定已批准计划摘要与精确活动 index 摘要 |
 | `opi-document` | 审计并同步产品文档 | 默认审计每份受维护的当前产品 README；targeted/version-bump 范围须显式指定 |
 | `opi-release` | 版本、包、公开 Git 与 crates.io 发布 | 公开 Git 关卡及独立的最后时刻不可逆发布关卡 |
@@ -129,7 +129,7 @@ audit set 进入 remediation。各报告地位平等，分别持有已提交的 
 | `.opi-impl-state.draft.json` | 被忽略的计划草稿；仅评审/恢复需要时保留 |
 | `docs/snapshots/phase<N>/` | 冻结台账与 Phase 证据 |
 | `docs/snapshots/phase<N>/assurance/` | 活动审计集合与 remediation；不可变的旧 `history/` 组不参与独立核心或 finding 权威，仅允许安装后的限定建议参考例外 |
-| `docs/eval/` | 双语评测摘要/保真度历史；大文件和私密证据留在外部 |
+| `docs/eval/` | 双语结论报告与保真度历史；密封证据与完整操作报告一律留在外部 |
 | `.opi-release-state.json` | 被忽略的发布恢复状态；仅未完成时保留 |
 
 ## 维护者组合说明

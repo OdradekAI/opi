@@ -68,6 +68,17 @@ versions do not make a local candidate the corresponding release. Preserve the
 snapshot evidence and binary used by every frozen trial. A repository that is
 unavailable or cannot build is an explicit preparation gap.
 
+### Pi source selection
+
+pi has no working-tree default in this checkout: a pi subject comes from the
+pinned [static lock](../../../../crates/opi-eval/external-locks/static/linux-x86_64.json)
+commit and blob identities. An explicit `version` must match that pinned
+package; `pi:latest` is operator sugar that resolves at preparation to the
+lock's current pi pin and records the resolved package version in
+`[[subjects]].version` beside its build identity. The lock pin, not an upstream
+tag, is the selection source of truth; bumping the lock creates a new pi
+identity rather than silently upgrading a subject.
+
 Stage the exact selected executable at `cache/agents/<product>` or the complete
 verified standalone runtime package at that directory, with entrypoint
 `cache/agents/<product>/<product>`. Verify its digest against build evidence.

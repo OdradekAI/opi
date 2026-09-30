@@ -81,7 +81,9 @@ records, digests, required artifact paths, privacy review, offline acceptance
 verification and the non-empty exhaustive Opi capture audit pass. Otherwise
 report `blocked` with trial-level reasons and keep all live acceptance gaps open.
 
-Write the operator's bilingual report in `docs/eval/`. Return the evidence root
+Write the operator's bilingual conclusion report in `docs/eval/` under the
+[benchmark report](benchmark-report.md) deliverable shape; the full report
+stays beside the external evidence root. Return the evidence root
 and its `manifest.json` SHA-256 so the user can separately resume
 `opi-implement 19.11`, and append the staged root's record to
 `docs/eval/evidence-roots.jsonl` as the [evidence-root

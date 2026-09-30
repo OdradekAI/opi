@@ -21,7 +21,7 @@ that affect the run. Load only the selected branch's references.
 ```text
 mode=benchmark|acceptance|verify|fidelity
 software=opi|pi|opi,pi
-version=<single-product version or per-product entries, e.g. pi:<version>>
+version=<single-product version or per-product entries, e.g. pi:<version>|pi:latest>
 bench=terminal-bench-2.1|terminal-bench-3.0|deepswe-v1.1|all
 model=<provider:model>  api=<protocol>  base_url=<endpoint>
 max_output_tokens=<positive integer>  context_window=<positive integer>
@@ -30,12 +30,14 @@ tasks=<family:task-id,...>  scope=subset|full  repetitions=<positive integer>
 concurrency=<positive integer>  budget=<requested time/usage/spend limits>
 workspace=<independent Linux directory>  cache=<local material cache>
 config=<existing experiment.toml>  evidence_root=<existing root for verify>
+baseline_root=<registered sealed pi baseline root>  # benchmark reuse branch only
 cases=<name,...|all>  # fidelity branch only
 ```
 
 | Selection | Route |
 |---|---|
 | Software/bench evaluation, no mode | `benchmark`; native CLI workflow below. |
+| Sealed pi baseline reuse for an Opi-only benchmark | `benchmark`; apply [sealed baseline](references/sealed-baseline.md) before Step 2 approval. |
 | Six-trial evidence for task 19.11 / P19-AC-012 | `acceptance`; first read [local acceptance](references/local-acceptance.md). |
 | Existing evidence, no new execution | `verify`; go to Step 4 with supplied roots. Never resolve credentials. |
 | Explicit canaries or `cases=...` | `fidelity`; use [fidelity cases](references/fidelity-run.md) instead of the native workflow. |
@@ -45,8 +47,11 @@ branches. For a new evaluation, omitted Opi version/source selection means the
 current local repository working tree, including build-relevant uncommitted
 changes. Resolve that snapshot under [native builds](references/native-run.md#opi-source-selection);
 an explicit version or user-supplied config pin takes precedence. A per-product
-version map may pin only pi and leave Opi at this default. Resolve pi's actual
-version separately. A bare invocation collects software, bench and model; it
+version map may pin only pi and leave Opi at this default. Pi has no working-tree
+default: an explicit entry pins it, or `pi:latest` resolves at preparation to
+the pi subject pinned by the current static lock, recording that resolved
+package version in the experiment and report; `latest` never survives as a
+frozen identity. A bare invocation collects software, bench and model; it
 never selects paid trials or a configured default model silently. An existing
 config supplies defaults, but conflicting requested overrides require a new
 experiment and plan. `verify` derives identities from evidence, not new inputs.
@@ -79,6 +84,8 @@ live authorization still permits preparation, never a provider call.
 
 Follow [native run](references/native-run.md) for builds, materials, projection
 and `doctor` / `prepare` / `validate` / `plan` in the independent directory.
+Baseline reuse adds the [sealed baseline](references/sealed-baseline.md)
+identity checks to this freeze and its disclosure to the approval preview.
 Each benchmark family gets its own experiment, material manifest and plan.
 Preserve the full requested inventory and rejected requirements; resource
 failures do not authorize a smaller run.
@@ -141,9 +148,9 @@ acceptance handoff.
 ## Step 5: Report and hand off
 
 Use [benchmark report](references/benchmark-report.md) for native, acceptance
-and verify results: unique bilingual `docs/eval/` reports, external machine
-evidence, native metrics/denominators, complete coverage, criterion status and
-exact artifact/check links. Acceptance readiness is separate from Phase exit.
+and verify results: unique bilingual `docs/eval/` conclusion reports, external
+machine evidence and full operator reports, native metrics/denominators,
+complete coverage, criterion status and exact artifact/check links. Acceptance readiness is separate from Phase exit.
 Eval findings use the [finding contract](../_shared/references/finding-contract.md);
 only a later independent audit can admit them to the live remediation set.
 
