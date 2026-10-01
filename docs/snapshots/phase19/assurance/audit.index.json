@@ -14,20 +14,6 @@
       "model_id": "gpt6",
       "reviewer_id": "codex",
       "verdict": "FAIL"
-    },
-    {
-      "artifact_stem": "audit.pi.glm53",
-      "audit_head": "bc9a5c75ba74ed59b6a676023af813566300a388",
-      "audit_run_id": "phase19-pi-glm53-bc9a5c7-20260930t231208z",
-      "digests": {
-        "findings_sha256": "380291b2803be54445d704b50f6e9d3d63647ca7a1e37373c0d256cf56632345",
-        "meta_sha256": "dc15283a07e1f4a36f78277552e1832caddd4daeac3098d9b82bb0698665a1da",
-        "report_sha256": "fdc54b66303c76e94eba9c250eb9206aa2301a4f5ce429e30d425cf64ee8ae1b",
-        "requirements_sha256": "0e17540650c20c7585cb9009916af209196cb13c0336bff32c86fbcf70199e7c"
-      },
-      "model_id": "glm53",
-      "reviewer_id": "pi",
-      "verdict": "PASS-WITH-FINDINGS"
     }
   ],
   "phase": 19,
