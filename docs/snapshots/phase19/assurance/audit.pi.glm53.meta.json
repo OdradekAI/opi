@@ -1,38 +1,23 @@
 {
   "schema_version": 3,
-  "audit_run_id": "phase19-pi-glm53-ac80281-20260928t070222z",
+  "audit_run_id": "phase19-pi-glm53-bc9a5c7-20260930t231208z",
   "phase": 19,
-  "audit_head": "ac802811f2f0216ceddc9d802906570d9f4d67e8",
+  "audit_head": "bc9a5c75ba74ed59b6a676023af813566300a388",
   "reviewer_id": "pi",
-  "reviewer_identity": "pi coding agent (pi-coding-agent CLI session)",
+  "reviewer_identity": "pi coding agent harness",
   "model_id": "glm53",
-  "reviewer_model_id": "glm-5.3",
-  "model_identity_source": "runtime-attested",
+  "reviewer_model_id": "glm53",
+  "model_identity_source": "operator-declared",
   "independence": "fresh-context-same-family",
   "baseline_policy": "latest-committed-spec",
   "baseline_sources": [
-    {
-      "path": ".opi-impl-state.json",
-      "sha256": "c65c10635c4bb8b1754625b94e8a0a15459eef6d65634610ba9b65ea9ba5337e"
-    },
-    {
-      "path": "docs/snapshots/phase19/opi-impl-state.json",
-      "sha256": "35b3378bd902cc976bb348d794dd1b5d3c5f160a58769c3aeb62fea175a7b7a9"
-    },
-    {
-      "path": "docs/opi-spec.md",
-      "sha256": "1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db"
-    },
-    {
-      "path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md",
-      "sha256": "5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a"
-    },
-    {
-      "path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md",
-      "sha256": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
-    }
+    {"path": ".opi-impl-state.json", "sha256": "c65c10635c4bb8b1754625b94e8a0a15459eef6d65634610ba9b65ea9ba5337e"},
+    {"path": "docs/snapshots/phase19/opi-impl-state.json", "sha256": "35b3378bd902cc976bb348d794dd1b5d3c5f160a58769c3aeb62fea175a7b7a9"},
+    {"path": "docs/opi-spec.md", "sha256": "1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db"},
+    {"path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md", "sha256": "5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a"},
+    {"path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md", "sha256": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"}
   ],
-  "requirements_sha256": "ba9ef009c749e312b0fd522f6765d2447a457890deae8fc6733a5b280d8e5fd8",
-  "findings_sha256": "8e47b6f1d2a5d74d6514568731c03e7a4ba99f31c638de369c6125a91f7b8435",
+  "requirements_sha256": "0e17540650c20c7585cb9009916af209196cb13c0336bff32c86fbcf70199e7c",
+  "findings_sha256": "380291b2803be54445d704b50f6e9d3d63647ca7a1e37373c0d256cf56632345",
   "verdict": "PASS-WITH-FINDINGS"
 }
