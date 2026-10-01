@@ -192,11 +192,18 @@ leaves the prior set active and reports `AUDIT-INCOMPLETE`.
 
 Successful `complete` freezes the independent core: the original report bytes,
 metadata, requirements, findings and verdict. Only afterward may the compiler
-read relevant same-Phase reports and repairs pinned to committed versions
-available at `audit_head`. It does not ingest concurrent sibling output or wait
-for a roster. Current behavior remains anchored to `audit_head`. Discoveries
-after historical exposure are leads for fresh independent verification, never
-edits or additions to the installed core.
+read exactly one historical record: the immediately superseded run of the same
+`(reviewer_id, model_id)` pair that this peer's own `complete` moved to
+`assurance/history/<audit-run-id>/` (cite the commit that last carried those
+bytes; the history move preserves them). That superseded report is the sole
+comparison source — every other history record (other reviewers' or models'
+runs, older runs of this pair, unrelated remediation material) stays outside
+the comparison, and concurrent sibling output is never ingested. When the
+installation superseded no prior same-pair run, the compiler records a bounded
+`no-history` result instead of widening scope. Current behavior remains
+anchored to `audit_head`. Discoveries after historical exposure are leads for
+fresh independent verification, never edits or additions to the installed
+core.
 Record any newly noticed post-install defect absent from the current sidecar
 only as a bounded lead in comparison `limitations` for fresh independent
 verification; do not invent a current finding ID or an old-only comparison row.
@@ -218,8 +225,8 @@ identities. There is no fifth member file or historical findings ledger.
 |---|---|
 | `schema` | `opi-audit-history/1` |
 | `status` | `compared` or `no-history` |
-| `scope` | Inspected same-Phase history and the boundary of any absence claim |
-| `sources` | List of `{id, path, commit, sha256, audit_run_id}`; unique source IDs, exact committed source bytes, and owning historical run or `null` for a non-audit source |
+| `scope` | The superseded same-pair run inspected (or the explicit no-superseded-run boundary) and the boundary of any absence claim |
+| `sources` | List of `{id, path, commit, sha256, audit_run_id}` naming only the superseded same-pair run's records; unique source IDs, exact committed source bytes, and the owning historical run (`null` stays valid only for legacy non-audit sources) |
 | `comparisons` | Comparison rows defined below; empty for `no-history` |
 | `limitations` | Missing inputs, applicability limits, or an explicit statement that none were found within scope |
 

@@ -156,16 +156,20 @@ Do not include the reserved historical appendix in the staged member.
 
 Only after `complete` succeeds, follow the shared contract's
 [post-audit historical reference](../_shared/references/audit-set-contract.md#post-audit-historical-reference).
-Compare relevant same-Phase reports and repairs pinned to commits available at
-`audit_head`; exclude concurrent sibling output. Keep current behavior anchored
-to `audit_head`. Distinguish persistent defects, missed branches, proven
+Compare only the immediately superseded run of this same `(reviewer, model)`
+pair — the record this peer's own `complete` just moved to
+`assurance/history/<audit-run-id>/`, cited at the commit that last carried its
+bytes. Every other history record (other pairs' runs, older runs of this pair,
+unrelated remediation material) and all concurrent sibling output stay outside
+the comparison. Keep current behavior anchored to `audit_head`. Distinguish
+persistent defects, missed branches, proven
 regressions, new omissions, evidence gaps and preserved repairs. Attribute old
 closure claims and record uncertainty; history never rewrites the installed core.
 
 Prepare the contract's comparison JSON and use its locked `append-history`
 command with the exact target run and current expected index SHA-256. Install a
-bounded `no-history` result when no relevant history is found. Validate the live
-set afterward. If comparison cannot finish, retain the valid core and report
+bounded `no-history` result when this peer's `complete` superseded no prior
+same-pair run. Validate the live set afterward. If comparison cannot finish, retain the valid core and report
 `HISTORY-SUPPLEMENT-INCOMPLETE` with the missing evidence or tool failure; do not
 change the audit verdict or claim full workflow completion.
 
