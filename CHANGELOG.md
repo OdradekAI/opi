@@ -9,6 +9,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- `opi-eval`: the manually dispatched external-lock materialization now
+  delegates its diagnostic preparation and the explicit oracle-witness
+  conformance to the shared local CLI and publishes
+  `opi-eval-materialization-receipt/2` / `opi-eval-external-lock/resolved/2`
+  only after both succeed (D4). The receipt binds the built Companion, the
+  diagnostic config, the prepare command/report/material (material/7) and
+  the conformance command/report (`met: true`, native reward origin,
+  `agent_score: false`) as contained, SHA-bound artifact members, plus the
+  uniquely bound raw oracle result/CTRF bytes; the network claim records
+  the task-declared mode with basis `pinned-task-policy`. A shared
+  prepare/conformance refusal publishes no receipt; legacy /1 receipts and
+  resolved locks are rejected as read-only history.
+
+- `opi-eval`: private thinking never reaches a first capture sink (D1).
+  Fresh native dispatch requires material/7 with a pinned musl capture
+  helper (the Companion's hidden `__native-capture` mode) that spawns the
+  selected Agent through bounded pipes and persists only validated,
+  privacy-projected bytes under both capture policies; handoff/4 stages
+  the helper before credentials, terminal/3 binds its task-side self-check
+  and the new `opi-eval-native-capture/1` receipt, and partial-capture/2
+  records truthful sanitized-prefix status. Thinking text, declared
+  private signatures and `redacted_thinking` data are removed wherever
+  assistant messages repeat, private deltas are emptied preserving
+  placeholders/indices, and non-private tool/native bindings stay truthful;
+  unknown grammar, duplicate keys, invalid JSON, incomplete records or
+  streams beyond the existing 64 MiB ceiling refuse without a native
+  score, and opaque agent stderr retains only static metadata. The host
+  re-verifies retained digests before completion, sealing and partial
+  copies; untrusted captures never cross into sealed evidence. Legacy
+  material/6 and terminal/2 bytes remain loadable read-only for sealed
+  offline verification, reports and verifier-only regrade; fresh dispatch
+  never uses them.
+
+- `opi-eval`: the native host credential stage is now private before the
+  first secret byte. The per-trial integration directory is created
+  exclusively with mode 0700 and the staged config/handoff files with mode
+  0600, independent of the caller's root permissions and umask; a
+  preexisting directory, file, or link target refuses fail-closed instead
+  of being reused. Settlement cleanup is unchanged.
+
+- `opi-eval`: an optional supplied `reasoning` model control now projects
+  as `Unsupported` (retaining the requested value) for both native clients
+  and all three protocols, matching the unsupported settlement verdict;
+  selected native execution cannot prove the control effective, so no
+  thinking surface is enabled without proof. Required reasoning values
+  keep their early rejection; the enum, config keys and serialized shape
+  are unchanged.
+- `opi-eval`: an explicit positive `[execution].max_output_bytes` now rejects
+  at resolution with the existing unenforceable-bound error. Captured output
+  stays under the fixed runtime limit and a requested byte cap has no
+  enforcement route in this build; omitting the bound keeps the fixed capture
+  protection. The field and its serialized shape are unchanged.
+
 - `opi-ai`: `ProviderCollection::prepare_call` now resolves an omitted response
   output limit from the selected model's capacity before authentication and
   rejects default thinking budgets that cannot fit. Both implicit and explicit

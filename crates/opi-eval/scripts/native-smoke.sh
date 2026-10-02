@@ -1021,9 +1021,14 @@ group = "group-{adapter}"
     # rejection here (including a shared prepare refusal) aborts the
     # whole stage before any material is published.
     prepared = out / f"prepared-{adapter}"
-    prepare = subprocess.run(
-        [str(opi_eval), "prepare", "--config", str(config), "--out", str(prepared)],
-        capture_output=True, text=True)
+    # Shared preparation with the exact candidate source: prepare builds
+    # and pins the musl capture helper from the same commit (P19-AUD-003).
+    prepare_argv = [str(opi_eval), "prepare", "--config", str(config),
+                    "--out", str(prepared)]
+    if os.environ.get("OPI_EVAL_CANDIDATE_SOURCE"):
+        prepare_argv += ["--opi-source", os.environ["OPI_EVAL_CANDIDATE_SOURCE"],
+                         "--opi-commit", os.environ.get("OPI_EVAL_CANDIDATE_COMMIT", "")]
+    prepare = subprocess.run(prepare_argv, capture_output=True, text=True)
     (out / f"prepare-{adapter}.stdout").write_text(prepare.stdout, encoding="utf-8")
     (out / f"prepare-{adapter}.stderr").write_text(prepare.stderr, encoding="utf-8")
     if prepare.returncode != 0:
@@ -1034,7 +1039,7 @@ group = "group-{adapter}"
         raise SystemExit(
             f"materialize-configs: shared preparation published no material for {adapter}")
     manifest = json.loads(material_path.read_text(encoding="utf-8"))
-    if manifest.get("schema") != "opi-eval-native-material/6":
+    if manifest.get("schema") != "opi-eval-native-material/7":
         raise SystemExit(
             f"materialize-configs: shared preparation emitted "
             f"{manifest.get('schema')!r} for {adapter}")

@@ -86,16 +86,62 @@ class Workspace:
             "closure/opt/curl-shim.sh": b"#!/usr/bin/env bash\nexec /usr/bin/curl \"$@\"\n",
             "closure/opt/apt-closure.conf": b"APT_CONF_CLOSED=1\n",
         }
+        self.pinned_task = self.static_lock["subjects"][1]["task"]["id"]
         self.oracle_files: dict[str, bytes] = {
-            "oracle/harbor-results.json": b'[{"task_id": "openssl-selfsigned-cert", "reward": 1.0}]\n',
-            "oracle/oracle-summary.json": b'{"rewards": [1.0]}\n',
-            "oracle/results.ctrf": b'{"results": {"tests": [{"state": "passed"}]}}\n',
-            "oracle/network-baseline.json": b"{}\n",
+            "oracle/raw-result.json": json.dumps(
+                {"agent_info": {"name": "oracle"}, "verifier_result": {"rewards": {"reward": 1.0}}}
+            ).encode("utf-8")
+            + b"\n",
+            "oracle/ctrf-report.json": b'{"results": {"tests": [{"state": "passed"}]}}\n',
             "oracle/network-inspection.txt": (
-                b"network-mode: none\n"
-                b"probe: docker run --network none curl https://example.com/ -> refused\n"
-                b"baseline: " + lf_sha256(b"{}\n").encode("ascii") + b"\n"
+                b"task-declared-network-mode: none\n"
+                b"basis: pinned-task-policy\n"
+                b"source: pinned task.toml environment.allow_internet verified by the shared preparation\n"
+                b"offline-enforcement: not claimed by this materialization run\n"
             ),
+        }
+        shared_report = json.dumps(
+            {
+                "schema": "opi-eval-conformance-report/1",
+                "suite": "benchmark",
+                "adapter": "terminal-bench-2.1",
+                "case": "oracle-witness",
+                "exit_state": "exited:0",
+                "outcome": "verified-native",
+                "identity": {
+                    "task_id": self.pinned_task,
+                    "admitted_lock_digest": self.static_sha,
+                },
+                "reward": {"state": "known", "value": 1, "origin": "native-trial-result"},
+                "met": True,
+            },
+            sort_keys=True,
+        ).encode("utf-8") + b"\n"
+        self.shared_files: dict[str, bytes] = {
+            "shared/companion": b"\x7fELF synthetic companion bytes\n",
+            "shared/diagnostic.toml": (
+                'schema = "opi-eval-experiment/2"\nexperiment_id = "external-lock-diagnostic"\n'
+            ).encode("utf-8"),
+            "shared/prepare-report.json": json.dumps(
+                {
+                    "schema": "opi-eval-prepare/1",
+                    "origin": "local",
+                    "material": "/run/prepared/material.json",
+                },
+                sort_keys=True,
+            ).encode("utf-8")
+            + b"\n",
+            "shared/material.json": json.dumps(
+                {
+                    "schema": "opi-eval-native-material/7",
+                    "origin": "local",
+                    "static_lock": {"sha256": self.static_sha},
+                    "benchmarks": {"terminal-bench-2.1": {"tasks": {self.pinned_task: {}}}},
+                },
+                sort_keys=True,
+            ).encode("utf-8")
+            + b"\n",
+            "shared/conformance-report.json": shared_report,
         }
         self.pinned_image = self.static_lock["images"][0]
         self._installed: dict[str, Path] | None = None
@@ -144,10 +190,14 @@ class Workspace:
         ).hexdigest()
         return manifest, len(records), sum(r["size"] for r in records)
 
+    def shared_ref(self, name: str) -> dict:
+        body = self.shared_files[f"shared/{name}"]
+        return {"path": f"shared/{name}", "sha256": hashlib.sha256(body).hexdigest()}
+
     def build_receipt(self, **overrides: object) -> dict:
         manifest, count, total = self.closure_manifest()
         receipt = {
-            "schema": "opi-eval-materialization-receipt/1",
+            "schema": "opi-eval-materialization-receipt/2",
             "lock_id": "opi-eval-linux-x86_64",
             "platform": "linux-x86_64",
             "candidate_commit": EXPECTED_COMMIT,
@@ -169,13 +219,77 @@ class Workspace:
                 "total_bytes": total,
             },
             "images": [json.loads(self.pulled_images_bytes.decode("utf-8"))],
+            "shared": {
+                "companion": {
+                    **self.shared_ref("companion"),
+                    "located_by": "cargo-compiler-artifact",
+                },
+                "config": self.shared_ref("diagnostic.toml"),
+                "prepare": {
+                    "command": [
+                        "/opt/hostedtoolcache/opi-eval",
+                        "prepare",
+                        "--config",
+                        "/tmp/diagnostic.toml",
+                        "--out",
+                        "/tmp/prepared",
+                        "--opi-source",
+                        "/workspace",
+                        "--opi-commit",
+                        EXPECTED_COMMIT,
+                    ],
+                    "report": self.shared_ref("prepare-report.json"),
+                    "material": {
+                        **self.shared_ref("material.json"),
+                        "schema": "opi-eval-native-material/7",
+                    },
+                },
+                "conformance": {
+                    "command": [
+                        "/opt/hostedtoolcache/opi-eval",
+                        "conformance",
+                        "--suite",
+                        "benchmark",
+                        "--adapter",
+                        "terminal-bench-2.1",
+                        "--case",
+                        "oracle-witness",
+                        "--root",
+                        "/tmp/conformance",
+                        "--fixtures",
+                        "/workspace/crates/opi-eval/tests/fixtures",
+                        "--provider",
+                        "/tmp/cache/pins/scripts/scripted-provider.py",
+                        "--native-material",
+                        "/tmp/prepared/material.json",
+                    ],
+                    "report": self.shared_ref("conformance-report.json"),
+                    "suite": "benchmark",
+                    "adapter": "terminal-bench-2.1",
+                    "case": "oracle-witness",
+                    "met": True,
+                    "agent_score": False,
+                    "reward_origin": "native-trial-result",
+                },
+            },
             "oracle": {
                 "status": "passed",
                 "reward": 1.0,
-                "ctrf_sha256": hashlib.sha256(self.oracle_files["oracle/results.ctrf"]).hexdigest(),
-                "harbor_results_sha256": lf_sha256(self.oracle_files["oracle/harbor-results.json"]),
+                "agent_score": False,
+                "raw_result": {
+                    "path": "oracle/raw-result.json",
+                    "sha256": hashlib.sha256(self.oracle_files["oracle/raw-result.json"]).hexdigest(),
+                },
+                "ctrf": {
+                    "path": "oracle/ctrf-report.json",
+                    "sha256": hashlib.sha256(self.oracle_files["oracle/ctrf-report.json"]).hexdigest(),
+                },
             },
-            "network": {"mode": "none", "evidence": "oracle/network-inspection.txt"},
+            "network": {
+                "mode": "none",
+                "basis": "pinned-task-policy",
+                "evidence": "oracle/network-inspection.txt",
+            },
         }
         receipt.update(overrides)
         return receipt
@@ -224,6 +338,7 @@ class Workspace:
         members: dict[str, bytes] = {
             **self.closure_files,
             **self.oracle_files,
+            **self.shared_files,
             "receipt.json": receipt_bytes,
             "closure-manifest.json": closure_manifest_bytes,
             "pulled-images.json": self.pulled_images_bytes,
@@ -385,7 +500,7 @@ class RejectsReceiptContract(unittest.TestCase):
 
     def test_wrong_schema_or_identity_rejects(self) -> None:
         for field, value in (
-            ("schema", "opi-eval-materialization-receipt/2"),
+            ("schema", "opi-eval-materialization-receipt/3"),
             ("lock_id", "opi-eval-other"),
             ("platform", "linux-aarch64"),
         ):
@@ -394,6 +509,12 @@ class RejectsReceiptContract(unittest.TestCase):
                 result = ws.rerun_with_receipt(ws.build_receipt(**{field: value}))
                 self.assertEqual(result.returncode, 2, output(result))
                 self.assertIn(field, output(result).lower())
+
+    def test_legacy_receipt_is_rejected_as_history(self) -> None:
+        ws = Workspace()
+        result = ws.rerun_with_receipt(ws.build_receipt(schema="opi-eval-materialization-receipt/1"))
+        self.assertEqual(result.returncode, 2, output(result))
+        self.assertIn("legacy", output(result).lower())
 
     def test_candidate_commit_mismatch_rejects(self) -> None:
         ws = Workspace()
@@ -751,26 +872,42 @@ class RejectsOracleAudit(unittest.TestCase):
     def test_ctrf_digest_mismatch_rejects(self) -> None:
         ws = Workspace()
         receipt = ws.build_receipt()
-        receipt["oracle"]["ctrf_sha256"] = "7" * 64
+        receipt["oracle"]["ctrf"]["sha256"] = "7" * 64
         result = ws.rerun_with_receipt(receipt)
         self.assertEqual(result.returncode, 2, output(result))
         self.assertIn("ctrf", output(result).lower())
 
     def test_missing_ctrf_member_rejects(self) -> None:
         ws = Workspace()
-        zip_bytes = ws.build_zip(omit_members=["oracle/results.ctrf"])
+        zip_bytes = ws.build_zip(omit_members=["oracle/ctrf-report.json"])
         paths = ws.install(zip_bytes=zip_bytes)
         result = ws.run(receipt_path=paths["receipt"], artifact_path=paths["artifact"])
         self.assertEqual(result.returncode, 2, output(result))
         self.assertIn("ctrf", output(result).lower())
 
-    def test_harbor_results_digest_mismatch_rejects(self) -> None:
+    def test_raw_result_digest_mismatch_rejects(self) -> None:
         ws = Workspace()
         receipt = ws.build_receipt()
-        receipt["oracle"]["harbor_results_sha256"] = "8" * 64
+        receipt["oracle"]["raw_result"]["sha256"] = "8" * 64
         result = ws.rerun_with_receipt(receipt)
         self.assertEqual(result.returncode, 2, output(result))
-        self.assertIn("harbor", output(result).lower())
+        self.assertIn("raw result", output(result).lower())
+
+    def test_missing_raw_result_member_rejects(self) -> None:
+        ws = Workspace()
+        zip_bytes = ws.build_zip(omit_members=["oracle/raw-result.json"])
+        paths = ws.install(zip_bytes=zip_bytes)
+        result = ws.run(receipt_path=paths["receipt"], artifact_path=paths["artifact"])
+        self.assertEqual(result.returncode, 2, output(result))
+        self.assertIn("raw result", output(result).lower())
+
+    def test_oracle_claiming_agent_score_rejects(self) -> None:
+        ws = Workspace()
+        receipt = ws.build_receipt()
+        receipt["oracle"]["agent_score"] = True
+        result = ws.rerun_with_receipt(receipt)
+        self.assertEqual(result.returncode, 2, output(result))
+        self.assertIn("agent score", output(result).lower())
 
     def test_missing_network_evidence_rejects(self) -> None:
         ws = Workspace()
@@ -806,7 +943,7 @@ class RejectsOracleAudit(unittest.TestCase):
         receipt["network"]["mode"] = "public"
         receipt_bytes = (json.dumps(receipt, sort_keys=True, indent=2) + "\n").encode("utf-8")
         evidence = ws.oracle_files["oracle/network-inspection.txt"].replace(
-            b"network-mode: none", b"network-mode: public"
+            b"task-declared-network-mode: none", b"task-declared-network-mode: public"
         )
         zip_bytes = ws.build_zip(
             receipt_bytes=receipt_bytes,
@@ -816,6 +953,117 @@ class RejectsOracleAudit(unittest.TestCase):
         paths["receipt"].write_bytes(receipt_bytes)
         result = ws.run(receipt_path=paths["receipt"], artifact_path=paths["artifact"])
         self.assertEqual(result.returncode, 0, output(result))
+
+
+class RejectsSharedProvenance(unittest.TestCase):
+    def test_missing_shared_member_rejects(self) -> None:
+        for member in ("shared/companion", "shared/material.json", "shared/conformance-report.json"):
+            with self.subTest(member=member):
+                ws = Workspace()
+                zip_bytes = ws.build_zip(omit_members=[member])
+                paths = ws.install(zip_bytes=zip_bytes)
+                result = ws.run(receipt_path=paths["receipt"], artifact_path=paths["artifact"])
+                self.assertEqual(result.returncode, 2, output(result))
+                self.assertIn("shared", output(result).lower())
+
+    def test_shared_member_digest_drift_rejects(self) -> None:
+        ws = Workspace()
+        zip_bytes = ws.build_zip(
+            extra_members={"shared/prepare-report.json": b'{"tampered": true}\n'}
+        )
+        paths = ws.install(zip_bytes=zip_bytes)
+        result = ws.run(receipt_path=paths["receipt"], artifact_path=paths["artifact"])
+        self.assertEqual(result.returncode, 2, output(result))
+        self.assertIn("prepare report", output(result).lower())
+
+    def test_shared_reference_escape_rejects(self) -> None:
+        ws = Workspace()
+        receipt = ws.build_receipt()
+        receipt["shared"]["config"]["path"] = "../shared/diagnostic.toml"
+        result = ws.rerun_with_receipt(receipt)
+        self.assertEqual(result.returncode, 2, output(result))
+        self.assertIn("contained", output(result).lower())
+
+    def test_legacy_material_schema_rejects(self) -> None:
+        ws = Workspace()
+        material = json.loads(ws.shared_files["shared/material.json"])
+        material["schema"] = "opi-eval-native-material/6"
+        body = (json.dumps(material, sort_keys=True) + "\n").encode("utf-8")
+        receipt = ws.build_receipt()
+        receipt["shared"]["prepare"]["material"] = {
+            "path": "shared/material.json",
+            "sha256": hashlib.sha256(body).hexdigest(),
+            "schema": "opi-eval-native-material/6",
+        }
+        zip_bytes = ws.build_zip(
+            receipt_bytes=(json.dumps(receipt, sort_keys=True, indent=2) + "\n").encode("utf-8"),
+            extra_members={"shared/material.json": body},
+        )
+        paths = ws.install(zip_bytes=zip_bytes)
+        paths["receipt"].write_bytes((json.dumps(receipt, sort_keys=True, indent=2) + "\n").encode("utf-8"))
+        result = ws.run(receipt_path=paths["receipt"], artifact_path=paths["artifact"])
+        self.assertEqual(result.returncode, 2, output(result))
+        self.assertIn("material", output(result).lower())
+
+    def test_material_not_binding_the_static_lock_rejects(self) -> None:
+        ws = Workspace()
+        material = json.loads(ws.shared_files["shared/material.json"])
+        material["static_lock"]["sha256"] = "0" * 64
+        body = (json.dumps(material, sort_keys=True) + "\n").encode("utf-8")
+        receipt = ws.build_receipt()
+        receipt["shared"]["prepare"]["material"]["sha256"] = hashlib.sha256(body).hexdigest()
+        zip_bytes = ws.build_zip(
+            receipt_bytes=(json.dumps(receipt, sort_keys=True, indent=2) + "\n").encode("utf-8"),
+            extra_members={"shared/material.json": body},
+        )
+        paths = ws.install(zip_bytes=zip_bytes)
+        paths["receipt"].write_bytes((json.dumps(receipt, sort_keys=True, indent=2) + "\n").encode("utf-8"))
+        result = ws.run(receipt_path=paths["receipt"], artifact_path=paths["artifact"])
+        self.assertEqual(result.returncode, 2, output(result))
+        self.assertIn("static lock", output(result).lower())
+
+    def test_non_met_conformance_report_rejects(self) -> None:
+        ws = Workspace()
+        report = json.loads(ws.shared_files["shared/conformance-report.json"])
+        report["met"] = False
+        body = (json.dumps(report, sort_keys=True) + "\n").encode("utf-8")
+        receipt = ws.build_receipt()
+        receipt["shared"]["conformance"]["report"]["sha256"] = hashlib.sha256(body).hexdigest()
+        receipt["shared"]["conformance"]["met"] = False
+        zip_bytes = ws.build_zip(
+            receipt_bytes=(json.dumps(receipt, sort_keys=True, indent=2) + "\n").encode("utf-8"),
+            extra_members={"shared/conformance-report.json": body},
+        )
+        paths = ws.install(zip_bytes=zip_bytes)
+        paths["receipt"].write_bytes((json.dumps(receipt, sort_keys=True, indent=2) + "\n").encode("utf-8"))
+        result = ws.run(receipt_path=paths["receipt"], artifact_path=paths["artifact"])
+        self.assertEqual(result.returncode, 2, output(result))
+        self.assertIn("met", output(result).lower())
+
+    def test_non_shared_command_rejects(self) -> None:
+        ws = Workspace()
+        receipt = ws.build_receipt()
+        receipt["shared"]["prepare"]["command"][1] = "run"
+        result = ws.rerun_with_receipt(receipt)
+        self.assertEqual(result.returncode, 2, output(result))
+        self.assertIn("prepare", output(result).lower())
+
+    def test_conformance_command_without_native_material_rejects(self) -> None:
+        ws = Workspace()
+        receipt = ws.build_receipt()
+        command = receipt["shared"]["conformance"]["command"]
+        del command[command.index("--native-material") : command.index("--native-material") + 2]
+        result = ws.rerun_with_receipt(receipt)
+        self.assertEqual(result.returncode, 2, output(result))
+        self.assertIn("--native-material", output(result))
+
+    def test_network_basis_off_contract_rejects(self) -> None:
+        ws = Workspace()
+        receipt = ws.build_receipt()
+        receipt["network"]["basis"] = "observed-effective-mode"
+        result = ws.rerun_with_receipt(receipt)
+        self.assertEqual(result.returncode, 2, output(result))
+        self.assertIn("basis", output(result).lower())
 
 
 class RejectsExpiry(unittest.TestCase):
@@ -853,7 +1101,7 @@ class AcceptsAndWritesLock(unittest.TestCase):
         result = ws.run(lock_mode=("--write-lock", lock_path))
         self.assertEqual(result.returncode, 0, output(result))
         lock = json.loads(lock_path.read_text(encoding="utf-8"))
-        self.assertEqual(lock["schema"], "opi-eval-external-lock/resolved/1")
+        self.assertEqual(lock["schema"], "opi-eval-external-lock/resolved/2")
         self.assertEqual(lock["lock_id"], "opi-eval-linux-x86_64")
         self.assertEqual(lock["platform"], "linux-x86_64")
         self.assertEqual(lock["resolved_by_stage"], "external-lock-materialization")
@@ -896,12 +1144,15 @@ class AcceptsAndWritesLock(unittest.TestCase):
             ],
         )
         receipt = ws.build_receipt()
+        self.assertEqual(lock["shared"], receipt["shared"])
         self.assertEqual(
             lock["oracle"],
             {
                 "status": "passed",
                 "reward": 1.0,
-                "ctrf_sha256": receipt["oracle"]["ctrf_sha256"],
+                "agent_score": False,
+                "ctrf_sha256": receipt["oracle"]["ctrf"]["sha256"],
+                "raw_result_sha256": receipt["oracle"]["raw_result"]["sha256"],
             },
         )
         self.assertEqual(lock["authority"], {"admission": "digest"})
@@ -911,9 +1162,9 @@ class AcceptsAndWritesLock(unittest.TestCase):
                 "materializer-tools": producer_identity(ws.producer_pins),
                 "closure-artifact": manifest,
                 "pulled-image-graphs": lf_sha256(ws.pulled_images_bytes),
-                "harbor-effective-config": receipt["oracle"]["harbor_results_sha256"],
+                "harbor-effective-config": receipt["oracle"]["raw_result"]["sha256"],
                 "docker-network-evidence": lf_sha256(ws.oracle_files["oracle/network-inspection.txt"]),
-                "oracle-preflight": receipt["oracle"]["ctrf_sha256"],
+                "oracle-preflight": receipt["oracle"]["ctrf"]["sha256"],
             },
         )
         declared = ws.static_lock["unresolved"]

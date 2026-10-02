@@ -842,7 +842,9 @@ mod tests {
         std::fs::write(&profile_path, toml::to_string(&profile).unwrap()).unwrap();
         let pinned = json!({"path": "/unused", "sha256": "unused"});
         let material = serde_json::from_value(json!({
-            "schema": "opi-eval-native-material/6", "static_lock": pinned,
+            "schema": "opi-eval-native-material/7", "static_lock": pinned,
+            "capture_helper": {"executable": pinned, "target": "x86_64-unknown-linux-gnu",
+                "protocol": "opi-eval-native-capture-helper/1", "cargo_lock_sha256": "0".repeat(64)},
             "provider": {"script": pinned, "endpoint": "unused", "request_log": "/unused"},
             "agents": {}, "benchmarks": {adapter: {
                 "corpus": {"root": corpus_root, "source_commit": "unused", "tasks_tree": "unused"},

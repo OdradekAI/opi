@@ -386,11 +386,11 @@ case fails closed.
 | Mode | Inputs and behavior | What it proves |
 |------|---------------------|----------------|
 | Hermetic fixture mode | Default. Uses bounded deterministic helpers and pinned repository fixtures. | Adapter, lifecycle, sealing, reporting, and failure-path conformance. It does not prove real-product or real-provider fidelity. |
-| Native-material mode | Add `--native-material <MANIFEST>` to `validate`, `run`, or `conformance`. The manifest (schema `opi-eval-native-material/6`) resolves exact Agent executables, the pinned integration modules that run each Agent inside the task environment (one per runner family: Harbor for the Terminal-Bench route, Pier for DeepSWE), task packages, verifier/oracle entry points, and the scripted-provider endpoint. | For `run`, one explicitly selected upstream job per trial runs the selected Agent inside the graded task environment and grades that same trial; the imported result must bind to the selected Agent, task, and job identity before anything seals. Terminal-Bench 3.0 runs through its declared separate-verifier handoff: the task's own `task.toml` lifecycle is parsed and bound (unsupported shapes, including multi-step tasks, disabled verifiers, verifier collect hooks on the Harbor route, and non-Linux tasks, reject before any verifier spawn), and for separate-verifier tasks only the declared artifacts cross into the fresh verifier - undeclared, missing, or substituted collections reject and an unrelated canary file stays outside. DeepSWE runs through its declared committed-patch handoff: the Pier task's collect hook extracts the committed patch beyond the task's base revision and the pristine no-network verifier grades exactly that patch (uncommitted work can never be substituted for it); the bound job must record the task's declared lifecycle together with the base revision and environment image, an empty nop patch still collects and grades zero, and undeclared collection rejects. The sealed bundle records the verifier-input identity (`native/verifier-input.json`: the environment mode, the DeepSWE base revision and image, plus every declared artifact with the digests of exactly the collected bytes). `conformance` restricts native mode to its registered native case subset (including the explicitly selected `oracle-witness`/`nop-witness` artifact witnesses for all three families). |
+| Native-material mode | Add `--native-material <MANIFEST>` to `validate`, `run`, or `conformance`. The manifest (schema `opi-eval-native-material/7`) resolves exact Agent executables, pinned shared capture helper (the musl-built Companion whose hidden `__native-capture` mode filters every stream at its first capture sink),, the pinned integration modules that run each Agent inside the task environment (one per runner family: Harbor for the Terminal-Bench route, Pier for DeepSWE), task packages, verifier/oracle entry points, and the scripted-provider endpoint. | For `run`, one explicitly selected upstream job per trial runs the selected Agent inside the graded task environment and grades that same trial; the imported result must bind to the selected Agent, task, and job identity before anything seals. Terminal-Bench 3.0 runs through its declared separate-verifier handoff: the task's own `task.toml` lifecycle is parsed and bound (unsupported shapes, including multi-step tasks, disabled verifiers, verifier collect hooks on the Harbor route, and non-Linux tasks, reject before any verifier spawn), and for separate-verifier tasks only the declared artifacts cross into the fresh verifier - undeclared, missing, or substituted collections reject and an unrelated canary file stays outside. DeepSWE runs through its declared committed-patch handoff: the Pier task's collect hook extracts the committed patch beyond the task's base revision and the pristine no-network verifier grades exactly that patch (uncommitted work can never be substituted for it); the bound job must record the task's declared lifecycle together with the base revision and environment image, an empty nop patch still collects and grades zero, and undeclared collection rejects. The sealed bundle records the verifier-input identity (`native/verifier-input.json`: the environment mode, the DeepSWE base revision and image, plus every declared artifact with the digests of exactly the collected bytes). `conformance` restricts native mode to its registered native case subset (including the explicitly selected `oracle-witness`/`nop-witness` artifact witnesses for all three families). |
 
 An Agent may carry a `runtime_package` with an absolute `path`, sorted-file
 `manifest_sha256`, and relative `entrypoint` bound to its pinned executable.
-The native handoff schema is `opi-eval-native-handoff/3`; Harbor and Pier
+The native handoff schema is `opi-eval-native-handoff/4`; Harbor and Pier
 verify and upload the complete package before launching it with the selected
 provider and model. Resource drift, links and entrypoint traversal reject.
 For local preparation, `cache/agents/<product>` is either the executable or
@@ -419,6 +419,24 @@ registered `oracle` or `nop` name without a custom import path. Result binding
 requires that exact name and rejects missing, substituted or dual selectors;
 integration Agents retain their pinned import selection.
 
+The manually dispatched
+[external-lock materialization workflow](../../.github/workflows/opi-eval-external-lock-materialization.yml)
+follows the same delegation rule. It builds the candidate Companion from
+Cargo compiler-artifact output, seeds the declared cache from the checkout,
+and delegates the diagnostic Terminal-Bench 2.1 preparation and the explicit
+`oracle-witness` conformance to the shared local CLI; it publishes
+`opi-eval-materialization-receipt/2` (and `opi-eval-external-lock/resolved/2`)
+only after both succeed. The receipt binds the shared provenance - the
+Companion, the diagnostic config, the prepare command/report/material
+(material/7), and the conformance command/report with `met: true`, a
+native reward origin and `agent_score: false` - as contained, relative,
+SHA-bound artifact members, plus the uniquely bound raw oracle result and
+CTRF bytes; the network claim records the task-declared mode with basis
+`pinned-task-policy` and never claims offline enforcement from host
+settings. A shared prepare or conformance refusal publishes no receipt at
+all; retained /1 bytes stay read-only history and the current verifier
+rejects them.
+
 Request identity comes from the experiment document's selected named
 connection (schema `opi-eval-experiment/2`): the top-level `connection`
 selects one `[[connections]]` id carrying `provider`,
@@ -432,15 +450,18 @@ before any model effect, and remote base URLs require the explicit
 `reasoning` value rejects at `validate`, `plan` and `run` for every native
 selection shape and protocol, because current native execution cannot prove
 that control effective; an optional supplied reasoning value stays
-admissible and is reported as explicitly non-comparable. Requested
+admissible, projects as `Unsupported` while retaining the request (no
+thinking surface is enabled without proof), and is reported as explicitly
+non-comparable. Requested
 monetary/usage caps in `[execution.caps]` are rejected - the native route
 cannot enforce them. Native Agent time uses the smaller supplied
 `time_limit_seconds` and `agent_timeout_seconds`; `verifier_timeout_seconds`
 caps the verifier stage. Narrower task limits remain in force, and each native
-job retains the pinned adapter profile's outer deadline. Requested
-`max_output_bytes` is recorded but does not override the profile's outer-job
-stdout/stderr capture bounds or the separate 64 MiB per-stream native client
-artifact bound. Both pinned clients (Opi and pi) are projected from the same
+job retains the pinned adapter profile's outer deadline. An explicit
+positive `max_output_bytes` rejects at resolution: a requested byte cap has
+no enforcement route in this build, and omitting the bound keeps the fixed
+runtime capture protection (the profile's outer-job stdout/stderr bounds and
+the separate 64 MiB per-stream native client artifact bound). Both pinned clients (Opi and pi) are projected from the same
 connection for all three
 protocols by the local
 [scripted provider](scripts/scripted-provider.py) (deterministic tool
@@ -791,15 +812,40 @@ continues to omit intermediate streams.
 Before projecting configuration or credentials, both native integrations run
 the exact staged executable (including pi's packaged runtime) with `--version`
 in the task environment, with a 30-second supervised bound. The private
-`opi-eval-native-agent-terminal/2` record binds that preflight to the logical
-trial, executable/package, command and separate capture digests. Failed or
-unknown preflight prevents task dispatch and remains attempted, invalid and
-unscored; its exit is never a task exit. Passed preflight proves bounded runtime
-compatibility. Later task dispatch and observed exit still need their own
-evidence, and valid task zero/nonzero/timeout outcomes retain their meanings.
-Terminal-only capture keeps the proof and permitted diagnostics. Fresh imports
-and local acceptance require `/2`; existing sealed byte verification, reports
-and verifier-only regrade do not invent a proof or rerun the Agent.
+`opi-eval-native-agent-terminal/3` record binds that preflight, the staged
+capture helper's task-side self-check, and the first-sink capture receipt
+summary to the logical trial, executable/package, command and separate capture
+digests. Failed or unknown preflight prevents task dispatch and remains
+attempted, invalid and unscored; its exit is never a task exit. Passed
+preflight proves bounded runtime compatibility. Later task dispatch and
+observed exit still need their own evidence, and valid task
+zero/nonzero/timeout outcomes retain their meanings. Terminal-only capture
+keeps the proof and permitted diagnostics. Fresh dispatch requires `/3` with
+a `sanitized` capture; legacy `/2` bytes remain readable only for sealed
+offline verification, reports and verifier-only regrade, which never invent
+a proof or rerun the Agent.
+
+Private thinking never reaches a first capture sink: a pinned musl capture
+helper (transported with the selected Agent, self-checked before any
+credential projection) spawns the Agent through bounded pipes and persists
+only validated, privacy-projected bytes under both capture policies.
+Thinking text, declared private signatures and `redacted_thinking` data are
+removed wherever assistant messages repeat (message, turn, AgentEnd
+snapshots and stream partials), private thinking deltas/end content is
+emptied preserving placeholders and `content_index`/`contentIndex`, and
+model/API/provider identity, usage, stop/retry/settlement and non-private
+tool identity stay truthful; tool-owned JSON named `thinking` is never
+touched. Unknown envelope/event/block fields or types, duplicate JSON keys,
+invalid UTF-8/JSON, incomplete records and streams beyond the existing
+64 MiB ceiling refuse before that record is written - without a native
+score. Unchanged records keep their exact original bytes. Agent stderr
+admits only empty output and the explicitly validated provider-diagnostic
+vocabulary; anything opaque retains only static count/digest metadata and
+excludes a score. The helper's `opi-eval-native-capture/1` receipt binds
+the retained digests, and the host re-verifies those bytes before any
+terminal completion, client message, seal or bounded partial copy
+(`opi-eval-partial-capture/2`) uses them; untrusted captures never cross
+into sealed exportable evidence.
 
 On the pinned mounted Docker routes, Agent streams and Opi traces are written
 directly to the trial's log mount, so an outer timeout does not depend on a

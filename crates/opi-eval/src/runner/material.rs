@@ -18,8 +18,12 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// The one admitted manifest schema identity.
-pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/6";
+/// The one admitted manifest schema identity for fresh dispatch.
+pub(crate) const MATERIAL_SCHEMA: &str = "opi-eval-native-material/7";
+/// The legacy read-only schema: sealed offline verification, reports and
+/// verifier-only regrade keep admitting `/6` bytes with their original
+/// seals; fresh dispatch never does.
+pub(crate) const LEGACY_MATERIAL_SCHEMA: &str = "opi-eval-native-material/6";
 
 /// Typed material rejections (exit-path failures, never settled outcomes).
 #[derive(Debug, Error)]
@@ -88,6 +92,66 @@ pub(crate) struct RuntimePackage {
     pub(crate) path: PathBuf,
     pub(crate) manifest_sha256: String,
     pub(crate) entrypoint: PathBuf,
+}
+
+/// The pinned shared capture helper (P19-AUD-003): the bounded privacy
+/// filter executable both integrations stage beside the selected Agent
+/// before credentials. `musl` is the production transport (static, any
+/// task image); the admitted GNU targets cover hermetic flows whose
+/// image matches the build host. Platform incompatibility refuses at
+/// the task-side helper preflight, never at dispatch.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CaptureHelperMaterial {
+    /// The exact helper executable staged with the Agent.
+    pub(crate) executable: PinnedFile,
+    /// Compiled target triple.
+    pub(crate) target: String,
+    /// The helper protocol identity the task-side preflight proves.
+    pub(crate) protocol: String,
+    /// SHA-256 of the source build's `Cargo.lock`, pinning the exact
+    /// dependency graph the helper was compiled from.
+    pub(crate) cargo_lock_sha256: String,
+}
+
+/// Targets whose helper binaries material admits.
+const CAPTURE_HELPER_TARGETS: &[&str] = &[
+    "x86_64-unknown-linux-musl",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-musl",
+    "aarch64-unknown-linux-gnu",
+];
+
+impl CaptureHelperMaterial {
+    /// Verifies the helper pin: exact bytes, admitted target, and the
+    /// capture helper protocol identity.
+    pub(crate) fn verify(&self) -> Result<(), MaterialError> {
+        verify_pinned(&self.executable)?;
+        if !CAPTURE_HELPER_TARGETS.contains(&self.target.as_str()) {
+            return Err(MaterialError::Rejected(format!(
+                "capture helper target {:?} is not admitted",
+                self.target
+            )));
+        }
+        if self.protocol != crate::native_capture::CAPTURE_HELPER_PROTOCOL {
+            return Err(MaterialError::Rejected(format!(
+                "capture helper protocol {:?} is not {}",
+                self.protocol,
+                crate::native_capture::CAPTURE_HELPER_PROTOCOL
+            )));
+        }
+        if self.cargo_lock_sha256.len() != 64
+            || !self
+                .cargo_lock_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(MaterialError::Rejected(
+                "capture helper Cargo.lock digest is malformed".to_owned(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// The per-product agent projection.
@@ -275,6 +339,9 @@ pub(crate) struct NativeMaterial {
     pub(crate) agents: BTreeMap<String, AgentMaterial>,
     /// The admitted benchmark revisions (keyed by CLI adapter id).
     pub(crate) benchmarks: BTreeMap<String, BenchmarkMaterial>,
+    /// The pinned shared capture helper (present on `/7`; fresh dispatch
+    /// requires it, legacy `/6` offline reads carry none).
+    pub(crate) capture_helper: Option<CaptureHelperMaterial>,
 }
 
 impl NativeMaterial {
@@ -292,7 +359,7 @@ impl NativeMaterial {
         let text = std::fs::read_to_string(path)?;
         let header: serde_json::Value = serde_json::from_str(&text)
             .map_err(|error| MaterialError::Rejected(format!("manifest parse failed: {error}")))?;
-        if header["schema"] != MATERIAL_SCHEMA {
+        if header["schema"] != MATERIAL_SCHEMA && header["schema"] != LEGACY_MATERIAL_SCHEMA {
             return Err(MaterialError::Rejected(format!(
                 "unknown native-material schema; regenerate material as {MATERIAL_SCHEMA}"
             )));
@@ -311,7 +378,7 @@ impl NativeMaterial {
                 "selected products must be a non-empty subset of [opi, pi], found {selected:?}"
             )));
         }
-        if material.schema != MATERIAL_SCHEMA {
+        if material.schema != MATERIAL_SCHEMA && material.schema != LEGACY_MATERIAL_SCHEMA {
             return Err(MaterialError::Rejected(format!(
                 "unknown schema {:?} (expected {MATERIAL_SCHEMA:?})",
                 material.schema
@@ -327,6 +394,19 @@ impl NativeMaterial {
         }
         verify_pinned(&material.static_lock)?;
         verify_pinned(&material.provider.script)?;
+        if material.schema == LEGACY_MATERIAL_SCHEMA && material.capture_helper.is_some() {
+            return Err(MaterialError::Rejected(
+                "legacy material must not carry a capture helper pin".to_owned(),
+            ));
+        }
+        if material.schema == MATERIAL_SCHEMA && material.capture_helper.is_none() {
+            return Err(MaterialError::Rejected(
+                "fresh material requires the pinned capture helper".to_owned(),
+            ));
+        }
+        if let Some(helper) = &material.capture_helper {
+            helper.verify()?;
+        }
         let agent_ids = material.agents.keys().cloned().collect::<Vec<_>>();
         if agent_ids != selected {
             return Err(MaterialError::Rejected(format!(
@@ -395,6 +475,29 @@ impl NativeMaterial {
     pub(crate) fn agent(&self, product: &str) -> Result<&AgentMaterial, MaterialError> {
         self.agents.get(product).ok_or_else(|| {
             MaterialError::Rejected(format!("agent product {product:?} is not in the material"))
+        })
+    }
+
+    /// The schema identity of the loaded manifest. Fresh dispatch sites
+    /// branch on it through [`Self::capture_helper`], which already
+    /// refuses legacy `/6`; the accessor keeps the boundary observable
+    /// for the offline readers that admit both schemas.
+    #[expect(
+        dead_code,
+        reason = "the legacy-boundary accessor is consumed by tests and offline readers"
+    )]
+    pub(crate) fn schema(&self) -> &str {
+        &self.schema
+    }
+
+    /// The pinned capture helper for fresh dispatch: legacy `/6` offline
+    /// material admits none and fresh dispatch refuses without one.
+    pub(crate) fn capture_helper(&self) -> Result<&CaptureHelperMaterial, MaterialError> {
+        self.capture_helper.as_ref().ok_or_else(|| {
+            MaterialError::Rejected(
+                "fresh native dispatch requires material/7 with the pinned capture helper"
+                    .to_owned(),
+            )
         })
     }
 
@@ -1480,6 +1583,7 @@ mod tests {
             tasks_tree: git(&["rev-parse", "HEAD:tasks"]),
         };
         let lock_value = serde_json::json!({"subjects": [{"id": "terminal-bench-2.1", "commit": corpus.source_commit, "tasks_tree": corpus.tasks_tree}]});
+        std::fs::write(dir.join("helper"), b"helper").unwrap();
         let lock = dir.join("lock.json");
         write(
             &lock,
@@ -1520,6 +1624,9 @@ mod tests {
             serde_json::json!({"executable": pinned(executable), "integrations": {"harbor": integration("harbor"), "pier": integration("pier")}})
         };
         serde_json::json!({"schema": MATERIAL_SCHEMA, "static_lock": pinned("lock.json"),
+            "capture_helper": {"executable": pinned("helper"), "target": "x86_64-unknown-linux-gnu",
+                "protocol": crate::native_capture::CAPTURE_HELPER_PROTOCOL,
+                "cargo_lock_sha256": "0".repeat(64)},
             "provider": {"script": pinned("provider.py"), "endpoint": "http://127.0.0.1:48127/v1", "request_log": dir.join("requests.jsonl")},
             "agents": {"opi": agent("opi", "opi"), "pi": agent("pi", "pi.js")},
             "benchmarks": {"terminal-bench-2.1": {"corpus": corpus, "tasks": {"unit-fixture-task": task_material},

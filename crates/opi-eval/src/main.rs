@@ -6,6 +6,14 @@ use clap::{Parser, Subcommand};
 
 use opi_eval::cli;
 
+// Binary-local capture modules (P19-AUD-003): the pure filter is shared
+// with the library's unit contract through the same source file, and the
+// runtime (pipes, process group, signals) exists only in this binary.
+#[path = "native_capture.rs"]
+mod native_capture;
+#[path = "native_capture_runtime.rs"]
+mod native_capture_runtime;
+
 #[derive(Debug, Parser)]
 #[command(
     name = "opi-eval",
@@ -177,6 +185,17 @@ enum Command {
 }
 
 fn main() -> ExitCode {
+    // Hidden binary-local capture dispatch (P19-AUD-003): before any
+    // public CLI parsing, `__native-capture` runs the bounded privacy
+    // filter. It is an internal Companion mode - no public CLI surface,
+    // configuration key or SDK contract - invoked only by the pinned
+    // integrations with the staged helper executable.
+    let mut arguments = std::env::args_os();
+    let program = arguments.next();
+    if arguments.next().as_deref().and_then(|value| value.to_str()) == Some("__native-capture") {
+        let rest: Vec<std::ffi::OsString> = arguments.collect();
+        return native_capture_runtime::run_hidden_mode(&rest, program.as_ref());
+    }
     let cli = Cli::parse();
     match cli.command {
         Command::Validate {

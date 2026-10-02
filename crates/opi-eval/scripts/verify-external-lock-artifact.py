@@ -4,13 +4,22 @@
 Audits a manually dispatched materialization run before its evidence is
 admitted as the resolved Linux x86_64 external lock:
 
-* the run-produced receipt's schema, identity, and candidate-commit binding;
-* the downloaded GitHub artifact zip: its digest, the embedded receipt, the
-  materialized closure manifest recomputed file by file, the pulled image
-  graph, and the oracle/network evidence bytes;
+* the run-produced /2 receipt's schema, identity, and candidate-commit
+  binding, including its shared-provenance references (the built Companion,
+  the diagnostic config, the shared prepare command/report/material, and
+  the shared conformance command/report) as contained, relative, SHA-bound
+  members of the artifact;
+* the downloaded GitHub artifact zip: its digest, the embedded receipt,
+  the materialized closure manifest recomputed file by file, the inspected
+  image graph, the shared-CLI reports and frozen native material, and the
+  uniquely bound raw oracle result/CTRF and network evidence bytes;
 * the committed static external lock, the pinned workflow bytes, and every
   pinned producer byte in the working tree;
 * artifact expiry against the caller's check time.
+
+The oracle evidence must show `met: true` with a native-trial-result
+reward and `agent_score: false`; legacy /1 receipts and resolved locks are
+rejected as superseded history (their retained bytes stay read-only).
 
 With `--write-lock` the verifier then writes the reviewed resolved lock as a
 deterministic repository artifact; with `--verify-lock` it re-derives that
@@ -34,8 +43,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 STATIC_LOCK_SCHEMA = "opi-eval-external-lock/static/1"
-RESOLVED_LOCK_SCHEMA = "opi-eval-external-lock/resolved/1"
-RECEIPT_SCHEMA = "opi-eval-materialization-receipt/1"
+RESOLVED_LOCK_SCHEMA = "opi-eval-external-lock/resolved/2"
+RECEIPT_SCHEMA = "opi-eval-materialization-receipt/2"
+MATERIAL_SCHEMA = "opi-eval-native-material/7"
+CONFORMANCE_REPORT_SCHEMA = "opi-eval-conformance-report/1"
 LOCK_ID = "opi-eval-linux-x86_64"
 PLATFORM = "linux-x86_64"
 RESOLVED_BY_STAGE = "external-lock-materialization"
@@ -187,15 +198,93 @@ def recompute_closure(members: dict[str, bytes]) -> tuple[str, int, int]:
     return manifest, len(records), sum(r["size"] for r in records)
 
 
-def find_ctrf(members: dict[str, bytes]) -> bytes:
-    matches = [
-        body
-        for name, body in members.items()
-        if name.startswith("oracle/")
-        and (Path(name).name.endswith(".ctrf") or (Path(name).name.startswith("ctrf") and name.endswith(".json")))
+def shared_member(members: dict[str, bytes], reference: object, what: str) -> bytes:
+    """One contained, relative, SHA-bound artifact member named by the receipt."""
+    require(isinstance(reference, dict), f"receipt {what} reference is not an object: {reference!r}")
+    rel = reference.get("path")
+    require(
+        isinstance(rel, str) and rel != "" and not rel.startswith("/") and ".." not in Path(rel).parts,
+        f"receipt {what} reference is not contained and relative: {rel!r}",
+    )
+    body = member(members, rel, f"{what} bytes")
+    digest = reference.get("sha256")
+    require(
+        isinstance(digest, str) and SHA256_HEX.match(digest) is not None,
+        f"receipt {what} digest is malformed: {digest!r}",
+    )
+    require(
+        hashlib.sha256(body).hexdigest() == digest,
+        f"{what} digest mismatch inside the artifact",
+    )
+    return body
+
+
+def verify_shared_commands(receipt: dict) -> None:
+    """The shared CLI invocations recorded by the producer must be the
+    shared prepare/conformance delegations with their required bindings."""
+    shared = receipt.get("shared")
+    require(isinstance(shared, dict), "receipt has no shared provenance object")
+
+    def command_of(stage: str) -> list[str]:
+        entry = shared.get(stage)
+        require(isinstance(entry, dict), f"receipt shared.{stage} is not an object")
+        command = entry.get("command")
+        require(
+            isinstance(command, list) and len(command) >= 3
+            and all(isinstance(part, str) for part in command),
+            f"receipt shared.{stage}.command is not a recorded argv: {command!r}",
+        )
+        require(
+            Path(command[0]).name == "opi-eval",
+            f"shared {stage} was not invoked through the Companion binary: {command[0]!r}",
+        )
+        require(command[1] == stage, f"shared {stage} command does not invoke {stage}: {command[1]!r}")
+        return command
+
+    prepare_command = command_of("prepare")
+    for flag in ("--config", "--out", "--opi-source", "--opi-commit"):
+        require(flag in prepare_command, f"shared prepare command lacks {flag}: {prepare_command!r}")
+    conformance_command = command_of("conformance")
+    required_pairs = [
+        ("--suite", "benchmark"),
+        ("--adapter", "terminal-bench-2.1"),
+        ("--case", "oracle-witness"),
     ]
-    require(bool(matches), "artifact carries no CTRF report under oracle/")
-    return matches[0]
+    for flag, value in required_pairs:
+        require(
+            flag in conformance_command
+            and conformance_command[conformance_command.index(flag) + 1] == value,
+            f"shared conformance command does not bind {flag} {value}: {conformance_command!r}",
+        )
+    for flag in ("--root", "--fixtures", "--provider", "--native-material"):
+        require(flag in conformance_command, f"shared conformance command lacks {flag}: {conformance_command!r}")
+
+    companion = shared.get("companion")
+    require(isinstance(companion, dict), "receipt shared.companion is not an object")
+    require(
+        companion.get("located_by") == "cargo-compiler-artifact",
+        f"Companion was not located from cargo compiler-artifact output: {companion.get('located_by')!r}",
+    )
+    material = shared.get("prepare", {}).get("material")
+    require(isinstance(material, dict), "receipt shared.prepare.material is not an object")
+    require(
+        material.get("schema") == MATERIAL_SCHEMA,
+        f"shared material schema is not {MATERIAL_SCHEMA}: {material.get('schema')!r}",
+    )
+    conformance = shared.get("conformance")
+    require(isinstance(conformance, dict), "receipt shared.conformance is not an object")
+    require(
+        conformance.get("suite") == "benchmark"
+        and conformance.get("adapter") == "terminal-bench-2.1"
+        and conformance.get("case") == "oracle-witness",
+        f"shared conformance selection drifted: {conformance!r}",
+    )
+    require(conformance.get("met") is True, "shared conformance is not met")
+    require(conformance.get("agent_score") is False, "shared conformance claims an Agent score")
+    require(
+        conformance.get("reward_origin") == "native-trial-result",
+        f"shared conformance reward origin is not native: {conformance.get('reward_origin')!r}",
+    )
 
 
 def build_resolved_lock(
@@ -226,12 +315,12 @@ def build_resolved_lock(
             ).encode("utf-8")
         ),
         "closure-artifact": receipt["closure"]["manifest_sha256"],
-        "pulled-image-graphs": lf_sha256(member(members, "pulled-images.json", "pulled image graph")),
-        "harbor-effective-config": receipt["oracle"]["harbor_results_sha256"],
+        "pulled-image-graphs": lf_sha256(member(members, "pulled-images.json", "inspected image graph")),
+        "harbor-effective-config": receipt["oracle"]["raw_result"]["sha256"],
         "docker-network-evidence": lf_sha256(
             member(members, "oracle/network-inspection.txt", "network evidence")
         ),
-        "oracle-preflight": receipt["oracle"]["ctrf_sha256"],
+        "oracle-preflight": receipt["oracle"]["ctrf"]["sha256"],
     }
     for slot in declared:
         if slot["owner_stage"] != RESOLVED_BY_STAGE:
@@ -278,10 +367,13 @@ def build_resolved_lock(
             "manifest_sha256": receipt["closure"]["manifest_sha256"],
             "file_count": receipt["closure"]["file_count"],
         },
+        "shared": receipt["shared"],
         "oracle": {
             "status": receipt["oracle"]["status"],
             "reward": receipt["oracle"]["reward"],
-            "ctrf_sha256": receipt["oracle"]["ctrf_sha256"],
+            "agent_score": receipt["oracle"]["agent_score"],
+            "ctrf_sha256": receipt["oracle"]["ctrf"]["sha256"],
+            "raw_result_sha256": receipt["oracle"]["raw_result"]["sha256"],
         },
         "resolved": resolved,
         "future": future,
@@ -315,6 +407,11 @@ def verify(args: argparse.Namespace) -> tuple[str, str]:
     )
 
     receipt = load_json(Path(args.receipt), "materialization receipt")
+    if receipt.get("schema") == "opi-eval-materialization-receipt/1":
+        raise Rejection(
+            "legacy /1 receipt: superseded by the shared-CLI /2 contract; "
+            "retained /1 bytes stay read-only history"
+        )
     require(receipt.get("schema") == RECEIPT_SCHEMA, f"unsupported receipt schema: {receipt.get('schema')!r}")
     require(
         receipt.get("lock_id") == LOCK_ID,
@@ -477,6 +574,41 @@ def verify(args: argparse.Namespace) -> tuple[str, str]:
             "the pulled image graph inside the artifact diverges from the receipt",
         )
 
+        # Shared provenance: every reference must be a contained member of
+        # this artifact with exactly the recorded bytes.
+        verify_shared_commands(receipt)
+        shared = receipt["shared"]
+        shared_member(members, shared["companion"], "shared companion")
+        shared_member(members, shared["config"], "diagnostic config")
+        shared_member(members, shared["prepare"]["report"], "shared prepare report")
+        material_bytes = shared_member(members, shared["prepare"]["material"], "shared material")
+        try:
+            material = json.loads(material_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise Rejection(f"shared material is not valid JSON: {error}") from error
+        require(
+            material.get("schema") == MATERIAL_SCHEMA,
+            f"shared material schema inside the artifact is not {MATERIAL_SCHEMA}: {material.get('schema')!r}",
+        )
+        require(
+            material.get("static_lock", {}).get("sha256") == static_digest,
+            "shared material does not bind the committed static lock",
+        )
+        conformance_bytes = shared_member(members, shared["conformance"]["report"], "shared conformance report")
+        try:
+            conformance_report = json.loads(conformance_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise Rejection(f"shared conformance report is not valid JSON: {error}") from error
+        require(
+            conformance_report.get("schema") == CONFORMANCE_REPORT_SCHEMA,
+            f"shared conformance report schema is malformed: {conformance_report.get('schema')!r}",
+        )
+        require(conformance_report.get("met") is True, "shared conformance report is not met")
+        require(
+            conformance_report.get("identity", {}).get("admitted_lock_digest") == static_digest,
+            "shared conformance report did not admit the committed static lock",
+        )
+
         receipt_oracle = receipt.get("oracle")
         require(isinstance(receipt_oracle, dict), "receipt has no oracle object")
         require(receipt_oracle.get("status") == "passed", f"oracle status is not passed: {receipt_oracle.get('status')!r}")
@@ -485,32 +617,40 @@ def verify(args: argparse.Namespace) -> tuple[str, str]:
             isinstance(reward, (int, float)) and not isinstance(reward, bool) and 0.0 < float(reward) <= 1.0,
             f"oracle reward is not a passing value in (0, 1]: {reward!r}",
         )
-        ctrf_sha = receipt_oracle.get("ctrf_sha256")
-        require(isinstance(ctrf_sha, str) and SHA256_HEX.match(ctrf_sha) is not None, f"oracle ctrf digest is malformed: {ctrf_sha!r}")
-        ctrf = find_ctrf(members)
         require(
-            hashlib.sha256(ctrf).hexdigest() == ctrf_sha,
-            "oracle CTRF report digest mismatch",
+            receipt_oracle.get("agent_score") is False,
+            "oracle witness claims an Agent score",
         )
-        harbor_sha = receipt_oracle.get("harbor_results_sha256")
-        require(isinstance(harbor_sha, str) and SHA256_HEX.match(harbor_sha) is not None, f"oracle harbor digest is malformed: {harbor_sha!r}")
-        harbor = member(members, "oracle/harbor-results.json", "harbor results")
         require(
-            lf_sha256(harbor) == harbor_sha,
-            "oracle harbor-results digest mismatch",
+            isinstance(receipt_oracle.get("raw_result"), dict) and isinstance(receipt_oracle.get("ctrf"), dict),
+            "receipt oracle object lacks its raw result/CTRF references",
         )
+        raw_result = shared_member(members, receipt_oracle["raw_result"], "oracle raw result")
+        try:
+            json.loads(raw_result.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise Rejection(f"oracle raw result is not valid JSON: {error}") from error
+        ctrf = shared_member(members, receipt_oracle["ctrf"], "oracle CTRF report")
+        try:
+            json.loads(ctrf.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise Rejection(f"oracle CTRF report is not valid JSON: {error}") from error
 
         receipt_network = receipt.get("network")
         require(isinstance(receipt_network, dict), "receipt has no network object")
         mode = receipt_network.get("mode")
         require(
             mode in ("none", "public"),
-            f"network mode is not a known effective-mode token: {mode!r}",
+            f"network mode is not a known task-declared-mode token: {mode!r}",
+        )
+        require(
+            receipt_network.get("basis") == "pinned-task-policy",
+            f"network basis is not pinned-task-policy: {receipt_network.get('basis')!r}",
         )
         evidence = member(members, "oracle/network-inspection.txt", "network evidence")
         require(
-            f"network-mode: {mode}".encode("utf-8") in evidence,
-            f"network evidence does not record the receipt's network-mode: {mode}",
+            f"task-declared-network-mode: {mode}".encode("utf-8") in evidence,
+            f"network evidence does not record the receipt's task-declared network mode: {mode}",
         )
 
         doc = build_resolved_lock(

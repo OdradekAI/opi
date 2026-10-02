@@ -9,11 +9,13 @@
 //! fixture-grade path resolves runtime-generated deterministic helpers and
 //! pinned fixtures-tree native bytes. The native driving mode consumes the
 //! resolved-material manifest: exact built agent
-//! executables, the materialized official task package, the pinned uv
-//! verifier entrypoint, one upstream oracle preflight per task, and the
-//! scripted-provider listener endpoint - never synthesized helpers and
-//! never fixture native bytes. Executables are never resolved from ambient
-//! PATH.
+//! executables, the pinned shared capture helper that filters every Agent
+//! stream at its first sink, the materialized official task package, the
+//! pinned uv verifier entrypoint, and the scripted-provider listener
+//! endpoint - never synthesized helpers and never fixture native bytes.
+//! The upstream oracle is an explicitly selected conformance diagnostic,
+//! never a prerequisite this runner silently runs, and executables are
+//! never resolved from ambient PATH.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -1164,8 +1166,9 @@ fn prepare_native(
 }
 
 /// The native integrity review: every identity derives from the verified
-/// material, and the oracle entry records the preflight this run performs
-/// before any agent trial.
+/// material. The oracle entry stays `None`: an upstream oracle is an
+/// explicitly selected conformance diagnostic, never a preflight this
+/// runner performs before an agent trial.
 fn native_integrity_review(
     experiment: &ResolvedExperiment,
     material: &NativeMaterial,
@@ -1548,28 +1551,53 @@ fn reserved_artifact_keys_native() -> Vec<ArtifactKey> {
 /// outside the sealed bundle and outside the task environment; the
 /// integration applies and then removes its credential projection before
 /// the verifier phase.
+/// The first-sink capture identity staged beside the Agent projection.
+struct CaptureStage<'a> {
+    helper: &'a crate::runner::material::CaptureHelperMaterial,
+    policy: &'a str,
+}
+
 fn stage_native_handoff(
     trial_root: &Path,
     declared: &crate::experiment::DeclaredTrial,
     product: &str,
     agent: &crate::runner::material::AgentMaterial,
     integration: &crate::runner::material::IntegrationMaterial,
-    projection: &crate::experiment::ConnectionProjection,
-    model: &str,
+    capture: CaptureStage<'_>,
+    connection: (&crate::experiment::ConnectionProjection, &str),
 ) -> Result<NativeHandoff, RunError> {
+    let (projection, model) = connection;
     let integration_dir = trial_root.join("integration");
-    std::fs::create_dir_all(&integration_dir)
-        .map_err(|error| RunError::Native(error.to_string()))?;
+    // The host credential stage is private before the first secret byte:
+    // the owned directory is created exclusively with mode 0700, every
+    // staged file is created exclusively with mode 0600, and a preexisting
+    // directory, file, or link target refuses fail-closed instead of
+    // reusing caller-controlled bytes. Caller-root permissions and the
+    // caller's umask never widen these modes.
+    create_private_stage(&integration_dir)?;
     // Own cleanup before the first write, including partial staging failures.
     let staged = NativeHandoff(integration_dir.join("handoff.json"));
-    std::fs::write(
-        integration_dir.join(projection.config_filename),
+    // The capture helper rides beside the Agent projection with its own
+    // exclusive 0700 executable staging; the integration uploads it into
+    // the task environment before any credential is projected.
+    let helper_source = std::fs::canonicalize(&capture.helper.executable.path)
+        .map_err(|error| RunError::Native(format!("capture helper path is not real: {error}")))?;
+    let helper_staged = integration_dir.join("capture-helper");
+    std::fs::copy(&helper_source, &helper_staged)
+        .map_err(|error| RunError::Native(format!("capture helper staging failed: {error}")))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&helper_staged, std::fs::Permissions::from_mode(0o700))
+            .map_err(|error| RunError::Native(format!("capture helper staging failed: {error}")))?;
+    }
+    write_private_stage_file(
+        &integration_dir.join(projection.config_filename),
         &projection.config_bytes,
-    )
-    .map_err(|error| RunError::Native(error.to_string()))?;
+    )?;
     let handoff_path = integration_dir.join("handoff.json");
     let handoff = json!({
-        "schema": "opi-eval-native-handoff/3",
+        "schema": "opi-eval-native-handoff/4",
         "trial": declared.id,
         "product": product,
         "integration_agent_name": integration.agent_name,
@@ -1577,28 +1605,69 @@ fn stage_native_handoff(
         "agent_executable": agent.executable.path,
         "agent_executable_sha256": agent.executable.sha256,
         "runtime_package": agent.runtime_package,
+        "capture_helper": {
+            "path": capture.helper.executable.path,
+            "sha256": capture.helper.executable.sha256,
+            "target": capture.helper.target,
+            "protocol": capture.helper.protocol,
+        },
+        "capture_policy": capture.policy,
         "model": model,
         "inference_endpoint": projection.connection.base_url,
         "config_path": projection.config_filename,
         "agent_env": projection.agent_env,
     });
-    std::fs::write(
+    write_private_stage_file(
         &handoff_path,
-        serde_json::to_vec(&handoff).map_err(|error| RunError::Native(error.to_string()))?,
-    )
-    .map_err(|error| RunError::Native(error.to_string()))?;
+        &serde_json::to_vec(&handoff).map_err(|error| RunError::Native(error.to_string()))?,
+    )?;
     let mut identity = handoff;
-    identity
-        .as_object_mut()
-        .expect("handoff object")
-        .remove("agent_env");
+    let identity_object = identity.as_object_mut().expect("handoff object");
+    identity_object.remove("agent_env");
+    identity_object.remove("capture_policy");
     identity["schema"] = json!("opi-eval-native-handoff-identity/1");
-    std::fs::write(
-        integration_dir.join("handoff-identity.json"),
-        serde_json::to_vec(&identity).map_err(|error| RunError::Native(error.to_string()))?,
-    )
-    .map_err(|error| RunError::Native(error.to_string()))?;
+    write_private_stage_file(
+        &integration_dir.join("handoff-identity.json"),
+        &serde_json::to_vec(&identity).map_err(|error| RunError::Native(error.to_string()))?,
+    )?;
     Ok(staged)
+}
+
+/// Creates the owner-only integration stage directory. Creation is
+/// exclusive: a preexisting directory or any link target refuses, so a
+/// caller cannot pre-seed or alias the credential stage. On Unix the mode
+/// is exactly 0700 regardless of the caller's umask; other platforms keep
+/// creation exclusive without expanding platform ACLs.
+fn create_private_stage(path: &Path) -> Result<(), RunError> {
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder
+        .create(path)
+        .map_err(|error| RunError::Native(format!("private credential stage refused: {error}")))
+}
+
+/// Writes one stage file with exclusive owner-only creation. A preexisting
+/// path or link target refuses instead of being reused or followed; on Unix
+/// the mode is exactly 0600 regardless of the caller's umask.
+fn write_private_stage_file(path: &Path, bytes: &[u8]) -> Result<(), RunError> {
+    use std::io::Write;
+    let refuse = |error: std::io::Error| {
+        RunError::Native(format!("private credential stage refused: {error}"))
+    };
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path).map_err(refuse)?;
+    file.write_all(bytes).map_err(refuse)?;
+    Ok(())
 }
 
 /// A setup refusal contains lifecycle evidence without an Agent execution
@@ -1657,6 +1726,7 @@ fn native_agent_record(
     product: &str,
     provider_model: &str,
     binding: &crate::benchmark::process::NativeTrialBinding,
+    capture_policy: &str,
 ) -> (crate::agent::process::AgentRecord, serde_json::Value) {
     let Some(terminal) = binding.terminal.as_ref() else {
         // A diagnostic witness carries no integration observation, and the
@@ -1687,12 +1757,74 @@ fn native_agent_record(
         .join("agent");
     let stdout = read_native_agent_capture(&capture, "stdout.log");
     let stderr = read_native_agent_capture(&capture, "stderr.log");
-    let capture_failed = stdout.is_err() || stderr.is_err();
+    let mut capture_failed = stdout.is_err() || stderr.is_err();
     let stdout = stdout.unwrap_or_default();
     let stderr = stderr.unwrap_or_default();
     let capture_overflow = stdout.truncated || stderr.truncated;
+    // First-sink capture receipt (P19-AUD-003): the retained sanitized
+    // bytes are compared against the helper's own commitment before any
+    // terminal completion, client message or seal consumes them. A
+    // refused, incomplete or unreadable receipt excludes a native score.
+    let receipt_bytes = std::fs::read(capture.join("capture-receipt.json"));
+    let receipt = receipt_bytes
+        .as_deref()
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok());
+    let capture_refused = match (&receipt, receipt_bytes.is_ok()) {
+        (Some(receipt), true) => {
+            let status = receipt.get("status").and_then(|value| value.as_str());
+            // The receipt itself must carry the admitted capture schema
+            // and policy vocabulary before any of its claims bind.
+            if receipt.get("schema").and_then(|value| value.as_str())
+                != Some(crate::native_capture::CAPTURE_RECEIPT_SCHEMA)
+                || receipt
+                    .get("policy")
+                    .and_then(|value| value.as_str())
+                    .and_then(crate::native_capture::CapturePolicy::from_str)
+                    .is_none()
+            {
+                true
+            } else {
+                let stdout_digest = receipt
+                    .pointer("/stdout/sha256")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_owned);
+                let stderr_opaque = receipt
+                    .pointer("/stderr/status")
+                    .and_then(|value| value.as_str())
+                    == Some("opaque");
+                let stderr_retained = receipt
+                    .pointer("/stderr/status")
+                    .and_then(|value| value.as_str())
+                    == Some("validated-diagnostic");
+                status != Some("sanitized")
+                    || stderr_opaque
+                    || stdout_digest != Some(crate::runner::material::sha256_hex(&stdout.bytes))
+                    || (stderr_retained
+                        && receipt
+                            .pointer("/stderr/sha256")
+                            .and_then(|value| value.as_str())
+                            != Some(crate::runner::material::sha256_hex(&stderr.bytes).as_str()))
+                    || (!stderr_retained && !stderr.bytes.is_empty())
+                    || receipt.get("policy").and_then(|value| value.as_str())
+                        != Some(capture_policy)
+            }
+        }
+        (None, true) => true,
+        (Some(_), false) => true,
+        (None, false) => {
+            capture_failed = true;
+            true
+        }
+    }
+    .then_some("native-capture-refused");
     let mut client_message = serde_json::Value::Null;
-    let completion = if capture_overflow {
+    let completion = if capture_refused.is_some() {
+        AgentCompletion::Failed(crate::agent::process::AgentFailure {
+            kind: "native-capture-refused",
+            boundary: FailureBoundaryCode::Evidence,
+        })
+    } else if capture_overflow {
         AgentCompletion::Failed(crate::agent::process::AgentFailure {
             kind: "native-client-capture-overflow",
             boundary: FailureBoundaryCode::Evidence,
@@ -1732,19 +1864,32 @@ fn native_agent_record(
     // interpretation that excluded a score. Full captures additionally retain
     // bounded raw client streams; terminal-only omits intermediate events.
     let evidence = json!({
-        "schema": "opi-eval-native-agent-terminal/2",
+        "schema": "opi-eval-native-agent-terminal/3",
         "product": product,
         "trial": terminal.trial,
         "agent_executable_sha256": terminal.agent_executable_sha256,
+        "capture_helper_sha256": terminal.capture_helper_sha256,
         "runtime_preflight": terminal.runtime_preflight,
+        "helper_preflight": terminal.helper_preflight,
+        "capture": terminal.capture,
         "task_dispatched": terminal.task_dispatched,
         "exit_code": terminal.exit_code,
         "timed_out": timed_out,
         "delivered": terminal.delivered,
         "client_message": client_message,
-        "diagnostic": if product == "opi" && matches!(task_exit, 3 | 4) && !stderr.truncated {
-            // The diagnostic is a preview; the complete safe stderr stream
-            // has its own capture/digest and must not inflate this record.
+        "diagnostic": if product == "opi"
+            && matches!(task_exit, 3 | 4)
+            && !stderr.truncated
+            && receipt
+                .as_ref()
+                .and_then(|value| value.pointer("/stderr/status"))
+                .and_then(|value| value.as_str())
+                == Some("validated-diagnostic")
+        {
+            // The diagnostic is a preview of the validated vocabulary;
+            // opaque stderr retains no byte to preview, and the complete
+            // safe stderr stream has its own capture/digest and must not
+            // inflate this record.
             Some(String::from_utf8_lossy(&stderr.bytes[..stderr.bytes.len().min(1024 * 1024)]))
         } else { None },
         "stdout_sha256": crate::runner::material::sha256_hex(&stdout.bytes),
@@ -1855,6 +2000,9 @@ async fn run_native_trial(
     )
     .map_err(|error| RunError::Native(error.to_string()))?;
     let material = request.material.as_ref().expect("native implies material");
+    let capture_helper = material
+        .capture_helper()
+        .map_err(|error| RunError::Native(error.to_string()))?;
     let agent = material
         .agent(product)
         .map_err(|error| RunError::Native(error.to_string()))?;
@@ -1907,8 +2055,11 @@ async fn run_native_trial(
         product,
         agent,
         integration,
-        &projection,
-        &model,
+        CaptureStage {
+            helper: capture_helper,
+            policy: experiment.storage().capture_policy.as_str(),
+        },
+        (&projection, &model),
     )?;
 
     // Durable intent before any process effect (EVAL-DUR-001): the native
@@ -2088,6 +2239,7 @@ async fn run_native_trial(
             &trial_root.join("integration/partial-capture.json"),
             experiment.storage().capture_policy == crate::experiment::CapturePolicy::Full,
             &stale_job_names,
+            experiment.storage().capture_policy.as_str(),
         )
         .is_err());
     let cleanup_failure = if !handoff_removed {
@@ -2188,7 +2340,23 @@ async fn run_native_trial(
                     && terminal.exit_code.is_some()
             })
         })
-        .map(|binding| native_agent_record(product, &model, binding));
+        .filter(|binding| {
+            // Fresh dispatch requires the first-sink capture proof; the
+            // legacy /2 terminal stays readable only for sealed offline
+            // evidence (verify/report/regrade).
+            binding
+                .terminal
+                .as_ref()
+                .is_some_and(|terminal| terminal.schema == "opi-eval-native-agent-terminal/3")
+        })
+        .map(|binding| {
+            native_agent_record(
+                product,
+                &model,
+                binding,
+                experiment.storage().capture_policy.as_str(),
+            )
+        });
     if let Some(observation) = &observation {
         if let Some(terminal) = &observation.terminal {
             let capture = observation
@@ -2220,11 +2388,14 @@ async fn run_native_trial(
             }
             if native_agent.is_none() {
                 let evidence = json!({
-                    "schema": "opi-eval-native-agent-terminal/2",
+                    "schema": terminal.schema,
                     "product": terminal.product,
                     "trial": terminal.trial,
                     "agent_executable_sha256": terminal.agent_executable_sha256,
+                    "capture_helper_sha256": terminal.capture_helper_sha256,
                     "runtime_preflight": terminal.runtime_preflight,
+                    "helper_preflight": terminal.helper_preflight,
+                    "capture": terminal.capture,
                     "task_dispatched": terminal.task_dispatched,
                     "exit_code": terminal.exit_code,
                     "timed_out": terminal.timed_out,
@@ -2283,13 +2454,17 @@ async fn run_native_trial(
         )?);
         staged_keys.push(produced_keys.last().cloned().expect("just pushed"));
         if experiment.storage().capture_policy == crate::experiment::CapturePolicy::Full {
+            // A refused capture leaves the retained bytes untrusted: they
+            // never cross into sealed exportable evidence (P19-AUD-003).
+            let capture_refused = terminal_evidence.get("failure_kind")
+                == Some(&serde_json::json!("native-capture-refused"));
             for (key, capture) in [
                 (AGENT_STDOUT_KEY, &agent.stdout),
                 (AGENT_STDERR_KEY, &agent.stderr),
             ] {
                 // Overflow stays private diagnostic evidence; a retained
                 // prefix cannot represent the complete native stream.
-                if capture.truncated {
+                if capture.truncated || capture_refused {
                     continue;
                 }
                 produced_keys.push(stage(
@@ -3619,6 +3794,7 @@ fn bound_partial_capture(
     receipt: &Path,
     full: bool,
     stale: &[std::ffi::OsString],
+    policy: &str,
 ) -> std::io::Result<()> {
     const FILE_BYTES: u64 = 1024 * 1024;
     const TOTAL_BYTES: u64 = 16 * FILE_BYTES;
@@ -3753,12 +3929,17 @@ fn bound_partial_capture(
     std::fs::write(
         receipt,
         serde_json::to_vec(&json!({
-            "schema": "opi-eval-partial-capture/1",
-            "sensitivity": "private-unredacted",
+            "schema": "opi-eval-partial-capture/2",
+            // Truthful first-sink status: the retained bytes were
+            // sanitized by the capture helper before this bounded copy;
+            // an incomplete copy stays explicitly incomplete.
+            "policy": policy,
+            "status": if full { "sanitized-partial" } else { "incomplete" },
             "files": files, "bytes": bytes,
             "truncated_files": truncated, "discarded_entries": discarded,
             "file_byte_limit": FILE_BYTES, "total_byte_limit": TOTAL_BYTES,
             "file_limit": FILES,
+            "sanitized_prefix": true,
         }))
         .expect("capture counts serialize"),
     )
@@ -4225,6 +4406,67 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn private_credential_stage_is_exclusive_and_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let stage = root.path().join("trial/integration");
+        std::fs::create_dir_all(stage.parent().unwrap()).unwrap();
+        create_private_stage(&stage).unwrap();
+        assert_eq!(
+            std::fs::metadata(&stage).unwrap().permissions().mode() & 0o777,
+            0o700,
+            "stage directory is owner-only regardless of caller umask"
+        );
+        write_private_stage_file(&stage.join("config.toml"), b"bytes").unwrap();
+        assert_eq!(
+            std::fs::metadata(stage.join("config.toml"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600,
+            "stage files are owner-only regardless of caller umask"
+        );
+        // Every preexisting target refuses fail-closed: the stage is
+        // created, never reused, and links are never followed.
+        for error in [
+            create_private_stage(&stage).unwrap_err(),
+            write_private_stage_file(&stage.join("config.toml"), b"again").unwrap_err(),
+        ] {
+            assert!(
+                error
+                    .to_string()
+                    .contains("private credential stage refused"),
+                "{error}"
+            );
+        }
+        let attacker = root.path().join("attacker-stage");
+        std::fs::create_dir(&attacker).unwrap();
+        std::os::unix::fs::symlink(&attacker, root.path().join("trial/link-stage")).unwrap();
+        let error = create_private_stage(&root.path().join("trial/link-stage")).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("private credential stage refused"),
+            "{error}"
+        );
+        std::os::unix::fs::symlink(stage.join("handoff.json"), stage.join("handoff-link")).unwrap();
+        let error = write_private_stage_file(&stage.join("handoff-link"), b"bytes").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("private credential stage refused"),
+            "{error}"
+        );
+        assert_eq!(
+            std::fs::read_dir(&attacker).unwrap().count(),
+            0,
+            "no staged byte reaches a link target"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn partial_capture_limits_and_policy_preserve_raw_evidence() {
         for (count, size, full, expected_files, expected_bytes) in [
             (20, 2 * 1024 * 1024, true, 16, 16 * 1024 * 1024),
@@ -4243,7 +4485,7 @@ mod tests {
             std::fs::create_dir_all(&stale).unwrap();
             std::fs::write(stale.join("stdout.log"), "excluded prior evidence").unwrap();
             let receipt = root.path().join("partial.json");
-            bound_partial_capture(&trace, &receipt, full, &["old".into()]).unwrap();
+            bound_partial_capture(&trace, &receipt, full, &["old".into()], "full").unwrap();
             let value: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(receipt).unwrap()).unwrap();
             assert_eq!(value["files"], expected_files);
@@ -4295,7 +4537,7 @@ mod tests {
             }
             let receipt = root.path().join("partial.json");
             assert!(
-                bound_partial_capture(&trace, &receipt, true, &[]).is_err(),
+                bound_partial_capture(&trace, &receipt, true, &[], "full").is_err(),
                 "{kind}"
             );
             assert!(

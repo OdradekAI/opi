@@ -358,6 +358,8 @@ class NativeSmokeCiVerifier(unittest.TestCase):
                     (package / name).write_text("fixture", encoding="utf-8")
 
                 def sha(path):
+                    if isinstance(path, bytes):
+                        return hashlib.sha256(path).hexdigest()
                     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
                 agents.mkdir()
@@ -373,8 +375,15 @@ class NativeSmokeCiVerifier(unittest.TestCase):
                 lock_file = (REPO_ROOT / "crates/opi-eval/external-locks/static"
                              / "linux-x86_64.json")
                 template = {
-                    "schema": "opi-eval-native-material/6", "origin": "local",
+                    "schema": "opi-eval-native-material/7", "origin": "local",
                     "static_lock": {"path": str(lock_file), "sha256": sha(lock_file)},
+                    "capture_helper": {
+                        "executable": {"path": str(agents / "capture-helper"),
+                                       "sha256": sha(b"capture-helper\n")},
+                        "target": "x86_64-unknown-linux-musl",
+                        "protocol": "opi-eval-native-capture-helper/1",
+                        "cargo_lock_sha256": "0" * 64,
+                    },
                     "provider": {
                         "script": {"path": "unused",
                                    "sha256": sha(REPO_ROOT / "crates/opi-eval/scripts/scripted-provider.py")},
@@ -487,7 +496,7 @@ class NativeSmokeCiVerifier(unittest.TestCase):
                     self.assertTrue(material_path.is_file())
                     self.assertEqual(sha(material_path), entry["sha256"])
                     material = json.loads(material_path.read_text(encoding="utf-8"))
-                    self.assertEqual(material["schema"], "opi-eval-native-material/6")
+                    self.assertEqual(material["schema"], "opi-eval-native-material/7")
                     self.assertEqual(material["origin"], "local")
                     runner_projects[adapter] = material["benchmarks"][adapter]["runner_project"]
                 # One shared preparation identity: identical runner source

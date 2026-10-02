@@ -31,6 +31,41 @@ from unittest.mock import patch
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 AGENT_SHA = "d4f0bc5a29de06b510f9aa428f1eedba926012b591fef7a518e776a7c9bd1824"
+
+
+def capture_helper_path():
+    """Locate the built Companion for the staged capture helper.
+
+    The real filter must run at the real first sink; a shell stand-in
+    cannot model the privacy boundary. Resolution order: an explicit
+    environment override, then the workspace target directory.
+    """
+    override = os.environ.get("OPI_EVAL_CAPTURE_HELPER")
+    if override:
+        return Path(override)
+    candidates = [
+        Path(__file__).resolve().parents[3] / "target" / "debug" / "opi-eval",
+    ]
+    cache_root = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "opi" / "cargo-targets"
+    if cache_root.is_dir():
+        candidates.extend(sorted(cache_root.glob("*/debug/opi-eval"), key=lambda p: p.stat().st_mtime, reverse=True))
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    raise RuntimeError(
+        "no built opi-eval Companion found for the capture helper; "
+        "build the workspace or set OPI_EVAL_CAPTURE_HELPER"
+    )
+
+
+def capture_helper_block():
+    helper = capture_helper_path()
+    return {
+        "path": str(helper),
+        "sha256": hashlib.sha256(helper.read_bytes()).hexdigest(),
+        "target": "x86_64-unknown-linux-gnu",
+        "protocol": "opi-eval-native-capture-helper/1",
+    }
 # Canonical path\nsha256\n manifest for the four fixed bytestrings below.
 PACKAGE_SHA = "c633facd2c08421e9d2e145e855c64fae14eb50f1a4048d52436164363de19d8"
 PACKAGE_FILES = {
@@ -381,6 +416,48 @@ class FakeEnvironment:
                 raise self.preflight_error
             return types.SimpleNamespace(return_code=self.preflight_code,
                                          stdout=self.preflight_stdout, stderr=self.preflight_stderr)
+        if len(args) >= 3 and args[1:3] == ["__native-capture", "--selfcheck"]:
+            self.preflight_calls.append((command, env, timeout_sec, user))
+            return types.SimpleNamespace(
+                return_code=0,
+                stdout=json.dumps({
+                    "schema": "opi-eval-native-capture-helper/1",
+                    "protocol": "opi-eval-native-capture/1",
+                    "policies": ["full", "terminal-only"],
+                }) + "\n",
+                stderr="",
+            )
+        if len(args) >= 2 and args[1] == "__native-capture":
+            # The helper launch: model a sanitized capture with a receipt
+            # that binds the retained bytes (P19-AUD-003).
+            def option(name):
+                return args[args.index(name) + 1]
+            policy = option("--policy")
+            stdout_target = option("--stdout")
+            stderr_target = option("--stderr")
+            receipt_target = option("--receipt")
+            self.files[stdout_target] = STDOUT
+            self.files[stderr_target] = STDERR
+            self.files[receipt_target] = (
+                json.dumps({
+                    "schema": "opi-eval-native-capture/1",
+                    "policy": policy,
+                    "status": "sanitized",
+                    "agent_exit_code": self.launch_code,
+                    "cancelled": False,
+                    "refusal_reason": None,
+                    "stdout": {
+                        "bytes": len(STDOUT),
+                        "sha256": hashlib.sha256(STDOUT).hexdigest(),
+                        "truncated": False,
+                    },
+                    "stderr": {
+                        "status": "opaque" if STDERR else "empty",
+                        "bytes": len(STDERR),
+                        "sha256": hashlib.sha256(STDERR).hexdigest(),
+                    },
+                }) + "\n"
+            ).encode()
         if args[0] == "mkdir":
             if self.setup_code:
                 result.return_code = self.setup_code
@@ -400,9 +477,6 @@ class FakeEnvironment:
         else:
             self.launches.append((args, env))
             stage = "/opi-eval-agent/pi" if "--provider" in args else "/opi-eval-agent/opi"
-            if ">" in args:
-                self.files[args[args.index(">") + 1]] = STDOUT
-                self.files[args[args.index("2>") + 1]] = STDERR
             if "--trace" in args:
                 self.files[f"{stage}/trace/run-1/evidence.jsonl"] = b"trace\n"
                 self.files[f"{stage}/trace/run-1/manifest.json"] = b"{}\n"
@@ -531,16 +605,27 @@ async def capture_child(root, family, product, container=None):
         "printf 'trace-progress\\n' > \"$1/run-1/evidence.jsonl\"; fi\n"
         "  shift\n"
         "done\n"
-        "printf 'tool-progress\\n'\n"
-        "printf 'diagnostic-progress\\n' >&2\n"
+        # P19-AUD-003: the emitter's stream must be admissible at the
+        # first sink; a safe record prefix survives the outer kill.
+        "printf '%s\\n' 'CAPTURE_SAFE_RECORD'\n"
         "touch ready\n"
         "sleep 300\n", encoding="utf-8",
     )
+    if product == "pi":
+        safe_prefix = (
+            '{"type":"session","version":2,"id":"capture-child","timestamp":"t","cwd":"/work"}\n'
+            '{"type":"tool_execution_start","toolCallId":"c1"}'
+        )
+    else:
+        safe_prefix = '{"type":"Agent","event":{"type":"AgentStart"}}'
+    executable.write_text(executable.read_text().replace("CAPTURE_SAFE_RECORD", safe_prefix))
     handoff = {
-        "schema": "opi-eval-native-handoff/3", "product": product, "trial": "capture-child",
+        "schema": "opi-eval-native-handoff/4", "product": product, "trial": "capture-child",
         "integration_agent_name": f"opi-eval-{product}",
         "agent_executable": str(executable),
         "agent_executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
+        "capture_helper": capture_helper_block(),
+        "capture_policy": "full",
         "model": "scripted:fixture", "inference_endpoint": "http://localhost:8080/v1",
         "agent_env": {},
     }
@@ -573,12 +658,14 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
         (root / config).write_text("projected-config-only", encoding="utf-8")
         (root / "unbound-neighbor").write_bytes(b"must not upload")
         handoff = {
-            "schema": "opi-eval-native-handoff/3",
+            "schema": "opi-eval-native-handoff/4",
             "trial": "fixture-native-trial",
             "product": product,
             "integration_agent_name": f"opi-eval-{product}",
             "agent_executable": str(runtime / "pi"),
             "agent_executable_sha256": AGENT_SHA,
+            "capture_helper": capture_helper_block(),
+            "capture_policy": "full",
             "model": "zhipu:glm-5.3-flash",
             "inference_endpoint": "https://api.selected.example/api/v4",
             "config_path": config,
@@ -673,9 +760,17 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     # the runner and its children are dead; no Python finally ran.
                     shutil.rmtree(root / "environment/stage", ignore_errors=True)
                     logs = root / "logs"
+                    def safe_record(product):
+                        if product == "pi":
+                            return (b'{"type":"session","version":2,"id":"capture-child",'
+                                    b'"timestamp":"t","cwd":"/work"}\n'
+                                    b'{"type":"tool_execution_start","toolCallId":"c1"}\n')
+                        return b'{"type":"Agent","event":{"type":"AgentStart"}}\n'
+
+
                     self.assertTrue((logs / "stdout.log").exists(), "outer kill lost Agent stdout")
-                    self.assertEqual((logs / "stdout.log").read_bytes(), b"tool-progress\n")
-                    self.assertEqual((logs / "stderr.log").read_bytes(), b"diagnostic-progress\n")
+                    self.assertEqual((logs / "stdout.log").read_bytes(), safe_record(product))
+                    self.assertEqual((logs / "stderr.log").read_bytes(), b"")
                     if product == "opi":
                         self.assertEqual((logs / "trace/run-1/evidence.jsonl").read_bytes(), b"trace-progress\n")
                     self.assertFalse((logs / "opi-eval-terminal.json").exists())
@@ -696,14 +791,21 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     if package:
                         self.assertEqual(environment.files[f"{stage}/runtime/theme/dark.json"], b"dark")
                         self.assertEqual(environment.files[f"{stage}/runtime/package.json"], b"{}")
-                        self.assertEqual(environment.uploads, [f"{stage}/runtime", f"{stage}/models.json"])
+                        self.assertEqual(
+                environment.uploads,
+                [f"{stage}/runtime", f"{stage}/capture-helper", f"{stage}/models.json"],
+            )
                     else:
                         config = "models.json" if product == "pi" else "config.toml"
-                        self.assertEqual(environment.uploads, [f"{stage}/agent", f"{stage}/{config}"])
+                        self.assertEqual(
+                environment.uploads,
+                [f"{stage}/agent", f"{stage}/capture-helper", f"{stage}/{config}"],
+            )
                     prompt = "--unsafe 'literal'; $(not-a-command)"
                     await agent.run(prompt, environment, object())
                     args, env = environment.launches[0]
-                    self.assertEqual(args[args.index("--") + 1], prompt)
+                    self.assertEqual(args[len(args) - 1 - args[::-1].index("--") + 1], prompt)
+                    self.assertIn("__native-capture", args)
                     expected_env = {"TEST_PROJECTED": "yes"}
                     if product == "opi":
                         expected_env["DBUS_SESSION_BUS_ADDRESS"] = HEADLESS_BUS
@@ -720,8 +822,9 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual((logs / "stdout.log").read_bytes(), STDOUT)
                     self.assertEqual((logs / "stderr.log").read_bytes(), STDERR)
                     terminal = json.loads((logs / "opi-eval-terminal.json").read_text())
-                    self.assertEqual(terminal["schema"], "opi-eval-native-agent-terminal/2")
+                    self.assertEqual(terminal["schema"], "opi-eval-native-agent-terminal/3")
                     self.assertEqual(terminal["trial"], handoff["trial"])
+                    self.assertEqual(terminal["capture"]["status"], "sanitized")
                     self.assertTrue(terminal["task_dispatched"])
                     self.assertEqual(terminal["runtime_preflight"]["status"], "passed")
                     self.assertEqual(terminal["agent_executable_sha256"], AGENT_SHA)
@@ -737,7 +840,9 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     agent = self.agent(family, root, logs, handoff)
                     await agent.setup(environment)
                     self.assertEqual(environment.launches, [])
-                    self.assertEqual(len(environment.preflight_calls), 1)
+                    # Two preflights now run: the staged runtime version and
+                    # the capture helper self-check (P19-AUD-003).
+                    self.assertEqual(len(environment.preflight_calls), 2)
                     command, env, timeout, user = environment.preflight_calls[0]
                     executable = f"/opi-eval-agent/{product}/runtime/pi" if package else f"/opi-eval-agent/{product}/agent"
                     self.assertEqual(command, shlex.quote(executable) + " --version")
@@ -749,6 +854,17 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                                         or value.startswith("unix:abstract=") for value in env.values()))
                     await agent.run("work", environment, object())
                     terminal = json.loads((logs / "opi-eval-terminal.json").read_text())
+                    helper_proof = terminal["helper_preflight"]
+                    self.assertEqual(helper_proof["kind"], "capture-helper-selfcheck")
+                    self.assertEqual(helper_proof["status"], "passed")
+                    self.assertEqual(helper_proof["exit_code"], 0)
+                    helper_command, _, helper_timeout, _ = environment.preflight_calls[1]
+                    self.assertIn("__native-capture --selfcheck", helper_command)
+                    self.assertEqual(
+                        helper_proof["command_sha256"],
+                        hashlib.sha256(helper_command.encode()).hexdigest(),
+                    )
+                    self.assertEqual(helper_timeout, 30)
                     proof = terminal["runtime_preflight"]
                     self.assertEqual(proof["kind"], "version")
                     self.assertEqual(proof["status"], "passed")
@@ -954,7 +1070,7 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
     async def test_old_handoff_schema_rejects(self):
         for family in INTEGRATIONS:
             root, _, logs, handoff = self.prepare(family)
-            handoff["schema"] = "opi-eval-native-handoff/2"
+            handoff["schema"] = "opi-eval-native-handoff/3"
             with self.assertRaisesRegex(RuntimeError, "handoff schema"):
                 self.agent(family, root, logs, handoff)
 
@@ -995,10 +1111,15 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(family=family, product=product):
                     root, runtime, logs, handoff = self.prepare(family, product, package=False)
                     executable = runtime / "pi"
+                    safe_prefix = (
+                        '{"type":"session","version":2,"id":"cancel-stage","timestamp":"t","cwd":"/work"}'
+                        if product == "pi"
+                        else '{"type":"Agent","event":{"type":"AgentStart"}}'
+                    )
                     executable.write_text(
                         "#!/bin/sh\n"
                         "if [ \"$1\" = --version ]; then printf '0.85.1\\n'; exit 0; fi\n"
-                        "echo started\n"
+                        f"printf '%s\\n' '{safe_prefix}'\n"
                         "(sleep 2; touch escaped) &\n"
                         "wait\n", encoding="utf-8",
                     )
@@ -1178,9 +1299,11 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     "if sys.argv[1:] == ['--version']:\n"
                     "    print(metadata['version']); sys.exit(0)\n"
                     "subprocess.run(['/bin/sh', '-c', 'printf delivered > answer.txt'], check=True)\n"
+                    "print(json.dumps({'type': 'session', 'version': 2, 'id': 'real-shell',\n"
+                    "                  'timestamp': 't', 'cwd': '/work'}))\n"
                     "print(json.dumps({'type': 'tool_execution_end', 'toolName': 'bash',\n"
                     "                  'version': metadata['version'], 'argv': sys.argv[1:]}))\n"
-                    "print('fixture stderr', file=sys.stderr)\n",
+                    "print('rate limited by provider', file=sys.stderr)\n",
                     encoding="utf-8",
                 )
                 handoff["agent_executable_sha256"] = hashlib.sha256((runtime / "pi").read_bytes()).hexdigest()
@@ -1194,14 +1317,23 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                 await agent.setup(environment)
                 prompt = "--literal 'quoted'; $(touch escaped)"
                 await agent.run(prompt, environment, object())
-                event = json.loads((logs / "stdout.log").read_text())
+                lines = (logs / "stdout.log").read_text().splitlines()
+                self.assertEqual(
+                    json.loads(lines[0])["type"], "session",
+                    "the sanitized stream keeps its session header",
+                )
+                event = json.loads(lines[1])
                 self.assertEqual(event["version"], "0.85.1")
                 self.assertEqual(event["toolName"], "bash")
                 args = event["argv"]
                 self.assertEqual(args[args.index("--provider") + 1], "zhipu")
                 self.assertEqual(args[args.index("--model") + 1], "glm-5.3-flash")
                 self.assertEqual(args[-2:], ["--", prompt])
-                self.assertEqual((logs / "stderr.log").read_text(), "fixture stderr\n")
+                # The validated diagnostic vocabulary is retained; unknown
+                # agent stderr would stay opaque and retain no byte.
+                self.assertEqual(
+                    (logs / "stderr.log").read_text(), "rate limited by provider\n"
+                )
                 self.assertFalse((environment.work / "escaped").exists())
                 self.assertEqual((environment.work / "answer.txt").read_bytes(), b"delivered")
                 terminal = json.loads((logs / "opi-eval-terminal.json").read_text())

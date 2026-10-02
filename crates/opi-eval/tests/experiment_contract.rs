@@ -547,7 +547,6 @@ required = ["max_output_tokens", "context_window"]
 [execution]
 mode = "native-fixture"
 time_limit_seconds = 900
-max_output_bytes = 1048576
 
 [storage]
 cache = "cache"
@@ -600,7 +599,9 @@ fn connection_doc_resolves_and_freezes_the_selected_connection() {
     let execution = resolved.execution();
     assert_eq!(execution.mode, ExecutionMode::NativeFixture);
     assert_eq!(execution.time_limit_seconds, Some(900));
-    assert_eq!(execution.max_output_bytes, Some(1_048_576));
+    // The bound is omitted: a positive request has no enforcement route,
+    // so the fixed runtime capture protection stays in force.
+    assert_eq!(execution.max_output_bytes, None);
     let storage = resolved.storage();
     assert_eq!(storage.cache, "cache");
     assert_eq!(storage.results, "results");
@@ -961,6 +962,24 @@ fn resolve_rejects_unenforceable_execution_bounds() {
         matches!(error, ResolveError::UnenforceableExecutionBound { ref bound, .. } if bound == "max_output_tokens"),
         "{error}"
     );
+
+    // An explicit positive captured-output bound has no enforcement route
+    // either: it rejects by name in every execution mode, and omission
+    // keeps the fixed runtime capture protection.
+    for mode in ["hermetic", "native-fixture", "live"] {
+        let mut source = selection_doc(|s| {
+            *s = s.replace(
+                "mode = \"hermetic\"",
+                "mode = \"CAPTURE-BOUND-PROBE-MODE\"\nmax_output_bytes = 1048576",
+            );
+        });
+        source = source.replace("CAPTURE-BOUND-PROBE-MODE", mode);
+        let error = assert_rejected(&source);
+        assert!(
+            matches!(error, ResolveError::UnenforceableExecutionBound { ref bound, .. } if bound == "max_output_bytes"),
+            "{mode}: {error}"
+        );
+    }
 }
 
 #[test]

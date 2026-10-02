@@ -1094,13 +1094,41 @@ async fn run_benchmark_case(args: &ConformanceArgs) -> Result<ConformanceReport,
                 .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
             let handoff_path = run.join("integration/handoff.json");
             std::fs::create_dir_all(run.join("integration"))?;
+            let helper = material
+                .capture_helper()
+                .map_err(|error| ConformanceError::Unsupported(error.to_string()))?;
+            std::fs::copy(
+                &helper.executable.path,
+                run.join("integration/capture-helper"),
+            )
+            .map_err(|error| {
+                ConformanceError::Unsupported(format!("capture helper staging failed: {error}"))
+            })?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    run.join("integration/capture-helper"),
+                    std::fs::Permissions::from_mode(0o700),
+                )
+                .map_err(|error| {
+                    ConformanceError::Unsupported(format!("capture helper staging failed: {error}"))
+                })?;
+            }
             std::fs::write(
                 &handoff_path,
                 serde_json::to_vec(&serde_json::json!({
-                    "schema": "opi-eval-native-handoff/3",
+                    "schema": "opi-eval-native-handoff/4",
                     "trial": format!("conformance-{agent}-witness"),
                     "product": agent,
                     "integration_agent_name": agent,
+                    "capture_helper": {
+                        "path": helper.executable.path,
+                        "sha256": helper.executable.sha256,
+                        "target": helper.target,
+                        "protocol": helper.protocol,
+                    },
+                    "capture_policy": "full",
                     "diagnostic": "explicitly selected witness; no agent score",
                 }))
                 .map_err(|error| ConformanceError::Unsupported(error.to_string()))?,

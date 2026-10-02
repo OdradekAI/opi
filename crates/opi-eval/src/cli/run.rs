@@ -6,11 +6,16 @@
 //! sealing, receipts, and comparison coverage), and prints a single-line
 //! JSON run report. Exit codes mirror the conformance contract: 0 when the
 //! run completed with every pair comparable, 1 for a non-success or
-//! explicitly incomplete outcome, 2 for a rejected request. The resolved
-//! executables are runtime-generated deterministic helpers over the pinned
-//! fixtures tree: this facade never claims a real Opi/pi program, provider
-//! call, or official task environment (native smoke owns that execution),
-//! and never touches paid providers or user-global resources.
+//! explicitly incomplete outcome, 2 for a rejected request. Without
+//! `--native-material` the resolved executables are runtime-generated
+//! deterministic helpers over the pinned fixtures tree. With
+//! `--native-material` the same runner drives the real selected Agent and
+//! official task environment through the pinned material: the graded
+//! dispatch, the shared capture helper that filters each Agent stream at
+//! its first sink, and the verifier entrypoint all come from the manifest.
+//! This facade never claims a provider call of its own (native smoke owns
+//! live execution) and never touches paid providers or user-global
+//! resources.
 
 use std::path::PathBuf;
 

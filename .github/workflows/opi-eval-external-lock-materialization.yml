@@ -4,6 +4,8 @@ name: opi-eval external-lock materialization
 # Dispatching requires the exact candidate commit that owns the
 # pinned static lock; the dispatch fails closed when the running workflow
 # bytes, any invoked producer script, or the static lock have drifted.
+# Preparation and the explicit oracle-witness conformance are delegated to
+# the shared local CLI; a shared refusal publishes no receipt.
 
 on:
   workflow_dispatch:
@@ -31,6 +33,11 @@ jobs:
         with:
           ref: ${{ inputs.candidate_sha }}
           fetch-depth: 0
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613 # 1.97.0
+        with:
+          toolchain: 1.97.0
 
       - name: Verify the dispatch contract
         env:

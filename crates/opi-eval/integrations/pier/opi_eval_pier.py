@@ -10,7 +10,7 @@ host-side Agent run followed by an unrelated job is not this contract.
 
 The integration is driven exclusively by the ``OPI_EVAL_NATIVE_HANDOFF``
 environment variable the opi-eval runner exports for the dispatched job
-(schema ``opi-eval-native-handoff/3``): the exact built Agent executable,
+(schema ``opi-eval-native-handoff/4``): the exact built Agent executable,
 the projected selected connection, and the credential material. None of
 it is read from ambient user configuration, and the integration never
 improvises or falls back to another provider, protocol, or model.
@@ -57,8 +57,8 @@ from pier.models.agent.context import AgentContext
 from pier.models.agent.network import NetworkAllowlist
 
 _HANDOFF_ENV = "OPI_EVAL_NATIVE_HANDOFF"
-_HANDOFF_SCHEMA = "opi-eval-native-handoff/3"
-_TERMINAL_SCHEMA = "opi-eval-native-agent-terminal/2"
+_HANDOFF_SCHEMA = "opi-eval-native-handoff/4"
+_TERMINAL_SCHEMA = "opi-eval-native-agent-terminal/3"
 _TERMINAL_FILENAME = "opi-eval-terminal.json"
 _PREFLIGHT_CAPTURE_BYTES = 64 * 1024 * 1024
 
@@ -288,6 +288,9 @@ class _OpiEvalAgent(BaseAgent):
         self._capture_root = self._stage_dir()
         self._capture_mounted = False
         self._runtime_preflight: dict[str, Any] | None = None
+        self._helper_preflight: dict[str, Any] | None = None
+        self._capture_helper: dict[str, Any] | None = None
+        self._capture_policy: str | None = None
         self._task_dispatched = False
 
     def _load_handoff(self) -> tuple[Path, dict[str, Any]]:
@@ -355,6 +358,28 @@ class _OpiEvalAgent(BaseAgent):
         self._executable_sha256 = self._digest_file(executable)
         if self._executable_sha256 != self._handoff.get("agent_executable_sha256"):
             raise _OpiEvalAgentError("agent executable digest mismatch")
+
+        helper = self._handoff.get("capture_helper")
+        if (
+            not isinstance(helper, dict)
+            or set(helper) != {"path", "sha256", "target", "protocol"}
+        ):
+            raise _OpiEvalAgentError("handoff capture helper identity is missing")
+        helper_path = Path(helper["path"])
+        if (
+            not helper_path.is_absolute()
+            or any(path.is_symlink() for path in (helper_path, *helper_path.parents))
+            or not helper_path.is_file()
+        ):
+            raise _OpiEvalAgentError("handoff capture helper is missing or unsafe")
+        if self._digest_file(helper_path) != helper["sha256"]:
+            raise _OpiEvalAgentError("capture helper digest mismatch")
+        if helper["protocol"] != "opi-eval-native-capture-helper/1":
+            raise _OpiEvalAgentError("capture helper protocol mismatch")
+        self._capture_helper = helper
+        self._capture_policy = self._handoff.get("capture_policy")
+        if self._capture_policy not in ("full", "terminal-only"):
+            raise _OpiEvalAgentError("handoff capture policy is missing")
 
         package = self._handoff.get("runtime_package")
         if package is None:
@@ -474,7 +499,20 @@ class _OpiEvalAgent(BaseAgent):
             )
             if result.return_code != 0:
                 raise _OpiEvalAgentError("agent executable staging failed")
+            # The shared capture helper is staged beside the Agent before
+            # any credential projection and proves itself inside the task
+            # environment; a failed helper preflight prevents dispatch.
+            await environment.upload_file(
+                Path(self._capture_helper["path"]), f"{stage}/capture-helper"
+            )
+            result = await environment.exec(
+                command=f"chmod 700 {shlex.quote(str(stage))}/capture-helper",
+                user="root",
+            )
+            if result.return_code != 0:
+                raise _OpiEvalAgentError("capture helper staging failed")
             await self._runtime_preflight_check(environment, stage)
+            await self._helper_preflight_check(environment, stage)
             await self._project_configuration(environment, stage)
             # Configuration upload owns fixed sibling paths, never runtime
             # files. Recheck source identities before allowing task dispatch.
@@ -586,6 +624,76 @@ class _OpiEvalAgent(BaseAgent):
                 raise interrupted
             raise _OpiEvalAgentError(f"runtime preflight {proof['status']}")
 
+    async def _helper_preflight_check(self, environment, stage):
+        command = f"{shlex.quote(str(stage))}/capture-helper __native-capture --selfcheck"
+        proof = {
+            "kind": "capture-helper-selfcheck", "status": "unknown", "exit_code": None,
+            "command_sha256": hashlib.sha256(command.encode()).hexdigest(),
+            "stdout_sha256": hashlib.sha256(b"").hexdigest(),
+            "stderr_sha256": hashlib.sha256(b"").hexdigest(),
+            "stdout_complete": False, "stderr_complete": False,
+            "stdout_truncated": False, "stderr_truncated": False, "reason": None,
+        }
+        result = None
+        interrupted = None
+        try:
+            kwargs = {"command": command, "timeout_sec": 30}
+            if isinstance(environment, OwnedDockerEnvironment):
+                kwargs["_capture_limit"] = _PREFLIGHT_CAPTURE_BYTES
+            result = await environment.exec(**kwargs)
+        except BaseException as exc:
+            interrupted = exc
+            proof["reason"] = (
+                "timeout" if isinstance(exc, TimeoutError)
+                else "termination" if isinstance(exc, (asyncio.CancelledError, _NativeCommandTerminationError))
+                else "transport"
+            )
+        identity = None
+        raw = getattr(result, "stdout", None)
+        try:
+            if isinstance(raw, str):
+                raw = raw.encode("utf-8", errors="strict")
+            if not isinstance(raw, bytes):
+                raise ValueError("missing stream")
+            bounded = raw[:_PREFLIGHT_CAPTURE_BYTES]
+            proof["stdout_sha256"] = hashlib.sha256(bounded).hexdigest()
+            proof["stdout_complete"] = interrupted is None and len(raw) <= _PREFLIGHT_CAPTURE_BYTES
+            proof["stdout_truncated"] = len(raw) > _PREFLIGHT_CAPTURE_BYTES
+            identity = json.loads(bounded.decode("utf-8", errors="strict"))
+        except (ValueError, UnicodeError):
+            proof["reason"] = proof["reason"] or "invalid-output"
+        stderr_raw = getattr(result, "stderr", None)
+        try:
+            if isinstance(stderr_raw, str):
+                stderr_raw = stderr_raw.encode("utf-8", errors="strict")
+            if not isinstance(stderr_raw, bytes):
+                raise ValueError("missing stream")
+            bounded = stderr_raw[:_PREFLIGHT_CAPTURE_BYTES]
+            proof["stderr_sha256"] = hashlib.sha256(bounded).hexdigest()
+            proof["stderr_complete"] = interrupted is None and len(stderr_raw) <= _PREFLIGHT_CAPTURE_BYTES
+            proof["stderr_truncated"] = len(stderr_raw) > _PREFLIGHT_CAPTURE_BYTES
+        except (ValueError, UnicodeError):
+            proof["reason"] = proof["reason"] or "invalid-output"
+        code = getattr(result, "return_code", None)
+        if type(code) is int and -(2**31) <= code < 2**31:
+            proof["exit_code"] = code
+        if (
+            proof["stdout_complete"] and proof["stderr_complete"]
+            and proof["exit_code"] == 0 and proof["reason"] is None
+            and isinstance(identity, dict)
+            and identity.get("schema") == "opi-eval-native-capture-helper/1"
+            and identity.get("protocol") == "opi-eval-native-capture/1"
+        ):
+            proof["status"] = "passed"
+        elif proof["reason"] is None and interrupted is None:
+            proof["status"] = "failed"
+        self._helper_preflight = proof
+        if proof["status"] != "passed":
+            self._write_terminal_observation(environment, None, [])
+            if interrupted is not None:
+                raise interrupted
+            raise _OpiEvalAgentError(f"capture helper preflight {proof['status']}")
+
     def _agent_command(self, instruction: str, stage: PurePosixPath) -> str:
         raise NotImplementedError
 
@@ -612,7 +720,7 @@ class _OpiEvalAgent(BaseAgent):
                     raise _OpiEvalAgentError("unsafe mounted capture directory")
                 self.logs_dir.mkdir(parents=True, exist_ok=True)
                 if any((self.logs_dir / name).exists() or (self.logs_dir / name).is_symlink()
-                       for name in ("stdout.log", "stderr.log", "trace")):
+                       for name in ("stdout.log", "stderr.log", "trace", "capture-receipt.json")):
                     raise _OpiEvalAgentError("mounted capture destination already exists")
                 self._capture_root = PurePosixPath("/logs/agent")
         except BaseException:
@@ -623,11 +731,20 @@ class _OpiEvalAgent(BaseAgent):
         launch_error = None
         # The pinned Docker exec uses Bash. Job control gives this launch its
         # own process group; the private pid file lives only until cleanup.
+        # First-sink privacy boundary (P19-AUD-003): the capture helper
+        # spawns the Agent through bounded pipes and owns stdout.log,
+        # stderr.log and the capture receipt; raw shell redirects are
+        # gone. The helper leads the job's process group, so the owned
+        # cancellation and the observed exit keep their meaning.
+        helper = f"{shlex.quote(str(stage))}/capture-helper"
         command = (
             "set -m\n"
-            f"{self._agent_command(instruction, stage)}"
-            f" > {shlex.quote(f'{self._capture_root}/stdout.log')}"
-            f" 2> {shlex.quote(f'{self._capture_root}/stderr.log')} &\n"
+            f"{helper} __native-capture"
+            f" --policy {self._capture_policy}"
+            f" --stdout {shlex.quote(f'{self._capture_root}/stdout.log')}"
+            f" --stderr {shlex.quote(f'{self._capture_root}/stderr.log')}"
+            f" --receipt {shlex.quote(f'{self._capture_root}/capture-receipt.json')}"
+            f" -- {self._agent_command(instruction, stage)} &\n"
             "opi_eval_pid=$!\n"
             f"printf '%s\\n' \"$opi_eval_pid\" > {shlex.quote(f'{stage}/agent.pid')}\n"
             "wait \"$opi_eval_pid\""
@@ -635,6 +752,9 @@ class _OpiEvalAgent(BaseAgent):
         if self._runtime_preflight is None or self._runtime_preflight["status"] != "passed":
             await self._cleanup(environment, stage)
             raise _OpiEvalAgentError("task dispatch requires passed runtime preflight")
+        if self._helper_preflight is None or self._helper_preflight["status"] != "passed":
+            await self._cleanup(environment, stage)
+            raise _OpiEvalAgentError("task dispatch requires passed capture helper preflight")
         self._task_dispatched = True
         launch = asyncio.create_task(environment.exec(
             command=f"bash -c {shlex.quote(command)}",
@@ -700,7 +820,7 @@ class _OpiEvalAgent(BaseAgent):
         if self._capture_mounted:
             return
         self.logs_dir.mkdir(parents=True, exist_ok=True)
-        for name in ("stdout.log", "stderr.log"):
+        for name in ("stdout.log", "stderr.log", "capture-receipt.json"):
             await environment.download_file(f"{stage}/{name}", self.logs_dir / name)
         if self._PRODUCT == "opi" and await environment.is_dir(f"{stage}/trace", user="root"):
             await environment.download_dir(f"{stage}/trace", self.logs_dir / "trace")
@@ -760,12 +880,27 @@ class _OpiEvalAgent(BaseAgent):
         delivered: list[dict[str, Any]],
     ) -> None:
         del environment  # the observation is host-side, from logs_dir
+        capture = None
+        receipt_path = self.logs_dir / "capture-receipt.json"
+        if receipt_path.is_file():
+            try:
+                receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+                capture = {
+                    "status": receipt.get("status"),
+                    "policy": receipt.get("policy"),
+                    "receipt_sha256": self._digest_file(receipt_path),
+                }
+            except (OSError, ValueError):
+                capture = {"status": "unreadable", "policy": None, "receipt_sha256": None}
         observation = {
             "schema": _TERMINAL_SCHEMA,
             "product": self._PRODUCT,
             "trial": self._handoff["trial"],
             "agent_executable_sha256": self._executable_sha256,
+            "capture_helper_sha256": self._capture_helper["sha256"],
             "runtime_preflight": self._runtime_preflight,
+            "helper_preflight": self._helper_preflight,
+            "capture": capture,
             "task_dispatched": self._task_dispatched,
             "exit_code": exit_code,
             "timed_out": self._timed_out,

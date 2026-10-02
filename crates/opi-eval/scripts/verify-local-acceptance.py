@@ -97,6 +97,20 @@ def unique_record(rows: object, record_id: str, fragment: str) -> dict:
     return matches[0]
 
 
+def admit_trial_id(value: object) -> str:
+    """A trial id is one nonempty path component: no separator of either
+    platform, no "."/".." self-reference, no NUL byte. Admission happens
+    before any evidence read, so an absolute, traversal, or dotted id can
+    never steer a later filesystem access."""
+    if not isinstance(value, str) or not value:
+        raise Rejection(f"trial id: {value!r} is not a nonempty string")
+    if value in (".", "..") or "/" in value or "\\" in value or "\x00" in value:
+        raise Rejection(
+            f"trial id: {value!r} is not a single contained path component"
+        )
+    return value
+
+
 class Acceptance:
     """One verification pass over a supplied evidence root."""
 
@@ -106,6 +120,7 @@ class Acceptance:
         self.companion = companion
         self.checks: list[dict] = []
         self.failures: list[str] = []
+        self.family_roots: dict[str, Path] = {}
 
     def record(self, check_id: str, ok: bool, detail: str) -> None:
         self.checks.append(
@@ -133,6 +148,7 @@ class Acceptance:
                 f"{len(trials) if isinstance(trials, list) else 'a non-list'} entries"
             )
         for trial in trials:
+            admit_trial_id(trial.get("id"))
             if trial.get("agent") not in ("opi", "pi"):
                 raise Rejection(
                     f"six attributable trials: {trial.get('id')!r} has agent "
@@ -179,8 +195,29 @@ class Acceptance:
             raise Rejection(f"run root: missing {relative!r} for trial {trial['id']!r}")
         return candidate
 
+    def admit_family_roots(self, trials: list[dict]) -> dict[str, Path]:
+        """Resolve one contained family root per family before any evidence
+        read. Both members of a family pair must declare the same run root,
+        and every byte, semantic, and Companion consumer reuses this one
+        admitted identity instead of a hardcoded canonical path."""
+        for trial in trials:
+            run = self.resolve_run_root(trial)
+            family = trial["family"]
+            admitted = self.family_roots.get(family)
+            if admitted is not None and admitted != run:
+                raise Rejection(
+                    f"run root: family {family!r} declares conflicting roots "
+                    f"{admitted} and {run}"
+                )
+            self.family_roots[family] = run
+        return self.family_roots
+
     def check_native_evidence(self, trials: list[dict]) -> None:
         for trial in trials:
+            # Admission at the first read seam: an unsafe id rejects here
+            # even when a caller reached this check without the manifest
+            # admission pass.
+            admit_trial_id(trial.get("id"))
             run = self.resolve_run_root(trial)
             gate = run / "trials" / trial["id"] / NATIVE_GATE
             if not gate.is_file():
@@ -249,7 +286,7 @@ class Acceptance:
                     f"material digest: family {family!r} has {len(rows)} material "
                     "entries, expected exactly one"
                 )
-            preserved = self.root / "runs" / family / "material.json"
+            preserved = self.family_roots[family] / "material.json"
             if not preserved.is_file():
                 raise Rejection(f"material digest: family {family!r} preserved no material")
             observed = sha256(preserved.read_bytes())
@@ -379,7 +416,7 @@ class Acceptance:
         if value != 1:
             raise Rejection(f"command exits: family {family!r} run exited {value}")
         report = load_json(
-            self.root / "runs" / family / "run-report.json", "command exits"
+            self.family_roots[family] / "run-report.json", "command exits"
         )
         trials = report.get("trials")
         if not isinstance(trials, list) or not trials:
@@ -408,8 +445,10 @@ class Acceptance:
             raise Rejection("preserved artifact: no preserved inventory")
         seen: set[str] = set()
         required: set[str] = set()
-        for family in FAMILIES:
-            required.add(f"runs/{family}/material.json")
+        for family, run in self.family_roots.items():
+            required.add(
+                (run / "material.json").relative_to(self.root.resolve()).as_posix()
+            )
         for entry in entries:
             if not isinstance(entry, dict):
                 raise Rejection("preserved artifact: malformed entry")
@@ -454,7 +493,7 @@ class Acceptance:
             per_family.setdefault(trial["family"], []).append(trial)
         for family, entries in sorted(per_family.items()):
             control = load_json(
-                self.root / "runs" / family / "run-control.json", "run-control"
+                self.family_roots[family] / "run-control.json", "run-control"
             )
             for trial in entries:
                 planned = unique_record(
@@ -595,7 +634,10 @@ class Acceptance:
             preflight_stderr = sealed("native/runtime-preflight-stderr.log")
             version = preflight_stdout.decode("utf-8") + preflight_stderr.decode("utf-8")
             if (
-                terminal["schema"] != "opi-eval-native-agent-terminal/2"
+                terminal["schema"] not in (
+                    "opi-eval-native-agent-terminal/2",
+                    "opi-eval-native-agent-terminal/3",
+                )
                 or terminal["trial"] != trial["id"]
                 or terminal["agent_executable_sha256"] != executable
                 or executable != trial["attribution"]["agent_executable_sha256"]
@@ -628,6 +670,14 @@ class Acceptance:
                 or terminal["stderr_sha256"] != sha256(stderr)
                 or result["agent_info"]["model_info"]["name"] != "zhipu:glm-5.3-flash"
                 or result.get("exception_info") is not None
+                or (
+                    terminal["schema"] == "opi-eval-native-agent-terminal/3"
+                    and (
+                        terminal.get("capture", {}).get("status") != "sanitized"
+                        or terminal.get("capture_helper_sha256") is None
+                        or terminal.get("helper_preflight", {}).get("status") != "passed"
+                    )
+                )
             ):
                 reject("terminal, stream, or native model attribution differs")
             rows = [json.loads(line) for line in stdout.splitlines() if line.strip()]
@@ -925,10 +975,13 @@ class Acceptance:
     def check_companion(self, trials: list[dict]) -> None:
         if not (self.companion.is_file() and os.access(self.companion, os.X_OK)):
             raise Rejection(f"companion: {self.companion} is not an executable")
+        # The Companion argv reuses the one admitted manifest-selected root
+        # per family; admission is idempotent and rechecked at this seam.
+        self.admit_family_roots(trials)
         families = sorted({trial["family"] for trial in trials})
         with tempfile.TemporaryDirectory(prefix="opi-eval-acceptance-") as scratch:
             for family in families:
-                run = self.root / "runs" / family
+                run = self.family_roots[family]
                 self.invoke_companion(["verify", "--root", str(run)])
                 self.invoke_companion(
                     [
@@ -945,6 +998,7 @@ class Acceptance:
     def run(self) -> dict:
         manifest = self.load_manifest()
         trials = self.check_trials(manifest)
+        self.admit_family_roots(trials)
         self.check_oracle(trials)
         self.check_native_evidence(trials)
         self.check_bundle_digests(trials)

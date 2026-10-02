@@ -10,10 +10,12 @@ evidence is rejected. These unit positives do not establish live acceptance.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -400,8 +402,9 @@ class EvidenceRoot:
         write_json(self.root / "manifest.json", manifest)
         self.manifest_path = self.root / "manifest.json"
 
-    def verify(self) -> subprocess.CompletedProcess:
-        out = self.outside / f"report-{id(self):x}"
+    def verify(self, label: str | None = None) -> subprocess.CompletedProcess:
+        suffix = f"-{label}" if label is not None else ""
+        out = self.outside / f"report-{id(self):x}{suffix}"
         return subprocess.run(
             [
                 sys.executable,
@@ -726,6 +729,71 @@ class AcceptanceVerifierTest(unittest.TestCase):
         manifest["schema"] = "something-else/1"
         self.evidence.save_manifest(manifest)
         self.reject("manifest schema")
+
+    def test_unsafe_trial_ids_reject_before_reads(self) -> None:
+        canary = self.base / "escape-canary.json"
+        write_json(canary, {"marker": "harmless-canary"})
+        pristine = self.evidence.load_manifest()
+        for index, bad in enumerate((
+            "/escape-canary.json",
+            "../../../escape-canary.json",
+            "C:\\canary",
+            ".",
+            "..",
+            "nested/id",
+            "",
+            123,
+            None,
+        )):
+            manifest = copy.deepcopy(pristine)
+            victim = next(
+                trial
+                for trial in manifest["trials"]
+                if trial["id"] == self.evidence.runs[FAMILIES[0]]["opi"]
+            )
+            victim["id"] = bad
+            self.evidence.save_manifest(manifest)
+            result = self.evidence.verify(label=str(index))
+            self.assertEqual(result.returncode, 2, f"expected rejection: {result.stderr}")
+            self.assertIn("trial id:", result.stderr)
+
+    def test_run_root_symlink_escape_is_rejected(self) -> None:
+        family = FAMILIES[0]
+        outside = self.base / "outside-root"
+        shutil.copytree(self.evidence.runs[family]["run"], outside, symlinks=True)
+        shutil.rmtree(self.evidence.runs[family]["run"])
+        (self.evidence.root / "runs" / family).symlink_to(outside)
+        self.reject("escapes the evidence root")
+
+    def test_conflicting_family_pair_roots_are_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        family = FAMILIES[0]
+        other = FAMILIES[1]
+        victim = next(
+            trial for trial in manifest["trials"]
+            if trial["family"] == family and trial["agent"] == "pi"
+        )
+        victim["run_root"] = f"runs/{other}"
+        self.evidence.save_manifest(manifest)
+        self.reject("conflicting roots")
+
+    def test_benign_alternate_family_roots_are_admitted(self) -> None:
+        family = FAMILIES[0]
+        alternate = self.evidence.root / "custom-evidence" / family
+        alternate.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(self.evidence.runs[family]["run"]), str(alternate))
+        manifest = self.evidence.load_manifest()
+        for trial in manifest["trials"]:
+            if trial["family"] == family:
+                trial["run_root"] = f"custom-evidence/{family}"
+        for entry in manifest["preserved"]:
+            entry["path"] = entry["path"].replace(
+                f"runs/{family}/", f"custom-evidence/{family}/"
+            )
+        self.evidence.save_manifest(manifest)
+        self.accept()
+        invocations = self.evidence.stub_record.read_text(encoding="utf-8").splitlines()
+        self.assertIn(f"verify --root {alternate}", invocations)
 
     def test_missing_trial_is_rejected(self) -> None:
         manifest = self.evidence.load_manifest()

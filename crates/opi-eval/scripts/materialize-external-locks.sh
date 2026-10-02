@@ -3,19 +3,22 @@
 #
 # Executes the committed static external lock at
 # crates/opi-eval/external-locks/static/linux-x86_64.json on the manually
-# authorized Linux runner: verifies every pinned upstream identity, pulls the
-# pinned task image by digest, materializes and seals the Terminal-Bench 2.1
-# verifier dependency closure, runs one official upstream oracle preflight
-# through the pinned Harbor revision under the task's own upstream network
-# configuration, and writes a receipt that the artifact verification stage verifies and admits as
-# the resolved Linux lock. Offline verifier enforcement is not claimed by
-# this run; the receipt records the actual effective network mode.
+# authorized Linux runner: builds the candidate Companion from Cargo
+# compiler-artifact output, delegates all native preparation and the explicit
+# oracle-witness conformance to the shared local CLI (opi-eval prepare /
+# opi-eval conformance), materializes and seals the Terminal-Bench 2.1
+# verifier dependency closure as transport-only provenance, inspects the
+# already prepared pinned task image graph, and writes a /2 receipt that the
+# artifact verification stage verifies and admits as the resolved Linux
+# lock. Offline verifier enforcement is not claimed by this run; the receipt
+# records the task-declared network mode with its pinned-task-policy basis.
 #
 # The script is data-driven: every upstream URL, digest, Git identity, and
 # environment control is read from the static lock; nothing is resolved
 # dynamically and no mutable tag is ever pulled. Every stage fails closed on
-# the first unverifiable byte. Repo-tracked text pins (workflow, producer
-# scripts, lock documents) hash over LF-normalized bytes; downloaded upstream
+# the first unverifiable byte, and a shared-CLI refusal prevents receipt
+# publication entirely. Repo-tracked text pins (workflow, producer scripts,
+# lock documents) hash over LF-normalized bytes; downloaded upstream
 # artifacts hash over their exact bytes.
 
 set -euo pipefail
@@ -475,6 +478,40 @@ require_tool() {
   command -v "$1" >/dev/null 2>&1 || fail "required tool not found: $1"
 }
 
+# The candidate Companion executable, selected from Cargo compiler-artifact
+# output (never an assumed target path). A cargo failure is surfaced, never
+# swallowed silently: the exit status and the stderr tail ride along with
+# the rejection.
+resolve_companion_executable() {
+  local build_json cargo_rc
+  export OPI_EVAL_BUILD_ERR="$WORK_ROOT/opi-eval-build.err"
+  build_json=$(cargo build --locked --release -p opi-eval \
+    --message-format=json-render-diagnostics 2>"$OPI_EVAL_BUILD_ERR") \
+    && cargo_rc=0 || cargo_rc=$?
+  printf '%s\n' "$build_json" | CARGO_RC="$cargo_rc" python3 -c '
+import json, os, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line.startswith("{"):
+        continue
+    message = json.loads(line)
+    if (message.get("reason") == "compiler-artifact"
+            and message.get("target", {}).get("name") == "opi-eval"
+            and message.get("executable")):
+        print(message["executable"])
+        break
+else:
+    tail = ""
+    try:
+        tail = open(os.environ["OPI_EVAL_BUILD_ERR"], encoding="utf-8"
+                    ).read().strip()[-1500:]
+    except OSError:
+        pass
+    sys.exit(f"no opi-eval compiler-artifact executable was reported "
+             f"(cargo rc={os.environ.get("CARGO_RC")}); stderr tail: {tail}")
+'
+}
+
 lock_field() {
   python3 - "$STATIC_LOCK_PATH" "$1" <<'PY'
 import json, sys
@@ -561,56 +598,281 @@ RUN_ID="${GITHUB_RUN_ID:-0}"
 RUN_ATTEMPT="${GITHUB_RUN_ATTEMPT:-1}"
 
 # ---------------------------------------------------------------------------
-# Stage 2: fetch the Terminal-Bench 2.1 source and verify the task package.
+# Stage 2: shared preparation and explicit conformance (D4).
 # ---------------------------------------------------------------------------
-info "stage 2: benchmark source identities"
+info "stage 2: shared prepare and conformance delegation"
+require_tool cargo
 mkdir -p "$OUTPUT_DIR"
 WORK_ROOT="$(mktemp -d "$OUTPUT_DIR/work.XXXXXX")"
-TB21_COMMIT="$(lock_field subjects.1.commit)"
-TB21_URL="$(lock_field subjects.1.repository_url)"
-TB21_TASKS_TREE="$(lock_field subjects.1.tasks_tree)"
+SHARED_DIR="$OUTPUT_DIR/shared"
+ORACLE_DIR="$OUTPUT_DIR/oracle"
+mkdir -p "$SHARED_DIR" "$ORACLE_DIR"
+
+# 2a. Locate the candidate Companion from Cargo compiler-artifact output
+#     (never an assumed target path; a cargo failure is surfaced, never
+#     swallowed silently).
+COMPANION="$(resolve_companion_executable)"
+[ -n "$COMPANION" ] && [ -x "$COMPANION" ] ||
+  fail "resolved Companion executable is not runnable: $COMPANION"
+COMPANION_PATH="$(command -v -- "$COMPANION" 2>/dev/null || echo "$COMPANION")"
+cp -- "$COMPANION_PATH" "$SHARED_DIR/companion"
+chmod 0755 "$SHARED_DIR/companion"
+COMPANION_SHA="$(sha256_bytes "$SHARED_DIR/companion")"
+
+# 2b. Seed the declared cache from this checkout: the static lock, the
+#     pinned producer scripts, the benchmark profile, and the integrations.
+#     Shared prepare acquires the corpora/runner/tool/agent identities
+#     itself through the materializer's supervised prepare mode; the
+#     default route never duplicates that acquisition.
+CACHE_DIR="$WORK_ROOT/cache"
+mkdir -p "$CACHE_DIR/pins/static" "$CACHE_DIR/pins/scripts" \
+  "$CACHE_DIR/pins/profiles/benchmarks" "$CACHE_DIR/pins/integrations"
+cp -- "$STATIC_LOCK_PATH" "$CACHE_DIR/pins/static/linux-x86_64.json"
+for producer_path in $(lock_field authority.producers | python3 -c 'import json,sys; [print(p["path"]) for p in json.load(sys.stdin)]'); do
+  [ -f "$producer_path" ] || fail "producer $producer_path is missing from the checkout"
+  cp -- "$producer_path" "$CACHE_DIR/pins/scripts/$(basename "$producer_path")"
+done
+[ -f "crates/opi-eval/profiles/benchmarks/terminal-bench-2.1.toml" ] ||
+  fail "benchmark profile is missing from the checkout"
+cp -- "crates/opi-eval/profiles/benchmarks/terminal-bench-2.1.toml" \
+  "$CACHE_DIR/pins/profiles/benchmarks/terminal-bench-2.1.toml"
+[ -f "crates/opi-eval/scripts/scripted-provider.py" ] ||
+  fail "scripted provider is missing from the checkout"
+cp -- "crates/opi-eval/scripts/scripted-provider.py" "$CACHE_DIR/pins/scripts/scripted-provider.py"
+for family in harbor pier; do
+  [ -d "crates/opi-eval/integrations/$family" ] ||
+    fail "integration $family is missing from the checkout"
+  mkdir -p "$CACHE_DIR/pins/integrations/$family"
+  find "crates/opi-eval/integrations/$family" -maxdepth 1 -type f -name '*.py' -exec cp -- {} "$CACHE_DIR/pins/integrations/$family/" \;
+  [ -n "$(find "$CACHE_DIR/pins/integrations/$family" -maxdepth 1 -type f -name '*.py')" ] ||
+    fail "integration $family has no python modules"
+done
+
+# 2c. One TB2.1 diagnostic config: the pinned task, both clients, an
+#     unused loopback fixture connection, and no credentials. The
+#     diagnostic never executes either Agent or dials a provider.
 TB21_TASK_ID="$(lock_field subjects.1.task.id)"
-TB21_TASK_TREE="$(lock_field subjects.1.task.tree)"
+mkdir -p "$WORK_ROOT/results"
+cat > "$WORK_ROOT/diagnostic.toml" <<DIAG
+# External-lock diagnostic experiment: shared prepare freezes the pinned
+# material; shared conformance runs the oracle witness. No trial executes,
+# the loopback fixture connection is never dialed, and no credential is
+# read.
 
-git clone --quiet --no-checkout "$TB21_URL" "$WORK_ROOT/terminal-bench-2-1"
-git -C "$WORK_ROOT/terminal-bench-2-1" fetch --quiet origin "$TB21_COMMIT" --depth 1
-git -C "$WORK_ROOT/terminal-bench-2-1" checkout --quiet --detach "$TB21_COMMIT"
-[ "$(git -C "$WORK_ROOT/terminal-bench-2-1" rev-parse HEAD)" = "$TB21_COMMIT" ] ||
-  fail "Terminal-Bench 2.1 checkout is not $TB21_COMMIT"
-[ "$(git -C "$WORK_ROOT/terminal-bench-2-1" rev-parse "HEAD:tasks")" = "$TB21_TASKS_TREE" ] ||
-  fail "Terminal-Bench 2.1 tasks tree drifted from $TB21_TASKS_TREE"
-[ "$(git -C "$WORK_ROOT/terminal-bench-2-1" rev-parse "HEAD:tasks/$TB21_TASK_ID")" = "$TB21_TASK_TREE" ] ||
-  fail "task tree for $TB21_TASK_ID drifted from $TB21_TASK_TREE"
+schema = "opi-eval-experiment/2"
+experiment_id = "external-lock-diagnostic"
+connection = "scripted-local"
 
-python3 - "$STATIC_LOCK_PATH" "$WORK_ROOT/terminal-bench-2-1" "$TB21_TASK_ID" <<'PY' || fail "task package files do not match the static lock"
-import hashlib, json, subprocess, sys
+[benchmark]
+name = "terminal-bench"
+revision = "2.1"
+dataset = "terminal-bench-2.1"
+# The run path alone validates this digest; the diagnostic never runs
+# trials, so the placeholder stays unclaimed.
+integrity_digest = "0000000000000000000000000000000000000000000000000000000000000000"
 
-lock_path, repo, task_id = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(lock_path, encoding="utf-8") as handle:
-    subject = json.load(handle)["subjects"][1]
-files = subject["task"]["files"]
-assert subject["task"]["id"] == task_id
-for pinned in files:
-    blob = subprocess.run(
-        ["git", "-C", repo, "rev-parse", f"HEAD:tasks/{task_id}/{pinned['path']}"],
-        capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    if blob != pinned["git_blob"]:
-        raise SystemExit(f"blob mismatch for {pinned['path']}: {blob}")
-    content = subprocess.run(
-        ["git", "-C", repo, "cat-file", "blob", blob],
-        capture_output=True, check=True,
-    ).stdout
-    digest = hashlib.sha256(content).hexdigest()
-    if digest != pinned["sha256"]:
-        raise SystemExit(f"content digest mismatch for {pinned['path']}")
-    if len(content) != pinned["size"]:
-        raise SystemExit(f"size mismatch for {pinned['path']}")
-print(f"task package verified: {len(files)} files")
+[[subjects]]
+id = "baseline-pi"
+product = "pi"
+version = "0.84.3"
+
+[[subjects]]
+id = "candidate-opi"
+product = "opi"
+version = "0.1.0"
+
+[[edges]]
+id = "edge-1"
+baseline = "baseline-pi"
+candidate = "candidate-opi"
+
+[[connections]]
+id = "scripted-local"
+provider = "local"
+api = "openai-completions"
+base_url = "http://127.0.0.1:48127/v1"
+model = "scripted"
+credential_env = "OPI_EVAL_SCRIPTED_KEY"
+
+[model_controls]
+temperature = 0.0
+top_p = "omitted"
+max_output_tokens = 4096
+context_window = 8192
+reasoning = "omitted"
+
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
+
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "isolated"
+
+[[trials]]
+id = "trial-pi-diagnostic"
+subject = "baseline-pi"
+task = "$TB21_TASK_ID"
+group = "group-diagnostic"
+
+[[trials]]
+id = "trial-opi-diagnostic"
+subject = "candidate-opi"
+task = "$TB21_TASK_ID"
+group = "group-diagnostic"
+DIAG
+cp -- "$WORK_ROOT/diagnostic.toml" "$SHARED_DIR/diagnostic.toml"
+CONFIG_SHA="$(sha256_bytes "$SHARED_DIR/diagnostic.toml")"
+
+# 2d. Shared preparation: opi-eval prepare owns every acquisition and the
+#     fresh native-material freeze. Its refusal fails this run closed.
+PREPARED_DIR="$WORK_ROOT/prepared"
+PREPARE_REPORT="$WORK_ROOT/prepare-report.json"
+PREPARE_COMMAND="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' \
+  "$COMPANION_PATH" prepare \
+  --config "$WORK_ROOT/diagnostic.toml" \
+  --out "$PREPARED_DIR" \
+  --opi-source "$PWD" \
+  --opi-commit "$CANDIDATE_COMMIT")"
+if ! "$COMPANION_PATH" prepare \
+    --config "$WORK_ROOT/diagnostic.toml" \
+    --out "$PREPARED_DIR" \
+    --opi-source "$PWD" \
+    --opi-commit "$CANDIDATE_COMMIT" > "$PREPARE_REPORT"; then
+  fail "shared opi-eval prepare refused the diagnostic request"
+fi
+python3 - "$STATIC_LOCK_PATH" "$PREPARE_REPORT" "$PREPARED_DIR/material.json" "$TB21_TASK_ID" "$STATIC_LOCK_SHA" <<'PY' || fail "shared preparation did not bind the pinned material"
+import json, sys
+
+lock_path, report_path, material_path, task_id, static_sha = sys.argv[1:6]
+report = json.load(open(report_path, encoding="utf-8"))
+material = json.load(open(material_path, encoding="utf-8"))
+if report.get("schema") != "opi-eval-prepare/1":
+    raise SystemExit(f"unexpected prepare report schema: {report.get('schema')!r}")
+if report.get("origin") != "local":
+    raise SystemExit("prepare report is not local-origin")
+if report.get("material") != material_path:
+    raise SystemExit(f"prepare report material {report.get('material')!r} is not the frozen manifest")
+if material.get("schema") != "opi-eval-native-material/7":
+    raise SystemExit(f"fresh material schema is not opi-eval-native-material/7: {material.get('schema')!r}")
+if material.get("origin") != "local":
+    raise SystemExit("frozen material is not local-origin")
+if material.get("static_lock", {}).get("sha256") != static_sha:
+    raise SystemExit("frozen material does not bind this run's static lock")
+tasks = material.get("benchmarks", {}).get("terminal-bench-2.1", {}).get("tasks", {})
+if task_id not in tasks:
+    raise SystemExit(f"frozen material does not select the pinned task {task_id}")
+print("shared prepare bound the pinned material")
 PY
+cp -- "$PREPARED_DIR/material.json" "$SHARED_DIR/material.json"
+cp -- "$PREPARE_REPORT" "$SHARED_DIR/prepare-report.json"
+MATERIAL_SHA="$(sha256_bytes "$SHARED_DIR/material.json")"
+PREPARE_REPORT_SHA="$(sha256_bytes "$SHARED_DIR/prepare-report.json")"
+
+# 2e. Explicit shared conformance: the official upstream oracle through the
+#     prepared material, never an inline trial driver. Its refusal (or a
+#     non-met witness) fails this run closed and publishes no receipt.
+CONFORMANCE_ROOT="$WORK_ROOT/conformance"
+CONFORMANCE_REPORT="$WORK_ROOT/conformance-report.json"
+CONFORMANCE_COMMAND="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' \
+  "$COMPANION_PATH" conformance \
+  --suite benchmark \
+  --adapter terminal-bench-2.1 \
+  --case oracle-witness \
+  --root "$CONFORMANCE_ROOT" \
+  --fixtures "$PWD/crates/opi-eval/tests/fixtures" \
+  --provider "$CACHE_DIR/pins/scripts/scripted-provider.py" \
+  --native-material "$PREPARED_DIR/material.json")"
+if ! "$COMPANION_PATH" conformance \
+    --suite benchmark \
+    --adapter terminal-bench-2.1 \
+    --case oracle-witness \
+    --root "$CONFORMANCE_ROOT" \
+    --fixtures "$PWD/crates/opi-eval/tests/fixtures" \
+    --provider "$CACHE_DIR/pins/scripts/scripted-provider.py" \
+    --native-material "$PREPARED_DIR/material.json" > "$CONFORMANCE_REPORT"; then
+  fail "shared opi-eval conformance refused the oracle witness"
+fi
+python3 - "$CONFORMANCE_REPORT" "$TB21_TASK_ID" "$STATIC_LOCK_SHA" <<'PY' || fail "shared conformance did not admit the oracle witness"
+import json, sys
+
+report = json.load(open(sys.argv[1], encoding="utf-8"))
+task_id, static_sha = sys.argv[2], sys.argv[3]
+if report.get("schema") != "opi-eval-conformance-report/1":
+    raise SystemExit(f"unexpected conformance report schema: {report.get('schema')!r}")
+expected = {"suite": "benchmark", "adapter": "terminal-bench-2.1", "case": "oracle-witness"}
+for key, value in expected.items():
+    if report.get(key) != value:
+        raise SystemExit(f"conformance {key} is {report.get(key)!r}, expected {value!r}")
+if report.get("exit_state") != "exited:0":
+    raise SystemExit(f"conformance exit state is {report.get('exit_state')!r}")
+if report.get("outcome") != "verified-native":
+    raise SystemExit(f"conformance outcome is {report.get('outcome')!r}")
+if report.get("met") is not True:
+    raise SystemExit("conformance witness did not meet the pinned expectation")
+identity = report.get("identity", {})
+if identity.get("task_id") != task_id:
+    raise SystemExit(f"conformance task {identity.get('task_id')!r} is not the pinned {task_id!r}")
+if identity.get("admitted_lock_digest") != static_sha:
+    raise SystemExit("conformance did not admit this run's static lock")
+reward = report.get("reward", {})
+if reward.get("state") != "known" or reward.get("origin") != "native-trial-result":
+    raise SystemExit(f"conformance reward is not a known native result: {reward!r}")
+print("shared conformance admitted the oracle witness")
+PY
+cp -- "$CONFORMANCE_REPORT" "$SHARED_DIR/conformance-report.json"
+CONFORMANCE_REPORT_SHA="$(sha256_bytes "$SHARED_DIR/conformance-report.json")"
+
+# 2f. Bind the raw verifier artifacts uniquely: exactly one raw result and
+#     one CTRF report under the shared conformance root, zero or ambiguous
+#     matches refuse before any receipt exists.
+python3 - "$CONFORMANCE_ROOT" "$ORACLE_DIR" <<'PY' || fail "shared conformance raw artifacts are missing or ambiguous"
+import hashlib, shutil, sys
+from pathlib import Path
+
+root, oracle_dir = Path(sys.argv[1]), Path(sys.argv[2])
+roles = {"native-result.json": "raw-result.json", "ctrf-report.json": "ctrf-report.json"}
+for name, target in roles.items():
+    matches = sorted(path for path in root.rglob(name) if path.is_file())
+    if not matches:
+        raise SystemExit(f"shared conformance root carries no {name}")
+    if len(matches) > 1:
+        raise SystemExit(f"shared conformance root carries ambiguous {name}: {[str(p) for p in matches]}")
+    shutil.copy2(matches[0], f"{oracle_dir}/{target}")
+    print(f"bound {name} -> oracle/{target}")
+PY
+RAW_RESULT_SHA="$(sha256_bytes "$ORACLE_DIR/raw-result.json")"
+CTRF_SHA="$(sha256_bytes "$ORACLE_DIR/ctrf-report.json")"
+
+# Record the task-declared network mode from the pinned corpus bytes the
+# shared preparation verified. This is a pinned-task-policy observation,
+# never a claim about an effective mode this run did not observe, and
+# offline enforcement is never inferred from host UV_OFFLINE.
+TASK_TOML="$CACHE_DIR/corpora/terminal-bench-2.1/tasks/$TB21_TASK_ID/task.toml"
+[ -f "$TASK_TOML" ] ||
+  fail "pinned task package is absent from the prepared cache; cannot record the task-declared network mode"
+ACTUAL_NETWORK_MODE="$(python3 - "$TASK_TOML" <<'PY'
+import sys, tomllib
+
+with open(sys.argv[1], "rb") as handle:
+    doc = tomllib.load(handle)
+if not doc.get("environment", {}).get("allow_internet", False):
+    raise SystemExit("pinned task is not public-network; revisit the network-mode recording")
+print("public")
+PY
+)"
+[ -n "$ACTUAL_NETWORK_MODE" ] || fail "cannot determine the task-declared network mode"
+{
+  echo "task-declared-network-mode: $ACTUAL_NETWORK_MODE"
+  echo "basis: pinned-task-policy"
+  echo "source: pinned task.toml environment.allow_internet verified by the shared preparation"
+  echo "offline-enforcement: not claimed by this materialization run"
+} > "$ORACLE_DIR/network-inspection.txt"
 
 # ---------------------------------------------------------------------------
-# Stage 3: materialize the pinned apt closure.
+# Stage 3: materialize the pinned apt closure (transport-only).
 # ---------------------------------------------------------------------------
 info "stage 3: apt closure"
 SNAPSHOT_BASE="https://snapshot.debian.org"
@@ -650,7 +912,8 @@ print(f"apt closure verified: {len(closure['indexes'])} indexes, {len(closure['p
 PY
 
 # ---------------------------------------------------------------------------
-# Stage 4: materialize the pinned uv and Python wheel closure.
+# Stage 4: materialize the pinned uv and Python wheel closure
+# (transport-only).
 # ---------------------------------------------------------------------------
 info "stage 4: uv and wheel closure"
 python3 - "$STATIC_LOCK_PATH" "$CLOSURE_DIR" <<'PY' || fail "uv/wheel closure did not verify against the static lock"
@@ -678,22 +941,15 @@ print(f"uv closure verified: installer, archive, {len(closure['wheels'])} wheels
 PY
 
 # ---------------------------------------------------------------------------
-# Stage 5: pull the pinned task image by digest and record its OCI graph.
+# Stage 5: inspect the prepared pinned task image graph.
 # ---------------------------------------------------------------------------
-info "stage 5: task image pull"
+info "stage 5: task image graph"
 TB21_IMAGE_REF="$(lock_field images.0.reference)"
 TB21_IMAGE_MANIFEST="$(lock_field images.0.manifest)"
-docker pull --quiet "$TB21_IMAGE_REF@$TB21_IMAGE_MANIFEST" ||
-  fail "cannot pull $TB21_IMAGE_REF by digest $TB21_IMAGE_MANIFEST"
 docker buildx imagetools inspect "$TB21_IMAGE_REF@$TB21_IMAGE_MANIFEST" --raw > "$OUTPUT_DIR/task-image-manifest.json" ||
-  fail "cannot inspect the pulled task image manifest"
-# A digest pull leaves no local tag; bind the task tag to the pulled digest so
-# the Harbor environment uses exactly the pinned image bytes instead of
-# re-resolving the mutable tag.
-docker tag "$TB21_IMAGE_REF@$TB21_IMAGE_MANIFEST" "$TB21_IMAGE_REF" ||
-  fail "cannot bind the local task tag to the pulled digest"
+  fail "cannot inspect the pinned task image manifest"
 IMAGES_JSON="$OUTPUT_DIR/pulled-images.json"
-python3 - "$STATIC_LOCK_PATH" "$OUTPUT_DIR/task-image-manifest.json" > "$IMAGES_JSON" <<'PY' || fail "pulled image graph does not match the static lock"
+python3 - "$STATIC_LOCK_PATH" "$OUTPUT_DIR/task-image-manifest.json" > "$IMAGES_JSON" <<'PY' || fail "inspected image graph does not match the static lock"
 import hashlib, json, sys
 
 lock_path, manifest_path = sys.argv[1], sys.argv[2]
@@ -703,14 +959,14 @@ with open(manifest_path, "rb") as handle:
     raw = handle.read()
 actual_manifest = "sha256:" + hashlib.sha256(raw).hexdigest()
 if actual_manifest != pinned["manifest"]:
-    raise SystemExit(f"pulled manifest {actual_manifest} != pinned {pinned['manifest']}")
+    raise SystemExit(f"inspected manifest {actual_manifest} != pinned {pinned['manifest']}")
 manifest = json.loads(raw)
 config = manifest.get("config", {}).get("digest", "")
 layers = [layer.get("digest", "") for layer in manifest.get("layers", [])]
 if pinned.get("config") and config != pinned["config"]:
-    raise SystemExit(f"pulled config {config} != pinned {pinned['config']}")
+    raise SystemExit(f"inspected config {config} != pinned {pinned['config']}")
 if pinned.get("layers") and layers != pinned["layers"]:
-    raise SystemExit(f"pulled layers {layers} != pinned {pinned['layers']}")
+    raise SystemExit(f"inspected layers {layers} != pinned {pinned['layers']}")
 print(json.dumps({
     "id": pinned["id"],
     "reference": pinned["reference"],
@@ -721,60 +977,9 @@ print(json.dumps({
 PY
 
 # ---------------------------------------------------------------------------
-# Stage 6: runner sources and the pinned uv executable.
+# Stage 6: seal the closure directory with a canonical manifest.
 # ---------------------------------------------------------------------------
-info "stage 6: runner toolchain"
-HARBOR_COMMIT="$(lock_field tools.2.commit)"
-HARBOR_URL="https://github.com/harbor-framework/harbor"
-PIER_COMMIT="$(lock_field tools.3.commit)"
-PIER_URL="https://github.com/datacurve-ai/pier"
-
-for pin in 2 3; do
-  URL="$([ "$pin" = 2 ] && echo "$HARBOR_URL" || echo "$PIER_URL")"
-  COMMIT="$([ "$pin" = 2 ] && echo "$HARBOR_COMMIT" || echo "$PIER_COMMIT")"
-  NAME="$([ "$pin" = 2 ] && echo harbor || echo pier)"
-  git clone --quiet "$URL" "$WORK_ROOT/$NAME"
-  git -C "$WORK_ROOT/$NAME" checkout --quiet --detach "$COMMIT"
-  [ "$(git -C "$WORK_ROOT/$NAME" rev-parse HEAD)" = "$COMMIT" ] ||
-    fail "$NAME checkout is not $COMMIT"
-  python3 - "$STATIC_LOCK_PATH" "$pin" "$WORK_ROOT/$NAME" <<'PY' || fail "$NAME uv.lock does not match the static lock"
-import hashlib, json, subprocess, sys
-
-lock_path, pin, repo = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-with open(lock_path, encoding="utf-8") as handle:
-    tool = json.load(handle)["tools"][pin]
-blob = subprocess.run(
-    ["git", "-C", repo, "rev-parse", "HEAD:uv.lock"],
-    capture_output=True, text=True, check=True,
-).stdout.strip()
-if blob != tool["uv_lock"]["git_blob"]:
-    raise SystemExit(f"{tool['id']} uv.lock blob {blob} != pinned")
-content = subprocess.run(
-    ["git", "-C", repo, "cat-file", "blob", blob],
-    capture_output=True, check=True,
-).stdout
-digest = hashlib.sha256(content).hexdigest()
-if digest != tool["uv_lock"]["sha256"]:
-    raise SystemExit(f"{tool['id']} uv.lock digest {digest} != pinned")
-PY
-done
-
-UV_RUNNER_URL="$(lock_field tools.1.archive.url)"
-UV_RUNNER_SHA="$(lock_field tools.1.archive.sha256)"
-curl --fail --silent --show-error --location "$UV_RUNNER_URL" -o "$WORK_ROOT/uv-runner.tar.gz"
-[ "$(sha256_bytes "$WORK_ROOT/uv-runner.tar.gz")" = "$UV_RUNNER_SHA" ] ||
-  fail "runner uv archive digest mismatch"
-mkdir -p "$WORK_ROOT/uv-runner"
-tar -xzf "$WORK_ROOT/uv-runner.tar.gz" -C "$WORK_ROOT/uv-runner"
-UV_BIN="$(find "$WORK_ROOT/uv-runner" -maxdepth 2 -name uv -type f | head -n 1)"
-[ -n "$UV_BIN" ] || fail "runner uv binary not found in archive"
-UV_BIN_SHA="$(sha256_bytes "$UV_BIN")"
-"$UV_BIN" --version >/dev/null || fail "runner uv binary does not execute"
-
-# ---------------------------------------------------------------------------
-# Stage 7: seal the closure directory with a canonical manifest.
-# ---------------------------------------------------------------------------
-info "stage 7: closure sealing"
+info "stage 6: closure sealing"
 mkdir -p "$CLOSURE_DIR/opt"
 cat > "$CLOSURE_DIR/opt/curl-shim.sh" <<'SHIM'
 #!/usr/bin/env bash
@@ -836,101 +1041,9 @@ CLOSURE_FILE_COUNT="$(python3 -c 'import json,sys; print(len(json.load(open(sys.
 info "closure sealed: $CLOSURE_FILE_COUNT files, manifest $CLOSURE_MANIFEST_SHA"
 
 # ---------------------------------------------------------------------------
-# Stage 8: upstream oracle preflight under the pinned upstream configuration.
+# Stage 7: receipt (/2).
 # ---------------------------------------------------------------------------
-info "stage 8: oracle preflight"
-ORACLE_DIR="$OUTPUT_DIR/oracle"
-mkdir -p "$ORACLE_DIR"
-cat > "$WORK_ROOT/oracle-driver.py" <<'DRIVER'
-"""Upstream oracle preflight driver (harbor v0.22.0 API).
-
-Runs the official Terminal-Bench 2.1 solution for the pinned task through the
-pinned Harbor revision and requires the native verifier to report a passing
-reward. The trial uses the task package's own upstream configuration
-verbatim: its declared docker_image, its declared network baseline, and the
-upstream oracle agent. The sealed closure stays a pinned provenance artifact
-and is not mounted into this run; offline verifier enforcement is deferred
-to the native-smoke profile for the native-smoke profile.
-"""
-
-import asyncio
-import json
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(sys.argv[2]).resolve()))
-
-from harbor.models.trial.config import (  # noqa: E402
-    AgentConfig,
-    TaskConfig,
-    TrialConfig,
-)
-from harbor.trial.trial import Trial  # noqa: E402
-
-
-async def main() -> int:
-    task_dir = pathlib.Path(sys.argv[1]).resolve()
-    work_dir = pathlib.Path(sys.argv[3]).resolve()
-    config = TrialConfig(
-        task=TaskConfig(path=task_dir),
-        agent=AgentConfig(name="oracle"),
-        trials_dir=work_dir,
-        trial_name="opi-eval-oracle-preflight",
-    )
-    trial = await Trial.create(config)
-    result = await trial.run()
-    verifier = result.verifier_result
-    rewards = dict(verifier.rewards) if verifier is not None and verifier.rewards else {}
-    if not rewards or any(float(value) <= 0.0 for value in rewards.values()):
-        print(f"oracle preflight failed: rewards={rewards}", file=sys.stderr)
-        return 1
-    report = trial.paths.result_path.read_text(encoding="utf-8")
-    (work_dir / "harbor-results.json").write_text(report, encoding="utf-8")
-    print(json.dumps({"rewards": rewards}, sort_keys=True))
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
-DRIVER
-
-if ! "$UV_BIN" run --locked --project "$WORK_ROOT/harbor" python "$WORK_ROOT/oracle-driver.py" \
-    "$WORK_ROOT/terminal-bench-2-1/tasks/$TB21_TASK_ID" \
-    "$WORK_ROOT/harbor" \
-    "$ORACLE_DIR" > "$ORACLE_DIR/oracle-summary.json"; then
-  fail "upstream oracle preflight did not pass"
-fi
-
-CTRF_PATH="$(find "$ORACLE_DIR" \( -name '*.ctrf' -o -name 'ctrf*.json' \) | head -n 1)"
-[ -n "$CTRF_PATH" ] || fail "oracle preflight produced no CTRF report"
-CTRF_SHA="$(sha256_bytes "$CTRF_PATH")"
-HARBOR_EFFECTIVE_SHA="$(lf_sha256_bytes "$ORACLE_DIR/harbor-results.json")"
-
-# Record the verifier phase's actual effective network mode. The pinned task
-# declares environment.allow_internet = true and harbor v0.22.0 keeps the
-# shared verifier on that public baseline; this run applies no offline
-# overlay, so the receipt must not claim one.
-ACTUAL_NETWORK_MODE="$(python3 - "$WORK_ROOT/terminal-bench-2-1/tasks/$TB21_TASK_ID/task.toml" <<'PY'
-import sys, tomllib
-
-with open(sys.argv[1], "rb") as handle:
-    doc = tomllib.load(handle)
-if not doc.get("environment", {}).get("allow_internet", False):
-    raise SystemExit("pinned task is not public-network; revisit the network-mode recording")
-print("public")
-PY
-)"
-[ -n "$ACTUAL_NETWORK_MODE" ] || fail "cannot determine the effective verifier network mode"
-{
-  echo "network-mode: $ACTUAL_NETWORK_MODE"
-  echo "source: pinned task.toml environment.allow_internet and harbor ${HARBOR_COMMIT} shared-verifier network baseline"
-  echo "offline-enforcement: not applied by this materialization run"
-} > "$ORACLE_DIR/network-inspection.txt"
-
-# ---------------------------------------------------------------------------
-# Stage 9: receipt.
-# ---------------------------------------------------------------------------
-info "stage 9: receipt"
+info "stage 7: receipt"
 RESOLVED_AT="$(now_utc)"
 EXPIRES_AT="$(expiry_utc)"
 export OPI_EVAL_CANDIDATE_COMMIT="$CANDIDATE_COMMIT"
@@ -940,10 +1053,17 @@ export OPI_EVAL_RUN_ID="$RUN_ID"
 export OPI_EVAL_RUN_ATTEMPT="$RUN_ATTEMPT"
 export OPI_EVAL_RESOLVED_AT="$RESOLVED_AT"
 export OPI_EVAL_EXPIRES_AT="$EXPIRES_AT"
+export OPI_EVAL_COMPANION_SHA="$COMPANION_SHA"
+export OPI_EVAL_CONFIG_SHA="$CONFIG_SHA"
+export OPI_EVAL_MATERIAL_SHA="$MATERIAL_SHA"
+export OPI_EVAL_PREPARE_REPORT_SHA="$PREPARE_REPORT_SHA"
+export OPI_EVAL_CONFORMANCE_REPORT_SHA="$CONFORMANCE_REPORT_SHA"
+export OPI_EVAL_PREPARE_COMMAND="$PREPARE_COMMAND"
+export OPI_EVAL_CONFORMANCE_COMMAND="$CONFORMANCE_COMMAND"
+export OPI_EVAL_RAW_RESULT_SHA="$RAW_RESULT_SHA"
 export OPI_EVAL_CTRF_SHA="$CTRF_SHA"
-export OPI_EVAL_HARBOR_EFFECTIVE_SHA="$HARBOR_EFFECTIVE_SHA"
 export OPI_EVAL_NETWORK_MODE="$ACTUAL_NETWORK_MODE"
-export OPI_EVAL_ORACLE_REWARD="$(python3 -c 'import json,sys; print(min(json.load(open(sys.argv[1]))["rewards"].values()))' "$ORACLE_DIR/oracle-summary.json")"
+export OPI_EVAL_ORACLE_REWARD="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["reward"]["value"])' "$SHARED_DIR/conformance-report.json")"
 python3 - "$STATIC_LOCK_PATH" "$OUTPUT_DIR" > "$OUTPUT_DIR/receipt.json" <<'PY'
 import hashlib, json, os, sys
 
@@ -963,8 +1083,11 @@ for producer in authority["producers"]:
         observed = hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
     producers.append({"path": producer["path"], "sha256": observed})
 
+def shared_ref(name, digest):
+    return {"path": f"shared/{name}", "sha256": digest}
+
 receipt = {
-    "schema": "opi-eval-materialization-receipt/1",
+    "schema": "opi-eval-materialization-receipt/2",
     "lock_id": "opi-eval-linux-x86_64",
     "platform": "linux-x86_64",
     "candidate_commit": os.environ["OPI_EVAL_CANDIDATE_COMMIT"],
@@ -983,6 +1106,31 @@ receipt = {
     "resolved_at": os.environ["OPI_EVAL_RESOLVED_AT"],
     "artifact_name": "opi-eval-linux-lock-materialization",
     "expires_at": os.environ["OPI_EVAL_EXPIRES_AT"],
+    "shared": {
+        "companion": {
+            **shared_ref("companion", os.environ["OPI_EVAL_COMPANION_SHA"]),
+            "located_by": "cargo-compiler-artifact",
+        },
+        "config": shared_ref("diagnostic.toml", os.environ["OPI_EVAL_CONFIG_SHA"]),
+        "prepare": {
+            "command": json.loads(os.environ["OPI_EVAL_PREPARE_COMMAND"]),
+            "report": shared_ref("prepare-report.json", os.environ["OPI_EVAL_PREPARE_REPORT_SHA"]),
+            "material": {
+                **shared_ref("material.json", os.environ["OPI_EVAL_MATERIAL_SHA"]),
+                "schema": "opi-eval-native-material/7",
+            },
+        },
+        "conformance": {
+            "command": json.loads(os.environ["OPI_EVAL_CONFORMANCE_COMMAND"]),
+            "report": shared_ref("conformance-report.json", os.environ["OPI_EVAL_CONFORMANCE_REPORT_SHA"]),
+            "suite": "benchmark",
+            "adapter": "terminal-bench-2.1",
+            "case": "oracle-witness",
+            "met": True,
+            "agent_score": False,
+            "reward_origin": "native-trial-result",
+        },
+    },
     "closure": {
         "manifest_sha256": closure_manifest["manifest_sha256"],
         "file_count": len(closure_manifest["files"]),
@@ -992,11 +1140,13 @@ receipt = {
     "oracle": {
         "status": "passed",
         "reward": float(os.environ["OPI_EVAL_ORACLE_REWARD"]),
-        "ctrf_sha256": os.environ["OPI_EVAL_CTRF_SHA"],
-        "harbor_results_sha256": os.environ["OPI_EVAL_HARBOR_EFFECTIVE_SHA"],
+        "agent_score": False,
+        "raw_result": {"path": "oracle/raw-result.json", "sha256": os.environ["OPI_EVAL_RAW_RESULT_SHA"]},
+        "ctrf": {"path": "oracle/ctrf-report.json", "sha256": os.environ["OPI_EVAL_CTRF_SHA"]},
     },
     "network": {
         "mode": os.environ["OPI_EVAL_NETWORK_MODE"],
+        "basis": "pinned-task-policy",
         "evidence": "oracle/network-inspection.txt",
     },
 }

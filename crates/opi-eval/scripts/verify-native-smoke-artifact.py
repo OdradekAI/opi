@@ -612,9 +612,19 @@ def verify_material(stage: Path, f: Findings) -> dict | None:
         materials[adapter] = json.loads(material_path.read_text(encoding="utf-8"))
     shared: dict[str, object] | None = None
     for adapter, material in materials.items():
-        if material.get("schema") != "opi-eval-native-material/6":
+        if material.get("schema") != "opi-eval-native-material/7":
             f.reject("material", f"{adapter}: the prepared material is not "
                                  f"the admitted schema {material.get('schema')!r}")
+            continue
+        helper = material.get("capture_helper")
+        if (not isinstance(helper, dict)
+                or helper.get("protocol") != "opi-eval-native-capture-helper/1"
+                or not isinstance(helper.get("target"), str)
+                or not helper.get("cargo_lock_sha256")
+                or not isinstance(helper.get("executable"), dict)
+                or len(str(helper["executable"].get("sha256", ""))) != 64):
+            f.reject("material", f"{adapter}: the prepared material pins no "
+                                 "admitted capture helper")
             continue
         agents = material.get("agents")
         if not isinstance(agents, dict) or sorted(agents) != ["opi", "pi"]:

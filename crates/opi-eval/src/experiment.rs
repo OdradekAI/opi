@@ -381,7 +381,9 @@ pub struct ResolvedExecution {
     pub mode: ExecutionMode,
     /// Enforceable wall-clock supervision limit per Agent process.
     pub time_limit_seconds: Option<u64>,
-    /// Enforceable captured-output limit per Agent process.
+    /// Requested captured-output limit per Agent process. A positive value
+    /// has no enforcement route in this build and rejects at resolution;
+    /// omitting it keeps the fixed runtime capture protection.
     pub max_output_bytes: Option<u64>,
     /// Bounded parallel trials (positive; 1 keeps the serial order).
     pub concurrency: u32,
@@ -700,10 +702,17 @@ impl ResolvedExperiment {
                             .to_owned(),
                     });
                 }
+                let max_output_bytes = optional_u64(execution_table, "max_output_bytes")?;
+                if max_output_bytes.is_some_and(|bound| bound > 0) {
+                    return Err(ResolveError::UnenforceableExecutionBound {
+                        bound: "max_output_bytes".to_owned(),
+                        reason: "captured output stays under the fixed runtime limit; a requested byte cap has no enforcement route in this build".to_owned(),
+                    });
+                }
                 ResolvedExecution {
                     mode,
                     time_limit_seconds: optional_u64(execution_table, "time_limit_seconds")?,
-                    max_output_bytes: optional_u64(execution_table, "max_output_bytes")?,
+                    max_output_bytes,
                     concurrency,
                     max_trials,
                     agent_timeout_seconds: optional_u64(execution_table, "agent_timeout_seconds")?,
@@ -1190,11 +1199,17 @@ fn project_controls(
         requested.max_output_tokens.clone(),
         "the requested control is not an enforced value",
     );
-    // Reasoning effort flows through each client's thinking-level map.
+    // Reasoning effort: selected native execution cannot prove this
+    // control effective for either pinned client, so a supplied value is
+    // retained as requested-but-Unsupported (the pinned Pi command
+    // disables thinking and the runner reports supplied reasoning as
+    // non-comparable after settlement). Required values still reject
+    // before native admission.
     let reasoning = match &requested.reasoning {
-        ControlValue::Value(value) => ProjectedControl::Effective {
-            value: value.clone(),
-        },
+        ControlValue::Value(value) => ProjectedControl::unsupported_from(
+            ControlValue::Value(value.clone()),
+            "selected native execution cannot prove the reasoning control effective",
+        ),
         ControlValue::Omitted => ProjectedControl::unsupported_from(
             ControlValue::Omitted,
             "the requested control is not an enforced value",
@@ -1774,13 +1789,19 @@ group = "hello"
                     ProjectedControl::Effective { value: 4096 },
                     "{api}/{client:?}"
                 );
-                // Reasoning effort flows through each client's thinking map.
-                assert_eq!(
-                    projection.controls.reasoning,
-                    ProjectedControl::Effective {
-                        value: "high".to_owned()
-                    },
-                    "{api}/{client:?}"
+                // Reasoning effort: a supplied value stays requested but
+                // Unsupported - selected native execution cannot prove it
+                // effective for either client.
+                assert!(
+                    matches!(
+                        &projection.controls.reasoning,
+                        ProjectedControl::Unsupported {
+                            requested: ControlValue::Value(value),
+                            ..
+                        } if value == "high"
+                    ),
+                    "{api}/{client:?}: {:?}",
+                    projection.controls.reasoning
                 );
                 // Sampling controls: only pi, and only on OpenAI-compatible
                 // wires, can express them.
@@ -1809,6 +1830,53 @@ group = "hello"
                         }
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn optional_reasoning_projection_records_unsupported() {
+        // P19-AUD-011: an optional supplied reasoning value must stay
+        // admissible yet project as Unsupported for every client and
+        // protocol - selected native execution cannot prove it effective,
+        // so no contradiction with the unsupported settlement verdict can
+        // arise. Required values keep their early rejection.
+        for api in [
+            "anthropic-messages",
+            "openai-completions",
+            "openai-responses",
+        ] {
+            for client in [NativeClient::Opi, NativeClient::Pi] {
+                let experiment = ResolvedExperiment::resolve(&doc(api).replace(
+                    "required = [\"max_output_tokens\", \"context_window\", \"reasoning\"]",
+                    "required = [\"max_output_tokens\", \"context_window\"]",
+                ))
+                .unwrap_or_else(|error| panic!("{api}: {error}"));
+                assert!(
+                    matches!(
+                        experiment.model_controls().reasoning,
+                        ControlValue::Value(_)
+                    ),
+                    "{api}: the fixture supplies a reasoning value"
+                );
+                assert!(
+                    experiment.admit_native_controls().is_ok(),
+                    "{api}/{client:?}: optional reasoning stays admissible"
+                );
+                let projection = experiment
+                    .project_connection(client, credential())
+                    .unwrap_or_else(|error| panic!("{api}/{client:?}: {error}"));
+                assert!(
+                    matches!(
+                        &projection.controls.reasoning,
+                        ProjectedControl::Unsupported {
+                            requested: ControlValue::Value(value),
+                            ..
+                        } if value == "high"
+                    ),
+                    "{api}/{client:?}: {:?}",
+                    projection.controls.reasoning
+                );
             }
         }
     }
@@ -2117,6 +2185,92 @@ cwd_policy = "isolated"
                 experiment.admit_native_controls().is_ok(),
                 "{products}: optional unsupported reasoning must stay admissible"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod capture_bound_tests {
+    //! P19-AUD-001: an explicit positive `max_output_bytes` has no
+    //! enforcement route in this build, so it rejects by name at resolution
+    //! in every execution mode; omitting it keeps the fixed runtime
+    //! capture protection.
+
+    use super::{ResolveError, ResolvedExperiment};
+
+    fn document(mode: &str, max_output_bytes: Option<u64>) -> String {
+        let bound = match max_output_bytes {
+            Some(value) => format!("max_output_bytes = {value}\n"),
+            None => String::new(),
+        };
+        format!(
+            r#"schema = "opi-eval-experiment/2"
+experiment_id = "capture-bound-probe"
+connection = "probe-local"
+
+[benchmark]
+name = "terminal-bench"
+revision = "2.1"
+dataset = "probe"
+integrity_digest = "{digest}"
+
+[[subjects]]
+id = "candidate-opi"
+product = "opi"
+version = "0.1.0"
+
+[[connections]]
+id = "probe-local"
+provider = "p"
+api = "anthropic-messages"
+base_url = "http://127.0.0.1:48127/v1"
+model = "m"
+credential_env = "OPI_EVAL_PROBE_KEY"
+
+[model_controls]
+temperature = "omitted"
+top_p = "omitted"
+max_output_tokens = 4096
+context_window = 8192
+reasoning = "omitted"
+
+[execution]
+mode = "{mode}"
+{bound}
+[storage]
+cache = "cache"
+results = "results"
+capture_policy = "full"
+
+[environment]
+platform = "linux"
+architecture = "x86_64"
+cwd_policy = "isolated"
+
+[[trials]]
+id = "trial-0"
+subject = "candidate-opi"
+task = "t"
+group = "g"
+"#,
+            digest = "0".repeat(64),
+            mode = mode,
+            bound = bound,
+        )
+    }
+
+    #[test]
+    fn explicit_capture_bound_rejects_during_resolution() {
+        for mode in ["hermetic", "native-fixture", "live"] {
+            let error = ResolvedExperiment::resolve(&document(mode, Some(1)))
+                .expect_err(&format!("{mode}: a positive bound must reject"));
+            assert!(
+                matches!(error, ResolveError::UnenforceableExecutionBound { ref bound, .. } if bound == "max_output_bytes"),
+                "{mode}: {error}"
+            );
+            let resolved = ResolvedExperiment::resolve(&document(mode, None))
+                .unwrap_or_else(|error| panic!("{mode}: {error}"));
+            assert_eq!(resolved.execution().max_output_bytes, None, "{mode}");
         }
     }
 }

@@ -1754,9 +1754,19 @@ pub(crate) async fn prepare(
             )
         })
         .collect();
+    let capture_helper = acquire_capture_helper(
+        &context.cache,
+        opi_source.as_deref(),
+        out,
+        cancel,
+        acquisition_deadline,
+        &mut acquired,
+    )
+    .await?;
     let material = serde_json::json!({
         "schema": super::material::MATERIAL_SCHEMA,
         "origin": "local",
+        "capture_helper": capture_helper,
         "static_lock": {"path": lock_path, "sha256": sha256_hex(&lock_bytes)},
         "provider": {
             "script": {"path": provider, "sha256": digest_of(&provider)},
@@ -1847,6 +1857,233 @@ fn image_engine_identity(
 }
 
 /// Build-tool inputs projected over the supervisor's empty environment.
+/// The warm-cache sidecar pin of the shared capture helper.
+#[derive(Debug, Serialize, Deserialize)]
+struct CaptureHelperPin {
+    schema: String,
+    target: String,
+    protocol: String,
+    cargo_lock_sha256: String,
+    sha256: String,
+}
+
+/// Acquires the shared capture helper (P19-AUD-003): warm cache bytes
+/// with a matching sidecar pin first; a cold build requires the exact
+/// local Opi source and compiles the Companion for the host-arch musl
+/// target through the Cargo compiler-artifact locator. A musl helper
+/// must be statically linked (no dynamic loader); unavailable targets,
+/// failed builds and dynamically linked results all refuse.
+async fn acquire_capture_helper(
+    cache: &Path,
+    opi_source: Option<&Path>,
+    out: &Path,
+    cancel: &tokio_util::sync::CancellationToken,
+    deadline: std::time::Instant,
+    acquired: &mut Vec<String>,
+) -> Result<serde_json::Value, PrepareError> {
+    let tools = cache.join("tools");
+    let executable = tools.join("native-capture-helper");
+    let sidecar = tools.join("native-capture-helper.json");
+    let protocol = crate::native_capture::CAPTURE_HELPER_PROTOCOL.to_owned();
+    let sha256_of = |path: &Path| sha256_hex(&std::fs::read(path).unwrap_or_default());
+    if executable.is_file() && sidecar.is_file() {
+        let pin: CaptureHelperPin =
+            serde_json::from_slice(&std::fs::read(&sidecar)?).map_err(|error| {
+                PrepareError::Rejected(format!("capture helper pin parse failed: {error}"))
+            })?;
+        let warm = pin.schema == "opi-eval-capture-helper-pin/1"
+            && pin.protocol == protocol
+            && sha256_of(&executable) == pin.sha256
+            && !pin.target.is_empty()
+            && pin.cargo_lock_sha256.len() == 64;
+        if warm {
+            return Ok(serde_json::json!({
+                "executable": {"path": executable, "sha256": pin.sha256},
+                "target": pin.target,
+                "protocol": pin.protocol,
+                "cargo_lock_sha256": pin.cargo_lock_sha256,
+            }));
+        }
+        return Err(PrepareError::Rejected(
+            "cache/tools/native-capture-helper(.json) drift: rebuild the helper pin".to_owned(),
+        ));
+    }
+    let source = opi_source.ok_or_else(|| {
+        PrepareError::Rejected(
+            "fresh native material requires the capture helper: seed \
+cache/tools/native-capture-helper from a completed build or pass --opi-source \
+so prepare can compile it for the host musl target"
+                .to_owned(),
+        )
+    })?;
+    let arch = std::env::consts::ARCH;
+    if !matches!(arch, "x86_64" | "aarch64") {
+        return Err(PrepareError::Rejected(format!(
+            "no capture helper target for host architecture {arch:?}"
+        )));
+    }
+    let target = format!("{arch}-unknown-linux-musl");
+    let cargo_lock = source.join("Cargo.lock");
+    if !cargo_lock.is_file() {
+        return Err(PrepareError::Rejected(format!(
+            "--opi-source has no Cargo.lock at {}",
+            cargo_lock.display()
+        )));
+    }
+    let cargo_lock_sha256 = sha256_hex(&std::fs::read(&cargo_lock)?);
+    let helper_target = out.join("helper-target");
+    std::fs::create_dir_all(&helper_target)?;
+    let mut env = acquisition_environment();
+    env.insert(
+        "CARGO_TARGET_DIR".into(),
+        helper_target.canonicalize()?.into_os_string(),
+    );
+    let spec = SpawnSpec {
+        argv: [
+            "cargo".into(),
+            "build".into(),
+            "--locked".into(),
+            "--release".into(),
+            "--manifest-path".into(),
+            source.join("Cargo.toml").into_os_string(),
+            "--package".into(),
+            "opi-eval".into(),
+            "--bin".into(),
+            "opi-eval".into(),
+            "--target".into(),
+            target.clone().into(),
+            "--message-format=json".into(),
+        ]
+        .to_vec(),
+        cwd: None,
+        env,
+        stdout_cap: 8 * 1024 * 1024,
+        stderr_cap: 1024 * 1024,
+        timeout: deadline.saturating_duration_since(std::time::Instant::now()),
+    };
+    let staging = out.join("helper-build-staging");
+    std::fs::create_dir(&staging)?;
+    let mut spec = spec.clone();
+    spec.env
+        .insert("TMPDIR".into(), staging.canonicalize()?.into_os_string());
+    let invocation = ProcessSupervisor::run(&spec, cancel).await;
+    std::fs::remove_dir_all(&staging).ok();
+    std::fs::write(
+        out.join("helper-build.log"),
+        format!(
+            "argv: {:?}\nexit: {:?}\nstdout_truncated: {}\nstderr_truncated: {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+            spec.argv,
+            invocation.exit,
+            invocation.stdout.truncated,
+            invocation.stderr.truncated,
+            String::from_utf8_lossy(&invocation.stdout.bytes),
+            String::from_utf8_lossy(&invocation.stderr.bytes),
+        ),
+    )?;
+    if invocation.exit != (ExitState::Exited { code: 0 }) {
+        return Err(PrepareError::Rejected(format!(
+            "capture helper build failed for target {target} (see {})",
+            out.join("helper-build.log").display()
+        )));
+    }
+    // The Cargo compiler-artifact locator: the last bin artifact for the
+    // requested target names the exact executable to pin.
+    let mut helper_path = None;
+    for line in String::from_utf8_lossy(&invocation.stdout.bytes).lines() {
+        let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if message.get("reason").and_then(|value| value.as_str()) != Some("compiler-artifact") {
+            continue;
+        }
+        let Some(target_fields) = message.get("target").and_then(|value| value.as_object()) else {
+            continue;
+        };
+        let kind = target_fields
+            .get("kind")
+            .and_then(|value| value.as_array())
+            .map(|rows| {
+                rows.iter()
+                    .filter_map(|row| row.as_str().map(str::to_owned))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if target_fields.get("name").and_then(|value| value.as_str()) != Some("opi-eval")
+            || !kind.iter().any(|kind| kind == "bin")
+        {
+            continue;
+        }
+        if let Some(path) = message
+            .get("executable")
+            .and_then(|value| value.as_str())
+            .filter(|path| path.contains(&target))
+        {
+            helper_path = Some(std::path::PathBuf::from(path));
+        }
+    }
+    let helper_path = helper_path.ok_or_else(|| {
+        PrepareError::Rejected(format!(
+            "no opi-eval compiler-artifact executable was reported for target {target}"
+        ))
+    })?;
+    if !helper_path.is_file() {
+        return Err(PrepareError::Rejected(format!(
+            "reported capture helper executable is missing at {}",
+            helper_path.display()
+        )));
+    }
+    let bytes = std::fs::read(&helper_path)?;
+    if elf_has_dynamic_loader(&bytes) {
+        return Err(PrepareError::Rejected(
+            "musl capture helper must not depend on a dynamic loader".to_owned(),
+        ));
+    }
+    std::fs::create_dir_all(&tools)?;
+    std::fs::write(&executable, &bytes)?;
+    let digest = sha256_hex(&bytes);
+    let pin = CaptureHelperPin {
+        schema: "opi-eval-capture-helper-pin/1".to_owned(),
+        target: target.clone(),
+        protocol: protocol.clone(),
+        cargo_lock_sha256: cargo_lock_sha256.clone(),
+        sha256: digest.clone(),
+    };
+    std::fs::write(
+        &sidecar,
+        serde_json::to_vec_pretty(&pin).expect("helper pin serializes"),
+    )?;
+    acquired.push("tools:native-capture-helper".to_owned());
+    Ok(serde_json::json!({
+        "executable": {"path": executable, "sha256": digest},
+        "target": target,
+        "protocol": protocol,
+        "cargo_lock_sha256": cargo_lock_sha256,
+    }))
+}
+
+/// Minimal ELF program-header scan: true when the binary declares an
+/// interpreter (dynamic loader). Little-endian ELF64 only, matching the
+/// admitted musl targets.
+fn elf_has_dynamic_loader(bytes: &[u8]) -> bool {
+    if bytes.len() < 64 || &bytes[0..4] != b"\x7fELF" || bytes[4] != 2 || bytes[5] != 1 {
+        return true;
+    }
+    let phoff = u64::from_le_bytes(bytes[0x20..0x28].try_into().expect("slice")) as usize;
+    let phentsize = u16::from_le_bytes(bytes[0x36..0x38].try_into().expect("slice")) as usize;
+    let phnum = u16::from_le_bytes(bytes[0x38..0x3a].try_into().expect("slice")) as usize;
+    for index in 0..phnum {
+        let start = phoff + index * phentsize;
+        let end = start + 4;
+        if end > bytes.len() {
+            return true;
+        }
+        if u32::from_le_bytes(bytes[start..end].try_into().expect("slice")) == 3 {
+            return true;
+        }
+    }
+    false
+}
+
 fn acquisition_environment() -> BTreeMap<std::ffi::OsString, std::ffi::OsString> {
     [
         "PATH",

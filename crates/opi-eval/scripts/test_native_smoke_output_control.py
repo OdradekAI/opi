@@ -3,6 +3,10 @@
 
 Only external commands are replaced. Producer outputs here are explicitly
 synthetic stand-ins; actual wire conformance belongs to the ignored Rust probe.
+The fixture models the current shared preparation seam: it stages real
+synthetic executable bytes (including uv) inside fresh fixture roots and mocks
+`opi-eval prepare` with explicitly synthetic per-family material/6 outputs, so
+no installed uv or any other host tool is required.
 """
 
 import hashlib
@@ -22,7 +26,7 @@ REPO = SCRIPT.resolve().parents[3]
 
 
 def sha(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 class MaterializeOutputControlTest(unittest.TestCase):
@@ -30,8 +34,7 @@ class MaterializeOutputControlTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="opi-smoke-control-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.out = self.root / "out"
-        (self.out / "wrappers").mkdir(parents=True)
+        self.out = self.out_for("out")
         self.external = self.root / "external"
         for runner in ("harbor", "pier"):
             home = self.external / runner
@@ -57,6 +60,13 @@ class MaterializeOutputControlTest(unittest.TestCase):
         }
         for product, identity in identities.items():
             (self.agents / f"{product}-identity.json").write_text(json.dumps(identity))
+        # Actual synthetic executable uv bytes live in the fixture root; the
+        # producer's `command -v uv` resolution and byte transport then work
+        # without any installed uv.
+        self.tools = self.root / "tools"
+        self.tools.mkdir()
+        (self.tools / "uv").write_text("#!/bin/sh\nsynthetic fixture uv\n")
+        (self.tools / "uv").chmod(0o755)
         self.provider = self.root / "provider"
         self.provider.mkdir()
         (self.provider / "endpoint.txt").write_text("127.0.0.1:32123\n")
@@ -80,10 +90,15 @@ class MaterializeOutputControlTest(unittest.TestCase):
         self.calls = []
         self.failure = None
 
+    def out_for(self, name):
+        out = self.root / name
+        (out / "wrappers").mkdir(parents=True)
+        return out
+
     def command(self, argv, **kwargs):
         self.calls.append(argv)
         if argv == ["sh", "-c", "command -v uv"]:
-            return subprocess.CompletedProcess(argv, 0, "/usr/bin/uv\n", "")
+            return subprocess.CompletedProcess(argv, 0, f"{self.tools / 'uv'}\n", "")
         if argv[0] == "cargo":
             self.assertEqual(argv, [
                 "cargo", "test", "--locked", "-p", "opi-eval",
@@ -93,12 +108,19 @@ class MaterializeOutputControlTest(unittest.TestCase):
             env = kwargs["env"]
             self.assertNotIn("ANTHROPIC_API_KEY", env)
             self.assertNotIn("OPI_EVAL_SCRIPTED_KEY", env)
-            self.assertEqual(kwargs["cwd"], str(REPO))
+            self.assertEqual(Path(kwargs["cwd"]), REPO)
             clients = json.loads(Path(env["OPI_EVAL_NATIVE_CLIENT_MATERIAL"]).read_text())
-            self.assertEqual(clients["opi"], str(self.agents / "opi"))
+            cache_agents = self.out / "cache" / "agents"
+            self.assertEqual(clients["opi"], str(cache_agents / "opi"))
+            self.assertEqual(clients["pi"], str(cache_agents / "pi" / "pi"))
+            self.assertEqual(clients["pi_package"], str(cache_agents / "pi"))
             package = Path(clients["pi_package"])
             self.assertEqual(Path(clients["pi"]).relative_to(package), Path("pi"))
+            # Cached Opi/pi executable and package bytes are transported
+            # unchanged from the staged synthetic sources.
             self.assertEqual((package / "node").read_bytes(), (self.agents / "node").read_bytes())
+            self.assertEqual(
+                (Path(clients["opi"])).read_bytes(), (self.agents / "opi").read_bytes())
             for name in ("dist/bundle/cli.js", "dist/bundle/resource.txt", "dist/theme.json",
                          "package.json", "README.md", "CHANGELOG.md",
                          "docs/fixture.md", "examples/fixture.md"):
@@ -111,7 +133,6 @@ class MaterializeOutputControlTest(unittest.TestCase):
             self.assertEqual(config["model_controls"]["required"], ["max_output_tokens"])
             self.assertEqual(config["model_controls"]["max_output_tokens"], 4096)
             self.assertEqual(config["benchmark"]["integrity_digest"], "pending")
-            self.assertFalse((self.out / "material.json").exists())
             if self.failure == "probe":
                 return subprocess.CompletedProcess(argv, 101, "", "synthetic probe failure")
             proof_root = Path(env["OPI_EVAL_OUTPUT_CONTROL_OUT"])
@@ -124,8 +145,50 @@ class MaterializeOutputControlTest(unittest.TestCase):
                 (case / "output-control.json").write_text(
                     json.dumps({"synthetic_test_only": product}))
             return subprocess.CompletedProcess(argv, 0, "synthetic probe completed", "")
+        if argv[:2] == [str(self.eval), "prepare"]:
+            # The shared local preparation is mocked: this fixture never
+            # transforms real preparation inputs, it only stages explicitly
+            # synthetic per-family material/6 bytes in the requested output.
+            self.assertEqual(argv[2:6], ["--config", argv[3], "--out", argv[5]])
+            config = Path(argv[3])
+            prepared = Path(argv[5])
+            prepared.mkdir(parents=True, exist_ok=True)
+            cache_agents = self.out / "cache" / "agents"
+            manifest = {
+                "schema": "opi-eval-native-material/7",
+                "origin": "local",
+                "static_lock": {"sha256": sha(self.lock)},
+                "capture_helper": {
+                    "executable": {"path": str(cache_agents / "capture-helper"),
+                                   "sha256": "synthetic"},
+                    "target": "x86_64-unknown-linux-musl",
+                    "protocol": "opi-eval-native-capture-helper/1",
+                    "cargo_lock_sha256": "0" * 64,
+                },
+                "agents": {
+                    "opi": {"executable": {"path": str(cache_agents / "opi"),
+                                           "sha256": sha(self.agents / "opi")}},
+                    "pi": {"executable": {"path": str(cache_agents / "pi" / "pi"),
+                                          "sha256": "synthetic"},
+                           "runtime_package": {"path": str(cache_agents / "pi"),
+                                               "entrypoint": "pi"}},
+                },
+                "synthetic_fixture_only": config.name,
+            }
+            (prepared / "material.json").write_text(
+                json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            return subprocess.CompletedProcess(argv, 0, "", "")
         if argv[:2] == [str(self.eval), "validate"]:
-            material = json.loads((self.out / "material.json").read_text())
+            self.assertEqual(argv[2:4], ["--config", argv[3]])
+            self.assertEqual(argv[4], "--native-material")
+            material_path = Path(argv[5])
+            self.assertEqual(material_path.parent.parent, self.out)
+            self.assertTrue(
+                material_path.parent.name.startswith("prepared-"),
+                f"validate must consume the actual prepared material: {material_path}")
+            adapter = material_path.parent.name.removeprefix("prepared-")
+            self.assertEqual(material_path, self.out / f"prepared-{adapter}" / "material.json")
+            material = json.loads(material_path.read_text())
             for product in ("opi", "pi"):
                 proof = material["agents"][product].get("output_control_evidence")
                 self.assertIsNotNone(proof, "validation must follow exact-client proof binding")
@@ -134,6 +197,9 @@ class MaterializeOutputControlTest(unittest.TestCase):
             self.assertEqual(package["entrypoint"], "pi")
             self.assertEqual(material["agents"]["pi"]["executable"]["path"],
                              str(Path(package["path"]) / "pi"))
+            # Validation still precedes the config freeze.
+            config = tomllib.loads(Path(argv[3]).read_text())
+            self.assertEqual(config["benchmark"]["integrity_digest"], "pending")
             return subprocess.CompletedProcess(argv, 0, "native_integrity=" + "a" * 64, "")
         self.fail(f"unexpected command (never executed): {argv}")
 
@@ -147,9 +213,11 @@ class MaterializeOutputControlTest(unittest.TestCase):
 
     def test_proof_precedes_material_validation_and_config_freeze(self):
         self.materialize()
-        config = tomllib.loads((self.out / "terminal-bench-2.1.toml").read_text())
-        self.assertEqual(config["benchmark"]["integrity_digest"], "a" * 64)
+        for adapter in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
+            config = tomllib.loads((self.out / f"{adapter}.toml").read_text())
+            self.assertEqual(config["benchmark"]["integrity_digest"], "a" * 64)
         self.assertTrue((self.out / "materialize-receipt.json").is_file())
+        self.assertTrue((self.out / "material-routing.json").is_file())
 
     def test_failed_or_incomplete_probe_never_freezes_material(self):
         for failure in ("probe", "missing"):
@@ -157,12 +225,18 @@ class MaterializeOutputControlTest(unittest.TestCase):
                 self.failure = failure
                 with self.assertRaises(SystemExit):
                     self.materialize()
-                self.assertFalse(any(call[:2] == [str(self.eval), "validate"] for call in self.calls))
-                self.assertFalse((self.out / "material.json").exists())
+                self.assertFalse(any(
+                    call[:2] == [str(self.eval), "validate"] for call in self.calls))
                 self.assertFalse((self.out / "materialize-receipt.json").exists())
+                self.assertFalse((self.out / "material-routing.json").exists())
+                for adapter in ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"):
+                    config = self.out / f"{adapter}.toml"
+                    if config.is_file():
+                        self.assertEqual(
+                            tomllib.loads(config.read_text())["benchmark"]["integrity_digest"],
+                            "pending")
                 # Each retry uses fresh output, preserving the prior failed stage.
-                self.out = self.root / ("after-" + failure)
-                (self.out / "wrappers").mkdir(parents=True)
+                self.out = self.out_for("after-" + failure)
 
 
 if __name__ == "__main__":

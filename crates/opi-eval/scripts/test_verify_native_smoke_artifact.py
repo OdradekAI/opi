@@ -257,10 +257,17 @@ def build_stage(tmp: Path, candidate: str) -> tuple[Path, Path, dict]:
         (package / "task.yaml").write_text("official: true\n", encoding="utf-8")
         digest = sha(b"task-package:" + short.encode())
         material_json = {
-            "schema": "opi-eval-native-material/6",
+            "schema": "opi-eval-native-material/7",
             "origin": "local",
             "static_lock": {"path": str(material / "external-lock.json"),
                             "sha256": sha(lock_bytes)},
+            "capture_helper": {
+                "executable": {"path": str(wrappers / "capture-helper"),
+                               "sha256": sha(b"capture-helper\n")},
+                "target": "x86_64-unknown-linux-musl",
+                "protocol": "opi-eval-native-capture-helper/1",
+                "cargo_lock_sha256": "0" * 64,
+            },
             "provider": {
                 "script": {"path": "crates/opi-eval/scripts/scripted-provider.py",
                            "sha256": sha(b"provider\n")},

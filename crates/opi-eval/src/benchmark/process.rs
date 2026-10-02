@@ -229,16 +229,54 @@ pub(crate) struct NativeTerminalObservation {
     pub(crate) product: String,
     /// sha256 of the exact Agent executable the integration executed.
     pub(crate) agent_executable_sha256: String,
+    /// sha256 of the staged capture helper (schema /3 only; legacy /2
+    /// sealed bundles predate the first-sink boundary).
+    pub(crate) capture_helper_sha256: Option<String>,
     /// Observed Agent process exit code.
     pub(crate) exit_code: Option<i64>,
     /// Whether the integration issued the task command after runtime admission.
     pub(crate) task_dispatched: bool,
     /// Exact staged-runtime version probe, separate from the task outcome.
     pub(crate) runtime_preflight: RuntimePreflightObservation,
+    /// Task-side capture helper self-check (schema /3 only).
+    pub(crate) helper_preflight: Option<HelperPreflightObservation>,
+    /// First-sink capture summary bound to the receipt (schema /3 only).
+    pub(crate) capture: Option<CaptureSummaryObservation>,
     /// Whether the Agent phase hit the task's Agent timeout.
     pub(crate) timed_out: bool,
     /// Files the Agent delivered, with observed digests.
     pub(crate) delivered: Vec<DeliveredFile>,
+}
+
+/// Task-side capture helper self-check proof (P19-AUD-003): the staged
+/// helper proves its own protocol identity inside the task environment
+/// before any credential projection or dispatch.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct HelperPreflightObservation {
+    pub(crate) kind: String,
+    pub(crate) status: String,
+    pub(crate) exit_code: Option<i64>,
+    pub(crate) command_sha256: String,
+    pub(crate) stdout_sha256: String,
+    pub(crate) stderr_sha256: String,
+    pub(crate) stdout_complete: bool,
+    pub(crate) stderr_complete: bool,
+    pub(crate) stdout_truncated: bool,
+    pub(crate) stderr_truncated: bool,
+    pub(crate) reason: Option<String>,
+}
+
+/// The capture-receipt summary the terminal proof binds (P19-AUD-003).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CaptureSummaryObservation {
+    /// `sanitized`, `refused`, `incomplete`, or `unreadable`.
+    pub(crate) status: String,
+    /// `full` or `terminal-only`.
+    pub(crate) policy: Option<String>,
+    /// sha256 of the captured receipt bytes.
+    pub(crate) receipt_sha256: Option<String>,
 }
 
 /// Integration-owned runtime compatibility proof. Closed vocabularies and
@@ -1236,8 +1274,10 @@ fn parse_terminal_observation(
     let terminal: NativeTerminalObservation =
         serde_json::from_slice(bytes).map_err(|_| invalid())?;
     let proof = &terminal.runtime_preflight;
-    if terminal.schema != "opi-eval-native-agent-terminal/2"
-        || terminal.trial.is_empty()
+    if !matches!(
+        terminal.schema.as_str(),
+        "opi-eval-native-agent-terminal/2" | "opi-eval-native-agent-terminal/3"
+    ) || terminal.trial.is_empty()
         || !matches!(terminal.product.as_str(), "opi" | "pi")
         || !is_sha256_hex(&terminal.agent_executable_sha256)
         || proof.kind != "version"
@@ -1272,6 +1312,39 @@ fn parse_terminal_observation(
             .delivered
             .iter()
             .any(|file| !file.source.starts_with('/') || !is_sha256_hex(&file.sha256))
+        || terminal
+            .capture_helper_sha256
+            .as_ref()
+            .is_some_and(|digest| !is_sha256_hex(digest))
+    {
+        return Err(invalid());
+    }
+    // Schema /3 binds the first-sink capture: the helper identity, the
+    // helper preflight and the receipt summary are mandatory together.
+    if terminal.schema == "opi-eval-native-agent-terminal/3"
+        && (terminal.capture_helper_sha256.is_none()
+            || terminal.helper_preflight.is_none()
+            || terminal.capture.is_none()
+            || terminal.helper_preflight.as_ref().is_some_and(|proof| {
+                proof.kind != "capture-helper-selfcheck"
+                    || proof.status != "passed"
+                    || !is_sha256_hex(&proof.command_sha256)
+                    || !is_sha256_hex(&proof.stdout_sha256)
+                    || !is_sha256_hex(&proof.stderr_sha256)
+            })
+            || !matches!(
+                terminal
+                    .capture
+                    .as_ref()
+                    .map(|capture| capture.status.as_str()),
+                Some("sanitized" | "refused" | "incomplete" | "unreadable")
+            )
+            || terminal.capture.as_ref().is_some_and(|capture| {
+                capture
+                    .policy
+                    .as_deref()
+                    .is_some_and(|policy| policy != "full" && policy != "terminal-only")
+            }))
     {
         return Err(invalid());
     }

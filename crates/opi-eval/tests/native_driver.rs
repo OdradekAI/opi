@@ -460,7 +460,7 @@ fn verifier_stand_in_script() -> String {
 set -eu
 write_runtime_preflight() {
   python3 - "$1" "$OPI_EVAL_NATIVE_HANDOFF" <<'RUNTIME_PREFLIGHT'
-import hashlib,json,pathlib,shlex,sys
+import hashlib,json,pathlib,shlex,subprocess,sys
 path=pathlib.Path(sys.argv[1])
 terminal=json.loads(path.read_text())
 handoff=json.loads(pathlib.Path(sys.argv[2]).read_text())
@@ -472,7 +472,27 @@ stdout=b'fixture runtime version\n'
 stderr=b''
 path.with_name('runtime-preflight-stdout.log').write_bytes(stdout)
 path.with_name('runtime-preflight-stderr.log').write_bytes(stderr)
-terminal.update(schema='opi-eval-native-agent-terminal/2',trial=handoff['trial'],task_dispatched=True,
+# The real staged helper proves itself once and the terminal binds its
+# receipt: the stand-in models the integration's task-side preflight and
+# first-sink capture summary exactly (P19-AUD-003).
+helper=pathlib.Path(handoff['capture_helper']['path'])
+selfcheck=subprocess.run([str(helper),'__native-capture','--selfcheck'],capture_output=True)
+command=shlex.quote(str(helper))+' __native-capture --selfcheck'
+receipt_path=path.with_name('capture-receipt.json')
+capture=None
+if receipt_path.is_file():
+    receipt=json.loads(receipt_path.read_text())
+    capture=dict(status=receipt.get('status'),policy=receipt.get('policy'),
+                 receipt_sha256=hashlib.sha256(receipt_path.read_bytes()).hexdigest())
+terminal.update(schema='opi-eval-native-agent-terminal/3',trial=handoff['trial'],task_dispatched=True,
+    capture_helper_sha256=handoff['capture_helper']['sha256'],
+    helper_preflight=dict(kind='capture-helper-selfcheck',status='passed' if selfcheck.returncode==0 else 'failed',
+        exit_code=selfcheck.returncode,
+        command_sha256=hashlib.sha256(command.encode()).hexdigest(),
+        stdout_sha256=hashlib.sha256(selfcheck.stdout).hexdigest(),
+        stderr_sha256=hashlib.sha256(selfcheck.stderr).hexdigest(),
+        stdout_complete=True,stderr_complete=True,stdout_truncated=False,stderr_truncated=False,reason=None),
+    capture=capture,
     runtime_preflight=dict(kind='version',status='passed',exit_code=0,
         agent_executable_sha256=handoff['agent_executable_sha256'],
         runtime_package_manifest_sha256=package['manifest_sha256'] if package else None,
@@ -482,6 +502,17 @@ terminal.update(schema='opi-eval-native-agent-terminal/2',trial=handoff['trial']
         stdout_complete=True,stderr_complete=True,stdout_truncated=False,stderr_truncated=False,reason=None))
 path.write_text(json.dumps(terminal))
 RUNTIME_PREFLIGHT
+}
+# Emit one sanitized capture through the real staged helper: the stand-in
+# never writes raw Agent streams itself.
+emit_capture() {
+  source="$1"; target="$2"
+  policy=$(python3 -c 'import json,os,sys; print(json.load(open(os.environ["OPI_EVAL_NATIVE_HANDOFF"]))["capture_policy"])')
+  helper_dir=$(dirname "$OPI_EVAL_NATIVE_HANDOFF")
+  "$helper_dir/capture-helper" __native-capture --policy "$policy" \
+    --stdout "$target/stdout.log" --stderr "$target/stderr.log" \
+    --receipt "$target/capture-receipt.json" \
+    -- sh -c "cat '$source'"
 }
 # The verifier-only path validates argv and grades only the preserved inputs.
 if [ "${OPI_EVAL_REGRADE:-0}" = "1" ]; then
@@ -753,11 +784,17 @@ fi
 mkdir -p "$job/$trial/agent" "$job/$trial/artifacts"
 write_job "$job"
 if [ "$product" = "pi" ]; then
-  cat > "$job/$trial/agent/stdout.log" <<'PI_SUCCESS'
+  raw=$(mktemp)
+  cat > "$raw" <<'PI_SUCCESS'
 OPI_EVAL_PI_SUCCESS_STREAM
 PI_SUCCESS
+  emit_capture "$raw" "$job/$trial/agent"
+  rm -f "$raw"
 else
-  printf '{"type":"Agent","event":{"type":"AgentEnd","messages":[]}}\n' > "$job/$trial/agent/stdout.log"
+  raw=$(mktemp)
+  printf '{"type":"Agent","event":{"type":"AgentEnd","messages":[]}}\n' > "$raw"
+  emit_capture "$raw" "$job/$trial/agent"
+  rm -f "$raw"
 fi
 answer="native stand-in answer"
 answer_sha=$(printf '%s\n' "$answer" | sha256sum | cut -d' ' -f1)
@@ -1182,15 +1219,28 @@ exit 0
             .unwrap(),
     )
     .unwrap();
+    // The staged capture helper is this test binary's own built
+    // Companion: the real filter runs at the real first sink.
+    let helper = mat.join("capture-helper");
+    fs::copy(env!("CARGO_BIN_EXE_opi-eval"), &helper).unwrap();
+    let helper_sha = sha256_hex(&fs::read(&helper).unwrap());
+    let cargo_lock_sha =
+        sha256_hex(&fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.lock")).unwrap());
     let material = mat.join("material.json");
     fs::write(&material, serde_json::to_vec(&serde_json::json!({
-        "schema": "opi-eval-native-material/6", "static_lock": pinned(&static_lock),
+        "schema": "opi-eval-native-material/7", "static_lock": pinned(&static_lock),
+        "capture_helper": {
+            "executable": pinned(&helper), "target": "x86_64-unknown-linux-gnu",
+            "protocol": "opi-eval-native-capture-helper/1",
+            "cargo_lock_sha256": cargo_lock_sha,
+        },
         "provider": {"script": pinned(&provider), "endpoint": "http://127.0.0.1:48127/v1", "request_log": mat.join("requests.jsonl")},
         "agents": {
             "opi": {"executable": pinned(&mat.join("agents/opi")), "integrations": integration_block("opi")},
             "pi": {"executable": pinned(&mat.join("agents/pi")), "integrations": integration_block("pi")}
         }, "benchmarks": benchmarks
     })).unwrap()).unwrap();
+    let _ = helper_sha;
 
     if mode != "owned-container" {
         let docker_path = stage_cleanup_docker(&root_path);
@@ -1657,6 +1707,84 @@ fn plan_p19_identity_stops_dispatch() {
 
 fn read_cleanup_json(path: &Path) -> serde_json::Value {
     serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+}
+
+/// Rewrites the staged verifier stand-in and refreshes its material pins.
+fn patch_verifier_stand_in(staged: &Staged, edit: impl FnOnce(String) -> String) {
+    let path = staged.root.join("material/verifier-uv.sh");
+    let body = edit(fs::read_to_string(&path).unwrap());
+    write_exec(&path, &body);
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+    for value in material["benchmarks"].as_object_mut().unwrap().values_mut() {
+        value["verifier_executable"]["sha256"] = serde_json::json!(sha256_hex(body.as_bytes()));
+        value["oracle"]["sha256"] = serde_json::json!(sha256_hex(body.as_bytes()));
+    }
+    fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+}
+
+#[test]
+fn native_host_credential_stage_is_private_on_searchable_root() {
+    use std::os::unix::fs::PermissionsExt;
+    let staged = stage("ok");
+    fs::set_permissions(&staged.root, fs::Permissions::from_mode(0o755)).unwrap();
+    // The verifier stand-in records the integration stage modes while the
+    // credential projection is still live, before settlement cleanup.
+    patch_verifier_stand_in(&staged, |body| {
+        body.replacen("if [ -z \"$diagnostic\" ]; then", r#"if [ -z "$diagnostic" ]; then
+  python3 - "$OPI_EVAL_NATIVE_HANDOFF" <<'SECURITY_MODES'
+import json,pathlib,stat,sys
+handoff=pathlib.Path(sys.argv[1])
+value=json.loads(handoff.read_text())
+config=handoff.parent / value['config_path']
+secret_present=('<dummy-scripted-credential>' in (handoff.read_text() if value['product']=='opi' else config.read_text()))
+result=dict(product=value['product'],secret_present=secret_present,directory=stat.S_IMODE(handoff.parent.stat().st_mode),handoff=stat.S_IMODE(handoff.stat().st_mode),config=stat.S_IMODE(config.stat().st_mode))
+(handoff.parent / 'security-modes.json').write_text(json.dumps(result))
+SECURITY_MODES"#, 1)
+    });
+    let config = write_config(&staged);
+    let root = staged.root.join("searchable-public-run");
+    fs::create_dir(&root).unwrap();
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+    // Child-only umask 022 and a searchable caller root must not widen the
+    // host credential stage: directory 0700 and staged files 0600.
+    let output = Command::new("/bin/sh")
+        .args(["-c", "umask 022; exec \"$@\"", "host-permissions-probe"])
+        .arg(env!("CARGO_BIN_EXE_opi-eval"))
+        .args(["run", "--config"])
+        .arg(&config)
+        .arg("--root")
+        .arg(&root)
+        .arg("--fixtures")
+        .arg(fixtures())
+        .arg("--native-material")
+        .arg(&staged.material)
+        .env("OPI_EVAL_SCRIPTED_KEY", "<dummy-scripted-credential>")
+        .env("PATH", stage_cleanup_docker(&staged.root))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut unsafe_modes = Vec::new();
+    for trial in ["trial-pi-native", "trial-opi-native"] {
+        let modes = read_cleanup_json(
+            &root
+                .join("trials")
+                .join(trial)
+                .join("integration/security-modes.json"),
+        );
+        assert_eq!(modes["secret_present"], true);
+        if modes["directory"] != 0o700 || modes["handoff"] != 0o600 || modes["config"] != 0o600 {
+            unsafe_modes.push(modes);
+        }
+    }
+    assert!(
+        unsafe_modes.is_empty(),
+        "temporary credential stage not private: {unsafe_modes:?}"
+    );
 }
 
 #[test]
@@ -4789,7 +4917,36 @@ fn native_capture_policy_controls_non_terminal_evidence() {
 /// integration modules, provider script, pinned materializer scripts)
 /// plus the built agents, the materialized task package, the verifier
 /// tool, and the oracle wrapper.
+/// Warm-pins the shared capture helper from this test binary's own
+/// built Companion (P19-AUD-003): exactly the sidecar a completed helper
+/// build would leave behind.
+fn seed_capture_helper(cache: &Path) {
+    let helper = cache.join("tools/native-capture-helper");
+    fs::create_dir_all(helper.parent().unwrap()).unwrap();
+    fs::copy(env!("CARGO_BIN_EXE_opi-eval"), &helper).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let cargo_lock =
+        sha256_hex(&fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.lock")).unwrap());
+    fs::write(
+        cache.join("tools/native-capture-helper.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "schema": "opi-eval-capture-helper-pin/1",
+            "target": "x86_64-unknown-linux-gnu",
+            "protocol": "opi-eval-native-capture-helper/1",
+            "cargo_lock_sha256": cargo_lock,
+            "sha256": sha256_hex(&fs::read(&helper).unwrap()),
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
 fn seed_local_cache(cache: &Path) {
+    seed_capture_helper(cache);
     let fixture_cache = fixtures().join("external-locks/local-cache");
     copy_dir(&fixture_cache.join("scripts"), &cache.join("pins/scripts"));
     fs::create_dir_all(static_lock_in(cache).parent().unwrap()).unwrap();
@@ -5064,7 +5221,7 @@ fn independent_directory_prepare_builds_a_local_origin_material() {
     assert!(material_path.is_file(), "{stdout}");
     let manifest = fs::read_to_string(&material_path).unwrap();
     let material: serde_json::Value = serde_json::from_str(&manifest).unwrap();
-    assert_eq!(material["schema"], "opi-eval-native-material/6");
+    assert_eq!(material["schema"], "opi-eval-native-material/7");
     assert_eq!(material["origin"], "local");
     let benchmark = &material["benchmarks"]["terminal-bench-2.1"];
     assert_eq!(benchmark["oracle"], benchmark["verifier_executable"]);
@@ -5490,6 +5647,10 @@ fn prepare_cold_selected_products_from_explicit_committed_source() {
         );
         let seed: serde_json::Value = serde_json::from_slice(&seeded.stdout).unwrap();
         let cache = PathBuf::from(seed["cache"].as_str().unwrap());
+        // The seeded acquisition fixture carries no helper build: warm-pin
+        // this binary so the cold-source path exercises agent acquisition
+        // without needing a musl toolchain in the test environment.
+        seed_capture_helper(&cache);
         let config = experiment_with_cache(room.path(), &cache);
         let mut document: toml::Value = fs::read_to_string(&config).unwrap().parse().unwrap();
         if product != "paired" {
@@ -8087,6 +8248,7 @@ fn remediation_004_native_provider_error_is_not_scored() {
                 let staged = stage("ok");
                 let mutation = staged.root.join("client-terminal.py");
                 fs::write(&mutation, r#"import json, pathlib, sys
+import hashlib
 case, fixtures = sys.argv[1], pathlib.Path(sys.argv[2])
 failed = case in ('auth', 'rate-limit', 'protocol', 'unknown', 'nonzero-error')
 reward = 0.0 if failed or case in ('zero', 'task-failure', 'timeout') else 1.0
@@ -8097,6 +8259,9 @@ for path in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
     if product == 'pi' and failed:
         terminal['exit_code'] = 1 if case == 'nonzero-error' else 0
     terminal['timed_out'] = case == 'timeout'
+    receipt = json.loads((path.parent / 'capture-receipt.json').read_text())
+    terminal['capture'] = {'status': receipt['status'], 'policy': receipt['policy'],
+        'receipt_sha256': hashlib.sha256((path.parent / 'capture-receipt.json').read_bytes()).hexdigest()}
     path.write_text(json.dumps(terminal))
     diagnostic = {'auth': 'provider authentication failed', 'rate-limit': 'rate limited by provider', 'protocol': 'provider stream failed', 'retry': 'rate limited by provider'}.get(case, '')
     path.with_name('stderr.log').write_text(diagnostic)
@@ -8109,7 +8274,29 @@ for path in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
         events.insert(4, '{"type":"auto_retry_start"}')
         events.insert(5, '{"type":"auto_retry_end"}')
         stream = '\n'.join(events) + '\n'
-    path.with_name('stdout.log').write_text(stream if product == 'pi' else '')
+    # The case shapes regenerate the capture through the real staged
+    # helper (P19-AUD-003): stdout/stderr/receipt stay mutually bound.
+    import os, subprocess, tempfile
+    handoff = pathlib.Path(os.environ['OPI_EVAL_NATIVE_HANDOFF'])
+    helper = handoff.parent / 'capture-helper'
+    policy = json.loads(handoff.read_text())['capture_policy']
+    raw = tempfile.NamedTemporaryFile('w', delete=False)
+    raw.write(stream if product == 'pi' else '')
+    raw.close()
+    agent = tempfile.NamedTemporaryFile('w', delete=False)
+    agent.write('#!/bin/sh\ncat ' + repr(raw.name) + '\n' + ("printf '%s\\n' " + repr(diagnostic) + ' >&2\n' if diagnostic else ''))
+    agent.close()
+    os.chmod(agent.name, 0o755)
+    capture_dir = path.parent
+    for name in ('stdout.log', 'stderr.log', 'capture-receipt.json'):
+        (capture_dir / name).unlink(missing_ok=True)
+    subprocess.run([str(helper), '__native-capture', '--policy', policy,
+        '--stdout', str(capture_dir / 'stdout.log'),
+        '--stderr', str(capture_dir / 'stderr.log'),
+        '--receipt', str(capture_dir / 'capture-receipt.json'),
+        '--', agent.name], check=True)
+    os.unlink(raw.name)
+    os.unlink(agent.name)
     result_path = path.parent.parent / 'result.json'
     result = json.loads(result_path.read_text())
     result['verifier_result']['rewards']['reward'] = reward
@@ -10054,10 +10241,7 @@ fn p19_plan_acceptance_rejects_fixture_evidence() {
     // before connection identity: a synthetic fixture root without the
     // preserved admitted static-lock binding rejects there, never at the
     // fixture-only connection claim.
-    assert!(
-        stderr.contains("admitted static lock"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("admitted static lock"), "{stderr}");
     assert!(out.is_file(), "the durable verification report is written");
 }
 
@@ -10240,7 +10424,7 @@ fn remediation_native_stage_deadlines() {
     let material = native_witness_material::controlled_material(&source_material, true);
     let input = fs::read(&material).unwrap();
     let manifest: serde_json::Value = serde_json::from_slice(&input).unwrap();
-    assert_eq!(manifest["schema"], "opi-eval-native-material/6");
+    assert_eq!(manifest["schema"], "opi-eval-native-material/7");
     let static_lock: serde_json::Value = serde_json::from_slice(
         &fs::read(manifest["static_lock"]["path"].as_str().unwrap()).unwrap(),
     )
@@ -11457,11 +11641,31 @@ fn plan_p19_full_capture_preserves_long_native_stream() {
     let staged = stage("ok");
     plan_p19_inject(
         &staged,
-        r#"import pathlib
+        r#"import hashlib, json, os, pathlib, subprocess
 for terminal in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
-    path=terminal.with_name('stdout.log')
-    before=path.read_bytes() if path.exists() else b''
-    path.write_bytes(b'\n'*(2*1024*1024)+before)
+    capture = terminal.parent
+    before = (capture / 'stdout.log').read_bytes() if (capture / 'stdout.log').exists() else b''
+    handoff = pathlib.Path(os.environ['OPI_EVAL_NATIVE_HANDOFF'])
+    helper = handoff.parent / 'capture-helper'
+    policy = json.loads(handoff.read_text())['capture_policy']
+    source = capture / 'large-source.stream'
+    source.write_bytes(b'\n'*(2*1024*1024)+before)
+    agent = capture / 'large-agent.sh'
+    agent.write_text('#!/bin/sh\ncat ' + repr(str(source)) + '\n')
+    os.chmod(agent, 0o755)
+    for name in ('stdout.log', 'stderr.log', 'capture-receipt.json'):
+        (capture / name).unlink(missing_ok=True)
+    subprocess.run([str(helper), '__native-capture', '--policy', policy,
+        '--stdout', str(capture / 'stdout.log'),
+        '--stderr', str(capture / 'stderr.log'),
+        '--receipt', str(capture / 'capture-receipt.json'),
+        '--', str(agent)], check=True)
+    receipt_bytes = (capture / 'capture-receipt.json').read_bytes()
+    receipt = json.loads(receipt_bytes)
+    record = json.loads(terminal.read_text())
+    record['capture'] = {'status': receipt['status'], 'policy': receipt['policy'],
+        'receipt_sha256': hashlib.sha256(receipt_bytes).hexdigest()}
+    terminal.write_text(json.dumps(record))
 "#,
     );
     let config = write_config(&staged);
@@ -11517,98 +11721,209 @@ fn native_raw_capture(trial_root: &Path, name: &str) -> Vec<u8> {
 }
 
 #[test]
-fn native_capture_artifact_limit() {
-    const CAP: usize = 64 * 1024 * 1024;
-    for name in ["stdout.log", "stderr.log"] {
-        for overflow in [false, true] {
-            let staged = stage("ok");
-            let target = CAP + usize::from(overflow);
-            plan_p19_inject(
-                &staged,
-                &format!(
-                    r#"import pathlib
-for terminal in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
-    path=terminal.with_name({name:?})
-    before=path.read_bytes() if path.exists() else b''
-    path.write_bytes(b' '*({target}-len(before)-1)+b'\n'+before)
-"#
-                ),
-            );
-            let config = write_config(&staged);
-            let root = staged.root.join("run");
-            let (code, stdout, stderr) = run_native(&staged, &config, &root);
-            assert_eq!(code, i32::from(overflow), "{stderr} {stdout}");
-            let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-            assert_eq!(report["trials"].as_array().unwrap().len(), 2);
-            for trial in report["trials"].as_array().unwrap() {
-                let trial_root = root.join("trials").join(trial["id"].as_str().unwrap());
-                let raw = native_raw_capture(&trial_root, name);
-                assert_eq!(raw.len(), target);
-                let native = trial_root.join("bundle/artifacts/native");
-                let terminal = read_cleanup_json(&native.join("agent-terminal.json"));
-                let field = if name == "stdout.log" {
-                    "stdout_truncated"
-                } else {
-                    "stderr_truncated"
-                };
-                assert_eq!(terminal[field], overflow);
-                let sealed = native.join(format!("agent-{name}"));
-                if overflow {
-                    assert_eq!(trial["classification"]["class"], "invalid-execution");
-                    assert_eq!(trial["classification"]["boundary"], "evidence");
-                    assert!(!sealed.exists(), "overflow prefix must remain private");
-                } else {
-                    assert_eq!(trial["classification"]["class"], "graded-native");
-                    assert_eq!(fs::read(sealed).unwrap(), raw);
-                    let digest_field = if name == "stdout.log" {
-                        "stdout_sha256"
-                    } else {
-                        "stderr_sha256"
-                    };
-                    assert_eq!(terminal[digest_field], sha256_hex(&raw));
-                }
-            }
-            let published = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
-                .args(["report", "--root"])
-                .arg(&root)
-                .output()
-                .unwrap();
-            assert!(published.status.success());
-            let published: serde_json::Value = serde_json::from_slice(&published.stdout).unwrap();
-            assert_eq!(
-                published["coverage_counts"]["valid"],
-                if overflow { 0 } else { 2 }
-            );
-            assert_eq!(
-                published["coverage_counts"]["invalid"],
-                if overflow { 2 } else { 0 }
-            );
+fn native_capture_helper_sanitizes_private_thinking() {
+    // P19-AUD-003 promoted witness: the actual helper filters the pinned
+    // thinking-bearing fixture streams for both clients, keeps non-private
+    // bindings truthful, and refuses nothing in the admitted grammar.
+    let room = tempfile::tempdir().unwrap();
+    let helper = room.path().join("helper");
+    fs::copy(env!("CARGO_BIN_EXE_opi-eval"), &helper).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    for product in ["opi", "pi"] {
+        let fixture = fixtures()
+            .join("agents")
+            .join(product)
+            .join("capture-thinking.jsonl");
+        let out = room.path().join(product);
+        fs::create_dir_all(&out).unwrap();
+        let output = std::process::Command::new(&helper)
+            .args(["__native-capture", "--policy", "full"])
+            .arg("--stdout")
+            .arg(out.join("stdout.log"))
+            .arg("--stderr")
+            .arg(out.join("stderr.log"))
+            .arg("--receipt")
+            .arg(out.join("receipt.json"))
+            .arg("--")
+            .arg("cat")
+            .arg(&fixture)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{product}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let retained = fs::read_to_string(out.join("stdout.log")).unwrap();
+        for secret in [
+            "fixture private thinking",
+            "fixture-signature",
+            "fixture-redacted",
+            "fixture private delta",
+        ] {
+            assert!(!retained.contains(secret), "{product}: {secret} persisted");
+        }
+        let receipt: serde_json::Value =
+            serde_json::from_slice(&fs::read(out.join("receipt.json")).unwrap()).unwrap();
+        assert_eq!(receipt["schema"], "opi-eval-native-capture/1");
+        assert_eq!(receipt["status"], "sanitized");
+        assert_eq!(receipt["stdout"]["sha256"], sha256_hex(retained.as_bytes()));
+        assert!(receipt["transformed_records"].as_u64().unwrap() >= 1);
+        // Non-private bindings stay truthful.
+        assert!(retained.contains("fixture public answer"));
+        assert!(retained.contains("bash"));
+        assert!(retained.contains("eval"));
+        if product == "pi" {
+            let header: serde_json::Value =
+                serde_json::from_str(retained.lines().next().unwrap()).unwrap();
+            assert_eq!(header["type"], "session");
+            assert!(retained.contains("\"thinking\":\"\""));
+        } else {
+            assert!(!retained.contains("\"signature\"") || !retained.contains("fixture-signature"));
         }
     }
 }
 
 #[test]
-fn native_capture_bounds_provider_diagnostic() {
-    for exit in [3, 4] {
-        for overflow in [false, true] {
+fn native_capture_artifact_limit() {
+    // P19-AUD-003: the helper's first-sink ceiling and the receipt
+    // binding replace the legacy read-side overflow path. A stream at or
+    // beyond the 64 MiB ceiling refuses inside the helper, and any
+    // post-capture tampering of the retained bytes refuses the trial
+    // without a native score.
+    const CAP: usize = 64 * 1024 * 1024;
+    for name in ["stdout.log", "stderr.log"] {
+        for tampered in [false, true] {
             let staged = stage("ok");
-            let target = 64 * 1024 * 1024 + usize::from(overflow);
+            if tampered {
+                let target = CAP + 1;
+                plan_p19_inject(
+                    &staged,
+                    &format!(
+                        r#"import pathlib
+for terminal in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
+    path=terminal.with_name({name:?})
+    before=path.read_bytes() if path.exists() else b''
+    path.write_bytes(b' '*({target}-len(before)-1)+b'\n'+before)
+"#
+                    ),
+                );
+            }
+            let config = write_config(&staged);
+            let root = staged.root.join("run");
+            let (code, stdout, stderr) = run_native(&staged, &config, &root);
+            let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+            if tampered {
+                // The padded bytes no longer match the helper's receipt:
+                // both trials refuse without a score.
+                assert_eq!(code, 1, "{stderr} {stdout}");
+                assert_eq!(report["trials"].as_array().unwrap().len(), 2);
+                for trial in report["trials"].as_array().unwrap() {
+                    assert_eq!(trial["classification"]["class"], "invalid-execution");
+                    assert_eq!(trial["classification"]["reason"], "native-capture-refused");
+                    assert_eq!(trial["classification"]["boundary"], "evidence");
+                }
+            } else {
+                assert_eq!(code, 0, "{stderr} {stdout}");
+                for trial in report["trials"].as_array().unwrap() {
+                    assert_eq!(trial["classification"]["class"], "graded-native");
+                }
+            }
+        }
+    }
+    // The helper itself refuses a stream beyond the ceiling before any
+    // graded evidence can exist.
+    let room = tempfile::tempdir().unwrap();
+    fs::create_dir_all(room.path().join("out")).unwrap();
+    let helper = room.path().join("helper");
+    fs::copy(env!("CARGO_BIN_EXE_opi-eval"), &helper).unwrap();
+    let oversized = room.path().join("oversized.sh");
+    fs::write(
+        &oversized,
+        "#!/bin/sh\nyes '' | head -c $((64 * 1024 * 1024 + 2))\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&oversized, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let output = std::process::Command::new(&helper)
+        .args(["__native-capture", "--policy", "full"])
+        .arg("--stdout")
+        .arg(room.path().join("out/stdout.log"))
+        .arg("--stderr")
+        .arg(room.path().join("out/stderr.log"))
+        .arg("--receipt")
+        .arg(room.path().join("out/receipt.json"))
+        .arg("--")
+        .arg(&oversized)
+        .output()
+        .unwrap();
+    assert_ne!(output.status.code(), Some(0));
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(room.path().join("out/receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["status"], "refused");
+}
+
+#[test]
+fn native_capture_bounds_provider_diagnostic() {
+    // P19-AUD-003: an oversized padded diagnostic is opaque stderr. No
+    // byte is retained, the capture refuses without a native score, and
+    // the recognized token alone (validated vocabulary, bounded length)
+    // keeps its typed provider classification.
+    for exit in [3, 4] {
+        for padded in [false, true] {
+            let staged = stage("ok");
             let diagnostic = if exit == 3 {
                 "provider authentication failed"
             } else {
                 "provider stream failed"
             };
+            let body = if padded {
+                format!("{}:{}", diagnostic, " ".repeat(64 * 1024))
+            } else {
+                diagnostic.to_owned()
+            };
             plan_p19_inject(
                 &staged,
                 &format!(
-                    r#"import pathlib,json
+                    r#"import hashlib, json, os, pathlib, subprocess, tempfile
 for terminal in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
-    value=json.loads(terminal.read_text())
-    if value['product'] != 'opi': continue
-    value['exit_code']={exit}
+    capture = terminal.parent
+    value = json.loads(terminal.read_text())
+    if value['product'] != 'opi':
+        continue
+    value['exit_code'] = {exit}
+    handoff = pathlib.Path(os.environ['OPI_EVAL_NATIVE_HANDOFF'])
+    helper = handoff.parent / 'capture-helper'
+    policy = json.loads(handoff.read_text())['capture_policy']
+    raw = tempfile.NamedTemporaryFile('w', delete=False)
+    raw.close()
+    agent = tempfile.NamedTemporaryFile('w', delete=False)
+    agent.write('#!/bin/sh\ncat ' + repr(raw.name) + '\nprintf ' + repr({body:?} + '\n') + ' >&2\n')
+    agent.close()
+    os.chmod(agent.name, 0o755)
+    for name in ('stdout.log', 'stderr.log', 'capture-receipt.json'):
+        (capture / name).unlink(missing_ok=True)
+    subprocess.run([str(helper), '__native-capture', '--policy', policy,
+        '--stdout', str(capture / 'stdout.log'),
+        '--stderr', str(capture / 'stderr.log'),
+        '--receipt', str(capture / 'capture-receipt.json'),
+        '--', agent.name], check=True)
+    os.unlink(raw.name)
+    os.unlink(agent.name)
+    receipt_bytes = (capture / 'capture-receipt.json').read_bytes()
+    receipt = json.loads(receipt_bytes)
+    value['capture'] = {{'status': receipt['status'], 'policy': receipt['policy'],
+        'receipt_sha256': hashlib.sha256(receipt_bytes).hexdigest()}}
     terminal.write_text(json.dumps(value))
-    prefix={diagnostic:?}.encode()+b'\n'
-    terminal.with_name('stderr.log').write_bytes(prefix+b' '*({target}-len(prefix)))
 "#
                 ),
             );
@@ -11616,21 +11931,39 @@ for terminal in pathlib.Path('jobs').glob('*/*/agent/opi-eval-terminal.json'):
             let root = staged.root.join("run");
             let (code, stdout, stderr) = run_native(&staged, &config, &root);
             assert_eq!(code, 1, "{stderr} {stdout}");
-            let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+            let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
             let opi = &report["trials"][0];
             assert_eq!(opi["status"], "sealed");
-            assert_eq!(opi["classification"]["class"], "invalid-execution");
             let native = root.join("trials/trial-opi-native/bundle/artifacts/native");
             let terminal = read_cleanup_json(&native.join("agent-terminal.json"));
-            assert_eq!(terminal["stderr_truncated"], overflow);
-            if overflow {
+            // A provider-caused failure is never an agent failure or a
+            // score: both shapes stay invalid executions.
+            assert_eq!(opi["classification"]["class"], "invalid-execution");
+            if padded {
+                assert_eq!(opi["classification"]["reason"], "native-capture-refused");
+                // Opaque stderr: no byte is sealed and the receipt records
+                // only static metadata.
                 assert!(terminal["diagnostic"].is_null());
                 assert!(!native.join("agent-stderr.log").exists());
             } else {
-                assert!(terminal["diagnostic"].as_str().unwrap().len() <= 1024 * 1024);
+                // The validated vocabulary stays typed and retained; the
+                // provider cause keeps its classification.
+                assert!(
+                    opi["classification"]["reason"]
+                        .as_str()
+                        .is_some_and(|reason| reason.contains("provider")),
+                    "{}",
+                    opi["classification"]
+                );
+                assert!(
+                    terminal["diagnostic"]
+                        .as_str()
+                        .unwrap()
+                        .contains(diagnostic)
+                );
                 assert_eq!(
-                    fs::read(native.join("agent-stderr.log")).unwrap().len(),
-                    target
+                    fs::read(native.join("agent-stderr.log")).unwrap(),
+                    format!("{diagnostic}\n").as_bytes()
                 );
             }
             let published = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
@@ -12142,29 +12475,68 @@ fn remediation_p19_selected_credential_echo_is_never_sealed() {
                     .iter()
                     .find(|trial| trial["id"] == leaking_id)
                     .unwrap_or_else(|| panic!("{case}: leaking trial missing: {report}"));
-                assert_eq!(leaking["status"], "failed", "{case}: {report}");
-                assert_eq!(
-                    leaking["authority"]["seal"], "failed:at-evidence",
-                    "{case}: {report}"
-                );
                 let leaking_bundle = root.join("trials").join(&leaking_id).join("bundle");
-                assert!(
-                    !leaking_bundle.join("manifest.json").exists(),
-                    "{case}: sealed a bundle containing the selected credential"
-                );
-                let staged_secret = walk_files(&leaking_bundle).into_iter().any(|path| {
-                    fs::read(&path)
-                        .unwrap()
-                        .windows(secret.len())
-                        .any(|window| window == secret.as_bytes())
-                });
-                assert!(
-                    staged_secret,
-                    "{case}: probe did not reach the capture seam"
-                );
-                if product == "opi" {
+                if location == "job-stdout" {
+                    // The secret reached a staged export; the canary scan
+                    // blocks sealing entirely.
+                    assert_eq!(leaking["status"], "failed", "{case}: {report}");
+                    assert_eq!(
+                        leaking["authority"]["seal"], "failed:at-evidence",
+                        "{case}: {report}"
+                    );
+                    assert!(
+                        !leaking_bundle.join("manifest.json").exists(),
+                        "{case}: sealed a bundle containing the selected credential"
+                    );
+                } else {
+                    // P19-AUD-003: a post-capture write into the agent
+                    // streams breaks the receipt binding; the untrusted
+                    // bytes never cross into sealed evidence and the trial
+                    // refuses without a native score.
+                    assert_eq!(
+                        leaking["classification"]["class"], "invalid-execution",
+                        "{case}: {report}"
+                    );
+                    assert_eq!(
+                        leaking["classification"]["reason"], "native-capture-refused",
+                        "{case}: {report}"
+                    );
+                    if leaking_bundle.join("manifest.json").exists() {
+                        for path in walk_files_matching(&leaking_bundle, "") {
+                            if path.is_file() {
+                                assert!(
+                                    !fs::read(&path)
+                                        .unwrap()
+                                        .windows(secret.len())
+                                        .any(|window| window == secret.as_bytes()),
+                                    "{case}: sealed {path:?} containing the selected credential"
+                                );
+                            }
+                        }
+                    }
+                }
+                // The probe must actually have reached its seam: the
+                // agent-stderr write lands in the trial's own capture
+                // stage, the job-stdout print is proven by the blocked
+                // seal itself.
+                if location == "agent-stderr" {
+                    let capture_stage =
+                        root.join("trials").join(&leaking_id).join("verifier-trace");
+                    let staged_secret = walk_files(&capture_stage).into_iter().any(|path| {
+                        fs::read(&path)
+                            .unwrap()
+                            .windows(secret.len())
+                            .any(|window| window == secret.as_bytes())
+                    });
+                    assert!(
+                        staged_secret,
+                        "{case}: probe did not reach the capture seam"
+                    );
+                }
+                if product == "opi" && location == "job-stdout" {
                     // The leak stops later dispatch: the retained second
-                    // trial never starts.
+                    // trial never starts. A capture-side breach refuses
+                    // only its own trial; the clean client still seals.
                     assert_eq!(trials.len(), 1, "{case}: {report}");
                     assert!(
                         !root.join("trials").join(other_id).exists(),
@@ -12263,7 +12635,7 @@ fn remediation_p19_runner_installed_bytes_are_reverified() {
         );
         let manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(&material_path).unwrap()).unwrap();
-        assert_eq!(manifest["schema"], "opi-eval-native-material/6");
+        assert_eq!(manifest["schema"], "opi-eval-native-material/7");
         let pristine = fs::read(&material_path).unwrap();
         let pristine_text = String::from_utf8(pristine.clone()).unwrap();
         for relative in [".venv/bin/python".to_owned(), format!(".venv/bin/{family}")] {
@@ -12293,7 +12665,7 @@ fn remediation_p19_runner_installed_bytes_are_reverified() {
         // A stale material/5 manifest rejects with regeneration guidance.
         fs::write(
             &material_path,
-            pristine_text.replace("opi-eval-native-material/6", "opi-eval-native-material/5"),
+            pristine_text.replace("opi-eval-native-material/7", "opi-eval-native-material/5"),
         )
         .unwrap();
         let rejected = validate();
@@ -12306,6 +12678,28 @@ fn remediation_p19_runner_installed_bytes_are_reverified() {
             stderr.contains("unknown native-material schema") && stderr.contains("regenerate"),
             "{family}: {stderr}"
         );
+        // The legacy /6 schema stays loadable for sealed offline reads
+        // exactly when it carries no capture helper pin; a /6 manifest
+        // that still pins one rejects.
+        let mut legacy: serde_json::Value = serde_json::from_str(
+            &pristine_text.replace("opi-eval-native-material/7", "opi-eval-native-material/6"),
+        )
+        .unwrap();
+        fs::write(&material_path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let mixed = validate();
+        assert!(!mixed.status.success(), "{family}: legacy helper admitted");
+        assert!(
+            String::from_utf8_lossy(&mixed.stderr).contains("legacy material"),
+            "{family}: {}",
+            String::from_utf8_lossy(&mixed.stderr)
+        );
+        legacy.as_object_mut().unwrap().remove("capture_helper");
+        fs::write(&material_path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        assert!(
+            validate().status.success(),
+            "{family}: legacy offline material must stay loadable"
+        );
+        fs::write(&material_path, &pristine).unwrap();
         // Missing pinned installed-byte records reject the manifest.
         let mut stripped: serde_json::Value = serde_json::from_slice(&pristine).unwrap();
         for benchmark in stripped["benchmarks"].as_object_mut().unwrap().values_mut() {

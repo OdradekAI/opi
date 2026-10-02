@@ -72,3 +72,8 @@ pub(crate) mod regrade;
 // report path consumes sealed assembled outputs only, recomputes before
 // rendering, and stays behind the CLI seam.
 pub(crate) mod report;
+
+// Binary-local bounded native capture filter (P19-AUD-003): private
+// thinking never reaches a first capture sink. Library-internal for the
+// hidden `__native-capture` mode and its unit contract; no SDK surface.
+pub(crate) mod native_capture;
