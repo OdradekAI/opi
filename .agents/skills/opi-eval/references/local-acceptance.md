@@ -47,6 +47,10 @@ package version, source snapshot and staged executable against the admitted
 client profile. An explicit version still selects that version, and an
 arbitrary version string does not admit a new integration. Apply the
 [model-control defaults](native-run.md#model-controls) unless overridden.
+Apply the [evaluation defaults](../SKILL.md#evaluation-defaults) to this batch:
+by default, six original logical trials permit at most 18 executions including
+retries, sharing one deadline. This does not change the six-trial acceptance
+denominator or the original per-family `max_trials = 2` expansion bound.
 Preserve requested/effective controls, runner/task/
 material/image identities, usage/time scope and operator authorization before
 launch. Use [native run](native-run.md) for the concrete CLI steps.

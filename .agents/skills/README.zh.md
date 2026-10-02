@@ -93,6 +93,10 @@ $opi-eval mode=fidelity cases=all model=<provider:model>
 以上是技能参数，不是 CLI flags。未指定 Opi 版本时选择当前工作区，包含影响构建的
 改动；显式版本优先。准备阶段记录源码和可执行文件身份，不启动模型。
 
+真实评测未指定模型/预算时，继承用户持续授权的
+[评测默认配置](opi-eval/SKILL.md#evaluation-defaults)，包括自动付费重试与整轮共用时限；
+显式参数或用户配置值优先。
+
 任务选择、模型控制（含 provider 特定默认值）、预算与准备见
 [原生运行](opi-eval/references/native-run.md)；19.11 固定六试次范围与独立离线交接见
 [本地验收](opi-eval/references/local-acceptance.md)；最终交接前读取

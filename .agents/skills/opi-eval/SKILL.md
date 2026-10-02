@@ -51,10 +51,54 @@ version map may pin only pi and leave Opi at this default. Pi has no working-tre
 default: an explicit entry pins it, or `pi:latest` resolves at preparation to
 the pi subject pinned by the current static lock, recording that resolved
 package version in the experiment and report; `latest` never survives as a
-frozen identity. A bare invocation collects software, bench and model; it
-never selects paid trials or a configured default model silently. An existing
-config supplies defaults, but conflicting requested overrides require a new
-experiment and plan. `verify` derives identities from evidence, not new inputs.
+frozen identity. A bare invocation collects software and benchmark/case scope;
+omitted model and budget inputs use the evaluation defaults below, shown in the
+resolved request. Explicit inputs and user-supplied config values take
+precedence; conflicting requested overrides require a new experiment and plan.
+`verify` derives identities from evidence, not new inputs.
+
+## Evaluation defaults
+
+Apply these standing user-authorized operator defaults to every new live
+`benchmark`, `acceptance` or `fidelity` evaluation unless explicitly overridden.
+They belong to this workflow; the provider-neutral Rust CLI does not load them.
+`verify` stays offline and does not launch or retry paid trials.
+
+| Setting | Default |
+|---|---|
+| Subject model | `zhipu:glm-5.3-flash` |
+| API / endpoint | `anthropic-messages` / `https://open.bigmodel.cn/api/anthropic` |
+| Automatic paid retries | At most 2 additional attempts per failed logical trial or fidelity case; at most 3 attempts including the initial one. |
+| Whole live batch | 3600 seconds (1 hour), shared across all families, subjects, cases, graders and retries. |
+| Spending ceiling | Unlimited; no cumulative token or currency cap. |
+
+Reuse this authorization without asking again for these defaults or each
+eligible retry. Resolve the selected software/tasks/cases and credential
+references before dispatch; selecting this skill or finding credentials alone
+does not choose live task scope. The connection defaults apply to the default
+subject model; another provider/model selection resolves its own connection.
+The subject-model default does not select the independent evaluator's model.
+Native model-control defaults remain in
+[model controls](references/native-run.md#model-controls).
+
+Before the first live dispatch, freeze the effective defaults/overrides,
+logical trial count, maximum attempted count, authorization source and timer
+enforcement in the invocation's evidence. Record the batch start/deadline and
+use one monotonic timer for the effective batch limit (3600 seconds by default)
+from the first live dispatch, including grading and retries; preparation and
+subsequent offline reporting are outside that live interval. At expiry, stop
+new dispatch and cancel owned execution
+through its supported cleanup path. A new family, replacement root or provider
+request never resets the timer. An unenforceable required deadline blocks live
+execution; a per-Agent timeout alone does not enforce the whole batch.
+
+Retry failed execution within the frozen scope, remaining attempt allowance
+and batch deadline. Preserve each attempt, failure and replacement link with
+fresh identities; never overwrite sealed evidence. A valid native score,
+including zero, is a completed result rather than a retry trigger. Authority
+or privacy breaches stop affected execution. Count trial/case attempts
+separately from client/provider request retries; all live activity consumes the
+same time budget, and unlimited spending does not authorize unlimited trials.
 
 ## Step 1: Resolve the operator request
 
@@ -98,7 +142,8 @@ sealed bytes cannot later be edited for sharing.
 Show the resulting plan digests, subjects/builds, task IDs, model connection,
 effective/unsupported controls, exact trial count, concurrency,
 [Agent turn budgets](references/native-run.md#agent-turn-budgets), time limits,
-capture policy and budget enforcement limits. The current CLI rejects total
+capture policy, [evaluation defaults](#evaluation-defaults), overrides and
+budget enforcement limits. The current CLI rejects total
 token and monetary caps; resolve any required unsupported bound before running.
 Honor the user's approval of this exact scope. If authorization is missing,
 finish the preview and ask once, citing the remaining live/paid effect.
@@ -116,9 +161,9 @@ environment and declared artifacts; shell exit alone is not a score.
 
 Retain every failed, cancelled and unstarted trial and its typed settlement.
 On authority, privacy or budget breach, cancel owned execution and stop affected
-dispatch. Recovery classifies prior effects; a separately scoped replacement
-uses new identities and preserves the original group. No automatic paid retries
-or substitution of witnesses for real trials.
+dispatch. Recovery classifies prior effects; replacements follow the frozen
+[retry allowance](#evaluation-defaults), use new identities and preserve the
+original group. Witnesses cannot substitute for real trials.
 
 **Completion criterion**: every planned trial has a settled result or an explicit
 unexecuted/effect-unknown record. An invalid trial remains invalid; completion

@@ -106,6 +106,10 @@ These are skill arguments, not CLI flags. Omitted Opi version selects the curren
 working tree, including build-relevant changes; explicit version pins win.
 Preparation records source and executable identities without starting a model.
 
+Omitted live model/budget inputs inherit the standing user-authorized
+[evaluation defaults](opi-eval/SKILL.md#evaluation-defaults), including paid
+retries and the shared batch deadline; explicit inputs/config values win.
+
 Read [native run](opi-eval/references/native-run.md) for task selection, model
 controls (including provider-specific defaults), budgets and preparation;
 [local acceptance](opi-eval/references/local-acceptance.md) for the fixed 19.11

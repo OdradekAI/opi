@@ -101,6 +101,12 @@ image produces a named prerequisite, not a GitHub receipt or invented digest.
 
 ## Input to experiment mapping
 
+Resolve the [evaluation defaults](../SKILL.md#evaluation-defaults) before
+creating a config. Keep the whole-batch deadline and retry allowance in operator
+evidence: the CLI has no corresponding automatic default or retry-budget field.
+Unlimited spending is the absence of cumulative usage/cost caps, not an
+unsupported `max_cost` value. Per-Agent stage limits retain their own meaning.
+
 Create one TOML document per family with a unique `experiment_id`. Use the
 [experiment fixture](../../../../crates/opi-eval/tests/fixtures/experiment/local-paired.toml)
 only to inspect syntax. Replace its synthetic identity, connection, controls,
@@ -267,11 +273,15 @@ Keep that classification separate from the original native report. The current
 `--replacement-for <trial-id>` flow resolves explicit `[[trials]]` before
 selection expansion, so it cannot replace a trial from this `[selection]`
 recipe; combining replacement with `--plan` also changes its frozen identity.
-Report this limitation when a retry is needed. A new operator-approved
-experiment must use fresh identities and retain the failed pair and replacement
-relationship; do not rewrite the old plan, trial IDs or run-control to force
-acceptance. Explicit-trial replacement and its family-root layout require their
-own checked command scope before spending.
+Report this limitation when a retry is needed. Within the standing
+[retry allowance](../SKILL.md#evaluation-defaults), prepare a fresh experiment
+and retain the failed attempt and replacement relationship; do not rewrite the
+old plan, trial IDs or run-control to force acceptance. Check the actual command
+scope and family-root layout before spending: replacement may execute the whole
+declared scope, not only the named failed trial. Repeated successful trials or
+other scope expansion need their own authorization; an unsupported replacement
+remains a preparation gap. Every replacement shares the original batch timer
+and each logical trial's attempt count.
 
 **Completion criterion**: the preserved command record and sealed settlements
 account for every planned trial, and each published native report verifies and

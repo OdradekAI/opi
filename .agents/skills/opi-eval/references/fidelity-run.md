@@ -27,12 +27,16 @@ comparison is permitted only for the exact identity
 ## Inputs
 
 ```text
-model=<provider:model>   # optional; defaults to user's configured default
+model=<provider:model>   # optional; uses the skill's evaluation defaults
 cases=<name,...>         # optional; comma-separated case names, or "all" (default)
 ```
 
-If no model is specified, use opi's default resolution. The model used is always
-recorded in the report regardless of how it was resolved.
+Resolve omitted model and budget inputs using
+[evaluation defaults](../SKILL.md#evaluation-defaults); explicit inputs or
+user-supplied config values win. Pass the resolved model explicitly instead of
+using opi's ambient default. Record the model, effective budget, timer and case
+attempt allowance before live execution. The batch timer also covers evaluator
+dispatch; evaluator model selection still follows Step 4's independence rules.
 
 ## Step 1: Build
 
@@ -77,8 +81,13 @@ selected case:
 <opi-binary> --json --model <model> --allow-mutating "<prompt>"
 ```
 
-4. Capture stdout (NDJSON) to `<temp>/output.ndjson`.
+4. Capture stdout (NDJSON) to `<temp>/output.ndjson`. Give each retry a fresh
+   workspace/evidence identity and preserve its link to the failed attempt.
 5. Record wall-clock duration and exit code.
+
+Apply the frozen [retry allowance](../SKILL.md#evaluation-defaults) to failed
+case execution before continuing. A completed case's quality verdict is not a
+reason to rerun it until a better score appears. Preserve and report all attempts.
 
 **Completion criterion**: every selected test case has a corresponding
 `output.ndjson` file and recorded exit code. Cases that crash (non-zero exit
