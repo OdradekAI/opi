@@ -1,12 +1,15 @@
 {
   "schema_version": 3,
-  "audit_run_id": "phase19-codex-gpt61-2465aeb-20261001t055252z",
-  "audit_head": "2465aeb80ad84d06172acc142f6d5ffbceb201cc",
+  "audit_run_id": "phase19-codex-gpt61-f60e458-20261003t041015z",
+  "phase": 19,
+  "audit_head": "f60e458f9d1bceffcba5caaef11e8c0d7312ff59",
   "reviewer_id": "codex",
+  "reviewer_identity": "Codex",
   "model_id": "gpt61",
   "reviewer_model_id": "gpt61",
   "model_identity_source": "operator-declared",
-  "independence": "unknown",
+  "independence": "fresh-context-same-family",
+  "baseline_policy": "latest-committed-spec",
   "baseline_sources": [
     {
       "path": ".opi-impl-state.json",
@@ -29,10 +32,7 @@
       "sha256": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
     }
   ],
-  "phase": 19,
-  "reviewer_identity": "Codex",
-  "baseline_policy": "latest-committed-spec",
-  "requirements_sha256": "7a6bbb95a72c38ae15bf5b4bca6acf07970cbb1c956673309165b3aa27e2a5af",
-  "findings_sha256": "90d9a494d59824cb99dfcf749cf6b0c30e7fa6eb79959b7e406fa2eeea64b5a1",
+  "requirements_sha256": "00ef0398b3b9b759369dd8ced604672793a8c9b1435af66ba223800f37be0083",
+  "findings_sha256": "37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a",
   "verdict": "FAIL"
 }
