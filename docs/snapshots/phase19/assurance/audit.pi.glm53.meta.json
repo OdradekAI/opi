@@ -1,10 +1,10 @@
 {
   "schema_version": 3,
-  "audit_run_id": "phase19-pi-glm53-efe2f69-20261001t043357z",
+  "audit_run_id": "phase19-pi-glm53-2e82c99-20261002t204027z",
   "phase": 19,
-  "audit_head": "efe2f6906fa47003bf806bddec0b15f2d20dd3c3",
+  "audit_head": "2e82c99aa32ca3a56acef3e2b969223161d370c7",
   "reviewer_id": "pi",
-  "reviewer_identity": "pi coding agent (earendil-works pi-coding-agent harness)",
+  "reviewer_identity": "pi coding agent (pi CLI harness)",
   "model_id": "glm53",
   "reviewer_model_id": "glm53",
   "model_identity_source": "operator-declared",
@@ -32,7 +32,7 @@
       "sha256": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
     }
   ],
-  "requirements_sha256": "9315c6f7894ac36ccced55b081e76f0162364200fd9c81398cb55723f38a5aba",
-  "findings_sha256": "fb086ccb76ea53156b0600c6b46f8e8c1b9fb8842515f3acff8669ec69923b70",
-  "verdict": "FAIL"
+  "requirements_sha256": "44e12e1c912c7f7745e8e7e56ddffd32f78204917b5b0a85f3f6beb6030017b4",
+  "findings_sha256": "d8dd6dd9833a5575975171b815f790d5c1c26ae3df4d5b94b21a84663cb8c7d1",
+  "verdict": "PASS"
 }

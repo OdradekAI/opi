@@ -17,20 +17,20 @@
     },
     {
       "artifact_stem": "audit.pi.glm53",
-      "audit_head": "efe2f6906fa47003bf806bddec0b15f2d20dd3c3",
-      "audit_run_id": "phase19-pi-glm53-efe2f69-20261001t043357z",
+      "audit_head": "2e82c99aa32ca3a56acef3e2b969223161d370c7",
+      "audit_run_id": "phase19-pi-glm53-2e82c99-20261002t204027z",
       "digests": {
-        "findings_sha256": "fb086ccb76ea53156b0600c6b46f8e8c1b9fb8842515f3acff8669ec69923b70",
-        "meta_sha256": "d9bf70ecba230c708c20df2d61092a63e94be93a8905697620761ae5ad2c5bf0",
-        "report_sha256": "44b2c3538ef101efedf67a53e2f08d7deb5a60c82716161f986dfb85ddf326fc",
-        "requirements_sha256": "9315c6f7894ac36ccced55b081e76f0162364200fd9c81398cb55723f38a5aba"
+        "findings_sha256": "d8dd6dd9833a5575975171b815f790d5c1c26ae3df4d5b94b21a84663cb8c7d1",
+        "meta_sha256": "d64bf8be9db090b5a464c0cdb7ca6c415a01ebfc2159c1cd5bf1282dc09c66b7",
+        "report_sha256": "2f8e6d0b7fb8537c2d1b6d28f2d92aaf2717237feec406914eea60e7be6fe3df",
+        "requirements_sha256": "44e12e1c912c7f7745e8e7e56ddffd32f78204917b5b0a85f3f6beb6030017b4"
       },
       "model_id": "glm53",
       "reviewer_id": "pi",
-      "verdict": "FAIL"
+      "verdict": "PASS"
     }
   ],
   "phase": 19,
-  "revision": 17,
+  "revision": 19,
   "schema_version": 2
 }

@@ -1,0 +1,38 @@
+{
+  "schema_version": 3,
+  "audit_run_id": "phase19-pi-glm53-efe2f69-20261001t043357z",
+  "phase": 19,
+  "audit_head": "efe2f6906fa47003bf806bddec0b15f2d20dd3c3",
+  "reviewer_id": "pi",
+  "reviewer_identity": "pi coding agent (earendil-works pi-coding-agent harness)",
+  "model_id": "glm53",
+  "reviewer_model_id": "glm53",
+  "model_identity_source": "operator-declared",
+  "independence": "fresh-context-same-family",
+  "baseline_policy": "latest-committed-spec",
+  "baseline_sources": [
+    {
+      "path": ".opi-impl-state.json",
+      "sha256": "c65c10635c4bb8b1754625b94e8a0a15459eef6d65634610ba9b65ea9ba5337e"
+    },
+    {
+      "path": "docs/snapshots/phase19/opi-impl-state.json",
+      "sha256": "35b3378bd902cc976bb348d794dd1b5d3c5f160a58769c3aeb62fea175a7b7a9"
+    },
+    {
+      "path": "docs/opi-spec.md",
+      "sha256": "1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md",
+      "sha256": "5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md",
+      "sha256": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
+    }
+  ],
+  "requirements_sha256": "9315c6f7894ac36ccced55b081e76f0162364200fd9c81398cb55723f38a5aba",
+  "findings_sha256": "fb086ccb76ea53156b0600c6b46f8e8c1b9fb8842515f3acff8669ec69923b70",
+  "verdict": "FAIL"
+}
