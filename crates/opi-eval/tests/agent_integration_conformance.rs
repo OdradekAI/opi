@@ -202,6 +202,114 @@ fn unknown_case_is_rejected_with_exit_two() {
 
 #[cfg(unix)]
 #[test]
+fn pi_protocol_truncations_classify_typed_across_all_three_wires() {
+    // P19-AUD-011: the three exact pinned pi truncation messages import
+    // as provider-protocol-error with failed outcomes at client exit
+    // zero, one per wire; near matches keep the unknown provider-failure
+    // fallback and auth/rate/success classifications are unchanged.
+    let template = std::fs::read_to_string(
+        manifest_dir().join("tests/fixtures/agents/pi/stream-protocol-error.jsonl"),
+    )
+    .unwrap();
+    let original = "Stream ended without finish_reason";
+    for (name, api, message, expected, met) in [
+        (
+            "completions",
+            "openai-completions",
+            original,
+            "provider-protocol-error",
+            true,
+        ),
+        (
+            "anthropic",
+            "anthropic-messages",
+            "Anthropic stream ended without a stop reason",
+            "provider-protocol-error",
+            true,
+        ),
+        (
+            "responses",
+            "openai-responses",
+            "OpenAI Responses stream ended before a terminal response event",
+            "provider-protocol-error",
+            true,
+        ),
+        (
+            "near-miss-prefix",
+            "openai-completions",
+            "arbitrary prefix Stream ended without finish_reason",
+            "provider-failure",
+            false,
+        ),
+        (
+            "near-miss-suffix",
+            "openai-responses",
+            "OpenAI Responses stream ended before a terminal response event: arbitrary suffix",
+            "provider-failure",
+            false,
+        ),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let fixture_root = root.path().join("fixtures");
+        let pi_dir = fixture_root.join("agents/pi");
+        std::fs::create_dir_all(&pi_dir).unwrap();
+        std::fs::write(
+            pi_dir.join("stream-protocol-error.jsonl"),
+            template
+                .replace("openai-completions", api)
+                .replace(original, message),
+        )
+        .unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("conformance")
+            .args(["--suite", "agent"])
+            .args(["--adapter", "pi"])
+            .args(["--case", "provider-protocol-error"])
+            .arg("--root")
+            .arg(root.path().join("run"))
+            .arg("--fixtures")
+            .arg(&fixture_root)
+            .arg("--provider")
+            .arg(
+                manifest_dir()
+                    .join("scripts/scripted-provider.py")
+                    .canonicalize()
+                    .unwrap(),
+            )
+            .output()
+            .expect("spawn the opi-eval conformance binary");
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        let report: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|error| {
+            panic!("{name}: not one report ({error}): {stdout:?} {stderr:?}")
+        });
+        assert_eq!(
+            output.status.code(),
+            if met { Some(0) } else { Some(1) },
+            "{name}: {stderr} {stdout}"
+        );
+        assert_eq!(report["failure_kind"], expected, "{name}: {report}");
+        assert_eq!(report["outcome"], "failed", "{name}: {report}");
+        assert_eq!(report["boundary"], "AgentProcess", "{name}: {report}");
+        assert_eq!(report["exit_state"], "exited:0", "{name}: {report}");
+        assert_eq!(report["met"], met, "{name}: {report}");
+    }
+    // Auth, rate-limit and success classifications are unchanged.
+    for (case, kind) in [
+        ("provider-auth-failure", "provider-auth-failure"),
+        ("provider-rate-limit", "provider-rate-limit-exhausted"),
+    ] {
+        let (code, report, stderr) = run_case("agent", "pi", case);
+        assert_eq!(code, 0, "{case}: {stderr}");
+        assert_eq!(report["failure_kind"], kind, "{case}: {report}");
+    }
+    let (code, report, stderr) = run_case("agent", "pi", "completed");
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(report["outcome"], "completed", "{report}");
+}
+
+#[cfg(unix)]
+#[test]
 fn agent_conformance_matrix_settles_every_pinned_case() {
     for row in rows() {
         let (code, report, stderr) = run_case("agent", row.adapter, row.case);

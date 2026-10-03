@@ -54,6 +54,10 @@ pub fn regrade(args: &RegradeArgs) -> Result<serde_json::Value, RegradeCliError>
             NativeRegradeError::OutputExists(path) => {
                 RegradeCliError::Request(format!("output root already exists: {}", path.display()))
             }
+            NativeRegradeError::OutputInsideSource(path) => RegradeCliError::Request(format!(
+                "output root {} resolves inside the run root; choose a fresh external output",
+                path.display()
+            )),
             NativeRegradeError::NotNativeRoot => {
                 RegradeCliError::Request("run root holds no native trial to regrade".to_owned())
             }

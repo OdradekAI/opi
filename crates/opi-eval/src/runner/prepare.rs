@@ -12,7 +12,6 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -115,15 +114,18 @@ fn resolve_cache(config_path: &Path, experiment: &ResolvedExperiment) -> PathBuf
 }
 
 /// Runs `doctor --config`: reports every observation, starts no model,
-/// and mutates nothing.
+/// and mutates nothing. Every observer shares one finite operation
+/// deadline (P19-AUD-003): a stalled or overflowing observer becomes a
+/// truthful bounded report instead of an unbounded wait.
 pub(crate) fn doctor(config_path: &Path) -> Result<serde_json::Value, PrepareError> {
     let context = PreparedContext::load(config_path)?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
     let mut observations = Vec::new();
 
     // 1. Linux engine reachability. The Docker client honors
     //    DOCKER_HOST; a missing client, a failed probe, or an unusable
     //    endpoint is `unreachable` with the reason, never a guess.
-    let engine = probe_engine();
+    let engine = probe_engine(deadline);
     let mut engine_observation = Observation::new(
         "linux-engine",
         if engine.is_ok() {
@@ -176,6 +178,7 @@ pub(crate) fn doctor(config_path: &Path) -> Result<serde_json::Value, PrepareErr
         &context.cache,
         config_path.parent().unwrap_or(Path::new(".")),
         None,
+        deadline,
     );
     observations.push(if !engine_reachable {
         unknown("gpu", "engine unreachable; GPU state cannot be observed")
@@ -197,7 +200,7 @@ pub(crate) fn doctor(config_path: &Path) -> Result<serde_json::Value, PrepareErr
 
     // 6. Disk space at the cache location (nearest existing ancestor).
     let probe_root = nearest_existing_ancestor(&context.cache);
-    observations.push(match available_disk_bytes(&probe_root) {
+    observations.push(match available_disk_bytes(&probe_root, deadline) {
         Some(available_bytes) => {
             let mut observation = Observation::new("disk", "ok");
             observation.detail = Some(probe_root.to_string_lossy().into_owned());
@@ -247,6 +250,18 @@ pub(crate) fn doctor(config_path: &Path) -> Result<serde_json::Value, PrepareErr
         observations.push(observation);
     }
 
+    // 8. Every selected preparation input (P19-AUD-010): the same
+    // selected benchmark/runner requirements `prepare` verifies —
+    // profile and corpus, uv tool pin, runner project/lock/interpreter/
+    // entrypoint, applicable integrations, the scripted provider and
+    // the capture helper — with expected locations and present/missing/
+    // unknown reasons. Only selected products are required, and no
+    // download, model, credential or Agent effect happens here.
+    observations.extend(selected_material_observations(
+        &context.cache,
+        &context.experiment,
+    ));
+
     Ok(serde_json::json!({
         "schema": DOCTOR_SCHEMA,
         "experiment": context.experiment.experiment_id(),
@@ -270,44 +285,210 @@ pub(crate) fn agent_executable_path(cache: &Path, product: &str) -> PathBuf {
     }
 }
 
+/// Observations for every selected preparation input `prepare` verifies
+/// (P19-AUD-010). Each row names the expected cache location and its
+/// present/missing/unknown state without any acquisition, model,
+/// credential or Agent effect; unselected products are not required.
+fn selected_material_observations(
+    cache: &Path,
+    experiment: &ResolvedExperiment,
+) -> Vec<Observation> {
+    let mut observations = Vec::new();
+    let mut observe = |key: &str, path: &Path, reason: Option<String>| {
+        let mut observation = match &reason {
+            Some(reason) => {
+                let mut observation = unknown(&format!("material:{key}"), reason);
+                observation.detail = Some(path.to_string_lossy().into_owned());
+                observation
+            }
+            None => Observation::new(
+                &format!("material:{key}"),
+                if path.is_file() || path.is_dir() {
+                    "present"
+                } else {
+                    "missing"
+                },
+            ),
+        };
+        if reason.is_none() {
+            observation.detail = Some(path.to_string_lossy().into_owned());
+        }
+        observations.push(observation);
+    };
+    let adapter = match crate::runner::experiment::adapter_key_for(experiment) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            let mut observation = unknown(
+                "material:selected-inputs",
+                &format!("selected benchmark inputs cannot be derived: {error}"),
+            );
+            observation.detail = Some(cache.to_string_lossy().into_owned());
+            observations.push(observation);
+            return observations;
+        }
+    };
+    let runner = if adapter == "deepswe-v1.1" {
+        "pier"
+    } else {
+        "harbor"
+    };
+    let lock: Option<StaticLockProjection> = std::fs::read(static_lock_path(cache))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+    let lock_available = lock.is_some();
+    observe(
+        &format!("profiles:{adapter}"),
+        &cache
+            .join("pins/profiles/benchmarks")
+            .join(format!("{adapter}.toml")),
+        None,
+    );
+    observe(
+        &format!("corpora:{adapter}"),
+        &cache.join("corpora").join(&adapter).join("tasks"),
+        None,
+    );
+    let uv_pinned = lock.as_ref().is_some_and(|lock| {
+        lock.tools
+            .iter()
+            .any(|tool| tool.id == "uv" && tool.version.as_deref() == Some("0.9.7"))
+    });
+    observe(
+        "tools:uv",
+        &cache.join("tools/uv"),
+        if lock_available && !uv_pinned {
+            Some("static lock does not pin the supported uv 0.9.7".to_owned())
+        } else if !lock_available {
+            Some("static lock unavailable; the uv tool pin cannot be verified".to_owned())
+        } else {
+            None
+        },
+    );
+    let runner_project = cache.join("runners").join(runner);
+    let runner_pinned = lock.as_ref().is_some_and(|lock| {
+        lock.tools
+            .iter()
+            .any(|tool| tool.id == runner && tool.commit.is_some() && tool.uv_lock.is_some())
+    });
+    let runner_reason = if !lock_available {
+        Some("static lock unavailable; runner pins cannot be verified".to_owned())
+    } else if !runner_pinned {
+        Some(format!("static lock has no {runner} source/lock pin"))
+    } else {
+        None
+    };
+    for (key, path) in [
+        (format!("runners:{runner}"), runner_project.clone()),
+        (
+            format!("runners:{runner}:project"),
+            runner_project.join("pyproject.toml"),
+        ),
+        (
+            format!("runners:{runner}:lock"),
+            runner_project.join("uv.lock"),
+        ),
+        (
+            format!("runners:{runner}:python"),
+            runner_project.join(".venv/bin/python"),
+        ),
+        (
+            format!("runners:{runner}:entrypoint"),
+            runner_project.join(".venv/bin").join(runner),
+        ),
+    ] {
+        observe(&key, &path, runner_reason.clone());
+    }
+    observe(
+        "pins:scripts:scripted-provider.py",
+        &cache.join("pins/scripts/scripted-provider.py"),
+        None,
+    );
+    observe(
+        "integrations:harbor",
+        &cache.join("pins/integrations/harbor"),
+        None,
+    );
+    observe(
+        "integrations:pier",
+        &cache.join("pins/integrations/pier"),
+        None,
+    );
+    observe(
+        "tools:native-capture-helper",
+        &cache.join("tools/native-capture-helper"),
+        None,
+    );
+    observations
+}
+
 fn unknown(id: &str, reason: &str) -> Observation {
     let mut observation = Observation::new(id, "unknown");
     observation.reason = Some(reason.to_owned());
     observation
 }
 
-/// Probes the local Linux engine; returns its `os/arch` identity.
-fn probe_engine() -> Result<String, String> {
-    let output = Command::new("docker")
-        .args(["version", "--format", "{{.Server.Os}}/{{.Server.Arch}}"])
-        .output()
-        .map_err(|error| format!("docker client not found: {error}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let reason = stderr
-            .lines()
-            .find(|line| !line.trim().is_empty())
-            .unwrap_or("");
-        let reason = reason.chars().take(200).collect::<String>();
-        return Err(format!("engine probe failed: {reason}"));
+/// The ambient observation environment: only routing, identity, and
+/// filesystem keys observers need, never provider credentials.
+fn observation_environment(source: Option<&BTreeMap<String, String>>) -> BTreeMap<String, String> {
+    [
+        "HOME",
+        "PATH",
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT",
+        "DOCKER_CONFIG",
+        "DOCKER_TLS_VERIFY",
+        "DOCKER_CERT_PATH",
+    ]
+    .into_iter()
+    .filter_map(|key| {
+        let value = match source {
+            Some(env) => env.get(key).cloned(),
+            None => std::env::var(key).ok(),
+        };
+        value.map(|value| (key.to_owned(), value))
+    })
+    .collect()
+}
+
+/// Probes the local Linux engine; returns its `os/arch` identity. The
+/// probe is supervised with a finite bound, so a stalled or overflowing
+/// engine client becomes a truthful bounded refusal reason (P19-AUD-003).
+fn probe_engine(deadline: std::time::Instant) -> Result<String, String> {
+    let bound = observer_bound(deadline);
+    if bound.is_zero() {
+        return Err("engine probe: observation budget elapsed".to_owned());
     }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    let argv = vec![
+        "docker".into(),
+        "version".into(),
+        "--format".into(),
+        "{{.Server.Os}}/{{.Server.Arch}}".into(),
+    ];
+    let Some(outcome) = supervised_observation(argv, &observation_environment(None), bound) else {
+        return Err("engine probe could not be supervised".to_owned());
+    };
+    if observation_clean(&outcome) {
+        return Ok(String::from_utf8_lossy(&outcome.stdout.bytes)
+            .trim()
+            .to_owned());
+    }
+    Err(observation_refusal("engine probe", &outcome))
 }
 
 /// The engine's GPU runtime name, when one is registered.
-pub(crate) fn gpu_runtime() -> Option<String> {
-    let output = Command::new("docker")
-        .args([
-            "info",
-            "--format",
-            "{{range $name, $_ := .Runtimes}}{{$name}} {{end}}",
-        ])
-        .output()
-        .ok()?;
-    if !output.status.success() {
+pub(crate) fn gpu_runtime(deadline: std::time::Instant) -> Option<String> {
+    let bound = observer_bound(deadline);
+    if bound.is_zero() {
         return None;
     }
-    let runtimes = String::from_utf8_lossy(&output.stdout);
+    let argv = vec![
+        "docker".into(),
+        "info".into(),
+        "--format".into(),
+        "{{range $name, $_ := .Runtimes}}{{$name}} {{end}}".into(),
+    ];
+    let bytes = observation_command(argv, &observation_environment(None), bound)?;
+    let runtimes = String::from_utf8_lossy(&bytes);
     runtimes
         .split_whitespace()
         .find(|runtime| runtime.contains("nvidia"))
@@ -330,15 +511,22 @@ pub(crate) fn total_memory_bytes() -> Option<u64> {
     Some(kib * 1024)
 }
 
-fn available_disk_bytes(path: &Path) -> Option<u64> {
-    let output = Command::new("df")
-        .args(["-B1", "-P", &path.to_string_lossy()])
-        .output()
-        .ok()?;
-    if !output.status.success() {
+fn available_disk_bytes(path: &Path, deadline: std::time::Instant) -> Option<u64> {
+    let bound = observer_bound(deadline);
+    if bound.is_zero() {
         return None;
     }
-    let text = String::from_utf8_lossy(&output.stdout);
+    let bytes = observation_command(
+        vec![
+            "df".into(),
+            "-B1".into(),
+            "-P".into(),
+            path.to_string_lossy().as_ref().into(),
+        ],
+        &observation_environment(None),
+        bound,
+    )?;
+    let text = String::from_utf8_lossy(&bytes);
     let line = text.lines().nth(1)?;
     line.split_whitespace().nth(3)?.parse::<u64>().ok()
 }
@@ -359,6 +547,8 @@ fn nearest_existing_ancestor(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::process::Command;
 
     #[cfg(unix)]
     #[tokio::test]
@@ -469,7 +659,12 @@ mod tests {
                 "tcp://selected.invalid:2375".to_owned(),
             ),
         ]);
-        let observed = observe_resources(root.path(), root.path(), Some(&env));
+        let observed = observe_resources(
+            root.path(),
+            root.path(),
+            Some(&env),
+            std::time::Instant::now() + std::time::Duration::from_secs(12),
+        );
         assert_eq!(observed.engine_id.as_deref(), Some("selected"));
         assert_eq!(observed.engine_cpu.value, Some(1));
         assert_eq!(observed.engine_memory.value, Some(4096));
@@ -588,18 +783,28 @@ mod tests {
     fn desktop_observation_binds_selection_and_rejects_failures() {
         let (room, mut env, info) = desktop_fixture();
         assert_eq!(
-            observe_resources(room.path(), room.path(), Some(&env))
-                .engine_storage
-                .value,
+            observe_resources(
+                room.path(),
+                room.path(),
+                Some(&env),
+                std::time::Instant::now() + std::time::Duration::from_secs(12),
+            )
+            .engine_storage
+            .value,
             Some(10485760)
         );
         // Context takes precedence over a conflicting host, including the recheck.
         env.insert("DOCKER_CONTEXT".into(), "chosen".into());
         env.insert("DOCKER_HOST".into(), "tcp://ignored:2375".into());
         assert_eq!(
-            observe_resources(room.path(), room.path(), Some(&env))
-                .engine_storage
-                .value,
+            observe_resources(
+                room.path(),
+                room.path(),
+                Some(&env),
+                std::time::Instant::now() + std::time::Duration::from_secs(12),
+            )
+            .engine_storage
+            .value,
             Some(10485760)
         );
         env.remove("DOCKER_CONTEXT");
@@ -610,7 +815,15 @@ mod tests {
             "unix://relative",
             "unix:///var/../run/docker.sock",
         ] {
-            assert_eq!(desktop_storage(&info, Some(endpoint), &env), None);
+            assert_eq!(
+                desktop_storage(
+                    &info,
+                    Some(endpoint),
+                    &env,
+                    std::time::Instant::now() + std::time::Duration::from_secs(12)
+                ),
+                None
+            );
         }
         let endpoint = "unix:///nonexistent/desktop.sock";
         for (key, value) in [
@@ -621,7 +834,15 @@ mod tests {
         ] {
             let mut invalid = info.clone();
             invalid[key] = value.into();
-            assert_eq!(desktop_storage(&invalid, Some(endpoint), &env), None);
+            assert_eq!(
+                desktop_storage(
+                    &invalid,
+                    Some(endpoint),
+                    &env,
+                    std::time::Instant::now() + std::time::Duration::from_secs(12)
+                ),
+                None
+            );
         }
         env.insert("DOCKER_HOST".into(), endpoint.into());
         for script in [
@@ -636,7 +857,12 @@ mod tests {
             std::fs::write(room.path().join("info.json"), info.to_string()).unwrap();
             std::fs::write(room.path().join("action"), script).unwrap();
             assert_eq!(
-                desktop_storage(&info, Some(endpoint), &env),
+                desktop_storage(
+                    &info,
+                    Some(endpoint),
+                    &env,
+                    std::time::Instant::now() + std::time::Duration::from_secs(12)
+                ),
                 None,
                 "{script}"
             );
@@ -644,11 +870,89 @@ mod tests {
         std::fs::write(room.path().join("action"), "printf 'engine\\t42\\t123\\tmnt:[9]\\t1\\t/var/lib/docker\\n'; echo tcp://changed > endpoint").unwrap();
         env.insert("DOCKER_CONTEXT".into(), "chosen".into());
         std::fs::write(room.path().join("info.json"), info.to_string()).unwrap();
-        assert_eq!(desktop_storage(&info, Some(endpoint), &env), None);
+        assert_eq!(
+            desktop_storage(
+                &info,
+                Some(endpoint),
+                &env,
+                std::time::Instant::now() + std::time::Duration::from_secs(12)
+            ),
+            None
+        );
         std::fs::write(room.path().join("running"), "Ubuntu\n").unwrap();
         std::fs::write(room.path().join("action"), "touch should-not-enter").unwrap();
-        assert_eq!(desktop_storage(&info, Some(endpoint), &env), None);
+        assert_eq!(
+            desktop_storage(
+                &info,
+                Some(endpoint),
+                &env,
+                std::time::Instant::now() + std::time::Duration::from_secs(12)
+            ),
+            None
+        );
         assert!(!room.path().join("should-not-enter").exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn desktop_containerized_storage_observer_binds_current_identity() {
+        let (room, env, mut info) = desktop_fixture();
+        info["OperatingSystem"] = "Docker Desktop (containerized)".into();
+        std::fs::write(room.path().join("info.json"), info.to_string()).unwrap();
+        let observed = observe_resources(
+            room.path(),
+            room.path(),
+            Some(&env),
+            std::time::Instant::now() + std::time::Duration::from_secs(12),
+        );
+        assert_eq!(observed.engine_id.as_deref(), Some("engine"));
+        assert_eq!(observed.engine_storage.value, Some(10485760));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn desktop_storage_rejects_near_match_and_unknown_names() {
+        // P19-AUD-008: only the two exact Desktop identities bind the
+        // namespace observer; near matches and unknown names stay
+        // unknown storage without entering the WSL observation.
+        let (room, env, mut info) = desktop_fixture();
+        for name in [
+            "docker desktop",
+            "Docker Desktop (containerized)",
+            "Docker Desktop on Ubuntu",
+            "Docker Desktop Enterprise",
+            "Ubuntu",
+        ] {
+            info["OperatingSystem"] = name.into();
+            std::fs::write(room.path().join("info.json"), info.to_string()).unwrap();
+            let expected = if name == "Docker Desktop (containerized)" {
+                Some(10485760)
+            } else {
+                None
+            };
+            std::fs::write(
+                room.path().join("action"),
+                if expected.is_some() {
+                    "printf 'engine\\t42\\t123\\tmnt:[9]\\t10240\\t/var/lib/docker\\n'\n"
+                } else {
+                    "touch should-not-enter\n"
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                desktop_storage(
+                    &info,
+                    Some("unix:///nonexistent/desktop.sock"),
+                    &env,
+                    std::time::Instant::now() + std::time::Duration::from_secs(12),
+                ),
+                expected,
+                "{name}"
+            );
+            if expected.is_none() {
+                assert!(!room.path().join("should-not-enter").exists(), "{name}");
+            }
+        }
     }
 
     #[cfg(target_os = "linux")]
@@ -656,9 +960,14 @@ mod tests {
     async fn desktop_observation_supports_tokio_and_bounds_commands() {
         let (room, env, _) = desktop_fixture();
         assert_eq!(
-            observe_resources(room.path(), room.path(), Some(&env))
-                .engine_storage
-                .value,
+            observe_resources(
+                room.path(),
+                room.path(),
+                Some(&env),
+                std::time::Instant::now() + std::time::Duration::from_secs(12),
+            )
+            .engine_storage
+            .value,
             Some(10485760)
         );
         let deadline = std::time::Duration::from_millis(50);
@@ -674,6 +983,65 @@ mod tests {
         ] {
             assert_eq!(observation_command(argv, &env, deadline), None);
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn awaited_observers_settle_under_cancellation_and_bounds() {
+        // P19-AUD-003: awaited observer probes honor the preparation
+        // cancellation token and finite bounds instead of blocking the
+        // current-thread executor, and refusal reasons stay truthful and
+        // bounded for stalled and overflowing observers.
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        let started = std::time::Instant::now();
+        assert_eq!(
+            supervised_docker_endpoint(&cancel, std::time::Instant::now() + OBSERVER_PROBE_BOUND)
+                .await,
+            None
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        let environment = std::collections::BTreeMap::new();
+        let stalled = supervised_observation(
+            vec!["/bin/sleep".into(), "30".into()],
+            &environment,
+            std::time::Duration::from_millis(150),
+        )
+        .expect("supervision runs");
+        assert!(matches!(stalled.exit, ExitState::TimedOut));
+        assert!(observation_refusal("probe", &stalled).contains("timed out"));
+        let overflowing = supervised_observation(
+            vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "head -c 131072 /dev/zero".into(),
+            ],
+            &environment,
+            OBSERVER_PROBE_BOUND,
+        )
+        .expect("supervision runs");
+        assert!(overflowing.stdout.truncated);
+        assert!(!observation_clean(&overflowing));
+        assert!(
+            observation_refusal("probe", &overflowing).contains("capture ceiling"),
+            "{}",
+            observation_refusal("probe", &overflowing)
+        );
+        let refused = supervised_observation(
+            vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "echo refused >&2; exit 7".into(),
+            ],
+            &environment,
+            OBSERVER_PROBE_BOUND,
+        )
+        .expect("supervision runs");
+        assert!(!observation_clean(&refused));
+        assert_eq!(
+            observation_refusal("engine probe", &refused),
+            "engine probe: refused"
+        );
     }
 
     #[cfg(target_os = "linux")]
@@ -1366,12 +1734,23 @@ pub(crate) async fn prepare(
     let corpus_digest = corpus
         .verified_manifest_digest(&adapter, &lock_value)
         .map_err(|error| PrepareError::Rejected(error.to_string()))?;
-    let version = Command::new(&verifier)
-        .arg("--version")
-        .env_clear()
-        .output()?;
-    if !version.status.success()
-        || String::from_utf8_lossy(&version.stdout).trim() != format!("uv {uv_version}")
+    // Supervised, cancellation-aware verifier identity probe
+    // (P19-AUD-003): the observation awaits `ProcessSupervisor` with the
+    // preparation token and a finite bound instead of blocking the
+    // current-thread executor on a raw child.
+    let uv_probe = SpawnSpec {
+        argv: vec![verifier.clone().into(), "--version".into()],
+        cwd: None,
+        env: BTreeMap::new(),
+        stdout_cap: 16 * 1024,
+        stderr_cap: 16 * 1024,
+        timeout: acquisition_deadline
+            .saturating_duration_since(std::time::Instant::now())
+            .min(OBSERVER_PROBE_BOUND),
+    };
+    let version = ProcessSupervisor::run(&uv_probe, cancel).await;
+    if !observation_clean(&version)
+        || String::from_utf8_lossy(&version.stdout.bytes).trim() != format!("uv {uv_version}")
     {
         return Err(PrepareError::Rejected(
             "verifier executable is not the pinned uv 0.9.7".to_owned(),
@@ -1460,17 +1839,7 @@ pub(crate) async fn prepare(
         }
     }
     if std::env::var_os("DOCKER_CONTEXT").is_some() || !verifier_env.contains_key("DOCKER_HOST") {
-        let endpoint = Command::new("docker")
-            .args([
-                "context",
-                "inspect",
-                "--format",
-                "{{(index .Endpoints \"docker\").Host}}",
-            ])
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned());
+        let endpoint = supervised_docker_endpoint(cancel, acquisition_deadline).await;
         if let Some(endpoint) = endpoint {
             verifier_env.insert("DOCKER_HOST".to_owned(), endpoint);
         }
@@ -1541,7 +1910,12 @@ pub(crate) async fn prepare(
     .into_iter()
     .filter_map(|key| std::env::var(key).ok().map(|value| (key.to_owned(), value)))
     .collect();
-    let observations = observe_resources(&context.cache, out, Some(&image_environment));
+    let observations = observe_resources(
+        &context.cache,
+        out,
+        Some(&image_environment),
+        std::time::Instant::now() + std::time::Duration::from_secs(12),
+    );
     let mut image_plan = BTreeMap::new();
     for task in &inventory_tasks {
         let id = task.dir.file_name().unwrap().to_string_lossy();
@@ -2296,11 +2670,70 @@ fn local_engine_pid(endpoint: &str) -> Option<u32> {
 // A dedicated runtime also permits callers already inside Tokio to stay synchronous.
 const ENGINE_INFO_FORMAT: &str = r#"{"ID":{{json .ID}},"DockerRootDir":{{json .DockerRootDir}},"OperatingSystem":{{json .OperatingSystem}},"NCPU":{{json .NCPU}},"MemTotal":{{json .MemTotal}},"Runtimes":{{json .Runtimes}}}"#;
 
-pub(super) fn observation_command(
+/// Finite per-probe ceiling for every production observer. Healthy
+/// observers settle in milliseconds; the bound turns a stalled or
+/// overflowing observer into a truthful refusal instead of an
+/// unbounded wait, and callers' remaining operation deadlines can only
+/// lower it.
+pub(crate) const OBSERVER_PROBE_BOUND: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Bound one observer by the caller's remaining operation deadline.
+fn observer_bound(deadline: std::time::Instant) -> std::time::Duration {
+    deadline
+        .saturating_duration_since(std::time::Instant::now())
+        .min(OBSERVER_PROBE_BOUND)
+}
+
+/// Whether a supervised observation settled cleanly: exit zero, both
+/// captures within their ceilings, and verified owned-tree cleanup.
+fn observation_clean(result: &crate::process::SupervisedOutcome) -> bool {
+    result.exit == (ExitState::Exited { code: 0 })
+        && !result.stdout.truncated
+        && !result.stderr.truncated
+        && matches!(
+            result.cleanup,
+            CleanupEvidence::NotRequired | CleanupEvidence::TreeTerminated { verified: true, .. }
+        )
+}
+
+/// A truthful bounded refusal reason for one supervised observation.
+fn observation_refusal(context: &str, result: &crate::process::SupervisedOutcome) -> String {
+    let reason = match result.exit {
+        ExitState::FailedToSpawn {
+            reason: crate::process::SpawnReason::NotFound,
+        } => "observer executable not found".to_owned(),
+        ExitState::FailedToSpawn { reason } => {
+            format!("observer could not start ({reason:?})")
+        }
+        ExitState::TimedOut => "observer timed out under bounded supervision".to_owned(),
+        ExitState::Cancelled => "observer cancelled".to_owned(),
+        ExitState::Exited { code } if code != 0 => {
+            let stderr = String::from_utf8_lossy(&result.stderr.bytes);
+            match stderr.lines().map(str::trim).find(|line| !line.is_empty()) {
+                Some(line) => line.chars().take(200).collect::<String>(),
+                None => format!("observer exited with status {code}"),
+            }
+        }
+        ExitState::Exited { .. } => {
+            if result.stdout.truncated || result.stderr.truncated {
+                "observer output exceeded the capture ceiling".to_owned()
+            } else {
+                "observer tree cleanup could not be verified".to_owned()
+            }
+        }
+    };
+    format!("{context}: {reason}")
+}
+
+/// Runs one observation under `ProcessSupervisor` on a private thread
+/// runtime. `None` only reports supervision itself failing (thread or
+/// runtime); every probe outcome — including timeout, refusal, and
+/// truncation — is a returned outcome callers classify.
+fn supervised_observation(
     argv: Vec<std::ffi::OsString>,
     environment: &BTreeMap<String, String>,
     timeout: std::time::Duration,
-) -> Option<Vec<u8>> {
+) -> Option<crate::process::SupervisedOutcome> {
     if timeout.is_zero() {
         return None;
     }
@@ -2326,19 +2759,58 @@ pub(super) fn observation_command(
                 &spec,
                 &tokio_util::sync::CancellationToken::new(),
             ));
-            (result.exit == (ExitState::Exited { code: 0 })
-                && !result.stdout.truncated
-                && !result.stderr.truncated
-                && matches!(
-                    result.cleanup,
-                    CleanupEvidence::NotRequired
-                        | CleanupEvidence::TreeTerminated { verified: true, .. }
-                ))
-            .then_some(result.stdout.bytes)
+            Some(result)
         })
         .ok()?
         .join()
         .ok()?
+}
+
+pub(super) fn observation_command(
+    argv: Vec<std::ffi::OsString>,
+    environment: &BTreeMap<String, String>,
+    timeout: std::time::Duration,
+) -> Option<Vec<u8>> {
+    supervised_observation(argv, environment, timeout)
+        .filter(observation_clean)
+        .map(|result| result.stdout.bytes)
+}
+
+/// The selected Docker endpoint through one supervised, awaited probe
+/// (P19-AUD-003): asynchronous callers keep their current-thread
+/// executor free and honor cancellation instead of blocking on a raw
+/// child. A refused, stalled, or overflowing probe yields `None`.
+async fn supervised_docker_endpoint(
+    cancel: &tokio_util::sync::CancellationToken,
+    deadline: std::time::Instant,
+) -> Option<String> {
+    let bound = observer_bound(deadline);
+    if bound.is_zero() {
+        return None;
+    }
+    let spec = SpawnSpec {
+        argv: vec![
+            "docker".into(),
+            "context".into(),
+            "inspect".into(),
+            "--format".into(),
+            "{{(index .Endpoints \"docker\").Host}}".into(),
+        ],
+        cwd: None,
+        env: observation_environment(None)
+            .iter()
+            .map(|(key, value)| (key.into(), value.into()))
+            .collect(),
+        stdout_cap: 16 * 1024,
+        stderr_cap: 16 * 1024,
+        timeout: bound,
+    };
+    let outcome = ProcessSupervisor::run(&spec, cancel).await;
+    observation_clean(&outcome).then(|| {
+        String::from_utf8_lossy(&outcome.stdout.bytes)
+            .trim()
+            .to_owned()
+    })
 }
 
 fn normalized_absolute(path: &str) -> bool {
@@ -2426,12 +2898,20 @@ fn desktop_is_running(bytes: &[u8]) -> bool {
     })
 }
 
+/// The exact Desktop operating-system identities whose storage binds
+/// through the bounded WSL namespace observer. Near matches and unknown
+/// names stay unknown (P19-AUD-008).
+const DESKTOP_OS_IDENTITIES: &[&str] = &["Docker Desktop", "Docker Desktop (containerized)"];
+
 fn desktop_storage(
     info: &serde_json::Value,
     endpoint: Option<&str>,
     environment: &BTreeMap<String, String>,
+    deadline: std::time::Instant,
 ) -> Option<u64> {
-    if !cfg!(target_os = "linux") || info["OperatingSystem"] != "Docker Desktop" {
+    if !cfg!(target_os = "linux")
+        || !DESKTOP_OS_IDENTITIES.contains(&info["OperatingSystem"].as_str().unwrap_or(""))
+    {
         return None;
     }
     let endpoint = endpoint?;
@@ -2468,7 +2948,6 @@ fn desktop_storage(
         .filter(|(k, _)| matches!(k.as_str(), "HOME" | "PATH"))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
     let remaining = || deadline.saturating_duration_since(std::time::Instant::now());
     let running = observation_command(
         vec![
@@ -2561,25 +3040,9 @@ pub(crate) fn observe_resources(
     cache: &Path,
     output: &Path,
     environment: Option<&BTreeMap<String, String>>,
+    deadline: std::time::Instant,
 ) -> ResourceObservations {
-    let environment: BTreeMap<String, String> = [
-        "HOME",
-        "PATH",
-        "DOCKER_HOST",
-        "DOCKER_CONTEXT",
-        "DOCKER_CONFIG",
-        "DOCKER_TLS_VERIFY",
-        "DOCKER_CERT_PATH",
-    ]
-    .into_iter()
-    .filter_map(|key| {
-        let value = match environment {
-            Some(env) => env.get(key).cloned(),
-            None => std::env::var(key).ok(),
-        };
-        value.map(|value| (key.to_owned(), value))
-    })
-    .collect();
+    let environment = observation_environment(environment);
     let docker = |args: &[&str]| -> Option<String> {
         let bytes = observation_command(
             std::iter::once("docker")
@@ -2587,7 +3050,7 @@ pub(crate) fn observe_resources(
                 .map(Into::into)
                 .collect(),
             &environment,
-            std::time::Duration::from_secs(12),
+            observer_bound(deadline),
         )?;
         String::from_utf8(bytes)
             .ok()
@@ -2601,10 +3064,12 @@ pub(crate) fn observe_resources(
     let engine_root = pid.zip(info["DockerRootDir"].as_str()).map(|(pid, root)| {
         PathBuf::from(format!("/proc/{pid}/root")).join(root.trim_start_matches('/'))
     });
-    let local_storage = engine_root.as_deref().and_then(available_disk_bytes);
+    let local_storage = engine_root
+        .as_deref()
+        .and_then(|root| available_disk_bytes(root, deadline));
     let desktop = local_storage
         .is_none()
-        .then(|| desktop_storage(&info, endpoint.as_deref(), &environment))
+        .then(|| desktop_storage(&info, endpoint.as_deref(), &environment, deadline))
         .flatten();
     let engine_storage = ResourceObservation::observed(
         local_storage.or(desktop),
@@ -2624,7 +3089,7 @@ pub(crate) fn observe_resources(
     let disk = |path: &Path| {
         let root = nearest_existing_ancestor(path);
         ResourceObservation::observed(
-            available_disk_bytes(&root),
+            available_disk_bytes(&root, deadline),
             format!("df:{}", root.display()),
             "storage observation unavailable",
         )
@@ -2634,19 +3099,23 @@ pub(crate) fn observe_resources(
         current.is_some() && current == std::fs::read_link(format!("/proc/{pid}/ns/mnt")).ok()
     });
     let gpu_types = if same_mount && info["Runtimes"].get("nvidia").is_some() {
-        Command::new("nvidia-smi")
-            .args(["--query-gpu=name", "--format=csv,noheader"])
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .map(|output| {
-                String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .map(str::trim)
-                    .filter(|name| !name.is_empty())
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>()
-            })
+        observation_command(
+            vec![
+                "nvidia-smi".into(),
+                "--query-gpu=name".into(),
+                "--format=csv,noheader".into(),
+            ],
+            &environment,
+            observer_bound(deadline),
+        )
+        .map(|bytes| {
+            String::from_utf8_lossy(&bytes)
+                .lines()
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
     } else {
         None
     };

@@ -124,14 +124,130 @@ fn parse_hidden_mode(args: &[std::ffi::OsString]) -> Result<HiddenModeArgs, Stri
 }
 
 /// The explicitly validated diagnostic vocabulary: the typed provider
-/// causes both pinned clients surface on stderr. Unknown stderr is
-/// opaque by default; a marker-bearing or malformed stream never
-/// persists.
+/// causes both pinned clients surface on stderr as complete plain
+/// records. Unknown stderr is opaque by default; a marker-bearing or
+/// malformed stream never persists.
 const VALIDATED_STDERR_TOKENS: &[&str] = &[
     "provider authentication failed",
     "rate limited by provider",
     "provider stream failed",
 ];
+
+/// Crate-attested static stream-failure summaries the pinned `opi-ai`
+/// producers own as literal text (`ProviderErrorSummary::attested_static`).
+const ATTESTED_STREAM_SUMMARIES: &[&str] = &[
+    "stream ended without a terminal event",
+    "stream ended without a terminal event (message_stop or error)",
+    "invalid UTF-8 in Anthropic SSE frame",
+    "Azure OpenAI returned a malformed streaming frame",
+    "Vertex returned a malformed streaming frame",
+];
+
+/// The pinned structured stream diagnostic the Opi runner appends after
+/// the plain summary. Parsing through this closed shape rejects unknown
+/// fields and duplicate keys (`serde` reports duplicate fields as errors),
+/// and every remaining dynamic surface is constrained by
+/// [`proven_safe_cause`].
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StructuredStreamDiagnostic {
+    severity: String,
+    code: String,
+    source: String,
+    message: String,
+    details: StructuredStreamCause,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StructuredStreamCause {
+    cause: String,
+}
+
+/// Admit one whole structured stream-diagnostic record: closed field
+/// set, the static stream-error identity, and a proven-safe cause.
+fn validated_structured_diagnostic(line: &str) -> bool {
+    let Ok(record) = serde_json::from_str::<StructuredStreamDiagnostic>(line) else {
+        return false;
+    };
+    record.severity == "error"
+        && record.code == "provider_stream_error"
+        && record.source == "provider"
+        && record.message == "provider stream failed"
+        && proven_safe_cause(&record.details.cause)
+}
+
+/// Proven-safe cause grammar for the pinned structured Opi stream
+/// diagnostic. Every admitted shape is a producer-owned
+/// `ProviderErrorSummary` format: the closed redacted placeholder, the
+/// HTTP status summaries, the crate-attested static summaries, and the
+/// locally formatted usage/SSE-event diagnostics whose payloads are
+/// bounded to digits or the lowercase SSE event-type vocabulary. No
+/// arbitrary upstream text is admitted: unknown causes keep the whole
+/// stream opaque instead of retaining bytes the vocabulary cannot prove
+/// safe.
+fn proven_safe_cause(cause: &str) -> bool {
+    if cause == "[REDACTED]" {
+        return true;
+    }
+    if let Some(rest) = cause.strip_prefix("HTTP ") {
+        let Some((status, tail)) = rest.split_once(": ") else {
+            return false;
+        };
+        return tail == "[REDACTED]"
+            && (1..=3).contains(&status.len())
+            && status.bytes().all(|byte| byte.is_ascii_digit());
+    }
+    if let Some(event) = cause
+        .strip_prefix("malformed Anthropic SSE event '")
+        .and_then(|rest| rest.strip_suffix('\''))
+    {
+        return proven_safe_sse_event_type(event);
+    }
+    for (left, right) in [
+        (
+            "cache_creation_input_tokens_1h",
+            "cache_creation_input_tokens",
+        ),
+        ("reasoning_tokens", "completion_tokens"),
+    ] {
+        let Some(rest) = cause
+            .strip_prefix(left)
+            .and_then(|rest| rest.strip_prefix(" ("))
+        else {
+            continue;
+        };
+        let Some((left_count, remainder)) = rest.split_once(") exceeds ") else {
+            continue;
+        };
+        let Some(counts) = remainder
+            .strip_prefix(right)
+            .and_then(|rest| rest.strip_prefix(" ("))
+            .and_then(|rest| rest.strip_suffix(')'))
+        else {
+            continue;
+        };
+        if !left_count.is_empty()
+            && left_count.bytes().all(|byte| byte.is_ascii_digit())
+            && !counts.is_empty()
+            && counts.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return true;
+        }
+    }
+    ATTESTED_STREAM_SUMMARIES.contains(&cause)
+}
+
+/// SSE event types the pinned Anthropic-compatible wire admits: lowercase
+/// snake-case identifiers, bounded by the producer's 256-char excerpt
+/// ceiling. Provider-controlled mixed-case or symbolic text stays opaque.
+fn proven_safe_sse_event_type(event: &str) -> bool {
+    !event.is_empty()
+        && event.len() <= 256
+        && event
+            .bytes()
+            .all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'_'))
+}
 
 fn validate_agent_stderr(bytes: &[u8]) -> &'static str {
     if bytes.is_empty() {
@@ -147,11 +263,17 @@ fn validate_agent_stderr(bytes: &[u8]) -> &'static str {
         if line.len() > 4096 {
             return "opaque";
         }
-        if !line.is_empty()
-            && !VALIDATED_STDERR_TOKENS
-                .iter()
-                .any(|token| line.contains(token))
-        {
+        if line.is_empty() {
+            continue;
+        }
+        // Whole-record admission only: a record is retained when it is
+        // exactly one plain validated summary or one structured stream
+        // diagnostic that passes the closed grammar. Substring matches,
+        // prefixed/suffixed text, and unknown structured payloads keep
+        // the stream opaque with no retained byte.
+        let admitted =
+            VALIDATED_STDERR_TOKENS.contains(&line) || validated_structured_diagnostic(line);
+        if !admitted {
             return "opaque";
         }
     }

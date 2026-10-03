@@ -660,16 +660,63 @@ class Acceptance:
             stdout = sealed("native/agent-stdout.log")
             stderr = sealed("native/agent-stderr.log")
             result = json.loads(sealed("native/trial-result.json"))
+            # Follow the sealed settlement's graded classification
+            # (P19-AUD-007): a benchmark-valid Agent non-zero exit or
+            # task timeout - including a timeout tail without a final
+            # AgentEnd after an already completed provider/tool loop -
+            # stays an eligible graded execution trial with its native
+            # task exception. Provider, auth, infrastructure, preflight,
+            # undispatched, and invalidly graded terminals never count.
+            settlement = json.loads(sealed("control/settlement.json"))
+            graded = (
+                settlement.get("schema") == "opi-eval-trial-settlement/1"
+                and settlement.get("graded") is True
+                and settlement.get("trial") == trial["id"]
+            )
+            valid_terminal = type(terminal["exit_code"]) is int and (
+                (
+                    not graded
+                    and terminal["exit_code"] == 0
+                    and terminal["timed_out"] is False
+                    and terminal["failure_kind"] is None
+                )
+                or (
+                    graded
+                    and terminal["failure_kind"] is None
+                    and terminal["timed_out"] is False
+                    and terminal["exit_code"] == 0
+                )
+                or (
+                    graded
+                    and terminal["failure_kind"] == "agent-non-zero-exit"
+                    and terminal["timed_out"] is False
+                    and terminal["exit_code"] != 0
+                )
+                or (
+                    graded
+                    and terminal["failure_kind"] == "agent-timeout"
+                    and terminal["timed_out"] is True
+                )
+            )
+            allowed_exceptions = set()
+            if graded and terminal.get("failure_kind") == "agent-non-zero-exit":
+                allowed_exceptions.add("NonZeroAgentExitCodeError")
+            if graded and terminal.get("failure_kind") == "agent-timeout":
+                allowed_exceptions.add("AgentTimeoutError")
+            exception_info = result.get("exception_info")
+            valid_exception = exception_info is None or (
+                isinstance(exception_info, dict)
+                and exception_info.get("exception_type") in allowed_exceptions
+            )
             if (
                 terminal["product"] != trial["agent"]
-                or type(terminal["exit_code"]) is not int or terminal["exit_code"] != 0
-                or terminal["timed_out"] is not False or terminal["failure_kind"] is not None
+                or not valid_terminal
                 or terminal["stdout_truncated"] is not False
                 or terminal["stderr_truncated"] is not False
                 or terminal["stdout_sha256"] != sha256(stdout)
                 or terminal["stderr_sha256"] != sha256(stderr)
                 or result["agent_info"]["model_info"]["name"] != "zhipu:glm-5.3-flash"
-                or result.get("exception_info") is not None
+                or not valid_exception
                 or (
                     terminal["schema"] == "opi-eval-native-agent-terminal/3"
                     and (
@@ -689,7 +736,14 @@ class Acceptance:
             )
             messages = [event["message"] for event in events if event.get("type") == message_end]
             assistants = [message for message in messages if message.get("role") == "assistant"]
-            if not assistants or not any(event.get("type") == agent_end for event in events):
+            # A graded timeout may end without a final Agent terminal
+            # event after its provider/tool loop already completed; every
+            # other shape still requires the Agent terminal event.
+            has_agent_end = any(event.get("type") == agent_end for event in events)
+            if not assistants or (
+                not has_agent_end
+                and not (graded and terminal.get("timed_out") is True)
+            ):
                 reject("missing provider response or Agent terminal event")
             for message in assistants:
                 expected_api = "Anthropic" if opi else FIRST_CONNECTION["api"]

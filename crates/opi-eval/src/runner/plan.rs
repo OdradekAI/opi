@@ -207,7 +207,10 @@ fn classify(task: &CorpusTask) -> (RequirementStatus, Option<String>) {
         }
     }
     if task.requirements.gpus.is_some_and(|required| required > 0)
-        && crate::runner::prepare::gpu_runtime().is_none()
+        && crate::runner::prepare::gpu_runtime(
+            std::time::Instant::now() + crate::runner::prepare::OBSERVER_PROBE_BOUND,
+        )
+        .is_none()
     {
         return (
             RequirementStatus::Unknown,
@@ -344,6 +347,7 @@ pub(crate) fn expand_selection(
                 cache,
                 output,
                 Some(&benchmark.verifier_env),
+                std::time::Instant::now() + std::time::Duration::from_secs(12),
             ))
         })
         .transpose()?;

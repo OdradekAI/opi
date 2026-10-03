@@ -999,6 +999,62 @@ fn resolve_rejects_nonpositive_execution_bounds() {
 }
 
 #[test]
+fn resolve_rejects_wrongly_typed_execution_bounds() {
+    // P19-AUD-001: every integer execution field rejects present
+    // non-integers before effects. Quoted numbers and empty strings no
+    // longer erase the bound; absence keeps its omitted meaning.
+    let base = selection_doc(|_| {});
+    for (field, original) in [
+        ("max_trials", "max_trials = 8"),
+        ("agent_timeout_seconds", "agent_timeout_seconds = 600"),
+        ("verifier_timeout_seconds", "verifier_timeout_seconds = 900"),
+        ("max_output_tokens", "max_output_tokens = 4096"),
+    ] {
+        for replacement in [
+            format!("{field} = \"2\""),
+            format!("{field} = \"\""),
+            format!("{field} = true"),
+            format!("{field} = 1.5"),
+            format!("{field} = -3"),
+        ] {
+            let error = assert_rejected(&base.replace(original, &replacement));
+            assert!(
+                matches!(error, ResolveError::InvalidControlValue { ref control, .. } if control == field),
+                "{field} -> {replacement}: {error}"
+            );
+        }
+    }
+    // The remaining bounds without a selection fixture are rejected
+    // through the same resolver on a document that carries them.
+    for field in ["time_limit_seconds", "max_total_tokens", "max_output_bytes"] {
+        for replacement in [format!("{field} = \"2\""), format!("{field} = \"\"")] {
+            let error = assert_rejected(&base.replace(
+                "concurrency = 2",
+                &format!("concurrency = 2\n{replacement}"),
+            ));
+            assert!(
+                matches!(error, ResolveError::InvalidControlValue { ref control, .. } if control == field),
+                "{field} -> {replacement}: {error}"
+            );
+        }
+        // Numeric present values keep their existing typed/unenforceable
+        // refusals instead of the wrong-type branch.
+        if field != "time_limit_seconds" {
+            let error = assert_rejected(
+                &base.replace("concurrency = 2", &format!("concurrency = 2\n{field} = 2")),
+            );
+            assert!(
+                matches!(error, ResolveError::UnenforceableExecutionBound { ref bound, .. } if bound == field),
+                "{field}: {error}"
+            );
+        }
+    }
+    // Absence stays a valid omitted bound.
+    let resolved = ResolvedExperiment::resolve(&base).unwrap();
+    assert_eq!(resolved.execution().time_limit_seconds, None);
+}
+
+#[test]
 fn validate_cli_summarizes_selection_documents() {
     let dir = std::env::temp_dir().join(format!("opi-eval-selection-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

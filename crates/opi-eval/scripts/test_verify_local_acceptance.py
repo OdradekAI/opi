@@ -262,6 +262,14 @@ class EvidenceRoot:
             wire_path = bundle / "artifacts/control/output-control.json"
             write_json(wire_path, snapshot)
             material["agents"][product] = {"executable": {"sha256": "e" * 64}, "output_control_evidence": {"sha256": snapshot["evidence_sha256"]}}
+            write_json(
+                bundle / "artifacts/control/settlement.json",
+                {
+                    "schema": "opi-eval-trial-settlement/1", "trial": trial,
+                    "graded": True, "agent_failure": False, "timed_out": False,
+                    "failure_kind": None, "boundary": None,
+                },
+            )
             integrity_path = bundle / "artifacts/control/integrity.json"
             write_json(
                 integrity_path,
@@ -277,6 +285,11 @@ class EvidenceRoot:
                     "entries": {
                         **{f"native/{path.name}": {"digest": sha256(path.read_bytes())} for path in native.iterdir()},
                         "control/output-control.json": {"digest": sha256(wire_path.read_bytes())},
+                        "control/settlement.json": {
+                            "digest": sha256(
+                                (bundle / "artifacts/control/settlement.json").read_bytes()
+                            )
+                        },
                         "control/integrity.json": {
                             "digest": sha256(integrity_path.read_bytes())
                         },
@@ -469,6 +482,150 @@ class AcceptanceVerifierTest(unittest.TestCase):
         out_root = self.evidence.outside
         written = [path.name for path in sorted(out_root.iterdir())]
         self.assertEqual(written, [f"report-{id(self.evidence):x}"])
+
+    def test_valid_native_task_failures_count_as_graded_trials(self) -> None:
+        # P19-AUD-007: a sealed graded settlement admits benchmark-valid
+        # Agent non-zero exits and task timeouts - including a timeout
+        # tail without a final AgentEnd after the completed provider/tool
+        # loop and the matching native task exception - as eligible
+        # execution trials. Invalid provider/preflight shapes stay
+        # ineligible.
+        for case, exception in (
+            ("graded-nonzero", "NonZeroAgentExitCodeError"),
+            ("graded-timeout", "AgentTimeoutError"),
+            ("graded-partial-timeout", "AgentTimeoutError"),
+        ):
+            with self.subTest(case=case):
+                self.evidence = EvidenceRoot(self.base / f"accepted-{case}")
+                entry = self.evidence.runs[FAMILIES[0]]
+                for product in ("opi", "pi"):
+                    bundle = entry["run"] / "trials" / entry[product] / "bundle"
+                    native = bundle / "artifacts/native"
+                    terminal_path = native / "agent-terminal.json"
+                    terminal = json.loads(terminal_path.read_text())
+                    if case == "graded-nonzero":
+                        terminal.update(
+                            {"exit_code": 1, "failure_kind": "agent-non-zero-exit"}
+                        )
+                    else:
+                        terminal.update(
+                            {"exit_code": 124, "timed_out": True, "failure_kind": "agent-timeout"}
+                        )
+                    if case == "graded-partial-timeout":
+                        stdout_path = native / "agent-stdout.log"
+                        rows = [
+                            json.loads(line)
+                            for line in stdout_path.read_text().splitlines()
+                        ]
+                        rows = [
+                            row
+                            for row in rows
+                            if (row.get("event", row)).get("type")
+                            not in ("AgentEnd", "agent_end")
+                        ]
+                        stdout_path.write_text(
+                            "".join(json.dumps(row) + "\n" for row in rows)
+                        )
+                        terminal["stdout_sha256"] = sha256(stdout_path.read_bytes())
+                    write_json(terminal_path, terminal)
+                    result_path = native / "trial-result.json"
+                    result = json.loads(result_path.read_text())
+                    result["exception_info"] = {"exception_type": exception}
+                    write_json(result_path, result)
+                    settlement_path = bundle / "artifacts/control/settlement.json"
+                    write_json(
+                        settlement_path,
+                        {
+                            "schema": "opi-eval-trial-settlement/1",
+                            "trial": entry[product],
+                            "graded": True,
+                            "agent_failure": True,
+                            "timed_out": terminal["timed_out"],
+                            "failure_kind": None,
+                            "boundary": None,
+                        },
+                    )
+                    manifest_path = bundle / "manifest.json"
+                    manifest = json.loads(manifest_path.read_text())
+                    for path in native.iterdir():
+                        manifest["entries"][f"native/{path.name}"] = {
+                            "digest": sha256(path.read_bytes())
+                        }
+                    manifest["entries"]["control/settlement.json"] = {
+                        "digest": sha256(settlement_path.read_bytes())
+                    }
+                    write_json(manifest_path, manifest)
+                for family, entry in self.evidence.runs.items():
+                    native = (
+                        entry["run"]
+                        / "trials"
+                        / entry["opi"]
+                        / "bundle/artifacts/native"
+                    )
+                    for path in native.iterdir():
+                        (
+                            self.evidence.root
+                            / "opi-artifact-audit"
+                            / entry["opi"]
+                            / path.name
+                        ).write_bytes(path.read_bytes())
+                self.evidence._write_manifest()
+                self.accept()
+        # Provider and preflight failures never become eligible.
+        for case, changes in (
+            ("invalid-provider", {"exit_code": 3, "failure_kind": "agent-provider-failure"}),
+            (
+                "invalid-preflight",
+                {
+                    "task_dispatched": False,
+                    "exit_code": None,
+                    "failure_kind": "native-runtime-preflight-refused",
+                },
+            ),
+        ):
+            with self.subTest(case=case):
+                self.evidence = EvidenceRoot(self.base / f"rejected-{case}")
+                entry = self.evidence.runs[FAMILIES[0]]
+                for product in ("opi", "pi"):
+                    bundle = entry["run"] / "trials" / entry[product] / "bundle"
+                    native = bundle / "artifacts/native"
+                    terminal_path = native / "agent-terminal.json"
+                    terminal = json.loads(terminal_path.read_text())
+                    terminal.update(changes)
+                    write_json(terminal_path, terminal)
+                    result_path = native / "trial-result.json"
+                    result = json.loads(result_path.read_text())
+                    result["exception_info"] = {
+                        "exception_type": "ApiError"
+                        if case == "invalid-provider"
+                        else "AgentSetupError"
+                    }
+                    write_json(result_path, result)
+                    settlement_path = bundle / "artifacts/control/settlement.json"
+                    write_json(
+                        settlement_path,
+                        {
+                            "schema": "opi-eval-trial-settlement/1",
+                            "trial": entry[product],
+                            "graded": False,
+                            "agent_failure": False,
+                            "timed_out": bool(changes.get("timed_out")),
+                            "failure_kind": changes["failure_kind"],
+                            "boundary": "agent-process",
+                        },
+                    )
+                    manifest_path = bundle / "manifest.json"
+                    manifest = json.loads(manifest_path.read_text())
+                    for path in native.iterdir():
+                        manifest["entries"][f"native/{path.name}"] = {
+                            "digest": sha256(path.read_bytes())
+                        }
+                    manifest["entries"]["control/settlement.json"] = {
+                        "digest": sha256(settlement_path.read_bytes())
+                    }
+                    write_json(manifest_path, manifest)
+                self.evidence._write_manifest()
+                self.reject("agent evidence")
 
     def test_companion_invoked_once_per_family_for_verify_and_report(self) -> None:
         self.accept()

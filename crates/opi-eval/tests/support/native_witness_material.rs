@@ -359,7 +359,9 @@ if sys.argv[1:] == ['--version']:
     sys.exit(0)
 case = json.loads(sys.argv[-1])
 assert case['diagnostic'] is True
-print('stage-witness-start', file=sys.stderr, flush=True)
+# The diagnostic client writes no stderr: the capture grammar admits
+# only the validated diagnostic vocabulary (P19-AUD-006), and this
+# stand-in qualifies regrade mechanics, not stderr privacy.
 time.sleep(case['delay'])
 if case['family'] == 'deepswe-v1.1':
     Path('/app/answer.txt').write_text(case['answer'] + '\n')
@@ -375,7 +377,10 @@ if '$PRODUCT' == 'pi':
     for event in [{'type': 'session', 'version': 3, 'id': 'diagnostic', 'timestamp': '2026-01-01T00:00:00Z', 'cwd': str(Path.cwd())}, {'type': 'message_end', 'message': message}, {'type': 'agent_end', 'messages': [message]}]:
         print(json.dumps(event))
 else:
-    print('diagnostic task completed')
+    # The Opi stand-in emits the recognized Agent event shape (as the
+    # artifact witnesses do); plain text is not an admissible capture
+    # stream.
+    print('{"type":"Agent","event":{"type":"AgentEnd","messages":[]}}')
 "#.replace("$PRODUCT", product)
 }
 

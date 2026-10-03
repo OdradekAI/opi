@@ -272,6 +272,10 @@ impl NativeRegradeReport {
 pub(crate) enum NativeRegradeError {
     /// The output root already exists; a regrade never overwrites.
     OutputExists(PathBuf),
+    /// The requested output resolves inside the canonical run root
+    /// (including through symlink aliases or missing parent chains); a
+    /// regrade never writes into its own source (P19-AUD-005).
+    OutputInsideSource(PathBuf),
     /// The run root holds no native trial to regrade (a hermetic fixture
     /// run root is never regraded under this command).
     NotNativeRoot,
@@ -287,6 +291,11 @@ impl std::fmt::Display for NativeRegradeError {
             NativeRegradeError::OutputExists(path) => {
                 write!(f, "output root already exists: {}", path.display())
             }
+            NativeRegradeError::OutputInsideSource(path) => write!(
+                f,
+                "output root {} resolves inside the run root; choose a fresh external output",
+                path.display()
+            ),
             NativeRegradeError::NotNativeRoot => {
                 write!(f, "run root holds no native trial to regrade")
             }
@@ -300,6 +309,54 @@ impl std::fmt::Display for NativeRegradeError {
 /// [`NativeRegrader::regrade`] reads the run root, the material, and
 /// writes only under the output root.
 pub(crate) struct NativeRegrader;
+
+/// Resolve a not-yet-existing output path through its canonical
+/// nearest existing ancestor (P19-AUD-005). The missing tail components
+/// are validated one by one during descent: each must still be absent
+/// and must not be a link, so a symlinked or partially existing parent
+/// chain cannot alias the fresh output into another tree.
+fn resolve_fresh_output(out: &Path) -> Result<PathBuf, NativeRegradeError> {
+    let mut path = if out.is_absolute() {
+        out.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(NativeRegradeError::Io)?
+            .join(out)
+    };
+    let mut missing: Vec<std::ffi::OsString> = Vec::new();
+    loop {
+        match std::fs::canonicalize(&path) {
+            Ok(resolved) => {
+                path = resolved;
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let Some(name) = path.file_name().map(|name| name.to_os_string()) else {
+                    return Err(NativeRegradeError::Io(error));
+                };
+                missing.push(name);
+                let Some(parent) = path.parent().map(Path::to_path_buf) else {
+                    return Err(NativeRegradeError::Io(error));
+                };
+                path = parent;
+            }
+            Err(error) => return Err(NativeRegradeError::Io(error)),
+        }
+    }
+    for name in missing.iter().rev() {
+        path.push(name);
+        match std::fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(NativeRegradeError::Io(error)),
+            // A tail component that exists although the path did not
+            // canonicalize is an alias or a race, never a fresh output.
+            Ok(_) => {
+                return Err(NativeRegradeError::OutputExists(path));
+            }
+        }
+    }
+    Ok(path)
+}
 
 impl NativeRegrader {
     /// Fresh-grades every sealed native trial bundle under `run_root`
@@ -327,6 +384,16 @@ impl NativeRegrader {
         }
         if out.exists() {
             return Err(NativeRegradeError::OutputExists(out.to_owned()));
+        }
+        // Canonical source containment (P19-AUD-005): the requested
+        // fresh output resolves through its canonical nearest existing
+        // ancestor and validated missing tail components before any
+        // mkdir/copy/verifier effect, so a nested output, a missing
+        // parent chain, or a symlink alias of the source can never
+        // mutate the source it claims to regrade.
+        let resolved_out = resolve_fresh_output(out)?;
+        if resolved_out.starts_with(&run_root) {
+            return Err(NativeRegradeError::OutputInsideSource(resolved_out));
         }
         let mut products = std::collections::BTreeSet::new();
         let mut source_rejections = std::collections::BTreeMap::new();

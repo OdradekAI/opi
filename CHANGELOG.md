@@ -42,6 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   offline verification, reports and verifier-only regrade; fresh dispatch
   never uses them.
 
+- `opi-eval`: every run now freezes its complete report identity under
+  `opi-eval-run-control/2` before the first intent: the resolved
+  experiment contract and the admitted integrity record join the
+  identity, selection, corpus and planned-trial bindings. With zero
+  sealed trials, the offline report restores the declared
+  edge/control pairs, native benchmark identity, exclusions and a zero
+  valid denominator instead of an empty coverage and an unknown
+  benchmark; sealed control bytes are cross-checked against the frozen
+  contract and integrity record, and drift refuses publication. Legacy
+  `/1` run-control roots keep their read-only meaning without frozen
+  topology.
 - `opi-eval`: the native host credential stage is now private before the
   first secret byte. The per-trial integration directory is created
   exclusively with mode 0700 and the staged config/handoff files with mode
@@ -754,6 +765,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failures preserve attempted coverage without an Agent score, and rejected
   result admission keeps truthful private diagnostics while refusing
   scoring and export.
+
+### Fixed
+
+- `opi-eval`: the pi native terminal importer classifies all three
+  exact pinned protocol-truncation messages — the Completions
+  `Stream ended without finish_reason`, the Anthropic
+  `Anthropic stream ended without a stop reason`, and the Responses
+  `OpenAI Responses stream ended before a terminal response event` —
+  as `provider-protocol-error` with failed outcomes at client exit
+  zero. Near matches and unknown messages keep the generic
+  `provider-failure` fallback; auth, rate-limit and success
+  classifications are unchanged.
+- `opi-eval`: `doctor` now reports every selected preparation input
+  that `prepare` verifies, each with its expected cache location and a
+  present/missing/unknown state: the selected benchmark profile and
+  corpus, the uv tool pin, the runner project/lock/interpreter/
+  entrypoint, the applicable integrations, the scripted provider and
+  the capture helper. Only selected products are required (a pi-only
+  selection reports no opi input), and no download, model, credential
+  or Agent effect happens during diagnosis.
+- `opi-eval`: the Linux Desktop storage gate admits exactly the two
+  known exact Docker Desktop engine operating-system identities
+  (`Docker Desktop` and `Docker Desktop (containerized)`) so the
+  current containerized Desktop backend reaches the existing bound WSL
+  namespace observer with its engine/root/process/mount identity
+  checks and before/after rechecks. Near-match, unknown, nonlocal and
+  drifted identities stay unknown; no substring matching, fallback
+  capacity or Docker runtime change is involved.
+- `opi-eval`: `verify-local-acceptance` follows the sealed settlement's
+  graded classification. A benchmark-valid Agent non-zero exit or task
+  timeout - including a timeout tail without a final AgentEnd after an
+  already completed provider/tool loop, with its matching native task
+  exception - now counts among the six required execution trials;
+  provider, authentication, infrastructure, preflight, undispatched,
+  and invalidly graded terminals remain ineligible. Preflight,
+  Agent/task/artifact binding, selected first-connection, actual
+  model/response and completed tool-loop requirements are unchanged.
+- `opi-eval`: `regrade` resolves its requested fresh output through
+  the canonical nearest existing ancestor and validated missing tail
+  components before any mkdir, copy, or verifier effect, and rejects an
+  output contained in the canonical run root - including nested
+  outputs under existing source parents, outputs behind missing parent
+  chains, and symlink aliases of the source. The source directory
+  digest and offline verify stay unchanged on refusal, while fresh
+  external output keeps regrading.
+- `opi-eval`: every selected observer now runs under the process
+  supervisor with a finite per-probe bound, the 16 KiB capture ceiling
+  and verified owned-tree cleanup. The `doctor` engine/version/disk/GPU
+  probes share one finite observation deadline, `plan`'s GPU-runtime
+  probe is supervised, and asynchronous `prepare` awaits its verifier
+  identity and Docker-context probes with the preparation cancellation
+  token instead of blocking the current-thread executor on raw child
+  processes. A stalled or overflowing observer yields a truthful
+  bounded refusal reason and unknown observations instead of an
+  unbounded wait; `observe_resources` callers share one 12-second
+  operation deadline.
+- `opi-eval`: the declared `max_trials` now caps every resolved trial
+  list on the shared run path — explicitly declared `[trials]`, selection
+  expansion, and replacement runs — before native acquisition, root
+  reservation, or dispatch. Selection expansion and replacement now
+  resolve before native material acquisition, so an over-cap request
+  causes no run effect; a cap equal to the resolved count still executes
+  exactly the declared plan.
+- `opi-eval`: the seven integer execution bounds (`max_trials`,
+  `max_total_tokens`, `max_output_bytes`, `time_limit_seconds`,
+  `agent_timeout_seconds`, `verifier_timeout_seconds`,
+  `max_output_tokens`) now reject present non-integer values with the
+  existing typed control error. Quoted numbers and empty strings no
+  longer silently erase the bound; absent fields keep their omitted
+  meaning and numeric values keep their existing semantics.
+- `opi-eval`: native capture stderr admission is whole-record instead of
+  substring-based. An agent stderr record is retained only when it is
+  exactly one validated plain provider summary, or the pinned structured
+  Opi stream diagnostic parsed through its closed field set with
+  duplicate-key rejection, static message identity, and a proven-safe
+  cause grammar (the redacted placeholder, HTTP status summaries,
+  crate-attested static summaries, and the bounded numeric/SSE-event
+  formats). Substring matches, prefixed/suffixed text, unknown fields and
+  unknown structured payloads keep the whole stream opaque with zero
+  retained bytes under both capture policies; empty stderr and admitted
+  records still retain their original bytes and receipt digests.
 
 ## [0.8.2] - 2026-09-05
 

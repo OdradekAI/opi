@@ -527,14 +527,12 @@ pub(crate) async fn run_experiment(
         }
         _ => {}
     }
-    let native = match &request.material {
-        Some(material) => Some(prepare_native(material, &experiment)?),
-        None => None,
-    };
     // Corpus-aware selection expansion (P19-D05): `[selection]`
     // documents expand against the enumerated task inventory here, on
     // the same code path `plan` freezes; a plan run must re-expand to
-    // exactly the frozen trials.
+    // exactly the frozen trials. Expansion and replacement resolve
+    // before native acquisition so admission refusals cause no
+    // acquisition, preflight or dispatch effect.
     let experiment = match experiment.selection() {
         Some(_) => {
             let root = crate::runner::plan::task_package_root(
@@ -590,6 +588,24 @@ pub(crate) async fn run_experiment(
         Some(crashed) => replace_group(&source, &experiment, crashed, &request.root)?,
         None => experiment,
     };
+    // Shared admission (P19-AUD-002): the final resolved trial list —
+    // explicitly declared, expanded from a selection, or replacement-
+    // re-identified — fits the declared max_trials before any run
+    // effect: no acquisition, root reservation, or dispatch happens for
+    // an over-cap request, and equality still executes exactly the plan.
+    if let Some(max_trials) = experiment.execution().max_trials
+        && experiment.trials().len() as u64 > max_trials
+    {
+        return Err(RunError::Native(format!(
+            "resolved trial count {} exceeds the declared max_trials {max_trials}; \
+             narrow the selection or declared trials",
+            experiment.trials().len()
+        )));
+    }
+    let native = match &request.material {
+        Some(material) => Some(prepare_native(material, &experiment)?),
+        None => None,
+    };
     if let (Some(tasks), Some(material)) = (&native, &request.material) {
         let adapter = adapter_key_for(&experiment)?;
         let benchmark = material
@@ -600,8 +616,12 @@ pub(crate) async fn run_experiment(
             .get("UV_CACHE_DIR")
             .map(Path::new)
             .unwrap_or(&benchmark.corpus.root);
-        let observations =
-            super::prepare::observe_resources(cache, &request.root, Some(&benchmark.verifier_env));
+        let observations = super::prepare::observe_resources(
+            cache,
+            &request.root,
+            Some(&benchmark.verifier_env),
+            std::time::Instant::now() + std::time::Duration::from_secs(12),
+        );
         let family = if adapter == "deepswe-v1.1" {
             crate::benchmark::task_lifecycle::TaskFamily::Pier
         } else {
@@ -698,8 +718,20 @@ pub(crate) async fn run_experiment(
             .collect::<std::collections::BTreeSet<_>>()
             .len(),
     };
+    // Complete frozen report identity (P19-AUD-004): the /2 run-control
+    // persists the resolved experiment contract and the admitted
+    // integrity record before the first intent, so an interrupted run
+    // still reports its declared edge/control pairs, native benchmark
+    // identity, exclusions and planned coverage with zero seals, and
+    // sealed control bytes remain cross-checkable against the frozen
+    // snapshot.
+    let frozen_experiment =
+        serde_json::to_value(&experiment).map_err(|error| RunError::Staging(error.to_string()))?;
+    let frozen_integrity =
+        serde_json::from_slice::<serde_json::Value>(&integrity.canonical_bytes())
+            .map_err(|error| RunError::Staging(error.to_string()))?;
     let run_control = json!({
-        "schema": "opi-eval-run-control/1",
+        "schema": "opi-eval-run-control/2",
         "experiment": experiment.experiment_id(),
         "manifest_digest": experiment.manifest_digest(),
         "corpus_tasks": corpus_tasks,
@@ -721,6 +753,8 @@ pub(crate) async fn run_experiment(
         "plan_digest": plan_json.as_ref().and_then(|plan| {
             plan["plan_digest"].as_str().map(str::to_owned)
         }),
+        "experiment_contract": frozen_experiment,
+        "integrity_record": frozen_integrity,
     });
     std::fs::create_dir_all(&request.root).map_err(|error| RunError::Staging(error.to_string()))?;
     for entry in std::fs::read_dir(&request.root)? {
@@ -4188,8 +4222,10 @@ fn recovery_report(
         Ok(bytes) => {
             let value: serde_json::Value = serde_json::from_slice(&bytes)
                 .map_err(|error| RunError::Bundle(error.to_string()))?;
-            if value["schema"] != "opi-eval-run-control/1"
-                || value["experiment"] != experiment.experiment_id()
+            if !matches!(
+                value["schema"].as_str(),
+                Some("opi-eval-run-control/1" | "opi-eval-run-control/2")
+            ) || value["experiment"] != experiment.experiment_id()
                 || value["manifest_digest"] != experiment.manifest_digest()
             {
                 return Err(RunError::Bundle(

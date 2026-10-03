@@ -7783,6 +7783,96 @@ fn regrade_family_root(
     )
 }
 
+#[test]
+fn regrade_output_containment_rejects_canonical_source_aliases() {
+    // P19-AUD-005: a source-contained regrade output - nested under an
+    // existing source parent, behind a missing parent chain, or behind a
+    // symlink alias of the source - rejects before any mkdir, copy or
+    // verifier effect. The source directory digest and offline verify
+    // stay unchanged; fresh external output remains valid.
+    let proof = std::env::var_os("P19_REMEDIATION_PROOF")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::temp_dir().join(format!("p19-regrade-proof-{}", std::process::id()))
+        });
+    fs::create_dir_all(&proof).unwrap();
+    let mut results = Vec::new();
+    for case in [
+        "nested-existing-parent",
+        "nested-missing-parents",
+        "symlink-alias",
+    ] {
+        let staged = stage("ok");
+        let config = write_config(&staged);
+        let (run_root, _) = regrade_family_root(&staged, &config, "run-source");
+        let before = directory_manifest_digest(&run_root);
+        let out = match case {
+            "nested-existing-parent" => {
+                run_root.join("trials/trial-opi-native/bundle/artifacts/derived")
+            }
+            "nested-missing-parents" => {
+                run_root.join("trials/trial-opi-native/bundle/artifacts/new/deeper/derived")
+            }
+            "symlink-alias" => {
+                let alias = staged.root.join("source-alias");
+                std::os::unix::fs::symlink(&run_root, &alias).unwrap();
+                alias.join("trials/trial-opi-native/bundle/artifacts/derived")
+            }
+            _ => unreachable!(),
+        };
+        let regrade = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .args(["regrade", "--root"])
+            .arg(&run_root)
+            .arg("--native-material")
+            .arg(&staged.material)
+            .arg("--out")
+            .arg(&out)
+            .output()
+            .unwrap();
+        let verify = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .args(["verify", "--root"])
+            .arg(&run_root)
+            .output()
+            .unwrap();
+        let after = directory_manifest_digest(&run_root);
+        let result = serde_json::json!({
+            "case":case,"regrade_exit":regrade.status.code(),
+            "regrade_stdout":String::from_utf8_lossy(&regrade.stdout),
+            "regrade_stderr":String::from_utf8_lossy(&regrade.stderr),
+            "verify_exit":verify.status.code(),
+            "verify_stdout":String::from_utf8_lossy(&verify.stdout),
+            "verify_stderr":String::from_utf8_lossy(&verify.stderr),
+            "source_before_digest":before,"source_after_digest":after,
+            "output_exists":out.exists(),
+            "passed":regrade.status.code()==Some(2) && before==after && !out.exists() && verify.status.code()==Some(0),
+            "standin_only":true,
+        });
+        println!("{result}");
+        results.push(result);
+    }
+    // A fresh external output still regrades: containment rejection
+    // never widens into refusing the valid command shape.
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    let (run_root, _) = regrade_family_root(&staged, &config, "run-external");
+    let out = staged.root.join("regrade-out");
+    let (code, report, stderr) = regrade_run(&staged, &run_root, &out);
+    assert_eq!(
+        code, 0,
+        "external fresh output must regrade: {stderr} {report}"
+    );
+    assert!(out.is_dir(), "{stderr}");
+    fs::write(
+        proof.join("regrade-results.json"),
+        serde_json::to_vec_pretty(&results).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        results.iter().all(|result| result["passed"] == true),
+        "source-contained output must reject before effects and preserve source: {results:?}"
+    );
+}
+
 /// Regrades one run root offline and returns (exit, stdout report JSON).
 fn regrade_run(staged: &Staged, run_root: &Path, out: &Path) -> (i32, serde_json::Value, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
@@ -8552,6 +8642,189 @@ fn remediation_006_plan_material_rejects_without_panic() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!root.exists());
+}
+
+#[test]
+fn max_trials_caps_every_resolved_trial_list_before_effects() {
+    // P19-AUD-002: the declared max_trials caps the final resolved trial
+    // list on the shared run path — explicit trials, selection expansion,
+    // and frozen plans — before root reservation, native acquisition or
+    // dispatch. Equality still executes exactly the declared plan.
+    let staged = stage("ok");
+    let digest = derive_integrity(&staged);
+    let with_bound = |bound: u64| {
+        experiment_text(&staged, &digest).replace(
+            "[execution]\nmode = \"native-fixture\"",
+            &format!("[execution]\nmode = \"native-fixture\"\nmax_trials = {bound}"),
+        )
+    };
+    // Explicit declared trials over the cap refuse before any effect.
+    let over = staged.root.join("config-over.toml");
+    fs::write(&over, with_bound(1)).unwrap();
+    stage_output_control(&staged, &over);
+    let root = staged.root.join("run-over");
+    let (code, stdout, stderr) = run_native(&staged, &over, &root);
+    assert_ne!(code, 0, "{stdout} {stderr}");
+    assert!(stderr.contains("max_trials"), "{stderr}");
+    assert!(!root.exists(), "over-cap request reserved no run root");
+    // Equality executes exactly the declared plan.
+    let equal = staged.root.join("config-equal.toml");
+    fs::write(&equal, with_bound(2)).unwrap();
+    stage_output_control(&staged, &equal);
+    let root = staged.root.join("run-equal");
+    let (code, stdout, stderr) = run_native(&staged, &equal, &root);
+    assert_eq!(code, 0, "{stdout} {stderr}");
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["trials"].as_array().unwrap().len(), 2);
+    for trial in report["trials"].as_array().unwrap() {
+        assert_eq!(trial["status"], "sealed");
+    }
+    // A selection document over the cap refuses on the same run path.
+    let selection = staged.root.join("selection-over.toml");
+    fs::write(
+        &selection,
+        selection_experiment_text(&staged, &digest, "[\"fixture-task\"]").replace(
+            "[execution]\nmode = \"native-fixture\"",
+            "[execution]\nmode = \"native-fixture\"\nmax_trials = 1",
+        ),
+    )
+    .unwrap();
+    let root = staged.root.join("run-selection-over");
+    let (code, stdout, stderr) = run_native(&staged, &selection, &root);
+    assert_ne!(code, 0, "{stdout} {stderr}");
+    assert!(stderr.contains("max_trials"), "{stderr}");
+    assert!(!root.exists());
+    // Freezing an over-cap selection never writes a plan artifact.
+    let (output, stdout) = run_plan_with_closed_engine(&staged, &selection);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(output.status.code(), Some(0), "{stdout} {stderr}");
+    assert!(stderr.contains("max_trials"), "{stderr}");
+    assert!(!staged.root.join("plan.json").exists());
+}
+
+#[test]
+fn zero_seal_run_control_restores_native_report_identity() {
+    // P19-AUD-004: the frozen run-control/2 restores the complete report
+    // identity with zero seals. A native run losing every trial bundle
+    // still reports its terminal-bench/2.1 identity, the declared edge
+    // pair with missing-side comparability and a zero valid denominator,
+    // and a drifted frozen integrity record refuses publication.
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    let root = staged.root.join("run");
+    let (code, stdout, stderr) = run_native(&staged, &config, &root);
+    assert_eq!(code, 0, "{stdout} {stderr}");
+    let control_path = root.join("run-control.json");
+    let control: serde_json::Value =
+        serde_json::from_slice(&fs::read(&control_path).unwrap()).unwrap();
+    assert_eq!(control["schema"], "opi-eval-run-control/2", "{control}");
+    assert!(control["integrity_record"].is_object(), "{control}");
+    // Zero seals: the frozen contract alone reconstructs the report.
+    fs::remove_dir_all(root.join("trials")).unwrap();
+    let published = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .args(["report", "--root"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(
+        published.status.success(),
+        "{}",
+        String::from_utf8_lossy(&published.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&published.stdout).unwrap();
+    assert_eq!(report["outcome"], "published", "{report}");
+    assert_eq!(report["run_outcome"], "incomplete", "{report}");
+    assert_eq!(
+        report["metrics"][0]["benchmark"], "terminal-bench/2.1",
+        "{report}"
+    );
+    assert_eq!(report["metrics"][0]["denominator"], 0, "{report}");
+    let coverage = report["coverage"].as_array().unwrap();
+    assert_eq!(coverage.len(), 1, "{report}");
+    assert_eq!(coverage[0]["edge"], "edge-1", "{report}");
+    assert!(
+        coverage[0]["comparability"]
+            .as_str()
+            .is_some_and(|reason| reason.starts_with("missing-")),
+        "{report}"
+    );
+    let counts = &report["coverage_counts"];
+    assert_eq!(counts["planned"], 2, "{report}");
+    assert_eq!(counts["unexecuted"], 2, "{report}");
+    assert_eq!(counts["valid"], 0, "{report}");
+    // A drifted frozen integrity record cannot normalize sealed bytes.
+    let drift_root = staged.root.join("run-drift");
+    let (code, stdout, stderr) = run_native(&staged, &config, &drift_root);
+    assert_eq!(code, 0, "{stdout} {stderr}");
+    let drift_control_path = drift_root.join("run-control.json");
+    let sealed_control: serde_json::Value =
+        serde_json::from_slice(&fs::read(&drift_control_path).unwrap()).unwrap();
+    let mut drifted = sealed_control.clone();
+    drifted["integrity_record"] = serde_json::json!({"tampered": true});
+    fs::write(
+        &drift_control_path,
+        serde_json::to_vec_pretty(&drifted).unwrap(),
+    )
+    .unwrap();
+    let blocked = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .args(["report", "--root"])
+        .arg(&drift_root)
+        .output()
+        .unwrap();
+    assert_eq!(blocked.status.code(), Some(1));
+    let refused: serde_json::Value = serde_json::from_slice(&blocked.stdout).unwrap();
+    assert_eq!(refused["outcome"], "verification-failed", "{refused}");
+    assert!(
+        refused["failures"]
+            .as_array()
+            .is_some_and(|failures| failures
+                .iter()
+                .any(|failure| failure["kind"] == "run-control-drift")),
+        "{refused}"
+    );
+}
+
+#[test]
+fn stalled_engine_observer_bounds_plan_admission() {
+    // P19-AUD-003: a stalled selected engine observer cannot stall plan
+    // admission. Supervised observers settle within their finite bounds,
+    // the unobservable resource stays unknown, and the freeze refuses
+    // without a partial plan artifact.
+    let staged = stage("tb21-ok");
+    stage_corpus(&staged);
+    let digest = derive_integrity(&staged);
+    let config = staged.root.join("selection-stalled.toml");
+    fs::write(
+        &config,
+        selection_experiment_text(&staged, &digest, "[\"gpu-train\"]"),
+    )
+    .unwrap();
+    let bin = staged.root.join("stalled-bin");
+    fs::create_dir_all(&bin).unwrap();
+    write_exec(&bin.join("docker"), "#!/bin/sh\nexec /bin/sleep 60\n");
+    let started = std::time::Instant::now();
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("plan")
+        .arg("--config")
+        .arg(&config)
+        .arg("--native-material")
+        .arg(&staged.material)
+        .arg("--out")
+        .arg(staged.root.join("plan.json"))
+        .env("DOCKER_HOST", "tcp://127.0.0.1:1")
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .output()
+        .unwrap();
+    let elapsed = started.elapsed();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert!(
+        elapsed < std::time::Duration::from_secs(30),
+        "stalled observer must bound admission: {elapsed:?}"
+    );
+    assert_eq!(output.status.code(), Some(2), "{stdout} {stderr}");
+    assert!(stderr.contains("unknown"), "{stderr}");
+    assert!(!staged.root.join("plan.json").exists());
 }
 
 #[test]
@@ -11786,6 +12059,158 @@ fn native_capture_helper_sanitizes_private_thinking() {
             assert!(retained.contains("\"thinking\":\"\""));
         } else {
             assert!(!retained.contains("\"signature\"") || !retained.contains("fixture-signature"));
+        }
+    }
+}
+
+#[test]
+fn native_capture_admits_only_closed_stderr_diagnostics() {
+    // P19-AUD-006: stderr admission is whole-record. Exactly one plain
+    // validated summary per record, or the pinned structured Opi stream
+    // diagnostic through its closed field set, duplicate-key rejection,
+    // static message identity and proven-safe cause grammar, retains
+    // bytes. Substring matches and unknown structured payloads keep the
+    // stream opaque with zero retained bytes under both policies.
+    let marker = "P19_INNOCUOUS_PRIVATE_PAYLOAD_MARKER_7382";
+    let structured = concat!(
+        "{\"severity\":\"error\",\"code\":\"provider_stream_error\",",
+        "\"source\":\"provider\",\"message\":\"provider stream failed\",",
+        "\"details\":{\"cause\":\"stream ended without a terminal event",
+        " (message_stop or error)\"}}"
+    );
+    let duplicated = structured.replace(
+        "\"cause\":\"",
+        &format!("\"cause\":\"{marker}\",\"cause\":\""),
+    );
+    let cases = [
+        ("empty", "", "empty"),
+        (
+            "exact-summary",
+            "provider stream failed\n",
+            "validated-diagnostic",
+        ),
+        (
+            "exact-auth-summary",
+            "provider authentication failed\n",
+            "validated-diagnostic",
+        ),
+        (
+            "exact-rate-summary",
+            "rate limited by provider\n",
+            "validated-diagnostic",
+        ),
+        (
+            "structured-safe",
+            &format!("provider stream failed\n{structured}\n"),
+            "validated-diagnostic",
+        ),
+        ("marker-only", &format!("{marker}\n"), "opaque"),
+        (
+            "token-prefixed",
+            &format!("{marker}: provider stream failed\n"),
+            "opaque",
+        ),
+        (
+            "token-suffixed",
+            &format!("provider stream failed: {marker}\n"),
+            "opaque",
+        ),
+        (
+            "structured-private-cause",
+            &format!(
+                "provider stream failed\n{}\n",
+                structured.replace(
+                    "stream ended without a terminal event (message_stop or error)",
+                    marker,
+                )
+            ),
+            "opaque",
+        ),
+        (
+            "structured-private-message",
+            &format!(
+                "provider stream failed\n{}\n",
+                structured.replace(
+                    "\"message\":\"provider stream failed\"",
+                    &format!("\"message\":\"provider stream failed: {marker}\""),
+                )
+            ),
+            "opaque",
+        ),
+        (
+            "structured-unknown-field",
+            &format!(
+                "provider stream failed\n{}\n",
+                structured.replace(
+                    "\"details\":",
+                    &format!("\"provider_payload\":\"{marker}\",\"details\":"),
+                )
+            ),
+            "opaque",
+        ),
+        (
+            "structured-duplicate-cause",
+            &format!("provider stream failed\n{duplicated}\n"),
+            "opaque",
+        ),
+    ];
+    let room = tempfile::tempdir().unwrap();
+    let helper = room.path().join("helper");
+    fs::copy(env!("CARGO_BIN_EXE_opi-eval"), &helper).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let fixture = fixtures().join("agents/pi/stream-ok.jsonl");
+    for policy in ["full", "terminal-only"] {
+        for (name, body, expected) in cases {
+            let case = room.path().join(format!("{policy}-{name}"));
+            fs::create_dir_all(&case).unwrap();
+            let source = case.join("stderr-source.txt");
+            fs::write(&source, body).unwrap();
+            let output = std::process::Command::new(&helper)
+                .args(["__native-capture", "--policy", policy])
+                .arg("--stdout")
+                .arg(case.join("stdout.log"))
+                .arg("--stderr")
+                .arg(case.join("stderr.log"))
+                .arg("--receipt")
+                .arg(case.join("receipt.json"))
+                .arg("--")
+                .arg("/bin/sh")
+                .arg("-c")
+                .arg("cat \"$1\"; cat \"$2\" >&2")
+                .arg("p19-closed-grammar")
+                .arg(&fixture)
+                .arg(&source)
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(0),
+                "{policy}/{name}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let receipt: serde_json::Value =
+                serde_json::from_slice(&fs::read(case.join("receipt.json")).unwrap()).unwrap();
+            assert_eq!(receipt["status"], "sanitized", "{policy}/{name}");
+            assert_eq!(receipt["stderr"]["status"], expected, "{policy}/{name}");
+            let retained = fs::read(case.join("stderr.log")).unwrap();
+            let expected_retained = if expected == "validated-diagnostic" {
+                body.as_bytes()
+            } else {
+                b"" as &[u8]
+            };
+            assert_eq!(retained, expected_retained, "{policy}/{name}");
+            assert!(!retained.starts_with(b"P19_INNOCUOUS"), "{policy}/{name}");
+            assert!(
+                !retained
+                    .windows(marker.len())
+                    .any(|window| window == marker.as_bytes()),
+                "{policy}/{name}: marker retained"
+            );
         }
     }
 }

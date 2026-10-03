@@ -234,6 +234,209 @@ fn doctor_reports_observations_without_a_model() {
 }
 
 #[test]
+fn doctor_bounds_stalled_and_overflowing_observers() {
+    // P19-AUD-003: every selected observer is supervised with a finite
+    // bound. A stalled or overflowing selected Docker client yields a
+    // truthful bounded report inside the finite observation budget
+    // instead of an unbounded wait, and no owned observer child survives.
+    for case in ["stall", "overflow"] {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        let config = staged_config(dir.path(), &cache.to_string_lossy());
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let docker = bin.join("docker");
+        let script = if case == "stall" {
+            "#!/bin/sh\nexec /bin/sleep 60\n"
+        } else {
+            "#!/bin/sh\nhead -c 131072 /dev/zero\n"
+        };
+        std::fs::write(&docker, script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&docker, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let path = format!("{}:/usr/bin:/bin", bin.display());
+        let started = std::time::Instant::now();
+        let output = run_doctor(&config, &[("PATH", &path)]);
+        let elapsed = started.elapsed();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{case}: bounded diagnosis must complete: stdout={stdout} stderr={stderr}"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(15),
+            "{case}: bounded diagnosis took {elapsed:?}"
+        );
+        let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+        let observations = report["observations"].as_array().unwrap();
+        let engine = observations
+            .iter()
+            .find(|observation| observation["id"] == "linux-engine")
+            .unwrap();
+        assert_eq!(engine["status"], "unreachable", "{case}: {stdout}");
+        let reason = engine["reason"].as_str().unwrap();
+        assert!(!reason.is_empty(), "{case}: {stdout}");
+        let expected = if case == "stall" {
+            "timed out"
+        } else {
+            "capture ceiling"
+        };
+        assert!(reason.contains(expected), "{case}: {reason}");
+    }
+}
+
+#[test]
+fn doctor_reports_every_selected_preparation_input() {
+    // P19-AUD-010: doctor derives its material observations from the same
+    // selected benchmark/runner requirements `prepare` verifies. A cache
+    // holding only the static lock and selected agents still reports
+    // every remaining selected requirement with its expected location,
+    // a pi-only selection requires no opi input, and an empty cache
+    // reports the unknownable categories with reasons.
+    let dir = tempfile::tempdir().unwrap();
+    let cache = dir.path().join("cache");
+    std::fs::create_dir_all(cache.join("agents")).unwrap();
+    let lock_source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("external-locks/static/linux-x86_64.json");
+    std::fs::create_dir_all(cache.join("pins/static")).unwrap();
+    std::fs::copy(&lock_source, cache.join("pins/static/linux-x86_64.json")).unwrap();
+    std::fs::write(
+        cache.join("agents/pi"),
+        b"fixture agent bytes, never executed",
+    )
+    .unwrap();
+    std::fs::write(
+        cache.join("agents/opi"),
+        b"fixture agent bytes, never executed",
+    )
+    .unwrap();
+    let config = staged_config(dir.path(), &cache.to_string_lossy());
+    let output = run_doctor(&config, &[("DOCKER_HOST", "tcp://127.0.0.1:1")]);
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let material: Vec<&serde_json::Value> = report["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|observation| {
+            observation["id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("material:"))
+        })
+        .collect();
+    let ids: Vec<&str> = material
+        .iter()
+        .map(|observation| observation["id"].as_str().unwrap())
+        .collect();
+    for category in [
+        "corpora:",
+        "profiles:",
+        "tools:uv",
+        "runners:",
+        "integrations:",
+        "scripted-provider",
+        "native-capture-helper",
+    ] {
+        assert!(
+            ids.iter().any(|id| id.contains(category)),
+            "missing {category} observation: {ids:?}"
+        );
+    }
+    for observation in &material {
+        assert!(
+            observation["detail"]
+                .as_str()
+                .is_some_and(|detail| !detail.is_empty()),
+            "every selected input names its expected location: {observation}"
+        );
+    }
+    let by_id = |needle: &str| {
+        material
+            .iter()
+            .find(|observation| observation["id"].as_str().unwrap().contains(needle))
+            .unwrap_or_else(|| panic!("missing {needle}: {ids:?}"))
+    };
+    assert_eq!(by_id("profiles:")["status"], "missing");
+    assert_eq!(by_id("corpora:")["status"], "missing");
+    assert_eq!(by_id("tools:uv")["status"], "missing");
+    assert_eq!(by_id("runners:harbor")["status"], "missing");
+    assert_eq!(by_id("native-capture-helper")["status"], "missing");
+    assert_eq!(by_id("agent:opi")["status"], "present");
+    assert_eq!(by_id("agent:pi")["status"], "present");
+
+    // Pi-only selection: the unselected product's input is not required.
+    let pi_only = fixtures_dir().join("experiment/pi-repetitions.toml");
+    let pi_config = dir.path().join("pi-only.toml");
+    let text = std::fs::read_to_string(&pi_only)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            if line.strip_prefix("cache = ").is_some() {
+                format!("cache = {:?}", cache.to_string_lossy())
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(&pi_config, text).unwrap();
+    let output = run_doctor(&pi_config, &[("DOCKER_HOST", "tcp://127.0.0.1:1")]);
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let ids: Vec<&str> = report["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|observation| observation["id"].as_str())
+        .collect();
+    assert!(ids.contains(&"material:agent:pi"), "{ids:?}");
+    assert!(!ids.contains(&"material:agent:opi"), "{ids:?}");
+    assert!(
+        ids.iter().any(|id| id.contains("runners:harbor")),
+        "{ids:?}"
+    );
+
+    // An empty cache keeps every category visible with unknown/missing
+    // reasons instead of guessing.
+    let empty = tempfile::tempdir().unwrap();
+    let empty_cache = empty.path().join("cache");
+    std::fs::create_dir_all(&empty_cache).unwrap();
+    let config = staged_config(empty.path(), &empty_cache.to_string_lossy());
+    let output = run_doctor(&config, &[("DOCKER_HOST", "tcp://127.0.0.1:1")]);
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let by_id = |needle: &str| {
+        report["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|observation| {
+                observation["id"]
+                    .as_str()
+                    .is_some_and(|id| id.contains(needle))
+            })
+            .unwrap_or_else(|| panic!("missing {needle}: {stdout}"))
+    };
+    assert_eq!(by_id("material:static-lock")["status"], "missing");
+    assert_eq!(by_id("tools:uv")["status"], "unknown");
+    assert!(
+        by_id("tools:uv")["reason"]
+            .as_str()
+            .is_some_and(|reason| !reason.is_empty()),
+        "{stdout}"
+    );
+}
+
+#[test]
 fn doctor_rejects_an_invalid_config_without_observing() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("broken.toml");

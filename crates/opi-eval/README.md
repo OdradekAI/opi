@@ -93,7 +93,17 @@ cargo run -p opi-eval -- prepare --config experiment.toml --out "$DEMO_DIR/mater
 
 `doctor` reports Linux-engine reachability, architecture, WSL/Docker-
 observed CPU/memory/GPU/disk, and missing materials with reasons for
-unknown observations, starting no model. `prepare` verifies the seeded
+unknown observations, starting no model. Its material observations
+cover every selected preparation input `prepare` verifies — profile and
+corpus, the uv tool pin, the runner project/lock/interpreter/entrypoint,
+applicable integrations, the scripted provider and the capture helper —
+each with its expected cache location; only selected products are
+required, and nothing is downloaded or executed. Every observer — engine,
+version, disk, context, and GPU probes in `doctor`, `prepare`, `plan`
+and `run` — runs under the process supervisor with a finite per-probe
+bound, the 16 KiB capture ceiling and verified owned-tree cleanup: a
+stalled or overflowing observer becomes a truthful bounded refusal
+reason instead of an unbounded wait. `prepare` verifies the seeded
 local cache (`[storage].cache`) against the pinned static lock, freezes
 the selected benchmark, subject executables, and every requested image
 identity, checks the frozen task's resource requirements against the
@@ -224,9 +234,17 @@ byte-stable normalized report with scores from verified sealed evidence; and
 `regrade --root R --native-material M --out D` is the distinct actual
 native regrading described below - a byte check never runs under the
 regrade name. Every run binds a run-level
-`run-control.json` before its first effect (experiment identity,
-manifest digest, selection, corpus size, exact planned trials), so the
-offline report preserves unstarted trials even when no trial sealed.
+`run-control.json` (`opi-eval-run-control/2`) before its first effect
+(experiment identity, manifest digest, selection, corpus size, exact
+planned trials, the complete resolved experiment contract and the
+admitted integrity record), so the
+offline report preserves unstarted trials even when no trial sealed:
+an interrupted or bundle-less run still reports its declared edge/control
+pairs, native benchmark identity, exclusions and a zero valid
+denominator, never inventing a grade or a cross-protocol pair. Sealed
+control bytes are cross-checked against the frozen contract; drift
+refuses publication. Legacy `/1` roots keep their read-only meaning
+without frozen topology.
 The report consumes per-trial settlement records - never stderr tokens or
 process exits - for its outcome classes. Unsealed records must agree with the
 experiment and planned-trial bindings; they preserve attempted/invalid or
@@ -313,8 +331,12 @@ rejects fail-closed, as do tampered bundles, missing or altered Agent
 artifacts, a drifted patch base, and drifted task material identity. Exit 0
 (`"outcome":"regraded"`) means every sealed native trial regraded; exit 1
 names the typed per-trial rejections; exit 2 rejects the request itself (a
-root with no native trial, an unreadable material, or an existing output
-root, which a regrade never overwrites). Only declared, digest-bound preserved
+root with no native trial, an unreadable material, an existing output
+root, which a regrade never overwrites, or an output that resolves
+inside the canonical run root — including through a missing parent
+chain or a symlink alias — which is refused before any mkdir, copy or
+verifier effect so the source stays byte-identical). Only declared,
+digest-bound preserved
 inputs are restored; missing shared final state cannot be replaced by a
 pristine task. Images must already be cached: this operation never builds or
 pulls. Cancellation and finite process bounds settle owned effects before

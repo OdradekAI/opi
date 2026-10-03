@@ -340,6 +340,60 @@ fn hermetic_paired_group_runs_end_to_end() {
 /// typed failure visible and no fallback Agent or parser started (the
 /// grade dispatch is mechanically refused; the verifier never runs).
 #[test]
+fn explicit_trial_count_admits_declared_max_trials() {
+    // P19-AUD-002: explicitly declared hermetic trials admit the declared
+    // max_trials on the shared run path — an over-cap request refuses
+    // before the run root exists, equality executes exactly the declared
+    // pair, and omission keeps the current unbounded behavior.
+    let dir = tempfile::tempdir().unwrap();
+    let base = std::fs::read_to_string(fixtures_dir().join("experiment").join("local-paired.toml"))
+        .unwrap();
+    for (name, execution) in [
+        (
+            "over",
+            "\n[execution]\nmode = \"hermetic\"\nmax_trials = 1\n",
+        ),
+        (
+            "equal",
+            "\n[execution]\nmode = \"hermetic\"\nmax_trials = 2\n",
+        ),
+        ("omitted", "\n[execution]\nmode = \"hermetic\"\n"),
+    ] {
+        let config = dir.path().join(format!("config-{name}.toml"));
+        std::fs::write(&config, base.clone() + execution).unwrap();
+        let root = dir.path().join(format!("run-{name}"));
+        std::fs::create_dir_all(&root).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .arg("run")
+            .arg("--config")
+            .arg(&config)
+            .arg("--root")
+            .arg(root.canonicalize().unwrap())
+            .arg("--fixtures")
+            .arg(fixtures_dir().canonicalize().unwrap())
+            .args(["--behavior", "happy"])
+            .output()
+            .expect("spawn the opi-eval run binary");
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        if name == "over" {
+            assert_ne!(output.status.code(), Some(0), "{stdout} {stderr}");
+            assert!(stderr.contains("max_trials"), "{stderr}");
+            assert!(!root.join("run-control.json").exists());
+            assert!(!root.join("trials").exists());
+        } else {
+            assert_eq!(output.status.code(), Some(0), "{name}: {stderr} {stdout}");
+            let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+            let trials = report["trials"].as_array().unwrap();
+            assert_eq!(trials.len(), 2, "{name}: {report}");
+            for trial in trials {
+                assert_eq!(trial["status"], "sealed", "{name}: {trial}");
+            }
+        }
+    }
+}
+
+#[test]
 fn agent_stream_contract_fails_closed() {
     struct Case {
         behavior: &'static str,

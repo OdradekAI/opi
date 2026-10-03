@@ -334,14 +334,19 @@ pub(crate) fn native_terminal_completion(
 /// trace root.
 /// The typed terminal provider cause from the pinned pi client's own
 /// evidence: the client echoes the HTTP status it received and its own
-/// closed protocol diagnostics. Anything else stays an unknown provider
-/// failure - its cause is never guessed.
+/// closed protocol diagnostics — the three exact pinned truncation
+/// messages across the Completions, Anthropic and Responses wires.
+/// Anything else - including near matches - stays an unknown provider
+/// failure; its cause is never guessed.
 fn pi_provider_failure_kind(error_message: &str) -> &'static str {
     if error_message.starts_with("401") || error_message.starts_with("403") {
         "provider-auth-failure"
     } else if error_message.starts_with("429") {
         "provider-rate-limit-exhausted"
-    } else if error_message == "Stream ended without finish_reason" {
+    } else if error_message == "Stream ended without finish_reason"
+        || error_message == "Anthropic stream ended without a stop reason"
+        || error_message == "OpenAI Responses stream ended before a terminal response event"
+    {
         "provider-protocol-error"
     } else {
         "provider-failure"

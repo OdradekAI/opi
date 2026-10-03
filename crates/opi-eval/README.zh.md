@@ -87,7 +87,15 @@ cargo run -p opi-eval -- prepare --config experiment.toml --out "$DEMO_DIR/mater
 
 `doctor` 报告 Linux engine 可达性、架构、WSL/Docker 观测到的
 CPU/内存/GPU/磁盘，以及缺失的 material；无法观测的项带原因说明，且
-全程不启动任何 model。`prepare` 依据 pinned static lock 校验种子化的
+全程不启动任何 model。其 material 观测覆盖 `prepare` 校验的每一个
+被选中的准备输入——profile 与 corpus、uv 工具 pin、runner 的
+project/lock/interpreter/entrypoint、适用的 integration、scripted
+provider 与 capture helper——每一项都带预期缓存位置；只有被选中的
+product 才是必需项，且不下载、不执行任何内容。`doctor`、`prepare`、`plan` 与 `run` 中的每一个
+观测者——engine、version、磁盘、context 与 GPU 探测——都在进程监督
+器下运行，拥有有限的单次探测上限、16 KiB 捕获上限与经过验证的
+自有进程树清理：停滞或溢出的观测者只会变成如实的有界拒绝原因，
+绝不会造成无限等待。`prepare` 依据 pinned static lock 校验种子化的
 本地缓存（`[storage].cache`），冻结所选 benchmark、subject 可执行文件
 与全部被请求的 image 身份，将冻结任务的资源需求与本地观测比对
 （未满足或无法观测都会整体拒绝，绝不静默收缩集合），并产出可被
@@ -195,9 +203,14 @@ cargo run -p opi-eval -- report --root "$DEMO_DIR/run" --out "$DEMO_DIR/report.j
 `report --root R --out O` 重建字节稳定的规范化报告，其分数只来自已验证的
 sealed 证据；`regrade --root R --native-material M --out D` 则是下文
 单独描述的真正原生重评——字节校验绝不以 regrade 之名运行。
-每次 run 在首个效果之前写入 run 级 `run-control.json`（实验身份、
-manifest digest、selection、corpus 规模、精确的 planned trials），
-因此即使没有任何 trial 封存，离线报告也能保留未启动的 trial。
+每次 run 在首个效果之前写入 run 级 `run-control.json`
+（`opi-eval-run-control/2`：实验身份、manifest digest、selection、
+corpus 规模、精确的 planned trials、完整的已解析实验契约与被接纳的
+integrity 记录），因此即使没有任何 trial 封存，离线报告也能保留未启动的
+trial：被中断或丢失 bundle 的 run 仍会报告其声明的 edge/control 配对、
+原生 benchmark 身份、排除项与零 valid 分母，绝不伪造分数或跨协议配对。
+sealed 控制字节会与冻结契约交叉校验；漂移会拒绝发布。遗留的 `/1` root
+保持其无冻结拓扑的只读语义。
 报告的结果分类消费逐 trial settlement 记录，绝不从 stderr 字符或进程
 退出码推断。未封存记录必须与实验及 planned trial 的绑定一致；它们仅保留
 attempted/invalid 或效果未知的覆盖信息，不提供已验证状态、原生事实或分数。
@@ -275,8 +288,10 @@ manifest 一致。发现修改或缺失 seal 时，命令以 1 退出，并在 J
 替代。缓存材料缺失、输入被修改、任务或补丁基线漂移，以及无法离线满足的 verifier
 网络要求均会被拒绝。取消和有限进程边界会先完成专属资源清理；清理无法确认时，
 禁止成功结算和后续派发。退出码 0（`"outcome":"regraded"`）表示全部原生 trial
-重评成功，1 表示逐 trial 类型化拒绝，2 表示请求被拒绝（没有原生 trial、材料不可读
-或输出目录已存在）；已有输出目录不会被覆盖。
+重评成功，1 表示逐 trial 类型化拒绝，2 表示请求被拒绝（没有原生 trial、材料不可读、
+输出目录已存在，或输出在规范 run root 内部——包括经缺失父目录链或符号链接别名——
+在任何 mkdir、复制或 verifier 效果之前即被拒绝，源字节保持不变）；已有输出目录
+不会被覆盖。
 
 ### 4. 生成报告
 

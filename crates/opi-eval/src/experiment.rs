@@ -1415,13 +1415,16 @@ fn array_entries<'a>(
     }
 }
 
-/// Optional non-negative integer field; `None` when absent or empty.
+/// Optional positive-integer field; `None` only when the field is
+/// absent. A present string (quoted number, empty or otherwise),
+/// boolean, float, or non-positive integer is the existing typed control
+/// error: quoted bounds never silently erase the limit.
 fn optional_u64(
     table: &toml::map::Map<String, toml::Value>,
     field: &str,
 ) -> Result<Option<u64>, ResolveError> {
     match table.get(field) {
-        None | Some(toml::Value::String(_)) => Ok(None),
+        None => Ok(None),
         Some(toml::Value::Integer(value)) if *value > 0 => Ok(Some(*value as u64)),
         Some(_) => Err(ResolveError::InvalidControlValue {
             control: field.to_owned(),

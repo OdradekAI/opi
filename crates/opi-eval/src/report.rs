@@ -395,6 +395,23 @@ impl ReportBuilder {
                 }));
             }
         }
+        // The complete frozen snapshot is authoritative when no trial
+        // sealed (P19-AUD-004): an interrupted /2 run still reports its
+        // declared topology, native benchmark identity, exclusions and
+        // controls. `/1` roots keep the legacy incomplete meaning: no
+        // contract was frozen, so no topology is invented.
+        if experiment_bytes.is_none()
+            && let Some(control) = &run_control
+            && control["schema"] == "opi-eval-run-control/2"
+            && let (Ok(contract), Ok(record)) = (
+                serde_json::from_value::<serde_json::Value>(control["experiment_contract"].clone()),
+                serde_json::from_value::<serde_json::Value>(control["integrity_record"].clone()),
+            )
+        {
+            experiment = contract;
+            integrity = record;
+            integrity_bytes = serde_json::to_vec(&integrity).unwrap_or_default();
+        }
         let integrity_digest = if integrity_bytes.is_empty() {
             String::new()
         } else {
@@ -402,10 +419,15 @@ impl ReportBuilder {
         };
         // The run-level binding must match the sealed control evidence:
         // a drifted run-control identity never silently normalizes a
-        // run root (`P19-D06`).
+        // run root (`P19-D06`), and a `/2` frozen contract or integrity
+        // record that drifted from the sealed bytes refuses publication
+        // (P19-AUD-004).
         if let Some(control) = &run_control
             && !trials.is_empty()
-            && !control_matches_experiment(control, &experiment)
+            && (!control_matches_experiment(control, &experiment)
+                || (control["schema"] == "opi-eval-run-control/2"
+                    && (control["experiment_contract"] != experiment
+                        || control["integrity_record"] != integrity)))
         {
             failures.push(serde_json::json!({
                 "trial": null,
@@ -578,20 +600,40 @@ impl ReportBuilder {
 
     /// Only absence permits legacy binding; malformed coverage never
     /// silently replaces a declared denominator with the surviving bundles.
+    /// `/1` roots keep their legacy read-only meaning (identity and
+    /// planned slots only); `/2` additionally validates the complete
+    /// frozen experiment/integrity snapshot persisted before the first
+    /// intent (P19-AUD-004).
     fn read_run_control(&self) -> Result<Option<serde_json::Value>, String> {
         let Some(control) =
             read_optional_json(&self.checked_input_path(Path::new("run-control.json"))?)?
         else {
             return Ok(None);
         };
-        if control["schema"] != "opi-eval-run-control/1"
-            || control["experiment"].as_str().is_none_or(str::is_empty)
+        if !matches!(
+            control["schema"].as_str(),
+            Some("opi-eval-run-control/1" | "opi-eval-run-control/2")
+        ) || control["experiment"].as_str().is_none_or(str::is_empty)
             || control["manifest_digest"].as_str().is_none_or(|digest| {
                 digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit())
             })
             || trial_slots(&control["planned_trials"]).is_none()
         {
             return Err("run-control-invalid".to_owned());
+        }
+        if control["schema"] == "opi-eval-run-control/2" {
+            let contract = &control["experiment_contract"];
+            let record = &control["integrity_record"];
+            if !contract.is_object()
+                || !record.is_object()
+                || contract["experiment_id"] != control["experiment"]
+                || contract["manifest_digest"] != control["manifest_digest"]
+                || trial_slots(&contract["trials"]).is_none()
+                || trial_slots(&contract["trials"])
+                    .is_some_and(|planned| Some(planned) != trial_slots(&control["planned_trials"]))
+            {
+                return Err("run-control-invalid".to_owned());
+            }
         }
         Ok(Some(control))
     }

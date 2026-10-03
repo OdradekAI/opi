@@ -163,8 +163,16 @@ fn planned_coverage_survives_total_bundle_loss() {
             .unwrap_or_else(|error| panic!("run-control must exist: {error}")),
     )
     .unwrap();
-    assert_eq!(control["schema"], "opi-eval-run-control/1", "{control}");
+    assert_eq!(control["schema"], "opi-eval-run-control/2", "{control}");
     assert_eq!(control["experiment"], "local-paired-hermetic", "{control}");
+    assert!(
+        control["experiment_contract"].is_object(),
+        "the frozen experiment contract binds before effects: {control}"
+    );
+    assert!(
+        control["integrity_record"].is_object(),
+        "the frozen integrity record binds before effects: {control}"
+    );
     assert_eq!(
         control["manifest_digest"].as_str().map(str::len),
         Some(64),
@@ -181,7 +189,9 @@ fn planned_coverage_survives_total_bundle_loss() {
 
     // Total bundle loss: with every trial directory gone, the report
     // still reconstructs the planned coverage - attempted 0, unexecuted
-    // 2 - instead of failing with no evidence.
+    // 2 - instead of failing with no evidence, and the frozen /2
+    // contract restores the declared edge/control pair, the known
+    // benchmark identity and a zero valid denominator (P19-AUD-004).
     std::fs::remove_dir_all(root.path().join("trials")).unwrap();
     let root_arg = root.path().canonicalize().unwrap();
     let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
@@ -195,6 +205,23 @@ fn planned_coverage_survives_total_bundle_loss() {
     assert_eq!(counts["planned"], 2, "{published}");
     assert_eq!(counts["attempted"], 0, "{published}");
     assert_eq!(counts["unexecuted"], 2, "{published}");
+    assert_eq!(counts["valid"], 0, "{published}");
+    assert_eq!(
+        published["metrics"][0]["benchmark"], "terminal-bench/2.1",
+        "{published}"
+    );
+    assert_eq!(published["metrics"][0]["denominator"], 0, "{published}");
+    let coverage = published["coverage"].as_array().unwrap();
+    assert_eq!(
+        coverage.len(),
+        1,
+        "declared edge pair restored: {published}"
+    );
+    assert_eq!(coverage[0]["edge"], "edge-1", "{published}");
+    assert_eq!(
+        coverage[0]["comparability"], "missing-baseline-trial",
+        "{published}"
+    );
     assert_eq!(
         published["planned_binding"]["source"], "run-control",
         "{published}"
@@ -218,7 +245,8 @@ fn run_control_binds_before_any_effect_and_rejects_drift() {
     );
 
     // A tampered run-control identity cannot normalize sealed evidence:
-    // the manifest digest no longer matches the sealed contract.
+    // a frozen /2 integrity record that drifted from the sealed bytes
+    // refuses publication.
     let tampered = tempfile::tempdir().unwrap();
     let (code, report, stderr) = run_experiment("local-paired.toml", "happy", tampered.path());
     assert_eq!(code, 0, "seed run must succeed: {stderr} report: {report}");
@@ -226,15 +254,8 @@ fn run_control_binds_before_any_effect_and_rejects_drift() {
         &std::fs::read_to_string(tampered.path().join("run-control.json")).unwrap(),
     )
     .unwrap();
-    let drifted = serde_json::json!({
-        "schema": control["schema"],
-        "experiment": "local-paired-hermetic",
-        "manifest_digest": "f".repeat(64),
-        "corpus_tasks": control["corpus_tasks"],
-        "selection": control["selection"],
-        "planned_trials": control["planned_trials"],
-        "plan_digest": control["plan_digest"],
-    });
+    let mut drifted = control.clone();
+    drifted["integrity_record"] = serde_json::json!({"tampered": true});
     std::fs::write(
         tampered.path().join("run-control.json"),
         serde_json::to_string_pretty(&drifted).unwrap(),
@@ -250,6 +271,48 @@ fn run_control_binds_before_any_effect_and_rejects_drift() {
         blocked["failures"][0]["kind"], "run-control-drift",
         "{blocked}"
     );
+
+    // Interruption before any seal (P19-AUD-004): the frozen /2
+    // contract restores the declared edge pair, the known benchmark
+    // identity and zero-valid coverage from the crash point.
+    let interrupted = tempfile::tempdir().unwrap();
+    let (code, _report, stderr) = run_experiment(
+        "local-paired.toml",
+        "crash-after-intent",
+        interrupted.path(),
+    );
+    assert_eq!(code, 70, "the crash behavior must exit 70: {stderr}");
+    let root_arg = interrupted.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "zero-seal report must publish: {stderr} {stdout}");
+    let zero_seal: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    assert_eq!(zero_seal["outcome"], "published", "{zero_seal}");
+    assert_eq!(zero_seal["run_outcome"], "incomplete", "{zero_seal}");
+    assert_eq!(
+        zero_seal["metrics"][0]["benchmark"], "terminal-bench/2.1",
+        "{zero_seal}"
+    );
+    assert_eq!(zero_seal["metrics"][0]["denominator"], 0, "{zero_seal}");
+    let coverage = zero_seal["coverage"].as_array().unwrap();
+    assert_eq!(coverage.len(), 1, "{zero_seal}");
+    assert_eq!(
+        coverage[0]["comparability"],
+        if coverage[0]["baseline_trial"]
+            .as_str()
+            .is_some_and(str::is_empty)
+        {
+            "missing-baseline-trial"
+        } else {
+            "missing-candidate-trial"
+        },
+        "{zero_seal}"
+    );
+    let counts = &zero_seal["coverage_counts"];
+    assert_eq!(counts["planned"], 2, "{zero_seal}");
+    assert_eq!(counts["attempted"], 0, "{zero_seal}");
+    assert_eq!(counts["unexecuted"], 2, "{zero_seal}");
+    assert_eq!(counts["valid"], 0, "{zero_seal}");
 }
 
 /// `EVAL-A15`: a sealed artifact byte change is rejected by verification
