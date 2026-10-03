@@ -1,372 +1,397 @@
 # Phase 19 Remediation Plan
 
 **Status**: READY-FOR-APPLY
-**Audit index SHA-256**: `7ae158dc8cfbdf0d4ec23497f2d5d34883878156f5eb1f6b83ae07d0ce98dd57`
-**Remediation head**: `31b3ae11095a41f1cbec46c6886b8513de2a292c`
+**Audit index SHA-256**: `fe9e6af9cd26f69556c0224f219500626181ae2829d7099af99500e73faff5db`
+**Remediation head**: `f039d682aec11365e381685186faad114f0b909f`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
-**Dirty-worktree baseline**: staged=[]; unstaged=[]; untracked=[]; committed=none-for-this-task.
-**Current continuation inventory**: staged=[]; unstaged=[the two task-owned fixed plan files plus six separately owned workflow-maintenance carry-in files listed below]; untracked=[]; HEAD unchanged.
+**Dirty-worktree baseline**: original plan admission at `3e1301178c471499f0fc36d4a8b1cd1f467cef7d` had staged=[], unstaged=[], untracked=[]; commit continuation at remediation head has staged=[], task-owned unstaged=[remediation.plan.md, remediation.plan.dispositions.jsonl], carried-in=[], untracked=[].
 **Unresolved decisions**: none
-**Pending closure evidence**: C005 fresh acceptance/input-budget freeze; C006 executed native witnesses/regrade. Both remain explicit Cannot confirm exclusions; their authorization and handling decisions are resolved.
 
-Planning owns only this fixed plan pair. The previously tracked clean pair was replaced without consuming its earlier content; this is a continuation of those owned edits. Current audit bytes, result pair, ledgers and production source are retained. This plan branch owns no production edit, branch or commit. The user separately authorized bounded no-model native witnesses/offline regrade with verified local caches, and prospective paid acceptance/retry with glm-5.3-flash under the frozen scope below. No further budget confirmation is required inside that scope. Source-repair and material admission gates remain; no fresh paid acceptance has started. Application of B1-B9 requires a new explicit apply invocation with this plan's exact validator-emitted digest. Ready status does not close C005/C006, change the audit verdict or admit Phase exit.
+## Admission and source identity
 
-The six workflow-maintenance carry-in files are `.agents/skills/README.md`, `.agents/skills/README.zh.md`, `.agents/skills/opi-eval/SKILL.md`, `.agents/skills/opi-eval/references/fidelity-run.md`, `.agents/skills/opi-eval/references/local-acceptance.md` and `.agents/skills/opi-eval/references/native-run.md`. Preserve them unchanged. Their defaults guide prospective operator orchestration, but their uncommitted bytes are not remediation_head committed evidence, archive source applicability or criterion-closure proof. Human budget authority is recorded separately below.
+audit-set validation passed before semantic inputs. Index revision 21 aggregates FAIL. Two equal peers contribute 12 strict-union source keys (Codex 11, pi 1). Same textual IDs stay separate. Prior fixed plan outputs were tracked/clean and replaced without reading earlier content. Existing results stay untouched and are not current closure evidence.
 
-Current committed code and plan-stage checks use a unique `git archive` export at `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-p19-0219472cad1f4164a338d6dccbe577ec/src`, without a Git worktree. Synthetic red tests were added only to this export or its parent; production code was not edited. The existing persistent WSL Cargo cache `/home/luiz/.cache/opi/cargo-targets/opi-8abcf38f9871653e` was reused with leases. No per-session target, cleanup or cache deletion was used.
+| Alias | Full source run | Audit head | Findings SHA-256 | Verdict | Requirements |
+|---|---|---|---|---|---|
+| C | `phase19-codex-gpt61-f60e458-20261003t041015z` | `f60e458f9d1bceffcba5caaef11e8c0d7312ff59` | `37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a` | FAIL | 56 |
+| P | `phase19-pi-glm53-2e82c99-20261002t204027z` | `2e82c99aa32ca3a56acef3e2b969223161d370c7` | `d8dd6dd9833a5575975171b815f790d5c1c26ae3df4d5b94b21a84663cb8c7d1` | PASS | 13 |
 
-## Active sources and criterion alignment
+Aliases resolve only to these exact run/digest identities. Original source evidence/severities stay unchanged. Current run/digest controls admission; title similarity cannot replace identity, and an older source cannot enter this union.
 
-| Alias | Full source run | Findings SHA-256 | Audit head |
-|---|---|---|---|
-| C | `phase19-codex-gpt61-2465aeb-20261001t055252z` | `90d9a494d59824cb99dfcf749cf6b0c30e7fa6eb79959b7e406fa2eeea64b5a1` | `2465aeb80ad84d06172acc142f6d5ffbceb201cc` |
-| P | `phase19-pi-glm53-efe2f69-20261001t043357z` | `fb086ccb76ea53156b0600c6b46f8e8c1b9fb8842515f3acff8669ec69923b70` | `efe2f6906fa47003bf806bddec0b15f2d20dd3c3` |
+Committed source was exported using git archive into unique external temporary directories, without a Git worktree. WSL/Linux locked/offline Cargo build passed using the existing stable external cache and incremental compilation. B6 adds only its regression test in a separate archive copy; production bytes remain baseline. Broad searches and a final Git diff accidentally exposed history rows and removed prior-plan text; none supplied a finding decision, authorization or closure evidence. The affected worker was replaced, and current-file reads name active files exactly.
 
-The current run/digest controls admission. Title similarity cannot substitute for identity, and older sources cannot enter this strict union. Both peers remain independent sources; neither is canonical. All fourteen `(audit_run_id, id)` keys have exactly one disposition. Source severity is retained; shared fixture repair schedules at Major.
+The user subsequently authorized committing all project changes. Research commit `f039d682aec11365e381685186faad114f0b909f` adds only the 16 non-normative docs/research/pi-1.0.0/ files, so the fixed plan is renewed at that committed source baseline. A new unique git archive export was inspected: 922 existing non-plan file/symlink identities (exact byte digests, modes and link targets) match the original `3e1301178c471499f0fc36d4a8b1cd1f467cef7d` evidence export; the current index and all registered source digests also match. The new export at /tmp/opi-commit-baseline-SzKBh64x passed its own python3 scripts/opi-doc-check.py. All recorded original source-dependent red checks and two executed native witnesses therefore remain applicable at remediation_head; their build/execution provenance stays at the original head. No invalidating source change or new runtime execution occurred. Pending green/native/final checks remain pending. The exact comparison inventory and receipts appear below; research prose supplies no finding or closure authority.
 
-Both members register the same current parent and supplemental source bytes: `docs/opi-spec.md` SHA-256 `1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db`; supplemental English `5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a`; Chinese `d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194`. The supplemental path is `docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md` and its `.zh.md` counterpart. These registered sources supply authority; arbitrary unregistered designs and prior conclusions do not.
+Only registered source fields were projected from the committed ledger: docs/opi-spec.md (1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db), Phase19 English source (5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a) and Chinese counterpart (d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194). Scope derives from parent CTRL-002/003/005/006 and registered Phase19 sections4-9/AC001,006,008,009,010,011,012,013. No spec, ledger, dependency graph, Opi runtime or authority change is proposed.
 
-| Criterion alignment | Codex requirement/state | pi requirement/state | Current resolution |
-|---|---|---|---|
-| Same registered path/digest, section8 gates; exact citation strings differ | R45 not-met (008,009) | R-GATES not-met (002), R-AC011 partially-met (001) | Keep requirements separate. Both formatter and fixture failures reproduce at HEAD. |
-| Same source/digest, AC-011/section8; independently stated obligations | R41 partially-met (007), R42 partially-met (004) | R-AC011 partially-met (001) | Fixture observation does not refute duplicate CI policy or root-admission defect. |
-| Same source/digest, distinct AC-012/section8 and native-proof criteria | R44 partially-met (005), R07/R10/R13/R31 not-assessable (006) | R-AC012 met (Info003) | Credit genuine six trials/source applicability without inferring missing budget/witness/regrade proof. No vote or state overwrite. |
-| Remaining independently stated AC-006/010/013 and PRIN-002 criteria | R16/R33/R34/R35/R49/R56 (001,002,003,010,011) | No matching source finding | Preserve Codex source rows and verify against current code/tests. |
+## Criterion cross-reference
+
+Exact criterion identity remains each sidecar `(path, sha256, citation)`. Both peers cite the same registered source bytes with different citation granularity. This table cross-references coverage; it does not merge original identities/states or resolve disagreement by voting. All 69 original states remain represented.
+
+| Registered AC family | C original requirement/state | P original requirement/state |
+|---|---|---|
+| P19-AC-001 | P19-AC-001-diagnose: partially-met; P19-AC-001-prepare: partially-met; P19-AC-001-plan: partially-met; P19-AC-001-run: partially-met; P19-AC-001-live: not-assessable | P19-R-001: met |
+| P19-AC-002 | P19-AC-002-binding: met; P19-AC-002-reject: met; P19-AC-002-settlement: met; P19-AC-002-capture: partially-met | P19-R-002: met |
+| P19-AC-003 | P19-AC-003-lifecycle: met; P19-AC-003-witness: not-assessable; P19-AC-003-live: not-assessable | P19-R-003: met |
+| P19-AC-004 | P19-AC-004-handoff: met; P19-AC-004-witness: not-assessable; P19-AC-004-live: not-assessable | P19-R-004: met |
+| P19-AC-005 | P19-AC-005-patch: met; P19-AC-005-witness: not-assessable; P19-AC-005-live: not-assessable | P19-R-005: met |
+| P19-AC-006 | P19-AC-006-projection: met; P19-AC-006-fixture: not-assessable; P19-AC-006-controls: met; P19-AC-006-terminal: partially-met; P19-AC-006-fallback: met; P19-AC-006-live: not-assessable | P19-R-006: met |
+| P19-AC-007 | P19-AC-007-inventory: met; P19-AC-007-preflight: partially-met; P19-AC-007-freeze: partially-met | P19-R-007: met |
+| P19-AC-008 | P19-AC-008-metrics: partially-met; P19-AC-008-coverage: partially-met; P19-AC-008-classification: met; P19-AC-008-pairs: partially-met; P19-AC-008-telemetry: met | P19-R-008: met |
+| P19-AC-009 | P19-AC-009-verify: met; P19-AC-009-recompute: met; P19-AC-009-regrade: partially-met; P19-AC-009-regrade-reject: met; P19-AC-009-witness: not-assessable | P19-R-009: met |
+| P19-AC-010 | P19-AC-010-credentials: met; P19-AC-010-bounds: not-met; P19-AC-010-cancel: partially-met; P19-AC-010-recovery: met; P19-AC-010-replacement: met; P19-AC-010-native-cleanup: not-assessable | P19-R-010: met |
+| P19-AC-011 | P19-AC-011-default: met; P19-AC-011-ci: met; P19-AC-011-verifier: partially-met; P19-AC-011-provenance: not-assessable | P19-R-011: met |
+| P19-AC-012 | P19-AC-012-six: not-assessable; P19-AC-012-freeze: not-assessable; P19-AC-012-raw: not-assessable; P19-AC-012-gates: not-assessable | P19-R-012: met |
+| P19-AC-013 | P19-AC-013-placement: met; P19-AC-013-package: met; P19-AC-013-contracts: met; P19-AC-013-legacy: partially-met; P19-AC-013-rollback: met | P19-R-013: met |
 
 ## Current Finding Verification
 
-| Source / finding | Verification | Source / final severity | Closure key / family | Batch | Decision |
+Current evidence supports ten bounded behavioral closures. C008 remains partially confirmed: the actual-client matrix and real Docker cancellation witness execute/pass, while the four grader/regrade filters are blocked by a reproduced current Desktop storage-admission defect. Exact required inputs are materialized; the current namespace observer proves engine/root/process/mount identity and capacity. B8 restores the existing Desktop observation path for its second exact OS identity and requires preparation plus executed native proof after repair. C009 is partially confirmed: its raw six-trial absence is countered by current offline verification, while final-state/current-build applicability remains a Final Verification obligation. P001 is an Info navigation limitation with documented historical resolution. P012 met does not vote down C evidence gaps.
+
+| Source run / Finding ID | Verification | Source/final severity and rationale | Closure key / family | Batch | Decision |
 |---|---|---|---|---|---|
-| C/P19-AUD-001 | Confirmed | Major / Major | `execution.explicit-capture-bound-admission` / `execution.authorized-bounds` | B1 | `fix:reject-unenforceable-captured-output-bound` |
-| C/P19-AUD-002 | Confirmed | Major / Major | `credentials.private-host-stage-before-write` / `privacy.native-capture` | B2 | `fix:create-private-host-credential-stage` |
-| C/P19-AUD-003 | Confirmed | Major / Major | `native-capture.private-thinking-boundary` / `privacy.native-capture` | B8 | `fix:filter-private-thinking-before-native-persistence` |
-| C/P19-AUD-004 | Confirmed | Major / Major | `acceptance.one-admitted-root-for-all-consumers` / `evidence.acceptance-admission` | B3 | `fix:admit-trial-paths-and-reuse-selected-family-root` |
-| C/P19-AUD-005 | Partially confirmed | Major / Major | `acceptance.contemporaneous-usage-time-freeze` / `evidence.operator-acceptance` | none | `no-action:Cannot confirm` |
-| C/P19-AUD-006 | Cannot confirm | Major / Major | `native.executed-witnesses-and-real-artifact-regrade` / `evidence.native-conformance` | none | `no-action:Cannot confirm` |
-| C/P19-AUD-007 | Confirmed | Minor / Minor | `ci.external-lock.shared-policy` / `ci.materialization-policy` | B9 | `fix:delegate-external-lock-ci-to-shared-cli` |
-| C/P19-AUD-008 | Confirmed | Minor / Minor | `verification.rustfmt-native-lock-assertion` / `verification.formatting` | B5 | `fix:format-native-lock-assertion` |
-| C/P19-AUD-009 | Confirmed | Minor / Minor | `fixture.output-control-hermetic-current-prepare` / `verification.script-fixtures` | B4 | `fix:update-synthetic-current-prepare-fixture` |
-| C/P19-AUD-010 | Confirmed | Minor / Minor | `docs.native-run-and-explicit-oracle` / `documentation.native-contract` | B6 | `fix:align-native-run-rustdoc-with-current-contract` |
-| C/P19-AUD-011 | Confirmed | Minor / Minor | `controls.reasoning-capability-truth` / `connection.control-projection` | B7 | `fix:record-unproven-reasoning-as-unsupported` |
-| P/P19-AUD-001 | Confirmed | Major / Major | `fixture.output-control-hermetic-current-prepare` / `verification.script-fixtures` | B4 | `fix:update-synthetic-current-prepare-fixture` |
-| P/P19-AUD-002 | Confirmed | Minor / Minor | `verification.rustfmt-native-lock-assertion` / `verification.formatting` | B5 | `fix:format-native-lock-assertion` |
-| P/P19-AUD-003 | Confirmed | Info / Info | `registry.removed-report-history-resolution` / `evidence.registry` | none | `no-action:Info/No action` |
-
-JSONL records retain each source's current evidence/rationale. C005 is partially confirmed only within supplied evidence; C006 is a missing executed-proof case and remains Cannot confirm. Neither is a demonstrated native runtime defect. Their explicit exclusions propose no production repair and do not waive the mandatory criteria. Under the disposition contract and closure matrix, these completed disposition decisions permit the independent B1-B9 fixes to proceed after approval; finding closure still needs the retained execution/evidence routes.
-
-## Confirmed user decisions
-
-- **D1**: remove private thinking before persistence; reject unknown formats. Preserve non-private terminal, tool and grading-binding evidence. This adopts the parent privacy obligation without rewriting existing immutable bundles. B8 implements this direction at the earliest capture sink, not only at later export classification.
-- **D4**: preserve the manual workflow and transport receipt; delegate preparation and explicit conformance to the shared local CLI. B9 keeps receipt claims bound to what actually ran.
-- **D3 execution scope**: bounded local-cache native witnesses/offline regrade remain authorized and contain no model/provider calls. The separate paid acceptance authorization below does not convert native diagnostics into model trials. Material and successful executed evidence remain missing inputs, not unresolved authority choices.
-- **D2 operator choice**: use a fresh prospective acceptance run under the frozen retry budget below; the earlier no-paid-retry restriction is superseded. No historic freeze is inferred.
-
-## Frozen prospective paid acceptance budget
-
-This records current Human Authority for the upcoming acceptance batch. Recorded at 2026-10-01 09:29:05 UTC (17:29:05 Asia/Shanghai); this is the recording time, not an invented earlier approval timestamp. The user's exact instructions are "自动使用 glm-5.3-flash 付费重试" and "重试2次，最长1h，费用无限制，固定下来".
-
-The user subsequently requested "固定到每次评测默认配置中". The separate workflow-maintenance edits persist these standing defaults; this plan consumes them only for its selected acceptance batch and does not broaden trial scope.
-
-| Frozen item | Authorized value |
-|---|---|
-| Model | glm-5.3-flash; retain the selected Zhipu connection/protocol and freeze its actual runtime identity before dispatch |
-| Logical acceptance scope | Six originals: one Opi and one pi trial for each selected TB2.1, TB3 and DeepSWE task |
-| Retry unit | At most2 additional executions per failed logical trial, after its initial execution; at most3 executions per logical trial |
-| Derived batch execution ceiling | At most18 actual trial executions for6 originals, including every trial dispatched by a replacement scope |
-| Concurrency | 1, retaining the existing declared acceptance scope |
-| Whole-batch time budget | 3600 seconds under one monotonic deadline, starting before the first execution of the new paid acceptance batch |
-| Spend ceiling | None: the user explicitly authorizes unlimited fees within this model/count/time scope; no currency ceiling or unsupported max_cost is invented |
-| Record preservation | Fresh experiment/trial/run identities; preserve all initial/retry attempts, commands, exits, timing, usage and native outcomes; never overwrite old sealed evidence or hide failed attempts |
-| Scope covered by this plan | Prospective six-trial acceptance under standing defaults; no retrospective budget proof, new product retry feature, commit or release authority |
-
-The planned six logical slots retain the existing candidate tasks openssl-selfsigned-cert (TB2.1), batched-eval-parity (TB3), and abs-module-cache-flags (DeepSWE). Their final selected task/build/material/config digests, supported model controls and credential references must be frozen before the batch starts. Runtime inputs are not guessed from this budget table; material availability and the admitted privacy repair remain prerequisites.
-
-Operator orchestration must check the actual dispatched scope before every retry. Standing authorization covers additional attempts only for failed logical trials; completed valid native results, including zero, are not retry triggers. The current --replacement-for path may execute the entire declared scope with fresh identities and is not inherently one failed-trial retry. If that scope includes an already completed trial or other expansion, do not dispatch without separate explicit scope authorization. Prepare a fresh failed-trial-only scope only where supported; otherwise record a preparation gap. Count every actual execution against its logical trial's three-attempt ceiling and the aggregate18 ceiling; those ceilings do not grant additional scope. Preserve every attempt and replacement link without selecting only favorable scores or changing frozen controls. Provider-request retries remain distinct from whole-trial attempts and share the original batch deadline, including grading.
-
-Current time_limit_seconds is per Agent process and does not implement the whole-batch3600s limit. The operator must use one monotonic deadline, check it before each subsequent run/retry, cancel active owned execution when it expires, stop new attempts and retain cleanup evidence. Merely setting time_limit_seconds=3600 is not proof of the batch limit. Current cancellation is cooperative and the process supervisor checks after spawn; do not claim an unverified absolute pre-spawn guarantee for every internal model/grader request. If the existing operator path cannot demonstrate the frozen count/time bounds, no model-containing run begins; stricter source enforcement remains subject to its owning admission gate. Fee permission is already settled and must not be requested again.
-
-This budget record precedes the upcoming run. C005 remains partially confirmed for the original supplied evidence: the new authorization cannot establish a historical freeze. Closure still requires an attributable fresh run and its contemporaneous complete input/budget freeze, all attempt records and independently verified actual boundaries. No new mandatory acceptance schema or configuration key is introduced by this record.
+| C/P19-AUD-001 | Confirmed | Major/Major, unchanged; current rationale in batch/disposition | experiment.execution.integer-bound-types / execution.bound-admission | B2 | fix:experiment.execution.integer-bound-types |
+| C/P19-AUD-002 | Confirmed | Major/Major, unchanged; current rationale in batch/disposition | runner.explicit-trials.max-trials / execution.bound-admission | B3 | fix:runner.explicit-trials.max-trials |
+| C/P19-AUD-003 | Confirmed | Major/Major, unchanged; current rationale in batch/disposition | prepare.external-probes.bounded-supervision / preparation.observation | B4 | fix:prepare.external-probes.bounded-supervision |
+| C/P19-AUD-004 | Confirmed | Major/Major, unchanged; current rationale in batch/disposition | report.zero-seal.frozen-topology-and-metrics / report.frozen-coverage | B5 | fix:report.zero-seal.frozen-topology-and-metrics |
+| C/P19-AUD-005 | Confirmed | Major/Major, unchanged; current rationale in batch/disposition | regrade.output.canonical-source-exclusion / evidence.immutability | B6 | fix:regrade.output.canonical-source-exclusion |
+| C/P19-AUD-006 | Confirmed | Major/Major, unchanged; current rationale in batch/disposition | native-capture.stderr.closed-diagnostic-grammar / native-capture.privacy | B1 | fix:native-capture.stderr.closed-diagnostic-grammar |
+| C/P19-AUD-007 | Confirmed | Major/Major, unchanged; current rationale in batch/disposition | acceptance.valid-native-task-failure / acceptance.native-eligibility | B7 | fix:acceptance.valid-native-task-failure |
+| C/P19-AUD-008 | Partially confirmed | Major/Major, unchanged; current rationale in batch/disposition | native-witness.current-executed-proof / assurance.native-evidence | B8 | fix:native-witness.desktop-storage-admission |
+| C/P19-AUD-009 | Partially confirmed | Major/Major, unchanged; current rationale in batch/disposition | phase-exit.current-acceptance-and-gates / assurance.acceptance-evidence | none | no-action:Cannot confirm final-state Phase exit |
+| C/P19-AUD-010 | Confirmed | Minor/Minor, unchanged; current rationale in batch/disposition | doctor.selected-materials.complete-observations / preparation.observation | B9 | fix:doctor.selected-materials.complete-observations |
+| C/P19-AUD-011 | Confirmed | Minor/Minor, unchanged; current rationale in batch/disposition | pi.native-terminal.protocol-truncation / native-provider.classification | B10 | fix:pi.native-terminal.protocol-truncation |
+| P/P19-AUD-001 | Confirmed | Info/Info, unchanged; current rationale in batch/disposition | evidence-registry.report-navigation / evidence.navigation | none | no-action:Info/No action documented historical pointers |
 
 ## Unresolved Decisions
 
-none.
+none. The former operator-input gap has become an observed, bounded implementation decision: exact corpus/runner/client/helper inputs and Docker mount/runtime access are available, and the unchanged storage observer independently proves the selected engine namespace. Only the current OS-name gate rejects preparation. No criterion, authority or model/provider decision is waived. Pending green execution belongs to B8 and the final union, as it does for the other behavioral fixes; it is not represented as completed proof.
 
-D1 and D4 have concrete B8/B9 designs and red-before evidence. D2 budget authority and D3 no-model execution authority are fixed. The closure matrix permits Cannot confirm exclusions, and plan-stage green observations must remain not-run; successful final execution proof is not a prerequisite for approving these nine source-repair batches. This corrects the earlier draft's treatment of D3 missing material as an unresolved decision. No criterion is revised, deferred by invented authority or claimed met.
+## Current native inputs and executed evidence
 
-## Evidence prerequisites and follow-up
+The six exact native_driver filters are native_tb21_artifact_witness, native_tb3_artifact_witness, native_deepswe_patch_witness, native_protocol_client_matrix, native_verifier_only_regrade_witness and native_owned_resource_cancellation. Two execute/pass at the source baseline. Four grader/regrade filters are not run because current public prepare refuses before publishing material. After B8 and all final causal edits, rebuild the current driver and execute all six with admitted exact inputs under owned-process/resource supervision. B1/B5/B10 change capture/report/Pi classifications and invalidate relevant baseline native applicability, so the final six-filter pass is required. Local matrix servers are scripted, not paid providers; ignored/fixture/build-only cases cannot count.
 
-| Finding | Missing input or evidence | Required route and boundary |
+### Current input contracts and preconditions
+
+The unchanged archived test binary builds with locked/offline Cargo: native_driver SHA-256 6caf85a0c714c00095698bd2171d00184bbcb09496789ea6cdab8a1b08989d3e, linked Companion SHA-256 fca95253fd44015a21431cdc7bf0f5539a35c1c20127ad259d632c3c378cd3b1. Build-only execution has zero native witness tests; no runtime qualification follows from it. Use the stable external Cargo cache with incremental compilation and leases.
+
+| Exact filter | Required inputs | Executed predicate / qualification boundary |
 |---|---|---|
-| C005 | A fresh source/material/input-bound acceptance run with contemporaneous complete usage/time freeze and all attempts. | After B8 privacy admission and verified materials, execute only the frozen prospective scope with proven count/deadline supervision. Prior accepted trials and current authorization cannot supply a historical freeze. |
-| C006 | Runnable verified local material, three controlled pinned-grader witnesses and genuine saved-artifact regrade. | The authorized TB2.1 witness failed before dispatch on its absent pinned static-lock path; referenced pi/tasks/Harbor/Pier/uv caches are also absent. Supply exact verified material/cache or source-applicable raw executed proofs, then use the no-model route below. No download or model call is authorized by the cache-only diagnostic branch. |
+| native_tb21_artifact_witness | OPI_EVAL_NATIVE_WITNESS_MATERIAL; real pinned Harbor/task material and Docker | Oracle/nop native results, identity-bound rewards 1/0 |
+| native_tb3_artifact_witness | Same variable; real pinned Harbor/task material and Docker | Rewards 1/0 plus distinct collected /app/evalbench identities |
+| native_deepswe_patch_witness | Same variable; real pinned Pier/task material and Docker | Rewards 1/0 plus distinct model.patch collection identities |
+| native_protocol_client_matrix | OPI_EVAL_NATIVE_CLIENT_MATERIAL; JSON file paths opi, node, pi_bundle | Three APIs, two actual clients, five cases: 30 launches; loopback only, synthetic credentials |
+| native_verifier_only_regrade_witness | All three prepared family profiles, static lock and actual runner material; Linux git/tar/ldd; Docker | Seven paired source/regrade scenarios and refusal/cleanup checks. Controlled tasks and diagnostic Agents qualify regrade mechanics, not actual Opi/pi execution |
+| native_owned_resource_cancellation | No material/client variable; real Docker and exact cached Python image | Real owned container/process cleanup, capture-helper removal, unchanged image and surviving neighbor; staged runner is a stand-in |
 
-These prerequisites block their respective native execution and closure claims, and the remaining mandatory gaps block Phase conformance. They do not block approved edits for the independently reproduced B1-B9 defects. A pre-dispatch refusal cannot close C006. No additional budget approval is outstanding. Any newly supplied proof must be checked for source/material applicability; changed plan bytes require a new digest and approval.
+Current material requires /7 and the capture-helper pin; legacy /6 may support its explicitly permitted offline reader paths. Current supplied runners require their exact project/venv/interpreter/entrypoint paths. The artifact/regrade tests invoke real runners that may build images; admit cached exact images/build contexts or enforced network restrictions before calling execution offline. Cancellation alone explicitly uses --pull never and --network none. Test failure cleanup is not universal: an outer supervisor must settle its owned client/listener/CLI process tree and exact-root containers, preserving shared images and neighbors.
+
+Exact dependency-path inventory SHA-256 ad1ef9d709c782a53d719054dfb1f325d010e64e8b91c6c803da9d009baad1f9 confirms the accepted root's Opi executable and output-control records still match; its old Pi package, uv, runners, task/profile/corpus and static/provider pin paths are absent. No alternate historical evidence was sought. Current Pi acquisition uses only the current static producer/source/Node/model-data pins in private storage; its result is separate from the old acceptance root.
+
+Current Pi acquisition passed with the unchanged pinned producer and one agents/pi acquisition entry: exit0, 48.965s, pinned source d981de1229ef899957bbe968bc8dcda02a21f477, Node22.19.0, bundle0.85.1, package SHA-256 f3cb211841f234875479fb26484c3bae949d5f22a6c376ecd0a6622fe3a346c6. Runtime remains at /home/luiz/.local/state/opi-p19-current-native/4d56f0f8-e393-47cb-8c69-53d99d96ed2e/attempt03/cache/agents/pi. Windows-backed extraction was cancelled with settled owned processes; a private npm configuration wrapper error was repaired before the successful Linux-native attempt. No producer/pin/dependency change occurred. A nonfatal locked dependency Node-engine warning is retained; standalone runtime smoke and the actual matrix pass under the pinned Node version.
+
+The unchanged current native_driver binary then ran `native_protocol_client_matrix --exact --ignored --nocapture --test-threads=1`, with OPI_EVAL_NATIVE_CLIENT_MATERIAL bound to native-pi/attempt-03/matrix/clients.json. PASS: 1 executed, 0 failed, 0 ignored, 123 filtered; exit0, 268.916s. Independently checked 30 case execution records, six loopback request logs/75 requests, 12 tool-effect hashes, expected 21 exit0/9 Opi exit4 outcomes, all output limits512, unchanged driver/Companion/Opi/Node/bundle, 1199 cache file identities and 230 evidence file identities. No owned-session processes remain. Raw root is native-pi/attempt-03/matrix/tmp/.tmpk1HJaY under the external evidence directory. This proves the host actual-client matrix only; it does not qualify a Docker task runtime, native grader, regrade, capture-helper task preflight or fresh material/7 task dispatch. The matrix qualifies the baseline host clients. The remaining four grader/regrade filters require B8; the final repaired-source six-filter pass is required after the planned causal edits.
+
+Initial Docker attempts failed: the Ubuntu socket was absent and a private no-network/no-pull readonly mount refused with exit125. Those receipts remain unchanged. Current backend logs identified Resource Saver shutdown and disabled Ubuntu integration. The settings file was backed up and changed only by adding IntegratedWslDistros=["Ubuntu"] (original SHA-256 8154e247613551819eccf46cc2fc045ceb48bbc8251260fb53814307abb5808a; applied candidate b54de1091febd854c21eb3679e160d67f944d23aa67408265e80b252683976ae). After confirming the only active container was the exact task-owned wake container, it was removed by ID and Desktop was restarted through its CLI. Ordinary Ubuntu /var/run/docker.sock access now succeeds. Two actual --pull never --network none readonly mount probes pass for Linux-native and Windows-backed paths, with exact Python image272efc... and engine f7640520-9a9f-4acb-bd58-62c5b388982a. No shared image was removed. Backup/change/engine/mount receipts are retained in docker-runtime-current.
+
+The unchanged driver executed native_owned_resource_cancellation: PASS, 1 executed/0 failed/0 ignored/123 filtered, exit0, 8.076s. The test removed one exact-root owned container and one helper, preserved its neighbor and shared image, retained incomplete/job-cancelled/no-seal evidence and restored three private files byte-identically. Raw trace permissions0700/file0600 and UID1000 match. Independent read-only verification passed28 checks and rehashed199/199 files; outer process/container cleanup had nothing to settle. This witness stages the GNU Companion helper, not the separate musl helper, and qualifies cleanup/private-file restoration only. The cached binary embeds a parallel committed export's CARGO_MANIFEST_DIR: three used fixtures and seven relevant production/support/manifest/lock dependencies independently match current HEAD; that export's driver has only an appended independent B6 regression beyond the unchanged complete baseline. No source-path metadata substitutes for these byte checks.
+
+Current unchanged producers acquired uv0.9.7, three exact corpus commits7131e4375048a0e408a8fb404b5f499d726b695b / 2b0442c3c583b710ca8da14c8e601b99f2f1f244 / 435ee89ec2f2e2289f33b0da4f992f0b7b7266b9 and locked Harbor4407eb5227a2ff4f0d3f16b2eb48849382fdf276 / Pierc1ebc6d145b40fae8425215e3fca528945065124 runners, all exit0/no owned residuals. Main independently verified57 raw records,12 committed seed files and8421 corpus/runner source files, Git-clean identities and installed interpreter/entrypoint hashes. The current helper was rebuilt locked/offline for x86_64-unknown-linux-musl in the stable shared Cargo cache with a lease and incremental compilation: SHA-256 919d9a6795a16a10bf7255a1996d3336654832a084fd752959a1e05808a0d9bb, Cargo.lock261a3ec501be2e045dc6c9b2b9a940adc1c56305f477008eea940f26545925f3, static ELF/no PT_INTERP. Verified Opi/Pi/helper copies are warm in /home/luiz/.local/state/opi-p19-current-native/0cce3262-2e03-4111-8611-5353e1435da4/cache. Existing actual clients and baseline helper receipts remain preserved.
+
+Current public prepare for openssl-selfsigned-cert rejects at agent/verifier engine_storage_bytes unknown: exit2, 9.169s, no timeout/process residual or material.json. TB3/DeepSWE configs exist but no dependent prepare or grader/regrade filter was invoked. Docker29.7.2 reports OperatingSystem="Docker Desktop (containerized)"; prepare.rs desktop_storage admits only the exact "Docker Desktop" name and returns before the existing WSL namespace observer. Running the unmodified DESKTOP_STORAGE_SCRIPT read-only against this actual selected engine succeeds: exact engine/root, PID187/start67050/mnt:[4026532311], stable before/after identity, available1016229654528 bytes. A separate committed archive with only the added regression reproduces the production gate: cargo test -p opi-eval --lib --locked --offline desktop_containerized_storage_observer_binds_current_identity -- --nocapture; exit101, 0 passed/1 failed/172 filtered, observed None vs expected Some(10485760). Production bytes remain unchanged. These are B8's discriminating reds, not a claimed native grader pass.
+
+For green, prepare each family to a fresh output using the reviewed current configs and final Companion/helper. runner/material.rs:326-466 admits and verifies the nonempty benchmark map; public prepare emits one verified family branch. A derived three-family witness manifest may copy those exact branches while preserving identical schema/origin/static lock/helper/Agents/provider script+endpoint, choosing the recorded TB2.1 provider request-log path. Record source output paths/hashes and the derivation, then run current validate for all three configs against the merged material before regrade. Do not invent profiles, pins or a prepare-success receipt. This is a derived admitted manifest, not an unchanged public prepare output. Rebuild/repin the final musl helper in fresh proof storage and the task-owned warm cache; retain the baseline helper raw artifact. All final predicates must use matching final source/build/material identities.
+
+Ten batches below repair existing obligations. B8 is required by the reproduced current preparation blocker on the C008 causal path; no additional audit source or general platform refactor is introduced. Major batches precede Minor, with final native evidence collected after the last causal edit. Shared files/family keys do not imply shared root closure.
 
 ## Closure Batches
 
-Nine bounded designs cover eleven source records; C005/C006 retain Cannot confirm exclusions and P003 retains Info/No action. Distinct closure keys remain separate even where files overlap. Dependent edits are sequential: B1 before B7; B2 and B7 before B8; B8 before B6 and B9; B4 before B9; B5 after test-source edits. The plan is ready for review; production application still requires its explicit digest-bound invocation.
+### Batch B1: Admit only closed whole stderr diagnostics
 
-### Batch B1: Refuse unenforceable requested capture bounds
+**Closure predicate**: Both policies persist zero synthetic private-marker bytes from unrecognized plaintext/structured stderr; exact summaries, empty stderr and proven safe structured diagnostics retain correct receipt digests.
+**Dependencies**: none
+**Verification union**: matching external probe; cargo test -p opi-eval --test native_driver --locked --offline; final union below.
 
-**Closure predicate**: explicit positive max_output_bytes cannot resolve into an executable experiment without enforcement; omission retains existing fixed capture protection.
-**Dependencies**: none.
-**Verification union**: isolated bound regression, experiment_contract, affected clippy, formatter, bilingual docs and final union.
+#### Fix B1.1: Admit only closed whole stderr diagnostics
 
-#### Fix B1.1: Reuse early unsupported-bound rejection
+- **Finding source(s)**: `phase19-codex-gpt61-f60e458-20261003t041015z` + `37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a` + `P19-AUD-006`
+- **Decision**: fix:native-capture.stderr.closed-diagnostic-grammar
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-eval/src/native_capture_runtime.rs`, `crates/opi-eval/tests/native_driver.rs`, `CHANGELOG.md`
+- **Change kind**: behavioral
+- **Change**: Replace substring admission with bounded whole-record validation: exact plain summaries and pinned structured Opi diagnostics through closed fields, duplicate-key rejection, static message identity and proven safe cause grammar. Unknown/prefixed/suffixed/malformed records follow the existing opaque branch without retaining source text. Preserve safe structured records byte-identically and receipt /1 retained-byte hashes. Preserve the intentional Opi emitter; no Opi runtime edit.
+- **Closure predicate**: Both policies persist zero synthetic private-marker bytes from unrecognized plaintext/structured stderr; exact summaries, empty stderr and proven safe structured diagnostics retain correct receipt digests.
+- **Red-before**: `wsl -d Ubuntu -- bash /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/capture-protocol-fresh/run-probe.sh privacy`; FAIL: exit 1; 32 cases executed, 12 controls pass and 20 privacy cases fail; arbitrary bytes retained under sanitized/validated-diagnostic.
+- **Green-after**: same discriminating check against rebuilt candidate/source and fresh output directory; PASS: exit 0, 32/32 cases; unknown records opaque, marker absent. Observed: not-run.
+- **Current evidence / counter-evidence**: native_capture_runtime.rs:130-158 uses line.contains(token); :511-517 writes original bytes. Opi runner.rs:889-904 intentionally emits a structured second diagnostic, so token equality on every line would remove existing behavior. Thinking/opaque/overflow controls do not cover this bypass.
+- **Test impact**: add closed-grammar privacy negatives; retain safe structured/thinking/opaque/overflow and downstream receipt rejection tests.
 
-- **Finding source(s)**: C/P19-AUD-001, exact full run/digest in Active sources and JSONL.
-- **Decision**: `fix:reject-unenforceable-captured-output-bound`.
-- **Verification status**: Confirmed.
-- **File(s)**: `crates/opi-eval/src/experiment.rs`, `crates/opi-eval/tests/experiment_contract.rs`, `crates/opi-eval/README.md`, `crates/opi-eval/README.zh.md`, `CHANGELOG.md`.
-- **Change kind**: behavioral.
-- **Change**: after numeric validation, reuse existing UnenforceableExecutionBound beside max_total_tokens/max_cost admission to reject explicit positive max_output_bytes in every mode before effects. Keep the existing field/serialized shape and fixed runtime limits; synchronize current Rustdoc, positive connection fixture and bilingual README. Record scoped 0.x tightening in Unreleased. No new cap implementation/flag/schema version.
-- **Closure predicate**: positive requested bound rejects by name in all three modes; omission is admitted.
-- **Red-before**: `cargo test -p opi-eval --lib explicit_capture_bound_rejects_during_resolution --locked` on export plus synthetic test: exit 101,1 executed failure,0 ignored; first hermetic case resolves max_output_bytes=1. All modes use the same unguarded parser branch.
-- **Green-after**: same command passes its full mode loop, plus `cargo test -p opi-eval --test experiment_contract --locked`. Promote the temporary assertion into existing behavior-based contract coverage.
+### Batch B2: Reject wrongly typed integer execution bounds
 
-### Batch B2: Protect the original host credential stage
+**Closure predicate**: All seven integer execution fields reject present non-integers before effects; supported integers and absent fields preserve their semantics.
+**Dependencies**: none
+**Verification union**: matching external probe; cargo test -p opi-eval --test experiment_contract --locked --offline; final union below.
 
-**Closure predicate**: credentials enter only trial-owned 0700 directories / 0600 files created privately before the first secret byte, independent of caller root/umask.
-**Dependencies**: none; B8 owns separate capture-content privacy.
-**Verification union**: Unix mode/preexisting-path refusal and cleanup, native_driver, affected clippy.
+#### Fix B2.1: Reject wrongly typed integer execution bounds
 
-#### Fix B2.1: Make private creation precede credential writes
+- **Finding source(s)**: `phase19-codex-gpt61-f60e458-20261003t041015z` + `37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a` + `P19-AUD-001`
+- **Decision**: fix:experiment.execution.integer-bound-types
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-eval/src/experiment.rs`, `crates/opi-eval/tests/experiment_contract.rs`, `CHANGELOG.md`
+- **Change kind**: behavioral
+- **Change**: Make optional_u64 return None only for absence and require a positive integer for each present execution limit. Reject all strings (including empty/omitted), booleans, floats, zero and negatives with the existing typed error. Retain numeric unenforceable-cap and output-control equality checks.
+- **Closure predicate**: All seven integer execution fields reject present non-integers before effects; supported integers and absent fields preserve their semantics.
+- **Red-before**: `python3 /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/boundary-probes.py --binary /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/opi-eval-baseline --source /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/source --case quoted-bounds --out /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/quoted-bounds-red`; FAIL: exit 1; 21 cases (seven fields times quoted 1/omitted/empty) all validate0 and erase the bound.
+- **Green-after**: same discriminating check against rebuilt candidate/source and fresh output directory; PASS: all 21 wrong-type cases reject; numeric/omission controls retain their correct semantics. Observed: not-run.
+- **Current evidence / counter-evidence**: experiment.rs:1419-1437 maps all String values to None; callers690-723 own seven limits. Existing numeric/nonpositive tests cannot discriminate this branch.
+- **Test impact**: add wrong-type execution-field public validate cases; retain numeric/nonpositive/unenforceable-bound tests.
 
-- **Finding source(s)**: C/P19-AUD-002, exact C identity/digest in JSONL.
-- **Decision**: `fix:create-private-host-credential-stage`.
-- **Verification status**: Confirmed.
-- **File(s)**: `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/tests/native_driver.rs`, `CHANGELOG.md`.
-- **Change kind**: behavioral.
-- **Change**: reuse current private-creation pattern at runner lines 3629-3635/3747 without extracting unrelated capture machinery. For supported Unix native execution create the owned integration directory 0700 before writes and config/handoff0600 with exclusive creation; fail closed on preexisting/link targets. Preserve cleanup at 3767-3794, selected credential identity and caller-root permissions. No global umask mutation or Windows ACL expansion. Add child-only umask022/searchable-root case and unsafe-path refusal to existing test binary; add the user-visible security fix to Unreleased.
-- **Closure predicate**: both selected clients' host stage is private before dispatch and cleaned on failure.
-- **Red-before**: `cargo test -p opi-eval --test security_plan_probe --locked plan_security_host_credentials_private_on_searchable_root -- --nocapture`: exit 101,1 executed intended failure,0 ignored; both clients show directory 0755/config 0644/handoff 0644 with fake secret-present booleans. A separate two-case run also reproduces D1 without merging its predicate.
-- **Green-after**: the identical red command and host-mode assertion in the retained temporary probe pass 0700/0600, then promoted native_driver permission/refusal filter and native_settlement_removes_actual_credentials pass. The separate thinking predicate belongs to B8.
+### Batch B3: Enforce caps on every resolved trial list
 
-### Batch B3: Admit one root identity before all evidence reads
+**Closure predicate**: A two-trial explicit/frozen request with max_trials=1 refuses before root/evidence creation or dispatch; equality to the cap executes exactly the plan.
+**Dependencies**: B2; shared execution edits sequential
+**Verification union**: matching external probe; cargo test -p opi-eval --test assembled_run --test native_driver --locked --offline; final union below.
 
-**Closure predicate**: unsafe trial IDs reject before reads; every Python/Companion consumer uses the same contained manifest-selected family root.
-**Dependencies**: none; budget D2 is separate.
-**Verification union**: three structural probes, acceptance Python suite, public verifier subprocess negative path, full script discovery.
+#### Fix B3.1: Enforce caps on every resolved trial list
 
-#### Fix B3.1: Share admitted paths across consumers
+- **Finding source(s)**: `phase19-codex-gpt61-f60e458-20261003t041015z` + `37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a` + `P19-AUD-002`
+- **Decision**: fix:runner.explicit-trials.max-trials
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/src/runner/plan.rs`, `crates/opi-eval/tests/assembled_run.rs`, `crates/opi-eval/tests/native_driver.rs`, `CHANGELOG.md`
+- **Change kind**: behavioral
+- **Change**: Check final resolved trial count on the shared plan/run admission path for explicit and expanded selections, before root reservation, native acquisition/preflight effects or dispatch. Include frozen-plan revalidation/replacement without widening limits; preserve selection resource refusal.
+- **Closure predicate**: A two-trial explicit/frozen request with max_trials=1 refuses before root/evidence creation or dispatch; equality to the cap executes exactly the plan.
+- **Red-before**: `python3 /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/boundary-probes.py --binary /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/opi-eval-baseline --source /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/source --case explicit-max-trials --out /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/explicit-max-trials-red-v2`; FAIL: exit 1; public hermetic run0/completed, two trials reported and two receipts sealed under max_trials=1.
+- **Green-after**: same discriminating check against rebuilt candidate/source and fresh output directory; PASS: refusal nonzero, fresh root absent/no dispatch; equality/omission controls preserved. Observed: not-run.
+- **Current evidence / counter-evidence**: plan.rs:445 caps selection expansion only; runner/experiment.rs:538-588 accepts None-selection without count admission. Current fresh two-seal reproduction confirms the public path.
+- **Test impact**: add explicit/frozen/native no-effect cap cases; retain selection/equality/replacement coverage.
 
-- **Finding source(s)**: C/P19-AUD-004, exact C identity/digest in JSONL.
-- **Decision**: `fix:admit-trial-paths-and-reuse-selected-family-root`.
-- **Verification status**: Confirmed.
-- **File(s)**: `crates/opi-eval/scripts/verify-local-acceptance.py`, `crates/opi-eval/scripts/test_verify_local_acceptance.py`.
-- **Change kind**: behavioral.
-- **Change**: admit nonempty single-component trial IDs before reads, rejecting absolute/dot/parent paths and either platform separator. Resolve contained family roots once; require paired trial declarations agree. Reuse those roots for native/bundle/material/control/report and Companion argv, replacing hardcoded canonical reads at lines 252/382/457/931. Retain contained custom roots. Cover absolute/traversal/symlink escape, conflicting pair roots and benign alternate roots with existing recording fixture and public CLI refusal. Preserve no-Agent/no-credential/no-provider boundary.
-- **Closure predicate**: all byte and semantic consumers share one admitted identity; malformed paths refuse before access.
-- **Red-before**: `python3 ../acceptance-probes.py` from export src: exit 1,3 assertion failures,0 skipped; external harmless absolute/traversal canaries admitted, Companion chooses runs/family instead of selected/family. No full invalid false acceptance claimed.
-- **Green-after**: same three probes pass; `python3 -m unittest discover -s crates/opi-eval/scripts -p test_verify_local_acceptance.py -v` passes existing/new positive and negative cases.
+### Batch B4: Supervise every selected observer
 
-### Batch B4: Make the current preparation fixture self-contained
+**Closure predicate**: A stalled/overflowing observer cannot escape a finite operation bound; prepare polls cancellation and cleans only its owned observer tree, preserving caches/unrelated sentinel processes.
+**Dependencies**: none
+**Verification union**: matching external probe; cargo test -p opi-eval --test fail_closed_cli --test native_driver --locked --offline; cargo test -p opi-eval --lib --locked --offline; final union below.
 
-**Closure predicate**: both existing output-control fixture tests reach their ordering/refusal assertions at the current shared prepare seam without installed uv or external effects.
-**Dependencies**: none.
-**Verification union**: focused fixture, native-smoke CI verifier, full Python discovery on WSL/Linux.
+#### Fix B4.1: Supervise every selected observer
 
-#### Fix B4.1: Model actual shared preparation
+- **Finding source(s)**: `phase19-codex-gpt61-f60e458-20261003t041015z` + `37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a` + `P19-AUD-003`
+- **Decision**: fix:prepare.external-probes.bounded-supervision
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-eval/src/runner/prepare.rs`, `crates/opi-eval/src/cli/prepare.rs`, `crates/opi-eval/tests/fail_closed_cli.rs`, `crates/opi-eval/tests/native_driver.rs`, `crates/opi-eval/README.md`, `crates/opi-eval/README.zh.md`, `CHANGELOG.md`
+- **Change kind**: behavioral
+- **Change**: Route production engine/version/disk/context/GPU observations through existing ProcessSupervisor with finite deadlines, existing 16 KiB capture ceiling and verified owned-tree cleanup. Async prepare awaits supervised probes with its cancellation token instead of blocking the current-thread executor with raw output/thread join. Keep doctor facade synchronous but bounded through its private runtime/thread pattern; report truthful unknown/unreachable/refusal reasons. Respect remaining operation deadline with finite per-probe bounds; no new config/dependency/public seam.
+- **Closure predicate**: A stalled/overflowing observer cannot escape a finite operation bound; prepare polls cancellation and cleans only its owned observer tree, preserving caches/unrelated sentinel processes.
+- **Red-before**: `python3 /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/boundary-probes.py --binary /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/opi-eval-baseline --source /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/source --case doctor-stall --out /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/doctor-stall-red`; FAIL: exit 1; selected fake docker execs sleep60; no doctor output for 15.018s, then the outer watchdog kills only the isolated probe group.
+- **Green-after**: same discriminating check against rebuilt candidate/source and fresh output directory; PASS: truthful bounded report inside the 15s watchdog; stalled version/context/disk/GPU, overflow and current-thread cancellation tests pass with no orphaned owned child. Observed: not-run.
+- **Current evidence / counter-evidence**: prepare.rs:281,299,334,1369,1463,2637 use raw synchronous output; existing observation_command2299 has16 KiB/deadline/verified cleanup but these callers bypass it. The prepare facade uses a current-thread runtime.
+- **Test impact**: add public stalled/overflow observers and async cancellation cases; retain selected-engine/resource/refusal/supervisor ownership tests.
 
-- **Finding source(s)**: C/P19-AUD-009 and P/P19-AUD-001, two separate run/digest keys.
-- **Decision**: `fix:update-synthetic-current-prepare-fixture`; schedule at Major while retaining source Minor/Major.
-- **Verification status**: Confirmed for both.
-- **File(s)**: `crates/opi-eval/scripts/test_native_smoke_output_control.py` only.
-- **Change kind**: test-only.
-- **Change**: create actual synthetic executable uv bytes in fresh fixture roots; mock shared opi-eval prepare with explicitly synthetic per-family material/6 outputs. Check cached Opi/pi executable/package byte transport, compare cwd via Path, and validate actual --native-material argument. Retain exact-client proof-before-validation/freeze, failed/missing proof, credential exclusion, fresh retries and no routing/final receipt after failure. Keep the original two scenario-owning methods. No production producer change.
-- **Closure predicate**: original methods/refusal subcases pass with only fixture bytes under current prepare behavior.
-- **Red-before**: `python3 -m unittest discover -s crates/opi-eval/scripts -p test_native_smoke_output_control.py -v`: WSL exit 1,2 methods/3 errors (uv file missing and partial retry). Outside-source uv-only prototype next fails at unexpected prepare; current-fixture-only prototype passes both original methods. Prototype is design evidence, not production green.
-- **Green-after**: same focused command plus `python3 -m unittest discover -s crates/opi-eval/scripts -p test_verify_native_smoke_ci.py -v` and full discovery pass.
+### Batch B5: Freeze complete report identity before first intent
 
-### Batch B5: Restore the formatter gate
+**Closure predicate**: Interruption before any seal retains declared edge/control pairs and terminal-bench/2.1 identity, planned 2/unexecuted 2, valid 0/denominator 0 and missing-side comparability; no invented grade/cross-protocol pair, and drifted frozen/sealed control refuses publication.
+**Dependencies**: B3; freeze the same final admitted trial set
+**Verification union**: matching external probe; cargo test -p opi-eval --test bundle_recompute --test report_contract --test report_output_containment --test native_driver --locked --offline; final union below.
 
-**Closure predicate**: rustfmt accepts the admitted-static-lock assertion without changing condition/message.
-**Dependencies**: B2 and any other test-source edits first.
-**Verification union**: cargo fmt --check --all and diff whitespace check.
+#### Fix B5.1: Freeze complete report identity before first intent
 
-#### Fix B5.1: Format the baseline assertion
+- **Finding source(s)**: `phase19-codex-gpt61-f60e458-20261003t041015z` + `37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a` + `P19-AUD-004`
+- **Decision**: fix:report.zero-seal.frozen-topology-and-metrics
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/src/report.rs`, `crates/opi-eval/tests/bundle_recompute.rs`, `crates/opi-eval/tests/report_output_containment.rs`, `crates/opi-eval/tests/native_driver.rs`, `crates/opi-eval/README.md`, `crates/opi-eval/README.zh.md`, `CHANGELOG.md`
+- **Change kind**: behavioral
+- **Change**: Persist the existing resolved experiment and admitted integrity/report controls under byte-bound run-control/2 before first intent. Retain experiment/manifest/planned-trial fields; validate the complete frozen snapshot and cross-check all sealed control bytes. Restore topology/native benchmark/exclusions/frozen report controls even without seals. Synchronize current report/recovery readers, fixtures, bilingual docs and deliberate 0.x Unreleased entry. Retain owning read-only meanings of sealed /1 evidence; /1 zero-seal roots without topology stay legacy/incomplete. Unsealed diagnostics never supply scores or authoritative control.
+- **Closure predicate**: Interruption before any seal retains declared edge/control pairs and terminal-bench/2.1 identity, planned 2/unexecuted 2, valid 0/denominator 0 and missing-side comparability; no invented grade/cross-protocol pair, and drifted frozen/sealed control refuses publication.
+- **Red-before**: `python3 /mnt/c/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/zero_seal_probe.py --source /mnt/c/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/source --binary /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/opi-eval-baseline --proof /mnt/c/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/zero-seal-proof-v2`; FAIL: exit 1; two cases. crash-after-intent run 70/report 0 has planned 2/unexecuted 2 but coverage=[], control_pairs=[], unknown/unknown metric; sealed run 0/report 0 retains edge-1 and terminal-bench/2.1.
+- **Green-after**: same discriminating check against rebuilt candidate/source and fresh output directory; PASS: interrupted/sealed cases retain frozen benchmark/pair topology; interrupted valid count remains0, drift/mutation tests refuse. Observed: not-run.
+- **Current evidence / counter-evidence**: runner/experiment.rs:702-729 omits complete contract; crash3052 precedes staged experiment3073, so no staged bytes can be promoted. report.rs:340 restores authoritative control only from seals. /1 readers report.rs:587 and runner/experiment.rs:4191 require synchronization. This restores AC008/CTRL005 using existing resolved contracts, without new scoring meaning.
+- **Test impact**: add zero-seal native/full/subset/pair/drift cases; update run-control version fixtures; retain sealed/legacy evidence checks.
 
-- **Finding source(s)**: C/P19-AUD-008 and P/P19-AUD-002, separate current keys.
-- **Decision**: `fix:format-native-lock-assertion`.
-- **Verification status**: Confirmed for both.
-- **File(s)**: `crates/opi-eval/tests/native_driver.rs`.
-- **Change kind**: test-only; assertion semantics retained.
-- **Change**: use rustfmt's single-line admitted-static-lock assertion at original line 10054; format only task-owned changed sources.
-- **Closure predicate**: formatter exits 0 on final relevant source.
-- **Red-before**: `cargo fmt --check --all` on original committed export, Windows exit 1, sole original-source hunk native_driver.rs:10054.
-- **Green-after**: same command exits 0. No added test assertion mirrors formatting.
+### Batch B6: Reject source-contained regrade output before effects
 
-### Batch B6: Correct current native run Rustdoc
+**Closure predicate**: Nested/missing-parent/symlink-alias output rejects before creation/dispatch; source directory digest and verify remain unchanged, while fresh external output remains valid.
+**Dependencies**: none
+**Verification union**: matching external probe; cargo test -p opi-eval --test native_driver --locked --offline; final union below.
 
-**Closure predicate**: Rustdoc distinguishes hermetic/native execution and describes oracle diagnostics as explicit, matching current call sites.
-**Dependencies**: B2 and B8 first for overlapping runner file.
-**Verification union**: source comparison, documentation checker, formatter, warning-free opi-eval rustdoc.
+#### Fix B6.1: Reject source-contained regrade output before effects
 
-#### Fix B6.1: Replace superseded fixture/oracle claims
+- **Finding source(s)**: `phase19-codex-gpt61-f60e458-20261003t041015z` + `37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a` + `P19-AUD-005`
+- **Decision**: fix:regrade.output.canonical-source-exclusion
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-eval/src/regrade.rs`, `crates/opi-eval/tests/native_driver.rs`, `crates/opi-eval/README.md`, `crates/opi-eval/README.zh.md`, `CHANGELOG.md`
+- **Change kind**: behavioral
+- **Change**: Before mkdir/copy/verifier effects, resolve requested fresh output through canonical nearest existing ancestor and validated missing components, then reject containment in canonical source, including symlink aliases/absent parent chains. Use the existing report containment rule where appropriate, without a speculative public abstraction. Preserve source directory inventory/bytes on refusal; keep external fresh-output success.
+- **Closure predicate**: Nested/missing-parent/symlink-alias output rejects before creation/dispatch; source directory digest and verify remain unchanged, while fresh external output remains valid.
+- **Red-before**: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e CARGO_INCREMENTAL=1 P19_REMEDIATION_PROOF=/mnt/c/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/regrade-proof cargo test -p opi-eval --test native_driver --locked --offline regrade_output_containment_rejects_canonical_source_aliases -- --exact --nocapture`; FAIL: exit 101; one test executed/failed,123 filtered. Three stand-in branches (nested-existing-parent, nested-missing-parents, symlink-alias) regrade 0/create output/change source digest; subsequent verify 1 reports unmanifested-file/mutation-detected.
+- **Green-after**: same discriminating check against rebuilt candidate/source and fresh output directory; PASS: the executed regression refuses all three cases, leaves out absent/source digest stable/verify 0; existing native_offline_regrade external-output cases pass. Observed: not-run.
+- **Current evidence / counter-evidence**: regrade.rs canonicalizes source314 but only checks out.exists328; mkdir378/380 and task copy620-623 precede later checks. Regression uses production regrade and existing stand-in helpers: containment proof, not actual-native grader qualification.
+- **Test impact**: add stored standalone containment regression to native_driver; retain external-output, missing-cache, tamper and no-Agent cases.
 
-- **Finding source(s)**: C/P19-AUD-010, exact C identity/digest in JSONL.
-- **Decision**: `fix:align-native-run-rustdoc-with-current-contract`.
-- **Verification status**: Confirmed.
-- **File(s)**: `crates/opi-eval/src/runner/experiment.rs`, `crates/opi-eval/src/cli/run.rs`.
-- **Change kind**: documentation.
-- **Change**: align module line 13/preparation comment near 1167 with actual oracle=None near 1212; align CLI module lines 10-13 with native-material dispatch at 152-190. Describe selected real Agent/provider/native grader and explicit diagnostics. Rustdoc has no Chinese counterpart; bilingual README executable meaning is already accurate for this correction. Retain behavior/tests.
-- **Closure predicate**: cited comments agree with hermetic/native paths and explicit conformance selection.
-- **Red-before**: N/A: semantic prose contradiction statically proved; no runtime behavior change.
-- **Green-after**: source comparison, `python scripts/opi-doc-check.py`, `git diff --check`, `cargo fmt --check --all`, and `RUSTDOCFLAGS="-D warnings" cargo doc -p opi-eval --no-deps --locked` pass.
+### Batch B7: Use admitted native outcome for acceptance eligibility
 
-### Batch B7: Keep reasoning capability verdicts truthful
+**Closure predicate**: Valid sealed native task failure/timeout (including timeout tail after completed loop) counts among six execution trials; provider/preflight/infra or missing-loop evidence never counts.
+**Dependencies**: B1/B5; verification edits sequential
+**Verification union**: matching external probe; python3 -m unittest discover -s crates/opi-eval/scripts -p 'test_verify_local_acceptance.py'; cargo test -p opi-eval --test native_driver --locked --offline; final union below.
 
-**Closure predicate**: requested optional reasoning is retained as Unsupported when selected native execution cannot prove it effective; required refusal and settlement agree.
-**Dependencies**: B1 first for experiment.rs/tests/bilingual README/Unreleased ownership.
-**Verification union**: isolated projection matrix, required-control refusal, config/contract tests, native_driver and affected clippy.
+#### Fix B7.1: Use admitted native outcome for acceptance eligibility
 
-#### Fix B7.1: Use the existing unsupported verdict
+- **Finding source(s)**: `phase19-codex-gpt61-f60e458-20261003t041015z` + `37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a` + `P19-AUD-007`
+- **Decision**: fix:acceptance.valid-native-task-failure
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-eval/scripts/verify-local-acceptance.py`, `crates/opi-eval/scripts/test_verify_local_acceptance.py`, `CHANGELOG.md`
+- **Change kind**: behavioral
+- **Change**: Follow byte-bound sealed native graded classification. Permit benchmark-valid Agent nonzero/task timeouts and matching native task exceptions, including a bounded timeout tail without final AgentEnd after an already completed real provider/tool loop. Preserve preflight, actual Agent/task/artifact binding, selected first connection, actual model/response and completed tool-loop requirements. Provider/auth/infra/setup/undispatched/invalid grades remain ineligible. Structural fixtures never become real acceptance proof.
+- **Closure predicate**: Valid sealed native task failure/timeout (including timeout tail after completed loop) counts among six execution trials; provider/preflight/infra or missing-loop evidence never counts.
+- **Red-before**: `python3 /mnt/c/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/acceptance_probe.py --source /mnt/c/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/source --proof /mnt/c/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/acceptance-proof-v4`; FAIL: exit 1; six structural cases. success0, invalid-provider2 and invalid-preflight2 controls pass; graded-nonzero2, graded-timeout2 and graded-partial-timeout2 fail despite consistent graded settlements.
+- **Green-after**: same discriminating check against rebuilt candidate/source and fresh output directory; PASS: six cases pass; eligible nonzero/timeouts accepted and invalid controls rejected. Verify the exact actual six-trial root separately with rebuilt Companion. Observed: not-run.
+- **Current evidence / counter-evidence**: verify-local-acceptance.py:665-672 unconditionally requires exit 0/no timeout/no exception; runner/experiment.rs:1839-1847 and terminal-outcome fixtures already admit benchmark-valid task failures. Structural probe uses a recording Companion stub, not live/native evidence.
+- **Test impact**: add/update valid nonzero/timeout/partial-tail fixtures; retain provider/preflight/infra/missing-loop negatives and sealed-outcome consistency.
 
-- **Finding source(s)**: C/P19-AUD-011, exact C identity/digest in JSONL.
-- **Decision**: `fix:record-unproven-reasoning-as-unsupported`.
-- **Verification status**: Confirmed.
-- **File(s)**: `crates/opi-eval/src/experiment.rs`, `crates/opi-eval/tests/experiment_contract.rs`, both opi-eval README counterparts, `CHANGELOG.md`.
-- **Change kind**: behavioral.
-- **Change**: use existing ProjectedControl::Unsupported for supplied reasoning, retaining request/reason. Synchronize current projection/render assertions and Rustdoc, optional admission/required early rejection and unsupported settlement/comparison. Preserve output/context controls; do not add a new enum/config flag or invent effectiveness. Record deliberate 0.x projection tightening and both README counterparts. Serialized shape/schema version is retained.
-- **Closure predicate**: both clients/all three protocols preserve high as requested Unsupported without contradictory effectiveness claims.
-- **Red-before**: `cargo test -p opi-eval --lib optional_reasoning_projection_records_unsupported --locked`: exit 101,1 executed failure,0 ignored; first Opi/Anthropic case claims Effective. Shared branch and pi --thinking off corroborate scope.
-- **Green-after**: same command passes all 6 client/protocol cases; retain required-refusal matrix and run affected experiment_contract/native_driver tests.
+### Batch B8: Admit the current exact Docker Desktop identity
 
-### Batch B8: Enforce privacy at the first native capture sink
+**Closure predicate**: Both known exact Desktop OS identities reach the existing bound storage observer; unknown/near-match/nonlocal/drifted identities stay unknown. Current prepare publishes verified material/7 and all six required native predicates execute/pass with final identities.
+**Dependencies**: none; final native evidence follows all causal edits.
+**Verification union**: matching regression; existing Desktop namespace/timeout/selection tests; three actual public prepares and material validation; six exact native filters; final union below.
 
-**Closure predicate**: fresh Opi/Pi captures persist only validated privacy-projected bytes, under full and terminal-only policies; unsupported or unsafe streams refuse without a native score, while non-private terminal/tool/grading binding remains truthful.
-**Dependencies**: B2/B7 first. B6/B9 follow; refresh shared producer pins after their final bytes. Existing read-only offline evidence obligations remain separate from fresh dispatch.
-**Verification union**: persistence red, actual integration first-write observer, parser/helper subprocess cases, native_driver and controlled fixtures, material/build identity tests, changed script suites, bilingual docs and the final workspace union.
+#### Fix B8.1: Preserve Desktop namespace binding for its current OS name
 
-#### Fix B8.1: Stage one bounded shared capture helper before credentials
+- **Finding source(s)**: `phase19-codex-gpt61-f60e458-20261003t041015z` + `37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a` + `P19-AUD-008`
+- **Decision**: fix:native-witness.desktop-storage-admission
+- **Verification status**: Partially confirmed
+- **File(s)**: `crates/opi-eval/src/runner/prepare.rs`, `CHANGELOG.md`
+- **Change kind**: behavioral
+- **Change**: Admit exactly "Docker Desktop" and "Docker Desktop (containerized)" at the existing Linux Desktop OS gate. Retain normalized local Unix endpoint, selected engine/root, unique dockerd process/start/mount, bounded secret-free WSL observation and exact before/after endpoint/engine/root/OS rechecks. Add the stored positive regression and near-match/unknown-name negatives; retain current namespace/process/malformed/timeout/remote/context-precedence cases. No substring matching, fallback capacity, wrapper, config switch, dependency or Docker runtime modification belongs to this repair. Existing current prepare/validate and native harnesses collect the green proofs.
+- **Closure predicate**: Both known exact Desktop OS identities reach the existing bound storage observer; unknown/near-match/nonlocal/drifted identities stay unknown. Current prepare publishes verified material/7 and all six required native predicates execute/pass with final identities.
+- **Red-before**: In the isolated source export with only desktop-label-red/regression.rs inserted: `CARGO_TARGET_DIR=/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e CARGO_INCREMENTAL=1 cargo test -p opi-eval --lib --locked --offline desktop_containerized_storage_observer_binds_current_identity -- --nocapture`; FAIL exit101, 0 passed/1 failed/172 filtered, storage None instead of10485760. Current public prepare independently exits2 with engine_storage_bytes unknown, while the exact unchanged real namespace script verifies1016229654528 bytes.
+- **Green-after**: Same stored regression against repaired source: PASS/one executed. Retain existing Desktop binding/timeout/refusal tests. With rebuilt final Companion/helper, run public prepare using the three exact configs under native-material-current/attempt-01/public-prepare/{terminal-bench-2.1,terminal-bench-3.0,deepswe-v1.1}/experiment.toml to fresh b8-green family outputs; validate their /7 and derived map as described above. Run the six explicit native_driver ignored/exact/nocapture filters with admitted matching final inputs and retained raw logs. Expected: all prepares0, all validations0, six tests executed/pass and no owned residuals. Observed: not-run.
+- **Current evidence / counter-evidence**: The original finding is an executed-proof gap, not an allegation of this OS gate. Two current predicates now pass. The independent current prepare refusal and test-only red identify the minimal production blocker for the remaining four; stock real engine-ID/root/process/mount checks pass, so no operator/spec decision or manufactured material is needed to design the repair. Source Major is retained until required native proof executes.
+- **Test impact**: add one positive and closed-name negatives in existing prepare.rs tests; retain all namespace/selection/timeout guards and six native harnesses. Refresh the final musl helper and record every actual source/build/client/material/native identity. No paid provider or real credential access.
 
-- **Finding source(s)**: C/P19-AUD-003, exact C run/digest in Active sources and JSONL.
-- **Decision**: `fix:filter-private-thinking-before-native-persistence` (D1 user-confirmed).
-- **Verification status**: Confirmed; Major.
-- **File(s)**: exact JSONL union: binary-local `src/native_capture.rs` plus private main dispatch; experiment/material/prepare/plan/native runner; benchmark process/regrade/conformance consumers; both integration modules; build/materializer/native-smoke/artifact/acceptance scripts and their changed test owners; native_driver/support; two new synthetic thinking fixtures; static producer pins; both README counterparts; root Unreleased. No library entry or Agent Core edit.
-- **Change kind**: behavioral.
-- **Closure predicate**: both capture policies persist no private thinking at actual first sinks or later artifacts; recognized streams retain non-private native bindings and unknown/unsafe streams refuse without a score.
-- **Change**: add a binary-local bounded Rust parser and hidden internal mode of the existing Companion executable. The private dispatch exposes no new SDK contract, crate, dependency, trait or configuration flag. Keep host proof/partial validation in its existing owners. Reuse the build producer's Cargo compiler-artifact locator to build and pin an x86_64-unknown-linux-musl helper with executable digest, source/Cargo.lock identity and target. Transport it alongside the selected Agent and verify task-side preflight before credentials. Refuse unavailable targets, dynamic loader dependencies, incompatible platforms or failed preflight; do not assume the GNU host CLI or an ambient Python/jq/Node parser runs in every task image. The helper spawns the Agent through bounded stdout/stderr pipes, preserving owned process-group cancellation and observed Agent exit. Replace direct raw shell redirects at Harbor lines587-595 and Pier626-630. Never spool raw contents or fall back to direct writes. Apply equivalent closed handling to version preflight streams, exceptions and partial captures.
-- **Admitted grammar**: cover exact Opi NDJSON/schema2 event variants and Pi session2/3 lifecycle/retry correlation already proved by current source/importers and the six admitted capture shape inventory. Transform assistant messages wherever repeated in message/turn/AgentEnd events and update partial/done/error snapshots. Remove thinking text, declared private signatures and redacted_thinking data; empty private thinking delta/end content, preserving placeholders and content_index/contentIndex. Preserve native model/API/provider, IDs, usage/cost, stop/retry/settlement and non-private tool IDs/names/arguments/results. Do not recursively remove arbitrary tool JSON properties named thinking. Unknown envelope/event/block fields or types, duplicate keys, invalid UTF-8/JSON, incomplete records or exceeded existing bounds refuse before that record is written. Use the existing64MiB stream ceiling and a bounded record buffer within it; the largest admitted stream/record is33,930,516/844,458 bytes, so do not add an arbitrary smaller ceiling. Safe unchanged records retain their exact original bytes, whitespace and newlines; only transformed records are serialized.
-- **Stderr and traces**: admit empty stderr and explicitly validated diagnostic forms; opaque stderr retains only static refusal/status/count/digest metadata and excludes a score. Preserve Opi's typed redacted trace contract. Validate safe prefixes and known trace records before partial copies; replace the private-unredacted receipt path with truthful sanitized/incomplete status. Terminal-only uses the same first-sink boundary and derives terminal facts from safe bytes. Classification as LocalOnly never substitutes for non-persistence.
-- **Fresh proof formats**: native-material/7 requires helper executable pin/target/protocol; native-handoff/4 carries the same identity; new native-capture/1 records closed policy/status and per-stream proof; native-agent-terminal/3 binds helper preflight/capture to existing native identity; partial-capture/2 records safe-prefix/bounds/proofs. Distinguish producer-attested raw source commitment from independently recomputed retained-file identity. Claim a complete raw_source_sha256 only after bounded full EOF; interruption/overflow/refusal records a prefix/incomplete commitment. Host checks compare retained sanitized bytes/digests before native_terminal_completion/client_message, before sealing and before partial copying. Missing, altered, incomplete-for-success or contradictory proof refuses without a fabricated terminal/score. Synchronize all fresh material/terminal producers and consumers, including native-smoke and offline artifact verification.
-- **Legacy boundary**: the current README offline contract requires old sealed verify/report/regrade. Retain material/6 and terminal/2 admission only for read-only offline use with their original seals. Never rewrite or relabel legacy bytes as privacy-safe and never use those formats for fresh Agent dispatch. Regrade creates only fresh verifier derivatives from the original declared artifacts. No private payload migration or deletion is authorized. Record the deliberate0.x tightening and versions in Unreleased and both README counterparts.
-- **Red-before**: `cargo test -p opi-eval --test security_plan_probe --locked plan_security_private_thinking_is_not_persisted -- --exact --nocapture` in the archive: exit101,0 passed/1 intended failure/0 ignored/123 filtered,14 marker-bearing task/host/bundle/terminal paths across both policies. Separate earlier classification red admits4 Exportable entries. `python3 security-first-sink-probe.py` in archive parent exits1:8 actual generated Harbor/Pier × Opi/Pi × mounted/downloaded launches complete without fixture errors, all observe stdout/stderr markers while emitter is active and after settlement. Existing integration loaders/shell environments execute the real launch path; no Docker/provider/native task runs. Only presence/path metadata is emitted. The two checks independently prove retained persistence and first-write leakage.
-- **Green-after**: retain both red commands and their no-marker predicates, permitting valid sanitized success or a specifically identified unsafe-format refusal in the persistence case. Generic missing-helper/material refusal cannot count as first-sink green. Promote fixture emission through the actual helper seam with fresh pinned formats; the first-sink witness must observe an active emitter and a successful recognized stdout capture preserving terminal/retry/tool/native bindings, testing opaque stderr refusal separately. For both integration families and mounted/downloaded capture, poll files while the emitter is alive; thinking message/delta/signature markers never appear, and cancellation leaves only safe prefixes/static diagnostics. Add duplicate-key/type/unknown/malformed/incomplete/overflow/stderr refusal, byte-identical safe stream, arbitrary tool-JSON preservation, altered proof, missing/unrunnable helper, preflight-before-credentials and incomplete-source-commitment cases. Retain >1MiB safe capture, terminal-only omission, native identity/cancellation/partial bounds and legacy offline verify/regrade. Run every new/modified Rust filter/binary (including helper binary tests), `test_native_integrations.py`, `test_native_smoke_output_control.py`, `test_verify_native_smoke_artifact.py`, `test_verify_native_smoke_ci.py`, `test_verify_local_acceptance.py`, relevant build/materializer identity cases and the final union.
+### Batch B9: Report every selected preparation input
 
+**Closure predicate**: A cache with only static lock and selected Agent files explicitly reports all remaining selected requirements missing; pi-only/invalid-config no-effect behavior remains.
+**Dependencies**: B4; tool observations inherit supervision
+**Verification union**: matching external probe; cargo test -p opi-eval --test fail_closed_cli --test native_driver --locked --offline; final union below.
 
-### Batch B9: Delegate external-lock CI policy while preserving transport
+#### Fix B9.1: Report every selected preparation input
 
-**Closure predicate**: the manually dispatched default producer publishes a receipt only after successful shared prepare and explicit bound native conformance; its transport, oracle and network claims describe the actual shared evidence.
-**Dependencies**: B4 and B8 first; B8 changes the fresh native-material/integration contract consumed by preparation. Update static byte pins last after workflow/scripts stabilize.
-**Verification union**: exact default-shell synthetic delegation/refusal probe, external-lock CI/artifact/acquisition Python suites, full script discovery, offline receipt identity/refusal checks, bilingual docs and final union.
+- **Finding source(s)**: `phase19-codex-gpt61-f60e458-20261003t041015z` + `37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a` + `P19-AUD-010`
+- **Decision**: fix:doctor.selected-materials.complete-observations
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-eval/src/runner/prepare.rs`, `crates/opi-eval/tests/fail_closed_cli.rs`, `crates/opi-eval/README.md`, `crates/opi-eval/README.zh.md`, `CHANGELOG.md`
+- **Change kind**: behavioral
+- **Change**: Derive doctor observations from the same selected product/benchmark/runner requirements as prepare: corpus/profile, uv, runner project/lock/interpreter/entrypoint, applicable integration/provider and capture helper. Emit expected locations/present/missing/unknown reasons without download/model/credential/Agent effects. Preserve pi-only selection; unselected product inputs are not required.
+- **Closure predicate**: A cache with only static lock and selected Agent files explicitly reports all remaining selected requirements missing; pi-only/invalid-config no-effect behavior remains.
+- **Red-before**: `python3 /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/boundary-probes.py --binary /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/opi-eval-baseline --source /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/source --case doctor-materials --out /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/doctor-materials-red`; FAIL: exit 1; doctor 0 reports only static lock/two present Agents; all seven corpus/profile/uv/runner/integration/provider/capture categories absent.
+- **Green-after**: same discriminating check against rebuilt candidate/source and fresh output directory; PASS: every required selected category has actionable observation; selected/unselected-product/no-mutation controls pass. Observed: not-run.
+- **Current evidence / counter-evidence**: doctor213-248 versus prepare1177-1221 and capture helper1757-1765. Existing empty-cache test asserts only three material IDs.
+- **Test impact**: add partial-cache/pi-only selected-input cases; update empty-cache observations; retain invalid-config/no-mutation tests.
 
-#### Fix B9.1: Preserve dispatch and receipt, use shared preparation/conformance
+### Batch B10: Classify all pinned Pi protocol truncations
 
-- **Finding source(s)**: C/P19-AUD-007, exact C run/digest in Active sources and JSONL.
-- **Decision**: `fix:delegate-external-lock-ci-to-shared-cli` (D4 user-confirmed).
-- **Verification status**: Confirmed; Minor.
-- **File(s)**: `.github/workflows/opi-eval-external-lock-materialization.yml`; `crates/opi-eval/scripts/materialize-external-locks.sh`, `verify-external-lock-ci.py`, `test_verify_external_lock_ci.py`, `verify-external-lock-artifact.py`, `test_verify_external_lock_artifact.py`; `crates/opi-eval/external-locks/static/linux-x86_64.json`; both opi-eval README counterparts; `CHANGELOG.md`. Fixture shape/pin updates belong to the two existing Python test files. The unused static valid-static/valid-resolved fixtures and independent local-cache fixture remain outside the required path union.
-- **Change kind**: behavioral.
-- **Closure predicate**: default CI uses shared preparation and explicit conformance authority; shared refusal prevents receipt publication, and successful /2 transport claims bind the actual reports/material/raw artifacts.
-- **Change**: keep candidate_sha-only manual dispatch, byte admission, 30-day upload and transport provenance. Build/locate the candidate Companion from Cargo compiler-artifact output using the existing native-smoke locator pattern; reuse `dtolnay/rust-toolchain@889fac408b4da0905346410f253f0c55fbcb6613`, toolchain `1.97.0`, already declared in the static lock. Seed the declared cache with the static lock/profile/provider/integrations. Generate one TB2.1 diagnostic config selecting the pinned task and both clients, with unused loopback fixture connection and no credentials. Invoke shared `prepare --config <config> --out <prepared> --opi-source <candidate> --opi-commit <candidate_sha>`, then explicit `conformance --suite benchmark --adapter terminal-bench-2.1 --case oracle-witness --root <oracle> --fixtures <fixtures> --provider <scripted-provider> --native-material <prepared/material.json>`. Prepare's existing acquisition backend uses its separate prepare mode, preventing default recursion. Both clients are pinned material inputs because current conformance requires them; this diagnostic does not execute either Agent or call a provider. Remove only duplicate default task/runner/uv acquisition, image pull/tag policy and inline Harbor Trial driver. Keep pinned closure archives/shims labelled transport-only, unapplied to the trial; inspect/export the already prepared OCI graph. Shared task preparation preserves lifecycle/network declarations while resolving immutable images. Shared oracle conformance selects official Harbor OracleAgent and labels the outcome DiagnosticWitness/no Agent score.
-- **Receipt contract**: introduce `opi-eval-materialization-receipt/2` and derived `opi-eval-external-lock/resolved/2` for required shared provenance. Retain common candidate/static-lock/workflow/producer/run/time/expiry/artifact/closure/OCI fields. Add contained, relative, SHA-bound references for the Companion, diagnostic config, prepare command/report/material and conformance command/report; bind the final fresh material digest/schema after B8 and require suite/adapter/case, `met: true`, native reward origin and `agent_score: false`. Keep material origin `local`; do not insert GitHub provenance into NativeMaterial. Copy oracle status/reward and uniquely bound raw result/CTRF digests from the successful shared report, without a second reward threshold or first-recursive-match fallback. Refuse missing/ambiguous artifacts or wrong task/material bindings before final receipt publication. Distinguish task-declared network mode (`basis: pinned-task-policy`) from an unobserved effective mode; never claim offline enforcement from host UV_OFFLINE. The current verifier rejects legacy receipt/resolved /1; retained /1 bytes and their original candidate-bound producer/verifier are preserved without relabelling or migration. Record the scoped 0.x receipt change in Unreleased and synchronize both README counterparts. No new Rust seam/dependency or partial-material loader.
-- **Red-before**: `PYTHONDONTWRITEBYTECODE=1 python3 tooling-external-route-red.py` from archive parent: exit1, 2 executed failures / 0 errors. Exact committed default Bash SHA-256 `edaae15faa05eb21b237f763af5d552ab43bc7c0e90f434cb23982f4bf1883cd` writes a receipt without shared prepare/conformance, and writes one despite configured shared conformance refusal. Fake tools and synthetic intercepted URL bytes only; no actual HTTP/Docker/uv/Cargo/Agent/grader run.
-- **Green-after**: the same delegation/refusal predicates pass on the final default script with complete synthetic /2 outputs; extend the fixture's locator output to the actual build seam without weakening assertions. Promote them into existing CI tests, adding prepare refusal, exit0/non-met conformance, wrong binding and missing/ambiguous raw artifact cases. Every refusal retains safe diagnostics and publishes no final receipt. Run `python3 -m unittest discover -s crates/opi-eval/scripts -p test_verify_external_lock_ci.py -v`, corresponding `test_verify_external_lock_artifact.py` and `test_prepare_acquisition.py`, then full discovery. Offline /2 verification passes exact byte/identity bindings; real CI/native execution remains separate from these hermetic checks.
+**Closure predicate**: All three exact messages import provider-protocol-error with failed outcomes at client exit 0; unknown/near-match/auth/rate/success retain classifications.
+**Dependencies**: none
+**Verification union**: matching external probe; cargo test -p opi-eval --test agent_integration_conformance --locked --offline; cargo test -p opi-eval --lib --locked --offline; final union below.
 
+#### Fix B10.1: Classify all pinned Pi protocol truncations
 
-## Current proof inventory and applicability
+- **Finding source(s)**: `phase19-codex-gpt61-f60e458-20261003t041015z` + `37f779a15dad2250e807239cc4b4718256a117402fdba496fc3da8452e47c28a` + `P19-AUD-011`
+- **Decision**: fix:pi.native-terminal.protocol-truncation
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-eval/src/agent/pi.rs`, `crates/opi-eval/tests/agent_integration_conformance.rs`, `CHANGELOG.md`
+- **Change kind**: behavioral
+- **Change**: Exact-match three pinned native truncation messages for Completions/Anthropic/Responses as provider-protocol-error. Preserve unknown/near-miss fallback and auth/rate/success classes; no substring inference.
+- **Closure predicate**: All three exact messages import provider-protocol-error with failed outcomes at client exit 0; unknown/near-match/auth/rate/success retain classifications.
+- **Red-before**: `wsl -d Ubuntu -- bash /mnt/c/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/capture-protocol-fresh/run-probe.sh protocol`; FAIL: exit 1; eight cases executed, six controls pass; Anthropic/Responses generic provider-failure, Completions correctly typed.
+- **Green-after**: same discriminating check against rebuilt candidate/source and fresh output directory; PASS: eight/eight conformance cases with known exact strings typed and negative controls unchanged. Observed: not-run.
+- **Current evidence / counter-evidence**: agent/pi.rs:339-348 only recognizes Stream ended without finish_reason; native_driver.rs:4133-4140 acknowledges the other two messages. Generic fallback remains failed/unscored, supporting unchanged Minor severity.
+- **Test impact**: add three-protocol copied-fixture cases; update Pi coverage; retain unknown/auth/rate/success controls.
 
-Only the validated indexed advisory appendix's exact candidate raw proofs were used for C005/C006. No history directory, prior remediation conclusion or alternate finding source was searched. Independent rechecks establish all ten named files' bytes/digests, commands/results/counts, source/build/client/material identity and predicate. An appendix prose lead without exact raw path was not reconstructed. Absence is bounded to inspected references.
+## Raw current evidence and advisory applicability
 
-- Supplied manifest SHA-256 `9897f08fed7876b757542235e77e54735d233b1d6b0d82ec5024eab26fc6a9ce`; genuine six native trials and source-applicable accepted:true proof are credited for actual loop, not budget/witness/regrade criteria.
-- Raw Opi source manifest SHA-256 `8bd27e06e0690f5248031dfdabd91c78bc7418633a954c43801fd796d894ed53`; independent in-memory archive comparison at remediation_head matches 694/694 relevant runtime paths, zero added/missing/mismatched. Retained executable SHA-256 `0ccc2b7f5be5257068c1d3bb8cb73dfeaa0e482c16b468872179a0b1720e2ad2` matches all three Opi terminals. Relevant current integration/material identities match. Synthetic export instrumentation/__pycache__ does not enter committed source applicability.
-- All six raw stdout digests match their bundle entries and have one AgentEnd; Opi/pi tool start/end counts TB2.1=4/4, TB3=95/78, DeepSWE=100/92. No raw reasoning text is included here.
-- Six sealed time_limit_seconds/agent_timeout_seconds/verifier_timeout_seconds/max_output_tokens/max_output_bytes are null; concurrency 1 / max_trials 2. Their exact output-control proof, defaults and finite count do not establish explicit pre-run total usage/time scope.
-- Applicable default Rust proof 369 passed,0 failed,11 ignored across 14 result blocks. Other exact-client/cancellation/cleanup/provider-failure proofs each execute 1 pass; none executes all controlled pinned grader witnesses or successful genuine saved-artifact regrade.
-- Docker Linux engine admission succeeds (linux/x86_64). Retained material/6 files exist and match the manifest digests. Their referenced `/tmp/opi-p19-b6-cache-20260927/pins/static/linux-x86_64.json` is absent; pi/task/runner/uv dependencies in the same cache root are also absent. The native loader reads the pinned static lock before task dispatch. Its generic IO message says "cannot read native material manifest"; the retained manifest itself exists, so this is a missing cache prerequisite, not a demonstrated runtime bug.
-- The explicitly authorized `native_tb21_artifact_witness` was executed with offline Cargo, filtered credential environment, the persistent Cargo cache, exact retained TB2.1 material and a 60-second bound: exit101, 0 passed / 1 failed / 0 ignored, CLI exit2 at material admission. No Agent, provider or Docker task launched; no download or credential-file read occurred. The other native filters/regrade were not repeated against the same missing prerequisite. The diagnostic trial root is `/tmp/opi-eval-terminal-bench-2.1-oracle-witness-lqeJkm`.
+Beyond validated indexed appendices, only their exact named candidate raw proofs were used: acceptance manifest/root (and its contained trial/control/material/artifact records), and the current registry path. No history report was reconstructed. Candidate acceptance manifest SHA-256 9897f08fed7876b757542235e77e54735d233b1d6b0d82ec5024eab26fc6a9ce matches. Current exported offline verifier returned accepted=true/six attributable trials/three families; current Companion verify/report accepted each family. No Agent/provider/credential/new native trial was invoked. Opi product paths/manifests/lockfile have no committed diff from manifest Opi commit daaf2cfb540cb9890d930973cff725802a742a93 to remediation_head. This supports retained client applicability, not current Eval fresh dispatch/capture or final/native witness predicates.
 
-Fresh local proof files below are relative to the unique archive parent in the header. They pin review evidence, not registered sources or progress state:
+| Current raw artifact | SHA-256 | Predicate / limitation |
+|---|---|---|
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/source.tar` | `15baf817301e0ef5415f2b567d97e174787493b74dbf67c625373aff93992096` | Original committed evidence archive at 3e1301178c471499f0fc36d4a8b1cd1f467cef7d; preserved |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-all-changes-commit-607dca8922694fa5bdbea364a194a5df/source-after-research.tar` | `902b32772611c03a65d2b6d999118f1cc0e6fb6b18696ae1ded36a39f315f323` | Current remediation-head archive; only 16 research additions |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-all-changes-commit-607dca8922694fa5bdbea364a194a5df/baseline-applicability.json` | `7b1b0f2333ac5acea6cc78fa374641b7fa6c2d3eca9715a84841bf8bf0a7890d` | Independent 922-entry equality and registered source/index bindings PASS |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-all-changes-commit-607dca8922694fa5bdbea364a194a5df/archive-doc-check.json` | `67cef76fb7f53aae1c220168b5f5d3027222a0e7f7913a09bff4d64efd5aadfb` | Current committed export documentation contracts PASS |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/opi-eval-baseline` | `fca95253fd44015a21431cdc7bf0f5539a35c1c20127ad259d632c3c378cd3b1` | Baseline WSL/Linux executable |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/boundary-probes.py` | `99df833a481fa01f8404794e44b81f1d1e9bb2fc830091f3ef6f305d95239906` | Four public boundary harnesses |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/quoted-bounds-red/result.json` | `06dc77d9c8c413df608559ace1c41683697cf8e36686cc374b97c8c48436a58f` | 21 cases; FAIL |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/explicit-max-trials-red-v2/result.json` | `7964e41af7932a30484a5704ef4b65b8f5ba62a024f8426420acfc6b5171c609` | two sealed trials under max 1; FAIL |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/doctor-stall-red/result.json` | `89db2febbe475a502f4691923d52743c764d530d4af0a73f3cb838e7a9184a65` | 15.018s owned-watchdog; FAIL |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/doctor-materials-red/result.json` | `dd195de9d5bf3470c660cd0c0f87b89200b7ffc4e31b51c0f73aa2bfb703a016` | seven categories missing; FAIL |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/zero_seal_probe.py` | `115d4c18a9f75d346a6f895b86ad2a7e647889a286fdc494be308bb04a35775f` | Interrupted/sealed harness |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/zero-seal-proof-v2/results.json` | `ea013445ff4c71c78cb3e252adabeb299e0a49b97239b7d7b157235336e96b7b` | two cases; FAIL |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/regrade_regression.rs` | `fc42fd967d446cb169b8770cc6e6516a65002179171434146669af0ab365d227` | Only added test in independent archive |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/regrade-proof/regrade-results.json` | `e4d00a3db688b7b0379c918ade2db474c5b4f81aaf13a4d45a0ffc9c6bbc74e0` | three stand-in branches; FAIL, no native grader qualification |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/acceptance_probe.py` | `0708227318bfbc1c5b987b23e8bf0d3a7615dea34f8175bd8d74fa075ec871ef` | Structural acceptance harness |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-p19-report-regrade-acceptance-2407cbfcbd7842cba81f1bf7bd861a7f/acceptance-proof-v4/results.json` | `28ace421b9ba756a265a66f14f4b6e1d4927bb9ceb55ab75a89b69191487e7f1` | six cases; FAIL, recording Companion stub |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/capture-protocol-fresh/p19-capture-protocol-probe.py` | `0a86ab81fc52b3a028359be7b1fbaa26d1c6b4e3c221cd6b85a7fb849a7d72c8` | Synthetic capture/copied Pi conformance harness |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/capture-protocol-fresh/raw/privacy-v4tu7187/results.json` | `7aa4bafe2043b277d599c5c2dd705279e7c6e9a69fcce1101cc3958b7be25960` | 32 cases; FAIL |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/capture-protocol-fresh/raw/protocol-adyzauwx/results.json` | `d4879c92ad55e31c216cdd09ce488a746b798db169c44374ec3c622d61d64be0` | eight cases; FAIL |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/acceptance-current.json` | `83e921d9c83bf4737bed0b959438d4789512ce789727d9546f2bb4a728db6c06` | six retained actual trials accepted offline, not fresh execution |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-input-inventory.json` | `ad1ef9d709c782a53d719054dfb1f325d010e64e8b91c6c803da9d009baad1f9` | exact allowed dependency paths/hash checks; old native inputs missing |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-driver-build-identity.json` | `41d0903792d341656143ab778ca47752a115da74431119861b305b0ad860bc76` | unchanged current test binary built; zero native filters executed by build |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-docker/mount-probe.json` | `bc8276f8ed5acbc294a2c575c84ddcc0efd9d20350047c9e3b895aa9fb4a1f80` | exit125 daemon bind-source refusal; exact owned-name cleanup, not native witness |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-docker/preconditions.json` | `37e51676c6bf8e891d9e376b95d8e19fa5e875a9eec612cdd28ee6039b0dd41c` | later proxy absent; native Docker filter count zero |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-pi/attempt-03/result.json` | `1c981c158200b37e4306e7814982c23554da49fec102c56c70704dc1bd54eeb5` | current pinned Pi acquisition exit0 |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-pi/attempt-03/input-identities.json` | `53f6899784b4667787140fdadd3b634f98dd5adf7c5ba8377da68d9bcc060145` | current static lock and unchanged producer pins |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-pi/attempt-03/retained-cache-identities.json` | `cf8f6c94d50389d06ccd1b62af1bd3c76eb1813e559698cfecf7704d6d15fa6e` | 1199 independently rehashed cache files |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-pi/attempt-03/matrix/result.json` | `4d0c6574672f649b73dca85f41dcdead743c6ecc78750c6e092a5d711762de98` | actual matrix PASS/1 executed/30 clients/no owned residuals |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-pi/attempt-03/matrix/retained-evidence-identities.json` | `3165b90ad5cf4e702ac782fcc2f2ddadd32e41de8a8d217498f3fb9175a1c0c3` | 230 independently rehashed evidence files |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/current-native-matrix-verification.json` | `fd1d5c0addace98ae04f7a5ce9be33a19befd4e59fdac57911808a1387174d17` | independent identity/count/exit/tool/request-limit verification PASS |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/docker-runtime-current/settings-change.json` | `78798a29d49630f4a02a03d8a47d054e705e257c012e67d2b5b3fdf46bfcb137` | Ubuntu-only integration repair; original/candidate settings backups retained |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/docker-runtime-current/preflight.json` | `59d027b7a4d51bbc479b7c05eb9e173c124f06ffae3a24da9efb3d71938996ad` | two cached no-network readonly mounts PASS; actual engine/image binding |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/docker-runtime-current/engine-storage-observation.json` | `a070221720e755a0866ac94b38977dcbb17f67b1e30b1a70c31a96fac6ec3724` | unmodified real namespace script PASS; current OS-name gate bypassed only for read-only diagnosis |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-helper-current/identity.json` | `b06d4a20802f94bc628f9e37eff0dd4035691b0306cceff7c74cd7240b74ad22` | unchanged current musl helper build/static ELF identity |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-material-current/attempt-01/handoff.json` | `d4281035fbe5d2d584d28422d2e3f0cd83484cc532deea2c70415e26089edb38` | six pinned no-model material acquisition stages PASS |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-material-current/attempt-01/record-hashes.json` | `3c264f2922b18e428f5b4ea7e6a08985c92e71f87a1fd44a413e0b5c383a4874` | 57 independently rehashed raw acquisition records |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/current-native-material-verification.json` | `a081bfdf85f3ef57ea543fd8c6ee0874a56d687ae4ec834efcebdf735f0e4ba1` | 57 raw/12 committed seeds/8421 source files/runner/helper identities PASS |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-material-current/attempt-01/public-prepare/inputs.json` | `e370f49977e7c64761f5416175cc55cf51c437153554fca02014f0baffdd7d0f` | verified exact client/helper copies and reviewed three configs |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-material-current/attempt-01/public-prepare/terminal-bench-2.1/result.json` | `a36ea972c9dbbc29b0fef8d3407d2868474507d7ff8fadab577a14d7f6409946` | current public prepare exit2; no material published/no residuals |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/desktop-label-red/regression.rs` | `e1fd57cee5898e1a6c6427f225a034107fa6b5d93c662595f149a3a2632143e9` | only added test in separate committed archive |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/desktop-label-red/result.json` | `e98afad29b3288bec32ca2b77863446750e988b955f5ee61572d9c820201bc1a` | one executed regression FAIL, production gate unchanged |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-witness-current/native_owned_resource_cancellation/result.json` | `52bdf2abb21b938af1d6c0658c34c321cf54423789366cfd5497ea65d68baadc` | native cleanup PASS/1 executed/no outer rescue/no residuals |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-witness-current/native_owned_resource_cancellation/retained-evidence-identities.json` | `c2bd01f01b68c0c50bf82b35929c775ab4e76fcfe26a90014f16a83dc6473389` | 199 independently rehashed retained files |
+| `C:/Users/Luiz/AppData/Local/Temp/opi-remediate-phase19-ta59potl/native-witness-current/native_owned_resource_cancellation/verification.json` | `fc5f1cc95a2f146703096e5cc461ea6ca5c697e71b74e6ba5ddb4499de65c84b` | independent28 checks PASS; exact embedded fixture/source dependencies checked |
 
-| Local proof | SHA-256 |
-|---|---|
-| `acceptance-probes.py` | `484ab82488ece902e02d92ebcc564e9afb7f94179ba83744a95cb38dd00d5fe1` |
-| `acceptance-red.log` | `1d796dc1dd8084896d716352e39e4162c70ad4c9b6317b4baac13848393ea950` |
-| `capture-bound-red.log` | `e4abd6fc8b3f9272e21e7c28fdb79c9ef95bce35c19d7750b9b755ac2f4756da` |
-| `reasoning-projection-red.log` | `2702bedd631006f0e02352e4c0293144ec56fae15805d42cdf8ce82e93e8c970` |
-| `security-red-before.log` | `c3248ab9283c663a9d55dea9fc5882bf9a275fc6f2c699b91674e0b3e7afdede` |
-| `host-credential-red.log` | `157b80eed2bbc42e5480cb055e365d34c4c4167e65e2b01fe0bd131fd4fd2522` |
-| `security-persistence-red-before.log` | `cd9af9bf994ace255035ca92effeea5865c093c83aa90e4e274a099b69a9acfd` |
-| `security-persistence-red.sh` | `c7d335de62c9d6f2e6ee05cfa3f129f72ce1fe50ffca30e12ded370f230083c1` |
-| `security-first-sink-probe.py` | `76ae7bd4fe541454fd0a8fc2a60f337555207c15aec86590d2b5af0e504adc53` |
-| `security-first-sink-red-before.log` | `106f1ee914d63b87a956d25846f09ff7d9b3bbc4a2cd7869a4ce8e54ab90c3ff` |
-| `security-shape-metadata.json` | `d41a7c0515ef6df0b97c43669422e7283bf510b542e166e21e72367951f54edb` |
-| `security-shapes-current.py` | `39bd9f04fd28d025c78abfb40942752549652b11ffe979a9a689a5f561f08c22` |
-| `src/crates/opi-eval/src/experiment.rs` | `090d814e0557ff9daec8cd60a2966ac8ffdf32e45c8a1c6565ef08bf29314f0a` |
-| `src/crates/opi-eval/tests/security_plan_probe.rs` | `3dc6570b9f179b7e9d11a92f724b33de326ccc975daeab29d39cc41627cf9d6a` |
-| `tooling-uv-only-probe.py` | `e7b070f4314503daf26db8c025f4bb448c12cfbd32115633d2e920ad4900431a` |
-| `tooling-current-fixture-probe.py` | `f941840cfea0535ae15d20475241228374258735d8823c6165257c014caeb7d1` |
-| `tooling-external-route-red.py` | `c209e4b6e2e2bfaaaa5b83ab6809764775ca8ff64bfda1f4fb47f0012cb099f2` |
-| `tooling-external-route-red.log` | `6a70f6b2742bfee8b82ffba8d74a48d7c91d189435da65bc1433143de7c944fa` |
-| `native-cache-admission.sh` | `a1eef3bc7111d3b328fbf8114c79c19cbe8d798ecd37f18cf79736a70cb025ab` |
-| `native-cache-admission.log` | `8d98b2853ce29168339e118a67260fbd2ac02a6b5d0a73465d8695228646382b` |
-| `native-cache-inventory.py` | `ac3df79632af90658a66472065ba8f07f04f8e5307bff1c77d6798d923234b96` |
-| `evidence-verification.json` | `6ce0f9c57244c9c6861995144856cc6211903005e6e8bf534542cb0cce2641f8` |
-
-UV/baseline formatter observations are in the planning tool transcript and exact observed fields. Source bytes remain bound by remediation_head. Production green-after remains not-run for every source, including the successful temporary fixture prototype.
-
-## Authorized native evidence route pending usable material
-
-Existing opt-in filters remain retained. The TB2.1 admission attempt above is executed and failed; no witness success is claimed. The user authorized these no-model commands using verified local caches. Supply verified material/6 with pinned runner/task/runtime/integration identities and cached immutable images/dependencies; drift/missing prerequisites refuse. Do not fetch missing materials or run models within this authority. Existing exact filters: native_tb21_artifact_witness, native_tb3_artifact_witness, native_deepswe_patch_witness, native_verifier_only_regrade_witness.
-
-Material/6 here describes the committed baseline. After B8, fresh controlled native jobs use its admitted material/7 and capture/helper bindings; recheck all affected witness predicates against that final source. Retained material/6 remains eligible only for original-seal offline verify/report and verifier-only regrade under B8's legacy boundary. Never relabel retained material or treat its old producer proof as fresh dispatch admission.
-
-```sh
-OPI_EVAL_NATIVE_WITNESS_MATERIAL="$VERIFIED_MATERIAL" cargo test -p opi-eval --offline --locked --test native_driver "$EXACT_FILTER" -- --ignored --exact --nocapture --test-threads=1
-```
-
-Require 1 executed pass per filter and retain controlled oracle 1 / nop 0 grader/collected identities; regrade witness needs material covering all 3 families. That controlled regrade proves mechanisms. R31 also needs production regrade of genuine immutable saved Agent artifacts:
-
-```sh
-"$BUILT_OPI_EVAL" regrade --root "$IMMUTABLE_ACCEPTANCE_FAMILY_ROOT" --native-material "$VERIFIED_FAMILY_MATERIAL" --out "$NEW_DERIVATIVE_ROOT"
-```
-
-Require exit 0, nonempty expected regraded trial records, source/artifact/task/runner/verifier identity, fresh derivatives, unchanged original bytes and zero Agent/provider calls. These native filters remain no-model diagnostics. The fresh paid acceptance/retry scope is separately authorized above; D2 requires its source-bound prospective freeze and actual execution evidence.
+External proof paths remain available for review. Green uses the concrete commands in the disposition sidecar: replace only capture-protocol-fresh/opi-eval-under-test with the rebuilt candidate, preserve baseline/proofs, use their fresh green output directories, and record rebuilt digest. B7 loads the repaired workspace source; B6 executes in the repaired source after adding its stored regression. B6 first adds the exact stored test to the existing binary; its red evidence is baseline production plus test-only instrumentation. Other probes use unchanged baseline production. Raw JSON/log siblings retain argv/stdout/stderr/executed counts.
 
 ## Final Verification
 
-Plan-only completion requires dispositions/plan validators, documentation checker and whitespace check. Intentional red checks verify current defects; no production green or Phase conformance is claimed. Recheck HEAD and staged/unstaged/untracked inventories at handoff.
+Changed surfaces select local Rust behavior, public CLI/report/durable-control/privacy seams and Python checker behavior. This union includes every modified test binary, exact script tests and crate clippy. C009 retains the registered final Phase workspace union as a final-state obligation. Run once after the last invalidating edit; ignored/fixture/preliminary checks do not establish native or Phase exit.
 
-After a validated digest-bound apply invocation, each batch's change is the step and its stated check is `step -> verify`. Run every added/modified test binary/filter and the deduplicated final union on relevant source. B9 additionally requires exact external-lock CI/artifact suites, a fake-CLI Bash delegation/refusal subprocess and lock/fixture conformance with synchronized transport documentation before resealing. C005/C006 follow-up remains separately subject to its actual material/privacy/count/deadline admission; source-fix green checks cannot substitute for that evidence.
-
-```sh
+```text
+step -> verify: rerun ten matching discriminating probes with rebuilt candidates, final source and fresh proof directories.
+cargo test -p opi-eval --all-targets --locked --offline
+cargo clippy -p opi-eval --all-targets --locked --offline -- -D warnings
 python3 -m unittest discover -s crates/opi-eval/scripts -p 'test_*.py'
 python scripts/opi-doc-check.py
 git diff --check
 cargo fmt --check --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
-cargo test --workspace --doc
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+cargo test --workspace --all-targets --locked --offline
+cargo test --workspace --doc --locked --offline
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked --offline
+step -> verify: exact six-trial raw root with final Companion verify/report; independently check selected route/control/native/artifact/provenance/current-build applicability.
+step -> verify: B8 current Desktop admission regression and three fresh public prepares/derived-map validations, then six exact final-build native predicates with admitted inputs/raw executed proof; current matrix/cleanup passes are baseline evidence and causal edits invalidate their final applicability; no paid provider or credential access.
 ```
 
-Workspace union is the registered final-state gate, distinct from D2/D3 operator/native proof. Default suites remain offline and cannot activate ignored/live cases because credentials exist. Repeat successful evidence only after changes/failure/applicability gaps. Read complete Unreleased before a future edit, reuse subsections, preserve releases. B1/B7/B8/B9 update both README counterparts. Fixed assurance protocol defines no Chinese plan sibling, so this pair has no counterpart to synchronize.
+B5 deliberately extends durable run-control to /2 while restoring existing report meaning; synchronize readers/tests, bilingual README and Unreleased. Other batches retain current schemas/public meaning. Do not add manifests/lockfile/Opi source/ledger edits. Additional input/source/authority decisions or a new protected blocker require a new sealed plan; no incidental scope is inferred from readiness.
 
 ## Exclusions
 
-| Source finding | Disposition | Current evidence/authority |
+| Exact source key | Disposition | Current evidence / authority |
 |---|---|---|
-| C/P19-AUD-005 | Cannot confirm closure; no production repair proposed | Original freeze remains missing. Prospective paid scope is explicitly fixed: glm-5.3-flash,2 retries per failed logical trial,3600s, unlimited fees. No fresh run or complete source/material/input freeze is claimed; Major/conformance gap remains. |
-| C/P19-AUD-006 | Cannot confirm; no demonstrated runtime defect | No-model cache execution approved, but TB2.1 admission fails on absent pinned cache; required successful native witnesses/genuine regrade remain missing. Major/conformance gap remains. |
-| P/P19-AUD-003 | Info/No action | Exact removed targets confirmed; documented history resolution/null normative criterion requires no edit. |
+| C/P19-AUD-009 | Cannot confirm final-state Phase exit; partially confirmed overall | Exact retained six-trial proof passes current exported verifier/Companion. Final repaired-state gates and current native/fresh-dispatch/capture applicability remain unproved; B8 and the final union explicitly retain them. Final Verification retains the obligations; no runtime fix fabricated for missing proof. |
+| P/P19-AUD-001 | Info/No action | Registry hash matches; two of three report pointers absent, with documented Git-history convention. Severity remains Info; raw-root acceptance is independently checked. |
 
-## Test impact and materialization
+## Planning verification and handoff boundary
 
-- **add**: future bound/reasoning, host-mode/refusal, acceptance-root, early capture privacy/refusal and CI delegation/refusal cases in existing scenario owners; planning adds only temporary probes outside repository.
-- **update**: future connection/projection assertions, capture/material/handoff/terminal-proof shapes and original 2 current-prepare fixture methods; CI receipt/fixture consumers preserve negative/order and transport intent.
-- **retain**: formatter assertion, native identity/cleanup/credential tests, four opt-in witnesses and immutable evidence.
-- **delete**: duplicate CI materialization/grading policy only in B9; retain intentional manual dispatch/upload/receipt behavior. No legacy bundle deletion or rewrite.
-- **none**: current repository runtime/test changes, documentation-only B6, evidence-only Cannot confirm exclusions and registry Info.
+Observable completion: active set -> verify: audit-set validator; strict-union findings -> verify: current source/counter-evidence and recorded red checks; fixed pair -> verify: dispositions/plan validators, doc checker and git diff --check. Planning writes only this workspace pair: 12 dispositions/ten proposed batches; exact matrix/cleanup/current inputs/preflight/namespace/red proofs are retained externally. Test impact now: add two regressions in separate disposable source exports; retain two existing executed native tests; none of the workspace tests is added/updated/deleted. Planned add/update/retain impacts appear per batch. User-authorized commit sequence: research `f039d682aec11365e381685186faad114f0b909f`, then this fixed plan pair only. Inventory before the plan commit: staged=[], carried-in=[], task-owned unstaged=[remediation.plan.md, remediation.plan.dispositions.jsonl], untracked=[]. The 45-byte unattributed nul diagnostic is preserved outside the repository at C:/Users/Luiz/AppData/Local/Temp/opi-all-changes-commit-607dca8922694fa5bdbea364a194a5df/nul.diagnostic.txt and excluded from project commits. Research document integrity was checked separately (1848 source file hashes, 13 package identities and 2065 local links; no runtime or exhaustive narrative-review claim). Only source-index.md and source-manifest.json needed CRLF-to-LF normalization; original document bytes and the normalization receipt remain in the external commit evidence directory. Commit-continuation test impact: none; no workspace test changes.
 
-This remediation task owns edits only to remediation.plan.md and its JSONL sibling; the six workflow-maintenance carry-in files remain separate and unchanged. No ledger, production source, audit, result or retained bundle is materialized. Committing remains a separate explicit request; plan-only commits preserve remediation_head under the shared baseline rule. A commit touching the separate workflow files or any other non-plan path requires a new plan baseline. Validate this ready plan and approve only its emitted digest before apply. C005/C006 remain unclosed unless separately attributable successful evidence satisfies their retained predicates; apply results must preserve Cannot confirm where that evidence is unavailable. Any index/member/plan byte change invalidates earlier approval.
+The owning protocol defines exactly this English Markdown/JSONL pair; no Chinese sibling filename exists, so none is created. Planned product README changes later synchronize both languages. No production repair, ledger mutation or Phase-conformant assertion is made; commits are authorized separately by the user.
+
+READY-FOR-APPLY admits only the ten bounded repairs and their recorded green/final checks through a new explicit apply invocation containing the validator-emitted digest. It does not assert native/Phase conformance or turn the four unexecuted baseline filters into proof. If a required final native predicate still cannot execute or exposes a protected new defect, retain the gap and follow the owning apply protocol instead of widening this repair. Digest binding covers complete index bytes and both fixed files. A member/index/plan byte change invalidates it. Committing only this Phase plan pair preserves remediation_head under the shared source-baseline rule.
