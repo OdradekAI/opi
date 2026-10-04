@@ -128,7 +128,7 @@ stateDiagram-v2
 7. `streamAssistantResponse` 执行 `transformContext → convertToLlm → normalizeContext`。
 8. 动态 `getApiKey(provider)` 之后才调用 StreamFn，允许跨长工具阶段刷新凭据。
 9. provider 的 start/delta/terminal 被包装成 message lifecycle，最终 assistant 加入本轮。
-10. 检查 stopReason；error/aborted 直接结束，正常响应进入工具批次。
+10. 检查 stopReason；error/aborted 仍调用 `finishTurn`，但忽略其返回决策，发出 turn_end/agent_end 后结束；正常响应进入工具批次。
 11. `executeToolCalls` 选择串行或并行路径，产出 ToolResultMessage。
 12. `finishTurn` 在所有工具结果之后、`turn_end` 之前决定继续或结束。
 13. steering 优先，follow-up 仅在本来会停止时读取。
@@ -306,3 +306,54 @@ proxy、MCP/codemode 示例、replay 元数据都是可用能力，不能据其�
 先明确状态与 hook 的权力，再读算法，能避免把事件、持久化消息和运行状态误认为同一层。
 
 测试影响：`none`，仅新增研究文档。
+
+## 15. 设计文档、规划与时效核查（2026-10-04）
+
+### 15.1 文档清单与历史范围
+
+| 文档 | 阅读范围 | 定位 |
+|---|---|---|
+| [README.md:1](../../../../.repo/pi-1.0.0/packages/agent/README.md#L1) | 全文，1–564 行 | 当前 Agent API、事件、队列、工具并发及 proxy 使用手册；不是未来工作清单 |
+| [CHANGELOG.md:3](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L3) | 全篇版本和设计变更关键词筛查；详读 1–260、359–495 行 | 重点追溯 1.0.0 边界收缩、0.87.0 hooks、0.68.1 并发顺序、0.65.0 结算边界和 0.58.x steering |
+| [telemetry/README.md:365](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L365) | 交叉核对 Agent schema 导入段 | 包外旧架构说明；不能覆盖当前 Agent exports 和 1.0.0 删除记录 |
+
+本包内未发现独立 docs、设计计划或路线图。引用 durable 的 Pico 设计，是解释被分离能力的归属，不把它继续列为 Agent 的待实现任务。
+旧报告已详细说明循环和 hook，但没有充分解释 CHANGELOG 里大量 Harness/session/telemetry 文字为何与当前小包不一致；以下补全时间维度。
+
+### 15.2 已落地的设计变化
+
+| 设计方向、动机 | 当前证据与结果 | 时效判断 |
+|---|---|---|
+| 让 Agent 只承担内存循环、消息和工具，不再在同一包承载实验 Harness/存储等体系 | 1.0.0 明确删除 AgentHarness、session/storage、durable runtime、pico3、harness tools、compaction、skills、telemetry schemas 和相关 subpath；index 只导出 agent/loop/proxy/stream-fn/types | **已完成的范围调整**。旧 0.84.0 “scaffold 未完成”和“v4 Session 默认导出”不是当前缺陷或未来计划。[CHANGELOG.md:7](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L7)、[CHANGELOG.md:102](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L102)、[index.ts:1](../../../../.repo/pi-1.0.0/packages/agent/src/index.ts#L1) |
+| 把结束策略从 shouldStopAfterTurn 扩展成 request 准备与 turn 结算两个稳定切入点 | prepareRequest 在每次请求前执行；finishTurn 在消息/工具归档后执行，continue 只补足下一次请求、end 保留未消费队列 | **已实现且 README 较准确**；0.87.0 为已发布变化，不是开放提案。[README.md:124](../../../../.repo/pi-1.0.0/packages/agent/README.md#L124)、[CHANGELOG.md:22](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L22)、[agent-loop.ts:219](../../../../.repo/pi-1.0.0/packages/agent/src/agent-loop.ts#L219) |
+| 并行执行降低批次等待，同时保持 provider transcript 稳定 | preflight 串行，执行并发；completion 事件即时发出，toolResult 按 assistant 原始顺序归档；任一工具 sequential 强制整批串行 | **现行契约**。0.68.0 曾写工具生命周期及结果都按 completion order，随后 0.68.1 修正，不能用较早一条覆盖当前行为。[README.md:109](../../../../.repo/pi-1.0.0/packages/agent/README.md#L109)、[CHANGELOG.md:372](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L372)、[agent-loop.test.ts:627](../../../../.repo/pi-1.0.0/packages/agent/test/agent-loop.test.ts#L627) |
+| steering 不制造半个工具批次，避免因新输入跳过已被模型要求的剩余调用 | 0.58.4 改为等待整批完成；当前循环在工具批次和 finishTurn 之后正常轮询 | **已实现的历史修正**。不是实时抢占工具；取消仍走 abort/signal。[CHANGELOG.md:475](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L475)、[agent-loop.test.ts:721](../../../../.repo/pi-1.0.0/packages/agent/test/agent-loop.test.ts#L721) |
+| 让高层 Agent 的消息归档与异步订阅成为下一阶段的屏障 | agent_end 是最后事件，但 prompt/waitForIdle 等订阅者完成才 settle；low-level observable streams 不提供同样屏障 | **已实现，仍值得阅读的边界设计**；不能把“收到 agent_end”当成资源已完全空闲。[CHANGELOG.md:443](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L443)、[README.md:560](../../../../.repo/pi-1.0.0/packages/agent/README.md#L560)、[agent.test.ts:376](../../../../.repo/pi-1.0.0/packages/agent/test/agent.test.ts#L376) |
+
+错误和取消时 `finishTurn` 是否执行值得单独澄清：README 说会执行，当前 `agent-loop.ts` 也在 hard-exit 分支 await 它，只忽略返回的调度决策；参数化测试分别覆盖 error 和 aborted。
+因此不是 README 过时；前文流程中的“结束”不能理解为跳过 hook。若 hook 自己抛错，仍涉及高层 Agent 的异常兜底，而不是保证 hook 永不失败。
+依据：[README.md:136](../../../../.repo/pi-1.0.0/packages/agent/README.md#L136)、[agent-loop.ts:245](../../../../.repo/pi-1.0.0/packages/agent/src/agent-loop.ts#L245)、[agent-loop.test.ts:1121](../../../../.repo/pi-1.0.0/packages/agent/test/agent-loop.test.ts#L1121)。
+
+### 15.3 明确过时的局部内容及原因
+
+1. **README 的角色列表与低层示例没有同步 SystemMessage。** 开头说标准角色只有 user/assistant/toolResult，低层 convertToLlm 示例同样过滤掉 system。
+   当前 ai Message 已含 SystemMessage，Agent 默认转换显式保留 system，README 自己的 Agent State 段也说明 prompt/tools 由 transcript 拥有。
+   所以这是局部示例陈旧；照抄该 filter 可能丢掉 prompt 与工具声明，不能说当前 Agent 仍不支持 system。
+   依据：[README.md:43](../../../../.repo/pi-1.0.0/packages/agent/README.md#L43)、[README.md:541](../../../../.repo/pi-1.0.0/packages/agent/README.md#L541)、[agent.ts:38](../../../../.repo/pi-1.0.0/packages/agent/src/agent.ts#L38)、[ai/types.ts:610](../../../../.repo/pi-1.0.0/packages/ai/src/types.ts#L610)。
+2. **旧状态赋值清单只能按发行时阅读。** 0.65.0 曾用 `agent.state.systemPrompt = value` 替换 setter；当前 `AgentState.systemPrompt` 为 readonly，通过系统消息 replay 求值。
+   README 当前 State 段已经给出追加系统消息的方法。旧 CHANGELOG 没有“作废”历史意义，但不再是今天的可复制 API 手册。
+   依据：[CHANGELOG.md:427](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L427)、[types.ts:389](../../../../.repo/pi-1.0.0/packages/agent/src/types.ts#L389)、[README.md:303](../../../../.repo/pi-1.0.0/packages/agent/README.md#L303)。
+3. **telemetry README 的 Agent schema 导入属于被移除架构。** 0.84.0 确曾新增 AI/harness schemas，1.0.0 又明确删除；当前 index 和 src 不导出该文档列出的 AI_TELEMETRY_SCHEMA、HARNESS_TELEMETRY_SCHEMA 及 starter helpers。
+   这是有发行证据的文档未同步，不能把不存在的导出推断成“将来恢复”或“定义已经转到 telemetry 包”。
+   依据：[CHANGELOG.md:113](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L113)、[CHANGELOG.md:7](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L7)、[telemetry/README.md:365](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L365)。
+
+README 对 steering 的“interrupt”应和同节后文“工具批次全部结束后注入”连读；它表达改变后续模型方向，不能扩大成强停所有正在运行的工具。
+MCP/codemode 段是现有集成示例；通用 Agent 没有自动连接服务器或启用 JavaScript VM。
+依据：[README.md:387](../../../../.repo/pi-1.0.0/packages/agent/README.md#L387)、[README.md:417](../../../../.repo/pi-1.0.0/packages/agent/README.md#L417)、[README.md:505](../../../../.repo/pi-1.0.0/packages/agent/README.md#L505)。
+
+### 15.4 规划判断与阅读价值
+
+未发现当前包独立承诺的未来路线图。README 里介绍的 hooks、队列、parallel、proxy 都有现行实现；CHANGELOG 的 Added/Fixed 是历史交付记录。
+本报告先前列出的并发上界、非合作取消、listener 异常等继续验证问题，是静态研究提出的问题，不是维护者宣布的开发计划。
+阅读应以 README 当前 State/Request lifecycle 和源码为主，用 1.0.0 CHANGELOG 先确认包边界，再向前读特定设计的演进，避免把已删除 Harness 和仍存在的 Agent 混为一谈。
+本次只读文档及实现/测试预期，未运行测试；对历史版本的完整行为也未检出旧版本重新验证。

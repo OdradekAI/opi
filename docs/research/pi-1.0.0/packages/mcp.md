@@ -345,3 +345,50 @@ SSE 恢复、HTTP session 重建、工具调用重试必须按其各自实现层
 
 阅读顺序建议：types/jsonrpc → McpClient initialize/request/cancel → stdio → HTTP send/SSE loops。
 之后读 OAuth discovery/runFlow/provider/callback，最后对照测试与 coding-agent MCP runtime，确认策略归属。
+
+## 设计文档、规划与时效核查（2026-10-04）
+
+本次完整阅读本包 `README.md` 第 1–136 行、`CHANGELOG.md` 第 1–32 行。
+本包没有独立路线图文档；可确认的是 README 的 supported surface、initial core 排除项，以及 0.99.0 至 1.0.0 的明确变更。
+“outside the initial core”只表明范围排除，不等于稍后必然补齐，更没有时间表。
+本节不访问链接中的在线标准、issue 或 SDK；判断只依据快照内文档、实现与测试。
+
+### 目标、非目标与文档覆盖差异
+
+| 文档主张 | 状态 | 当前证据与解释 |
+|---|---|---|
+| 独立小型 MCP client，不依赖官方 SDK 或其他 Pi 包 | 已兑现 | manifest 仅依赖 cross-spawn；OAuth 有 MIT 来源说明，复制适配的代码不等于运行时 SDK 依赖。[README.md:3](../../../../.repo/pi-1.0.0/packages/mcp/README.md#L3)、[README.md:112](../../../../.repo/pi-1.0.0/packages/mcp/README.md#L112)、[package.json:1](../../../../.repo/pi-1.0.0/packages/mcp/package.json#L1) |
+| core 管 request/initialize/timeout，transport 管 framing/IO | 已兑现 | stdio/HTTP/in-memory 均接单消息接口，生命周期职责已拆开。[README.md:114](../../../../.repo/pi-1.0.0/packages/mcp/README.md#L114) |
+| MCP 2025-11-25 并接受三个旧版本 | 已兑现为当前显式列表 | `LATEST_PROTOCOL_VERSION` 与 `SUPPORTED_PROTOCOL_VERSIONS` 匹配；不能解释为承诺接受任意未来版本。[README.md:118](../../../../.repo/pi-1.0.0/packages/mcp/README.md#L118)、[types.ts:4](../../../../.repo/pi-1.0.0/packages/mcp/src/protocol/types.ts#L4) |
+| tools、progress、cancel、roots、HTTP session/SSE resume、OAuth | 主体已兑现 | 与前文逐函数追踪一致，GET 重连和 response resume 有各自条件，不是所有请求无条件 replay。[README.md:119](../../../../.repo/pi-1.0.0/packages/mcp/README.md#L119) |
+| server、legacy HTTP+SSE、sampling、tasks 不在 initial core | 明确非目标；无后续承诺证据 | generic request/handler 可由应用扩展，不构成本包已有完整对应子系统。[README.md:132](../../../../.repo/pi-1.0.0/packages/mcp/README.md#L132) |
+| batch JSON-RPC 不在 initial core | 基本范围描述，需限定绝对说法 | parser/core 接单消息且不提供批量 request API，但 HTTP JSON body 为数组时逐项 emit；所以“没有 batch 子系统”合理，“任何 batch-shaped 输入一概拒绝”不符实现。[jsonrpc.ts:110](../../../../.repo/pi-1.0.0/packages/mcp/src/protocol/jsonrpc.ts#L110)、[streamable-http.ts:243](../../../../.repo/pi-1.0.0/packages/mcp/src/transports/streamable-http.ts#L243) |
+| supported surface 列表主要列 tools | 文档覆盖不完整，不是资源能力尚未实现 | 源码已经提供 resources/list、templates/list、分页和 resources/read，且有测试；README 列表未列出它们。[client.ts:299](../../../../.repo/pi-1.0.0/packages/mcp/src/client.ts#L299)、[client.test.ts:128](../../../../.repo/pi-1.0.0/packages/mcp/test/client.test.ts#L128) |
+| 浏览器打开与凭据存储位置交给应用 | 明确职责排除 | state store 可注入；库不会自行决定持久存储或开启浏览器。[README.md:110](../../../../.repo/pi-1.0.0/packages/mcp/README.md#L110) |
+
+### 1.0.0 / 0.99.2 记录已在代码中兑现
+
+| 变更记录 | 状态与当前实现 |
+|---|---|
+| 配置 `authorizationServerMetadataUrl`，替代自动 discovery | 已兑现；`runFlow` 对配置 URL 做 secureEndpoint 检查并绕过 discovery cache，改配置可立即生效。[CHANGELOG.md:7](../../../../.repo/pi-1.0.0/packages/mcp/CHANGELOG.md#L7)、[flow.ts:281](../../../../.repo/pi-1.0.0/packages/mcp/src/oauth/flow.ts#L281) |
+| 授权 code exchange 校验 `iss` | 已兑现；metadata 存在时，收到 iss 或服务声明支持该参数都进入匹配检查。[CHANGELOG.md:8](../../../../.repo/pi-1.0.0/packages/mcp/CHANGELOG.md#L8)、[flow.ts:339](../../../../.repo/pi-1.0.0/packages/mcp/src/oauth/flow.ts#L339)、[oauth.test.ts:469](../../../../.repo/pi-1.0.0/packages/mcp/test/oauth.test.ts#L469) |
+| step-up 保留旧 scopes，加上 challenge 所需 scope | 已兑现；scope union、请求 scope 回填及 refresh 保留 grant 都存在。[CHANGELOG.md:9](../../../../.repo/pi-1.0.0/packages/mcp/CHANGELOG.md#L9)、[flow.ts:275](../../../../.repo/pi-1.0.0/packages/mcp/src/oauth/flow.ts#L275)、[flow.ts:351](../../../../.repo/pi-1.0.0/packages/mcp/src/oauth/flow.ts#L351) |
+| optional OAuth 字段空串/null 视为 absent；expires_in:null 不立刻过期 | 已兑现；`absent` 与 token parser 明确处理，不能继续沿旧错误行为描述现版。[CHANGELOG.md:13](../../../../.repo/pi-1.0.0/packages/mcp/CHANGELOG.md#L13)、[types.ts:105](../../../../.repo/pi-1.0.0/packages/mcp/src/oauth/types.ts#L105)、[types.ts:178](../../../../.repo/pi-1.0.0/packages/mcp/src/oauth/types.ts#L178) |
+| protected resource metadata 坏 URL 回退；空 requested scope 继续 fallback | 已兑现；URL 解析转普通 Error 区分网络 TypeError，scope 选源使用 `||`。[CHANGELOG.md:15](../../../../.repo/pi-1.0.0/packages/mcp/CHANGELOG.md#L15)、[types.ts:121](../../../../.repo/pi-1.0.0/packages/mcp/src/oauth/types.ts#L121)、[flow.ts:310](../../../../.repo/pi-1.0.0/packages/mcp/src/oauth/flow.ts#L310) |
+| 空串/null nextCursor 作为分页终点 | 已兑现；parseListResult 已正规化该值，重复 cursor 防护仍保留。[CHANGELOG.md:17](../../../../.repo/pi-1.0.0/packages/mcp/CHANGELOG.md#L17)、[client.ts:104](../../../../.repo/pi-1.0.0/packages/mcp/src/client.ts#L104) |
+| Cloudflare Workers fetch 不带错误 receiver | 已兑现为实现修复；wrapper 以自由函数调用注入的 fetch，并有回归测试；本次没有实际部署到 Workers。[CHANGELOG.md:24](../../../../.repo/pi-1.0.0/packages/mcp/CHANGELOG.md#L24)、[streamable-http.ts:199](../../../../.repo/pi-1.0.0/packages/mcp/src/transports/streamable-http.ts#L199)、[streamable-http.test.ts:346](../../../../.repo/pi-1.0.0/packages/mcp/test/streamable-http.test.ts#L346) |
+
+0.99.0 的“Added standalone client”已经是现有实现背景，并非未完成产品愿景。
+这些相邻版本记录总体与源码一致，不能仅因它们来自 CHANGELOG 就一概判断过时。
+见 [CHANGELOG.md:28](../../../../.repo/pi-1.0.0/packages/mcp/CHANGELOG.md#L28)。
+
+### 明确发现的示例滞后：OAuth 回调未传递 iss
+
+README OAuth 示例从 callback 结果只取 `{ code }`，随后 `authorizeMcp` 只传 authorizationCode。
+而 callback 实际返回可选 `iss`，1.0.0 新增的 exchange 校验在 metadata 声明 `authorization_response_iss_parameter_supported` 时要求它匹配 issuer。
+因此该示例对要求 RFC 9207 issuer 参数的服务会丢失必要信息，并走到 `OAuthIssuerMismatchError`；对未声明要求且无 iss 的服务仍可工作。
+这是**条件性示例不完整/滞后**，不是 OAuth feature 未实现，也不能据此宣称所有登录都失败。
+见 [README.md:99](../../../../.repo/pi-1.0.0/packages/mcp/README.md#L99)、[callback.ts:148](../../../../.repo/pi-1.0.0/packages/mcp/src/oauth/callback.ts#L148)、[flow.ts:339](../../../../.repo/pi-1.0.0/packages/mcp/src/oauth/flow.ts#L339)。
+
+README 对资源 API 的遗漏和 batch 字面范围需要上述限定，除此之外未从这些文档发现另外明确承诺的未来 milestone。
+原报告已经覆盖实现中的 OAuth/HTTP 限制，但没有将 release fixes、示例滞后和“不在 initial core”分别作时效判断；本节补齐这一证据层。

@@ -1,0 +1,63 @@
+{
+  "status": "non-normative offline research observation",
+  "date": "2026-10-03",
+  "finding": "O-002",
+  "opi_revision": "f72181a7aa0b4087a3b6a6dfd158e2b4c234bf73",
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "build_mode": "rustc linked existing local rlib artifacts; no Cargo build or dependency install",
+  "network": "none; pure MockProvider routes",
+  "credential_source": "CountingAuthResolver with library test placeholder; no environment lookup",
+  "compile_exit_code": 0,
+  "run_exit_code": 0,
+  "cases": [
+    {
+      "case": "control",
+      "registry_wire": "openai-completions",
+      "prepared_wire": "openai-completions",
+      "actual_mock_route": "openai-completions",
+      "chat_calls": 1,
+      "anthropic_calls": 0,
+      "auth_calls": 1,
+      "terminal": "done",
+      "mismatch": false
+    },
+    {
+      "case": "wire_overlay",
+      "registry_wire": "anthropic-messages",
+      "prepared_wire": "anthropic-messages",
+      "actual_mock_route": "openai-completions",
+      "chat_calls": 1,
+      "anthropic_calls": 0,
+      "auth_calls": 1,
+      "terminal": "done",
+      "mismatch": true
+    },
+    {
+      "case": "added_id",
+      "registry_resolves": true,
+      "dispatchability_passes": true,
+      "prepare_passes": true,
+      "attempt_result": "UnknownModel",
+      "chat_calls": 0,
+      "anthropic_calls": 0,
+      "auth_calls": 1
+    }
+  ],
+  "sha256": {
+    "route_probe.rs": "52BE335628001C0C1D320D6AA9C32AFF8871D046DBCC2CC4CF5EACACD430F65C",
+    "route_probe.exe": "14F8739C157E8374A4CD1ECE17FFC6A761605D11224A01F86574A06F99361548",
+    "libopi_ai-38f9c4470d925d76.rlib": "548DFAD9DF214810BF2AFAE50A2DBD11472889FC06A3F004369383D81EAD2E1B",
+    "libtokio-26851d323d1034af.rlib": "CF3857DC367B3B80626097519DDC1E274841E9C07C0C748A262E9766D50ADC67",
+    "crates/opi-ai/src/registry.rs": "591F187626DC7F796A2CE3B56FBD9902C0ABD06F5B8136D0598E7AA740718492",
+    "crates/opi-ai/src/provider_collection.rs": "93D917242E683265EAB17F7BEB067ACEF1F66E78B5A60521D12A63E81F7D86C2",
+    "crates/opi-ai/src/api_mapped.rs": "5483FE0231301C7181C4825D25F1FB5CF574C8F3061BE9B2385E32E5C3027C75",
+    "crates/opi-ai/src/test_support.rs": "A9D608DEF7BD2DD4EDDBD0F3394A0F2394AD859F7F3E8CD754A6C78430F69FA7"
+  },
+  "limitations": [
+    "The actual route is observed through route-specific MockProvider call logs, not an HTTP request.",
+    "The coding-agent CLI, extension load, and model-switch sequence were not executed.",
+    "Dynamic catalog refresh, endpoint overrides, and thinking-map overrides were not exercised by this probe.",
+    "Existing rlib identities are pinned by SHA256; this probe did not perform a fresh Cargo build to establish their entire build provenance.",
+    "The probe asserts the current inconsistency to capture evidence; it is not a regression test that defines desired behavior."
+  ]
+}

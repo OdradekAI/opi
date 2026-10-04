@@ -115,7 +115,7 @@ full redraw 的 clear 路径清理 viewport 和 scrollback；宽度改变会引�
 
 ## 9 滚动、鼠标与选择
 
-ScrollView 只有一个子组件，明确拒绝 add/remove/clear。它维护 scrollTop、contentHeight、viewportHeight 和 followingEnd；手动离开底部后保持位置，返回底部可恢复跟随。`scrollBy` 返回未消费的滚动量，配合 overscroll chain/contain 决定是否传给父滚动区。[components/scroll-view.ts:24](../../../../.repo/pi-1.0.0/packages/tui/src/components/scroll-view.ts#L24)。
+ScrollView 只有一个子组件，明确拒绝 add/remove/clear。它维护 scrollTop、contentHeight、viewportHeight 和 followingEnd；手动离开底部后保持位置，返回底部可恢复跟随。`scrollBy` 返回未消费的滚动量，由 renderer 配合 overscroll chain/contain 路由；当前 contain 与 primary fallback 的组合存在第 19.2 节说明的静态偏差，不能笼统保证它会阻止一切外层滚动。[components/scroll-view.ts:24](../../../../.repo/pi-1.0.0/packages/tui/src/components/scroll-view.ts#L24)、[routeWheel](../../../../.repo/pi-1.0.0/packages/tui/src/tui-alt-screen.ts#L985)。
 
 鼠标坐标区分 screenX/screenY 和组件局部 x/y。dispatch 记录精确命中 target 与坐标变换；capture 将后续 drag/release 继续送给同一组件。嵌套容器可以保留键盘焦点，避免焦点落在随后被移除的子组件上。[tui.ts:25](../../../../.repo/pi-1.0.0/packages/tui/src/tui.ts#L25)、[tui.ts:81](../../../../.repo/pi-1.0.0/packages/tui/src/tui.ts#L81)。
 
@@ -230,3 +230,49 @@ Markdown 先词法分析，再把 token 转成包含 ANSI 样式的行，最后�
 7. 针对实际目标平台查看 terminal/native 回归测试和 native README。
 
 源文件入口与完整枚举见 [源码索引](../source-index.md#tui)。与业务宿主的集成见 [coding-agent 报告](coding-agent.md)。未解决的验证空白是：真实终端矩阵、字体与 Unicode 版本差异、native 二进制可重现性、长期内存曲线、突发输入和输出背压、特定 SSH/tmux/Windows 组合下的协议降级。它们是静态分析的边界，不是已证明存在的故障。
+
+## 19 设计文档、规划与时效核查（2026-10-04）
+
+### 19.1 文档覆盖与用途
+
+原报告详细解释了布局实现，却没有系统追溯根目录的 [tui-plan.md](../../../../.repo/pi-1.0.0/tui-plan.md#L1)。这是实质性的覆盖缺口：该文件用 1,001 行解释屏幕模式的物理约束、接口取舍、实现顺序、非目标和未来方向；仅阅读包 README 不能替代它。
+
+本次完整阅读该计划、947 行 [包 README](../../../../.repo/pi-1.0.0/packages/tui/README.md#L1) 和三个 native README；CHANGELOG 按版本及布局、滚动、输入、图像关键词筛查，重点对照 0.84.0 至 1.0.0 的相关条目。native 文档描述现有构建、平台降级和测试条件，没有独立的后续开发路线图。[Darwin](../../../../.repo/pi-1.0.0/packages/tui/native/darwin/README.md#L1)、[Linux](../../../../.repo/pi-1.0.0/packages/tui/native/linux/README.md#L1)、[Windows](../../../../.repo/pi-1.0.0/packages/tui/native/win32/README.md#L1)。
+
+`tui-plan.md` 应定性为**大部分主干已落实、部分未来项已提前完成、仍有后续方向的历史设计与交接文档**。文件标题中的 Plan 不表示它描述的系统尚未实现。CHANGELOG 已在 0.84.0 记录布局、滚动条与跨屏选择的引入；当前源码也有对应实现。[发布记录](../../../../.repo/pi-1.0.0/packages/tui/CHANGELOG.md#L161)。
+
+### 19.2 规划逐项对照
+
+| 设计或规划原意 | 本快照状态与判断依据 | 应保留的认识 |
+|---|---|---|
+| alternate screen 拥有固定 viewport，main screen 保留终端 scrollback | **已实现**：两套 renderer 共用 TUI 接口，布局 root 只在 viewport 模式装配；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L26)、[装配](../../../../.repo/pi-1.0.0/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L855) | 分模式是终端滚动机制决定的，不只是视觉主题开关 |
+| `VStack`、`HStack`、`ScrollView` 是最小公共布局 API | **已实现**：根 index 导出组件，内部 `LayoutNode` 未作为根 API 导出；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L114)、[导出](../../../../.repo/pi-1.0.0/packages/tui/src/index.ts#L39)、[内部协议](../../../../.repo/pi-1.0.0/packages/tui/src/layout-node.ts#L3) | 公共组件契约与内部测量、几何表示分离 |
+| 每次请求重建 frame 几何，组件状态与 leaf cache 跨帧保留 | **已实现，细节演进**：`renderLayoutFrame()` 每次新建上下文及 Map；该 Map 只消除同帧同宽度重复 render，不是计划反对的第二套长期缓存；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L321)、[实现](../../../../.repo/pi-1.0.0/packages/tui/src/layout.ts#L379) | 要区分组件缓存、同帧测量缓存和跨帧几何缓存 |
+| basis/grow/shrink/min/max、可见性与整数空间分配 | **已实现**：stack 分配与受约束布局由布局层处理；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L390)、[实现入口](../../../../.repo/pi-1.0.0/packages/tui/src/layout.ts#L170)、[分配测试](../../../../.repo/pi-1.0.0/packages/tui/test/layout.test.ts#L16) | 这是有限布局系统，不应推导出完整 CSS flexbox 兼容性 |
+| transcript 可滚动，编辑器、状态、pending messages、widgets、footer 固定 | **已实现**：`createChatViewport()` 声明 transcript 与 dock，交互层保留一套组件树；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L743)、[实际组合](../../../../.repo/pi-1.0.0/packages/coding-agent/src/modes/interactive/chat-viewport.ts#L22)、[挂载](../../../../.repo/pi-1.0.0/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L955) | 业务只组合组件，不自行实现屏幕坐标算法 |
+| 绘制完成后再提交本帧几何，输入按当前屏幕命中 | **已实现**：`terminal.write(buffer)` 之后更新 `previousScreen` 与 `currentLayout`；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L343)、[提交点](../../../../.repo/pi-1.0.0/packages/tui/src/tui-alt-screen.ts#L1747) | 输入与绘制必须指向同一已提交 frame |
+| wheel 按位置路由、嵌套滚动传递剩余量、键盘可独立操作 | **主要机制已接线，contain 有静态偏差**：命中非 primary 的 contain 滚动区且剩余 delta 非零时，循环虽停止，随后仍可能交给未访问的 primary；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L524)、[实际路由](../../../../.repo/pi-1.0.0/packages/tui/src/tui-alt-screen.ts#L985)、[primary 操作](../../../../.repo/pi-1.0.0/packages/tui/src/tui-alt-screen.ts#L482) | chain 能力存在，不等于完整兑现 contain 停止传播的要求；本次未运行复现 |
+| 没有显式 layout root 时，保留旧 children API 的隐式滚动容器 | **已实现**：实际 root 为显式 root 或 implicit ScrollView；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L664)、[选择点](../../../../.repo/pi-1.0.0/packages/tui/src/tui-alt-screen.ts#L1675) | 新布局没有要求所有旧组件先改成另一套接口 |
+| 正常退出时输出完整文档，而非最后一屏 | **已实现，有显式例外**：普通 stop 重新执行无高度限制的 `render(width)`；`preserveScreen` 走另一分支；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L677)、[实现](../../../../.repo/pi-1.0.0/packages/tui/src/tui-alt-screen.ts#L396) | 最后一帧与最终文档是不同产物 |
+| 可见滚动条先预留，未来再做 | **旧延期描述已过时**：`auto/always/hidden`、比例 thumb、hover、拖动及 track click 已实现；[旧预留注释](../../../../.repo/pi-1.0.0/tui-plan.md#L205)、[状态与配置](../../../../.repo/pi-1.0.0/packages/tui/src/components/scroll-view.ts#L1)、[交互](../../../../.repo/pi-1.0.0/packages/tui/src/tui-alt-screen.ts#L1036)、[后续样式变更](../../../../.repo/pi-1.0.0/packages/tui/CHANGELOG.md#L107) | 不应继续列为待开发功能 |
+| 首轮选择只保证可见屏幕文本 | **原最小范围已被扩展**：已有拖动到边缘自动滚动并选择屏外内容；[原范围](../../../../.repo/pi-1.0.0/tui-plan.md#L577)、[选择实现](../../../../.repo/pi-1.0.0/packages/tui/src/tui-alt-screen.ts#L1260)、[发布记录](../../../../.repo/pi-1.0.0/packages/tui/CHANGELOG.md#L172) | 原验收下限不能当作当前能力上限 |
+| Kitty 图片支持 viewport 垂直裁剪，iTerm2 在 alt 模式降级 | **主要路径已实现**：layout 对 Kitty 上下边界裁剪，启动时禁用 iTerm2 图片能力；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L599)、[裁剪](../../../../.repo/pi-1.0.0/packages/tui/src/layout.ts#L330)、[降级](../../../../.repo/pi-1.0.0/packages/tui/src/tui-alt-screen.ts#L339)、[测试](../../../../.repo/pi-1.0.0/packages/tui/test/layout.test.ts#L130) | 计划另要求受限横向图片情形明确降级；本次证据不足以宣布所有图片验收项满足 |
+| overlay 沿用既有 screen-relative 合成，以后再拥有独立受约束树 | **第一阶段已实现，后半句仍是未落地的设计方向**：overlay 依然 `component.render(width)` 后裁剪、定位、合成，没有逐 overlay 调用 `renderLayoutFrame`；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L618)、[合成实现](../../../../.repo/pi-1.0.0/packages/tui/src/tui.ts#L1339) | 有 overlay bounds 和鼠标命中，不等于 overlay 内部已接入完整受约束布局 |
+
+contain 偏差可以具体定位：计划要求遇到 contain 即停止，即使仍有余量；`routeWheel` 第 991 行只 break，第 994 行仍可能执行 primary fallback，`ScrollView.scrollBy` 也不会主动把余量清零。若外层 primary 尚有可滚动空间，它仍可能移动；现有嵌套 wheel 用例验证的是默认 chain。因此这项应保留为规划与实现的具体差距，不能仅凭“存在 overscroll 字段”宣称完成。[原要求](../../../../.repo/pi-1.0.0/tui-plan.md#L532)、[余量返回](../../../../.repo/pi-1.0.0/packages/tui/src/components/scroll-view.ts#L148)、[现有 chain 测试](../../../../.repo/pi-1.0.0/packages/tui/test/tui-alt-screen.test.ts#L532)。
+
+表中的“已实现”指静态实现证据，不包含测试执行证明。布局、renderer 和宿主集成测试都保留在仓库中；计划末尾要求运行的命令也是验收说明，不能当作已经通过的结果。[计划测试矩阵](../../../../.repo/pi-1.0.0/tui-plan.md#L839)、[验收标准](../../../../.repo/pi-1.0.0/tui-plan.md#L985)。
+
+### 19.3 尚有价值的后续方向与明确非目标
+
+| 文档方向 | 当前边界 | 时效判断 |
+|---|---|---|
+| 宽终端 sidebar、独立 transcript/sidebar 滚动、sticky top | `HStack` 与独立 ScrollView 已提供布局基础；当前 chat viewport 仍是 transcript + 底部 dock | **基础机制已有，具体产品组合不是现成能力清单**；不能将示意用途全列为缺失 |
+| 多个键盘可选择的 active scroll region | 当前 renderer 的通用滚动操作仍取 primary；计划将 active pane 和新增 keybinding 留到有多窗格需求时 | **明确留待后续的交互策略**，非仅补几个快捷键；[计划](../../../../.repo/pi-1.0.0/tui-plan.md#L548)、[primary 选择](../../../../.repo/pi-1.0.0/packages/tui/src/tui-alt-screen.ts#L335) |
+| unread-line indicator | 已有偏离底部时显示的可点击 jump-to-end indicator；未见独立未读行计数状态契约 | **相邻能力已实现，原措辞的完整语义未获证实**；[规划](../../../../.repo/pi-1.0.0/tui-plan.md#L92)、[现有 indicator 记录](../../../../.repo/pi-1.0.0/packages/tui/CHANGELOG.md#L86) |
+| transcript virtualization | ScrollView 仍渲染内容并保留完整 `scrollContentLines`；绘制阶段裁剪行数并不免除完整内容测量 | **快照内尚未实现的明确方向**；[规划](../../../../.repo/pi-1.0.0/tui-plan.md#L99)、[实现](../../../../.repo/pi-1.0.0/packages/tui/src/layout.ts#L136) |
+| overlay 内独立 constrained layout tree | 现有 overlay 合成仍基于行数组 | **仍有差距的后续设计方向**，见上表 |
+
+“非目标”不能直接转成待办。计划明确首轮不做完整 CSS flexbox、grid、wrapped rows、任意 absolute layout、公开内部布局节点、增量修改布局树，以及为了布局重写所有组件的 height API；这些决定保留了现有 `render(width)` 模型，也压低了公共接口复杂度。[非目标](../../../../.repo/pi-1.0.0/tui-plan.md#L101)。
+
+阅读这一计划最有价值的部分是：为什么主屏不能简单模拟固定 dock；为什么组件状态长期存活而 frame 几何短期存在；为什么输入、图片、选择和退出输出都必须共享布局信息。以上理由在实现完成后依然有效。只有预留状态、草拟接口和实现顺序需要结合当前 README、源码与 CHANGELOG 解读，不能把整份文档视为失效，也不能据它承诺未来版本的发布时间。

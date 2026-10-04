@@ -281,3 +281,48 @@ testing 子入口提供 deterministic host/harness 与协议 client，不依赖�
 再读 Server accept → handshake → handleRequest → disconnect/close。
 接着完整读 SessionRouter 的串行接纳、并发操作和释放逻辑，配合 conformance tests。
 最后读 Unix listener 的文件竞争防护与输出状态，及 coding-agent 的 ServerHost 实现确认接线。
+
+## 设计文档、规划与时效核查（2026-10-04）
+
+本次完整阅读本包 `README.md` 第 1–63 行、`CHANGELOG.md` 第 1–75 行。
+未找到独立 PLANNING 或公开待办路线图；README 的“current slice”是实验服务端当前能力边界，不是未列能力的交付承诺。
+以下判断限定在本地快照，未运行 server、worker 或测试。
+
+### 当前设计目标与实际实现
+
+| 设计文档主张 | 状态 | 实现及解释 |
+|---|---|---|
+| server/Session 服务透明路由，不装载业务 facet 契约 | 已兑现 | `Routed*Attachment.invokeService` 接收 Chord call；router 验证路由，业务执行留给对应 endpoint。[README.md:5](../../../../.repo/pi-1.0.0/packages/server/README.md#L5)、[types.ts:21](../../../../.repo/pi-1.0.0/packages/server/src/types.ts#L21) |
+| 多 presentation、重复 attach 幂等、随机 attachmentId | 已兑现 | 同连接已附着同一 session 直接返回；不同附件通过完整 target 隔离。[README.md:15](../../../../.repo/pi-1.0.0/packages/server/README.md#L15)、[session-router.ts:160](../../../../.repo/pi-1.0.0/packages/server/src/session-router.ts#L160) |
+| 断线后等 admitted call 再释放 lease | 已兑现 | `releaseAttachment` 等操作集合 settle，再 release；共享 handle 留在缓存，零连接不自动 close。[session-router.ts:234](../../../../.repo/pi-1.0.0/packages/server/src/session-router.ts#L234) |
+| shutdown close 每个 routed handle | 已兑现到 server 的责任边界 | router 调用 `handle.close(context)`；真正退出 worker、释放 writer 由该应用 handle 实现保证，不是 server 可自行证明的 OS 效果。[README.md:15](../../../../.repo/pi-1.0.0/packages/server/README.md#L15)、[session-router.ts:108](../../../../.repo/pi-1.0.0/packages/server/src/session-router.ts#L108) |
+| metadata 最小化，仅要求 id | 已兑现，且有 1.0.0 明确变更记录 | resolver 与 host 可扩展 metadata；无需依赖 Agent runtime 类型。[README.md:57](../../../../.repo/pi-1.0.0/packages/server/README.md#L57)、[types.ts:17](../../../../.repo/pi-1.0.0/packages/server/src/types.ts#L17)、[CHANGELOG.md:7](../../../../.repo/pi-1.0.0/packages/server/CHANGELOG.md#L7) |
+| 明确 logical serverId 与 physical path | 已兑现 | launcher 决定身份和位置，Unix preset 不自行选择全局运行目录。[README.md:59](../../../../.repo/pi-1.0.0/packages/server/README.md#L59) |
+| peer authentication 由应用，Unix 当前不实现 | 明确限制，非已承诺 TODO | listener 契约要求交入已授权连接；Unix 文件权限不等于通用远端身份认证。[README.md:61](../../../../.repo/pi-1.0.0/packages/server/README.md#L61)、[listener.ts:3](../../../../.repo/pi-1.0.0/packages/server/src/listener.ts#L3) |
+| worker demand/activity 与 coordinator generation 是私有生命周期 | 明确包边界 | README 描述应用接线；ServerHost 只有服务端点、resolve、open，未定义完整 worker 调度协议。[README.md:63](../../../../.repo/pi-1.0.0/packages/server/README.md#L63)、[types.ts:63](../../../../.repo/pi-1.0.0/packages/server/src/types.ts#L63) |
+
+“host 决定何时允许 worker retirement”与“server 不因连接断开 close handle”一致。
+`handle.terminated` 发生时 router 仅使缓存失效并释放附件，不能倒述为 router 主动结束了 worker。
+见 [session-router.ts:302](../../../../.repo/pi-1.0.0/packages/server/src/session-router.ts#L302)。
+
+### CHANGELOG 哪些仍适用，哪些仅供理解历史
+
+1.0.0 条目是当前仍有效的架构变更：SessionMetadata 由 server 导出，包不再依赖 pi-agent-core；测试 host 用 Map，TestHarness 持 metadata。
+manifest、公共类型与测试 helper 一致，属于**已兑现**，无需把该项列为未来去耦工作。
+见 [CHANGELOG.md:7](../../../../.repo/pi-1.0.0/packages/server/CHANGELOG.md#L7)、[package.json:49](../../../../.repo/pi-1.0.0/packages/server/package.json#L49)、[host.ts:149](../../../../.repo/pi-1.0.0/packages/server/src/testing/host.ts#L149)。
+
+0.84.0 的 `toProtocolToolResultMessage()`、`PiServerService.listSessions()`、transcript lifecycle adapter 是旧表面。
+当前 server 源码及出口不再提供它们；README 将 transcript/catalogue/management 明确交给应用服务。
+这些条目是**历史方案已替代**，并非 CHANGELOG 记错；它们已不足以说明现在的 adapter 责任。
+快照中的后续空版本条目不足以确定逐项替代的日期。
+见 [CHANGELOG.md:37](../../../../.repo/pi-1.0.0/packages/server/CHANGELOG.md#L37)、[README.md:7](../../../../.repo/pi-1.0.0/packages/server/README.md#L7)。
+
+历史“sanitize internal failures”的设计动机仍保留，但不能把旧 error enum 当作当前全部错误集合。
+`toProtocolError` 保留明确的 ServerError/RemoteServiceError code，普通异常映射成固定 `internal_error` 文本；`not_implemented` 不再是当前 server 的专门声明分支。
+见 [CHANGELOG.md:45](../../../../.repo/pi-1.0.0/packages/server/CHANGELOG.md#L45)、[server.ts:512](../../../../.repo/pi-1.0.0/packages/server/src/server.ts#L512)、[errors.ts:3](../../../../.repo/pi-1.0.0/packages/server/src/errors.ts#L3)。
+
+0.81.0 从 orchestrator 到 server 的重命名属于已完成历史，与当前目录/包名一致，不是未来规划。
+见 [CHANGELOG.md:59](../../../../.repo/pi-1.0.0/packages/server/CHANGELOG.md#L59)。
+
+原报告解释了 router/lease/lifecycle，但未把“旧 server 曾拥有业务协议 adapter”与“当前只路由 opaque 服务”的文档演变单独呈现。
+本次没有找到自动任务取消、零连接立即销毁 Session、内置权限系统或应用业务 schema 回归 server 的计划；它们不能从当前缺省行为推导出来。

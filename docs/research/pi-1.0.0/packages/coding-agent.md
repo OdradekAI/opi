@@ -890,8 +890,272 @@ sequenceDiagram
 本报告覆盖包交付边界、默认启动与 SDK、AgentSession 主状态流、JSONL 树与压缩、八类工具、资源与模型认证、扩展 hooks、codemode、MCP、三种默认模式，以及实验 server/services/durable/vacation 的真实接线。
 主要结论同时引用实现和针对性测试；源码事实与设计观察已在相关章节分开。
 
-未逐分支覆盖：全部交互快捷键与视觉组件、所有主题/图片协议、HTML 导出模板的完整安全审计、包安装器所有来源和平台分支、所有 OAuth Provider 的登录细节、MCP UI/OAuth 全流程、Radius relay 内部实现、完整示例和每一个回归测试。
+未逐分支覆盖：全部交互快捷键与视觉组件、所有主题/图片协议、HTML 导出模板的完整安全审计、包安装器所有来源和平台分支、所有 OAuth Provider 的登录细节、MCP UI/OAuth 全流程、Radius relay 内部实现、全部示例实现和每一个回归测试。
 这些是研究范围边界，不应解释为上述能力缺失或存在缺陷。
 
 未执行：依赖安装、build、typecheck、lint、测试、CLI、任何 Provider/模型/MCP/外部服务请求、真实 shell 工具和文件编辑工具调用、实验进程恢复演示、性能或跨平台基准。
 本次只进行本地静态读取和报告引用检查；行为是否在具体环境实际通过，需要另行运行对应验证。
+
+
+## 25. 设计文档、规划与时效核查（2026-10-04）
+
+本节补充文档中的设计意图、未来方向和历史承诺，核查基准仍是 **Pi 1.0.0 本地快照**。
+日期是本次静态核查日期，不代表已查询此日的上游最新状态；没有访问文档中的外链，也没有执行示例、构建或测试。
+“已实现”表示找到对应实现链；“部分实现”表示机制已有但文档列出的延伸尚未接入；“尚无实现”限定在当前包的可见契约与接线。
+“非目标”表示文档明确排除或只是示例范围；“被替代”表示旧机制的意图由不同机制承接；“文档冲突/过时”需要当前源码的正面证据，不能只由搜索无结果推定。
+**没有实现、存在 TODO 和公开承诺交付，是三个不同判断。**
+
+### 25.1 文档地图与实际阅读范围
+
+按包内 Markdown 文件枚举，包含 **79 份**：根目录 2 份、docs 40 份、examples 16 份、实验 README 3 份、测试指南 2 份、skill fixtures 16 份。
+本轮全文阅读 56 份；另 22 份 docs 做首段、标题和规划关键词筛查；CHANGELOG 做全文件标题/关键词检索并详读相关选段。
+“全文”仅表示文本文字读完，不表示每个外部依赖、平台命令或 API 示例都运行验证；“筛查”不冒充逐句审校。
+筛查词包括 roadmap、TODO、future、planned、not yet、experimental、defer、deprecated、design、architecture、not support 等，并根据命中上下文排除普通术语。
+本表逐文件保留口径，测试夹具也计入清点，避免把样本中的角色指令误当成维护者计划。
+
+| 根文档 | 阅读范围 | 内容及分类 |
+|---|---|---|
+| [README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/README.md#L1) | 全文；1–70 | 产品定位、安装、文档索引和源码开发入口；没有独立路线图 |
+| [CHANGELOG.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/CHANGELOG.md#L1) | 1–6044 全量标题/关键词筛查；详读 1–88、107–185、357–374、714–731、748–760、1283–1308 | 发行历史，含 compat 将来删除的旧承诺、旧 AgentHarness 和实验入口发布政策；不能整份当成当前设计规范 |
+
+| 文件（链接指向首行） | 范围 | 内容及分类 |
+|---|---|---|
+| [docs/cli-integration.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/cli-integration.md#L1) | 全文；1–106 | 默认四种呈现入口及 SDK 的过程边界；当前设计说明 |
+| [docs/cli.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/cli.md#L1) | 首段/标题/关键词筛查；1–319 | 启动参数、工具及安装命令参考；未发现独立路线图 |
+| [docs/codemode.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/codemode.md#L1) | 全文；1–207 | 脚本隔离、工具桥接、输出与状态设计；当前实现 |
+| [docs/compaction.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/compaction.md#L1) | 全文；1–463 | 摘要/树分支/恢复顺序的算法设计；Next Steps 是摘要模板 |
+| [docs/configuration.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/configuration.md#L1) | 首段/标题/关键词筛查；1–47 | 文件位置、配置与信任例外；当前参考 |
+| [docs/containerization.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/containerization.md#L1) | 全文；1–183 | 整进程隔离与仅工具隔离的边界；外部环境接入指南 |
+| [docs/custom-provider.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/custom-provider.md#L1) | 全文；1–173 | 两类 Provider 注册及 streaming 契约；当前扩展设计 |
+| [docs/environment-variables.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/environment-variables.md#L1) | 首段/标题/关键词筛查；1–98 | 进程与 shell 的环境变量参考 |
+| [docs/extensions.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/extensions.md#L1) | 全文；1–270 | 同进程扩展、生命周期、工具与跨模式设计 |
+| [docs/how-pi-works.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/how-pi-works.md#L1) | 全文；1–49 | 会话、循环、上下文、模式和资源的概念设计 |
+| [docs/index.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/index.md#L1) | 全文；1–39 | 导航与扩展机制选择；当前文档入口 |
+| [docs/json.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/json.md#L1) | 首段/标题/关键词筛查；1–226 | 默认 JSONL 事件参考；不是实验服务路线图 |
+| [docs/keybindings.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/keybindings.md#L1) | 首段/标题/关键词筛查；1–194 | 动作与快捷键参考 |
+| [docs/llama-cpp.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/llama-cpp.md#L1) | 首段/标题/关键词筛查；1–114 | 已有 router/classifier 的使用说明 |
+| [docs/mcp.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/mcp.md#L1) | 全文；1–248 | 已有 MCP/codemode 工具发现、资源、权限及 SDK 接线 |
+| [docs/message-types.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/message-types.md#L1) | 首段/标题/关键词筛查；1–261 | 共享消息类型参考；deferred 为响应类型，非开发延期 |
+| [docs/models.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/models.md#L1) | 全文；1–179 | 模型/认证/图片限制；含尚未执行的请求限额声明 |
+| [docs/packages.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/packages.md#L1) | 全文；1–129 | pi 资源 manifest 与分发规则；不同于 Chord facets |
+| [docs/prompt-templates.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/prompt-templates.md#L1) | 首段/标题/关键词筛查；1–59 | 可复用 prompt 资源说明 |
+| [docs/providers.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/providers.md#L1) | 首段/标题/关键词筛查；1–200 | 已有认证和 Provider 配置说明 |
+| [docs/quickstart.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/quickstart.md#L1) | 首段/标题/关键词筛查；1–122 | 安装与下一步阅读；Next steps 为用户使用路径 |
+| [docs/rpc-commands.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/rpc-commands.md#L1) | 首段/标题/关键词筛查；1–860 | 860 行命令协议参考；不是待实现 API 清单 |
+| [docs/rpc-extension-ui.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/rpc-extension-ui.md#L1) | 全文；1–200 | 已支持的 UI 子协议与明确降级范围 |
+| [docs/rpc.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/rpc.md#L1) | 全文；1–193 | stdio RPC 过程、framing、错误及退出设计；保留旧页面锚点 |
+| [docs/sdk.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/sdk.md#L1) | 全文；1–147 | 嵌入式会话、持久化、运行完成与 cwd 服务重建契约 |
+| [docs/security.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/security.md#L1) | 全文；1–99 | 权限边界、项目信任例外与外部隔离 |
+| [docs/session-format.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/session-format.md#L1) | 首段/标题/关键词筛查；1–293 | 默认 JSONL 树格式、投影与解析参考 |
+| [docs/sessions.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/sessions.md#L1) | 首段/标题/关键词筛查；1–66 | 继续、分支、压缩等已实现用户流程 |
+| [docs/settings.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/settings.md#L1) | 首段/标题/关键词筛查；1–169 | 配置参考；enableAnalytics 的实验使用范围需保留限定 |
+| [docs/shell-aliases.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/shell-aliases.md#L1) | 首段/标题/关键词筛查；1–93 | 每次独立 shell 的初始化与别名行为 |
+| [docs/skills.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/skills.md#L1) | 全文；1–93 | 渐进加载的指令资源；规格字段不等于本地权限实现 |
+| [docs/slash-commands.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/slash-commands.md#L1) | 首段/标题/关键词筛查；1–60 | 当前内置命令参考 |
+| [docs/terminal-setup.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/terminal-setup.md#L1) | 首段/标题/关键词筛查；1–219 | 终端兼容配置和故障排查 |
+| [docs/termux.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/termux.md#L1) | 首段/标题/关键词筛查；1–117 | Android/Termux 使用说明；不是支持路线图 |
+| [docs/themes.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/themes.md#L1) | 首段/标题/关键词筛查；1–136 | 主题格式、颜色和自动外观说明 |
+| [docs/tmux.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/tmux.md#L1) | 首段/标题/关键词筛查；1–55 | 终端按键转发配置 |
+| [docs/tui.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/tui.md#L1) | 全文；1–125 | 组件、focus、overlay、鼠标与渲染约束；当前接口设计 |
+| [docs/usage.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/usage.md#L1) | 首段/标题/关键词筛查；1–94 | 终端日常使用流程 |
+| [docs/virtual-models.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/virtual-models.md#L1) | 全文；1–114 | 选择/实际派发、路由状态、恢复与压缩设计 |
+| [docs/windows.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/windows.md#L1) | 首段/标题/关键词筛查；1–67 | Windows/WSL 与 Bash/PowerShell 当前用法 |
+
+| 文件（链接指向首行） | 范围 | 内容及分类 |
+|---|---|---|
+| [examples/extensions/doom-overlay/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/doom-overlay/README.md#L1) | 全文；1–46 | 实时 overlay 技术演示，不是产品路线图 |
+| [examples/extensions/dynamic-resources/dynamic.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/dynamic-resources/dynamic.md#L1) | 全文；1–5 | resources_discover 加载的 prompt 模板 |
+| [examples/extensions/dynamic-resources/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/dynamic-resources/SKILL.md#L1) | 全文；1–8 | resources_discover 加载的 skill 样本 |
+| [examples/extensions/plan-mode/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/plan-mode/README.md#L1) | 全文；1–66 | 用户规划/执行模式示例，不是 Pi 项目计划 |
+| [examples/extensions/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/README.md#L1) | 全文；1–214 | 扩展能力示例索引；安全 gates 属于选装示例 |
+| [examples/extensions/subagent/agents/planner.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/agents/planner.md#L1) | 全文；1–37 | planner 的角色指令，目标由用户任务决定 |
+| [examples/extensions/subagent/agents/reviewer.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/agents/reviewer.md#L1) | 全文；1–35 | reviewer 的角色指令 |
+| [examples/extensions/subagent/agents/scout.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/agents/scout.md#L1) | 全文；1–50 | scout 的检索/交接格式 |
+| [examples/extensions/subagent/agents/worker.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/agents/worker.md#L1) | 全文；1–24 | worker 的执行/交接格式 |
+| [examples/extensions/subagent/prompts/implement-and-review.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/prompts/implement-and-review.md#L1) | 全文；1–10 | worker → reviewer → worker 模板 |
+| [examples/extensions/subagent/prompts/implement.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/prompts/implement.md#L1) | 全文；1–10 | scout → planner → worker 模板 |
+| [examples/extensions/subagent/prompts/scout-and-plan.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/prompts/scout-and-plan.md#L1) | 全文；1–9 | 仅勘察和生成用户任务计划的模板 |
+| [examples/extensions/subagent/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/README.md#L1) | 全文；1–177 | 子进程委派、并行/链式任务和信任模型示例 |
+| [examples/plugins/pi-example-plugin/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/plugins/pi-example-plugin/README.md#L1) | 全文；1–38 | source-only Session/TUI facets 的真实集成示例 |
+| [examples/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/README.md#L1) | 全文；1–39 | SDK、扩展与实验 plugin 导航 |
+| [examples/sdk/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/sdk/README.md#L1) | 全文；1–141 | 14 个嵌入式例子；Quick Reference 有过时导入，见 25.6 |
+
+| 文件（链接指向首行） | 范围 | 内容及分类 |
+|---|---|---|
+| [src/experimental/durable/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/README.md#L1) | 全文；1–66 | 单进程 durable 设计演示、恢复语义及明确非目标 |
+| [src/experimental/services/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L1) | 全文；1–45 | 最集中、明确的服务切片 roadmap；全文与源码逐项核对 |
+| [src/experimental/vacation/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/vacation/README.md#L1) | 全文；1–53 | 后台任务与幂等报告的旅行代理演示；planning 指用户旅行计划 |
+
+| 文件（链接指向首行） | 范围 | 内容及分类 |
+|---|---|---|
+| [test/mcp-conformance/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/mcp-conformance/README.md#L1) | 全文；1–45 | 固定 conformance 套件、baseline 更新规则和已知协议范围；不是全部特性待办 |
+| [test/suite/README.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/suite/README.md#L1) | 全文；1–10 | 新测试 harness 的编写约定与无真实模型/网络要求；不是待实现功能清单 |
+
+| 文件（链接指向首行） | 范围 | 内容及分类 |
+|---|---|---|
+| [test/fixtures/skills-collision/first/calendar/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills-collision/first/calendar/SKILL.md#L1) | 全文；1–8 | 同名 skill 优先级夹具；测试数据 |
+| [test/fixtures/skills-collision/second/calendar/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills-collision/second/calendar/SKILL.md#L1) | 全文；1–8 | 同名 skill 优先级夹具；测试数据 |
+| [test/fixtures/skills/consecutive-hyphens/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/consecutive-hyphens/SKILL.md#L1) | 全文；1–8 | skill 解析/发现/验证夹具；测试数据 |
+| [test/fixtures/skills/disable-model-invocation/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/disable-model-invocation/SKILL.md#L1) | 全文；1–9 | 显式调用限制夹具；测试数据 |
+| [test/fixtures/skills/invalid-name-chars/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/invalid-name-chars/SKILL.md#L1) | 全文；1–8 | skill 解析/发现/验证夹具；测试数据 |
+| [test/fixtures/skills/invalid-yaml/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/invalid-yaml/SKILL.md#L1) | 全文；1–8 | skill 解析/发现/验证夹具；测试数据 |
+| [test/fixtures/skills/long-name/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/long-name/SKILL.md#L1) | 全文；1–8 | skill 解析/发现/验证夹具；测试数据 |
+| [test/fixtures/skills/missing-description/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/missing-description/SKILL.md#L1) | 全文；1–7 | skill 解析/发现/验证夹具；测试数据 |
+| [test/fixtures/skills/multiline-description/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/multiline-description/SKILL.md#L1) | 全文；1–11 | skill 解析/发现/验证夹具；测试数据 |
+| [test/fixtures/skills/name-mismatch/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/name-mismatch/SKILL.md#L1) | 全文；1–8 | skill 解析/发现/验证夹具；测试数据 |
+| [test/fixtures/skills/nested/child-skill/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/nested/child-skill/SKILL.md#L1) | 全文；1–8 | skill 解析/发现/验证夹具；测试数据 |
+| [test/fixtures/skills/no-frontmatter/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/no-frontmatter/SKILL.md#L1) | 全文；1–3 | skill 解析/发现/验证夹具；测试数据 |
+| [test/fixtures/skills/root-skill-preferred/nested-child/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/root-skill-preferred/nested-child/SKILL.md#L1) | 全文；1–3 | skill 解析/发现/验证夹具；测试数据 |
+| [test/fixtures/skills/root-skill-preferred/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/root-skill-preferred/SKILL.md#L1) | 全文；1–3 | skill 解析/发现/验证夹具；测试数据 |
+| [test/fixtures/skills/unknown-field/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/unknown-field/SKILL.md#L1) | 全文；1–10 | 非标准 frontmatter 字段夹具；测试数据 |
+| [test/fixtures/skills/valid-skill/SKILL.md:1](../../../../.repo/pi-1.0.0/packages/coding-agent/test/fixtures/skills/valid-skill/SKILL.md#L1) | 全文；1–8 | skill 解析/发现/验证夹具；测试数据 |
+
+### 25.2 默认产品文档表达的设计动机
+
+默认 README 将产品定位为小型、可扩展的终端 coding harness，复杂工作流通过扩展、skills、prompt templates、themes 和 packages 组合。
+这是一项**现行设计原则**，不是“未来准备加入扩展”的愿景：当前 ResourceLoader、ExtensionRunner、工具注册和 SDK 已经承担对应能力。
+CLI integration 把 interactive、print、JSON、RPC 解释为共享 agent/session 机制的不同输入输出方式；SDK 则改变进程边界，不另造会话语义。
+这个概括的适用范围是默认产品入口，不能扩大成实验 SQLite/Chord 服务也使用 AgentSession。
+证据：[README.md:15](../../../../.repo/pi-1.0.0/packages/coding-agent/README.md#L15)、[docs/cli-integration.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/cli-integration.md#L3)、[docs/how-pi-works.md:33](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/how-pi-works.md#L33)、[src/core/sdk.ts:175](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/sdk.ts#L175)。
+
+| 设计主题 | 文档动机与当前实现判断 | 时效及边界 |
+|---|---|---|
+| 可持久化的分支上下文 | SessionManager 保留树历史，默认模型上下文是 active branch 的投影；压缩释放上下文，branch summary 保留离开分支的工作信息 | 已实现。compaction 文档中的 Goal / Progress / Next Steps 是给模型生成摘要的格式，不是仓库开发计划。[docs/compaction.md:16](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/compaction.md#L16)、[docs/compaction.md:234](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/compaction.md#L234)、[src/core/session-manager.ts:543](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/session-manager.ts#L543) |
+| 恢复不篡改原始历史 | 溢出/length 失败后以 context_edit 排除失败尝试，再压缩并另起 retry；旧消息仍可导出与计费 | 已实现的当前顺序说明。文档明确失败或取消压缩时不自动再重试，不能把“可恢复”概括成所有错误都保证重做。[docs/compaction.md:85](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/compaction.md#L85)；实现及测试见第 8、21 节 |
+| 可嵌入的会话生命周期 | SDK 区分 AgentSession 的运行管理和 AgentSessionRuntime 的 cwd 相关服务重建；强调持久化权威在 SessionManager | 已实现。不是另一个远程服务 SDK；运行结束应看 agent_settled，不能只看 agent_end。[docs/sdk.md:38](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/sdk.md#L38)、[docs/sdk.md:58](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/sdk.md#L58)、[docs/sdk.md:92](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/sdk.md#L92)、[src/core/agent-session-runtime.ts:43](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/agent-session-runtime.ts#L43) |
+| 扩展拥有行为，skills/templates 提供指令 | 工具/事件/命令需要可执行 ExtensionAPI；skills 先暴露元数据再读取内容，templates 复用文本 | 已实现且分工仍有价值。不能把 skill 内容当成进程隔离或执行权限。[docs/extensions.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/extensions.md#L3)、[docs/skills.md:43](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/skills.md#L43)、[src/core/skills.ts:334](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/skills.ts#L334) |
+| 默认工具发现控制提示体积 | codemode 把大量工具调用/过滤留在脚本内；MCP 默认间接发现，tool_search 按需声明工具 | 已实现，且 0.99.2/1.0.0 文档记录了最近的提示缓存及声明体积调整。并非“未来 MCP 支持”。[docs/codemode.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/codemode.md#L3)、[docs/mcp.md:169](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/mcp.md#L169)、[CHANGELOG.md:68](../../../../.repo/pi-1.0.0/packages/coding-agent/CHANGELOG.md#L68)、[src/index.ts:405](../../../../.repo/pi-1.0.0/packages/coding-agent/src/index.ts#L405) |
+| 安全边界放在进程/OS 环境 | 文档区分完整 Pi 在隔离环境中运行与仅工具委派；项目 trust 只控制部分资源加载 | 当前明确的威胁模型，不是未完成内置 sandbox 的承诺。sessionDir 的提前读取、context files 始终加载都有文档限定。[docs/security.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/security.md#L3)、[docs/security.md:31](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/security.md#L31)、[docs/security.md:57](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/security.md#L57)、[docs/containerization.md:9](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/containerization.md#L9) |
+
+这里“默认/公开支持路径”不表示所有扩展 API 都已获永久稳定性保证。文档中仍有局部实验 API 和兼容层，其分界要逐项判断。
+
+### 25.3 services README：真实 roadmap、已完成底座与仍然开放的方向
+
+这份 README 的核心动机，是把 Session worker 拥有的 durable conversation 与 presentation 分开：
+控制通过服务 facade，状态通过 ConversationView/Chord 复制；工具执行、持久化和恢复不归 TUI。
+它还试图让插件以 Session/TUI 等不同 host 的 facets 组织，通过服务 token 建立依赖与生命周期，避免把整个 Harness 或原始 TUI 当成远程服务暴露。
+这些已有对应源码：worker 构建 AgentController、Models、Transcript 和 SessionPlugins facets；TUI 以 private bridge 连接这些服务，提供窄的本地 PresentationUI。
+证据：[src/experimental/services/README.md:26](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L26)、[src/experimental/services/README.md:32](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L32)、[src/experimental/services/worker.ts:51](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/worker.ts#L51)、[src/experimental/client-tui.ts:267](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/client-tui.ts#L267)。
+
+README 的 Continuation point 共 9 项。下表分别保留当前切片、尚未完成的部分和条件，不把全部句子压成一个笼统的“服务化尚未实现”。
+
+| 规划/动机 | 当前源码与状态 | 对未来含义的判断 |
+|---|---|---|
+| SessionDirectory 按已认证客户端投影，避免所有客户端看到同一目录 | **当前目录已实现；身份投影尚无实现。** server 建立一份 directory replicated state，并把同一 state 提供给各 attachment。[src/experimental/services/README.md:16](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L16)、[src/experimental/services/server.ts:37](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/server.ts#L37)、[src/experimental/services/server.ts:70](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/server.ts#L70) | 明确以 identity 落地为前提；不等同于已有 per-user ACL，也没有给出完成时间 |
+| SessionManagement 的 workspace authorization | **创建/删除/attach/detach 已实现；该层 workspace 授权尚无实现。** 当前 provider 直接调用管理回调和 presentation 操作。[src/experimental/services/README.md:17](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L17)、[src/experimental/services/server.ts:90](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/server.ts#L90) | 保留为文档明确后续方向。现有本地目录权限、worker token/scope 不能替代这个要求 |
+| PresentationPlugins 的认证 plugin policy | **分支插件选择和构建/重载已实现；认证策略尚无实现。** prepare/reload 在 server 回调链上执行，没有此 README 所述的身份策略参数。[src/experimental/services/README.md:18](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L18)、[src/experimental/services/server.ts:71](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/server.ts#L71) | 本地路径选择限制和分支隔离是已有边界，不应宣称已经形成多用户插件授权 |
+| SessionPlugins 的跨 worker 协调重载及结果汇报 | **单 worker generation reload 已实现；多 worker 协调尚无实现。** 每个 worker 有独立 facetHost 与 reloadTail；/reload 顺序处理选中 presentation、Session 和当前 TUI。[src/experimental/services/README.md:19](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L19)、[src/experimental/services/worker.ts:91](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/worker.ts#L91)、[src/experimental/services/slash-commands-provider.ts:104](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/slash-commands-provider.ts#L104) | 现有能力不能读成全体 Session 同步切换，也不能从“atomically rebuilds”推导跨进程事务 |
+| Models 将 provider/auth composition 下移到插件 facets | **部分实现。** Models 自身已有 facet，但 ModelRuntime/SettingsManager 由 host 创建并直接传入；服务操作再调用这些对象。[src/experimental/services/README.md:20](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L20)、[src/experimental/services/models-provider.ts:139](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/models-provider.ts#L139)、[src/experimental/session-worker.ts:778](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/session-worker.ts#L778) | “已有 Models facet”并不表示 Provider/认证的组成权已经插件化；此延伸仍是明确后续方向 |
+| AgentController 仅在 presentation 需要时添加新 conversation 操作 | **现有 root facade 已实现；新增操作是条件性方向。** 当前 interface 包含 prompt、steer、followUp、cancelQueued、abort、compact、waitForPrompt。[src/experimental/services/README.md:21](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L21)、[src/experimental/services/agent-controller.ts:38](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/agent-controller.ts#L38) | 这是一项限制抽象扩张的设计约束，不是列出一批已承诺 API |
+| Transcript 仅在第二种 presentation 需要时增添投影 | **当前 root ConversationView 已实现；额外投影无具体承诺。** provider 直接取得 conversation.viewState()，没有 worker 自有 transcript reducer。[src/experimental/services/README.md:22](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L22)、[src/experimental/services/transcript-provider.ts:6](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/transcript-provider.ts#L6) | 需求驱动的扩展点；不能把其它包中的 canvas/diff-review 示例当成本包待交付界面 |
+| SlashCommands 随具体 plugin slice 增加 hookpoints | **本地贡献注册表和内置命令已实现。** 定义为 local token；命令注册、替换和释放由 registry/facet 生命周期承担。[src/experimental/services/README.md:23](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L23)、[src/experimental/services/slash-commands.ts:22](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/slash-commands.ts#L22)、[src/experimental/services/slash-commands-provider.ts:77](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/slash-commands-provider.ts#L77) | 明确按实际插件需要增加，不表示默认 ExtensionAPI 全部 hooks 会被照搬 |
+| PresentationUI 随命令需要添加窄能力 | **select/showStatus 已实现；其它能力未列出。** token 为 local，TUI bridge 提供实现。[src/experimental/services/README.md:24](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L24)、[src/experimental/services/presentation-ui.ts:9](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/presentation-ui.ts#L9)、[src/experimental/client-tui.ts:270](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/client-tui.ts#L270) | 这是保持 UI 服务表面较窄的原则，不是通用远程 TUI API 规划 |
+
+**TODO 段落中，迁移前提已过时，功能差距不能一并删去。**
+README 第 40 行仍把后续项描述为等待 worker 从已删除 AgentHarness 移到 pi-durable；当前 worker 已调用 Harness.open(SQLite)、取得 root conversation，且启动时调用 harness.resume()。
+因此迁移底座应判为**已实现，旧延期原因失效**，而不能据此说 services 整体过时或四个 TODO 全部完成。
+证据：[src/experimental/services/README.md:40](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L40)、[src/experimental/session-worker.ts:784](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/session-worker.ts#L784)、[src/experimental/session-worker.ts:804](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/session-worker.ts#L804)、[src/experimental/session-worker.ts:594](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/session-worker.ts#L594)。
+
+| TODO 中的项目 | 分项核查 | 分类 |
+|---|---|---|
+| Tree navigation / navigate() | 当前 AgentController 无 navigate。文档描述需要 fork 新 conversation、summary 起点和 Session 当前 conversation 指针；当前服务仍固定 root，未连接这套导航政策 | **尚无服务实现；明确后续设计。** 不能把 durable 底层可 fork 等同于 TUI 服务导航已完成。[src/experimental/services/README.md:42](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L42)、[src/experimental/services/worker.ts:24](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/worker.ts#L24) |
+| nextRun() | 当前 controller 只提供 steer/followUp；文档说旧方法已 dropped，并说明 durable 的队列分类 | **旧接口已移除/语义收窄。** 没有足够证据把它记成等待恢复的承诺。[src/experimental/services/README.md:43](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L43)、[src/experimental/services/agent-controller.ts:39](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/agent-controller.ts#L39) |
+| 显式 resume() | 当前服务无此方法；worker 在打开 Session 时自动 resume | **被自动恢复机制替代。** 这是已完成机制变化，不是遗漏 API。[src/experimental/services/README.md:43](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L43)、[src/experimental/session-worker.ts:593](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/session-worker.ts#L593) |
+| Subagents 的 keyed services | 当前 worker 只向 services 传一个 root conversation，Transcript 与 AgentController 都是 root facade；durable 独立演示已有子 conversation 也不会自动暴露为远程 keyed service | **本服务切片尚无实现。** keyed 机制存在不等于已有该功能的实例目录。[src/experimental/services/README.md:44](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L44)、[src/experimental/services/worker.ts:51](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/worker.ts#L51) |
+| Transcript 旧历史分页 | interface 只有 replicated state，没有 entries paging 方法；它服务 active view，非全历史查询 API | **尚无服务实现；文档仍准确。** 文档建议以 Conversation.entries() 建分页，但没有页大小、游标或发布计划。[src/experimental/services/README.md:45](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L45)、[src/experimental/services/transcript.ts:4](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/transcript.ts#L4) |
+
+该 README 还有一处**范围过强**：开头称每个 host 的 RPC catalogue 都由 facet setup 生成、“没有手写内置清单”。
+worker/TUI 的 FacetHost 装配支持这种方向，但当前 server 仍直接创建 RemoteServiceProvider 并列出三个 singleton token；非交互客户端也显式选择所需服务。
+README 第 36 行自己承认 server provider 还在直接组装，等待完整 host environment。
+因此应将首段读作 facets 主路径的机制说明及目标，不能作为 server 已全面统一的事实；后者是**部分实现**。
+证据：[src/experimental/services/README.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L3)、[src/experimental/services/README.md:36](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L36)、[src/experimental/services/server.ts:65](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/server.ts#L65)、[src/experimental/client-runtime.ts:185](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/client-runtime.ts#L185)。
+
+### 25.4 durable/vacation README：已实现的设计实验与明确非目标
+
+两个 README 的价值是提供可运行入口和最小集成切片，观察 durable 语义如何穿过工具、子任务和 TUI。
+它们既不是默认产品功能清单，也没有承诺把 SQLite/恢复机制整体替换到 AgentSession。
+两者复用默认模型认证、设置和界面组件，与复用默认 agent/session 实现是不同事实。
+证据：[src/experimental/durable/README.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/README.md#L3)、[src/experimental/vacation/README.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/vacation/README.md#L3)、[src/experimental/durable/harness-setup.ts:52](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/harness-setup.ts#L52)、[src/experimental/vacation/harness-setup.ts:42](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/vacation/harness-setup.ts#L42)。
+
+| 文档设计 | 当前接线与判断 | 保留的边界 |
+|---|---|---|
+| durable：提交状态驱动一个 view，TUI 不处理恢复 | runtime 安装 CodingTools 和 Subagent，打开 Harness，订阅 view/task graph，调用 resume；README 的恢复设计有具体集成支撑 | **已实现的演示主链；原文概括需要限定。** README 的“every streamed partial/tool output”不能理解为每个输入 chunk 都立即完成独立 durable commit；底层 generation/output 有节流与在途提交，崩溃只能恢复已提交状态，也不保证固定 100 ms 丢失上限。本次未做 crash 或掉电演练。[原文](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/README.md#L20)、[runtime](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/runtime.ts#L124)、[generation](../../../../.repo/pi-1.0.0/packages/durable/src/harness/generation.ts#L358)、[output](../../../../.repo/pi-1.0.0/packages/durable/src/harness/output.ts#L274)、[durable 详细核查](durable.md) |
+| durable：foreground subagent 由工具调用拥有 | registry 安装 Subagent；工具创建 child conversation，和调用生命周期绑定；/agents 可切换观察 | **已实现。** 与默认 examples/subagent 的独立 pi 进程是另一种实现。[src/experimental/durable/README.md:26](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/README.md#L26)、[src/experimental/durable/runtime.ts:134](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/runtime.ts#L134)、[src/experimental/durable/subagent.ts:24](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/subagent.ts#L24) |
+| durable：会话列表、resume picker、fork/tree、extensions、templates、images、/login “Not here” | README 明确排除，而 runtime 只装专用 registry；认证从 Pi 已有存储共享 | **演示的明确非目标。** “extensions”在此指默认扩展发现/ExtensionAPI，不是说 durable 没有 defineExtension 机制。不能据此推断主产品失去这些能力，或承诺以后补齐。[src/experimental/durable/README.md:15](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/README.md#L15)、[src/experimental/durable/README.md:66](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/README.md#L66)、[src/experimental/durable/harness-setup.ts:52](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/harness-setup.ts#L52) |
+| vacation：research 立即返回，后台 child 完成后把报告送回主 conversation | Research 任务以 conversation ownership、background:true 启动；deliver/report checkpoint 分开；报告作为 followUp 输入提交 | **已实现的后台任务模式。** 不是“规划中的旅行产品”。[src/experimental/vacation/README.md:27](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/vacation/README.md#L27)、[src/experimental/vacation/vacation.ts:62](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/vacation/vacation.ts#L62)、[src/experimental/vacation/vacation.ts:112](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/vacation/vacation.ts#L112) |
+| vacation：并行搜索、恢复和重复提交防护 | search 明确 replay:safe；不同 topic 使用模拟结果和延迟；research 与 report 采用由 task.id 生成的稳定 requestId | **已实现的幂等演示。** canned search 不是缺失真实搜索的自动承诺；只读源码也不代表实际恢复实验通过。[src/experimental/vacation/README.md:30](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/vacation/README.md#L30)、[src/experimental/vacation/vacation.ts:35](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/vacation/vacation.ts#L35)、[src/experimental/vacation/vacation.ts:79](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/vacation/vacation.ts#L79)、[src/experimental/vacation/vacation.ts:97](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/vacation/vacation.ts#L97) |
+
+services README 引用的 canvas、diff-review、task-observation 被原文明确定位为扩展模式，而非内置 coding-agent services。
+它们的保留价值在于验证跨包接口能承载哪些 presentation，不足以证明本包已有这些界面、排期或默认启用计划。
+证据：[src/experimental/services/README.md:36](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/README.md#L36)。
+
+### 25.5 扩展、SDK、MCP 与 plugins 的支持边界
+
+| 文档中的名称 | 当前所属路径 | 时效判断 |
+|---|---|---|
+| Extensions、Pi Packages、skills/templates | 默认同进程 ExtensionAPI 和资源加载；packages 使用 pi 资源 manifest | **当前公开产品机制。** docs/packages 的 package 不等于 chord.facets 插件包。[docs/extensions.md:38](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/extensions.md#L38)、[docs/packages.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/packages.md#L3)、[src/core/extensions/loader.ts:87](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/extensions/loader.ts#L87) |
+| SDK / stdio RPC | npm 根 export 和 RpcClient；CLI 的 RPC 是同一默认会话的 JSONL 子进程接口 | **当前公开支持入口。** CHANGELOG 明确在收回实验发布时保留它们；支持不意味着每个 example snippet 都无过时内容。[docs/sdk.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/sdk.md#L3)、[docs/rpc.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/rpc.md#L3)、[CHANGELOG.md:371](../../../../.repo/pi-1.0.0/packages/coding-agent/CHANGELOG.md#L371)、[package.json:14](../../../../.repo/pi-1.0.0/packages/coding-agent/package.json#L14) |
+| MCP / codemode / tool_search | 默认 CLI 内置 extensions；SDK 需显式加 factories 并绑定生命周期 | **已实现，不属于 source-only services。** SDK 未自动装入不是 roadmap 缺口，而是当前装配契约。[docs/sdk.md:116](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/sdk.md#L116)、[docs/mcp.md:246](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/mcp.md#L246)、[src/index.ts:405](../../../../.repo/pi-1.0.0/packages/coding-agent/src/index.ts#L405) |
+| Virtual models | ModelRuntime 与 AgentSession 的默认本地链，扩展可注册；0.99.0 发布说明仍称 experimental | **已实现但被标实验的 API。** 源码有注册、路由、会话状态接线，不能把“experimental”统一解释为需要 server/client 或 PI_EXPERIMENTAL 才可用；也不能仅凭 docs 页面不再重复标签就断言已正式稳定。[CHANGELOG.md:122](../../../../.repo/pi-1.0.0/packages/coding-agent/CHANGELOG.md#L122)、[docs/virtual-models.md:61](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/virtual-models.md#L61)、[src/core/model-runtime.ts:955](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/model-runtime.ts#L955)、[src/core/agent-session.ts:3436](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/agent-session.ts#L3436) |
+| experimental/plugin、client、Session/TUI Chord facets | source 条件入口，normal build/publish 排除相关源码产物 | **已实现的源码实验，未进入默认 npm API。** 示例展示的是当前构建/分发/热重载模式，不是未来“将支持 plugins”的空设计。[examples/plugins/pi-example-plugin/README.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/plugins/pi-example-plugin/README.md#L3)、[package.json:22](../../../../.repo/pi-1.0.0/packages/coding-agent/package.json#L22)、[tsconfig.build.json:19](../../../../.repo/pi-1.0.0/packages/coding-agent/tsconfig.build.json#L19) |
+| durable/vacation main | 独立源文件入口及 source resolver；各自 SQLite 会话目录 | **设计演示。** 不通过默认 CLI SDK 自动获得其恢复语义。[src/experimental/durable/README.md:7](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/README.md#L7)、[src/experimental/vacation/README.md:14](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/vacation/README.md#L14) |
+
+插件示例的设计动机有三个已经实现的部分：同一包拆成不同 host facet；Session 分支保存插件选择，避免改变其它 worker；/reload 生成候选代并在 host 内替换、释放旧代。
+服务的未来方向是认证策略与多 worker 协調，不是重新实现上述基础。
+当前 /reload 有 presentation package rebuild、Session reload、TUI reload 三次顺序等待，因此文档的原子构建/代际替换表述不能扩大为跨所有进程同时提交、失败全部回滚。
+证据：[examples/plugins/pi-example-plugin/README.md:21](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/plugins/pi-example-plugin/README.md#L21)、[examples/plugins/pi-example-plugin/README.md:25](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/plugins/pi-example-plugin/README.md#L25)、[src/experimental/services/slash-commands-provider.ts:104](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/slash-commands-provider.ts#L104)、[src/experimental/services/worker.ts:94](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/worker.ts#L94)、[src/experimental/client-tui.ts:246](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/client-tui.ts#L246)。
+
+### 25.6 旧说明与当前源码冲突、未完成声明的逐项判断
+
+**明确过时的 SDK README 片段。**
+examples/sdk/README 的 Quick Reference 从 pi-ai 根导入 getModel 并直接调用；当前 pi-ai 根入口只导出 core，旧全局 getModel 位于 compat。
+实际 SDK 例子 02-custom-model 已通过 ModelRuntime.getModel 获取模型，因此 README 片段落后于相邻源码。
+ExtensionLoader 将 pi-ai 根映射到 compat 是扩展专属运行时别名，不能据此认定普通 SDK 进程的根 import 正确。
+这是静态可确认的文档/API 冲突；本次没有运行该片段。
+证据：[examples/sdk/README.md:36](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/sdk/README.md#L36)、[examples/sdk/README.md:51](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/sdk/README.md#L51)、[examples/sdk/02-custom-model.ts:12](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/sdk/02-custom-model.ts#L12)、[packages/ai/src/index.ts:4](../../../../.repo/pi-1.0.0/packages/ai/src/index.ts#L4)、[packages/ai/src/compat.ts:65](../../../../.repo/pi-1.0.0/packages/ai/src/compat.ts#L65)、[src/core/extensions/loader.ts:90](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/extensions/loader.ts#L90)。
+
+| 文档条目 | 与现状对照 | 判定 |
+|---|---|---|
+| 0.80.0 说明 compat 入口及 loader alias 将在未来删除并提供迁移指南 | 当前 ai/package.json 仍有 ./compat；coding-agent loader 仍把根映射到 compat | **历史未来承诺仍未完成；无日期。** 可以记录为未落地方向，不能宣称 1.0 已移除，也不能替维护者承诺下一版一定完成。[CHANGELOG.md:1289](../../../../.repo/pi-1.0.0/packages/coding-agent/CHANGELOG.md#L1289)、[packages/ai/package.json:22](../../../../.repo/pi-1.0.0/packages/ai/package.json#L22)、[src/core/extensions/loader.ts:93](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/extensions/loader.ts#L93) |
+| 0.84.0 的 AgentHarness v2 scaffold、lane v4 Session/Repo 与旧 JSONL API removal | 当前 agent 根入口只导出 Agent/loop/proxy/stream/types；实验 worker 已用 pi-durable Harness；默认 SessionManager 仍为自身 JSONL 树 | **历史架构已被替代。** 这些旧发行记录不能当成当前 AgentHarness 尚待完成的设计，也不能推导默认 coding-agent JSONL 已弃用。[CHANGELOG.md:721](../../../../.repo/pi-1.0.0/packages/coding-agent/CHANGELOG.md#L721)、[CHANGELOG.md:754](../../../../.repo/pi-1.0.0/packages/coding-agent/CHANGELOG.md#L754)、[packages/agent/src/index.ts:1](../../../../.repo/pi-1.0.0/packages/agent/src/index.ts#L1)、[src/experimental/session-worker.ts:784](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/session-worker.ts#L784) |
+| 0.85.1 收回误发布的 experimental 子路径 | 当前 manifest 只给 source 条件，build 排除 client/experimental；没有正常 import fallback | **发布范围修正仍有效。** 是明确支持边界，不是实现缺失。[CHANGELOG.md:371](../../../../.repo/pi-1.0.0/packages/coding-agent/CHANGELOG.md#L371)、[package.json:22](../../../../.repo/pi-1.0.0/packages/coding-agent/package.json#L22)、[tsconfig.build.json:19](../../../../.repo/pi-1.0.0/packages/coding-agent/tsconfig.build.json#L19) |
+| 0.99.0–1.0.0 的 MCP/codemode、默认间接曝光、提示精简与图片模型 | 当前 MCP/codemode 文档和工厂导出均描述实际接线，服务 README 另属实验栈 | **已交付的默认扩展能力。** 历史版本“Added”不能继续留在未来列表；CHANGELOG 的性能数字是项目记录，本次没有复测。[CHANGELOG.md:119](../../../../.repo/pi-1.0.0/packages/coding-agent/CHANGELOG.md#L119)、[CHANGELOG.md:68](../../../../.repo/pi-1.0.0/packages/coding-agent/CHANGELOG.md#L68)、[CHANGELOG.md:19](../../../../.repo/pi-1.0.0/packages/coding-agent/CHANGELOG.md#L19)、[docs/codemode.md:165](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/codemode.md#L165) |
+| models.md：maxRequestBytes / images.maxPerMessage / maxPerRequest 尚不重写或拒绝历史 | 配置 schema 接受这些 metadata；当前新图片处理取 images.resize，检索未找到上述 hard-limit 字段的历史执法路径 | **明确尚未实施的策略，不是已排期功能。** 保留 metadata ≠ enforce；现有 resize 限制与整体 request 限制应分开。[docs/models.md:89](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/models.md#L89)、[src/core/model-config.ts:150](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/model-config.ts#L150)、[src/core/agent-session.ts:678](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/agent-session.ts#L678) |
+| skills.md 将 allowed-tools 描述为 experimental pre-approved tool list | 该表说明 Agent Skills 规格；本包 SkillFrontmatter 允许额外字段，但构建 Skill 对象只提取 name/description/disableModelInvocation 等，未建立允许工具清单 | **规格/实现边界需补充，不宜认定已实现预批准。** 未发现本包执法路径，也没有本包承诺何时实现；不把规格字段自动纳入 roadmap。[docs/skills.md:69](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/skills.md#L69)、[docs/skills.md:78](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/skills.md#L78)、[src/core/skills.ts:67](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/skills.ts#L67)、[src/core/skills.ts:334](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/skills.ts#L334) |
+| RPC UI 的 custom、terminal input、themes、header/footer 等降级 | rpc-mode 对相应方法返回 undefined、空值/no-op 或 setTheme 失败 | **当前明示非支持范围。** 没有证据说明将把完整 terminal component API 远程化。[docs/rpc-extension-ui.md:14](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/rpc-extension-ui.md#L14)、[src/modes/rpc/rpc-mode.ts:228](../../../../.repo/pi-1.0.0/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L228)、[src/modes/rpc/rpc-mode.ts:290](../../../../.repo/pi-1.0.0/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L290) |
+| MCP legacy SSE、MCP Apps UI 资源不支持 | 文档明确仅 stdio/streamable HTTP，省略需 UI 渲染的资源；conformance 指南另列 elicitation、CIMD/stateless 等已知范围 | **现行限制/测试范围，不自动构成未来承诺。** protocol 日期和 baseline 只代表固定套件对象，不能推成覆盖任意更新规范。[docs/mcp.md:54](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/mcp.md#L54)、[docs/mcp.md:222](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/mcp.md#L222)、[test/mcp-conformance/README.md:13](../../../../.repo/pi-1.0.0/packages/coding-agent/test/mcp-conformance/README.md#L13)、[test/mcp-conformance/README.md:39](../../../../.repo/pi-1.0.0/packages/coding-agent/test/mcp-conformance/README.md#L39) |
+
+概念概述也必须保留详细文档的例外：how-pi-works 说 trust 决定后才加载 project settings/resources，security/configuration 则明确 sessionDir 在 trust 前读取，context files 不受此 gate 限制。
+这属于**概述压缩了范围**，以详细说明和实际启动链为准；不足以说整个 trust 文档已失效。
+证据：[docs/how-pi-works.md:49](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/how-pi-works.md#L49)、[docs/security.md:31](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/security.md#L31)、[docs/security.md:57](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/security.md#L57)、[docs/configuration.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/configuration.md#L3)。
+
+### 25.7 示例中的“plan”不是项目路线图
+
+plan-mode README 描述的是用户可切换的只读探索、Plan: 步骤提取和 DONE 标记追踪。
+实现关闭 edit/write，保留其它 active tools，并在 tool_call 上过滤 bash；它是当前扩展示例。
+“只读”不能扩展成无条件系统沙箱：该实现保留其它 active tools，而 hook 只匹配 bash，第三方工具或其它执行通道不会因为这个名称自动受限。
+这些边界与 security 文档的同进程权限模型相符，不能因为示例列出安全命令就提升为内置安全保证。
+证据：[examples/extensions/plan-mode/README.md:5](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/plan-mode/README.md#L5)、[examples/extensions/plan-mode/README.md:39](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/plan-mode/README.md#L39)、[examples/extensions/plan-mode/index.ts:24](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/plan-mode/index.ts#L24)、[examples/extensions/plan-mode/index.ts:164](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/plan-mode/index.ts#L164)、[docs/security.md:3](../../../../.repo/pi-1.0.0/packages/coding-agent/docs/security.md#L3)。
+
+subagent 的 planner.md 是委派角色提示，scout-and-plan.md 是把用户 $@ 输入送入 scout→planner 的 workflow template。
+其中“创建 implementation plan”“Do NOT implement”等是被演示 Agent 的任务指令，并非维护者对 Pi 下一阶段的工作承诺。
+subagent README 的并行 8 项/并发 4 项、独立 pi 进程、信任确认与取消说明也有具体实现，并不是 durable keyed services roadmap 已完成的证据。
+证据：[examples/extensions/subagent/agents/planner.md:8](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/agents/planner.md#L8)、[examples/extensions/subagent/prompts/scout-and-plan.md:4](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/prompts/scout-and-plan.md#L4)、[examples/extensions/subagent/README.md:55](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/README.md#L55)、[examples/extensions/subagent/index.ts:33](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/index.ts#L33)、[examples/extensions/subagent/index.ts:346](../../../../.repo/pi-1.0.0/packages/coding-agent/examples/extensions/subagent/index.ts#L346)。
+
+同理，vacation 中的 planning 是旅行用户目标；compaction 文档中的 Next Steps 是摘要模板；quickstart 中的 Next steps 是阅读导航。
+标题含 plan/future/next 只能作为检索线索，不能单独决定文件性质。
+
+### 25.8 这些设计方向仍保留什么价值
+
+以下是根据文档动机与当前实现作出的**研究判断**，不新增项目承诺、交付日期或开发任务：
+
+- **认证后的会话投影与 workspace/plugin 授权**仍是服务架构最明确的未完成方向：当前共享目录和宿主权限模型已经存在，文档要求解决的是多客户端身份进入后的资源可见性和操作授权，不能靠现有 token/scope 替代。
+- **conversation 作为服务实例边界**仍有解释力：root-only controller/view 已能工作，而子 conversation、tree 导航和旧历史分页尚未通过远程契约暴露；独立 durable 演示可以证明底层的可能性，却不能替代 service contract。
+- **提交驱动的呈现与 checkpoint/requestId**是两份 durable 演示的主要设计证据：主界面不重建恢复状态；后台任务把提交与报告分开。该价值已经能从真实集成看见，不需要包装成未来产品清单。
+- **窄的 facet 服务与按需求扩张的 UI hooks**仍是 README 明示的设计约束；当前 server 直接组装的例外表明统一 host 模型只完成一部分，不能用目标架构覆盖现状。
+- **资源描述与执行政策分开**有持续的解释价值：hard request metadata、allowed-tools 规格字段、MCP annotations 都不自动成为授权或限额执法；状态应由实际消费它们的路径判断。
+- **历史 compat 的删除意图仍可追溯，但日期与范围未重新确认**。当前兼容别名同时解释了旧扩展示例为何可能继续工作，以及普通 SDK README 为什么不能沿用同样假设。
+
+此前章节已覆盖不少现有机制，但没有系统列出全部文档、分开服务 roadmap 的每个条件，也未核对 SDK 说明片段、迁移前提和历史未来承诺。
+本节补足这些缺口；第 24 节未验证项仍有效，文档全文阅读不等于全部示例实现或每个回归分支都完成审计。
+测试影响为 `none`；新增的验证仅为报告链接目标/行号和文本自检，没有执行项目测试。

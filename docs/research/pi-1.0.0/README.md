@@ -1,9 +1,11 @@
 # Pi 1.0.0 整体源码分析报告
 
-> 对象：本地 `.repo/pi-1.0.0` 源码快照。分析日期：2026-10-03。
-> 范围：仓库总体结构、13 个一级包、默认产品与实验路径、状态及错误边界、构建发布和测试体系。
+> 对象：本地 `.repo/pi-1.0.0` 源码快照。源码分析日期：2026-10-03；设计文档与规划时效补充核查：2026-10-04。
+> 范围：仓库总体结构、13 个一级包、默认产品与实验路径、状态及错误边界、构建发布和测试体系，以及设计文档、后续方向与已被替代的历史方案。
 > 方法：只读静态分析，交叉检查实现、manifest、入口、测试及随仓库文档。未安装依赖、运行项目、构建、执行项目测试、调用模型或连接外部服务。报告以中文新建，不修改或替代既有双语文档。
 > 本文和子报告只分析 Pi 自身，不包含对其他项目的映射、迁移方案或实现建议。
+
+文档与规划的集中结论见 [设计文档与规划时效核查](documentation-audit.md)；125 份本地文档的逐文件清单和审读口径见 [文档索引](documentation-index.md)。13 份包报告末尾均新增“设计文档、规划与时效核查”章节。
 
 ## 1 核心结论
 
@@ -54,11 +56,12 @@ cc37a8fcc2c2dd97a3953c01a1e85f951984a85a0f5252111627163ce4c71173
 
 摘要算法是对按 Unicode 码点排序的 POSIX 相对路径，拼接 `path + NUL + file_sha256_hex + LF` 后计算 SHA-256。这用于定位本报告针对的内容，不证明供应方身份、发布包签名或来源真实性。
 
-覆盖方式分为三层：
+覆盖方式分为四层：
 
 1. **全包枚举**：manifest、文件规模、源码入口和内部依赖覆盖所有一级包。
 2. **关键实现追踪**：逐链分析请求、工具执行、会话、存储、取消、恢复、协议、UI 和扩展的关键函数及状态转换。
 3. **契约交叉检查**：用测试与文档核实边界，区分“已有测试断言”和“本次实际执行过的验证”。大包中未逐分支审计的安装器、供应商适配器和平台代码，在子报告说明。
+4. **文档与演进对照**：清点本地文档，分离设计规划、当前契约、历史记录、示例和测试夹具；对规划条目比较原始理由、当前实现与替代记录，不把旧的“将实现”描述直接视为未来工作。审读深度与结论置信边界单独记录在文档索引和时效核查中。
 
 每个子报告可独立阅读，包含定位、结构/API、关键流程、状态及失败行为、测试、取舍和阅读入口。源码引用使用本地相对链接及 `#L` 行号；若 Markdown 阅读器不支持行号跳转，链接标签或上下文仍可用于定位。文件枚举见 [source-index.md](source-index.md)，列出一个文件不代表逐行审计过它。
 
@@ -308,7 +311,7 @@ Editor 又拥有一套独立状态：逻辑文本坐标、视觉折行、undo、
 
 telemetry 定义 vendor-neutral tracer/span/schema/context 契约，提供 NOOP、内存参考 adapter 和 conformance suite。span 生命周期由回调管理；记录失败不能改变业务回调执行次数、结果或异常身份。敏感属性标记是 schema 元数据，不会自动脱敏，内存实现也不是有容量与导出的生产后端。[telemetry 子报告](packages/telemetry.md)。
 
-ai 中主要是 telemetry 类型和参数透传，不能因为其依赖 telemetry 就宣称每次网络请求自动产生完整 trace。这里还有明确的文档/实现差异：telemetry README 声称 Agent 导出业务 schemas 和 helpers，但当前 Agent src 与根导出没有这些符号，也未找到对应 instrumentation；应以本地实现为准，不把文档里的示例当成已经接通的链路。[telemetry README:365](../../../.repo/pi-1.0.0/packages/telemetry/README.md#L365)、[Agent index.ts:1](../../../.repo/pi-1.0.0/packages/agent/src/index.ts#L1)。
+ai 中主要是 telemetry 类型和参数透传，不能因为其依赖 telemetry 就宣称每次网络请求自动产生完整 trace。这里还有明确的文档滞后：telemetry README 声称 Agent 导出业务 schemas 和 helpers，但 Agent 1.0.0 CHANGELOG 已记录移除 experimental harness、telemetry schemas 和再导出，当前 src 与根导出也没有这些符号。该段应作为旧包边界的残留说明，不作为已接通链路或待实现承诺。[telemetry README:365](../../../.repo/pi-1.0.0/packages/telemetry/README.md#L365)、[Agent 1.0.0 移除记录](../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L7)、[Agent index.ts:1](../../../.repo/pi-1.0.0/packages/agent/src/index.ts#L1)。
 
 evals 主要研究文档是否改善任务执行，不是覆盖全部 Agent 能力的综合排行榜。它在 Docker 中对同一 case/model/run 的有文档与无文档条件进行成对执行，控制顺序，严格解析产物，再计算配对指标。未形成有效 pair 时，不能把缺失当零分，汇总还会阻止产生不完整的 headline。[evals 子报告](packages/evals.md)。
 
@@ -407,3 +410,20 @@ CI 的主要 job 在 Ubuntu/Node 22 上 install、build、check、test；MCP con
 - evals 的真实样本量、模型版本、费用、统计波动与可重复性。
 
 这些条目是证据空白，不是漏洞或失败清单。能够直接由实现确认的具体限制、需要调用方维护的契约和测试中已有的回归场景，均放在对应包报告中，并附源码定位。整套报告的用途是提供一张能回到代码验证的系统地图。
+
+## 20 设计规划如何补充实现视角
+
+原版报告不是完全没有使用文档，但覆盖重心确实在代码：修订前的报告只直接链接了 12 份源文档，Chord 的 `PLANNING.md`、durable 的四份设计/交接文档和根目录 `tui-plan.md` 均没有建立系统的逐项对照。该统计反映显式引用覆盖，不用于反推之前是否读过某个文件。本次补充把“为什么这样设计、曾打算怎样推进、哪些方向尚未落地”纳入整体分析。
+
+最需要防止混读的四组材料是：
+
+| 材料 | 它补充的设计信息 | 当前应如何理解 |
+|---|---|---|
+| Chord `PLANNING.md` | services、producer/consumer、delta、facet 装配与分阶段工作包 | 多个工作包已完成；对称 `RpcPeer`、structural reload 等仍需区分具体未实现范围，旧 Plugin 名称不能照抄为当前 API；见 [Chord 报告](packages/chord.md) |
+| durable `spec.md` 与 handoff | 提交、恢复、任务所有权、模块边界和多轮方案更替 | “Pico5 未实现”已与现状冲突；handoff 同时含已执行的改版决策，不能整体判废或顺序照做；见 [durable 报告](packages/durable.md) |
+| `tui-plan.md` | 主屏/全屏分工、布局状态、输入命中、图片与退出输出、未来方向 | 主要布局能力及曾延期的滚动条已完成；虚拟化、overlay 独立受约束布局等仍是文档明确提出而未完整落实的方向；见 [TUI 报告](packages/tui.md) |
+| coding-agent 实验 README 与使用文档 | 实验服务集成、未统一的产品行为、扩展组合和 SDK 使用 | 某些 TODO 的迁移前提已过时，部分能力仍有限制；`plan-mode` 示例是用户工作流能力，不是项目路线图；见 [coding-agent 报告](packages/coding-agent.md) |
+
+其余包也逐一核查文档。没有独立路线图的包明确记录这一事实；保留其文档中的职责边界、非目标与扩展点，不补写未经作者说明的未来计划。telemetry 的过时跨包示例、MCP 的 OAuth 示例边界等也归入“文档是否仍可直接采用”的分析。
+
+本次核查以同一 1.0.0 文件快照为时间参照。根 README 和 CONTRIBUTING 指向外部 RFC，且后者说明并非所有 RFC 公开；外部材料未纳入此轮本地分析，因此这里不是对全部上游路线图或未来发布承诺的认证。[README 的规划入口](../../../.repo/pi-1.0.0/README.md#L52)、[CONTRIBUTING 的说明](../../../.repo/pi-1.0.0/CONTRIBUTING.md#L99)。逐项状态、证据与文档审读范围见 [专项核查](documentation-audit.md) 和 [完整文档索引](documentation-index.md)。

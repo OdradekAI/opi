@@ -1,0 +1,16 @@
+{
+  "head": "f72181a7aa0b4087a3b6a6dfd158e2b4c234bf73",
+  "pi_declared_version": "1.0.0",
+  "pi_has_git": false,
+  "manifest_sha256": "7ba3764ae8921274ce78c6a8e20eeb5e75b949e8a57cc72438b2344345c0210f",
+  "manifest_declared_tree": "cc37a8fcc2c2dd97a3953c01a1e85f951984a85a0f5252111627163ce4c71173",
+  "computed_tree": "cc37a8fcc2c2dd97a3953c01a1e85f951984a85a0f5252111627163ce4c71173",
+  "computed_count": 1848,
+  "changed": [],
+  "missing": [],
+  "new": [],
+  "ai_file_count": 378,
+  "staged": "",
+  "unstaged": "M\tCHANGELOG.md\nM\tcrates/opi-eval/README.md\nM\tcrates/opi-eval/README.zh.md\nM\tcrates/opi-eval/scripts/test_verify_local_acceptance.py\nM\tcrates/opi-eval/scripts/verify-local-acceptance.py\nM\tcrates/opi-eval/src/agent/pi.rs\nM\tcrates/opi-eval/src/cli/regrade.rs\nM\tcrates/opi-eval/src/experiment.rs\nM\tcrates/opi-eval/src/native_capture_runtime.rs\nM\tcrates/opi-eval/src/regrade.rs\nM\tcrates/opi-eval/src/report.rs\nM\tcrates/opi-eval/src/runner/experiment.rs\nM\tcrates/opi-eval/src/runner/plan.rs\nM\tcrates/opi-eval/src/runner/prepare.rs\nM\tcrates/opi-eval/tests/agent_integration_conformance.rs\nM\tcrates/opi-eval/tests/assembled_run.rs\nM\tcrates/opi-eval/tests/bundle_recompute.rs\nM\tcrates/opi-eval/tests/experiment_contract.rs\nM\tcrates/opi-eval/tests/fail_closed_cli.rs\nM\tcrates/opi-eval/tests/native_driver.rs\nM\tdocs/research/pi-1.0.0/source-manifest.json\n",
+  "untracked": "docs/research/pi-evals-opi-eval-comparison.zh.md\n"
+}

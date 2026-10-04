@@ -181,3 +181,19 @@ protocol digest 固定了本次实验的模型、镜像与任务计划，便于�
 建议先读 plan/report 确定“什么算一次有效实验”，再读 cli/docker 确定执行协议，随后读 harness 的真实 Agent 生命周期，最后逐个阅读场景。逆序只看任务提示词，容易忽略决定结果可信度的实验基础设施。
 
 本次未验证 Docker 构建、降权机制在当前主机的实际效果、外部依赖运行时 API、模型表现及统计稳定性；本报告不发布任何文档增益数值。
+
+## 13 设计文档、规划与时效核查（2026-10-04）
+
+本包只有一份匹配本次文档清单口径的文档：[README.md](../../../../.repo/pi-1.0.0/packages/evals/README.md#L1)，共 129 行；本次全文核查。没有独立 `PLANNING.md`、设计交接文件或 CHANGELOG。README 是现有实验协议与使用说明，不能因为描述理想实验方法就把它当成未实现路线图。
+
+| 文档中的设计要求 | 实现与时效结论 | 依据 |
+|---|---|---|
+| host eval 与 `*.docs.eval.ts` 配对实验分开 | **已实现的工作方式**，不是未来演进阶段 | [README](../../../../.repo/pi-1.0.0/packages/evals/README.md#L5)、[package scripts](../../../../.repo/pi-1.0.0/packages/evals/package.json#L1) |
+| 先计划全部 `(case, variant, model, runNumber)`，再运行；按重复序号交替顺序 | **已实现的实验协议**，用于避免失败样本从分母消失及减轻固定顺序偏差 | [README](../../../../.repo/pi-1.0.0/packages/evals/README.md#L69)、[任务规划](../../../../.repo/pi-1.0.0/packages/evals/src/plan.ts#L1) |
+| 两实验臂使用相同本地运行时 tarball，文档与 prompt routing 是处理差异 | **已有构建与 harness 实现**；隔离边界仍需实际容器验证 | [README](../../../../.repo/pi-1.0.0/packages/evals/README.md#L80)、[Docker 调度](../../../../.repo/pi-1.0.0/packages/evals/src/docker.ts#L1)、[harness](../../../../.repo/pi-1.0.0/packages/evals/src/harness.ts#L1) |
+| 缺失、重复、errored 等实验臂阻断 headline lift；未知 telemetry 不填零 | **已实现并有测试源码约束**，不是统计增强的未来承诺 | [README](../../../../.repo/pi-1.0.0/packages/evals/README.md#L101)、[配对报告](../../../../.repo/pi-1.0.0/packages/evals/src/report.ts#L359)、[比较测试](../../../../.repo/pi-1.0.0/packages/evals/test/comparison.test.ts#L61) |
+| 场景只负责 setup、模型任务与确定性评分，外层拥有隔离、身份、持久化与汇报 | **当前职责分割**；新场景的扩展入口已存在 | [README](../../../../.repo/pi-1.0.0/packages/evals/README.md#L125)、[扩展场景](../../../../.repo/pi-1.0.0/packages/evals/evals/extensions.docs.eval.ts#L9) |
+
+README 还主动限定了结论强度：模型请求需要网络，因此 Docker 本身不能证明生成代码完全无法联网；单次重复不能建立稳定性；低分是实验数据而非基础设施故障。这些都是**当前方法的边界**，并非已承诺以后消除的缺陷。[隔离限制](../../../../.repo/pi-1.0.0/packages/evals/README.md#L88)、[稳定性](../../../../.repo/pi-1.0.0/packages/evals/README.md#L103)、[评分边界](../../../../.repo/pi-1.0.0/packages/evals/README.md#L129)。
+
+因此，本包可从文档提炼的长期设计价值是“先固定实验协议，再运行 Agent，最后保留失败与不可用数据”。本快照不能支持“以后将增加置信区间、分布式执行、排行榜或自动扩展场景”等路线图结论；第 9 节列出的统计能力边界是分析观察，不是作者规划。本次未发现 README 中需要改判为过时的主要协议段落，也未执行 README 中的付费模型或 Docker 命令。

@@ -3,7 +3,7 @@
 ## 1. 范围与核心判断
 
 本报告研究本地 `pi-1.0.0` 快照的 `packages/durable`。
-证据是 manifest、类型、实现、测试和实际调用点；README 只用于确认包自述及 experimental 标记。
+证据是 manifest、类型、实现、测试和实际调用点；第 15 节另完整核对 README、发行记录和设计文档的原意、落实状态与时效。
 所有结论来自静态阅读，未安装依赖、未运行构建、测试、基准或模型请求。
 文中“测试覆盖”表示存在相应测试及断言，不代表本次执行通过。
 
@@ -572,3 +572,151 @@ CodingTools作为扩展导出，需宿主显式registry.install，不会由导�
 这条顺序先确定数据与提交权威，再理解模型循环，最后评估UI事件和恢复承诺。
 
 本报告只新增研究文档，测试影响：`none`；未修改源快照、测试、manifest、缓存或运行数据。
+
+## 15. 设计文档、规划与时效核查（2026-10-04）
+
+### 15.1 文档清单、阅读范围与证据层级
+
+前文主要从代码解释现状，未系统呈现 Pico5 的设计动机、分阶段替换和被否决实验。本节补齐这部分。
+核查只比较本地 1.0.0 文档与源码/测试；没有访问文档链接、检出旧提交、重跑 benchmark 或执行项目测试。
+“已实现”表示快照有对应机制与测试预期；文档说曾通过、曾测得，不等于本次执行确认。
+
+| 文档 | 阅读范围 | 原本承担的角色 |
+|---|---|---|
+| [README.md:1](../../../../.repo/pi-1.0.0/packages/durable/README.md#L1) | 1–597 行全文 | 现行公共使用说明，明确标为实验性包；末尾链接规范、实现计划和 Chord 指南 |
+| [CHANGELOG.md:1](../../../../.repo/pi-1.0.0/packages/durable/CHANGELOG.md#L1) | 1–7 行全文 | 2026-10-01 的 1.0.0 初始发行记录；没有独立未发布路线图 |
+| [docs/spec.md:1](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L1) | 1–4601 行全文 | 自称 normative 的 Pico5 设计规范：records、documents、tasks、Harness、storage、观察和非目标 |
+| [docs/pico-v5-handoff.md:1](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L1) | 1–917 行全文 | 分阶段实施计划与后补修订；顶部称 1–23 已实现，正文同时保留旧阶段说明 |
+| [docs/pico-v5-chord-usage.md:1](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-chord-usage.md#L1) | 1–387 行全文 | DocumentState、Facet/Service、remote binding、watch 生命周期的具体集成指南 |
+| [docs/chord-delta-findings.md:1](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L1) | 1–358 行全文 | 被移除 graph tracker 实验与旧 tree/path tracker 的测量、正确性问题及后续调查要求 |
+
+包内 Markdown 枚举只有以上六份。额外交叉阅读 Agent 1.0.0 删除记录、Chord 当前 delta 契约及相关实现/测试；没有把其他包整份设计再当成本包路线图。
+这些文档不能按一个统一时态阅读：README 大体是“现在怎么用”，spec 是“应满足什么”，handoff 是“曾分几步到达”，findings 是“某轮实验为什么被拒绝”。
+判定时应落到具体段落，并优先让当前源码、公共类型和测试解释现实行为。
+
+### 15.2 spec：核心设计已落地，局部状态句过期
+
+规范的核心动机是让存储提交成为可见状态的权威：文档 draft 可以修改，prepare 先构造候选版本，Storage 接受后才 adopt/publish；可重开的任务以持久 checkpoint 重新进入阶段，不保存 JS 调用栈。
+records、conversation branch、doc incarnation、requestId admission、任务所有权和 Chord observation 因此共享提交线。
+这一体系在 Session、Transaction、Scheduler 与三类后端中已有实现，不是只有规范草图。
+依据：[spec.md:46](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L46)、[spec.md:1268](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L1268)、[spec.md:1521](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L1521)、[session.ts:404](../../../../.repo/pi-1.0.0/packages/durable/src/session/session.ts#L404)、[transaction.ts:697](../../../../.repo/pi-1.0.0/packages/durable/src/session/transaction.ts#L697)。
+
+| 规范条目 | 现状与时效判断 | 依据 |
+|---|---|---|
+| §2.2 “Pico5 is not implemented yet”，并要求实施 package 24 时采用该 facade | **状态句已过时**。同仓 handoff 顶部已称 1–23 实现，Harness、Conversation、Submission、document API 及 1.0.0 包真实存在。后面的 API 形状仍有现行契约价值，不能整章作废 | [spec.md:289](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L289)、[handoff.md:10](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L10)、[harness.ts:165](../../../../.repo/pi-1.0.0/packages/durable/src/harness/harness.ts#L165)、[CHANGELOG.md:3](../../../../.repo/pi-1.0.0/packages/durable/CHANGELOG.md#L3) |
+| 开头以 PR #9548 待合入来说明 SystemMessage | **时间条件过时，设计已落实**。ai 0.86.0 记录已发布 transcript-backed system/tool changes，当前 Message union 有 SystemMessage；后文用这个 PR 名称指代消息格式仍可读作历史来源 | [spec.md:37](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L37)、[ai/CHANGELOG.md:120](../../../../.repo/pi-1.0.0/packages/ai/CHANGELOG.md#L120)、[ai/types.ts:610](../../../../.repo/pi-1.0.0/packages/ai/src/types.ts#L610) |
+| immutable roots、revocable drafts、prepare/adopt 和显式 doc tokens | **已实现的核心约束**。读取返回受信任 immutable revision；不是自动冻结每个对象或保存全局业务 schema registry | [spec.md:1268](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L1268)、[session.ts:162](../../../../.repo/pi-1.0.0/packages/durable/src/session/session.ts#L162)、[transaction.ts:662](../../../../.repo/pi-1.0.0/packages/durable/src/session/transaction.ts#L662) |
+| owner/wait/completing 和逐层 abort | **已实现**。父任务可在完成请求后等待后代收敛，scheduler 负责持久状态而非任意 Promise 图；恢复是阶段重入 | [spec.md:2031](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L2031)、[scheduler.ts:980](../../../../.repo/pi-1.0.0/packages/durable/src/harness/scheduler.ts#L980)、[harness-structured.test.ts:202](../../../../.repo/pi-1.0.0/packages/durable/test/harness-structured.test.ts#L202) |
+| semantic events 与 task graph | **已实现的派生观察面**。events 标 experimental；由提交生成 snapshot/delta，不是 Session 内第二套持久事件 journal；task graph 展示已提交关系，调度诊断仍在 inspect | [spec.md:3955](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L3955)、[spec.md:4100](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L4100)、[events.ts:140](../../../../.repo/pi-1.0.0/packages/durable/src/harness/events.ts#L140)、[task-graph.ts:62](../../../../.repo/pi-1.0.0/packages/durable/src/harness/task-graph.ts#L62) |
+| §11.3 JSONL fsync | **规范比 README 摘要精确，仍有效**。默认 false；true 时先 flush sidecars 再 append main marker，普通提交不 flush main；破坏性回收前才 flush main，失败推迟回收 | [spec.md:4398](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L4398)、[storage.ts:256](../../../../.repo/pi-1.0.0/packages/durable/src/storage/jsonl/storage.ts#L256)、[storage.ts:294](../../../../.repo/pi-1.0.0/packages/durable/src/storage/jsonl/storage.ts#L294)、[storage.ts:509](../../../../.repo/pi-1.0.0/packages/durable/src/storage/jsonl/storage.ts#L509) |
+
+§12 的 footguns 是当前边界说明：任意代码忽略取消会拖住 close、低层 head 改写可能使已挂载 view 无法即时补回历史、checkpoint 策略由 doc 定义承担等。
+§13 则明确排除 whole-Session DOM、session-scoped rewindable docs、自动 checkpoint heuristic、自动第三方 view 挂载、CRDT/offline multiwriter、任意 Chord op 的 SQL 翻译、JSONL 全局压缩/自动损坏修复、旧 Pico compatibility 和进程内强停非合作代码。
+这些不能因“目前没有”而全部列成未完成功能；有些以后可能改变，但快照没有排期或承诺。
+依据：[spec.md:4450](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L4450)、[spec.md:4587](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L4587)。
+
+### 15.3 handoff：实施包次序保留了被后续阶段替换的方案
+
+这里的 package 1–23 是**工作阶段编号**，不是仓库的 npm packages 个数。Pico5 是该套 durable 设计的阶段名；当前公共 npm 包和路径叫 `pi-durable` / `packages/durable`，不存在一个必须另行发布的 Pico5 npm 包。
+handoff 顶部说 pico3 仍保留，但 Agent 1.0.0 明确记录删除 pico3 与 experimental subpath，当前文件枚举也未发现旧 pico3 实现目录。
+因此该状态项已过时；文中从 `packages/agent/src/harness/...` 搬实现的路径应视为历史来源，现行接线应定位 durable。
+依据：[handoff.md:1](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L1)、[handoff.md:54](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L54)、[agent/CHANGELOG.md:7](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L7)。
+
+| 阶段与原计划 | 设计动机及当前落点 | 时效判断 |
+|---|---|---|
+| 1–2：numeric IDs、records/indexed scans、MemoryStorage、doc records | 建立原子提交和 detached storage ownership，避免所有权靠序列化“碰巧成立”；Session/Transaction 与 Memory backend 已存在 | 已实现基础，不是未来内存后端计划。[handoff.md:16](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L16) |
+| 3–5：SQLite、JSONL sidecars/marker、reclaim | 用相同 storage contract 实现查询、重开、确认边界和可回收最新文档；现有三后端及 conformance/reopen/failure tests 对应 | 主体已落地；真实掉电与文件系统条件仍需环境验证，不能仅凭“Done”保证物理耐久性。[handoff.md:45](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L45)、[jsonl-storage.test.ts:533](../../../../.repo/pi-1.0.0/packages/durable/test/jsonl-storage.test.ts#L533) |
+| 6–7：tracker、typed definitions、Tx doc access | 为失败前不推进权威版本、异步 draft 和输入类型约束服务；现在用 immutable revision/prepare/adopt，typed token 不需要中央注册 | 已实现且是当前架构核心；不是 findings 里旧 target/flush tracker 的原封延续。[handoff.md:107](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L107)、[transaction.ts:672](../../../../.repo/pi-1.0.0/packages/durable/src/session/transaction.ts#L672) |
+| 8–9：checkpoint/migration/fork | 把版本变换、历史 asOf 和 fork 拷贝协议明确化；未注册类型可按存储记录复制，rewindable 与 latest 有不同策略 | 已实现；自定义 migration/checkpoint 正确性仍由定义承担。[handoff.md:189](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L189)、[session-checkpoints-migrations.test.ts:648](../../../../.repo/pi-1.0.0/packages/durable/test/session-checkpoints-migrations.test.ts#L648) |
+| 10–12：Chord structural ops、documentState、bounded watches | 大数组结构变更不携带未改几何 payload；直接采用已提交 doc 帧，慢消费者超过 100 帧改 root reset | 对应实现和测试已在；10 在状态栏说明由 Chord 已满足，不能重复列为 durable 待开发算法。[handoff.md:213](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L213)、[session.ts:212](../../../../.repo/pi-1.0.0/packages/durable/src/session/session.ts#L212)、[session-watches.test.ts:159](../../../../.repo/pi-1.0.0/packages/durable/test/session-watches.test.ts#L159) |
+| 13–15：openable Harness、task runtime、首个无工具聊天 | 先连通恢复/registry/任务和一次模型请求；阶段 15 的 busy/toolUse 暂不支持是纵向里程碑限制 | 历史阶段已推进，不能当成 1.0.0 仍不会工具调用或 busy queue。[handoff.md:288](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L288)、[handoff.md:386](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L386)、[generation.ts:542](../../../../.repo/pi-1.0.0/packages/durable/src/harness/generation.ts#L542) |
+| 16：工具 intent/effect/outcome、输出 retention、pi.post-tools/after 串联 | 当时通过 post-tools 任务处理一轮收尾，工具输出需要有界并持久；工具和输出能力保留，但任务编排后被 19 改写 | **一部分已实现、一部分被明确替代**。不能在当前内置任务列表中继续加 pi.post-tools。[handoff.md:441](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L441)、[registry.ts:10](../../../../.repo/pi-1.0.0/packages/durable/src/harness/registry.ts#L10) |
+| 17–18：view/inbox/usage/events、ownership/subagents | 前者从 commits 投影产品状态；后者以任务拥有 conversation 构建前台/后台协作 | 已实现主要机制与示例；未选择内置统一 subagent tool/supervisor，示例 22/23 是应用组合，不是默认装载。[handoff.md:528](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L528)、[handoff.md:577](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L577) |
+| 19：structured concurrency 替换 after、pi.post-tools | generation 拥有 tool children，等待/收尾进入其 phase；子任务/拥有会话阻挡终结，以 owner 边维持收敛 | **明确取代旧方案且已实现**；文档要求删除而不保留兼容，不存在两套同等现行 API。[handoff.md:606](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L606)、[scheduler.ts:1003](../../../../.repo/pi-1.0.0/packages/durable/src/harness/scheduler.ts#L1003) |
+| 20：compaction/overflow | summary task 独立持久化、range/tail 明确、boundary 放置摘要，overflow 在重试前触发 blocking compaction | 主体已实现；“重发精确最后请求 + toolChoice none”的缓存友好摘要明确写 Not in v1，只是备选方向。[handoff.md:681](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L681)、[handoff.md:729](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L729) |
+| 21：named extensions + per-conversation Agent | 用 pi.agent/configure 替换 pi.conversation.config/getters，live HarnessSettings 放运行策略，env 按调用构造；移除旧 keyed registry/batch/wrapper scopes | **替代设计已实现**；旧 13–16 示例不能直接当当前 API。CodingTools 只有 read/write/edit/bash，grep/find/ls 未移植是该阶段明确范围。[handoff.md:825](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L825)、[agent.ts:36](../../../../.repo/pi-1.0.0/packages/durable/src/harness/agent.ts#L36)、[agent.ts:61](../../../../.repo/pi-1.0.0/packages/durable/src/harness/agent.ts#L61) |
+| 22–23：lifecycle audit、规范示例、task graph | 收紧 shutdown/late invocation/迁移观察；让任务所有权成为可观察图 | 文末明确 Done/Implemented，且有对应代码测试；详见下节，不能把上面的 Bugs 列表直接复制为现存缺陷。[handoff.md:850](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L850)、[handoff.md:897](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L897)、[task-graph.ts:71](../../../../.repo/pi-1.0.0/packages/durable/src/harness/task-graph.ts#L71) |
+
+另有一个容易读错的明确冲突：13–20 前的 cross-cutting 文字要求在 Storage admission 前准备所有 ConversationView，且禁止订阅已提交 publication 重建；后面的阶段 17 改为 `subscribeCommits()`，当前 spec §9.3 和 `view.ts` 也从 durable publications 推进 mount。
+因此应判定**较早约束已被后续设计替换，但旧文字未清理**；不能以这句孤立旧要求指控当前实现违反现行 view 架构，也不能把两种时序混成同一条保证。
+依据：[handoff.md:270](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L270)、[handoff.md:553](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L553)、[spec.md:3904](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L3904)、[view.ts:68](../../../../.repo/pi-1.0.0/packages/durable/src/harness/view.ts#L68)。
+
+handoff 的 1 GiB cat 约 0.4 s 是 throughput **目标**，不是本次或当前快照已经达到的结果；同段 TypeBox 的 RSS 数字是作者环境中的测量说明。
+benchmark 实现存在、文档列有要采集的 metrics，都不能替代实际跑出的结果。没有因为目标文字存在便认定它“已满足”，也没有因本次未测便认定“未实现”。
+依据：[handoff.md:502](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L502)、[handoff.md:519](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L519)。
+
+### 15.4 阶段 22 的 Bugs 已怎样处理
+
+| 当时发现 | 当前静态证据 | 结论 |
+|---|---|---|
+| invocation 结束后 now/report 仍可调用 | 两方法都检查 invocation.ended；测试 expect 两者抛 invocation has ended | **已修正对应缺口**。[scheduler.ts:1172](../../../../.repo/pi-1.0.0/packages/durable/src/harness/scheduler.ts#L1172)、[harness-tasks.test.ts:524](../../../../.repo/pi-1.0.0/packages/durable/test/harness-tasks.test.ts#L524) |
+| migration-only base 没有 ops，旧 shape observer 一直不更新 | `observedOperations` 跨版本发 root replacement；测试明确断言 migration-only base 发布给旧 watch | **已修正**；新 shape observer 可忽略同版本空 ops，不能误判再次漏发。[session.ts:553](../../../../.repo/pi-1.0.0/packages/durable/src/session/session.ts#L553)、[session-checkpoints-migrations.test.ts:398](../../../../.repo/pi-1.0.0/packages/durable/test/session-checkpoints-migrations.test.ts#L398) |
+| open 失败后用已取消 caller context close，掩盖原错误 | catch 路径 close 使用 withoutAbortSignal；测试覆盖 close 本身失败仍重抛 open 原因 | **已修正**。[harness.ts:427](../../../../.repo/pi-1.0.0/packages/durable/src/harness/harness.ts#L427)、[harness-lifecycle.test.ts:85](../../../../.repo/pi-1.0.0/packages/durable/test/harness-lifecycle.test.ts#L85) |
+| close/watch 结束边界、取消 close 后是否真正 shutdown、non-cooperative handler 是否 join | seal 立即停止观察；共用 shutdown，取消只取消该等待；handler/tool/hook 忽略 signal 时测试要求 storage 保持打开直到返回 | **契约已细化并有针对性测试**，不支持强停非合作代码。[harness-lifecycle.test.ts:127](../../../../.repo/pi-1.0.0/packages/durable/test/harness-lifecycle.test.ts#L127)、[harness-lifecycle.test.ts:230](../../../../.repo/pi-1.0.0/packages/durable/test/harness-lifecycle.test.ts#L230)、[harness-lifecycle.test.ts:275](../../../../.repo/pi-1.0.0/packages/durable/test/harness-lifecycle.test.ts#L275) |
+| progress calls、compile examples、Chord detach/withdraw 需补覆盖 | lifecycle 测试分别列只读不调度和 progress 调度；spec-usage、chord-guide 文件存在，指南测试包含 facet host 与 remote client teardown | **计划已形成实现/测试工件**，不是本次运行认证。[harness-lifecycle.test.ts:533](../../../../.repo/pi-1.0.0/packages/durable/test/harness-lifecycle.test.ts#L533)、[harness-lifecycle.test.ts:565](../../../../.repo/pi-1.0.0/packages/durable/test/harness-lifecycle.test.ts#L565)、[spec-usage.test.ts:1](../../../../.repo/pi-1.0.0/packages/durable/test/spec-usage.test.ts#L1)、[chord-guide.test.ts:269](../../../../.repo/pi-1.0.0/packages/durable/test/chord-guide.test.ts#L269) |
+
+“Done”是 handoff 自身的后补状态，上表才是本次的交叉依据。它不证明每条历史验收命令都能在任意平台通过，也不证明所有可能的生命周期 race 已穷尽。
+
+### 15.5 Chord usage：标题旧，主要内容仍是现行集成指南
+
+该文档开头把示例与 `test/chord-guide.test.ts` 绑定，并要求同步。Session 是提交权威；DocumentState 是已提交 doc 的 hydrated readonly adapter；ReplicatedState 的 stream sequence 不是 Session commit number。
+这些术语仍与当前实现匹配，不能因为文件名含 pico-v5 就列为废弃提案。
+`documentState` 在提交线上获取当前 snapshot 并注册后续 exact frames；外部 service 不需要复制整个 Session，也不赋予 replica 提交权。
+依据：[chord-usage.md:1](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-chord-usage.md#L1)、[chord-usage.md:28](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-chord-usage.md#L28)、[session.ts:212](../../../../.repo/pi-1.0.0/packages/durable/src/session/session.ts#L212)。
+
+| 指南场景与原意 | 当前落实 | 阅读时必须保留的边界 |
+|---|---|---|
+| Session-wide canvas：自定义 doc 经 facet/service 暴露给多个客户端 | 测试确实创建 CanvasDoc、绑定 service、通过 remote binding attach，验证 host dispose 撤下服务 | canvas 是示例自定义状态，不是 durable 默认 built-in；transport 由 host 提供，不默认建 socket/鉴权协议。[chord-usage.md:54](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-chord-usage.md#L54)、[chord-guide.test.ts:269](../../../../.repo/pi-1.0.0/packages/durable/test/chord-guide.test.ts#L269) |
+| conversation diff family：按会话与 key 暴露 review | keyed consumer 测试存在；fork policy current/asOf 定义文档复制时点 | service 的复合 key 不是 DocumentId；latest 文档不能获得 rewindable 历史。[chord-usage.md:185](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-chord-usage.md#L185)、[chord-guide.test.ts:327](../../../../.repo/pi-1.0.0/packages/durable/test/chord-guide.test.ts#L327) |
+| task-scoped output：生产者有界输出与 watch | 测试运行直到 producer retire；超过 backlog 上限 reset，退役以 null 可见 | watch.stop 不 join 任意 listener；task 终结后不能继续创建 task doc，需把永久结果另行归档。[chord-usage.md:264](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-chord-usage.md#L264)、[chord-guide.test.ts:356](../../../../.repo/pi-1.0.0/packages/durable/test/chord-guide.test.ts#L356) |
+| built-in conversation view 与 commit delivery | view 挂载内置几类文档，由提交 publication 推进 | 不自动挂第三方 docs；不能把 network replica hydration、Session commit、用户回调开始看成同一时刻。[chord-usage.md:334](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-chord-usage.md#L334)、[view.ts:81](../../../../.repo/pi-1.0.0/packages/durable/src/harness/view.ts#L81) |
+
+指南的生命周期说明仍有阅读价值：先 detach clients、dispose facet host 及其 owned states，再 close Harness；`env.provide` 在同步 setup 注册，不能等到异步 onActivate 才提供。
+文档示例测试说明接线具备可执行形式；本次未编译或运行，不能宣称文档所有示例已经在当前机器上通过。
+依据：[chord-usage.md:172](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-chord-usage.md#L172)、[chord-usage.md:368](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-chord-usage.md#L368)。
+
+### 15.6 delta findings：哪些结论仍有效，哪些不能当现状
+
+调查原意是解决 large drawing 中交换、移动、持有引用与复制效率的矛盾。工作负载约 2 万 strokes × 100 points，总计约 204 万对象；作者区分 serialized size、raw heap、post-GC retained heap、采样峰值和 RSS，并要求验证身份/别名，不只 deep equality。
+这个方法论仍有效，但文档自己标明其多数表格是历史测量，并且早于最终 spread-first clone 改动。
+依据：[findings.md:21](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L21)、[findings.md:51](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L51)。
+
+**被否决的 graph 方案。** 它为对象分配 ID、通过 reference writes 表达图结构，能保留 alias/cycle 和交换身份，但 import、hydration、producer metadata 与 full traversal 代价过高，所以实验实现被移除，未导出、未接入 Chord services。
+文档反对的是测到的这一实现，而非数学上证明所有 graph replication 不可能。其 graph hash 只标识一次未提交实验，不意味着当前 Git 快照能恢复该实现。
+因此 graph 部分是**历史决策证据**，不能列为仍待接入的半成品模块。
+依据：[findings.md:3](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L3)、[findings.md:122](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L122)、[findings.md:331](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L331)。
+
+| findings 中的发现/主张 | 当前对照 | 时效判定 |
+|---|---|---|
+| path operation log 的 swap 很小，但 flush 仍可能遍历几何；大量 edit 可折成大 root replacement | 当前仍是 path ops，并有结构数组 `m`、region splice 和 root fallback；但公共协议已从 mutable target/flush 改为 immutable revision + beginChange/prepare/adopt | 设计问题仍相关，**旧算法时序/数字不能直接套用**。当前成本需重测。[findings.md:54](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L54)、[delta/README.md:124](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L124)、[tracker.ts:1652](../../../../.repo/pi-1.0.0/packages/chord/src/delta/tracker.ts#L1652) |
+| alias/held refs/reindex 可使 producer 和 replica 分歧，copy-on-assignment 本身改变 alias 语义 | 当前 root 必须 alias-free、acyclic strict JSON；不遍历验证 trusted roots，违规仍可能分歧。draft placements 深拷贝并验证，多处放同一值成为独立容器；held handles 跟随数组重排 | **换成明确树所有权契约，而非实现任意 JS graph alias 语义**。不能写“所有 alias 缺陷修好了”，也不能拿违规 root 例子宣称实现违反自己的契约。[findings.md:95](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L95)、[delta/README.md:96](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L96)、[delta-clone.test.ts:41](../../../../.repo/pi-1.0.0/packages/chord/test/delta-clone.test.ts#L41) |
+| full traversal 暴露数 GiB retained heap；weak proxy cache 把该轮保留量降到约 203.54 MiB，却未解决约 2491.78 MiB 的冷读后采样 heap和慢冷读 | 当前采用 transaction overlay、WeakRef contexts、prepare/abort/adopt 清理；retention 测试覆盖 14 个情景，已不是文中描述的旧 placement/finalizer cache 结构 | **历史补丁效果与当前性能未知分开**。不能说旧 retained 数字证明当前快照仍占几 GiB，也不能说新实现已达到满意上限。[findings.md:208](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L208)、[findings.md:226](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L226)、[tracker.ts:214](../../../../.repo/pi-1.0.0/packages/chord/src/delta/tracker.ts#L214)、[retention.test.ts:5](../../../../.repo/pi-1.0.0/packages/chord/test/delta-tracker/retention.test.ts#L5) |
+| spread-first clone 减小对象布局与拷贝成本，保留 null prototype | 当前 `track(root)` O(1) 保留原 root 身份、不完整 clone；placement `copyJson` 用 Object.create/own data properties，null prototype 仍被保留 | **clone 实现描述已不对应当前路径**，null-prototype 语义仍在。旧 93.924 ms/139.466 MiB 数据只属于旧 clone 比较。[findings.md:274](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L274)、[json.ts:16](../../../../.repo/pi-1.0.0/packages/chord/src/json.ts#L16)、[delta-clone.test.ts:5](../../../../.repo/pi-1.0.0/packages/chord/test/delta-clone.test.ts#L5)、[delta-clone.test.ts:17](../../../../.repo/pi-1.0.0/packages/chord/test/delta-clone.test.ts#L17) |
+| 保留 benchmark 供重现，未来尝试必须覆盖读放大/复制/身份/回收 | 当前 benchmark 确有 raw/minimal proxy/current delta 三模式、独立进程、source hashes；delta 已用 beginChange/prepare/adopt | **重现实验方法仍有价值，但不是原 graph/baseline 全矩阵重现**；临时结果路径不是随快照附带的数据集。[findings.md:308](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L308)、[delta-traversal.bench.ts:53](../../../../.repo/pi-1.0.0/packages/chord/test/delta-traversal.bench.ts#L53)、[delta-traversal.bench.ts:94](../../../../.repo/pi-1.0.0/packages/chord/test/delta-traversal.bench.ts#L94) |
+
+findings 最后的 “Requirements for a future attempt” 是下一次研究应满足的证据要求：完整 producer reads、初始化/编辑/序列化/回收分阶段、identity/reindex、import/hydration、新对象替换和多种内存指标。
+它没有选定另一个必然要实现的 graph API，也没有排期；其“没有一种测得设计同时达到所有目标”应限定在该轮调查，不能跨过后来的 immutable tracker 改造无限延伸。
+依据：[findings.md:347](../../../../.repo/pi-1.0.0/packages/durable/docs/chord-delta-findings.md#L347)。
+
+### 15.7 README 的现行说明、局部夸大与真正剩余方向
+
+README 对 extensions、pi.agent、settings、env、reload、compaction、task graph 已使用较新的最终表面；它应作为实际入口，而不是依旧按 handoff 13–16 的旧 registry 名称接线。
+“Reading images is not supported yet” 与 read 工具的 unsupported_image 分支一致，这是**明确尚未支持**，但没有版本/日期承诺；grep/find/ls 未移植和 cache-friendly compaction Not in v1 也不等于确定下一步。
+依据：[README.md:124](../../../../.repo/pi-1.0.0/packages/durable/README.md#L124)、[README.md:145](../../../../.repo/pi-1.0.0/packages/durable/README.md#L145)、[read.ts:25](../../../../.repo/pi-1.0.0/packages/durable/src/tools/read.ts#L25)、[handoff.md:729](../../../../.repo/pi-1.0.0/packages/durable/docs/pico-v5-handoff.md#L729)。
+
+README:287 把“partial/tool output at most every 100 ms”进一步解释为“崩溃最多丢失该窗口”，这个上限**不成立**。
+generation 是 100 ms 节流并且只有一个 commit 在途，存储/调度可以更慢；tool output 的 Progress 更明确按上次写入量以 100 KiB/s 计费，等待至少 100 ms，大输出等待可更久。
+这是频率约束和减少 I/O 的取舍，不能提升为 100 ms recovery-point guarantee；JSONL 与 SQLite 还各有另外的介质耐久性条件。
+依据：[README.md:287](../../../../.repo/pi-1.0.0/packages/durable/README.md#L287)、[spec.md:2755](../../../../.repo/pi-1.0.0/packages/durable/docs/spec.md#L2755)、[generation.ts:358](../../../../.repo/pi-1.0.0/packages/durable/src/harness/generation.ts#L358)、[output.ts:220](../../../../.repo/pi-1.0.0/packages/durable/src/harness/output.ts#L220)、[output.ts:274](../../../../.repo/pi-1.0.0/packages/durable/src/harness/output.ts#L274)。
+
+README 开头“reopening picks work up where it stopped”也应按任务 checkpoint 理解：恢复会把未完成 assistant partial 归为 aborted 后重新请求；工具是否可重跑要求已保存 intent 和当前工具都声明 safe。
+requestId 仅在 conversation 内去重 admission，不能把它误读为远程副作用 exactly-once。已有工具 recovery 测试覆盖 safe 组合，这些是当前实现的具体边界，不是等待未来补完的无限承诺。
+依据：[README.md:5](../../../../.repo/pi-1.0.0/packages/durable/README.md#L5)、[README.md:166](../../../../.repo/pi-1.0.0/packages/durable/README.md#L166)、[tool.ts:95](../../../../.repo/pi-1.0.0/packages/durable/src/harness/tool.ts#L95)、[submissions.ts:155](../../../../.repo/pi-1.0.0/packages/durable/src/harness/submissions.ts#L155)、[harness-tools-recovery.test.ts:136](../../../../.repo/pi-1.0.0/packages/durable/test/harness-tools-recovery.test.ts#L136)。
+
+最后，package 的能力存在不代表已替代默认产品运行时。快照内 coding-agent 的 durable 集成位于 experimental 路径；指南的自定义 canvas/diff/service、handoff 的背景 subagent 组合则属于测试与示例。
+因此不能由“计划 1–23 已实现”直接推导默认 CLI 已全面切换、全部扩展和 transport 已成为默认产品功能。
+依据：[experimental/runtime.ts:125](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/durable/runtime.ts#L125)、[chord-guide.test.ts:1](../../../../.repo/pi-1.0.0/packages/durable/test/chord-guide.test.ts#L1)。
+
+建议阅读顺序：README 确认现行 API → spec 的 invariants/ownership/storage/non-goals → handoff 19–23 掌握最终替换 → 回看 1–18 的历史原因 → Chord usage 看实际生命周期 → findings 看研究方法与被否决方案。
+本轮保留的验证空白是性能目标/历史数字未重测、真实进程崩溃及掉电未实验、Node/Bun/SQLite driver 未运行、文档示例只静态对照、历史未提交 graph 实验无法从本快照复原。
+以上不是新的产品路线图，也没有把明确非目标改写成缺陷；测试影响仍为 `none`。

@@ -273,3 +273,52 @@ coding-agent CLI 将 codemode 作为内建 extension 加载，但工具注册时
 
 推荐阅读顺序：`types → host → protocol → worker → prelude → sandbox tests → source/declarations → 产品 execute`。
 测试影响：`none`，仅新增研究文档。
+
+## 13. 设计文档、规划与时效核查（2026-10-04）
+
+### 13.1 文档清单与范围
+
+本包 Markdown 枚举只有两份，均全文阅读；没有发现独立 docs、设计计划、未发布路线图。
+前文解释了隔离机制，本节补充文档原意、发行时间和未承诺事项，避免把 README 的能力说明当作未来规划。
+
+| 文档 | 范围 | 性质与时效 |
+|---|---|---|
+| [README.md:1](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L1) | 1–190 行全文 | 当前 API/嵌入手册；包含 capability 注入、source、store、bundled host、Agent 适配、错误和运行时边界，整体与实现相符 |
+| [CHANGELOG.md:1](../../../../.repo/pi-1.0.0/packages/codemode/CHANGELOG.md#L1) | 1–29 行全文 | 0.99.0 初始 spike → 0.99.2 Bun worker/image 校验修复 → 1.0.0 声明 helper/错误提示；是短期发行历史，不是排期 |
+
+### 13.2 原意、实现和明确边界
+
+| 文档中的设计意图 | 对照当前实现与测试 | 判断 |
+|---|---|---|
+| 把工具编排放进独立 VM，脚本只通过已注入函数获得外部能力；嵌套调用不逐条进入 LLM transcript | worker 内建立 QuickJS，JSON 消息转发 host calls；调用记录在 result.calls，产品选择返回输出/返回值 | **已实现的主要设计**；不是执行任意 Node 程序的计划。[README.md:3](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L3)、[runtime/worker.ts:53](../../../../.repo/pi-1.0.0/packages/codemode/src/runtime/worker.ts#L53)、[sandbox.test.ts:631](../../../../.repo/pi-1.0.0/packages/codemode/test/sandbox.test.ts#L631) |
+| 每次执行独立 worker/VM，host 控制 deadline 与 abort，避免无限循环卡住主线程 | host 先写共享 interrupt flag 再 terminate worker；同步循环和 microtask 自旋均有测试；Infinity 是有意提供的关闭 deadline 选项 | **现行机制**；不等于能强制停止 host 里忽略 signal 的工具。[README.md:178](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L178)、[runtime/host.ts:242](../../../../.repo/pi-1.0.0/packages/codemode/src/runtime/host.ts#L242)、[sandbox.test.ts:504](../../../../.repo/pi-1.0.0/packages/codemode/test/sandbox.test.ts#L504) |
+| store/load 让多次模型脚本传递中间 JSON，但不把 sandbox 变成数据库 | 每次输入 store snapshot；只有成功 result 返回 storeWrites；caller 负责提交；load 返回副本 | **明确职责边界**；失败无 writes 不撤销已经执行的外部工具副作用，也未承诺未来内置持久化。[README.md:53](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L53)、[runtime/host.ts:255](../../../../.repo/pi-1.0.0/packages/codemode/src/runtime/host.ts#L255)、[sandbox.test.ts:363](../../../../.repo/pi-1.0.0/packages/codemode/test/sandbox.test.ts#L363) |
+| source 第一行 options 统一模型生成格式，但策略仍由调用方决定 | parser 保持代码行号，source 子入口独立；execute 不自动实施 max_output_tokens/timeout_ms 注释 | **已实现且说明准确**；不能把 parser 能接受字段等同于 VM 自动限流或截断。[README.md:67](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L67)、[source.test.ts:13](../../../../.repo/pi-1.0.0/packages/codemode/test/source.test.ts#L13) |
+| JSON Schema 转 TypeScript declarations 帮模型理解工具，不引入另一套 runtime validation | renderDeclarations/renderToolOutputType 生成类型；recursive/remote refs 回退 unknown；真正执行值不按该 schema 校验 | **明确非职责**，不是“验证器尚未完成”。[README.md:99](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L99)、[declarations.ts:181](../../../../.repo/pi-1.0.0/packages/codemode/src/declarations.ts#L181)、[declarations.test.ts:86](../../../../.repo/pi-1.0.0/packages/codemode/test/declarations.test.ts#L86) |
+| bundled host 显式提供 wasm 和 worker 位置，兼容 Bun 嵌入模块路径 | workerUrl 为 string 或 URL；host 传给 Worker；测试覆盖字符串路径、缺失 worker 和坏 wasm | **已实现的分发适配**；没有本次 Node/Bun 全矩阵实测。[README.md:79](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L79)、[types.ts:124](../../../../.repo/pi-1.0.0/packages/codemode/src/types.ts#L124)、[sandbox.test.ts:607](../../../../.repo/pi-1.0.0/packages/codemode/test/sandbox.test.ts#L607) |
+
+README 明确没有 timers/fetch/process/require/modules/WebAssembly，允许 eval/Function 也只生成同一 VM 内代码。
+这是一套刻意缩窄的 capability 设计，不应把这些缺少的宿主全局写成待补功能。
+同样，memoryLimitBytes 约束 VM heap，不能由“单独 wasm memory”推断 host 工具输出、worker 消息队列和主线程总内存都获得相同额度。
+依据：[README.md:47](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L47)、[README.md:51](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L51)、[runtime/host.ts:215](../../../../.repo/pi-1.0.0/packages/codemode/src/runtime/host.ts#L215)。
+
+### 13.3 发行记录是否已落实
+
+0.99.0 的 “Initial spike” 是出生时的描述，不等于当前只剩未实现构想。
+随后 0.99.2 的 workerUrl 字符串支持已出现在公共类型和测试；image 输入严格校验有 malformed/wrapped/large base64 测试；1.0.0 的 renderToolOutputType 确实公开导出。
+不存在的 tools/global namespace 成员会给出近似名字，超大 store 提示说明 store 用途，两类变化也都有具体测试。
+因此这几项应归为**已实现、可从源码和测试预期交叉定位的发行记录**；本次未运行测试，不能复述成已在本机验证通过。
+依据：[CHANGELOG.md:3](../../../../.repo/pi-1.0.0/packages/codemode/CHANGELOG.md#L3)、[CHANGELOG.md:13](../../../../.repo/pi-1.0.0/packages/codemode/CHANGELOG.md#L13)、[index.ts:7](../../../../.repo/pi-1.0.0/packages/codemode/src/index.ts#L7)、[sandbox.test.ts:83](../../../../.repo/pi-1.0.0/packages/codemode/test/sandbox.test.ts#L83)、[sandbox.test.ts:335](../../../../.repo/pi-1.0.0/packages/codemode/test/sandbox.test.ts#L335)、[sandbox.test.ts:411](../../../../.repo/pi-1.0.0/packages/codemode/test/sandbox.test.ts#L411)、[sandbox.test.ts:466](../../../../.repo/pi-1.0.0/packages/codemode/test/sandbox.test.ts#L466)。
+
+未发现与当前实现明显冲突的独立路线图条目，但有两种不应当作保证的文字：README 的约 20 ms worker/VM 创建时间是作者环境下的概略性能描述；“Node 和 Bun 一样工作”描述支持目标，不能替代具体 OS、runtime、打包产物的验证。
+这些不是已证明过时的数据，也不是本次重新测量的结果。
+依据：[README.md:178](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L178)、[README.md:186](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L186)。
+
+### 13.4 集成示例的阅读价值
+
+README 的 Agent 适配示例先直调 tool.execute，随后明确提醒这会绕过 before/after hooks，并给出 runToolCall 的替代调用路径；这是有意展示低层接线及边界，不是 runtime 忘记实施 Agent 策略。
+coding-agent 使用本包是真实现，但内置工具是否默认激活、输出截断、store 写入会话、执行 timeout 等由产品 adapter 决定，不能由通用包 README 倒推出默认产品策略。
+依据：[README.md:115](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L115)、[README.md:161](../../../../.repo/pi-1.0.0/packages/codemode/README.md#L161)、[execute.ts:377](../../../../.repo/pi-1.0.0/packages/coding-agent/src/extensions/codemode/execute.ts#L377)。
+
+推荐先读 README 的能力和结果契约，再读 source/store/bundled-host，随后对照 host/worker/prelude，最后用 CHANGELOG 定位最近变更。
+前文提出的非合作 host 工具、输出洪泛等问题属于研究者的待验证范围；快照没有把它们列为确定排期，本节不虚构未来规划。

@@ -491,3 +491,160 @@ Chord 和 delta 可以独立复用，但 snapshot 中的新 facet/service 组合
 最后结合 client/server 的真实 transport 与 durable 的存储提交顺序，确认 Chord 契约在边界何处落实。
 
 测试影响：`none`。本次仅新增研究文档，所有测试结论均来自静态阅读。
+
+## 17. 设计文档、规划与时效核查（2026-10-04）
+
+本次完整阅读三份包内文档：`PLANNING.md` 第 1–859 行、`README.md` 第 1–264 行、`src/delta/README.md` 第 1–191 行。
+包内没有独立 CHANGELOG，不能利用缺失的发行记录为每次设计变化指定日期。
+本节按快照中可见证据判断：**已兑现**指有实现；**部分兑现**指只覆盖原计划一部分；**无实现证据**不等于仍有维护者承诺；**明确非目标**不是遗漏；**历史替代/不一致**按具体条目判定。
+所有检查为文档与源码静态对照，没有运行规划中的 conformance、bundle、GC 或性能验证。
+
+### 17.1 PLANNING 仍有有效未完项，但不是整份都在讲未来
+
+规划开头已经明确：Context、strict JSON、state、service、facet host/loader、初始 Node bundling/loading 都已进入 Chord；对称 RPC 与 structural generation replacement 仍计划中。
+这段状态概括与源码总体相符，不能因标题为 implementation plan 就把整套能力认定为未实现。
+但其后混有早期命名、已实现的设计要求、当前边界声明、仍未实现的工作包，以及互相冲突的旧句子。
+见 [PLANNING.md:3](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L3)。
+
+设计动机仍清楚：应用中立、单写者 latest-value state、服务位置透明、稳定 facade、模块加载代与运行生命周期分权。
+本地服务不应被迫序列化，远程通道由适配器建立严格 wire 边界；应用 Session、路由、认证和持久化不向下渗透。
+这些目标已经由当前 exports、RemoteServiceTransport、FacetHost 与依赖边界体现。
+见 [PLANNING.md:16](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L16)、[PLANNING.md:75](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L75)、[types.ts:251](../../../../.repo/pi-1.0.0/packages/chord/src/types.ts#L251)。
+
+### 17.2 WP0–WP8 逐项落实状态
+
+| 工作包与原定交付 | 判断 | 当前实现/测试证据与剩余部分 |
+|---|---|---|
+| WP0：公共词汇、Context、卸载调用策略、协议协商、尾部 Context、race helpers、边界/类型检查 | 部分兑现 | Facet/Context/末尾 Context、包边界与 compile-time 负例已有；独立 peer 版本协商未见。卸载策略现在由规划第 255 行确定为不 drain 旧 facet 工作；不能把 WP0 全部标完成。[PLANNING.md:621](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L621)、[types.ts:168](../../../../.repo/pi-1.0.0/packages/chord/src/types.ts#L168)、[services.test.ts:69](../../../../.repo/pi-1.0.0/packages/chord/test/services.test.ts#L69)、[boundary.test.ts:11](../../../../.repo/pi-1.0.0/packages/chord/test/boundary.test.ts#L11) |
+| WP1：JSON、取消 Context、权威 state/cold replica、水合/重建、immutable 值、监听器错误 | 主体已兑现 | Context helpers、Mutable/Attached/Replica、sequence 防护与错误报告均存在。初始根输入采用可信 ownership，不等于运行时对所有根深校验；这已是当前明确契约。[PLANNING.md:635](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L635)、[state.ts:184](../../../../.repo/pi-1.0.0/packages/chord/src/services/state.ts#L184)、[state.ts:344](../../../../.repo/pi-1.0.0/packages/chord/src/services/state.ts#L344)、[context.test.ts:14](../../../../.repo/pi-1.0.0/packages/chord/test/context.test.ts#L14) |
+| WP2：对称 RPC peer、版本 envelope、request correlation、handler、cancel、sanitized error、notification、duplex loopback | 无对应通用 peer 实现证据；文档仍称 planned | 当前出口和 source tree 没有 RpcPeer/`src/rpc`；现有 loopback 直接调用 provider.invoke/subscribe，非双向请求关联通道。Pi client/server 有相关机制，不等于 Chord WP2 交付。[PLANNING.md:649](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L649)、[index.ts:1](../../../../.repo/pi-1.0.0/packages/chord/src/index.ts#L1)、[loopback.ts:5](../../../../.repo/pi-1.0.0/packages/chord/src/services/loopback.ts#L5) |
+| WP3：token、singleton/keyed provider、成员分类、stable facade、RpcPeer 调用、catalogue、generation/error | 服务主体已兑现；RpcPeer 部分未兑现 | provider/binding/slot 已工作在可插拔 transport 上，不依赖计划的 RpcPeer。类型/成员检查已有，args/results 自动递归 strict-JSON 校验和通用异常净化不在当前 service runtime 内执行。[PLANNING.md:663](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L663)、[provider.ts:214](../../../../.repo/pi-1.0.0/packages/chord/src/services/provider.ts#L214)、[services.test.ts:145](../../../../.repo/pi-1.0.0/packages/chord/test/services.test.ts#L145) |
+| WP4：快照与捕获屏障、state/lifecycle 更新、keyed 水合与取消、断连重建 | 主体已兑现，并已细化 overflow 政策 | snapshot/activate、rebind、generation、显式 reset 都有实现和测试；自动 resubscribe 不属于现有 binding 通用修复策略。普通 singleton replacement 直接安装新快照，不先暴露 unready。[PLANNING.md:678](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L678)、[consumer.ts:540](../../../../.repo/pi-1.0.0/packages/chord/src/services/consumer.ts#L540)、[service-delivery.test.ts:211](../../../../.repo/pi-1.0.0/packages/chord/test/service-delivery.test.ts#L211) |
+| WP5：setup 派生依赖图、local/remote resolution、activation/ownership、失败清理、static loader | 主体已兑现，Plugin 名称改为 Facet | host.activate 完整执行声明→验证→绑定→ready→拓扑激活；语义比旧拟议文件名更有意义。[PLANNING.md:692](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L692)、[host.ts:388](../../../../.repo/pi-1.0.0/packages/chord/src/facets/host.ts#L388)、[facets.test.ts:624](../../../../.repo/pi-1.0.0/packages/chord/test/facets.test.ts#L624) |
+| WP6：combined loader、structural replacement、shape-preserving reload、代际隔离、卸载策略、错误与 disposal 次序 | 部分兑现 | combined loader 和相同 ID/依赖/提供形状的 reload 已有，cutover 前保留旧代、之后失败终止；新增/删除 facet 或改变服务图的完整 structural 更新 API 未实现。加载代销毁仍由调用方协调。[PLANNING.md:707](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L707)、[types.ts:325](../../../../.repo/pi-1.0.0/packages/chord/src/types.ts#L325)、[host.ts:423](../../../../.repo/pi-1.0.0/packages/chord/src/facets/host.ts#L423)、[facet-loader.test.ts:344](../../../../.repo/pi-1.0.0/packages/chord/test/facet-loader.test.ts#L344) |
+| WP7：Node bundler/manifest/内容寻址/maps/externals/完整性/新 VM 代 | 主体已兑现；完整验收证据有限 | esbuild 已选定且锁定、manifest/artifact v2、load 校验与独立代均存在。测试包含双入口、同输入 hash 一致、新代及损坏拒绝；没有本次执行结果，也不把这等同全部 pack/platform/GC 验收通过。[PLANNING.md:722](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L722)、[bundle.ts:39](../../../../.repo/pi-1.0.0/packages/chord/src/node/bundle.ts#L39)、[bundle.test.ts:81](../../../../.repo/pi-1.0.0/packages/chord/test/bundle.test.ts#L81) |
+| WP8：Pi 采用 Chord、保持路由/TUI 在上层、替换旧通用实现 | 当前采用已发生；整项完成证据不足 | client/server/protocol 与实验 worker/TUI 已调用 Chord；计划列出的旧 agent services、experimental facets/loader 路径在快照中已不存在。但独立 RpcPeer/metadata hooks 未落地，文档规定的全部集成验收未运行，不能宣布 WP8 全部完成。[PLANNING.md:738](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L738)、[worker.ts:82](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/services/worker.ts#L82)、[client-tui.ts:314](../../../../.repo/pi-1.0.0/packages/coding-agent/src/experimental/client-tui.ts#L314) |
+
+规划的 Definition of Done 仍要求“两对称 peer 双向调用”和“运行中 structural load/unload”。
+当前缺少这两项，所以不能因 npm 版本为 1.0.0 或大多数工作包已有实现，就断言最初 DoD 全部满足。
+反过来，也不能由该 DoD 推定版本发布失败；发布版本语义和这份未完全同步的内部规划不是同一份验收记录。
+见 [PLANNING.md:846](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L846)。
+
+### 17.3 对称 RPC：有效远景，实施层次已经调整
+
+旧 layering 将 symmetric RPC 放在复制状态之下；WP3 明说远程调用经 RpcPeer，第 475 行要求 Chord 独立协商 envelope 版本。
+现在 README 将 symmetric peer 称作 remote-service boundary 的**一种可选计划实现**；类型直接接受 RemoteServiceTransport。
+这是规划重心的调整：服务语义已经可用，不必等待 peer 落地；不能仍画成当前所有服务必须穿过的底层。
+见 [PLANNING.md:57](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L57)、[PLANNING.md:475](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L475)、[README.md:47](../../../../.repo/pi-1.0.0/packages/chord/README.md#L47)。
+
+当前 `wire.ts` 有 service control vocabulary，却没有独立 peer version/hello/requestId/cancel envelope。
+`services/errors.ts` 只有八个 service_* code；规划中 cancellation、malformed RPC、peer disconnected、internal provider failure 等通用 peer 错误并未在本包形成完整表面。
+普通 provider 异常直接经 invoke Promise 传播，实际 wire 错误清洗由 Pi server 等 adapter 完成。
+所以 service grammar 已兑现、generic peer 与其错误/metadata hooks 尚无实现证据，两者必须分别标注。
+见 [wire.ts:40](../../../../.repo/pi-1.0.0/packages/chord/src/services/wire.ts#L40)、[errors.ts:1](../../../../.repo/pi-1.0.0/packages/chord/src/services/errors.ts#L1)、[PLANNING.md:457](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L457)。
+
+这里保留“planned”的依据是当前两份文档直接写出该词，不是单凭源码缺失。
+快照没有交付日期、负责人或后续版本范围，不能进一步称它为近期承诺。
+
+### 17.4 Facet / Plugin 术语与生命周期规划的时效
+
+PLANNING 第 45 行把 Plugin 定义成独立激活的同步 setup 单元，代码草案也用 `PluginEnvironment/LoadedPlugins/PluginLoader`。
+当前公共类型已经选择 `Facet/FacetEnvironment/LoadedFacets/FacetLoader`；manifest 的 plugin 则只保存打包身份与版本，entry 名由应用决定。
+README 第 18–27 行先把 plugins 的 setup units 称为 facets，又说 facets 是 plugin 在不同环境中的部分，说明概念层与运行 API 用语仍有交叠。
+因此旧 Plugin 类型名应标为**历史术语已替代**，不能抄成可导入 API；“一份 plugin 多环境 entry”仍是有效打包设计动机。
+见 [PLANNING.md:41](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L41)、[PLANNING.md:164](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L164)、[README.md:18](../../../../.repo/pi-1.0.0/packages/chord/README.md#L18)、[types.ts:303](../../../../.repo/pi-1.0.0/packages/chord/src/types.ts#L303)、[manifest.ts:25](../../../../.repo/pi-1.0.0/packages/chord/src/node/manifest.ts#L25)。
+
+结构性替换仍未兑现：现有 reload 明确拒绝不存在的 ID，并要求同一 requirements/provisions 形状；没有 `update(desiredGraph)`、add/remove 或重选 source 的入口。
+“先构建完整候选图、验证后统一切换”的算法仍只出现在规划第 229–251 行。
+调用者销毁旧 host 再新建 host，并不等价于规划要求的 surviving 外部 facade 身份保留和切换协议。
+见 [PLANNING.md:229](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L229)、[host.ts:423](../../../../.repo/pi-1.0.0/packages/chord/src/facets/host.ts#L423)。
+
+shape-preserving reload 的当前实现则与规划第 204–227 行大体一致：候选先激活、逐 singleton 直接切换、旧 facet 退休，切换之后不回滚。
+它不是跨全部服务的原子事务；已提交的应用副作用不属于 reload 回滚范围。
+旧 facet 的在途任务不 drain，终止 handle 访问不等于终止任意 JavaScript；规划中的“future killable-isolate host”没有现成公开实现证据。
+见 [PLANNING.md:204](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L204)、[PLANNING.md:253](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L253)、[host.ts:460](../../../../.repo/pi-1.0.0/packages/chord/src/facets/host.ts#L460)。
+
+规划第 193 行“updates serialized”也需结合第 268 行的“serialized or rejected”阅读。
+实现通过 phase guard 拒绝 reload/dispose 的非法重叠，而不是把所有并发请求自动排队。
+第 224 行所说 named host resources 的重叠注册语义，当前 FacetEnvironment 没有通用 named-resource registry；`own` 只保存 cleanup。
+这类注册能力可由应用 local service 实现，不能归纳成 Chord 自动保证；规划第 826 行也把通用 contribution registry 排除。
+见 [PLANNING.md:224](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L224)、[PLANNING.md:268](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L268)、[types.ts:281](../../../../.repo/pi-1.0.0/packages/chord/src/types.ts#L281)。
+
+### 17.5 远程边界与状态文档中的具体冲突
+
+| 原文或读法 | 时效判断 | 当前应采用的解释 |
+|---|---|---|
+| PLANNING 第 93–99 行：service runtime 不做自动递归校验，serializer 负责 | 当前有效 | 与 RemoteServiceTransport 契约和 loopback 对象身份测试一致；业务 schema 仍由应用处理。[PLANNING.md:93](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L93)、[services.test.ts:145](../../../../.repo/pi-1.0.0/packages/chord/test/services.test.ts#L145) |
+| 第 312 行 runtime checks mandatory，WP3 测试列 strict-JSON args/results | 需要分层；按“core 每次深校验”理解会过强 | provider 确实检查 member shape，parser 检查 control structure；完整 strict JSON 由 adapter 承担。它与文档前述“deferred to serializers”并不支持 core 自动 clone/validate 的旧读法。[PLANNING.md:312](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L312)、[provider.ts:591](../../../../.repo/pi-1.0.0/packages/chord/src/services/provider.ts#L591) |
+| 第 376 行 replacement clears readiness；README 第 40 行类似 | 与普通 replacement 实现及规划自身第 220 行不一致 | `replaced` 直接 facade.install；普通无缝 singleton reload 不先 clear。disconnect/rebind/unavailable 会 clear，不能泛化到所有 replacement。[PLANNING.md:376](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L376)、[PLANNING.md:220](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L220)、[consumer.ts:608](../../../../.repo/pi-1.0.0/packages/chord/src/services/consumer.ts#L608)、[README.md:253](../../../../.repo/pi-1.0.0/packages/chord/README.md#L253) |
+| 第 375 行 gap 自动 resubscribe 或 terminal binding error | 部分兑现，恢复选择未自动化 | Replica 在 gap 时 clear+throw；binding 报告错误，没有通用自动 resubscribe。不得写成已经透明修复连接。[PLANNING.md:375](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L375)、[state.ts:390](../../../../.repo/pi-1.0.0/packages/chord/src/services/state.ts#L390) |
+| 第 397 行由 before/after 派生 compact ops，完整替换在更小时选择 | 描述滞后或混合了不同 API | mutable state 使用 tracker 记录 draft 操作；tracker 有操作数量/区域折叠阈值，不统一按 payload 字节比较。独立 diffRevisions 才有成本比较；prepareReplace 非 diff，非相等即 root r。[PLANNING.md:397](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L397)、[tracker.ts:1602](../../../../.repo/pi-1.0.0/packages/chord/src/delta/tracker.ts#L1602)、[diff.ts:513](../../../../.repo/pi-1.0.0/packages/chord/src/delta/diff.ts#L513)、[tracker.ts:2112](../../../../.repo/pi-1.0.0/packages/chord/src/delta/tracker.ts#L2112) |
+| README 第 150 行 successful change 发布 exactly one revision | 需要补充 no-op 例外 | 空 ops 仍 adopt tracker revision，但 MutableReplicatedState 不发 publication；delta guide 已明确该例外。[README.md:150](../../../../.repo/pi-1.0.0/packages/chord/README.md#L150)、[src/delta/README.md:138](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L138)、[state.ts:223](../../../../.repo/pi-1.0.0/packages/chord/src/services/state.ts#L223) |
+
+### 17.6 Delta guide：现行契约为主，几个短句需要上下文
+
+这份 guide 已经以 immutable revision、transaction-scoped revocable draft、prepare/adopt、按边界复制为中心，与当前 tracker 一致。
+它不是等待实现的 delta 提案，也不支持把早期长期 mutable proxy 或历史优化补丁直接当作当前架构。
+ownership 表、roots/placements、生命周期和 operations 段落应优先于规划里的旧概括。
+见 [src/delta/README.md:28](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L28)、[src/delta/README.md:124](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L124)。
+
+| Guide 条目 | 当前状态与细化 |
+|---|---|
+| 开头“nothing frozen or defensively copied” | “不冻结”成立；“完全不复制”不能脱离后文。可信 roots 转移所有权，placements 明确复制并验证；代码是 copyJson/clonePlacement，而不是全程 zero-copy。[src/delta/README.md:6](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L6)、[src/delta/README.md:105](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L105)、[tracker.ts:1541](../../../../.repo/pi-1.0.0/packages/chord/src/delta/tracker.ts#L1541) |
+| `track`/`prepareReplace` 根输入 O(1)、never walk | ownership/校验方式的说明有效，但不是整个 prepareReplace 最坏时间复杂度承诺。guide 第 147 行自己承认深相等比较可遍历两棵树；实现确有 equalTrustedJson。[src/delta/README.md:98](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L98)、[src/delta/README.md:145](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L145)、[tracker.ts:2112](../../../../.repo/pi-1.0.0/packages/chord/src/delta/tracker.ts#L2112) |
+| prepare 不改 authority，adopt 校验 owner/revision 再换根 | 已兑现；候选可先交给持久化层，失败时丢弃；adopt/no-op 也使竞争 draft stale。[src/delta/README.md:126](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L126)、[tracker.ts:254](../../../../.repo/pi-1.0.0/packages/chord/src/delta/tracker.ts#L254) |
+| decode 不复制 payload、mutable apply 每 replica 必须独占 batch | 已兑现的所有权限制；不可变重放可共享，不能从同 wire 数组 decode 两次就推导得到隔离副本。[src/delta/README.md:67](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L67)、[delta/index.ts:335](../../../../.repo/pi-1.0.0/packages/chord/src/delta/index.ts#L335) |
+| op exact 但非 canonical/minimal；shape/path 校验不是 payload strictness | 与实现一致；replica 另验最终 revision。[src/delta/README.md:167](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L167)、[revision-validator.ts:8](../../../../.repo/pi-1.0.0/packages/chord/src/delta/revision-validator.ts#L8) |
+| 一条有序 state stream 一对 encoder/decoder，r 重置；错误后丢 decoder/replica | 现行恢复契约；不保证所有上层自动执行恢复，也不是 ordinary state update 中出现 r 就可忽略 sequence gap。[src/delta/README.md:178](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L178)、[README.md:100](../../../../.repo/pi-1.0.0/packages/chord/README.md#L100) |
+| 100k placements 额外约 19 ms / 20 MiB | 文档记录的特定测量，不是通用性能 SLA；没有本次复测或足够环境信息，不拿它证明现版在任意负载下的开销。[src/delta/README.md:188](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L188) |
+| 外部 Proxy、某些 coercion、带副作用 sort comparator 不在契约内 | 明确限制。即使测试覆盖部分重入 comparator 行为，也不扩大文档公开保证；不能把“某测试有断言”自动当成全部这类输入都受支持。[src/delta/README.md:189](../../../../.repo/pi-1.0.0/packages/chord/src/delta/README.md#L189)、[tracker.test.ts:1038](../../../../.repo/pi-1.0.0/packages/chord/test/delta-tracker/tracker.test.ts#L1038) |
+
+### 17.7 Queue 政策是已实现的细化，不是未完成背压规划
+
+PLANNING 的 state 章节强调 snapshot/update 连贯与 listener 隔离，但没有完整描述后来的两套 100 条政策。
+当前 README 已准确区分 provider pending update 超限 reset 与 public complete-value delivery 超限合并。
+二者在实现与对应 delivery tests 都存在，应标**已兑现、文档已细化**。
+见 [README.md:90](../../../../.repo/pi-1.0.0/packages/chord/README.md#L90)、[README.md:157](../../../../.repo/pi-1.0.0/packages/chord/README.md#L157)、[provider.ts:445](../../../../.repo/pi-1.0.0/packages/chord/src/services/provider.ts#L445)、[state.ts:28](../../../../.repo/pi-1.0.0/packages/chord/src/services/state.ts#L28)。
+
+不能把规划第 431 行未来 channel.send awaitable 读成现有 Chord provider 已对网络输出施加背压。
+现有 provider listener 同步，endpoint 的 publish Promise 不 await；client/server transport 自己限制其发送队列。
+public coalescing 可跳序号，provider reset 则重建每个成员与实例目录的基线，后续 delta 必须连续。
+这不是“精确流随意丢 100 条后继续”，也不是持久事件历史。
+见 [PLANNING.md:431](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L431)、[provider.ts:549](../../../../.repo/pi-1.0.0/packages/chord/src/services/provider.ts#L549)、[service-delivery.test.ts:211](../../../../.repo/pi-1.0.0/packages/chord/test/service-delivery.test.ts#L211)。
+
+### 17.8 Bundler 规划的兑现与措辞边界
+
+esbuild 选型、独立 CJS entry、显式 external、hash、manifest v2、source map/diagnostics、VM generation 已有实现。
+“决定 bundler engine/依赖位置”的待决事项已由 `esbuild 0.28.2` production dependency 及独立 `./bundler` 入口落实；无需仍列作悬而未决。
+package-level entry conventions、false 禁用、peer dependency external 与 transportable artifact 也已经成为公开能力。
+见 [PLANNING.md:479](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L479)、[package.json:65](../../../../.repo/pi-1.0.0/packages/chord/package.json#L65)、[package.ts:30](../../../../.repo/pi-1.0.0/packages/chord/src/node/package.ts#L30)、[bundle-loader.ts:84](../../../../.repo/pi-1.0.0/packages/chord/src/node/bundle-loader.ts#L84)。
+
+仍有四处需要限定文档概括：
+
+- README 示例的 Chord peer range 仍是 `^0.84.4`，而当前包是 1.0.0；这是版本示例滞后，不是当前 manifest 依赖范围。[README.md:195](../../../../.repo/pi-1.0.0/packages/chord/README.md#L195)、[package.json:2](../../../../.repo/pi-1.0.0/packages/chord/package.json#L2)。
+- “Each load verifies integrity”是默认行为；磁盘 loader 允许显式关闭，artifact 校验则强制执行。不能把默认写成不可禁用。[README.md:241](../../../../.repo/pi-1.0.0/packages/chord/README.md#L241)、[bundle-loader.ts:22](../../../../.repo/pi-1.0.0/packages/chord/src/node/bundle-loader.ts#L22)、[bundle-loader.ts:147](../../../../.repo/pi-1.0.0/packages/chord/src/node/bundle-loader.ts#L147)。
+- 临时目录完成后替换，避免逐文件暴露半成品；实际两次 rename 之间最终路径可暂不存在，不是单操作目录交换，也不能保证 loader 永远无短暂 ENOENT。[PLANNING.md:509](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L509)、[bundle.ts:176](../../../../.repo/pi-1.0.0/packages/chord/src/node/bundle.ts#L176)。
+- “outside Node caches”指编译的入口代；externals 仍由普通 require 解析/缓存。卸载只释放持有引用，不强制 GC，不构成沙箱、签名信任或第三方依赖完整性验证。[PLANNING.md:187](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L187)、[bundle-loader.ts:171](../../../../.repo/pi-1.0.0/packages/chord/src/node/bundle-loader.ts#L171)。
+
+原计划的 packed-package execution、浏览器行为、GC eligibility 与全套并发 race 验收，没有本次运行证据。
+源码和测试可以证明这些路径被设计/断言过，但不能据此宣称整个 WP7 exit matrix 已在当前环境通过。
+
+### 17.9 明确非目标、已决事项与仍缺证据的未来部分
+
+文档明确排除：多写者/CRDT、离线 mutation replay、durability/event history、网络 listener/framing/reconnect、路由认证、代码签名/沙箱、插件下载安装、远端对象引用、自动重试不确定副作用、兼容旧实验 API。
+这些都是有意的范围选择；缺少它们不能归为尚未交付路线图。
+见 [PLANNING.md:389](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L389)、[PLANNING.md:815](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L815)。
+
+第 16 节的九个“implementation 前需决策”如今分属不同状态：Facet 命名、Context/尾部参数、旧工作不 drain、esbuild/manifest/SHA-256/external 契约已经在代码或更新文档中决定。
+metadata propagation、通用 peer 协商与 message-size 归属仍随未实现的 peer 悬空；gap 当前为 clear/report，自动恢复未兑现。
+浏览器中立是当前架构约束，是否已达到“立即在浏览器验证”的验收程度仍缺本次证据。
+见 [PLANNING.md:830](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L830)。
+
+第 11 节列出的旧 generic services/facets 文件在快照中已消失，当前消费者直接 import Chord；该列表应作历史设计来源，不是当前待改文件地图。
+提议布局里的 `plugins/`、`services/facade.ts`、`rpc/` 也不能逐项当作缺文件缺功能：前两类主要已由 `facets/host.ts`、`services/handle.ts/consumer.ts` 实现，rpc 则确实尚无通用 peer。
+文档自己把 source layout 称为 planning aid，因此实现文件拆分不同不构成未满足契约。
+见 [PLANNING.md:537](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L537)、[PLANNING.md:575](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L575)。
+
+原报告覆盖了运行机制，却没有逐项读取计划、保留设计动机或解释已实现/未实现/历史用语的混合状态。
+补充后的核心判断是：**基础 service/state/facet/bundle 体系已落地，对称 peer 与完整 structural generation replacement 仍有明确文档计划但无对应实现，部分旧文字需要按当前源码与更具体的 ownership/queue 文档限定。**
+本次仅更新研究报告，未改变原始设计文档或源码；测试影响仍为 `none`。

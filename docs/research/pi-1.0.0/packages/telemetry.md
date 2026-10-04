@@ -126,7 +126,7 @@ schema 将每个 span 分成起始属性、结束属性、事件、父节点说�
 
 `pi-ai` 接收、传播 provider 请求选项里的 telemetry context；通用 telemetry 包提供定义 schema 的工具，而没有在生产源码中定义 Agent/AI 业务 span 词汇。
 
-**当前快照存在文档与实现不一致。** telemetry README 的 Package Integration 声称 `pi-agent-core` 导出 `AI_TELEMETRY_SCHEMA`、`HARNESS_TELEMETRY_SCHEMA`、`AGENT_TELEMETRY_SCHEMAS` 及 typed helpers，并给出导入示例。但检索本快照 Agent 的全部 src 文件未找到 telemetry/span/schema instrumentation，根 index 也没有这些导出；全 packages 生产 TS 检索只找到 telemetry 自己的通用 schema/helper 定义。因而应把该段 README 视为无法由当前实现支持的描述，而不是已完成的跨包接线。[README.md:365](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L365)、[Agent 根导出 index.ts:1](../../../../.repo/pi-1.0.0/packages/agent/src/index.ts#L1)、[通用 typed helper index.ts:349](../../../../.repo/pi-1.0.0/packages/telemetry/src/index.ts#L349)。
+**当前快照存在已能定位演进原因的文档滞后。** telemetry README 的 Package Integration 声称 `pi-agent-core` 导出 `AI_TELEMETRY_SCHEMA`、`HARNESS_TELEMETRY_SCHEMA`、`AGENT_TELEMETRY_SCHEMAS` 及 typed helpers，并给出导入示例。但 Agent 1.0.0 CHANGELOG 明确记录移除了 experimental harness、telemetry schemas 和 telemetry 再导出；本快照 Agent 的 src 与根 index 也没有这些符号。因此该段是旧包边界留下的描述，不是待实现的跨包接线承诺。[README.md:365](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L365)、[Agent 1.0.0 变更](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L7)、[Agent 根导出](../../../../.repo/pi-1.0.0/packages/agent/src/index.ts#L1)、[通用 typed helper](../../../../.repo/pi-1.0.0/packages/telemetry/src/index.ts#L349)。
 
 跨包细节参见 [ai 报告](ai.md) 和 [agent 报告](agent.md)。要核对一次模型请求是否真的发出 span，应沿调用方 helper 追踪，不能仅根据 provider options 中存在 `telemetryContext` 就认定底层 SDK 自带完整 tracing。
 
@@ -165,3 +165,22 @@ schema 将每个 span 分成起始属性、结束属性、事件、父节点说�
 推荐按 `index.ts` 顶部接口 → `noop.ts` → `memory.ts` → conformance 用例 → `index.ts` 类型推导后半部分 → `telemetry.test.ts` 中自定义 schema 的顺序阅读。先理解回调是否改变业务行为，再研究类型层如何限制词汇；不要把 README 中当前不存在的 Agent schema 导出当成可用入口。
 
 本次未验证第三方 telemetry adapter、真实 exporter 故障、浏览器打包和大规模内存表现。源码中没有这些实现的测试结果，不应据此宣称它们已被证明可靠或不可靠。
+
+## 12 设计文档、规划与时效核查（2026-10-04）
+
+本包文档包括 [README](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L1) 的 464 行设计契约与用法，以及 [CHANGELOG](../../../../.repo/pi-1.0.0/packages/telemetry/CHANGELOG.md#L1) 的 35 行历史记录；本次两份均全文阅读。没有独立规划文件。README 的“Applications can provide an adapter”描述现有扩展点，不表示包将内置这些后端。
+
+| 文档主张或方向 | 分类与本快照结论 | 证据 |
+|---|---|---|
+| vendor-neutral、callback 管理 span、显式传父 context | **现行设计且已实现**；异步上下文机制由 adapter 自行决定 | [设计契约](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L118)、[公共接口](../../../../.repo/pi-1.0.0/packages/telemetry/src/index.ts#L1) |
+| NOOP、确定性 in-memory adapter、通用 conformance suite | **已发布能力**；0.84.0 已记录引入，不是之后才要建设的测试设施 | [变更记录](../../../../.repo/pi-1.0.0/packages/telemetry/CHANGELOG.md#L29)、[内存实现](../../../../.repo/pi-1.0.0/packages/telemetry/src/memory.ts#L192)、[公共测试入口](../../../../.repo/pi-1.0.0/packages/telemetry/src/testing/conformance.ts#L12) |
+| typed schema + 多 schema starter | **已实现的编译期约束**；schema 参数不参与运行时验证 | [README](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L211)、[实现](../../../../.repo/pi-1.0.0/packages/telemetry/src/index.ts#L349) |
+| Agent 拥有并导出 AI/harness schemas 与 helper | **过时、被 1.0.0 的包拆分替代**；第 8 节已补齐 CHANGELOG 与根导出两方面证据 | [旧说明](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L365)、[移除记录](../../../../.repo/pi-1.0.0/packages/agent/CHANGELOG.md#L7) |
+| 多 schema 示例从 Agent 导入 `AGENT_TELEMETRY_SCHEMAS` | **同一旧接口残留**；多 schema 功能有效，但这个具体 import 不成立 | [示例](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L323)、[Agent 当前导出](../../../../.repo/pi-1.0.0/packages/agent/src/index.ts#L1) |
+| OpenTelemetry、Sentry、日志后端适配 | **作者说明可由应用实现的适配方向**；本包没有提供对应 exporter，也没有本地文档承诺交付日期 | [范围说明](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L5)、[adapter 职责](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L132) |
+| buffering、flush、sampling、backend ID、ambient context | **明确放在 adapter 的职责**；不是 core 缺失的待办清单 | [职责划分](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L132) |
+| 时间戳、内存上限与 durable 持久化 | in-memory adapter 明确不记录时间戳、存储无界；telemetry context 明确不应持久化，属于**现行限制与非目标** | [内存限制](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L174)、[安全与可移植性](../../../../.repo/pi-1.0.0/packages/telemetry/README.md#L385) |
+
+该 README 仍保留有价值的设计原则：诊断失败不能改变业务运行次数、返回值或错误身份；生命周期由回调结算决定；schema 元信息与数据处理策略分工明确。应修正的是特定跨包所有权和导入示例，不能因它们过时而否定通用 telemetry 契约。
+
+后续阅读应把“应用可以实现的 adapter”与“Pi 已承诺的产品路线图”分开。本快照只证明适配面与 conformance 工具存在，不证明任何第三方后端已经完成接线；本次也没有把 README 的可移植性描述当作跨运行时执行验证。

@@ -409,3 +409,54 @@ Vitest 默认 Node 环境，timeout 为三十秒；并没有把所有真实调�
 对于 CLI 行为，随后再读 compat 与 coding-agent SDK 的实际装配，而不从新 API 的存在倒推默认产品已经完成切换。
 
 本次测试影响：`none`。仅增加研究文档；所有运行时结论来自静态源码与测试预期，真实服务、浏览器、构建产物和第三方 SDK 内部均未实测。
+
+## 17. 设计文档、规划与时效核查（2026-10-04）
+
+### 17.1 文档清单与核查口径
+
+本包 Markdown 文档枚举结果只有 README 与 CHANGELOG；未发现独立 `docs/`、路线图或设计计划。
+本节补上前文偏重实现而未充分区分的三类材料：现行使用契约、历史架构变化，以及仍明确写出的未来意图。
+“当前”只指本地 1.0.0 快照，不代表远端服务或后续版本的状态；没有访问文档中的网页链接。
+
+| 文档 | 阅读范围 | 文档性质与阅读价值 |
+|---|---|---|
+| [README.md:1](../../../../.repo/pi-1.0.0/packages/ai/README.md#L1) | 全文，1–1938 行 | 现行 API 手册；Provider/Models、鉴权、工具、图像、分类、transcript、打包和扩展入口均有说明，不能整体归为未来规划 |
+| [CHANGELOG.md:3](../../../../.repo/pi-1.0.0/packages/ai/CHANGELOG.md#L3) | 全篇版本标题与规划/删除/变更关键词筛查；详读 1–250、650–733 行 | 发行历史，重点追溯 0.80.0 的 Provider 重构、0.86.0 的 SystemMessage、0.99.0 的多操作模型及 1.0.0 修复；不是未完成任务单 |
+
+CHANGELOG 的较早发行记录没有逐项对照今天的实现，也没有据其中旧 API 名称判断当前缺失功能。
+这一区分尤其重要：0.80.0 曾新增独立 ImagesModels，0.99.0 又删除并合入 Models；两个记录都可作为各自时间点的历史事实，只有后者描述当前方向。
+依据：[CHANGELOG.md:711](../../../../.repo/pi-1.0.0/packages/ai/CHANGELOG.md#L711)、[CHANGELOG.md:35](../../../../.repo/pi-1.0.0/packages/ai/CHANGELOG.md#L35)。
+
+### 17.2 设计方向的落实与剩余
+
+| 原意与动机 | 快照中的落实/剩余 | 时效判断与证据 |
+|---|---|---|
+| 由全局 API registry 转为实例拥有的 Provider 集合，让目录、鉴权和 dispatch 归同一 provider，并支持选择性打包 | root 为 core-only；`createModels`、独立工厂、lazy API、显式 all、compat 共存 | **主体已实现，旧入口退出尚未完成**。不能因 compat 仍存在说重构未落地。[README.md:235](../../../../.repo/pi-1.0.0/packages/ai/README.md#L235)、[CHANGELOG.md:653](../../../../.repo/pi-1.0.0/packages/ai/CHANGELOG.md#L653)、[index.ts:4](../../../../.repo/pi-1.0.0/packages/ai/src/index.ts#L4) |
+| 持久凭证归 provider 所有，避免 OAuth 轮换竞争和失败时悄悄使用另一把 key | `CredentialStore.modify` 承担串行读改写；解析优先级及 refresh 双重检查已存在；默认 store 仍是内存 | **现行契约**；“跨进程不会重复 refresh”以自定义持久 store 正确兑现锁契约为前提，不是内存实现自动获得跨进程锁。[README.md:428](../../../../.repo/pi-1.0.0/packages/ai/README.md#L428)、[auth/resolve.ts:95](../../../../.repo/pi-1.0.0/packages/ai/src/auth/resolve.ts#L95)、[models-runtime.test.ts:584](../../../../.repo/pi-1.0.0/packages/ai/test/models-runtime.test.ts#L584) |
+| 静态读取低开销，动态目录刷新显式、可取消、可持久化 | synchronous reads 与 `refresh(options)` 分离；generation 检查约束迟到发布 | **已实现且仍有设计价值**；无 signal 时不设置总期限是契约，不是遗漏的 timeout 计划。[README.md:1296](../../../../.repo/pi-1.0.0/packages/ai/README.md#L1296)、[models.ts:546](../../../../.repo/pi-1.0.0/packages/ai/src/models.ts#L546) |
+| prompt/tool 变化进入 transcript，维持历史并尽可能保留 provider 缓存前缀 | `SystemMessage`、replay/collapse 及各 adapter capability 分支已存在 | **已实现**；0.86.0 记录是 PR 已落地证据，不能沿用其他设计文档“待 PR #9548 合入”的时间句。[CHANGELOG.md:120](../../../../.repo/pi-1.0.0/packages/ai/CHANGELOG.md#L120)、[types.ts:522](../../../../.repo/pi-1.0.0/packages/ai/src/types.ts#L522)、[README.md:1565](../../../../.repo/pi-1.0.0/packages/ai/README.md#L1565) |
+| 同一 provider/credential 支持 chat、image、classifier，避免平行目录和鉴权体系 | `AnyModel`/operation type 与 `generateImages`、`classify` 已合入 Models；旧 plural image collection 不再是目标 API | **已实现的替代方案**；仅 OpenRouter 提供内置 image generation 是当前范围，不应擅自补成扩展到所有 provider 的路线图。[README.md:787](../../../../.repo/pi-1.0.0/packages/ai/README.md#L787)、[README.md:887](../../../../.repo/pi-1.0.0/packages/ai/README.md#L887)、[models.ts:948](../../../../.repo/pi-1.0.0/packages/ai/src/models.ts#L948) |
+| 将 live partial 转成紧凑、可持久化的帧，避免每 token 复制整个累计响应 | frame encoder/reducer 已导出，README 明确 terminal 另行结算且 reducer 不验工具 schema | **现行机制**；不是自动会话数据库或无损保存任意 provider 原始事件的承诺。[README.md:726](../../../../.repo/pi-1.0.0/packages/ai/README.md#L726)、[index.ts:38](../../../../.repo/pi-1.0.0/packages/ai/src/index.ts#L38) |
+| root 和按 provider 工厂支持浏览器/小 bundle，Node 能力延迟装载 | README 同时明确 Bedrock 不支持浏览器、OAuth login 为 Node-only、无 code splitting 时 lazy SDK 仍可进入单文件 bundle | **限定成立的现行说明**；不能读成所有 provider、鉴权方式和 bundler 都已验证通用。[README.md:1627](../../../../.repo/pi-1.0.0/packages/ai/README.md#L1627)、[README.md:1654](../../../../.repo/pi-1.0.0/packages/ai/README.md#L1654) |
+
+本包确有一项**明确但无日期的未来意图**：README 写 compat 将在未来版本删除，0.80.0 CHANGELOG 也这样记载。
+当前 `compat.ts` 仍存在，文件注释把删除与 coding-agent 的 ModelManager 改造关联起来；真实 SDK 仍从 compat 导入 streamSimple。
+因此它是“尚未完成且快照仍保留的退出意图”，不是“1.0.0 已删除”、没有证据的下一版本承诺，也不能把注释中的组件名当作现有同名文件。
+依据：[README.md:1832](../../../../.repo/pi-1.0.0/packages/ai/README.md#L1832)、[CHANGELOG.md:666](../../../../.repo/pi-1.0.0/packages/ai/CHANGELOG.md#L666)、[compat.ts:1](../../../../.repo/pi-1.0.0/packages/ai/src/compat.ts#L1)、[sdk.ts:4](../../../../.repo/pi-1.0.0/packages/coding-agent/src/core/sdk.ts#L4)。
+
+### 17.3 局部过时与不能照字面扩大之处
+
+README 的 Cross-Provider Handoffs 段落仍说同 provider/API 的 assistant 原样保留、跨 provider thinking 加 `<thinking>` 标签、user/toolResult 原样传递，并笼统声称支持 aborted partial。
+当前共享 `transformMessages()` 的条件更精细：同 provider、API、**model ID** 三者均相同才算 same model；跨模型 thinking 变为普通 text，而非该函数添加标签；不兼容的 redacted thinking 被丢弃；toolCall ID 与配对 result ID 可规范化；error/aborted assistant 在第二遍被跳过。
+这是**局部说明落后于实现**，不是跨 provider 重放能力不存在；应用可保存 partial，但不能据该段断言 provider 会收到全部 partial。
+依据：[README.md:1517](../../../../.repo/pi-1.0.0/packages/ai/README.md#L1517)、[transform-messages.ts:64](../../../../.repo/pi-1.0.0/packages/ai/src/api/transform-messages.ts#L64)、[transform-messages.ts:94](../../../../.repo/pi-1.0.0/packages/ai/src/api/transform-messages.ts#L94)、[transform-messages.ts:195](../../../../.repo/pi-1.0.0/packages/ai/src/api/transform-messages.ts#L195)。
+
+相反，README 后来补充的 shared live partial、请求准备失败可只有 error、contentIndex 允许交错、strict prefer/require 的能力分支，都与现行机制相符，不能因上面几句旧描述而给整份 README 贴“过时”标签。
+这些段落是比简化 Quick Start 更重要的边界说明；provider 支持表和模型价格只确认快照内静态目录，未做服务端时效核验。
+依据：[README.md:541](../../../../.repo/pi-1.0.0/packages/ai/README.md#L541)、[README.md:701](../../../../.repo/pi-1.0.0/packages/ai/README.md#L701)。
+
+### 17.4 阅读优先级与未验证范围
+
+按现行 README 的 Provider/Models → Auth → System Messages → streaming/frame → bundling 阅读，再用 CHANGELOG 的 0.80.0、0.86.0、0.99.0 解释接口变化；最后读 compat，能同时看清目标架构和仍存在的产品消费路径。
+Development 的“添加 provider”清单是维护流程，不是已决定要增加哪些 provider 的路线图。
+本节未执行该清单中的生成目录、构建、测试或真实调用，也没有将作者曾报告的修复一概宣布为本次已验证通过。

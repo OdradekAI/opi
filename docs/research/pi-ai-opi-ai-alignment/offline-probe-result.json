@@ -1,0 +1,23 @@
+{
+  "probe_revision": "drop-barrier-and-classified-socket-outcome",
+  "source_lf_sha256": "3084365913ea575eb8ebecb15c4f4ad09e4bc067563f114be15eeac48da474ae",
+  "compiled_source_bytes_sha256": "3084365913ea575eb8ebecb15c4f4ad09e4bc067563f114be15eeac48da474ae",
+  "compile_command": [
+    "rustc",
+    "--edition=2024",
+    "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-ai-alignment-probe-jo53w0qm\\probe.rs",
+    "-L",
+    "dependency=E:\\opi\\cargo-targets\\windows-direct\\debug\\deps",
+    "-o",
+    "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-ai-alignment-probe-jo53w0qm\\probe.exe",
+    "--extern",
+    "opi_ai=E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\libopi_ai-38f9c4470d925d76.rlib",
+    "--extern",
+    "tokio=E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\libtokio-26851d323d1034af.rlib"
+  ],
+  "compile_exit": 0,
+  "compile_stderr": "",
+  "run_exit": 0,
+  "stdout": "prepared_delivers_event_after_terminal=true\nprepared_empty_is_none=true; drain_empty_is_error=true\nsplit_utf8_text=\"���\"\ngemini_idle_after_drop=timeout; observation_ms=501\n",
+  "stderr": ""
+}

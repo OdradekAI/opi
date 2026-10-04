@@ -253,3 +253,46 @@ Chord 的 wire 层定义 catalogue/subscribe/unsubscribe 控制调用和状态�
 接着读 `framing.ts` 的 `push/end/fail`，随后对照 CBOR options、encoder 与 decoder。
 用三组测试理解拒绝集合和 chunk 生命周期。
 最后读 client 的订阅入口、server 的路由入口和 Chord wire/state codec，确认语义分层。
+
+## 设计文档、规划与时效核查（2026-10-04）
+
+本次补充完整阅读本包 `README.md` 第 1–41 行、`CHANGELOG.md` 第 1–41 行，并对照 Chord 规划的远程服务与 RPC 部分。
+本包文档清单中没有独立 PLANNING、路线图或待办文档；README 是当前实验协议契约，CHANGELOG 是历史记录。
+“已兑现”仅表示快照内存在相应实现与可定位测试，不表示本次运行通过或已经成为稳定兼容承诺。
+
+### 当前设计主张及落实状态
+
+| 文档主张与设计动机 | 状态 | 当前证据与边界 |
+|---|---|---|
+| v8 把路由、请求关联、取消、attachment 控制与业务数据分开 | 已兑现 | `PROTOCOL_VERSION = 8`，server/Session target 与 envelope 已定义；这不是下一版本计划。[README.md:5](../../../../.repo/pi-1.0.0/packages/protocol/README.md#L5)、[protocol.ts:5](../../../../.repo/pi-1.0.0/packages/protocol/src/protocol.ts#L5) |
+| payload 是 strict JSON，但 Chord grammar 不归 protocol | 已兑现 | codec 组合 envelope schema 与整树 `isJsonValue`；root exports 不提供旧 transcript/Session 业务 schema。[README.md:15](../../../../.repo/pi-1.0.0/packages/protocol/README.md#L15)、[codec.ts:20](../../../../.repo/pi-1.0.0/packages/protocol/src/codec.ts#L20)、[index.ts:4](../../../../.repo/pi-1.0.0/packages/protocol/src/index.ts#L4) |
+| 固定长度前缀、definite CBOR、碎片化与合帧、默认资源限制 | 已兑现 | 属于现有 framing/CBOR 实现；资源上限是单帧与解析容器限制，不是所有连接积压的总预算。[README.md:21](../../../../.repo/pi-1.0.0/packages/protocol/README.md#L21)、[README.md:41](../../../../.repo/pi-1.0.0/packages/protocol/README.md#L41)、[framing.test.ts:76](../../../../.repo/pi-1.0.0/packages/protocol/test/framing.test.ts#L76) |
+| server/worker 生命周期在公共协议外 | 明确职责排除 | README 将其交给替换 server 的私有生命周期协议；不能把缺少启动/回收 wire 消息列成 protocol 待完功能。[README.md:19](../../../../.repo/pi-1.0.0/packages/protocol/README.md#L19) |
+| peer 认证和 authenticated Context 尚未实现；无兼容保证 | 当前限制，未找到排期 | README 明确保留这两个限制；版本号 `1.0.0` 不会覆盖文档对实验 wire 的定位，也不能推导下一版必然加入认证。[README.md:39](../../../../.repo/pi-1.0.0/packages/protocol/README.md#L39) |
+
+README 第 13 行还概括了 attach/detach 和断线等待 accepted calls 的跨包行为。
+这些语义由 server router 执行，而不是 schema 自身能保证；`releaseAttachment` 先等待已接纳操作，再 release lease。
+因此它是有效的系统设计说明，但验证责任要定位到 [session-router.ts:234](../../../../.repo/pi-1.0.0/packages/server/src/session-router.ts#L234)，不能仅凭协议类型断言完成顺序。
+
+### 历史 schema 已被替代，变更记录本身不是错误
+
+0.84.0 记录限制 assistant/tool transcript 生命周期组合，并将 `SessionSummarySchema` 替换成 `SessionMetadataSchema`，另有 acquired `SessionSnapshot`。
+当前 `src/index.ts` 与 `protocol.ts` 已不再定义/导出这些业务 schema；README 第 17 行明确 transcript、models、plugins 等均是 opaque service data。
+故这些条目应归为**历史 API 已被后续设计替代**，不能作为 1.0.0 用法，也不是等待重新补齐的 schema 清单。
+现有 CHANGELOG 没逐次记录完成这种抽离的版本，快照证据不足以给出精确变更日期。
+见 [CHANGELOG.md:33](../../../../.repo/pi-1.0.0/packages/protocol/CHANGELOG.md#L33)、[README.md:17](../../../../.repo/pi-1.0.0/packages/protocol/README.md#L17)、[index.ts:4](../../../../.repo/pi-1.0.0/packages/protocol/src/index.ts#L4)。
+
+历史 `not_implemented/internal_error` 条目同样不能解读为当前封闭的 error code enum。
+当前 `ProtocolErrorCode` 是 string，schema 仅要求非空；服务端可以继续返回 `internal_error`，但错误 taxonomy 已由 Chord/应用 adapter 管理。
+见 [CHANGELOG.md:41](../../../../.repo/pi-1.0.0/packages/protocol/CHANGELOG.md#L41)、[protocol.ts:25](../../../../.repo/pi-1.0.0/packages/protocol/src/protocol.ts#L25)。
+
+### 与 Chord 未完成 RPC 规划的关系
+
+Chord 规划仍提出独立版本协商的对称 peer，允许双方请求/提供服务。
+这项规划在 Chord 中未兑现；当前 protocol 的 v8 client/server handshake 不是它已经完成的证明。
+Chord README 则明确允许服务值进入任意外层协议，并将 symmetric peer 称为可选未来实现。
+所以当前 Pi routed envelope 已实现，Chord 通用 peer 仍计划中；二者不能相互替代命名。
+见 [PLANNING.md:399](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L399)、[PLANNING.md:475](../../../../.repo/pi-1.0.0/packages/chord/PLANNING.md#L475)、[README.md:47](../../../../.repo/pi-1.0.0/packages/chord/README.md#L47)。
+
+原报告已覆盖 codec 与状态机，但缺少上述历史 schema 的时效判断和跨包 RPC 规划区分。
+本次没有发现本包文档承诺自动重连、持久化、业务 schema 回归或内建认证的具体路线图。
