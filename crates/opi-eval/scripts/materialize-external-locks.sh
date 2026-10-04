@@ -674,7 +674,7 @@ integrity_digest = "000000000000000000000000000000000000000000000000000000000000
 [[subjects]]
 id = "baseline-pi"
 product = "pi"
-version = "0.84.3"
+version = "1.0.0"
 
 [[subjects]]
 id = "candidate-opi"

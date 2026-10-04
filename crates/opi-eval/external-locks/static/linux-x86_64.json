@@ -13,7 +13,7 @@
    {
     "path": "crates/opi-eval/scripts/materialize-external-locks.sh",
     "role": "materializer",
-    "sha256": "0349023ec76162144eabd5d831c357b227a77e8b4c365965fc1e7e35860dce9d"
+    "sha256": "47d7e3d1cd0c59c4b125f680115476ea06b6124ee85557e1a0ef826b0b12aeb1"
    },
    {
     "path": "crates/opi-eval/scripts/verify-external-lock-ci.py",
@@ -64,29 +64,29 @@
    "id": "pi",
    "kind": "agent-source",
    "repository_url": "https://github.com/earendil-works/pi",
-   "commit": "d981de1229ef899957bbe968bc8dcda02a21f477",
+   "commit": "a13d35a742c6ef8462812a28fbe1d8c8b7431c32",
    "blobs": [
     {
      "path": "package-lock.json",
-     "git_blob": "aad45bdb63cc1c2407fbe14d6d1ddfd2bf77f64f",
-     "sha256": "e3569b99e673a0051be908f2bed57651b90a966a5a0d208913c29e6830a6a6c2"
+     "git_blob": "e6c64776e9a4b687402fa87ae3b360ba9e2261ed",
+     "sha256": "d5ca36c6b5af93e5d5ef79deedae8efff575adf6ae080bd2093ff29bb7c5664b"
     },
     {
      "path": "packages/coding-agent/npm-shrinkwrap.json",
-     "git_blob": "6cebe320b7c2a1258448be460f80c106584b7d5d",
-     "sha256": "5ff461d87e0a7ccac07e6a9eb3edcd18841d3373d375bed043606b51082f1a26"
+     "git_blob": "d893472c056d489bd9382d67418bb3b1eb8a418e",
+     "sha256": "7e4fee77ddb6a63ef9bfaa090d82dfbd04ed20ea92e8914574c13782471f60bf"
     },
     {
      "path": "packages/coding-agent/package.json",
-     "git_blob": "572af1e947bf8b827389ecafae428a13b4957fa9",
-     "sha256": "f1738e4b42203e5f22bcb513f13fb2fb224f1e98d1f129ff042f87048665a94c"
+     "git_blob": "6a310438413dd4698e6695ab79271adc2c21900f",
+     "sha256": "81ac04bbcbc8d80bdb28bcb88cabe8345ffabc6b4c9389fd74c85fab76a0aac6"
     }
    ],
    "model_data_archive": {
     "package": "@earendil-works/pi-ai",
-    "version": "0.85.1",
-    "url": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.85.1.tgz",
-    "sha256": "af7d11986179445ce6fe88b37d57de22f823c0ffd3a65cae31c555b7f5e99253"
+    "version": "1.0.0",
+    "url": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-1.0.0.tgz",
+    "sha256": "f39b99c29b8598f175b10840e5d2a81983e7c0ce5cae4d7df83a1007447d2c2b"
    }
   },
   {

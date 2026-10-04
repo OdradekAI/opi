@@ -235,6 +235,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `opi-eval`: the static external lock now pins the pi coding-agent to the
+  upstream `v1.0.0` tag (commit `a13d35a742c6ef8462812a28fbe1d8c8b7431c32`)
+  with its verified `package-lock.json`/`npm-shrinkwrap.json`/
+  `package.json` blobs and the `@earendil-works/pi-ai` 1.0.0 model-data
+  archive. The pinned CLI surface is protocol-identical for the adapter
+  (v3 session header, same `AgentSessionEvent` vocabulary, same wire
+  shapes and truncation messages), so the adapter, profile, and smoke
+  templates only retarget their pinned-version references; `pi:latest`
+  still resolves to this pin at preparation.
+
 - `opi-eval` skill: native runs now deliver a bilingual conclusion pair in
   `docs/eval/` while full operator reports, sealed evidence and verification
   output stay external; `version=pi:latest` resolves at preparation to the

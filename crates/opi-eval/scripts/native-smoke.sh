@@ -964,7 +964,7 @@ integrity_digest = "pending"
 [[subjects]]
 id = "baseline-pi"
 product = "pi"
-version = "0.85.1"
+version = "1.0.0"
 
 [[subjects]]
 id = "candidate-opi"
