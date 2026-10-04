@@ -22,6 +22,11 @@ assurance directory that will hold this peer's four suffixed files. `model`
 is a file-identity slug for the model already selected by the runtime, never
 a model selector.
 
+Accept optional `evidence_root=<redacted-raw-directory>` for operator-supplied
+execution proof. It supplies evidence, not requirements or authorization to run
+native, credentialed, or paid trials. Its contents remain subject to the context
+boundary; do not discover proof by reading prior reports or raw ledgers.
+
 Without overrides, default during Step 2: create the member directory as a
 fresh unique private directory (for example with `mktemp -d`), record
 `reviewer_model_id` as the operator-supplied `model` slug verbatim, and set
@@ -121,10 +126,26 @@ Then populate only the evidence fields governed by
 `references/audit-proof-obligations.md` and the live-set contract. Keep the
 sealed requirement set unchanged in response to implementation discoveries.
 
+Before implementation inspection, classify required proof as fixture, native,
+live/operator, or platform evidence from those sealed obligations. Inventory
+supplied raw proof using paths and hashes before reading selected contents;
+exclude audit/remediation conclusions and sibling output before tool exposure,
+even when colocated in `evidence_root`. Check source/build/client/material
+identity, commands, exits, actual test execution, and original proof seals for
+applicability to `audit_head`, following the reference's raw-proof preflight.
+Without sufficient applicable proof, record an explicit limitation and the
+required reciprocal finding; continue independent code checks. Do not replace
+native or operator proof with fixtures, or start new live trials implicitly.
+
 ### 4. Inspect the complete committed implementation
 
 Apply the review axes and anti-vacuity rules from
 `references/audit-proof-obligations.md`, keeping Standards and Spec separate.
+At applicable input boundaries, compare validation with the actual consumer's
+interpretation and trace limits before costly work or external effects. Use
+bounded isolated probes where needed. For Rust filtered execution evidence,
+follow `references/test-execution-check.md` and check actual test identities
+and execution counts, not command exit alone.
 Run the narrowest sufficient checks in the export. Completion requires:
 
 - Every sealed requirement has current evidence or an explicit limitation.

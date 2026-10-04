@@ -1,18 +1,36 @@
 ---
 name: opi-eval
-description: Run native benchmarks or explicit fidelity cases, report evidence, and repair Opi source after user confirmation.
+description: Preserve pi benchmark baselines, evaluate current-worktree Opi, compare verified evidence, and repair confirmed eval defects.
 disable-model-invocation: true
 ---
 
 # opi-eval
 
-Use the Rust CLI in `crates/opi-eval` for native trials, grading, seals and
-offline reconstruction. This skill owns operator scope, execution, evidence
+Maintain pi version baselines and measure the current Opi working tree against
+eligible saved results. Use the Rust CLI in `crates/opi-eval` for native trials,
+grading, seals and offline reconstruction. This skill owns operator scope, execution, evidence
 privacy, reports and cleanup. Opi source fixes follow the
 [user-confirmed repair branch](#user-confirmed-source-repairs). Only
 `opi-implement` owns `.opi-impl-state.json` and Phase exit.
 
 ## Inputs and routing
+
+The normal benchmark entry is one of these actions:
+
+```text
+$opi-eval baseline bench=tb21 version=pi:1.0.0
+$opi-eval candidate bench=tb21
+$opi-eval compare run=<operator run directory>
+```
+
+Read [operator invocation](references/operator.md) for the single private
+configuration, executable helper, frozen preparation/run handoff and return
+contract. `baseline` records only the admitted pi version; `candidate` always
+builds current-worktree Opi and compares with an eligible saved baseline when
+available; `compare` is offline. Missing baselines never dispatch pi. These
+actions select `mode=benchmark`; acceptance, verify and fidelity retain their
+separate contracts below. Configuration and preparation do not authorize live
+trials. Reuse explicit authorization for the exact selected scope.
 
 Resolve natural-language requests to these skill inputs, not extra CLI flags.
 Reuse supplied selections and authorization; ask only for unresolved choices
@@ -20,11 +38,13 @@ that affect the run. Load only the selected branch's references.
 
 ```text
 mode=benchmark|acceptance|verify|fidelity
+action=baseline|candidate|compare  profile=<private operator TOML>
 software=opi|pi|opi,pi
 version=<single-product version or per-product entries, e.g. pi:<version>|pi:latest>
 bench=terminal-bench-2.1|terminal-bench-3.0|deepswe-v1.1|all
 model=<provider:model>  api=<protocol>  base_url=<endpoint>
 max_output_tokens=<positive integer>  context_window=<positive integer>
+thinking=<level>  thinking_required=true|false
 credential_env=<name> | credential_file=<private absolute path>
 tasks=<family:task-id,...>  scope=subset|full  repetitions=<positive integer>
 concurrency=<positive integer>  budget=<requested time/usage/spend limits>
@@ -36,7 +56,8 @@ cases=<name,...|all>  # fidelity branch only
 
 | Selection | Route |
 |---|---|
-| Software/bench evaluation, no mode | `benchmark`; native CLI workflow below. |
+| Baseline, candidate or offline comparison | `benchmark`; [operator invocation](references/operator.md), then native/evidence references as needed. |
+| Software/bench evaluation, no mode | `benchmark`; resolve the operator profile, then native CLI workflow below. |
 | Sealed pi baseline reuse for an Opi-only benchmark | `benchmark`; apply [sealed baseline](references/sealed-baseline.md) before Step 2 approval. |
 | Six-trial evidence for task 19.11 / P19-AC-012 | `acceptance`; first read [local acceptance](references/local-acceptance.md). |
 | Existing evidence, no new execution | `verify`; go to Step 4 with supplied roots. Never resolve credentials. |
@@ -46,31 +67,34 @@ An explicit `mode` wins; reject contradictory inputs instead of combining
 branches. For a new evaluation, omitted Opi version/source selection means the
 current local repository working tree, including build-relevant uncommitted
 changes. Resolve that snapshot under [native builds](references/native-run.md#opi-source-selection);
-an explicit version or user-supplied config pin takes precedence. A per-product
+`candidate` requires this source selection: a historical Opi pin rejects rather
+than replacing its current-worktree build. An explicitly requested historical
+benchmark outside `candidate` may pin its source. A per-product
 version map may pin only pi and leave Opi at this default. Pi has no working-tree
 default: an explicit entry pins it, or `pi:latest` resolves at preparation to
 the pi subject pinned by the current static lock, recording that resolved
 package version in the experiment and report; `latest` never survives as a
 frozen identity. A bare invocation collects software and benchmark/case scope;
-omitted model and budget inputs use the evaluation defaults below, shown in the
+omitted model and budget inputs use the resolved operator profile, shown in the
 resolved request. Explicit inputs and user-supplied config values take
 precedence; conflicting requested overrides require a new experiment and plan.
 `verify` derives identities from evidence, not new inputs.
 
 ## Evaluation defaults
 
-Apply these standing user-authorized operator defaults to every new live
-`benchmark`, `acceptance` or `fidelity` evaluation unless explicitly overridden.
-They belong to this workflow; the provider-neutral Rust CLI does not load them.
-`verify` stays offline and does not launch or retry paid trials.
+The [configuration template](config.example.toml) is the single maintained
+source of operator defaults. Initialize one private `.opi/eval.toml` and edit
+that file for model, connection, credential source, thinking depth, retries,
+deadline, selection and storage. Explicit invocation overrides win over the
+private profile. Freeze sanitized effective values and origins; do not copy
+secret-bearing profile bytes into evidence. Do not keep a second defaults table
+in a reference or invent CLI flags for operator-only controls.
 
-| Setting | Default |
-|---|---|
-| Subject model | `zhipu:glm-5.3-flash` |
-| API / endpoint | `anthropic-messages` / `https://open.bigmodel.cn/api/anthropic` |
-| Automatic paid retries | At most 2 additional attempts per failed logical trial or fidelity case; at most 3 attempts including the initial one. |
-| Whole live batch | 3600 seconds (1 hour), shared across all families, subjects, cases, graders and retries. |
-| Spending ceiling | Unlimited; no cumulative token or currency cap. |
+The established authorization for default retry/time/spending policy still
+applies to an explicitly selected live scope. A modified profile alone does
+not authorize new trials or expanded paid scope. The provider-neutral Rust CLI
+does not load this profile; the operator resolves it to its existing experiment
+contract. `verify` and `compare` stay offline and never resolve credentials.
 
 Reuse this authorization without asking again for these defaults or each
 eligible retry. Resolve the selected software/tasks/cases and credential
@@ -78,13 +102,17 @@ references before dispatch; selecting this skill or finding credentials alone
 does not choose live task scope. The connection defaults apply to the default
 subject model; another provider/model selection resolves its own connection.
 The subject-model default does not select the independent evaluator's model.
-Native model-control defaults remain in
-[model controls](references/native-run.md#model-controls).
+Check supported controls and exact-client proof under
+[model controls](references/native-run.md#model-controls). Thinking is requested
+once through the profile, projected to both selected clients, verified on first
+request and tool continuation, and included in baseline eligibility. A required
+unsupported level rejects preparation; never claim a configured value took
+effect merely because TOML accepted it.
 
 Before the first live dispatch, freeze the effective defaults/overrides,
 logical trial count, maximum attempted count, authorization source and timer
 enforcement in the invocation's evidence. Record the batch start/deadline and
-use one monotonic timer for the effective batch limit (3600 seconds by default)
+use one monotonic timer for the configured effective batch limit
 from the first live dispatch, including grading and retries; preparation and
 subsequent offline reporting are outside that live interval. At expiry, stop
 new dispatch and cancel owned execution
@@ -99,6 +127,11 @@ including zero, is a completed result rather than a retry trigger. Authority
 or privacy breaches stop affected execution. Count trial/case attempts
 separately from client/provider request retries; all live activity consumes the
 same time budget, and unlimited spending does not authorize unlimited trials.
+Generate a fresh plan containing only the eligible failed logical trials,
+retaining original identities and attempt links. The native
+`--replacement-for` path redispatches its whole original scope and is not an
+automatic single-trial retry. The first valid native settlement is the logical
+result; do not select the highest-scoring attempt.
 
 ## Step 1: Resolve the operator request
 

@@ -250,6 +250,24 @@ class ScriptedProviderListenerTest(unittest.TestCase):
             {"max_output_tokens": 16384},
         ])
 
+    def test_reasoning_observation_retains_controls_and_discards_private_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "requests.jsonl"
+            process, base = self.start_listener(log)
+            try:
+                body = self.chat_body(stream=False) | {
+                    "thinking": {"type": "enabled", "budget_tokens": 16384, "private": "canary-private-thinking"},
+                    "reasoning_effort": "high", "reasoning": {"effort": "medium", "summary": "canary-private-thinking"}}
+                self.post(base, body)
+            finally:
+                self.stop_listener(process)
+            text = log.read_text()
+            row = json.loads(text)
+        self.assertEqual(row["reasoning_controls"], {"thinking_type": "enabled", "thinking_budget": 16384,
+                                                     "reasoning_effort": "high", "response_reasoning_effort": "medium"})
+        self.assertFalse(row["tool_continuation"])
+        self.assertNotIn("canary-private-thinking", text)
+
     def test_undeclared_paths_and_methods_are_rejected(self) -> None:
         import urllib.request
 

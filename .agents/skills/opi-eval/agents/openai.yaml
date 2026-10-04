@@ -1,6 +1,6 @@
 interface:
   display_name: "Opi Eval"
-  short_description: "Evaluate agents and apply user-confirmed Opi repairs"
-  default_prompt: "Use $opi-eval with my selected software, benchmarks and model to complete the authorized evaluation and report verified evidence; apply Opi source repairs only within a separately confirmed scope."
+  short_description: "Preserve pi baselines and evaluate current Opi"
+  default_prompt: "Use $opi-eval candidate with my private evaluation profile to build current-worktree Opi, evaluate the selected benchmark and compare verified pi baselines; apply source repairs only within separately confirmed scope."
 policy:
   allow_implicit_invocation: false

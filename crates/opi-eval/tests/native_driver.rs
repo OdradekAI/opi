@@ -1408,7 +1408,15 @@ fn stage_output_control(staged: &Staged, config: &Path) {
             }
         };
         let requests = (1..=2).map(|seq| {
-            serde_json::json!({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": wire_path, "model": connection.model, "request_sha256": "d".repeat(64), "output_limits": {field: controls["max_output_tokens"]}}).to_string() + "\n"
+            let reasoning = match &projection.controls.reasoning {
+                opi_eval::experiment::ProjectedControl::Effective { value } if value != "off" => match connection.api {
+                    opi_eval::experiment::ConnectionApi::AnthropicMessages => serde_json::json!({"thinking_type":"enabled", "thinking_budget": opi_eval::experiment::native_thinking_budget(value).unwrap()}),
+                    opi_eval::experiment::ConnectionApi::OpenAiCompletions => serde_json::json!({"reasoning_effort": value}),
+                    opi_eval::experiment::ConnectionApi::OpenAiResponses => serde_json::json!({"response_reasoning_effort": value}),
+                },
+                _ => serde_json::json!({}),
+            };
+            serde_json::json!({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": wire_path, "model": connection.model, "request_sha256": "d".repeat(64), "output_limits": {field: controls["max_output_tokens"]}, "tool_continuation": seq == 2, "reasoning_controls": reasoning}).to_string() + "\n"
         }).collect::<String>();
         let log = root.join("requests.jsonl");
         fs::write(&log, &requests).unwrap();
@@ -4533,13 +4541,6 @@ fn native_output_control_client_matrix() {
         panic!("output-control probe requires a numeric control");
     };
     assert!(limit > 0);
-    assert!(
-        !matches!(
-            experiment.model_controls().reasoning,
-            ControlValue::Value(_)
-        ),
-        "this output-control probe does not attest reasoning effort"
-    );
     let root = PathBuf::from(std::env::var("OPI_EVAL_OUTPUT_CONTROL_OUT").unwrap());
     assert!(root.is_absolute());
     // Validate all local client inputs before creating evidence or starting a listener.
@@ -4631,7 +4632,7 @@ fn native_output_control_client_matrix() {
             } else {
                 Some(Path::new(clients["pi_bundle"].as_str().unwrap()))
             };
-            run_pi_client_for(
+            run_pi_client_with_thinking_for(
                 &executable,
                 bundle,
                 &config,
@@ -4639,6 +4640,10 @@ fn native_output_control_client_matrix() {
                 &connection.model,
                 &case,
                 &work,
+                match &projection.controls.reasoning {
+                    opi_eval::experiment::ProjectedControl::Effective { value } => value,
+                    _ => "off",
+                },
             )
         };
         let _ = listener.kill();
@@ -4667,6 +4672,45 @@ fn native_output_control_client_matrix() {
             assert_eq!(row["status"], 200);
             assert_eq!(row["model"], connection.model);
             assert_wire_output_limit(row, connection.api.as_str(), limit);
+            if let opi_eval::experiment::ProjectedControl::Effective { value } =
+                &projection.controls.reasoning
+            {
+                let observed = &row["reasoning_controls"];
+                if value == "off" {
+                    assert!(observed.get("thinking_budget").is_none());
+                    assert!(
+                        observed
+                            .get("thinking_type")
+                            .is_none_or(|kind| kind == "disabled")
+                    );
+                    assert!(
+                        observed
+                            .get("reasoning_effort")
+                            .is_none_or(|effort| effort == "none")
+                    );
+                    assert!(
+                        observed
+                            .get("response_reasoning_effort")
+                            .is_none_or(|effort| effort == "none")
+                    );
+                } else {
+                    match connection.api {
+                        opi_eval::experiment::ConnectionApi::AnthropicMessages => {
+                            assert_eq!(observed["thinking_type"], "enabled");
+                            assert_eq!(
+                                observed["thinking_budget"],
+                                opi_eval::experiment::native_thinking_budget(value).unwrap()
+                            );
+                        }
+                        opi_eval::experiment::ConnectionApi::OpenAiCompletions => {
+                            assert_eq!(observed["reasoning_effort"], value.as_str())
+                        }
+                        opi_eval::experiment::ConnectionApi::OpenAiResponses => {
+                            assert_eq!(observed["response_reasoning_effort"], value.as_str())
+                        }
+                    }
+                }
+            }
         }
         assert_eq!(
             sha256_hex(&fs::read(&executable).unwrap()),
@@ -4825,6 +4869,22 @@ fn run_pi_client_for(
     case_root: &Path,
     work: &Path,
 ) -> std::process::Output {
+    run_pi_client_with_thinking_for(
+        executable, bundle, config, provider, model, case_root, work, "off",
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_pi_client_with_thinking_for(
+    executable: &Path,
+    bundle: Option<&Path>,
+    config: &Path,
+    provider: &str,
+    model: &str,
+    case_root: &Path,
+    work: &Path,
+    thinking: &str,
+) -> std::process::Output {
     let agent_dir = case_root.join("pi-agent");
     std::fs::create_dir_all(&agent_dir).unwrap();
     std::fs::copy(config, agent_dir.join("models.json")).unwrap();
@@ -4841,7 +4901,7 @@ fn run_pi_client_for(
         .arg("--no-extensions")
         .arg("--no-skills")
         .arg("--no-context-files")
-        .args(["--thinking", "off"])
+        .args(["--thinking", thinking])
         .arg("--provider")
         .arg(provider)
         .arg("--model")
@@ -13211,9 +13271,128 @@ for path in pathlib.Path('jobs').glob('*/*/config.json'):
 }
 
 #[test]
+#[ignore = "requires exact local opi and pinned pi package in OPI_EVAL_NATIVE_CLIENT_MATERIAL"]
+fn native_operator_control_proof_validates_exact_clients() {
+    let clients: serde_json::Value = serde_json::from_slice(
+        &fs::read(std::env::var("OPI_EVAL_NATIVE_CLIENT_MATERIAL").unwrap()).unwrap(),
+    )
+    .unwrap();
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    let source = fs::read_to_string(&config)
+        .unwrap()
+        .replace(
+            "api = \"openai-completions\"",
+            "api = \"anthropic-messages\"",
+        )
+        .replace(
+            "reasoning = \"omitted\"",
+            "reasoning = \"high\"\nrequired = [\"reasoning\", \"max_output_tokens\"]",
+        )
+        .replace("max_output_tokens = 4096", "max_output_tokens = 131072")
+        .replace("context_window = 8192", "context_window = 1000000");
+    fs::write(&config, source).unwrap();
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+    for product in ["opi", "pi"] {
+        let executable = Path::new(clients[product].as_str().unwrap());
+        material["agents"][product]["executable"] = serde_json::json!({"path": executable, "sha256":sha256_hex(&fs::read(executable).unwrap())});
+        material["agents"][product]
+            .as_object_mut()
+            .unwrap()
+            .remove("output_control_evidence");
+        if let Some(package) = clients[format!("{product}_package")].as_str() {
+            let package = Path::new(package);
+            let (manifest_sha256, entrypoint) =
+                probe_package_identity(executable, package).unwrap();
+            material["agents"][product]["runtime_package"] = serde_json::json!({"path":package,"manifest_sha256":manifest_sha256,"entrypoint":entrypoint});
+        } else {
+            material["agents"][product]["runtime_package"] = serde_json::Value::Null;
+        }
+    }
+    fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+    let root = staged.root.join("operator-proof");
+    let output = Command::new("python3")
+        .arg(manifest_dir().join("scripts/native-control-proof.py"))
+        .arg("--companion")
+        .arg(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("--config")
+        .arg(&config)
+        .arg("--material")
+        .arg(&staged.material)
+        .arg("--out")
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for product in ["opi", "pi"] {
+        let rows = fs::read_to_string(root.join(product).join("requests.jsonl")).unwrap();
+        let rows: Vec<serde_json::Value> = rows
+            .lines()
+            .map(|row| serde_json::from_str(row).unwrap())
+            .collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["tool_continuation"], false);
+        assert_eq!(rows[1]["tool_continuation"], true);
+        for row in rows {
+            assert_eq!(row["reasoning_controls"]["thinking_budget"], 16384);
+        }
+    }
+}
+
+#[test]
+fn required_native_thinking_binds_launch_and_fails_without_wire_proof() {
+    let staged = stage("ok");
+    let config = write_config(&staged);
+    let source = fs::read_to_string(&config)
+        .unwrap()
+        .replace(
+            "reasoning = \"omitted\"",
+            "reasoning = \"high\"\nrequired = [\"reasoning\"]",
+        )
+        .replace("max_output_tokens = 4096", "max_output_tokens = 131072")
+        .replace("context_window = 8192", "context_window = 1000000");
+    fs::write(&config, source).unwrap();
+    stage_output_control(&staged, &config);
+    let root = staged.root.join("thinking-admitted");
+    let (code, _, stderr) = run_native(&staged, &config, &root);
+    assert_eq!(code, 0, "{stderr}");
+    for trial in ["trial-pi-native", "trial-opi-native"] {
+        let handoff: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                root.join("trials")
+                    .join(trial)
+                    .join("integration/handoff-identity.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(handoff["thinking_level"], "high");
+    }
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+    for product in ["opi", "pi"] {
+        material["agents"][product]
+            .as_object_mut()
+            .unwrap()
+            .remove("output_control_evidence");
+    }
+    fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+    let root = staged.root.join("thinking-rejected");
+    let (code, _, stderr) = run_native(&staged, &config, &root);
+    assert_ne!(code, 0);
+    assert!(stderr.contains("required reasoning"), "{stderr}");
+    assert!(!root.join("trials").exists());
+}
+
+#[test]
 fn required_reasoning_rejects_before_native_effects() {
-    // P19-AUD-006: for Opi-only, pi-only and paired native selections
-    // across all three protocols, a required reasoning value rejects at
+    // For Opi-only, pi-only and paired native selections across all three
+    // protocols, a high level with only 4096 output tokens rejects at
     // validate, plan and run before Agent/verifier dispatch or run/plan
     // artifact publication; optional unsupported reasoning stays
     // admissible and remains explicitly non-comparable.

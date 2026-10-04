@@ -1024,11 +1024,9 @@ impl ResolvedExperiment {
 
     /// Reject required control values that a selected native client
     /// cannot prove effective before any effect. Sampling admission covers
-    /// values the client cannot express; required reasoning additionally
-    /// rejects because current native execution cannot prove an effective
-    /// reasoning control (the pinned Pi command disables thinking and the
-    /// runner records supplied reasoning as unsupported only after
-    /// settlement, so a required value can never be enforced here).
+    /// values the client cannot express. Reasoning requires a supported level
+    /// and enough answer room; exact-client wire proof is admitted separately
+    /// from the native material before any dispatch.
     pub(crate) fn admit_native_controls(&self) -> Result<(), ResolveError> {
         for subject in self.subjects() {
             let client = match subject.product.as_str() {
@@ -1041,7 +1039,14 @@ impl ResolvedExperiment {
                 .required
                 .iter()
                 .any(|name| name == "reasoning")
-                && matches!(self.model_controls.reasoning, ControlValue::Value(_))
+                && matches!(
+                    project_controls(self.model_controls(), client, self.selected_connection())
+                        .reasoning,
+                    ProjectedControl::Unsupported {
+                        requested: ControlValue::Value(_),
+                        ..
+                    }
+                )
             {
                 return Err(ResolveError::RequiredControlUnsupported {
                     control: "reasoning".to_owned(),
@@ -1085,6 +1090,13 @@ impl ResolvedExperiment {
             .then(|| name.to_owned())
         })
         .collect()
+    }
+
+    pub(crate) fn native_reasoning_is_projected(&self, client: NativeClient) -> bool {
+        matches!(
+            project_controls(self.model_controls(), client, self.selected_connection()).reasoning,
+            ProjectedControl::Effective { .. }
+        )
     }
 
     /// Frozen execution mode and enforceable bounds.
@@ -1199,16 +1211,14 @@ fn project_controls(
         requested.max_output_tokens.clone(),
         "the requested control is not an enforced value",
     );
-    // Reasoning effort: selected native execution cannot prove this
-    // control effective for either pinned client, so a supplied value is
-    // retained as requested-but-Unsupported (the pinned Pi command
-    // disables thinking and the runner reports supplied reasoning as
-    // non-comparable after settlement). Required values still reject
-    // before native admission.
     let reasoning = match &requested.reasoning {
+        ControlValue::Value(value) if native_thinking_budget(value).is_some_and(|budget|
+            budget == 0 || matches!(requested.max_output_tokens, ControlValue::Value(limit) if limit >= budget + 1024)) => {
+            ProjectedControl::Effective { value: value.clone() }
+        }
         ControlValue::Value(value) => ProjectedControl::unsupported_from(
             ControlValue::Value(value.clone()),
-            "selected native execution cannot prove the reasoning control effective",
+            "native thinking requires off/minimal/low/medium/high and an output cap with budget plus 1024 answer tokens",
         ),
         ControlValue::Omitted => ProjectedControl::unsupported_from(
             ControlValue::Omitted,
@@ -1258,6 +1268,19 @@ fn project_controls(
         max_output_tokens,
         context_window,
         reasoning,
+    }
+}
+
+/// Shared budget mapping implemented by both pinned clients. Higher names
+/// remain unsupported rather than silently mapping down to high.
+pub fn native_thinking_budget(level: &str) -> Option<u64> {
+    match level {
+        "off" => Some(0),
+        "minimal" => Some(1024),
+        "low" => Some(2048),
+        "medium" => Some(8192),
+        "high" => Some(16384),
+        _ => None,
     }
 }
 
@@ -1322,13 +1345,25 @@ display_name = \"opi-eval {provider}\"\n",
         body.push_str(&format!("max_output_tokens = {value}\n"));
     }
     if let ProjectedControl::Effective { value } = &controls.reasoning {
-        body.push_str("supports_thinking = true\n");
+        body.push_str(&format!("supports_thinking = {}\n", value != "off"));
+        // Opi selects its startup level from model capabilities. Restrict the
+        // map to the requested level so medium/default selection cannot win.
+        let entries = ["minimal", "low", "medium", "high", "xhigh", "max"]
+            .map(|level| format!("{level} = {}", level == value));
         body.push_str(&format!(
-            "thinking_level_map = {{ {value} = \"{value}\" }}\n"
+            "thinking_level_map = {{ {} }}\n",
+            entries.join(", ")
         ));
     }
     if let ProjectedControl::Effective { value } = controls.max_output_tokens {
         body.push_str(&format!("\n[defaults]\nmax_output_tokens = {value}\n"));
+    }
+    if let ProjectedControl::Effective { value } = &controls.reasoning {
+        body.push_str(&format!(
+            "\n[thinking]\nenabled = {}\nbudget_tokens = {}\n",
+            value != "off",
+            native_thinking_budget(value).unwrap().max(1024)
+        ));
     }
     Ok(body)
 }
@@ -1361,8 +1396,10 @@ fn render_pi_config(
         model["samplingParams"] = serde_json::Value::Object(sampling);
     }
     if let ProjectedControl::Effective { value } = &controls.reasoning {
-        model["reasoning"] = true.into();
-        model["thinkingLevelMap"] = serde_json::json!({ value.clone(): value });
+        model["reasoning"] = (value != "off").into();
+        if value != "off" {
+            model["thinkingLevelMap"] = serde_json::json!({ value.clone(): value });
+        }
     }
     let config = serde_json::json!({
         "providers": {
@@ -1838,6 +1875,81 @@ group = "hello"
     }
 
     #[test]
+    fn explicit_native_thinking_projects_one_level_without_startup_fallback() {
+        for api in [
+            "anthropic-messages",
+            "openai-completions",
+            "openai-responses",
+        ] {
+            for level in ["off", "minimal", "low", "medium", "high"] {
+                let source = doc(api)
+                    .replace("reasoning = \"high\"", &format!("reasoning = \"{level}\""))
+                    .replace("max_output_tokens = 4096", "max_output_tokens = 131072")
+                    .replace("context_window = 128000", "context_window = 1000000");
+                let experiment = ResolvedExperiment::resolve(&source).unwrap();
+                experiment.admit_native_controls().unwrap();
+                for client in [NativeClient::Opi, NativeClient::Pi] {
+                    let projection = experiment.project_connection(client, credential()).unwrap();
+                    assert_eq!(
+                        projection.controls.reasoning,
+                        ProjectedControl::Effective {
+                            value: level.to_owned()
+                        }
+                    );
+                    if client == NativeClient::Opi {
+                        let config: toml::Value =
+                            toml::from_str(std::str::from_utf8(&projection.config_bytes).unwrap())
+                                .unwrap();
+                        assert_eq!(
+                            config["thinking"]["enabled"].as_bool(),
+                            Some(level != "off")
+                        );
+                        if level != "off" {
+                            let model = &config["providers"]["custom"]["scripted"]["models"][0];
+                            for other in ["minimal", "low", "medium", "high", "xhigh", "max"] {
+                                assert_eq!(
+                                    model["thinking_level_map"][other].as_bool(),
+                                    Some(other == level)
+                                );
+                            }
+                        }
+                    } else {
+                        let config: serde_json::Value =
+                            serde_json::from_slice(&projection.config_bytes).unwrap();
+                        assert_eq!(
+                            config["providers"]["scripted"]["models"][0]["reasoning"],
+                            level != "off"
+                        );
+                        assert!(
+                            config["providers"]["scripted"]["models"][0]["thinkingLevelMap"]
+                                .get("off")
+                                .is_none()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unsupported_thinking_names_never_clamp_to_a_lower_level() {
+        for level in ["xhigh", "max", "ultra", "high; injected"] {
+            let source = doc("anthropic-messages")
+                .replace("reasoning = \"high\"", &format!("reasoning = \"{level}\""))
+                .replace("max_output_tokens = 4096", "max_output_tokens = 131072");
+            let experiment = ResolvedExperiment::resolve(&source).unwrap();
+            assert!(experiment.admit_native_controls().is_err());
+            for client in [NativeClient::Opi, NativeClient::Pi] {
+                let projection = experiment.project_connection(client, credential()).unwrap();
+                assert!(matches!(
+                    projection.controls.reasoning,
+                    ProjectedControl::Unsupported { .. }
+                ));
+            }
+        }
+    }
+
+    #[test]
     fn optional_reasoning_projection_records_unsupported() {
         // P19-AUD-011: an optional supplied reasoning value must stay
         // admissible yet project as Unsupported for every client and
@@ -2048,7 +2160,7 @@ group = "hello"
 
 #[cfg(test)]
 mod remediation_tests {
-    //! P19-AUD-006 admission probe: a required reasoning value must reject
+    //! An unsupported level or insufficient output budget must reject
     //! before any native effect for every selection shape and protocol,
     //! while an optional unsupported value stays admissible (it is only
     //! reported as non-comparable after settlement).
@@ -2154,7 +2266,7 @@ cwd_policy = "isolated"
     }
 
     #[test]
-    fn current_required_reasoning_rejects_before_native_admission() {
+    fn insufficient_required_thinking_budget_rejects_before_native_admission() {
         for api in [
             "anthropic-messages",
             "openai-completions",

@@ -468,13 +468,15 @@ reference. There is no provider, protocol, model, or billing-product
 fallback: the credential resolves only inside the supervised Agent launch,
 absent credentials and required-but-unsupported `[model_controls]` reject
 before any model effect, and remote base URLs require the explicit
-`[execution].mode = "live"` (loopback routes only otherwise). A required
-`reasoning` value rejects at `validate`, `plan` and `run` for every native
-selection shape and protocol, because current native execution cannot prove
-that control effective; an optional supplied reasoning value stays
-admissible, projects as `Unsupported` while retaining the request (no
-thinking surface is enabled without proof), and is reported as explicitly
-non-comparable. Requested
+`[execution].mode = "live"` (loopback routes only otherwise). Explicit native
+`reasoning` supports `off`, `minimal`, `low`, `medium` and `high`, with shared
+budgets of 0, 1024, 2048, 8192 and 16384 tokens respectively. Enabled levels
+need a numeric response cap at least 1024 tokens above the budget. Opi's startup
+configuration selects only the requested level; pi receives that level in
+`--thinking`. Required reasoning needs exact-client first-request and tool
+continuation evidence before `validate`, `plan` or `run` admits it. Unsupported
+required settings reject; optional unsupported settings retain the request and
+remain non-comparable. No private thinking text is retained. Requested
 monetary/usage caps in `[execution.caps]` are rejected - the native route
 cannot enforce them. Native Agent time uses the smaller supplied
 `time_limit_seconds` and `agent_timeout_seconds`; `verifier_timeout_seconds`
@@ -557,9 +559,10 @@ cargo test -p opi-eval --test native_driver \
 The output directory must not exist. Native pi is launched verbatim; the
 existing `node`/`pi_bundle` input form is also supported. Supply `opi_package`
 or `pi_package` whenever native material transports that client's runtime
-package. This probe covers the experiment's selected API and numeric limit,
-with reasoning omitted or unknown; it does not attest reasoning effort. Both
-requests in the deterministic tool loop must carry the exact limit.
+package. This test probe covers the experiment's selected API and numeric limit
+with reasoning omitted or unknown. For explicit thinking, use the native control
+probe documented below. Both requests in the deterministic tool loop must carry
+the exact limit and, for explicit thinking, the required reasoning wire fields.
 
 Before starting a listener, the probe binds the executed file to a normal
 relative entrypoint inside the supplied package, rejecting traversal, links,
@@ -575,10 +578,29 @@ set `agents.<product>.output_control_evidence` to
 `{"path":"/absolute/proof/<product>/output-control.json","sha256":"<file SHA-256>"}`
 before freezing the plan. The optional field does not grant support by itself:
 admission verifies the pinned bytes, regenerates the production projection,
-and checks both observed wire limits. Missing, substituted, unsupported, or
+and checks both observed wire limits and any projected reasoning controls.
+Missing, substituted, unsupported, or
 mismatched required evidence rejects before dispatch. No existing plan, run,
 or seal is rewritten. Each admitted trial seals a self-contained snapshot as
 `control/output-control.json`.
+
+For selected subjects with explicit thinking, use the standalone offline probe
+before freezing native material or a plan:
+
+```sh
+python3 crates/opi-eval/scripts/native-control-proof.py \
+  --companion /absolute/opi-eval --config /absolute/experiment.toml \
+  --material /absolute/unfrozen-material.json --out /absolute/new-control-proof
+```
+
+The output must be fresh. The helper runs only the exact selected packages with
+synthetic authentication and an isolated home against IPv4 loopback. It retains
+projected config, whitelisted request controls, command exit and admission
+result, discarding client stdout/stderr. Both requests must carry the requested
+output cap and supported thinking projection. Only successful Companion
+admission adds proof pins to the unfrozen material; failure leaves its original
+bytes unchanged. The existing material and proof schema identities are retained.
+Never use this preparation helper to rewrite a frozen plan or sealed material.
 
 The CLI consumes a resolved native-material manifest; it does not improvise or
 silently replace missing native inputs. Native materialization is owned by the

@@ -144,6 +144,62 @@
         "Does not create an invented current finding ID or revise the core.",
         "Uses a fresh independent context for a later requested audit rather than restarting core work here."
       ]
+    },
+    {
+      "id": 14,
+      "prompt": "In the sealed implementation, an HTTP boundary uses string splitting around @ to approve a loopback endpoint, then passes the original URL to its locked HTTP client. Ordinary localhost and remote-host tests pass. What proof is needed before treating the endpoint boundary as met?",
+      "expected_output": "Check validation/consumer interpretation against the actual locked URL parser, including relevant fragments, userinfo and IPv6 cases. Use local parsing or fake transport so a misclassified URL cannot contact a remote destination. A guard-only test is insufficient.",
+      "files": [],
+      "expectations": [
+        "Compares the guard's admitted destination with the production client's parsed destination using the locked dependency.",
+        "Selects an input that distinguishes the two interpretations rather than repeating ordinary host tests.",
+        "Keeps probes offline or under fake transport and does not initiate a remote request."
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "A mandatory max_trials cap rejects explicit trial arrays before dispatch. Another entry accepts a selection and repetitions, expands all repetitions into a Vec, then checks max_trials. A small over-limit input returns the right typed error. How do you assess the bound and reproduce safely?",
+      "expected_output": "Trace limits before work in both explicit and derived ingress paths. The derived expansion can exceed the resource bound before rejection; use static evidence or a subprocess with enforced memory/time limits, never an extreme in-process allocation. Retain evidence that the explicit path is bounded.",
+      "files": [],
+      "expectations": [
+        "Identifies pre-check expansion as a separate unbounded branch despite the correct small-input error.",
+        "Requires the limit before the allocation/loop it constrains, as well as before dispatch.",
+        "Uses a bounded isolated probe or static invariant proof, preserving the working explicit branch."
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "A Rust target lists native_fixture_projection as a nonignored test and native_real_client as ignored. The acceptance log for cargo test -p sample --test driver native_fixture_projection -- --ignored --exact exits 0 with 0 passed, 0 failed, 0 ignored, 2 filtered out. Can it prove native acceptance?",
+      "expected_output": "No. Check complete and ignored inventories against the exact filter and observed execution. The selected name exists but is ineligible under --ignored, so zero execution fails behavioral proof; the fixture would not prove native fidelity even if run normally.",
+      "files": [],
+      "expectations": [
+        "Detects ignored-selection mismatch rather than merely checking whether the name exists.",
+        "Rejects exit 0 with zero executed tests as behavior evidence.",
+        "Uses check_test_execution.py or equivalent inventory/count evidence without running a credentialed native test implicitly."
+      ]
+    },
+    {
+      "id": 17,
+      "prompt": "Use $opi-audit phase=23 reviewer=codex model=gpt61 evidence_root=<redacted-raw-directory>. A mandatory native/operator criterion has only fixture logs, tool-ready metadata, a raw run with different relevant source/client bytes, and a prior Closed summary colocated in that directory. How should preflight proceed?",
+      "expected_output": "Inventory raw paths and hashes after sealing obligations, exclude historical conclusions before exposure, and verify source/build/client/material identity, original seals and actual execution. The supplied proof is insufficient or inapplicable; record not-assessable and a reciprocal finding, continue independent code checks, and do not start paid/live trials.",
+      "files": [],
+      "expectations": [
+        "Uses evidence_root as optional proof input rather than specification or new execution authorization.",
+        "Keeps the colocated Closed summary outside independent context.",
+        "Rejects fixture/readiness/source-mismatched proof as native/operator acceptance.",
+        "Records the mandatory evidence gap and continues independent inspection without an implicit paid/live run."
+      ]
+    },
+    {
+      "id": 18,
+      "prompt": "At a sealed boundary, the guard and consumer use the same locked parser and reject remote destinations, checked multiplication and the cap precede all allocation in both entry branches, and applicable redacted native proof has matching source/client/material identities and original seals. Complete inventories show one selected runnable test, whose raw log records that exact case passed and zero ignored, with a discriminating production-path assertion. What evidence can be accepted?",
+      "expected_output": "Accept the applicable parser/bound and nonvacuous test evidence for their proven criteria, and accept native proof only after checking its raw observations and required execution conditions. Do not invent an extra boundary defect or require broad reruns when evidence is sufficient. Checker PASS alone does not prove assertions or provenance.",
+      "files": [],
+      "expectations": [
+        "Recognizes already-enforced bounds and parser consistency without a false positive.",
+        "Accepts positive execution identity/count evidence while separately checking assertions, provenance and native conditions.",
+        "Keeps acceptance scoped to proven criteria and avoids redundant broad reruns."
+      ]
     }
   ]
 }

@@ -60,13 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preexisting directory, file, or link target refuses fail-closed instead
   of being reused. Settlement cleanup is unchanged.
 
-- `opi-eval`: an optional supplied `reasoning` model control now projects
-  as `Unsupported` (retaining the requested value) for both native clients
-  and all three protocols, matching the unsupported settlement verdict;
-  selected native execution cannot prove the control effective, so no
-  thinking surface is enabled without proof. Required reasoning values
-  keep their early rejection; the enum, config keys and serialized shape
-  are unchanged.
+- `opi-eval`: explicit native `reasoning` supports `off`, `minimal`, `low`,
+  `medium` and `high` through both client projections. Required settings need
+  exact executable/package proof of the first request and tool continuation
+  before dispatch; enabled levels also require output room for the shared
+  thinking budget plus 1024 answer tokens. Unsupported levels retain the
+  request and reject when required. Pi launch no longer fixes every request
+  to `off`; private thinking remains excluded from retained captures.
 - `opi-eval`: an explicit positive `[execution].max_output_bytes` now rejects
   at resolution with the existing unenforceable-bound error. Captured output
   stays under the fixed runtime limit and a requested byte cap has no
@@ -235,6 +235,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `opi-eval` skill: a single private `.opi/eval.toml` configures the model,
+  credential source, thinking, retries, batch deadline, task selection and
+  storage. The operator prepares pi version baselines and rebuilds current
+  working-tree Opi candidates into frozen operation packages. Candidates reuse
+  eligible registered snapshots without rerunning pi; offline comparison keeps
+  original evidence, task identities, paired coverage and unknown telemetry
+  explicit. Failed logical trials use precise fresh plans within the original
+  deadline, and machine handoffs expose preparation, attempts and results.
+
 - `opi-eval`: the static external lock now pins the pi coding-agent to the
   upstream `v1.0.0` tag (commit `a13d35a742c6ef8462812a28fbe1d8c8b7431c32`)
   with its verified `package-lock.json`/`npm-shrinkwrap.json`/
@@ -256,6 +265,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operator reports from 2026-09-10 to 2026-09-29 were removed from the
   checkout; they remain in Git history and their evidence roots stay
   registered in `docs/eval/evidence-roots.jsonl`.
+
+- Assurance tooling: `opi-audit` accepts optional redacted `evidence_root`
+  proof and checks source/client/material applicability and actual execution
+  after sealing requirements. Boundary review compares validation with the
+  production consumer and checks limits before costly work with bounded
+  isolated probes. Its read-only Rust libtest log checker rejects stale or
+  ignored-selection filters, zero execution, and inconsistent identities or
+  counts; fixture/readiness evidence cannot substitute for native acceptance.
 
 - Assurance tooling: `opi-audit` now installs its independent core before
   compiling a bounded historical reference. The locked `append-history`

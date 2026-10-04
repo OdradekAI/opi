@@ -400,10 +400,12 @@ artifact 成员，并唯一绑定 oracle 原始结果与 CTRF 字节；网络声
 `credential_env`/`credential_file` 引用之一。不存在 provider、协议、模型或
 计费产品的回退：credential 只在受监督的 Agent 启动内解析；缺失的 credential
 与 required-but-unsupported 的 `[model_controls]` 控件在任何模型效果之前拒绝；
-required 的 `reasoning` 值在任何 native 选择形态与协议下都会在 `validate`、
-`plan` 和 `run` 中被拒绝，因为当前 native 执行无法证明该控件生效；可选的已
-提供 reasoning 值仍可被接受，投影为 `Unsupported` 并保留原请求（本证明前不启用任何
-thinking 配置面），并显式报告为不可比较。远程 base URL 必须显式声明 `[execution].mode = "live"`（否则只允许回环地址）。
+显式 native `reasoning` 支持 `off`、`minimal`、`low`、`medium`、`high`，共享预算
+分别为 0、1024、2048、8192、16384 tokens。启用的深度要求数值响应上限至少比预算
+多 1024 tokens。Opi 启动配置只选择请求的深度；pi 通过 `--thinking` 接收该值。
+required reasoning 在 `validate`、`plan`、`run` 准入前要求真实客户端首轮及工具
+续轮证据。不支持的必需设置拒绝；可选的不支持设置保留请求，并保持不可比较。
+私有思考文本不予保留。远程 base URL 必须显式声明 `[execution].mode = "live"`（否则只允许回环地址）。
 `[execution.caps]` 中请求的货币/用量上限会被拒绝，因为 native 路由无法强制执行。
 native Agent 时间采用已提供的 `time_limit_seconds` 与 `agent_timeout_seconds`
 中的较小值；`verifier_timeout_seconds` 限制 verifier 阶段。任务原有的更窄
@@ -470,9 +472,10 @@ cargo test -p opi-eval --test native_driver \
 
 输出目录必须尚不存在。原生 pi executable 按原路径启动，也保留已有的
 `node`/`pi_bundle` 输入形式。若 native material 携带客户端运行包，必须提供
-相应的 `opi_package` 或 `pi_package`。此探针只覆盖实验选定的 API 和数值
-上限，reasoning 为 omitted 或 unknown；它不证明 reasoning effort。确定性
-工具循环中的两个请求都必须携带精确上限。
+相应的 `opi_package` 或 `pi_package`。此测试探针覆盖实验选定的 API 和数值
+上限，reasoning 为 omitted 或 unknown；显式思考设置使用下文的 native control
+探针。确定性工具循环中的两个请求都必须携带精确上限；显式思考还需携带要求的
+reasoning wire 字段。
 
 启动监听器前，探针将实际执行的文件绑定到所提供 package 内的普通相对
 entrypoint，拒绝路径穿越、链接和无关 package，即使 executable 字节相同。
@@ -485,9 +488,26 @@ provider/API/model、冻结控制、投影 config 和独立监听器日志。保
 `agents.<product>.output_control_evidence` 为
 `{"path":"/absolute/proof/<product>/output-control.json","sha256":"<file SHA-256>"}`。
 该可选字段本身并不授予能力：准入校验固定字节、重新生成生产投影，并检查
-两个实际 wire 上限。必需证据缺失、被替换、不支持或不一致时，在派发前拒绝。
+两个实际 wire 上限及已投影的 reasoning 控制。必需证据缺失、被替换、不支持或
+不一致时，在派发前拒绝。
 不会改写已有 plan、run 或 seal。每个已准入 trial 将自包含快照封存为
 `control/output-control.json`。
+
+对于指定显式思考深度的受测对象，在冻结 native material 或 plan 前使用独立离线
+探针：
+
+```sh
+python3 crates/opi-eval/scripts/native-control-proof.py \
+  --companion /absolute/opi-eval --config /absolute/experiment.toml \
+  --material /absolute/unfrozen-material.json --out /absolute/new-control-proof
+```
+
+输出目录必须全新。helper 仅用合成认证、隔离 home 和 IPv4 回环端点运行精确的
+选定客户端包。它保留投影配置、白名单请求控制、命令退出及准入结果，丢弃客户端
+stdout/stderr。两个请求都须携带请求的输出上限和支持的思考投影。只有 Companion
+成功准入后才向未冻结 material 添加证据 pin；失败时其原字节保持不变。
+现有 material 与 proof schema 身份不变。不要用准备 helper 改写冻结 plan 或密封
+material。
 
 CLI 只消费已经解析的 native-material manifest；它不会临时拼凑或静默替换缺失的
 native input。Native materialization 由公共本地 `prepare` 路径拥有，并附带显式的

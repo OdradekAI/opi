@@ -27,6 +27,22 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    #[command(name = "__native-control-config", hide = true)]
+    NativeControlConfig {
+        #[arg(long)]
+        config: std::path::PathBuf,
+        #[arg(long)]
+        product: String,
+        #[arg(long)]
+        base_url: String,
+    },
+    #[command(name = "__native-control-admit", hide = true)]
+    NativeControlAdmit {
+        #[arg(long)]
+        config: std::path::PathBuf,
+        #[arg(long)]
+        material: std::path::PathBuf,
+    },
     /// Resolve an experiment document into a frozen contract.
     Validate {
         /// Path to the experiment document.
@@ -198,6 +214,29 @@ fn main() -> ExitCode {
     }
     let cli = Cli::parse();
     match cli.command {
+        Command::NativeControlConfig {
+            config,
+            product,
+            base_url,
+        } => match cli::native_control::config(&config, &product, &base_url) {
+            Ok(value) => {
+                println!("{value}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("error: {error}");
+                ExitCode::from(2)
+            }
+        },
+        Command::NativeControlAdmit { config, material } => {
+            match cli::native_control::admit(&config, &material) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Command::Validate {
             config,
             native_material,

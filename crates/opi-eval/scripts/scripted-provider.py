@@ -380,6 +380,22 @@ def serve_listener(rest: list[str]) -> int:
                 if isinstance(body, dict) and key in body
                 and type(body[key]) is int
             }
+            # Whitelist request knobs only. Never retain private thinking,
+            # prompt content, signatures, headers or arbitrary provider values.
+            reasoning = {}
+            if isinstance(body, dict):
+                thinking = body.get("thinking")
+                if isinstance(thinking, dict):
+                    if thinking.get("type") in ("enabled", "disabled", "adaptive"):
+                        reasoning["thinking_type"] = thinking["type"]
+                    if type(thinking.get("budget_tokens")) is int:
+                        reasoning["thinking_budget"] = thinking["budget_tokens"]
+                efforts = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+                if body.get("reasoning_effort") in efforts:
+                    reasoning["reasoning_effort"] = body["reasoning_effort"]
+                response_reasoning = body.get("reasoning")
+                if isinstance(response_reasoning, dict) and response_reasoning.get("effort") in efforts:
+                    reasoning["response_reasoning_effort"] = response_reasoning["effort"]
             line = json.dumps(
                 {
                     "schema": LOG_SCHEMA,
@@ -390,6 +406,8 @@ def serve_listener(rest: list[str]) -> int:
                     "auth": self.auth_kind(),
                     "request_sha256": canonical_digest(raw),
                     "output_limits": limits,
+                    "reasoning_controls": reasoning,
+                    "tool_continuation": wants_final_turn(body),
                     "response_script": RESPONSE_SCRIPT,
                     "status": status,
                 },

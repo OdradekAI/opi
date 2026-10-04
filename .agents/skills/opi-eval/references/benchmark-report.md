@@ -22,6 +22,11 @@ their intended `docs/eval/` handoff paths.
 Start with the result and paths, then fill the following sections. Missing
 evidence yields `blocked`/`incomplete` with reasons; omit unsupported scores.
 No native run is appended to the case-based fidelity `history.jsonl` schema.
+For configured baseline/candidate operations, link the original `handoff.json`,
+snapshot and comparison manifests from [the operator](operator.md). Describe
+baseline selection as `matched`, `missing` or `incomparable`, with its frozen
+identity and eligible coverage. A successful standalone candidate does not
+imply that a pi comparison was possible.
 
 ## Run and evidence identity
 
@@ -66,6 +71,10 @@ a statistical superiority claim or a full benchmark result.
 | <actual identity> | <actual attribution> | <typed result> | <artifact pointers> | <identity and artifact pointers> | <path and digest> |
 
 Include every planned/attempted trial, failed attempts and replacement links.
+Use the operator's frozen logical slots to report task/repetition/seed and all
+attempts, selecting the first valid native settlement. Keep earlier failed
+attempts and their consumption visible; do not sum valid retry results into a
+larger benchmark denominator.
 For acceptance, identify the exact six selected rows separately while keeping
 the complete attempt history visible. Copying a manifest's claim is not a
 traceability check; cite the originating native records.

@@ -779,6 +779,25 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                         if path.is_file():
                             self.assertNotIn(b"synthetic-private-config-canary", path.read_bytes())
 
+    async def test_selected_thinking_level_is_launched_and_invalid_level_refused(self):
+        for family in INTEGRATIONS:
+            for level in ("off", "minimal", "low", "medium", "high"):
+                with self.subTest(family=family, level=level):
+                    root, _, logs, handoff = self.prepare(family, "pi", False)
+                    handoff["thinking_level"] = level
+                    path = root / "handoff.json"
+                    path.write_text(json.dumps(handoff))
+                    agent = self.agent(family, root, logs, handoff)
+                    environment = FakeEnvironment()
+                    await agent.setup(environment)
+                    await agent.run("task", environment, object())
+                    args, _ = environment.launches[0]
+                    self.assertEqual(args[args.index("--thinking") + 1], level)
+            root, _, logs, handoff = self.prepare(family, "pi", False)
+            handoff["thinking_level"] = "ultra; injected"
+            with self.assertRaisesRegex(Exception, "thinking"):
+                self.agent(family, root, logs, handoff)._agent_command("task", PurePosixPath("/stage"))
+
     async def test_package_and_single_binary_launches_retain_evidence(self):
         for family in INTEGRATIONS:
             for product, package in (("pi", True), ("pi", False), ("opi", False)):

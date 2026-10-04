@@ -983,11 +983,15 @@ class PiAgent(_OpiEvalAgent):
     def _agent_command(self, instruction: str, stage: PurePosixPath) -> str:
         agent = self._staged_executable(stage)
         provider, model = self._handoff["model"].split(":", 1)
+        thinking = self._handoff.get("thinking_level", "off")
+        if thinking not in ("off", "minimal", "low", "medium", "high"):
+            raise _OpiEvalAgentError("handoff thinking level is unsupported")
         quoted = shlex.quote(instruction)
         return (
             f"PI_CODING_AGENT_DIR={stage} {agent}"
             " --print --mode json --no-session --no-approve"
-            " --no-extensions --no-skills --no-context-files --thinking off"
+            " --no-extensions --no-skills --no-context-files"
+            f" --thinking {thinking}"
             f" --provider {shlex.quote(provider)} --model {shlex.quote(model)}"
             f" -- {quoted}"
         )

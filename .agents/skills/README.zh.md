@@ -84,18 +84,28 @@ flowchart TD
 ### 原生评测入口
 
 ```text
+$opi-eval action=baseline profile=.opi/eval.toml bench=tb21
+$opi-eval action=candidate profile=.opi/eval.toml bench=tb21
+$opi-eval action=compare candidate_snapshot=<snapshot.json>
 $opi-eval mode=benchmark software=pi version=<实际pi版本> bench=terminal-bench-2.1 model=<provider:model>
 $opi-eval mode=acceptance software=opi,pi version=pi:<实际版本> bench=all model=<provider:model>
 $opi-eval mode=verify evidence_root=<脱敏证据根>
 $opi-eval mode=fidelity cases=all model=<provider:model>
 ```
 
-以上是技能参数，不是 CLI flags。未指定 Opi 版本时选择当前工作区，包含影响构建的
-改动；显式版本优先。准备阶段记录源码和可执行文件身份，不启动模型。
+以上是技能参数，不是 CLI flags。对已准入的 pi 版本统一执行 `baseline`，保留可复用
+跑分快照。`candidate` 每次构建当前 Opi 工作区，包含影响构建的改动，随后与已注册且
+符合条件的 pi 快照比较。缺少基线时明确报告，不自动启动 pi。显式历史版本仍可通过
+`mode=benchmark` 选择。准备阶段记录源码和可执行文件身份，不启动付费模型。
 
 真实评测未指定模型/预算时，继承用户持续授权的
-[评测默认配置](opi-eval/SKILL.md#evaluation-defaults)，包括自动付费重试与整轮共用时限；
-显式参数或用户配置值优先。
+[评测默认配置](opi-eval/SKILL.md#evaluation-defaults)。把唯一的
+[配置模板](opi-eval/config.example.toml) 复制为私有 `.opi/eval.toml`，集中设置模型、
+密钥引用、思考深度、重试、任务范围和存储路径；显式类型化覆盖优先。
+必需的思考设置须在真实客户端首轮请求和工具续轮中通过证明，才允许真实运行。
+
+[操作契约](opi-eval/references/operator.md) 说明初始化、离线准备、审阅后执行、
+证据位置、快照匹配，以及提供给调用技能的机器交接格式。
 
 任务选择、模型控制（含 provider 特定默认值）、预算与准备见
 [原生运行](opi-eval/references/native-run.md)；19.11 固定六试次范围与独立离线交接见
@@ -104,6 +114,18 @@ $opi-eval mode=fidelity cases=all model=<provider:model>
 就绪证据不自动完成实现任务或 Phase。
 
 ### 发现与独立审阅
+
+```text
+$opi-audit phase=<N> reviewer=<reviewer-id> model=<model-id> evidence_root=<脱敏原始证据目录>
+```
+
+`evidence_root` 是可选的原始证明输入。封存需求后，审计先核验源码、构建、客户端、
+材料身份、原始封印与实际执行，再判断其是否适用于当前基线。缺失的原生或操作验收
+证明须明确记录；fixture 与就绪状态不能替代。
+[证明义务](opi-audit/references/audit-proof-obligations.md) 要求在适用边界核验校验器与
+消费者解释的一致性、昂贵工作前的限额，以及有界隔离探针。
+[Rust 执行检查器](opi-audit/references/test-execution-check.md) 拒绝过期过滤器与零执行，
+不授予新增试次权限。
 
 [发现契约](_shared/references/finding-contract.md) 定义共享词汇。只有当前活动 indexed
 audit set 进入 remediation。各报告地位平等，分别持有已提交的 `audit_head`；

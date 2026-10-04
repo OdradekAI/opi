@@ -96,19 +96,33 @@ Open the selected `SKILL.md`, then only references required by its active mode.
 ### Native evaluation entry
 
 ```text
+$opi-eval action=baseline profile=.opi/eval.toml bench=tb21
+$opi-eval action=candidate profile=.opi/eval.toml bench=tb21
+$opi-eval action=compare candidate_snapshot=<snapshot.json>
 $opi-eval mode=benchmark software=pi version=<actual-pi-version> bench=terminal-bench-2.1 model=<provider:model>
 $opi-eval mode=acceptance software=opi,pi version=pi:<actual-version> bench=all model=<provider:model>
 $opi-eval mode=verify evidence_root=<redacted-evidence-root>
 $opi-eval mode=fidelity cases=all model=<provider:model>
 ```
 
-These are skill arguments, not CLI flags. Omitted Opi version selects the current
-working tree, including build-relevant changes; explicit version pins win.
-Preparation records source and executable identities without starting a model.
+These are skill arguments, not CLI flags. Use `baseline` once for an admitted pi
+version to preserve a reusable benchmark snapshot. `candidate` always builds the
+current Opi working tree, including build-relevant changes, then compares with
+an eligible registered pi snapshot if present. Missing baselines stay visible;
+they do not start pi runs. Explicit historical pins remain available through
+`mode=benchmark`. Preparation records source and executable identities without
+starting a paid model.
 
 Omitted live model/budget inputs inherit the standing user-authorized
-[evaluation defaults](opi-eval/SKILL.md#evaluation-defaults), including paid
-retries and the shared batch deadline; explicit inputs/config values win.
+[evaluation defaults](opi-eval/SKILL.md#evaluation-defaults). Copy the single
+[configuration template](opi-eval/config.example.toml) to private
+`.opi/eval.toml` for model, credential reference, thinking, retries, scope and
+storage. Explicit typed overrides win. Required thinking must pass actual-client
+first-request and continuation proof before live execution.
+
+The [operator contract](opi-eval/references/operator.md) documents initialization,
+offline preparation, reviewed execution, evidence locations, snapshot matching
+and the machine handoff for calling skills.
 
 Read [native run](opi-eval/references/native-run.md) for task selection, model
 controls (including provider-specific defaults), budgets and preparation;
@@ -118,6 +132,20 @@ six-trial scope and independent offline handoff; and
 Ready evidence does not automatically complete an implementation task or Phase.
 
 ### Findings and independent review
+
+```text
+$opi-audit phase=<N> reviewer=<reviewer-id> model=<model-id> evidence_root=<redacted-raw-directory>
+```
+
+`evidence_root` is optional raw proof input. After sealing requirements, audit
+checks its source/build/client/material identity, seals and actual execution
+before using it as current evidence. Missing native/operator proof remains an
+explicit gap; fixtures and readiness do not substitute for it. The
+[proof obligations](opi-audit/references/audit-proof-obligations.md) require
+validation/consumer agreement, limits before costly work and bounded isolated
+probes at applicable boundaries. The
+[Rust execution checker](opi-audit/references/test-execution-check.md) rejects
+stale filters and zero execution; it does not authorize new trials.
 
 The [finding contract](_shared/references/finding-contract.md) supplies shared
 vocabulary. Only the current live indexed audit set feeds remediation.

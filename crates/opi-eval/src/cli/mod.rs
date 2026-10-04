@@ -4,6 +4,8 @@
 //! [`regrade`] and [`report`].
 
 pub mod conformance;
+#[doc(hidden)]
+pub mod native_control;
 pub mod plan;
 pub mod prepare;
 pub mod regrade;

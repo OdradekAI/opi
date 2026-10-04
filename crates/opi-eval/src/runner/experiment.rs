@@ -1649,6 +1649,10 @@ fn stage_native_handoff(
         "model": model,
         "inference_endpoint": projection.connection.base_url,
         "config_path": projection.config_filename,
+        "thinking_level": match &projection.controls.reasoning {
+            crate::experiment::ProjectedControl::Effective { value } => value.as_str(),
+            _ => "off",
+        },
         "agent_env": projection.agent_env,
     });
     write_private_stage_file(
@@ -2789,7 +2793,11 @@ async fn run_native_trial(
 
     // Trial facts for pairing from the one classification.
     let mut unsupported_controls = match experiment.model_controls().reasoning {
-        crate::experiment::ControlValue::Value(_) => vec!["reasoning".to_owned()],
+        crate::experiment::ControlValue::Value(_)
+            if output_control.is_none() || !experiment.native_reasoning_is_projected(client) =>
+        {
+            vec!["reasoning".to_owned()]
+        }
         _ => Vec::new(),
     };
     unsupported_controls.extend(experiment.unsupported_native_sampling(client));

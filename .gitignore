@@ -54,6 +54,7 @@ credentials.toml
 
 # Local project config (may contain provider base_url, model overrides)
 .opi/config.toml
+.opi/eval.toml
 
 # Release skill resume state
 .opi-release-state.json

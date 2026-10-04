@@ -36,17 +36,27 @@ pub(crate) fn admit(
     material: &super::material::NativeMaterial,
     experiment: &ResolvedExperiment,
 ) -> Result<(), MaterialError> {
-    let required = experiment
+    let output_required = experiment
         .model_controls()
         .required
         .iter()
         .any(|name| name == "max_output_tokens")
         || experiment.execution().max_output_tokens.is_some();
+    let thinking_required = experiment
+        .model_controls()
+        .required
+        .iter()
+        .any(|name| name == "reasoning");
     for (product, agent) in &material.agents {
         let evidence = snapshot(agent, product, experiment)?;
-        if required && evidence.is_none() {
+        if (output_required || thinking_required) && evidence.is_none() {
             return Err(reject(format!(
-                "{product} has no exact-client wire evidence for required max_output_tokens"
+                "{product} has no exact-client wire evidence for required {}",
+                if thinking_required {
+                    "reasoning"
+                } else {
+                    "max_output_tokens"
+                }
             )));
         }
     }
@@ -173,6 +183,16 @@ pub(crate) fn snapshot(
         {
             return Err(reject("observed request limit or wire identity differs"));
         }
+        if let crate::experiment::ProjectedControl::Effective { value } =
+            &projection.controls.reasoning
+        {
+            if row["tool_continuation"].as_bool() != Some(index == 1) {
+                return Err(reject(
+                    "expected first request followed by a tool result continuation",
+                ));
+            }
+            verify_thinking(row, selected.api, value)?;
+        }
     }
     let snapshot = json!({
         "evidence": std::str::from_utf8(&bytes).map_err(reject)?,
@@ -181,4 +201,88 @@ pub(crate) fn snapshot(
         "requests": text,
     });
     serde_json::to_vec(&snapshot).map(Some).map_err(reject)
+}
+
+fn verify_thinking(
+    row: &Value,
+    api: crate::experiment::ConnectionApi,
+    level: &str,
+) -> Result<(), MaterialError> {
+    let observed = row["reasoning_controls"]
+        .as_object()
+        .ok_or_else(|| reject("listener did not observe reasoning controls"))?;
+    let budget = crate::experiment::native_thinking_budget(level)
+        .ok_or_else(|| reject("unsupported reasoning level"))?;
+    let matches = if level == "off" {
+        observed.iter().all(|(key, value)| {
+            matches!(
+                (key.as_str(), value.as_str()),
+                ("thinking_type", Some("disabled"))
+                    | ("reasoning_effort", Some("none"))
+                    | ("response_reasoning_effort", Some("none"))
+            )
+        })
+    } else {
+        match api {
+            crate::experiment::ConnectionApi::AnthropicMessages => {
+                observed.get("thinking_type").and_then(Value::as_str) == Some("enabled")
+                    && observed.get("thinking_budget").and_then(Value::as_u64) == Some(budget)
+                    && observed.len() == 2
+            }
+            crate::experiment::ConnectionApi::OpenAiCompletions => {
+                observed.get("reasoning_effort").and_then(Value::as_str) == Some(level)
+                    && observed.len() == 1
+            }
+            crate::experiment::ConnectionApi::OpenAiResponses => {
+                observed
+                    .get("response_reasoning_effort")
+                    .and_then(Value::as_str)
+                    == Some(level)
+                    && observed.len() == 1
+            }
+        }
+    };
+    if !matches {
+        return Err(reject(
+            "observed reasoning control differs from requested level",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::experiment::ConnectionApi;
+
+    #[test]
+    fn reasoning_proof_rejects_continuation_downgrade_and_missing_measurement() {
+        let row = json!({"reasoning_controls":{"thinking_type":"enabled","thinking_budget":16384}});
+        assert!(verify_thinking(&row, ConnectionApi::AnthropicMessages, "high").is_ok());
+        assert!(verify_thinking(&row, ConnectionApi::AnthropicMessages, "low").is_err());
+        assert!(verify_thinking(&json!({}), ConnectionApi::AnthropicMessages, "off").is_err());
+        assert!(
+            verify_thinking(
+                &json!({"reasoning_controls": {}}),
+                ConnectionApi::AnthropicMessages,
+                "high"
+            )
+            .is_err()
+        );
+        for api in [
+            ConnectionApi::AnthropicMessages,
+            ConnectionApi::OpenAiCompletions,
+            ConnectionApi::OpenAiResponses,
+        ] {
+            assert!(verify_thinking(&json!({"reasoning_controls": {}}), api, "off").is_ok());
+        }
+        assert!(
+            verify_thinking(
+                &json!({"reasoning_controls":{"reasoning_effort":"medium"}}),
+                ConnectionApi::OpenAiCompletions,
+                "high"
+            )
+            .is_err()
+        );
+    }
 }
