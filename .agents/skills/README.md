@@ -123,6 +123,13 @@ first-request and continuation proof before live execution.
 The [operator contract](opi-eval/references/operator.md) documents initialization,
 offline preparation, reviewed execution, evidence locations, snapshot matching
 and the machine handoff for calling skills.
+It also defines a proposed migration to a separately supplied evaluation
+runtime, explicit subject paths and an external snapshot index. Current helper
+commands remain checkout-bound; proposed profile fields are not yet supported.
+The self-contained [diagnostic checklist](opi-eval/references/diagnostics.md)
+separates native-score validity, diagnostic completeness and pairing eligibility.
+Project-specific file ownership and migration stages are recorded in the
+[decoupling proposal](../../docs/eval/operator-decoupling.md), outside the skill.
 
 Read [native run](opi-eval/references/native-run.md) for task selection, model
 controls (including provider-specific defaults), budgets and preparation;

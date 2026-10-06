@@ -106,6 +106,12 @@ $opi-eval mode=fidelity cases=all model=<provider:model>
 
 [操作契约](opi-eval/references/operator.md) 说明初始化、离线准备、审阅后执行、
 证据位置、快照匹配，以及提供给调用技能的机器交接格式。
+其中还定义了迁移到独立评测运行包、显式受测源码路径和外部快照索引的方案。
+当前辅助命令仍依赖仓库；方案中的新增配置字段尚未支持。
+自包含的[诊断清单](opi-eval/references/diagnostics.md) 分开判断原生分数有效性、
+诊断材料完整性和配对资格。
+项目特定的文件归属与迁移阶段记录在技能之外的
+[解耦方案](../../docs/eval/operator-decoupling.zh.md)。
 
 任务选择、模型控制（含 provider 特定默认值）、预算与准备见
 [原生运行](opi-eval/references/native-run.md)；19.11 固定六试次范围与独立离线交接见

@@ -7,7 +7,7 @@ disable-model-invocation: true
 # opi-eval
 
 Maintain pi version baselines and measure the current Opi working tree against
-eligible saved results. Use the Rust CLI in `crates/opi-eval` for native trials,
+eligible saved results. Use the identified native Companion CLI for trials,
 grading, seals and offline reconstruction. This skill owns operator scope, execution, evidence
 privacy, reports and cleanup. Opi source fixes follow the
 [user-confirmed repair branch](#user-confirmed-source-repairs). Only
@@ -31,6 +31,13 @@ available; `compare` is offline. Missing baselines never dispatch pi. These
 actions select `mode=benchmark`; acceptance, verify and fidelity retain their
 separate contracts below. Configuration and preparation do not authorize live
 trials. Reuse explicit authorization for the exact selected scope.
+
+The operator reference distinguishes current checkout-bound commands from the
+proposed runtime-package boundary. Proposed fields and capabilities are not
+available until the runtime migration passes its acceptance checks. Read
+[diagnostics](references/diagnostics.md) before selecting capture requirements
+or explaining a regression; assess score validity, diagnostic completeness and
+comparison eligibility separately.
 
 Resolve natural-language requests to these skill inputs, not extra CLI flags.
 Reuse supplied selections and authorization; ask only for unresolved choices
