@@ -30,7 +30,6 @@
 !.agents/skills/opi-workflow/**
 !.agents/skills/opi-eval/
 !.agents/skills/opi-eval/**
-.agents/skills/opi-eval/config.toml
 !.agents/skills/opi-slim-tests/
 !.agents/skills/opi-slim-tests/**
 !.agents/skills/_shared/

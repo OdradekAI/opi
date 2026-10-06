@@ -23,18 +23,18 @@ $opi-eval candidate bench=tb21
 $opi-eval compare run=<operator run directory>
 ```
 
-Read [operator invocation](references/operator.md) for the single private
-configuration, executable helper, frozen preparation/run handoff and return
-contract. `baseline` records only the admitted pi version; `candidate` always
+Read [operator invocation](references/operator.md) for the explicitly supplied
+`EVAL_OPERATOR` entrypoint, single private profile, frozen preparation/run handoff
+and return contract. `baseline` records only the admitted pi version; `candidate` always
 builds current-worktree Opi and compares with an eligible saved baseline when
 available; `compare` is offline. Missing baselines never dispatch pi. These
 actions select `mode=benchmark`; acceptance, verify and fidelity retain their
 separate contracts below. Configuration and preparation do not authorize live
 trials. Reuse explicit authorization for the exact selected scope.
 
-The operator reference distinguishes current checkout-bound commands from the
-proposed runtime-package boundary. Proposed fields and capabilities are not
-available until the runtime migration passes its acceptance checks. Read
+The operator owns external evaluation records, reports, catalogue and lifecycle
+receipts. Its source ownership has moved out of the skill; a complete independently
+distributable runtime package remains provisional. Read
 [diagnostics](references/diagnostics.md) before selecting capture requirements
 or explaining a regression; assess score validity, diagnostic completeness and
 comparison eligibility separately.
@@ -46,6 +46,7 @@ that affect the run. Load only the selected branch's references.
 ```text
 mode=benchmark|acceptance|verify|fidelity
 action=baseline|candidate|compare  profile=<private operator TOML>
+operator=<supplied EVAL_OPERATOR entrypoint>
 software=opi|pi|opi,pi
 version=<single-product version or per-product entries, e.g. pi:<version>|pi:latest>
 bench=terminal-bench-2.1|terminal-bench-3.0|deepswe-v1.1|all
@@ -89,11 +90,11 @@ precedence; conflicting requested overrides require a new experiment and plan.
 
 ## Evaluation defaults
 
-The [configuration template](config.example.toml) is the single maintained
-source of operator defaults. Initialize one private `.opi/eval.toml` and edit
-that file for model, connection, credential source, thinking depth, retries,
-deadline, selection and storage. Explicit invocation overrides win over the
-private profile. Freeze sanitized effective values and origins; do not copy
+Use the supplied operator's `init --config <private-profile>` to create a private
+profile from its single maintained template; explicitly select it for each operation.
+Edit that file for model, connection, credential source, thinking depth, retries,
+deadline, selection, baseline freshness and retention. Explicit invocation
+overrides win over the private profile. Freeze sanitized effective values and origins; do not copy
 secret-bearing profile bytes into evidence. Do not keep a second defaults table
 in a reference or invent CLI flags for operator-only controls.
 
@@ -142,9 +143,9 @@ result; do not select the highest-scoring attempt.
 
 ## Step 1: Resolve the operator request
 
-For benchmark/acceptance, read [native run](references/native-run.md), which
-links command/build authorities. Consult the crate README and walkthrough for
-the selected operation. For acceptance, also read its registered source and
+For benchmark/acceptance, read [native run](references/native-run.md) for native
+execution contracts and inspect the supplied operator's help and handoff.
+For acceptance, also read its registered source and
 task 19.11 handoff read-only; never derive benchmark cases or update progress
 from the ledger.
 
@@ -170,7 +171,9 @@ Follow [native run](references/native-run.md) for builds, materials, projection
 and `doctor` / `prepare` / `validate` / `plan` in the independent directory.
 Baseline reuse adds the [sealed baseline](references/sealed-baseline.md)
 identity checks to this freeze and its disclosure to the approval preview.
-Each benchmark family gets its own experiment, material manifest and plan.
+Each benchmark family gets its own experiment, material manifest and plan under
+one external evaluation record. `bench=all` shares the selected families' first-
+dispatch deadline; changing family or attempt never resets it.
 Preserve the full requested inventory and rejected requirements; resource
 failures do not authorize a smaller run.
 
@@ -233,9 +236,11 @@ acceptance handoff.
 ## Step 5: Report and hand off
 
 Use [benchmark report](references/benchmark-report.md) for native, acceptance
-and verify results: unique bilingual `docs/eval/` conclusion reports, external
-machine evidence and full operator reports, native metrics/denominators,
-complete coverage, criterion status and exact artifact/check links. Acceptance readiness is separate from Phase exit.
+and verify results: unique external bilingual reports and machine evidence,
+native metrics/denominators, complete coverage, criterion status and exact
+artifact/check links. Export a
+compact bilingual conclusion to `docs/eval/` only when the caller explicitly
+requests it. Acceptance readiness is separate from Phase exit.
 Eval findings use the [finding contract](../_shared/references/finding-contract.md);
 only a later independent audit can admit them to the live remediation set.
 
@@ -251,7 +256,11 @@ After preserving evidence and preparing reports, follow
 [environment cleanup](references/environment-cleanup.md) on success, failure,
 cancellation and completed repair checks. Remove only proven invocation-owned
 disposable resources; preserve reusable materials, evidence and active/resumable
-work. `mode=verify` cleans only its own scratch, keeping supplied evidence and
+work. Finished managed evaluations apply the operator's latest-three rolling
+policy; pins, references, active leases and unknown cleanup/dependencies stay
+protected, with retained exceptions reported. Manual archive/GC remains separate
+explicit plan-based maintenance. Shared material/build caches remain outside both.
+`mode=verify` cleans only its own scratch, keeping supplied evidence and
 shared Docker state read-only.
 
 **Completion criterion**: the cleanup record accounts for removed/retained

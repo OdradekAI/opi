@@ -1,34 +1,40 @@
 # opi eval results
 
-This directory stores the bilingual conclusion reports produced by the
-[`opi-eval` skill](../../.agents/skills/opi-eval/SKILL.md) for native
-benchmark, six-trial acceptance handoffs and offline verification, plus the
-evidence-root registry and provider-fidelity history below. Large sealed run
-trees, private material and full operator reports stay in the operator's
-external evaluation storage; conclusion reports link their exact identities. Generic canaries are runtime signals,
+This directory retains historical conclusion reports, legacy evidence references
+and fidelity history. New evaluation records, bilingual/machine reports and
+query history live in the operator's external workspace. A caller may explicitly
+export a compact bilingual conclusion here through the
+[`opi-eval` skill](../../.agents/skills/opi-eval/SKILL.md); neither this directory
+nor a repository index is an execution prerequisite or default write destination.
+Generic canaries are runtime signals,
 not deterministic acceptance evidence; public-seam tests and CI remain the
 deterministic acceptance baseline.
 
-## Evidence-root registry
+## Historical evidence-root index
 
-[evidence-roots.jsonl](evidence-roots.jsonl) is the machine-readable index of
-every retained evaluation/acceptance evidence root: absolute path (WSL mount
+[evidence-roots.jsonl](evidence-roots.jsonl) is the historical machine-readable
+index of retained evaluation/acceptance evidence roots: absolute path (WSL mount
 view plus Windows drive view), manifest SHA-256 and schema versions when a
 manifest exists, collection date, current consumability status and the owning
-report. The `opi-eval` skill appends one record per staged root at handoff and
-never deletes records for retained roots - a superseded root gets a status
-change instead. Audits and offline reviewers resolve evidence locations
-through this registry rather than filesystem searches; a root missing from
-the registry is a handoff defect, not a search problem. Historical report
+report. Existing records remain historical references. The operator reads this
+file only through an explicit `import-index --config <profile> --index <path>`;
+import preserves references without copying or rewriting originals. New runs
+use external `evaluations/YYYY/MM/<eval-id>/record.json`, imports and lifecycle
+receipts directly, without a database or persistent query cache. An existing
+`catalog.sqlite` is ignored and left untouched; retained JSON needs no migration.
+The evaluation operator alone writes those records; reviewers query them or use
+returned immutable references and verify
+original native evidence before trusting a claim. Historical report
 links to cleaned-up roots (the 2026-09-10..13 `E:/opi/evaluations/*` trees
 were removed before this registry existed) stay as prose in their reports.
 
 ## Native benchmark and acceptance reports
 
-Each new native run writes one bilingual conclusion pair
+Each new native evaluation writes bilingual and machine reports externally.
+An explicit conclusion export uses one bilingual pair
 `<UTC-date-time>-<software-versions>-<model-short>-<run-id>.md` and
 `.zh.md`: outcome, scope, verified coverage counts, key identities, the
-evidence-root and registry paths with digests, and remaining gaps. Full
+external record/evidence/report paths with digests, and remaining gaps. Full
 operator reports, sealed evidence and verification output stay external; the
 [report contract](../../.agents/skills/opi-eval/references/benchmark-report.md)
 defines both artifacts.
@@ -37,16 +43,32 @@ The detailed operator reports written here between 2026-09-10 and 2026-09-29
 were removed from the checkout on 2026-10-01 when this conclusion-pair
 contract took effect. They remain readable in Git history at the removal
 commit; frozen snapshots that reference them resolve them through that
-history, and their evidence roots stay registered below.
+history, and their evidence roots remain historical index entries.
 
 Select software/version, benchmark families and model through `mode=benchmark`.
 Use `mode=acceptance` for task 19.11's fixed Opi/pi six-trial scope or
 `mode=verify evidence_root=<path>` for offline checks without new Agent calls.
 The skill drives the Rust Companion's actual native workflow; native graders
 own scores. The [report contract](../../.agents/skills/opi-eval/references/benchmark-report.md)
-defines bilingual `<UTC-date-time>-<software-versions>-<model-short>-<run-id>.md`
-and `.zh.md` summaries with coverage, provenance, failure history, usage/time,
-privacy review and exact verification results.
+defines coverage, provenance, failure history, usage/time, privacy review and
+exact verification results. `bench=all` groups selected families under one
+external record and one first-dispatch deadline.
+
+Historical score validity is independent of baseline freshness, retirement,
+selection eligibility and storage availability. Finished operations retain the
+latest three per Agent, benchmark combination, model/API/parameters/thinking and
+task scope. Pi releases have independent buckets; Opi commits/versions and
+Companion builds do not reset counts. Pins, references, active work and unknown
+cleanup/dependencies can retain extra entries, which the handoff reports.
+Completed preparation failures with grouped non-live proof and stopped offline
+comparisons with confirmed command/stream cleanup count toward retention; unknown
+or unsettled process cleanup stays protected. Failure summaries and separate
+`retention-handoff.json` persist even when the CLI rejects without result JSON.
+Manual archive/GC previews bind exact inventory and policy. Restore returns unchanged bytes to the
+original canonical path without rewriting seals. Missing cached materials or
+images remain offline capability gaps. Rolling retention covers only owned
+evaluation trees; caller-owned standalone comparison output and shared caches
+stay outside cleanup.
 
 Acceptance reports link the external evidence root, its manifest SHA-256,
 per-family native JSON, offline verifier result and exhaustive Opi-only capture
@@ -56,10 +78,14 @@ trials. Native runs do not use the case-based `history.jsonl` schema below.
 
 ## Fidelity contents
 
-- `history.jsonl` -- append-only log of eval runs, one JSON object per line.
-  Used for trend analysis across versions.
-- `<version>-<date>-<model>.md` -- individual eval reports with per-case
-  verdicts and runtime trace highlights.
+- `history.jsonl` -- legacy append-only case history, one JSON object per line.
+- `<version>-<date>-<model>.md` -- historical reports with per-case verdicts and
+  runtime trace highlights.
+
+New fidelity invocations keep reports/evidence and the same case history schema
+in an explicitly selected external fidelity directory. This is caller-managed;
+the baseline/candidate operator catalogue does not run canaries or append fidelity
+history. Exporting a conclusion here requires a separate explicit request.
 
 The cases in the fidelity catalogue are provider-fidelity canaries. They cannot
 by themselves close a product criterion or Phase exit condition; the native
@@ -140,7 +166,7 @@ OS/architecture, run mode, and effective tool set all match. Otherwise set
 Resource metrics are `record-only` by default. They become threshold-bearing
 only for a registered performance budget or an explicitly enabled median from
 at least three comparable prior samples. Do not create an empty
-`history.jsonl`; the first real eval creates it.
+external `history.jsonl`; the first real eval creates it.
 
 ## Usage
 
@@ -151,4 +177,5 @@ To run an eval, invoke the `opi-eval` skill from any compatible agent
 $opi-eval mode=fidelity model=anthropic:claude-sonnet-4-5-20250514
 ```
 
-Results will be written here automatically.
+Results remain in the selected external fidelity directory. Request a repository
+conclusion export explicitly when needed.

@@ -85,13 +85,13 @@ records, digests, required artifact paths, privacy review, offline acceptance
 verification and the non-empty exhaustive Opi capture audit pass. Otherwise
 report `blocked` with trial-level reasons and keep all live acceptance gaps open.
 
-Write the operator's bilingual conclusion report in `docs/eval/` under the
-[benchmark report](benchmark-report.md) deliverable shape; the full report
-stays beside the external evidence root. Return the evidence root
-and its `manifest.json` SHA-256 so the user can separately resume
-`opi-implement 19.11`, and append the staged root's record to
-`docs/eval/evidence-roots.jsonl` as the [evidence-root
-reference](evidence-root.md#evidence-root-registry) requires. That workflow
+Keep the operator's bilingual report beside the external evidence under the
+[benchmark report](benchmark-report.md) deliverable shape; export a compact
+conclusion pair to `docs/eval/` only on an explicit caller request. Return the
+evidence root and its `manifest.json` SHA-256 so the user can separately resume
+`opi-implement 19.11`, together with the external evaluation record and report
+references under the [evidence-root
+contract](evidence-root.md#external-records-and-legacy-references). That workflow
 owns the final workspace verification union and
 `docs/audits/phase19-local-native-acceptance.md` / `.zh.md`, verifies the
 supplied evidence offline, and retains its independent Phase archive gate.

@@ -1,0 +1,898 @@
+{
+  "subject": "Pi 1.0.0 historical documentation reading evidence",
+  "analysis_date": "2026-10-04",
+  "migration_date": "2026-10-05",
+  "original_report": "docs/research/pi-1.0.0/documentation-index.md",
+  "archive_commit": "d472a50393422121c9343332dea125c7a98ada19",
+  "original_report_git_blob": "6b7d9f8cbec07092544345e5b73eb4afc812664a",
+  "original_report_worktree_sha256": "a86f20132bdb79477881bea29b17af969160323596ae398f0df02de555c24a70",
+  "source_tree_sha256": "cc37a8fcc2c2dd97a3953c01a1e85f951984a85a0f5252111627163ce4c71173",
+  "document_count": 125,
+  "line_count": 33468,
+  "package_document_count": 111,
+  "root_and_hidden_document_count": 14,
+  "scope_notes": [
+    "从旧索引逐文件表提取全部路径、行数、文档类型和审读口径，保留原始表述；不是新增审读结果。",
+    "路径和行号属于 Pi 1.0.0；旧源码不在工作区，本数据不包含源码文本。",
+    "清点、关键词筛查、全文阅读、逐项与实现复验是不同深度；全文不表示运行示例、测试或模型调用。",
+    "核心设计六份合计 8123 行均全文阅读；长 CHANGELOG 和 22 份 coding-agent 使用文档没有宣称逐条全文复验。",
+    "文档类型不等于时效判决；外部 RFC（含不公开材料）未纳入本地文档覆盖。"
+  ],
+  "documents": [
+    {
+      "path": ".pi/prompts/cl.md",
+      "lines": 54,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "标题与关键词筛查；不作为功能规划",
+      "original_index_line": 40
+    },
+    {
+      "path": ".pi/prompts/deslop.md",
+      "lines": 67,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "标题与关键词筛查；不作为功能规划",
+      "original_index_line": 41
+    },
+    {
+      "path": ".pi/prompts/is.md",
+      "lines": 28,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "标题与关键词筛查；不作为功能规划",
+      "original_index_line": 42
+    },
+    {
+      "path": ".pi/prompts/pr.md",
+      "lines": 37,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "标题与关键词筛查；不作为功能规划",
+      "original_index_line": 43
+    },
+    {
+      "path": ".pi/prompts/sa.md",
+      "lines": 163,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "标题与关键词筛查；不作为功能规划",
+      "original_index_line": 44
+    },
+    {
+      "path": ".pi/prompts/wr.md",
+      "lines": 41,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "标题与关键词筛查；不作为功能规划",
+      "original_index_line": 45
+    },
+    {
+      "path": ".pi/skills/add-llm-provider.md",
+      "lines": 57,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "标题与关键词筛查；不作为功能规划",
+      "original_index_line": 46
+    },
+    {
+      "path": ".pi/skills/interactive-testing.md",
+      "lines": 19,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "标题与关键词筛查；不作为功能规划",
+      "original_index_line": 47
+    },
+    {
+      "path": ".pi/skills/release.md",
+      "lines": 48,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "标题与关键词筛查；不作为功能规划",
+      "original_index_line": 48
+    },
+    {
+      "path": "AGENTS.md",
+      "lines": 125,
+      "kind": "仓库工作约定",
+      "reading_scope": "全文；工作边界上下文，非路线图",
+      "original_index_line": 49
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "lines": 102,
+      "kind": "仓库说明／贡献规则",
+      "reading_scope": "标题与关键词筛查；外部规划入口局部核对",
+      "original_index_line": 50
+    },
+    {
+      "path": "README.md",
+      "lines": 116,
+      "kind": "仓库说明／贡献规则",
+      "reading_scope": "标题与关键词筛查；外部规划入口局部核对",
+      "original_index_line": 51
+    },
+    {
+      "path": "SECURITY.md",
+      "lines": 87,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "标题与关键词筛查；不作为功能规划",
+      "original_index_line": 52
+    },
+    {
+      "path": "tui-plan.md",
+      "lines": 1001,
+      "kind": "设计计划、非目标、后续方向",
+      "reading_scope": "全文；逐项实现与时效对照",
+      "original_index_line": 53
+    },
+    {
+      "path": "packages/agent/CHANGELOG.md",
+      "lines": 760,
+      "kind": "发行历史",
+      "reading_scope": "全篇标题／关键词筛查；重点详读 1–260、359–495",
+      "original_index_line": 59
+    },
+    {
+      "path": "packages/agent/README.md",
+      "lines": 564,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 60
+    },
+    {
+      "path": "packages/ai/CHANGELOG.md",
+      "lines": 2218,
+      "kind": "发行历史",
+      "reading_scope": "全篇标题／关键词筛查；重点详读 1–250、650–733",
+      "original_index_line": 66
+    },
+    {
+      "path": "packages/ai/README.md",
+      "lines": 1938,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 67
+    },
+    {
+      "path": "packages/chord/PLANNING.md",
+      "lines": 859,
+      "kind": "设计计划与工作包",
+      "reading_scope": "全文；WP0–WP8 与现行实现逐项对照",
+      "original_index_line": 73
+    },
+    {
+      "path": "packages/chord/README.md",
+      "lines": 264,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 74
+    },
+    {
+      "path": "packages/chord/src/delta/README.md",
+      "lines": 191,
+      "kind": "现行 delta 设计与使用契约",
+      "reading_scope": "全文；与旧计划／实验文字对照",
+      "original_index_line": 75
+    },
+    {
+      "path": "packages/client/CHANGELOG.md",
+      "lines": 39,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对相关演进，非当前待办",
+      "original_index_line": 81
+    },
+    {
+      "path": "packages/client/README.md",
+      "lines": 72,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 82
+    },
+    {
+      "path": "packages/codemode/CHANGELOG.md",
+      "lines": 29,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对相关演进，非当前待办",
+      "original_index_line": 88
+    },
+    {
+      "path": "packages/codemode/README.md",
+      "lines": 190,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 89
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "lines": 6044,
+      "kind": "发行历史",
+      "reading_scope": "全篇标题／关键词筛查；重点详读 1–88、107–185、357–374、714–731、748–760、1283–1308",
+      "original_index_line": 95
+    },
+    {
+      "path": "packages/coding-agent/README.md",
+      "lines": 70,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 96
+    },
+    {
+      "path": "packages/coding-agent/docs/cli-integration.md",
+      "lines": 106,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 97
+    },
+    {
+      "path": "packages/coding-agent/docs/cli.md",
+      "lines": 319,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 98
+    },
+    {
+      "path": "packages/coding-agent/docs/codemode.md",
+      "lines": 207,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 99
+    },
+    {
+      "path": "packages/coding-agent/docs/compaction.md",
+      "lines": 463,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 100
+    },
+    {
+      "path": "packages/coding-agent/docs/configuration.md",
+      "lines": 47,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 101
+    },
+    {
+      "path": "packages/coding-agent/docs/containerization.md",
+      "lines": 183,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 102
+    },
+    {
+      "path": "packages/coding-agent/docs/custom-provider.md",
+      "lines": 173,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 103
+    },
+    {
+      "path": "packages/coding-agent/docs/environment-variables.md",
+      "lines": 98,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 104
+    },
+    {
+      "path": "packages/coding-agent/docs/extensions.md",
+      "lines": 270,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 105
+    },
+    {
+      "path": "packages/coding-agent/docs/how-pi-works.md",
+      "lines": 49,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 106
+    },
+    {
+      "path": "packages/coding-agent/docs/index.md",
+      "lines": 39,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 107
+    },
+    {
+      "path": "packages/coding-agent/docs/json.md",
+      "lines": 226,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 108
+    },
+    {
+      "path": "packages/coding-agent/docs/keybindings.md",
+      "lines": 194,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 109
+    },
+    {
+      "path": "packages/coding-agent/docs/llama-cpp.md",
+      "lines": 114,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 110
+    },
+    {
+      "path": "packages/coding-agent/docs/mcp.md",
+      "lines": 248,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 111
+    },
+    {
+      "path": "packages/coding-agent/docs/message-types.md",
+      "lines": 261,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 112
+    },
+    {
+      "path": "packages/coding-agent/docs/models.md",
+      "lines": 179,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 113
+    },
+    {
+      "path": "packages/coding-agent/docs/packages.md",
+      "lines": 129,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 114
+    },
+    {
+      "path": "packages/coding-agent/docs/prompt-templates.md",
+      "lines": 59,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 115
+    },
+    {
+      "path": "packages/coding-agent/docs/providers.md",
+      "lines": 200,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 116
+    },
+    {
+      "path": "packages/coding-agent/docs/quickstart.md",
+      "lines": 122,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 117
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc-commands.md",
+      "lines": 860,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 118
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc-extension-ui.md",
+      "lines": 200,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 119
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc.md",
+      "lines": 193,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 120
+    },
+    {
+      "path": "packages/coding-agent/docs/sdk.md",
+      "lines": 147,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 121
+    },
+    {
+      "path": "packages/coding-agent/docs/security.md",
+      "lines": 99,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 122
+    },
+    {
+      "path": "packages/coding-agent/docs/session-format.md",
+      "lines": 293,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 123
+    },
+    {
+      "path": "packages/coding-agent/docs/sessions.md",
+      "lines": 66,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 124
+    },
+    {
+      "path": "packages/coding-agent/docs/settings.md",
+      "lines": 169,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 125
+    },
+    {
+      "path": "packages/coding-agent/docs/shell-aliases.md",
+      "lines": 93,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 126
+    },
+    {
+      "path": "packages/coding-agent/docs/skills.md",
+      "lines": 93,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 127
+    },
+    {
+      "path": "packages/coding-agent/docs/slash-commands.md",
+      "lines": 60,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 128
+    },
+    {
+      "path": "packages/coding-agent/docs/terminal-setup.md",
+      "lines": 219,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 129
+    },
+    {
+      "path": "packages/coding-agent/docs/termux.md",
+      "lines": 117,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 130
+    },
+    {
+      "path": "packages/coding-agent/docs/themes.md",
+      "lines": 136,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 131
+    },
+    {
+      "path": "packages/coding-agent/docs/tmux.md",
+      "lines": 55,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 132
+    },
+    {
+      "path": "packages/coding-agent/docs/tui.md",
+      "lines": 125,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 133
+    },
+    {
+      "path": "packages/coding-agent/docs/usage.md",
+      "lines": 94,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 134
+    },
+    {
+      "path": "packages/coding-agent/docs/virtual-models.md",
+      "lines": 114,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文；关联实现核对",
+      "original_index_line": 135
+    },
+    {
+      "path": "packages/coding-agent/docs/windows.md",
+      "lines": 67,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 136
+    },
+    {
+      "path": "packages/coding-agent/examples/README.md",
+      "lines": 39,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 137
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/README.md",
+      "lines": 214,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 138
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/doom-overlay/README.md",
+      "lines": 46,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 139
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/dynamic-resources/SKILL.md",
+      "lines": 8,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 140
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/dynamic-resources/dynamic.md",
+      "lines": 5,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 141
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/plan-mode/README.md",
+      "lines": 66,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 142
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/README.md",
+      "lines": 177,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 143
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/planner.md",
+      "lines": 37,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 144
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/reviewer.md",
+      "lines": 35,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 145
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/scout.md",
+      "lines": 50,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 146
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/worker.md",
+      "lines": 24,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 147
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/implement-and-review.md",
+      "lines": 10,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 148
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/implement.md",
+      "lines": 10,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 149
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/scout-and-plan.md",
+      "lines": 9,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 150
+    },
+    {
+      "path": "packages/coding-agent/examples/plugins/pi-example-plugin/README.md",
+      "lines": 38,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 151
+    },
+    {
+      "path": "packages/coding-agent/examples/sdk/README.md",
+      "lines": 141,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "全文；示例能力不视为项目路线图",
+      "original_index_line": 152
+    },
+    {
+      "path": "packages/coding-agent/src/experimental/durable/README.md",
+      "lines": 66,
+      "kind": "实验设计、集成说明与 TODO",
+      "reading_scope": "全文；逐条判断 TODO 的前提和剩余范围",
+      "original_index_line": 153
+    },
+    {
+      "path": "packages/coding-agent/src/experimental/services/README.md",
+      "lines": 45,
+      "kind": "实验设计、集成说明与 TODO",
+      "reading_scope": "全文；逐条判断 TODO 的前提和剩余范围",
+      "original_index_line": 154
+    },
+    {
+      "path": "packages/coding-agent/src/experimental/vacation/README.md",
+      "lines": 53,
+      "kind": "实验设计、集成说明与 TODO",
+      "reading_scope": "全文；逐条判断 TODO 的前提和剩余范围",
+      "original_index_line": 155
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills-collision/first/calendar/SKILL.md",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 156
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills-collision/second/calendar/SKILL.md",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 157
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/consecutive-hyphens/SKILL.md",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 158
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/disable-model-invocation/SKILL.md",
+      "lines": 9,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 159
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/invalid-name-chars/SKILL.md",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 160
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/invalid-yaml/SKILL.md",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 161
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/long-name/SKILL.md",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 162
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/missing-description/SKILL.md",
+      "lines": 7,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 163
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/multiline-description/SKILL.md",
+      "lines": 11,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 164
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/name-mismatch/SKILL.md",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 165
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/nested/child-skill/SKILL.md",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 166
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/no-frontmatter/SKILL.md",
+      "lines": 3,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 167
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/root-skill-preferred/SKILL.md",
+      "lines": 3,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 168
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/root-skill-preferred/nested-child/SKILL.md",
+      "lines": 3,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 169
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/unknown-field/SKILL.md",
+      "lines": 10,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 170
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/valid-skill/SKILL.md",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "全文；测试输入，非路线图",
+      "original_index_line": 171
+    },
+    {
+      "path": "packages/coding-agent/test/mcp-conformance/README.md",
+      "lines": 45,
+      "kind": "测试运行指南",
+      "reading_scope": "全文；当前验证方法",
+      "original_index_line": 172
+    },
+    {
+      "path": "packages/coding-agent/test/suite/README.md",
+      "lines": 10,
+      "kind": "测试运行指南",
+      "reading_scope": "全文；当前验证方法",
+      "original_index_line": 173
+    },
+    {
+      "path": "packages/durable/CHANGELOG.md",
+      "lines": 7,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对相关演进，非当前待办",
+      "original_index_line": 179
+    },
+    {
+      "path": "packages/durable/README.md",
+      "lines": 597,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 180
+    },
+    {
+      "path": "packages/durable/docs/chord-delta-findings.md",
+      "lines": 358,
+      "kind": "历史实验分析",
+      "reading_scope": "全文；原意、阶段更替与当前实现对照",
+      "original_index_line": 181
+    },
+    {
+      "path": "packages/durable/docs/pico-v5-chord-usage.md",
+      "lines": 387,
+      "kind": "设计规范／实现交接",
+      "reading_scope": "全文；原意、阶段更替与当前实现对照",
+      "original_index_line": 182
+    },
+    {
+      "path": "packages/durable/docs/pico-v5-handoff.md",
+      "lines": 917,
+      "kind": "设计规范／实现交接",
+      "reading_scope": "全文；原意、阶段更替与当前实现对照",
+      "original_index_line": 183
+    },
+    {
+      "path": "packages/durable/docs/spec.md",
+      "lines": 4601,
+      "kind": "设计规范／实现交接",
+      "reading_scope": "全文；原意、阶段更替与当前实现对照",
+      "original_index_line": 184
+    },
+    {
+      "path": "packages/evals/README.md",
+      "lines": 129,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 190
+    },
+    {
+      "path": "packages/mcp/CHANGELOG.md",
+      "lines": 32,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对相关演进，非当前待办",
+      "original_index_line": 196
+    },
+    {
+      "path": "packages/mcp/LICENSES/modelcontextprotocol-typescript-sdk.txt",
+      "lines": 21,
+      "kind": "第三方许可证",
+      "reading_scope": "清点与类型筛查；不作为功能规划",
+      "original_index_line": 197
+    },
+    {
+      "path": "packages/mcp/README.md",
+      "lines": 136,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 198
+    },
+    {
+      "path": "packages/protocol/CHANGELOG.md",
+      "lines": 41,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对相关演进，非当前待办",
+      "original_index_line": 204
+    },
+    {
+      "path": "packages/protocol/README.md",
+      "lines": 41,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 205
+    },
+    {
+      "path": "packages/server/CHANGELOG.md",
+      "lines": 75,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对相关演进，非当前待办",
+      "original_index_line": 211
+    },
+    {
+      "path": "packages/server/README.md",
+      "lines": 63,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 212
+    },
+    {
+      "path": "packages/telemetry/CHANGELOG.md",
+      "lines": 35,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对相关演进，非当前待办",
+      "original_index_line": 218
+    },
+    {
+      "path": "packages/telemetry/README.md",
+      "lines": 464,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 219
+    },
+    {
+      "path": "packages/tui/CHANGELOG.md",
+      "lines": 1226,
+      "kind": "发行历史",
+      "reading_scope": "全篇标题／关键词筛查；重点详读 1–190（0.84.0 至 1.0.0 相关条目）",
+      "original_index_line": 225
+    },
+    {
+      "path": "packages/tui/README.md",
+      "lines": 947,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文；核查设计意图、限制与具体示例",
+      "original_index_line": 226
+    },
+    {
+      "path": "packages/tui/native/darwin/README.md",
+      "lines": 22,
+      "kind": "原生构建与验证说明",
+      "reading_scope": "全文；当前平台边界，非路线图",
+      "original_index_line": 227
+    },
+    {
+      "path": "packages/tui/native/linux/README.md",
+      "lines": 23,
+      "kind": "原生构建与验证说明",
+      "reading_scope": "全文；当前平台边界，非路线图",
+      "original_index_line": 228
+    },
+    {
+      "path": "packages/tui/native/win32/README.md",
+      "lines": 31,
+      "kind": "原生构建与验证说明",
+      "reading_scope": "全文；当前平台边界，非路线图",
+      "original_index_line": 229
+    }
+  ]
+}

@@ -139,7 +139,11 @@ case before reporting the assessment.
 
 ## Step 5: Report
 
-Write results to `docs/eval/`.
+Keep reports, evidence and case history in an explicitly selected external
+fidelity directory, preferably under the configured evaluation workspace.
+The baseline/candidate catalogue is not a fidelity runner or history writer;
+these case records are maintained by this branch's caller. A repository
+`docs/eval/` conclusion export is optional and requires an explicit request.
 
 ### Report file
 
@@ -152,7 +156,7 @@ Use the format from `references/report-template.md`.
 
 ### History log
 
-Append one JSON line to `docs/eval/history.jsonl` with:
+Append one JSON line to `<fidelity-directory>/history.jsonl` with:
 ```json
 {
   "version": "<semver>",
@@ -198,7 +202,8 @@ records outside disposable workspaces before applying
 `references/environment-cleanup.md`. Keep failed-case evidence and link the
 cleanup record in the report.
 
-**Completion criterion**: report markdown file written, `history.jsonl` updated,
+**Completion criterion**: external report markdown file written, the selected
+external `history.jsonl` updated,
 evidence retained, and cleanup completed or remaining residue explicitly recorded.
 
 ### Normalized regressions

@@ -6,18 +6,21 @@ preserved artifacts. Use `report-template.md` only for fidelity canaries.
 
 Choose a unique stem
 `<UTC-date-time>-<software-versions>-<model-short>-<run-id>` with filesystem-safe
-characters. Build the full report (all sections below) beside the evidence in
-the external operator directory; the repository copy is only the bilingual
-**conclusion pair**: write `docs/eval/<stem>.md` and `<stem>.zh.md`, with
-counterpart links, as one compact standalone result per run - outcome, scope,
-verified coverage counts, key identities, the evidence-root and registry paths
-with manifest/report digests, and remaining gaps - linking the external full
-report by path and digest instead of restating per-trial tables. Preserve the
-exact full identities even when the filename uses abbreviations. Never
-overwrite an earlier report, and keep sealed evidence, full operator reports
-and verification output outside the checkout. For an independent operator
-directory without a checkout, keep both artifacts beside the evidence and name
-their intended `docs/eval/` handoff paths.
+characters. Keep bilingual reports and machine evidence under the external
+evaluation's `reports/` directory. Configured operations return operator
+summaries `report.md`, `report.zh.md` and `report.json`; their native records and
+checks remain authoritative. Preserve these generated artifacts unchanged and
+write any fuller human interpretation as fresh sibling reports using the sections
+below. A summary cannot prove missing checks. Preserve the exact full
+identities even when a filename uses abbreviations. Each evaluation has a fresh
+dated root; never overwrite an earlier evaluation's report.
+
+Only an explicit caller request exports a compact bilingual conclusion pair to
+`docs/eval/<stem>.md` and `<stem>.zh.md`, with counterpart links: outcome, scope,
+verified coverage counts, key identities, external record/evidence/report paths
+and digests, and remaining gaps. Link the external full report instead of
+restating per-trial tables. This export is not an execution prerequisite or a
+catalogue update; sealed evidence and verification output stay external.
 
 Start with the result and paths, then fill the following sections. Missing
 evidence yields `blocked`/`incomplete` with reasons; omit unsupported scores.
@@ -25,8 +28,9 @@ No native run is appended to the case-based fidelity `history.jsonl` schema.
 For configured baseline/candidate operations, link the original `handoff.json`,
 snapshot and comparison manifests from [the operator](operator.md). Describe
 baseline selection as `matched`, `missing` or `incomparable`, with its frozen
-identity and eligible coverage. A successful standalone candidate does not
-imply that a pi comparison was possible.
+identity, freshness, selection/storage status and eligible coverage. Historical
+score validity stays separate from those current selection dimensions. A
+successful standalone candidate does not imply that a pi comparison was possible.
 
 ## Run and evidence identity
 
@@ -35,6 +39,9 @@ imply that a pi comparison was possible.
   `ready-for-offline-review` or `blocked` handoff.
 - Evidence-root path, manifest SHA-256 where applicable, machine-report and
   verification-report paths; link exact artifacts for claims.
+- External evaluation ID and record path, relevant import/lifecycle receipt,
+  archived/active/missing storage state and pin/retirement decisions. Catalogue
+  metadata locates originals; it never substitutes for original verification.
 - Tested software/version, full source commits, dirty state, executable/runtime
   and dependency hashes; Companion version/build/digest recorded separately.
 - WSL/Linux/Docker/platform/image identities and observed resources.
@@ -108,6 +115,12 @@ action record, and summarize removed resources, measured reclaimed space (or
 `unknown`), retained reusable materials/evidence and unresolved residue with
 reasons. Include the post-cleanup preservation/check results. Keep this record
 outside original sealed evidence; cleanup status cannot upgrade eval outcomes.
+Include the rolling retention result: selected group, retained/latest count,
+removed owned evaluations and protected extras with reasons. Three is the default
+target, not a promise to remove pins, references, active work or unknown cleanup.
+Link the returned `retention` pin and its `retention_status` (`applied`,
+`protected_excess` or `refused`) separately from the frozen result handoff.
+Standalone comparison output remains caller-owned and is not a deletion target.
 
 ## Acceptance trace and remaining work
 

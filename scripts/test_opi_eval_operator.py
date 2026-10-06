@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline contracts for the skill-local eval operator; no provider calls."""
+"""Offline contracts for the Companion eval operator; no provider calls."""
 import copy
 import importlib.util
 import json
@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
-SCRIPTS = REPO / ".agents/skills/opi-eval/scripts"
+SCRIPTS = REPO / "crates/opi-eval/operator"
 sys.path.insert(0, str(SCRIPTS))
 
 
@@ -164,6 +164,9 @@ class OperatorTests(unittest.TestCase):
                        "semantic": {"common": {"model": "x", "admitted": True}, "tasks": {"one": {"admitted": True}}}, "slots": []}]
         target = copy.deepcopy(candidates[0])
         target["product"] = "opi"
+        self.assertEqual(choose_baseline(candidates, target)["id"], "b")
+        candidates[0]["completed_at"] = "2020-01-02T00:00:00+14:00"
+        candidates[1]["completed_at"] = "2020-01-01T23:00:00+00:00"
         self.assertEqual(choose_baseline(candidates, target)["id"], "b")
         self.assertEqual(compare_snapshots(target, None)["status"], "baseline_missing")
         self.assertIsNone(compare_snapshots(target, None)["paired_reward_delta"])
@@ -382,7 +385,7 @@ class NativeFlowTests(OperatorTests):
         meta.write_text('{"version":"0.84.1"}')
         with fixture.patches(), self.assertRaises(OperatorError):
             prepare(fixture.config, "tb21", "baseline", repo=fixture.repo, index=fixture.index)
-        roots = list(fixture.workspace.iterdir())
+        roots = [path.parent for path in (fixture.workspace / "evaluations").glob("*/*/*/record.json")]
         self.assertEqual(len(roots), 1)
         self.assertEqual(json.loads((roots[0] / "handoff.json").read_text())["status"], "preparation_failed")
         self.assertFalse((roots[0] / "runs").exists())
@@ -445,7 +448,7 @@ class NativeFlowTests(OperatorTests):
             fixture.config.write_text(dumps_toml(fixture.profile))
             with self.assertRaises(OperatorError):
                 prepare(fixture.config, "tb21", "candidate", repo=fixture.repo, index=fixture.index)
-            self.assertEqual(len(list(fixture.workspace.iterdir())), 1)
+            self.assertEqual(len(list((fixture.workspace / "evaluations").glob("*/*/*/record.json"))), 1)
 
 
 if __name__ == "__main__":

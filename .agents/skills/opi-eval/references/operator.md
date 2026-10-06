@@ -1,330 +1,269 @@
 # Configured benchmark operator
 
-Read for `baseline`, `candidate`, `compare`, or a caller reusing the benchmark
-operation. The skill selects scope, reviews evidence and communicates results;
-the evaluation runtime owns configuration resolution, builds, durable operation
-records and comparison. The native Companion owns materials, plans, execution,
-seals and native scores. This is not an implementation/admission workflow.
+Read for `baseline`, `candidate`, `compare`, catalogue queries or retained
+evaluation maintenance. The skill owns scope, authorization, privacy review and
+interpretation. The supplied operator owns configuration, builds, retries,
+external records, reports and lifecycle receipts. The native Companion owns
+materials, frozen plans, trials, seals and native scores. These operations do
+not admit implementation work or update a progress ledger.
 
-**Status:** the decoupling design below is proposed. The existing operator is
-still checkout-bound; the commands in the later sections describe that current
-implementation. Runtime relocation, new configuration fields and additional
-diagnostic capture have not been implemented. Reading newer research does not
-change the admitted pi pin or create new benchmark results.
+## Supplied entrypoint and one profile
 
-- [Decoupling design](#decoupling-design)
-- [Configuration](#one-editable-configuration)
-- [Preparation and execution](#prepare-review-and-execute)
-- [Baselines and comparison](#baselines-and-offline-comparison)
-- [Evidence and caller handoff](#evidence-and-caller-handoff)
-
-## Decoupling design
-
-Keep one workflow with three ownership boundaries:
-
-```text
-calling skill / human
-  -> opi-eval skill: scope, authorization, diagnostics, interpretation
-    -> installed evaluation runtime: prepare, execute, verify, compare, handoff
-      -> subject build adapter: pinned pi package / selected Opi working tree
-      -> native Companion and benchmark integrations: execution and grading
-```
-
-| Owner | Maintained material | Consumed interface |
-|---|---|---|
-| Skill | Instructions, diagnostic checklist, scope and handoff rules | Runtime entry point, supported contract versions and returned artifact references |
-| Evaluation runtime | Existing Python operator, sole config template, snapshot lookup, retries, cancellation, reports and frozen packages | Native CLI and its bundled resources; explicit subject source/package inputs |
-| Subject build adapter | Product-specific source inventory, locked build and executable verification | Explicit checkout or pinned package; emits immutable source/build identity |
-| Native integration | Pinned clients, benchmark materials, capture and native grader | Prepared subject package and frozen trial plan |
-
-The recommended change moves the existing Python operator into the evaluation
-runtime package. Keeping the whole runtime inside a skill preserves the same
-coupling; rewriting it in Rust adds migration cost without resolving the
-ownership problem. Preserve the existing Python/Rust boundary and avoid a new
-crate, generic plugin registry or public distribution promise.
-
-The skill's install location and the subject checkout are independent inputs.
-After migration, skill files contain no repository-root inference, Cargo
-package selection, private source-module imports, internal resource paths or
-mandatory links to a project's research tree. Product-specific knowledge
-belongs to the runtime's real pi/Opi adapters. Project repair/admission policy
-remains a caller-supplied context, separate from the portable benchmark contract.
-
-### Runtime package and one profile
-
-Use one explicitly selected, self-contained runtime package with a verified
-entry point, native executable, operator modules, configuration template, locks,
-proof/capture helpers and integrations. Resolve its own resources relative to
-the package, never relative to the skill or subject. Record package contents,
-dependency pins and executable digests separately from the subject build.
-Package metadata exposes supported operation/handoff versions, pi pins,
-benchmark families, model controls, enforced bounds and capture capabilities.
-This is a provisional local process contract; public packaging requires its
-own admission evidence.
-
-Extend the sole private profile in the runtime with these bindings. These are
-design fields, **not accepted keys in the current `/1` profile**:
-
-| Binding | Meaning |
-|---|---|
-| `runtime.package` | Absolute installed runtime package path; verify its content identity during preparation |
-| `subjects.opi.source` | Absolute current working-tree path, required for candidates; irrelevant to pi-only and offline operations |
-| `storage.index` | Absolute external snapshot-discovery index, independent of project documentation |
-| `diagnostics.required` | Selected diagnostic capabilities that must be available before new dispatch; empty means disclose available capture and gaps |
-
-Keep model/API/endpoint, credential source, thinking level/required flag,
-retries, concurrency, deadlines, benchmark selection and workspace/cache in
-this same profile. Defaults come from the runtime's template; the skill carries
-no second executable default table. Explicit typed overrides win and their
-origins are frozen. Unknown fields reject. Bump the profile version for these
-new bindings; never silently reinterpret an existing `/1` profile.
-
-Every invocation supplies an explicit profile or frozen operation. Resolve
-profile-relative file paths against the profile location, then freeze absolute
-paths; no implicit search in the skill or current working directory. The
-runtime obtains any build-cache coordination through its subject adapter.
-Missing required tools produce a named preparation failure.
-
-### Subject and evidence independence
-
-`baseline` prepares the selected admitted pi version without inspecting or
-building Opi source. Multiple admitted pi versions can retain independent
-snapshots; a new version needs verified acquisition and adapter proof before
-dispatch. Update pins explicitly rather than treating a research version or
-an ambient executable as an admitted subject.
-
-`candidate` builds the explicitly configured current Opi tree, including
-relevant dirty inputs, for every preparation. It freezes source inputs and the
-newly reported executable; build failure never falls back to a cached Opi
-binary. Keeping the evaluation runtime fixed across candidates makes subject
-changes distinguishable from grader/integration changes.
-
-The external index is discovery data, not evidence or a progress ledger. Runtime
-operations write their own roots and append discovery references there. Project
-conclusion reports and any project registry entry are an explicit caller-owned
-handoff, rather than an execution prerequisite. Import old snapshot references
-without rewriting originals; verify each original before eligibility. Offline
-verification and comparison use the frozen compatible runtime package and
-retained evidence, without a subject checkout, build, credential resolution or
-network request.
-
-Select and freeze a baseline before live dispatch by admitted pi version,
-benchmark/task/grader identities, model/connection/effective controls, tools,
-environment and repetition/seed policy. Label saved comparisons `cross-run`
-and disclose timestamps, service-version uncertainty and coverage. The same
-model name does not establish the same remote model implementation. Runtime
-changes require reviewed grading-path equivalence or an `incomparable` result;
-do not weaken current eligibility checks to improve the match rate.
-
-### Migration acceptance
-
-Complete runtime migration only when all these observable checks pass:
-
-- Copy the skill to an unrelated directory: it reads its own references and
-  uses a supplied runtime without discovering a repository from its location.
-- Resolve the sole profile and prepare a synthetic pi baseline with no Opi
-  checkout present; no Opi build or source access occurs.
-- Prepare an Opi candidate from a relocated dirty checkout: build identity
-  changes with relevant inputs, and a failed build produces no reused binary.
-- Execute/verify a frozen synthetic operation after removing its source
-  checkout and skill installation; the operation's pinned runtime remains
-  usable. Reject a changed package, unsupported contract or missing resource.
-- Compare retained fixtures from a read-only checkout with credentials absent
-  and network disabled; originals remain unchanged and only the configured
-  external output/index can be written.
-- Preserve the precise retry/deadline/privacy/seal contracts and exercise the
-  diagnostic gaps and invalid inputs in [diagnostics](diagnostics.md).
-- Test both actual Agent integrations and benchmark-native grader paths with
-  offline fixtures and existing exact-client proofs. These checks create no
-  benchmark performance claim or permission for paid execution.
-
-## One editable configuration
-
-Current checkout-bound implementation, pending the migration above:
+Bind `EVAL_OPERATOR` to the absolute supplied Python operator entrypoint and
+`PROFILE` to one explicit private TOML file. Inspect that entrypoint's `--help`
+and returned schema versions. The skill does not locate the operator from its
+own installation or infer a subject checkout. The development source entrypoint
+and sole template belong to the Companion; callers supply the operator to this
+skill. Source relocation does not establish a complete independently
+distributable runtime package: native resources, build adapters and public
+packaging retain their provisional admission boundary.
 
 ```sh
-python3 .agents/skills/opi-eval/scripts/evaluate.py init
-python3 .agents/skills/opi-eval/scripts/evaluate.py resolve --config .opi/eval.toml
+python3 "$EVAL_OPERATOR" init --config "$PROFILE"
+python3 "$EVAL_OPERATOR" resolve --config "$PROFILE"
 ```
 
-`init` creates the ignored private profile exclusively from
-[config.example.toml](../config.example.toml); it never replaces an existing
-profile. Edit this one file for model, API, endpoint, credential source, model
-controls, thinking, logical trial retries, whole-batch deadline, benchmark
-selection and storage. `resolve` validates without resolving credentials or
-starting a provider. `--set key=TOML_VALUE` supplies a typed invocation override;
-unknown keys, wrong types and contradictory selections reject.
+`init` creates the private profile exclusively from the operator's maintained
+template and refuses an existing file. Edit that file for model/API/endpoint,
+credential source, thinking, retries, batch deadline, selection, baseline
+freshness and storage/retention. `resolve` validates without resolving
+credentials or starting a provider. Typed `--set key=TOML_VALUE` overrides win;
+unknown keys, wrong types and contradictory selections reject. Storage workspace,
+cache and file-backed credential paths must be absolute; relative paths reject.
 
 Exactly one credential source is allowed: `credential_env`, `credential_file`,
-or `api_key` in the private profile. An inline key is projected to a temporary
-environment reference for the selected live launch; the sanitized profile,
-generated experiment, plan, reports and command records do not contain it.
-Keep the real profile outside shareable evidence and restrict access to it.
-Never print or hash its secret-bearing bytes as an exportable identity.
+or `api_key` in the private profile. Inline keys become temporary launch
+environment references; sanitized profiles, experiments, plans and reports omit
+their values. Keep secret-bearing profile bytes private; never print or hash
+them as an exportable identity. Offline comparison and storage maintenance
+resolve no credentials.
 
-`[model.thinking]` selects `level` and `required` once. The generated experiment
-uses `[model_controls].reasoning`; actual native launch and exact-client
-loopback proof must agree. The same name does not by itself prove equal wire
-settings. Unsupported levels fail when required and remain explicitly
-unsupported otherwise. Record per-client mappings, actual observations and
-missing capability rather than silently lowering the level.
+The template is the only executable default source. `/1` profiles remain
+readable with unchanged model controls and the template's retention default;
+loading one never upgrades or rewrites the private file. `/2` retention has one
+control: `keep_latest_per_group = 3`. The optional baseline `max_age_days` filter
+is separate; zero disables age filtering. Finished native evaluations and
+standalone comparisons apply rolling retention under the protections below.
 
-The template retains the established model and budget defaults. Whole-batch
-time starts at first live dispatch and includes graders and retries. A full
-corpus request can need a larger explicitly selected deadline; expiry produces
-an incomplete operation with all undispatched trials visible. Configured
-concurrency remains an upper bound; the current native Companion runs trials
-serially. Logical trial retries do not control client-internal request retries.
-The Companion's unsupported total-token and monetary caps remain unsupported.
-Nonempty task `seeds` currently reject operator preparation: the native route
-does not enforce that selection field. An empty table records no seed control.
+Thinking is selected once through `[model.thinking]` and projected to both
+selected clients. Required controls need exact-client first-request and tool
+continuation proof; accepted TOML alone is no proof. Unsupported required levels
+reject preparation. Nonempty task seeds currently reject operator preparation
+because the native route does not enforce them. Concurrency is an upper bound;
+native trials remain serial. Total-token and monetary caps remain unsupported.
 
 ## Prepare, review and execute
 
-Native preparation and execution run in Linux/WSL x86_64 with Docker Linux.
-Configure absolute Linux workspace/cache paths outside the source checkout.
-The workspace and material cache must be disjoint. The helper admits at most
-10,000 logical trials per family and checks the expanded count before creating
-a plan; oversized requests reject without allocating their trial expansion.
-Use the shared Cargo target cache and lease workflow in
-[native builds](native-run.md#platform-and-builds); each operation freezes its
-actual build package and material view so later candidates cannot replace its
-runtime bytes.
-Newly acquired materials are retained as independent `storage.cache/seeds/`
-generations, excluding disposable runner environments. A later preparation
-physically copies a matching seed into its own cache and recreates the runner
-environment at that final path; existing generations and operation packages
-remain unchanged. These seeds are reusable material, not a progress ledger.
+Native preparation and execution require Linux/WSL x86_64 with Docker Linux.
+Configure absolute external Linux workspace/cache paths; the workspace and
+material cache must be disjoint. The runtime owns source/build adapters and
+shared build-cache coordination. Each family admits at most 10,000 logical
+trials and checks the count before expansion.
 
 ```sh
-python3 .agents/skills/opi-eval/scripts/evaluate.py baseline --config .opi/eval.toml --bench tb21
-python3 .agents/skills/opi-eval/scripts/evaluate.py candidate --config .opi/eval.toml --bench tb21
+python3 "$EVAL_OPERATOR" baseline --config "$PROFILE" --bench tb21
+python3 "$EVAL_OPERATOR" candidate --config "$PROFILE" --bench all
 ```
 
-These commands prepare and return the external operation directory and
-`handoff.json`. They do not run a live benchmark. Preparation may download
-pinned dependencies/images and runs synthetic loopback client proofs; inspect
-the full requested task inventory, effective controls, paths, build identities,
-exact attempted-count limit and budget enforcement before live dispatch.
+These commands prepare a fresh external evaluation and return its operation,
+evaluation and `handoff.json` paths; they do not execute live trials. Preparation
+may acquire pinned dependencies/images and run synthetic loopback client proofs.
+Review task inventory, controls, source/build identities, paths, attempted-count
+limit, capture and budget enforcement. The `/2` profile adds no silent diagnostic
+requirements and does not expand the permitted capture contract.
 
-`baseline` selects only pi and checks its version against the admitted static
-lock. A new upstream release requires an updated, verified pin and supported
-adapter; it never substitutes an ambient installation. `candidate` builds the
-current Opi working tree with relevant dirty inputs, checks its build inputs
-before/after, and freezes the executable. An explicit historical Opi experiment
-is a separate benchmark request, not a candidate operation.
+`baseline` selects only the admitted pi version without building Opi. A new pi
+release needs a verified pin and adapter proof; research or an ambient installed
+binary cannot substitute. `candidate` rebuilds current-worktree Opi with relevant
+dirty inputs, checks build inputs before/after and freezes its executable. A
+failed build never reuses an old Opi binary. Historical Opi evaluation is a
+separate explicitly selected benchmark request.
 
-With explicit authorization bound to that prepared scope:
+With authorization for the exact reviewed scope:
 
 ```sh
-python3 .agents/skills/opi-eval/scripts/evaluate.py baseline --prepared /absolute/operation --execute
-python3 .agents/skills/opi-eval/scripts/evaluate.py candidate --prepared /absolute/operation --execute
+python3 "$EVAL_OPERATOR" baseline --prepared "$OPERATION" --execute
+python3 "$EVAL_OPERATOR" candidate --prepared "$OPERATION" --execute
 ```
 
-The reviewed operation is the input; the private profile cannot silently alter
-its scope. The operator preserves command cwd/argv, start/end, exit and bounded
-stdout/stderr outside seals. At the shared deadline it stops dispatch and asks
-the Companion to cancel through its supported signal/cleanup route. Cleanup
-uncertainty stops further live work and stays a typed gap.
+The frozen operation is the execution input; editing the private profile cannot
+alter it. A single-family operation points to its family root; `--bench all`
+returns a whole-evaluation handoff and groups selected families under one record.
+Both forms use one timer starting at the first live dispatch. Preparation and
+subsequent offline reporting are outside the live interval. Graders, provider
+retries, new families and precise logical-trial retries consume the same remaining
+deadline. At expiry stop new dispatch and cancel through the Companion's supported
+owned-cleanup route. A caller nesting evaluations also supervises its original
+remaining deadline; the operator cannot discover another process's authorization
+budget.
 
-Eligible failed logical trials get new precise plans and attempt roots. Valid
-native zero and benchmark-valid timeouts are completed results. The first valid
-settlement is selected; earlier attempts, consumption and replacement links
-remain visible. Never use whole-scope `--replacement-for` as a single-item retry
-or choose the best score from several valid attempts.
+Failed logical trials receive fresh precise plans/attempt roots. A valid native
+zero or benchmark-valid Agent timeout is complete. Select the first valid
+settlement, retaining failures, consumption and replacement links; never select
+the best score or use whole-scope `--replacement-for` as a single-trial retry.
+Cleanup uncertainty, authority or privacy breaches stop affected dispatch.
+
+## External records, reports and catalogue
+
+The configured workspace contains:
+
+```text
+workspace/
+  evaluations/YYYY/MM/<eval-id>/
+    record.json                       authoritative operator identity
+    families/<bench>/                 prepared/native family roots
+    prepared-evaluation.json          frozen family-operation group
+    handoff.json                      evaluation preparation
+    result-handoff.json               evaluation result
+    retention-handoff.json            separate rolling-cleanup result
+    reports/report.json
+    reports/report.md
+    reports/report.zh.md
+  imports/                            immutable legacy-index references
+  events/                             lifecycle decisions and receipts
+  archives/                           reviewed archived evaluation bytes
+  leases/                             owned active-operation markers
+```
+
+Family roots retain sanitized inputs, source/build identities and packages,
+frozen material/plan/control proof, command/check outputs, original native run
+and attempt roots, `prepared.json`, `handoff.json`, `snapshot.json`, comparison
+derivatives and execution `result-handoff.json`. Use returned paths instead of
+reconstructing them from this outline. All record/report writes stay external.
+Repository `docs/eval/` is an optional explicit conclusion export; its old
+`evidence-roots.jsonl` is historical input, never a runtime prerequisite or default
+read/write destination.
+
+The catalogue reads the external JSON records, immutable import references and
+lifecycle receipts directly; it keeps no database or persistent query cache.
+An existing `catalog.sqlite` is ignored and left untouched. No migration or
+reindex is needed: retained JSON files supply discovery state. Only the
+evaluation operator writes its records/events/imports; other authorities consume
+immutable bundles/references. Treat discovered paths and metadata as untrusted
+and re-verify original snapshots and native evidence before selection/comparison.
+
+```sh
+python3 "$EVAL_OPERATOR" list --config "$PROFILE" --action baseline --bench tb21 --limit 3
+python3 "$EVAL_OPERATOR" show --config "$PROFILE" --id "$EVAL_ID"
+python3 "$EVAL_OPERATOR" import-index --config "$PROFILE" --index "$LEGACY_JSONL"
+```
+
+`list` also supports `--model`, `--version`, `--state` and `--offset`; use help
+for accepted values. Import is explicit and read-only: imported roots are
+references, not copied evidence or permission to maintain an externally owned
+tree. Missing, drifted and unverifiable records remain visible with typed gaps.
+Reading retained JSON never invents a seal, changes a score or admits a pi version.
 
 ## Baselines and offline comparison
 
-A snapshot is an immutable derived index over original run/attempt roots,
-verified native reports and bundle identities. It records the full expected
-inventory and each logical result; incomplete snapshots are retained but never
-labelled full benchmark completion. The current implementation registers baseline evidence through
-`docs/eval/evidence-roots.jsonl`, with snapshot path/digest and owning report.
-The registry locates evidence; it does not upgrade a missing seal or score.
+A snapshot derives logical results and expected inventory from original attempt
+roots and verified native reports. Complete baselines account for every expected
+task/repetition, including native zero. Incomplete snapshots remain evidence;
+partial matches support labelled per-task comparisons, never a full-corpus claim.
 
-The candidate freezes its selected baseline before live execution. Use
-[sealed baseline](sealed-baseline.md) for the comparison dimensions. Missing or
-ineligible baseline evidence leaves a standalone Opi result, never an automatic
-pi provider call. Snapshot selection is deterministic and independent of score.
-
-To reconstruct comparison separately:
+Candidate preparation freezes a deterministic matching baseline by admitted pi
+version and the [sealed-baseline identity tuple](sealed-baseline.md). Freshness,
+version eligibility, selection status and storage availability are separate from
+historical score validity. Age filtering may exclude an old baseline from a new
+selection while its original result remains valid. Retired baselines are excluded
+from new automatic selection; retirement preserves their records and scores.
+Archived originals need restoration before verification. Missing/ineligible
+baselines produce a standalone Opi result, never an automatic pi call.
 
 ```sh
-python3 .agents/skills/opi-eval/scripts/evaluate.py compare --candidate /absolute/candidate/snapshot.json --out /absolute/fresh-comparison
-python3 .agents/skills/opi-eval/scripts/evaluate.py compare --candidate /absolute/candidate/snapshot.json --baseline /absolute/pi/snapshot.json --out /absolute/fresh-comparison
+python3 "$EVAL_OPERATOR" compare --candidate "$CANDIDATE_SNAPSHOT" --out "$COMPARISON"
+python3 "$EVAL_OPERATOR" compare --candidate "$CANDIDATE_SNAPSHOT" --baseline "$PI_SNAPSHOT" --out "$COMPARISON"
 ```
 
-Both originals are re-verified; output is outside their evidence roots. Bind
-paired task/repetition/seed and bundle identities in one comparison manifest,
-labelled cross-run. Per-run native metrics keep their own full denominators;
-paired differences use only the verified comparable intersection. Missing,
-invalid, mismatched or unavailable telemetry remains explicit. Never compare
-an Opi subset's aggregate with pi's whole-corpus average as a paired result.
+The catalogue is resolved from the candidate's frozen workspace. Both original
+snapshots and native evidence are re-verified; use fresh external output. Bind
+comparable task/repetition/seed and bundle identities in one cross-run comparison
+manifest. Per-run native metrics retain their own denominators; paired differences
+use only the verified comparable intersection. Unknown remote service
+implementation, telemetry, missing pairs and unsupported controls stay explicit.
+The same model name does not establish the same remote model build.
+
+Each standalone comparison creates an external evaluation record and reports,
+freezing its original input references while their managed leases are held.
+These references protect its retained sources and remain in the JSON records.
+The caller-selected output is referenced rather than adopted for maintenance;
+output inside retained evidence or operator metadata rejects.
+
+## Retained-evaluation maintenance
+
+After a native evaluation or standalone comparison finishes, rolling cleanup
+keeps the latest three per group by recorded completion time, falling back to
+creation time/identity. A just-finished evaluation is retained. A group combines Agent, benchmark-family combination,
+model/API, model parameters/thinking and task scope. Each pi release
+has an independent bucket; Opi source commits, Opi release versions and Companion
+build identities do not reset its history.
+
+Active/resumable operations, explicit pins, retained references and unknown
+dependencies or cleanup status are protected. For pi, only excess unprotected copies
+within the same pi release bucket are eligible. These protections may leave more
+than three evaluations; returned retention results name removals and exceptions.
+Completed preparation failures count when their grouped proof records no live
+dispatch; stopped offline comparisons count when command/stream cleanup is
+confirmed. Unknown or unsettled process cleanup remains protected.
+When the command returns JSON, it contains the `retention` pin to `retention-handoff.json` and
+`retention_status = applied|protected_excess|refused`. This separate receipt
+preserves the already frozen `result-handoff.json`; a cleanup refusal does not
+change the native result or erase its evidence.
+Failure summaries and `retention-handoff.json` are also persisted when the CLI
+rejects with an exception; inspect those files even when no result JSON is returned.
+The operator maintains only its owned evaluation trees. A standalone comparison's
+arbitrary `--out` remains caller-owned and is never adopted for deletion. Shared
+materials, images and Cargo caches remain outside rolling cleanup.
+
+Manual archive/GC remains available through reviewed plans:
+
+```sh
+python3 "$EVAL_OPERATOR" pin --config "$PROFILE" --id "$EVAL_ID" --reason "retain for review"
+python3 "$EVAL_OPERATOR" unpin --config "$PROFILE" --id "$EVAL_ID" --reason "review complete"
+python3 "$EVAL_OPERATOR" retire --config "$PROFILE" --id "$EVAL_ID" --reason "exclude from new selection"
+python3 "$EVAL_OPERATOR" unretire --config "$PROFILE" --id "$EVAL_ID" --reason "selection restored"
+python3 "$EVAL_OPERATOR" archive --config "$PROFILE" --id "$EVAL_ID" --plan "$FRESH_PLAN"
+python3 "$EVAL_OPERATOR" gc --config "$PROFILE" --plan "$FRESH_PLAN"
+python3 "$EVAL_OPERATOR" apply-plan --config "$PROFILE" --plan "$REVIEWED_PLAN"
+python3 "$EVAL_OPERATOR" restore --config "$PROFILE" --id "$EVAL_ID"
+```
+
+Pin/unpin and retire/unretire record decisions outside sealed trees. Archive and
+GC only preview an exact inventory/digest-bound plan; repeated `gc --id` restricts
+its scope. Review selected entries and protected reasons before explicitly
+applying that exact plan. Application rechecks paths, bytes, leases, references,
+ownership and policy. A changed inventory refuses application. The latest-three
+policy and the same protections bound selection; distinct pi releases stay in
+independent buckets. Manual application does not broaden rolling cleanup to
+shared materials, images or Cargo caches.
+
+Restore extracts verified archive bytes to their original canonical path without
+rewriting seals, absolute material paths or original scores. Missing cached images,
+runtime packages or other dependencies remain typed portability gaps; restoration
+does not promise offline regrading or a new executable run. Read
+[environment cleanup](environment-cleanup.md) to distinguish disposable invocation
+cleanup from explicit retained-evidence maintenance.
 
 ## Evidence and caller handoff
 
-Keep the whole operation outside the checkout: sanitized inputs, source/build
-identities and frozen packages, material/plan/control proof, all run roots and
-attempt links, command/check outputs, snapshots, comparisons and `handoff.json`.
-The configured `storage.workspace` contains one fresh operation directory:
+Read the actual schema/version and returned artifact references. Preparation
+`handoff.json` and execution `result-handoff.json` have different meanings.
+Original family contracts remain `opi-eval-prepared-operation/1`,
+`opi-eval-baseline-snapshot/1`, `opi-eval-cross-run-comparison/1` and
+`opi-eval-handoff/1`; evaluation contracts add `opi-eval-prepared-evaluation/1`,
+`opi-eval-evaluation-handoff/1` and `opi-eval-evaluation-report/1` to bind family results.
+An exit-zero process alone proves no native result or acceptance.
 
-```text
-<baseline-or-candidate>-<bench>-<operation-id>/
-  inputs/        sanitized effective profile, experiment, plan, baseline binding
-  builds/        source/build identities and exact Companion package
-  cache/         this operation's frozen client and native material view
-  material/      prepared native material
-  commands/      argv, cwd, timing, exits and permitted stdout/stderr
-  checks/        control proof, seal checks and reconstructed reports
-  runs/          original native attempt roots and sealed bundles
-  attempts/      dispatch and precise retry records
-  prepared.json  frozen operation contract
-  handoff.json   preparation result and exact execution command
-  snapshot.json  final verified logical results and coverage
-  comparison.json       candidate comparison, when applicable
-  comparison-manifest.json  original snapshot and comparison digest bindings
-  result-handoff.json   execution result and all evidence pointers
-```
+Keep full evidence external and apply [privacy review](evidence-root.md) before
+sharing. `capture_policy = "full"` retains permitted streams, not private thinking,
+complete sessions/final filesystems or telemetry absent from the clients. Use
+[diagnostics](diagnostics.md) to assess score validity, diagnostic completeness
+and comparison eligibility separately. Missing diagnostics cannot retroactively
+invalidate an otherwise verified historical native score; proposed richer
+diagnostic handoff fields remain unavailable until admitted and implemented.
 
-`handoff.json` describes preparation; consumers read `result-handoff.json` after
-execution. Offline `compare` writes its own `comparison.json`,
-`comparison-manifest.json` and `handoff.json`
-in the supplied fresh output directory. Contracts are versioned as
-`opi-eval-prepared-operation/1`, `opi-eval-baseline-snapshot/1` (with an explicit
-pi/Opi product), `opi-eval-cross-run-comparison/1` and `opi-eval-handoff/1`.
-Follow [evidence privacy](evidence-root.md) before sharing, and
-[environment cleanup](environment-cleanup.md) after preserving evidence.
-`full` retains permitted event streams; it does not promise recoverable pi
-sessions, private thinking, complete final container filesystems or measured
-telemetry absent from the actual client. Such gaps remain in the handoff.
-
-Use the self-contained [diagnostic checklist](diagnostics.md) when assessing
-whether a retained run can explain an Opi regression. Its retention requirements
-do not depend on a project research checkout. Current permitted streams are
-partial diagnostics: complete native sessions, measured system-prompt digests,
-per-trial telemetry and final-workspace coverage require adapter evidence,
-rather than a stronger interpretation of `capture_policy = "full"`.
-
-Keep `score_validity`, `diagnostic_completeness` and `comparison_eligibility`
-separate in the proposed handoff extension. A missing session does not erase
-an otherwise verified native score, and unknown telemetry never becomes zero.
-If selected required diagnostics are unavailable, stop preparation before a
-new dispatch; this policy cannot retroactively invalidate historical scores.
-The current `/1` handoff does not yet contain these additional dimensions.
-
-The machine handoff exposes status, effective configuration, candidate
-source/build, planned/attempted/valid/missing coverage, selected baseline and
-comparison status, attempt roots, evidence/report/check paths and typed gaps.
-Consumers read its schema/version and actual outcomes, not human prose or an
-exit-zero assumption. Native grade provenance stays with Companion reports.
-
-Another explicitly authorized skill may read this contract and call these
-operations with supplied scope and budget. Reading or invoking a parent skill
-does not authorize a new paid batch, update pi pins, repair source, regrade,
-commit, or publish. A nested call inherits the parent's remaining live budget;
-the caller must set that remaining allowance and supervise the original
-deadline and supported cancellation route across families. This helper starts
-one timer per prepared family; it does not automatically discover or inherit
-a parent's timer. A caller without that supervision must not use repeated
-operations as one authorized batch. It cannot create a second progress ledger. Eval findings
-remain evidence until the owning repair/audit workflow admits them.
+Another explicitly authorized skill may consume this contract with supplied
+scope/budget. A call does not authorize paid scope expansion, pi pin updates,
+source repair, native regrade, commit or publication. Findings remain evidence
+until their owning repair/audit workflow admits them; acceptance and Phase exit
+retain their existing owners.

@@ -48,7 +48,7 @@ flowchart TD
 | `opi-research` | `docs/research/` 中的一手资料调研 | 非规范性的能力与归属证据 |
 | `opi-implement` | 准入任务图、交付、正式台账与 Phase 快照 | 登记来源；任务图、任务/台账 commit 与失败关卡 |
 | `opi-audit` | 独立带后缀报告组，随后追加绑定的历史参考 | 先用最新已提交来源完成核心，安装后才作历史参考；不修复生产代码 |
-| `opi-eval` | 外部封存证据、双语 `docs/eval/` 结论报告、限定源码修复 | 真实运行范围/预算与用户确认的修复分别授权 |
+| `opi-eval` | 外部封存证据、双语报告、查询目录与限定源码修复 | 真实运行范围/预算、保留证据维护与已确认修复分别授权 |
 | `opi-remediate` | 集合级固定计划、disposition、结果与批准的修复 | apply 绑定已批准计划摘要与精确活动 index 摘要 |
 | `opi-document` | 审计并同步产品文档 | 默认审计每份受维护的当前产品 README；targeted/version-bump 范围须显式指定 |
 | `opi-release` | 版本、包、公开 Git 与 crates.io 发布 | 公开 Git 关卡及独立的最后时刻不可逆发布关卡 |
@@ -99,19 +99,22 @@ $opi-eval mode=fidelity cases=all model=<provider:model>
 `mode=benchmark` 选择。准备阶段记录源码和可执行文件身份，不启动付费模型。
 
 真实评测未指定模型/预算时，继承用户持续授权的
-[评测默认配置](opi-eval/SKILL.md#evaluation-defaults)。把唯一的
-[配置模板](opi-eval/config.example.toml) 复制为私有 `.opi/eval.toml`，集中设置模型、
+[评测默认配置](opi-eval/SKILL.md#evaluation-defaults)。提供 `EVAL_OPERATOR`
+入口，并用它的 `init --config` 命令初始化一份显式选定的私有 profile，集中设置模型、
 密钥引用、思考深度、重试、任务范围和存储路径；显式类型化覆盖优先。
 必需的思考设置须在真实客户端首轮请求和工具续轮中通过证明，才允许真实运行。
 
 [操作契约](opi-eval/references/operator.md) 说明初始化、离线准备、审阅后执行、
-证据位置、快照匹配，以及提供给调用技能的机器交接格式。
-其中还定义了迁移到独立评测运行包、显式受测源码路径和外部快照索引的方案。
-当前辅助命令仍依赖仓库；方案中的新增配置字段尚未支持。
+外部逐评测记录与报告、快照匹配、目录查询、维护计划，以及提供给调用技能的机器交接格式。
+运行代码与唯一模板已归属于 Companion，不再放在技能内；完整独立运行包分发仍为暂定。
+`bench=all` 将多个 family 纳入同一个首次 dispatch 起算的 deadline。
 自包含的[诊断清单](opi-eval/references/diagnostics.md) 分开判断原生分数有效性、
 诊断材料完整性和配对资格。
-项目特定的文件归属与迁移阶段记录在技能之外的
-[解耦方案](../../docs/eval/operator-decoupling.zh.md)。
+历史分数有效性、新鲜度、选择资格与存储可用性分别判断。发现过程直接读取外部 JSON
+records/events/imports，不使用数据库或持久查询缓存。完成后的操作按 Agent、benchmark
+组合、模型/API/参数/thinking 及任务范围保留最新三次；pi release 分桶，Opi commit/版本
+和 Companion build 不重置计数。Pin、引用、活动任务与 cleanup/依赖不明项可留下额外记录，
+结果中明确报告。手动 archive/GC 仍使用精确审阅计划，共享缓存不参与清理。
 
 任务选择、模型控制（含 provider 特定默认值）、预算与准备见
 [原生运行](opi-eval/references/native-run.md)；19.11 固定六试次范围与独立离线交接见
@@ -161,7 +164,8 @@ audit set 进入 remediation。各报告地位平等，分别持有已提交的 
 | `.opi-impl-state.draft.json` | 被忽略的计划草稿；仅评审/恢复需要时保留 |
 | `docs/snapshots/phase<N>/` | 冻结台账与 Phase 证据 |
 | `docs/snapshots/phase<N>/assurance/` | 活动审计集合与 remediation；不可变的旧 `history/` 组不参与独立核心或 finding 权威，仅允许安装后的限定建议参考例外 |
-| `docs/eval/` | 双语结论报告与保真度历史；密封证据与完整操作报告一律留在外部 |
+| 外部 eval workspace | 按日期组织的 JSON 记录、family 证据、双语/机器报告、直接 JSON 发现、导入引用与生命周期回执；最新三次 retention 报告受保护的额外记录；保真度历史由调用者在外部维护 |
+| `docs/eval/` | 仅显式请求的双语结论导出，以及历史索引/保真度记录；不是 runtime 前提，也不是默认写入位置 |
 | `.opi-release-state.json` | 被忽略的发布恢复状态；仅未完成时保留 |
 
 ## 维护者组合说明

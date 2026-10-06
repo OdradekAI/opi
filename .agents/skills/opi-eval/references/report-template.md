@@ -1,8 +1,9 @@
 # Report Template
 
-Output format for eval reports written to `docs/eval/`. The skill runner fills
-in the template and writes the result as
-`docs/eval/<version>-<date>-<model-short>.md`.
+Output format for fidelity reports kept in the caller's explicitly selected
+external fidelity directory as `<version>-<date>-<model-short>.md`. The case
+history remains beside these reports; the benchmark catalogue does not write it.
+Export a compact conclusion to `docs/eval/` only on an explicit caller request.
 
 ---
 
@@ -70,7 +71,7 @@ _Include for each confirmed FAIL, ERROR, or cross-version regression signal._
 ```yaml
 id: <source-stable identifier>
 source_kind: eval
-source_path: docs/eval/<version>-<date>-<model-short>.md
+source_path: <absolute external fidelity report path>
 source_model: <evaluator provider:model>
 independence: <independent-family | fresh-context-same-family | unknown>
 axis: runtime-fidelity

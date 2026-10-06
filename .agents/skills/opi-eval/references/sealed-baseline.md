@@ -10,16 +10,25 @@ baseline evidence.
 
 ## Baseline eligibility
 
-The baseline is a root registered in `docs/eval/evidence-roots.jsonl` whose
-sealed bundles still pass Companion `verify` (exit 0) at reuse time. Record
+The baseline is an original root discovered through the operator's external
+catalogue, an explicitly imported legacy reference, or a supplied snapshot.
+Its sealed bundles must still pass Companion `verify` (exit 0) at reuse time. Record
 the root path, its manifest digest where applicable, the owning baseline
 report, and the exact pi trial bundle digests used for pairing.
-Configured candidate operations discover the registered snapshot and freeze
+Configured candidate operations discover the eligible snapshot and freeze
 its path/digest before live dispatch. A complete version baseline accounts for
 every expected task/repetition with a valid native settlement, including zero.
 Retain incomplete snapshots with coverage gaps; partial matches may support
 labelled per-task comparisons but never a full-corpus claim. Select the newest
 eligible matching snapshot deterministically, never the highest-scoring one.
+
+The catalogue is an untrusted discovery index, not native evidence. Check the
+original snapshot digest and every referenced original before reuse. Apply the
+admitted pi version, retirement and configured `baseline.max_age_days` filters
+before selection; zero age disables freshness filtering. Missing, archived or
+unverifiable evidence is unavailable until restored or verified. Freshness,
+selection eligibility and storage state never change a historical native score.
+Retirement excludes new automatic selection while preserving prior comparisons.
 
 ## Identity tuple
 
@@ -56,7 +65,7 @@ task execution limits; unavailable required environment identity remains a gap.
 
 ## Workflow
 
-1. Step 1: collect `baseline_root` or discover a matching registered snapshot;
+1. Step 1: collect `baseline_root` or discover a matching external snapshot;
    verify the baseline seals offline before
    requesting any live scope.
 2. Step 2: check every identity dimension against the new experiment's frozen
@@ -76,7 +85,8 @@ stay `missing`, mismatches/unknown required dimensions stay `incomparable`,
 and partial coverage is disclosed beside any paired metric. Baseline selection
 does not authorize another pi run or verifier regrade.
 
-**Completion criterion**: the report names the baseline root, its registry
-record, every checked identity dimension with both runs' values, and the
+**Completion criterion**: the report names the baseline root, its external
+record/import reference, freshness and selection result, every checked identity
+dimension with both runs' values, and the
 exact paired bundle digests. A failed check yields `incomparable`, never a
 substituted fresh pi number or an edited baseline bundle.

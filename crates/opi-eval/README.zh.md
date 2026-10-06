@@ -48,6 +48,118 @@ sealed bundle，并且只根据仍能通过验证的证据计算分数。报告�
 
 `opi-eval` 尚未发布，因此请通过 Cargo 调用，不要尝试从 crates.io 安装。
 
+## 配置化 operator 与外部存储
+
+Python operator 与唯一配置模板位于 [`operator/`](operator/)，由本 Independent
+Companion 维护。在 workspace 根目录使用 Python 3.11 或更新版本创建一份显式私有 profile：
+
+```sh
+python3 crates/opi-eval/operator/evaluate.py init --config /absolute/private/eval.toml
+python3 crates/opi-eval/operator/evaluate.py resolve --config /absolute/private/eval.toml
+python3 crates/opi-eval/operator/evaluate.py baseline --config /absolute/private/eval.toml --bench tb21
+python3 crates/opi-eval/operator/evaluate.py candidate --config /absolute/private/eval.toml --bench all
+```
+
+在这份 profile 中设置模型、连接、凭据来源、思考、重试、deadline、任务选择，以及外部
+Linux workspace/cache 路径。`init` 拒绝覆盖已有文件。`resolve` 与准备不授权或启动付费模型；
+准备可获取固定材料并执行本地客户端证明。审阅返回的身份、计划、路径、覆盖与实际限制。
+技能接收调用者提供的 `EVAL_OPERATOR` 入口及显式 profile，不从技能安装位置发现源码或 runtime。
+
+`baseline` 只选择已准入 pi 版本，不构建 Opi。`candidate` 每次重新构建当前 Opi 工作树，
+包含影响构建的未提交输入，冻结实际源码/可执行文件并选择合格的已存 pi 快照。
+缺少基线时保留独立 candidate，不自动启动 pi。获得精确冻结范围的授权后，执行返回的
+family 或整组 evaluation operation：
+
+```sh
+python3 crates/opi-eval/operator/evaluate.py candidate --prepared /absolute/prepared-operation --execute
+python3 crates/opi-eval/operator/evaluate.py compare --candidate /absolute/candidate/snapshot.json --out /absolute/fresh-comparison
+```
+
+`--bench all` 创建包含选定 family 计划的一次 evaluation，从首次真实 dispatch 起共用
+deadline，包含 grading 与 retries；准备和后续离线报告不在真实运行计时区间。
+每次 retry 使用新身份，首个有效 native 结果（包括零分）成为逻辑结果。离线比较可显式添加
+`--baseline /absolute/pi/snapshot.json`，从 candidate 冻结的 workspace 解析外部目录，
+核验 originals 并写独立衍生产物，不修改原始证据或分数。
+
+外部 `storage.workspace` 包含：
+
+```text
+evaluations/YYYY/MM/<eval-id>/record.json
+evaluations/YYYY/MM/<eval-id>/families/<bench>/
+evaluations/YYYY/MM/<eval-id>/reports/report.json
+evaluations/YYYY/MM/<eval-id>/reports/report.md
+evaluations/YYYY/MM/<eval-id>/reports/report.zh.md
+imports/
+events/
+archives/
+leases/
+```
+
+Family 根保留准备包、native runs/attempts、快照、比较及准备/执行 handoff。已准备的 native evaluation 另有
+`prepared-evaluation.json`、顶层 `handoff.json` 与 `result-handoff.json`；精确位置以返回引用为准。报告和目录写入全部
+留在外部；`docs/eval/` 仅用于显式请求的结论导出。旧仓库索引不自动读取或写入。
+操作返回 JSON 时包含 `retention` pin，指向独立的 `retention-handoff.json`，以及
+`retention_status = applied|protected_excess|refused`；保留已冻结的 result handoff 与 native 结果。
+
+独立离线比较会创建自己的外部评测记录与报告，保存两个输入及调用者指定的新输出的不可变引用，
+这些引用保护仍需保留的源证据。Operator 不接管该输出树的维护；输出位于已保留证据或
+operator 元数据内部时拒绝。
+
+Native originals 是证据权威。发现过程直接读取逐评测 JSON 记录、不可变导入引用及生命周期
+回执，不使用数据库或持久查询缓存。已有 `catalog.sqlite` 被忽略且不改动，不需要迁移或
+reindex。只有 operator 写它的 records/events/imports；其他权限域交换不可变 bundles
+和引用。发现元数据不能证明 native seal 或分数。
+
+```sh
+python3 crates/opi-eval/operator/evaluate.py list --config /absolute/private/eval.toml --action baseline --bench tb21 --limit 3
+python3 crates/opi-eval/operator/evaluate.py show --config /absolute/private/eval.toml --id EVAL_ID
+python3 crates/opi-eval/operator/evaluate.py import-index --config /absolute/private/eval.toml --index /absolute/legacy.jsonl
+```
+
+`list` 支持 action、benchmark、model、version、state、limit 与 offset 筛选；允许值见
+`--help`。旧索引导入保留只读引用，不搬移或编辑原始证据；保留的 JSON 文件提供发现状态，
+证据缺失或 drift 保持明确 gap。
+
+新 profile 使用 `opi-eval-operator/2`；`/1` 保持可读，模型默认值不变，使用模板中的 retention 默认值，
+不自动改写用户私有文件。`[baseline].max_age_days = 0` 关闭年龄筛选。唯一的
+[`config.example.toml`](operator/config.example.toml) 只有一个 retention 设置：
+`keep_latest_per_group = 3`。
+历史结果有效性与新鲜度、版本/retirement 选择资格及存储可用性分别判断。
+
+完成后的 native evaluation 和独立比较应用最新三次滚动 retention，按 Agent、benchmark-family
+组合、模型/API、模型参数/thinking 及任务范围分组。每个 pi release 独立分桶；Opi commit、
+Opi release 版本与 Companion build 不重置计数。按记录的完成时间排序，缺失时回退到创建时间/身份；
+刚完成的 evaluation 保持保留。
+Pin、引用、活动/可恢复任务与 cleanup/依赖不明项保持受保护；返回的 retention 结果说明额外
+保留的记录与原因。Pi 仅同 release 桶内超量且不受保护的副本可被清理。滚动清理仅覆盖 operator
+自有 evaluation 树；任意独立比较输出由调用者管理，共享材料、镜像及 Cargo cache 不参与。
+
+已完成的准备失败在具备明确的分组非 live dispatch 证明时计入 retention。已停止的离线比较
+在 command/stream cleanup 已确认时计入；cleanup 不明或 process 未结算时仍受保护。
+即使 CLI 因异常拒绝且没有返回结果 JSON，失败摘要与 `retention-handoff.json` 仍会保存，
+可直接检查这些文件。
+
+手动保留证据维护仍须显式执行：
+
+```sh
+python3 crates/opi-eval/operator/evaluate.py pin --config /absolute/private/eval.toml --id EVAL_ID --reason "retain for review"
+python3 crates/opi-eval/operator/evaluate.py retire --config /absolute/private/eval.toml --id EVAL_ID --reason "exclude from new selection"
+python3 crates/opi-eval/operator/evaluate.py archive --config /absolute/private/eval.toml --id EVAL_ID --plan /absolute/fresh-plan.json
+python3 crates/opi-eval/operator/evaluate.py gc --config /absolute/private/eval.toml --plan /absolute/fresh-plan.json
+python3 crates/opi-eval/operator/evaluate.py apply-plan --config /absolute/private/eval.toml --plan /absolute/reviewed-plan.json
+python3 crates/opi-eval/operator/evaluate.py restore --config /absolute/private/eval.toml --id EVAL_ID
+```
+
+`unpin` 与 `unretire` 使用相同 ID/reason 输入。Archive/GC 只预览绑定 inventory/digest
+的计划；重复 `gc --id` 可限制选择范围。审阅计划后才显式 apply，执行前重新核验所有权、字节、
+引用、lease 与 policy；inventory 改变即拒绝。选择仍受最新三次分组与相同保护约束。
+共享材料、镜像及 Cargo cache 不在此维护范围内。
+
+Restore 核验归档字节并恢复原 canonical 路径，不改写 seal 或绝对 material binding。
+缺少缓存依赖时记录离线能力 gap；恢复不保证 regrade 或新的执行。运行源码归属已迁移完成，
+完整独立运行包分发与 public packaging 仍为暂定。此次变更不扩大诊断 capture、pi pin 准入、
+验收权限或付费执行授权。
+
 ## 快速开始：校验实验
 
 下面的命令不会启动 Agent：
@@ -779,7 +891,8 @@ Harbor/Pier 的 `jobs/<job>/<trial>/result.json` 布局，并保留有效零分�
 experiment 或 report 格式不隐含兼容层。
 
 没有任何 Opi 产品链接、注册或激活本 crate。它不在 `opi` 中注册 Provider、工具、
-package、command、extension、启动 hook 或默认捕获路径。现有 session、native
-evidence、本地 Eval 报告、配置、凭据和用户工件不会被本 crate 读取、改写或迁移。
+package、command、extension、启动 hook 或默认捕获路径。普通 Opi 启动不读取或迁移评测存储。
+评测命令只消费显式提供的 profile、operation 或 evidence；已有私有 profile 与封存
+originals 不会被改写。
 
 当前 crate 版本：`0.8.2`，继承自 workspace package 版本。

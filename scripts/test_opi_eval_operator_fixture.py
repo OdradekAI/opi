@@ -47,10 +47,10 @@ elif command=='prepare':
         'static_lock':{'path':str(cache/'pins/static/linux-x86_64.json'),'sha256':sha(cache/'pins/static/linux-x86_64.json')},
         'agents':{agent:{'executable':{'path':str(runtime/agent),'sha256':sha(runtime/agent)},
                          'runtime_package':{'path':str(runtime),'entrypoint':agent,'manifest_sha256':'r'*64}}},
-        'benchmarks':{'terminal-bench-2.1':{'corpus':{'root':str(cache/'corpora'),'source_commit':'commit','tasks_tree':'tree'},
-             'tasks':{task:{'task_package':str(cache/task),'profile':{'path':str(cache/task),'sha256':'2'*64},
+        'benchmarks':{doc['benchmark']['dataset']:{'corpus':{'root':str(cache/'corpora'),'source_commit':'commit','tasks_tree':'tree'},
+             'tasks':{task:{'task_package':str(cache/task),'profile':{'path':str(cache/task),'sha256':sha(cache/task)},
                              'task_package_manifest_sha256':'3'*64} for task in doc['selection']['task_ids']},
-             'verifier_executable':{'path':str(cache/'uv'),'sha256':'4'*64},
+             'verifier_executable':{'path':str(cache/'uv'),'sha256':sha(cache/'uv')},
              'runner_project':{'path':str(cache/'runner'),'source_manifest_sha256':'5'*64}, 'verifier_env':{}}}})
     print('{}')
 elif command=='validate': print('experiment synthetic resolved: digest='+manifest(config())+' native_integrity='+'a'*64)
@@ -133,6 +133,10 @@ class Fixture:
         (self.repo / "Cargo.lock").write_text("synthetic lock")
         pi = self.cache / "agents/pi"
         (pi / "dist/bundle").mkdir(parents=True)
+        for name in ("one", "two", "uv"):
+            (self.cache / name).write_bytes(name.encode())
+        for name in ("runner", "corpora"):
+            (self.cache / name).mkdir()
         (pi / "package.json").write_text('{"version":"1.0.0"}')
         (pi / "node").write_text("synthetic node")
         (pi / "dist/bundle/cli.js").write_text("synthetic bundle")
@@ -140,7 +144,7 @@ class Fixture:
         write_json(pi / "build-identity.json", {"schema":"opi-eval-agent-identity/1","agent":"pi", "checkout_commit":"commit", "checkout_dirty":False,
                    "package_lock_sha256":"lock", "shrinkwrap_sha256":"shrink", "node_version":"v22.19.0",
                    "node_sha256":sha(pi/"node"), "bundle_sha256":sha(pi/"dist/bundle/cli.js")})
-        lock = {"authority":{"producers":[]},"tools":[{"id":"node","version":"22.19.0"}],
+        lock = {"schema":"opi-eval-external-lock/static/1", "authority":{"producers":[]},"tools":[{"id":"node","version":"22.19.0"}],
                 "subjects":[{"id":"pi","commit":"commit","model_data_archive":{"version":"1.0.0"},
                              "blobs":[{"path":"packages/coding-agent/package.json","sha256":sha(pi/"package.json")},
                                       {"path":"package-lock.json","sha256":"lock"},

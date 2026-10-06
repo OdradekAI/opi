@@ -52,6 +52,146 @@ evaluation fixtures and evidence workflows, not general Agent execution.
 `opi-eval` is unpublished, so invoke it through Cargo rather than installing it
 from crates.io.
 
+## Configured operator and external storage
+
+The Python operator and its sole configuration template live in
+[`operator/`](operator/), owned by this Independent Companion. From the workspace
+root, with Python 3.11 or later, create one explicit private profile:
+
+```sh
+python3 crates/opi-eval/operator/evaluate.py init --config /absolute/private/eval.toml
+python3 crates/opi-eval/operator/evaluate.py resolve --config /absolute/private/eval.toml
+python3 crates/opi-eval/operator/evaluate.py baseline --config /absolute/private/eval.toml --bench tb21
+python3 crates/opi-eval/operator/evaluate.py candidate --config /absolute/private/eval.toml --bench all
+```
+
+Edit that profile for model, connection, credential source, thinking, retries,
+deadline, task selection and external Linux workspace/cache paths. `init`
+refuses an existing profile. `resolve` and preparation do not authorize or start
+a paid model. Preparation can acquire pinned materials and run local client
+proofs; inspect returned identities, plans, paths, coverage and enforced bounds.
+The skill accepts a supplied `EVAL_OPERATOR` entrypoint and this explicit profile;
+it does not discover source code or a runtime from its install location.
+
+`baseline` selects the admitted pi version without building Opi. `candidate`
+rebuilds current-worktree Opi including relevant dirty inputs, freezes its actual
+source/executable and selects an eligible saved pi snapshot. Missing baselines
+leave a standalone candidate; they never start pi. After authorization for the
+exact frozen scope, execute the returned family or whole-evaluation operation:
+
+```sh
+python3 crates/opi-eval/operator/evaluate.py candidate --prepared /absolute/prepared-operation --execute
+python3 crates/opi-eval/operator/evaluate.py compare --candidate /absolute/candidate/snapshot.json --out /absolute/fresh-comparison
+```
+
+`--bench all` creates one evaluation containing selected family plans and uses
+one deadline from the first live dispatch, including grading and retries.
+Preparation and offline reporting are outside that live interval. Each retry has
+fresh identities; the first valid native result wins, including zero. Offline
+comparison accepts an optional `--baseline /absolute/pi/snapshot.json`, resolves
+the external catalogue from the candidate's frozen workspace, verifies originals
+and writes a separate derivative. Native evidence and original scores stay unchanged.
+
+The external `storage.workspace` contains:
+
+```text
+evaluations/YYYY/MM/<eval-id>/record.json
+evaluations/YYYY/MM/<eval-id>/families/<bench>/
+evaluations/YYYY/MM/<eval-id>/reports/report.json
+evaluations/YYYY/MM/<eval-id>/reports/report.md
+evaluations/YYYY/MM/<eval-id>/reports/report.zh.md
+imports/
+events/
+archives/
+leases/
+```
+
+Family roots preserve prepared packages, native runs/attempts, snapshots,
+comparisons and preparation/execution handoffs. A prepared native evaluation also has
+`prepared-evaluation.json`, top-level `handoff.json` and `result-handoff.json`.
+When an operation returns JSON, it includes a `retention` pin to separate `retention-handoff.json`
+and `retention_status = applied|protected_excess|refused`, preserving the frozen
+result handoff and native outcome.
+Use returned references for
+exact locations. Reports and all catalogue writes stay external; `docs/eval/`
+is an optional explicit conclusion export. The legacy repository index is neither
+read nor written automatically.
+
+Standalone offline comparisons create their own external evaluation record and
+reports with immutable references to both inputs and the caller-selected fresh
+output. These references protect retained source evidence. The operator does not
+adopt that output tree for maintenance; output inside retained evidence or
+operator metadata is refused.
+
+Native originals are authoritative. Discovery reads per-evaluation JSON records,
+immutable imports and lifecycle receipts directly, without a database or
+persistent query cache. Existing `catalog.sqlite` files are ignored and left
+untouched; no migration or reindex is needed. The operator alone writes its
+records/events/imports; other authorities exchange immutable bundles and
+references. Discovery metadata cannot establish a native seal or score.
+
+```sh
+python3 crates/opi-eval/operator/evaluate.py list --config /absolute/private/eval.toml --action baseline --bench tb21 --limit 3
+python3 crates/opi-eval/operator/evaluate.py show --config /absolute/private/eval.toml --id EVAL_ID
+python3 crates/opi-eval/operator/evaluate.py import-index --config /absolute/private/eval.toml --index /absolute/legacy.jsonl
+```
+
+`list` supports action, benchmark, model, version, state, limit and offset filters;
+inspect `--help` for accepted values. Legacy import preserves read-only references
+without moving or editing original evidence. Retained JSON supplies discovery
+state; missing/drifted evidence stays an explicit gap.
+
+New profiles use `opi-eval-operator/2`; `/1` profiles remain readable with unchanged
+model defaults and the template's retention default, without automatic private-file
+rewrites. `[baseline].max_age_days = 0` disables age filtering. The sole
+[`config.example.toml`](operator/config.example.toml) has one retention setting,
+`keep_latest_per_group = 3`. Historical result validity stays separate
+from freshness, version/retirement eligibility and storage availability.
+
+Finished native evaluations and standalone comparisons apply latest-three
+rolling retention. Groups combine Agent, benchmark-family combination,
+model/API, model parameters/thinking and task scope. Each pi release
+has an independent bucket; Opi commits, Opi release versions and Companion builds
+do not reset the count. Ranking uses recorded completion time with creation
+time/identity as fallback; the just-finished evaluation stays retained. Pins,
+references, active/resumable work and unknown
+cleanup/dependencies stay protected; returned retention results report extra
+retained entries and reasons. For pi, only excess unprotected copies in the same
+release bucket are eligible. Rolling cleanup covers owned evaluation trees;
+arbitrary standalone output remains caller-owned, and shared materials, images
+and Cargo caches are outside this scope.
+
+Completed preparation failures count with explicit grouped proof of no live
+dispatch. Stopped offline comparisons count when command/stream cleanup is
+confirmed; unknown or unsettled process cleanup stays protected. Failure summaries
+and `retention-handoff.json` persist even when the CLI rejects with an exception
+and returns no result JSON.
+
+Manual retained-evidence maintenance remains explicit:
+
+```sh
+python3 crates/opi-eval/operator/evaluate.py pin --config /absolute/private/eval.toml --id EVAL_ID --reason "retain for review"
+python3 crates/opi-eval/operator/evaluate.py retire --config /absolute/private/eval.toml --id EVAL_ID --reason "exclude from new selection"
+python3 crates/opi-eval/operator/evaluate.py archive --config /absolute/private/eval.toml --id EVAL_ID --plan /absolute/fresh-plan.json
+python3 crates/opi-eval/operator/evaluate.py gc --config /absolute/private/eval.toml --plan /absolute/fresh-plan.json
+python3 crates/opi-eval/operator/evaluate.py apply-plan --config /absolute/private/eval.toml --plan /absolute/reviewed-plan.json
+python3 crates/opi-eval/operator/evaluate.py restore --config /absolute/private/eval.toml --id EVAL_ID
+```
+
+`unpin` and `unretire` use the same ID/reason inputs. Archive/GC only preview
+inventory/digest-bound plans; repeated `gc --id` restricts selection. Review the
+plan before explicit application, which rechecks ownership, bytes, references,
+leases and policy and refuses changed inventory. Latest-three grouping and the
+same protections bound selection. Shared materials, images and Cargo caches are
+outside this maintenance scope.
+
+Restore verifies archived bytes and restores the original canonical path without
+rewriting seals or absolute material bindings. Missing cached dependencies remain
+offline capability gaps; restoration does not promise regrading or new execution.
+Source ownership relocation is complete here, but a fully independent runtime
+distribution and public packaging remain provisional. No new diagnostic capture,
+pi pin admission, acceptance authority or paid execution follows from this change.
+
 ## Quick start: validate an experiment
 
 This command works without starting an Agent:
@@ -939,8 +1079,8 @@ section. Older experiment or report formats imply no compatibility shim.
 
 No Opi product links, registers, or activates this crate. It registers no
 provider, tool, package, command, extension, startup hook, or default capture
-path in `opi`. Existing sessions, native evidence, local Eval reports,
-configuration, credentials, and user artifacts are not read, rewritten, or
-migrated by this crate.
+path in `opi`. Ordinary Opi startup does not read or migrate evaluation storage.
+Evaluation commands consume only their explicitly supplied profiles, operations
+or evidence; existing private profiles and sealed originals are not rewritten.
 
 Current crate version: `0.8.2`, inherited from the workspace package version.

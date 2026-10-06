@@ -124,19 +124,34 @@ directories, no pi captures and no hand-picked excerpts. The verifier checks
 non-emptiness, exhaustiveness and byte identity; generic auditor exit zero by
 itself can be an empty scan and is insufficient.
 
-## Evidence-root registry
+## External records and legacy references
 
-Every staged or retained evidence root must be recorded in
-`docs/eval/evidence-roots.jsonl` at handoff: one JSON line with the absolute
-path (WSL mount view plus Windows drive view when applicable), manifest
-SHA-256 and schema versions when a manifest exists, material schema, the
-Companion hash, collection date, current consumability status and the owning
-report. Never delete a record for a retained root - supersede it with a
-status change instead. Audits and offline reviewers resolve evidence
-locations through this registry rather than filesystem searches; a root
-missing from the registry is a handoff defect, not a search problem. The
-registry is language-neutral repo content and complements, never replaces,
-the bilingual report and returned manifest digest.
+Return the external evaluation ID and `record.json`, exact root/report/check
+paths, manifest SHA-256 and schema versions when applicable, material schema,
+Companion identity and current consumability gaps. The operator's external
+catalogue reads JSON records, immutable import references and lifecycle receipts
+directly, without a database or persistent query cache. These files are owned
+only by the evaluation operator. Reviewers query them
+or use the supplied immutable references, then verify the original evidence.
+Index metadata cannot establish a seal or score.
+
+`docs/eval/evidence-roots.jsonl` is a historical project index. Import it only by
+an explicit operator `import-index --config <profile> --index <legacy-jsonl>`
+request, read-only, without copying or rewriting originals. New runs neither
+require nor write it by default. A caller may explicitly export a bilingual
+conclusion to the repository; the external record/report handoff is sufficient.
+
+Archive/GC decisions and receipts stay outside sealed native trees. Restoration
+returns verified archive bytes to their original canonical path without editing
+absolute material references or seals. Storage unavailability, retirement and
+freshness are separate from historical result validity. Preserve required
+material/runtime/image dependencies; a portable report does not imply portable
+native regrading. Missing dependencies remain explicit gaps.
+
+Finished operations keep the latest three per retention group, protecting pins,
+retained references, active operations and unknown cleanup/dependencies. Protected
+exceptions remain locatable and are reported. Rolling cleanup never adopts
+caller-owned standalone output or shared material/build caches.
 
 ## Offline checks
 

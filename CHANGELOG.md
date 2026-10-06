@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- `opi-eval`: the Python operator modules and sole configuration template move
+  from the skill into `crates/opi-eval/operator/`; the development entrypoint is
+  `python3 crates/opi-eval/operator/evaluate.py`. The portable skill consumes a
+  supplied operator entrypoint and explicit private profile. Full independent
+  runtime distribution remains provisional; existing `/1` profiles and family
+  evidence contracts remain readable without private-file rewrites.
+
 - `opi-eval`: the manually dispatched external-lock materialization now
   delegates its diagnostic preparation and the explicit oracle-witness
   conformance to the shared local CLI and publishes
@@ -235,14 +242,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `opi-eval` skill: a single private `.opi/eval.toml` configures the model,
-  credential source, thinking, retries, batch deadline, task selection and
-  storage. The operator prepares pi version baselines and rebuilds current
-  working-tree Opi candidates into frozen operation packages. Candidates reuse
-  eligible registered snapshots without rerunning pi; offline comparison keeps
-  original evidence, task identities, paired coverage and unknown telemetry
-  explicit. Failed logical trials use precise fresh plans within the original
-  deadline, and machine handoffs expose preparation, attempts and results.
+- `opi-eval`: external `evaluations/YYYY/MM/<eval-id>/record.json` groups frozen
+  family operations, bilingual/machine reports and native attempt evidence.
+  Discovery reads JSON records, explicit read-only legacy imports and lifecycle
+  receipts directly, without SQLite or a persistent query cache. Existing
+  `catalog.sqlite` files are ignored and left untouched. Queries, pinning,
+  retirement, inventory-bound archive/GC previews, explicit plan application and
+  canonical-path archive restore keep original seals and scores unchanged.
+  Finished native evaluations and standalone comparisons apply latest-three
+  rolling retention by Agent, benchmark combination, model/API/parameters/thinking
+  and task scope. Pi releases retain independent buckets; Opi commits/versions
+  and Companion builds do not reset counts. Pins, references, active work and
+  unknown cleanup/dependencies are protected, with extra retained entries reported.
+  Only owned evaluation trees are maintained; standalone output and shared caches
+  remain caller-owned. `/2` retention has only `keep_latest_per_group = 3`; `/1`
+  inherits that template default without rewriting the private file or model
+  controls. Current-worktree candidates reuse verified eligible pi
+  snapshots without rerunning pi. `--bench all` uses one evaluation and one
+  first-dispatch deadline across families, graders and precise logical retries.
+  Historical validity, freshness, selection and storage availability stay separate.
 
 - `opi-eval`: the static external lock now pins the pi coding-agent to the
   upstream `v1.0.0` tag (commit `a13d35a742c6ef8462812a28fbe1d8c8b7431c32`)
@@ -254,10 +272,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   templates only retarget their pinned-version references; `pi:latest`
   still resolves to this pin at preparation.
 
-- `opi-eval` skill: native runs now deliver a bilingual conclusion pair in
-  `docs/eval/` while full operator reports, sealed evidence and verification
-  output stay external; `version=pi:latest` resolves at preparation to the
-  static-lock pi pin and records the resolved package version (never a frozen
+- `opi-eval` skill: native reports, sealed evidence, catalogue and verification
+  output stay external by default; `docs/eval/` receives a bilingual conclusion
+  pair only on an explicit caller request, and its evidence registry is a legacy
+  import source rather than a runtime requirement. Fidelity history is maintained
+  by its caller in a selected external directory. `version=pi:latest` resolves
+  at preparation to the static-lock pi pin and records the resolved package version (never a frozen
   `latest` identity); and Opi-only benchmark runs may reuse a registered
   sealed pi baseline under the new identity-tuple checks in
   `.agents/skills/opi-eval/references/sealed-baseline.md`, with cross-run

@@ -7,6 +7,26 @@ evidence that supports report traceability, verification, diagnosis or
 reproduction; remove only disposable resources attributable to this invocation.
 Routine cleanup within that scope needs no second blanket confirmation.
 
+Finished managed evaluations and standalone comparisons apply the supplied
+[operator's latest-three rolling policy](operator.md#retained-evaluation-maintenance).
+Pins, references, active/resumable operations and unknown cleanup/dependencies
+stay protected; extra retained evaluations are reported. Each pi release has an
+independent bucket, with only excess unprotected copies eligible. Arbitrary
+standalone comparison output stays caller-owned. Rolling retention does not
+authorize cache eviction, Docker pruning or another paid pi run.
+
+Manual retained-evaluation archive/GC remains separate. `archive` and `gc`
+write preview plans only; review exact entries, measured sizes and protected
+reasons before explicitly applying that plan. Application rechecks current
+inventory, ownership, leases and references against the same count policy and
+protections. Shared images, materials and persistent build caches remain outside
+these operations.
+
+Archive restore preserves original bytes at the original canonical location;
+never rewrite paths in sealed claims. A missing runtime/material/image dependency
+is an offline capability gap. Pinning, retirement, archive and tombstone receipts
+stay outside native sealed trees and never reclassify historical scores.
+
 ## Establish ownership and retention
 
 Before acquisition, builds or execution, record the selected Docker context,

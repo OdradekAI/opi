@@ -4,7 +4,7 @@
 
 ## 结论与使用方法
 
-完整阅读原 [ai.md](../pi-1.0.0/packages/ai.md) 411 行和 [telemetry.md](../pi-1.0.0/packages/telemetry.md) 167 行，对照当前 [spec-draft.md](spec-draft.md) 及 [decisions.md](decisions.md) 的 D-19–37（含前置 D-18/历史解释），并回到关键一手源码核验。**可以用这两份报告核查决策；本轮相关主张中没有发现必须重开已确认目标的新实质证据。** 它们不能单独证明全部56条目标正确或已实现：相同快照上的两份静态报告不是两次独立运行实验。
+完整阅读原 [ai.md（历史恢复）](../pi-1.0.2/evidence/pi-1.0.0/README.md#early-reports) 411 行和 [telemetry.md（历史恢复）](../pi-1.0.2/evidence/pi-1.0.0/README.md#early-reports) 167 行，对照当前 [spec-draft.md](spec-draft.md) 及 [decisions.md](decisions.md) 的 D-19–37（含前置 D-18/历史解释），并回到关键一手源码核验。**可以用这两份报告核查决策；本轮相关主张中没有发现必须重开已确认目标的新实质证据。** 它们不能单独证明全部56条目标正确或已实现：相同快照上的两份静态报告不是两次独立运行实验。
 
 两项 ai 事实表述需要限定或纠正：实际产品 session 的 Models 路径不能由残留 compat fallback 推断；header transform 属请求选项，不属于 auth。第一项已被本目录 P02/M02/设计演进纠正，不是新发现，更不是 D-30/35 错误。telemetry 报告对通用契约、NOOP、schema 与 README 冲突的判断得到回源支持；Rust tracing 不被宣称等价于整个通用 pi-telemetry API。
 

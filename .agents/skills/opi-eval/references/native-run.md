@@ -1,11 +1,11 @@
 # Native operator run
 
-Use for `benchmark` and `acceptance`. The current sources of command and format
-truth are [main.rs](../../../../crates/opi-eval/src/main.rs),
-[experiment.rs](../../../../crates/opi-eval/src/experiment.rs),
-[preparation](../../../../crates/opi-eval/src/runner/prepare.rs), and the
-[local walkthrough](../../../../crates/opi-eval/examples/local-evaluation/README.md).
-Check the selected executable's `--help` before assembling commands; the
+Use for `benchmark` and `acceptance`. Normal benchmark calls use the supplied
+[operator](operator.md) and its explicit private profile; the operator owns
+source/build adapters, material acquisition and frozen family plans. Inspect
+its returned preparation handoff before dispatch. This reference defines the
+native contracts needed to review that handoff or drive an explicitly selected
+native/acceptance workflow. Check the selected executable's `--help`; the
 Companion has no `--version` flag, so record its build/package identity.
 
 ## Platform and builds
@@ -15,37 +15,17 @@ engine. Translate Windows paths once, record the Linux cwd, and use Linux
 executables. Windows compilation or an installed Docker client does not prove
 task feasibility. Keep evaluation storage outside the source checkout.
 
-For Cargo builds, respect an existing `CARGO_TARGET_DIR`; otherwise use
-`python scripts/opi-cargo-cache.py resolve`, start a resolver-managed lease for
-the invoking process, and release it in `finally`/`trap`. Read the cache helper's
-help for lease arguments. Keep incremental compilation enabled and shared
-caches intact; inspect with `python scripts/opi-cargo-cache.py status`.
-
-Build the Companion from the checkout, recording the compiler-artifact
-executable path instead of assuming `target/release`:
-
-```sh
-cargo build --locked --release -p opi-eval --bin opi-eval --message-format=json-render-diagnostics
-```
-
-Record commit, dirty state, package version, Cargo.lock hash, toolchain, target,
-features and executable SHA-256. If a build fails, stop that path; stale
-binaries are not a substitute. A supplied Companion is usable after its
-identity and supported CLI are verified.
-
-For the selected subjects, inspect and use
-[build-agent-artifacts.sh](../../../../crates/opi-eval/scripts/build-agent-artifacts.sh):
-
-```sh
-bash crates/opi-eval/scripts/build-agent-artifacts.sh --opi-source "$OPI_SOURCE" --opi-commit "$OPI_COMMIT" --pi-source "$PI_SOURCE" --static-lock "$STATIC_LOCK" --out "$BUILD_OUT"
-```
-
-The script changes into the selected source directory. It accepts either or
-both products: Opi requires paired source/commit arguments; pi requires its
-source and static lock. Omit unselected products. It emits identities and
-locator files and does **not** install `cache/agents/*`.
-Compare requested versions with the source package and actual executable;
-never rewrite the version field to make a mismatched build pass.
+Use the runtime's subject adapters and build-cache coordination. Record the
+Companion's package version, source/dirty identity, locked dependencies,
+toolchain, target, features and executable digest separately from each subject.
+Respect configured persistent Cargo caches and release only invocation-owned
+leases; keep incremental compilation and reusable cache bytes intact. A failed
+build stops preparation; stale binaries cannot substitute. A supplied Companion
+is usable only after its identity and supported CLI are verified. Compare subject
+versions with actual source/package/executable records rather than editing a
+version field to make a mismatch pass. Project-specific developer build recipes
+belong to the runtime's development documentation, outside the portable benchmark
+instructions.
 
 ### Opi source selection
 
@@ -69,9 +49,8 @@ unavailable or cannot build is an explicit preparation gap.
 
 ### Pi source selection
 
-pi has no working-tree default in this checkout: a pi subject comes from the
-pinned [static lock](../../../../crates/opi-eval/external-locks/static/linux-x86_64.json)
-commit and blob identities. An explicit `version` must match that pinned
+pi has no working-tree default: a pi subject comes from the runtime's admitted
+static-lock commit and blob identities. An explicit `version` must match that pinned
 package; `pi:latest` is operator sugar that resolves at preparation to the
 lock's current pi pin and records the resolved package version in
 `[[subjects]].version` beside its build identity. The lock pin, not an upstream
@@ -94,9 +73,7 @@ Use a per-operation frozen material view. Preserve the actual executable and
 runtime bytes used by every run before staging another candidate; updating a
 shared `agents/opi` alias would invalidate the old material's bound paths.
 
-Seed the pinned lock/scripts/profiles/integrations exactly as the walkthrough
-describes. Inspect [external locks](../../../../crates/opi-eval/external-locks/static/linux-x86_64.json)
-and the selected [benchmark profiles](../../../../crates/opi-eval/profiles/benchmarks/).
+Use the supplied runtime's pinned lock/profiles/integrations.
 Let `prepare` verify/acquire materials through its pinned materializer; retain
 the acquisition plan, log and download identities. A missing runner/package/
 image produces a named prerequisite, not a GitHub receipt or invented digest.
@@ -109,10 +86,11 @@ evidence: the CLI has no corresponding automatic default or retry-budget field.
 Unlimited spending is the absence of cumulative usage/cost caps, not an
 unsupported `max_cost` value. Per-Agent stage limits retain their own meaning.
 
-Create one TOML document per family with a unique `experiment_id`. Use the
-[experiment fixture](../../../../crates/opi-eval/tests/fixtures/experiment/local-paired.toml)
-only to inspect syntax. Replace its synthetic identity, connection, controls,
-subjects and selection; fixture digests/tasks are never live evidence.
+The operator creates one TOML document per family with a unique `experiment_id`
+under `evaluations/YYYY/MM/<eval-id>/families/<bench>/`. Direct native requests
+must use the selected runtime's documented experiment schema; fixture
+digests/tasks are never live evidence. `bench=all` shares the selected families'
+external record and one first-dispatch deadline, including grading and retries.
 
 | Skill input | Experiment / evidence |
 |---|---|
@@ -130,8 +108,8 @@ subjects and selection; fixture digests/tasks are never live evidence.
 ### Model controls
 
 Explicit user inputs override the resolved
-[operator profile](operator.md#one-editable-configuration). The
-[configuration template](../config.example.toml) is the single default source
+[operator profile](operator.md#supplied-entrypoint-and-one-profile). The
+supplied operator's maintained template is the single default source
 for context/output controls; apply the same required controls to compared
 subjects.
 The [model documentation](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash)
@@ -185,8 +163,8 @@ never silently omit the user's requirement.
 
 ### Agent turn budgets
 
-Inspect the selected Companion's `render_opi_config` and the actual client's
-loop configuration alongside the native time limits. The current projection
+Inspect the frozen client projection and exact-client proof alongside native
+time limits. The current projection
 omits `[defaults].max_iterations`; current-tree Opi has no default turn-count
 ceiling and only the product enforces an explicitly supplied budget. An older
 Opi executable may still default to 50: a version label or absent field alone
@@ -195,7 +173,7 @@ and cancellation still apply. Disclose the observed turn policy and deadlines
 in the preview, separately from tokens and pi's actual loop/retry policy.
 
 Before using a new Opi executable/projection combination, verify it with the
-offline `native_client_turn_budgets` test documented in the crate README. It must
+runtime's offline `native_client_turn_budgets` conformance check. It must
 finish beyond 50 turns using both the default and production projection, while
 an explicitly small product budget stops before the next request. A failed
 exact-client check is a preparation gap; do not silently substitute a newer
