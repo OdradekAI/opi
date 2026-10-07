@@ -1,0 +1,246 @@
+{
+  "date": "2026-10-07",
+  "status": "removed",
+  "target": "docs/research/pi-1.0.2",
+  "current_baseline": "docs/research/pi-1.0.4",
+  "source_tree_sha256": "7e74bf510f6a2ced24656f8a03f576e01067d66fbe2e89bafb9c33059593de02",
+  "file_count": 22,
+  "directories": [
+    "evidence",
+    "evidence/pi-1.0.0",
+    "packages"
+  ],
+  "files": [
+    {
+      "path": "documentation-audit.md",
+      "bytes": 24121,
+      "sha256": "81b1fdb41cf283d303763a6b8c2989cca6146c30380ec31a807cf478f3c44e41",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/documentation-audit.md",
+      "git_blob": "10f88a25efcebf5883ed17652e9dc7858388a6a6",
+      "git_sha256": "81b1fdb41cf283d303763a6b8c2989cca6146c30380ec31a807cf478f3c44e41",
+      "same_bytes": true
+    },
+    {
+      "path": "documentation-index.md",
+      "bytes": 30624,
+      "sha256": "1303cf7dc3a4d09fe5a4e6cbdb3495fae1b5a55af481857ef3fc6a6a7264930f",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/documentation-index.md",
+      "git_blob": "c3361ee874b630557969995de0d0eab91e51adf6",
+      "git_sha256": "1303cf7dc3a4d09fe5a4e6cbdb3495fae1b5a55af481857ef3fc6a6a7264930f",
+      "same_bytes": true
+    },
+    {
+      "path": "evidence/pi-1.0.0/documentation-reading.json",
+      "bytes": 31941,
+      "sha256": "85ffc1d4ed1a441f5fb06a8646468a2488f23257df2549bb33a0b249ee0abe1b",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/evidence/pi-1.0.0/documentation-reading.json",
+      "git_blob": "2053da52b138f63d782827b3b130565c9c814ebb",
+      "git_sha256": "85ffc1d4ed1a441f5fb06a8646468a2488f23257df2549bb33a0b249ee0abe1b",
+      "same_bytes": true
+    },
+    {
+      "path": "evidence/pi-1.0.0/README.md",
+      "bytes": 4920,
+      "sha256": "899c99eb7378f22829e76f0b01e86231dae3871309e16a1dd8959a555c9d9650",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/evidence/pi-1.0.0/README.md",
+      "git_blob": "da12a19ec6355ae75488e25fee3c701ca43bfe67",
+      "git_sha256": "899c99eb7378f22829e76f0b01e86231dae3871309e16a1dd8959a555c9d9650",
+      "same_bytes": true
+    },
+    {
+      "path": "evidence/pi-1.0.0/source-manifest.json",
+      "bytes": 394719,
+      "sha256": "b4c8d2260a3bd86dfd35d31a562ab5a981a713ab9f395712b640a644aac7185b",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/evidence/pi-1.0.0/source-manifest.json",
+      "git_blob": "a823c64b6620da96b3b4abc2b88bad94486e364e",
+      "git_sha256": "b4c8d2260a3bd86dfd35d31a562ab5a981a713ab9f395712b640a644aac7185b",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/agent.md",
+      "bytes": 31232,
+      "sha256": "daedbb0d2eb7a7c111468bacc8e5d81c354d0a819a1ae3627cd284a366bfe64d",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/agent.md",
+      "git_blob": "855a76851ca88e39cf136f15ae8a0d5f22ccc5d6",
+      "git_sha256": "daedbb0d2eb7a7c111468bacc8e5d81c354d0a819a1ae3627cd284a366bfe64d",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/ai.md",
+      "bytes": 56440,
+      "sha256": "49a9a953d4acfada3b65a539a80ed5890c2c18ff6a6d289c27d0e7ff0a22198f",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/ai.md",
+      "git_blob": "a2912f54d9e521b85bf96853fcbda937d7e9afbf",
+      "git_sha256": "49a9a953d4acfada3b65a539a80ed5890c2c18ff6a6d289c27d0e7ff0a22198f",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/chord.md",
+      "bytes": 72045,
+      "sha256": "4e44c67568cc78d47a267f30f25c74dea67107ea088734bacb7399fa24548a54",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/chord.md",
+      "git_blob": "dcd80880279a542a3a2fb1ae9d86c315a5696a6d",
+      "git_sha256": "4e44c67568cc78d47a267f30f25c74dea67107ea088734bacb7399fa24548a54",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/client.md",
+      "bytes": 24620,
+      "sha256": "c1a29598e9c76cfdcdd96a6ad7b45e71bdf9b3e4a2e6a2577bb6e174b9e33758",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/client.md",
+      "git_blob": "c904dfc38903b47c2b6014cbf87388e14907bf9e",
+      "git_sha256": "c1a29598e9c76cfdcdd96a6ad7b45e71bdf9b3e4a2e6a2577bb6e174b9e33758",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/codemode.md",
+      "bytes": 30595,
+      "sha256": "77a0eb26ed23e49f30ecbb386b1bdb303d62a2f4aafb3bddbd676a0ff0120b60",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/codemode.md",
+      "git_blob": "875bab5fc9935c8bb914cf987fe3b03952f4b123",
+      "git_sha256": "77a0eb26ed23e49f30ecbb386b1bdb303d62a2f4aafb3bddbd676a0ff0120b60",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/coding-agent.md",
+      "bytes": 190431,
+      "sha256": "0859fccece704efcb1be7e36a6dc9bae2f76b9cfab8fbd80524977a2f3b38700",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/coding-agent.md",
+      "git_blob": "95e642453ac93dd05b953db211e06034a6c7cf1f",
+      "git_sha256": "0859fccece704efcb1be7e36a6dc9bae2f76b9cfab8fbd80524977a2f3b38700",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/durable.md",
+      "bytes": 90171,
+      "sha256": "d749ae581589aae75550d17f5a6bc350a8826ee342182c283cc8ec257374ed58",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/durable.md",
+      "git_blob": "017d7a14a3a46bf13afa3f7f8a3054b360983348",
+      "git_sha256": "d749ae581589aae75550d17f5a6bc350a8826ee342182c283cc8ec257374ed58",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/evals.md",
+      "bytes": 23998,
+      "sha256": "604cc1f4ed8af79fe4403fd25a3a2c3d14fd0c5f2f99efbdc607912dfcf6ddca",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/evals.md",
+      "git_blob": "635278e54aa6bf3f17bb0ddee8aead369cb6d0ce",
+      "git_sha256": "604cc1f4ed8af79fe4403fd25a3a2c3d14fd0c5f2f99efbdc607912dfcf6ddca",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/mcp.md",
+      "bytes": 38047,
+      "sha256": "3db4b5d7e17ab975b97f142eb1bf850c72b80e3b2b027d8b1cd188cd137f5836",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/mcp.md",
+      "git_blob": "545c09b181f5c99562ccf9418c29d648ac0a54b7",
+      "git_sha256": "3db4b5d7e17ab975b97f142eb1bf850c72b80e3b2b027d8b1cd188cd137f5836",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/protocol.md",
+      "bytes": 21718,
+      "sha256": "3596ec684d76e387ce3e55f685fb8eb2cce94a628ce72eafeb01be6b94f02694",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/protocol.md",
+      "git_blob": "bc61c90ba49a9fa3cae3f70fcacb032bc2827842",
+      "git_sha256": "3596ec684d76e387ce3e55f685fb8eb2cce94a628ce72eafeb01be6b94f02694",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/server.md",
+      "bytes": 26915,
+      "sha256": "47031d9bc23b41f449a68d54e45f5a5e4a78821741c4d3fcebede2fa8c79063e",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/server.md",
+      "git_blob": "199a608e7c6ed38aa643a77e738724e8c32b790d",
+      "git_sha256": "47031d9bc23b41f449a68d54e45f5a5e4a78821741c4d3fcebede2fa8c79063e",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/telemetry.md",
+      "bytes": 20292,
+      "sha256": "4247421c3580b9f92cbd90c055972342b71156f0ea1345bfad3050e24c58554f",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/telemetry.md",
+      "git_blob": "55e623e6690c6cbe461d99a64efde77afd886bd3",
+      "git_sha256": "4247421c3580b9f92cbd90c055972342b71156f0ea1345bfad3050e24c58554f",
+      "same_bytes": true
+    },
+    {
+      "path": "packages/tui.md",
+      "bytes": 48905,
+      "sha256": "1c99458fb65ffe1a92221fbded33c7bb8c83bdb3c52715faf408c2d784d4ec8b",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/packages/tui.md",
+      "git_blob": "6b576214359c9b756c8a9b74d7b1f2f9609ba13b",
+      "git_sha256": "1c99458fb65ffe1a92221fbded33c7bb8c83bdb3c52715faf408c2d784d4ec8b",
+      "same_bytes": true
+    },
+    {
+      "path": "README.md",
+      "bytes": 54282,
+      "sha256": "8b05c0a94f770e439e1246a2a6db63c00d30de4104257f9243d339f9669a1024",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/README.md",
+      "git_blob": "a8567f3a3ae9d38052481fe25ad0f30a31dab991",
+      "git_sha256": "71b3dbc34a6a345bb0fc10c64ba26d40872cf395bb27b8afe0ca6dea37dfb59d",
+      "same_bytes": false,
+      "working_copy_archive": "README-before-retirement.txt"
+    },
+    {
+      "path": "source-index.md",
+      "bytes": 79828,
+      "sha256": "c79a8b88df4f880469d903fca190dfcf49cae334515f782157dadcec955eb9c0",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/source-index.md",
+      "git_blob": "7808f01a1ad38c4dd3126abaad2e402ebbfe3699",
+      "git_sha256": "c79a8b88df4f880469d903fca190dfcf49cae334515f782157dadcec955eb9c0",
+      "same_bytes": true
+    },
+    {
+      "path": "source-manifest.json",
+      "bytes": 396703,
+      "sha256": "4cf023e1a6b0bbcec9aeb540614bac35dafea343788ef86c87b2e5515cb37ed9",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/source-manifest.json",
+      "git_blob": "4c385eeaa14ba254c539431422b29a384e961548",
+      "git_sha256": "4cf023e1a6b0bbcec9aeb540614bac35dafea343788ef86c87b2e5515cb37ed9",
+      "same_bytes": true
+    },
+    {
+      "path": "version-changes.md",
+      "bytes": 32828,
+      "sha256": "f71d0d7fcb3a1823cbbb0bf101dead50b27f89eba0a959873136918d8b47a809",
+      "git_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+      "git_path": "docs/research/pi-1.0.2/version-changes.md",
+      "git_blob": "8f7ab6304a9c5c126c2e8e4f032e5ca816ebd10f",
+      "git_sha256": "f71d0d7fcb3a1823cbbb0bf101dead50b27f89eba0a959873136918d8b47a809",
+      "same_bytes": true
+    }
+  ],
+  "untracked_files": [],
+  "ignored_files": [],
+  "reparse_points": [],
+  "recovery_notes": [
+    "21 files match the fixed Git commit byte for byte. Restoring their complete text requires this repository and its retained Git objects.",
+    "README differs only by the preceding baseline-navigation update; its exact pre-removal bytes are additionally archived as README-before-retirement.txt.",
+    "Historical source snapshots are absent; restoring report text does not restore old source files.",
+    "The current baseline and migrated evidence can be read without restoring the deleted directory."
+  ],
+  "removal_method": "Explicit file-path patch for the 22 verified files, then deletion of verified empty directories only; no recursive removal executed."
+}

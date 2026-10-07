@@ -1,0 +1,2106 @@
+{
+  "subject": "Pi 1.0.4 documentation reading evidence",
+  "analysis_date": "2026-10-07",
+  "source_tree_sha256": "7e74bf510f6a2ced24656f8a03f576e01067d66fbe2e89bafb9c33059593de02",
+  "document_count": 128,
+  "line_count": 33270,
+  "scope_notes": [
+    "全文表示阅读文本，不表示逐分支实现审计或运行测试。",
+    "ranges仅表示本次实读范围；继承深度以inherited_from指向的原记录为准。",
+    "删除的tui-plan.md不在当前128项中；二手历史证据另存evidence/pi-1.0.2/historical-planning.json。",
+    "外部RFC及最新网页不在本地快照范围。"
+  ],
+  "documents": [
+    {
+      "path": ".pi/prompts/cl.md",
+      "sha256": "e86103ed3476ac5760526496f9d4a5a63ae6e3a8a9597db103cfd023ddbf9684",
+      "lines": 54,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "内容与1.0.2一致；继承原审读：字节一致；继承旧版：标题与关键词筛查；不作为功能规划；当前相关结论按包报告复核，不宣称本轮重新全文阅读",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "e86103ed3476ac5760526496f9d4a5a63ae6e3a8a9597db103cfd023ddbf9684",
+        "original_index_line": 40,
+        "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": ".pi/prompts/deslop.md",
+      "sha256": "a52acc375c4b8c949ddb0469f802c5a352a98fe26d47fb12fbcf5c555aeb4551",
+      "lines": 67,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "内容与1.0.2一致；继承原审读：字节一致；继承旧版：标题与关键词筛查；不作为功能规划；当前相关结论按包报告复核，不宣称本轮重新全文阅读",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "a52acc375c4b8c949ddb0469f802c5a352a98fe26d47fb12fbcf5c555aeb4551",
+        "original_index_line": 41,
+        "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": ".pi/prompts/is.md",
+      "sha256": "9bc500efde0bcd1285e1103492077d732c24242719d230a109b13c7bcad7b7d4",
+      "lines": 28,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "内容与1.0.2一致；继承原审读：字节一致；继承旧版：标题与关键词筛查；不作为功能规划；当前相关结论按包报告复核，不宣称本轮重新全文阅读",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "9bc500efde0bcd1285e1103492077d732c24242719d230a109b13c7bcad7b7d4",
+        "original_index_line": 42,
+        "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": ".pi/prompts/pr.md",
+      "sha256": "1ba8e6cba91354e27bc4976d237c291691e9a064cee2132cef7656e3ceb46e20",
+      "lines": 37,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "内容与1.0.2一致；继承原审读：字节一致；继承旧版：标题与关键词筛查；不作为功能规划；当前相关结论按包报告复核，不宣称本轮重新全文阅读",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "1ba8e6cba91354e27bc4976d237c291691e9a064cee2132cef7656e3ceb46e20",
+        "original_index_line": 43,
+        "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": ".pi/prompts/sa.md",
+      "sha256": "7b590798a5526e6620c6052cb688afd1d7ff2c2ca9426f8a28b5110a94ddbd7a",
+      "lines": 163,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "内容与1.0.2一致；继承原审读：字节一致；继承旧版：标题与关键词筛查；不作为功能规划；当前相关结论按包报告复核，不宣称本轮重新全文阅读",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "7b590798a5526e6620c6052cb688afd1d7ff2c2ca9426f8a28b5110a94ddbd7a",
+        "original_index_line": 44,
+        "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": ".pi/prompts/wr.md",
+      "sha256": "86c6bd7b244b6d4d1792804ce170a2d0b67f735dcf79d539c88163c0c73dba1b",
+      "lines": 41,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "内容与1.0.2一致；继承原审读：字节一致；继承旧版：标题与关键词筛查；不作为功能规划；当前相关结论按包报告复核，不宣称本轮重新全文阅读",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "86c6bd7b244b6d4d1792804ce170a2d0b67f735dcf79d539c88163c0c73dba1b",
+        "original_index_line": 45,
+        "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": ".pi/skills/add-llm-provider.md",
+      "sha256": "684ffea93aee90c2f13a21c5c696a4a303264d412ea8f9f789b6c9065718132d",
+      "lines": 57,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "内容与1.0.2一致；继承原审读：字节一致；继承旧版：标题与关键词筛查；不作为功能规划；当前相关结论按包报告复核，不宣称本轮重新全文阅读",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "684ffea93aee90c2f13a21c5c696a4a303264d412ea8f9f789b6c9065718132d",
+        "original_index_line": 46,
+        "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": ".pi/skills/interactive-testing.md",
+      "sha256": "65264173c8d5352b9ad643dd524238da0537572aeed9c1d754017ca8907c9673",
+      "lines": 19,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "内容与1.0.2一致；继承原审读：字节一致；继承旧版：标题与关键词筛查；不作为功能规划；当前相关结论按包报告复核，不宣称本轮重新全文阅读",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "65264173c8d5352b9ad643dd524238da0537572aeed9c1d754017ca8907c9673",
+        "original_index_line": 47,
+        "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": ".pi/skills/release.md",
+      "sha256": "2fd7f2c0a5c74894f368d798304bd1baef7e482bacafb6457bff511f4f4fd5b1",
+      "lines": 50,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "本轮全文重读；对照包集合、实现边界、发布流程和外部规划可见性；不执行其中命令",
+      "ranges": [
+        [
+          1,
+          50
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "2fd7f2c0a5c74894f368d798304bd1baef7e482bacafb6457bff511f4f4fd5b1",
+        "original_index_line": 48,
+        "reading_scope": "全文复核；对变化契约追踪关联实现",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "316c0f9f1e053d5dfc9ccb31915b18725d51d792f06783bf908f4bd8861a6dda",
+      "lines": 125,
+      "kind": "仓库工作约定",
+      "reading_scope": "本轮全文重读；对照包集合、实现边界、发布流程和外部规划可见性；不执行其中命令",
+      "ranges": [
+        [
+          1,
+          125
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "316c0f9f1e053d5dfc9ccb31915b18725d51d792f06783bf908f4bd8861a6dda",
+        "original_index_line": 49,
+        "reading_scope": "全文复核；对变化契约追踪关联实现",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "ce0c1456c55404c729c632221f9159ea3b463e6b3974a1c22446e9315388490c",
+      "lines": 102,
+      "kind": "仓库说明／贡献规则",
+      "reading_scope": "本轮全文重读；对照包集合、实现边界、发布流程和外部规划可见性；不执行其中命令",
+      "ranges": [
+        [
+          1,
+          102
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "ce0c1456c55404c729c632221f9159ea3b463e6b3974a1c22446e9315388490c",
+        "original_index_line": 50,
+        "reading_scope": "字节一致；继承旧版：标题与关键词筛查；外部规划入口局部核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "README.md",
+      "sha256": "63d76d96fbd1f98b670a9f3e746102343e04b2d026bd05c9fe06700ceb95a0f2",
+      "lines": 164,
+      "kind": "仓库说明／贡献规则",
+      "reading_scope": "本轮全文重读；对照包集合、实现边界、发布流程和外部规划可见性；不执行其中命令",
+      "ranges": [
+        [
+          1,
+          164
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "63d76d96fbd1f98b670a9f3e746102343e04b2d026bd05c9fe06700ceb95a0f2",
+        "original_index_line": 51,
+        "reading_scope": "全文复核；对变化契约追踪关联实现",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "2d8b299904ce69d14b9378b643964d86f79fb619578cdc2ee390f843dab1b6cb",
+      "lines": 87,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "本轮全文重读；对照包集合、实现边界、发布流程和外部规划可见性；不执行其中命令",
+      "ranges": [
+        [
+          1,
+          87
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "2d8b299904ce69d14b9378b643964d86f79fb619578cdc2ee390f843dab1b6cb",
+        "original_index_line": 52,
+        "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/agent/CHANGELOG.md",
+      "sha256": "1f43b75821920d3c9d3b75af7f8ecb857435e33606aac08b69a451ad200db7b1",
+      "lines": 768,
+      "kind": "changelog",
+      "reading_scope": "重读最新 1–70 行，核对空的 1.0.3/1.0.4 标题及 1.0.0 范围收缩。",
+      "ranges": [
+        [
+          1,
+          70
+        ]
+      ]
+    },
+    {
+      "path": "packages/agent/README.md",
+      "sha256": "37da6831566eb0385a59da2ee055e7a7efe3e8e7a4b50aab8745ce43559197fe",
+      "lines": 564,
+      "kind": "readme",
+      "reading_scope": "重点复核角色说明、prepareRequest/finishTurn、State 与低层 system 过滤示例、订阅结算。",
+      "ranges": [
+        [
+          38,
+          58
+        ],
+        [
+          124,
+          142
+        ],
+        [
+          303,
+          325
+        ],
+        [
+          532,
+          564
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "37da6831566eb0385a59da2ee055e7a7efe3e8e7a4b50aab8745ce43559197fe",
+        "original_index_line": 60,
+        "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/ai/CHANGELOG.md",
+      "sha256": "c8d1eef0bb84d1c0cf77a055e4b4465a2d11aef4f6872c55307eb51f48bf68ac",
+      "lines": 2264,
+      "kind": "changelog",
+      "reading_scope": "重读最新发行 1–90 行；旧发行历史分析从旧证据保留。",
+      "ranges": [
+        [
+          1,
+          90
+        ]
+      ]
+    },
+    {
+      "path": "packages/ai/README.md",
+      "sha256": "af571fea1caa25864af0ac66254210200456a5b587aa1aaa86ae59667277887c",
+      "lines": 1938,
+      "kind": "readme",
+      "reading_scope": "重点复核 Azure 双协议、跨模型历史与 compat；另读取 quick start 片段。",
+      "ranges": [
+        [
+          126,
+          162
+        ],
+        [
+          1517,
+          1558
+        ],
+        [
+          1810,
+          1844
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "af571fea1caa25864af0ac66254210200456a5b587aa1aaa86ae59667277887c",
+        "original_index_line": 67,
+        "reading_scope": "全文复核；对变化契约追踪关联实现",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/chord/PLANNING.md",
+      "sha256": "b80b119d0eeb5c27b8f1be59eb39d0650539a12099ae070a1dff953b23fa672f",
+      "lines": 859,
+      "kind": "设计规划及历史交接",
+      "reading_scope": "文档与包内源码摘要未变，继承旧报告全文审读；本次重读 generation replacement、工作包及 Definition of Done，重新判断未兑现方向。",
+      "ranges": [
+        [
+          196,
+          272
+        ],
+        [
+          636,
+          752
+        ],
+        [
+          835,
+          859
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "b80b119d0eeb5c27b8f1be59eb39d0650539a12099ae070a1dff953b23fa672f",
+        "original_index_line": 73,
+        "reading_scope": "字节一致；继承旧版：全文；WP0–WP8 与现行实现逐项对照",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/chord/README.md",
+      "sha256": "765e67d90e55a45ec8269f6aa7a9c38af6c8828e33df1ef87e75b89fdb08f7e1",
+      "lines": 264,
+      "kind": "现行 API 与设计说明",
+      "reading_scope": "本次全文重新阅读；新 env Context 消费者及旧规划边界另按当前源码复核。",
+      "ranges": [
+        [
+          1,
+          264
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "765e67d90e55a45ec8269f6aa7a9c38af6c8828e33df1ef87e75b89fdb08f7e1",
+        "original_index_line": 74,
+        "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/chord/src/delta/README.md",
+      "sha256": "a1d98ec78b0dff483b3c6d151a1773e002e64ddcb34c0b028ee585dbf96bef90",
+      "lines": 191,
+      "kind": "delta 算法设计与取舍",
+      "reading_scope": "文档与对应源码摘要未变；继承旧报告第 1–191 行完整审读，本轮未重复阅读全文。",
+      "ranges": [],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "a1d98ec78b0dff483b3c6d151a1773e002e64ddcb34c0b028ee585dbf96bef90",
+        "original_index_line": 75,
+        "reading_scope": "字节一致；继承旧版：全文；与旧计划／实验文字对照",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/client/CHANGELOG.md",
+      "sha256": "f53ab0a7f1231ca0650489f1361b41ec9116c0a20c8bb50d2df78f08ef9d98cd",
+      "lines": 47,
+      "kind": "发行历史",
+      "reading_scope": "本次全文重新阅读，区分已交付变更、空版本标题与历史记录；未作运行验证。",
+      "ranges": [
+        [
+          1,
+          47
+        ]
+      ]
+    },
+    {
+      "path": "packages/client/README.md",
+      "sha256": "be336696a8f91c5cb40a240c672926dc96cc8f30e38ab97afc8d2a6885cb7205",
+      "lines": 72,
+      "kind": "现行包说明与 API 契约",
+      "reading_scope": "本次全文重新阅读，结合当前关键路径或内容摘要核对现版；具体实现/规划结论见本包报告。",
+      "ranges": [
+        [
+          1,
+          72
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "be336696a8f91c5cb40a240c672926dc96cc8f30e38ab97afc8d2a6885cb7205",
+        "original_index_line": 82,
+        "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/codemode/CHANGELOG.md",
+      "sha256": "b26070ec683ff5e14236008dfbe8c39876a7b5a90edcce4d47e7a8550fe9b515",
+      "lines": 49,
+      "kind": "发行历史",
+      "reading_scope": "本次全文重新阅读，区分已交付变更、空版本标题与历史记录；未作运行验证。",
+      "ranges": [
+        [
+          1,
+          49
+        ]
+      ]
+    },
+    {
+      "path": "packages/codemode/README.md",
+      "sha256": "4b79ddd6fd06c8d1ca24a4dc353415019128452002228f2943d23cc4b1cf277b",
+      "lines": 190,
+      "kind": "现行包说明与 API 契约",
+      "reading_scope": "本次全文重新阅读，结合当前关键路径或内容摘要核对现版；具体实现/规划结论见本包报告。",
+      "ranges": [
+        [
+          1,
+          190
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "4b79ddd6fd06c8d1ca24a4dc353415019128452002228f2943d23cc4b1cf277b",
+        "original_index_line": 89,
+        "reading_scope": "全文复核；对变化契约追踪关联实现",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "sha256": "12ee2fa0296d6e6614ac3facc84daf055fd8fa58e30d0fe7c0967341d74d3dae",
+      "lines": 6148,
+      "kind": "发行历史",
+      "reading_scope": "本轮详读 1.0.4/1.0.3 新段与 1.0.2/1.0.1 背景；旧历史主题沿用证据，不冒称全文",
+      "ranges": [
+        [
+          1,
+          107
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/README.md",
+      "sha256": "fbc7abec7d0829ac8bc4b217e950794e1ba4d8d1b3e0850f970da318ad72e863",
+      "lines": 95,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：全文复核；对变化契约追踪关联实现；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "fbc7abec7d0829ac8bc4b217e950794e1ba4d8d1b3e0850f970da318ad72e863",
+        "original_index_line": 96,
+        "reading_scope": "全文复核；对变化契约追踪关联实现",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/cli-integration.md",
+      "sha256": "1596d0e7f1598b960d6e05cf6d44d762917348a92ee46e83e87cba9f69fb439a",
+      "lines": 106,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "1596d0e7f1598b960d6e05cf6d44d762917348a92ee46e83e87cba9f69fb439a",
+        "original_index_line": 97,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/cli.md",
+      "sha256": "c7bd9c24a1bc7004c60f3d58150533f208bf721c9906181b635fd3f0753b8a3e",
+      "lines": 333,
+      "kind": "当前 CLI 契约",
+      "reading_scope": "全文阅读；工具模式、MCP 特例与 no-mcp 的 SDK/loader/会话接线复核",
+      "ranges": [
+        [
+          1,
+          333
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/codemode.md",
+      "sha256": "aee38a85e13a2e83b51f0622dde2e0b8f8449c88af7f10890e251d50776b64a2",
+      "lines": 208,
+      "kind": "当前脚本工具契约",
+      "reading_scope": "全文阅读；read 图片结果、落盘及 guidelines 对照实现",
+      "ranges": [
+        [
+          1,
+          208
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/compaction.md",
+      "sha256": "190b8c651148504613aea98b0637807c536ed0362948fda1bcd1ae137d75ff4a",
+      "lines": 463,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "190b8c651148504613aea98b0637807c536ed0362948fda1bcd1ae137d75ff4a",
+        "original_index_line": 100,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/configuration.md",
+      "sha256": "fc48d1ce7d885c5253222415fb7a4b46d75f80e6431eb924174657ff775099eb",
+      "lines": 47,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "fc48d1ce7d885c5253222415fb7a4b46d75f80e6431eb924174657ff775099eb",
+        "original_index_line": 101,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/containerization.md",
+      "sha256": "e309fcb9a0a7592c0dba000ef8ee90f2d7ef1e01e6a1ac2f0cd9760dd63dee0c",
+      "lines": 183,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "e309fcb9a0a7592c0dba000ef8ee90f2d7ef1e01e6a1ac2f0cd9760dd63dee0c",
+        "original_index_line": 102,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/custom-provider.md",
+      "sha256": "5345ac346429a3862b46533ee810944b2c756079dcf5d3aad272ab579c58c129",
+      "lines": 173,
+      "kind": "Provider 扩展设计与边界",
+      "reading_scope": "字节未变；本轮全文复读；API 标识与 provider 标识分开，未把 Responses API 列举误读为 provider 唯一能力",
+      "ranges": [
+        [
+          1,
+          173
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "5345ac346429a3862b46533ee810944b2c756079dcf5d3aad272ab579c58c129",
+        "original_index_line": 103,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/environment-variables.md",
+      "sha256": "ed17a738cf346e687d391fcad3b55e39063626081f8eebd9563f2f5e0491f542",
+      "lines": 98,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "ed17a738cf346e687d391fcad3b55e39063626081f8eebd9563f2f5e0491f542",
+        "original_index_line": 104,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/extensions.md",
+      "sha256": "bd2ed1f728173c1defc035e90c3894c308ae153fa08575c12b4a9988e11f8108",
+      "lines": 274,
+      "kind": "当前扩展 API 与边界",
+      "reading_scope": "全文阅读；ToolLoadout/getPromptGuidelines、隐藏声明及同进程权限复核",
+      "ranges": [
+        [
+          1,
+          274
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/how-pi-works.md",
+      "sha256": "7d43ab8e2b886cd1047dcee503588a1c828b92333dd4f177526b89e6db8aaa8b",
+      "lines": 49,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "7d43ab8e2b886cd1047dcee503588a1c828b92333dd4f177526b89e6db8aaa8b",
+        "original_index_line": 106,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/index.md",
+      "sha256": "c107426e88eac570e9ecbea325cb45c2a6b778a324fd6e424bd032380a65614d",
+      "lines": 39,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "c107426e88eac570e9ecbea325cb45c2a6b778a324fd6e424bd032380a65614d",
+        "original_index_line": 107,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/json.md",
+      "sha256": "839a2a2da8112298a7f8870afa71d1998db2d43b8f68c9c179a0c696b6477a5e",
+      "lines": 226,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "839a2a2da8112298a7f8870afa71d1998db2d43b8f68c9c179a0c696b6477a5e",
+        "original_index_line": 108,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/keybindings.md",
+      "sha256": "537f1ec029db7885104861cf8197a310066a8b712376dab307b6b312215db33a",
+      "lines": 194,
+      "kind": "当前按键参考",
+      "reading_scope": "全文阅读；Home/End 与 transcript 首尾动作语义；底层表由 TUI 包核对",
+      "ranges": [
+        [
+          1,
+          194
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/llama-cpp.md",
+      "sha256": "636e994b9714c8f9264d25e14f4335e72b31f9b8d72c33c0c88f4e609f5813df",
+      "lines": 114,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "636e994b9714c8f9264d25e14f4335e72b31f9b8d72c33c0c88f4e609f5813df",
+        "original_index_line": 110,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/mcp.md",
+      "sha256": "a635d721e58b0cbf43f7443a29fd43b8201b62602c62763c1f5fdb3910d7d938",
+      "lines": 272,
+      "kind": "当前 MCP 使用与集成契约",
+      "reading_scope": "全文阅读；MCP allowlist、曝光、禁用与 SDK 的调用链复核",
+      "ranges": [
+        [
+          1,
+          272
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/message-types.md",
+      "sha256": "c642db2a93e6433aadde1675f51e3c8b51520d9a6ee1ac805802e635aab10413",
+      "lines": 261,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "c642db2a93e6433aadde1675f51e3c8b51520d9a6ee1ac805802e635aab10413",
+        "original_index_line": 112,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/models.md",
+      "sha256": "b59ad4c66c559714bdc3543b5c53eac423adcc961574086ab555db61fc104714",
+      "lines": 205,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：全文复核；对变化契约追踪关联实现；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "b59ad4c66c559714bdc3543b5c53eac423adcc961574086ab555db61fc104714",
+        "original_index_line": 113,
+        "reading_scope": "全文复核；对变化契约追踪关联实现",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/packages.md",
+      "sha256": "5fe4a3009d7260fe1e2f54b64086fc3c8b4d678232bfa2dbc7e91fe588fc9ea5",
+      "lines": 129,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "5fe4a3009d7260fe1e2f54b64086fc3c8b4d678232bfa2dbc7e91fe588fc9ea5",
+        "original_index_line": 114,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/prompt-templates.md",
+      "sha256": "ad5113cce0d05ef0ac77b3c71f9ebe41ea68c072275f9273b9616e4924feda42",
+      "lines": 59,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "ad5113cce0d05ef0ac77b3c71f9ebe41ea68c072275f9273b9616e4924feda42",
+        "original_index_line": 115,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/providers.md",
+      "sha256": "5f07326b78241e7e090fdfb71ad79b44bd339332da5d94f1167c93b92bd062eb",
+      "lines": 200,
+      "kind": "当前 Provider 认证参考",
+      "reading_scope": "字节未变；本轮全文复读；Azure 环境配置仍有效，未列 provider key 不推成旧名",
+      "ranges": [
+        [
+          1,
+          200
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "5f07326b78241e7e090fdfb71ad79b44bd339332da5d94f1167c93b92bd062eb",
+        "original_index_line": 116,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/quickstart.md",
+      "sha256": "10c69b394304f6e7d6409b6bde02b0165f5723ff4acfd49cfa8f7414f977266a",
+      "lines": 136,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：全文复核；对变化契约追踪关联实现；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "10c69b394304f6e7d6409b6bde02b0165f5723ff4acfd49cfa8f7414f977266a",
+        "original_index_line": 117,
+        "reading_scope": "全文复核；对变化契约追踪关联实现",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc-commands.md",
+      "sha256": "4deeee367852f4633ef594bc079f9e9fb14640a4e3ba8a69b7c89b6f54740838",
+      "lines": 860,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "4deeee367852f4633ef594bc079f9e9fb14640a4e3ba8a69b7c89b6f54740838",
+        "original_index_line": 118,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc-extension-ui.md",
+      "sha256": "3c6f2c6edfc8b1ace6642343727aef97a7e9234c85509850921b52d6ff09a48e",
+      "lines": 200,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "3c6f2c6edfc8b1ace6642343727aef97a7e9234c85509850921b52d6ff09a48e",
+        "original_index_line": 119,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc.md",
+      "sha256": "37a03d180115460a0a275022f4aeabef1e5345458df6a9b6e8a6de18474de720",
+      "lines": 193,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "37a03d180115460a0a275022f4aeabef1e5345458df6a9b6e8a6de18474de720",
+        "original_index_line": 120,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/sdk.md",
+      "sha256": "d9034ccbf2219a58712d8dd4fcdf47e687d77131e71dd5d119d8a71e9bd2a2e8",
+      "lines": 147,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "d9034ccbf2219a58712d8dd4fcdf47e687d77131e71dd5d119d8a71e9bd2a2e8",
+        "original_index_line": 121,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/security.md",
+      "sha256": "3b1e40a8d28b17c9eb7e496a7ba88fbe04665e3e6ae02873a58b943e325ad504",
+      "lines": 99,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "3b1e40a8d28b17c9eb7e496a7ba88fbe04665e3e6ae02873a58b943e325ad504",
+        "original_index_line": 122,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/session-format.md",
+      "sha256": "4f8fc42179b332bcf71fe4c85cc95d914853ff7486d68742954a45316b512a4a",
+      "lines": 293,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "4f8fc42179b332bcf71fe4c85cc95d914853ff7486d68742954a45316b512a4a",
+        "original_index_line": 123,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/sessions.md",
+      "sha256": "5ad5bda19caaa0794bb44f86c85c8e66be6f493c52bb5e6a4d127b58cd8c2c1e",
+      "lines": 66,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "5ad5bda19caaa0794bb44f86c85c8e66be6f493c52bb5e6a4d127b58cd8c2c1e",
+        "original_index_line": 124,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/settings.md",
+      "sha256": "dae0b70c2f852ff57b4a34947d5059f7bac18038ca7e1fae4c4ba97bcbd574c3",
+      "lines": 169,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "dae0b70c2f852ff57b4a34947d5059f7bac18038ca7e1fae4c4ba97bcbd574c3",
+        "original_index_line": 125,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/shell-aliases.md",
+      "sha256": "ebb55456870455b4da91cfd054ae2ac9b3a417e6ff48a009587c33e68ecd7807",
+      "lines": 93,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "ebb55456870455b4da91cfd054ae2ac9b3a417e6ff48a009587c33e68ecd7807",
+        "original_index_line": 126,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/skills.md",
+      "sha256": "5b9805525b194474ef1fe5455a0917ef15ed7f710aa9bec2eee11879556469e5",
+      "lines": 93,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "5b9805525b194474ef1fe5455a0917ef15ed7f710aa9bec2eee11879556469e5",
+        "original_index_line": 127,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/slash-commands.md",
+      "sha256": "d7e1db36e9186ff146a6c27de31fe169671f52cb6f7b93e1bf8d7fe76209a79c",
+      "lines": 60,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "d7e1db36e9186ff146a6c27de31fe169671f52cb6f7b93e1bf8d7fe76209a79c",
+        "original_index_line": 128,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/terminal-setup.md",
+      "sha256": "4e8d12211c8ac33b01d9d7b5e572a84b1b45ac651989321bd476f81515d4bc5a",
+      "lines": 219,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "4e8d12211c8ac33b01d9d7b5e572a84b1b45ac651989321bd476f81515d4bc5a",
+        "original_index_line": 129,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/termux.md",
+      "sha256": "1b0687157f2384385d07800ec23e6c225ef28fbf6648f55453cc7ce62f4c64ea",
+      "lines": 117,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "1b0687157f2384385d07800ec23e6c225ef28fbf6648f55453cc7ce62f4c64ea",
+        "original_index_line": 130,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/themes.md",
+      "sha256": "cb4645f4a77c73b12f8edee22c46f0ea9ad32ce32fa6be81ae81cb08b424c889",
+      "lines": 136,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "cb4645f4a77c73b12f8edee22c46f0ea9ad32ce32fa6be81ae81cb08b424c889",
+        "original_index_line": 131,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/tmux.md",
+      "sha256": "9ec0abdbf74c57d51d4a93f308fb4aec4d8a3574a24cbfd9ba481d2e39f1273c",
+      "lines": 55,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "9ec0abdbf74c57d51d4a93f308fb4aec4d8a3574a24cbfd9ba481d2e39f1273c",
+        "original_index_line": 132,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/tui.md",
+      "sha256": "2d3d61b6b385dea968c76984f118e5862750caad6a0bc94d104f6b4dee185673",
+      "lines": 125,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "2d3d61b6b385dea968c76984f118e5862750caad6a0bc94d104f6b4dee185673",
+        "original_index_line": 133,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/usage.md",
+      "sha256": "88f22eb38ff9cf980d4d5c6af2376d08d683db20073c57fa8b10e752fee322d6",
+      "lines": 94,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "88f22eb38ff9cf980d4d5c6af2376d08d683db20073c57fa8b10e752fee322d6",
+        "original_index_line": 134,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/virtual-models.md",
+      "sha256": "5ab04dee3b3712b317522bb0784e28a3fef2e6b7fe1aeb1c1ca27778685a38f7",
+      "lines": 114,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；关联实现核对；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "5ab04dee3b3712b317522bb0784e28a3fef2e6b7fe1aeb1c1ca27778685a38f7",
+        "original_index_line": 135,
+        "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/docs/windows.md",
+      "sha256": "6e05d30d8d4ade81f6c453b98538d98188cecbc1d4aa81750c6d690c486eeea1",
+      "lines": 67,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "6e05d30d8d4ade81f6c453b98538d98188cecbc1d4aa81750c6d690c486eeea1",
+        "original_index_line": 136,
+        "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/README.md",
+      "sha256": "a18e8d19c4d7bc4af8a6bff3ab7991d6dd44cfff5ba238e5429bfdbe496b5d2c",
+      "lines": 39,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "a18e8d19c4d7bc4af8a6bff3ab7991d6dd44cfff5ba238e5429bfdbe496b5d2c",
+        "original_index_line": 137,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/README.md",
+      "sha256": "b51e1095d338ed8bc6cb0a40dca12da66ffd12d6f4ec7bfd57815fac84d87662",
+      "lines": 214,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "b51e1095d338ed8bc6cb0a40dca12da66ffd12d6f4ec7bfd57815fac84d87662",
+        "original_index_line": 138,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/doom-overlay/README.md",
+      "sha256": "e17bc73b76c7977ffeef99120c7896ff992cf5938a60c4d7427a7b19fc180d97",
+      "lines": 46,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "e17bc73b76c7977ffeef99120c7896ff992cf5938a60c4d7427a7b19fc180d97",
+        "original_index_line": 139,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/dynamic-resources/SKILL.md",
+      "sha256": "f8f34b0d81aa791a2d56501756fe0ace21fb78ca2754025d093f41d3b0ccaf69",
+      "lines": 8,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "f8f34b0d81aa791a2d56501756fe0ace21fb78ca2754025d093f41d3b0ccaf69",
+        "original_index_line": 140,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/dynamic-resources/dynamic.md",
+      "sha256": "e61e2c971d02d628a58f7c36b9b37bd3e636e4ad60618a7f65e2b41410c38f35",
+      "lines": 5,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "e61e2c971d02d628a58f7c36b9b37bd3e636e4ad60618a7f65e2b41410c38f35",
+        "original_index_line": 141,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/plan-mode/README.md",
+      "sha256": "1ff8d611b8fbafef4ca1e3dbc72136fbcc166461b69f859b5e961b15147bff39",
+      "lines": 66,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "1ff8d611b8fbafef4ca1e3dbc72136fbcc166461b69f859b5e961b15147bff39",
+        "original_index_line": 142,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/README.md",
+      "sha256": "6a888330bf974657751e09f5d375a9039872d59d6606fc217c5105c7eca51b1a",
+      "lines": 177,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "6a888330bf974657751e09f5d375a9039872d59d6606fc217c5105c7eca51b1a",
+        "original_index_line": 143,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/planner.md",
+      "sha256": "452f21f65957753cec3b0772004209c108071be168e627fffd7191234c0ce64e",
+      "lines": 37,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "452f21f65957753cec3b0772004209c108071be168e627fffd7191234c0ce64e",
+        "original_index_line": 144,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/reviewer.md",
+      "sha256": "b5c3f13b67207e8e32de631f8cd52a373d9b956028e2f8c1fd8b737b5f239265",
+      "lines": 35,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "b5c3f13b67207e8e32de631f8cd52a373d9b956028e2f8c1fd8b737b5f239265",
+        "original_index_line": 145,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/scout.md",
+      "sha256": "3b84e8e01c6e05c8dfbff1c845c0c6371f4f16350735d4d1dbd02bfa98b1d4e6",
+      "lines": 50,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "3b84e8e01c6e05c8dfbff1c845c0c6371f4f16350735d4d1dbd02bfa98b1d4e6",
+        "original_index_line": 146,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/worker.md",
+      "sha256": "ca2b2298fcbd8bfafcfe61977dc8075001a64b9c4d8c289c3b5eaa896efe6238",
+      "lines": 24,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "ca2b2298fcbd8bfafcfe61977dc8075001a64b9c4d8c289c3b5eaa896efe6238",
+        "original_index_line": 147,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/implement-and-review.md",
+      "sha256": "019ba4bf42d596ea03fc4564be5b2cc55a06227c95db19a4d5a5bb96697a75f9",
+      "lines": 10,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "019ba4bf42d596ea03fc4564be5b2cc55a06227c95db19a4d5a5bb96697a75f9",
+        "original_index_line": 148,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/implement.md",
+      "sha256": "65462de33c97ac1372cfed270dad9af164605b05028c069dd4c013ff9792675b",
+      "lines": 10,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "65462de33c97ac1372cfed270dad9af164605b05028c069dd4c013ff9792675b",
+        "original_index_line": 149,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/scout-and-plan.md",
+      "sha256": "9506399391e0d2c71826c45f26cc332175dd964465f99a8bb880e109f8ed89f4",
+      "lines": 9,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "9506399391e0d2c71826c45f26cc332175dd964465f99a8bb880e109f8ed89f4",
+        "original_index_line": 150,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/plugins/pi-example-plugin/README.md",
+      "sha256": "3adb56978c7476263a32d036f767f106642328043db096047cec862136395b5e",
+      "lines": 38,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "3adb56978c7476263a32d036f767f106642328043db096047cec862136395b5e",
+        "original_index_line": 151,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/examples/sdk/README.md",
+      "sha256": "c1f9d8f58c300195d03a420222d2d5370d2884a18a4190a1d8c8ea9371c016ff",
+      "lines": 141,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；示例能力不视为项目路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "c1f9d8f58c300195d03a420222d2d5370d2884a18a4190a1d8c8ea9371c016ff",
+        "original_index_line": 152,
+        "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/src/experimental/durable/README.md",
+      "sha256": "f68434b4c94a6fe9514b976d296d000c6204673ad7bf359b8b7b46b6a1c977f1",
+      "lines": 66,
+      "kind": "实验设计、集成说明与 TODO",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；逐条判断 TODO 的前提和剩余范围；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "f68434b4c94a6fe9514b976d296d000c6204673ad7bf359b8b7b46b6a1c977f1",
+        "original_index_line": 153,
+        "reading_scope": "字节一致；继承旧版：全文；逐条判断 TODO 的前提和剩余范围",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/src/experimental/services/README.md",
+      "sha256": "8da2755833466523c2c804a28cec822a847c2366dd915f29e00aa5b01f359792",
+      "lines": 45,
+      "kind": "实验服务设计与后续方向",
+      "reading_scope": "字节未变；本轮全文复读；逐项沿用并核对旧迁移前提、root-only、授权与分页边界",
+      "ranges": [
+        [
+          1,
+          45
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "8da2755833466523c2c804a28cec822a847c2366dd915f29e00aa5b01f359792",
+        "original_index_line": 154,
+        "reading_scope": "字节一致；本轮全文重读，逐条复核 TODO 前提和剩余范围",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/src/experimental/vacation/README.md",
+      "sha256": "5f4b0093b89ade9972c7d017ced8d9c6eb1c02079b9573685a19cfa1cd398ffe",
+      "lines": 53,
+      "kind": "实验设计、集成说明与 TODO",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；逐条判断 TODO 的前提和剩余范围；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "5f4b0093b89ade9972c7d017ced8d9c6eb1c02079b9573685a19cfa1cd398ffe",
+        "original_index_line": 155,
+        "reading_scope": "字节一致；继承旧版：全文；逐条判断 TODO 的前提和剩余范围",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills-collision/first/calendar/SKILL.md",
+      "sha256": "422f8cbd0bd678fd2b0f10ecbb6df78a470316ee0dc524ea5addb0f56c8a8905",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "422f8cbd0bd678fd2b0f10ecbb6df78a470316ee0dc524ea5addb0f56c8a8905",
+        "original_index_line": 156,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills-collision/second/calendar/SKILL.md",
+      "sha256": "adceefcc79f6e7a79bf75cdae7d5bd0364b2c525296e4f0ec4c5240f9a11a44d",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "adceefcc79f6e7a79bf75cdae7d5bd0364b2c525296e4f0ec4c5240f9a11a44d",
+        "original_index_line": 157,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/consecutive-hyphens/SKILL.md",
+      "sha256": "52e4b2685c63c0037c8107334b49cfa146341b668db703cb3594c0c6cf629684",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "52e4b2685c63c0037c8107334b49cfa146341b668db703cb3594c0c6cf629684",
+        "original_index_line": 158,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/disable-model-invocation/SKILL.md",
+      "sha256": "da0457eefec51f8aba12e1c7090ece7983043688704ed6b74c881df1aed09a58",
+      "lines": 9,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "da0457eefec51f8aba12e1c7090ece7983043688704ed6b74c881df1aed09a58",
+        "original_index_line": 159,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/invalid-name-chars/SKILL.md",
+      "sha256": "bd0121b407fe21640002b61ecb2d559c43fba74dbe3eeac82ba442112fea580f",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "bd0121b407fe21640002b61ecb2d559c43fba74dbe3eeac82ba442112fea580f",
+        "original_index_line": 160,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/invalid-yaml/SKILL.md",
+      "sha256": "ef6bba8e89e5a697f5f87e5b0de2785b170e02d1f344c3d0c1e40114ffde2a11",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "ef6bba8e89e5a697f5f87e5b0de2785b170e02d1f344c3d0c1e40114ffde2a11",
+        "original_index_line": 161,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/long-name/SKILL.md",
+      "sha256": "dfe930f367e25c4b0703cd7c8906070f87b345f867dea6fef34f9074c3cb052f",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "dfe930f367e25c4b0703cd7c8906070f87b345f867dea6fef34f9074c3cb052f",
+        "original_index_line": 162,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/missing-description/SKILL.md",
+      "sha256": "ac54cca8108cc426fab7fd46a5cc9379afedbd7bafeca43ce6e3413da2503713",
+      "lines": 7,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "ac54cca8108cc426fab7fd46a5cc9379afedbd7bafeca43ce6e3413da2503713",
+        "original_index_line": 163,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/multiline-description/SKILL.md",
+      "sha256": "30a57026f007961b421e8556e8c4d277208a6b61504ebcd8ee20e7102baa0022",
+      "lines": 11,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "30a57026f007961b421e8556e8c4d277208a6b61504ebcd8ee20e7102baa0022",
+        "original_index_line": 164,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/name-mismatch/SKILL.md",
+      "sha256": "53686d98a0e1b92d1f90d5f192cefbe011121507debb5a407653b1ae80b9694c",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "53686d98a0e1b92d1f90d5f192cefbe011121507debb5a407653b1ae80b9694c",
+        "original_index_line": 165,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/nested/child-skill/SKILL.md",
+      "sha256": "0050995f18550fc4554a1dc3723026474c080d2e2772da1ce5c7f14b0b462ce7",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "0050995f18550fc4554a1dc3723026474c080d2e2772da1ce5c7f14b0b462ce7",
+        "original_index_line": 166,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/no-frontmatter/SKILL.md",
+      "sha256": "e5ca5b4ffb7aaada8b4decc54fc4af732de355786ef54d38db97bb9f75d25672",
+      "lines": 3,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "e5ca5b4ffb7aaada8b4decc54fc4af732de355786ef54d38db97bb9f75d25672",
+        "original_index_line": 167,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/root-skill-preferred/SKILL.md",
+      "sha256": "347fa1b7bd4f21992a5cf2aee1b9af9a05ec991ae644c96aa8e68b356e5f0f3f",
+      "lines": 3,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "347fa1b7bd4f21992a5cf2aee1b9af9a05ec991ae644c96aa8e68b356e5f0f3f",
+        "original_index_line": 168,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/root-skill-preferred/nested-child/SKILL.md",
+      "sha256": "f07ee61492ee356de86d13b785f3e67c7db491521780e8087fe558b91bd61fe5",
+      "lines": 3,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "f07ee61492ee356de86d13b785f3e67c7db491521780e8087fe558b91bd61fe5",
+        "original_index_line": 169,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/unknown-field/SKILL.md",
+      "sha256": "df6e1ecfff7a6b65a8d0d5280457fde480c819a76be6926dafef6895c8bed650",
+      "lines": 10,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "df6e1ecfff7a6b65a8d0d5280457fde480c819a76be6926dafef6895c8bed650",
+        "original_index_line": 170,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/valid-skill/SKILL.md",
+      "sha256": "db6af8bf9364290c5376d39e97c622f0152b6cd64f379bc03855d79ea058c0ba",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；测试输入，非路线图；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "db6af8bf9364290c5376d39e97c622f0152b6cd64f379bc03855d79ea058c0ba",
+        "original_index_line": 171,
+        "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/mcp-conformance/README.md",
+      "sha256": "5c6ed3a36bab80d4f589e02af7391bf2a1025ccd2886b7949fde796884cb70d6",
+      "lines": 45,
+      "kind": "测试运行指南",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；本轮全文重读，重核 CIMD 陈旧说明及对应实现；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "5c6ed3a36bab80d4f589e02af7391bf2a1025ccd2886b7949fde796884cb70d6",
+        "original_index_line": 172,
+        "reading_scope": "字节一致；本轮全文重读，重核 CIMD 陈旧说明及对应实现",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/coding-agent/test/suite/README.md",
+      "sha256": "a7ee973f9400c37f97c7e6a6b221381fde2dbde5d9021485d9fe292a7aba689e",
+      "lines": 10,
+      "kind": "测试运行指南",
+      "reading_scope": "字节一致；继承 1.0.2 实际审读深度：字节一致；继承旧版：全文；当前验证方法；本轮不宣称重读全文。",
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "a7ee973f9400c37f97c7e6a6b221381fde2dbde5d9021485d9fe292a7aba689e",
+        "original_index_line": 173,
+        "reading_scope": "字节一致；继承旧版：全文；当前验证方法",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/durable/CHANGELOG.md",
+      "sha256": "2a72724d3a7ae516f426f4905001475239b0f51a7b06180cb393595c28561792",
+      "lines": 63,
+      "kind": "changelog",
+      "reading_scope": "本轮全文阅读。",
+      "ranges": [
+        [
+          1,
+          63
+        ]
+      ]
+    },
+    {
+      "path": "packages/durable/README.md",
+      "sha256": "c43ab96d438118de49a632802ed4cf455feb2b38d91ba5281673b5828c29704f",
+      "lines": 613,
+      "kind": "readme",
+      "reading_scope": "本轮全文阅读，特别核对新 progress、argv、reader、watch 和输出窗口；已补读中段以免截断冒称全文。",
+      "ranges": [
+        [
+          1,
+          613
+        ]
+      ]
+    },
+    {
+      "path": "packages/durable/docs/chord-delta-findings.md",
+      "sha256": "3f4e9c8ad3a3448c360730d9e6bb668f90800d0d19f4c513bf7bd5561d0d770c",
+      "lines": 358,
+      "kind": "research-findings",
+      "reading_scope": "重读复现实验和 future attempt 条件，核对其为历史研究、非当前性能或路线图。",
+      "ranges": [
+        [
+          308,
+          358
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "3f4e9c8ad3a3448c360730d9e6bb668f90800d0d19f4c513bf7bd5561d0d770c",
+        "original_index_line": 181,
+        "reading_scope": "字节一致；继承旧版：全文；原意、阶段更替与当前实现对照",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/durable/docs/pico-v5-chord-usage.md",
+      "sha256": "f7a451b37377b0cef747571694d2138ab09414c241ec1fd7462e436a42e6bfc0",
+      "lines": 387,
+      "kind": "design-guide",
+      "reading_scope": "重读 built-in view、commit delivery、生命周期和最终指南收尾；前面 canvas/diff/task 示例分析继承。",
+      "ranges": [
+        [
+          334,
+          387
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "f7a451b37377b0cef747571694d2138ab09414c241ec1fd7462e436a42e6bfc0",
+        "original_index_line": 182,
+        "reading_scope": "字节一致；继承旧版：全文；原意、阶段更替与当前实现对照",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/durable/docs/pico-v5-handoff.md",
+      "sha256": "9ce6664e924e04ad1c4feee472a2ecbb31a154fbb5ac8cfbf0eb353da34cdd42",
+      "lines": 917,
+      "kind": "implementation-plan",
+      "reading_scope": "重读阶段 19–23 及最终 API/包拆分说明，保持前期各阶段的继承分析。",
+      "ranges": [
+        [
+          681,
+          917
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "9ce6664e924e04ad1c4feee472a2ecbb31a154fbb5ac8cfbf0eb353da34cdd42",
+        "original_index_line": 183,
+        "reading_scope": "字节一致；继承旧版：全文；原意、阶段更替与当前实现对照",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/durable/docs/spec.md",
+      "sha256": "461d2e77e229e940c34e4da478461d0e7e9f04e1def80e7066d0156db71a03d3",
+      "lines": 4692,
+      "kind": "design-spec",
+      "reading_scope": "改动长文按列明范围重读：地位/旧 PR 状态、Pico 状态、新工具 API/输出窗口/argv、reader/watch 约束、规划尾部与开发顺序；其余前版详细分析保留。不是全文新读，也不是旧新逐行 diff。",
+      "ranges": [
+        [
+          1,
+          80
+        ],
+        [
+          289,
+          313
+        ],
+        [
+          2655,
+          2880
+        ],
+        [
+          3020,
+          3088
+        ],
+        [
+          3270,
+          3284
+        ],
+        [
+          3470,
+          3503
+        ],
+        [
+          4630,
+          4692
+        ]
+      ]
+    },
+    {
+      "path": "packages/env/CHANGELOG.md",
+      "sha256": "f95d2ee1a21c9390c7a3f7c68f5abf158ee3d77ac5284802497afeb844b3d14a",
+      "lines": 8,
+      "kind": "changelog",
+      "reading_scope": "本轮首次全文阅读；1.0.4 首次发行（不是 1.0.3）。",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    {
+      "path": "packages/env/README.md",
+      "sha256": "2337a0c409ab9bea85408ebc911bb770e0affe6918406c5acae7b416dea573f3",
+      "lines": 44,
+      "kind": "readme",
+      "reading_scope": "本轮首次全文阅读；包边界、SSH 示例、平台声明和测试资产前提均核对实现。",
+      "ranges": [
+        [
+          1,
+          44
+        ]
+      ]
+    },
+    {
+      "path": "packages/env/docs/protocol.md",
+      "sha256": "69a33598e4a9bfa7b59b48d63d392a00c0a379fb55277128af96ba245bc9811d",
+      "lines": 114,
+      "kind": "protocol",
+      "reading_scope": "本轮首次全文阅读，逐项核对 framing、cancel、调度、心跳、文件/exec/watch 操作。",
+      "ranges": [
+        [
+          1,
+          114
+        ]
+      ]
+    },
+    {
+      "path": "packages/env/docs/semantics.md",
+      "sha256": "cfeb1a5372540889f65ce7015aa5461bb98cb52865456ec30210b2b9fc5fcbf8",
+      "lines": 65,
+      "kind": "semantics",
+      "reading_scope": "本轮首次全文阅读，核对 client/daemon 分工、Node 文件/进程语义与 watcher。",
+      "ranges": [
+        [
+          1,
+          65
+        ]
+      ]
+    },
+    {
+      "path": "packages/evals/README.md",
+      "sha256": "544041208460422e2d1d4498b1b23c15650c414a22df9c54f899efd6c743f500",
+      "lines": 129,
+      "kind": "评测协议与使用说明",
+      "reading_scope": "字节未变；本轮全文复读；实验配对/隔离/缺失数据契约沿用，模型示例不是默认值",
+      "ranges": [
+        [
+          1,
+          129
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "544041208460422e2d1d4498b1b23c15650c414a22df9c54f899efd6c743f500",
+        "original_index_line": 190,
+        "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/mcp/CHANGELOG.md",
+      "sha256": "ddd1ea99d2927a37441fac8b14cafe79f192d0e2355c4eca181562a6e6aecd3b",
+      "lines": 52,
+      "kind": "发行历史",
+      "reading_scope": "本次全文重新阅读，区分已交付变更、空版本标题与历史记录；未作运行验证。",
+      "ranges": [
+        [
+          1,
+          52
+        ]
+      ]
+    },
+    {
+      "path": "packages/mcp/LICENSES/modelcontextprotocol-typescript-sdk.txt",
+      "sha256": "5e13dbbc1d120fc2a03cecde7c91424ae2d7de11b63d58ded2f4431e261ee50d",
+      "lines": 21,
+      "kind": "第三方来源与许可",
+      "reading_scope": "本次全文重新阅读；仅作来源/许可材料，不作为运行依赖或未来计划。",
+      "ranges": [
+        [
+          1,
+          21
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "5e13dbbc1d120fc2a03cecde7c91424ae2d7de11b63d58ded2f4431e261ee50d",
+        "original_index_line": 197,
+        "reading_scope": "字节一致；继承旧版：清点与类型筛查；不作为功能规划",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/mcp/README.md",
+      "sha256": "1ef949d454c0948706133bc1732a5f66617df6bfd237ec4138051eeba8c37f13",
+      "lines": 136,
+      "kind": "现行包说明与 API 契约",
+      "reading_scope": "本次全文重新阅读，结合当前关键路径或内容摘要核对现版；具体实现/规划结论见本包报告。",
+      "ranges": [
+        [
+          1,
+          136
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "1ef949d454c0948706133bc1732a5f66617df6bfd237ec4138051eeba8c37f13",
+        "original_index_line": 198,
+        "reading_scope": "字节一致；本轮仍全文重读，核查 issuer 示例和 CIMD 说明缺口",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/protocol/CHANGELOG.md",
+      "sha256": "6749bd30a59e0698f0b653c443a8a2babd5eb1e759f7e1c11cddd703903cd9ed",
+      "lines": 49,
+      "kind": "发行历史",
+      "reading_scope": "本次全文重新阅读，区分已交付变更、空版本标题与历史记录；未作运行验证。",
+      "ranges": [
+        [
+          1,
+          49
+        ]
+      ]
+    },
+    {
+      "path": "packages/protocol/README.md",
+      "sha256": "b70f6581daa26b36db6caaa86c5d570b246fc26324f66cc8959d1267fc907ed8",
+      "lines": 41,
+      "kind": "现行包说明与 API 契约",
+      "reading_scope": "本次全文重新阅读，结合当前关键路径或内容摘要核对现版；具体实现/规划结论见本包报告。",
+      "ranges": [
+        [
+          1,
+          41
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "b70f6581daa26b36db6caaa86c5d570b246fc26324f66cc8959d1267fc907ed8",
+        "original_index_line": 205,
+        "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/server/CHANGELOG.md",
+      "sha256": "debb6c950118bbf91232e9ba5729181d92c4dad70570f27d18873b61d0fc1e7a",
+      "lines": 83,
+      "kind": "发行历史",
+      "reading_scope": "本次全文重新阅读，区分已交付变更、空版本标题与历史记录；未作运行验证。",
+      "ranges": [
+        [
+          1,
+          83
+        ]
+      ]
+    },
+    {
+      "path": "packages/server/README.md",
+      "sha256": "f36bc313997b95c736210670cf2f89205392be80e37d48776ec8d4e41af15062",
+      "lines": 63,
+      "kind": "现行包说明与 API 契约",
+      "reading_scope": "本次全文重新阅读，结合当前关键路径或内容摘要核对现版；具体实现/规划结论见本包报告。",
+      "ranges": [
+        [
+          1,
+          63
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "f36bc313997b95c736210670cf2f89205392be80e37d48776ec8d4e41af15062",
+        "original_index_line": 212,
+        "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/telemetry/CHANGELOG.md",
+      "sha256": "04fd42a66e50537172b9c2f5b51659a28ecb9e0bdd2a7f366b97ee7cce1e43f2",
+      "lines": 43,
+      "kind": "发行历史",
+      "reading_scope": "本次全文重新阅读，确认新增版本标题为空；历史设计判断沿用原分析。",
+      "ranges": [
+        [
+          1,
+          43
+        ]
+      ]
+    },
+    {
+      "path": "packages/telemetry/README.md",
+      "sha256": "d68b25b6d319c7a02b509c9ccf1bafea2cc1efa7f15af756fb59fa451b2fb4d7",
+      "lines": 464,
+      "kind": "观测设计契约与集成示例",
+      "reading_scope": "摘要未变，继承旧报告全文审读；本次重新阅读 schema/Agent 示例，核对 agent 当前 exports 与既有移除记录。",
+      "ranges": [
+        [
+          321,
+          400
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "d68b25b6d319c7a02b509c9ccf1bafea2cc1efa7f15af756fb59fa451b2fb4d7",
+        "original_index_line": 219,
+        "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/tui/CHANGELOG.md",
+      "sha256": "fc1ae91e1bc461072a49262d1773055bc5c647e8e1f115d77cac8401850e8bdb",
+      "lines": 1247,
+      "kind": "发行历史",
+      "reading_scope": "本次阅读第 1–36 行，核对 Home/End 调整、空 1.0.4 标题和已有图片修复；其余历史条目仅继承旧报告的分类筛查和重点章节阅读，不声称本轮全文重读。",
+      "ranges": [
+        [
+          1,
+          36
+        ]
+      ]
+    },
+    {
+      "path": "packages/tui/README.md",
+      "sha256": "2cb1b0d02b94ba20db9f812379bbb9b98d56d68c6e38cdc0c6cbd5491f610e7e",
+      "lines": 947,
+      "kind": "终端 UI API 与平台用法",
+      "reading_scope": "摘要未变，继承旧报告全文审读；本次重新阅读图片章节，核对无 setImageTranscoder 说明的已知遗漏。",
+      "ranges": [
+        [
+          651,
+          689
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "2cb1b0d02b94ba20db9f812379bbb9b98d56d68c6e38cdc0c6cbd5491f610e7e",
+        "original_index_line": 226,
+        "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例；本轮另复读图片段 658–686",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/tui/native/darwin/README.md",
+      "sha256": "de34e2dfb2b600fe67df5aae2fa58eef26ac84644a0f0d44cf0a09d46f3d2730",
+      "lines": 22,
+      "kind": "native 构建与平台说明",
+      "reading_scope": "本次全文重新阅读；说明构建、平台降级和条件测试，没有独立路线图。",
+      "ranges": [
+        [
+          1,
+          22
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "de34e2dfb2b600fe67df5aae2fa58eef26ac84644a0f0d44cf0a09d46f3d2730",
+        "original_index_line": 227,
+        "reading_scope": "字节一致；继承旧版：全文；当前平台边界，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/tui/native/linux/README.md",
+      "sha256": "a06e3ff9ed53919f7d6147f2d016e837cbe780e01615053d01002754d83a522d",
+      "lines": 23,
+      "kind": "native 构建与平台说明",
+      "reading_scope": "本次全文重新阅读；说明构建、平台降级和条件测试，没有独立路线图。",
+      "ranges": [
+        [
+          1,
+          23
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "a06e3ff9ed53919f7d6147f2d016e837cbe780e01615053d01002754d83a522d",
+        "original_index_line": 228,
+        "reading_scope": "字节一致；继承旧版：全文；当前平台边界，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    },
+    {
+      "path": "packages/tui/native/win32/README.md",
+      "sha256": "5b00a5533ea3b8bea1667d0fe2f34345d97a7164bec3652bcbf03b4eee53d991",
+      "lines": 31,
+      "kind": "native 构建与平台说明",
+      "reading_scope": "本次全文重新阅读；说明构建、平台降级和条件测试，没有独立路线图。",
+      "ranges": [
+        [
+          1,
+          31
+        ]
+      ],
+      "inherited_from": {
+        "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+        "record": "evidence/pi-1.0.2/documentation-reading.json",
+        "sha256": "5b00a5533ea3b8bea1667d0fe2f34345d97a7164bec3652bcbf03b4eee53d991",
+        "original_index_line": 229,
+        "reading_scope": "字节一致；继承旧版：全文；当前平台边界，非路线图",
+        "note": "当前复读范围仅由本项ranges/reading_scope表达；这里保留既有证据而非新增阅读"
+      }
+    }
+  ]
+}

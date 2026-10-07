@@ -1,0 +1,1018 @@
+{
+  "subject": "Pi 1.0.2 historical documentation reading evidence",
+  "analysis_date": "2026-10-05",
+  "migration_date": "2026-10-07",
+  "source_tree_sha256": "f0309990522b4c47b96e19ec684c53fd1c8fd8a5bc7918ba70ec3289bf3f13fb",
+  "original_report": "docs/research/pi-1.0.2/documentation-index.md",
+  "original_report_worktree_sha256": "1303cf7dc3a4d09fe5a4e6cbdb3495fae1b5a55af481857ef3fc6a6a7264930f",
+  "original_report_git_blob": "c3361ee874b630557969995de0d0eab91e51adf6",
+  "archive_commit": "057af397945316a1954ec7ec65270e732f052d5a",
+  "document_count": 125,
+  "line_count": 33781,
+  "scope_notes": [
+    "逐项提取旧 Markdown 索引原文，不扩大阅读深度；记录未给精确范围时不补造。",
+    "继承 1.0.0 的范围和原始摘要见 ../pi-1.0.0/documentation-reading.json 及 source-manifest.json。"
+  ],
+  "documents": [
+    {
+      "path": ".pi/prompts/cl.md",
+      "sha256": "e86103ed3476ac5760526496f9d4a5a63ae6e3a8a9597db103cfd023ddbf9684",
+      "lines": 54,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+      "original_index_line": 40
+    },
+    {
+      "path": ".pi/prompts/deslop.md",
+      "sha256": "a52acc375c4b8c949ddb0469f802c5a352a98fe26d47fb12fbcf5c555aeb4551",
+      "lines": 67,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+      "original_index_line": 41
+    },
+    {
+      "path": ".pi/prompts/is.md",
+      "sha256": "9bc500efde0bcd1285e1103492077d732c24242719d230a109b13c7bcad7b7d4",
+      "lines": 28,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+      "original_index_line": 42
+    },
+    {
+      "path": ".pi/prompts/pr.md",
+      "sha256": "1ba8e6cba91354e27bc4976d237c291691e9a064cee2132cef7656e3ceb46e20",
+      "lines": 37,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+      "original_index_line": 43
+    },
+    {
+      "path": ".pi/prompts/sa.md",
+      "sha256": "7b590798a5526e6620c6052cb688afd1d7ff2c2ca9426f8a28b5110a94ddbd7a",
+      "lines": 163,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+      "original_index_line": 44
+    },
+    {
+      "path": ".pi/prompts/wr.md",
+      "sha256": "86c6bd7b244b6d4d1792804ce170a2d0b67f735dcf79d539c88163c0c73dba1b",
+      "lines": 41,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+      "original_index_line": 45
+    },
+    {
+      "path": ".pi/skills/add-llm-provider.md",
+      "sha256": "684ffea93aee90c2f13a21c5c696a4a303264d412ea8f9f789b6c9065718132d",
+      "lines": 57,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+      "original_index_line": 46
+    },
+    {
+      "path": ".pi/skills/interactive-testing.md",
+      "sha256": "65264173c8d5352b9ad643dd524238da0537572aeed9c1d754017ca8907c9673",
+      "lines": 19,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+      "original_index_line": 47
+    },
+    {
+      "path": ".pi/skills/release.md",
+      "sha256": "2fd7f2c0a5c74894f368d798304bd1baef7e482bacafb6457bff511f4f4fd5b1",
+      "lines": 50,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 48
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "316c0f9f1e053d5dfc9ccb31915b18725d51d792f06783bf908f4bd8861a6dda",
+      "lines": 125,
+      "kind": "仓库工作约定",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 49
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "ce0c1456c55404c729c632221f9159ea3b463e6b3974a1c22446e9315388490c",
+      "lines": 102,
+      "kind": "仓库说明／贡献规则",
+      "reading_scope": "字节一致；继承旧版：标题与关键词筛查；外部规划入口局部核对",
+      "original_index_line": 50
+    },
+    {
+      "path": "README.md",
+      "sha256": "63d76d96fbd1f98b670a9f3e746102343e04b2d026bd05c9fe06700ceb95a0f2",
+      "lines": 164,
+      "kind": "仓库说明／贡献规则",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 51
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "2d8b299904ce69d14b9378b643964d86f79fb619578cdc2ee390f843dab1b6cb",
+      "lines": 87,
+      "kind": "安全规范／仓库工作流资源",
+      "reading_scope": "字节一致；继承旧版：标题与关键词筛查；不作为功能规划",
+      "original_index_line": 52
+    },
+    {
+      "path": "tui-plan.md",
+      "sha256": "050bfff6f92f92be0ad724bfa28af428f879aa90a73a8f1b15e628384c9c68e4",
+      "lines": 1001,
+      "kind": "设计计划、非目标、后续方向",
+      "reading_scope": "字节一致；继承旧版：全文；逐项实现与时效对照；本轮另复读滚轮段 524–532",
+      "original_index_line": 53
+    },
+    {
+      "path": "packages/agent/CHANGELOG.md",
+      "sha256": "04e78c1076b568cf73f02e517363c72f71f3aa6471eba7a316a52eb5694469e1",
+      "lines": 764,
+      "kind": "发行历史",
+      "reading_scope": "详读 1.0.2 / 1.0.1 与涉及的历史段；其他历史条目不逐项重审",
+      "original_index_line": 59
+    },
+    {
+      "path": "packages/agent/README.md",
+      "sha256": "37da6831566eb0385a59da2ee055e7a7efe3e8e7a4b50aab8745ce43559197fe",
+      "lines": 564,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+      "original_index_line": 60
+    },
+    {
+      "path": "packages/ai/CHANGELOG.md",
+      "sha256": "1a1d7f09d5fd58080b3fa1ebcefff2dd909cbbad104e57c1f68fd6d0405e7a53",
+      "lines": 2244,
+      "kind": "发行历史",
+      "reading_scope": "详读 1.0.2 / 1.0.1 与涉及的历史段；其他历史条目不逐项重审",
+      "original_index_line": 66
+    },
+    {
+      "path": "packages/ai/README.md",
+      "sha256": "af571fea1caa25864af0ac66254210200456a5b587aa1aaa86ae59667277887c",
+      "lines": 1938,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 67
+    },
+    {
+      "path": "packages/chord/PLANNING.md",
+      "sha256": "b80b119d0eeb5c27b8f1be59eb39d0650539a12099ae070a1dff953b23fa672f",
+      "lines": 859,
+      "kind": "设计计划与工作包",
+      "reading_scope": "字节一致；继承旧版：全文；WP0–WP8 与现行实现逐项对照",
+      "original_index_line": 73
+    },
+    {
+      "path": "packages/chord/README.md",
+      "sha256": "765e67d90e55a45ec8269f6aa7a9c38af6c8828e33df1ef87e75b89fdb08f7e1",
+      "lines": 264,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+      "original_index_line": 74
+    },
+    {
+      "path": "packages/chord/src/delta/README.md",
+      "sha256": "a1d98ec78b0dff483b3c6d151a1773e002e64ddcb34c0b028ee585dbf96bef90",
+      "lines": 191,
+      "kind": "现行 delta 设计与使用契约",
+      "reading_scope": "字节一致；继承旧版：全文；与旧计划／实验文字对照",
+      "original_index_line": 75
+    },
+    {
+      "path": "packages/client/CHANGELOG.md",
+      "sha256": "0248a0029edae8bca4272d4cf31637f52ccccd3bb91e90a2caa006582e9e1463",
+      "lines": 43,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对新增发行标题和条目",
+      "original_index_line": 81
+    },
+    {
+      "path": "packages/client/README.md",
+      "sha256": "be336696a8f91c5cb40a240c672926dc96cc8f30e38ab97afc8d2a6885cb7205",
+      "lines": 72,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+      "original_index_line": 82
+    },
+    {
+      "path": "packages/codemode/CHANGELOG.md",
+      "sha256": "742bf1ad232866eff1037e593e5fcbf43be8e846f4e1c76c6decb1e309c21409",
+      "lines": 37,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对新增发行标题和条目",
+      "original_index_line": 88
+    },
+    {
+      "path": "packages/codemode/README.md",
+      "sha256": "4b79ddd6fd06c8d1ca24a4dc353415019128452002228f2943d23cc4b1cf277b",
+      "lines": 190,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 89
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "sha256": "3b58fb99e46aa0a9185fb7ba052b4cad0d72f38ba2b634553ecdb25e4b82b654",
+      "lines": 6098,
+      "kind": "发行历史",
+      "reading_scope": "详读 1.0.2 / 1.0.1 与涉及的历史段；其他历史条目不逐项重审",
+      "original_index_line": 95
+    },
+    {
+      "path": "packages/coding-agent/README.md",
+      "sha256": "fbc7abec7d0829ac8bc4b217e950794e1ba4d8d1b3e0850f970da318ad72e863",
+      "lines": 95,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 96
+    },
+    {
+      "path": "packages/coding-agent/docs/cli-integration.md",
+      "sha256": "1596d0e7f1598b960d6e05cf6d44d762917348a92ee46e83e87cba9f69fb439a",
+      "lines": 106,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 97
+    },
+    {
+      "path": "packages/coding-agent/docs/cli.md",
+      "sha256": "bfc637a7aaa5aac6faef468282981952b10591f511ced4c47bbf656e40def161",
+      "lines": 321,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 98
+    },
+    {
+      "path": "packages/coding-agent/docs/codemode.md",
+      "sha256": "560572590385aaa8402feb640c4cc23fa9cf6f1ef8a0088f38626ac243d678a5",
+      "lines": 207,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 99
+    },
+    {
+      "path": "packages/coding-agent/docs/compaction.md",
+      "sha256": "190b8c651148504613aea98b0637807c536ed0362948fda1bcd1ae137d75ff4a",
+      "lines": 463,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 100
+    },
+    {
+      "path": "packages/coding-agent/docs/configuration.md",
+      "sha256": "fc48d1ce7d885c5253222415fb7a4b46d75f80e6431eb924174657ff775099eb",
+      "lines": 47,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 101
+    },
+    {
+      "path": "packages/coding-agent/docs/containerization.md",
+      "sha256": "e309fcb9a0a7592c0dba000ef8ee90f2d7ef1e01e6a1ac2f0cd9760dd63dee0c",
+      "lines": 183,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 102
+    },
+    {
+      "path": "packages/coding-agent/docs/custom-provider.md",
+      "sha256": "5345ac346429a3862b46533ee810944b2c756079dcf5d3aad272ab579c58c129",
+      "lines": 173,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 103
+    },
+    {
+      "path": "packages/coding-agent/docs/environment-variables.md",
+      "sha256": "ed17a738cf346e687d391fcad3b55e39063626081f8eebd9563f2f5e0491f542",
+      "lines": 98,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 104
+    },
+    {
+      "path": "packages/coding-agent/docs/extensions.md",
+      "sha256": "da717a338c68708cb3e45b44c491287fde44059184dec2351d8d1dd430f73f76",
+      "lines": 274,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 105
+    },
+    {
+      "path": "packages/coding-agent/docs/how-pi-works.md",
+      "sha256": "7d43ab8e2b886cd1047dcee503588a1c828b92333dd4f177526b89e6db8aaa8b",
+      "lines": 49,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 106
+    },
+    {
+      "path": "packages/coding-agent/docs/index.md",
+      "sha256": "c107426e88eac570e9ecbea325cb45c2a6b778a324fd6e424bd032380a65614d",
+      "lines": 39,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 107
+    },
+    {
+      "path": "packages/coding-agent/docs/json.md",
+      "sha256": "839a2a2da8112298a7f8870afa71d1998db2d43b8f68c9c179a0c696b6477a5e",
+      "lines": 226,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 108
+    },
+    {
+      "path": "packages/coding-agent/docs/keybindings.md",
+      "sha256": "4998259aee69aab79dcf17a05cabf7aea5296f29d0e6a24a346bf9bc36ae0fea",
+      "lines": 194,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 109
+    },
+    {
+      "path": "packages/coding-agent/docs/llama-cpp.md",
+      "sha256": "636e994b9714c8f9264d25e14f4335e72b31f9b8d72c33c0c88f4e609f5813df",
+      "lines": 114,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 110
+    },
+    {
+      "path": "packages/coding-agent/docs/mcp.md",
+      "sha256": "a335cfc18ad39e9c1cb126ca8fbbb216de32313f730463e7a6f2ab76b493e409",
+      "lines": 270,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 111
+    },
+    {
+      "path": "packages/coding-agent/docs/message-types.md",
+      "sha256": "c642db2a93e6433aadde1675f51e3c8b51520d9a6ee1ac805802e635aab10413",
+      "lines": 261,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 112
+    },
+    {
+      "path": "packages/coding-agent/docs/models.md",
+      "sha256": "b59ad4c66c559714bdc3543b5c53eac423adcc961574086ab555db61fc104714",
+      "lines": 205,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 113
+    },
+    {
+      "path": "packages/coding-agent/docs/packages.md",
+      "sha256": "5fe4a3009d7260fe1e2f54b64086fc3c8b4d678232bfa2dbc7e91fe588fc9ea5",
+      "lines": 129,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 114
+    },
+    {
+      "path": "packages/coding-agent/docs/prompt-templates.md",
+      "sha256": "ad5113cce0d05ef0ac77b3c71f9ebe41ea68c072275f9273b9616e4924feda42",
+      "lines": 59,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 115
+    },
+    {
+      "path": "packages/coding-agent/docs/providers.md",
+      "sha256": "5f07326b78241e7e090fdfb71ad79b44bd339332da5d94f1167c93b92bd062eb",
+      "lines": 200,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 116
+    },
+    {
+      "path": "packages/coding-agent/docs/quickstart.md",
+      "sha256": "10c69b394304f6e7d6409b6bde02b0165f5723ff4acfd49cfa8f7414f977266a",
+      "lines": 136,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 117
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc-commands.md",
+      "sha256": "4deeee367852f4633ef594bc079f9e9fb14640a4e3ba8a69b7c89b6f54740838",
+      "lines": 860,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 118
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc-extension-ui.md",
+      "sha256": "3c6f2c6edfc8b1ace6642343727aef97a7e9234c85509850921b52d6ff09a48e",
+      "lines": 200,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 119
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc.md",
+      "sha256": "37a03d180115460a0a275022f4aeabef1e5345458df6a9b6e8a6de18474de720",
+      "lines": 193,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 120
+    },
+    {
+      "path": "packages/coding-agent/docs/sdk.md",
+      "sha256": "d9034ccbf2219a58712d8dd4fcdf47e687d77131e71dd5d119d8a71e9bd2a2e8",
+      "lines": 147,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 121
+    },
+    {
+      "path": "packages/coding-agent/docs/security.md",
+      "sha256": "3b1e40a8d28b17c9eb7e496a7ba88fbe04665e3e6ae02873a58b943e325ad504",
+      "lines": 99,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 122
+    },
+    {
+      "path": "packages/coding-agent/docs/session-format.md",
+      "sha256": "4f8fc42179b332bcf71fe4c85cc95d914853ff7486d68742954a45316b512a4a",
+      "lines": 293,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 123
+    },
+    {
+      "path": "packages/coding-agent/docs/sessions.md",
+      "sha256": "5ad5bda19caaa0794bb44f86c85c8e66be6f493c52bb5e6a4d127b58cd8c2c1e",
+      "lines": 66,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 124
+    },
+    {
+      "path": "packages/coding-agent/docs/settings.md",
+      "sha256": "dae0b70c2f852ff57b4a34947d5059f7bac18038ca7e1fae4c4ba97bcbd574c3",
+      "lines": 169,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 125
+    },
+    {
+      "path": "packages/coding-agent/docs/shell-aliases.md",
+      "sha256": "ebb55456870455b4da91cfd054ae2ac9b3a417e6ff48a009587c33e68ecd7807",
+      "lines": 93,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 126
+    },
+    {
+      "path": "packages/coding-agent/docs/skills.md",
+      "sha256": "5b9805525b194474ef1fe5455a0917ef15ed7f710aa9bec2eee11879556469e5",
+      "lines": 93,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 127
+    },
+    {
+      "path": "packages/coding-agent/docs/slash-commands.md",
+      "sha256": "d7e1db36e9186ff146a6c27de31fe169671f52cb6f7b93e1bf8d7fe76209a79c",
+      "lines": 60,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 128
+    },
+    {
+      "path": "packages/coding-agent/docs/terminal-setup.md",
+      "sha256": "4e8d12211c8ac33b01d9d7b5e572a84b1b45ac651989321bd476f81515d4bc5a",
+      "lines": 219,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 129
+    },
+    {
+      "path": "packages/coding-agent/docs/termux.md",
+      "sha256": "1b0687157f2384385d07800ec23e6c225ef28fbf6648f55453cc7ce62f4c64ea",
+      "lines": 117,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 130
+    },
+    {
+      "path": "packages/coding-agent/docs/themes.md",
+      "sha256": "cb4645f4a77c73b12f8edee22c46f0ea9ad32ce32fa6be81ae81cb08b424c889",
+      "lines": 136,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 131
+    },
+    {
+      "path": "packages/coding-agent/docs/tmux.md",
+      "sha256": "9ec0abdbf74c57d51d4a93f308fb4aec4d8a3574a24cbfd9ba481d2e39f1273c",
+      "lines": 55,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 132
+    },
+    {
+      "path": "packages/coding-agent/docs/tui.md",
+      "sha256": "2d3d61b6b385dea968c76984f118e5862750caad6a0bc94d104f6b4dee185673",
+      "lines": 125,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 133
+    },
+    {
+      "path": "packages/coding-agent/docs/usage.md",
+      "sha256": "88f22eb38ff9cf980d4d5c6af2376d08d683db20073c57fa8b10e752fee322d6",
+      "lines": 94,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 134
+    },
+    {
+      "path": "packages/coding-agent/docs/virtual-models.md",
+      "sha256": "5ab04dee3b3712b317522bb0784e28a3fef2e6b7fe1aeb1c1ca27778685a38f7",
+      "lines": 114,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：全文；关联实现核对",
+      "original_index_line": 135
+    },
+    {
+      "path": "packages/coding-agent/docs/windows.md",
+      "sha256": "6e05d30d8d4ade81f6c453b98538d98188cecbc1d4aa81750c6d690c486eeea1",
+      "lines": 67,
+      "kind": "当前使用／集成契约",
+      "reading_scope": "字节一致；继承旧版：标题、首段与规划关键词筛查；命中处局部阅读",
+      "original_index_line": 136
+    },
+    {
+      "path": "packages/coding-agent/examples/README.md",
+      "sha256": "a18e8d19c4d7bc4af8a6bff3ab7991d6dd44cfff5ba238e5429bfdbe496b5d2c",
+      "lines": 39,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 137
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/README.md",
+      "sha256": "b51e1095d338ed8bc6cb0a40dca12da66ffd12d6f4ec7bfd57815fac84d87662",
+      "lines": 214,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 138
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/doom-overlay/README.md",
+      "sha256": "e17bc73b76c7977ffeef99120c7896ff992cf5938a60c4d7427a7b19fc180d97",
+      "lines": 46,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 139
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/dynamic-resources/SKILL.md",
+      "sha256": "f8f34b0d81aa791a2d56501756fe0ace21fb78ca2754025d093f41d3b0ccaf69",
+      "lines": 8,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 140
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/dynamic-resources/dynamic.md",
+      "sha256": "e61e2c971d02d628a58f7c36b9b37bd3e636e4ad60618a7f65e2b41410c38f35",
+      "lines": 5,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 141
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/plan-mode/README.md",
+      "sha256": "1ff8d611b8fbafef4ca1e3dbc72136fbcc166461b69f859b5e961b15147bff39",
+      "lines": 66,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 142
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/README.md",
+      "sha256": "6a888330bf974657751e09f5d375a9039872d59d6606fc217c5105c7eca51b1a",
+      "lines": 177,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 143
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/planner.md",
+      "sha256": "452f21f65957753cec3b0772004209c108071be168e627fffd7191234c0ce64e",
+      "lines": 37,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 144
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/reviewer.md",
+      "sha256": "b5c3f13b67207e8e32de631f8cd52a373d9b956028e2f8c1fd8b737b5f239265",
+      "lines": 35,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 145
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/scout.md",
+      "sha256": "3b84e8e01c6e05c8dfbff1c845c0c6371f4f16350735d4d1dbd02bfa98b1d4e6",
+      "lines": 50,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 146
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/worker.md",
+      "sha256": "ca2b2298fcbd8bfafcfe61977dc8075001a64b9c4d8c289c3b5eaa896efe6238",
+      "lines": 24,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 147
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/implement-and-review.md",
+      "sha256": "019ba4bf42d596ea03fc4564be5b2cc55a06227c95db19a4d5a5bb96697a75f9",
+      "lines": 10,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 148
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/implement.md",
+      "sha256": "65462de33c97ac1372cfed270dad9af164605b05028c069dd4c013ff9792675b",
+      "lines": 10,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 149
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/scout-and-plan.md",
+      "sha256": "9506399391e0d2c71826c45f26cc332175dd964465f99a8bb880e109f8ed89f4",
+      "lines": 9,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 150
+    },
+    {
+      "path": "packages/coding-agent/examples/plugins/pi-example-plugin/README.md",
+      "sha256": "3adb56978c7476263a32d036f767f106642328043db096047cec862136395b5e",
+      "lines": 38,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 151
+    },
+    {
+      "path": "packages/coding-agent/examples/sdk/README.md",
+      "sha256": "c1f9d8f58c300195d03a420222d2d5370d2884a18a4190a1d8c8ea9371c016ff",
+      "lines": 141,
+      "kind": "示例说明／示例 Agent 或 prompt",
+      "reading_scope": "字节一致；继承旧版：全文；示例能力不视为项目路线图",
+      "original_index_line": 152
+    },
+    {
+      "path": "packages/coding-agent/src/experimental/durable/README.md",
+      "sha256": "f68434b4c94a6fe9514b976d296d000c6204673ad7bf359b8b7b46b6a1c977f1",
+      "lines": 66,
+      "kind": "实验设计、集成说明与 TODO",
+      "reading_scope": "字节一致；继承旧版：全文；逐条判断 TODO 的前提和剩余范围",
+      "original_index_line": 153
+    },
+    {
+      "path": "packages/coding-agent/src/experimental/services/README.md",
+      "sha256": "8da2755833466523c2c804a28cec822a847c2366dd915f29e00aa5b01f359792",
+      "lines": 45,
+      "kind": "实验设计、集成说明与 TODO",
+      "reading_scope": "字节一致；本轮全文重读，逐条复核 TODO 前提和剩余范围",
+      "original_index_line": 154
+    },
+    {
+      "path": "packages/coding-agent/src/experimental/vacation/README.md",
+      "sha256": "5f4b0093b89ade9972c7d017ced8d9c6eb1c02079b9573685a19cfa1cd398ffe",
+      "lines": 53,
+      "kind": "实验设计、集成说明与 TODO",
+      "reading_scope": "字节一致；继承旧版：全文；逐条判断 TODO 的前提和剩余范围",
+      "original_index_line": 155
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills-collision/first/calendar/SKILL.md",
+      "sha256": "422f8cbd0bd678fd2b0f10ecbb6df78a470316ee0dc524ea5addb0f56c8a8905",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 156
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills-collision/second/calendar/SKILL.md",
+      "sha256": "adceefcc79f6e7a79bf75cdae7d5bd0364b2c525296e4f0ec4c5240f9a11a44d",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 157
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/consecutive-hyphens/SKILL.md",
+      "sha256": "52e4b2685c63c0037c8107334b49cfa146341b668db703cb3594c0c6cf629684",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 158
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/disable-model-invocation/SKILL.md",
+      "sha256": "da0457eefec51f8aba12e1c7090ece7983043688704ed6b74c881df1aed09a58",
+      "lines": 9,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 159
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/invalid-name-chars/SKILL.md",
+      "sha256": "bd0121b407fe21640002b61ecb2d559c43fba74dbe3eeac82ba442112fea580f",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 160
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/invalid-yaml/SKILL.md",
+      "sha256": "ef6bba8e89e5a697f5f87e5b0de2785b170e02d1f344c3d0c1e40114ffde2a11",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 161
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/long-name/SKILL.md",
+      "sha256": "dfe930f367e25c4b0703cd7c8906070f87b345f867dea6fef34f9074c3cb052f",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 162
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/missing-description/SKILL.md",
+      "sha256": "ac54cca8108cc426fab7fd46a5cc9379afedbd7bafeca43ce6e3413da2503713",
+      "lines": 7,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 163
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/multiline-description/SKILL.md",
+      "sha256": "30a57026f007961b421e8556e8c4d277208a6b61504ebcd8ee20e7102baa0022",
+      "lines": 11,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 164
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/name-mismatch/SKILL.md",
+      "sha256": "53686d98a0e1b92d1f90d5f192cefbe011121507debb5a407653b1ae80b9694c",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 165
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/nested/child-skill/SKILL.md",
+      "sha256": "0050995f18550fc4554a1dc3723026474c080d2e2772da1ce5c7f14b0b462ce7",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 166
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/no-frontmatter/SKILL.md",
+      "sha256": "e5ca5b4ffb7aaada8b4decc54fc4af732de355786ef54d38db97bb9f75d25672",
+      "lines": 3,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 167
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/root-skill-preferred/SKILL.md",
+      "sha256": "347fa1b7bd4f21992a5cf2aee1b9af9a05ec991ae644c96aa8e68b356e5f0f3f",
+      "lines": 3,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 168
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/root-skill-preferred/nested-child/SKILL.md",
+      "sha256": "f07ee61492ee356de86d13b785f3e67c7db491521780e8087fe558b91bd61fe5",
+      "lines": 3,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 169
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/unknown-field/SKILL.md",
+      "sha256": "df6e1ecfff7a6b65a8d0d5280457fde480c819a76be6926dafef6895c8bed650",
+      "lines": 10,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 170
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/valid-skill/SKILL.md",
+      "sha256": "db6af8bf9364290c5376d39e97c622f0152b6cd64f379bc03855d79ea058c0ba",
+      "lines": 8,
+      "kind": "解析器测试夹具",
+      "reading_scope": "字节一致；继承旧版：全文；测试输入，非路线图",
+      "original_index_line": 171
+    },
+    {
+      "path": "packages/coding-agent/test/mcp-conformance/README.md",
+      "sha256": "5c6ed3a36bab80d4f589e02af7391bf2a1025ccd2886b7949fde796884cb70d6",
+      "lines": 45,
+      "kind": "测试运行指南",
+      "reading_scope": "字节一致；本轮全文重读，重核 CIMD 陈旧说明及对应实现",
+      "original_index_line": 172
+    },
+    {
+      "path": "packages/coding-agent/test/suite/README.md",
+      "sha256": "a7ee973f9400c37f97c7e6a6b221381fde2dbde5d9021485d9fe292a7aba689e",
+      "lines": 10,
+      "kind": "测试运行指南",
+      "reading_scope": "字节一致；继承旧版：全文；当前验证方法",
+      "original_index_line": 173
+    },
+    {
+      "path": "packages/durable/CHANGELOG.md",
+      "sha256": "9ab21fd617c17bd4147b1eea6398a6324b9b78b492234495433c46d6e5b677ce",
+      "lines": 15,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对新增发行标题和条目",
+      "original_index_line": 179
+    },
+    {
+      "path": "packages/durable/README.md",
+      "sha256": "43d5f169feebd88484014c0fab88b018a655dc7d01351e2a5d797a122638063b",
+      "lines": 599,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "全文复核；对变化契约追踪关联实现",
+      "original_index_line": 180
+    },
+    {
+      "path": "packages/durable/docs/chord-delta-findings.md",
+      "sha256": "3f4e9c8ad3a3448c360730d9e6bb668f90800d0d19f4c513bf7bd5561d0d770c",
+      "lines": 358,
+      "kind": "历史实验分析",
+      "reading_scope": "字节一致；继承旧版：全文；原意、阶段更替与当前实现对照",
+      "original_index_line": 181
+    },
+    {
+      "path": "packages/durable/docs/pico-v5-chord-usage.md",
+      "sha256": "f7a451b37377b0cef747571694d2138ab09414c241ec1fd7462e436a42e6bfc0",
+      "lines": 387,
+      "kind": "设计规范／实现交接",
+      "reading_scope": "字节一致；继承旧版：全文；原意、阶段更替与当前实现对照",
+      "original_index_line": 182
+    },
+    {
+      "path": "packages/durable/docs/pico-v5-handoff.md",
+      "sha256": "9ce6664e924e04ad1c4feee472a2ecbb31a154fbb5ac8cfbf0eb353da34cdd42",
+      "lines": 917,
+      "kind": "设计规范／实现交接",
+      "reading_scope": "字节一致；继承旧版：全文；原意、阶段更替与当前实现对照",
+      "original_index_line": 183
+    },
+    {
+      "path": "packages/durable/docs/spec.md",
+      "sha256": "c7a40d5af2f34cb9e06344b88d576a199d0054dbd57c07c6efacc94e531c8e8e",
+      "lines": 4628,
+      "kind": "设计规范／实现交接",
+      "reading_scope": "全文复核；重点对照 ProviderSession 与恢复、view、compaction 实现",
+      "original_index_line": 184
+    },
+    {
+      "path": "packages/evals/README.md",
+      "sha256": "544041208460422e2d1d4498b1b23c15650c414a22df9c54f899efd6c743f500",
+      "lines": 129,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+      "original_index_line": 190
+    },
+    {
+      "path": "packages/mcp/CHANGELOG.md",
+      "sha256": "af6951c2eb4c5d337b51d17685e56e7931aaaf72e1e6d20348ab366672264ee2",
+      "lines": 44,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对新增发行标题和条目",
+      "original_index_line": 196
+    },
+    {
+      "path": "packages/mcp/LICENSES/modelcontextprotocol-typescript-sdk.txt",
+      "sha256": "5e13dbbc1d120fc2a03cecde7c91424ae2d7de11b63d58ded2f4431e261ee50d",
+      "lines": 21,
+      "kind": "第三方许可证",
+      "reading_scope": "字节一致；继承旧版：清点与类型筛查；不作为功能规划",
+      "original_index_line": 197
+    },
+    {
+      "path": "packages/mcp/README.md",
+      "sha256": "1ef949d454c0948706133bc1732a5f66617df6bfd237ec4138051eeba8c37f13",
+      "lines": 136,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "字节一致；本轮仍全文重读，核查 issuer 示例和 CIMD 说明缺口",
+      "original_index_line": 198
+    },
+    {
+      "path": "packages/protocol/CHANGELOG.md",
+      "sha256": "e5b4b6894562900cffe6b105f7f47e30c42fa461c67b36ec47060f68f025db8f",
+      "lines": 45,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对新增发行标题和条目",
+      "original_index_line": 204
+    },
+    {
+      "path": "packages/protocol/README.md",
+      "sha256": "b70f6581daa26b36db6caaa86c5d570b246fc26324f66cc8959d1267fc907ed8",
+      "lines": 41,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+      "original_index_line": 205
+    },
+    {
+      "path": "packages/server/CHANGELOG.md",
+      "sha256": "e029da965dfd60ac21205a8dee880417889cda3510ef5471fb311f8f062dc920",
+      "lines": 79,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对新增发行标题和条目",
+      "original_index_line": 211
+    },
+    {
+      "path": "packages/server/README.md",
+      "sha256": "f36bc313997b95c736210670cf2f89205392be80e37d48776ec8d4e41af15062",
+      "lines": 63,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+      "original_index_line": 212
+    },
+    {
+      "path": "packages/telemetry/CHANGELOG.md",
+      "sha256": "2e5ed61627e4322f16b6713fecce20e8f877f24e4704d1ec4efe6986f14d6047",
+      "lines": 39,
+      "kind": "发行历史",
+      "reading_scope": "全文；核对新增发行标题和条目",
+      "original_index_line": 218
+    },
+    {
+      "path": "packages/telemetry/README.md",
+      "sha256": "d68b25b6d319c7a02b509c9ccf1bafea2cc1efa7f15af756fb59fa451b2fb4d7",
+      "lines": 464,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例",
+      "original_index_line": 219
+    },
+    {
+      "path": "packages/tui/CHANGELOG.md",
+      "sha256": "e3d89333acabfd7411e7f62a2b26d8f845ccf85eea06ac4764b3fc458087329f",
+      "lines": 1239,
+      "kind": "发行历史",
+      "reading_scope": "详读 1.0.2 / 1.0.1 与涉及的历史段；其他历史条目不逐项重审",
+      "original_index_line": 225
+    },
+    {
+      "path": "packages/tui/README.md",
+      "sha256": "2cb1b0d02b94ba20db9f812379bbb9b98d56d68c6e38cdc0c6cbd5491f610e7e",
+      "lines": 947,
+      "kind": "现行包说明、API 与设计边界",
+      "reading_scope": "字节一致；继承旧版：全文；核查设计意图、限制与具体示例；本轮另复读图片段 658–686",
+      "original_index_line": 226
+    },
+    {
+      "path": "packages/tui/native/darwin/README.md",
+      "sha256": "de34e2dfb2b600fe67df5aae2fa58eef26ac84644a0f0d44cf0a09d46f3d2730",
+      "lines": 22,
+      "kind": "原生构建与验证说明",
+      "reading_scope": "字节一致；继承旧版：全文；当前平台边界，非路线图",
+      "original_index_line": 227
+    },
+    {
+      "path": "packages/tui/native/linux/README.md",
+      "sha256": "a06e3ff9ed53919f7d6147f2d016e837cbe780e01615053d01002754d83a522d",
+      "lines": 23,
+      "kind": "原生构建与验证说明",
+      "reading_scope": "字节一致；继承旧版：全文；当前平台边界，非路线图",
+      "original_index_line": 228
+    },
+    {
+      "path": "packages/tui/native/win32/README.md",
+      "sha256": "5b00a5533ea3b8bea1667d0fe2f34345d97a7164bec3652bcbf03b4eee53d991",
+      "lines": 31,
+      "kind": "原生构建与验证说明",
+      "reading_scope": "字节一致；继承旧版：全文；当前平台边界，非路线图",
+      "original_index_line": 229
+    }
+  ]
+}

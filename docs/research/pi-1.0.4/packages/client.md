@@ -1,8 +1,18 @@
 # client：远程服务连接、订阅与路由生命周期
 
+> 升级核查日期：2026-10-07。以 [1.0.2 历史证据](../evidence/pi-1.0.2/README.md) 与 [当前清单](../source-manifest.json) 比较；旧源码不在现场，不声称取得完整旧新文本 diff。未变正文继承已完成分析，本次重读范围和跨包复核见下文；没有执行 Pi 代码、测试、安装或网络请求。
+
+## 1.0.2 → 1.0.4 升级核查
+
+相对基线：新增 0、修改 2、删除 0、字节一致 17 个文件。
+
+变化仅为 manifest 的版本/内部依赖范围和 CHANGELOG 两个空标题。8 个生产源码、3 个测试、README 与基线哈希一致；本次全文重读 README/CHANGELOG，继承连接状态机、订阅、手动 reconnect 和 Unix 运输分析。内部 Chord/protocol 的源码同样未变，版本范围同步为 ^1.0.4；不能据此扩展成所有外部依赖或平台行为都不变。
+
+现版实验 client-runtime、service connection 的 Chord binding 接线仍在；新增 pi-env 自己拥有远端执行连接，不复用本 Client 的 Session attachment/reconnect 语义。MCP 的 OAuth 修复也不经过该包。原来的“不自动重连或 replay”“typed 服务由应用拥有”仍是当前边界，而非本次遗漏的功能。[当前 README](../../../../.repo/pi-1.0.4/packages/client/README.md#L30)、[独立 env 连接](../../../../.repo/pi-1.0.4/packages/env/src/connection.ts#L4)。
+
 ## 范围与核心判断
 
-本文静态阅读 `pi-1.0.2` 本地源码；未运行测试、构建、Unix socket 或远程服务。
+本文静态阅读 `pi-1.0.4` 本地源码；未运行测试、构建、Unix socket 或远程服务。
 “测试覆盖”仅表示快照中的测试用例意图，不表示本次执行通过。
 跨包阅读限于确认 Chord、protocol、server 与 coding-agent 的真实边界。
 
@@ -10,22 +20,17 @@
 它维护连接状态、请求关联、当前 attachment 和服务订阅；类型化服务代理与最终 replicated-state 投影来自 Chord。
 包本身没有聊天消息镜像、工具状态 reducer、模型选择 API，也没有自动重试循环。
 `reconnect()` 只是重新调用 `connect()`；调用方必须处于 disconnected 状态。
-依据：[client.ts:62](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L62)、[client.ts:128](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L128)。
+依据：[client.ts:62](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L62)、[client.ts:128](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L128)。
 
-## 1.0.2 升级核查（2026-10-05）
-
-本包 19 个文件中 17 个未变，变化只在 `package.json` 与 `CHANGELOG.md`，无增删。现版包与内部依赖范围同步为 `1.0.2` / `^1.0.2`；1.0.1、1.0.2 的 changelog 标题没有具体条目。源码、测试与 README 哈希一致，连接、取消、订阅和手动 reconnect 结论按证据复用；这不是从空发布记录推导无运行变化。
-
-比对依据为 [1.0.0 清单](../evidence/pi-1.0.0/source-manifest.json) 与 [1.0.2 清单](../source-manifest.json)。旧源码目录不在本次现场；这里只证明文件内容相同或不同，不声称恢复了修改文件的逐行旧文本差异。
 
 ## Manifest 与公开入口
 
 | 项目 | 事实 |
 |---|---|
-| 名称/版本 | `@earendil-works/pi-client` / `1.0.2` |
+| 名称/版本 | `@earendil-works/pi-client` / `1.0.4` |
 | 模块 | ESM；`sideEffects:false` |
 | Node | `>=22.19.0` |
-| 运行依赖 | Chord `^1.0.2`、pi-protocol `^1.0.2` |
+| 运行依赖 | Chord `^1.0.4`、pi-protocol `^1.0.4` |
 | 根入口 | Client、Chord transport adapter、错误类型、传输和生命周期类型 |
 | `./unix` | Unix transport factory、服务器发现和 route 类型 |
 | `./package.json` | manifest 子路径 |
@@ -33,7 +38,7 @@
 
 核心入口不导入 `node:net`；Unix 子入口负责 Node 文件系统和 socket。
 这是一条真实的导入隔离边界，但不能仅据此声明所有浏览器环境都已验证兼容。
-依据：[package.json](../../../../.repo/pi-1.0.2/packages/client/package.json)、[index.ts:1](../../../../.repo/pi-1.0.2/packages/client/src/index.ts#L1)。
+依据：[package.json](../../../../.repo/pi-1.0.4/packages/client/package.json)、[index.ts:1](../../../../.repo/pi-1.0.4/packages/client/src/index.ts#L1)。
 
 ## 目录和对象地图
 
@@ -56,7 +61,7 @@
 后者不是从远端学习的任意身份：构造时先验证为规范小写 UUIDv4，握手时再比较远端声明。
 可选配置是最大帧长和监听器异常诊断回调。
 没有 credential、retry、request timeout 或 session path 选项。
-依据：[types.ts:25](../../../../.repo/pi-1.0.2/packages/client/src/types.ts#L25)、[client.ts:76](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L76)。
+依据：[types.ts:25](../../../../.repo/pi-1.0.4/packages/client/src/types.ts#L25)、[client.ts:76](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L76)。
 
 | API | 成功/生命周期语义 |
 |---|---|
@@ -75,7 +80,7 @@
 `hello` 和 attachment 在断线时清空；`serverId` 始终来自配置。
 `ServiceSubscription` 暴露 `id`、`target`、`snapshot`、`start()`、`dispose()`。
 订阅消费者拥有安装快照和开始投递的次序控制。
-依据：[client.ts:93](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L93)、[types.ts:16](../../../../.repo/pi-1.0.2/packages/client/src/types.ts#L16)。
+依据：[client.ts:93](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L93)、[types.ts:16](../../../../.repo/pi-1.0.4/packages/client/src/types.ts#L16)。
 
 ## 连接状态机逐步追踪
 
@@ -93,20 +98,20 @@ stateDiagram-v2
 factory 返回之前若发生断开，其稍后返回的 transport 会立即关闭。
 `#openTransport` 获得 transport 后发送版本 8 hello。
 若 factory 尚未返回就同步交付服务器数据，按“client hello 尚未发送”协议错误拒绝。
-依据：[connection.ts:67](../../../../.repo/pi-1.0.2/packages/client/src/connection.ts#L67)、[connection.ts:120](../../../../.repo/pi-1.0.2/packages/client/src/connection.ts#L120)。
+依据：[connection.ts:67](../../../../.repo/pi-1.0.4/packages/client/src/connection.ts#L67)、[connection.ts:120](../../../../.repo/pi-1.0.4/packages/client/src/connection.ts#L120)。
 
 在 connecting 阶段，服务器首条消息必须是 hello 或 hello_error。
 hello 的版本已由 protocol schema 限定；这里再比对期望 serverId。
 握手成功后先置 connected，再通知内部 onHandshake、连接监听器，最后 resolve 握手 Promise。
 每次回调后重新检查当前 lifecycle，防止监听器重入断连后仍完成过期握手。
 进入 connected 后任何第二次 hello/hello_error 都是协议错误。
-依据：[connection.ts:163](../../../../.repo/pi-1.0.2/packages/client/src/connection.ts#L163)。
+依据：[connection.ts:163](../../../../.repo/pi-1.0.4/packages/client/src/connection.ts#L163)。
 
 `onClose` 会执行 decoder.end，识别最终半帧，而不简单报告普通断连。
 `#failAndClose` 先切换状态并通知上层，再关闭 transport。
 `#fail` 拒绝仍未完成的握手并发布 disconnected。
 核心 Connection 未设置握手定时器；发现探测提供自己的 1 秒上限，普通连接需由 transport/调用方处理等待策略。
-依据：[connection.ts:215](../../../../.repo/pi-1.0.2/packages/client/src/connection.ts#L215)。
+依据：[connection.ts:215](../../../../.repo/pi-1.0.4/packages/client/src/connection.ts#L215)。
 
 ## 请求、响应、取消与 mutation 语义
 
@@ -122,20 +127,20 @@ hello 的版本已由 protocol schema 限定；这里再比对期望 serverId。
 
 request 的 target 是显式参数，客户端并不在此替调用方验证它等于当前 attachment。
 服务端是权威路由检查者；本地 `#targetIsCurrent` 主要用于订阅释放时避免向过期路由发 unsubscribe。
-依据：[client.ts:238](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L238)、[client.ts:423](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L423)。
+依据：[client.ts:238](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L238)、[client.ts:423](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L423)。
 
 预先 aborted 的请求完全不发送。
 发送后的 abort 立即拒绝调用 Promise，并以相同 id/target 发送 cancel。
 pending map **不会在本地 abort 时删除**，以便消费服务端最终响应；最终响应到达才清理 AbortSignal listener。
 这一点防止正常取消响应被识别为“无匹配请求”而断连。
 若服务端永不完成而连接也不终止，该记录没有客户端超时来自动回收。
-依据：[client.ts:249](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L249)、[client.test.ts:209](../../../../.repo/pi-1.0.2/packages/client/test/client.test.ts#L209)。
+依据：[client.ts:249](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L249)、[client.test.ts:209](../../../../.repo/pi-1.0.4/packages/client/test/client.test.ts#L209)。
 
 未知响应 id 会终止连接；未知 subscription id 的 service_update 则被忽略。
 这是两个不同政策：请求响应必须严格关联，已释放订阅的迟到事件可以丢弃。
 mutation 没有特别的写入 API、幂等键或本地乐观回滚；它仍是服务 method call。
 取消意味着传递终止意图，不保证服务端已完成的修改回滚。
-依据：[client.ts:304](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L304)。
+依据：[client.ts:304](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L304)。
 
 ## 订阅：先 hydration，再 activation
 
@@ -149,7 +154,7 @@ mutation 没有特别的写入 API、幂等键或本地乐观回滚；它仍是�
 请求 transform 回调先 `decodeSnapshot`，标记 hydrated，再按序解码此前 wire updates。
 `subscribeService` 返回时仍不投递这些更新。
 调用 `start` 才标记 ready 并冲刷 queued；重复 start 无作用。
-依据：[client.ts:172](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L172)。
+依据：[client.ts:172](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L172)。
 
 ```text
 register listener → send subscribe → buffer wire updates
@@ -162,19 +167,19 @@ caller installs snapshot → start() → ordered listener delivery
 Chord `createServiceStateDecoder` 为 instance generation/member 各自维护 delta codec。
 reset/replaced/unavailable 会重置相关 registry；spawned 增加、closed 删除 instance 字典。
 状态 sequence 仍随 update 传递，最终消费者的 replicated-state 层负责其语义。
-依据：[state-codec.ts:99](../../../../.repo/pi-1.0.2/packages/chord/src/services/state-codec.ts#L99)。
+依据：[state-codec.ts:99](../../../../.repo/pi-1.0.4/packages/chord/src/services/state-codec.ts#L99)。
 
 每个服务 listener 经 `deliveryTail.then(...)` 顺序运行，可返回 Promise。
 用户 callback 抛错交给 `onListenerError`，不会污染网络状态；诊断 callback 自身抛错也吞掉。
 本包没有限制这条 Promise 链或两条订阅缓冲的长度，也不会因慢消费者暂停 transport 读取。
 因此发送字节背压与接收应用消费者背压并非同一个保证。
-依据：[client.ts:417](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L417)、[client.ts:437](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L437)。
+依据：[client.ts:417](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L417)、[client.ts:437](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L437)。
 
 订阅 `dispose` 先从本地 map 删除，再在仍 connected 且 target 当前有效时发送 unsubscribe。
 等待 unsubscribe 和已经排队的 deliveryTail，最后清空缓冲。
 Client 全局 dispose 则清空 maps 并断连，不逐个等待所有订阅 callback 完成。
 已经形成的 Promise callback 链不能据此认定被强制取消。
-依据：[client.ts:221](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L221)、[client.ts:379](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L379)。
+依据：[client.ts:221](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L221)、[client.ts:379](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L379)。
 
 ## Attachment、断连和重连
 
@@ -182,13 +187,13 @@ Client 全局 dispose 则清空 maps 并断连，不逐个等待所有订阅 cal
 收到不同 serverId 的 attachment 直接协议失败。
 相同三元组不会重复通知；sessionId 相同但 attachmentId 更新会被视作新路由。
 断连依次清空 hello、清除 attachment、拒绝 pending requests、清除 subscriptions，再通知连接监听器。
-依据：[client.ts:345](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L345)、[client.ts:398](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L398)。
+依据：[client.ts:345](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L345)、[client.ts:398](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L398)。
 
 `reconnect` 不保存 durable Session 选择、不 replay mutation、不 resubscribe，也不做指数退避。
 新连接只有新的 hello；旧 attachment 不再是当前能力。
 自动重连若存在，应在调用方寻找，而不能归因于本包方法名。
 测试明确断开后第二条 transport 只收到 hello。
-依据：[client.test.ts:314](../../../../.repo/pi-1.0.2/packages/client/test/client.test.ts#L314)。
+依据：[client.test.ts:314](../../../../.repo/pi-1.0.4/packages/client/test/client.test.ts#L314)。
 
 ## Transport 契约与 Unix 背压
 
@@ -196,19 +201,19 @@ ByteTransport 要求 send 调用顺序即交付顺序，返回 Promise；close �
 factory 的契约是创建“已连接、已认证”的新 transport，并且只发一次终止回调。
 认证本身不是 Client hello 的工作。
 根入口支持自定义传输，Unix 是随包提供的具体实现。
-依据：[transport.ts:1](../../../../.repo/pi-1.0.2/packages/client/src/transport.ts#L1)。
+依据：[transport.ts:1](../../../../.repo/pi-1.0.4/packages/client/src/transport.ts#L1)。
 
 Unix factory 拒绝 Windows、空 path、非正安全整数 pending byte limit。
 默认 pending 上限为默认最大帧长的四倍，即 64 MiB，而不是随 Client 自定义帧长自动变化。
 socket 的 connect 前错误 reject factory；connect 后错误交给 handlers；terminal 标记避免重复报告。
-依据：[unix.ts:87](../../../../.repo/pi-1.0.2/packages/client/src/unix.ts#L87)。
+依据：[unix.ts:87](../../../../.repo/pi-1.0.4/packages/client/src/unix.ts#L87)。
 
 `UnixByteTransport.send` 先把 chunk 字节数记入 pending，并复制输入。
 写入按 `#writeTail` 串行排队，完成或失败都减 pending 计数。
 超限返回 rejected Promise，Client 因发送失败断连。
 实际 socket.write 必须同时满足 callback 完成与必要的 drain 完成，才能 resolve。
 socket 提前 close 会拒绝正在等待的写操作并清理 listener。
-依据：[unix.ts:161](../../../../.repo/pi-1.0.2/packages/client/src/unix.ts#L161)、[unix.ts:186](../../../../.repo/pi-1.0.2/packages/client/src/unix.ts#L186)。
+依据：[unix.ts:161](../../../../.repo/pi-1.0.4/packages/client/src/unix.ts#L161)、[unix.ts:186](../../../../.repo/pi-1.0.4/packages/client/src/unix.ts#L186)。
 
 ## Unix 服务发现
 
@@ -216,35 +221,35 @@ socket 提前 close 会拒绝正在等待的写操作并清理 listener。
 只保留 `<canonical-uuidv4>.sock` 名称，再用 lstat 确認实际 socket。
 最多 16 个并发 worker，结果按 serverId 排序。
 每个候选通过真正的 Client hello 校验文件名所声称的逻辑身份，默认超时 1 秒。
-依据：[unix.ts:36](../../../../.repo/pi-1.0.2/packages/client/src/unix.ts#L36)。
+依据：[unix.ts:36](../../../../.repo/pi-1.0.4/packages/client/src/unix.ts#L36)。
 
 缺失、拒绝、重置、超时、协议不匹配和版本不支持作为不可达候选忽略。
 异常文件系统错误等仍传播，避免把权限故障伪装成“没有服务器”。
 探测 finally 清 timer、dispose client、destroy socket 并等待 close。
 发现不会删除陈旧 socket，文件清理由 server listener 自己负责。
-依据：[unix.ts:237](../../../../.repo/pi-1.0.2/packages/client/src/unix.ts#L237)。
+依据：[unix.ts:237](../../../../.repo/pi-1.0.4/packages/client/src/unix.ts#L237)。
 
 ## Chord 与 coding-agent 的真实接线
 
 `createClientServiceTransport(client,getTarget)` 延迟求值 route。
 invoke 将 Chord Context.abortSignal 传入 request；subscribe 将 start/dispose 映射成 activate/close。
 接收更新用 `BACKGROUND_CONTEXT` 交付，原远端请求 Context 不会跨 wire 保留。
-依据：[client.ts:447](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L447)。
+依据：[client.ts:447](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L447)。
 
 实验 client runtime 会发现或激活 Unix server，也可选择 Radius transport。
 它用本包 Client 建立连接后，另建 server/session service source 与 Chord facade。
 只有 Radius 路径显式安装 `RadiusClientReconnect`，回调等待 server services ready 后重新 attach Session。
 这属于 coding-agent 策略层，不能描述成 pi-client 对所有 transport 自动恢复。
-依据：[client-runtime.ts:119](../../../../.repo/pi-1.0.2/packages/coding-agent/src/experimental/client-runtime.ts#L119)、[client-runtime.ts:156](../../../../.repo/pi-1.0.2/packages/coding-agent/src/experimental/client-runtime.ts#L156)。
+依据：[client-runtime.ts:119](../../../../.repo/pi-1.0.4/packages/coding-agent/src/experimental/client-runtime.ts#L119)、[client-runtime.ts:156](../../../../.repo/pi-1.0.4/packages/coding-agent/src/experimental/client-runtime.ts#L156)。
 
 高层 `management.attach` 不仅等待 remote method，还等待 `session.whenAttached`。
 `whenAttached` 等待所有 facade hydration，并确认 attachment revision 未被替换。
 这解释了“远端 attach RPC 已完成”和“UI 可以安全使用 mirrored state”为什么不是同一个时刻。
-依据：[client-runtime.ts:201](../../../../.repo/pi-1.0.2/packages/coding-agent/src/experimental/client-runtime.ts#L201)、[connection.ts:324](../../../../.repo/pi-1.0.2/packages/coding-agent/src/experimental/services/connection.ts#L324)。
+依据：[client-runtime.ts:201](../../../../.repo/pi-1.0.4/packages/coding-agent/src/experimental/client-runtime.ts#L201)、[connection.ts:324](../../../../.repo/pi-1.0.4/packages/coding-agent/src/experimental/services/connection.ts#L324)。
 
 稳定 `--mode rpc` 仍在 coding-agent 的 rpc-mode 中走 JSONL；本包属于另一套 framed-CBOR 服务协议。
 实验命令由 development-only dispatch 与 `PI_EXPERIMENTAL=1` 控制。
-依据：[commands.ts:84](../../../../.repo/pi-1.0.2/packages/coding-agent/src/experimental/commands.ts#L84)、[rpc-mode.ts:61](../../../../.repo/pi-1.0.2/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L61)。
+依据：[commands.ts:84](../../../../.repo/pi-1.0.4/packages/coding-agent/src/experimental/commands.ts#L84)、[rpc-mode.ts:61](../../../../.repo/pi-1.0.4/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L61)。
 
 ## 测试矩阵与尚未证明的部分
 
@@ -263,7 +268,7 @@ invoke 将 Chord Context.abortSignal 传入 request；subscribe 将 start/dispos
 | `unix.test.ts:112` | 过滤错误名字、普通文件、错误逻辑身份 |
 | `unix.test.ts:149` | 发现探测并发不超过 16 |
 
-依据：[client.test.ts:81](../../../../.repo/pi-1.0.2/packages/client/test/client.test.ts#L81)、[unix-transport.test.ts:55](../../../../.repo/pi-1.0.2/packages/client/test/unix-transport.test.ts#L55)、[unix.test.ts:149](../../../../.repo/pi-1.0.2/packages/client/test/unix.test.ts#L149)。
+依据：[client.test.ts:81](../../../../.repo/pi-1.0.4/packages/client/test/client.test.ts#L81)、[unix-transport.test.ts:55](../../../../.repo/pi-1.0.4/packages/client/test/unix-transport.test.ts#L55)、[unix.test.ts:149](../../../../.repo/pi-1.0.4/packages/client/test/unix.test.ts#L149)。
 
 Unix 实际连接测试以 `process.platform !== "win32"` 条件运行。
 本次未执行，因此没有操作系统行为、时间精度、吞吐、内存峰值或真实 Radius reconnect 证据。
@@ -277,9 +282,9 @@ Unix 实际连接测试以 `process.platform !== "win32"` 条件运行。
 对照 Chord state-codec 理解字典状态，再读 Unix send/write 和 discovery。
 最后用实验 client-runtime/service-source 确认恢复、ready 和业务命名空间的上层归属。
 
-## 设计文档、规划与时效核查（2026-10-05）
+## 设计文档、规划与时效核查（2026-10-07）
 
-README 的 1–72 行完整阅读沿用 1.0.0 研究，本次以 SHA-256 确认全文未变；重新完整阅读现版 `CHANGELOG.md` 1–43 行。
+本次全文重新阅读 README 1–72 行与 CHANGELOG 1–47 行；代码事实沿用 1.0.2 已完成分析，并以当前逐文件摘要及实验调用边界核对。
 未找到本包独立路线图；README 描述当前实验 client 的运输边界及调用者义务，不能把示例注释或未提供的 adapter 当成已承诺功能。
 以下落实判断依据当前源码与测试文本，未执行测试或连接服务。
 
@@ -287,18 +292,18 @@ README 的 1–72 行完整阅读沿用 1.0.0 研究，本次以 SHA-256 确认�
 
 | 文档主张 | 状态与动机 | 当前落实和剩余边界 |
 |---|---|---|
-| transport-neutral core、每次 fresh transport | 已兑现；让连接机制与协议生命周期分开 | `ByteTransportFactory` 提供 fresh connected/authenticated transport，核心并不自己实现认证。[README.md:38](../../../../.repo/pi-1.0.2/packages/client/README.md#L38)、[transport.ts:17](../../../../.repo/pi-1.0.2/packages/client/src/transport.ts#L17) |
-| 校验预期 serverId、Session 请求带 attachmentId | 已兑现；防物理端点错配与迟到路由帧 | 是逻辑身份/路由栅栏，不是密码学认证。[README.md:28](../../../../.repo/pi-1.0.2/packages/client/README.md#L28)、[connection.ts:1](../../../../.repo/pi-1.0.2/packages/client/src/connection.ts#L1) |
-| typed APIs 由应用 Chord binding 提供 | 已兑现；client 保持对业务契约不透明 | `createClientServiceTransport` 桥接低层 request/subscribe，Client 不负责构造产品代理。[README.md:30](../../../../.repo/pi-1.0.2/packages/client/README.md#L30)、[client.ts:447](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L447) |
-| snapshot 后 start，再释放水合期间更新 | 已兑现 | 是实际双阶段订阅 API，不是泛化为所有外部队列都有限容量的背压机制。[README.md:30](../../../../.repo/pi-1.0.2/packages/client/README.md#L30)、[client.ts:172](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L172) |
-| 断线不自动重连或重放 | 明确当前策略 | `reconnect()` 只发起新的 connect；应用重新 attach、重建业务 binding，不能称“自动恢复尚待实现”。[README.md:34](../../../../.repo/pi-1.0.2/packages/client/README.md#L34)、[client.ts:134](../../../../.repo/pi-1.0.2/packages/client/src/client.ts#L134) |
-| coordinator 仅稳定路由，server/worker 生命周期在协议外 | 明确职责排除 | Client 没有 worker 管理器不属于未完成证据。[README.md:36](../../../../.repo/pi-1.0.2/packages/client/README.md#L36) |
-| Unix discovery、16 并发、只读探测、输出 maxPendingBytes | 已兑现 | 路径显式提供，异常及身份不匹配政策已实装；未由文档承诺 TCP/WebSocket preset。[README.md:61](../../../../.repo/pi-1.0.2/packages/client/README.md#L61)、[unix.ts:1](../../../../.repo/pi-1.0.2/packages/client/src/unix.ts#L1) |
+| transport-neutral core、每次 fresh transport | 已兑现；让连接机制与协议生命周期分开 | `ByteTransportFactory` 提供 fresh connected/authenticated transport，核心并不自己实现认证。[README.md:38](../../../../.repo/pi-1.0.4/packages/client/README.md#L38)、[transport.ts:17](../../../../.repo/pi-1.0.4/packages/client/src/transport.ts#L17) |
+| 校验预期 serverId、Session 请求带 attachmentId | 已兑现；防物理端点错配与迟到路由帧 | 是逻辑身份/路由栅栏，不是密码学认证。[README.md:28](../../../../.repo/pi-1.0.4/packages/client/README.md#L28)、[connection.ts:1](../../../../.repo/pi-1.0.4/packages/client/src/connection.ts#L1) |
+| typed APIs 由应用 Chord binding 提供 | 已兑现；client 保持对业务契约不透明 | `createClientServiceTransport` 桥接低层 request/subscribe，Client 不负责构造产品代理。[README.md:30](../../../../.repo/pi-1.0.4/packages/client/README.md#L30)、[client.ts:447](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L447) |
+| snapshot 后 start，再释放水合期间更新 | 已兑现 | 是实际双阶段订阅 API，不是泛化为所有外部队列都有限容量的背压机制。[README.md:30](../../../../.repo/pi-1.0.4/packages/client/README.md#L30)、[client.ts:172](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L172) |
+| 断线不自动重连或重放 | 明确当前策略 | `reconnect()` 只发起新的 connect；应用重新 attach、重建业务 binding，不能称“自动恢复尚待实现”。[README.md:34](../../../../.repo/pi-1.0.4/packages/client/README.md#L34)、[client.ts:134](../../../../.repo/pi-1.0.4/packages/client/src/client.ts#L134) |
+| coordinator 仅稳定路由，server/worker 生命周期在协议外 | 明确职责排除 | Client 没有 worker 管理器不属于未完成证据。[README.md:36](../../../../.repo/pi-1.0.4/packages/client/README.md#L36) |
+| Unix discovery、16 并发、只读探测、输出 maxPendingBytes | 已兑现 | 路径显式提供，异常及身份不匹配政策已实装；未由文档承诺 TCP/WebSocket preset。[README.md:61](../../../../.repo/pi-1.0.4/packages/client/README.md#L61)、[unix.ts:1](../../../../.repo/pi-1.0.4/packages/client/src/unix.ts#L1) |
 
 README transport 示例中的 WebSocket/Unix/other 只是说明 factory 可接任意有序字节流。
 本包实际额外导出的运输实现是 Unix；这两种事实并不冲突，也不能据示例推断已有通用 WebSocket 实现。
 “authenticated transport” 是 factory 的输入契约，当前 Unix 实现不凭这段类型注释自动获得对等方认证能力。
-对照 [README.md:8](../../../../.repo/pi-1.0.2/packages/client/README.md#L8)、[README.md:44](../../../../.repo/pi-1.0.2/packages/client/README.md#L44) 与 server 明确的 [README.md:61](../../../../.repo/pi-1.0.2/packages/server/README.md#L61)。
+对照 [README.md:8](../../../../.repo/pi-1.0.4/packages/client/README.md#L8)、[README.md:44](../../../../.repo/pi-1.0.4/packages/client/README.md#L44) 与 server 明确的 [README.md:61](../../../../.repo/pi-1.0.4/packages/server/README.md#L61)。
 
 ### 旧 client 命名与镜像 Session API 的历史时效
 
@@ -306,17 +311,17 @@ CHANGELOG 0.84.0 宣布 `PiClient`、`PiSessionHandle`、`PiServerError`，并�
 当前 root 导出改为 `Client`、`ServerError` 及 transport/binding 帮助函数；没有这些旧 class 或 `listSessions` 业务方法。
 会话目录、管理、transcript 已经作为 coding-agent 的 Chord 服务定义。
 这说明**旧产品级 client 表面已被后续服务适配边界替代**，不是仍需实现的接口，也不应为了对齐历史文档推导兼容层需求。
-见 [CHANGELOG.md](../../../../.repo/pi-1.0.2/packages/client/CHANGELOG.md)、[index.ts:1](../../../../.repo/pi-1.0.2/packages/client/src/index.ts#L1)、[sessions.ts:22](../../../../.repo/pi-1.0.2/packages/coding-agent/src/experimental/services/sessions.ts#L22)。
+见 [CHANGELOG.md](../../../../.repo/pi-1.0.4/packages/client/CHANGELOG.md)、[index.ts:1](../../../../.repo/pi-1.0.4/packages/client/src/index.ts#L1)、[sessions.ts:22](../../../../.repo/pi-1.0.4/packages/coding-agent/src/experimental/services/sessions.ts#L22)。
 
-0.84.1 至 1.0.2 多个版本标题没有具体条目，不能据此确定旧 API 何时消失，或断言期间没有变化。
+0.84.1 至 1.0.4 多个版本标题没有具体条目，不能据此确定旧 API 何时消失，或断言期间没有变化。
 README 的当前表述和 exports 比旧发行摘要更适合回答“现在如何使用”。
-相关记录见 [CHANGELOG.md](../../../../.repo/pi-1.0.2/packages/client/CHANGELOG.md)。
+相关记录见 [CHANGELOG.md](../../../../.repo/pi-1.0.4/packages/client/CHANGELOG.md)。
 
 ### 当前限制与未来承诺分开
 
 没有通用自动重试、业务请求 replay、认证策略或 Session 恢复调度，是当前分层的明示结果。
 实验 Radius reconnect 层已经在应用中存在，不表示 client 包正在等待同名能力合入，也不是本包整体尚未完成。
 Chord 的对称 peer 仍是其可选规划；当前 Client 的 request/cancel 关联不能被归为 Chord WP2 已交付。
-见 [Chord README.md:47](../../../../.repo/pi-1.0.2/packages/chord/README.md#L47)。
+见 [Chord README.md:47](../../../../.repo/pi-1.0.4/packages/chord/README.md#L47)。
 
 当前分析同时保留手动 reconnect、镜像状态和低层运输机制，以及旧 API 已替代、示例能力与实际出口的区分；没有独立路线图时，不从缺省行为虚构交付承诺。
