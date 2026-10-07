@@ -187,13 +187,13 @@ fn writes_and_reads_project_declarations() {
     });
     store
         .write_declarations(&[PackageDeclaration {
-            source: "./examples/todo".into(),
+            source: "./packages/local".into(),
             filters: PackageFilters::default(),
         }])
         .expect("write declarations");
     let loaded = store.read_declarations().expect("read declarations");
     assert_eq!(loaded.len(), 1);
-    assert_eq!(loaded[0].source, "./examples/todo");
+    assert_eq!(loaded[0].source, "./packages/local");
 }
 
 #[test]

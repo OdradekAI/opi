@@ -14,7 +14,8 @@ try { rustc --version | Out-Null } catch { Write-Error "FAIL: rustc not found"; 
 try { cargo --version | Out-Null } catch { Write-Error "FAIL: cargo not found"; exit 1 }
 
 $cacheLeased = $false
-$cacheTool = Join-Path $PSScriptRoot "opi-cargo-cache.py"
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../../..")).Path
+$cacheTool = Join-Path $repoRoot "scripts/opi-cargo-cache.py"
 if (-not $env:CARGO_TARGET_DIR) {
   $env:CARGO_TARGET_DIR = (& python $cacheTool resolve).Trim()
   if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: resolve Cargo cache"; exit 1 }

@@ -1,4 +1,0 @@
-[extension]
-name = "protected-paths"
-version = "0.1.0"
-description = "Example protected paths extension that blocks or allows file-tool operations based on configured path rules through extension hooks."

@@ -8,10 +8,11 @@ import shutil
 import sys
 from unittest.mock import patch
 
+REPO = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from operator_config import dumps_toml
 from operator_process import pin, sha, write_json, Commands
-
-REPO = Path(__file__).resolve().parents[1]
 
 COMPANION = r'''
 import json, hashlib, os, sys, tomllib

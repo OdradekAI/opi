@@ -1,5 +1,0 @@
-name = "sub-agent"
-description = "Example package demonstrating a sub-agent extension that runs nested agent workflows"
-version = "0.1.0"
-
-extensions = ["sub-agent"]

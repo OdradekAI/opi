@@ -205,6 +205,11 @@ Matt tracker-based shaping is optional; see
 [adapter prerequisites](opi-workflow/SKILL.md#matt-adapter-contract). Missing
 optional tools do not block human-led shaping in the current conversation.
 
+Keep workflow-specific helpers and their tests in the owning skill's `scripts/`,
+and shared assurance helpers and tests in `_shared/scripts/`. Companion runtime
+and tests belong to its crate. Repository-wide documentation checks, Cargo
+cache coordination and release artifact auditing stay in root `scripts/`.
+
 Keep shared invariants in their owning contract; retain exact commands/schemas
 where correctness depends on them. Put conditional procedures behind explicit
 mode/decision pointers. A description should identify the skill's actual job,

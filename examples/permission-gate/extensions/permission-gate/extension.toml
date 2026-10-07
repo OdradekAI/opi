@@ -1,4 +1,0 @@
-[extension]
-name = "permission-gate"
-version = "0.1.0"
-description = "Example permission gate that intercepts tool calls and applies allow/deny policies through extension hooks."

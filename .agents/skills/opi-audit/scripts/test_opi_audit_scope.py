@@ -12,8 +12,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent.parent
-SCRIPT = ROOT / ".agents/skills/opi-audit/scripts/read_audit_scope.py"
+SCRIPT = Path(__file__).resolve().with_name("read_audit_scope.py")
 SNAPSHOT = "docs/snapshots/phase19/opi-impl-state.json"
 SPEC = "docs/opi-spec.md"
 SUPPLEMENT = "docs/phase19.md"

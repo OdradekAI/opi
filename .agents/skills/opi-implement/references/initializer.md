@@ -318,7 +318,7 @@ choice:
   needs it to resume graph review.
 
 ### A.init.5 Write Smoke Script
-- `scripts/opi-impl-smoke.sh` (+ `.ps1` sibling on Windows)
+- `.agents/skills/opi-implement/scripts/opi-impl-smoke.sh` (+ `.ps1` sibling on Windows)
 
 ### A.init.6 Commit
 

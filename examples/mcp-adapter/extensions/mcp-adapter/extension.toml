@@ -1,4 +1,0 @@
-[extension]
-name = "mcp-adapter"
-version = "0.1.0"
-description = "Example MCP adapter extension that maps MCP-style tools/resources through custom commands and fixture data without live network calls."

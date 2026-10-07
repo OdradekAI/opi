@@ -242,6 +242,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Development tooling: implementation smoke wrappers now live in
+  `.agents/skills/opi-implement/scripts/` with their tests. Audit tests move
+  beside their owning skill helpers, shared assurance tests move to
+  `.agents/skills/_shared/scripts/`, and Eval operator tests move to
+  `crates/opi-eval/operator/tests/`. Repository-wide documentation, Cargo cache
+  and release artifact-audit tools retain their root `scripts/` entrypoints.
+
+- Repository: removed the top-level `examples/` package skeletons, their
+  manifest smoke tests and the accompanying `docs/extension-examples/`
+  documentation. Extension behavior tests remain self-contained under
+  `crates/opi-coding-agent/tests/`.
+
 - `opi-eval`: external `evaluations/YYYY/MM/<eval-id>/record.json` groups frozen
   family operations, bilingual/machine reports and native attempt evidence.
   Discovery reads JSON records, explicit read-only legacy imports and lifecycle

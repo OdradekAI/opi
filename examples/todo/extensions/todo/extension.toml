@@ -1,4 +1,0 @@
-[extension]
-name = "todo"
-version = "0.1.0"
-description = "Example todo extension that stores and updates task state through custom commands and extension state."

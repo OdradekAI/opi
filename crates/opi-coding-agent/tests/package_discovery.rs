@@ -368,25 +368,6 @@ description = "{long_desc}"
         let err = PackageManifest::from_toml(toml, path).unwrap_err();
         assert!(matches!(err, PackageDiscoveryError::InvalidManifest { .. }));
     }
-
-    #[test]
-    fn example_package_manifests_parse_with_supported_schema() {
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let repo_root = manifest_dir.join("../..");
-        let examples = [
-            "examples/sub-agent/package.toml",
-            "examples/plan-mode/package.toml",
-            "examples/todo/package.toml",
-            "examples/mcp-adapter/package.toml",
-        ];
-
-        for relative in examples {
-            let path = repo_root.join(relative);
-            let toml = std::fs::read_to_string(&path).expect("example package should be readable");
-            PackageManifest::from_toml(&toml, &path)
-                .unwrap_or_else(|err| panic!("{relative} should parse: {err}"));
-        }
-    }
 }
 
 // ===========================================================================

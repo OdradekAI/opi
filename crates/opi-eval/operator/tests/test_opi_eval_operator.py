@@ -11,8 +11,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-REPO = Path(__file__).resolve().parents[1]
-SCRIPTS = REPO / "crates/opi-eval/operator"
+REPO = Path(__file__).resolve().parents[4]
+SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
 

@@ -199,10 +199,11 @@ checkpoint boundaries, and phase-local compaction. Frozen snapshots stay frozen.
 
 ## Platform Detection
 
-Use the host-native smoke wrapper: `scripts/opi-impl-smoke.ps1` for native
-PowerShell, `scripts/opi-impl-smoke.sh` for Linux/macOS or Windows bash with
-forward-slash paths. Modes are `boot` at A.4 for runtime tasks, `full` for
-workspace D.1, and `scoped --crate <crate> [--test <name>...]` for focused Rust
+From the repository root, use the host-native smoke wrapper:
+`.agents/skills/opi-implement/scripts/opi-impl-smoke.ps1` for native PowerShell,
+`.agents/skills/opi-implement/scripts/opi-impl-smoke.sh` for Linux/macOS or Windows
+bash with forward-slash paths. Modes are `boot` at A.4 for runtime tasks, `full`
+for workspace D.1, and `scoped --crate <crate> [--test <name>...]` for focused Rust
 D.1. Read [verification-tiers.md](references/verification-tiers.md) for the
 selected tier and applicable addenda.
 

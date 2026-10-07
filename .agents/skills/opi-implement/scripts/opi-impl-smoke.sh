@@ -22,7 +22,7 @@ rustc --version >/dev/null 2>&1 || { echo "FAIL: rustc not found"; exit 1; }
 cargo --version >/dev/null 2>&1 || { echo "FAIL: cargo not found"; exit 1; }
 
 cache_leased=0
-cache_tool="$(cd "$(dirname "$0")" && pwd)/opi-cargo-cache.py"
+cache_tool="$(cd "$(dirname "$0")/../../../.." && pwd)/scripts/opi-cargo-cache.py"
 if [ -z "${CARGO_TARGET_DIR:-}" ]; then
   export CARGO_TARGET_DIR="$(python "$cache_tool" resolve)"
   python "$cache_tool" lease start --target "$CARGO_TARGET_DIR" --pid "$$"

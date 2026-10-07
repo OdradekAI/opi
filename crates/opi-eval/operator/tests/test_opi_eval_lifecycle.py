@@ -15,8 +15,8 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 
-REPO = Path(__file__).resolve().parents[1]
-OPERATOR = REPO / "crates/opi-eval/operator"
+REPO = Path(__file__).resolve().parents[4]
+OPERATOR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(OPERATOR))
 
 

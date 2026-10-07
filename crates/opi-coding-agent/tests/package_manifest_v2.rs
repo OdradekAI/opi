@@ -463,55 +463,6 @@ fn opi_version_unparseable_constraint_produces_diagnostic() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Backward compatibility: existing manifests still parse
-// ---------------------------------------------------------------------------
-
-#[test]
-fn existing_example_manifests_still_parse() {
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let repo_root = manifest_dir.join("../..");
-    let examples_with_adapters = [
-        "examples/todo/package.toml",
-        "examples/permission-gate/package.toml",
-        "examples/protected-paths/package.toml",
-    ];
-    let examples_without_adapters = [
-        "examples/sub-agent/package.toml",
-        "examples/plan-mode/package.toml",
-        "examples/mcp-adapter/package.toml",
-    ];
-
-    for relative in examples_with_adapters {
-        let path = repo_root.join(relative);
-        let toml = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("{relative} should be readable: {e}"));
-        let manifest = PackageManifest::from_toml(&toml, &path)
-            .unwrap_or_else(|err| panic!("{relative} should parse: {err}"));
-        assert!(
-            manifest.adapter.is_some(),
-            "{relative}: should have adapter declaration"
-        );
-        assert_eq!(manifest.adapter.as_ref().unwrap().kind, "process-jsonl");
-        assert_eq!(
-            manifest.adapter.as_ref().unwrap().protocol,
-            "opi-extension-jsonl-v1"
-        );
-    }
-
-    for relative in examples_without_adapters {
-        let path = repo_root.join(relative);
-        let toml = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("{relative} should be readable: {e}"));
-        let manifest = PackageManifest::from_toml(&toml, &path)
-            .unwrap_or_else(|err| panic!("{relative} should parse: {err}"));
-        assert!(
-            manifest.adapter.is_none(),
-            "{relative}: existing examples should not have adapter"
-        );
-    }
-}
-
 #[test]
 fn missing_resources_and_path_containment_unchanged() {
     // Verify that existing error paths still work

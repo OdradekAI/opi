@@ -10,15 +10,8 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent.parent
-VALIDATOR = (
-    ROOT
-    / ".agents"
-    / "skills"
-    / "_shared"
-    / "scripts"
-    / "validate_assurance_artifact.py"
-)
+ROOT = Path(__file__).resolve().parents[4]
+VALIDATOR = Path(__file__).resolve().with_name("validate_assurance_artifact.py")
 AUDIT_HEAD = "136c380f0c5eea541190cc1a0f5c1d62f983b4e8"
 REMEDIATION_HEAD = "236c380f0c5eea541190cc1a0f5c1d62f983b4e8"
 RUN_ID = "phase17-136c380-20260824t010203z"

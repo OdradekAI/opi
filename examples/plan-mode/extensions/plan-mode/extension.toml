@@ -1,4 +1,0 @@
-[extension]
-name = "plan-mode"
-version = "0.1.0"
-description = "Example plan mode extension that blocks mutating tools while in planning mode and provides plan state management."

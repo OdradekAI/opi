@@ -11,12 +11,12 @@ import sys
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from test_opi_assurance_skills import (
     AssuranceFixture, finding_record, requirement_record, run_validator, sha256, write_json,
 )
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / '.agents/skills/_shared/scripts'))
 sys.dont_write_bytecode = True
 
 

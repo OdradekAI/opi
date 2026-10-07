@@ -11,8 +11,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / ".agents" / "skills" / "_shared" / "scripts"
+SCRIPTS = Path(__file__).resolve().parent
 SCRIPT = SCRIPTS / "assurance_set.py"
 VALIDATOR = SCRIPTS / "validate_assurance_artifact.py"
 GENERATION_ID = "phase17-legacy-20260824t010203z"

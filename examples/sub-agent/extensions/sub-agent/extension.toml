@@ -1,4 +1,0 @@
-[extension]
-name = "sub-agent"
-version = "0.1.0"
-description = "Example sub-agent extension that runs nested agent workflows through custom commands with isolated state and bounded cancellation."

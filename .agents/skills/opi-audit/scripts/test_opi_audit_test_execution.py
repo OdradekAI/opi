@@ -10,8 +10,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent.parent
-SCRIPT = ROOT / ".agents/skills/opi-audit/scripts/check_test_execution.py"
+SCRIPT = Path(__file__).resolve().with_name("check_test_execution.py")
 SPEC = importlib.util.spec_from_file_location("audit_test_execution", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 checker = importlib.util.module_from_spec(SPEC)

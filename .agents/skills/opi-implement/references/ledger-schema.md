@@ -42,7 +42,7 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
       "evaluator_required": false,
       "verification": {
         "library_gates": [
-          "scripts/opi-impl-smoke.sh full"
+          ".agents/skills/opi-implement/scripts/opi-impl-smoke.sh full"
         ],
         "behavioral_tests": ["crates/opi-coding-agent/tests/phase17_provider_runtime.rs"],
         "snapshot_tests": [],
@@ -227,8 +227,8 @@ Validation rule: when `behavioral_tests` references more than one crate, either 
 
 Validation rule: `task_owned_paths` MUST NOT include broad documentation globs
 such as `docs/**` when a narrower subtree can satisfy the task. Use a
-purpose-specific path such as `docs/extension-examples/**` for example
-packages. `docs/opi-spec.md` is normative input and MUST NOT be task-owned
+purpose-specific subtree for package documentation. `docs/opi-spec.md` is
+normative input and MUST NOT be task-owned
 unless the task is a reviewed documentation/alignment task whose DoD explicitly
 requires updating `docs/opi-spec.md` and its localized counterpart.
 

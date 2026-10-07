@@ -10,15 +10,16 @@ Cargo manifests, or generated build artifacts.
 Use for dependency graph changes, cross-crate integration harnesses, and tasks
 whose primary crate is `workspace` or `cross-crate`.
 
-Gate: `scripts/opi-impl-smoke.sh full` (or `.ps1 full` on Windows). It is the
-single authoritative Phase-exit order and runs each gate exactly once in this
+Gate: `.agents/skills/opi-implement/scripts/opi-impl-smoke.sh full` (or `.ps1 full`
+on Windows). It is the single authoritative Phase-exit order and runs each gate
+exactly once in this
 order: `python scripts/opi-doc-check.py`, `cargo fmt --check --all`,
 `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace --all-targets`, `cargo test --workspace --doc`, then
 `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`. Cross-platform
 parity, the exact order, and exactly-once occurrence are pinned by
-`python scripts/test_opi_impl_smoke.py`. There is no preceding
-`cargo build --workspace` and no D.3 rerun.
+`python .agents/skills/opi-implement/scripts/test_opi_impl_smoke.py`. There is no
+preceding `cargo build --workspace` and no D.3 rerun.
 
 ## `documentation` Tier
 
@@ -48,7 +49,7 @@ Gates:
    [`shared-decision-and-test-stewardship.md`](../../_shared/references/shared-decision-and-test-stewardship.md)
    and record one test-impact action for every affected behavior. Its
    replace-don't-layer proof governs additions, updates, and deletions.
-2. Run `scripts/opi-impl-smoke.sh scoped --crate <crate> [--test <name> ...]`
+2. Run `.agents/skills/opi-implement/scripts/opi-impl-smoke.sh scoped --crate <crate> [--test <name> ...]`
    (or the PowerShell sibling). Name every affected integration binary; with no
    `--test`, the gate runs lib tests only. The script owns format, production
    clippy, named-test clippy/test, and crate rustdoc.
@@ -232,7 +233,7 @@ Before confirming an init or reinit graph:
    `package-template` must include the concrete test paths they declare, even
    when implementation files live under `examples/**`.
 6. Example/package tasks must not own broad `docs/**`; use a task-specific
-   docs subtree such as `docs/extension-examples/**`.
+   documentation subtree.
 7. Reviewed documentation/alignment tasks may own exact documentation files
    required by their DoD, including `docs/opi-spec.md` and localized
    counterparts. They still must not own broad `docs/**`.

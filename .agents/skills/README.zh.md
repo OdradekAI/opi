@@ -175,6 +175,10 @@ audit set 进入 remediation。各报告地位平等，分别持有已提交的 
 见[适配前提](opi-workflow/SKILL.md#matt-adapter-contract)；
 可选工具缺失不妨碍在当前对话中由人主导塑形。
 
+工作流专用辅助脚本及其测试放在所属技能的 `scripts/`，共享保障脚本与测试放在
+`_shared/scripts/`。Companion 的运行代码和测试归属于它的 crate。仓库级文档检查、
+Cargo 缓存协调及 release 制品审计保留在根目录 `scripts/`。
+
 共享不变量只保留在其所属契约中；正确性依赖精确命令或 schema 时保留这些细节。
 条件性流程放在有明确模式/决策入口的 references 中。description 只说明实际工作，
 不吸引无关任务。规则阻塞请求时，指出来源及未满足条件。
