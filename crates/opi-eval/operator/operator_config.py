@@ -75,7 +75,7 @@ def resolve(profile, explicit=()):
     if version == "opi-eval-operator/2":
         keys.add("retention")
     table(p, keys, "profile", keys)
-    if version not in {"opi-eval-operator/1", "opi-eval-operator/2"}:
+    if not isinstance(version, str) or version not in {"opi-eval-operator/1", "opi-eval-operator/2"}:
         raise OperatorError("unsupported operator profile schema")
     model = p["model"]
     table(model, {"provider", "model", "api", "base_url", "credential_env", "credential_file", "api_key", "controls", "thinking"},
@@ -110,8 +110,11 @@ def resolve(profile, explicit=()):
         value = controls[name]
         if value not in ("omitted", "unknown") and (type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= ceiling):
             raise OperatorError("invalid sampling control")
+        if type(value) in (int, float):
+            # Companion sampling controls require TOML floats, including whole-number values.
+            controls[name] = float(value)
     table(model["thinking"], {"level", "required"}, "model.thinking", {"level", "required"})
-    if model["thinking"]["level"] not in {"off", "minimal", "low", "medium", "high", "xhigh", "omitted"}:
+    if not isinstance(model["thinking"]["level"], str) or model["thinking"]["level"] not in {"off", "minimal", "low", "medium", "high", "xhigh", "max", "omitted"}:
         raise OperatorError("unknown thinking level")
     if type(model["thinking"]["required"]) is not bool or (model["thinking"]["required"] and model["thinking"]["level"] == "omitted"):
         raise OperatorError("required thinking must have an explicit supported level")
@@ -121,7 +124,9 @@ def resolve(profile, explicit=()):
     positive(execution["trial_retries"], "execution.trial_retries", zero=True)
     for name in ("batch_timeout_seconds", "concurrency"):
         positive(execution[name], "execution." + name)
-    if execution["capture_policy"] not in {"full", "terminal-only"}:
+    if execution["concurrency"] > 2**32 - 1:
+        raise OperatorError("execution.concurrency exceeds the Companion u32 contract")
+    if not isinstance(execution["capture_policy"], str) or execution["capture_policy"] not in {"full", "terminal-only"}:
         raise OperatorError("unsupported capture policy")
     table(p["benchmarks"], BENCHMARKS, "benchmarks")
     if not p["benchmarks"]:
@@ -135,7 +140,7 @@ def resolve(profile, explicit=()):
         ids = selected["task_ids"]
         if not isinstance(ids, list) or any(not isinstance(item, str) or not item for item in ids) or len(ids) != len(set(ids)):
             raise OperatorError("task_ids must be unique nonempty strings")
-        if selected["scope"] not in {"full", "subset"} or (selected["scope"] == "full" and ids) or (selected["scope"] == "subset" and not ids):
+        if not isinstance(selected["scope"], str) or selected["scope"] not in {"full", "subset"} or (selected["scope"] == "full" and ids) or (selected["scope"] == "subset" and not ids):
             raise OperatorError("full scope has no task_ids; subset requires task_ids")
         if selected["scope"] == "subset" and len(ids) * selected["repetitions"] > MAX_LOGICAL_TRIALS:
             raise OperatorError("operator plan exceeds its 10000 logical-trial admission bound")
@@ -150,7 +155,7 @@ def resolve(profile, explicit=()):
         baseline_keys.add("max_age_days")
     table(p["baseline"], baseline_keys, "baseline", baseline_keys)
     text(p["baseline"]["pi_version"], "baseline.pi_version")
-    if p["baseline"]["lookup"] not in {"auto", "none"}:
+    if not isinstance(p["baseline"]["lookup"], str) or p["baseline"]["lookup"] not in {"auto", "none"}:
         raise OperatorError("baseline.lookup must be auto or none")
     if version == "opi-eval-operator/2":
         positive(p["baseline"]["max_age_days"], "baseline.max_age_days", zero=True)

@@ -939,7 +939,7 @@ class PiAgent(_OpiEvalAgent):
         agent = self._staged_executable(stage)
         provider, model = self._handoff["model"].split(":", 1)
         thinking = self._handoff.get("thinking_level", "off")
-        if thinking not in ("off", "minimal", "low", "medium", "high"):
+        if thinking not in ("off", "minimal", "low", "medium", "high", "xhigh", "max"):
             raise _OpiEvalAgentError("handoff thinking level is unsupported")
         quoted = shlex.quote(instruction)
         return (

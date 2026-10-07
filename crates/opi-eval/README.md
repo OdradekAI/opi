@@ -609,9 +609,14 @@ fallback: the credential resolves only inside the supervised Agent launch,
 absent credentials and required-but-unsupported `[model_controls]` reject
 before any model effect, and remote base URLs require the explicit
 `[execution].mode = "live"` (loopback routes only otherwise). Explicit native
-`reasoning` supports `off`, `minimal`, `low`, `medium` and `high`, with shared
-budgets of 0, 1024, 2048, 8192 and 16384 tokens respectively. Enabled levels
-need a numeric response cap at least 1024 tokens above the budget. Opi's startup
+`reasoning` supports `off`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`,
+matching the logical levels in pi 1.0.4. Shared numeric budgets are 0, 1024,
+2048, 8192 and 16384 tokens for the first five levels; `xhigh` and `max` also
+use 16384 on budget-based wires. Effort-based wires retain the exact requested
+name. The operator's `omitted` marker is not a pi thinking level and cannot be
+required; experiment `omitted`/`unknown` markers record unenforced controls.
+Enabled levels need a numeric response cap at least 1024 tokens above the budget.
+Opi's startup
 configuration selects only the requested level; pi receives that level in
 `--thinking`. Required reasoning needs exact-client first-request and tool
 continuation evidence before `validate`, `plan` or `run` admits it. Unsupported
@@ -642,6 +647,14 @@ selected client. Opi cannot express either control; pi supports them only on
 the OpenAI protocols. Unsupported required values reject validation, planning
 and execution; optional requested values remain non-comparable. Omitted and
 unknown markers remain distinct and do not establish an enforced value.
+
+The operator accepts integer or floating-point sampling values and freezes
+numeric values as floats for the Companion's TOML contract. Its supported
+API set remains the three protocols above; pi's additional APIs, transports,
+tool-choice modes and arbitrary sampling keys need their own client projection
+and conformance before this Companion can admit them. Provider/model identities
+remain open strings. Benchmark, capture, storage and retry controls belong to
+the evaluator rather than pi's model parameter enums.
 
 Native Opi configuration omits `[defaults].max_iterations`. Current-tree Opi's
 core has no intrinsic turn ceiling; its product enforces only explicitly

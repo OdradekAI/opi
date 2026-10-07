@@ -100,6 +100,8 @@ external record and one first-dispatch deadline, including grading and retries.
 | `bench` | `[benchmark].name`, `.revision`, `.dataset` from the selected admitted material. `all` expands to three documents. |
 | `model`, `api`, `base_url` | Top-level `connection` selecting a `[[connections]]` id with `provider`, `api`, `base_url`, `model`. |
 | `max_output_tokens`, `context_window` | Equal-named `[model_controls]` values for every compared subject; explicit inputs override model-specific defaults. |
+| `temperature`, `top_p` | Equal-named `[model_controls]` values, normalized to TOML floats for numeric inputs, or explicit evidence markers. |
+| `thinking`, `thinking_required` | `[model_controls].reasoning` preserves the requested level; `thinking_required=true` adds `reasoning` to `.required`. |
 | Credential reference | Exactly one `credential_env` or `credential_file` on the connection; no inline value. Prefer an environment name to avoid personal paths in frozen config. |
 | `tasks`, `scope`, `repetitions` | `[selection]` with `scope`, explicit `task_ids` for subset, `reason`, positive `repetitions`, optional per-task `seeds`. Remove `[[trials]]` when using selection. |
 | `concurrency`, budget | `[execution]` with explicit `mode = "live"`, concurrency, `max_trials` and enforceable bounds. |
@@ -119,7 +121,8 @@ specifies `max_tokens <= 131072` (checked 2026-09-11). Recheck the selected
 endpoint's current support before freezing; an incompatible required value is
 a preparation gap rather than permission to silently lower the limit. Other
 models resolve their own documented capabilities instead of inheriting these
-numbers. Resolve sampling and thinking from the same profile, preserving honest
+numbers. Resolve sampling and thinking from the same profile using
+[model-control selection](operator.md#model-control-selection), preserving honest
 omitted/unknown markers for controls that were not selected. A required thinking
 level needs actual-client proof on the first request and tool continuation;
 profile acceptance alone does not establish support.

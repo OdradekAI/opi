@@ -512,8 +512,12 @@ artifact 成员，并唯一绑定 oracle 原始结果与 CTRF 字节；网络声
 `credential_env`/`credential_file` 引用之一。不存在 provider、协议、模型或
 计费产品的回退：credential 只在受监督的 Agent 启动内解析；缺失的 credential
 与 required-but-unsupported 的 `[model_controls]` 控件在任何模型效果之前拒绝；
-显式 native `reasoning` 支持 `off`、`minimal`、`low`、`medium`、`high`，共享预算
-分别为 0、1024、2048、8192、16384 tokens。启用的深度要求数值响应上限至少比预算
+显式 native `reasoning` 支持 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、
+`max`，与 pi 1.0.4 的逻辑级别一致。前五个级别的共享数值预算分别为
+0、1024、2048、8192、16384 tokens；`xhigh` 与 `max` 在预算型协议上同样使用
+16384，effort 型协议则保留请求的原始级别名称。operator 的 `omitted` 是标记，
+不是 pi thinking level，也不能设为 required；experiment 的 `omitted`/`unknown`
+标记记录未强制执行的控制。启用的深度要求数值响应上限至少比预算
 多 1024 tokens。Opi 启动配置只选择请求的深度；pi 通过 `--thinking` 接收该值。
 required reasoning 在 `validate`、`plan`、`run` 准入前要求真实客户端首轮及工具
 续轮证据。不支持的必需设置拒绝；可选的不支持设置保留请求，并保持不可比较。
@@ -536,6 +540,12 @@ native 准入按每个选定客户端检查 required `temperature` 与 `top_p`�
 Opi 无法表达这两个控制；pi 仅在 OpenAI 协议上支持它们。不受支持的 required
 数值会阻断验证、计划与执行；可选的请求数值则保留为不可比较。omitted 与 unknown
 标记保持区别，均不能证明数值已被强制执行。
+
+operator 接受整数或浮点采样值，并将数值冻结为符合 Companion TOML 合约的
+浮点值。支持的 API 仍为上述三种协议；pi 的其他 API、transport、tool-choice
+模式及任意 sampling key，需要各自的客户端投影和 conformance 后才能准入。
+provider/model 身份保持开放字符串。benchmark、capture、storage 与 retry
+控制属于 evaluator，而非 pi 的模型参数枚举。
 
 原生 Opi 配置省略 `[defaults].max_iterations`。当前仓库的 Opi 核心没有内置
 轮数上限，产品只执行显式配置的预算；原生任务/adapter 超时与取消仍然生效。

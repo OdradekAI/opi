@@ -1218,7 +1218,7 @@ fn project_controls(
         }
         ControlValue::Value(value) => ProjectedControl::unsupported_from(
             ControlValue::Value(value.clone()),
-            "native thinking requires off/minimal/low/medium/high and an output cap with budget plus 1024 answer tokens",
+            "native thinking requires off/minimal/low/medium/high/xhigh/max and an output cap with budget plus 1024 answer tokens",
         ),
         ControlValue::Omitted => ProjectedControl::unsupported_from(
             ControlValue::Omitted,
@@ -1271,15 +1271,16 @@ fn project_controls(
     }
 }
 
-/// Shared budget mapping implemented by both pinned clients. Higher names
-/// remain unsupported rather than silently mapping down to high.
+/// Shared numeric budget mapping implemented by both clients. Extended levels
+/// use the high budget on budget-based wires; their logical name remains intact
+/// in the projected capabilities, startup selection, and effort-based requests.
 pub fn native_thinking_budget(level: &str) -> Option<u64> {
     match level {
         "off" => Some(0),
         "minimal" => Some(1024),
         "low" => Some(2048),
         "medium" => Some(8192),
-        "high" => Some(16384),
+        "high" | "xhigh" | "max" => Some(16384),
         _ => None,
     }
 }
@@ -1881,7 +1882,7 @@ group = "hello"
             "openai-completions",
             "openai-responses",
         ] {
-            for level in ["off", "minimal", "low", "medium", "high"] {
+            for level in ["off", "minimal", "low", "medium", "high", "xhigh", "max"] {
                 let source = doc(api)
                     .replace("reasoning = \"high\"", &format!("reasoning = \"{level}\""))
                     .replace("max_output_tokens = 4096", "max_output_tokens = 131072")
@@ -1925,6 +1926,13 @@ group = "hello"
                                 .get("off")
                                 .is_none()
                         );
+                        if level != "off" {
+                            assert_eq!(
+                                config["providers"]["scripted"]["models"][0]["thinkingLevelMap"],
+                                serde_json::json!({level: level}),
+                                "the selected effort must not map to a lower level"
+                            );
+                        }
                     }
                 }
             }
@@ -1933,7 +1941,7 @@ group = "hello"
 
     #[test]
     fn unsupported_thinking_names_never_clamp_to_a_lower_level() {
-        for level in ["xhigh", "max", "ultra", "high; injected"] {
+        for level in ["ultra", "high; injected", "MAX", "omitted-level"] {
             let source = doc("anthropic-messages")
                 .replace("reasoning = \"high\"", &format!("reasoning = \"{level}\""))
                 .replace("max_output_tokens = 4096", "max_output_tokens = 131072");

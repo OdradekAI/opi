@@ -68,7 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of being reused. Settlement cleanup is unchanged.
 
 - `opi-eval`: explicit native `reasoning` supports `off`, `minimal`, `low`,
-  `medium` and `high` through both client projections. Required settings need
+  `medium`, `high`, `xhigh` and `max` through both client projections. Extended
+  levels retain their logical/effort names and use the high numeric budget on
+  budget-based wires. Required settings need
   exact executable/package proof of the first request and tool continuation
   before dispatch; enabled levels also require output room for the shared
   thinking budget plus 1024 answer tokens. Unsupported levels retain the
@@ -826,6 +828,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scoring and export.
 
 ### Fixed
+
+- `opi-eval`: the operator, native projections and Harbor/Pier launches accept
+  the complete pi 1.0.4 thinking-level enum, including `max`. Exact-client
+  evidence rejects a lowered OpenAI effort. Integer sampling inputs normalize
+  to the Companion's float contract, concurrency uses its u32 bound, and
+  malformed enum values reject through the operator's typed error path.
 
 - `opi-eval`: the pi native terminal importer classifies all three
   exact pinned protocol-truncation messages — the Completions

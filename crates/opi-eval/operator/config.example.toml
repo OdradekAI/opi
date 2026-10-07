@@ -17,8 +17,9 @@ temperature = "omitted"
 top_p = "omitted"
 
 [model.thinking]
-# Supported native levels: off, minimal, low, medium, high. Unsupported required
-# levels (including xhigh/max) reject; non-off levels require budget + 1024 tokens.
+# Native levels: off, minimal, low, medium, high, xhigh, max; omitted is an
+# operator marker, not a pi level, and cannot be required. Enabled levels need
+# budget + 1024 output tokens; exact-client wire proof checks effective support.
 level = "off"
 required = true
 

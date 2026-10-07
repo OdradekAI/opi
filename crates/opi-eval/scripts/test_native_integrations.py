@@ -781,7 +781,7 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_selected_thinking_level_is_launched_and_invalid_level_refused(self):
         for family in INTEGRATIONS:
-            for level in ("off", "minimal", "low", "medium", "high"):
+            for level in ("off", "minimal", "low", "medium", "high", "xhigh", "max"):
                 with self.subTest(family=family, level=level):
                     root, _, logs, handoff = self.prepare(family, "pi", False)
                     handoff["thinking_level"] = level

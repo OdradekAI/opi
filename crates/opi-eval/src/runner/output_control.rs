@@ -256,6 +256,27 @@ mod tests {
     use crate::experiment::ConnectionApi;
 
     #[test]
+    fn extended_thinking_proof_keeps_exact_effort_and_rejects_downgrade() {
+        for level in ["xhigh", "max"] {
+            for (api, field) in [
+                (ConnectionApi::OpenAiCompletions, "reasoning_effort"),
+                (ConnectionApi::OpenAiResponses, "response_reasoning_effort"),
+            ] {
+                let row = json!({"reasoning_controls": {field: level}});
+                assert!(verify_thinking(&row, api, level).is_ok(), "{api:?}/{level}");
+                let downgraded = json!({"reasoning_controls": {field: "high"}});
+                assert!(verify_thinking(&downgraded, api, level).is_err());
+            }
+            // Both clients use the high numeric budget for extended levels;
+            // the frozen config and launch retain the selected logical level.
+            let row = json!({"reasoning_controls": {
+                "thinking_type": "enabled", "thinking_budget": 16384
+            }});
+            assert!(verify_thinking(&row, ConnectionApi::AnthropicMessages, level).is_ok());
+        }
+    }
+
+    #[test]
     fn reasoning_proof_rejects_continuation_downgrade_and_missing_measurement() {
         let row = json!({"reasoning_controls":{"thinking_type":"enabled","thinking_budget":16384}});
         assert!(verify_thinking(&row, ConnectionApi::AnthropicMessages, "high").is_ok());

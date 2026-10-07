@@ -45,12 +45,42 @@ control: `keep_latest_per_group = 3`. The optional baseline `max_age_days` filte
 is separate; zero disables age filtering. Finished native evaluations and
 standalone comparisons apply rolling retention under the protections below.
 
-Thinking is selected once through `[model.thinking]` and projected to both
-selected clients. Required controls need exact-client first-request and tool
-continuation proof; accepted TOML alone is no proof. Unsupported required levels
-reject preparation. Nonempty task seeds currently reject operator preparation
-because the native route does not enforce them. Concurrency is an upper bound;
-native trials remain serial. Total-token and monetary caps remain unsupported.
+## Model-control selection
+
+Thinking is selected once through `[model.thinking]`. The maintained operator
+accepts the pi-1.0.4 native levels `off`, `minimal`, `low`, `medium`, `high`,
+`xhigh`, `max`. Preserve the selected level in both client projections and
+evidence: `xhigh` and `max` remain distinct selections even when an API maps them
+to the same numeric budget as `high`. Required controls need exact-client
+first-request and tool-continuation proof; accepted TOML alone is no proof.
+Model/API/client support can restrict the effective level; an unsupported or
+downgraded required level rejects preparation.
+
+`omitted` is an operator evidence marker, not a native pi level, and requires
+`thinking_required=false`. Leaving the skill's `thinking` input unspecified
+inherits the resolved private profile; it does not select the `omitted` marker.
+For an explicit `thinking=max thinking_required=true` request, resolve the
+corresponding typed overrides before preparation:
+
+```sh
+python3 "$EVAL_OPERATOR" resolve --config "$PROFILE" --set 'model.thinking.level="max"' --set model.thinking.required=true
+```
+
+The operator currently supports `anthropic-messages`, `openai-completions` and
+`openai-responses`; this is the Companion's proven native subset, not pi's full
+API catalogue. Provider and model are nonempty strings, not closed enums.
+Resolve their capabilities for the selected endpoint. Sampling accepts finite
+`temperature` in `[0, 2]` and `top_p` in `[0, 1]`, or the evidence markers
+`omitted` / `unknown`. Numeric inputs, including integers, become floating-point
+TOML controls in the experiment. These bounds belong to the operator; effective
+client support still requires proof under [model controls](native-run.md#model-controls).
+Use the supplied entrypoint's validation for other enums and types rather than
+forwarding arbitrary pi flags or treating evaluator policy as pi parameters.
+
+Nonempty task seeds currently reject operator preparation because the native
+route does not enforce them. Concurrency accepts `1..=4294967295` as a Companion
+`u32` upper bound; native trials remain serial. Total-token and monetary caps
+remain unsupported.
 
 ## Prepare, review and execute
 

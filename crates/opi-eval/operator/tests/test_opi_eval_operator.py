@@ -97,6 +97,82 @@ class OperatorTests(unittest.TestCase):
         doc["selection"]["seeds"] = {"a.b\"c": 42}
         self.assertEqual(tomllib.loads(dumps_toml(doc)), doc)
 
+    def test_thinking_levels_resolve_and_project_in_both_profile_schemas(self):
+        from operator_config import TEMPLATE, load, resolve, experiment
+        for profile in (self.profile(), load(TEMPLATE)):
+            for level in ("off", "minimal", "low", "medium", "high", "xhigh", "max", "omitted"):
+                with self.subTest(schema=profile["schema"], level=level):
+                    p = copy.deepcopy(profile)
+                    p["model"]["thinking"] = {"level": level, "required": level != "omitted"}
+                    effective = resolve(p)
+                    document = experiment(effective, "tb21", "pi", "1.0.4", "test", self.root / "cache", self.root)
+                    self.assertEqual(effective["model"]["thinking"]["level"], level)
+                    self.assertEqual(document["model_controls"]["reasoning"], level)
+                    self.assertEqual("reasoning" in document["model_controls"]["required"], level != "omitted")
+
+    def test_invalid_enum_values_raise_operator_error_before_storage_creation(self):
+        from operator_config import resolve, OperatorError
+        for name in ("schema", "model.api", "model.thinking.level", "execution.capture_policy",
+                     "benchmarks.tb21.scope", "baseline.lookup"):
+            for value in ("unknown-choice", "MAX", "", 42, True, [], {}, None):
+                with self.subTest(name=name, value=value):
+                    p = self.profile()
+                    components = name.split(".")
+                    target = p
+                    for component in components[:-1]:
+                        target = target[component]
+                    target[components[-1]] = value
+                    with self.assertRaises(OperatorError):
+                        resolve(p)
+        self.assertFalse((self.root / "workspace").exists())
+        self.assertFalse((self.root / "cache").exists())
+
+    def test_concurrency_matches_companion_u32_bound(self):
+        from operator_config import TEMPLATE, load, resolve, experiment, OperatorError
+        for profile in (self.profile(), load(TEMPLATE)):
+            with self.subTest(schema=profile["schema"]):
+                profile["execution"]["concurrency"] = 2**32 - 1
+                effective = resolve(profile)
+                document = experiment(effective, "tb21", "pi", "1.0.4", "test", self.root / "cache", self.root)
+                self.assertEqual(document["execution"]["concurrency"], 2**32 - 1)
+                profile["execution"]["concurrency"] = 2**32
+                with self.assertRaises(OperatorError):
+                    resolve(profile)
+        self.assertFalse((self.root / "workspace").exists())
+        self.assertFalse((self.root / "cache").exists())
+
+    def test_sampling_values_keep_companion_float_type_through_toml_projection(self):
+        from operator_config import TEMPLATE, load, resolve, experiment, dumps_toml
+        import tomllib
+        for profile in (self.profile(), load(TEMPLATE)):
+            for temperature, top_p in ((0, 1), (2, 0), (0.25, 0.9), ("omitted", "unknown"), ("unknown", "omitted")):
+                with self.subTest(schema=profile["schema"], temperature=temperature, top_p=top_p):
+                    p = copy.deepcopy(profile)
+                    p["model"]["controls"].update(temperature=temperature, top_p=top_p)
+                    effective = resolve(p)
+                    document = experiment(effective, "tb21", "pi", "1.0.4", "test", self.root / "cache", self.root)
+                    parsed = tomllib.loads(dumps_toml(document))
+                    for controls in (effective["model"]["controls"], document["model_controls"], parsed["model_controls"]):
+                        for name, requested in (("temperature", temperature), ("top_p", top_p)):
+                            expected = requested if isinstance(requested, str) else float(requested)
+                            self.assertEqual(controls[name], expected)
+                            self.assertIs(type(controls[name]), type(expected))
+
+    def test_cli_resolve_accepts_max_and_refuses_invalid_thinking(self):
+        from operator_config import TEMPLATE, load, dumps_toml
+        config = self.root / "private.toml"
+        config.write_text(dumps_toml(load(TEMPLATE)))
+        command = [sys.executable, str(SCRIPTS / "evaluate.py"), "resolve", "--config", str(config), "--set"]
+        result = subprocess.run([*command, 'model.thinking.level="max"'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["model"]["thinking"], {"level": "max", "required": True})
+        for value in ('"ultra"', '["max"]'):
+            with self.subTest(value=value):
+                result = subprocess.run([*command, "model.thinking.level=" + value], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("unknown thinking level", result.stderr)
+
     def test_retry_is_precise_valid_zero_never_retries_and_breach_stops(self):
         from operator_evidence import retry_trials, OperatorError
         planned = [{"id": "one", "task": "a", "subject": "opi", "group": "a-rep1"},

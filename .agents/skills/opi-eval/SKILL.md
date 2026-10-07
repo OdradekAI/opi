@@ -52,7 +52,8 @@ version=<single-product version or per-product entries, e.g. pi:<version>|pi:lat
 bench=terminal-bench-2.1|terminal-bench-3.0|deepswe-v1.1|all
 model=<provider:model>  api=<protocol>  base_url=<endpoint>
 max_output_tokens=<positive integer>  context_window=<positive integer>
-thinking=<level>  thinking_required=true|false
+temperature=<number>|omitted|unknown  top_p=<number>|omitted|unknown
+thinking=<native level>|omitted  thinking_required=true|false
 credential_env=<name> | credential_file=<private absolute path>
 tasks=<family:task-id,...>  scope=subset|full  repetitions=<positive integer>
 concurrency=<positive integer>  budget=<requested time/usage/spend limits>
@@ -61,6 +62,11 @@ config=<existing experiment.toml>  evidence_root=<existing root for verify>
 baseline_root=<registered sealed pi baseline root>  # benchmark reuse branch only
 cases=<name,...|all>  # fidelity branch only
 ```
+
+Read [model-control selection](references/operator.md#model-control-selection)
+for thinking levels including `max`, omission semantics and the operator's
+supported API/sampling bounds. Preserve explicit selections when resolving the
+profile and preparing both clients.
 
 | Selection | Route |
 |---|---|
