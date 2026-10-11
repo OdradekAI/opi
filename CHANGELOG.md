@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `opi-eval`: `evaluate.py baseline --bench <id> --tasks <list|@file>` prepares a
+  task-subset evaluation: the frozen plan expands only the named tasks, records
+  the subset selection and its reason, and the native report carries
+  `selection_scope: "subset"` with the excluded corpus remainder. Precision
+  re-runs (for example provider-failure victims) no longer require a full
+  corpus re-execution.
+
 ### Breaking Changes
 
 - `opi-eval`: the Python operator modules and sole configuration template move
@@ -243,6 +252,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handoffs land; their hermetic fixture conformance is unchanged.
 
 ### Changed
+
+- `opi-eval`: the static external lock now pins the pi coding-agent to the
+  upstream `v1.0.4` tag (commit `7c10bd4337495ee613f2224843ecdf349b80d1df`)
+  with its verified `package-lock.json`/`package.json` blobs and the
+  `@earendil-works/pi-ai` 1.0.4 model-data archive. Upstream removed the
+  published `npm-shrinkwrap.json` in 1.0.1, so the lock drops that blob,
+  the agent builder records `shrinkwrap_sha256: null` when the pinned
+  source publishes none, and warm-cache admission compares the digest only
+  when the lock pins it. The pinned CLI surface is protocol-identical for
+  the adapter (same json print mode, v3 session header,
+  `AgentSessionEvent` vocabulary, wire shapes and truncation messages;
+  additive `--no-mcp`/tool-pattern flags only), so the adapter, profile,
+  operator template and smoke templates only retarget their pinned-version
+  references; `pi:latest` still resolves to this pin at preparation. The
+  lock's tb21 image set now binds every corpus task image (89 tasks) to
+  its verified immutable manifest with config and layer digests, so a
+  full-scope `terminal-bench-2.1` selection passes image preflight;
+  previously only the `openssl-selfsigned-cert` task image was pinned.
 
 - Development tooling: implementation smoke wrappers now live in
   `.agents/skills/opi-implement/scripts/` with their tests. Audit tests move
@@ -828,6 +855,141 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scoring and export.
 
 ### Fixed
+
+- `opi-eval`: the pi 1.0.4 stream importer now binds real retry shapes
+  honestly instead of rejecting them as `import-unsupported-schema`: the
+  opaque `entry_appended` context prune between `auto_retry_start` and the
+  retried `agent_start` is tolerated, a recovered chain may be followed by a
+  new retry chain whose attempt counter restarts from 1, and an exhausted
+  chain settles as `agent-provider-failure:connection` (AgentProcess
+  boundary, retry-eligible) instead of an adapter refusal. Verified against
+  the six real affected streams from the tb21 pi-1.0.4 baseline: four bind
+  their completed outcome and two bind the typed provider failure.
+
+- `opi-eval`: the Harbor and Pier agent integrations now record an
+  honest `unreadable` capture summary when the first-sink receipt is
+  absent or unparseable instead of `null`. The Agent-timeout kill takes
+  down the capture helper with it (whole-group SIGKILL), and a `null`
+  capture summary violates the terminal/3 binding contract
+  (`native-binding-trial-invalid`), aborting the whole run at the
+  integrity boundary; `unreadable` keeps the same trial a settled
+  evidence-boundary invalid while the run continues.
+
+- `opi-eval`: the owned-environment teardown settle bound rises from
+  15s to 120s in both Harbor and Pier integrations. A CPU-saturated
+  task container (observed on `crack-7z-hash`) legitimately needs tens
+  of seconds for a compose teardown; the previous bound marked cleanup
+  as effect-unknown and aborted the whole run as
+  `native-command-termination-unconfirmed` after 16 of 89 trials.
+
+- `opi-eval`: the terminal-bench-2.1 benchmark profile's whole-job
+  deadline rises from 900s to 15000s. The outer Harbor-job timeout equals
+  the profile limit, and 900s also matched the effective agent cap, so any
+  trial whose agent used its full window was killed as
+  `native-job-timeout` before the task-declared verifier (up to 12000s)
+  could grade it. The new budget follows the tb30 convention: agent window
+  plus verifier, build and collection margin.
+
+- `opi-eval`: manual maintenance plans bind selections by inventory
+  digest instead of embedding per-file inventories. Real material-bearing
+  evaluation trees carry tens of thousands of staged files each, which
+  made a three-entry purge plan exceed 100 MB. The plan, inventory listing
+  and application now carry and compare digest-bound shapes (plans shrink
+  to kilobytes; the reviewed-plan read bound rises to a still-finite
+  64 MB), and the reference scan skips staged upstream subtrees (`families/*/cache`,
+  `builds`, `material/packages`) so oversized runner registries,
+  deliberately corrupt repository test fixtures, uv-installed hardlinks
+  and container-internal `/app` paths no longer mark every real
+  evaluation permanently unreadable, unverifiable or unportable. Purge
+  tolerates staged hardlinks and symlinks (archive still refuses them).
+
+- `opi-eval`: the agent/verifier-timeout `Unknown` reward binding only
+  applies when the verifier produced no result; an agent timeout whose
+  verifier still ran and scored keeps binding through the normal reward
+  path (the common graded shape whose capture refusal settles the trial
+  downstream).
+
+- `opi-eval`: an agent-timeout job whose pinned-runner stats carry an
+  empty-reward eval entry attributed to the exception (the second
+  observed no-score shape; tb21 `model-extraction-relu-logits`) binds
+  the same honest `Unknown` (`agent-timeout`) as the empty-evals shape,
+  with the identical strict attribution checks already applied to
+  verifier timeouts.
+
+- `opi-eval`: a binding `task-not-observed` failure (an honest setup
+  refusal with a bound identity: the terminal observation exists but the
+  task never dispatched, e.g. a runtime-preflight transport failure after
+  all retries) now settles at the Infrastructure boundary, invalidating
+  one trial while the run continues. Every other binding token still
+  means identity or provenance corruption and stays integrity-fatal.
+  Observed on tb21 `mcmc-sampling-stan`, where a docker-exec attach
+  window returned exit 0 with empty output three probes in a row and the
+  whole run stopped at 47/89; the probes also gained a third attempt
+  with a 3s spacing to ride out multi-second attach degradation.
+
+- `opi-eval`: a native job whose agent or verifier timed out while the
+  pinned runner wrote no eval stats (observed on tb21
+  `torch-pipeline-parallelism`, where the verifier is killed on the
+  half-built repository after the agent timeout) now binds an honest
+  `Unknown` reward (`agent-timeout`/`verifier-timeout`) after the full
+  per-trial identity checks, instead of failing the whole run at the
+  aggregate boundary. Any other missing or multi-eval aggregate remains an
+  integrity failure.
+
+- `opi-eval`: agent-phase settlement is shielded and always publishes the
+  terminal observation. Harbor enforces task agent timeouts by cancelling
+  the agent task; on a CPU-saturated container (observed three times on
+  `extract-moves-from-video`) the cancellation also cut down the 5s
+  bounded stop path and then the unshielded capture/cleanup awaits, so no
+  terminal observation was ever written and the native binding aborted the
+  whole run (`native-binding-trial-invalid`). The stop-path bound rises to
+  60s, capture/cleanup/terminal run to completion inside a shielded
+  settle, and cancellation now yields an honest terminal with an unobserved
+  exit that settles one evidence-invalid trial instead of stopping the run.
+  A genuinely failed cleanup still prevents settlement.
+
+- `opi-eval`: the Harbor and Pier runtime-preflight and capture-helper
+  probes retry once when the docker-exec transport returns an empty marker
+  frame (exit 0, no output; observed once after a heavy container
+  teardown). The probes are idempotent and side-effect free; without the
+  retry a single transient flake failed the whole run at the integrity
+  boundary (`native-binding-trial-invalid`, 8 of 89 trials).
+
+- `opi-eval`: a confirmed owned-environment teardown now resolves its own
+  earlier uncertainty marker. Harbor retries `stop()`; the first attempt
+  could fail its residue check under teardown load (observed twice on
+  `extract-moves-from-video`), and the sticky marker then failed every
+  later attempt as `native-command-termination-unconfirmed` even after the
+  environment was gone, aborting runs at 16 and 23 of 89 trials. The
+  post-teardown residue check is now the cleanup authority: when it
+  confirms no resources remain, a marker recording a cleanup failure is
+  removed; uncertainty markers from other phases keep their meaning.
+
+- `opi-eval`: owned-environment cleanup uncertainty now reflects the
+  observed final state instead of the first transient compose failure.
+  Upstream Harbor teardown logs and retries some compose failures
+  without raising them, but the wrapper marked the first failure
+  effect-unknown permanently (observed aborting the run at
+  `extract-moves-from-video` after 23 of 89 trials even though the
+  environment was ultimately removed). A transient teardown failure is
+  now tolerated when the post-teardown residue check confirms the
+  environment is gone; only observed residue, a pre-existing marker or
+  a failed settle still marks cleanup uncertain.
+
+- `opi-eval`: the native capture helper now admits the pinned pi 1.0.4
+  session-stream shapes. The 1.0.0-era key sets rejected the real stream
+  fail-closed (`native-capture-refused`, agent exit 125): the leading system
+  message carries built-in-MCP prompt `sections` and tool-change lists,
+  assistant messages carry `responseModel`/`providerThinkingLevel`/
+  `thinkingLevel`/`rawStopReason`/`endTurn`/`diagnostics`/`deferred`, text
+  blocks carry `textSignature`, thinking blocks carry `redacted`, tool
+  results are `role: "toolResult"` messages with `toolCallId`/`toolName`/
+  `isError`/`details`/`usage`/`nestedCalls`, and tool-call blocks serialize
+  as the declared `toolCall` shape. All are non-private agent/prompt
+  payloads passed through under structural checks; private thinking text
+  and signatures still redact and anything undeclared still refuses.
+  Verified against a real pi 1.0.4 session through the scripted loopback
+  provider (full tool loop, `status: sanitized`).
 
 - `opi-eval`: the operator, native projections and Harbor/Pier launches accept
   the complete pi 1.0.4 thinking-level enum, including `max`. Exact-client
