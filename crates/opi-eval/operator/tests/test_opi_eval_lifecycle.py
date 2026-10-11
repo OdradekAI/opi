@@ -233,6 +233,25 @@ class LifecycleTests(unittest.TestCase):
             self.store.rows.pop("linked")
         self.assertEqual(self.selected(self.plan()), [])
 
+    def test_staged_hardlinks_block_archive_but_not_purge(self):
+        # uv installs runner venv packages as hardlinks; deletion only drops
+        # the tree's link, so purge selects them while archive still refuses.
+        row = self.store.add("old")
+        self.store.add("new", completed="2021-01-01T00:00:00+00:00")
+        outside = self.root / "uv-cache/package.py"
+        outside.parent.mkdir(parents=True, exist_ok=True)
+        outside.write_text("shared package bytes\n")
+        staged = Path(row["root"]) / "families/tb21/cache/runners/harbor/.venv/site/package.py"
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        os.link(outside, staged)
+        self.assertNotIn("old", self.selected(self.plan("archive")))
+        purge = self.plan("purge")
+        self.assertEqual(self.selected(purge), ["old"])
+        self.life.apply_plan(self.store, self.save(purge))
+        self.assertFalse(staged.exists())
+        self.assertTrue(outside.exists())
+        self.assertTrue(row["lifecycle"]["tombstone"])
+
     def test_restore_refuses_existing_destinations_corrupt_archive_and_path_attacks(self):
         row = self.store.add("old")
         self.life.apply_plan(self.store, self.save(self.plan()))

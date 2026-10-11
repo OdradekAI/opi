@@ -137,7 +137,11 @@ def _inventory(root, require_record=True, allow_links=False):
         elif stat.S_ISDIR(info.st_mode):
             entry = {"path": path.relative_to(root).as_posix(), "kind": "directory", "bytes": 0}
         elif stat.S_ISREG(info.st_mode):
-            if info.st_nlink > 1:
+            if info.st_nlink > 1 and not allow_links:
+                # Purge (deletion) may unlink staged hardlinks such as the
+                # runner venv's uv-installed packages; archive still refuses
+                # them because an archive bundle must own self-contained
+                # bytes.
                 raise LifecycleError("link", "hardlinked evidence cannot be maintained")
             entry = {"path": path.relative_to(root).as_posix(), "kind": "file",
                      "bytes": info.st_size, "sha256": _sha(path)}
@@ -171,8 +175,34 @@ def _time(value):
 
 
 def _documents(root, inventory):
-    return [(PurePosixPath(entry["path"]), _read(root / entry["path"])) for entry in inventory
-            if entry["kind"] == "file" and entry["path"].endswith(".json")]
+    # Reference scanning covers operator-owned evidence documents. Staged
+    # upstream bytes under a family's cache/ (runner venvs, registries),
+    # builds/ (the repository working-tree snapshot, including test
+    # fixtures with deliberately malformed JSON) and material/packages/
+    # (acquired task packages) are not operator evidence: oversized or
+    # intentionally corrupt upstream documents must not make the whole
+    # evaluation permanently unreadable. Operator documents directly under
+    # material/ stay scanned, and scanned documents may be objects or
+    # arrays (e.g. collected-artifacts manifests).
+    def staged_upstream(relative):
+        parts = relative.split("/")
+        return (len(parts) > 2 and parts[0] == "families" and parts[2] in {"cache", "builds"}) or (
+            len(parts) > 3 and parts[0] == "families" and parts[2] == "material" and parts[3] == "packages"
+        )
+    def scan(path):
+        try:
+            if path.stat().st_size > MAX_DOCUMENT_BYTES:
+                raise ValueError()
+            with path.open(encoding="utf-8") as stream:
+                value = json.load(stream)
+        except (OSError, ValueError, TypeError, RecursionError) as exc:
+            raise LifecycleError("unreadable", "machine evidence is unreadable") from exc
+        if not isinstance(value, (dict, list)):
+            raise LifecycleError("unreadable", "machine evidence is unreadable")
+        return value
+    return [(PurePosixPath(entry["path"]), scan(root / entry["path"])) for entry in inventory
+            if entry["kind"] == "file" and entry["path"].endswith(".json")
+            and not staged_upstream(entry["path"])]
 
 
 def _walk(value):
@@ -199,6 +229,10 @@ def _pins(value):
 
 def _provenance_document(relative, document):
     """Exclude exact execution-authority pointers, retaining all material bindings."""
+    if isinstance(document, list):
+        # Array documents (e.g. collected-artifacts manifests) carry no
+        # operator execution authority to exclude; their pins still scan.
+        return document
     value = dict(document)
     parts, schema = relative.parts, document.get("schema")
     family = len(parts) >= 3 and parts[0] == "families"
@@ -355,7 +389,14 @@ def _facts(row, root, inventory):
                 reasons.append("dependency_unverifiable")
         for key, value in _walk(document):
             if isinstance(value, str) and _absolute(value):
-                if (not _inside(Path(value).resolve(), root) and Path(value).resolve() not in retained_references
+                # Recorded environment variables (UPPERCASE_SNAKE keys) and
+                # native run trees' absolute strings (container-internal
+                # paths like /app by construction) are not host references;
+                # structured pins remain fully protected above.
+                environment_key = isinstance(key, str) and key.isupper() and key.replace("_", "").isalnum()
+                in_runs = "runs" in relative.parts
+                if (not environment_key and not in_runs
+                        and not _inside(Path(value).resolve(), root) and Path(value).resolve() not in retained_references
                         and Path(value).resolve() not in derivative_outputs):
                     reasons.append("unportable_dependency")
             if key in {"cleanup_state", "cleanup_status"} and value not in {"confirmed", "complete"}:
@@ -458,7 +499,14 @@ def _archived_facts(store, row):
     return inventory, groups, products, binding
 
 
-def _plan(store, policy, action, ids=None, ignore_leases=(), retain_ids=()):
+def _selected_binding(entry):
+    """The reviewed plan's digest-bound selection shape; application
+    re-derives the same shape from current evidence before comparing."""
+    return {"id": entry["id"], "inventory_digest": entry["inventory_digest"],
+            "bytes": entry["bytes"], "reclaimable_bytes": entry["reclaimable_bytes"]}
+
+
+def _plan(store, policy, action, ids=None, ignore_leases=(), retain_ids=(), detail=False):
     if action not in {"archive", "purge"}:
         raise LifecycleError("action", "maintenance action must be archive or purge")
     policy = _policy(policy)
@@ -556,9 +604,16 @@ def _plan(store, policy, action, ids=None, ignore_leases=(), retain_ids=()):
         entry["protected"] = sorted(set(entry["protected"]))
     selected = [entry for entry in inventory if not entry["protected"] and (requested is None or entry["id"] in requested)]
     measured = sum(entry["bytes"] for entry in inventory if entry["storage_state"] == "active")
+    # The reviewed plan binds selections by inventory digest, not by embedded
+    # per-file inventories: real material-bearing trees carry tens of
+    # thousands of files each, and the application re-derives and compares
+    # the same digest-bound shape before anything is removed. Internal
+    # detail=True keeps full entries for the executing path.
     result = {"schema": "opi-eval-maintenance-plan/1", "workspace": str(Path(store.workspace).resolve()),
               "action": action, "policy": policy, "requested_ids": requested,
-              "inventory": inventory, "selected": selected, "selected_bytes": sum(entry["bytes"] for entry in selected),
+              "inventory": [{key: value for key, value in entry.items() if key != "inventory"} for entry in inventory],
+              "selected": selected if detail else [_selected_binding(entry) for entry in selected],
+              "selected_bytes": sum(entry["bytes"] for entry in selected),
               "reclaimable_bytes": sum(entry["reclaimable_bytes"] for entry in selected),
               "hot_bytes": measured}
     result["plan_digest"] = _digest(result)
@@ -626,9 +681,10 @@ def _extract_verified(archive, destination, inventory):
         raise LifecycleError("archive-digest", "restored evidence inventory differs")
 
 
-def _remove_exact(root, inventory, keep_record=True, require_record=True):
+def _remove_exact(root, inventory, keep_record=True, require_record=True, allow_links=None):
     """Delete only validated descendants, with no recursive or cross-shell deletion."""
-    allow_links = any(entry["kind"] in {"symlink", "junction"} for entry in inventory)
+    if allow_links is None:
+        allow_links = any(entry["kind"] in {"symlink", "junction"} for entry in inventory)
     if _inventory(root, require_record=require_record, allow_links=allow_links) != inventory:
         raise LifecycleError("inventory-drift", "evidence changed before removal")
     # Sealed directory modes are archived/restored verbatim. Owner write/execute
@@ -757,11 +813,11 @@ def apply_plan(store, plan_path):
                 leases.enter_context(store.lease(identity))
             except Exception as exc:
                 raise LifecycleError("lease", "evaluation is active or has an unresolved lease") from exc
-        current = _plan(store, policy, plan.get("action"), identities, ignore_leases=identities)
-        if current["selected"] != selected:
+        current = _plan(store, policy, plan.get("action"), identities, ignore_leases=identities, detail=True)
+        if [_selected_binding(entry) for entry in current["selected"]] != selected:
             raise LifecycleError("plan-stale", "reviewed inventory, protection, or retention eligibility changed")
         results = []
-        for entry in selected:
+        for entry in current["selected"]:
             row = store.show(entry["id"])
             root = _owned_root(store, row)
             if plan["action"] == "archive":
@@ -788,7 +844,9 @@ def _purge(store, row, entry, root):
         store.event(row["id"], "purge", **fields, **binding, cleanup_state="confirmed")
     else:
         store.event(row["id"], "purge", **fields, cleanup_state="pending")
-        _remove_exact(root, entry["inventory"])
+        # Purge tolerates staged symlinks and hardlinks (e.g. uv-installed
+        # runner venv packages): deletion only drops this tree's links.
+        _remove_exact(root, entry["inventory"], allow_links=True)
         store.event(row["id"], "purge", **fields, cleanup_state="confirmed")
     return {"id": row["id"], "inventory_digest": entry["inventory_digest"], "bytes": entry["bytes"]}
 
@@ -800,7 +858,7 @@ def apply_retention(store, policy=None, *, retain_ids=()):
         raise LifecycleError("identity", "retained current identities must be strings")
     purged, refusals = [], {}
     for _ in range(MAX_INVENTORY_ENTRIES):
-        plan = _plan(store, policy, "purge", retain_ids=retain_ids)
+        plan = _plan(store, policy, "purge", retain_ids=retain_ids, detail=True)
         candidates = [entry for entry in plan["selected"] if entry["id"] not in refusals]
         if not candidates:
             break
@@ -809,7 +867,7 @@ def apply_retention(store, policy=None, *, retain_ids=()):
         try:
             with store.lease(entry["id"]):
                 current = _plan(store, policy, "purge", ids=[entry["id"]],
-                                ignore_leases=[entry["id"]], retain_ids=retain_ids)
+                                ignore_leases=[entry["id"]], retain_ids=retain_ids, detail=True)
                 if current["selected"] != [entry]:
                     raise LifecycleError("retention-stale", "retention protection or inventory changed")
                 row = store.show(entry["id"])

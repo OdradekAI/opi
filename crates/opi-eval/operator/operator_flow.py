@@ -240,8 +240,20 @@ def publish_cache_seed(profile, root, repo):
     seeds = external(profile["storage"]["cache"], repo) / "seeds"
     seeds.mkdir(parents=True, exist_ok=True)
     target = seeds / (utc_now().replace(":", "-") + "-" + uuid.uuid4().hex)
-    shutil.copytree(root / "cache", target, symlinks=True,
-                    ignore=shutil.ignore_patterns(".venv", "__pycache__", "*.pyc", "packages", "profiles", "home", "inventory.json"))
+    cache_root = root / "cache"
+
+    def ignore(directory, names):
+        # Companion-owned cache-root views never enter seeds, while junk and
+        # runner virtual environments drop at any depth. A pinned runner
+        # checkout's own subpackages (harbor packages/*) are source bytes,
+        # not cache views, and must survive the seed copy.
+        excluded = {name for name in names
+                    if name in {".venv", "__pycache__"} or name.endswith(".pyc")}
+        if Path(directory) == cache_root:
+            excluded |= {"packages", "profiles", "home", "inventory.json"}
+        return excluded
+
+    shutil.copytree(cache_root, target, symlinks=True, ignore=ignore)
     write_json(target / ".opi-eval-material-seed.json", {"schema": "opi-eval-material-seed/1",
                 "static_lock_sha256": sha(repo / "crates/opi-eval/external-locks/static/linux-x86_64.json")})
 
@@ -253,6 +265,7 @@ def verify_pi_package(package, lock):
     metadata = read_json(package / "package.json")
     selected = next(row for row in lock["subjects"] if row["id"] == "pi")
     blobs = {row["path"]: row for row in selected["blobs"]}
+    shrinkwrap = blobs.get("packages/coding-agent/npm-shrinkwrap.json")
     node = next(row for row in lock["tools"] if row["id"] == "node")
     launcher = b'#!/bin/sh\nagent_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$agent_root/node" "$agent_root/dist/bundle/cli.js" "$@"\n'
     if (metadata.get("version") != selected["model_data_archive"]["version"]
@@ -260,7 +273,7 @@ def verify_pi_package(package, lock):
             or identity.get("checkout_commit") != selected["commit"]
             or identity.get("checkout_dirty") is not False
             or identity.get("package_lock_sha256") != blobs["package-lock.json"]["sha256"]
-            or identity.get("shrinkwrap_sha256") != blobs["packages/coding-agent/npm-shrinkwrap.json"]["sha256"]
+            or identity.get("shrinkwrap_sha256") != (shrinkwrap["sha256"] if shrinkwrap else None)
             or identity.get("node_version") != "v" + node["version"]
             or identity.get("node_sha256") != sha(package / "node")
             or identity.get("bundle_sha256") != sha(package / "dist/bundle/cli.js")
@@ -506,6 +519,8 @@ def _prepare_family(profile_path, raw, profile, bench, action, root, store, leas
             raise OperatorError("operator plan exceeds its 10000 logical-trial admission bound")
         document["execution"]["max_trials"] = logical_count
         config.write_text(dumps_toml(document), encoding="utf-8")
+        # The proof script requires its output root fresh and its parent present.
+        (root / "checks").mkdir(mode=0o700)
         commands.run([sys.executable, repo / "crates/opi-eval/scripts/native-control-proof.py",
                       "--companion", executable, "--config", config, "--material", material_path,
                       "--out", root / "checks/control-proof"], root)
