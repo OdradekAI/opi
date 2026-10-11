@@ -91,20 +91,7 @@ class OwnedDockerEnvironment(DockerEnvironment):
     """Supervise each native exec through its observed container-command exit."""
 
     async def _settle_shielded(self, task, *, propagate_cancellation=False):
-        # Repeated caller cancellation must not interrupt the bounded settlement.
-        cancelled = False
-        while True:
-            try:
-                result = await asyncio.shield(task)
-                break
-            except asyncio.CancelledError:
-                cancelled = True
-                if task.done():
-                    result = task.result()
-                    break
-        if cancelled and propagate_cancellation:
-            raise asyncio.CancelledError
-        return result
+        return await _settle_shielded_task(task, propagate_cancellation=propagate_cancellation)
 
     def _effect_unknown(self, reason):
         (self.trial_paths.trial_dir / "opi-eval-effect-unknown").write_text(
@@ -238,30 +225,59 @@ class OwnedDockerEnvironment(DockerEnvironment):
         if command and command[0] == "down" and "--rmi" in command:
             index = command.index("--rmi")
             del command[index:index + 2]
-        try:
-            return await super()._run_docker_compose_command(command, **kwargs)
-        except Exception:
-            if command and command[0] in ("down", "stop"):
-                self._effect_unknown("owned environment cleanup failed")
-            raise
+        # A transient compose failure is not itself cleanup uncertainty:
+        # upstream teardown tolerates and retries some failures, and the
+        # stop() settle pass confirms the final state by observing residue.
+        return await super()._run_docker_compose_command(command, **kwargs)
 
     async def stop(self, delete):
         async def settle():
             try:
-                async with asyncio.timeout(15):
-                    await super(OwnedDockerEnvironment, self).stop(delete)
-                    # Upstream teardown logs some failures without raising them.
-                    if (self.trial_paths.trial_dir / "opi-eval-effect-unknown").exists():
-                        raise RuntimeError("owned environment cleanup unavailable")
+                # A CPU-saturated task container can need tens of seconds for
+                # a teardown; the bound stays finite so cleanup uncertainty
+                # still fails closed.
+                async with asyncio.timeout(120):
+                    try:
+                        await super(OwnedDockerEnvironment, self).stop(delete)
+                    except Exception:
+                        # Upstream teardown logs and retries some compose
+                        # failures without raising them; the residue check
+                        # below decides whether cleanup is actually confirmed.
+                        pass
                     remaining = await self._run_docker_compose_command(
                         ["ps", "--all", "--quiet"], timeout_sec=5,
                     )
                     if remaining.stdout and remaining.stdout.strip():
                         raise RuntimeError("owned environment resources remain")
+                    marker = self.trial_paths.trial_dir / "opi-eval-effect-unknown"
+                    if marker.is_file() and marker.read_text(encoding="utf-8").strip() == "owned environment cleanup failed":
+                        # A previous stop() attempt marked this trial before a
+                        # transient failure; the residue check has now
+                        # confirmed the environment is gone, so that recorded
+                        # cleanup uncertainty is resolved. Uncertainty markers
+                        # from other phases keep their meaning and stay.
+                        marker.unlink()
             except Exception:
                 self._effect_unknown("owned environment cleanup failed")
                 raise
         await self._settle_shielded(asyncio.create_task(settle()), propagate_cancellation=True)
+
+async def _settle_shielded_task(task, *, propagate_cancellation=False):
+    """Await a bounded settlement to completion even under cancellation."""
+    cancelled = False
+    while True:
+        try:
+            result = await asyncio.shield(task)
+            break
+        except asyncio.CancelledError:
+            cancelled = True
+            if task.done():
+                result = task.result()
+                break
+    if cancelled and propagate_cancellation:
+        raise asyncio.CancelledError
+    return result
+
 
 class _OpiEvalAgent(BaseAgent):
     """Shared implementation for the opi-eval selected Agents."""
@@ -561,7 +577,20 @@ class _OpiEvalAgent(BaseAgent):
             kwargs = {"command": command, "env": env, "timeout_sec": 30}
             if isinstance(environment, OwnedDockerEnvironment):
                 kwargs["_capture_limit"] = _PREFLIGHT_CAPTURE_BYTES
-            result = await environment.exec(**kwargs)
+            # The probe is idempotent and side-effect free; a docker-exec
+            # transport flake (exit 0 with an empty marker frame) gets one
+            # immediate retry before it can fail the whole run at the
+            # integrity boundary.
+            for attempt in (1, 2, 3):
+                try:
+                    result = await environment.exec(**kwargs)
+                    break
+                except _RuntimePreflightOutputError:
+                    if attempt == 3:
+                        raise
+                    self.logger.warning(
+                        "runtime preflight capture empty; retrying (attempt %d)", attempt)
+                    await asyncio.sleep(3)
         except BaseException as exc:
             interrupted = exc
             result = getattr(exc, "runtime_capture", None)
@@ -640,7 +669,20 @@ class _OpiEvalAgent(BaseAgent):
             kwargs = {"command": command, "timeout_sec": 30}
             if isinstance(environment, OwnedDockerEnvironment):
                 kwargs["_capture_limit"] = _PREFLIGHT_CAPTURE_BYTES
-            result = await environment.exec(**kwargs)
+            # The probe is idempotent and side-effect free; a docker-exec
+            # transport flake (exit 0 with an empty marker frame) gets one
+            # immediate retry before it can fail the whole run at the
+            # integrity boundary.
+            for attempt in (1, 2, 3):
+                try:
+                    result = await environment.exec(**kwargs)
+                    break
+                except _RuntimePreflightOutputError:
+                    if attempt == 3:
+                        raise
+                    self.logger.warning(
+                        "runtime preflight capture empty; retrying (attempt %d)", attempt)
+                    await asyncio.sleep(3)
         except BaseException as exc:
             interrupted = exc
             proof["reason"] = (
@@ -768,7 +810,9 @@ class _OpiEvalAgent(BaseAgent):
             if not launch.cancelled():
                 # Keep the transport alive to observe the actual exit. Killing
                 # its client alone can leave the Agent running in the container.
-                async with asyncio.timeout(5):
+                # A CPU-saturated (compute-saturated) container can need tens of seconds even for
+                # the pid-file read and group kill; the bound stays finite.
+                async with asyncio.timeout(60):
                     if not launch.done():
                         pid_file = shlex.quote(f"{stage}/agent.pid")
                         stop = (
@@ -795,13 +839,26 @@ class _OpiEvalAgent(BaseAgent):
             launch_error = exc
             self.logger.warning("agent phase ended with %s", name)
         finally:
-            try:
-                await self._capture_logs(environment, stage)
-                delivered = await self._observe_delivered(environment)
-            finally:
-                await self._cleanup(environment, stage)
-            if not cancelled:
+            # Settlement is shielded: repeated caller cancellation (the agent
+            # timeout cancels the whole run) must not interrupt it, and the
+            # terminal observation is written inside — after cleanup succeeds
+            # (a failed cleanup never publishes a settlement) but even when
+            # the capture awaits were cancelled. Without the observation the
+            # native binding aborts the whole run at the integrity boundary
+            # instead of settling one honest invalid.
+            async def settle_effects():
+                delivered = []
+                try:
+                    await self._capture_logs(environment, stage)
+                    delivered = await self._observe_delivered(environment)
+                finally:
+                    await self._cleanup(environment, stage)
+                # Always published, including cancellation (harbor converts
+                # its agent-timeout cancellation into AgentTimeoutError): an
+                # honest terminal with an unobserved exit settles one invalid
+                # trial, while a missing observation aborts the whole run.
                 self._write_terminal_observation(environment, exit_code, delivered)
+            await _settle_shielded_task(asyncio.ensure_future(settle_effects()), propagate_cancellation=True)
         if launch_error is not None:
             raise launch_error
         if exit_code not in (0,):
@@ -880,7 +937,10 @@ class _OpiEvalAgent(BaseAgent):
         delivered: list[dict[str, Any]],
     ) -> None:
         del environment  # the observation is host-side, from logs_dir
-        capture = None
+        # Schema /3 binding requires a capture summary even when the helper
+        # died (e.g. the Agent timeout killed it) before writing its receipt;
+        # a missing or unparseable receipt is honestly "unreadable".
+        capture: dict[str, Any] = {"status": "unreadable", "policy": None, "receipt_sha256": None}
         receipt_path = self.logs_dir / "capture-receipt.json"
         if receipt_path.is_file():
             try:
@@ -891,7 +951,7 @@ class _OpiEvalAgent(BaseAgent):
                     "receipt_sha256": self._digest_file(receipt_path),
                 }
             except (OSError, ValueError):
-                capture = {"status": "unreadable", "policy": None, "receipt_sha256": None}
+                pass
         observation = {
             "schema": _TERMINAL_SCHEMA,
             "product": self._PRODUCT,

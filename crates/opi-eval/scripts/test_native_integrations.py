@@ -242,6 +242,39 @@ class NativeEnvironmentTest(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaisesRegex(RuntimeError, "cleanup unavailable"):
                         await environment.stop(delete=True)
 
+    async def test_confirmed_cleanup_clears_its_own_stale_uncertainty_marker(self):
+        # Harbor retries stop(): a first attempt whose residue check observes
+        # remaining resources marks the trial, and a later confirmed teardown
+        # must resolve that recorded cleanup uncertainty instead of failing
+        # forever on the sticky marker.
+        for family, (module, _) in INTEGRATIONS.items():
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
+                environment = module.OwnedDockerEnvironment(Path(root))
+                marker = Path(root) / "opi-eval-effect-unknown"
+                attempts = 0
+                original = RunnerDockerEnvironment._run_docker_compose_command
+                async def residue_then_clean(instance, command, **kwargs):
+                    nonlocal attempts
+                    if command[0] == "ps":
+                        attempts += 1
+                        if attempts == 1:
+                            return types.SimpleNamespace(stdout="stale-container-id\n")
+                    return await original(instance, command, **kwargs)
+                with patch.object(RunnerDockerEnvironment, "_run_docker_compose_command", residue_then_clean):
+                    with self.assertRaisesRegex(RuntimeError, "owned environment resources remain"):
+                        await environment.stop(delete=True)
+                    self.assertTrue(marker.is_file())
+                    self.assertEqual(
+                        marker.read_text(encoding="utf-8").strip(),
+                        "owned environment cleanup failed",
+                    )
+                    await environment.stop(delete=True)
+                self.assertFalse(marker.exists())
+                # An uncertainty recorded by another phase keeps its meaning.
+                marker.write_text("native command exit could not be observed", encoding="utf-8")
+                await environment.stop(delete=True)
+                self.assertTrue(marker.is_file())
+
     async def test_native_stop_settles_before_propagating_cancellation(self):
         for family, (module, _) in INTEGRATIONS.items():
             with self.subTest(family=family), tempfile.TemporaryDirectory() as root:
@@ -1115,11 +1148,8 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual((logs / "stdout.log").read_bytes(), STDOUT)
                     self.assertEqual((logs / "stderr.log").read_bytes(), STDERR)
                     self.assertTrue(environment.cleaned)
-                    if failure == "cancelled":
-                        self.assertFalse((logs / "opi-eval-terminal.json").exists())
-                        continue
                     terminal = json.loads((logs / "opi-eval-terminal.json").read_text())
-                    self.assertEqual(terminal["exit_code"], {"exit-code": 7, "timeout": None}[failure])
+                    self.assertEqual(terminal["exit_code"], {"exit-code": 7, "timeout": None, "cancelled": None}[failure])
                     self.assertEqual(terminal["timed_out"], failure == "timeout")
                     self.assertTrue(environment.cleaned)
 
