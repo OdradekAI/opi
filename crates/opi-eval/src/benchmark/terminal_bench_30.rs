@@ -1101,7 +1101,7 @@ impl BenchmarkAdapter for TerminalBench30Adapter {
                         reward_unknown(),
                         BenchmarkCompletion::Failed(super::process::BenchmarkFailure {
                             kind: error.token(),
-                            boundary: FailureBoundaryCode::Integrity,
+                            boundary: error.settled_boundary(),
                         }),
                     ),
                 };

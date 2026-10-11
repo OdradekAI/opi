@@ -426,6 +426,20 @@ pub(crate) enum NativeBindingError {
 }
 
 impl NativeBindingError {
+    /// Boundary for a settled binding failure. `task-not-observed` is an
+    /// honest setup refusal with a bound identity (the terminal exists but
+    /// the task never dispatched): the trial settles as infrastructure
+    /// invalid and the run continues. Every other token means identity or
+    /// provenance corruption and stays integrity-fatal.
+    pub(crate) fn settled_boundary(&self) -> crate::failure::FailureBoundaryCode {
+        match self {
+            Self::TrialInvalid("task-not-observed") => {
+                crate::failure::FailureBoundaryCode::Infrastructure
+            }
+            _ => crate::failure::FailureBoundaryCode::Integrity,
+        }
+    }
+
     /// Static redacted diagnostic token (receipts and stderr never echo
     /// job-tree bytes).
     pub(crate) fn token(&self) -> &'static str {
@@ -519,12 +533,7 @@ fn bound_native_identity(
     let evals = aggregate
         .get("stats")
         .and_then(|s| s.get("evals"))
-        .and_then(|e| e.as_object())
-        .ok_or(NativeBindingError::AggregateInvalid("no-eval-stats"))?;
-    if evals.len() != 1 {
-        return Err(NativeBindingError::AggregateInvalid("eval-count"));
-    }
-    let eval_key = evals.keys().next().expect("len checked").to_owned();
+        .and_then(|e| e.as_object());
     // The single per-trial result: the authoritative native identity.
     let mut trial_dirs: Vec<PathBuf> = std::fs::read_dir(&job_dir)
         .map_err(|_| NativeBindingError::TrialResultMissing)?
@@ -566,10 +575,34 @@ fn bound_native_identity(
             observed: agent_name.to_owned(),
         });
     }
+    let exception_type = results
+        .get("exception_info")
+        .and_then(|e| e.get("exception_type"))
+        .and_then(|t| t.as_str())
+        .map(str::to_owned);
+    // A timeout job whose runner wrote no eval stats at all (the pinned
+    // runner writes none when the verifier is killed on a half-built
+    // repository after an agent timeout, or when a completed agent's
+    // verifier is killed before stats) has no score to attribute: identity
+    // still binds through the per-trial result, and the reward settles as
+    // an honest Unknown instead of failing the whole run at the aggregate
+    // boundary. Any other missing or multi-eval aggregate stays invalid.
+    let unscored_timeout = matches!(
+        exception_type.as_deref(),
+        Some("AgentTimeoutError") | Some("VerifierTimeoutError")
+    ) && evals.is_none_or(|e| e.is_empty())
+        && results.get("verifier_result") == Some(&serde_json::Value::Null);
+    let eval_key = match evals {
+        Some(e) if e.len() == 1 => e.keys().next().expect("len checked").to_owned(),
+        _ if unscored_timeout => String::new(),
+        None => return Err(NativeBindingError::AggregateInvalid("no-eval-stats")),
+        _ => return Err(NativeBindingError::AggregateInvalid("eval-count")),
+    };
     // The eval key embeds the actual Agent name (`agent__model__dataset`
     // or `agent__dataset` in the pinned runner): a job grouped under any
     // other Agent - oracle included - is not this trial's score.
-    if eval_key.split("__").next().unwrap_or_default() != selection.agent_name {
+    if !unscored_timeout && eval_key.split("__").next().unwrap_or_default() != selection.agent_name
+    {
         return Err(NativeBindingError::AgentNameMismatch {
             expected: selection.agent_name.clone(),
             observed: eval_key,
@@ -609,12 +642,6 @@ fn bound_native_identity(
             return Err(NativeBindingError::TrialInvalid("selected-model-mismatch"));
         }
     }
-    let exception_type = results
-        .get("exception_info")
-        .and_then(|e| e.get("exception_type"))
-        .and_then(|t| t.as_str())
-        .map(str::to_owned);
-
     // Bind the trial's explicit selection according to its dispatch kind.
     // Diagnostics use registered names; integrations use their pinned import.
     let config_path = trial_dir.join("config.json");
@@ -682,7 +709,7 @@ fn bound_native_identity(
         agent_version,
         model_name,
         task_name: task_name.to_owned(),
-        exception_type,
+        exception_type: exception_type.clone(),
         terminal,
         results_path,
         config_path,
@@ -693,6 +720,7 @@ fn bound_native_identity(
         results,
         config,
         trial_dir,
+        unscored_timeout,
     })
 }
 
@@ -702,6 +730,9 @@ struct NativeIdentityEvidence {
     results: serde_json::Value,
     config: serde_json::Value,
     trial_dir: PathBuf,
+    /// Agent or verifier timed out with no eval stats: nothing is
+    /// scoreable, so the reward binds as an honest Unknown.
+    unscored_timeout: bool,
 }
 
 /// Admit the new job's actual identity and runtime proof without requiring a
@@ -725,6 +756,7 @@ pub(crate) fn import_bound_native_job(
         results,
         config,
         trial_dir,
+        unscored_timeout,
     } = bound_native_identity(trace_root, selection)?;
     let NativeTrialObservation {
         job_name,
@@ -748,31 +780,58 @@ pub(crate) fn import_bound_native_job(
     let evals = aggregate["stats"]["evals"]
         .as_object()
         .expect("identity validated");
-    let reward_stats = evals
-        .values()
-        .next()
-        .expect("identity validated")
-        .get("reward_stats")
-        .and_then(|value| value.as_object())
-        .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
-
     // A timed-out verifier has no reward in either pinned runner. Bind its
     // exact exception attribution without manufacturing a zero score.
-    let reward = if exception_type.as_deref() == Some("VerifierTimeoutError") {
+    let reward = if unscored_timeout {
+        // Verified shape from bound identity: agent or verifier timeout, no
+        // eval stats, no verifier result. There is nothing to score; keep
+        // the trial honest instead of inventing a zero or failing the run.
+        Fact::Unknown {
+            reason: match exception_type.as_deref() {
+                Some("AgentTimeoutError") => "agent-timeout".to_owned(),
+                _ => "verifier-timeout".to_owned(),
+            },
+        }
+    } else if matches!(
+        exception_type.as_deref(),
+        Some("AgentTimeoutError") | Some("VerifierTimeoutError")
+    ) && results.get("verifier_result") == Some(&serde_json::Value::Null)
+    {
+        // A timed-out agent or verifier has no reward in either pinned
+        // runner: stats may carry an empty-reward entry attributed to the
+        // exception, or no eval entry at all (the unscored shape bound
+        // above). Bind the exact attribution without manufacturing a
+        // score. A verifier that did run and score (timeout with a graded
+        // outcome) binds through the normal reward path below.
         let stats = evals.values().next().expect("len checked");
+        let reward_stats = stats
+            .get("reward_stats")
+            .and_then(|value| value.as_object())
+            .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
+        let expected = serde_json::json!({exception_type.clone().expect("matched"): [trial_name]});
         if !reward_stats.is_empty()
             || results.get("verifier_result") != Some(&serde_json::Value::Null)
             || stats.get("n_trials").and_then(|n| n.as_u64()) != Some(0)
             || stats.get("n_errors").and_then(|n| n.as_u64()) != Some(1)
-            || stats.get("exception_stats")
-                != Some(&serde_json::json!({"VerifierTimeoutError": [trial_name]}))
+            || stats.get("exception_stats") != Some(&expected)
         {
             return Err(NativeBindingError::AggregateInvalid("verifier-timeout"));
         }
         Fact::Unknown {
-            reason: "verifier-timeout".to_owned(),
+            reason: if exception_type.as_deref() == Some("AgentTimeoutError") {
+                "agent-timeout".to_owned()
+            } else {
+                "verifier-timeout".to_owned()
+            },
         }
     } else {
+        let reward_stats = evals
+            .values()
+            .next()
+            .expect("identity validated")
+            .get("reward_stats")
+            .and_then(|value| value.as_object())
+            .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
         let by_value = reward_stats
             .get(&selection.reward_metric)
             .ok_or(NativeBindingError::AggregateInvalid("no-reward-stats"))?;
@@ -824,7 +883,6 @@ pub(crate) fn import_bound_native_job(
             origin: "native-trial-result".to_owned(),
         }
     };
-
     // Resolve the job's task reference, trial additions, and native mode
     // against the admitted lifecycle this dispatch selected.
     let observed_lifecycle = parse_recorded_lifecycle(&config, &results, selection)
@@ -2557,6 +2615,167 @@ fn native_verifier_timeout_binds_without_inventing_reward() {
                 binding.reward,
                 Fact::Unknown {
                     reason: "verifier-timeout".to_owned()
+                }
+            );
+        } else {
+            assert!(binding.is_err(), "{mutation}: {binding:?}");
+        }
+    }
+}
+
+// An agent timeout whose verifier still ran and scored binds the graded
+// reward normally (the common shape: capture refused downstream settles
+// the trial, the run continues).
+#[test]
+fn native_agent_timeout_with_graded_verifier_binds_reward() {
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+    let trial = dir.path().join("jobs/j1/fixture-task__bZZeEkw");
+    let mut result: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(trial.join("result.json")).unwrap()).unwrap();
+    result["exception_info"] = serde_json::json!({"exception_type": "AgentTimeoutError"});
+    result["verifier_result"]["rewards"]["reward"] = serde_json::json!(0.0);
+    std::fs::write(
+        trial.join("result.json"),
+        serde_json::to_vec(&result).unwrap(),
+    )
+    .unwrap();
+    let mut aggregate = serde_json::json!({
+        "n_total_trials": 1,
+        "stats": {"evals": {"opi-eval-opi__adhoc": {
+            "n_trials": 1, "n_errors": 1,
+            "reward_stats": {"reward": {"0.0": ["fixture-task__bZZeEkw"]}},
+            "exception_stats": {"AgentTimeoutError": ["fixture-task__bZZeEkw"]},
+        }}},
+    });
+    aggregate["stats"]["evals"]["opi-eval-opi__adhoc"]["reward_stats"] =
+        serde_json::json!({"reward": {"0.0": ["fixture-task__bZZeEkw"]}});
+    std::fs::write(
+        dir.path().join("jobs/j1/result.json"),
+        serde_json::to_vec(&aggregate).unwrap(),
+    )
+    .unwrap();
+    let binding = import_bound_native_job(dir.path(), &selection).unwrap();
+    assert_eq!(
+        binding.reward,
+        Fact::Known {
+            value: 0,
+            origin: "native-trial-result".to_owned()
+        }
+    );
+}
+
+// An agent-timeout job whose stats carry an empty-reward eval entry
+// attributed to the exception (the other pinned-runner shape; observed on
+// tb21 `model-extraction-relu-logits`) also binds an honest Unknown.
+#[test]
+fn native_agent_timeout_with_empty_reward_stats_binds_unknown() {
+    let dir = tempfile::tempdir().unwrap();
+    let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+    let job = dir.path().join("jobs/j1");
+    let trial = job.join("fixture-task__bZZeEkw");
+    let mut result: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(trial.join("result.json")).unwrap()).unwrap();
+    result["verifier_result"] = serde_json::Value::Null;
+    result["exception_info"] = serde_json::json!({"exception_type": "AgentTimeoutError"});
+    std::fs::write(
+        trial.join("result.json"),
+        serde_json::to_vec(&result).unwrap(),
+    )
+    .unwrap();
+    let aggregate = serde_json::json!({
+        "n_total_trials": 1,
+        "stats": {"evals": {"opi-eval-opi__adhoc": {
+            "n_trials": 0, "n_errors": 1, "reward_stats": {},
+            "exception_stats": {"AgentTimeoutError": ["fixture-task__bZZeEkw"]},
+        }}},
+    });
+    std::fs::write(
+        job.join("result.json"),
+        serde_json::to_vec(&aggregate).unwrap(),
+    )
+    .unwrap();
+    let binding = import_bound_native_job(dir.path(), &selection).unwrap();
+    assert_eq!(binding.exception_type.as_deref(), Some("AgentTimeoutError"));
+    assert_eq!(
+        binding.reward,
+        Fact::Unknown {
+            reason: "agent-timeout".to_owned()
+        }
+    );
+}
+
+#[test]
+fn native_binding_failure_boundaries_separate_setup_refusal_from_corruption() {
+    use crate::failure::FailureBoundaryCode;
+    // An honest setup refusal (bound identity, terminal observed, task
+    // never dispatched) settles as infrastructure: the trial is invalid
+    // but the run continues.
+    assert_eq!(
+        NativeBindingError::TrialInvalid("task-not-observed").settled_boundary(),
+        FailureBoundaryCode::Infrastructure
+    );
+    // Identity or provenance corruption stays integrity-fatal.
+    for error in [
+        NativeBindingError::TrialInvalid("terminal-observation"),
+        NativeBindingError::TrialInvalid("agent-name"),
+        NativeBindingError::TrialInvalid("runtime-preflight-output"),
+        NativeBindingError::AggregateInvalid("no-eval-stats"),
+        NativeBindingError::TrialResultMissing,
+        NativeBindingError::NoNewJob,
+    ] {
+        assert_eq!(error.settled_boundary(), FailureBoundaryCode::Integrity);
+    }
+}
+
+// A trial whose Agent timed out and whose verifier then also produced no
+// eval stats (the pinned runner writes none when the verifier is killed on
+// the half-built repository) binds an honest Unknown instead of failing
+// the aggregate boundary. Observed on tb21 `torch-pipeline-parallelism`.
+#[test]
+fn native_agent_timeout_without_evals_binds_unknown() {
+    for mutation in ["none", "with-verifier-result", "wrong-exception"] {
+        let dir = tempfile::tempdir().unwrap();
+        let selection = stage_bound_job(dir.path(), "j1", "opi-eval-opi");
+        let job = dir.path().join("jobs/j1");
+        let trial = job.join("fixture-task__bZZeEkw");
+        let mut result: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(trial.join("result.json")).unwrap()).unwrap();
+        result["verifier_result"] = serde_json::Value::Null;
+        result["exception_info"] = serde_json::json!({"exception_type": "AgentTimeoutError"});
+        match mutation {
+            "with-verifier-result" => {
+                result["verifier_result"] = serde_json::json!({"rewards": {"accuracy": 0.0}})
+            }
+            "wrong-exception" => {
+                result["exception_info"] =
+                    serde_json::json!({"exception_type": "InfrastructureError"})
+            }
+            _ => {}
+        }
+        std::fs::write(
+            trial.join("result.json"),
+            serde_json::to_vec(&result).unwrap(),
+        )
+        .unwrap();
+        // The pinned runner writes no eval entries at all for this shape.
+        let aggregate = serde_json::json!({
+            "n_total_trials": 1,
+            "stats": {"evals": {}},
+        });
+        std::fs::write(
+            job.join("result.json"),
+            serde_json::to_vec(&aggregate).unwrap(),
+        )
+        .unwrap();
+        let binding = import_bound_native_job(dir.path(), &selection);
+        if mutation == "none" {
+            let binding = binding.unwrap();
+            assert_eq!(binding.exception_type.as_deref(), Some("AgentTimeoutError"));
+            assert_eq!(
+                binding.reward,
+                Fact::Unknown {
+                    reason: "agent-timeout".to_owned()
                 }
             );
         } else {
