@@ -73,7 +73,15 @@ family 或整组 evaluation operation：
 ```sh
 python3 crates/opi-eval/operator/evaluate.py candidate --prepared /absolute/prepared-operation --execute
 python3 crates/opi-eval/operator/evaluate.py compare --candidate /absolute/candidate/snapshot.json --out /absolute/fresh-comparison
+python3 crates/opi-eval/operator/evaluate.py watch --prepared /absolute/prepared-evaluation --max 3600
 ```
+
+`watch` 是针对单次 evaluation 的只读事件驱动监督：每 `--poll` 秒（默认 20）轮询操作员
+自身记录，一旦结果发布、执行中的操作员崩溃或消失、冻结批预算到期，或在 `--stall` 秒
+（默认 600）内无任何 trial 结算且无任务容器运行，即唤醒调用方；否则以 `--max` 作为
+健康心跳退出。类型化退出码（`0` 已完成、`1` 未运行、`2` 操作员崩溃、`3` 疑似停滞、
+`4` 预算到期、`5` 监督错误、`124` 到达最大等待）与末尾的 `opi-eval-watch-status/1`
+JSON 文档让唤醒原因可机读。它从不读取证据字节或凭据，也不改变评测本身。
 
 `--bench all` 创建包含选定 family 计划的一次 evaluation，从首次真实 dispatch 起共用
 deadline，包含 grading 与 retries；准备和后续离线报告不在真实运行计时区间。

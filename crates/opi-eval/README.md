@@ -82,7 +82,19 @@ exact frozen scope, execute the returned family or whole-evaluation operation:
 ```sh
 python3 crates/opi-eval/operator/evaluate.py candidate --prepared /absolute/prepared-operation --execute
 python3 crates/opi-eval/operator/evaluate.py compare --candidate /absolute/candidate/snapshot.json --out /absolute/fresh-comparison
+python3 crates/opi-eval/operator/evaluate.py watch --prepared /absolute/prepared-evaluation --max 3600
 ```
+
+`watch` is read-only event-driven supervision for one evaluation: it polls the
+operator's own records every `--poll` seconds (default 20) and wakes its caller
+as soon as the result is published, the executing operator crashes or goes
+away, the frozen batch budget expires, or no trial settles while no task
+container runs for `--stall` seconds (default 600) — with a healthy `--max`
+heartbeat otherwise. Typed exit codes (`0` completed, `1` not-running,
+`2` operator-crashed, `3` stall-suspected, `4` budget-expired, `5` watch-error,
+`124` max-reached) and a final `opi-eval-watch-status/1` JSON document make the
+wake reason machine-readable. It never reads evidence bytes or credentials and
+changes nothing about the evaluation itself.
 
 `--bench all` creates one evaluation containing selected family plans and uses
 one deadline from the first live dispatch, including grading and retries.

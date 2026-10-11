@@ -102,6 +102,15 @@ Review task inventory, controls, source/build identities, paths, attempted-count
 limit, capture and budget enforcement. The `/2` profile adds no silent diagnostic
 requirements and does not expand the permitted capture contract.
 
+A preparation may narrow one family to an explicit task list with
+`--tasks TASK[,TASK...]` (single `--bench` family only, unique nonempty ids).
+It becomes the same frozen `scope = "subset"` selection `--set` would express:
+the material, plan and native report carry exactly those tasks, and the frozen
+plan records the subset reason. Precision re-runs of infrastructure victims
+(for example provider-connection failures) use this instead of re-executing the
+whole corpus; a subset evaluation is its own sealed evidence tree and never
+merges into another run's metrics.
+
 `baseline` selects only the admitted pi version without building Opi. A new pi
 release needs a verified pin and adapter proof; research or an ambient installed
 binary cannot substitute. `candidate` rebuilds current-worktree Opi with relevant
@@ -171,6 +180,20 @@ reindex is needed: retained JSON files supply discovery state. Only the
 evaluation operator writes its records/events/imports; other authorities consume
 immutable bundles/references. Treat discovered paths and metadata as untrusted
 and re-verify original snapshots and native evidence before selection/comparison.
+
+```sh
+python3 "$EVAL_OPERATOR" watch --prepared "$EVALUATION" --max 3600
+```
+
+`watch` is read-only supervision for a running or finished evaluation: it
+wakes immediately when the result is published, the executing operator
+crashes or disappears, the frozen batch budget expires, or no trial settles
+while no task container runs for `--stall` seconds; otherwise it exits as a
+healthy heartbeat at `--max`. Typed exit codes (`0` completed, `1`
+not-running, `2` operator-crashed, `3` stall-suspected, `4` budget-expired,
+`5` watch-error, `124` max-reached) and a final `opi-eval-watch-status/1`
+JSON document describe the wake; it reads no evidence bytes or credentials
+and never alters the evaluation.
 
 ```sh
 python3 "$EVAL_OPERATOR" list --config "$PROFILE" --action baseline --bench tb21 --limit 3

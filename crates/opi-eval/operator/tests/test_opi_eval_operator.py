@@ -173,6 +173,34 @@ class OperatorTests(unittest.TestCase):
                 self.assertEqual(result.stdout, "")
                 self.assertIn("unknown thinking level", result.stderr)
 
+    def test_tasks_selection_translates_to_subset_overrides_and_validates(self):
+        import evaluate
+        from operator_process import OperatorError
+        class Arguments:
+            bench = "tb21"
+            tasks = "build-pmars, build-pov-ray"
+        self.assertEqual(evaluate.tasks_selection(Arguments()),
+                         ['benchmarks.tb21.scope="subset"',
+                          'benchmarks.tb21.task_ids=["build-pmars", "build-pov-ray"]'])
+        for bench, tasks in (("all", "build-pmars"), ("tb21", ""), ("tb21", "a,,b"),
+                             ("tb21", "a,a"), (None, "build-pmars")):
+            with self.subTest(bench=bench, tasks=tasks):
+                class Rejected:
+                    pass
+                Rejected.bench, Rejected.tasks = bench, tasks
+                with self.assertRaises(OperatorError):
+                    evaluate.tasks_selection(Rejected())
+
+    def test_cli_tasks_prepare_refuses_without_single_family(self):
+        from operator_config import TEMPLATE, load, dumps_toml
+        config = self.root / "private.toml"
+        config.write_text(dumps_toml(load(TEMPLATE)))
+        command = [sys.executable, str(SCRIPTS / "evaluate.py"), "baseline", "--config", str(config)]
+        result = subprocess.run([*command, "--bench", "all", "--tasks", "build-pmars"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("exactly one benchmark family", result.stderr)
+
     def test_retry_is_precise_valid_zero_never_retries_and_breach_stops(self):
         from operator_evidence import retry_trials, OperatorError
         planned = [{"id": "one", "task": "a", "subject": "opi", "group": "a-rep1"},
@@ -525,6 +553,29 @@ class NativeFlowTests(OperatorTests):
             with self.assertRaises(OperatorError):
                 prepare(fixture.config, "tb21", "candidate", repo=fixture.repo, index=fixture.index)
             self.assertEqual(len(list((fixture.workspace / "evaluations").glob("*/*/*/record.json"))), 1)
+
+    def test_seed_copy_keeps_runner_subpackages_and_drops_cache_views(self):
+        from operator_flow import publish_cache_seed
+        cache = self.root / "family" / "cache"
+        (cache / "runners/harbor/packages/harbor-atif2otel/src").mkdir(parents=True)
+        (cache / "runners/harbor/packages/harbor-atif2otel/src/keep.py").write_text("runner source\n")
+        (cache / "runners/harbor/.venv/lib").mkdir(parents=True)
+        (cache / "runners/harbor/.venv/lib/site.py").write_text("virtualenv\n")
+        (cache / "corpora/terminal-bench-2.1/tasks").mkdir(parents=True)
+        (cache / "corpora/terminal-bench-2.1/tasks/task.toml").write_text("[task]\n")
+        (cache / "packages").mkdir()
+        (cache / "packages/view.toml").write_text("cache view\n")
+        (cache / "profiles").mkdir()
+        (cache / "home").mkdir()
+        (cache / "inventory.json").write_text("{}\n")
+        profile = {"storage": {"cache": str(self.root / "shared-cache")}}
+        publish_cache_seed(profile, self.root / "family", REPO)
+        seed = next((self.root / "shared-cache" / "seeds").iterdir())
+        self.assertTrue((seed / "runners/harbor/packages/harbor-atif2otel/src/keep.py").is_file())
+        self.assertTrue((seed / "corpora/terminal-bench-2.1/tasks/task.toml").is_file())
+        self.assertFalse((seed / "runners/harbor/.venv").exists())
+        for view in ("packages", "profiles", "home", "inventory.json"):
+            self.assertFalse((seed / view).exists(), view)
 
 
 if __name__ == "__main__":
