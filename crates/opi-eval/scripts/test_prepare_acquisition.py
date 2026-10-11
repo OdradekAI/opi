@@ -344,6 +344,22 @@ class PrepareAcquisitionTests(unittest.TestCase):
         self.assertTrue((fixture.cache / "agents/pi/pi").is_file())
         self.assertEqual(json.loads(fixture.events.read_text())["product"], "pi")
 
+    def test_pi_source_without_published_shrinkwrap_builds_with_null_digest(self):
+        fixture = Fixture(self.base / "absent-shrinkwrap")
+        source = fixture.root / "sources/pi"
+        (source / "packages/coding-agent/npm-shrinkwrap.json").unlink()
+        revision = commit(source)
+        subject = next(row for row in fixture.lock["subjects"] if row["id"] == "pi")
+        subject["commit"] = revision
+        subject["blobs"] = [blob(source, row["path"]) for row in subject["blobs"]
+                             if row["path"] != "packages/coding-agent/npm-shrinkwrap.json"]
+        fixture.save_lock()
+        result = fixture.prepare(FAMILIES[0], ["pi"], with_source=False)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        identity = json.loads((fixture.cache / "agents/pi/build-identity.json").read_text())
+        self.assertIsNone(identity["shrinkwrap_sha256"])
+        self.assertTrue((fixture.cache / "agents/pi/pi").is_file())
+
     def test_invalid_pi_data_pins_reject_before_build_or_publication(self):
         for case in ("missing", "malformed", "duplicate-subject", "duplicate-field", "package", "version", "url", "digest", "uppercase-digest", "tampered"):
             with self.subTest(case=case):

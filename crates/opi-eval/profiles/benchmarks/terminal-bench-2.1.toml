@@ -34,7 +34,11 @@ cpus = 1
 memory_gib = 2
 
 [limits]
-timeout_secs = 900
+# Whole Harbor job: the effective agent cap is the pi profile's 900s;
+# TB 2.1 tasks additionally declare verifier timeouts up to 12000s and a
+# 600s environment build, so the whole-job budget must leave room for a
+# full-window agent plus the task-declared verifier and collection.
+timeout_secs = 15000
 stdout_cap_bytes = 1048576
 stderr_cap_bytes = 1048576
 

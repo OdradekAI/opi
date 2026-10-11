@@ -13,7 +13,7 @@
    {
     "path": "crates/opi-eval/scripts/materialize-external-locks.sh",
     "role": "materializer",
-    "sha256": "47d7e3d1cd0c59c4b125f680115476ea06b6124ee85557e1a0ef826b0b12aeb1"
+    "sha256": "8f2e73fa4f6caefa4852af265837abf73bb1ecc0ef2a288984b81409363e2879"
    },
    {
     "path": "crates/opi-eval/scripts/verify-external-lock-ci.py",
@@ -23,7 +23,7 @@
    {
     "path": "crates/opi-eval/scripts/build-agent-artifacts.sh",
     "role": "agent-builder",
-    "sha256": "c9be8cb3e9afff89193253f68ce929226647d924a954ed889ed61283dce9f2ab"
+    "sha256": "225e5a02137c6ee36af0ec5fdf481b58f216d8c83ca1a6417007807b21520ead"
    }
   ],
   "actions": [
@@ -64,29 +64,24 @@
    "id": "pi",
    "kind": "agent-source",
    "repository_url": "https://github.com/earendil-works/pi",
-   "commit": "a13d35a742c6ef8462812a28fbe1d8c8b7431c32",
+   "commit": "7c10bd4337495ee613f2224843ecdf349b80d1df",
    "blobs": [
     {
      "path": "package-lock.json",
-     "git_blob": "e6c64776e9a4b687402fa87ae3b360ba9e2261ed",
-     "sha256": "d5ca36c6b5af93e5d5ef79deedae8efff575adf6ae080bd2093ff29bb7c5664b"
-    },
-    {
-     "path": "packages/coding-agent/npm-shrinkwrap.json",
-     "git_blob": "d893472c056d489bd9382d67418bb3b1eb8a418e",
-     "sha256": "7e4fee77ddb6a63ef9bfaa090d82dfbd04ed20ea92e8914574c13782471f60bf"
+     "git_blob": "c12187bf64fdc587eb0b7fdb8baf27a3f7553b94",
+     "sha256": "c33f65ebe4179566a606c4a071e5db18ecb1f82ea48d76a7cb71b25e4fa445f9"
     },
     {
      "path": "packages/coding-agent/package.json",
-     "git_blob": "6a310438413dd4698e6695ab79271adc2c21900f",
-     "sha256": "81ac04bbcbc8d80bdb28bcb88cabe8345ffabc6b4c9389fd74c85fab76a0aac6"
+     "git_blob": "76a5e66fb70654cefbfc6914442a53528bd76de0",
+     "sha256": "248decde30021109984def7ddc8f7bf4caf21ef04910a1303ab19604206c1bd5"
     }
    ],
    "model_data_archive": {
     "package": "@earendil-works/pi-ai",
-    "version": "1.0.0",
-    "url": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-1.0.0.tgz",
-    "sha256": "f39b99c29b8598f175b10840e5d2a81983e7c0ce5cae4d7df83a1007447d2c2b"
+    "version": "1.0.4",
+    "url": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-1.0.4.tgz",
+    "sha256": "2fd5bf57c6a5b5b82d4563b18a2627b14d74dc4aacbf69a3dcf91c091e6038cf"
    }
   },
   {
@@ -242,10 +237,1391 @@
    ]
   },
   {
+   "id": "tb21-adaptive-rejection-sampler-task",
+   "role": "task",
+   "reference": "alexgshaw/adaptive-rejection-sampler:20251031",
+   "manifest": "sha256:985bed39e8448bc95f138b5f766b59003a95c4be171c96af8e76448338f3dd8f",
+   "config": "sha256:65b25be2c34967a7db2332794da5a1f6d8235e1792a1d747aff46b5bff77b9d7",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:af234408b59c3d882a70f3d2644fd29310da8d57bb541035f88e5af8a29adcab"
+   ]
+  },
+  {
+   "id": "tb21-bn-fit-modify-task",
+   "role": "task",
+   "reference": "alexgshaw/bn-fit-modify:20251031",
+   "manifest": "sha256:5aeb11ca6e802b83816c9a31f055ac9d028309a853509400c2e3139ac2d8380d",
+   "config": "sha256:e22baa862c29eb5076f82ba45527df74ce0b393a03ee6c08697279b852acd354",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:fb90ebf3b09abb452f84502f65fa0d25500fdadddfe08e027b7da5cd7863ff42",
+    "sha256:b38c2de77958e5785d773929bc3ed8cbe61e25c85abc44d8d765988617cce9ce",
+    "sha256:942ae344094fde56e13dd57733492c863024d4514c998f953f084e466df25c54"
+   ]
+  },
+  {
+   "id": "tb21-break-filter-js-from-html-task",
+   "role": "task",
+   "reference": "alexgshaw/break-filter-js-from-html:20251031",
+   "manifest": "sha256:d7bfb45e47cf10d2e21dc520239215498f4eba9c1ab2d0cd7d647985dddb4fa8",
+   "config": "sha256:1c09e20b95f90415fe2f5424335b3bca11e36ee915715b2891aeaaefec475645",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:20a136b3f3167c417050c32902fe9bc2444663f5fd4b8d1b69b7f56782c9eec1",
+    "sha256:d78de09d486d106a06249d668389824c9b3a3a903e0849e88d7969c4165ff104",
+    "sha256:9242be66e84b7c85e9601b2b18da174eb4e4316b1ad186aecb09d6397a8cc1d2",
+    "sha256:48fe277dcdc580728423652daa3e3b096ef73bfe2927ed202236bef5d86d95f1",
+    "sha256:8dec4e611b065d510b385b4f0d755ce8662d30cc8ce5b4e25b01d41c5561be2c"
+   ]
+  },
+  {
+   "id": "tb21-build-cython-ext-task",
+   "role": "task",
+   "reference": "alexgshaw/build-cython-ext:20251031",
+   "manifest": "sha256:3612a38fadb89a96f74a1a951fb0b0af734198fd160571eeaba6401593234594",
+   "config": "sha256:b2a41c10dde020d36fbea4643794d8791118afb77db125e61837f21a02c1a3af",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:1076d6a31df318ccb7e6a5b46cdc0bb15e063789916a8014a55b0e11ef43a154",
+    "sha256:80fcd3e2399e0e69249795b3f0499beedb4df791bc3549cb2258526fd1c37ed1"
+   ]
+  },
+  {
+   "id": "tb21-build-pmars-task",
+   "role": "task",
+   "reference": "alexgshaw/build-pmars:20251031",
+   "manifest": "sha256:57a82706f7491e0b2d1ff7e927e97ae5339892dd09c47ac43290b4ba1f5abc6f",
+   "config": "sha256:7b5bae6c1dea946c16c088a0f254182013f7040298420d0021612fe1b1a2e5ee",
+   "layers": [
+    "sha256:396b1da7636e2dcd10565cb4f2f952cbb4a8a38b58d3b86a2cacb172fb70117c",
+    "sha256:0db927ebd1dee1f8040919e27248dd0c868fd55a8db6a4134d742af0e6af4801",
+    "sha256:7449371de95f24ce94e29d70aeeb057c303fb4a8eada23e7e12a93e7d678f08b",
+    "sha256:047f34fb7de9e22460aec5507bd23f667c1beb44694239925de33f0079224959"
+   ]
+  },
+  {
+   "id": "tb21-build-pov-ray-task",
+   "role": "task",
+   "reference": "alexgshaw/build-pov-ray:20251031",
+   "manifest": "sha256:874baf49341e2853a15a9184e308c7eb632e97f434359fcff2891c6e5ca1b39b",
+   "config": "sha256:bdd54bc6df23947ecd7277cbb5ff569b6436d8f697ecfe585f06d8265fcb1941",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:38fb19e2afbe7a78d38d82ce96b211364fee9d7c6fac0788272256144e2ae3c4",
+    "sha256:e4dfad2790bf1f0f27f4636c430afa69923b8bada30baf84fb0923be2cf2a7d1",
+    "sha256:b554f12c25e541cbcd8a92c9b85bf75360687434756d63742c9035be3f51759c",
+    "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1"
+   ]
+  },
+  {
+   "id": "tb21-caffe-cifar-10-task",
+   "role": "task",
+   "reference": "alexgshaw/caffe-cifar-10:20260403",
+   "manifest": "sha256:929a6d631b592c82e0d0f5d4a65cf03c946dc554cfc9bb09916e82076e7d3215",
+   "config": "sha256:67f40b2f90da4a0e49d475a4d58450d3c0605756ba4b1c68e258141d1db200d1",
+   "layers": [
+    "sha256:817807f3c64e0b90b66edc7d90297f121cad2a7c2a3ee05a731557762f91e6c7",
+    "sha256:34d6a484dc4ba05597b0c3744ea1391238e47b0c85a9f9717ab61eac0a7e44c0",
+    "sha256:15f8478339329ece14f683633ad76aee4ba486c3ae812394420137d140ae3ce9",
+    "sha256:bb73af8e64110bd0ed681e17059aacae720ec4bfb87e738f9e91d420ea246745"
+   ]
+  },
+  {
+   "id": "tb21-cancel-async-tasks-task",
+   "role": "task",
+   "reference": "alexgshaw/cancel-async-tasks:20251031",
+   "manifest": "sha256:84c7fae6b256dcc56a350790e2a9715eefc7dad662a9d8e8a472363aa71ef18d",
+   "config": "sha256:760c5426807dc80edd6a1b1c3675c197599fc3f9cb46b1a06e7539cb94818553",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e"
+   ]
+  },
+  {
+   "id": "tb21-chess-best-move-task",
+   "role": "task",
+   "reference": "alexgshaw/chess-best-move:20251031",
+   "manifest": "sha256:bb447f94d9e2a8ed879f85c85a514b213b7418f9fe11fd7b2428a0b0e436e647",
+   "config": "sha256:0977c69064c0e9d25a2267d99794290653e3683349a52e974c6f171e4293828f",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:64370410d5ca49aa5d0eea29bc2a46e2f2dd4b3b6934043944fd000c198f51d0",
+    "sha256:a77d67507195a38ba29f45064c745b8b92847a660fd3ec5557df6b8f1d975c04",
+    "sha256:d8f12b6818bde5a2babfd108809bd3683da8415816e5cd134308e071b473394c",
+    "sha256:c38c7b25e3debb87a228e22d3d32e99ea6865e2a0af482a34ff56559f41f83ce",
+    "sha256:9fcf91c5d8f30c93c240fbd6459127a40082f221d09e1e999285d6a97a924d7c",
+    "sha256:84d2affda6c86e46a57b6c4c1c33582c501109d93d74ce821e4c9eb655f20b63",
+    "sha256:6ada36832d152f470c6e0efd88ccfb1df476abce4d06f6c45c15b2f8350457ea",
+    "sha256:b2cc7717b0b69ee5dc2918574cea7bb9d7ae014c38eabe4f68404147e94a6bf7",
+    "sha256:58eb935af274dadb6df9c76159d4d6fec60646a6009172cdc181633fa13d3ce0",
+    "sha256:79e41a00ade04d77ad59a288398910ef70cb0f1a0d87cef7c14aea299b1a255a"
+   ]
+  },
+  {
+   "id": "tb21-circuit-fibsqrt-task",
+   "role": "task",
+   "reference": "alexgshaw/circuit-fibsqrt:20251031",
+   "manifest": "sha256:29783439f529eaed2145592f15af7a2281161528860392a382c825489030ae3a",
+   "config": "sha256:133688d2a04ad9fd39267badd3d61ac22c91c09162d682e44d4396b3445123ab",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:bc40fc4dc46cee68aba78925a13f70663da4e66ac49a178568a5598f01425418",
+    "sha256:125331e148d6e63db383de155f4719c74913e13c2ebcfada593242173d86dc6c",
+    "sha256:0ff0d40170915ce4125d6778fe96ef1ba18e377d2b26cd484179946c7460f955",
+    "sha256:a2c8103321355da92be7d3e21fe697b95f965a66c44fc8569efded4b680bbe61"
+   ]
+  },
+  {
+   "id": "tb21-cobol-modernization-task",
+   "role": "task",
+   "reference": "alexgshaw/cobol-modernization:20251031",
+   "manifest": "sha256:593ab9df3d83f771e927888b2d9436b380cdf7ec4d0af2a9f0802d541edebba0",
+   "config": "sha256:14e6e693be70ee0c7f07105dfc0f3cae71fd495cc0106042dd530fc5fbd8e637",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:a5aa2831c13227fc01bfd1cca969b87c7b1fe2b63b8b4e7bc6002df878f2b939",
+    "sha256:ff9dbe1ab819e28f5f1c552ca77f2ec48e9d3600d98415dad7ee2ceb8a4acd0e",
+    "sha256:17c435b06bacfc493d4a9a645c68da0aa912a37f12b685e4a01f30aa566bd94b",
+    "sha256:bb31e0971ff4ec655d9189b74148963679fdac75182c3201e999a09c2206c781"
+   ]
+  },
+  {
+   "id": "tb21-code-from-image-task",
+   "role": "task",
+   "reference": "alexgshaw/code-from-image:20251031",
+   "manifest": "sha256:2be9cdb746ed18c1b2b1404032efae0b2235a1b8fc479ef17730c95409d89f76",
+   "config": "sha256:95e8a914c522fb26db230a1f28a895f260a3f0b3351f3de8d5bd04e88f316998",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:9ad031cfdc54932d8f9267c500561a36edaddf0e09c932df9595e84c356adb81"
+   ]
+  },
+  {
+   "id": "tb21-compile-compcert-task",
+   "role": "task",
+   "reference": "alexgshaw/compile-compcert:20260403",
+   "manifest": "sha256:f60236a4fe55bbb3c573210fe0fcd91551f4ee97c417453cd4985be074b35411",
+   "config": "sha256:773582f15daca73360cd02f77d61626cd90ca0ff5b13c474500c41234c7d59f5",
+   "layers": [
+    "sha256:817807f3c64e0b90b66edc7d90297f121cad2a7c2a3ee05a731557762f91e6c7",
+    "sha256:c1a864ea6a139088d8f3eb47ec4f851b2e42ea0c70c500894e4bea323f49631f",
+    "sha256:598731d735fc36da279cb2f7b79b0038d676c84beecfde3a7a8910a03984804e"
+   ]
+  },
+  {
+   "id": "tb21-configure-git-webserver-task",
+   "role": "task",
+   "reference": "alexgshaw/configure-git-webserver:20251031",
+   "manifest": "sha256:9e48389b917fd4650dda1f64406bd7198bbf20dc1c6b0e5c4d81a3c16369f88c",
+   "config": "sha256:ec4bd4a5223850005caf80b223cbd98adb8999dbc5326786169d7998db53b65f",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:fd2be512195fc807065013477e3efe16f53efe12b972f2b1cdb731878c986dad"
+   ]
+  },
+  {
+   "id": "tb21-constraints-scheduling-task",
+   "role": "task",
+   "reference": "alexgshaw/constraints-scheduling:20251031",
+   "manifest": "sha256:567ce5a189f8d11ac461790876e934cc7af38391baf89a78f95f4dafc1fec3b0",
+   "config": "sha256:65694556a87deb6f2c0f643841d4d4ff3fabd1e794999978694d891ccb24e703",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:20929a28fe1e5af2d88306abb0017058246d012bf454261a9ba22c0658f31078",
+    "sha256:dacaa4c4b4567b83fe1f6a497ad6d562a963eea3b0ce7e4419d97af5c213526b"
+   ]
+  },
+  {
+   "id": "tb21-count-dataset-tokens-task",
+   "role": "task",
+   "reference": "alexgshaw/count-dataset-tokens:20251031",
+   "manifest": "sha256:9c513c4ba342bd95be501f6f5eadd4806a2b18749c87c251615825100130232d",
+   "config": "sha256:acc8c39db027c0cf3f45f960cb88e06be954dc34b15d7ab7622f4614ff21130a",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e"
+   ]
+  },
+  {
+   "id": "tb21-crack-7z-hash-task",
+   "role": "task",
+   "reference": "alexgshaw/crack-7z-hash:20251031",
+   "manifest": "sha256:0f4453abd774c5a3d3d7e66ba28fae88ec2e49ada3a993b324ebc16c348666d3",
+   "config": "sha256:cd0a22dc1d928e3075936ac702626ae529a683ac25aed25103ffaf33b72074d5",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:84907baf64ecbf4b36629297831aba724a171ed957f87370c86108db00822e5e",
+    "sha256:4b2a5f614394ba03fceb44460b669c0ee10ce03397dafa2f81e5b2652038a456",
+    "sha256:104740d9ec34e6f9fd4cdd51d65047385c30124ca5ddbb6320a3643fa1359f6e",
+    "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1",
+    "sha256:7a86cd934e9ec0401e9b9ecaa76e1cb709d00946ab2b1db4367fe0e9946711de",
+    "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1",
+    "sha256:420adecd22258561bc6dfd33cf286aed16dda42305ebc053232f74e77a3184c0"
+   ]
+  },
+  {
+   "id": "tb21-custom-memory-heap-crash-task",
+   "role": "task",
+   "reference": "alexgshaw/custom-memory-heap-crash:20251031",
+   "manifest": "sha256:1895d7d6240d5fb2ec774d6bfdd1057d170f8d199c15c582e4585d3c63802557",
+   "config": "sha256:7d4d46573a68e9463df7b9dd12cc791d94a310e6a5fa6ab318c368e258de3162",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:dd46708295f17929958e63e7a5a31643ca54f5fc0082c5dce6f7cca6198e2bd3",
+    "sha256:c0e8ed5d167b921787039f809410dcf568f586b06deaa14ecfad052055848e76",
+    "sha256:cb7a778c578a2fabe0b13690ff776923820933a6997f74cc5c433c50451069e5",
+    "sha256:d761efdeec43acd3de7746b667ed1455751773076fe6d0a46a5ac627aae931d2",
+    "sha256:b2e202c152400acebbae4c99b70d482267005999fcc40a79a02bcf552dada763",
+    "sha256:728543a15d3812c50d8abeb6b4d99c931b470f073523beb15d071d5a858f6bcf",
+    "sha256:ad6fa6ecc133bb083a41fef3119e2f83399f25b065f52ae8475a195c66ef024d",
+    "sha256:031c4aea494fb1e0ef64583e128fd19ab8b9c1fb0bbef5dbd9818af285de8004",
+    "sha256:7f30ea32f5e381eeee0795d18f59d5ced7ab09f5139f4d7057fa46413f84ee8d",
+    "sha256:ee8bc43a5c3803d3c6ad63a109549dfb722b5cbc6846f636a6e2bcbebaddb58f"
+   ]
+  },
+  {
+   "id": "tb21-db-wal-recovery-task",
+   "role": "task",
+   "reference": "alexgshaw/db-wal-recovery:20251031",
+   "manifest": "sha256:0e33ea5ec823975d1bd6c3778395c9f94251dd88f571146057bff6adb7e4594e",
+   "config": "sha256:0ff6d2977f94533d8a7a0cdc5a16efd42cb3ccfeb2f5684cdc8db0836b43b9e3",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:99b12d2635194ce40491d1dcd713ca38107c6a363b0702341240b2a0e576baa0",
+    "sha256:516306c0434b835b3b409a324d1a37714c87f6149e765e721d13c3ad78566dc9",
+    "sha256:7a195517a906da1d8081fa0ff799cf6af1ef716a0067307c70ef63bc8bb6dd32",
+    "sha256:31ab2b12569dc3e523dfc7492dbf9f764a2201458a630ab1af4f741a6dce308d"
+   ]
+  },
+  {
+   "id": "tb21-distribution-search-task",
+   "role": "task",
+   "reference": "alexgshaw/distribution-search:20251031",
+   "manifest": "sha256:1448f7aa1c6080488251d00350e8e90477858989b1bec0accc866d7b3220738a",
+   "config": "sha256:0c39e3eb6c2fb13618ed2a075343d52ab35dfef59a30e19c1173e534b9179b06",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:bc40fc4dc46cee68aba78925a13f70663da4e66ac49a178568a5598f01425418",
+    "sha256:418ec72b63fee0a29674744dada1eaf29d2260810309c6f41e6f41800795f8ec"
+   ]
+  },
+  {
+   "id": "tb21-dna-assembly-task",
+   "role": "task",
+   "reference": "alexgshaw/dna-assembly:20251031",
+   "manifest": "sha256:d1adf6835f1dd91205ba70e452c699d0aea601010038e5617f370716efb50569",
+   "config": "sha256:940e10327e89b8034aa335c48e8e643414809f5ee2ffd2d2854688b996c822ee",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:9bdac2ab54779d5f8c7e67d8e9c86eb4499e6d76122126164fb265709114adee"
+   ]
+  },
+  {
+   "id": "tb21-dna-insert-task",
+   "role": "task",
+   "reference": "alexgshaw/dna-insert:20251031",
+   "manifest": "sha256:4dd8760694e355de85ecf03605cb487ccdb33322f6afad513d2920829baa33b2",
+   "config": "sha256:2e68029a49d11b454994967b2eddb94333ef321b688f865ada3c09a3b534c110",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:f4f5c7323e8075462dff7d958f7b530c2df164bdc20f2988fca7f190318ce97a"
+   ]
+  },
+  {
+   "id": "tb21-extract-elf-task",
+   "role": "task",
+   "reference": "alexgshaw/extract-elf:20251031",
+   "manifest": "sha256:6932e4cb318464307eacd497ef8dc617eaf551b6a90231f815ec0b911895cfed",
+   "config": "sha256:ce2d818d338482f97d2dc224b884271798ccd801e922ef08606a64103e08489f",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:8e96d75cb01110fe744da6a8aad95d5d773a0f1ec31c5d9ed22735cdb81fc71f",
+    "sha256:6bcd540b5d24064888c86f2e6045d713a289dd0ef9e1f468de12dd6bb22f6ac9",
+    "sha256:a8bae8ccd62560abd33ec4c515acba68cf33a43d30e78d1b800183c67ed1a19c",
+    "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1"
+   ]
+  },
+  {
+   "id": "tb21-extract-moves-from-video-task",
+   "role": "task",
+   "reference": "alexgshaw/extract-moves-from-video:20260403",
+   "manifest": "sha256:74ef87375ce2b6332ca9fe0180eb541b64cf4ef4188edd5b1be22c272e5a5b4b",
+   "config": "sha256:d8a5aaba96f55ee0826f58c6d5c47aa8df70c66c88a9dae1aca92462d3d31158",
+   "layers": [
+    "sha256:817807f3c64e0b90b66edc7d90297f121cad2a7c2a3ee05a731557762f91e6c7",
+    "sha256:4ad6710b451d83412019a6f488b306b401edc169c7717b6b1293fdf5e313b226",
+    "sha256:c7ddfdedd1a5b96ef5200be061d321b1d1218799c14283a97939a8f107af25aa"
+   ]
+  },
+  {
+   "id": "tb21-feal-differential-cryptanalysis-task",
+   "role": "task",
+   "reference": "alexgshaw/feal-differential-cryptanalysis:20251031",
+   "manifest": "sha256:bea93bafe9eab601ca58729f5735a13f8339f52055322d1cf840e3742b54a287",
+   "config": "sha256:ad58defcdd2544ac3494b06b77af0f6715fa1b94221e6d509578b156ef4817e2",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:da85a05c4a57a6ba3f391905b35a23f0c90e92c9ea9fec67b385a16c52ca6586",
+    "sha256:a7ff3b6b1ace0a13e6b3ef0912f38a9feb6b162d964b9a4293fab0e3aa099ee4"
+   ]
+  },
+  {
+   "id": "tb21-feal-linear-cryptanalysis-task",
+   "role": "task",
+   "reference": "alexgshaw/feal-linear-cryptanalysis:20251031",
+   "manifest": "sha256:ea78749a8422c6228d26c8753f45906a6a2df089906764b7e3c3e27e8f718ee7",
+   "config": "sha256:4adae8befa34922a8cac7344ad89aef223bb7758956070a12641e64fdfdd45d8",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:742e89473e769a502c93d86af0b2ebee55f3b9a2f035215fcbf490f2d8a2d8a5",
+    "sha256:48d792ff5b0437dfa2b52e0b7fb40c54d6d4abaa59f13b92eb0f2442ba3a2db8",
+    "sha256:9ebeb1a5f3d31ce792eb50169da3324f34bfa634ff3fee880526115010360b35",
+    "sha256:8c32da8121794a68d6b0568bc4a2ea9a2014562aef8438af04a05ae8beb7509b",
+    "sha256:60c4a3f43375623babcae588ee8b8b032183b4f60ee4816dbaebdd7431907f7c",
+    "sha256:9bb652580316d50578481cd0d06851f794f5c28021c54b41e6f0962cfe7ca526",
+    "sha256:43369d2475b52cea4550d5e82a69d1dfa7ac9065dcf50c26cfda03b5d5c224a3",
+    "sha256:06030801ba395e78eb638c2ce35f96712da517853121f3d69340c5447097d4e3"
+   ]
+  },
+  {
+   "id": "tb21-filter-js-from-html-task",
+   "role": "task",
+   "reference": "alexgshaw/filter-js-from-html:20251031",
+   "manifest": "sha256:92acda0f124b988036a6f426ce0bc47fac19f5efe9fc5e6ea3ea52ccb075d0a4",
+   "config": "sha256:afdd2693169844c7a66ff66012b4c8470f3ca7c2420607d3b1629e38da9d4517",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:ad4a7a69f112a2306e0b26589698ef20b36c4b16134f4cc78547924b8eea87ca",
+    "sha256:9a039149dac2d0cd106ac7df186a80bbf8e435adc173e85f45dbe07872eff87a",
+    "sha256:99fd6525a4b7a41d10743d6a95f4d106ef566b9e7680efc51bc1d58a5ef8000d"
+   ]
+  },
+  {
+   "id": "tb21-financial-document-processor-task",
+   "role": "task",
+   "reference": "alexgshaw/financial-document-processor:20251031",
+   "manifest": "sha256:ef6c9cfaaf14cdd200163008a188d5baa9f626f3bfb8d3e7d6f30c08518e6251",
+   "config": "sha256:d53ef35af0ce9ed2f68741a7175355c731bf170dbf35971166a906b61e4c647c",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:1747e2c146516baace56120d3f357b065242b6f361da55edcabf25462d89455d",
+    "sha256:3c15773502d15a7eb9bcb5d8c8a26110b4f6232389d17bc34a18b0e8aa6de7a1",
+    "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1"
+   ]
+  },
+  {
+   "id": "tb21-fix-code-vulnerability-task",
+   "role": "task",
+   "reference": "alexgshaw/fix-code-vulnerability:20251031",
+   "manifest": "sha256:cac325252991f823713b2d0441502972901dd782bd67f66c03d9b1e410dac5c0",
+   "config": "sha256:fe9be33bb13823b31284102c8b366e3fc83f5e84cedbba42d2540081c2d9899a",
+   "layers": [
+    "sha256:38513bd7256313495cdd83b3b0915a633cfa475dc2a07072ab2c8d191020ca5d",
+    "sha256:a9ffe18d7fdb9bb2f5b878fdc08887ef2d9644c86f5d4e07cc2e80b783fbea04",
+    "sha256:e73850a50582f63498f7551a987cc493e848413fcae176379acff9144341f77f",
+    "sha256:19fb8589da0207a0e7d3baa0c1b71a67136b1ad06c4b2e65cc771664592e6d9e",
+    "sha256:e67c3b73d36102077cc0184d0278493a21e6b3c3e10760f1017bda8c2596a599",
+    "sha256:b3eba097e01747ebdd3891eb2efbd81c1b2c65a63cf48bd60b1ad9a316d969e8",
+    "sha256:9c9387ff02de8c9ddc711f3a9d0704a8535c87dc3b88eb30399c8eeedbbf2cdf",
+    "sha256:5ce4ae8c4e6c792cebb50859019faac6755758bbfef3880657b932895757b524",
+    "sha256:44033e542dec7447cad0716febba958d97c6c19556aeaa8a4563dd95ab568634",
+    "sha256:e4fc29bbafeb5c04a4a042ce6312ad62f469062cfeb8ba46b4702f4de3a7226b",
+    "sha256:eebcf5146d9de7d8b5505822e9f8ced994fef375a569d3d8f802f0765640f92c",
+    "sha256:5b01b2577a046a5ae049dbb551278e209ec5a808da4e6a6a49881dcf5a1110f5"
+   ]
+  },
+  {
+   "id": "tb21-fix-git-task",
+   "role": "task",
+   "reference": "alexgshaw/fix-git:20260403",
+   "manifest": "sha256:389b9c8247610c2c5be080b1ac00429007c2c69bf57f7f26c79f0f75ba2d5c74",
+   "config": "sha256:bed9051fa1e09cdadf5fe0c3bbba6c90d23fc74b0d67d6f5d05fb075e8a4acd6",
+   "layers": [
+    "sha256:6db0909c4473287ed4d1f950d26b8bc5b7b4206d365a0e7740cb89e46979153e",
+    "sha256:792aba8f9d95f389be4b9e81a1107f33c9c2b1f2f43dd2df3a2a8f063f906183",
+    "sha256:63706ab84aa539b4f769d315a862a19bff6ef69c4ee54a3433d248788bfccd6f",
+    "sha256:219a2e93422d5675008663767e8569ce06c02be2a80fdaee6615573751c0cdd8",
+    "sha256:582253a64dc5e49799e4f8d53a99c7cd857903e111a287f20fed130bd5fa9614",
+    "sha256:e92b4fb0a981fe35ef7500e80f77ecb9127ebb7542e469766d138bfafda61806",
+    "sha256:0dfe80c3a7bd921f3e3eec729deb68ea0b244791d64d6df32b63cdbb4a0fc621",
+    "sha256:ea003e3491890cca8069225a918dcc3027d90891edc11636d3e3b7b86c90aa38",
+    "sha256:55493703d495dbe3f40a0c0c5dfd3bda4dfb40af30ac041c100ae4f58b2ebdbb",
+    "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1"
+   ]
+  },
+  {
+   "id": "tb21-fix-ocaml-gc-task",
+   "role": "task",
+   "reference": "alexgshaw/fix-ocaml-gc:20251031",
+   "manifest": "sha256:66a1e2293076c9ef27a118611b3089a6284fdf467fd4675592d0cce7d11e5b0b",
+   "config": "sha256:64b43d0dbddfbc0291d03486954c3def53d5d19c67426c8f758631d5dd9d7d85",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:7a95f9abdbff02d0c51386fc8b20bf9ef124973b596b337294ecb201d17ce877",
+    "sha256:5502f4618d3bb02dd00db32b97d76fb796b67999bb5640e18a025322c8250678",
+    "sha256:9dc0a3a34bff39bbf862d8936950eb5842fc267e39efc9aa8ea4447d76a1dee1"
+   ]
+  },
+  {
+   "id": "tb21-gcode-to-text-task",
+   "role": "task",
+   "reference": "alexgshaw/gcode-to-text:20251031",
+   "manifest": "sha256:0979ef40c6a3e8c4e7ab5b6c2524c74625a84799e15cd45dd98dcf83b11efd4d",
+   "config": "sha256:174ac52b2c4ae7e2bad19ae1f5e61ee91b1344c8ab1bf57bed5333c15249a402",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:e37c25268cfe950a7d8c710ecc34168e88bf94ea17466c397540feeba6e70b06",
+    "sha256:333f8ac46b6e66e5fc7049349de3aebb0fe28146d5e522fc9555d589e6ed88d4"
+   ]
+  },
+  {
+   "id": "tb21-git-leak-recovery-task",
+   "role": "task",
+   "reference": "alexgshaw/git-leak-recovery:20251031",
+   "manifest": "sha256:62160e522a4238b8bcd522411ea97b5b200f811e5899d34947e66809bef7e586",
+   "config": "sha256:ac4c027aef4e069789e75e13a1b03b9cecb5f42faef5c828cac183d25ba08fe2",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:225ca3afda46de8139586a6e6a9b71d19b7c959dc60574a3d1dfa0d991fd3501",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:15616d527a90b6a8438abbc71017bfdfbceb41ddfbff73df6c058338b503fd6a",
+    "sha256:1edf7bab4cfbee22a0d4b55340b366c1e5c0b53114e8c99ddbba6eee0f5e63c3"
+   ]
+  },
+  {
+   "id": "tb21-git-multibranch-task",
+   "role": "task",
+   "reference": "alexgshaw/git-multibranch:20251031",
+   "manifest": "sha256:5bc449921c138295f6ddd8dca2977319fee2ce523811dbe56cec4ca663385fb5",
+   "config": "sha256:ec6eeb02cecf35faf5badd75646ab0dd2e02cab484638b413ccd4606a2e2ef7d",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:19ba1edfa8aca3ca931727a9beb36396299d4076c3ced9574490a51f5be15fbc",
+    "sha256:2ed2e0894df4529528cbd34c879f9a0a9767ded49a43b6771ae3a53310b2453c",
+    "sha256:7afc971ff391e7867c7ef4ebd87302be1bba2cd0ade63f82f22f7373022110ec",
+    "sha256:1351034b0738666abd9b361bcce533e9c3bfd78ea38445fd30ed4b21d63e8fdf",
+    "sha256:656e54030aa62a7d0a25b9789570bf2df27d160b4d1ad31e28caefc1c980955e"
+   ]
+  },
+  {
+   "id": "tb21-gpt2-codegolf-task",
+   "role": "task",
+   "reference": "alexgshaw/gpt2-codegolf:20251031",
+   "manifest": "sha256:537e7bd26b02db5c761230515fa09dc05f89403c6737fbdae4b5793ebc2c7066",
+   "config": "sha256:f4771870b08b96c63feb567c49bcc2c2b4deefd0fc3acab5ccb781ed4fc492a6",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:5b291480786ed6338f84b1ab85c86a142dee5cfb8de817cfe661bd43d3773758",
+    "sha256:35d0239b0b78b56a7d51968bd619f1c34b489552600864eeb59a2670b492c556",
+    "sha256:8fa1f13ab2ca3575f10ee38a2a92e0d499d7612f8cd32087c94987100833ba59"
+   ]
+  },
+  {
+   "id": "tb21-headless-terminal-task",
+   "role": "task",
+   "reference": "alexgshaw/headless-terminal:20251031",
+   "manifest": "sha256:eb7e209672bf6cef2785fafd9e13509b10626c327bcc2b37f5bf40ca83eaf3aa",
+   "config": "sha256:41e1eca1ec72a2873c91d2e1b988b0565c0b1e9a0e65ddc6df95faa786336838",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:6010ae45bbe7c4954fd78d7f9fe596968b9084ab476dc6591e8bda247059e835",
+    "sha256:18aeee1a49c75dac9deeec086c880473e105287136796a1dac0981709a166678"
+   ]
+  },
+  {
+   "id": "tb21-hf-model-inference-task",
+   "role": "task",
+   "reference": "alexgshaw/hf-model-inference:20260430",
+   "manifest": "sha256:a88d98a849e81bf42754973d1ed58f5971eb76315bf94d2b19cabedd7d7af9c7",
+   "config": "sha256:43a3ff616ca45a6b1693e4cd436c14c6449367e090f4a50f379c9da89cd5062f",
+   "layers": [
+    "sha256:6db0909c4473287ed4d1f950d26b8bc5b7b4206d365a0e7740cb89e46979153e",
+    "sha256:792aba8f9d95f389be4b9e81a1107f33c9c2b1f2f43dd2df3a2a8f063f906183",
+    "sha256:63706ab84aa539b4f769d315a862a19bff6ef69c4ee54a3433d248788bfccd6f",
+    "sha256:219a2e93422d5675008663767e8569ce06c02be2a80fdaee6615573751c0cdd8",
+    "sha256:582253a64dc5e49799e4f8d53a99c7cd857903e111a287f20fed130bd5fa9614",
+    "sha256:d525d0237895e4da266073c52acb1c0e4a12d21248c1acb66f3b2f77ffce263c"
+   ]
+  },
+  {
+   "id": "tb21-install-windows-3.11-task",
+   "role": "task",
+   "reference": "alexgshaw/install-windows-3.11:20251031",
+   "manifest": "sha256:c6695097316ef8810abce0545e347e65354aef9d51d4f7f662c3242e742f6a3e",
+   "config": "sha256:c476efafe0214c2c6263fcbc0b2ed0b67be0b19c053bd7c81865cc4786f79e5f",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:d6235d7dba47ca33256fe0ab02b7b7b5cc9cacf6bf86962d795cef3043ea8ae2",
+    "sha256:28079ba6684fa982399cce8e0707c512b4dd1b611777ad84fc308e7b41c6fc90",
+    "sha256:ffaea3d7f60bef0211bf95a5cf1fe86e5564bf3ef52c6814e8829b6efd2f0b6e",
+    "sha256:ef4914b59c87f7d3e70e4d5ca5610d326b2d98b6915c988649ab46db27a53fb1",
+    "sha256:7e68690a2ad43cc0ee66a5886c986c3d2e8088ba8dac905ef876880851807dbd",
+    "sha256:7316b97ab25054166a74f3d12de01063dd9b693a8c6df24e11bb0fcd11412453",
+    "sha256:f013f756e9704506af3444aead6e0285a021bfd0eec7e1abc865925a90c531c3",
+    "sha256:ceaf0d042491f84f2c308027adc9b831f3a58ba882d455974ee7211a6eaddd3e",
+    "sha256:66867fb583155b8e4680af8ece5b72e785c1e83f233fa6d52738059222befe66",
+    "sha256:7307483e371a487449aada18608e38df60fdf78587542e29142d6aba2195ff4c",
+    "sha256:8831fcdb48453f9f18a93052f1ca59478984cb46b5690ab23baad9774f2d96cd",
+    "sha256:72d39465f9a06fe5c48026a88ed7677c9ca6e4c2bd3b106f8aec478384ea0feb",
+    "sha256:ae99a0c74233ce73548068bd53b59eb94c0e488db99a40184c83d54f93f9e7ed"
+   ]
+  },
+  {
+   "id": "tb21-kv-store-grpc-task",
+   "role": "task",
+   "reference": "alexgshaw/kv-store-grpc:20251031",
+   "manifest": "sha256:3399400800dcb207634daa42bc1b052e831e285cc9d221eea66c47bc0fc79791",
+   "config": "sha256:b9412389bb791988d341f7dcbf456fb68feea133d9e3e6a705fbea976a8acb2b",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e"
+   ]
+  },
+  {
+   "id": "tb21-large-scale-text-editing-task",
+   "role": "task",
+   "reference": "alexgshaw/large-scale-text-editing:20251031",
+   "manifest": "sha256:719adca3f1388220546ce6a155eee56eff3c4fe318183100320606a210f6b59c",
+   "config": "sha256:4ca0b429596fd62b9fab0a787e276ee7ee3faf2761b56473232327218c462c56",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:369e607fa3f365bd526ab869f79f414156c6c747a342232bea9db35fe0cf0e64",
+    "sha256:f0278870baa8b5d768145a1738a03bbaf6eee3c12ae7095f2cacc27e06a6d9c5",
+    "sha256:e3a263e6fd343606a552b4ec7f69fd12bd626b9af9e8e00de2b83cfca4979fd0"
+   ]
+  },
+  {
+   "id": "tb21-largest-eigenval-task",
+   "role": "task",
+   "reference": "alexgshaw/largest-eigenval:20251031",
+   "manifest": "sha256:cb9e3e3b09d0783f3bbcfeec8d77bc32d3791204fb2be6650b19be4fbc082b2e",
+   "config": "sha256:c46388bf47c6faec1324b39da95fd7bb7d1eee9e3a3a61e46f59a34ee1850805",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:2fce69189eab6f94762dfbe1d447ca9ba980379bb7b375b93e4c44cefd0c8b73",
+    "sha256:f01dd3689923626e6c12ee60e2fe6d608ef9ec0571a0d1ef9d15671d7318e573",
+    "sha256:80209f3bb3d9744bc78aa614c02a8a8e8fbcbeaed32bba3bd6a4c0965d70ffce"
+   ]
+  },
+  {
+   "id": "tb21-llm-inference-batching-scheduler-task",
+   "role": "task",
+   "reference": "alexgshaw/llm-inference-batching-scheduler:20251031",
+   "manifest": "sha256:19e79aa49be4e55dccca1dde966515ebe6852314b6010bcb9230afb48b996774",
+   "config": "sha256:0aff6db1f586c1b1e14999750d1cdf8fb94f11bc69c700fcad9b43a7c2ef5686",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:6b522f4df42671336b020375c0bded921063ea5d3e07500e8af135838ac97f07"
+   ]
+  },
+  {
+   "id": "tb21-log-summary-date-ranges-task",
+   "role": "task",
+   "reference": "alexgshaw/log-summary-date-ranges:20251031",
+   "manifest": "sha256:cbeb6ba905c2fec294f16cd5e16e3ea7f2e04d38ac2484d51a11de262aa7dc51",
+   "config": "sha256:748e8485201e72133a9400dc8f6f524eb20e9812655eef41b32a1cc21796bdef",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:49e1b278b007d72f128923ac5531ab36b8140074317997efb947166631fd9204",
+    "sha256:b79cb5816acd938f12e2e0abe13f039e8cdc44c0257d4fda55c57f876f012937",
+    "sha256:e314e4cd5538fcd95e09bc6bbd7ae1e51b0ef0b309f787cabfec5e1c7a1b0f7b"
+   ]
+  },
+  {
+   "id": "tb21-mailman-task",
+   "role": "task",
+   "reference": "alexgshaw/mailman:20251031",
+   "manifest": "sha256:04fac73db7e2b4f49d43f09fbc2266a94d70131f07efa1393d370abc059f4094",
+   "config": "sha256:db488c3287e44deaa76c7bdb4b57019a9602b117a1132c99b2c1ae28b21c7ec7",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:184fb57f3d7e712a9102af39e7fc060c97c5007ccf24b194262aa8ffecb63e1b",
+    "sha256:3062260cfd7d78c1cbb60a6d1724cf17431cd84ffa18d466c9a47f8dc723c507",
+    "sha256:cc022af94ad841a9d90d97f44a0a7c4c81df850581799456589bd3f556718810"
+   ]
+  },
+  {
+   "id": "tb21-make-doom-for-mips-task",
+   "role": "task",
+   "reference": "alexgshaw/make-doom-for-mips:20251031",
+   "manifest": "sha256:80a9459f1b94b692ea8346f68e6b864f6c4d984fbdf6ffd68ad332308300c2ec",
+   "config": "sha256:c503768044b13ea799f26ee48c83c5885cd9697114bc3e320e1e5f926276188f",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:1bce62fd651e8199134f0abaf4d39885f0c90155aac8d382712908889beb1356",
+    "sha256:a51ee09b570eeab86d010ccc9e603762a8b2704bbed0c36812cd0aea3c395e61",
+    "sha256:9ea585aa5d862dcfed5b8ecdaf3b2d912bdefab74d076486e134e50443b1679f",
+    "sha256:2d41d2824ae3d4fe51989535dd0de4e004d9182257e3d056dfdaef947d4007d2",
+    "sha256:e78131d8d49bd13490d76ccfc2bc62a1456aba3d3b8d1b4ff62faa35016f7cb0",
+    "sha256:59c049d16b4e304134ec66995a005cfe1dc73981dd22b4dad0a25f161ada700c",
+    "sha256:72023c047a30c32c0937173215a82735775b465969538ac23e4cfefcce1cf3ae"
+   ]
+  },
+  {
+   "id": "tb21-make-mips-interpreter-task",
+   "role": "task",
+   "reference": "alexgshaw/make-mips-interpreter:20251031",
+   "manifest": "sha256:082fc8821b317f30fdfbf8d08d528874ce331c03e8083aef0406d48cdd7132a2",
+   "config": "sha256:818505509c7be8f53b6133b093076cb03527f7539c8ad980435cf556143ddcb8",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:c746c2b5d97c1f2c6d4902accb37195c4c0cac7ddc2d956c96ab8bedb363ecf3",
+    "sha256:7676a6ce786d4da1c26d046feb1389919c72e5a11cb082bf112c9736b9bd086c",
+    "sha256:3976a9caed20919898f605c99af2566825955642b557393d55690ff4aad12c79",
+    "sha256:f30729b4a71b9f4dec6939c54a111441f910905396b6af527bf7aee845681766",
+    "sha256:d252566affb2a9f183ac55e3ec5f2ed787c2d4f00ef9abf6ba27f363a2255146",
+    "sha256:ac66e6ab6701baaa715310827e72549cfe3ba33bb572a10273366a441c50e844",
+    "sha256:681c6e839459a0da322cf06c99f146e7eb91079d763f902640a5bd8a559aff48"
+   ]
+  },
+  {
+   "id": "tb21-mcmc-sampling-stan-task",
+   "role": "task",
+   "reference": "alexgshaw/mcmc-sampling-stan:20251031",
+   "manifest": "sha256:073fc36a3347b4f6b43bd6e98339542c41ed531c771af8bee40ba10f00cfabaf",
+   "config": "sha256:c7ba1f1f9d2df36db0338e4d1e429692aaf653ef6faa13dc4694a7c457593d6e",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:337a47ccc3bb4aea504cb05079cb2b22342fcc3a0ece34c7de2c3dc173baaad6",
+    "sha256:00b744d967d69f9088a29799970db9c900ad059e8e078d636c974d116a71dd85",
+    "sha256:d589df2ca6fc7af3fd0612fa26e964a5ff9adba7d99d1aebe7acfaee6b17e029",
+    "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1"
+   ]
+  },
+  {
+   "id": "tb21-merge-diff-arc-agi-task-task",
+   "role": "task",
+   "reference": "alexgshaw/merge-diff-arc-agi-task:20251031",
+   "manifest": "sha256:bfc2a235f2ceea64ffb1ffc5529c2acebf570bff61f3668f0e5669ef570c17d4",
+   "config": "sha256:1994f7ed8975cf2a616e00daa45fc556e842418f8040398053f064cf0bba3c69",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:cfab6fe0554512c98787926783a6501787762c95a089cc26287bbb478798a001"
+   ]
+  },
+  {
+   "id": "tb21-model-extraction-relu-logits-task",
+   "role": "task",
+   "reference": "alexgshaw/model-extraction-relu-logits:20251031",
+   "manifest": "sha256:52fe1f089f38650f0dc22d7531ee6e01ebd526de1b349aaa2ecb331dca9fabce",
+   "config": "sha256:cc17ca081e08612a89a3d185fc4af6735ee2a08eaeb9478f8b2474392c4feac8",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:539f748aa76b11a619ac0e8735b44736a82db2f8f3905f7df1ed0156395b80bd",
+    "sha256:07995f1e6cd9dc072b0851609754658b6f7427094cd22afdc59e615d698ac01e"
+   ]
+  },
+  {
+   "id": "tb21-modernize-scientific-stack-task",
+   "role": "task",
+   "reference": "alexgshaw/modernize-scientific-stack:20251031",
+   "manifest": "sha256:64e69cee13bf6b0b9016e735b51891bce996a60f1e2d1a005bf12c949e221d71",
+   "config": "sha256:725e815168e64c91e9b45a71f3c989d3672b510647b98e7392c0bf9e7dc203c6",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:c36f0e7399a7d418fa006fe7d9a25b3bdec7fb3ac206060d12e304b13b56bc4f",
+    "sha256:8b995efd6971a119e0332d7f6143cb4c6fd1ae402d135d8b70ee20018e005f2c",
+    "sha256:2954a93c6f0133469cde0e42ce6f9028c87e51c7cdd176d4a09c160d849b1850"
+   ]
+  },
+  {
+   "id": "tb21-mteb-leaderboard-task",
+   "role": "task",
+   "reference": "alexgshaw/mteb-leaderboard:20260430",
+   "manifest": "sha256:3eb9e900bf0a5c865eb0da0252c78eba2777cbd790794ff978d41d8982a04f09",
+   "config": "sha256:0cdccdd4ec71822cd55179e77e0dca2be313be44d8ec046d94861e4147d5a4af",
+   "layers": [
+    "sha256:ff86ea2e5edce334d19a34fbc65d1a511aa1fc823dba1110422f991aa56b44d4",
+    "sha256:c3e679e50d245700a80baea2b60938498dd5936691a8cc037911bc9f293fe829",
+    "sha256:105e80ad8221116994115c37d2a348f336a136db3ea7463a1b9e8129dc6f2e7f",
+    "sha256:9f517d69e49825c1ef90e27bffaefb1e879a811652d05d899e21da9455679e7c",
+    "sha256:95025b539416c5d95d070ec5fa34d5287041cf067ff190778a7cb6d735ea6fa6",
+    "sha256:156082c69ec6f2664167dd476c9a5f973f05c2c379f3175cc7d85d4ba66a14f5",
+    "sha256:ce8345ca35bf0701d2c46d92727a3dcdfd697f6b7c3874966776330392fa3316"
+   ]
+  },
+  {
+   "id": "tb21-mteb-retrieve-task",
+   "role": "task",
+   "reference": "alexgshaw/mteb-retrieve:20260430",
+   "manifest": "sha256:8b3220cd25483014236076477603c7e02babfd670bf79150b5a1f0110ba662f9",
+   "config": "sha256:0edfab046492caa503d2f5796122e86540d3a915d73b77230d93d28678c68479",
+   "layers": [
+    "sha256:ff86ea2e5edce334d19a34fbc65d1a511aa1fc823dba1110422f991aa56b44d4",
+    "sha256:c3e679e50d245700a80baea2b60938498dd5936691a8cc037911bc9f293fe829",
+    "sha256:105e80ad8221116994115c37d2a348f336a136db3ea7463a1b9e8129dc6f2e7f",
+    "sha256:9f517d69e49825c1ef90e27bffaefb1e879a811652d05d899e21da9455679e7c",
+    "sha256:77bca82657782d8edbb55c414963f60952f70c1ab63d5724de82e2312c947c1e",
+    "sha256:090c6bf9166c5c8ed482cabba91ad59e7f0384259b0e3e3e53d175fab2c45046",
+    "sha256:31d0973e8c50cbaa89814062a935bee9bb855da92a60ac7d4c9ecc71f5372575",
+    "sha256:bb63b6e06ce21434f59996a1389fa352091cb7506db32a2495de37b0162b208f",
+    "sha256:1ead7f9cfe824c2a1116676d02ec2a6939393236e758779b78300473d2fde76c"
+   ]
+  },
+  {
+   "id": "tb21-multi-source-data-merger-task",
+   "role": "task",
+   "reference": "alexgshaw/multi-source-data-merger:20251031",
+   "manifest": "sha256:8b32782078ff7383a1b4e5d3cecca8ce287e30f50bb4c0e5db009a18064e666e",
+   "config": "sha256:5096d3409e5c692afd62a136f90a2e52dd87653aa6637a3e1ca31ad30fab1096",
+   "layers": [
+    "sha256:38513bd7256313495cdd83b3b0915a633cfa475dc2a07072ab2c8d191020ca5d",
+    "sha256:a9ffe18d7fdb9bb2f5b878fdc08887ef2d9644c86f5d4e07cc2e80b783fbea04",
+    "sha256:e73850a50582f63498f7551a987cc493e848413fcae176379acff9144341f77f",
+    "sha256:19fb8589da0207a0e7d3baa0c1b71a67136b1ad06c4b2e65cc771664592e6d9e",
+    "sha256:d37114942cef1c97956f7ef87c75eca327b22718932547e74dd54d8a92c13a7a",
+    "sha256:e03ee4aed2ebd0b03b8e49a7d5d2ceab71ea9fce72b7b2e95ab79389fcc4180c",
+    "sha256:216effbc080728f5f3d64828761bd28c78808cd43c9bd3c75bea5094cb30a000",
+    "sha256:eed93e57e79fbfdcee5b29167010ad27dd4ed321cd678f5226834ba46ef43eb0"
+   ]
+  },
+  {
+   "id": "tb21-nginx-request-logging-task",
+   "role": "task",
+   "reference": "alexgshaw/nginx-request-logging:20251031",
+   "manifest": "sha256:693e64431a0dbf45952e8b91a298d54fd60247e501c6623fb8fa3ebc07fc3d3d",
+   "config": "sha256:41217bae6667f04a767dc1b2c5c12b034dfc51a18226202003313aaf86832055",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:53c2b0dacd3101a644036d25bf2855fa03eed011cf6932cd4393bbb93e373b06",
+    "sha256:c655b75aad516509a8587fdff2652e536739d7950e7c0900a22813ab6d4d50c9"
+   ]
+  },
+  {
+   "id": "tb21-overfull-hbox-task",
+   "role": "task",
+   "reference": "alexgshaw/overfull-hbox:20260403",
+   "manifest": "sha256:7dca952bb6736194a736b5110945f48842eafa8551e24468f1dddeed0daee799",
+   "config": "sha256:492bea53bb36318ba79f670c0449d388229bed86eb82f12845ad8e1ebe93a83e",
+   "layers": [
+    "sha256:817807f3c64e0b90b66edc7d90297f121cad2a7c2a3ee05a731557762f91e6c7",
+    "sha256:a49faa55a4689481d0ca856614a7fe0a9c736492d0747dc44e42abd6fb8273a7",
+    "sha256:53d5c40d298f49bdf37c12412ed513e3185a6332cdac12b611aacf8510d99c11",
+    "sha256:1cdb58ce0df1440d8bca088d6723c5c893a0b3c2e1375f89ee88754981f780f1",
+    "sha256:48da704f0a1f7a88f34a3f85f8581203ef96d013be0394109a63a35df6077287",
+    "sha256:318a6bc3a692c56d0602d8637e0729e24ca788094428042aa8b1940b4ede2f1d"
+   ]
+  },
+  {
+   "id": "tb21-password-recovery-task",
+   "role": "task",
+   "reference": "alexgshaw/password-recovery:20251031",
+   "manifest": "sha256:15fcd84bf3b06270ee148211cc6da6599b13ec2f41ac1d0894cf75c2225872ee",
+   "config": "sha256:9a77f7a2317527330ca8403b1826a283c8ca7d39fd064022cd9285e6e8cd2d7c",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:5dc186ebd8d2fa59a27c07e24254f1bc3bd084ae61704663d9af33f735a537c1",
+    "sha256:7fd0c91cf7665eccae4ce515cb1333400a00faac4129e13b3a624b6d670af6a7",
+    "sha256:ce2cafed98286c76d02c82da1eaf7c51dec647ed2077c4aae9158e7439a51704",
+    "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1"
+   ]
+  },
+  {
+   "id": "tb21-path-tracing-reverse-task",
+   "role": "task",
+   "reference": "alexgshaw/path-tracing-reverse:20251031",
+   "manifest": "sha256:7911e42479d8f6d8af1248bc52442a0efbc5a33e3ecf535fdc20d252a2c64142",
+   "config": "sha256:158e1425861e7daff35d76555db6bc9df63ac411a856b3b83c433ec331bee1cf",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:0ea5caa4a862be8a65591e9508f40a7aae313797cfbf5f9f97d5f4517c02de22",
+    "sha256:b9a0d39196ccdb9a9bea927f20e81da01086a8daab9d83961cd466642148ee1d",
+    "sha256:b75fd1c1af092f876aab7dc60870f819ca3a8a033644c539c8851b3dec2b171e",
+    "sha256:96276acbb17caa49134e574d2d9f3ab00c16de7bf1f73abb555b1d577d1d2c17"
+   ]
+  },
+  {
+   "id": "tb21-path-tracing-task",
+   "role": "task",
+   "reference": "alexgshaw/path-tracing:20251031",
+   "manifest": "sha256:4b44725102cd627dfa895191a5a30d16dae3c5623bb43da6459f79135db6b482",
+   "config": "sha256:189b026301d200f7d2dec5cc9dc617c3c70163e687b407201a6a9300fdf8d655",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:2791af007580285cdbc6d2a41394db3a599349b822ec7d02b56098c2a83c11ff",
+    "sha256:64c6aad538dc04abc94d333312a2e7a1e3b5911887f934c65f3843287284c2a1",
+    "sha256:9627c58f772d5ece17f4863716628115048e49216c078af9ec73ac94c54526f9",
+    "sha256:383b4fe26653b09de7a6737fbfd0ebf9b00b71cc7121e885a20af326bea0cf9d",
+    "sha256:4483d779200aa29d66d905b5d67f04b8178f8c4d523628582aa20e7629b46177"
+   ]
+  },
+  {
+   "id": "tb21-polyglot-c-py-task",
+   "role": "task",
+   "reference": "alexgshaw/polyglot-c-py:20251031",
+   "manifest": "sha256:0f1c3b7816d70cf5551573fd6aeef76893f2ae3000be2419997b6871b5d987ed",
+   "config": "sha256:e1956576c394084e01441646e27f54bf0a246d83b764d9d14b04273e00302f07",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:e6212ba761b94d5f37ca39bf3403b77a18919a0cd5a77a5ef9551322989c2012"
+   ]
+  },
+  {
+   "id": "tb21-polyglot-rust-c-task",
+   "role": "task",
+   "reference": "alexgshaw/polyglot-rust-c:20251031",
+   "manifest": "sha256:3ba84f0e138a4b65e58c53f920a0fc852571e6402901c3bdbb876e9dab6e6c5e",
+   "config": "sha256:42e1c101034156ab6a0cbefc63ee654ab7fccb668e1580a090abba89244f6a93",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:61302fbaff22452e3e799a7745e59ddb3c126234179d4ff5ff6c335004521bca"
+   ]
+  },
+  {
+   "id": "tb21-portfolio-optimization-task",
+   "role": "task",
+   "reference": "alexgshaw/portfolio-optimization:20251031",
+   "manifest": "sha256:93461db3cec697c31585941a3b9387c1398495aa1ff0aee2ac752c7230b50ef8",
+   "config": "sha256:b0ef263fdd85ca609faafead645c86c8a03f534178b3368e3eedc0a273b3fed9",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:51c6bc14821b3b5a42bbf40658a6f82278bd5c7360d2bb70d0acf629c02ce4e1",
+    "sha256:f1f25d74b21d44a83a5d2deec523590656c2f1154d7350f8b79026f4835a8d18",
+    "sha256:c88bc3cf974277f690988f6f1ad802f57eb709088889c2884993dadb4c6f337d",
+    "sha256:b29e92f2c753031695534ddb0e902e2be8f4c8fb19a61444c04039f7ec92e3cb",
+    "sha256:540a3b0fcf302f195f3fb12e29558a6219e3d766c48c322cf8e990294dda4eda",
+    "sha256:d14d2dd4b4abf392c56bc3a9753b866c8a62542e21e3e0c66f94ccc927e6bcf0",
+    "sha256:f5a21cbba373d2827931b2dd323e51f81a5c77bf3df65daf2700dcbf8456b88f"
+   ]
+  },
+  {
+   "id": "tb21-protein-assembly-task",
+   "role": "task",
+   "reference": "alexgshaw/protein-assembly:20260403",
+   "manifest": "sha256:602c467ae6b661a73441b960d9fa7130f068f4c6041d37ef8632611733d83f4a",
+   "config": "sha256:2a47b0bd852b71effd01caaded10f3897b25712c8b87b0921a5f67079338ac5f",
+   "layers": [
+    "sha256:6db0909c4473287ed4d1f950d26b8bc5b7b4206d365a0e7740cb89e46979153e",
+    "sha256:792aba8f9d95f389be4b9e81a1107f33c9c2b1f2f43dd2df3a2a8f063f906183",
+    "sha256:63706ab84aa539b4f769d315a862a19bff6ef69c4ee54a3433d248788bfccd6f",
+    "sha256:219a2e93422d5675008663767e8569ce06c02be2a80fdaee6615573751c0cdd8",
+    "sha256:582253a64dc5e49799e4f8d53a99c7cd857903e111a287f20fed130bd5fa9614",
+    "sha256:88b2165b89602681211f96c38a5c7e69fa7e29c97b7e660d2cfc98a54dae9ca8",
+    "sha256:6e9185cf510e3a0c6aa116f5fdeb570d00152bba34d9a5d4497d0c204bd85992",
+    "sha256:d6c76a6e57ed7f99e565754284a3ac0cca1d0291fd9eb49e4cf2297ab5b16bc8"
+   ]
+  },
+  {
+   "id": "tb21-prove-plus-comm-task",
+   "role": "task",
+   "reference": "alexgshaw/prove-plus-comm:20251031",
+   "manifest": "sha256:e26741d01681a9da1beeff8b7b7b65fe2b921b8b122a306a3707a81ebd051f73",
+   "config": "sha256:daba7f4d626336854298dd6e021c4b85486844e34474b2928e261fc35c312547",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:b31e9920f4862eaebba569d6e8a4aaaaebc66e0b7378a1de0bd4770406db5b71",
+    "sha256:ff5f4b1753977cff9e9c2d86e4262500722b4edc79b89cb99ae7326b1ef4c4f3",
+    "sha256:e2f4ce22598a905b16e652170bfe3262d27fb6159c674915c72fac8b1a7d8f1e"
+   ]
+  },
+  {
+   "id": "tb21-pypi-server-task",
+   "role": "task",
+   "reference": "alexgshaw/pypi-server:20251031",
+   "manifest": "sha256:d18bb30f47c7dcaa3acdbc31ac7413c98eadca2ea16540bbd380f2f063b95276",
+   "config": "sha256:14bdb79aabffeb5b4635c42038a4eb7de3f4935f49d0bcd53dd9e726b1d6d1b2",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:08d4fb5608abe4f0269c800e764c7e70dbd167f861f470deb836375adb360eb5",
+    "sha256:893cc57130ed10e1dae6e162195dd6dddbb3fc43f4ad04c0b426db1ef138c847",
+    "sha256:342ebb439e403f6a96c502f3603533472ac6acdb973afceff309552f81c298ea",
+    "sha256:43be9d6aca2ca67ad97821dabecc12c1e4a2b72f5d8a180a66696b0822feb176"
+   ]
+  },
+  {
+   "id": "tb21-pytorch-model-cli-task",
+   "role": "task",
+   "reference": "alexgshaw/pytorch-model-cli:20251031",
+   "manifest": "sha256:c996884b5fb5fb2c0c07d67da2c4f974f271f07234ed28e1a868240375c57a67",
+   "config": "sha256:2d19236650cc866ba441762e3d89edfa452756e0e4833cfdb984257d50b446e7",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:24e9f2af0382d814e60f76f5b219bf4eb0b5795d1b18822549e02f05913f4f71"
+   ]
+  },
+  {
+   "id": "tb21-pytorch-model-recovery-task",
+   "role": "task",
+   "reference": "alexgshaw/pytorch-model-recovery:20260430",
+   "manifest": "sha256:63c804250786f1450028e68f66efac1b0ab58718e6bc98686e62f3cd72b0f395",
+   "config": "sha256:038b41ad0d7a8bc956173db3e27d7460dae907d859b844b4df1afd7826cdb114",
+   "layers": [
+    "sha256:6db0909c4473287ed4d1f950d26b8bc5b7b4206d365a0e7740cb89e46979153e",
+    "sha256:792aba8f9d95f389be4b9e81a1107f33c9c2b1f2f43dd2df3a2a8f063f906183",
+    "sha256:63706ab84aa539b4f769d315a862a19bff6ef69c4ee54a3433d248788bfccd6f",
+    "sha256:219a2e93422d5675008663767e8569ce06c02be2a80fdaee6615573751c0cdd8",
+    "sha256:582253a64dc5e49799e4f8d53a99c7cd857903e111a287f20fed130bd5fa9614",
+    "sha256:4cacddb4b631d3f7122451a2b068bf220808ae689ec78146b2496846ab74aba0",
+    "sha256:6fca28d23cfaa576ccd6e83cddcf81557a30267826191389f495564f0a9e37e3",
+    "sha256:be6017e2e311d2bf2b5b83af4f5010850189364aa193fa502aea96b5078dc6fc",
+    "sha256:520b837f0ca05a176c550989c066a8d1d31af970f58d226dd6d826d1646d57d7"
+   ]
+  },
+  {
+   "id": "tb21-qemu-alpine-ssh-task",
+   "role": "task",
+   "reference": "alexgshaw/qemu-alpine-ssh:20251031",
+   "manifest": "sha256:541e8214a8c4faa7b556531b899d45da21048fa2ca6dd328d8cb6c4cffa8e964",
+   "config": "sha256:e868510787ba024e1fced364e94b5ae42c9b3076fa2345498edb833752188f93",
+   "layers": [
+    "sha256:d207cc66da44f4d060efb9a20dc200ca0e6b10c76276d0c1db9c735eaee1d506",
+    "sha256:3d84f27ee395d98d8ca14617b744516d447ce103b851c39a1478669fcb387097",
+    "sha256:a74b6126a333adcd54dea3c776c12eb5819d39214dfab3e62eea4be826f1815b",
+    "sha256:fe2b0116b821f00079f74f01f60f7eb30931de23d171ef0970a72d7ae061b953",
+    "sha256:851bb1368529df0e304f7fb779766c987d214bc71adf05f1b2d0b32f86705309",
+    "sha256:90b04f7874fdeeaffb6a5760ca37860ce8fe46adfc42e84ba51bfa591bec1467",
+    "sha256:a0c6b4cb481d2a976773f893b12445bd54fc92f12df438ef826db562e189fd2d"
+   ]
+  },
+  {
+   "id": "tb21-qemu-startup-task",
+   "role": "task",
+   "reference": "alexgshaw/qemu-startup:20251031",
+   "manifest": "sha256:1a666e049db553c5e713830b1f5de1953210ab7c99212d006bb4e46cbc6b6d04",
+   "config": "sha256:7feacb1ee3f271a6a99b1ab8a04f0872411d651ef9319b5d6da2eb11b61bc210",
+   "layers": [
+    "sha256:d207cc66da44f4d060efb9a20dc200ca0e6b10c76276d0c1db9c735eaee1d506",
+    "sha256:3d84f27ee395d98d8ca14617b744516d447ce103b851c39a1478669fcb387097",
+    "sha256:a74b6126a333adcd54dea3c776c12eb5819d39214dfab3e62eea4be826f1815b",
+    "sha256:fe2b0116b821f00079f74f01f60f7eb30931de23d171ef0970a72d7ae061b953",
+    "sha256:851bb1368529df0e304f7fb779766c987d214bc71adf05f1b2d0b32f86705309",
+    "sha256:90b04f7874fdeeaffb6a5760ca37860ce8fe46adfc42e84ba51bfa591bec1467",
+    "sha256:a0c6b4cb481d2a976773f893b12445bd54fc92f12df438ef826db562e189fd2d"
+   ]
+  },
+  {
+   "id": "tb21-query-optimize-task",
+   "role": "task",
+   "reference": "alexgshaw/query-optimize:20251031",
+   "manifest": "sha256:28de7da87004eab5b29bd5eaf1823579bc5b73ccea4b80349a5623185770da14",
+   "config": "sha256:5654e241057913a0f1a234583c62e12ed7bfab560d9c3f0dc5da985d9f3514eb",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:57376dfe58013c9d6be8be41c7abeb7ba9f9fe65f6a5e5e70ae0650aa06992d8",
+    "sha256:47dff70e3eac1e1529d8a120abdbac81ea1c6f3cc4fe037e974cc124831676f8",
+    "sha256:ce5b55dfeca415b971cd9ee0a4c50591feb1c7d06cefce8c6654d9f9589d68a1",
+    "sha256:057ca2a0dba2dddca0cd4a348ab5e530d411b59d57f17ac999e9291daf503707",
+    "sha256:14dd762cfec1bf2eb97dfc87325a73b87a3e0d61fbd86d7cd72b4cb773132a73"
+   ]
+  },
+  {
+   "id": "tb21-raman-fitting-task",
+   "role": "task",
+   "reference": "alexgshaw/raman-fitting:20251031",
+   "manifest": "sha256:401fa95d5d491f44a473eda9d2c52930f9565cc889c796eabcb6e20fec26852e",
+   "config": "sha256:64fc1c6d2f3db01a8defcf978d3a9dc2d3f0a71c536b0baf5155b24e3a092284",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:2ac44409ad8c29fe9ed1883d4d97eaffce5b0da6066129e5b9dc8416977c2e1d"
+   ]
+  },
+  {
+   "id": "tb21-regex-chess-task",
+   "role": "task",
+   "reference": "alexgshaw/regex-chess:20251031",
+   "manifest": "sha256:e3b6d61d2d3930fbbdc5f7bf091a7f8b7f6125e1951ef8a7dbe165b1ef62942c",
+   "config": "sha256:f75b4cea8135bedd201959332e8a6f68acc00bd1cf55faedd966319d3f70e842",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:2f53de0830935dde0b336ab33ae2a50e7b345b51ab8b137e044761ef7fc74a4b",
+    "sha256:0b323c8e32876f296a4bf0b8bc41a5ffe4d5962f5b72da6f0055cd8b7b3e0932"
+   ]
+  },
+  {
+   "id": "tb21-regex-log-task",
+   "role": "task",
+   "reference": "alexgshaw/regex-log:20251031",
+   "manifest": "sha256:90101b2e815323a8da20528a1439bebc407eb9761c9c68a3d557730856c878e9",
+   "config": "sha256:0a15c19cc78685f8d322945e882ba702ef3d0265d1f621ee00991b8e64ddb750",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6"
+   ]
+  },
+  {
+   "id": "tb21-reshard-c4-data-task",
+   "role": "task",
+   "reference": "alexgshaw/reshard-c4-data:20251031",
+   "manifest": "sha256:92d209e704785e17ad6b3f740e813dd72bc7ac33982ce435d197ab9d890eac2a",
+   "config": "sha256:a1ea118e6dbb44200cb77c4de3dc38023bf80387b0e781512c2d615189ad2562",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:847041143ee581174de05d7d67a1eb5879f4e29ee513427c6331a3c63cd7ee13",
+    "sha256:a6b8357e13c6db66949de128f76ab58dabb9a0f1bfb7770696e6e1d182c7ebfb",
+    "sha256:d837809709c4ab24652e7069517b82b566528575412b0edd946342816951d28c",
+    "sha256:7353b0e32859fadc664bb8dcaeb781cdabd872e0b3b626896fdeeeb115a3d21a"
+   ]
+  },
+  {
+   "id": "tb21-rstan-to-pystan-task",
+   "role": "task",
+   "reference": "alexgshaw/rstan-to-pystan:20251031",
+   "manifest": "sha256:b23d48839408524326095c15ada4145c772b87646cf299022ff1f58c97baba91",
+   "config": "sha256:1b14d62b12dd1cb5420463579116a69e26fafc7d56745f8f896eb503a656b000",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:06dd669f68a57ff6433cec37ac1df980c9743c674304142a9a9b1f79469e30e4",
+    "sha256:5837169d98eead7768a2fb4b7c57c0a7f5cc9d278b469fde85882991fc7ce9f1",
+    "sha256:b1b0f643bd779670aa319d14b6c799890d8cab06a8f192a5b77722faae438fde",
+    "sha256:e849a34ef718012f671d2928c94ac8c2a238f7a07620a7b22e26a7252e54f194",
+    "sha256:368050f8abe7731421dd2653510e06e29a88c2c8aace968cf0a2f4348fe26a6b",
+    "sha256:14dbbd13c525c9e4d546eb2be5ff0f8d26120d0b2841e2ca29ac55557ccd6c43",
+    "sha256:69af25dfa62ac52c39b799f95ffe820a4e4f0b8426356d3fa0e5bd75658d87cb",
+    "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1"
+   ]
+  },
+  {
+   "id": "tb21-sam-cell-seg-task",
+   "role": "task",
+   "reference": "alexgshaw/sam-cell-seg:20251031",
+   "manifest": "sha256:d76bdeef19d8113f4094013249c982eca93e62e46130484846269b2d378879d0",
+   "config": "sha256:792f56b9413a280dfbeb0c5b64067e4f7217f0fba16cd84918eb28928f406fd2",
+   "layers": [
+    "sha256:795dbedde24d2c72dafd2b71fe36643552e56859c0e29cdb095ed54b825fbaa2",
+    "sha256:89d573bf42b377ce6a5a0451c15388849686fa4058efd68999f3b014daeb5b55",
+    "sha256:26dfe2fac1c486e9aaf41d1028ed30be2c442aa84af44462bc7bac8c148ffb13",
+    "sha256:79d5bd8a8d262418bf22e705535ce38c6789dc72e319d76b30aafa5c331b6924",
+    "sha256:69737967e5cb11e9620b02915a0934c662a94c8bda3169c4e27ceb07e8373c0d",
+    "sha256:65617f2bacb8da442a0a1c8a97a5daba1d55bec59fb02ba573672e6589e0fb0f",
+    "sha256:32c7ae452e13e29c96085e51a9acb056dbf7d4283abe4f02ed991d00e3f6bab6",
+    "sha256:9b18076936cdab64c20a289e7833607b65047e31ced6494ddf38bfd0dab3ce5a",
+    "sha256:73bc58beeee21dd067ae7bef73963c1c90b3eed3002eb226ecd1ee8e4372c60d",
+    "sha256:b1e23898728ae4aa6546fb1a439537960cc529ae668ea1bc11bee5c96cc70fe8",
+    "sha256:9a8fae9efbfa9b81a84919065062ee34437e3226bbd55f061323eca500a16735"
+   ]
+  },
+  {
+   "id": "tb21-sanitize-git-repo-task",
+   "role": "task",
+   "reference": "alexgshaw/sanitize-git-repo:20251031",
+   "manifest": "sha256:4b5234da5bb0d67f3b0bf8db40a2883c07a5219f62b64c2bf9ff1ac84cd0f672",
+   "config": "sha256:aed7717e5fcd600ca2db5e8c5ce33954a20b5543f0c9775429915ced251d7f55",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:607df89562e8d89e5da498d5d8761b09f72ad128805bf8ed382470e5a394b2d9",
+    "sha256:cc1961159cf21c6cba463905627244cf0e7fc6298fb733375b7974e84a7fe92b",
+    "sha256:f6a76dba383b2812055059ba78d1b4a31b8d139560ced0d72980610d72e19b93",
+    "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1"
+   ]
+  },
+  {
+   "id": "tb21-schemelike-metacircular-eval-task",
+   "role": "task",
+   "reference": "alexgshaw/schemelike-metacircular-eval:20251031",
+   "manifest": "sha256:b485be38bf80d56c1a4cd9da95bbf7ec129dc03f6786b86c0525518a96f6d1db",
+   "config": "sha256:85149ed74db9444b32fe96d058048ecbe604dfd39f19cf5deb4c0d7c10db57c9",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:bec7c2f1120bbeaeebec20e14a7bbe417b5ef279f0c51e942972b7f6a1d943a9",
+    "sha256:a4cd59c2a5343a47a714d2aded2d5203a3aa01ff24987c32936b9018121c6262"
+   ]
+  },
+  {
+   "id": "tb21-sparql-university-task",
+   "role": "task",
+   "reference": "alexgshaw/sparql-university:20251031",
+   "manifest": "sha256:92fa4304e51167f9fb4466144eba33ef9272a7df0ac1cab9fc3986bccd1ab708",
+   "config": "sha256:4b477a009da63f0cff40da8caa52e09a382bf4a0ce011cd371c09650e665ba9c",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:9c0a01962ba5136d0bef7b32429c0eee79c6fb10972122491899c0715dc2ec17"
+   ]
+  },
+  {
+   "id": "tb21-sqlite-db-truncate-task",
+   "role": "task",
+   "reference": "alexgshaw/sqlite-db-truncate:20251031",
+   "manifest": "sha256:aabac93c93bd1f310e6a6fb893911d7735026ed18491c72133c9196a09092ca4",
+   "config": "sha256:33e71d5cd2768815d8c822af32020cd12ff3b0c35f4609dbd65523d8ee98d358",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:d1a1b7d210010e8ba310736980cda789a023482c33eb1385ac1ca99871efa32d"
+   ]
+  },
+  {
+   "id": "tb21-sqlite-with-gcov-task",
+   "role": "task",
+   "reference": "alexgshaw/sqlite-with-gcov:20251031",
+   "manifest": "sha256:f986820b00c74ce75db7288719d364df313fde7c7917bea6eb6352a08431a89f",
+   "config": "sha256:b9726244945382a5d73839440e391c88aceeb52346805eebd8712eb1b6ba8b3a",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:d8eda3d9b8a7199ecd50e7e9f8c4dee9839ead9475b46e3fbb708d51df9c43ab"
+   ]
+  },
+  {
+   "id": "tb21-torch-pipeline-parallelism-task",
+   "role": "task",
+   "reference": "alexgshaw/torch-pipeline-parallelism:20251031",
+   "manifest": "sha256:3cb7b39d86f1704b20e668851da0b08b34b3270c01d583f136d65190984a8d1b",
+   "config": "sha256:3e61cb3c7516e90e3a5a49171a673fd3d30f9a1e2ada2358a227bfa7369e2295",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6"
+   ]
+  },
+  {
+   "id": "tb21-torch-tensor-parallelism-task",
+   "role": "task",
+   "reference": "alexgshaw/torch-tensor-parallelism:20251031",
+   "manifest": "sha256:c50ac169e11465f41b49749fe87e4487f24d31a0c39c0906cd3242cc5499c690",
+   "config": "sha256:fea44fb62b9c5cf7bb98548d09f2d5f3cb564773e9ea2688bcd184390c247dcf",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6"
+   ]
+  },
+  {
+   "id": "tb21-train-fasttext-task",
+   "role": "task",
+   "reference": "alexgshaw/train-fasttext:20251031",
+   "manifest": "sha256:3c77da9617e7fa577de04aef73fb1ac3114be32d7ffef72609c83929d842b157",
+   "config": "sha256:ea991ff9add049c6956d2501b6f38fc612948cb30edaf8f6d61f63f90808272e",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:9d044c9c68f1dfe253ac6bf00e93a38144662b09682c5e02ba80019714f28711",
+    "sha256:08ac4b0ae93865a18f5a65f5a2645275ae71b01bf60c10c127a09b9bb3d61ed2",
+    "sha256:11b813e45342b8b52703d49a6549bdbe11bd2fe86112c0202f72184389e99faf",
+    "sha256:8d1a542c5e68481cab456b1c80bdd4612ce082ae9a59ad1d8b8c45d6b4a7e465",
+    "sha256:26d256f296cede262c9c8a1e0483e5c89ac52a9be7a0ac785712fe95871f6770",
+    "sha256:e3877ec020997244a02e02507761c984761a7e8b9af89a2c63306110117a5880",
+    "sha256:3c0aaa8b72500f3bc0d4ff162c27f24a9a2d19862034b264a2b6b4175d554cd2"
+   ]
+  },
+  {
+   "id": "tb21-tune-mjcf-task",
+   "role": "task",
+   "reference": "alexgshaw/tune-mjcf:20251031",
+   "manifest": "sha256:56c197739db2db79562384581fcc9d3d71e6c171bf052104b1a7ee0282e7c3cf",
+   "config": "sha256:9b16b1b03963fede220751f194eaa4e59c22a7341290a5a26fef85cbbaf09f14",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:ff09ad2a276dc3fc68d05c3bb13337ce92c37359cb3e87014bae75e23fbfd773",
+    "sha256:80f017778f19b6f83e65f102159700283218a4d0c9e6e9ae2c14eb813b273bf8",
+    "sha256:e7b1c1b91ced97d50de4a27987809d64a217244451695062148249a4f1a9faad"
+   ]
+  },
+  {
+   "id": "tb21-video-processing-task",
+   "role": "task",
+   "reference": "alexgshaw/video-processing:20251031",
+   "manifest": "sha256:a2c0f39e3ab04e67ac6e49cad9167bb0d987babe32511768c01aa0c6905a875f",
+   "config": "sha256:48c2f3683967aff593e02b1ef5b138ae5e4db7980bccd403ea550694b6fa8e43",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:63ff33ad641b9f09475780c18fcae5aa35c92fed4207585d4e93c6070d6c2e0e",
+    "sha256:a64f945f2e69508fae61619fd26f3cff81a1e489633b2f3970b9a3c27a15c1eb",
+    "sha256:648887593fb469dbb58d3bf9e8b6398e9ab76a8bbd14a7374626134dcb72cac2",
+    "sha256:dd8bfeaf3ce7fae853f9cc0be9bf0782ffe384407b0fba5b7b61ad0185e70c26"
+   ]
+  },
+  {
+   "id": "tb21-vulnerable-secret-task",
+   "role": "task",
+   "reference": "alexgshaw/vulnerable-secret:20251031",
+   "manifest": "sha256:61ebb40454dd103aa2f7e71ad6dafd91cf2b301e6bb07e69d5b472412d1ee15b",
+   "config": "sha256:54e36ed5f26ccc7489bde8745c86e6d8f2ce8927d2a5719316480716f550bf54",
+   "layers": [
+    "sha256:b1badc6e50664185acfaa0ca255d8076061c2a9d881cecaaad281ae11af000ce",
+    "sha256:7e88bf276da094b3c1c5d62775d85ae6e63c58165a5c759570bcecf8b52a4ce3",
+    "sha256:d55dfff74d98ac204fa78f18533eecc39a8bd69bd9384a73572c6d09f06b11fc",
+    "sha256:e97853488aa5b877aa1248a8d146c75752543b00dced77518e40164d1badafd3",
+    "sha256:5b136720a4b27ce3ae4a5a013e368f5fe58dbd3dd9a2d79843007ed834a651f1",
+    "sha256:d6a3434158910adf1a1034fd562be262146b2329d360163caa6f8896ae72ac9e",
+    "sha256:9d1bf8b77b924f838d3fe59ba4d6bf26ae8a33d3c61551a44b00b03a00386b33",
+    "sha256:b64a65dd070bea340fb212d305490dfc2559e44695d8bd5d675b24d656b61956",
+    "sha256:d7d8071bfb4ed1452c031ecfa718036a205fba762d9e05665c3b1700b61832b8",
+    "sha256:c91354099db07f761cd78f9d381d1b85fd0be5c35a9b93905f5acb4696c163d3"
+   ]
+  },
+  {
+   "id": "tb21-winning-avg-corewars-task",
+   "role": "task",
+   "reference": "alexgshaw/winning-avg-corewars:20251031",
+   "manifest": "sha256:ad7a6b1c53aed59e10916c692aa7e2ae00042a4283187430aee1e3e79f72d5c6",
+   "config": "sha256:d372f2022972a03c8a7d16f631e9171dad3a65e1d119a97d4875167f8db3e6ca",
+   "layers": [
+    "sha256:396b1da7636e2dcd10565cb4f2f952cbb4a8a38b58d3b86a2cacb172fb70117c",
+    "sha256:f849e5b569f7988e20b5d57beb0da95655af113b478373022f7b921d13f6c04f",
+    "sha256:b8bfa28af3cb07559f81672b4eca67eb41e03c9ff864fe9ddb9feca5d53c616b",
+    "sha256:9dd31a9fa29989526f4b8be121641c27f105302e722c1b097373175ad0be4faa",
+    "sha256:4713e371e45e13e4754e4434590188bac3bc2c331606d2ac01217086a59339b0",
+    "sha256:d1d8ff3cf1c7f87c77f31c575af9f8f292e47dd2850a0f28b31b317ddc9c5751",
+    "sha256:83283a05835c4c591c075a337a79a76b4f749a65cd6d7ded9cd33c5ab626cabf"
+   ]
+  },
+  {
+   "id": "tb21-write-compressor-task",
+   "role": "task",
+   "reference": "alexgshaw/write-compressor:20251031",
+   "manifest": "sha256:3618e1f8a997b437c09cd3dbaac736705809c05f6f12f584b65722175970ebe1",
+   "config": "sha256:795a10ee52aa610a840b6587c5a1d2194175faa76c58879c8846a115b601902a",
+   "layers": [
+    "sha256:4b3ffd8ccb5201a0fc03585952effb4ed2d1ea5e704d2e7330212fb8b16c86a3",
+    "sha256:9040135e24f8def558e39d9b4c5b54b721c749c33610ae4233bfab3ccb2c63b6",
+    "sha256:33a202c4c08067ebd49947490b122db97f366a03935a8664d3f6a2522070b9ea",
+    "sha256:0ae28c70866cc9529937974a0c72e070fb7f8f575a4f961b4c2c100f9c05e8d1",
+    "sha256:15c9353a7f7a6986c1cdd48a85652279b3a53d60d1b59a731fc18f88a9f4d443",
+    "sha256:4a42354bf723cdc910756a166b50e1b69000797ae77cf30a5dadf9d41682acba"
+   ]
+  },
+  {
    "id": "tb30-python-base",
    "role": "build-input",
    "reference": "python:3.11-slim",
-   "manifest": "sha256:272efc3f94bec901e2bc7a5c9984b3d113c317839edca2714c6a388b9476f8fc"
+   "manifest": "sha256:0dd364ba7e10242f07755449e3a3d0e35f9efd987952737b90def6709ab0c5ce"
   },
   {
    "id": "deepswe-task",
@@ -270,7 +1646,37 @@
    "id": "tb21-python-base",
    "role": "build-input",
    "reference": "python:3.13-slim-bookworm",
-   "manifest": "sha256:3e2de9c40ca4e3d73240059f9d48baff27908f10293e985a2f382a0378e6df4a"
+   "manifest": "sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641"
+  },
+  {
+   "id": "tb21-debian-bullseye-base",
+   "role": "build-input",
+   "reference": "debian:bullseye-slim",
+   "manifest": "sha256:e5b6442dd2e9684cf5e87d8338b5968f3b348636fc0be6d7850a381e3731a2bd"
+  },
+  {
+   "id": "tb21-debian13-base",
+   "role": "build-input",
+   "reference": "debian:13.0-slim",
+   "manifest": "sha256:c85a2732e97694ea77237c61304b3bb410e0e961dd6ee945997a06c788c545bb"
+  },
+  {
+   "id": "tb21-python-310-base",
+   "role": "build-input",
+   "reference": "python:3.10-slim-bookworm",
+   "manifest": "sha256:5be5aaecb962a41567bc8041f1e9e3432cb085b037fe057f9a562630b2e4b370"
+  },
+  {
+   "id": "tb21-python311-base",
+   "role": "build-input",
+   "reference": "python:3.11",
+   "manifest": "sha256:9b1f68f04213c536eef8a29358879f736e954111cf42d605f11bec58c3e5ad6a"
+  },
+  {
+   "id": "tb21-ubuntu-base",
+   "role": "build-input",
+   "reference": "ubuntu:24.04",
+   "manifest": "sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55"
   }
  ],
  "closures": [

@@ -48,7 +48,7 @@ task_ids = []
 seeds = {}
 
 [baseline]
-pi_version = "1.0.0"
+pi_version = "1.0.4"
 lookup = "auto"
 # 0 disables age exclusion. Historical scores remain unchanged when stale.
 max_age_days = 0

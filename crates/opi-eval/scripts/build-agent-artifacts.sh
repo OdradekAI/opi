@@ -16,8 +16,9 @@
 #   bundle existence check). The identity records the canonical Node
 #   executable path, SHA-256, file(1), ldd, --version, the npm identity,
 #   the checkout commit and dirty state, the package manifest, package
-#   lock, and shrinkwrap digests, the installed node_modules tree digest,
-#   and the canonical bundle path and digest.
+#   lock, and shrinkwrap digests (null when the pinned source publishes
+#   none, as upstream pi releases since 1.0.1 do), the installed
+#   node_modules tree digest, and the canonical bundle path and digest.
 #
 # Usage:
 #   crates/opi-eval/scripts/build-agent-artifacts.sh --opi-source DIR --opi-commit COMMIT --pi-source DIR --static-lock PATH --out DIR
@@ -266,8 +267,11 @@ identity = {
     "checkout_dirty_files": int(dirty_files),
     "package_json_sha256": sha(f"{source}/package.json"),
     "package_lock_sha256": sha(f"{source}/package-lock.json"),
-    "shrinkwrap_sha256": sha(
-        f"{source}/packages/coding-agent/npm-shrinkwrap.json"),
+    "shrinkwrap_sha256": (
+        sha(f"{source}/packages/coding-agent/npm-shrinkwrap.json")
+        if os.path.exists(f"{source}/packages/coding-agent/npm-shrinkwrap.json")
+        else None
+    ),
     "installed_tree_sha256": tree_digest(f"{source}/node_modules"),
     "npm_cache_archive_sha256": tree_digest(cache),
     "bundle_path": bundle,
