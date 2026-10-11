@@ -1143,10 +1143,70 @@ fn filter_pi_message(
     message: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<Option<serde_json::Map<String, serde_json::Value>>, CaptureRefusal> {
     let fields = Fields::new(message);
-    if fields.str_of("role")? != "assistant" {
-        // Non-assistant messages carry no private thinking; admit their
-        // declared core shape only.
-        fields.exact(&["role", "content"], &["id", "timestamp"])?;
+    let role = fields.str_of("role")?;
+    if role != "assistant" {
+        // Non-assistant messages carry no private thinking; admit each
+        // role's declared pinned-1.0.4 shape only. System messages carry
+        // named prompt `sections` (plain prompt text, same class as
+        // `content`) and mid-session tool-change lists from the built-in
+        // MCP support; tool results carry their call identity, optional
+        // usage/details and bounded nested-call records. All are
+        // non-private, agent-owned payloads passed through unchanged.
+        match role {
+            "system" => {
+                fields.exact(
+                    &["role", "content"],
+                    &["id", "timestamp", "sections", "toolsAdded", "toolsRemoved"],
+                )?;
+                if let Some(sections) = message.get("sections") {
+                    let sections = sections.as_object().ok_or_else(|| {
+                        CaptureRefusal::new("pi system message sections is not an object")
+                    })?;
+                    for (name, value) in sections {
+                        if !value.is_string() && !value.is_null() {
+                            return Err(CaptureRefusal::new(format!(
+                                "pi system message section {name:?} is not a string or null"
+                            )));
+                        }
+                    }
+                }
+                for key in ["toolsAdded", "toolsRemoved"] {
+                    if let Some(value) = message.get(key)
+                        && !value.is_array()
+                    {
+                        return Err(CaptureRefusal::new(format!(
+                            "pi system message {key} is not an array"
+                        )));
+                    }
+                }
+            }
+            "user" => {
+                fields.exact(&["role", "content"], &["id", "timestamp"])?;
+            }
+            "toolResult" => {
+                fields.exact(
+                    &["role", "toolCallId", "toolName", "content", "isError"],
+                    &["id", "timestamp", "details", "usage", "nestedCalls"],
+                )?;
+                fields.str_of("toolCallId")?;
+                fields.str_of("toolName")?;
+                fields.bool_of("isError")?;
+                for key in ["usage", "nestedCalls"] {
+                    if let Some(value) = message.get(key)
+                        && !value.is_object()
+                    {
+                        return Err(CaptureRefusal::new(format!(
+                            "pi tool result {key} is not an object"
+                        )));
+                    }
+                }
+            }
+            other => {
+                return Err(CaptureRefusal::new(format!(
+                    "unknown pi message role {other:?}"
+                )));
+            }
+        }
         return Ok(None);
     }
     fields.exact(
@@ -1160,8 +1220,59 @@ fn filter_pi_message(
             "stopReason",
             "usage",
         ],
-        &["id", "responseId", "errorMessage"],
+        &[
+            "id",
+            "responseId",
+            "errorMessage",
+            "responseModel",
+            "providerThinkingLevel",
+            "thinkingLevel",
+            "rawStopReason",
+            "endTurn",
+            "diagnostics",
+            "deferred",
+        ],
     )?;
+    // Declared optionals of the pinned 1.0.4 assistant projection: model/
+    // control identity strings, a turn flag, client-redacted diagnostics and
+    // a deferred-content handle. All non-private; structural checks only.
+    for key in [
+        "responseModel",
+        "providerThinkingLevel",
+        "thinkingLevel",
+        "rawStopReason",
+    ] {
+        if let Some(value) = message.get(key)
+            && !value.is_string()
+        {
+            return Err(CaptureRefusal::new(format!(
+                "pi assistant message {key} is not a string"
+            )));
+        }
+    }
+    if let Some(value) = message.get("endTurn")
+        && !value.is_boolean()
+    {
+        return Err(CaptureRefusal::new(
+            "pi assistant message endTurn is not a boolean".to_owned(),
+        ));
+    }
+    for key in ["diagnostics"] {
+        if let Some(value) = message.get(key)
+            && !value.is_array()
+        {
+            return Err(CaptureRefusal::new(format!(
+                "pi assistant message {key} is not an array"
+            )));
+        }
+    }
+    if let Some(value) = message.get("deferred")
+        && !value.is_object()
+    {
+        return Err(CaptureRefusal::new(
+            "pi assistant message deferred is not an object".to_owned(),
+        ));
+    }
     fields.str_of("api")?;
     fields.str_of("provider")?;
     fields.str_of("model")?;
@@ -1183,9 +1294,12 @@ fn filter_pi_message(
         );
         let mut block = block.clone();
         match block_fields.type_of()? {
-            "text" => block_fields.exact(&["type", "text"], &[])?,
+            "text" => block_fields.exact(&["type", "text"], &["textSignature"])?,
             "thinking" => {
-                block_fields.exact(&["type", "thinking"], &["signature", "thinkingSignature"])?;
+                block_fields.exact(
+                    &["type", "thinking"],
+                    &["signature", "thinkingSignature", "redacted"],
+                )?;
                 if block
                     .get("thinking")
                     .and_then(|v| v.as_str())
@@ -1220,8 +1334,10 @@ fn filter_pi_message(
             }
             // Tool-bearing shapes are non-private agent payloads whose
             // field sets the pi importer admits opaquely; only the block
-            // type is admitted here.
-            "tool_use" | "tool_result" => {}
+            // type is admitted here. The pinned stream serializes the
+            // declared `toolCall` block (id/name/arguments plus provider
+            // signature/namespace optionals) verbatim.
+            "toolCall" => {}
             other => {
                 return Err(CaptureRefusal::new(format!(
                     "unknown pi assistant content block {other:?}"
@@ -1413,7 +1529,7 @@ mod tests {
                     {"type": "thinking", "thinking": "SECRET", "signature": "SIG"},
                     {"type": "text", "text": "done"},
                     {"type": "redacted_thinking", "data": "REDACTED"},
-                    {"type": "tool_use", "id": "t", "name": "bash", "input": {"cmd": "ls"}}
+                    {"type": "toolCall", "id": "t", "name": "bash", "arguments": {"cmd": "ls"}}
                 ],
                 "api": "pi-messages",
                 "provider": "local",
@@ -1432,7 +1548,7 @@ mod tests {
         assert_eq!(content[0]["thinking"], "");
         assert!(content[0].get("signature").is_none());
         assert_eq!(content[2]["data"], "");
-        assert_eq!(content[3]["input"]["cmd"], "ls");
+        assert_eq!(content[3]["arguments"]["cmd"], "ls");
         assert_eq!(value["message"]["usage"]["totalTokens"], 3);
 
         let delta = serde_json::json!({
@@ -1459,6 +1575,130 @@ mod tests {
             "type": "tool_result", "message": {"role": "assistant", "content": []}
         }));
         assert!(filter_record(&leaking, StreamKind::PiSession).is_err());
+    }
+
+    #[test]
+    fn pi_system_message_sections_pass_through_under_shape_checks() {
+        // The pinned 1.0.4 stream's leading system message: named prompt
+        // sections and tool-change lists are non-private and unchanged.
+        let system = serde_json::json!({
+            "type": "message_end",
+            "message": {
+                "role": "system",
+                "content": "base prompt",
+                "sections": {"mcp_servers": "# MCP Servers\nnone", "removed": null},
+                "toolsAdded": [],
+                "toolsRemoved": [],
+                "id": "m-0",
+                "timestamp": 1756296000000i64
+            }
+        });
+        let line = pi_line(system);
+        let filtered = filter_record(&line, StreamKind::PiSession).unwrap();
+        assert_eq!(filtered, line.as_str());
+
+        let bad_sections = pi_line(serde_json::json!({
+            "type": "message_end",
+            "message": {"role": "system", "content": "p", "sections": {"mcp_servers": 1}}
+        }));
+        assert!(filter_record(&bad_sections, StreamKind::PiSession).is_err());
+        let sections_not_object = pi_line(serde_json::json!({
+            "type": "message_end",
+            "message": {"role": "system", "content": "p", "sections": "mcp"}
+        }));
+        assert!(filter_record(&sections_not_object, StreamKind::PiSession).is_err());
+        let bad_tools = pi_line(serde_json::json!({
+            "type": "message_end",
+            "message": {"role": "system", "content": "p", "toolsAdded": {"name": "x"}}
+        }));
+        assert!(filter_record(&bad_tools, StreamKind::PiSession).is_err());
+        let unknown_still_refuses = pi_line(serde_json::json!({
+            "type": "message_end",
+            "message": {"role": "system", "content": "p", "prompt_cache_key": "k"}
+        }));
+        assert!(filter_record(&unknown_still_refuses, StreamKind::PiSession).is_err());
+    }
+
+    #[test]
+    fn pi_tool_result_and_extended_assistant_fields_pass_through() {
+        let tool_result = serde_json::json!({
+            "type": "message_end",
+            "message": {
+                "role": "toolResult",
+                "toolCallId": "call-1",
+                "toolName": "bash",
+                "content": [{"type": "text", "text": "ok"}],
+                "isError": false,
+                "details": {"exit": 0},
+                "usage": {"input": 0, "output": 0},
+                "nestedCalls": {"calls": [], "complete": true},
+                "id": "m-2",
+                "timestamp": 1756296000500i64
+            }
+        });
+        let line = pi_line(tool_result);
+        assert_eq!(
+            filter_record(&line, StreamKind::PiSession).unwrap(),
+            line.as_str()
+        );
+        let bad_tool_result = pi_line(serde_json::json!({
+            "type": "message_end",
+            "message": {"role": "toolResult", "toolCallId": 1, "toolName": "bash", "content": [], "isError": false}
+        }));
+        assert!(filter_record(&bad_tool_result, StreamKind::PiSession).is_err());
+
+        // The pinned 1.0.4 assistant projection: new declared optionals are
+        // non-private and pass through; thinking text/signatures still redact.
+        let assistant = serde_json::json!({
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "id": "m-3",
+                "responseId": "resp-9",
+                "responseModel": "glm-5.3-flash-0414",
+                "providerThinkingLevel": "high",
+                "thinkingLevel": "high",
+                "rawStopReason": "end_turn",
+                "endTurn": true,
+                "diagnostics": [{"kind": "retry", "message": "redacted"}],
+                "deferred": {"provider": "zhipu", "modelId": "m", "api": "anthropic-messages", "id": "d-1"},
+                "content": [
+                    {"type": "text", "text": "answer", "textSignature": "sig-v1"},
+                    {"type": "thinking", "thinking": "SECRET", "signature": "SIG", "redacted": false}
+                ],
+                "api": "pi-messages",
+                "provider": "local",
+                "model": "scripted",
+                "usage": {"input": 1, "output": 2, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 3, "cost": {"total": 0}},
+                "stopReason": "stop",
+                "timestamp": 1756296001000i64
+            }
+        });
+        let line = pi_line(assistant);
+        let filtered = filter_record(&line, StreamKind::PiSession).unwrap();
+        assert!(!filtered.contains("SECRET"));
+        let value: serde_json::Value = serde_json::from_str(&filtered).unwrap();
+        assert_eq!(value["message"]["rawStopReason"], "end_turn");
+        assert_eq!(value["message"]["endTurn"], true);
+        assert_eq!(value["message"]["content"][0]["textSignature"], "sig-v1");
+        assert_eq!(value["message"]["content"][1]["thinking"], "");
+        assert!(value["message"]["content"][1].get("signature").is_none());
+        assert_eq!(value["message"]["content"][1]["redacted"], false);
+
+        let bad_end_turn = pi_line(serde_json::json!({
+            "type": "message_end",
+            "message": {"role": "assistant", "content": [], "api": "a", "provider": "p", "model": "m",
+                        "usage": {"input": 0, "output": 0}, "stopReason": "stop", "timestamp": 1,
+                        "endTurn": "yes"}
+        }));
+        assert!(filter_record(&bad_end_turn, StreamKind::PiSession).is_err());
+        let unknown_assistant_field = pi_line(serde_json::json!({
+            "type": "message_end",
+            "message": {"role": "assistant", "content": [], "api": "a", "provider": "p", "model": "m",
+                        "usage": {"input": 0, "output": 0}, "stopReason": "stop", "timestamp": 1,
+                        "surprise": 1}
+        }));
+        assert!(filter_record(&unknown_assistant_field, StreamKind::PiSession).is_err());
     }
 
     #[test]
