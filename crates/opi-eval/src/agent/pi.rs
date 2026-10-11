@@ -3,7 +3,7 @@
 //!
 //! [`PiProcessAdapter`] owns ONLY pi-specific launch and evidence rules:
 //! argv/profile construction for the pinned earendil-works coding-agent
-//! (v1.0.0 CLI surface) in one-shot JSON print mode with an isolated
+//! (v1.0.4 CLI surface) in one-shot JSON print mode with an isolated
 //! `PI_CODING_AGENT_DIR`/session projection and no ambient project, user, or
 //! extension resources, plus the private importer for pi's documented stdout
 //! JSON event stream (session header + `AgentSessionEvent` lines) and the
@@ -118,7 +118,7 @@ impl PiProfile {
     }
 }
 
-/// The pi adapter: launch policy + private importer over the pinned v1.0.0
+/// The pi adapter: launch policy + private importer over the pinned v1.0.4
 /// stdout JSON surface. Constructed from the checked-in declarative profile.
 pub(crate) struct PiProcessAdapter {
     profile: PiProfile,
@@ -162,7 +162,7 @@ impl AgentAdapter for PiProcessAdapter {
         &[AgentCapability::JsonEvents, AgentCapability::UsageFacts]
     }
 
-    /// Exact argv for the pinned pi v1.0.0 production CLI — one-shot JSON
+    /// Exact argv for the pinned pi v1.0.4 production CLI — one-shot JSON
     /// print mode, no persistent session, no project trust or context files,
     /// no extension/skill discovery, explicit provider/model and deterministic
     /// thinking (EVAL-AGT-001/005). `--` ends option parsing before the prompt.
@@ -329,7 +329,7 @@ pub(crate) fn native_terminal_completion(
 
 /// Private importer for pi's documented stdout JSON protocol: one session
 /// header line followed by `AgentSessionEvent` NDJSON. Accepts only the
-/// pinned v1.0.0 shapes; anything older, unknown, corrupted, or ambiguous
+/// pinned v1.0.4 shapes; anything older, unknown, corrupted, or ambiguous
 /// fails closed (EVAL-MIG-002). Never mutates anything outside the fresh
 /// trace root.
 /// The typed terminal provider cause from the pinned pi client's own
@@ -419,7 +419,7 @@ impl PiImporter {
 
         // Line 1 must be the current session header: exact field identity.
         // The hermetic fixtures pin the v2 sample shape and the pinned pi
-        // 1.0.0 stream emits v3 with the same event vocabulary; both
+        // 1.0.4 stream emits v3 with the same event vocabulary; both
         // admitted, anything older or drifted fails closed.
         let header: serde_json::Value = match lines.next().map(serde_json::from_str) {
             Some(Ok(value)) => value,
@@ -449,6 +449,7 @@ impl PiImporter {
         let mut retry_attempt = 0u64;
         let mut retry_max = None;
         let mut retry_identity: Option<(String, String, String)> = None;
+        let mut exhausted_error: Option<String> = None;
         for line in lines {
             let value: serde_json::Value = match serde_json::from_str(line) {
                 Ok(value) => value,
@@ -461,7 +462,9 @@ impl PiImporter {
                 return failed("import-parse-failure", FailureBoundaryCode::Adapter);
             };
             if matches!(retry_phase, PiRetryPhase::AwaitingRetryStart) && kind != "auto_retry_start"
-                || matches!(retry_phase, PiRetryPhase::AwaitingAgentStart) && kind != "agent_start"
+                || matches!(retry_phase, PiRetryPhase::AwaitingAgentStart)
+                    && kind != "agent_start"
+                    && kind != "entry_appended"
                 || matches!(retry_phase, PiRetryPhase::Ended) && kind != "agent_settled"
                 || matches!(retry_phase, PiRetryPhase::Settled)
             {
@@ -496,18 +499,53 @@ impl PiImporter {
                 "auto_retry_end" if v3 => {
                     if retry_phase != PiRetryPhase::Retrying
                         || fields.get("attempt").and_then(|v| v.as_u64()) != Some(retry_attempt)
-                        || fields.get("success").and_then(|v| v.as_bool()) != Some(true)
-                        || fields.contains_key("finalError")
-                        || !terminal.as_ref().is_some_and(|message| {
-                            matches!(
-                                message["stopReason"].as_str(),
-                                Some("stop" | "length" | "toolUse")
-                            )
-                        })
                     {
                         return failed("import-unsupported-schema", FailureBoundaryCode::Adapter);
                     }
-                    retry_phase = PiRetryPhase::Recovered;
+                    match fields.get("success").and_then(|v| v.as_bool()) {
+                        Some(true) => {
+                            if fields.contains_key("finalError")
+                                || !terminal.as_ref().is_some_and(|message| {
+                                    matches!(
+                                        message["stopReason"].as_str(),
+                                        Some("stop" | "length" | "toolUse")
+                                    )
+                                })
+                            {
+                                return failed(
+                                    "import-unsupported-schema",
+                                    FailureBoundaryCode::Adapter,
+                                );
+                            }
+                            retry_phase = PiRetryPhase::Recovered;
+                        }
+                        Some(false) => {
+                            // Exhaustion: the retry controller gave up after
+                            // the last failed attempt. finalError must repeat
+                            // that attempt's diagnostic exactly; the failed
+                            // terminal must be a proven retry error.
+                            let final_error = fields.get("finalError").and_then(|v| v.as_str());
+                            if final_error.is_none_or(str::is_empty)
+                                || !terminal.as_ref().is_some_and(|message| {
+                                    validate_retry_error(message).is_ok()
+                                        && message["errorMessage"].as_str() == final_error
+                                })
+                            {
+                                return failed(
+                                    "import-unsupported-schema",
+                                    FailureBoundaryCode::Adapter,
+                                );
+                            }
+                            exhausted_error = final_error.map(str::to_owned);
+                            retry_phase = PiRetryPhase::Ended;
+                        }
+                        None => {
+                            return failed(
+                                "import-unsupported-schema",
+                                FailureBoundaryCode::Adapter,
+                            );
+                        }
+                    }
                 }
                 "agent_settled" if v3 => {
                     if retry_phase == PiRetryPhase::Ended {
@@ -643,8 +681,16 @@ impl PiImporter {
                                     FailureBoundaryCode::Evidence,
                                 );
                             };
-                            if !matches!(retry_phase, PiRetryPhase::None | PiRetryPhase::Retrying)
-                                || agent_ends != 0
+                            // A recovered chain does not end the agent: pi
+                            // 1.0.4 keeps working inside the same attempt and
+                            // may open a NEW retry chain whose attempt
+                            // counter restarts from 1.
+                            if !matches!(
+                                retry_phase,
+                                PiRetryPhase::None
+                                    | PiRetryPhase::Retrying
+                                    | PiRetryPhase::Recovered
+                            ) || agent_ends != 0
                                 || messages.last() != Some(message)
                                 || validate_retry_error(message).is_err()
                             {
@@ -652,6 +698,9 @@ impl PiImporter {
                                     "import-unsupported-schema",
                                     FailureBoundaryCode::Adapter,
                                 );
+                            }
+                            if matches!(retry_phase, PiRetryPhase::Recovered) {
+                                retry_attempt = 0;
                             }
                             retry_identity.get_or_insert_with(|| {
                                 (
@@ -666,12 +715,23 @@ impl PiImporter {
                         if let Some(message) = terminal.as_ref()
                             && validate_terminal_message(message).is_err()
                         {
-                            return failed(
-                                "import-unsupported-schema",
-                                FailureBoundaryCode::Adapter,
-                            );
-                        }
-                        if retry_identity.is_some() {
+                            // A final non-retry agent_end over an unproven
+                            // terminal is only admissible as the exhaustion
+                            // boundary of a proven retry chain: the retry
+                            // controller must adjudicate next with
+                            // auto_retry_end(success=false). Anything else
+                            // stays an unsupported unproven terminal.
+                            if retry_identity.is_none()
+                                || retry_phase != PiRetryPhase::Retrying
+                                || messages.last() != Some(message)
+                                || validate_retry_error(message).is_err()
+                            {
+                                return failed(
+                                    "import-unsupported-schema",
+                                    FailureBoundaryCode::Adapter,
+                                );
+                            }
+                        } else if retry_identity.is_some() {
                             if retry_phase != PiRetryPhase::Recovered
                                 || messages.last() != terminal.as_ref()
                                 || fields.get("willRetry").and_then(|v| v.as_bool()) != Some(false)
@@ -698,6 +758,35 @@ impl PiImporter {
                 failed("import-evidence-missing", FailureBoundaryCode::Evidence)
             } else {
                 failed("import-ambiguous-stream", FailureBoundaryCode::Adapter)
+            };
+        }
+        // A proven retry exhaustion settles as a typed provider failure:
+        // pi's transient-transport retry class, never a scored Agent
+        // outcome. The live runner path uses the same reason prefix.
+        if let Some(error) = exhausted_error {
+            let message = terminal.expect("exhaustion validated the failed terminal");
+            let fields = message.as_object().expect("validated retry error");
+            let usage_fields = fields["usage"].as_object().expect("validated usage shape");
+            return ImportedPi {
+                completion: AgentCompletion::Failed(AgentFailure {
+                    kind: "agent-provider-failure:connection",
+                    boundary: FailureBoundaryCode::AgentProcess,
+                }),
+                stop_reason: fields["stopReason"].as_str().unwrap_or("error").to_owned(),
+                error_message: error,
+                provider: fields["provider"].as_str().unwrap_or_default().to_owned(),
+                model: fields["model"].as_str().unwrap_or_default().to_owned(),
+                usage: UsageProjection {
+                    input_tokens: Some(Fact::Known {
+                        value: usage_fields["input"].as_u64().expect("validated"),
+                        origin: "provider_reported".to_owned(),
+                    }),
+                    output_tokens: Some(Fact::Known {
+                        value: usage_fields["output"].as_u64().expect("validated"),
+                        origin: "provider_reported".to_owned(),
+                    }),
+                },
+                terminal_message: serde_json::Value::Null,
             };
         }
         let Some(message) = terminal else {
@@ -743,7 +832,7 @@ impl PiImporter {
 /// projection fields with presence-only opaque fields.
 fn validate_terminal_message(message: &serde_json::Value) -> Result<(), &'static str> {
     validate_assistant_message(message)?;
-    // Correlation identity: v2 samples carry `id`, the pinned 1.0.0
+    // Correlation identity: v2 samples carry `id`, the pinned 1.0.4
     // stream carries `responseId`; one of the two must be present.
     if message.get("id").is_none() && message.get("responseId").is_none() {
         return Err("import-unsupported-schema");
@@ -1051,6 +1140,154 @@ mod tests {
             source
         );
         assert_eq!(capture.bytes, source);
+    }
+
+    #[test]
+    fn importer_pinned_v3_retry_tolerates_context_prune_between_retry_events() {
+        // pi 1.0.4 prunes the failed attempt's message from context (an
+        // opaque entry_appended/context_edit) between auto_retry_start and
+        // the retried agent_start; every real retrying stream shows it.
+        let mut rows = pinned_v3_retry_rows();
+        let prune = serde_json::json!({
+            "type": "entry_appended",
+            "entry": {"type": "context_edit", "id": "prune-1", "parentId": "failed",
+                       "timestamp": "2026-09-27T00:00:00Z", "targetId": "failed",
+                       "replacement": null}
+        });
+        let at = rows
+            .iter()
+            .position(|row| row["type"] == "auto_retry_start")
+            .expect("retry start");
+        rows.insert(at + 1, prune);
+        let imported = PiImporter.parse_stream(&rows_capture(&rows));
+        assert!(
+            matches!(imported.completion, AgentCompletion::Completed { .. }),
+            "{:?}",
+            imported.completion
+        );
+        assert_eq!(
+            imported.terminal_message["responseId"],
+            "retry-final-response"
+        );
+    }
+
+    fn pinned_v3_multi_chain_rows(second_chain_exhausts: bool) -> Vec<serde_json::Value> {
+        use serde_json::json;
+        let usage = |input, output| {
+            json!({
+                "input": input, "output": output, "cacheRead": 0, "cacheWrite": 0,
+                "totalTokens": input + output, "cost": {},
+            })
+        };
+        let error = json!({"role": "assistant", "content": [], "api": "anthropic-messages",
+            "timestamp": 1, "provider": "zhipu", "model": "glm", "stopReason": "error",
+            "errorMessage": "Connection error.", "usage": usage(0, 0)});
+        let tool = json!({"role": "assistant", "content": [], "api": "anthropic-messages",
+            "timestamp": 2, "provider": "zhipu", "model": "glm", "stopReason": "toolUse",
+            "responseId": "chain1-tool", "usage": usage(5, 7)});
+        let more = json!({"role": "assistant", "content": [], "api": "anthropic-messages",
+            "timestamp": 3, "provider": "zhipu", "model": "glm", "stopReason": "toolUse",
+            "responseId": "chain1-more", "usage": usage(5, 7)});
+        let final_message = json!({"role": "assistant", "content": [], "api": "anthropic-messages",
+            "timestamp": 4, "provider": "zhipu", "model": "glm", "stopReason": "stop",
+            "responseId": "multi-final", "usage": usage(9, 11)});
+        let prune = |suffix: u64| {
+            json!({"type": "entry_appended",
+                "entry": {"type": "context_edit", "id": format!("prune-{suffix}"),
+                           "parentId": "failed", "timestamp": "2026-09-27T00:00:00Z",
+                           "targetId": "failed", "replacement": null}})
+        };
+        let start = |attempt: u64, delay: u64| {
+            json!({"type": "auto_retry_start", "attempt": attempt, "maxAttempts": 3,
+                   "delayMs": delay, "errorMessage": "Connection error."})
+        };
+        let mut rows = vec![
+            json!({"type": "session", "version": 3, "id": "multi-chain", "timestamp": "2026-09-27T00:00:00Z", "cwd": "/work"}),
+            json!({"type": "agent_start"}),
+            json!({"type": "message_end", "message": error}),
+            json!({"type": "agent_end", "messages": [error], "willRetry": true}),
+            start(1, 2000),
+            prune(1),
+            json!({"type": "agent_start"}),
+            json!({"type": "message_end", "message": tool}),
+            json!({"type": "auto_retry_end", "attempt": 1, "success": true}),
+            // The recovered attempt keeps working, then a NEW failure opens
+            // a second chain whose attempt counter restarts from 1.
+            json!({"type": "message_end", "message": more}),
+            json!({"type": "message_end", "message": error}),
+            json!({"type": "agent_end", "messages": [error], "willRetry": true}),
+            start(1, 2000),
+            prune(2),
+            json!({"type": "agent_start"}),
+            json!({"type": "message_end", "message": error}),
+            json!({"type": "agent_end", "messages": [error], "willRetry": true}),
+            start(2, 4000),
+            prune(3),
+            json!({"type": "agent_start"}),
+        ];
+        if second_chain_exhausts {
+            rows.extend([
+                json!({"type": "message_end", "message": error}),
+                json!({"type": "agent_end", "messages": [error], "willRetry": false}),
+                json!({"type": "auto_retry_end", "attempt": 2, "success": false,
+                       "finalError": "Connection error."}),
+                json!({"type": "agent_settled"}),
+            ]);
+        } else {
+            rows.extend([
+                json!({"type": "message_end", "message": final_message}),
+                json!({"type": "auto_retry_end", "attempt": 2, "success": true}),
+                json!({"type": "agent_end", "messages": [final_message], "willRetry": false}),
+                json!({"type": "agent_settled"}),
+            ]);
+        }
+        rows
+    }
+
+    #[test]
+    fn importer_pinned_v3_new_chain_after_recovery_binds_final_outcome() {
+        let imported = PiImporter.parse_stream(&rows_capture(&pinned_v3_multi_chain_rows(false)));
+        assert!(
+            matches!(imported.completion, AgentCompletion::Completed { .. }),
+            "{:?}",
+            imported.completion
+        );
+        assert_eq!(imported.terminal_message["responseId"], "multi-final");
+    }
+
+    #[test]
+    fn importer_pinned_v3_exhausted_chain_binds_provider_failure() {
+        let imported = PiImporter.parse_stream(&rows_capture(&pinned_v3_multi_chain_rows(true)));
+        match imported.completion {
+            AgentCompletion::Failed(crate::agent::process::AgentFailure { kind, boundary }) => {
+                assert_eq!(kind, "agent-provider-failure:connection");
+                assert_eq!(boundary, FailureBoundaryCode::AgentProcess);
+            }
+            other => panic!("expected provider failure, got {other:?}"),
+        }
+        assert_eq!(imported.error_message, "Connection error.");
+        assert_eq!(imported.stop_reason, "error");
+        assert_eq!(imported.provider, "zhipu");
+    }
+
+    #[test]
+    fn importer_pinned_v3_exhausted_chain_requires_matching_final_error() {
+        let mut rows = pinned_v3_multi_chain_rows(true);
+        let at = rows
+            .iter()
+            .position(|row| row["type"] == "auto_retry_end" && row["success"] == false)
+            .expect("exhaustion adjudication");
+        rows[at]["finalError"] = serde_json::json!("different diagnostic");
+        let imported = PiImporter.parse_stream(&rows_capture(&rows));
+        assert!(
+            matches!(
+                &imported.completion,
+                AgentCompletion::Failed(failure)
+                    if failure.kind == "import-unsupported-schema"
+            ),
+            "{:?}",
+            imported.completion
+        );
     }
 
     #[test]
