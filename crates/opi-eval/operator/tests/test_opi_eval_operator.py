@@ -290,6 +290,65 @@ class OperatorTests(unittest.TestCase):
         with self.assertRaises(OperatorError):
             resolve(profile)
 
+    def test_subset_export_merges_into_matching_full_evaluation(self):
+        import operator_flow
+        base = self.root / "evaluations/2026/10"
+        primary, subset = base / "baseline-full", base / "baseline-sub"
+        for evaluation, scope, task_rows in ((primary, "full", [("task-a", False, None, "native-capture-refused"), ("task-b", True, 1.0, None)]),
+                                              (subset, "subset", [("task-a", True, 1.0, None)])):
+            (evaluation / "families/tb21/checks/attempt-0").mkdir(parents=True)
+            (evaluation / "families/tb21/inputs").mkdir(parents=True)
+            (evaluation / "reports").mkdir(parents=True)
+            write = lambda path, value: path.write_text(json.dumps(value), encoding="utf-8")
+            write(evaluation / "record.json", {"action": "baseline", "created_at": "2026-10-12T00:00:00Z",
+                                               "families": {"tb21": str(evaluation / "families/tb21")}})
+            write(evaluation / "families/tb21/inputs/effective.json", {"benchmarks": {"tb21": {"scope": scope}}})
+            common = {"connection": {"provider": "zhipu", "model": "m", "api": "a", "base_url": "u"},
+                      "controls": {"reasoning": "high"}, "corpus": {"source_commit": "c"}}
+            slots = []
+            for task, valid, reward, reason in task_rows:
+                outcome = {"class": "graded"} if valid else {"class": "invalid", "reason": reason}
+                slots.append({"task": task, "repetition": 1, "valid": valid, "reward": reward,
+                              "attempts": [{"outcome": outcome}]})
+            write(evaluation / "families/tb21/snapshot.json", {"product": "pi", "version": "1.0.4",
+                "semantic": {"common": common}, "slots": slots,
+                "companion": {"sha256": "x" * 64}})
+            write(evaluation / "families/tb21/checks/attempt-0/report-a.json", {"manifest_digest": "m", "integrity_digest": "i"})
+            write(evaluation / "result-handoff.json", {"status": "stopped", "completed_at": "2026-10-12T00:00:00Z",
+                "families": {"tb21": {"status": "stopped", "coverage": {"planned": len(task_rows)}}}})
+        class Store:
+            def list(self):
+                return [{"root": str(primary)}, {"root": str(subset)}]
+        profile = {"storage": {}}
+        outcome = operator_flow._export_results(subset, profile, self.root, store=Store())
+        self.assertEqual(outcome["merged_into"], primary.name)
+        merged = self.root / "docs/eval/2026-10-12_baseline-tb21_baseline-full.md"
+        self.assertTrue(merged.is_file())
+        text = merged.read_text(encoding="utf-8")
+        self.assertIn("Metric (merged, supplements replace)", text)
+        self.assertIn("Supplement sealed tree", text)
+        self.assertIn("baseline-sub", text)
+        self.assertIn("| 1 | task-a | invalid: agent-timeout (capture refused) | pass | pass | 1.0 |", text)
+        self.assertFalse((self.root / "docs/eval/2026-10-12_baseline-tb21_baseline-sub.md").exists())
+        self.assertTrue((self.root / "docs/eval/2026-10-12_baseline-tb21_baseline-full.zh.md").is_file())
+        # differing controls never merge: the subset writes its own report
+        drift = base / "baseline-drift"
+        (drift / "families/tb21").mkdir(parents=True)
+        (drift / "record.json").write_text(json.dumps({"action": "baseline", "created_at": "2026-10-12T00:00:01Z",
+            "families": {"tb21": str(drift / "families/tb21")}}), encoding="utf-8")
+        (drift / "families/tb21/inputs").mkdir(parents=True)
+        (drift / "families/tb21/inputs/effective.json").write_text(json.dumps({"benchmarks": {"tb21": {"scope": "subset"}}}), encoding="utf-8")
+        snapshot = json.loads((primary / "families/tb21/snapshot.json").read_text(encoding="utf-8"))
+        snapshot["semantic"]["common"]["controls"]["reasoning"] = "max"
+        (drift / "families/tb21/snapshot.json").write_text(json.dumps(snapshot), encoding="utf-8")
+        (drift / "result-handoff.json").write_text(json.dumps({"status": "stopped", "families": {}}), encoding="utf-8")
+        class DriftStore:
+            def list(self):
+                return [{"root": str(primary)}, {"root": str(drift)}]
+        outcome = operator_flow._export_results(drift, profile, self.root, store=DriftStore())
+        self.assertIsNone(outcome["merged_into"])
+        self.assertTrue(any(entry.endswith("baseline-drift.md") for entry in outcome["conclusions"]))
+
     def test_exclusive_artifacts(self):
         from operator_process import write_json, OperatorError
         target = self.root / "manifest.json"
