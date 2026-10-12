@@ -62,3 +62,7 @@ keep_latest_per_group = 3
 # Native prepare/run requires Linux x86_64 and Docker. Choose external Linux paths.
 workspace = "/home/luiz/.local/state/opi-eval"
 cache = "/home/luiz/.cache/opi-eval"
+# Optional Windows-accessible export root (for example under /mnt/d/…):
+# every finished evaluation automatically copies its compact machine-evidence
+# set here, and bilingual conclusions land in the project's docs/eval.
+# exports = "/mnt/d/Luiz/Odradek/opi-eval-results"

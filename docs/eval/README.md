@@ -2,11 +2,13 @@
 
 This directory retains historical conclusion reports, legacy evidence references
 and fidelity history. New evaluation records, bilingual/machine reports and
-query history live in the operator's external workspace. A caller may explicitly
-export a compact bilingual conclusion here through the
-[`opi-eval` skill](../../.agents/skills/opi-eval/SKILL.md); neither this directory
-nor a repository index is an execution prerequisite or default write destination.
-Generic canaries are runtime signals,
+query history live in the operator's external workspace. Every finished
+configured execution automatically exports a compact bilingual conclusion pair
+here through the
+[`opi-eval` skill](../../.agents/skills/opi-eval/SKILL.md), and, when the
+private profile configures `storage.exports`, machine-evidence copies land in
+that Windows-accessible root; neither this directory
+nor a repository index is an execution prerequisite. Generic canaries are runtime signals,
 not deterministic acceptance evidence; public-seam tests and CI remain the
 deterministic acceptance baseline.
 

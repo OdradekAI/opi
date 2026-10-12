@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-runs (for example provider-failure victims) no longer require a full
   corpus re-execution.
 
+- `opi-eval`: every finished configured execution automatically exports a
+  compact bilingual conclusion pair to the project's `docs/eval/` and, when the
+  new optional `storage.exports` root is configured (for example a
+  `/mnt/<drive>/…` path), copies the compact machine-evidence set (result
+  handoff, generated reports, snapshots, native machine reports) to
+  `<exports>/<evaluation-id>/` for Windows-side consumers. The export is
+  best-effort: failures record a typed gap in `export-handoff.json` and never
+  change execution results.
+
 ### Breaking Changes
 
 - `opi-eval`: the Python operator modules and sole configuration template move

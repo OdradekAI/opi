@@ -244,9 +244,10 @@ acceptance handoff.
 Use [benchmark report](references/benchmark-report.md) for native, acceptance
 and verify results: unique external bilingual reports and machine evidence,
 native metrics/denominators, complete coverage, criterion status and exact
-artifact/check links. Export a
-compact bilingual conclusion to `docs/eval/` only when the caller explicitly
-requests it. Acceptance readiness is separate from Phase exit.
+artifact/check links. The operator automatically exports a compact bilingual
+conclusion pair to the project's `docs/eval/` and, when `storage.exports` is
+configured, machine-evidence copies to that Windows-accessible root when an
+execution finishes. Acceptance readiness is separate from Phase exit.
 Eval findings use the [finding contract](../_shared/references/finding-contract.md);
 only a later independent audit can admit them to the live remediation set.
 

@@ -677,6 +677,7 @@ def run_prepared(root, action, *, repo=REPO, index=INDEX):
             _write_reports(evaluation, handoff)
             write_json(evaluation / "result-handoff.json", handoff)
             store.refresh(evaluation)
+            _export_results(evaluation, profile, repo)
         else:
             handoff = {"status": _evaluation_status(results), "families": results}
         returned = handoff if grouped else next(iter(results.values()))
@@ -700,6 +701,129 @@ def _finish_retention(store, profile, evaluation):
         status = "refused"
     write_json(evaluation / "retention-handoff.json", result)
     return {"retention": pin(evaluation / "retention-handoff.json"), "retention_status": status}
+
+
+def _refresh(destination, payload):
+    """Replace this operator's own derived export file (same identity, fresh bytes)."""
+    if destination.exists() or destination.is_symlink():
+        destination.unlink()
+    write_bytes(destination, payload)
+
+
+def _windows_view(path):
+    """Render a WSL /mnt/<drive>/… path as its Windows drive view, else None."""
+    parts = Path(path).parts
+    if len(parts) >= 3 and parts[0] == "/" and parts[1] == "mnt" and len(parts[2]) == 1 and parts[2].isalpha():
+        return parts[2].upper() + ":\\" + "\\".join(parts[3:])
+    return None
+
+
+def _export_results(evaluation, profile, repo):
+    """Automatic post-run export, best-effort and never result-bearing.
+
+    Writes a compact bilingual conclusion pair into the project's
+    docs/eval (the repository is the Windows-accessible project folder)
+    and, when storage.exports is configured, copies the small machine
+    evidence set (result handoff, generated reports, snapshots, native
+    machine reports) into that Windows-accessible root. Every failure
+    records a typed gap in export-handoff.json; execution results never
+    depend on export success.
+    """
+    outcome = {"schema": "opi-eval-export-handoff/1", "evaluation": str(evaluation),
+               "status": "completed", "conclusions": [], "evidence": [], "exports_root": None, "gap": None}
+    try:
+        handoff = read_json(evaluation / "result-handoff.json")
+        record = read_json(evaluation / "record.json")
+        date = (handoff.get("completed_at") or record.get("created_at") or utc_now())[:10]
+        action = record.get("action") or "evaluation"
+        benches = "-".join(sorted(record.get("families") or {})) or "eval"
+        stem = f"{date}_{action}-{benches}_{evaluation.name}"
+        rows = []
+        for bench in sorted(record.get("families") or {}):
+            family = evaluation / "families" / bench
+            row = {"bench": bench, "status": (handoff.get("families") or {}).get(bench, {}).get("status")}
+            coverage = (handoff.get("families") or {}).get(bench, {}).get("coverage")
+            if coverage:
+                row["coverage"] = coverage
+            snapshot_path = family / "snapshot.json"
+            if snapshot_path.is_file():
+                snapshot = read_json(snapshot_path)
+                row["product"] = snapshot.get("product")
+                row["version"] = snapshot.get("version")
+                row["stopped_reason"] = snapshot.get("stopped_reason")
+            machine = sorted((family / "checks").glob("attempt-*/report-a.json")) if (family / "checks").is_dir() else []
+            if machine:
+                report = read_json(machine[-1])
+                row["machine_report"] = str(machine[-1])
+                row["manifest_digest"] = report.get("manifest_digest")
+                row["integrity_digest"] = report.get("integrity_digest")
+            rows.append(row)
+        views = "; ".join(filter(None, [
+            f"`{evaluation}`" + (f" (Windows: `{_windows_view(evaluation)}`)" if _windows_view(evaluation) else ""),
+        ]))
+        exports = profile.get("storage", {}).get("exports")
+        body = {"": ("Evaluation conclusion", "en"), ".zh": ("评测结论", "zh")}
+        for suffix, (title, language) in body.items():
+            if language == "zh":
+                lines = [f"# {title}", "",
+                         f"状态:{handoff.get('status')};动作:{action};测试集:{benches};评估:`{evaluation.name}`。", "",
+                         "覆盖与身份(权威数据见机器报告):", ""]
+                for row in rows:
+                    lines.append(f"- {row['bench']}:状态 {row['status']};覆盖 {json.dumps(row.get('coverage', {}), ensure_ascii=False, sort_keys=True)};"
+                                 f"受测 {row.get('product')} {row.get('version')};manifest `{row.get('manifest_digest', 'n/a')}`;"
+                                 f"integrity `{row.get('integrity_digest', 'n/a')}`。")
+                lines += ["", f"证据根:{views}", ""]
+                if exports:
+                    lines.append(f"Windows 可访问证据副本:`{Path(exports) / evaluation.name}`。")
+                lines += [f"完整报告:`{evaluation}/reports/`;机器报告路径与摘要见上。", "",
+                          f"剩余缺口:{json.dumps([row.get('stopped_reason') for row in rows if row.get('stopped_reason')], ensure_ascii=False) or '无'}。", ""]
+            else:
+                lines = [f"# {title}", "",
+                         f"Status: {handoff.get('status')}; action: {action}; families: {benches}; evaluation: `{evaluation.name}`.", "",
+                         "Coverage and identity (authoritative facts remain in the machine reports):", ""]
+                for row in rows:
+                    lines.append(f"- {row['bench']}: status {row['status']}; coverage {json.dumps(row.get('coverage', {}), sort_keys=True)}; "
+                                 f"subject {row.get('product')} {row.get('version')}; manifest `{row.get('manifest_digest', 'n/a')}`; "
+                                 f"integrity `{row.get('integrity_digest', 'n/a')}`.")
+                lines += ["", f"Evidence root: {views}", ""]
+                if exports:
+                    lines.append(f"Windows-accessible evidence copies: `{Path(exports) / evaluation.name}`.")
+                lines += [f"Full reports: `{evaluation}/reports/`; machine report paths and digests above.", "",
+                          f"Remaining gaps: {json.dumps([row.get('stopped_reason') for row in rows if row.get('stopped_reason')]) or 'none'}.", ""]
+            destination = repo / "docs/eval" / (stem + suffix + ".md")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            _refresh(destination, ("\n".join(lines) + "\n").encode())
+            outcome["conclusions"].append("docs/eval/" + stem + suffix + ".md")
+        if exports:
+            target = Path(exports) / evaluation.name
+            outcome["exports_root"] = "configured"
+            copies = [evaluation / "result-handoff.json"]
+            reports = evaluation / "reports"
+            if reports.is_dir():
+                copies += [reports / name for name in ("report.md", "report.zh.md", "report.json") if (reports / name).is_file()]
+            for bench in sorted(record.get("families") or {}):
+                family = evaluation / "families" / bench
+                copies.append(family / "snapshot.json")
+                copies += sorted((family / "checks").glob("attempt-*/report-a.json")) if (family / "checks").is_dir() else []
+            for source in copies:
+                if not source.is_file():
+                    continue
+                relative = source.relative_to(evaluation)
+                destination = target / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                _refresh(destination, source.read_bytes())
+                outcome["evidence"].append(relative.as_posix())
+    except (OperatorError, OSError, KeyError, ValueError, TypeError) as exc:
+        outcome["status"] = "refused"
+        outcome["gap"] = f"export refused ({type(exc).__name__}); original results remain authoritative"
+    try:
+        outcome_path = evaluation / "export-handoff.json"
+        if outcome_path.exists():
+            outcome_path.unlink()
+        write_json(outcome_path, outcome)
+    except (OSError, OperatorError):
+        pass
+    return outcome
 
 
 def _evaluation_status(results):

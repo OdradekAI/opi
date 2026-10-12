@@ -165,7 +165,7 @@ def resolve(profile, explicit=()):
         fields = {"keep_latest_per_group"}
         table(retention, fields, "retention", fields)
         positive(retention["keep_latest_per_group"], "retention.keep_latest_per_group")
-    table(p["storage"], {"workspace", "cache"}, "storage", {"workspace", "cache"})
+    table(p["storage"], {"workspace", "cache", "exports"}, "storage", {"workspace", "cache"})
     for name in ("workspace", "cache"):
         text(p["storage"][name], "storage." + name)
         value = p["storage"][name]
@@ -176,6 +176,17 @@ def resolve(profile, explicit=()):
     workspace, cache = (PurePosixPath(p["storage"][name]) if p["storage"][name].startswith("/") else Path(p["storage"][name]) for name in ("workspace", "cache"))
     if workspace == cache or workspace in cache.parents or cache in workspace.parents:
         raise OperatorError("storage workspace and cache must be disjoint directories")
+    if p["storage"].get("exports") is not None:
+        text(p["storage"]["exports"], "storage.exports")
+        value = p["storage"]["exports"]
+        path = PurePosixPath(value) if os.name == "nt" and value.startswith("/") else Path(value)
+        if not path.is_absolute():
+            raise OperatorError("storage paths must be absolute")
+        p["storage"]["exports"] = str(path) if isinstance(path, PurePosixPath) and not isinstance(path, Path) else str(path.resolve())
+        exports = PurePosixPath(p["storage"]["exports"]) if p["storage"]["exports"].startswith("/") else Path(p["storage"]["exports"])
+        for retained in (workspace, cache):
+            if exports == retained or exports in retained.parents or retained in exports.parents:
+                raise OperatorError("storage exports must be disjoint from workspace and cache")
     if credential == "api_key":
         del model["api_key"]
         p["credential"] = {"kind": "private-profile"}

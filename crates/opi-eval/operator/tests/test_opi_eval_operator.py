@@ -230,6 +230,60 @@ class OperatorTests(unittest.TestCase):
         clock[0] = 71
         self.assertEqual(deadline.remaining(), 0)
 
+    def test_export_results_writes_conclusions_and_windows_evidence(self):
+        import operator_flow
+        evaluation = self.root / "evaluations/2026/10/baseline-x"
+        (evaluation / "families/tb21/checks/attempt-0").mkdir(parents=True)
+        (evaluation / "reports").mkdir(parents=True)
+        write = lambda path, value: path.write_text(json.dumps(value), encoding="utf-8")
+        write(evaluation / "record.json", {"action": "baseline", "created_at": "2026-10-12T00:00:00Z",
+                                           "families": {"tb21": str(evaluation / "families/tb21")}})
+        write(evaluation / "result-handoff.json", {"status": "stopped", "completed_at": "2026-10-12T00:00:00Z",
+                                                    "families": {"tb21": {"status": "stopped", "coverage": {"planned": 6, "valid": 5}}}})
+        write(evaluation / "families/tb21/snapshot.json", {"product": "pi", "version": "1.0.4", "stopped_reason": "gap"})
+        write(evaluation / "families/tb21/checks/attempt-0/report-a.json", {"manifest_digest": "m", "integrity_digest": "i"})
+        write(evaluation / "reports/report.json", {"schema": "opi-eval-evaluation-report/1"})
+        (evaluation / "reports/report.md").write_text("report", encoding="utf-8")
+        exports = self.root / "exports"
+        profile = {"storage": {"exports": str(exports)}}
+        outcome = operator_flow._export_results(evaluation, profile, self.root)
+        self.assertEqual(outcome["status"], "completed")
+        stem = "2026-10-12_baseline-tb21_baseline-x"
+        for suffix in ("", ".zh"):
+            conclusion = self.root / "docs/eval" / (stem + suffix + ".md")
+            self.assertTrue(conclusion.is_file(), conclusion)
+            text = conclusion.read_text(encoding="utf-8")
+            self.assertIn("manifest `m`", text)
+            self.assertIn("Remaining gaps" if not suffix else "剩余缺口", text)
+        copied = exports / "baseline-x"
+        self.assertTrue((copied / "result-handoff.json").is_file())
+        self.assertTrue((copied / "reports/report.md").is_file())
+        self.assertTrue((copied / "families/tb21/checks/attempt-0/report-a.json").is_file())
+        receipt = json.loads((evaluation / "export-handoff.json").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["schema"], "opi-eval-export-handoff/1")
+        self.assertEqual(len(receipt["conclusions"]), 2)
+        self.assertTrue(all(not entry.startswith("/") for entry in receipt["conclusions"] + receipt["evidence"]))
+        self.assertEqual(operator_flow._windows_view(Path("/mnt/d/a/b")), "D:\\a\\b")
+        self.assertIsNone(operator_flow._windows_view(Path("/home/luiz/a")))
+
+    def test_export_failure_records_gap_and_keeps_results(self):
+        import operator_flow
+        evaluation = self.root / "evaluations/2026/10/baseline-y"
+        evaluation.mkdir(parents=True)
+        outcome = operator_flow._export_results(evaluation, {}, self.root)
+        self.assertEqual(outcome["status"], "refused")
+        self.assertIn("export refused", outcome["gap"])
+
+    def test_resolve_accepts_optional_disjoint_exports_root(self):
+        from operator_config import TEMPLATE, load, resolve, OperatorError
+        profile = load(TEMPLATE)
+        profile["storage"]["exports"] = str(self.root / "exports")
+        resolved = resolve(profile)
+        self.assertEqual(resolved["storage"]["exports"], str(self.root / "exports"))
+        profile["storage"]["exports"] = str(Path(profile["storage"]["workspace"]) / "inside")
+        with self.assertRaises(OperatorError):
+            resolve(profile)
+
     def test_exclusive_artifacts(self):
         from operator_process import write_json, OperatorError
         target = self.root / "manifest.json"

@@ -111,6 +111,13 @@ plan records the subset reason. Precision re-runs of infrastructure victims
 whole corpus; a subset evaluation is its own sealed evidence tree and never
 merges into another run's metrics.
 
+When a configured execution finishes, the operator automatically writes a
+compact bilingual conclusion pair into the project's `docs/eval/` and, when the
+optional `storage.exports` root is configured (for example under `/mnt/d/…`),
+copies the compact machine-evidence set to `<exports>/<evaluation-id>/` for
+Windows-side consumers. The export is best-effort: failures record a typed gap
+in `export-handoff.json` and never change execution results.
+
 `baseline` selects only the admitted pi version without building Opi. A new pi
 release needs a verified pin and adapter proof; research or an ambient installed
 binary cannot substitute. `candidate` rebuilds current-worktree Opi with relevant
