@@ -721,13 +721,12 @@ def _windows_view(path):
 def _export_results(evaluation, profile, repo):
     """Automatic post-run export, best-effort and never result-bearing.
 
-    Writes a compact bilingual conclusion pair into the project's
-    docs/eval (the repository is the Windows-accessible project folder)
-    and, when storage.exports is configured, copies the small machine
-    evidence set (result handoff, generated reports, snapshots, native
-    machine reports) into that Windows-accessible root. Every failure
-    records a typed gap in export-handoff.json; execution results never
-    depend on export success.
+    Writes a full bilingual benchmark report into the project's docs/eval
+    (the repository is the Windows-accessible project folder) and, when
+    storage.exports is configured, copies the small machine evidence set
+    (result handoff, generated reports, snapshots, native machine reports)
+    into that Windows-accessible root. Every failure records a typed gap in
+    export-handoff.json; execution results never depend on export success.
     """
     outcome = {"schema": "opi-eval-export-handoff/1", "evaluation": str(evaluation),
                "status": "completed", "conclusions": [], "evidence": [], "exports_root": None, "gap": None}
@@ -738,58 +737,123 @@ def _export_results(evaluation, profile, repo):
         action = record.get("action") or "evaluation"
         benches = "-".join(sorted(record.get("families") or {})) or "eval"
         stem = f"{date}_{action}-{benches}_{evaluation.name}"
-        rows = []
+        exports = profile.get("storage", {}).get("exports")
+        families = []
         for bench in sorted(record.get("families") or {}):
             family = evaluation / "families" / bench
-            row = {"bench": bench, "status": (handoff.get("families") or {}).get(bench, {}).get("status")}
-            coverage = (handoff.get("families") or {}).get(bench, {}).get("coverage")
-            if coverage:
-                row["coverage"] = coverage
             snapshot_path = family / "snapshot.json"
-            if snapshot_path.is_file():
-                snapshot = read_json(snapshot_path)
-                row["product"] = snapshot.get("product")
-                row["version"] = snapshot.get("version")
-                row["stopped_reason"] = snapshot.get("stopped_reason")
+            snapshot = read_json(snapshot_path) if snapshot_path.is_file() else {}
+            common = (snapshot.get("semantic") or {}).get("common") or {}
+            connection = common.get("connection") or {}
+            controls = common.get("controls") or {}
+            rows = []
+            passed = graded = invalid = 0
+            for slot in snapshot.get("slots") or []:
+                attempt = (slot.get("attempts") or [{}])[-1]
+                result = attempt.get("outcome") or {}
+                kind = result.get("class")
+                reason = result.get("reason")
+                reward = slot.get("reward")
+                if slot.get("valid"):
+                    graded += 1
+                    passed += 1 if (reward or 0) >= 1 else 0
+                else:
+                    invalid += 1
+                rows.append({"task": slot.get("task"), "repetition": slot.get("repetition"),
+                             "valid": bool(slot.get("valid")), "kind": kind, "reason": reason,
+                             "reward": reward, "attempts": len(slot.get("attempts") or [])})
             machine = sorted((family / "checks").glob("attempt-*/report-a.json")) if (family / "checks").is_dir() else []
-            if machine:
-                report = read_json(machine[-1])
-                row["machine_report"] = str(machine[-1])
-                row["manifest_digest"] = report.get("manifest_digest")
-                row["integrity_digest"] = report.get("integrity_digest")
-            rows.append(row)
-        views = "; ".join(filter(None, [
-            f"`{evaluation}`" + (f" (Windows: `{_windows_view(evaluation)}`)" if _windows_view(evaluation) else ""),
-        ]))
-        exports = profile.get("storage", {}).get("exports")
-        body = {"": ("Evaluation conclusion", "en"), ".zh": ("评测结论", "zh")}
-        for suffix, (title, language) in body.items():
-            if language == "zh":
-                lines = [f"# {title}", "",
-                         f"状态:{handoff.get('status')};动作:{action};测试集:{benches};评估:`{evaluation.name}`。", "",
-                         "覆盖与身份(权威数据见机器报告):", ""]
-                for row in rows:
-                    lines.append(f"- {row['bench']}:状态 {row['status']};覆盖 {json.dumps(row.get('coverage', {}), ensure_ascii=False, sort_keys=True)};"
-                                 f"受测 {row.get('product')} {row.get('version')};manifest `{row.get('manifest_digest', 'n/a')}`;"
-                                 f"integrity `{row.get('integrity_digest', 'n/a')}`。")
-                lines += ["", f"证据根:{views}", ""]
-                if exports:
-                    lines.append(f"Windows 可访问证据副本:`{Path(exports) / evaluation.name}`。")
-                lines += [f"完整报告:`{evaluation}/reports/`;机器报告路径与摘要见上。", "",
-                          f"剩余缺口:{json.dumps([row.get('stopped_reason') for row in rows if row.get('stopped_reason')], ensure_ascii=False) or '无'}。", ""]
-            else:
-                lines = [f"# {title}", "",
-                         f"Status: {handoff.get('status')}; action: {action}; families: {benches}; evaluation: `{evaluation.name}`.", "",
-                         "Coverage and identity (authoritative facts remain in the machine reports):", ""]
-                for row in rows:
-                    lines.append(f"- {row['bench']}: status {row['status']}; coverage {json.dumps(row.get('coverage', {}), sort_keys=True)}; "
-                                 f"subject {row.get('product')} {row.get('version')}; manifest `{row.get('manifest_digest', 'n/a')}`; "
-                                 f"integrity `{row.get('integrity_digest', 'n/a')}`.")
-                lines += ["", f"Evidence root: {views}", ""]
-                if exports:
-                    lines.append(f"Windows-accessible evidence copies: `{Path(exports) / evaluation.name}`.")
-                lines += [f"Full reports: `{evaluation}/reports/`; machine report paths and digests above.", "",
-                          f"Remaining gaps: {json.dumps([row.get('stopped_reason') for row in rows if row.get('stopped_reason')]) or 'none'}.", ""]
+            comparison = family / "comparison.json"
+            families.append({
+                "bench": bench,
+                "status": (handoff.get("families") or {}).get(bench, {}).get("status"),
+                "coverage": (handoff.get("families") or {}).get(bench, {}).get("coverage"),
+                "snapshot": snapshot,
+                "connection": connection, "controls": controls,
+                "corpus": common.get("corpus") or {}, "runner": common.get("runner") or {},
+                "rows": rows, "passed": passed, "graded": graded, "invalid": invalid,
+                "machine_report": str(machine[-1]) if machine else None,
+                "manifest_digest": (read_json(machine[-1]).get("manifest_digest") if machine else None),
+                "integrity_digest": (read_json(machine[-1]).get("integrity_digest") if machine else None),
+                "comparison": read_json(comparison) if comparison.is_file() else None,
+                "stopped_reason": snapshot.get("stopped_reason"),
+            })
+        outcome_label = {"graded": None, "native-capture-refused": "invalid: agent-timeout (capture refused)",
+                         "import-unsupported-schema": "invalid: provider-connection (adapter)",
+                         "verifier-timeout": "invalid: verifier-timeout",
+                         "agent-provider-failure:connection": "invalid: provider-connection exhausted"}
+        outcome_label_zh = {"graded": None, "native-capture-refused": "无效:agent 超时(捕获拒绝)",
+                            "import-unsupported-schema": "无效:provider 连接(适配器)",
+                            "verifier-timeout": "无效:verifier 超时",
+                            "agent-provider-failure:connection": "无效:provider 连接耗尽"}
+
+        def render(family, zh):
+            snapshot = family["snapshot"]
+            lines = []
+            status = family["status"]
+            title = "评测报告" if zh else "Benchmark report"
+            lines += [f"# {title} — {family['bench']} ({snapshot.get('product')} {snapshot.get('version')})", "",
+                      f"- {'状态' if zh else 'Status'}: {status}{' — ' + str(family['stopped_reason']) if family['stopped_reason'] else ''}"]
+            if family["coverage"]:
+                coverage = family["coverage"]
+                lines.append(f"- {'覆盖' if zh else 'Coverage'}: planned {coverage.get('planned')}, valid {coverage.get('valid')}, "
+                             f"verified_attempts {coverage.get('verified_attempts')}, unverified {coverage.get('unverified_attempt_runs')}")
+            connection, controls = family["connection"], family["controls"]
+            if connection:
+                lines.append(f"- {'受测模型(锁定)' if zh else 'Subject model (locked)'}: {connection.get('provider')}:`{connection.get('model')}` @ {connection.get('api')}")
+            if controls:
+                lines.append(f"- {'控制变量(锁定)' if zh else 'Controls (locked)'}: thinking={controls.get('reasoning')}, max_output_tokens={controls.get('max_output_tokens')}, "
+                             f"temperature={controls.get('temperature')}, top_p={controls.get('top_p')}, context_window={controls.get('context_window')}")
+            corpus, runner = family["corpus"], family["runner"]
+            if corpus:
+                lines.append(f"- {'语料提交(锁定)' if zh else 'Corpus commit (locked)'}: `{corpus.get('source_commit')}`")
+            if snapshot.get("companion"):
+                lines.append(f"- Companion: sha256 `{str(snapshot.get('companion', {}).get('sha256'))[:16]}…`")
+            if family["machine_report"]:
+                lines.append(f"- {'机器报告' if zh else 'Machine report'}: `{family['machine_report']}` (manifest `{str(family['manifest_digest'])[:16]}…`, integrity `{str(family['integrity_digest'])[:16]}…`)")
+            passed, graded, invalid = family["passed"], family["graded"], family["invalid"]
+            if graded:
+                lines.append(f"- {'指标' if zh else 'Metric'}: native-task-success = {passed}/{graded} = {passed / graded:.4f}"
+                             f"{' (全语料参考: ' + str(round(passed / max(len(family['rows']), 1), 4)) + ')' if invalid else ''}")
+            lines.append(f"- {'逐任务结局' if zh else 'Per-trial outcomes'}: passed {passed}, failed {graded - passed}, invalid {invalid}")
+            comparison = family["comparison"]
+            if comparison:
+                lines += ["", f"## {'与 pi 基线的对比' if zh else 'Comparison against the pi baseline'}", "",
+                          f"- {'对比状态' if zh else 'Comparison status'}: {comparison.get('status')}"]
+                if comparison.get("baseline"):
+                    lines.append(f"- {'基线' if zh else 'Baseline'}: `{json.dumps(comparison.get('baseline'), ensure_ascii=False)[:160]}`")
+                if comparison.get("paired_reward_delta") is not None:
+                    lines.append(f"- {'成对平均分差' if zh else 'Paired mean reward delta'}: {comparison.get('paired_reward_delta'):+.4f} (opi − pi)")
+                coverage = comparison.get("coverage") or {}
+                if coverage:
+                    lines.append(f"- {'配对覆盖' if zh else 'Pairing coverage'}: {json.dumps(coverage, sort_keys=True)}")
+                lines += ["", f"| {'任务' if zh else 'Task'} | {'状态' if zh else 'State'} | pi | opi | Δ |", "|---|---|---|---|---|"]
+                for pair in comparison.get("pairs") or []:
+                    lines.append(f"| {pair.get('task')} | {pair.get('state')} | {pair.get('baseline_reward')} | "
+                                 f"{pair.get('candidate_reward')} | {pair.get('reward_delta') if pair.get('reward_delta') is not None else ''} |")
+            lines += ["", f"## {'逐任务结果' if zh else 'Per-task results'}", "",
+                      f"| # | {'任务' if zh else 'Task'} | {'结局' if zh else 'Outcome'} | reward | {'尝试' if zh else 'Attempts'} |",
+                      "|---|---|---|---|---|"]
+            labels = outcome_label_zh if zh else outcome_label
+            for index, row in enumerate(family["rows"], 1):
+                if row["valid"]:
+                    label = ("通过" if zh else "pass") if (row["reward"] or 0) >= 1 else ("失败" if zh else "fail")
+                else:
+                    label = labels.get(row["reason"]) or f"invalid: {row['reason']}"
+                reward = "" if row["reward"] is None else f"{row['reward']:.1f}"
+                lines.append(f"| {index} | {row['task']} | {label} | {reward} | {row['attempts']} |")
+            return lines
+
+        for suffix, zh in (("", False), (".zh", True)):
+            lines = [f"# {'评测报告' if zh else 'Evaluation report'} — {action} ({benches})", "",
+                     f"`{evaluation.name}`" + (f" (Windows: `{_windows_view(evaluation)}`)" if _windows_view(evaluation) else ""), ""]
+            for family in families:
+                lines += render(family, zh)
+                lines.append("")
+            lines += [f"{'证据根' if zh else 'Evidence root'}: `{evaluation}`"]
+            if exports:
+                lines.append(f"{'Windows 可访问证据副本' if zh else 'Windows-accessible evidence copies'}: `{Path(exports) / evaluation.name}`.")
+            lines.append(f"{'完整报告' if zh else 'Full reports'}: `{evaluation}/reports/`")
             destination = repo / "docs/eval" / (stem + suffix + ".md")
             destination.parent.mkdir(parents=True, exist_ok=True)
             _refresh(destination, ("\n".join(lines) + "\n").encode())
@@ -801,10 +865,12 @@ def _export_results(evaluation, profile, repo):
             reports = evaluation / "reports"
             if reports.is_dir():
                 copies += [reports / name for name in ("report.md", "report.zh.md", "report.json") if (reports / name).is_file()]
-            for bench in sorted(record.get("families") or {}):
-                family = evaluation / "families" / bench
-                copies.append(family / "snapshot.json")
-                copies += sorted((family / "checks").glob("attempt-*/report-a.json")) if (family / "checks").is_dir() else []
+            for family in families:
+                bench = family["bench"]
+                copies.append(evaluation / "families" / bench / "snapshot.json")
+                copies += sorted((evaluation / "families" / bench / "checks").glob("attempt-*/report-a.json")) if (evaluation / "families" / bench / "checks").is_dir() else []
+                if (evaluation / "families" / bench / "comparison.json").is_file():
+                    copies.append(evaluation / "families" / bench / "comparison.json")
             for source in copies:
                 if not source.is_file():
                     continue

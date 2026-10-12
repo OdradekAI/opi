@@ -240,7 +240,11 @@ class OperatorTests(unittest.TestCase):
                                            "families": {"tb21": str(evaluation / "families/tb21")}})
         write(evaluation / "result-handoff.json", {"status": "stopped", "completed_at": "2026-10-12T00:00:00Z",
                                                     "families": {"tb21": {"status": "stopped", "coverage": {"planned": 6, "valid": 5}}}})
-        write(evaluation / "families/tb21/snapshot.json", {"product": "pi", "version": "1.0.4", "stopped_reason": "gap"})
+        write(evaluation / "families/tb21/snapshot.json", {"product": "pi", "version": "1.0.4", "stopped_reason": "gap",
+            "slots": [
+                {"task": "task-a", "repetition": 1, "valid": True, "reward": 1.0, "attempts": [{"outcome": {"class": "graded"}}]},
+                {"task": "task-b", "repetition": 1, "valid": False, "reward": None, "attempts": [{"outcome": {"class": "invalid", "reason": "native-capture-refused"}}]},
+            ]})
         write(evaluation / "families/tb21/checks/attempt-0/report-a.json", {"manifest_digest": "m", "integrity_digest": "i"})
         write(evaluation / "reports/report.json", {"schema": "opi-eval-evaluation-report/1"})
         (evaluation / "reports/report.md").write_text("report", encoding="utf-8")
@@ -253,8 +257,10 @@ class OperatorTests(unittest.TestCase):
             conclusion = self.root / "docs/eval" / (stem + suffix + ".md")
             self.assertTrue(conclusion.is_file(), conclusion)
             text = conclusion.read_text(encoding="utf-8")
-            self.assertIn("manifest `m`", text)
-            self.assertIn("Remaining gaps" if not suffix else "剩余缺口", text)
+            self.assertIn("manifest `m", text)
+            self.assertIn("逐任务结果" if suffix else "Per-task results", text)
+            self.assertIn("task-a", text)
+            self.assertIn("native-task-success = 1/1" if not suffix else "native-task-success = 1/1", text)
         copied = exports / "baseline-x"
         self.assertTrue((copied / "result-handoff.json").is_file())
         self.assertTrue((copied / "reports/report.md").is_file())

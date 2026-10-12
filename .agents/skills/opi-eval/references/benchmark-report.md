@@ -16,18 +16,20 @@ identities even when a filename uses abbreviations. Each evaluation has a fresh
 dated root; never overwrite an earlier evaluation's report.
 
 When a configured execution finishes, the operator automatically exports a
-compact bilingual conclusion pair to the project's
-`docs/eval/<stem>.md` and `<stem>.zh.md`, with counterpart links: outcome,
-scope, verified coverage counts, key identities, external record/evidence/report
-paths and digests, and remaining gaps. Link the external full report instead of
-restating per-trial tables. When the optional `storage.exports` root is
-configured (for example a `/mnt/<drive>/…` path), the same completion step
-copies the compact machine-evidence set (result handoff, generated reports,
-snapshots, native machine reports) to `<exports>/<evaluation-id>/` so
-Windows-side consumers reach it without WSL path knowledge. The export is
-best-effort: failures record a typed gap in `export-handoff.json` and never
-change execution results. It is not an execution prerequisite or a
-catalogue update; sealed evidence and verification output stay external.
+full bilingual benchmark report to the project's
+`docs/eval/<stem>.md` and `<stem>.zh.md`: the locked identity block
+(provider:model@api, thinking/output-token controls, corpus commit, runner
+and Companion digests), coverage, the native metric, per-task outcome and
+reward tables, and, for Opi candidates, the paired comparison against the
+selected pi baseline (per-task deltas, pairing coverage). When the optional
+`storage.exports` root is configured (for example a `/mnt/<drive>/…` path),
+the same completion step copies the compact machine-evidence set (result
+handoff, generated reports, snapshots, comparisons, native machine reports)
+to `<exports>/<evaluation-id>/` so Windows-side consumers reach it without
+WSL path knowledge. The export is best-effort: failures record a typed gap
+in `export-handoff.json` and never change execution results. It is not an
+execution prerequisite or a catalogue update; sealed evidence and
+verification output stay external.
 
 Start with the result and paths, then fill the following sections. Missing
 evidence yields `blocked`/`incomplete` with reasons; omit unsupported scores.

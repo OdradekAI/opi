@@ -17,10 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   corpus re-execution.
 
 - `opi-eval`: every finished configured execution automatically exports a
-  compact bilingual conclusion pair to the project's `docs/eval/` and, when the
-  new optional `storage.exports` root is configured (for example a
-  `/mnt/<drive>/…` path), copies the compact machine-evidence set (result
-  handoff, generated reports, snapshots, native machine reports) to
+  full bilingual benchmark report to the project's `docs/eval/` — locked
+  identity block (provider:model, thinking/output-token controls, corpus
+  commit, runner/Companion digests), coverage, the native metric, per-task
+  outcome and reward tables, and for Opi candidates the paired comparison
+  against the selected pi baseline — and, when the new optional
+  `storage.exports` root is configured (for example a `/mnt/<drive>/…`
+  path), copies the compact machine-evidence set (result handoff, generated
+  reports, snapshots, comparisons, native machine reports) to
   `<exports>/<evaluation-id>/` for Windows-side consumers. The export is
   best-effort: failures record a typed gap in `export-handoff.json` and never
   change execution results.
