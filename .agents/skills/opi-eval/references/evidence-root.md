@@ -135,11 +135,11 @@ only by the evaluation operator. Reviewers query them
 or use the supplied immutable references, then verify the original evidence.
 Index metadata cannot establish a seal or score.
 
-`docs/eval/evidence-roots.jsonl` is a historical project index. Import it only by
-an explicit operator `import-index --config <profile> --index <legacy-jsonl>`
-request, read-only, without copying or rewriting originals. New runs neither
-require nor write it by default. A caller may explicitly export a bilingual
-conclusion to the repository; the external record/report handoff is sufficient.
+`docs/eval/evidence-roots.jsonl` was a historical project index; it has been
+removed and its records stay in Git history. External JSONL indexes are still
+imported only by an explicit operator
+`import-index --config <profile> --index <legacy-jsonl>` request, read-only,
+without copying or rewriting originals. New runs neither require nor write one.
 
 Archive/GC decisions and receipts stay outside sealed native trees. Restoration
 returns verified archive bytes to their original canonical path without editing

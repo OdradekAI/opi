@@ -21,7 +21,7 @@ Opi 专属的限定制品审计非空、穷尽且逐字节绑定，通过。全�
   `D:/Luiz/Odradek/phase19-operator/evidence-root`），manifest schema
   `opi-eval-local-acceptance/1`，manifest SHA-256
   `c7c0a2556b4e5d1dbe5626165590f5e831a218499fdc1dbc379d7029f214731a`。
-  已登记于 [docs/eval/evidence-roots.jsonl](../eval/evidence-roots.jsonl)。
+  已登记于历史索引 `docs/eval/evidence-roots.jsonl`（现已从检出中移除，保留于 Git 历史）。
   验收当时（2026-09-15，companion SHA-256
   `f8bf959c1428c3e10c88a7f6ebcc37166043b3d1f3f74c40809a0f30775a861b`）的校验器
   接受了该根；当前校验器会拒绝它，因为它的 material/4 manifest 与 /1 native

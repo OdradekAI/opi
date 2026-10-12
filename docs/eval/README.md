@@ -1,34 +1,35 @@
 # opi eval results
 
-This directory retains historical conclusion reports, legacy evidence references
-and fidelity history. New evaluation records, bilingual/machine reports and
-query history live in the operator's external workspace. Every finished
-configured execution automatically exports a compact bilingual conclusion pair
-here through the
-[`opi-eval` skill](../../.agents/skills/opi-eval/SKILL.md), and, when the
-private profile configures `storage.exports`, machine-evidence copies land in
-that Windows-accessible root; neither this directory
-nor a repository index is an execution prerequisite. Generic canaries are runtime signals,
+Every finished configured evaluation automatically exports its full bilingual
+benchmark report here: `<UTC-date>_<action>-<families>_<evaluation-id>.md` plus
+its `.zh.md` counterpart. The report carries the locked identity block
+(provider:model@api, thinking and output-token controls, corpus commit, runner
+and Companion digests), coverage, the native metric, per-task outcome and
+reward tables, and for Opi candidates the paired comparison against the
+selected pi baseline. A subset precision re-run whose controlled-variable
+identity matches a full-scope evaluation folds itself into that evaluation's
+merged report (sealed and merged metrics side by side, evidence chain
+documented) instead of writing a separate file.
+
+The reports are derived views. Authoritative evidence stays in the operator's
+external workspace (`<workspace>/evaluations/YYYY/MM/<eval-id>/`: sealed trial
+bundles, frozen inputs, sanitized command records, machine reports); when the
+private profile configures `storage.exports`, compact machine-evidence copies
+land in that Windows-accessible root (`<exports>/<evaluation-id>/`). See the
+[`opi-eval` skill](../../.agents/skills/opi-eval/SKILL.md) for the contracts.
+This directory is not an execution prerequisite, holds no database, and is
+never a default evidence location. Generic canaries are runtime signals,
 not deterministic acceptance evidence; public-seam tests and CI remain the
 deterministic acceptance baseline.
 
-## Historical evidence-root index
+## Historical note
 
-[evidence-roots.jsonl](evidence-roots.jsonl) is the historical machine-readable
-index of retained evaluation/acceptance evidence roots: absolute path (WSL mount
-view plus Windows drive view), manifest SHA-256 and schema versions when a
-manifest exists, collection date, current consumability status and the owning
-report. Existing records remain historical references. The operator reads this
-file only through an explicit `import-index --config <profile> --index <path>`;
-import preserves references without copying or rewriting originals. New runs
-use external `evaluations/YYYY/MM/<eval-id>/record.json`, imports and lifecycle
-receipts directly, without a database or persistent query cache. An existing
-`catalog.sqlite` is ignored and left untouched; retained JSON needs no migration.
-The evaluation operator alone writes those records; reviewers query them or use
-returned immutable references and verify
-original native evidence before trusting a claim. Historical report
-links to cleaned-up roots (the 2026-09-10..13 `E:/opi/evaluations/*` trees
-were removed before this registry existed) stay as prose in their reports.
+The legacy machine-readable index `evidence-roots.jsonl` was removed; its
+records (2026-09 era evidence roots, some since cleaned) remain available in
+Git history and are referenced as prose by the historical audit documents.
+The operator still accepts an external JSONL index through an explicit
+`import-index --config <profile> --index <path>` request, read-only, without
+copying or rewriting originals.
 
 ## Native benchmark and acceptance reports
 

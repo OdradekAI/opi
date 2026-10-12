@@ -23,7 +23,8 @@ payload or private key appears here or in the staged evidence root.
   Windows path `D:/Luiz/Odradek/phase19-operator/evidence-root`), manifest
   schema `opi-eval-local-acceptance/1`, manifest SHA-256
   `c7c0a2556b4e5d1dbe5626165590f5e831a218499fdc1dbc379d7029f214731a`.
-  Registered in [docs/eval/evidence-roots.jsonl](../eval/evidence-roots.jsonl).
+  Registered in the historical `docs/eval/evidence-roots.jsonl` index (since
+  removed from the checkout; preserved in Git history).
   The verifier of record at acceptance time (2026-09-15, companion
   SHA-256 `f8bf959c1428c3e10c88a7f6ebcc37166043b3d1f3f74c40809a0f30775a861b`)
   accepted this root; the current verifier rejects it because its

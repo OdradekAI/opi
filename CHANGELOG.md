@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   best-effort: failures record a typed gap in `export-handoff.json` and never
   change execution results.
 
+### Removed
+
+- `opi-eval`: the legacy `docs/eval/evidence-roots.jsonl` index; its 2026-09
+  era records stay in Git history and are referenced as prose by the historical
+  audit documents. `docs/eval/README.md` now documents the automatic report
+  export workflow (full bilingual benchmark reports, merged subset views,
+  authoritative evidence locations) instead of the registry.
+
 ### Breaking Changes
 
 - `opi-eval`: the Python operator modules and sole configuration template move

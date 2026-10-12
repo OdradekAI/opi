@@ -176,9 +176,9 @@ frozen material/plan/control proof, command/check outputs, original native run
 and attempt roots, `prepared.json`, `handoff.json`, `snapshot.json`, comparison
 derivatives and execution `result-handoff.json`. Use returned paths instead of
 reconstructing them from this outline. All record/report writes stay external.
-Repository `docs/eval/` is an optional explicit conclusion export; its old
-`evidence-roots.jsonl` is historical input, never a runtime prerequisite or default
-read/write destination.
+Repository `docs/eval/` receives the automatic full bilingual report export
+after every finished execution; it is not an execution prerequisite and never a
+default evidence location.
 
 The catalogue reads the external JSON records, immutable import references and
 lifecycle receipts directly; it keeps no database or persistent query cache.
