@@ -59,6 +59,217 @@ fn write_exec(path: &Path, body: &str) {
     fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
+fn assert_diagnostic_start(product: &str, events: &[serde_json::Value]) {
+    if product == "opi" {
+        assert_eq!(
+            events.first(),
+            Some(&serde_json::json!({"type": "Agent", "event": {"type": "AgentStart"}})),
+            "Agent never started"
+        );
+    } else {
+        let opener = events
+            .first()
+            .expect("Pi session opener precedes Agent start");
+        assert_eq!(opener["type"], "session");
+        assert_eq!(opener["version"], 3);
+        assert_eq!(opener["id"], "diagnostic");
+        assert_eq!(opener["timestamp"], "2026-01-01T00:00:00Z");
+        assert!(opener["cwd"].is_string());
+        assert_eq!(opener.as_object().unwrap().len(), 5);
+        assert_eq!(
+            events.get(1),
+            Some(&serde_json::json!({"type": "agent_start"})),
+            "Agent never started"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event["type"] == "session")
+                .count(),
+            1,
+            "session opener must not be duplicated"
+        );
+    }
+}
+
+#[test]
+fn witness_material_diagnostic_start_is_flushed_and_capture_admitted() {
+    use std::io::BufRead as _;
+    use std::process::Stdio;
+    let root = tempfile::tempdir().unwrap();
+    for product in ["opi", "pi"] {
+        let directory = root.path().join(product);
+        fs::create_dir(&directory).unwrap();
+        let executable = directory.join(product);
+        let work = directory.join("work");
+        let script = native_witness_material::diagnostic_client_script(product)
+            .replace("'/work'", &format!("{:?}", work.to_str().unwrap()));
+        write_exec(&executable, &script);
+        let prompt = serde_json::json!({"diagnostic": true, "family": "terminal-bench-2.1", "delay": 30, "answer": "correct"});
+        let mut child = Command::new(&executable)
+            .arg(prompt.to_string())
+            .current_dir(&directory)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            for line in std::io::BufReader::new(stdout).lines() {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let count = if product == "pi" { 2 } else { 1 };
+        let early = (0..count)
+            .map(|_| receiver.recv_timeout(std::time::Duration::from_secs(2)))
+            .collect::<Vec<_>>();
+        child.kill().unwrap();
+        let output = child.wait_with_output().unwrap();
+        reader.join().unwrap();
+        let events = early
+            .into_iter()
+            .map(|line| {
+                serde_json::from_str::<serde_json::Value>(
+                    &line.expect("start record must precede delay").unwrap(),
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_diagnostic_start(product, &events);
+        assert!(output.stderr.is_empty());
+        assert!(
+            !work.exists(),
+            "delay task must not execute before its start record"
+        );
+
+        let prompt = serde_json::json!({"diagnostic": true, "family": "terminal-bench-2.1", "delay": 0, "answer": "correct"});
+        let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+            .args(["__native-capture", "--policy", "full"])
+            .arg("--stdout")
+            .arg(directory.join("stdout.log"))
+            .arg("--stderr")
+            .arg(directory.join("stderr.log"))
+            .arg("--receipt")
+            .arg(directory.join("receipt.json"))
+            .arg("--")
+            .arg(&executable)
+            .arg(prompt.to_string())
+            .current_dir(&directory)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{product}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let events = fs::read_to_string(directory.join("stdout.log"))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_diagnostic_start(product, &events);
+        assert_eq!(
+            read_cleanup_json(&directory.join("receipt.json"))["status"],
+            "sanitized"
+        );
+        assert!(fs::read(directory.join("stderr.log")).unwrap().is_empty());
+        assert_eq!(
+            fs::read_to_string(work.join("answer.txt")).unwrap(),
+            "correct\n"
+        );
+    }
+}
+
+#[test]
+fn witness_material_selected_families_preserve_standalone_capability() {
+    let root = tempfile::tempdir().unwrap();
+    let mut material = serde_json::json!({"benchmarks": {}});
+    for &family in native_witness_material::ALL_FAMILIES {
+        let profile = root.path().join(format!("{family}.toml"));
+        fs::write(&profile, format!("{family} profile")).unwrap();
+        material["benchmarks"][family] =
+            serde_json::json!({"tasks": {"selected": {"profile": {"path": profile}}}});
+    }
+    assert_eq!(
+        native_witness_material::witness_material_profiles(&material)
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(
+        native_witness_material::witness_material_profiles_selected(&material, &["deepswe-v1.1"])
+            .unwrap()[0]
+            .0,
+        "deepswe-v1.1"
+    );
+    let selected = native_witness_material::witness_material_profiles_selected(
+        &material,
+        native_witness_material::PHASE_FAMILIES,
+    )
+    .unwrap();
+    assert_eq!(
+        selected
+            .iter()
+            .map(|(family, _)| *family)
+            .collect::<Vec<_>>(),
+        native_witness_material::PHASE_FAMILIES
+    );
+    material["benchmarks"]
+        .as_object_mut()
+        .unwrap()
+        .remove("deepswe-v1.1");
+    assert!(
+        native_witness_material::witness_material_profiles_selected(
+            &material,
+            native_witness_material::PHASE_FAMILIES
+        )
+        .is_ok(),
+        "excluded material is not a Phase prerequisite"
+    );
+    assert!(
+        native_witness_material::witness_material_profiles(&material).is_err(),
+        "general witness still requires all families"
+    );
+    for selection in [
+        vec![],
+        vec!["terminal-bench-2.1", "terminal-bench-2.1"],
+        vec!["unknown"],
+    ] {
+        assert!(
+            native_witness_material::witness_material_profiles_selected(&material, &selection)
+                .is_err()
+        );
+    }
+    for &family in native_witness_material::PHASE_FAMILIES {
+        let mut invalid = material.clone();
+        invalid["benchmarks"]
+            .as_object_mut()
+            .unwrap()
+            .remove(family);
+        assert!(
+            native_witness_material::witness_material_profiles_selected(
+                &invalid,
+                native_witness_material::PHASE_FAMILIES
+            )
+            .unwrap_err()
+            .contains(family)
+        );
+    }
+    assert_eq!(
+        fs::read_dir(root.path()).unwrap().count(),
+        3,
+        "profile preflight creates no retained output"
+    );
+}
+
 #[test]
 fn witness_material_refusal_child() {
     let Some(input) = std::env::var_os("OPI_EVAL_WITNESS_REFUSAL_INPUT") else {
@@ -3027,7 +3238,7 @@ fn native_conformance_owned_cleanup_uses_the_selected_docker_context() {
 /// A real verifier command outlives the native job's outer watchdog. Cleanup
 /// must retain its start evidence and remove only the copied task's resources.
 #[test]
-#[ignore = "requires frozen three-family material/6 and the real Docker engine"]
+#[ignore = "requires frozen selected-family material/7 and the real Docker engine"]
 fn native_conformance_owned_cleanup_witness() {
     use std::collections::BTreeMap;
     use std::os::unix::fs::MetadataExt;
@@ -3116,7 +3327,11 @@ fn native_conformance_owned_cleanup_witness() {
     let source = PathBuf::from(std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL").unwrap());
     let source_bytes = fs::read(&source).unwrap();
     let original: serde_json::Value = serde_json::from_slice(&source_bytes).unwrap();
-    let material_path = native_witness_material::controlled_material(&source, false);
+    let material_path = native_witness_material::controlled_material_selected(
+        &source,
+        false,
+        native_witness_material::PHASE_FAMILIES,
+    );
     let material_root = material_path.parent().unwrap();
     let evidence = material_root.join("conformance-owned-cleanup");
     fs::create_dir(&evidence).unwrap();
@@ -4009,13 +4224,15 @@ fn native_protocol_client_matrix() {
         .expect("OPI_EVAL_NATIVE_CLIENT_MATERIAL points at the client material JSON");
     let clients: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(material).unwrap()).unwrap();
+    let admitted = native_witness_material::admit_clients(&clients)
+        .expect("independently admitted current clients");
     let opi_bin = PathBuf::from(clients["opi"].as_str().unwrap());
     let node_bin = PathBuf::from(clients["node"].as_str().unwrap());
     let pi_bundle = PathBuf::from(clients["pi_bundle"].as_str().unwrap());
     assert!(opi_bin.is_file() && node_bin.is_file() && pi_bundle.is_file());
 
     let root = tempfile::tempdir().unwrap().keep();
-    native_witness_material::retain_clients(&root, &clients);
+    admitted.retain(&root, &clients);
     // One fresh listener per client and API: each combination's full
     // matrix (tool loops, retry history, and exhausted rate limits) stays
     // inside the provider's bounded request cap, the retry script's
@@ -4216,6 +4433,7 @@ fn native_protocol_client_matrix() {
         let _ = provider.kill();
         let _ = provider.wait();
     }
+    admitted.recheck(&clients);
 }
 
 /// Exercises both actual clients with the same isolated long-loop provider.
@@ -4241,12 +4459,14 @@ fn native_client_turn_budgets() {
     let material = std::env::var("OPI_EVAL_NATIVE_CLIENT_MATERIAL").unwrap();
     let clients: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(material).unwrap()).unwrap();
+    let admitted = native_witness_material::admit_clients(&clients)
+        .expect("independently admitted current clients");
     let bin = PathBuf::from(clients["opi"].as_str().unwrap());
     let pi = PathBuf::from(clients["pi"].as_str().unwrap());
     assert!(bin.is_absolute() && bin.is_file());
     assert!(pi.is_absolute() && pi.is_file());
     let root = tempfile::tempdir().unwrap().keep();
-    native_witness_material::retain_clients(&root, &clients);
+    admitted.retain(&root, &clients);
     let script = root.join("long_loop.py");
     fs::write(
         &script,
@@ -4397,6 +4617,7 @@ sys.exit(provider.main())
             }
         }
     }
+    admitted.recheck(&clients);
 }
 
 fn matrix_controls() -> opi_eval::experiment::ModelControls {
@@ -4520,6 +4741,226 @@ fn output_control_probe_rejects_unrelated_runtime_package() {
     assert!(probe_package_identity(&first.join("linked-pi"), &first).is_err());
 }
 
+#[test]
+fn native_client_identity_admission() {
+    // Synthetic transported bytes isolate admission from providers, Docker and
+    // retained native execution. Current independent source/version identities
+    // are kept; the test lock binds its own coding-agent manifest bytes.
+    let root = tempfile::tempdir().unwrap();
+    let mut lock: serde_json::Value = serde_json::from_slice(
+        &fs::read(manifest_dir().join("external-locks/static/linux-x86_64.json")).unwrap(),
+    )
+    .unwrap();
+    let opi_package = root.path().join("opi");
+    let pi_package = root.path().join("pi");
+    fs::create_dir(&opi_package).unwrap();
+    fs::create_dir_all(pi_package.join("dist/bundle")).unwrap();
+    let opi = opi_package.join("opi");
+    let pi = pi_package.join("pi");
+    let node = pi_package.join("node");
+    let bundle = pi_package.join("dist/bundle/cli.js");
+    for (path, value) in [
+        (&opi, "synthetic Opi runtime"),
+        (&pi, "synthetic Pi wrapper"),
+        (&node, "synthetic Node"),
+        (&bundle, "synthetic Pi bundle"),
+    ] {
+        fs::write(path, value).unwrap();
+    }
+    let pi_pin = lock["subjects"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|pin| pin["id"] == "pi")
+        .unwrap();
+    let package_json = serde_json::to_vec(
+        &serde_json::json!({"version": pi_pin["model_data_archive"]["version"]}),
+    )
+    .unwrap();
+    fs::write(pi_package.join("package.json"), &package_json).unwrap();
+    let package_lock_sha = pi_pin["blobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|blob| blob["path"] == "package-lock.json")
+        .unwrap()["sha256"]
+        .clone();
+    pi_pin["blobs"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|blob| blob["path"] == "packages/coding-agent/package.json")
+        .unwrap()["sha256"] = sha256_hex(&package_json).into();
+    let opi_receipt = serde_json::json!({
+        "schema": "opi-eval-agent-identity/1", "agent": "opi",
+        "checkout_commit": "3908fba723956a6af7daf298599cbe3d30bbbc09", "checkout_dirty": false, "checkout_dirty_files": 0,
+        "executable_sha256": sha256_hex(&fs::read(&opi).unwrap()),
+        "cargo_lock_sha256": "261a3ec501be2e045dc6c9b2b9a940adc1c56305f477008eea940f26545925f3",
+        "target": "x86_64-unknown-linux-musl", "profile": "release", "features": "workspace-default-features",
+        "canonical_executable": "/deleted/acquisition/opi",
+    });
+    let pi_receipt = serde_json::json!({
+        "schema": "opi-eval-agent-identity/1", "agent": "pi",
+        "checkout_commit": pi_pin["commit"], "checkout_dirty": false, "checkout_dirty_files": 0,
+        "bundle_sha256": sha256_hex(&fs::read(&bundle).unwrap()), "node_sha256": sha256_hex(&fs::read(&node).unwrap()),
+        "package_lock_sha256": package_lock_sha,
+        "package_json_sha256": "1b862e9592e29d12112b99023dfb5124f4e9c26f8b4d9c3129a311e9ca11542d",
+        "node_version": "v22.19.0", "bundle_path": "/deleted/acquisition/cli.js", "node_executable": "/deleted/acquisition/node",
+    });
+    let mut clients = serde_json::json!({
+        "opi": opi, "pi": pi, "node": node, "pi_bundle": bundle,
+        "opi_package": opi_package, "pi_package": pi_package,
+        "opi_version": "0.8.2", "pi_version": "1.0.4",
+        "opi_source_commit": opi_receipt["checkout_commit"], "source_commit": pi_receipt["checkout_commit"], "build_identities": {},
+    });
+    for (product, receipt) in [("opi", &opi_receipt), ("pi", &pi_receipt)] {
+        let path = root.path().join(format!("{product}-build-identity.json"));
+        let bytes = serde_json::to_vec(receipt).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        clients["build_identities"][product] =
+            serde_json::json!({"path": path, "sha256": sha256_hex(&bytes)});
+        clients[format!("{product}_package_manifest_sha256")] = directory_manifest_digest(
+            Path::new(clients[format!("{product}_package")].as_str().unwrap()),
+        )
+        .into();
+    }
+    assert!(native_witness_material::admit_clients_with_lock(&clients, &lock).is_ok());
+    let original_clients = clients.clone();
+    let original_node = fs::read(&node).unwrap();
+    let original_bundle = fs::read(&bundle).unwrap();
+    for case in [
+        "swapped-receipts",
+        "wrong-pi-source",
+        "wrong-opi-source",
+        "receipt-pi-source",
+        "receipt-opi-source",
+        "receipt-digest",
+        "node",
+        "bundle",
+        "package",
+        "safe-wrong-entrypoint",
+        "unsafe-entrypoint",
+        "linked-entrypoint",
+        "missing-proofs",
+        "dirty-opi",
+        "dirty-pi",
+        "dirty-files",
+        "opi-cargo-lock",
+        "opi-target",
+        "opi-profile",
+        "opi-features",
+        "pi-package-lock",
+        "pi-root-manifest",
+        "pi-version",
+    ] {
+        let mut invalid = original_clients.clone();
+        let mut opi_changed = opi_receipt.clone();
+        let mut pi_changed = pi_receipt.clone();
+        match case {
+            "swapped-receipts" => {
+                invalid["build_identities"]["opi"] =
+                    original_clients["build_identities"]["pi"].clone();
+                invalid["build_identities"]["pi"] =
+                    original_clients["build_identities"]["opi"].clone();
+            }
+            "wrong-pi-source" => invalid["source_commit"] = "f".repeat(40).into(),
+            "wrong-opi-source" => invalid["opi_source_commit"] = "e".repeat(40).into(),
+            "receipt-pi-source" => pi_changed["checkout_commit"] = "f".repeat(40).into(),
+            "receipt-opi-source" => opi_changed["checkout_commit"] = "e".repeat(40).into(),
+            "receipt-digest" => {
+                invalid["build_identities"]["opi"]["sha256"] = "f".repeat(64).into()
+            }
+            "node" => fs::write(&node, "substituted Node").unwrap(),
+            "bundle" => fs::write(&bundle, "substituted Pi code").unwrap(),
+            "package" => {
+                fs::write(pi_package.join("resource"), "substituted package resource").unwrap()
+            }
+            "safe-wrong-entrypoint" => invalid["pi"] = original_clients["node"].clone(),
+            "unsafe-entrypoint" => {
+                invalid["pi"] = pi_package
+                    .join("../pi/pi")
+                    .to_string_lossy()
+                    .into_owned()
+                    .into()
+            }
+            "linked-entrypoint" => {
+                std::os::unix::fs::symlink(&pi, pi_package.join("linked-pi")).unwrap();
+                invalid["pi"] = pi_package
+                    .join("linked-pi")
+                    .to_string_lossy()
+                    .into_owned()
+                    .into();
+            }
+            "missing-proofs" => {
+                invalid.as_object_mut().unwrap().remove("build_identities");
+            }
+            "dirty-opi" => opi_changed["checkout_dirty"] = true.into(),
+            "dirty-pi" => pi_changed["checkout_dirty"] = true.into(),
+            "dirty-files" => opi_changed["checkout_dirty_files"] = 1.into(),
+            "opi-cargo-lock" => opi_changed["cargo_lock_sha256"] = "f".repeat(64).into(),
+            "opi-target" => opi_changed["target"] = "unadmitted-target".into(),
+            "opi-profile" => opi_changed["profile"] = "debug".into(),
+            "opi-features" => opi_changed["features"] = "extra-features".into(),
+            "pi-package-lock" => pi_changed["package_lock_sha256"] = "f".repeat(64).into(),
+            "pi-root-manifest" => {
+                pi_changed["package_json_sha256"] = sha256_hex(&package_json).into()
+            }
+            "pi-version" => invalid["pi_version"] = "0.85.1".into(),
+            _ => unreachable!(),
+        }
+        for (product, receipt, original) in [
+            ("opi", &opi_changed, &opi_receipt),
+            ("pi", &pi_changed, &pi_receipt),
+        ] {
+            if receipt != original {
+                let bytes = serde_json::to_vec(receipt).unwrap();
+                fs::write(
+                    original_clients["build_identities"][product]["path"]
+                        .as_str()
+                        .unwrap(),
+                    &bytes,
+                )
+                .unwrap();
+                invalid["build_identities"][product]["sha256"] = sha256_hex(&bytes).into();
+            }
+        }
+        // Let runtime mutations reach their receipt-byte predicates as well as
+        // the package seal, by rebinding only the private expected tree digest.
+        if matches!(case, "node" | "bundle") {
+            invalid["pi_package_manifest_sha256"] = directory_manifest_digest(&pi_package).into();
+        }
+        assert!(
+            native_witness_material::admit_clients_with_lock(&invalid, &lock).is_err(),
+            "{case}: admission must refuse before any subprocess or retained output"
+        );
+        fs::write(&node, &original_node).unwrap();
+        fs::write(&bundle, &original_bundle).unwrap();
+        for path in [pi_package.join("resource"), pi_package.join("linked-pi")] {
+            if fs::symlink_metadata(&path).is_ok() {
+                fs::remove_file(path).unwrap();
+            }
+        }
+        for (product, receipt) in [("opi", &opi_receipt), ("pi", &pi_receipt)] {
+            fs::write(
+                original_clients["build_identities"][product]["path"]
+                    .as_str()
+                    .unwrap(),
+                serde_json::to_vec(receipt).unwrap(),
+            )
+            .unwrap();
+        }
+        assert!(
+            native_witness_material::admit_clients_with_lock(&original_clients, &lock).is_ok(),
+            "{case}: restores independently valid proof"
+        );
+    }
+    assert_eq!(
+        fs::read_dir(root.path()).unwrap().count(),
+        4,
+        "pure admission creates no output"
+    );
+}
+
 /// Offline evidence for the exact projected output control. Supply an
 /// `experiment` config path and `opi` plus native `pi` (or `node`/`pi_bundle`)
 /// in OPI_EVAL_NATIVE_CLIENT_MATERIAL. Optional `opi_package`/`pi_package`
@@ -4533,6 +4974,8 @@ fn native_output_control_client_matrix() {
     };
     let input = std::env::var("OPI_EVAL_NATIVE_CLIENT_MATERIAL").unwrap();
     let clients: serde_json::Value = serde_json::from_slice(&fs::read(input).unwrap()).unwrap();
+    let admitted = native_witness_material::admit_clients(&clients)
+        .expect("independently admitted current clients");
     let experiment = ResolvedExperiment::resolve(
         &fs::read_to_string(clients["experiment"].as_str().unwrap()).unwrap(),
     )
@@ -4576,6 +5019,7 @@ fn native_output_control_client_matrix() {
         package_identities.insert(product, identity);
     }
     fs::create_dir(&root).expect("output-control evidence root must be fresh");
+    admitted.retain(&root, &clients);
     for client in [NativeClient::Opi, NativeClient::Pi] {
         let product = client.as_str();
         let case = root.join(product);
@@ -4740,6 +5184,7 @@ fn native_output_control_client_matrix() {
         )
         .unwrap();
     }
+    admitted.recheck(&clients);
 }
 
 fn start_scripted_provider(log: &Path) -> (std::process::Child, Option<String>) {
@@ -7060,7 +7505,7 @@ fn plan_rejections_name_every_contradiction() {
 /// Agent outcome inside the denominator. Both facts flow from the sealed
 /// settlement record, not from stderr tokens or process exits.
 #[test]
-fn native_provider_failure_report() {
+fn native_provider_failure_report_fixture() {
     // Final provider/access failure: both pinned clients' trials settle
     // as terminal provider failures.
     let staged = stage("provider-error");
@@ -7136,8 +7581,8 @@ fn native_provider_failure_report() {
 /// keep custom models runnable; this witness does not prove output-control
 /// support or comparable model controls.
 #[test]
-#[ignore = "requires exact client material, verified three-family native material and Docker"]
-fn native_client_provider_failure_report() {
+#[ignore = "requires exact client material, verified selected-family native material and Docker"]
+fn native_provider_failure_report() {
     use std::os::unix::fs::MetadataExt as _;
 
     let client_path = PathBuf::from(
@@ -7152,16 +7597,8 @@ fn native_client_provider_failure_report() {
     let source_bytes = fs::read(&source_path).unwrap();
     let clients: serde_json::Value = serde_json::from_slice(&client_bytes).unwrap();
     let original: serde_json::Value = serde_json::from_slice(&source_bytes).unwrap();
-    assert_eq!(clients["opi_version"], "0.8.2");
-    assert_eq!(clients["pi_version"], "0.85.1");
-    // Exact client-source precondition: the committed base of the final
-    // applied tree (the full source/build manifest bound in the retained
-    // evidence handoff proves the built bytes; the commit alone is the
-    // recorded base, never the whole proof).
-    assert_eq!(
-        clients["source_commit"],
-        "54b4695353ea1371d04448284844864529772e11"
-    );
+    let admitted = native_witness_material::admit_clients(&clients)
+        .expect("independently admitted current clients");
     for product in ["opi", "pi"] {
         let executable = Path::new(clients[product].as_str().unwrap());
         let agent = &original["agents"][product];
@@ -7179,7 +7616,7 @@ fn native_client_provider_failure_report() {
             );
             assert_eq!(
                 agent["runtime_package"]["manifest_sha256"],
-                directory_manifest_digest(package)
+                probe_package_identity(executable, package).unwrap().0
             );
         }
     }
@@ -7190,11 +7627,15 @@ fn native_client_provider_failure_report() {
             sha256_hex(&fs::read(pi_package.join(relative)).unwrap())
         );
     }
-    let material_path = native_witness_material::controlled_material(&source_path, false);
+    let material_path = native_witness_material::controlled_material_selected(
+        &source_path,
+        false,
+        native_witness_material::PHASE_FAMILIES,
+    );
     let material_root = material_path.parent().unwrap();
     let evidence = material_root.join("client-provider-report");
     fs::create_dir_all(&evidence).unwrap();
-    native_witness_material::retain_clients(&evidence, &clients);
+    admitted.retain(&evidence, &clients);
     fs::write(evidence.join("source-clients.json"), &client_bytes).unwrap();
     let mut material: serde_json::Value =
         serde_json::from_slice(&fs::read(&material_path).unwrap()).unwrap();
@@ -7206,7 +7647,7 @@ fn native_client_provider_failure_report() {
             .unwrap()
             .remove("output_control_evidence");
     }
-    for family in ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"] {
+    for &family in native_witness_material::PHASE_FAMILIES {
         for field in ["verifier_executable", "runner_project", "verifier_env"] {
             assert_eq!(
                 material["benchmarks"][family][field],
@@ -7643,7 +8084,7 @@ with (logs/'provider-listener.log').open('wb') as output:
                     .exists()
             );
             let terminal = read_cleanup_json(&native.join("agent-terminal.json"));
-            assert_eq!(terminal["schema"], "opi-eval-native-agent-terminal/2");
+            assert_eq!(terminal["schema"], "opi-eval-native-agent-terminal/3");
             assert_eq!(terminal["trial"], id);
             assert_eq!(terminal["product"], product);
             assert_eq!(
@@ -7651,6 +8092,21 @@ with (logs/'provider-listener.log').open('wb') as output:
                 original["agents"][product]["executable"]["sha256"]
             );
             assert_eq!(terminal["runtime_preflight"]["status"], "passed");
+            assert_eq!(terminal["capture"]["status"], "sanitized");
+            assert_eq!(terminal["helper_preflight"]["status"], "passed");
+            assert_eq!(terminal["helper_preflight"]["exit_code"], 0);
+            assert_eq!(
+                terminal["capture_helper_sha256"],
+                material["capture_helper"]["executable"]["sha256"]
+            );
+            assert_eq!(
+                terminal["runtime_preflight"]["runtime_package_manifest_sha256"],
+                material["agents"][product]["runtime_package"]["manifest_sha256"]
+            );
+            assert_eq!(
+                terminal["runtime_preflight"]["runtime_package_entrypoint"],
+                material["agents"][product]["runtime_package"]["entrypoint"]
+            );
             assert_eq!(terminal["task_dispatched"], true);
             assert!(terminal["exit_code"].is_number());
             assert_eq!(terminal["timed_out"], false);
@@ -7818,6 +8274,7 @@ with (logs/'provider-listener.log').open('wb') as output:
     }
     assert_eq!(fs::read(&source_path).unwrap(), source_bytes);
     assert_eq!(fs::read(&client_path).unwrap(), client_bytes);
+    admitted.recheck(&clients);
 }
 
 /// Runs one native family to completion and returns its root plus the
@@ -7959,7 +8416,7 @@ fn regrade_run(staged: &Staged, run_root: &Path, out: &Path) -> (i32, serde_json
 /// trial, zero Agent or provider invocations, and byte-identical source
 /// evidence afterwards. Byte checking alone never satisfies this path.
 #[test]
-fn native_offline_regrade() {
+fn native_offline_regrade_fixture() {
     let staged = stage("ok");
     let cases: Vec<(&str, PathBuf)> = vec![
         ("terminal-bench-2.1", write_config(&staged)),
@@ -8702,6 +9159,61 @@ fn remediation_006_plan_material_rejects_without_panic() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!root.exists());
+}
+
+#[test]
+fn max_trials_rejects_large_selection_before_allocation() {
+    let root = tempfile::tempdir().unwrap();
+    let source = fs::read_to_string(fixtures().join("experiment/local-paired.toml"))
+        .unwrap()
+        .split("[[trials]]")
+        .next()
+        .unwrap()
+        .to_owned();
+    for (name, repetitions, cap, expected) in [
+        ("equal", 1_u32, 2, 0),
+        ("small-over", 2, 1, 2),
+        ("huge-over", u32::MAX, 1, 2),
+    ] {
+        let config = root.path().join(format!("{name}.toml"));
+        let plan = root.path().join(format!("{name}.json"));
+        fs::write(
+            &config,
+            format!(
+                "{source}\n[execution]\nmode = \"hermetic\"\nmax_trials = {cap}\n\n\
+                 [selection]\nscope = \"full\"\nreason = \"bounded selection\"\n\
+                 repetitions = {repetitions}\n"
+            ),
+        )
+        .unwrap();
+        // Python applies the address-space/core limits only to the isolated
+        // CLI child, leaving the test runner and concurrent tests untouched.
+        let output = Command::new("python3")
+            .args([
+                "-c",
+                "import os, resource, sys; resource.setrlimit(resource.RLIMIT_AS, (268435456, 268435456)); resource.setrlimit(resource.RLIMIT_CORE, (0, 0)); os.execv(sys.argv[1], sys.argv[1:])",
+                env!("CARGO_BIN_EXE_opi-eval"),
+                "plan",
+                "--config",
+            ])
+            .arg(&config)
+            .arg("--fixtures")
+            .arg(fixtures())
+            .arg("--out")
+            .arg(&plan)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(expected), "{name}: {stderr}");
+        if expected == 0 {
+            let plan: serde_json::Value =
+                serde_json::from_slice(&fs::read(&plan).unwrap()).unwrap();
+            assert_eq!(plan["trials"].as_array().unwrap().len(), 2);
+        } else {
+            assert!(stderr.contains("max_trials"), "{name}: {stderr}");
+            assert!(!plan.exists(), "{name}: rejected selection wrote a plan");
+        }
+    }
 }
 
 #[test]
@@ -10409,10 +10921,9 @@ fn p19_plan_acceptance_rejects_fixture_evidence() {
     let connection = frozen.selected_connection();
     let evidence = tempfile::tempdir().unwrap();
     let root = evidence.path().join("evidence");
-    let families: [(&str, &str); 3] = [
+    let families: [(&str, &str); 2] = [
         ("terminal-bench-2.1", "tb21"),
         ("terminal-bench-3.0", "tb30"),
-        ("deepswe-v1.1", "swe"),
     ];
     let material: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&staged.material).unwrap()).unwrap();
@@ -10500,7 +11011,7 @@ fn p19_plan_acceptance_rejects_fixture_evidence() {
         })
         .collect();
     let manifest = serde_json::json!({
-        "schema": "opi-eval-local-acceptance/1",
+        "schema": "opi-eval-local-acceptance/2",
         "operator": {"redacted": true, "label": "local-acceptance-e2e"},
         "opi_repository": {"url": "https://example.invalid/opi", "commit": "9".repeat(40)},
         "controls": {
@@ -10523,7 +11034,6 @@ fn p19_plan_acceptance_rejects_fixture_evidence() {
         "material": [
             {"family": "terminal-bench-2.1", "material_sha256": sha256_hex(&fs::read(&staged.material).unwrap())},
             {"family": "terminal-bench-3.0", "material_sha256": sha256_hex(&fs::read(&staged.material).unwrap())},
-            {"family": "deepswe-v1.1", "material_sha256": sha256_hex(&fs::read(&staged.material).unwrap())},
         ],
         "command_exits": command_exits,
         "preserved": preserved,
@@ -10568,7 +11078,7 @@ fn p19_plan_acceptance_rejects_fixture_evidence() {
     );
     let report: serde_json::Value =
         serde_json::from_str(stdout.trim().lines().last().unwrap()).unwrap();
-    assert_eq!(report["schema"], "opi-eval-local-acceptance-verification/1");
+    assert_eq!(report["schema"], "opi-eval-local-acceptance-verification/2");
     assert_eq!(report["accepted"], false);
     // The hardened admission order gates on admitted-material provenance
     // before connection identity: a synthetic fixture root without the
@@ -10746,15 +11256,19 @@ fn remediation_005_native_stage_deadlines_reach_runner() {
 
 /// Exercises the unchanged pinned runners and real Docker stages with
 /// independently byte-bound, no-model delay tasks constructed from supplied
-/// three-family runner material. This is not benchmark acceptance evidence.
+/// selected-family runner material. This is not benchmark acceptance evidence.
 #[test]
-#[ignore = "requires verified three-family material/6 and the real Docker engine"]
+#[ignore = "requires verified selected-family material/7 and the real Docker engine"]
 fn remediation_native_stage_deadlines() {
     let source_material = PathBuf::from(
         std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL")
             .expect("OPI_EVAL_NATIVE_WITNESS_MATERIAL is required"),
     );
-    let material = native_witness_material::controlled_material(&source_material, true);
+    let material = native_witness_material::controlled_material_selected(
+        &source_material,
+        true,
+        native_witness_material::PHASE_FAMILIES,
+    );
     let input = fs::read(&material).unwrap();
     let manifest: serde_json::Value = serde_json::from_slice(&input).unwrap();
     assert_eq!(manifest["schema"], "opi-eval-native-material/7");
@@ -10766,7 +11280,8 @@ fn remediation_native_stage_deadlines() {
         &fs::read(manifest_dir().join("external-locks/static/linux-x86_64.json")).unwrap(),
     )
     .unwrap();
-    for family in ["harbor", "pier"] {
+    {
+        let family = "harbor";
         let tool = |lock: &serde_json::Value| {
             lock["tools"]
                 .as_array()
@@ -10873,7 +11388,7 @@ fn remediation_native_stage_deadlines() {
         ),
     ] {
         // Establish every family's positive control before any timeout case.
-        for family in ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"] {
+        for &family in native_witness_material::PHASE_FAMILIES {
             let pier = family == "deepswe-v1.1";
             let bounds = if pier {
                 let agent_bounds = bounds
@@ -11018,11 +11533,24 @@ fn remediation_native_stage_deadlines() {
                         );
                     }
                 }
+                let stdout = fs::read_to_string(directory.join("agent/stdout.log")).unwrap();
+                let events = stdout
+                    .lines()
+                    .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                    .collect::<Vec<_>>();
+                let product = if events
+                    .first()
+                    .is_some_and(|event| event["type"] == "session")
+                {
+                    "pi"
+                } else {
+                    "opi"
+                };
+                assert_diagnostic_start(product, &events);
                 assert!(
-                    fs::read_to_string(directory.join("agent/stderr.log"))
+                    fs::read(directory.join("agent/stderr.log"))
                         .unwrap()
-                        .contains("stage-witness-start"),
-                    "Agent never started"
+                        .is_empty()
                 );
                 let observations =
                     fs::read_to_string(directory.join("opi-eval-commands.jsonl")).unwrap();
@@ -11307,10 +11835,21 @@ fn native_simultaneous_run_root_claim_has_one_owner() {
 }
 
 #[test]
-#[ignore = "requires verified three-family material/6 for Git/Python diagnostics and Docker"]
-fn native_verifier_only_regrade_witness() {
+#[ignore = "requires verified selected-family material/7 for Python diagnostics and Docker"]
+fn native_offline_regrade() {
+    native_offline_regrade_selected(native_witness_material::PHASE_FAMILIES);
+}
+
+#[test]
+#[ignore = "requires verified three-family material/7 for Git/Python diagnostics and Docker"]
+fn native_offline_regrade_all_families() {
+    native_offline_regrade_selected(native_witness_material::ALL_FAMILIES);
+}
+
+fn native_offline_regrade_selected(families: &[&'static str]) {
     let source_material = PathBuf::from(std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL").unwrap());
-    let material = native_witness_material::controlled_material(&source_material, false);
+    let material =
+        native_witness_material::controlled_material_selected(&source_material, false, families);
     let frozen = fs::read(&material).unwrap();
     let guard = tempfile::tempdir().unwrap();
     let evidence = guard.keep();
@@ -11320,7 +11859,7 @@ fn native_verifier_only_regrade_witness() {
     let provider_before = fs::read(&provider_log).ok();
     let mut positive_source = None;
     let mut deepswe_source = None;
-    for family in ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"] {
+    for &family in families {
         for case in ["positive", "negative", "timeout"] {
             if case == "timeout" && family != "terminal-bench-2.1" {
                 continue;
@@ -11558,107 +12097,114 @@ fn native_verifier_only_regrade_witness() {
     assert_eq!(fs::read(out.join("prior")).unwrap(), b"preserve");
     assert_eq!(directory_manifest_digest(&source), original);
 
-    for case in ["task", "base", "network", "missing-cache"] {
-        let variant = evidence.join(format!("material-{case}"));
-        fs::create_dir(&variant).unwrap();
-        let mut changed = source_material.clone();
-        if case == "missing-cache" {
-            changed["benchmarks"]["deepswe-v1.1"]["verifier_executable"]["path"] =
-                serde_json::json!(variant.join("missing-uv"));
-        } else {
-            let family = "deepswe-v1.1";
-            let project = variant.join("corpus");
-            let original_tasks = changed["benchmarks"][family]["tasks"]
-                .as_object()
-                .unwrap()
-                .clone();
-            for (id, task) in &original_tasks {
-                copy_dir(
-                    Path::new(task["task_package"].as_str().unwrap()),
-                    &project.join("tasks").join(id),
+    if let Some(deepswe_source) = deepswe_source {
+        for case in ["task", "base", "network", "missing-cache"] {
+            let variant = evidence.join(format!("material-{case}"));
+            fs::create_dir(&variant).unwrap();
+            let mut changed = source_material.clone();
+            if case == "missing-cache" {
+                changed["benchmarks"]["deepswe-v1.1"]["verifier_executable"]["path"] =
+                    serde_json::json!(variant.join("missing-uv"));
+            } else {
+                let family = "deepswe-v1.1";
+                let project = variant.join("corpus");
+                let original_tasks = changed["benchmarks"][family]["tasks"]
+                    .as_object()
+                    .unwrap()
+                    .clone();
+                for (id, task) in &original_tasks {
+                    copy_dir(
+                        Path::new(task["task_package"].as_str().unwrap()),
+                        &project.join("tasks").join(id),
+                    );
+                }
+                let task_path = project.join("tasks/positive/task.toml");
+                let mut task: toml::Value =
+                    fs::read_to_string(&task_path).unwrap().parse().unwrap();
+                match case {
+                    "task" => fs::write(
+                        project.join("tasks/positive/instruction.md"),
+                        "Changed task\n",
+                    )
+                    .unwrap(),
+                    "base" => {
+                        task["metadata"]["base_commit_hash"] = "9".repeat(40).into();
+                        fs::write(&task_path, toml::to_string(&task).unwrap()).unwrap();
+                    }
+                    "network" => {
+                        let old = fs::read_to_string(&task_path).unwrap();
+                        assert!(old.contains("no-network"));
+                        fs::write(&task_path, old.replace("no-network", "public")).unwrap();
+                    }
+                    _ => unreachable!(),
+                }
+                let (corpus, pin) = fixture_corpus_pin(&project, family);
+                changed["benchmarks"][family]["corpus"] = corpus;
+                for (id, task) in original_tasks {
+                    let profile = variant.join(format!("{id}.toml"));
+                    fs::copy(task["profile"]["path"].as_str().unwrap(), &profile).unwrap();
+                    changed["benchmarks"][family]["tasks"][&id] = fixture_task_binding(
+                        &project,
+                        &id,
+                        &project.join("tasks").join(&id),
+                        &profile,
+                    );
+                }
+                let mut lock: serde_json::Value = serde_json::from_slice(
+                    &fs::read(source_material["static_lock"]["path"].as_str().unwrap()).unwrap(),
+                )
+                .unwrap();
+                *lock["subjects"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|item| item["id"] == family)
+                    .unwrap() = pin;
+                let lock_bytes = serde_json::to_vec(&lock).unwrap();
+                let lock_path = variant.join("lock.json");
+                fs::write(&lock_path, &lock_bytes).unwrap();
+                changed["static_lock"] =
+                    serde_json::json!({"path": lock_path, "sha256": sha256_hex(&lock_bytes)});
+            }
+            let changed_path = variant.join("material.json");
+            fs::write(&changed_path, serde_json::to_vec_pretty(&changed).unwrap()).unwrap();
+            let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["regrade", "--root"])
+                .arg(&deepswe_source)
+                .arg("--native-material")
+                .arg(&changed_path)
+                .arg("--out")
+                .arg(variant.join("out"))
+                .output()
+                .unwrap();
+            fs::write(variant.join("stdout.json"), &output.stdout).unwrap();
+            fs::write(variant.join("stderr.log"), &output.stderr).unwrap();
+            if case == "missing-cache" {
+                assert_eq!(
+                    output.status.code(),
+                    Some(2),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            } else {
+                let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(output.status.code(), Some(1), "{case}: {report}");
+                let reason = match case {
+                    "task" => "task-package-drift",
+                    "base" => "patch-base-drift",
+                    _ => "verifier-network-required",
+                };
+                assert!(
+                    report["rejections"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .all(|entry| entry["reason"] == reason),
+                    "{case}: {report}"
                 );
             }
-            let task_path = project.join("tasks/positive/task.toml");
-            let mut task: toml::Value = fs::read_to_string(&task_path).unwrap().parse().unwrap();
-            match case {
-                "task" => fs::write(
-                    project.join("tasks/positive/instruction.md"),
-                    "Changed task\n",
-                )
-                .unwrap(),
-                "base" => {
-                    task["metadata"]["base_commit_hash"] = "9".repeat(40).into();
-                    fs::write(&task_path, toml::to_string(&task).unwrap()).unwrap();
-                }
-                "network" => {
-                    let old = fs::read_to_string(&task_path).unwrap();
-                    assert!(old.contains("no-network"));
-                    fs::write(&task_path, old.replace("no-network", "public")).unwrap();
-                }
-                _ => unreachable!(),
-            }
-            let (corpus, pin) = fixture_corpus_pin(&project, family);
-            changed["benchmarks"][family]["corpus"] = corpus;
-            for (id, task) in original_tasks {
-                let profile = variant.join(format!("{id}.toml"));
-                fs::copy(task["profile"]["path"].as_str().unwrap(), &profile).unwrap();
-                changed["benchmarks"][family]["tasks"][&id] =
-                    fixture_task_binding(&project, &id, &project.join("tasks").join(&id), &profile);
-            }
-            let mut lock: serde_json::Value = serde_json::from_slice(
-                &fs::read(source_material["static_lock"]["path"].as_str().unwrap()).unwrap(),
-            )
-            .unwrap();
-            *lock["subjects"]
-                .as_array_mut()
-                .unwrap()
-                .iter_mut()
-                .find(|item| item["id"] == family)
-                .unwrap() = pin;
-            let lock_bytes = serde_json::to_vec(&lock).unwrap();
-            let lock_path = variant.join("lock.json");
-            fs::write(&lock_path, &lock_bytes).unwrap();
-            changed["static_lock"] =
-                serde_json::json!({"path": lock_path, "sha256": sha256_hex(&lock_bytes)});
+            assert!(walk_files_matching(&variant.join("out"), "request.json").is_empty());
         }
-        let changed_path = variant.join("material.json");
-        fs::write(&changed_path, serde_json::to_vec_pretty(&changed).unwrap()).unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
-            .args(["regrade", "--root"])
-            .arg(deepswe_source.as_ref().unwrap())
-            .arg("--native-material")
-            .arg(&changed_path)
-            .arg("--out")
-            .arg(variant.join("out"))
-            .output()
-            .unwrap();
-        fs::write(variant.join("stdout.json"), &output.stdout).unwrap();
-        fs::write(variant.join("stderr.log"), &output.stderr).unwrap();
-        if case == "missing-cache" {
-            assert_eq!(
-                output.status.code(),
-                Some(2),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        } else {
-            let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(output.status.code(), Some(1), "{case}: {report}");
-            let reason = match case {
-                "task" => "task-package-drift",
-                "base" => "patch-base-drift",
-                _ => "verifier-network-required",
-            };
-            assert!(
-                report["rejections"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .all(|entry| entry["reason"] == reason),
-                "{case}: {report}"
-            );
-        }
-        assert!(walk_files_matching(&variant.join("out"), "request.json").is_empty());
     }
 
     // Fault-inject loss of the final Docker cleanup observation after a real
@@ -13277,6 +13823,8 @@ fn native_operator_control_proof_validates_exact_clients() {
         &fs::read(std::env::var("OPI_EVAL_NATIVE_CLIENT_MATERIAL").unwrap()).unwrap(),
     )
     .unwrap();
+    let admitted = native_witness_material::admit_clients(&clients)
+        .expect("independently admitted current clients");
     let staged = stage("ok");
     let config = write_config(&staged);
     let source = fs::read_to_string(&config)
@@ -13311,6 +13859,7 @@ fn native_operator_control_proof_validates_exact_clients() {
         }
     }
     fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+    admitted.retain(&staged.root, &clients);
     let root = staged.root.join("operator-proof");
     let output = Command::new("python3")
         .arg(manifest_dir().join("scripts/native-control-proof.py"))
@@ -13342,6 +13891,7 @@ fn native_operator_control_proof_validates_exact_clients() {
             assert_eq!(row["reasoning_controls"]["thinking_budget"], 16384);
         }
     }
+    admitted.recheck(&clients);
 }
 
 #[test]

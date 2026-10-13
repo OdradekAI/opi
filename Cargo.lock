@@ -2086,6 +2086,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml",
+ "url",
  "windows-sys 0.61.2",
 ]
 

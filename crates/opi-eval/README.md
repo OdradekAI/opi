@@ -908,20 +908,29 @@ execution, and roll back by disabling the affected local execution path
 or restoring a previously verified Companion build - never by relabeling
 old evidence.
 
-The operator hands over one redacted evidence root: the manifest with six
-attributable trials across the three benchmark families, the frozen
+Phase 19 acceptance uses `opi-eval-local-acceptance/2`: at least four
+attributable primary trials across Terminal-Bench 2.1 and 3.0, with exactly
+one Opi/Pi pair for each frozen task/group (including each repetition).
+Additional selected tasks and repetitions remain fully checked; no frozen
+planned trial may be omitted. DeepSWE and unknown primary families are rejected.
+The `/1` acceptance manifest is incompatible with this revised scope; its
+retained evidence stays intact. DeepSWE/Pier standalone capability remains
+available, and contributes no primary trial or score to this acceptance.
+
+The operator hands over one redacted evidence root: the manifest, the frozen
 controls, source/build/material/bundle digests, the preserved command
 exits and provider/tool/native artifacts, the Opi-only
-`opi-artifact-audit` scoped capture view (byte-bound to the three
-original Opi native captures and exhaustive for them), and a cached
-upstream repository-identity inventory for the pi/Harbor/Pier source
+`opi-artifact-audit` scoped capture view (byte-bound to every accepted
+original Opi native capture and exhaustive for them), and a cached
+upstream repository-identity inventory for the selected pi/Harbor source
 records. The preserved inventory must carry exactly one material entry
 per trial family with unique paths, plus the admitted static-lock bytes
-located by each preserved material's `static_lock` pin; the pi,
-Harbor, and Pier identities are derived from those admitted lock bytes
+located by each preserved material's `static_lock` pin; the pi and
+Harbor identities are mandatory and derived from those admitted lock bytes
 (repository-qualified commit identities from the lock's subject and
 locked runner tools), never from mutual agreement of supplied maps, and
-the cached inventory is corroborating evidence only. Anyone can verify
+the cached inventory is corroborating evidence only. Unused Pier qualification
+is optional. Anyone can verify
 that evidence offline:
 
 ```sh
@@ -939,7 +948,8 @@ digest, validates upstream commits against the identities derived from
 the admitted lock bytes (cross-checked with the supplied cached
 inventories, never by resolving commits in this checkout), and invokes
 the built Companion `verify` and `report` only against the supplied
-family run roots. Exit 0 accepts the evidence; exit 2 prints one typed
+family run roots. The `opi-eval-local-acceptance-verification/2` result explicitly
+records DeepSWE as excluded. Exit 0 accepts the evidence; exit 2 prints one typed
 rejection.
 
 Acceptance requires Python 3.11 or later. Its manifest's
@@ -948,9 +958,15 @@ Acceptance requires Python 3.11 or later. Its manifest's
 The verifier compares these and `execution_concurrency` with every sealed
 experiment, then checks the sealed output-control snapshot against the trial's
 executable identity and preserved material. It validates the projected numeric
-limit and both independently observed request limits; a dictionary-shaped
+limit, the source-current thinking projection, and both independently observed
+request limits; a dictionary-shaped
 claim or a seal alone is insufficient. Original host paths inside the probe
 record are never followed during acceptance.
+For explicit Opi thinking, support/enabled are false for `off`, the six boolean
+level entries select only the requested level, and the budget is the native
+level budget with a minimum of 1024 tokens. Pi `off` uses `reasoning = false`
+without a level map; enabled levels retain their selected string map. Omitted
+and unknown reasoning retain their absent fields.
 
 ### Bounded cancellation
 
@@ -972,8 +988,9 @@ cargo test -p opi-eval --locked --test native_driver \
 ```
 
 Prepare immutable task/helper images and separate-verifier build contexts before
-timed dispatch. The three families each require all nine controlled cases for
-both subjects; all positive controls run first. Harbor uses a 3-second positive
+timed dispatch. The Phase 19 gate selects Terminal-Bench 2.1 and 3.0, each
+requiring all nine controlled cases for both subjects; all positive controls
+run first. Standalone DeepSWE cases remain available. Harbor uses a 3-second positive
 verifier cap and a 1-second timeout cap against a 4-second delayed command.
 Pier times the entire verifier lifecycle and retries once: every case uses a
 30-second verifier cap, a 60-second task verifier limit and, for verifier-timeout

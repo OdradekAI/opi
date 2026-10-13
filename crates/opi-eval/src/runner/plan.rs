@@ -428,6 +428,32 @@ pub(crate) fn expand_selection(
         }
     }
 
+    let trial_count = selected_ids
+        .len()
+        .checked_mul(selection.repetitions as usize)
+        .and_then(|count| count.checked_mul(experiment.subjects().len()));
+    let Some(trial_count) = trial_count else {
+        rejections.push("planned trial count overflows addressable storage".to_owned());
+        return Err(PlanError::Rejected(rejections.join("; ")));
+    };
+    if trial_count
+        .checked_mul(std::mem::size_of::<DeclaredTrial>())
+        .is_none_or(|bytes| bytes > isize::MAX as usize)
+    {
+        rejections.push("planned trial vector exceeds addressable storage".to_owned());
+    }
+    if let Some(max_trials) = experiment.execution().max_trials
+        && trial_count as u64 > max_trials
+    {
+        rejections.push(format!(
+            "planned trial count {trial_count} exceeds the declared max_trials {max_trials}; \
+             narrow the selection"
+        ));
+    }
+    if !rejections.is_empty() {
+        return Err(PlanError::Rejected(rejections.join("; ")));
+    }
+
     let mut trials = Vec::new();
     let mut subjects: Vec<&crate::experiment::ResolvedSubject> =
         experiment.subjects().iter().collect();
@@ -445,18 +471,6 @@ pub(crate) fn expand_selection(
                 });
             }
         }
-    }
-    if let Some(max_trials) = experiment.execution().max_trials
-        && trials.len() as u64 > max_trials
-    {
-        rejections.push(format!(
-            "planned trial count {} exceeds the declared max_trials {max_trials}; \
-             narrow the selection",
-            trials.len()
-        ));
-    }
-    if !rejections.is_empty() {
-        return Err(PlanError::Rejected(rejections.join("; ")));
     }
     Ok(Expansion {
         trials,

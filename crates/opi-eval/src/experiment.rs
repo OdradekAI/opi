@@ -1474,21 +1474,18 @@ fn optional_u64(
 /// Whether a base URL is a parseable http(s) loopback route. Anything
 /// unparsable fails closed: it is not a loopback route.
 fn is_loopback_base_url(base_url: &str) -> bool {
-    let rest = base_url
-        .strip_prefix("http://")
-        .or_else(|| base_url.strip_prefix("https://"))
-        .unwrap_or("");
-    let authority = rest.split(['/', '?']).next().unwrap_or("");
-    let host = authority.rsplit('@').next().unwrap_or("");
-    let host = if host.starts_with('[') {
-        host.split(']').next().unwrap_or("")
-    } else {
-        host.rsplit_once(':').map(|(h, _)| h).unwrap_or(host)
+    let Ok(url) = url::Url::parse(base_url) else {
+        return false;
     };
-    matches!(
-        host.to_ascii_lowercase().as_str(),
-        "127.0.0.1" | "localhost" | "[::1]" | "::1"
-    )
+    if !matches!(url.scheme(), "http" | "https") {
+        return false;
+    }
+    match url.host() {
+        Some(url::Host::Domain(host)) => host == "localhost",
+        Some(url::Host::Ipv4(host)) => host == std::net::Ipv4Addr::LOCALHOST,
+        Some(url::Host::Ipv6(host)) => host == std::net::Ipv6Addr::LOCALHOST,
+        None => false,
+    }
 }
 
 fn control_marker(value: &str) -> Option<ControlValue<()>> {

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Offline verifier for the redacted local acceptance evidence root.
 
-Validates the supplied operator evidence - the redacted manifest, the six
-attributable trials across the three native benchmark families, the frozen
+Validates the supplied operator evidence - the redacted manifest, at least
+four paired trials across Terminal-Bench 2.1 and 3.0, the frozen
 controls, the source/build/material/bundle digests, the preserved command
 exits and provider/tool/native artifacts, the Opi-only scoped capture view,
 and the cached upstream repository identities - and invokes the built
@@ -29,11 +29,16 @@ import tomllib
 import urllib.parse
 from pathlib import Path
 
-ACCEPTANCE_SCHEMA = "opi-eval-local-acceptance/1"
+ACCEPTANCE_SCHEMA = "opi-eval-local-acceptance/2"
 IDENTITY_CACHE_SCHEMA = "opi-eval-upstream-identity-cache/1"
-VERIFICATION_SCHEMA = "opi-eval-local-acceptance-verification/1"
-FAMILIES = ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1")
-EXPECTED_TRIALS = 6
+VERIFICATION_SCHEMA = "opi-eval-local-acceptance-verification/2"
+FAMILIES = ("terminal-bench-2.1", "terminal-bench-3.0")
+EXCLUDED_FAMILIES = ("deepswe-v1.1",)
+MINIMUM_TRIALS = 4
+THINKING_BUDGETS = {
+    "off": 0, "minimal": 1024, "low": 2048, "medium": 8192,
+    "high": 16384, "xhigh": 16384, "max": 16384,
+}
 FIRST_CONNECTION = {
     "provider": "zhipu",
     "api": "anthropic-messages",
@@ -142,33 +147,39 @@ class Acceptance:
 
     def check_trials(self, manifest: dict) -> list[dict]:
         trials = manifest.get("trials")
-        if not isinstance(trials, list) or len(trials) != EXPECTED_TRIALS:
+        if not isinstance(trials, list) or len(trials) < MINIMUM_TRIALS:
             raise Rejection(
-                f"six attributable trials: manifest declares "
+                f"paired attributable trials: require at least {MINIMUM_TRIALS}, manifest declares "
                 f"{len(trials) if isinstance(trials, list) else 'a non-list'} entries"
             )
         for trial in trials:
+            if not isinstance(trial, dict):
+                raise Rejection("paired attributable trials: malformed trial entry")
             admit_trial_id(trial.get("id"))
             if trial.get("agent") not in ("opi", "pi"):
                 raise Rejection(
-                    f"six attributable trials: {trial.get('id')!r} has agent "
+                    f"paired attributable trials: {trial.get('id')!r} has agent "
                     f"{trial.get('agent')!r}"
                 )
         ids = [trial.get("id") for trial in trials]
-        if len(set(ids)) != EXPECTED_TRIALS:
-            raise Rejection(f"six attributable trials: duplicate trial ids {sorted(ids)}")
+        if len(set(ids)) != len(trials):
+            raise Rejection(f"paired attributable trials: duplicate trial ids {sorted(ids)}")
         per_family: dict[str, list[dict]] = {}
         for trial in trials:
+            if trial.get("family") not in FAMILIES:
+                raise Rejection(
+                    f"paired attributable trials: excluded or unknown primary family {trial.get('family')!r}"
+                )
             per_family.setdefault(trial.get("family"), []).append(trial)
         for family, entries in per_family.items():
-            agents = sorted(entry["agent"] for entry in entries)
-            if agents != ["opi", "pi"]:
+            agents = [entry["agent"] for entry in entries]
+            if agents.count("opi") != agents.count("pi") or not agents.count("opi"):
                 raise Rejection(
-                    f"six attributable trials: family {family!r} carries {agents}"
+                    f"paired attributable trials: family {family!r} carries {agents}"
                 )
         if sorted(per_family) != sorted(FAMILIES):
             raise Rejection(
-                f"six attributable trials: families {sorted(per_family)} do not "
+                f"paired attributable trials: families {sorted(per_family)} do not "
                 f"match {sorted(FAMILIES)}"
             )
         return trials
@@ -371,12 +382,10 @@ class Acceptance:
             )
         pi = unique_record(subjects, "pi", "admitted lock subjects")
         harbor = unique_record(tools, "harbor", "admitted lock tools")
-        pier = unique_record(tools, "pier", "admitted lock tools")
         identities = {}
         for name, record, url in (
             ("pi", pi, pi.get("repository_url")),
             ("harbor", harbor, RUNNER_REPOSITORIES["harbor"]),
-            ("pier", pier, RUNNER_REPOSITORIES["pier"]),
         ):
             commit = record.get("commit")
             if not isinstance(url, str) or not isinstance(commit, str) or not HEX40.match(commit):
@@ -537,6 +546,9 @@ class Acceptance:
             control = load_json(
                 self.family_roots[family] / "run-control.json", "run-control"
             )
+            accepted_ids = {trial["id"] for trial in entries}
+            self.check_frozen_coverage(control.get("planned_trials"), accepted_ids, "planned")
+            pairs: dict[tuple[str, str], list[tuple[str, str]]] = {}
             for trial in entries:
                 planned = unique_record(
                     control.get("planned_trials"), trial["id"], "run-control planned trial"
@@ -573,6 +585,7 @@ class Acceptance:
                     raise Rejection(
                         f"run-control: {trial['id']!r} sealed experiment is not an object"
                     )
+                self.check_frozen_coverage(experiment.get("trials"), accepted_ids, "sealed")
                 selected = unique_record(
                     experiment.get("connections"), experiment.get("connection_id"),
                     "first connection",
@@ -622,8 +635,34 @@ class Acceptance:
                         f"run-control: {trial['id']!r} subject {declared['subject']!r} "
                         f"binds product {subject.get('product')!r}, not {trial['agent']!r}"
                     )
+                pairs.setdefault((declared["task"], declared["group"]), []).append(
+                    (declared["subject"], trial["agent"])
+                )
                 self.check_output_control(controls, experiment, trial, bundle, artifact_entries)
                 self.check_agent_observations(trial, bundle, artifact_entries)
+            for key, members in pairs.items():
+                if (
+                    sorted(product for _, product in members) != ["opi", "pi"]
+                    or len({subject for subject, _ in members}) != 2
+                ):
+                    raise Rejection(
+                        f"run-control: family {family!r} task/group {key!r} is not exactly paired: {members!r}"
+                    )
+
+    @staticmethod
+    def check_frozen_coverage(rows: object, accepted_ids: set[str], kind: str) -> None:
+        """No frozen task/repetition slot may disappear from the evidence view.
+
+        DeclaredTrial stores repetition in its group identity. Compare the
+        entire selected ID set, then validate its task/group pairs below.
+        """
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise Rejection(f"run-control: malformed {kind} trial coverage")
+        ids = [admit_trial_id(row.get("id")) for row in rows]
+        if len(set(ids)) != len(ids) or set(ids) != accepted_ids:
+            raise Rejection(
+                f"run-control: {kind} trial coverage differs from the complete accepted trial set"
+            )
 
     def check_agent_observations(self, trial, bundle, entries):
         """Bind live client observations to the sealed first-connection claim."""
@@ -894,8 +933,15 @@ class Acceptance:
                     expected_model[target] = declared[source]
             reasoning = declared["reasoning"]
             if reasoning not in ("omitted", "unknown"):
-                expected_model["supports_thinking" if opi else "reasoning"] = True
-                expected_model["thinking_level_map" if opi else "thinkingLevelMap"] = {reasoning: reasoning}
+                if reasoning not in THINKING_BUDGETS:
+                    reject("unknown explicit reasoning level")
+                expected_model["supports_thinking" if opi else "reasoning"] = reasoning != "off"
+                if opi:
+                    expected_model["thinking_level_map"] = {
+                        level: level == reasoning for level in THINKING_BUDGETS if level != "off"
+                    }
+                elif reasoning != "off":
+                    expected_model["thinkingLevelMap"] = {reasoning: reasoning}
             if not opi and public["api"] != "anthropic-messages":
                 sampling = {
                     name: declared[name] for name in ("temperature", "top_p")
@@ -915,6 +961,11 @@ class Acceptance:
                     "providers": {"custom": {public["provider"]: expected_provider}},
                     "defaults": {"max_output_tokens": limit},
                 }
+                if reasoning not in ("omitted", "unknown"):
+                    expected_config["thinking"] = {
+                        "enabled": reasoning != "off",
+                        "budget_tokens": max(THINKING_BUDGETS[reasoning], 1024),
+                    }
                 parsed = tomllib.loads(config)
                 # Current projections omit a turn budget; historical sealed
                 # projections may contain the former exact finite ceiling.
@@ -977,7 +1028,7 @@ class Acceptance:
             if entry.is_dir():
                 raise Rejection(
                     f"exhaustive: scoped view holds capture {name!r} beyond the "
-                    f"three Opi trials"
+                    f"accepted Opi trials"
                 )
             text = entry.read_text(encoding="utf-8", errors="replace")
             for token in HEX40_TOKEN.findall(text):
@@ -1026,7 +1077,7 @@ class Acceptance:
                         f"{name} identities {derived[name]!r} and {identity!r}"
                     )
                 derived[name] = identity
-        for name in ("pi", "harbor", "pier"):
+        for name in sorted(derived):
             record = sources.get(name)
             if not isinstance(record, dict):
                 raise Rejection(f"upstream identity: no source record for {name}")
@@ -1124,7 +1175,7 @@ class Acceptance:
         self.record(
             "evidence-structure",
             True,
-            "six attributable native trials, digests, controls, exits and "
+            "paired native trials, complete frozen coverage, digests, controls, exits and "
             "preserved artifacts verified offline",
         )
         self.check_companion(trials)
@@ -1137,6 +1188,7 @@ class Acceptance:
             "root": str(self.root),
             "trials": [trial["id"] for trial in trials],
             "families": sorted({trial["family"] for trial in trials}),
+            "excluded_families": list(EXCLUDED_FAMILIES),
             "checks": self.checks,
         }
 
@@ -1167,6 +1219,7 @@ def verify(root: Path, out: Path, companion: Path) -> int:
             "root": str(root),
             "trials": [],
             "families": [],
+            "excluded_families": list(EXCLUDED_FAMILIES),
             "checks": acceptance.checks,
         }
         print(f"error: {rejection}", file=sys.stderr)

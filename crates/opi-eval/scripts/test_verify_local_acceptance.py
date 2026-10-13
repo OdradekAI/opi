@@ -26,7 +26,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parent
 VERIFIER = SCRIPTS / "verify-local-acceptance.py"
 
-FAMILIES = ("terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1")
+FAMILIES = ("terminal-bench-2.1", "terminal-bench-3.0")
 PI_REPO = "https://github.com/badlogic/pi-mono"
 HARBOR_REPO = "https://github.com/harbor-framework/harbor"
 PIER_REPO = "https://github.com/datacurve-ai/pier"
@@ -36,6 +36,7 @@ PIER_COMMIT = "c" * 40
 PROBE_BASE_URL = "http://127.0.0.1:48127"
 CONNECTION = {"id": "primary", "provider": "zhipu", "api": "anthropic-messages", "base_url": "https://open.bigmodel.cn/api/anthropic", "model": "glm-5.3-flash"}
 MODEL_CONTROLS = {"temperature": "omitted", "top_p": "omitted", "max_output_tokens": 16384, "context_window": 1000000, "reasoning": "omitted", "required": ["max_output_tokens"]}
+THINKING_BUDGETS = {"off": 0, "minimal": 1024, "low": 2048, "medium": 8192, "high": 16384, "xhigh": 16384, "max": 16384}
 
 
 def synthetic_output_control(product, experiment, opi_turn_budget=None):
@@ -60,6 +61,26 @@ context_window = 1000000
         config = json.dumps({"providers": {"zhipu": {"baseUrl": PROBE_BASE_URL, "api": CONNECTION["api"], "apiKey": "dummy-scripted-credential", "models": [{"id": "glm-5.3-flash", "maxTokens": limit, "contextWindow": 1000000}]}}})
     if product == "opi" and opi_turn_budget is not None:
         config = config.replace("[defaults]\n", f"[defaults]\nmax_iterations = {opi_turn_budget}\n")
+    reasoning = experiment["model_controls"]["reasoning"]
+    if reasoning not in ("omitted", "unknown"):
+        if product == "opi":
+            levels = ", ".join(
+                f"{level} = {str(level == reasoning).lower()}"
+                for level in THINKING_BUDGETS if level != "off"
+            )
+            config += (
+                f"supports_thinking = {str(reasoning != 'off').lower()}\n"
+                f"thinking_level_map = {{ {levels} }}\n"
+                f"[thinking]\nenabled = {str(reasoning != 'off').lower()}\n"
+                f"budget_tokens = {max(THINKING_BUDGETS[reasoning], 1024)}\n"
+            )
+        else:
+            value = json.loads(config)
+            model = value["providers"]["zhipu"]["models"][0]
+            model["reasoning"] = reasoning != "off"
+            if reasoning != "off":
+                model["thinkingLevelMap"] = {reasoning: reasoning}
+            config = json.dumps(value)
     requests = "".join(json.dumps({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": "/v1/messages", "model": "glm-5.3-flash", "output_limits": {"max_tokens": limit}, "request_sha256": "d" * 64}) + "\n" for seq in (1, 2))
     proof = {"schema": "opi-eval-output-control/1", "product": product, "executable_sha256": "e" * 64, "runtime_package_manifest_sha256": None, "connection": {key: CONNECTION[key] for key in ("provider", "api", "model")}, "model_controls": experiment["model_controls"], "probe_base_url": PROBE_BASE_URL, "exit_code": 0, "config": {"path": "synthetic-config", "sha256": sha256(config.encode())}, "requests": {"path": "synthetic-requests", "sha256": sha256(requests.encode())}}
     evidence = json.dumps(proof)
@@ -121,6 +142,7 @@ class EvidenceRoot:
     def __init__(
         self, base: Path, subject_ids: tuple[str, str] = ("candidate-opi", "baseline-pi"),
         opi_turn_budget: str | None = None,
+        reasoning: str = "omitted", extra_pairs: int = 0,
     ) -> None:
         self.root = base / "evidence"
         self.root.mkdir(parents=True)
@@ -132,6 +154,7 @@ class EvidenceRoot:
         self.runs = {}
         self.subject_ids = subject_ids
         self.opi_turn_budget = opi_turn_budget
+        self.model_controls = {**MODEL_CONTROLS, "reasoning": reasoning}
         for index, family in enumerate(FAMILIES):
             run = self.root / "runs" / family
             opi_id = f"trial-opi-{index + 1}"
@@ -142,7 +165,10 @@ class EvidenceRoot:
                 "opi": opi_id,
                 "pi": pi_id,
                 "bundle_digests": {},
+                "pairs": [(opi_id, pi_id)],
             }
+        for repetition in range(2, extra_pairs + 2):
+            self._stage_extra_pair(FAMILIES[0], repetition)
         self.identity_cache = {
             "schema": "opi-eval-upstream-identity-cache/1",
             "repositories": {
@@ -190,7 +216,7 @@ class EvidenceRoot:
             "trials": declared,
             "connection_id": "primary",
             "connections": [CONNECTION],
-            "model_controls": MODEL_CONTROLS,
+            "model_controls": self.model_controls,
             "execution": {"concurrency": 2, "mode": "live"},
         }
         write_json(
@@ -202,6 +228,7 @@ class EvidenceRoot:
                 "planned_trials": declared,
             },
         )
+
         material = {
             "schema": "preserved-material",
             "agents": {},
@@ -323,6 +350,45 @@ class EvidenceRoot:
             },
         )
 
+    def _stage_extra_pair(self, family: str, repetition: int) -> None:
+        """Add a completely sealed task/repetition pair to the same family root."""
+        entry = self.runs[family]
+        run = entry["run"]
+        control_path = run / "run-control.json"
+        control = json.loads(control_path.read_text())
+        pair = tuple(f"{entry[product]}-r{repetition}" for product in ("opi", "pi"))
+        for product, trial_id in zip(("opi", "pi"), pair):
+            shutil.copytree(run / "trials" / entry[product], run / "trials" / trial_id)
+            original = next(row for row in control["planned_trials"] if row["id"] == entry[product])
+            control["planned_trials"].append({**original, "id": trial_id, "group": f"g-r{repetition}"})
+            bundle = run / "trials" / trial_id / "bundle"
+            sealed = json.loads((bundle / "manifest.json").read_text())
+            for key in ("native/agent-terminal.json", "control/settlement.json"):
+                path = bundle / "artifacts" / key
+                value = json.loads(path.read_text())
+                value["trial"] = trial_id
+                write_json(path, value)
+                sealed["entries"][key]["digest"] = sha256(path.read_bytes())
+            write_json(bundle / "manifest.json", sealed)
+        write_json(control_path, control)
+        for directory in (run / "trials").iterdir():
+            bundle = directory / "bundle"
+            path = bundle / "artifacts/control/experiment.json"
+            experiment = json.loads(path.read_text())
+            experiment["trials"] = control["planned_trials"]
+            write_json(path, experiment)
+            sealed = json.loads((bundle / "manifest.json").read_text())
+            sealed["entries"]["control/experiment.json"]["digest"] = sha256(path.read_bytes())
+            write_json(bundle / "manifest.json", sealed)
+        report_path = run / "run-report.json"
+        report = json.loads(report_path.read_text())
+        report["trials"].extend(
+            {"id": trial_id, "status": "sealed", "verifier": {"completion": "verified-native"}}
+            for trial_id in pair
+        )
+        write_json(report_path, report)
+        entry["pairs"].append(pair)
+
     def rewrite_sealed_family_controls(self, family: str, max_output_tokens: int) -> None:
         """Rebind one family's sealed experiment, wire snapshots and digests."""
         run = self.runs[family]["run"]
@@ -358,20 +424,67 @@ class EvidenceRoot:
             write_json(bundle / "manifest.json", manifest)
         self._write_manifest()
 
+    def reseal_output_control(self, family: str, product: str, snapshot: dict) -> None:
+        """Keep all byte bindings valid while testing a semantic mutation."""
+        entry = self.runs[family]
+        bundle = entry["run"] / "trials" / entry[product] / "bundle"
+        proof = json.loads(snapshot["evidence"])
+        proof["config"]["sha256"] = sha256(snapshot["config"].encode())
+        proof["requests"]["sha256"] = sha256(snapshot["requests"].encode())
+        snapshot["evidence"] = json.dumps(proof)
+        snapshot["evidence_sha256"] = sha256(snapshot["evidence"].encode())
+        path = bundle / "artifacts/control/output-control.json"
+        write_json(path, snapshot)
+        material_path = entry["run"] / "material.json"
+        material = json.loads(material_path.read_text())
+        material["agents"][product]["output_control_evidence"]["sha256"] = snapshot["evidence_sha256"]
+        write_json(material_path, material)
+        manifest_path = bundle / "manifest.json"
+        sealed = json.loads(manifest_path.read_text())
+        sealed["entries"]["control/output-control.json"]["digest"] = sha256(path.read_bytes())
+        write_json(manifest_path, sealed)
+        self._write_manifest()
+
+    def rewrite_lock_tools(self, family: str, tools: list[dict]) -> None:
+        """Rebind material and sealed integrity to a synthetic selected-tool lock."""
+        run = self.runs[family]["run"]
+        path = run / "static-lock.json"
+        lock = json.loads(path.read_text())
+        lock["tools"] = tools
+        write_json(path, lock)
+        digest = sha256(path.read_bytes())
+        material_path = run / "material.json"
+        material = json.loads(material_path.read_text())
+        material["static_lock"]["sha256"] = digest
+        write_json(material_path, material)
+        for directory in (run / "trials").iterdir():
+            bundle = directory / "bundle"
+            integrity = bundle / "artifacts/control/integrity.json"
+            value = json.loads(integrity.read_text())
+            value["upstream_identity"] = f"{family}@{digest}"
+            write_json(integrity, value)
+            sealed = json.loads((bundle / "manifest.json").read_text())
+            sealed["entries"]["control/integrity.json"]["digest"] = sha256(integrity.read_bytes())
+            write_json(bundle / "manifest.json", sealed)
+        self._write_manifest()
+
     def _stage_scoped_view(self) -> None:
         view = self.root / "opi-artifact-audit"
         for family, entry in self.runs.items():
-            native = entry["run"] / "trials" / entry["opi"] / "bundle" / "artifacts" / "native"
-            target = view / entry["opi"]
-            target.mkdir(parents=True)
-            for path in sorted(native.iterdir()):
-                (target / path.name).write_bytes(path.read_bytes())
+            for opi_id, _ in entry["pairs"]:
+                native = entry["run"] / "trials" / opi_id / "bundle" / "artifacts" / "native"
+                target = view / opi_id
+                target.mkdir(parents=True)
+                for path in sorted(native.iterdir()):
+                    (target / path.name).write_bytes(path.read_bytes())
 
     def _write_manifest(self) -> None:
         trials = []
         for family, entry in self.runs.items():
-            for key, agent in (("opi", "opi"), ("pi", "pi")):
-                trial = entry[key]
+            for trial, agent in (
+                (trial_id, agent) for pair in entry["pairs"]
+                for trial_id, agent in zip(pair, ("opi", "pi"))
+            ):
                 bundle_manifest = (
                     entry["run"] / "trials" / trial / "bundle" / "manifest.json"
                 )
@@ -386,12 +499,12 @@ class EvidenceRoot:
                     }
                 )
         manifest = {
-            "schema": "opi-eval-local-acceptance/1",
+            "schema": "opi-eval-local-acceptance/2",
             "operator": {"redacted": True, "label": "local-acceptance-operator"},
             "opi_repository": {"url": "https://github.com/OdradekAI/opi", "commit": "9" * 40},
             "controls": {
                 "execution_concurrency": 2,
-                "connection_controls": {"connection": {key: CONNECTION[key] for key in ("provider", "api", "base_url", "model")}, "model_controls": MODEL_CONTROLS},
+                "connection_controls": {"connection": {key: CONNECTION[key] for key in ("provider", "api", "base_url", "model")}, "model_controls": self.model_controls},
             },
             "trials": trials,
             "sources": {
@@ -499,11 +612,92 @@ class AcceptanceVerifierTest(unittest.TestCase):
 
     def test_synthetic_structured_root_is_accepted(self) -> None:
         report = self.accept()
-        self.assertEqual(report["schema"], "opi-eval-local-acceptance-verification/1")
-        self.assertEqual(len(report["trials"]), 6)
+        self.assertEqual(report["schema"], "opi-eval-local-acceptance-verification/2")
+        self.assertEqual(len(report["trials"]), 4)
+        self.assertEqual(report["families"], sorted(FAMILIES))
+        self.assertEqual(report["excluded_families"], ["deepswe-v1.1"])
         out_root = self.evidence.outside
         written = [path.name for path in sorted(out_root.iterdir())]
         self.assertEqual(written, [f"report-{id(self.evidence):x}"])
+
+    def test_six_and_eight_complete_active_trials_are_accepted(self) -> None:
+        for extra_pairs in (1, 2):
+            with self.subTest(extra_pairs=extra_pairs):
+                self.evidence = EvidenceRoot(self.base / f"extra-{extra_pairs}", extra_pairs=extra_pairs)
+                report = self.accept()
+                self.assertEqual(len(report["trials"]), 4 + 2 * extra_pairs)
+                self.assertEqual(report["families"], sorted(FAMILIES))
+
+    def test_legacy_acceptance_schema_is_incompatible(self) -> None:
+        manifest = self.evidence.load_manifest()
+        manifest["schema"] = "opi-eval-local-acceptance/1"
+        self.evidence.save_manifest(manifest)
+        report = self.reject("manifest schema")
+        self.assertEqual(report["schema"], "opi-eval-local-acceptance-verification/2")
+        self.assertEqual(report["excluded_families"], ["deepswe-v1.1"])
+
+    def test_excluded_and_unknown_primary_families_are_rejected(self) -> None:
+        for family in ("deepswe-v1.1", "unknown-family"):
+            with self.subTest(family=family):
+                self.evidence = EvidenceRoot(self.base / family)
+                manifest = self.evidence.load_manifest()
+                manifest["trials"].extend(
+                    {"id": f"extra-{agent}", "agent": agent, "family": family}
+                    for agent in ("opi", "pi")
+                )
+                self.evidence.save_manifest(manifest)
+                self.reject("excluded or unknown primary family")
+
+    def test_unpaired_primary_attribution_is_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        manifest["trials"][1]["agent"] = "opi"
+        self.evidence.save_manifest(manifest)
+        self.reject("paired attributable trials")
+
+    def test_complete_frozen_coverage_cannot_be_trimmed(self) -> None:
+        self.evidence = EvidenceRoot(self.base / "trimmed", extra_pairs=1)
+        manifest = self.evidence.load_manifest()
+        manifest["trials"] = [row for row in manifest["trials"] if not row["id"].endswith("-r2")]
+        self.evidence.save_manifest(manifest)
+        self.reject("planned trial coverage")
+
+    def test_resealed_mismatched_task_and_repetition_pairs_are_rejected(self) -> None:
+        for field in ("task", "group"):
+            with self.subTest(field=field):
+                self.evidence = EvidenceRoot(self.base / f"pair-{field}")
+                family = FAMILIES[0]
+                run = self.evidence.runs[family]["run"]
+                control_path = run / "run-control.json"
+                control = json.loads(control_path.read_text())
+                control["planned_trials"][1][field] += "-other"
+                write_json(control_path, control)
+                experiment_path = run / "trials" / self.evidence.runs[family]["opi"] / "bundle/artifacts/control/experiment.json"
+                experiment = json.loads(experiment_path.read_text())
+                experiment["trials"] = control["planned_trials"]
+                self.evidence.rewrite_sealed_experiment(family, experiment)
+                self.reject("is not exactly paired")
+
+    def test_resealed_duplicate_task_repetition_pair_is_rejected(self) -> None:
+        self.evidence = EvidenceRoot(self.base / "duplicate-pair", extra_pairs=1)
+        family = FAMILIES[0]
+        run = self.evidence.runs[family]["run"]
+        control_path = run / "run-control.json"
+        control = json.loads(control_path.read_text())
+        for row in control["planned_trials"]:
+            row["group"] = "g"
+        write_json(control_path, control)
+        experiment_path = run / "trials" / self.evidence.runs[family]["opi"] / "bundle/artifacts/control/experiment.json"
+        experiment = json.loads(experiment_path.read_text())
+        experiment["trials"] = control["planned_trials"]
+        self.evidence.rewrite_sealed_experiment(family, experiment)
+        self.reject("is not exactly paired")
+
+    def test_missing_selected_family_is_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        for row in manifest["trials"]:
+            row["family"] = FAMILIES[0]
+        self.evidence.save_manifest(manifest)
+        self.reject("families")
 
     def test_valid_native_task_failures_count_as_graded_trials(self) -> None:
         # P19-AUD-007: a sealed graded settlement admits benchmark-valid
@@ -661,7 +855,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
     def test_companion_invoked_once_per_family_for_verify_and_report(self) -> None:
         self.accept()
         invocations = self.evidence.stub_record.read_text(encoding="utf-8").splitlines()
-        self.assertEqual(len(invocations), 6)
+        self.assertEqual(len(invocations), 4)
         for family in FAMILIES:
             self.assertIn(
                 f"verify --root {self.evidence.root / 'runs' / family}", invocations
@@ -985,15 +1179,15 @@ class AcceptanceVerifierTest(unittest.TestCase):
 
     def test_missing_trial_is_rejected(self) -> None:
         manifest = self.evidence.load_manifest()
-        manifest["trials"] = manifest["trials"][:5]
+        manifest["trials"] = manifest["trials"][:3]
         self.evidence.save_manifest(manifest)
-        self.reject("six attributable trials")
+        self.reject("paired attributable trials")
 
     def test_duplicate_trial_id_is_rejected(self) -> None:
         manifest = self.evidence.load_manifest()
         manifest["trials"][2]["id"] = manifest["trials"][0]["id"]
         self.evidence.save_manifest(manifest)
-        self.reject("six attributable trials")
+        self.reject("paired attributable trials")
 
     def test_oracle_attribution_is_rejected(self) -> None:
         manifest = self.evidence.load_manifest()
@@ -1142,6 +1336,83 @@ class AcceptanceVerifierTest(unittest.TestCase):
                     self.accept()
                 else:
                     self.reject("output-control")
+
+    def test_source_current_explicit_reasoning_projections_are_accepted(self) -> None:
+        for level in (*THINKING_BUDGETS, "omitted", "unknown"):
+            with self.subTest(level=level):
+                self.evidence = EvidenceRoot(self.base / f"reasoning-{level}", reasoning=level)
+                self.accept()
+
+    def test_resealed_opi_reasoning_semantic_mutations_are_rejected(self) -> None:
+        for case in (
+            "support", "support-type", "string-map", "missing-map", "extra-map",
+            "wrong-level", "enabled", "enabled-type", "budget", "budget-type",
+            "budget-bool", "missing-block", "missing-budget", "off-support",
+            "off-enabled", "off-map", "off-budget",
+        ):
+            with self.subTest(case=case):
+                level = "off" if case.startswith("off-") else "high"
+                self.evidence = EvidenceRoot(self.base / case, reasoning=level)
+                family = FAMILIES[0]
+                entry = self.evidence.runs[family]
+                path = entry["run"] / "trials" / entry["opi"] / "bundle/artifacts/control/output-control.json"
+                snapshot = json.loads(path.read_text())
+                config = snapshot["config"]
+                if case in ("support", "off-support"):
+                    config = config.replace(f"supports_thinking = {str(level != 'off').lower()}", f"supports_thinking = {str(level == 'off').lower()}")
+                elif case == "support-type":
+                    config = config.replace("supports_thinking = true", "supports_thinking = 1")
+                elif case == "string-map":
+                    config = config.replace("high = true", 'high = "high"')
+                elif case == "missing-map":
+                    config = "\n".join(line for line in config.splitlines() if not line.startswith("thinking_level_map")) + "\n"
+                elif case == "extra-map":
+                    config = config.replace("thinking_level_map = { ", "thinking_level_map = { off = false, ")
+                elif case in ("wrong-level", "off-map"):
+                    config = config.replace("low = false", "low = true")
+                elif case in ("enabled", "off-enabled"):
+                    config = config.replace(f"enabled = {str(level != 'off').lower()}", f"enabled = {str(level == 'off').lower()}")
+                elif case == "enabled-type":
+                    config = config.replace("enabled = true", 'enabled = "true"')
+                elif case in ("budget", "off-budget"):
+                    config = config.replace(f"budget_tokens = {max(THINKING_BUDGETS[level], 1024)}", "budget_tokens = 2048")
+                elif case == "budget-type":
+                    config = config.replace("budget_tokens = 16384", "budget_tokens = 16384.0")
+                elif case == "budget-bool":
+                    config = config.replace("budget_tokens = 16384", "budget_tokens = true")
+                elif case == "missing-budget":
+                    config = config.replace("budget_tokens = 16384\n", "")
+                else:
+                    config = config.split("[thinking]")[0]
+                self.assertNotEqual(config, snapshot["config"])
+                snapshot["config"] = config
+                self.evidence.reseal_output_control(family, "opi", snapshot)
+                self.reject("config differs from the frozen control projection")
+
+    def test_resealed_pi_reasoning_semantic_mutations_are_rejected(self) -> None:
+        for case in ("reasoning", "reasoning-type", "map-type", "missing-map", "wrong-level", "off-map", "off-enabled"):
+            with self.subTest(case=case):
+                level = "off" if case.startswith("off-") else "high"
+                self.evidence = EvidenceRoot(self.base / f"pi-{case}", reasoning=level)
+                family = FAMILIES[0]
+                entry = self.evidence.runs[family]
+                path = entry["run"] / "trials" / entry["pi"] / "bundle/artifacts/control/output-control.json"
+                snapshot = json.loads(path.read_text())
+                config = json.loads(snapshot["config"])
+                model = config["providers"]["zhipu"]["models"][0]
+                if case in ("reasoning", "off-enabled"):
+                    model["reasoning"] = level == "off"
+                elif case == "reasoning-type":
+                    model["reasoning"] = 1
+                elif case == "map-type":
+                    model["thinkingLevelMap"] = {"high": True}
+                elif case == "missing-map":
+                    del model["thinkingLevelMap"]
+                else:
+                    model["thinkingLevelMap"] = {"low": "low"}
+                snapshot["config"] = json.dumps(config)
+                self.evidence.reseal_output_control(family, "pi", snapshot)
+                self.reject("config differs from the frozen control projection")
 
     def test_output_control_missing_wire_or_wrong_client_is_rejected(self) -> None:
         for case in (
@@ -1343,7 +1614,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
 
     def test_unknown_upstream_commit_is_rejected(self) -> None:
         manifest = self.evidence.load_manifest()
-        manifest["sources"]["pier"]["commit"] = "d" * 40
+        manifest["sources"]["harbor"]["commit"] = "d" * 40
         self.evidence.save_manifest(manifest)
         self.reject("upstream identity")
 
@@ -1356,9 +1627,34 @@ class AcceptanceVerifierTest(unittest.TestCase):
     def test_identity_cache_without_repository_is_rejected(self) -> None:
         cache = self.evidence.root / "upstream-identity-cache.json"
         value = json.loads(cache.read_text(encoding="utf-8"))
-        del value["repositories"][PIER_REPO]
+        del value["repositories"][HARBOR_REPO]
         write_json(cache, value)
         self.reject("upstream identity")
+
+    def test_unused_pier_qualification_is_optional(self) -> None:
+        for family in FAMILIES:
+            self.evidence.rewrite_lock_tools(family, [{"id": "harbor", "commit": HARBOR_COMMIT}])
+        manifest = self.evidence.load_manifest()
+        del manifest["sources"]["pier"]
+        self.evidence.save_manifest(manifest)
+        cache = self.evidence.root / "upstream-identity-cache.json"
+        value = json.loads(cache.read_text())
+        del value["repositories"][PIER_REPO]
+        write_json(cache, value)
+        self.accept()
+
+    def test_selected_pi_and_harbor_qualification_remain_mandatory(self) -> None:
+        for name in ("pi", "harbor"):
+            with self.subTest(name=name):
+                self.evidence = EvidenceRoot(self.base / f"required-{name}")
+                manifest = self.evidence.load_manifest()
+                del manifest["sources"][name]
+                self.evidence.save_manifest(manifest)
+                self.reject(f"no source record for {name}")
+
+    def test_selected_harbor_lock_identity_is_mandatory(self) -> None:
+        self.evidence.rewrite_lock_tools(FAMILIES[0], [{"id": "pier", "commit": PIER_COMMIT}])
+        self.reject("admitted lock tools")
 
     def test_coordinated_source_and_cache_substitution_is_rejected(self) -> None:
         """A coordinated substitution of manifest sources and the operator
@@ -1431,7 +1727,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
 
     def test_sealed_upstream_identity_drift_is_rejected(self) -> None:
         self.rebind_upstream_identity(
-            FAMILIES[2], f"{FAMILIES[2]}@{'0' * 64}"
+            FAMILIES[1], f"{FAMILIES[1]}@{'0' * 64}"
         )
         self.reject("sealed upstream identity")
 

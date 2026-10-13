@@ -755,17 +755,24 @@ trial 所在的整个对比组创建新身份。替换前会校验原计划并�
 方式是禁用受影响的本地执行路径或恢复先前已校验的 Companion
 构建——绝不重新标注旧证据。
 
-操作员交付一个脱敏的证据根目录：包含六个可归属 trial（覆盖三个
-benchmark 家族）的 manifest、冻结的 controls、source/build/
+Phase 19 验收使用 `opi-eval-local-acceptance/2`：至少四个可归属的主 trial，
+覆盖 Terminal-Bench 2.1 与 3.0，每个冻结 task/group（含每次重复）必须恰好
+有一个 Opi/Pi 配对。额外选定的任务和重复仍须完整校验，不得省略任何冻结
+planned trial。DeepSWE 与未知的主家族均被拒绝。`/1` 验收 manifest 与修订
+范围不兼容，保留的原始证据保持完整。DeepSWE/Pier 独立能力仍可使用，
+其 trial 或分数不进入本次主验收。
+
+操作员交付一个脱敏的证据根目录：manifest、冻结的 controls、source/build/
 material/bundle 摘要、保留的命令退出码与 provider/tool/native
-工件、Opi 专属的 `opi-artifact-audit` 范围捕获视图（与三个原始
-Opi native 捕获逐字节绑定且恰好穷尽它们），以及 pi/Harbor/Pier
+工件、Opi 专属的 `opi-artifact-audit` 范围捕获视图（与每个获接受的原始
+Opi native 捕获逐字节绑定且恰好穷尽它们），以及所选 pi/Harbor
 来源记录的缓存上游仓库身份清单。保留清单必须为每个 trial 家族
 携带恰好一条 material 记录且路径唯一，并包含由各保留 material 的
-`static_lock` pin 定位的已准入 static-lock 字节；pi、Harbor 与
-Pier 的身份从这些已准入 lock 字节推导（来自 lock 的 subject 与
+`static_lock` pin 定位的已准入 static-lock 字节；pi 与 Harbor 的身份
+必须存在，并从这些已准入 lock 字节推导（来自 lock 的 subject 与
 固定的 runner tools 的仓库限定提交身份），绝不依赖多个提供的
-映射彼此印证，缓存清单仅作佐证。任何人都可以离线校验该证据：
+映射彼此印证，缓存清单仅作佐证。未使用的 Pier 身份校验是可选的。
+任何人都可以离线校验该证据：
 
 ```sh
 python3 crates/opi-eval/scripts/verify-local-acceptance.py \
@@ -780,7 +787,8 @@ oracle、缺失或仅 fixture 的证据，拒绝把空的一般审计成功当�
 已准入 lock 摘要，并依据从已准入 lock 字节推导出的身份校验上游
 提交（与随证据提供的缓存清单交叉核对，绝不在本 checkout 中
 解析提交），且只针对随证据提供的家族 run 根调用构建出的
-Companion `verify` 与 `report`。退出码 0 表示接受证据；退出码 2
+Companion `verify` 与 `report`。`opi-eval-local-acceptance-verification/2`
+结果明确记录 DeepSWE 已排除。退出码 0 表示接受证据；退出码 2
 输出一个类型化的拒绝原因。
 
 验收校验器要求 Python 3.11 或更高版本。manifest 的
@@ -788,8 +796,13 @@ Companion `verify` 与 `report`。退出码 0 表示接受证据；退出码 2
 `api`、`base_url`、`model`）与 `model_controls`（冻结的 resolved 对象）。
 校验器将它们和 `execution_concurrency` 与每个 sealed experiment 比较，
 再把封存的输出控制快照与 trial executable 身份和保留的 material 核对。
-投影中的数值上限和两个独立观察到的请求上限必须一致；仅有字典形状的声明
+投影中的数值上限、当前源码的 thinking 投影与两个独立观察到的请求上限
+必须一致；仅有字典形状的声明
 或 seal 不足以通过。验收时绝不沿探针记录中的原始主机路径读取文件。
+Opi 显式 thinking 的 support/enabled 在 `off` 时为 false，六个 boolean
+level 项只选中请求的 level，预算为原生 level 预算且至少 1024 tokens。
+Pi 的 `off` 使用 `reasoning = false` 并省略 level map；启用时保留所选
+level 的字符串 map。omitted 与 unknown reasoning 继续省略对应字段。
 
 ### 有界取消
 
@@ -807,8 +820,9 @@ cargo test -p opi-eval --locked --test native_driver \
   remediation_native_stage_deadlines -- --exact --ignored --nocapture --test-threads=1
 ```
 
-计时派发前准备不可变任务/helper 镜像及独立 verifier 构建上下文。三个家族各需
-覆盖九种受控场景和两个主体，先运行全部正向控制。Harbor 的正向 verifier 上限
+计时派发前准备不可变任务/helper 镜像及独立 verifier 构建上下文。Phase 19
+门禁选择 Terminal-Bench 2.1 与 3.0，各需覆盖九种受控场景和两个主体，先运行
+全部正向控制。独立 DeepSWE 场景继续可用。Harbor 的正向 verifier 上限
 为 3 秒，超时控制为 1 秒，对应延迟 4 秒的命令。Pier 对整个 verifier 生命周期
 计时并重试一次：所有场景显式使用 30 秒 verifier 上限、60 秒任务 verifier
 时限，verifier 超时场景的命令延迟 60 秒。Agent 上限保持 1 秒，另有任务自身

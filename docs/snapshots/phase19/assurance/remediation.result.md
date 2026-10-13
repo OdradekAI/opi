@@ -1,94 +1,127 @@
 # Phase 19 Remediation Result
 
 **Status**: COMPLETE
-**Audit index SHA-256**: `fe9e6af9cd26f69556c0224f219500626181ae2829d7099af99500e73faff5db`
-**Plan SHA-256**: `db42006b85fd392267c76dcf7362bb1d1478e369d25f353a5e4ec4f4fcd88d24`
-**Changed paths**: ["CHANGELOG.md", "crates/opi-eval/README.md", "crates/opi-eval/README.zh.md", "crates/opi-eval/scripts/test_verify_local_acceptance.py", "crates/opi-eval/scripts/verify-local-acceptance.py", "crates/opi-eval/src/agent/pi.rs", "crates/opi-eval/src/cli/prepare.rs", "crates/opi-eval/src/experiment.rs", "crates/opi-eval/src/native_capture_runtime.rs", "crates/opi-eval/src/regrade.rs", "crates/opi-eval/src/report.rs", "crates/opi-eval/src/runner/experiment.rs", "crates/opi-eval/src/runner/plan.rs", "crates/opi-eval/src/runner/prepare.rs", "crates/opi-eval/tests/agent_integration_conformance.rs", "crates/opi-eval/tests/assembled_run.rs", "crates/opi-eval/tests/bundle_recompute.rs", "crates/opi-eval/tests/experiment_contract.rs", "crates/opi-eval/tests/fail_closed_cli.rs", "crates/opi-eval/tests/native_driver.rs", "crates/opi-eval/tests/report_output_containment.rs", "crates/opi-eval/tests/support/native_witness_material.rs"]
+**Audit index SHA-256**: `23b39dcdc52f71dc1b17b4f87678f39aa3d86289c3753eb0b5f55373ad82873e`
+**Plan SHA-256**: `944841c1bbd9e8f1c0907d2b92ace9511232c34878a55a3afafdb0f080fb26af`
+**Changed paths**: ["CHANGELOG.md", "Cargo.lock", "Cargo.toml", "crates/opi-eval/Cargo.toml", "crates/opi-eval/README.md", "crates/opi-eval/README.zh.md", "crates/opi-eval/scripts/test_verify_local_acceptance.py", "crates/opi-eval/scripts/verify-local-acceptance.py", "crates/opi-eval/src/experiment.rs", "crates/opi-eval/src/runner/plan.rs", "crates/opi-eval/tests/experiment_contract.rs", "crates/opi-eval/tests/native_driver.rs", "crates/opi-eval/tests/support/native_witness_material.rs", "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md", "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md"]
 
-## Summary
+Disposition accounting is complete for the exact current eight-key union.
+Execution is **STOPPED-WITH-NOT-CLOSED**: B1, B2 and B5 are Closed; B3, B4,
+B6, B7 and B8 are Not closed. COMPLETE is the fixed result-artifact status,
+not a claim that all repairs, native gates or Phase acceptance passed.
 
-All ten approved closure batches executed in dependency order with the
-planned minimum changes. Every batch's discriminating green-after check
-was observed against the final repaired build
-(`opi-eval` sha256 `8e483c6f8535a5e1924b6f39e531010657431e5cb144c6c7c76dd633584f81ac`)
-and the final repaired source; the recorded observations live in the
-result dispositions. Ten fix findings closed; the two no-action findings
-keep their planned statuses (`Cannot confirm` for the retained final-state
-Phase-exit gap, `Info/No action` for the advisory registry navigation
-limitation).
+## Approval and carried-in work
 
-One bounded incidental repair (`I1`) was accepted during the B8 final
-native evidence: the regrade witness's diagnostic stand-in agent emitted
-unlisted stderr and plain stdout that B1's closed capture grammar
-correctly refuses; the stand-in now emits no stderr and the recognized
-Agent event shape. All guardrails hold (test-support only).
+The explicit invocation was `opi-remediate mode=apply phase=19
+plan_sha256=944841c1bbd9e8f1c0907d2b92ace9511232c34878a55a3afafdb0f080fb26af`. Locked audit-set/apply admission passed.
+Source baseline and current HEAD are both
+`e40c46f42b9ebc87e66bb596d778ff239cc3183e`; no commit was made. The carried-in
+unstaged fixed plan pair and prepared English/Chinese registered source pair
+were retained. Staged and untracked baseline inventories were empty.
+The approved plan pair and active index/member bytes remain unchanged.
+Both prepared source hashes remain exactly f507f29d91ddfc919ead6fa84df8d5f912b04af1d84ed5e68777e20c80c135c5
+and 7d97f00f3a06723765e8cb2c8ea7ed13933defc8d7c230bdc0d165ad1284e7dc.
+All fifteen attributed source paths changed; fixed result outputs are separately
+owned artifacts. No unowned path, implementation ledger or original raw proof
+was edited. No incidental repair was accepted.
 
-## Final verification union
+## Batch outcomes
 
-Executed once after the last invalidating edit, in the repository
-working tree with the external Cargo cache:
+| Batch | Source key | Outcome | Evidence |
+|---|---|---|---|
+| B1 | C/P19-AUD-001 | Closed | Routes23/23; experiment35/35; parsed exact loopback admission; direct locked URL edge only. |
+| B2 | C/P19-AUD-002 | Closed | Cardinality3/3; isolated huge/small/equal controls; new and retained caps1pass each. |
+| B3 | P/P19-AUD-002 | Not closed | Flushed admitted starts/version/grammar pass; required real stage/deadline body unadmitted. |
+| B4 | P/P19-AUD-003 | Not closed | Native names each list1; fixtures each execute1pass; actual native report/regrade bodies unadmitted. |
+| B5 | P/P19-AUD-004 | Closed | Ignore reason material/7 agrees with consumer; intentionally0executed/1ignored. |
+| B6 | C/P19-AUD-003 | Not closed | Admission positive+23 negatives; actual client four exact filters1pass each; seven native Docker gates absent and required all-targets union fails. |
+| B7 | C/P19-AUD-004 | Not closed | Projection/semantic tests and full immutable f2 /2 structure pass; original operator/source-build/time qualification incomplete. |
+| B8 | P/P19-AUD-001 | Not closed | Revised two-family coverage/consumers/source pair synchronized; complete required native/operator/final union remains incomplete. |
 
-- Ten matching discriminating probes rerun with the final binary and
-  fresh proof directories: privacy 32/32, protocol 8/8,
-  quoted-bounds 21/21, explicit-max-trials (exit 2, 0 sealed, no root),
-  doctor-stall (bounded 10.1s report), zero-seal (both cases),
-  acceptance 6/6, doctor-materials (all seven categories), the B6
-  containment regression, and the B8 desktop regression - all PASS.
-- `cargo test -p opi-eval --all-targets --locked --offline`: all test
-  binaries green (lib 175, native_driver 117 + the B6 containment
-  regression, fail_closed_cli 8, agent_integration_conformance 3,
-  assembled_run 16, bundle_recompute 7, report_contract 6,
-  report_output_containment 14, experiment_contract 35, others green).
-- `cargo clippy -p opi-eval --all-targets --locked --offline -- -D warnings`:
-  clean.
-- `python3 -m unittest discover -s crates/opi-eval/scripts -p 'test_*.py'`:
-  273 tests OK (1 skipped) with the final Companion at the workspace
-  target fallback.
-- `python3 scripts/opi-doc-check.py`: PASS; `git diff --check`: clean on
-  every task-owned path (an unrelated, unowned mid-session rewrite of
-  `docs/research/pi-1.0.0/source-manifest.json` and an untracked
-  research document are preserved untouched).
-- `cargo fmt --check --all`: OK.
-- `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`:
-  clean.
-- `cargo test --workspace --all-targets --locked --offline`: exit 0,
-  232/232 test-result lines OK.
-- `cargo test --workspace --doc --locked --offline`: exit 0 (8 result
-  lines OK).
-- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked --offline`:
-  exit 0.
-- Exact six-trial raw root re-verified offline with the final Companion:
-  accepted=true, six attributable trials, three families.
-- B8 native evidence with final identities: Docker engine
-  `Docker Desktop (containerized)` (f7640520-9a9f-4acb-bd58-62c5b388982a)
-  admitted through the existing namespace observer; three public
-  prepares exit 0 publishing `opi-eval-native-material/7`; each config
-  and the derived three-family witness manifest validate exit 0; the
-  final musl helper (sha256 `28b0d74c0e208fefd63c5576d2020cfa85f4e454c4cab8c147719439c2421b4c`)
-  repinned; the six exact native filters execute/pass
-  (6 passed, 0 failed, 122 filtered) with no owned residual container or
-  process.
+C is phase19-codex-gpt61-2ec1ccb-20261004t023807z, findings
+bd454f15884f80e537772452aabc05593d73763e5f4500326edbf13e8d018bc4.
+P is phase19-pi-glm53-9d805b4-20261004t094337z, findings
+377d730be9a09201c6056b3513739fa2f524ec684019ae516ef04182da56eeaf.
+Same textual IDs remain separate records. Original indexed states/severities,
+source criteria and aggregate FAIL remain unchanged.
 
-## Notes
+## Verification and retained evidence
 
-- The retained warm cache had been wiped externally between planning and
-  apply; it was re-seeded from the verified pinned inputs (12 lock
-  seeds, the retained Opi client copy) and re-acquired under supervision
-  through the pinned materializer (uv, three corpora, harbor/pier
-  runners, pi package). Corpus working-tree exec bits were normalized to
-  the git-recorded modes after drvfs-staged acquisition, and one
-  deferred-uv console-script shebang rewrite of the pier entrypoint was
-  restored to its pinned identity before the final re-freeze; content
-  digests verified unchanged throughout.
-- `cargo test --workspace` initially reused stale export-compiled unit
-  binaries from the shared external Cargo cache (a `git`-dependent
-  artifact audit binary and one OOM-corrupted unit); the affected units
-  were rebuilt from the repository and the complete workspace union then
-  ran green. These are cache/workflow effects, not source defects.
-- C/P19-AUD-009's final-state Phase-exit gap is retained as planned: the
-  exact six-trial root passes the final Companion and verifier, while
-  final repaired-state workspace gates are now green; any remaining
-  Phase-conformance assertion stays with the owning workflow.
+Evidence root: `C:/Users/Luiz/AppData/Local/Temp/opi-phase19-remediate-apply-crtgd33k` (WSL `/mnt/c/Users/Luiz/AppData/Local/Temp/opi-phase19-remediate-apply-crtgd33k`).
+`result-check-index.json` binds exact argv, exits, counts and raw log digests;
+final receipts bind unchanged relevant source bytes and owned process groups.
+The protocol and input-generator provisional runs are retained separately;
+final inputv2/source runs supply current green evidence.
 
-This result claims finding closure and executed native evidence only; it
-does not declare the Phase conformant.
+| Check | Outcome |
+|---|---|
+| `cargo test --locked -p opi-eval --test experiment_contract --test native_driver` | PASS35+122 executed;13 intentionally ignored. Every added/modified test binary ran. |
+| `python3 -m unittest discover -s crates/opi-eval/scripts -p test_verify_local_acceptance.py` | PASS74/74. |
+| Identical route/cardinality/max-projection/scope/f2-control probes | PASS23/23,3/3,2/2,2/2,4/4 plus actual observations4/4 and lock2/2. |
+| Four required actual-client exact ignored filters | Each1pass on final source; loopback scripted provider, private HOME/environment and dummy keys. No Docker/model spend. |
+| `cargo fmt --check --all` | PASS. |
+| `cargo clippy --workspace --all-targets -- -D warnings` | PASS. |
+| `cargo test --workspace --all-targets` | FAIL101 at opi-coding-agent json_streaming_cli:0pass/3fail. Later binaries were not reached. |
+| `cargo test -p opi-eval --all-targets` | FAIL101 library:189pass/3fail. Required modified integration binaries ran separately and passed. |
+| `cargo test --workspace --doc` | PASS12 executed doctests. |
+| `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | PASS. |
+| `python scripts/opi-doc-check.py`, `git diff --check` | PASS after fixed result materialization. |
+| Active audit-set and fixed result validator | PASS; exact eight-source coverage and fifteen-path attribution. |
+| Full f2 `/2` public verifier with exact current Companion | PASS exit0/accepted=true, four actual original trials. |
+| Public CLI adversarial manifest/control check | PASS intended rejection:exit2/accepted=false, manifest controls differ from sealed experiment; no missing-file/schema shortcut. |
+
+Cargo verification used offline locked inputs and the persistent external cache;
+no cargo clean, new per-session target or cache deletion occurred. Cargo.lock was
+generated by Cargo and changes only the existing url2.5.8 direct edge. Its
+already locked pure-Rust URL/IDNA/ICU/proc-macro closure is reused; no new version,
+native library or Opi internal runtime dependency was added.
+
+## Concrete remaining gates
+
+D2 initial native setup cannot currently prove the fixed no-implicit-fetch
+boundary. Pinned Harbor initial Compose/buildx paths permit builds/pulls/network
+without an offline guard. Existing candidate images and UV_OFFLINE do not govern
+those paths; oracle/nop initial witnesses use upstream DockerEnvironment.
+`d2-native-admission.json` records REJECTED before effects; `native-preflight.json`
+records exact current task/package/base/image/source observations. Packages are
+recoverable from immutable current-source-equivalent f2 copies, and candidate
+Agent/verifier images exist. This is not a global absence or impossibility claim.
+A newly qualified bounded Docker guard/build strategy needs its own admitted
+source/tool/argv/context/image proof before the seven named native bodies run.
+No default build, pull or native container effect was attempted by this apply.
+
+D1 copied384 exact original material/lock/freeze/seal/capture/raw-command files
+into a new evidence presentation. Origin checks and four fresh current Companion
+verify/report commands pass. Native outcomes remain TB21 Opi/Pi1/1 and TB3
+Opi/Pi0/1. Original outer argv/build-time and fully reproduced source acquisition
+remain unavailable within inspected proof. `manifest.operator_provenance` keeps
+those fields null; current offline commands do not fill them by inference.
+Structural `/2` acceptance alone therefore does not close operator/Phase proof.
+Later max-thinking and DeepSWE attempts remain intact and outside primary counts.
+
+Six all-targets failures also reproduce in a unique clean git archive of e40,
+not a Git worktree: three JSON streaming CLI cases exit with invalid provider
+configuration before the local request; three generic profile assertions retain
+old TB3/Deep task IDs and the old18000-second TB3 deadline against current
+foodstuff/opa pins and10800 seconds. Exact baseline commands/counts/log hashes
+and unchanged source-file digests are in `verification-blockers.json` and
+baseline-*.json. They are observations outside this strict finding union,
+not new finding IDs or accepted incidental repairs. Required-for-green alone
+does not establish the approved causal/owned surface. Their source is preserved.
+
+## Materialization and test impact
+
+Changes remain uncommitted in the shared worktree. Fresh audit/re-run requires
+fixes plus the current live set committed, a clean assurance directory, resolved
+external evidence and completion of any owning-workflow return. This apply does
+not change the implementation ledger, grant Phase PASS or invoke another skill.
+The next plan/owning-authority decision must admit missing native/offline proof
+and any separately owned baseline test repairs before complete closure.
+
+Test impact: **add** isolated selection regression, private admission and
+selected-family/start tests, standalone retained-family selector and fourteen
+Python cases; **update** route/native names/annotation/current terminal/control/
+scope fixtures; **retain** explicit caps, opaque pi0.85.1 fixtures, importer
+fallback, privacy/provenance guards and standalone Deep capability; **delete** none.
+The fixed result contract has no localized report sibling; README and registered
+source counterparts are synchronized in English/Chinese.

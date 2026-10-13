@@ -2,6 +2,10 @@
 
 use super::*;
 
+pub(super) const PHASE_FAMILIES: &[&str] = &["terminal-bench-2.1", "terminal-bench-3.0"];
+pub(super) const ALL_FAMILIES: &[&str] =
+    &["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"];
+
 pub(super) const IMAGE: &str =
     "python@sha256:272efc3f94bec901e2bc7a5c9984b3d113c317839edca2714c6a388b9476f8fc";
 
@@ -10,8 +14,26 @@ pub(super) const IMAGE: &str =
 pub(super) fn witness_material_profiles(
     material: &serde_json::Value,
 ) -> Result<Vec<(&'static str, PathBuf)>, String> {
+    witness_material_profiles_selected(material, ALL_FAMILIES)
+}
+
+/// Admits exactly the requested private witness families before any effects.
+pub(super) fn witness_material_profiles_selected(
+    material: &serde_json::Value,
+    families: &[&'static str],
+) -> Result<Vec<(&'static str, PathBuf)>, String> {
+    let unique = families
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    if families.is_empty()
+        || unique.len() != families.len()
+        || families.iter().any(|family| !ALL_FAMILIES.contains(family))
+    {
+        return Err("selected families must be nonempty, known and unique".to_owned());
+    }
     let mut profiles = Vec::new();
-    for family in ["terminal-bench-2.1", "terminal-bench-3.0", "deepswe-v1.1"] {
+    for &family in families {
         let entry = material
             .get("benchmarks")
             .and_then(|b| b.get(family))
@@ -45,10 +67,22 @@ pub(super) fn witness_material_profiles(
 /// Builds private tasks and diagnostic clients around the supplied real runners.
 /// These materials exercise lifecycle mechanics, never benchmark Agent scores.
 pub(super) fn controlled_material(input: &Path, deadlines: bool) -> PathBuf {
+    controlled_material_selected(input, deadlines, ALL_FAMILIES)
+}
+
+pub(super) fn controlled_material_selected(
+    input: &Path,
+    deadlines: bool,
+    families: &[&'static str],
+) -> PathBuf {
     let original = fs::read(input).unwrap();
     let mut material: serde_json::Value = serde_json::from_slice(&original).unwrap();
-    let profiles = witness_material_profiles(&material)
+    let profiles = witness_material_profiles_selected(&material, families)
         .unwrap_or_else(|reason| panic!("controlled material: {reason}"));
+    material["benchmarks"]
+        .as_object_mut()
+        .unwrap()
+        .retain(|family, _| families.contains(&family.as_str()));
     let root = tempfile::Builder::new()
         .prefix(if deadlines {
             "opi-eval-delays-"
@@ -64,53 +98,58 @@ pub(super) fn controlled_material(input: &Path, deadlines: bool) -> PathBuf {
     )
     .unwrap();
     let git = root.join("git-runtime");
-    fs::create_dir(&git).unwrap();
-    fs::copy("/usr/bin/git", git.join("git")).unwrap();
-    let libraries = Command::new("ldd").arg("/usr/bin/git").output().unwrap();
-    assert!(libraries.status.success());
-    fs::write(root.join("git-ldd.txt"), &libraries.stdout).unwrap();
-    for path in String::from_utf8(libraries.stdout)
-        .unwrap()
-        .split_whitespace()
-        .filter(|word| word.starts_with('/'))
-    {
-        let path = Path::new(path);
-        fs::copy(path, git.join(path.file_name().unwrap())).unwrap();
-    }
-    fs::copy("/usr/share/doc/git/copyright", git.join("copyright")).unwrap();
-    let seed = root.join("git-seed");
-    fs::create_dir(&seed).unwrap();
-    fs::write(seed.join("answer.txt"), "incorrect\n").unwrap();
-    fixture_git(&seed, &["init", "--quiet"]);
-    fixture_git(&seed, &["add", "answer.txt"]);
-    fixture_git(
-        &seed,
-        &[
-            "-c",
-            "user.name=Diagnostic",
-            "-c",
-            "user.email=diagnostic@example.invalid",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "--quiet",
-            "-m",
-            "diagnostic base",
-        ],
-    );
-    let base = fixture_git(&seed, &["rev-parse", "HEAD"]);
     let archive = root.join("seed.tar");
-    assert!(
-        Command::new("tar")
-            .arg("-cf")
-            .arg(&archive)
-            .arg("-C")
-            .arg(&seed)
-            .arg(".")
-            .status()
+    let base = if families.contains(&"deepswe-v1.1") {
+        fs::create_dir(&git).unwrap();
+        fs::copy("/usr/bin/git", git.join("git")).unwrap();
+        let libraries = Command::new("ldd").arg("/usr/bin/git").output().unwrap();
+        assert!(libraries.status.success());
+        fs::write(root.join("git-ldd.txt"), &libraries.stdout).unwrap();
+        for path in String::from_utf8(libraries.stdout)
             .unwrap()
-            .success()
-    );
+            .split_whitespace()
+            .filter(|word| word.starts_with('/'))
+        {
+            let path = Path::new(path);
+            fs::copy(path, git.join(path.file_name().unwrap())).unwrap();
+        }
+        fs::copy("/usr/share/doc/git/copyright", git.join("copyright")).unwrap();
+        let seed = root.join("git-seed");
+        fs::create_dir(&seed).unwrap();
+        fs::write(seed.join("answer.txt"), "incorrect\n").unwrap();
+        fixture_git(&seed, &["init", "--quiet"]);
+        fixture_git(&seed, &["add", "answer.txt"]);
+        fixture_git(
+            &seed,
+            &[
+                "-c",
+                "user.name=Diagnostic",
+                "-c",
+                "user.email=diagnostic@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "diagnostic base",
+            ],
+        );
+        let base = fixture_git(&seed, &["rev-parse", "HEAD"]);
+        assert!(
+            Command::new("tar")
+                .arg("-cf")
+                .arg(&archive)
+                .arg("-C")
+                .arg(&seed)
+                .arg(".")
+                .status()
+                .unwrap()
+                .success()
+        );
+        base
+    } else {
+        String::new()
+    };
     let cases: &[&str] = if deadlines {
         &[
             "positive",
@@ -359,9 +398,14 @@ if sys.argv[1:] == ['--version']:
     sys.exit(0)
 case = json.loads(sys.argv[-1])
 assert case['diagnostic'] is True
-# The diagnostic client writes no stderr: the capture grammar admits
-# only the validated diagnostic vocabulary (P19-AUD-006), and this
-# stand-in qualifies regrade mechanics, not stderr privacy.
+# The first-sink grammar admits these native start records; flushing
+# preserves the start observation when the task is subsequently cancelled.
+if '$PRODUCT' == 'pi':
+    print(json.dumps({'type': 'session', 'version': 3, 'id': 'diagnostic', 'timestamp': '2026-01-01T00:00:00Z', 'cwd': str(Path.cwd())}), flush=True)
+    print(json.dumps({'type': 'agent_start'}), flush=True)
+else:
+    print(json.dumps({'type': 'Agent', 'event': {'type': 'AgentStart'}}), flush=True)
+# No stderr is emitted; this stand-in qualifies lifecycle mechanics.
 time.sleep(case['delay'])
 if case['family'] == 'deepswe-v1.1':
     Path('/app/answer.txt').write_text(case['answer'] + '\n')
@@ -374,7 +418,7 @@ else:
     (directory/'completed').write_text('completed')
 if '$PRODUCT' == 'pi':
     message = {'id': 'diagnostic', 'role': 'assistant', 'content': [{'type': 'text', 'text': 'diagnostic task completed'}], 'api': 'openai-completions', 'provider': 'scripted', 'model': 'eval', 'usage': {'input': 0, 'output': 0, 'cacheRead': 0, 'cacheWrite': 0, 'totalTokens': 0, 'cost': {}}, 'stopReason': 'stop', 'timestamp': int(time.time()*1000)}
-    for event in [{'type': 'session', 'version': 3, 'id': 'diagnostic', 'timestamp': '2026-01-01T00:00:00Z', 'cwd': str(Path.cwd())}, {'type': 'message_end', 'message': message}, {'type': 'agent_end', 'messages': [message]}]:
+    for event in [{'type': 'message_end', 'message': message}, {'type': 'agent_end', 'messages': [message]}]:
         print(json.dumps(event))
 else:
     # The Opi stand-in emits the recognized Agent event shape (as the
@@ -417,6 +461,267 @@ pub(super) fn retain_clients(root: &Path, clients: &serde_json::Value) {
     )
     .unwrap();
     eprintln!("native client evidence: {}", root.display());
+}
+
+/// Private admission for transported actual clients. Build receipts attribute
+/// clean source builds; their deleted acquisition paths are not runtime inputs.
+/// The retained snapshots bind the copied packages before and after execution.
+pub(super) struct AdmittedClients {
+    identities: serde_json::Value,
+    receipts: Vec<(String, Vec<u8>)>,
+}
+
+impl AdmittedClients {
+    pub(super) fn retain(&self, root: &Path, clients: &serde_json::Value) {
+        retain_clients(root, clients);
+        for (product, bytes) in &self.receipts {
+            fs::write(root.join(format!("build-identity-{product}.json")), bytes).unwrap();
+        }
+        fs::write(
+            root.join("admitted-client-identities.json"),
+            serde_json::to_vec_pretty(&self.identities).unwrap(),
+        )
+        .unwrap();
+    }
+
+    pub(super) fn recheck(&self, clients: &serde_json::Value) {
+        let current =
+            admit_clients(clients).expect("client identity remains admitted after execution");
+        assert_eq!(
+            current.identities, self.identities,
+            "transported client identity changed during execution"
+        );
+        assert_eq!(
+            current.receipts, self.receipts,
+            "client build receipt changed during execution"
+        );
+    }
+}
+
+pub(super) fn admit_clients(clients: &serde_json::Value) -> Result<AdmittedClients, String> {
+    let static_lock: serde_json::Value = serde_json::from_slice(
+        &fs::read(manifest_dir().join("external-locks/static/linux-x86_64.json"))
+            .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    admit_clients_with_lock(clients, &static_lock)
+}
+
+pub(super) fn admit_clients_with_lock(
+    clients: &serde_json::Value,
+    static_lock: &serde_json::Value,
+) -> Result<AdmittedClients, String> {
+    fn text<'a>(value: &'a serde_json::Value, field: &str) -> Result<&'a str, String> {
+        value[field]
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("missing {field}"))
+    }
+    fn equal(
+        actual: &serde_json::Value,
+        expected: &serde_json::Value,
+        field: &str,
+    ) -> Result<(), String> {
+        if actual != expected {
+            return Err(format!("client identity mismatch: {field}"));
+        }
+        Ok(())
+    }
+    fn bytes(path: &str) -> Result<Vec<u8>, String> {
+        let path = Path::new(path);
+        if !path.is_absolute()
+            || !fs::symlink_metadata(path)
+                .map_err(|error| error.to_string())?
+                .file_type()
+                .is_file()
+        {
+            return Err("identity input must be an absolute regular file".to_owned());
+        }
+        fs::read(path).map_err(|error| error.to_string())
+    }
+    let pins = static_lock["subjects"]
+        .as_array()
+        .ok_or("missing static subjects")?
+        .iter()
+        .filter(|pin| pin["id"] == "pi")
+        .collect::<Vec<_>>();
+    if pins.len() != 1 {
+        return Err("expected one static Pi source pin".to_owned());
+    }
+    let pin = pins[0];
+    let blob = |path: &str| -> Result<&serde_json::Value, String> {
+        let matches = pin["blobs"]
+            .as_array()
+            .ok_or("missing Pi blobs")?
+            .iter()
+            .filter(|blob| blob["path"] == path)
+            .collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return Err(format!("expected one static Pi blob: {path}"));
+        }
+        Ok(&matches[0]["sha256"])
+    };
+    equal(&clients["opi_version"], &"0.8.2".into(), "Opi version")?;
+    equal(
+        &clients["opi_source_commit"],
+        &"3908fba723956a6af7daf298599cbe3d30bbbc09".into(),
+        "independent Opi source",
+    )?;
+    equal(&clients["source_commit"], &pin["commit"], "Pi source")?;
+    let mut identities = serde_json::Map::new();
+    let mut receipts = Vec::new();
+    for product in ["opi", "pi"] {
+        let executable = Path::new(text(clients, product)?);
+        let package = Path::new(text(clients, &format!("{product}_package"))?);
+        // Validate containment and every tree entry before recursive hashing.
+        let (manifest, entrypoint) = probe_package_identity(executable, package)?;
+        if entrypoint != Path::new(product) {
+            return Err(format!(
+                "{product} requires its admitted product entrypoint"
+            ));
+        }
+        let package_digest_key = format!("{product}_package_manifest_sha256");
+        equal(
+            &clients[&package_digest_key],
+            &manifest.clone().into(),
+            &package_digest_key,
+        )?;
+        let executable_sha256 = sha256_hex(&bytes(text(clients, product)?)?);
+        let reference = &clients["build_identities"][product];
+        let raw = bytes(text(reference, "path")?)?;
+        equal(
+            &reference["sha256"],
+            &sha256_hex(&raw).into(),
+            "build receipt digest",
+        )?;
+        let receipt: serde_json::Value =
+            serde_json::from_slice(&raw).map_err(|error| error.to_string())?;
+        equal(
+            &receipt["schema"],
+            &"opi-eval-agent-identity/1".into(),
+            "build receipt schema",
+        )?;
+        equal(&receipt["agent"], &product.into(), "build receipt product")?;
+        equal(
+            &receipt["checkout_dirty"],
+            &false.into(),
+            "clean recorded checkout",
+        )?;
+        equal(
+            &receipt["checkout_dirty_files"],
+            &0.into(),
+            "zero recorded dirty files",
+        )?;
+        let source = if product == "opi" {
+            &clients["opi_source_commit"]
+        } else {
+            &pin["commit"]
+        };
+        equal(&receipt["checkout_commit"], source, "build receipt source")?;
+        if product == "opi" {
+            equal(
+                &receipt["executable_sha256"],
+                &executable_sha256.clone().into(),
+                "Opi executable",
+            )?;
+            equal(
+                &receipt["cargo_lock_sha256"],
+                &"261a3ec501be2e045dc6c9b2b9a940adc1c56305f477008eea940f26545925f3".into(),
+                "Opi source Cargo.lock",
+            )?;
+            equal(
+                &receipt["target"],
+                &"x86_64-unknown-linux-musl".into(),
+                "Opi target",
+            )?;
+            equal(&receipt["profile"], &"release".into(), "Opi profile")?;
+            equal(
+                &receipt["features"],
+                &"workspace-default-features".into(),
+                "Opi features",
+            )?;
+        } else {
+            for (key, relative, digest_key) in [
+                ("node", "node", "node_sha256"),
+                ("pi_bundle", "dist/bundle/cli.js", "bundle_sha256"),
+            ] {
+                let transported = Path::new(text(clients, key)?);
+                probe_package_identity(transported, package)?;
+                let actual = sha256_hex(&bytes(text(clients, key)?)?);
+                equal(&receipt[digest_key], &actual.clone().into(), key)?;
+                equal(
+                    &sha256_hex(&bytes(
+                        package
+                            .join(relative)
+                            .to_str()
+                            .ok_or("non-UTF8 copied path")?,
+                    )?)
+                    .into(),
+                    &actual.clone().into(),
+                    "copied Pi runtime bytes",
+                )?;
+                identities.insert(
+                    key.to_owned(),
+                    serde_json::json!({"path": transported, "sha256": actual}),
+                );
+            }
+            equal(
+                &receipt["package_lock_sha256"],
+                blob("package-lock.json")?,
+                "Pi package-lock",
+            )?;
+            // This receipt field describes Pi's root manifest, while the
+            // transported package.json is the separately pinned coding Agent.
+            equal(
+                &receipt["package_json_sha256"],
+                &"1b862e9592e29d12112b99023dfb5124f4e9c26f8b4d9c3129a311e9ca11542d".into(),
+                "Pi root manifest",
+            )?;
+            let package_json = bytes(
+                package
+                    .join("package.json")
+                    .to_str()
+                    .ok_or("non-UTF8 Pi manifest path")?,
+            )?;
+            equal(
+                &sha256_hex(&package_json).into(),
+                blob("packages/coding-agent/package.json")?,
+                "locked Pi coding-agent manifest",
+            )?;
+            let package_json: serde_json::Value =
+                serde_json::from_slice(&package_json).map_err(|error| error.to_string())?;
+            equal(
+                &package_json["version"],
+                &pin["model_data_archive"]["version"],
+                "current Pi package version",
+            )?;
+            equal(
+                &clients["pi_version"],
+                &package_json["version"],
+                "Pi client version",
+            )?;
+            let nodes = static_lock["tools"]
+                .as_array()
+                .ok_or("missing static tools")?
+                .iter()
+                .filter(|tool| tool["id"] == "node")
+                .collect::<Vec<_>>();
+            if nodes.len() != 1 {
+                return Err("expected one static Node pin".to_owned());
+            }
+            equal(
+                &receipt["node_version"],
+                &format!("v{}", text(nodes[0], "version")?).into(),
+                "Pi Node version",
+            )?;
+        }
+        identities.insert(product.to_owned(), serde_json::json!({"executable": executable, "executable_sha256": executable_sha256, "package": package, "manifest_sha256": manifest, "entrypoint": entrypoint, "source_commit": source, "build_identity_sha256": sha256_hex(&raw)}));
+        receipts.push((product.to_owned(), raw));
+    }
+    Ok(AdmittedClients {
+        identities: identities.into(),
+        receipts,
+    })
 }
 
 pub(super) fn run_cli(command: &mut Command, root: &Path, label: &str) -> std::process::Output {

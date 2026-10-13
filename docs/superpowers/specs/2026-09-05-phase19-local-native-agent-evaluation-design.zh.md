@@ -17,9 +17,9 @@
 Evaluation product owner。
 
 交付结果是一条独立的 `opi-eval` 本地使用流程：用户配置 provider，选择 Opi、pi
-或两者，运行固定版本的 Terminal-Bench 2.1、Terminal-Bench 3.0 或 Datacurve
-DeepSWE v1.1 任务，取得可追溯到这些 Agent 实际任务产物的原生结果。任务执行、
-评分、证据和报告留在用户电脑上；模型推理可以调用用户的远程 API。验收平台为
+或两者，运行固定版本的 Terminal-Bench 2.1 或 Terminal-Bench 3.0 任务，取得可
+追溯到这些 Agent 实际任务产物的原生结果。任务执行、评分、证据和报告留在用户
+电脑上；模型推理可以调用用户的远程 API。验收平台为
 Windows x86_64、WSL2 Linux 与本机 Docker Linux engine。
 
 | 父条款 | 本 Phase 的责任 |
@@ -29,7 +29,7 @@ Windows x86_64、WSL2 Linux 与本机 Docker Linux engine。
 | `CTRL-004` | 使用已准入原生 grader 评分所选 Agent 的真实产物。 |
 | `CTRL-005` | 冻结比较条件，保留选定/全量覆盖、缺失配对、排除项及失败分类。 |
 | `CTRL-006` | 保持 bundle 不可变、报告可离线重建，新执行使用新身份。 |
-| `CTRL-007`、`GATE-001`–`GATE-002` | 原生 runner 与任务材料留在模块外；证明 Opi/pi 与 Harbor/Pier 集成，不提前稳定公共 SDK。 |
+| `CTRL-007`、`GATE-001`–`GATE-002` | 原生 runner 与任务材料留在模块外；通过共同 conformance 证明 Opi/pi 两个真实 Agent 集成和 TB2.1/TB3 两个 native grader 集成，不提前稳定公共 SDK。 |
 | `PHASE-001`–`PHASE-006` | 以明确的验收、风险、回退与平台边界完成有限交付。 |
 
 ## 2. 问题、证据与优先级
@@ -54,9 +54,20 @@ receipt 保持原样。
 ## 3. 范围与架构归属
 
 选定方案扩展现有 Rust Companion CLI 与实验配置，通过真实 Opi/pi 集成调用固定
-版本的外部 Harbor/Pier runner。Companion 拥有选择、配置投影、监督、证据绑定与
+版本的 TB2.1/TB3 外部 runner。Companion 拥有选择、配置投影、监督、证据绑定与
 报告；runner 拥有任务环境创建、官方产物收集和原生 verifier 执行；各 Agent
 保留自己的 provider 客户端、工具与 native 配置。
+
+本 Phase 准入的 benchmark 类别**仅为 TB2.1 与 TB3**。Phase exit 要求 Opi 和 pi
+各自在每类任务中使用首选连接执行至少一个可行任务，即至少四个可归因的真实
+Agent trial。这保留父规范的至少两个真实 Agent 与两个 native grader 准入门槛；
+`CTRL-005`–`CTRL-007` 的配对、不可变证据与无效 trial 规则不变。
+
+DeepSWE v1.1 延后，不属于当前 Phase 的验收与完成范围。`P19-AC-005` 和
+`P19-D04` 保留为 reserved 来源标识符，供既有 audit 链接追溯。现有 DeepSWE/Pier
+接口与代码保留；它们的存在不准入本次交付。既有 DeepSWE 尝试、bundle 与失败
+证据逐字节保留，单独标记为 scoped-out 证据；不进入当前 headline，也不满足
+当前要求的 trial 数量。
 
 这是 Independent Companion 归属：仅评测 pi 时不需要 Opi 可执行文件即可提供
 完整价值；失败不改变普通 Opi 行为；删除 Companion 会移除评测策略，而不会把它
@@ -77,7 +88,9 @@ API 是独立决策。
 - 性能 season、有统计显著性的领先声明，或必须超过 pi、取得正分的要求。
 - 新的 Agent Core 证据/provider 接口、Eval 专用 LLM 客户端、额外 Agent 或任务集、
   Learning、Promotion 或结果自动激活。
-- 三个 API 协议共十八次强制 trial；本 Phase 只要求首选连接的真实 provider 验收。
+- DeepSWE 资格验证，或删除既有 DeepSWE/Pier 接口、代码与原始证据；后续准入
+  需要单独的范围决策。
+- 三个 API 协议共十二次强制 trial；本 Phase 只要求首选连接的真实 provider 验收。
 
 ## 4. 本地流程与配置
 
@@ -141,33 +154,33 @@ Agent 的三个协议投影都需要确定性的请求路径、鉴权和工具�
 另一个 runner job，不是有效集成。实际 Agent 身份缺失、为 oracle 或不匹配时，
 即使所有子进程成功退出，也必须拒绝其分数。
 
-| 任务类别 | 产物交接与 grader 边界 |
-|---|---|
-| TB2.1 | 遵守选定任务声明的生命周期；共享 verifier 任务在清除凭据后，对该 Agent 留下的任务环境评分。 |
-| TB3 | 遵守每项任务的 verifier 隔离与 collect 声明；独立 verifier 任务只向验证环境复制声明的 Agent 产物。 |
-| DeepSWE v1.1 | 遵守任务 base revision 和 collect hook；收集 Agent 已提交的 patch，在全新独立 verifier 中按声明网络策略应用。不能静默用未提交工作替代 patch。 |
+| 任务类别 | 当前 Phase 范围 | 产物交接与 grader 边界 |
+|---|---|---|
+| TB2.1 | 已准入 | 遵守选定任务声明的生命周期；共享 verifier 任务在清除凭据后，对该 Agent 留下的任务环境评分。 |
+| TB3 | 已准入 | 遵守每项任务的 verifier 隔离与 collect 声明；独立 verifier 任务只向验证环境复制声明的 Agent 产物。 |
+| DeepSWE v1.1 | Deferred/reserved；scoped out | 已提交 patch 收集与全新 verifier 语义保留给另行准入的范围。既有接口、代码与原始证据保留；当前 Phase exit 不要求 DeepSWE 样例或真实 trial。 |
 
-这些类别描述是集成责任，不覆盖每项任务自己的配置。解析所有选定任务，保留
+已准入类别的描述是集成责任，不覆盖每项任务自己的配置。解析所有选定任务，保留
 网络、CPU、内存、GPU、磁盘、Agent timeout 与 verifier timeout 要求。provider
 访问走 runner 支持的 Agent 侧推理路径，不扩大任务或 grader 的网络权限。
 不支持的生命周期或资源声明必须明确拒绝，不能近似执行后标注为原生等价。
 
-复用当前固定的 corpus 与 Harbor/Pier 身份作为材料起点，将任务选择从当前三个
-固定 smoke profile 扩展出去。每个选定任务都有经过校验的文件/摘要清单、指令、
-环境、收集规则和原生 grader 身份。trial 计划冻结前，将可变镜像 tag 解析为不可变
+复用当前固定的 TB2.1/TB3 corpus 与原生 runner 身份作为材料起点，将任务选择
+从各自固定 smoke profile 扩展出去。每个选定任务都有经过校验的文件/摘要清单、
+指令、环境、收集规则和原生 grader 身份。trial 计划冻结前，将可变镜像 tag 解析为不可变
 材料身份。上游修订变更需要重新进行完整性准入并生成配置身份。本地材料校验替代
 强制 GitHub upload receipt 前提，同时保留字节/来源验证并如实记录本地产生来源；
 不能为本地材料伪造 GitHub 来源。
 
-全量预检枚举固定 corpus，对照 WSL/Docker 内可见资源报告每个任务的要求，也
-报告未知观测。GPU 型号、内存、磁盘不足，镜像缺失或任务语义不支持，均不能
+全量预检枚举每个准入类别的固定 corpus，对照 WSL/Docker 内可见资源报告每个
+任务的要求，也报告未知观测。GPU 型号、内存、磁盘不足，镜像缺失或任务语义不支持，均不能
 静默缩小请求范围。用户选择可行子集后冻结明确 task ID 与选择原因。仅为报告
 资源需求而做全量规划，不要求下载或启动所有任务镜像。
 
 oracle 执行是显式选择、单独标识的诊断。它不能提供 Agent 结果、填补缺失配对或
-改变评分分母。每类任务都使用可控的正确/错误产物样例，经过同一生产交接路径和
-真实原生 grader，证明评分响应提交产物的变化。这些样例属于 conformance 证据，
-与六次真实 provider trial 分开。
+改变评分分母。每个准入类别都使用可控的正确/错误产物样例，经过同一生产交接
+路径和真实原生 grader，证明评分响应提交产物的变化。这些样例属于 conformance 证据，
+与要求的至少四次真实 provider trial 分开。
 
 ## 6. 证据、失败与报告
 
@@ -186,8 +199,9 @@ oracle 执行是显式选择、单独标识的诊断。它不能提供 Agent 结
 各 benchmark 报告同时显示指标定义、分母、corpus 大小、选定任务、计划与已尝试
 trial、有效评分 trial、Agent 失败、无效/基础设施失败以及未执行项。子集比率明确
 标记 subset；未完成的全量实验不能声明完整 full score。任务成功与测试用例通过
-比例是不同指标。三个 benchmark 的结果不平均成一个 headline。配对比较使用同一
-任务/重复编号与冻结控制，显示缺失配对和差异，也不跨协议组配对。单 subject
+比例是不同指标。TB2.1 与 TB3 的结果不平均成一个 headline；scoped-out DeepSWE
+证据与当前验收和覆盖计数分开。配对比较使用同一任务/重复编号与冻结控制，显示
+缺失配对和差异，也不跨协议组配对。单 subject
 报告不需要虚构比较边或一个缺席的 Agent。
 
 离线字节校验检查原始 seal。报告重建消费经过验证的原生结果，在不联网、不调用
@@ -200,6 +214,8 @@ grader，在新环境中保留任务的 verifier 规则；输出引用原始 bun
 
 以下每项规范义务都有负责人和可观察验证路径。验收标识符是任务图提取的来源
 条件。上述操作描述的是要求交付的行为，不是声称这些命令已经发布。
+Deferred/reserved 的 `P19-AC-005` 行不是当前验收或完成义务；其他所有条件均适用
+于已准入的 TB2.1/TB3 交付。
 
 | ID | 要求 | 负责人 | 机械验证 |
 |---|---|---|---|
@@ -207,19 +223,20 @@ grader，在新环境中保留任务的 verifier 规则；输出引用原始 bun
 | P19-AC-002 | 原生结果 **MUST** 绑定实际选定 Agent 及其交付产物；缺失/错误身份或 oracle 结果 **MUST NOT** 成为 Agent 分数。 | Native integration owner | 通过生产结果读取入口注入缺失/错误 Agent、替换产物、旧 job 和 oracle 输出，逐一拒绝。 |
 | P19-AC-003 | TB2.1 **MUST** 按任务原生生命周期评分真实 trial 环境。 | TB2.1 integration owner | 正确/错误 native 样例，以及两个真实 Agent 的 trace、工具效果与评分产物。 |
 | P19-AC-004 | TB3 **MUST** 在任务要求时保留声明的 collection 与独立 verifier 语义。 | TB3 integration owner | Native 样例只改变声明产物，无关文件不进入 verifier；两个真实 Agent 均经过该交接路径。 |
-| P19-AC-005 | DeepSWE **MUST** 在声明的全新 verifier 中评分收集的已提交 patch。 | DeepSWE integration owner | 正确/错误 patch 样例，base/patch/verifier 身份检查，以及两个真实 Agent 的 patch 到结果 trace。 |
+| P19-AC-005 | **Deferred/reserved；不属于当前 Phase 验收与完成范围。** DeepSWE 已提交 patch 评分需要另行准入。 | DeepSWE integration owner | 当前 exit 不要求其证据；保留此 ID 供既有 audit 链接追溯，保留原始 DeepSWE 证据。 |
 | P19-AC-006 | Provider 投影 **MUST** 为每个 Agent 消费选定协议、端点、精确模型、凭据引用和生效控制。 | Agent integration owner | 两个 native Agent 客户端对三个协议的本地 fake server 运行；拒绝缺失凭据/控制不匹配；首选连接有真实工具循环证据。 |
-| P19-AC-007 | 资源预检和选择 **MUST** 保留每项任务的要求与显式 full/subset 范围。 | Material and selection owner | 不调用模型，枚举固定版本完整清单；拒绝一项未满足的 TB3 资源要求；运行冻结的可行子集且不改变限制或范围。 |
+| P19-AC-007 | 资源预检和选择 **MUST** 保留 TB2.1/TB3 每项任务的要求与显式 full/subset 范围。 | Material and selection owner | 不调用模型，枚举两类固定版本完整清单；拒绝一项未满足的 TB3 资源要求；运行冻结的可行子集且不改变限制或范围。 |
 | P19-AC-008 | 报告 **MUST** 保留原生指标含义、失败分类、分母、配对覆盖、单 subject 结果与遥测 unknown 原因。 | Report owner | 公共报告入口 fixture 覆盖有效零分、partial/full/subset、缺失配对、provider 失败和协议不匹配。 |
 | P19-AC-009 | 校验、重新统计和原生重新评分 **MUST** 是独立、可离线执行的操作，保留源证据不可变。 | Evidence owner | 篡改拒绝、确定性重建、对保存产物进行新的 native regrade、缓存缺失拒绝，且 Agent/provider 调用数为零。 |
 | P19-AC-010 | 凭据、监督、取消和恢复 **MUST** 遵守本地授权边界，并保留效果与证据。 | Lifecycle and privacy owner | Grader/export 中没有 canary 凭据；监督取消只清理 trial 自有进程/资源；恢复保留效果未知，替换使用新身份。 |
 | P19-AC-011 | 默认测试和 CI **MUST** 保持确定性且无需凭据；本地真实验收 **MUST** 显式、独立进行。 | Test 与 Evaluation product owners | 填入 dummy 凭据的环境不启用真实测试；本地 native 检查无需 dispatch；真实验收报告有独立标识。 |
-| P19-AC-012 | Phase exit **MUST** 包含至少六个真实 Agent trial：每个 benchmark 一个可行任务，Opi/pi 各使用首选连接执行一次，并完成原生评分。 | Evaluation product owner 与 local operator | 冻结运行 manifest、脱敏 provider/tool 证据、六个可归因原生结果、bundle 及可重现本地报告。 |
+| P19-AC-012 | Phase exit **MUST** 包含至少四个真实 Agent trial：一个可行 TB2.1 任务和一个可行 TB3 任务，Opi/pi 各使用首选连接执行一次，并完成原生评分。 | Evaluation product owner 与 local operator | 冻结运行 manifest、脱敏 provider/tool 证据、覆盖两个 Agent 与两个准入类别的至少四个可归因原生结果、bundle 及可重现本地报告。 |
 | P19-AC-013 | Companion **MUST** 保持独立归属，并有意记录发生变化的 0.x 契约。 | Companion owner | Cargo 依赖/包内容审查；无 Opi 的 pi-only 验收；Minimal Runtime 不变；实际变更同步到 help、schema、fixture、双语 README 与 Unreleased。 |
 
-六次 trial 证明产品闭环，不证明统计显著性。真实 Agent 可以解题失败并得到零分，
+最少四次 trial 证明产品闭环，不证明统计显著性。真实 Agent 可以解题失败并得到零分，
 这仍可满足执行条件。鉴权失败、没有工具循环、无效产物交接或基础设施失败，不能
-替代六次中的任一次。即使需要替换 trial，失败尝试也保留在证据中。
+替代任何必需 trial。即使需要替换 trial，失败尝试也保留在证据中。既有 DeepSWE
+尝试保留在当前最少四次 trial 范围之外；移出范围不会把无效尝试变成有效 Agent 结果。
 
 ## 8. 验证与本地验收交接
 
@@ -229,8 +246,8 @@ bundle、report 和 authority 测试在能够覆盖目标路径时优先复用�
 行为缺口，不能仅复制已有断言并换成 Phase 名称。测试不调用付费 provider，也不
 因环境中恰好存在凭据而启用真实执行。
 
-原生产物正反例在本机使用固定外部材料运行，不调用真实模型。CI 可以运行显式
-限定的 native conformance smoke，但它不是产品运行环境或用户分数的来源。已有
+TB2.1/TB3 原生产物正反例在本机使用固定外部材料运行，不调用真实模型。CI 可以
+运行显式限定的 native conformance smoke，但它不是产品运行环境或用户分数的来源。已有
 GitHub workflow 入口可以保留为调用同一本地路径的薄回归入口，不能拥有第二套
 材料化或评分策略。
 
@@ -240,14 +257,15 @@ GitHub workflow 入口可以保留为调用同一本地路径的薄回归入口�
 保持未满足，不能通过 Phase exit。无需 API key 即可推进纯确定性开发。
 
 运行前，local operator 冻结实际任务、Agent build、runner/材料摘要、模型控制、
-并发、用量/时间预算与凭据引用。已经研究过的候选任务为
-`openssl-selfsigned-cert`、`batched-eval-parity` 和 `abs-module-cache-flags`；
+并发、用量/时间预算与凭据引用。已准入类别中已经研究过的候选任务为
+`openssl-selfsigned-cert` 和 `batched-eval-parity`；
 它们在本地资源/镜像检查及操作者选择完成前仍是候选。所用账号的模型访问和计费
 产品资格仍是显式输入，不能仅凭端点推断。来源登记不授权使用凭据或消费额度。
 
 本地验收交接保留命令、退出码、脱敏日志、请求/生效配置、材料与 bundle 摘要、
-逐条件结果及报告路径。动态声明需要已保存产物；源码推断和旧 workflow 成功不能
-关闭这些条件。运行证据留在本规范之外，使用项目工作流的证据/快照位置，以及
+TB2.1/TB3 的逐条件结果及报告路径。既有 DeepSWE 证据单独保留为 scoped-out
+记录，不进入当前 headline 或必需覆盖。动态声明需要已保存产物；源码推断和旧
+workflow 成功不能关闭这些条件。运行证据留在本规范之外，使用项目工作流的证据/快照位置，以及
 必要的本地私有存储。
 
 Phase exit 还要求对最终相关状态执行一次仓库验证并集：
@@ -301,15 +319,21 @@ plan` 中派生任务 ID 和必要拆分，并在任务图中保留来源 ID。�
 | P19-D01 | 所选 Agent 的 native trial 与 TB2.1 分数绑定；native integration owner | 已有 Companion 基础 | `AC-002`、`AC-003`：CLI 到 native 的正确/错误样例，以及错误/oracle 身份拒绝。 |
 | P19-D02 | 经两个真实 Agent 客户端投影用户连接；Agent integration owner | D01 的 resolved trial identity | `AC-006` 及 `AC-010` 凭据部分：隔离 native 配置的三个协议 fake-server 循环；所选真实连接留到 D08 验证。 |
 | P19-D03 | TB3 声明产物交接；TB3 integration owner | D01 | `AC-004`：跨规定环境边界完成可归因原生评分。 |
-| P19-D04 | DeepSWE 已提交 patch 交接；DeepSWE integration owner | D01 | `AC-005`：base/patch/pristine-verifier 来源及原生正反例。 |
-| P19-D05 | 独立本地准备、全量预检与显式多任务选择；local workflow owner | D01–D04 的 configuration/task/material 契约 | `AC-001` 的准备/选择部分及 `AC-007`：经过校验的本地材料与冻结选择，不依赖 fixtures 或 GitHub receipt。 |
-| P19-D06 | 原生结果报告与离线产物操作；evidence/report owner | D01–D04 | `AC-008`、`AC-009`：如实覆盖、单 subject/配对报告与真正的离线重新评分。 |
+| P19-D04 | **Deferred/reserved；不属于当前 Phase 验收与完成范围。** DeepSWE 已提交 patch 交接；DeepSWE integration owner | 当前 Phase 无前置条件；需要另行准入 | 保留 `AC-005` 链接、既有接口/代码与原始证据。不作为 D05、D06 或 D08 的前置条件或完成关卡。 |
+| P19-D05 | TB2.1/TB3 独立本地准备、全量预检与显式多任务选择；local workflow owner | D01–D03 的 configuration/task/material 契约 | `AC-001` 的准备/选择部分及 `AC-007`：两个准入类别的经过校验本地材料与冻结选择，不依赖 fixtures 或 GitHub receipt。 |
+| P19-D06 | TB2.1/TB3 原生结果报告与离线产物操作；evidence/report owner | D01–D03 | `AC-008`、`AC-009`：两个准入类别的如实覆盖、单 subject/配对报告与真正的离线重新评分。 |
 | P19-D07 | 有限恢复与 CI/产品入口对齐；lifecycle/product owner | D02、D05、D06 | `AC-010`、`AC-011`、`AC-013`：取消/凭据/独立性检查、可在本机复现的确定性关卡，以及同步的用户文档。 |
-| P19-D08 | 本地验收证据验证与 Phase exit；Evaluation product owner | D02–D07 及另行授权的操作者证据 | `AC-012` 和全部先前条件：六次真实 trial、原生结果与离线重建通过验证；必需 workspace 关卡通过。 |
+| P19-D08 | 本地验收证据验证与 Phase exit；Evaluation product owner | D02、D03、D05、D06、D07 及另行授权的操作者证据 | `AC-012` 和全部已准入先前条件：至少四次真实 TB2.1/TB3 trial、原生结果与离线重建通过验证；必需 workspace 关卡通过。 |
 
-D01–D07 关闭各自声明的确定性/native 接线证据。D08 拥有 `AC-001` 的 assembled
-真实流程、`AC-003`–`AC-006` 的真实 provider 部分及 `AC-012`；较早组件的样例
+D01–D03 和 D05–D07 关闭各自声明的确定性/native 接线证据。D04 仍为 deferred，
+不阻止它们完成。D08 拥有 `AC-001` 的 assembled 真实流程、`AC-003`、`AC-004`、
+`AC-006` 的真实 provider 部分及 `AC-012`；较早组件的样例
 通过，不关闭这些真实产品场景。
+
+Audit 和 remediation 在推导当前条件时绑定修订来源的精确路径与 SHA-256。
+既有 audit 记录保留原始来源摘要和 ID；应按当前范围重新核对其适用性，不能
+改写原记录或把缩小范围视为行为修复。Reserved 的 `AC-005`/D04 链接仍可追溯；
+重新绑定来源本身不安装任务图、不记录进度，也不关闭 finding。
 
 来源准入不要求凭据或购买 provider 套餐；它们是运行时输入，不是产品设计缺项。
 授权运行前冻结精确控制和任务选择，不能由实现者猜测。任何要求新增 core seam、

@@ -44,6 +44,7 @@ thiserror = "2"
 
 # HTTP/SSE
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+url = "2.5.8"
 
 # CLI
 clap = { version = "4", features = ["derive"] }

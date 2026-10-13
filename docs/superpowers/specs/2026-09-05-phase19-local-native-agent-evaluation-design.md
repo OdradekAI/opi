@@ -19,9 +19,9 @@ from **STRAT-002 — Establish independent cross-Agent Eval**. Its end-to-end
 owner is the Evaluation product owner.
 
 The outcome is an independent `opi-eval` local workflow: a user configures a
-provider, selects Opi, pi, or both, runs pinned Terminal-Bench 2.1,
-Terminal-Bench 3.0, or Datacurve DeepSWE v1.1 tasks, and obtains native outcomes
-that trace to those Agents' actual task artifacts. Task execution, grading,
+provider, selects Opi, pi, or both, runs pinned Terminal-Bench 2.1 or
+Terminal-Bench 3.0 tasks, and obtains native outcomes that trace to those
+Agents' actual task artifacts. Task execution, grading,
 evidence, and reports stay on the user's computer. Model inference may use the
 user's remote API. The acceptance platform is Windows x86_64 with WSL2 Linux
 and a local Docker Linux engine.
@@ -33,7 +33,7 @@ and a local Docker Linux engine.
 | `CTRL-004` | Grade the selected Agent's real artifacts with the admitted native grader. |
 | `CTRL-005` | Freeze comparisons and retain selected/full coverage, missing pairs, exclusions, and failure classifications. |
 | `CTRL-006` | Preserve immutable bundles, offline report reconstruction, and fresh identities for new execution. |
-| `CTRL-007`, `GATE-001`–`GATE-002` | Keep native runners and task materials external; demonstrate Opi/pi and Harbor/Pier integration without prematurely stabilizing a public SDK. |
+| `CTRL-007`, `GATE-001`–`GATE-002` | Keep native runners and task materials external; demonstrate both real Opi/pi Agent integrations and both TB2.1/TB3 native grader integrations through shared conformance without prematurely stabilizing a public SDK. |
 | `PHASE-001`–`PHASE-006` | Deliver this finite scope with explicit acceptance, risk, rollback, and platform boundaries. |
 
 ## 2. Problem, evidence, and priority
@@ -61,11 +61,25 @@ to Learning or Promotion. Historical snapshots and receipts remain unchanged.
 ## 3. Scope and placement
 
 The selected approach extends the existing Rust Companion CLI and experiment
-configuration, calling pinned external Harbor/Pier runners with real Opi/pi
+configuration, calling pinned external runners for TB2.1/TB3 with real Opi/pi
 integrations. The Companion owns selection, configuration projection,
 supervision, evidence binding, and reporting. The runner owns task environment
 creation, official artifact collection, and native verifier execution. Each
 Agent retains its own provider client, tools, and native configuration.
+
+The admitted benchmark families for this Phase are **TB2.1 and TB3 only**.
+Phase exit requires Opi and pi to each run at least one feasible task in each
+family with the first selected connection: at least four attributable real
+Agent trials. This retains the parent's threshold of at least two real Agent
+integrations and two native grader integrations; pairing, immutable evidence,
+and invalid-trial rules in `CTRL-005`–`CTRL-007` remain unchanged.
+
+DeepSWE v1.1 is deferred outside current Phase acceptance and completion.
+`P19-AC-005` and `P19-D04` remain reserved source identifiers for existing audit
+links. Existing DeepSWE/Pier interfaces and code remain; their presence does
+not admit DeepSWE into this delivery. Preserve prior DeepSWE attempts, bundles,
+and failure evidence byte-for-byte as separately labelled scoped-out evidence;
+they neither enter the current headline nor satisfy its required trial count.
 
 This is an Independent Companion placement: pi-only evaluation has complete
 value without an Opi executable; failure cannot change ordinary Opi behavior;
@@ -91,7 +105,9 @@ Non-goals:
   requirement to beat pi or obtain a positive benchmark score.
 - A new Agent Core evidence/provider seam, Eval-specific LLM client, additional
   Agent or benchmark, Learning, Promotion, or automatic activation of results.
-- Eighteen mandatory trials across all three API protocols; only the first
+- DeepSWE qualification or deletion of existing DeepSWE/Pier interfaces, code,
+  or original evidence; future admission requires a separate scope decision.
+- Twelve mandatory trials across all three API protocols; only the first
   selected connection requires real-provider acceptance in this Phase.
 
 ## 4. Local workflow and configuration
@@ -170,21 +186,21 @@ An independent host Agent followed by a second unspecified runner job is not a
 valid integration. Missing, oracle, or mismatched actual Agent identity rejects
 the score even when every subprocess exits successfully.
 
-| Task family | Handoff and grader boundary |
-|---|---|
-| TB2.1 | Honor the selected task's declared lifecycle; for shared-verifier tasks, grade that Agent's resulting task environment after credential cleanup. |
-| TB3 | Honor per-task verifier isolation and collect declarations; for separate-verifier tasks, copy only the declared Agent artifacts into the verifier environment. |
-| DeepSWE v1.1 | Honor the task's base revision and collect hook; collect the Agent's committed patch and apply it in the pristine, separate verifier under its declared network policy. Uncommitted work is not silently substituted for the patch. |
+| Task family | Current Phase scope | Handoff and grader boundary |
+|---|---|---|
+| TB2.1 | Admitted | Honor the selected task's declared lifecycle; for shared-verifier tasks, grade that Agent's resulting task environment after credential cleanup. |
+| TB3 | Admitted | Honor per-task verifier isolation and collect declarations; for separate-verifier tasks, copy only the declared Agent artifacts into the verifier environment. |
+| DeepSWE v1.1 | Deferred/reserved; scoped out | Committed-patch collection and pristine-verifier semantics remain reserved for separate admission. Existing interfaces, code, and original evidence are retained; no DeepSWE witness or real trial is required for current Phase exit. |
 
-The family rows are integration obligations, not overrides for every task's
-configuration. Parse each selected task and preserve its network, CPU, memory,
+The admitted family rows are integration obligations, not overrides for every
+task's configuration. Parse each selected task and preserve its network, CPU, memory,
 GPU, disk, Agent timeout, and verifier timeout requirements. Provider access
 uses the runner's supported Agent-side inference route; it does not widen task
 or grader network access. Unsupported lifecycle or resource declarations cause
 an explicit rejection, not an approximate task run labelled native-equivalent.
 
-Reuse the current pinned corpus and Harbor/Pier identities as the starting
-material set. Generalize task selection beyond the three current fixed smoke
+Reuse the current pinned TB2.1/TB3 corpora and native runner identities as the
+starting material set. Generalize task selection beyond their fixed smoke
 profiles. Every selected task gets a verified file/digest inventory, instructions,
 environment, collection and native-grader identity. Resolve mutable image tags
 to immutable material identities before the trial plan freezes. An upstream
@@ -193,8 +209,9 @@ Local material verification replaces a mandatory GitHub upload-receipt
 prerequisite; it retains byte/provenance verification and records local origin
 truthfully. It does not manufacture GitHub provenance for local materials.
 
-Full preflight enumerates the pinned corpus and reports per-task requirements
-against resources visible inside WSL/Docker, including unknown observations.
+Full preflight enumerates each admitted family's pinned corpus and reports
+per-task requirements against resources visible inside WSL/Docker, including
+unknown observations.
 Insufficient GPU type, memory, disk, missing images, or unsupported task
 semantics cannot silently shrink the requested set. A user-selected feasible
 subset freezes explicit task IDs and selection reasons. Full planning does not
@@ -202,10 +219,11 @@ require downloading or starting every task image merely to report requirements.
 
 Oracle execution is an explicitly selected, separately identified diagnostic.
 It never supplies an Agent result, fills a missing pair, or changes the scored
-denominator. For each family, a controlled correct/incorrect artifact witness
-passes through the same production handoff and real native grader, proving
-that grading responds to the submitted artifact. Such witnesses remain
-conformance evidence, separate from the six real-provider trials.
+denominator. For each admitted family, a controlled correct/incorrect artifact
+witness passes through the same production handoff and real native grader,
+proving that grading responds to the submitted artifact. Such witnesses remain
+conformance evidence, separate from the at least four required real-provider
+trials.
 
 ## 6. Evidence, failure, and reporting
 
@@ -228,7 +246,8 @@ corpus size, selected tasks, planned and attempted trials, valid graded trials,
 Agent failures, invalid/infrastructure failures, and unexecuted items. A subset
 rate is explicitly labelled subset; an incomplete full experiment cannot claim
 a complete full score. Task success and test-case pass fraction are different
-metrics. Results from the three benchmarks are not averaged into one headline.
+metrics. TB2.1 and TB3 results are not averaged into one headline; scoped-out
+DeepSWE evidence remains separate from current acceptance and coverage counts.
 Paired comparisons use the same task/repetition and frozen controls, expose
 missing pairs and differences, and never match different protocol groups.
 Single-subject reports require no artificial comparison edge or absent Agent.
@@ -248,6 +267,8 @@ does not satisfy this requirement.
 Every normative obligation below has an owner and an observable verification
 route. The acceptance identifiers are the source criteria for graph extraction.
 The operations above describe required behavior, not commands already shipped.
+The deferred/reserved `P19-AC-005` row is not a current acceptance or completion
+obligation; every other criterion applies to the admitted TB2.1/TB3 delivery.
 
 | ID | Requirement | Owner | Mechanical verification |
 |---|---|---|---|
@@ -255,21 +276,23 @@ The operations above describe required behavior, not commands already shipped.
 | P19-AC-002 | Native results **MUST** bind the actual selected Agent and its delivered artifacts; missing/mismatched identities and oracle results **MUST NOT** become Agent scores. | Native integration owner | Inject missing/wrong Agent, substituted artifact, stale job, and oracle output through the production result reader; each is rejected. |
 | P19-AC-003 | TB2.1 **MUST** grade the real trial environment under the task's native lifecycle. | TB2.1 integration owner | Correct/incorrect native witness plus both real Agent traces, tool effects, and graded artifacts. |
 | P19-AC-004 | TB3 **MUST** preserve declared collection and separate-verifier semantics where required. | TB3 integration owner | Native witness changes only a declared artifact; unrelated files do not enter the verifier; both real Agents traverse that handoff. |
-| P19-AC-005 | DeepSWE **MUST** grade the collected committed patch in the declared pristine verifier. | DeepSWE integration owner | Correct/incorrect patch witnesses, base/patch/verifier identity checks, and both real Agents' patch-to-result traces. |
+| P19-AC-005 | **Deferred/reserved; scoped out of current Phase acceptance and completion.** DeepSWE committed-patch grading requires separate admission. | DeepSWE integration owner | No current exit evidence required; retain this ID for existing audit links and preserve original DeepSWE evidence. |
 | P19-AC-006 | Provider projection **MUST** consume the selected protocol, endpoint, exact model, credential reference, and effective controls for each Agent. | Agent integration owner | Both native Agent clients against local fake servers for all three protocols; missing credentials/control mismatch rejected; first connection proven by real tool-loop evidence. |
-| P19-AC-007 | Resource preflight and selection **MUST** preserve per-task requirements and explicit full/subset scope. | Material and selection owner | Enumerate the full pinned inventories without models; reject an unmet TB3 resource requirement; run a frozen feasible subset without changing limits or scope. |
+| P19-AC-007 | Resource preflight and selection **MUST** preserve per-task requirements and explicit full/subset scope for TB2.1/TB3. | Material and selection owner | Enumerate both full pinned inventories without models; reject an unmet TB3 resource requirement; run a frozen feasible subset without changing limits or scope. |
 | P19-AC-008 | Reports **MUST** retain native metric meanings, failure classes, denominators, pair coverage, single-subject results, and unknown telemetry reasons. | Report owner | Public report-path fixtures covering valid zero, partial/full/subset, missing pairs, provider failure, and protocol mismatch. |
 | P19-AC-009 | Verification, recomputation, and native regrading **MUST** be distinct, offline-capable operations preserving immutable source evidence. | Evidence owner | Tamper rejection, deterministic reconstruction, fresh native regrade of saved artifacts, missing-cache rejection, and zero Agent/provider invocations. |
 | P19-AC-010 | Credentials, supervision, cancellation, and recovery **MUST** respect local authority and preserve effects and evidence. | Lifecycle and privacy owner | Canary credentials absent from grader/export; supervised cancellation cleans only trial-owned processes/resources; recovery retains unknown effects and replaces with new identities. |
 | P19-AC-011 | Default tests and CI **MUST** remain deterministic and credential-free; local real acceptance **MUST** be explicit and separate. | Test and Evaluation product owners | Populated dummy credential environment does not enable live tests; local native checks can run without dispatch; real acceptance report is independently identified. |
-| P19-AC-012 | Phase exit **MUST** include at least six real Agent trials: one feasible task per benchmark, each run once by Opi and pi with the selected first connection, followed by native grading. | Evaluation product owner and local operator | Frozen run manifest, redacted provider/tool evidence, six attributable native results, bundles, and reproducible local reports. |
+| P19-AC-012 | Phase exit **MUST** include at least four real Agent trials: one feasible TB2.1 task and one feasible TB3 task, each run once by Opi and pi with the selected first connection, followed by native grading. | Evaluation product owner and local operator | Frozen run manifest, redacted provider/tool evidence, at least four attributable native results covering both Agents in both admitted families, bundles, and reproducible local reports. |
 | P19-AC-013 | The Companion **MUST** preserve independent placement and deliberately record changed 0.x contracts. | Companion owner | Cargo dependency/package review; pi-only acceptance without Opi; unchanged Minimal Runtime; synchronized help, schemas, fixtures, bilingual README, and Unreleased entries for actual changes. |
 
-The six trials prove the product loop, not statistical significance. A real
-Agent may fail the task and receive zero; that can satisfy the execution
-criterion. An authentication failure, missing tool loop, invalid artifact
-handoff, or infrastructure failure cannot substitute for one of the six.
+The minimum of four trials proves the product loop, not statistical
+significance. A real Agent may fail the task and receive zero; that can satisfy
+the execution criterion. An authentication failure, missing tool loop, invalid artifact
+handoff, or infrastructure failure cannot substitute for any required trial.
 Failed attempts remain in the evidence even when replacement trials are needed.
+Prior DeepSWE attempts remain preserved outside the current four-trial minimum;
+scoping them out does not convert an invalid attempt into a valid Agent result.
 
 ## 8. Verification and local acceptance handoff
 
@@ -281,9 +304,9 @@ require a missing behavioral case rather than a Phase-specific copy of an
 existing assertion. No test calls a paid provider or becomes live because a
 credential happens to exist.
 
-Native artifact witnesses run locally with pinned external materials and no
-live model. CI may run an explicitly bounded native conformance smoke, but is
-not the product's runtime or source of user scores. Existing GitHub workflow
+TB2.1/TB3 native artifact witnesses run locally with pinned external materials
+and no live model. CI may run an explicitly bounded native conformance smoke,
+but is not the product's runtime or source of user scores. Existing GitHub workflow
 entry points may remain as thin regression callers of the same local path;
 they cannot own a second materialization or scoring policy.
 
@@ -296,8 +319,8 @@ Pure deterministic development can proceed without an API key.
 
 Before that run, the local operator freezes the actual tasks, Agent builds,
 runner/material digests, model controls, concurrency, usage/time budget, and
-credential references. Candidate tasks already researched are
-`openssl-selfsigned-cert`, `batched-eval-parity`, and `abs-module-cache-flags`;
+credential references. Candidate tasks already researched for the admitted
+families are `openssl-selfsigned-cert` and `batched-eval-parity`;
 these are candidates until local resource/image checks and the operator's
 selection freeze them. The selected account's model access and billing-product
 eligibility remain explicit inputs; an endpoint alone does not prove them.
@@ -305,7 +328,9 @@ No credentials or spending are authorized by source registration.
 
 The local acceptance handoff preserves commands, exit codes, redacted logs,
 requested/effective configuration, material and bundle digests, per-criterion
-results, and report paths. Dynamic claims need preserved artifacts; source
+results for TB2.1/TB3, and report paths. Preserve any prior DeepSWE evidence in
+its own scoped-out record without including it in the current headline or
+required coverage. Dynamic claims need preserved artifacts; source
 inference and old workflow success do not close them. Runtime evidence stays
 outside this specification, using the project workflow's evidence/snapshot
 locations and private local storage where necessary.
@@ -373,16 +398,25 @@ must remain in the dependency closure of its scenario owner.
 | P19-D01 | Selected-Agent native trial and TB2.1 score binding; native integration owner | Existing Companion foundation | `AC-002`, `AC-003`: CLI-to-native correct/incorrect witness and wrong/oracle identity rejection. |
 | P19-D02 | User connection projection through both real Agent clients; Agent integration owner | D01's resolved trial identity | `AC-006`, credential part of `AC-010`: three protocol fake-server loops with isolated native config; selected real route remains for D08. |
 | P19-D03 | TB3 declared artifact handoff; TB3 integration owner | D01 | `AC-004`: attributable native grading across the required environment boundary. |
-| P19-D04 | DeepSWE committed patch handoff; DeepSWE integration owner | D01 | `AC-005`: base/patch/pristine-verifier provenance and native positive/negative witness. |
-| P19-D05 | Independent local preparation, full preflight, and explicit multi-task selection; local workflow owner | D01–D04 configuration/task/material contracts | Preparation/selection portion of `AC-001`, and `AC-007`: verified local materials and frozen selection without fixtures or GitHub receipt dependencies. |
-| P19-D06 | Native outcome reports and offline artifact operations; evidence/report owner | D01–D04 | `AC-008`, `AC-009`: honest coverage, single-subject/paired reports and real offline regrading. |
+| P19-D04 | **Deferred/reserved; scoped out of current Phase acceptance and completion.** DeepSWE committed patch handoff; DeepSWE integration owner | None for current Phase; separate admission required | Reserved `AC-005` link; retain existing interfaces/code and original evidence. Not a prerequisite or completion gate for D05, D06, or D08. |
+| P19-D05 | Independent local preparation, full preflight, and explicit multi-task selection for TB2.1/TB3; local workflow owner | D01–D03 configuration/task/material contracts | Preparation/selection portion of `AC-001`, and `AC-007`: verified local materials and frozen selection for both admitted families without fixtures or GitHub receipt dependencies. |
+| P19-D06 | TB2.1/TB3 native outcome reports and offline artifact operations; evidence/report owner | D01–D03 | `AC-008`, `AC-009`: honest coverage, single-subject/paired reports and real offline regrading for both admitted families. |
 | P19-D07 | Bounded recovery and CI/product entry alignment; lifecycle/product owner | D02, D05, D06 | `AC-010`, `AC-011`, `AC-013`: cancellation/credential/independence checks, locally reproducible deterministic gates and synchronized user documentation. |
-| P19-D08 | Local acceptance evidence verification and Phase exit; Evaluation product owner | D02–D07 plus separately authorized operator evidence | `AC-012` and all prior criteria: six real trials, native outcomes and offline reconstruction verified; required workspace gates pass. |
+| P19-D08 | Local acceptance evidence verification and Phase exit; Evaluation product owner | D02, D03, D05, D06, D07 plus separately authorized operator evidence | `AC-012` and all admitted prior criteria: at least four real TB2.1/TB3 trials, native outcomes and offline reconstruction verified; required workspace gates pass. |
 
-D01–D07 close their stated deterministic/native wiring evidence. D08 owns the
+D01–D03 and D05–D07 close their stated deterministic/native wiring evidence.
+D04 remains deferred and does not gate their completion. D08 owns the
 assembled real workflow in `AC-001`, the real-provider portions of
-`AC-003`–`AC-006`, and `AC-012`; an earlier component's passing witness does
-not close those live product scenarios.
+`AC-003`, `AC-004`, `AC-006`, and `AC-012`; an earlier component's passing
+witness does not close those live product scenarios.
+
+Audit and remediation consumers bind the revised source's exact path and
+SHA-256 when deriving current criteria. Earlier audit records keep their
+original source digests and IDs; reassess their applicability against this
+scope rather than rewriting those records or treating scope reduction as
+behavioral repair. The reserved `AC-005`/D04 links remain traceable, and source
+rebinding does not itself install a task graph, record progress, or close a
+finding.
 
 The source can be admitted without credentials or a purchased provider plan;
 those are runtime inputs, not missing product design. Exact controls and task

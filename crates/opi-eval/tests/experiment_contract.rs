@@ -699,17 +699,49 @@ fn resolve_rejects_unknown_connection_api() {
 #[test]
 fn resolve_rejects_remote_routes_without_explicit_live_mode() {
     for mode in ["hermetic", "native-fixture"] {
-        let doc = CONNECTION_DOC
-            .replace(
-                "base_url = \"http://127.0.0.1:48127\"",
-                "base_url = \"https://open.bigmodel.cn/api/anthropic\"",
-            )
-            .replace("mode = \"native-fixture\"", &format!("mode = \"{mode}\""));
-        let error = assert_rejected(&doc);
-        assert!(
-            matches!(error, ResolveError::RemoteRouteNotLive { .. }),
-            "mode {mode} must reject remote routes: {error:?}"
-        );
+        for route in [
+            "https://open.bigmodel.cn/api/anthropic",
+            "http://example.invalid#@localhost",
+            "http://example.invalid#@127.0.0.1",
+            r"http://example.invalid\@localhost",
+            "http://localhost:not-a-port",
+            "http://localhost:65536",
+            "http://localhost@example.invalid",
+            "http://127.0.0.2",
+            "http://[::2]",
+            "ftp://localhost",
+        ] {
+            let doc = CONNECTION_DOC
+                .replace(
+                    "base_url = \"http://127.0.0.1:48127\"",
+                    &format!("base_url = {route:?}"),
+                )
+                .replace("mode = \"native-fixture\"", &format!("mode = \"{mode}\""));
+            let error = assert_rejected(&doc);
+            assert!(
+                matches!(error, ResolveError::RemoteRouteNotLive { .. }),
+                "mode {mode} must reject route {route:?}: {error:?}"
+            );
+        }
+        for route in [
+            "http://localhost:48127/v1",
+            "https://LOCALHOST/v1#part",
+            "http://127.0.0.1/v1#part",
+            "http://example.invalid@localhost",
+            "http://[::1]:48127/v1",
+            "https://[::1]/v1#part",
+        ] {
+            let doc = CONNECTION_DOC
+                .replace(
+                    "base_url = \"http://127.0.0.1:48127\"",
+                    &format!("base_url = {route:?}"),
+                )
+                .replace("mode = \"native-fixture\"", &format!("mode = \"{mode}\""));
+            assert!(
+                ResolvedExperiment::resolve(&doc).is_ok(),
+                "mode {mode} must admit parsed loopback route {route:?}"
+            );
+        }
     }
     // The same remote route with explicit live mode resolves: real
     // acceptance belongs only to the 19.11 operator evidence run.

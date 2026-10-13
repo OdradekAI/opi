@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `opi-eval`: non-live connection admission parses the actual HTTP(S) URL
+  host before applying the existing loopback allowlist. Remote fragments,
+  backslashes and malformed ports can no longer bypass the route guard.
+- `opi-eval`: selection expansion checks trial cardinality, vector storage
+  bounds and the declared `max_trials` before allocating trial records.
+  Oversized repetitions now return a typed rejection instead of an allocation
+  abort, while preserving complete preflight contradictions.
+- `opi-eval`: offline local acceptance checks the current Opi boolean
+  thinking-level map and thinking block, including disabled thinking, and
+  Pi's omitted level map when reasoning is off. Resealed configuration
+  substitutions still reject against the exact native control projection.
+
 - `opi-eval`: four execution-blocker repairs from the 2026-10-12 six-trial
   acceptance re-run (audit gap P19-AUD-001). (1) `build-agent-artifacts.sh`
   now builds the Opi agent for the host-arch musl target (statically linked,
@@ -72,6 +84,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authoritative evidence locations) instead of the registry.
 
 ### Breaking Changes
+
+- `opi-eval`: standalone local-acceptance evidence and verification move to
+  `opi-eval-local-acceptance/2` and `opi-eval-local-acceptance-verification/2`.
+  Primary evidence requires at least four fully paired Terminal-Bench 2.1/3.0
+  Opi/pi trials and complete frozen task/repetition coverage. Legacy `/1` and
+  excluded-family primary rows reject. Existing DeepSWE/Pier capability and
+  original evidence remain; DeepSWE is explicitly outside this acceptance
+  scope, and unused Pier identity is no prerequisite for the selected families.
 
 - `opi-eval`: the Python operator modules and sole configuration template move
   from the skill into `crates/opi-eval/operator/`; the development entrypoint is
