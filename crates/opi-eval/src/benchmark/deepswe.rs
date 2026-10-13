@@ -591,15 +591,19 @@ mod tests {
             profile.tasks_tree,
             "66df25a1b382017d0ae014d94cadb2698baaed48"
         );
-        assert_eq!(profile.task_id, "abs-module-cache-flags");
+        assert_eq!(profile.task_id, "opa-template-string-reconstruction");
         assert_eq!(
             profile.task_tree,
-            "8ee76a3e4a876a9bd24f34edabcdde4e47257db4"
+            "dfbaf7af531adc463503770ac0cc0431a72bcd04"
         );
         // The native smoke registered the reviewed official byte table: 10
         // pinned files with their canonical digest declared.
         assert_eq!(profile.package_pin, PackagePin::ByteTable);
         assert_eq!(profile.package.len(), 10);
+        assert_eq!(
+            profile.package_manifest_sha256,
+            "95915a95d6ecc6e63aba815007eca45fd5fcbc4382808033461803ce2e87beb5"
+        );
         assert_eq!(
             profile.canonical_package_digest(),
             profile.package_manifest_sha256

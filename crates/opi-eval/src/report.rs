@@ -107,6 +107,8 @@ struct SealedTrial {
     native_result: Option<serde_json::Value>,
     /// Native output limits require a sealed snapshot bound to this trial's controls.
     output_control_proven: bool,
+    /// Explicit reasoning additionally requires first-request and continuation proof.
+    reasoning_control_proven: bool,
 }
 
 /// One recomputed normalized view of a run root.
@@ -972,14 +974,26 @@ impl ReportBuilder {
                 .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
             native_result: None,
             output_control_proven: false,
+            reasoning_control_proven: false,
         };
         if trial.entries.contains_key("control/output-control.json") {
             let bytes = self
                 .sealed_bytes(id, "control/output-control.json")
                 .map_err(|_| "output-control-missing")?;
-            trial.output_control_proven =
-                sealed_output_control(&bytes, &experiment, &trial.subject)
-                    .ok_or("output-control-invalid")?;
+            let terminal = self
+                .sealed_bytes(id, "native/agent-terminal.json")
+                .ok()
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                .ok_or("output-control-invalid")?;
+            trial.reasoning_control_proven = crate::runner::output_control::sealed_snapshot(
+                &bytes,
+                &experiment,
+                &trial.subject,
+                id,
+                &terminal,
+            )
+            .ok_or("output-control-invalid")?;
+            trial.output_control_proven = true;
         }
         if let Some(grader) = trajectory_node_matching(&trial.trajectory, "grader/")
             && grader["facts"]["reward"]["Known"]["origin"] == "native-trial-result"
@@ -1594,13 +1608,20 @@ fn coverage(normalized: &NormalizedReport) -> Vec<serde_json::Value> {
                     }
                 }
             }
-            // A shared control no pinned subject profile can express: a
-            // reasoning VALUE (not the explicit `omitted`/`unknown`
-            // markers) is unsupported by every pinned profile.
+            // A declaration alone is not native control proof: both clients
+            // must retain an admitted snapshot of the first request and tool
+            // continuation. Omitted/unknown markers carry no enforced value.
             if comparability == "comparable"
                 && normalized.experiment["model_controls"]["reasoning"]
                     .as_str()
                     .is_some_and(|reasoning| reasoning != "omitted" && reasoning != "unknown")
+                && [&baseline_trial, &candidate_trial].iter().any(|id| {
+                    normalized
+                        .trials
+                        .iter()
+                        .find(|trial| &trial.id == *id)
+                        .is_none_or(|trial| !trial.reasoning_control_proven)
+                })
             {
                 comparability = "unsupported-control:reasoning".to_owned();
             }
@@ -1653,77 +1674,6 @@ fn coverage(normalized: &NormalizedReport) -> Vec<serde_json::Value> {
         }
     }
     pairs
-}
-
-/// Interpret only verified sealed snapshot bytes; embedded host paths are never followed.
-fn sealed_output_control(
-    bytes: &[u8],
-    experiment: &serde_json::Value,
-    subject: &str,
-) -> Option<bool> {
-    use crate::runner::material::sha256_hex;
-    let snapshot: serde_json::Value = serde_json::from_slice(bytes).ok()?;
-    let evidence = snapshot["evidence"].as_str()?;
-    let proof: serde_json::Value = serde_json::from_str(evidence).ok()?;
-    let config = snapshot["config"].as_str()?;
-    let requests = snapshot["requests"].as_str()?;
-    let product = experiment["subjects"]
-        .as_array()?
-        .iter()
-        .find(|entry| entry["id"] == subject)?["product"]
-        .as_str()?;
-    let connection = experiment["connections"]
-        .as_array()?
-        .iter()
-        .find(|entry| entry["id"] == experiment["connection_id"])?;
-    let limit = experiment["model_controls"]["max_output_tokens"].as_u64()?;
-    if limit == 0
-        || proof["schema"] != "opi-eval-output-control/1"
-        || proof["product"] != product
-        || proof["exit_code"] != 0
-        || proof["model_controls"] != experiment["model_controls"]
-        || proof["connection"]
-            != serde_json::json!({"provider": connection["provider"], "api": connection["api"], "model": connection["model"]})
-        || snapshot["evidence_sha256"] != sha256_hex(evidence.as_bytes())
-        || proof["config"]["sha256"] != sha256_hex(config.as_bytes())
-        || proof["requests"]["sha256"] != sha256_hex(requests.as_bytes())
-    {
-        return None;
-    }
-    let rows = requests
-        .lines()
-        .map(serde_json::from_str::<serde_json::Value>)
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
-    if rows.len() != 2 {
-        return None;
-    }
-    let (paths, fields): (&[&str], &[&str]) = match connection["api"].as_str()? {
-        "anthropic-messages" => (&["/v1/messages", "/v1/messages?beta=true"], &["max_tokens"]),
-        "openai-completions" => (
-            &["/chat/completions", "/v1/chat/completions"],
-            &["max_tokens", "max_completion_tokens"],
-        ),
-        "openai-responses" => (&["/responses", "/v1/responses"], &["max_output_tokens"]),
-        _ => return None,
-    };
-    for (index, row) in rows.iter().enumerate() {
-        let limits = row["output_limits"].as_object()?;
-        if row["schema"] != "opi-eval-scripted-provider-log/1"
-            || row["seq"].as_u64() != Some(index as u64 + 1)
-            || row["status"] != 200
-            || row["method"] != "POST"
-            || row["model"] != connection["model"]
-            || !paths.contains(&row["path"].as_str()?)
-            || limits.len() != 1
-            || !fields
-                .iter()
-                .any(|field| limits.get(*field).and_then(serde_json::Value::as_u64) == Some(limit))
-        {
-            return None;
-        }
-    }
-    Some(true)
 }
 
 /// The blocked publication report: typed leak reason, no normalized
@@ -1833,6 +1783,7 @@ mod tests {
             settlement: None,
             native_result: None,
             output_control_proven: false,
+            reasoning_control_proven: false,
             entries,
             trajectory: serde_json::json!({
                 "nodes": [{

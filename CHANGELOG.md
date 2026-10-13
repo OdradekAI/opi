@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `opi-eval`: offline native comparisons validate sealed exact-client reasoning
+  evidence for the first request and tool continuation. Proven supported levels
+  remain comparable; missing, substituted or downgraded proof stays rejected.
+- `opi-eval`: the Terminal-Bench 3.0 and DeepSWE production profiles now bind
+  their selected tasks' actual package bytes and lifecycle metadata, matching
+  the pinned `foodstuff-beta-activity` and `opa-template-string-reconstruction`
+  source identities.
 - `opi-eval`: non-live connection admission parses the actual HTTP(S) URL
   host before applying the existing loopback allowlist. Remote fragments,
   backslashes and malformed ports can no longer bypass the route guard.

@@ -6,7 +6,8 @@ use serde_json::{Value, json};
 
 use super::material::{AgentMaterial, MaterialError, PinnedFile, sha256_hex, verify_pinned};
 use crate::experiment::{
-    ControlValue, CredentialReference, NativeClient, ResolvedCredential, ResolvedExperiment,
+    Connection, ConnectionApi, ConnectionProjection, ControlValue, CredentialReference,
+    ModelControls, NativeClient, ProjectedControl, ResolvedCredential, ResolvedExperiment,
 };
 
 #[derive(Deserialize)]
@@ -105,10 +106,44 @@ pub(crate) fn snapshot(
     if limit == 0 {
         return Err(reject("output limit must be positive"));
     }
-    // The producer binds exactly an ephemeral IPv4 loopback listener. No
-    // remote URL, path, query, or credentials are admitted in the probe URL.
-    let address = evidence
-        .probe_base_url
+    let projection = probe_projection(
+        selected,
+        experiment.model_controls(),
+        product,
+        &evidence.probe_base_url,
+    )?;
+    verify_pinned(&evidence.config).map_err(reject)?;
+    let config = std::fs::read(&evidence.config.path).map_err(reject)?;
+    if config != projection.config_bytes {
+        return Err(reject("config differs from the production projection"));
+    }
+    verify_pinned(&evidence.requests).map_err(reject)?;
+    let requests = std::fs::read(&evidence.requests.path).map_err(reject)?;
+    let text = std::str::from_utf8(&requests).map_err(reject)?;
+    verify_requests(
+        text,
+        selected.api,
+        &selected.model,
+        limit,
+        &projection.controls.reasoning,
+    )?;
+    let snapshot = json!({
+        "evidence": std::str::from_utf8(&bytes).map_err(reject)?,
+        "evidence_sha256": sha256_hex(&bytes),
+        "config": String::from_utf8(config).map_err(reject)?,
+        "requests": text,
+    });
+    serde_json::to_vec(&snapshot).map(Some).map_err(reject)
+}
+
+fn probe_projection(
+    selected: &Connection,
+    controls: &ModelControls,
+    product: &str,
+    base_url: &str,
+) -> Result<ConnectionProjection, MaterialError> {
+    // Only the retained dummy-credential loopback projection is reconstructed.
+    let address = base_url
         .strip_prefix("http://")
         .and_then(|address| address.parse::<std::net::SocketAddr>().ok())
         .filter(|address| address.ip() == std::net::Ipv4Addr::LOCALHOST && address.port() != 0)
@@ -123,24 +158,25 @@ pub(crate) fn snapshot(
         "pi" => NativeClient::Pi,
         _ => return Err(reject("unknown client")),
     };
-    let projection = crate::experiment::project_connection(
+    crate::experiment::project_connection(
         &connection,
-        experiment.model_controls(),
+        controls,
         client,
         ResolvedCredential::FromEnv {
             variable: "OPI_EVAL_SCRIPTED_KEY".to_owned(),
             value: "dummy-scripted-credential".to_owned(),
         },
     )
-    .map_err(reject)?;
-    verify_pinned(&evidence.config).map_err(reject)?;
-    let config = std::fs::read(&evidence.config.path).map_err(reject)?;
-    if config != projection.config_bytes {
-        return Err(reject("config differs from the production projection"));
-    }
-    verify_pinned(&evidence.requests).map_err(reject)?;
-    let requests = std::fs::read(&evidence.requests.path).map_err(reject)?;
-    let text = std::str::from_utf8(&requests).map_err(reject)?;
+    .map_err(reject)
+}
+
+fn verify_requests(
+    text: &str,
+    api: ConnectionApi,
+    model: &str,
+    limit: u64,
+    reasoning: &ProjectedControl<String>,
+) -> Result<(), MaterialError> {
     let rows = text
         .lines()
         .map(serde_json::from_str::<Value>)
@@ -149,7 +185,7 @@ pub(crate) fn snapshot(
     if rows.len() != 2 {
         return Err(reject("expected first request and tool continuation"));
     }
-    let (paths, fields): (&[&str], &[&str]) = match selected.api {
+    let (paths, fields): (&[&str], &[&str]) = match api {
         crate::experiment::ConnectionApi::AnthropicMessages => {
             (&["/v1/messages", "/v1/messages?beta=true"], &["max_tokens"])
         }
@@ -169,7 +205,7 @@ pub(crate) fn snapshot(
             || row["seq"].as_u64() != Some(index as u64 + 1)
             || row["status"] != 200
             || row["method"] != "POST"
-            || row["model"] != selected.model
+            || row["model"] != model
             || !row["path"]
                 .as_str()
                 .is_some_and(|path| paths.contains(&path))
@@ -183,24 +219,123 @@ pub(crate) fn snapshot(
         {
             return Err(reject("observed request limit or wire identity differs"));
         }
-        if let crate::experiment::ProjectedControl::Effective { value } =
-            &projection.controls.reasoning
-        {
+        if let ProjectedControl::Effective { value } = reasoning {
             if row["tool_continuation"].as_bool() != Some(index == 1) {
                 return Err(reject(
                     "expected first request followed by a tool result continuation",
                 ));
             }
-            verify_thinking(row, selected.api, value)?;
+            verify_thinking(row, api, value)?;
         }
     }
-    let snapshot = json!({
-        "evidence": std::str::from_utf8(&bytes).map_err(reject)?,
-        "evidence_sha256": sha256_hex(&bytes),
-        "config": String::from_utf8(config).map_err(reject)?,
-        "requests": text,
-    });
-    serde_json::to_vec(&snapshot).map(Some).map_err(reject)
+    Ok(())
+}
+
+/// Verify retained snapshot bytes against the sealed trial's native client and
+/// frozen controls. `Some` proves the output limit; its boolean records whether
+/// explicit reasoning was projected and observed on both requests. No embedded
+/// host path is followed and no credential is resolved.
+pub(crate) fn sealed_snapshot(
+    bytes: &[u8],
+    experiment: &Value,
+    subject: &str,
+    trial: &str,
+    terminal: &Value,
+) -> Option<bool> {
+    let snapshot: Value = serde_json::from_slice(bytes).ok()?;
+    let evidence = snapshot["evidence"].as_str()?;
+    let proof: Evidence = serde_json::from_str(evidence).ok()?;
+    let config = snapshot["config"].as_str()?;
+    let requests = snapshot["requests"].as_str()?;
+    let product = experiment["subjects"]
+        .as_array()?
+        .iter()
+        .find(|entry| entry["id"] == subject)?["product"]
+        .as_str()?;
+    let selected = experiment["connections"]
+        .as_array()?
+        .iter()
+        .find(|entry| entry["id"] == experiment["connection_id"])?;
+    let api = match selected["api"].as_str()? {
+        "anthropic-messages" => ConnectionApi::AnthropicMessages,
+        "openai-completions" => ConnectionApi::OpenAiCompletions,
+        "openai-responses" => ConnectionApi::OpenAiResponses,
+        _ => return None,
+    };
+    let connection = Connection {
+        id: selected["id"].as_str()?.to_owned(),
+        provider: selected["provider"].as_str()?.to_owned(),
+        api,
+        base_url: selected["base_url"].as_str()?.to_owned(),
+        model: selected["model"].as_str()?.to_owned(),
+        credential: CredentialReference::Env {
+            variable: "OPI_EVAL_SCRIPTED_KEY".to_owned(),
+        },
+    };
+    let frozen = &experiment["model_controls"];
+    let controls = ModelControls {
+        temperature: frozen_control(&frozen["temperature"])?,
+        top_p: frozen_control(&frozen["top_p"])?,
+        max_output_tokens: frozen_control(&frozen["max_output_tokens"])?,
+        context_window: frozen_control(&frozen["context_window"])?,
+        reasoning: frozen_control(&frozen["reasoning"])?,
+        required: serde_json::from_value(frozen["required"].clone()).ok()?,
+    };
+    let ControlValue::Value(limit) = controls.max_output_tokens else {
+        return None;
+    };
+    let preflight = &terminal["runtime_preflight"];
+    if limit == 0
+        || proof.schema != "opi-eval-output-control/1"
+        || proof.product != product
+        || proof.exit_code != 0
+        || proof.connection
+            != json!({"provider": connection.provider, "api": connection.api, "model": connection.model})
+        || proof.model_controls != *frozen
+        || snapshot["evidence_sha256"] != sha256_hex(evidence.as_bytes())
+        || proof.config.sha256 != sha256_hex(config.as_bytes())
+        || proof.requests.sha256 != sha256_hex(requests.as_bytes())
+        || !matches!(
+            terminal["schema"].as_str(),
+            Some("opi-eval-native-agent-terminal/2" | "opi-eval-native-agent-terminal/3")
+        )
+        || terminal["product"] != product
+        || terminal["trial"] != trial
+        || terminal["agent_executable_sha256"] != proof.executable_sha256
+        || preflight["agent_executable_sha256"] != proof.executable_sha256
+        || preflight["runtime_package_manifest_sha256"]
+            != json!(proof.runtime_package_manifest_sha256)
+        || preflight["runtime_package_entrypoint"] != json!(proof.runtime_package_entrypoint)
+    {
+        return None;
+    }
+    let projection =
+        probe_projection(&connection, &controls, product, &proof.probe_base_url).ok()?;
+    if config.as_bytes() != projection.config_bytes {
+        return None;
+    }
+    verify_requests(
+        requests,
+        api,
+        &connection.model,
+        limit,
+        &projection.controls.reasoning,
+    )
+    .ok()?;
+    Some(matches!(
+        projection.controls.reasoning,
+        ProjectedControl::Effective { .. }
+    ))
+}
+
+fn frozen_control<T: serde::de::DeserializeOwned>(value: &Value) -> Option<ControlValue<T>> {
+    match value.as_str() {
+        Some("omitted") => Some(ControlValue::Omitted),
+        Some("unknown") => Some(ControlValue::Unknown),
+        _ => serde_json::from_value(value.clone())
+            .ok()
+            .map(ControlValue::Value),
+    }
 }
 
 fn verify_thinking(
@@ -254,6 +389,172 @@ fn verify_thinking(
 mod tests {
     use super::*;
     use crate::experiment::ConnectionApi;
+
+    fn sealed_proof(product: &str, api: ConnectionApi, level: &str) -> (Value, Value, Value) {
+        let connection = Connection {
+            id: "selected".to_owned(),
+            provider: "fixture".to_owned(),
+            api,
+            base_url: "http://127.0.0.1:48127".to_owned(),
+            model: "scripted".to_owned(),
+            credential: CredentialReference::Env {
+                variable: "NEVER_RESOLVED".to_owned(),
+            },
+        };
+        let controls = ModelControls {
+            temperature: ControlValue::Omitted,
+            top_p: ControlValue::Omitted,
+            max_output_tokens: ControlValue::Value(131_072),
+            context_window: ControlValue::Value(1_000_000),
+            reasoning: ControlValue::Value(level.to_owned()),
+            required: vec![],
+        };
+        let projection =
+            probe_projection(&connection, &controls, product, &connection.base_url).unwrap();
+        let observed = if level == "off" {
+            json!({})
+        } else {
+            match api {
+                ConnectionApi::AnthropicMessages => {
+                    json!({"thinking_type": "enabled", "thinking_budget": 16384})
+                }
+                ConnectionApi::OpenAiCompletions => json!({"reasoning_effort": level}),
+                ConnectionApi::OpenAiResponses => json!({"response_reasoning_effort": level}),
+            }
+        };
+        let (path, field) = match api {
+            ConnectionApi::AnthropicMessages => ("/v1/messages", "max_tokens"),
+            ConnectionApi::OpenAiCompletions => ("/v1/chat/completions", "max_tokens"),
+            ConnectionApi::OpenAiResponses => ("/v1/responses", "max_output_tokens"),
+        };
+        let requests = (1..=2).map(|seq| {
+            json!({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": path, "model": connection.model, "request_sha256": "d".repeat(64), "output_limits": {field: 131_072}, "tool_continuation": seq == 2, "reasoning_controls": observed}).to_string() + "\n"
+        }).collect::<String>();
+        let config = String::from_utf8(projection.config_bytes).unwrap();
+        let evidence = json!({
+            "schema": "opi-eval-output-control/1", "product": product,
+            "executable_sha256": "a".repeat(64), "runtime_package_manifest_sha256": "b".repeat(64),
+            "runtime_package_entrypoint": product,
+            "connection": {"provider": connection.provider, "api": api, "model": connection.model},
+            "model_controls": controls, "probe_base_url": connection.base_url, "exit_code": 0,
+            "config": {"path": "/never-followed/config", "sha256": sha256_hex(config.as_bytes())},
+            "requests": {"path": "/never-followed/requests", "sha256": sha256_hex(requests.as_bytes())},
+        }).to_string();
+        let snapshot = json!({"evidence_sha256": sha256_hex(evidence.as_bytes()), "evidence": evidence, "config": config, "requests": requests});
+        let experiment = json!({"connection_id": "selected", "connections": [connection], "model_controls": controls, "subjects": [{"id": "subject", "product": product}]});
+        let terminal = json!({
+            "schema": "opi-eval-native-agent-terminal/3", "product": product, "trial": "trial",
+            "agent_executable_sha256": "a".repeat(64), "task_dispatched": true,
+            "runtime_preflight": {"agent_executable_sha256": "a".repeat(64), "runtime_package_manifest_sha256": "b".repeat(64), "runtime_package_entrypoint": product, "status": "passed", "exit_code": 0},
+        });
+        (snapshot, experiment, terminal)
+    }
+
+    #[test]
+    fn sealed_thinking_proof_admits_exact_clients_across_native_wires() {
+        for product in ["opi", "pi"] {
+            for api in [
+                ConnectionApi::AnthropicMessages,
+                ConnectionApi::OpenAiCompletions,
+                ConnectionApi::OpenAiResponses,
+            ] {
+                for level in ["off", "max"] {
+                    let (snapshot, experiment, terminal) = sealed_proof(product, api, level);
+                    assert_eq!(
+                        sealed_snapshot(
+                            &serde_json::to_vec(&snapshot).unwrap(),
+                            &experiment,
+                            "subject",
+                            "trial",
+                            &terminal
+                        ),
+                        Some(true),
+                        "{product}/{api:?}/{level}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sealed_thinking_proof_rejects_self_consistent_identity_and_wire_drift() {
+        for case in [
+            "product",
+            "binary",
+            "package",
+            "entrypoint",
+            "connection",
+            "controls",
+            "config",
+            "missing-continuation",
+            "continuation-kind",
+            "downgrade",
+            "missing-reasoning",
+            "request-digest",
+            "preflight-package",
+        ] {
+            let (mut snapshot, experiment, mut terminal) =
+                sealed_proof("pi", ConnectionApi::OpenAiCompletions, "max");
+            let mut proof: Value =
+                serde_json::from_str(snapshot["evidence"].as_str().unwrap()).unwrap();
+            let mut rows: Vec<Value> = snapshot["requests"]
+                .as_str()
+                .unwrap()
+                .lines()
+                .map(|row| serde_json::from_str(row).unwrap())
+                .collect();
+            match case {
+                "product" => proof["product"] = "opi".into(),
+                "binary" => proof["executable_sha256"] = "f".repeat(64).into(),
+                "package" => proof["runtime_package_manifest_sha256"] = "f".repeat(64).into(),
+                "entrypoint" => proof["runtime_package_entrypoint"] = "alternate/pi".into(),
+                "connection" => proof["connection"]["provider"] = "other".into(),
+                "controls" => proof["model_controls"]["reasoning"] = "high".into(),
+                "config" => snapshot["config"] = "{}".into(),
+                "missing-continuation" => {
+                    rows.pop();
+                }
+                "continuation-kind" => rows[1]["tool_continuation"] = false.into(),
+                "downgrade" => rows[1]["reasoning_controls"]["reasoning_effort"] = "high".into(),
+                "missing-reasoning" => {
+                    rows[1]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("reasoning_controls");
+                }
+                "request-digest" => rows[0]["request_sha256"] = "missing".into(),
+                "preflight-package" => {
+                    terminal["runtime_preflight"]["runtime_package_manifest_sha256"] =
+                        "f".repeat(64).into()
+                }
+                _ => unreachable!(),
+            }
+            // Re-pin all mutated embedded bytes: these cases distinguish
+            // semantic admission from a mere snapshot hash check.
+            let requests = rows
+                .iter()
+                .map(|row| row.to_string() + "\n")
+                .collect::<String>();
+            proof["requests"]["sha256"] = sha256_hex(requests.as_bytes()).into();
+            proof["config"]["sha256"] =
+                sha256_hex(snapshot["config"].as_str().unwrap().as_bytes()).into();
+            let evidence = proof.to_string();
+            snapshot["evidence_sha256"] = sha256_hex(evidence.as_bytes()).into();
+            snapshot["evidence"] = evidence.into();
+            snapshot["requests"] = requests.into();
+            assert_eq!(
+                sealed_snapshot(
+                    &serde_json::to_vec(&snapshot).unwrap(),
+                    &experiment,
+                    "subject",
+                    "trial",
+                    &terminal
+                ),
+                None,
+                "{case}"
+            );
+        }
+    }
 
     #[test]
     fn extended_thinking_proof_keeps_exact_effort_and_rejects_downgrade() {

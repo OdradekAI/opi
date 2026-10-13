@@ -64,6 +64,40 @@ fn invoke(command: &str, args: &[(&str, &std::ffi::OsStr)]) -> (i32, String, Str
     )
 }
 
+#[test]
+fn hermetic_reasoning_declaration_does_not_establish_native_wire_proof() {
+    let scratch = tempfile::tempdir().unwrap();
+    let config = scratch.path().join("explicit-off.toml");
+    let source = std::fs::read_to_string(fixtures_dir().join("experiment/local-paired.toml"))
+        .unwrap()
+        .replace("reasoning = \"omitted\"", "reasoning = \"off\"");
+    std::fs::write(&config, source).unwrap();
+    let root = scratch.path().join("run");
+    let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+        .args(["run", "--config"])
+        .arg(&config)
+        .arg("--root")
+        .arg(&root)
+        .arg("--fixtures")
+        .arg(fixtures_dir().canonicalize().unwrap())
+        .args(["--behavior", "happy"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let (code, stdout, stderr) = invoke("report", &[("--root", root.as_os_str())]);
+    assert_eq!(code, 0, "{stderr}");
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        report["coverage"][0]["comparability"],
+        "unsupported-control:reasoning"
+    );
+}
+
 /// The report output is isolated from the run root :
 /// an `--out` target inside the run root is rejected outright, and an
 /// existing target is never replaced.

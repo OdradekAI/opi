@@ -4,11 +4,10 @@
 # configuration, no credentials.
 # Pinned to the canonical harbor-framework/terminal-bench repository, tag
 # v3.0.0, commit 2b0442c3c583b710ca8da14c8e601b99f2f1f244 exactly as admitted
-# by the static external lock. Unlike 2.1, no byte-level task-package file
-# table is committed for 3.0 yet: the lock admits the task-tree identity only
-# (files table empty) and the task/verifier images and native results are
-# unresolved slots owned by the native smoke. The adapter therefore fails closed on
-# task-package admission until a reviewed byte table is registered.
+# by the static external lock. The lock admits task-tree identity with an
+# empty files table; this profile registers the selected task's materialized
+# byte table. Task/verifier image identities and native results remain bound
+# to each execution.
 
 schema = "opi-eval-benchmark-profile/1"
 benchmark = "terminal-bench"
@@ -22,7 +21,7 @@ tasks_tree = "a10dbfde7cd4d1c3ceaf22ed39b52a98dc775d54"
 task_id = "foodstuff-beta-activity"
 task_tree = "7ed5eb80cfd496444f1effd6c7050cae990a6c86"
 package_pin = "byte-table"
-package_manifest_sha256 = "65dec27842eaad93f4737e53d349cb6ccb1ff720bb0fc9041b81ad989b70d730"
+package_manifest_sha256 = "7285d3616fc527c3af1d5494e28abfa1fcd3ad9fbdbb5922a197b2c93fcca261"
 adapter = "opi-eval-terminal-bench-30-adapter/1"
 
 [verifier]
@@ -33,313 +32,103 @@ runner_version = "v0.22.0"
 runner_commit = "4407eb5227a2ff4f0d3f16b2eb48849382fdf276"
 launch = ["run", "-p", "<task-dir>"]
 # TB 3.0 verifier semantics that must not be normalized away: the verifier
-# runs as a separate container (EVAL-BMK-003) declaring /app/evalbench/, and
-# Harbor v0.22 delivers only declared artifacts at their original paths.
+# runs as a separate container (EVAL-BMK-003). Its Dockerfile inherits the
+# base image's default working directory, /; Harbor v0.22 delivers only the
+# declared /app/results.txt artifact at its original path.
 lifecycle = "separate-container"
-verifier_workdir = "/app/evalbench"
+verifier_workdir = "/"
 artifact_policy = "declared-original-paths"
 # The pinned 3.0 native output: Harbor's jobs/<job>/result.json aggregate
 # with its single per-trial results.json (P19-D03).
 output_kind = "harbor-result-aggregate"
 
 [resources]
-cpus = 1
+cpus = 2
 memory_gib = 4
 
 [limits]
-# Whole Harbor job for the selected task foodstuff-beta-activity
-# (agent contract 9000s, single text deliverable): agent 9000s +
-# separate verifier 120s + environment build 600s + verifier image
-# build 600s + slack. Zhipu's Terminal-Bench 3.0 protocol (research 162:
-# reasoning effort=max, 400K context, 128K max output, avg@3, 600 agent
-# turns, 10h per rollout, Tool Search disabled) uses the same Claude Code
-# 2.1.207 harness; the pinned task's own agent timeout (9000s) binds
-# first and fails closed. Earlier selections are retained as run
-# evidence: html-js-filter (3600s cap killed the baseline mid-work under
-# reasoning=max) and photonic-waveguide-routing (baseline finished but
-# emitted no declared artifact).
+# Whole Harbor job for foodstuff-beta-activity: agent 9000s + separate
+# verifier 120s + environment build 600s + verifier image build 600s =
+# 10320s, plus 480s for collection and cleanup. The task's own Agent
+# timeout binds before the whole-job watchdog.
 timeout_secs = 10800
 stdout_cap_bytes = 1048576
 stderr_cap_bytes = 1048576
 
 [[package]]
+path = "LICENSE.md"
+mode = "100644"
+size = 789
+sha256 = "79dcb7a87de1fc1d6711e1014891296a231e650ede3b1c3807c9f93aee87f012"
+
+[[package]]
 path = "README.md"
 mode = "100644"
-size = 3757
-sha256 = "f8dda2e379c16c1743a1d2d97a66326141b33e73f7913a6e9334c0b3f0728f47"
-
-[[package]]
-path = "cheat/evaluate.py"
-mode = "100755"
-size = 2292
-sha256 = "ef8e08d2a8ae362e53c316a326192377ab9b05b0f674c5da275a17854e2e821b"
-
-[[package]]
-path = "cheat/solve.sh"
-mode = "100755"
-size = 586
-sha256 = "b4c5467e0b077aa077c051a4862f1916ab152872558f8faac1b6b6e0e9b74555"
+size = 6093
+sha256 = "036d70c225a663096ceebf129aa9b796040502bb17eba9a6dfacd08ca274be6c"
 
 [[package]]
 path = "environment/Dockerfile"
 mode = "100644"
-size = 290
-sha256 = "961b82f377700090e82df396f1b4ad59dc0d96ca8bd2b85afad1b4c2a0e29bbe"
+size = 462
+sha256 = "3fa9ccf23bd74b15305430c168bf3082636898963c8b29a8e29678cffdd47411"
 
 [[package]]
-path = "environment/data/public_eval.jsonl"
+path = "environment/data/Sr-90_tables.pdf"
 mode = "100644"
-size = 4116
-sha256 = "816f904395230e30a8dee2446901ad1e2504fe660a0dae0e9ec97a7fa04af0b7"
+size = 105291
+sha256 = "92621d84eeaefa762dd6aa9c8c71e47d444e1492adb0cf61f9ed741070cedd36"
 
 [[package]]
-path = "environment/data/public_runtime.jsonl"
+path = "environment/data/measurement data.xls"
 mode = "100644"
-size = 876246
-sha256 = "bf6e67d9c3be09ad37acf8c28bd33bf821f641425af3b9cc7546a8d04de4c509"
+size = 22528
+sha256 = "99062d344247d4b5385e81cf9f3a03aa14f1bd6803147947183a34ef8d865dd0"
 
 [[package]]
-path = "environment/evalbench/SPEC.md"
+path = "environment/data/sample.xls"
 mode = "100644"
-size = 4661
-sha256 = "356727e28f6a77ae7fe91bd0429301905de32bb0cb056eff7e9bcd5ebe6da376"
-
-[[package]]
-path = "environment/evalbench/__init__.py"
-mode = "100644"
-size = 200
-sha256 = "e8ceb2153bc1f18ba8cf6b98821acc2ef332075690d58f2e7b6319978d8615bc"
-
-[[package]]
-path = "environment/evalbench/byte_stops.py"
-mode = "100644"
-size = 1781
-sha256 = "13ec60f0b74f8642b604df3befa2438585259520e6bf2e0ce0be83de0b6edbb4"
-
-[[package]]
-path = "environment/evalbench/evaluate.py"
-mode = "100644"
-size = 6981
-sha256 = "c3216306d1698745d62d9e0758826b70b812edde2bc9f710ca6fec13bf5b90ef"
-
-[[package]]
-path = "environment/evalbench/generation.py"
-mode = "100644"
-size = 2827
-sha256 = "3f0f450d5003e35a059dba76ef64e5d74888487ee9e63105c6fdf68c9282452b"
-
-[[package]]
-path = "environment/evalbench/io_utils.py"
-mode = "100644"
-size = 781
-sha256 = "34be40affa2748abbc7730d384adc157109a6bf5d43e7e68959bc68fe39367dc"
-
-[[package]]
-path = "environment/evalbench/metrics.py"
-mode = "100644"
-size = 3782
-sha256 = "4bdbf10a02e517f231a12f7d57171c3f29eda779c6f6e368ccdea06866cf5f2a"
-
-[[package]]
-path = "environment/evalbench/model.py"
-mode = "100644"
-size = 7065
-sha256 = "386e10f9df181c5ffec2869155e719b68b36061f0ab63da3e3703c7b4db2aec7"
-
-[[package]]
-path = "environment/evalbench/packing.py"
-mode = "100644"
-size = 2220
-sha256 = "f7c1bd844f224ca0f099104a000f0b17180547e62cf4b613cc0c18559c1d6798"
-
-[[package]]
-path = "environment/evalbench/prefix_cache.py"
-mode = "100644"
-size = 1607
-sha256 = "a20836bc682c615ccbdba580a5b6f95a57891a62c77f874191ec4e5183e70408"
-
-[[package]]
-path = "environment/evalbench/reference.py"
-mode = "100644"
-size = 721
-sha256 = "d5691f81ff5028432ff90ecf76008930fb0f3379cc7da000e0d5d6569d2bb670"
-
-[[package]]
-path = "environment/evalbench/rendering.py"
-mode = "100644"
-size = 2499
-sha256 = "109d46ebc1467399cbda69fca6f1b5543e1f9800bd15f8b6d50545746b2981d4"
-
-[[package]]
-path = "environment/evalbench/scheduler.py"
-mode = "100644"
-size = 954
-sha256 = "7cb44ec6bbd8cb33af062beef0a4946aca23bf8540a446418dbec8089632add6"
-
-[[package]]
-path = "environment/evalbench/schema.py"
-mode = "100644"
-size = 9195
-sha256 = "0eac527fa0ea312d64aa086b95b527bd55bf1c77182ce786776bcc04c6f0b2a3"
-
-[[package]]
-path = "environment/evalbench/scoring.py"
-mode = "100644"
-size = 4921
-sha256 = "d328e2d55496d1d39d4e1ac4d9a38c20cd005c2d4a437a92f80054a6ef40ff47"
-
-[[package]]
-path = "environment/evalbench/spans.py"
-mode = "100644"
-size = 2701
-sha256 = "593ff0c25fce839276a4366b547745d1e19f2186be24c113dab0c8d39c205198"
-
-[[package]]
-path = "environment/evalbench/tokenizer.py"
-mode = "100644"
-size = 3886
-sha256 = "197880cfcfdf94940f900af18639030e359d87cb09e5099851e661e896ef140e"
-
-[[package]]
-path = "environment/evalbench/trace.py"
-mode = "100644"
-size = 4200
-sha256 = "ec45cf0b3852841b92fe95f6483dc959fc1821f98c24a08d9ca483aac38ca780"
-
-[[package]]
-path = "environment/model/config.json"
-mode = "100644"
-size = 301
-sha256 = "64c08767f7cdb1e629da96737bd7a6421cc2f60e01ddd6ce627ba51cede22b5a"
-
-[[package]]
-path = "environment/model/vocab.json"
-mode = "100644"
-size = 3409
-sha256 = "85e2fe3a4008f89b6ff37e2e2b5996d5490ef4c357c140a4eb7571490cc1cd41"
-
-[[package]]
-path = "environment/model/weights.json"
-mode = "100644"
-size = 1337
-sha256 = "89bcb77656db65ddfec7918dc979a31cf0a1f51af24db09977598c71d49d8f9c"
+size = 23040
+sha256 = "6e147735dba336e6c64238aa22a1f852288685b941edd568245aab7b4aef1375"
 
 [[package]]
 path = "instruction.md"
 mode = "100644"
-size = 1294
-sha256 = "15d3a1555aa46b2cf72ad940b4f1c4b67640b7710d70f68dae5554ea5cc8d0de"
+size = 1402
+sha256 = "c786aa4f995b35b735a18008156eb896a5dee0a280e2c0fbdc71f5e8d6cde3f9"
 
 [[package]]
-path = "solution/byte_stops.py"
+path = "solution/solve.py"
 mode = "100644"
-size = 1781
-sha256 = "13ec60f0b74f8642b604df3befa2438585259520e6bf2e0ce0be83de0b6edbb4"
-
-[[package]]
-path = "solution/evaluate.py"
-mode = "100644"
-size = 9184
-sha256 = "1e6fc624bfa720ae0605be6425aa78c689efb3d859d29bcf9546d5cc23037b2d"
-
-[[package]]
-path = "solution/generation.py"
-mode = "100644"
-size = 2940
-sha256 = "2cc375ab7ca6f07c0ce118981a7c69fb8371e18bebe7aa07af48e0d7051e712c"
-
-[[package]]
-path = "solution/metrics.py"
-mode = "100644"
-size = 6661
-sha256 = "b6b2ce85f47d7df3de9f45d924fcfe4bbad577f70c6435499c24aa3d2b9f27ef"
-
-[[package]]
-path = "solution/packing.py"
-mode = "100644"
-size = 2220
-sha256 = "f7c1bd844f224ca0f099104a000f0b17180547e62cf4b613cc0c18559c1d6798"
-
-[[package]]
-path = "solution/prefix_cache.py"
-mode = "100644"
-size = 1607
-sha256 = "a20836bc682c615ccbdba580a5b6f95a57891a62c77f874191ec4e5183e70408"
-
-[[package]]
-path = "solution/rendering.py"
-mode = "100644"
-size = 2497
-sha256 = "f87314db06ca5aff6aeb41bdd7b09d7d7e385102837d6e43fecdf666b65dca42"
-
-[[package]]
-path = "solution/scheduler.py"
-mode = "100644"
-size = 953
-sha256 = "576daea0bbbdd1f1d6e38d7c5f8123ddb459e19dd3bc093543869245e008890f"
-
-[[package]]
-path = "solution/scoring.py"
-mode = "100644"
-size = 8290
-sha256 = "fea0830362042bae4dcd7cdc5dae5b9130c8a5165178f39beb27e215f3046b4a"
+size = 9050
+sha256 = "83df7ecdadc01099f31a8de3f7da1e97675e73329ffc2c8217c9624a4bfeac77"
 
 [[package]]
 path = "solution/solve.sh"
 mode = "100755"
-size = 872
-sha256 = "05519455cea2e76192266319a5c750b82468ed4a9eca0686b3359a229b1135b6"
-
-[[package]]
-path = "solution/spans.py"
-mode = "100644"
-size = 3079
-sha256 = "07fd4bd24f62909ffc2f174c4d86bd982aeb5e020112a37404b65e8804d8eea3"
+size = 232
+sha256 = "49ccc120561f8ea75ccb406ec8a373d576e087f688f7f173bd610a9468911c6f"
 
 [[package]]
 path = "task.toml"
 mode = "100644"
-size = 886
-sha256 = "4b6825575bbebb11df11f9608597ce0941f2732cfb5716046bf2bd99317b48a0"
+size = 635
+sha256 = "5090e2cf2308f9d0e516c785c106831f56e43c9c42e942d984dc00df81a4db24"
 
 [[package]]
 path = "tests/Dockerfile"
 mode = "100644"
-size = 565
-sha256 = "65d7080277a1bcad5538d71be1e8512c51def6311be24e9ae18ca3ac9ed2dab6"
-
-[[package]]
-path = "tests/model/config.json"
-mode = "100644"
-size = 301
-sha256 = "64c08767f7cdb1e629da96737bd7a6421cc2f60e01ddd6ce627ba51cede22b5a"
-
-[[package]]
-path = "tests/model/vocab.json"
-mode = "100644"
-size = 3409
-sha256 = "85e2fe3a4008f89b6ff37e2e2b5996d5490ef4c357c140a4eb7571490cc1cd41"
-
-[[package]]
-path = "tests/model/weights.json"
-mode = "100644"
-size = 1337
-sha256 = "89bcb77656db65ddfec7918dc979a31cf0a1f51af24db09977598c71d49d8f9c"
-
-[[package]]
-path = "tests/oracle_eval.py"
-mode = "100644"
-size = 29848
-sha256 = "22280202dcdd5c21ef03c02bed1afde36e4e46f99c14d3e1bc451600a1e1d82b"
+size = 543
+sha256 = "f4b0f42e3e7bfd44e51aa905d4cb509dd68092004d555d1e52b0647485bf759c"
 
 [[package]]
 path = "tests/test.sh"
 mode = "100755"
-size = 828
-sha256 = "b6a9b6a83e86e234dac10d6762bed1532b36a54e830b6a4a474e919f2e21cf14"
+size = 281
+sha256 = "4b386db8150259613978b006e3228bd8a3f3c7a161dd37d79a1d294cd699d8de"
 
 [[package]]
-path = "tests/test_eval_parity.py"
+path = "tests/test_outputs.py"
 mode = "100644"
-size = 26200
-sha256 = "be20c405ee0c0d8dd88d07a952db25c886300f09a327936e7f95d63c127f0cad"
+size = 5517
+sha256 = "f5cfe824b3e346d5568ba06592e309ea2b024b202555fd5b67c186031e0b0742"

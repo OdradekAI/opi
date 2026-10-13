@@ -53,6 +53,25 @@ fn isolated_command(workspace: &Path, config: &Path) -> Command {
     {
         command.env("SystemRoot", root);
     }
+    #[cfg(target_os = "linux")]
+    {
+        use sha2::Digest;
+
+        // The unique workspace remains alive until the child settles. An
+        // unoccupied abstract bus isolates Secret Service and permits the
+        // synthetic environment key through the connection-refused fallback.
+        let bus = hex::encode(sha2::Sha256::digest(
+            workspace.as_os_str().as_encoded_bytes(),
+        ));
+        command.env(
+            "DBUS_SESSION_BUS_ADDRESS",
+            format!(
+                "unix:abstract=opi-json-stream-{}-{}",
+                std::process::id(),
+                &bus[..32]
+            ),
+        );
+    }
     command.env("OPI_TEST_STREAM_KEY", "synthetic-loopback-only-key");
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     command

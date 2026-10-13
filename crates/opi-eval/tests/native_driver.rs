@@ -13940,6 +13940,134 @@ fn required_native_thinking_binds_launch_and_fails_without_wire_proof() {
 }
 
 #[test]
+fn native_reasoning_reports_require_sealed_exact_client_proof() {
+    for (level, proven, sampling, expected) in [
+        ("off", true, false, "comparable"),
+        ("max", true, false, "comparable"),
+        ("max", false, false, "unsupported-control:reasoning"),
+        ("unsupported", true, false, "unsupported-control:reasoning"),
+        ("off", true, true, "unsupported-control:temperature"),
+    ] {
+        let staged = stage("ok");
+        let config = write_config(&staged);
+        let mut source: toml::Value = fs::read_to_string(&config).unwrap().parse().unwrap();
+        source["model_controls"]["reasoning"] = level.into();
+        source["model_controls"]["max_output_tokens"] = 131_072_i64.into();
+        source["model_controls"]["context_window"] = 1_000_000_i64.into();
+        if sampling {
+            source["model_controls"]["temperature"] = 0.5_f64.into();
+        }
+        fs::write(&config, toml::to_string(&source).unwrap()).unwrap();
+        stage_output_control(&staged, &config);
+        if !proven {
+            let mut material: serde_json::Value =
+                serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+            material["agents"]["opi"]
+                .as_object_mut()
+                .unwrap()
+                .remove("output_control_evidence");
+            fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+        }
+        let root = staged.root.join("reasoning-run");
+        let (code, stdout, stderr) = run_native(&staged, &config, &root);
+        assert_eq!(code, i32::from(expected != "comparable"), "{stderr}");
+        let live: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(live["pairs"][0]["comparability"], expected, "{live}");
+        fs::write(root.join("run-report.json"), b"{}\n").unwrap();
+        let before = directory_manifest_digest(&root);
+        let mut reports = Vec::new();
+        for _ in 0..2 {
+            let output = Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["report", "--root"])
+                .arg(&root)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let offline: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(
+                offline["coverage"][0]["comparability"], expected,
+                "{offline}"
+            );
+            reports.push(output.stdout);
+        }
+        assert_eq!(
+            reports[0], reports[1],
+            "offline reconstruction is deterministic"
+        );
+        assert_eq!(
+            directory_manifest_digest(&root),
+            before,
+            "sealed source changed"
+        );
+    }
+}
+
+#[test]
+fn native_reasoning_admission_rejects_unproven_tool_continuation() {
+    for case in ["downgrade", "missing", "first-only"] {
+        let staged = stage("ok");
+        let config = write_config(&staged);
+        let source = fs::read_to_string(&config)
+            .unwrap()
+            .replace(
+                "reasoning = \"omitted\"",
+                "reasoning = \"max\"\nrequired = [\"reasoning\"]",
+            )
+            .replace("max_output_tokens = 4096", "max_output_tokens = 131072")
+            .replace("context_window = 8192", "context_window = 1000000");
+        fs::write(&config, source).unwrap();
+        stage_output_control(&staged, &config);
+        let mut material: serde_json::Value =
+            serde_json::from_slice(&fs::read(&staged.material).unwrap()).unwrap();
+        let pin = &mut material["agents"]["opi"]["output_control_evidence"];
+        let proof_path = PathBuf::from(pin["path"].as_str().unwrap());
+        let mut proof: serde_json::Value =
+            serde_json::from_slice(&fs::read(&proof_path).unwrap()).unwrap();
+        let requests_path = PathBuf::from(proof["requests"]["path"].as_str().unwrap());
+        let mut rows: Vec<serde_json::Value> = fs::read_to_string(&requests_path)
+            .unwrap()
+            .lines()
+            .map(|row| serde_json::from_str(row).unwrap())
+            .collect();
+        match case {
+            "downgrade" => rows[1]["reasoning_controls"]["reasoning_effort"] = "high".into(),
+            "missing" => {
+                rows[1]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("reasoning_controls");
+            }
+            "first-only" => {
+                rows.pop();
+            }
+            _ => unreachable!(),
+        }
+        let requests = rows
+            .iter()
+            .map(|row| row.to_string() + "\n")
+            .collect::<String>();
+        fs::write(&requests_path, &requests).unwrap();
+        proof["requests"]["sha256"] = sha256_hex(requests.as_bytes()).into();
+        let bytes = serde_json::to_vec(&proof).unwrap();
+        fs::write(&proof_path, &bytes).unwrap();
+        pin["sha256"] = sha256_hex(&bytes).into();
+        fs::write(&staged.material, serde_json::to_vec(&material).unwrap()).unwrap();
+        let root = staged.root.join("rejected-continuation");
+        let (code, stdout, stderr) = run_native(&staged, &config, &root);
+        assert_eq!(code, 2, "{case}: {stdout} {stderr}");
+        assert!(stderr.contains("output-control"), "{case}: {stderr}");
+        assert!(
+            !root.join("trials").exists(),
+            "{case}: effect before admission"
+        );
+    }
+}
+
+#[test]
 fn required_reasoning_rejects_before_native_effects() {
     // For Opi-only, pi-only and paired native selections across all three
     // protocols, a high level with only 4096 output tokens rejects at

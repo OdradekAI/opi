@@ -14,11 +14,10 @@ tasks_tree = "66df25a1b382017d0ae014d94cadb2698baaed48"
 task_id = "opa-template-string-reconstruction"
 task_tree = "dfbaf7af531adc463503770ac0cc0431a72bcd04"
 # The static external lock pins DeepSWE v1.1 by task-tree identity with an
-# empty files table. No byte-level task-package table is committed, so the
-# production pin is tree-identity only and admission fails closed until
-# the native smoke registers reviewed bytes.
+# empty files table; this profile registers the selected task's materialized
+# byte table for exact-set and exact-byte package admission.
 package_pin = "byte-table"
-package_manifest_sha256 = "a21f63f43013fed09a930473d10e51a7f419954554b1bf759733d5f0ba0df095"
+package_manifest_sha256 = "95915a95d6ecc6e63aba815007eca45fd5fcbc4382808033461803ce2e87beb5"
 adapter = "opi-eval-deepswe-adapter/1"
 
 [verifier]
@@ -63,20 +62,20 @@ stderr_cap_bytes = 1048576
 [[package]]
 path = "environment/Dockerfile"
 mode = "100644"
-size = 1575
-sha256 = "69f10920ca0e9d9aa53d0bdb5e2d1ddff39f7eefc0b2d29b96dba9032ddbdbd8"
+size = 1390
+sha256 = "085dc2b93217ab91027bd3fda3e00192dbeb14dda7da94b042ddb591ad0b206b"
 
 [[package]]
 path = "instruction.md"
 mode = "100644"
-size = 2624
-sha256 = "cffcaa70386408363b090b563943fd63fdcc322ed44b8c76cc3e56cfd76b7ed8"
+size = 1141
+sha256 = "d36537d6cbe3c99fedc73640fda871cd77cdc1940d74b70af1df8cb77089c7df"
 
 [[package]]
 path = "solution/solution.patch"
 mode = "100644"
-size = 23719
-sha256 = "dbb0bc5ce090de7c6f1c172a620f400070714846e93b54943d981b7b496fc069"
+size = 14515
+sha256 = "1119bbbc9afe74c0adf9dae127229b185589f235f40d4fce825e77b43104f83b"
 
 [[package]]
 path = "solution/solve.sh"
@@ -87,20 +86,20 @@ sha256 = "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198"
 [[package]]
 path = "task.toml"
 mode = "100644"
-size = 1469
-sha256 = "b8bc8e72b5ff44d165651fad7164c4e0fce3a226c3a38dd395764091ff905834"
+size = 1539
+sha256 = "6f9603e6508d6cfa4f90631f53207843adeb1d46acb1a8a44b8bea88eeba8468"
 
 [[package]]
 path = "tests/Dockerfile"
 mode = "100644"
-size = 383
-sha256 = "184c20de1b4d9fa4532be3345050de006670de023aaae508bcb7f0711f80fd71"
+size = 455
+sha256 = "65ee6a7912903baa83b81bfcf4aa269533ce2380eb4fa1acd5c374a1b4379df8"
 
 [[package]]
 path = "tests/config.json"
 mode = "100644"
-size = 2197
-sha256 = "18ae10bb40d545220bc46690d2ab749911b5bb12bfba870e3679ab3750684014"
+size = 1104
+sha256 = "b4ed8eac969ee56a83e35b79364621735022ff2ea19d547029ef2f2fd0ef9a15"
 
 [[package]]
 path = "tests/grader.py"
@@ -111,11 +110,11 @@ sha256 = "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c"
 [[package]]
 path = "tests/test.patch"
 mode = "100644"
-size = 30643
-sha256 = "1f14443b836ad75b66975d9c8b6e735f675250136661dfc0a370d018ba4a97f9"
+size = 8081
+sha256 = "c43cc961616fcbada6a8752b2606da3c1fca736e5bd85d95f235b5c2b5c6e6dd"
 
 [[package]]
 path = "tests/test.sh"
 mode = "100755"
-size = 5114
-sha256 = "dfecfd863824f3d9780fb1bdb13de5415d831a7c452a41f39202dd29e4454b81"
+size = 4470
+sha256 = "539162ab1b5207da4b27e60520cd57814ae983a87ef6278f7d3a3f4ae38edcb6"

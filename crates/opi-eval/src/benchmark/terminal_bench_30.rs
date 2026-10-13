@@ -582,23 +582,26 @@ mod tests {
             profile.tasks_tree,
             "a10dbfde7cd4d1c3ceaf22ed39b52a98dc775d54"
         );
-        assert_eq!(profile.task_id, "batched-eval-parity");
+        assert_eq!(profile.task_id, "foodstuff-beta-activity");
         assert_eq!(
             profile.task_tree,
-            "729916599199dd1de6be0e0c543da9788d6129b5"
+            "7ed5eb80cfd496444f1effd6c7050cae990a6c86"
         );
-        // The native smoke registered the reviewed official byte table: 47
-        // pinned files with their canonical digest declared.
+        // The selected task's materialized closure has 13 pinned files.
         assert_eq!(profile.package_pin, PackagePin::ByteTable);
-        assert_eq!(profile.package.len(), 47);
+        assert_eq!(profile.package.len(), 13);
+        assert_eq!(
+            profile.package_manifest_sha256,
+            "7285d3616fc527c3af1d5494e28abfa1fcd3ad9fbdbb5922a197b2c93fcca261"
+        );
         assert_eq!(
             profile.canonical_package_digest(),
             profile.package_manifest_sha256
         );
         assert_eq!(profile.output_kind, OutputKind::HarborResultAggregate);
-        assert_eq!(profile.verifier_workdir, "/app/evalbench");
+        assert_eq!(profile.verifier_workdir, "/");
         assert_eq!(profile.launch, vec!["run", "-p", "<task-dir>"]);
-        assert_eq!((profile.cpus, profile.memory_gib), (1, 4));
+        assert_eq!((profile.cpus, profile.memory_gib), (2, 4));
 
         let lock: serde_json::Value = serde_json::from_slice(&read(
             &crate_root().join("external-locks/static/linux-x86_64.json"),
@@ -1262,10 +1265,10 @@ mod adapter_tests {
             root.path().join("trace"),
         );
         let spec = adapter.spawn_spec(&request);
-        // Pinned batched-eval-parity allows four hours for the agent,
-        // fifteen minutes for grading and two ten-minute environment builds.
+        // Pinned foodstuff-beta-activity allows 9,000 seconds for the agent,
+        // 120 seconds for grading and two ten-minute environment builds.
         // The whole-job watchdog must also leave time for collection/cleanup.
-        let native_phases = Duration::from_secs(14_400 + 900 + 2 * 600);
+        let native_phases = Duration::from_secs(9_000 + 120 + 2 * 600);
         assert!(
             spec.timeout > native_phases,
             "whole-job budget: {:?}",
