@@ -481,13 +481,55 @@ class Acceptance:
                 f"preserved artifact: required references missing {missing}"
             )
 
+    @staticmethod
+    def control_block(controls: dict, family: str) -> dict:
+        """Per-family control block when declared; the shared block otherwise.
+
+        Benchmarks whose primary sources prescribe different sampling or
+        output protocols freeze one block per family; the legacy shared
+        block stays valid when no per-family declaration exists.
+        """
+        families = controls.get("families")
+        if isinstance(families, dict):
+            block = families.get(family)
+            if not isinstance(block, dict):
+                raise Rejection(
+                    f"run-control: controls declare no block for family {family!r}"
+                )
+            return block
+        return {
+            "connection_controls": controls.get("connection_controls"),
+            "execution_concurrency": controls.get("execution_concurrency"),
+        }
+
     def check_controls(self, manifest: dict, trials: list[dict]) -> None:
         controls = manifest.get("controls", {})
-        concurrency = controls.get("execution_concurrency")
-        if type(concurrency) is not int or concurrency < 1:
-            raise Rejection(f"run-control: controls declare no positive concurrency")
-        if not isinstance(controls.get("connection_controls"), dict):
-            raise Rejection(f"run-control: controls declare no frozen connection controls")
+        declared_families = controls.get("families")
+        trial_families = {trial["family"] for trial in trials}
+        if isinstance(declared_families, dict):
+            if set(declared_families) != trial_families:
+                raise Rejection(
+                    "run-control: per-family controls must cover exactly the "
+                    "accepted families"
+                )
+            blocks = declared_families
+        else:
+            concurrency = controls.get("execution_concurrency")
+            if type(concurrency) is not int or concurrency < 1:
+                raise Rejection(f"run-control: controls declare no positive concurrency")
+            if not isinstance(controls.get("connection_controls"), dict):
+                raise Rejection(f"run-control: controls declare no frozen connection controls")
+            blocks = {family: controls for family in trial_families}
+        for family, block in sorted(blocks.items()):
+            concurrency = block.get("execution_concurrency")
+            if type(concurrency) is not int or concurrency < 1:
+                raise Rejection(
+                    f"run-control: family {family!r} declares no positive concurrency"
+                )
+            if not isinstance(block.get("connection_controls"), dict):
+                raise Rejection(
+                    f"run-control: family {family!r} declares no frozen connection controls"
+                )
         per_family: dict[str, list[dict]] = {}
         for trial in trials:
             per_family.setdefault(trial["family"], []).append(trial)
@@ -697,6 +739,16 @@ class Acceptance:
                     and terminal["failure_kind"] == "agent-timeout"
                     and terminal["timed_out"] is True
                 )
+                or (
+                    # The Companion grades a clean agent-side non-success
+                    # terminal (for example a pi `max_tokens` stop) as a
+                    # native zero, mirroring its settlement vocabulary;
+                    # provider/auth/infrastructure kinds still reject above.
+                    graded
+                    and terminal["failure_kind"] == "agent-outcome-not-success"
+                    and terminal["timed_out"] is False
+                    and terminal["exit_code"] == 0
+                )
             )
             allowed_exceptions = set()
             if graded and terminal.get("failure_kind") == "agent-non-zero-exit":
@@ -765,14 +817,20 @@ class Acceptance:
         def reject(reason):
             raise Rejection(f"output-control: {trial['id']!r} {reason}")
 
+        block = self.control_block(controls, trial["family"])
+        concurrency = block.get("execution_concurrency")
+        claims = block.get("connection_controls")
+        if type(concurrency) is not int or concurrency < 1:
+            reject("declares no positive concurrency")
+        if not isinstance(claims, dict):
+            reject("declares no frozen connection controls")
         declared = experiment.get("model_controls")
-        claims = controls["connection_controls"]
         if not isinstance(declared, dict) or claims.get("model_controls") != declared:
             reject("manifest controls differ from the sealed experiment")
         limit = declared.get("max_output_tokens")
         if type(limit) is not int or limit <= 0:
             reject("requires a positive, proven output limit")
-        if experiment.get("execution", {}).get("concurrency") != controls["execution_concurrency"]:
+        if experiment.get("execution", {}).get("concurrency") != concurrency:
             reject("concurrency differs from the sealed experiment")
         selected = unique_record(
             experiment.get("connections"), experiment.get("connection_id"),

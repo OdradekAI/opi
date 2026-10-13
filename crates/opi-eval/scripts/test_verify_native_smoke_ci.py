@@ -568,8 +568,8 @@ PY
     def test_build_without_locked_release_rejects(self) -> None:
         self.assert_rejects(
             self.ws(builder_text=BUILDER.read_text(encoding="utf-8").replace(
-                "cargo build --locked --release \\",
-                "cargo build \\")),
+                'cargo build --locked --release --target "$OPI_TARGET" \\',
+                'cargo build --target "$OPI_TARGET" \\')),
             "locked")
 
     def test_build_assuming_target_path_rejects(self) -> None:

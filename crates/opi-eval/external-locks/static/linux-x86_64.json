@@ -23,7 +23,7 @@
    {
     "path": "crates/opi-eval/scripts/build-agent-artifacts.sh",
     "role": "agent-builder",
-    "sha256": "225e5a02137c6ee36af0ec5fdf481b58f216d8c83ca1a6417007807b21520ead"
+    "sha256": "88e49c4a7353ee785432bcd55e1a31d5f831b0e7c1792633da197b143faa438f"
    }
   ],
   "actions": [
@@ -161,8 +161,8 @@
    "commit": "2b0442c3c583b710ca8da14c8e601b99f2f1f244",
    "tasks_tree": "a10dbfde7cd4d1c3ceaf22ed39b52a98dc775d54",
    "task": {
-    "id": "batched-eval-parity",
-    "tree": "729916599199dd1de6be0e0c543da9788d6129b5",
+    "id": "foodstuff-beta-activity",
+    "tree": "7ed5eb80cfd496444f1effd6c7050cae990a6c86",
     "files": []
    }
   },
@@ -174,8 +174,8 @@
    "commit": "435ee89ec2f2e2289f33b0da4f992f0b7b7266b9",
    "tasks_tree": "66df25a1b382017d0ae014d94cadb2698baaed48",
    "task": {
-    "id": "abs-module-cache-flags",
-    "tree": "8ee76a3e4a876a9bd24f34edabcdde4e47257db4",
+    "id": "opa-template-string-reconstruction",
+    "tree": "dfbaf7af531adc463503770ac0cc0431a72bcd04",
     "files": []
    }
   }
@@ -1624,10 +1624,28 @@
    "manifest": "sha256:0dd364ba7e10242f07755449e3a3d0e35f9efd987952737b90def6709ab0c5ce"
   },
   {
+   "id": "tb30-python312-slim",
+   "role": "task",
+   "reference": "python:3.12-slim",
+   "manifest": "sha256:2b4f19dae3a777dfc3b76730bda1e82e1f66ab2a2686fa93ca78edbfb4f04ffe"
+  },
+  {
+   "id": "tb30-python312-base",
+   "role": "task",
+   "reference": "python:3.12-slim-bookworm",
+   "manifest": "sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d"
+  },
+  {
+   "id": "tb30-playwright-v1512",
+   "role": "task",
+   "reference": "mcr.microsoft.com/playwright/python:v1.52.0-noble",
+   "manifest": "sha256:3997517e73c4d17fe9cc805961a7f57ba104a01355a5d5d4981ea6e7f57c32b2"
+  },
+  {
    "id": "deepswe-task",
    "role": "task",
-   "reference": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh75679ajj3b8dtd7se3h7z0a1833y6r-v1.1",
-   "manifest": "sha256:3a4d47f5281269305343c83729836ac2f3172811aee72681e472a4196178eda1"
+   "reference": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh7eq7eek21pjhv1zx8c2cmmed82yd7v-v1.1",
+   "manifest": "sha256:649b70fa34779e57670bf02516b83f7138a0ab289d95795f2fde2e3f319f5dc2"
   },
   {
    "id": "deepswe-mars-base-provenance",

@@ -580,6 +580,15 @@ class MountedShellEnvironment(LocalShellEnvironment):
         self.logs = logs
         self.capabilities = types.SimpleNamespace(mounted=True)
 
+    def local(self, remote):
+        # The mounted capture root is the live /logs/agent bind; downloads
+        # from it land beside the trial's terminal observation.
+        remote = PurePosixPath(remote)
+        if remote.is_relative_to("/logs/agent"):
+            relative = remote.relative_to("/logs/agent")
+            return self.logs.joinpath(*relative.parts) if relative.parts else self.logs
+        return super().local(str(remote))
+
     async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None):
         command = command.replace("/opi-eval-agent", shlex.quote(str(self.stage_root)))
         command = command.replace("/logs/agent", shlex.quote(str(self.logs)))

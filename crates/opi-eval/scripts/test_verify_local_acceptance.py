@@ -40,9 +40,10 @@ MODEL_CONTROLS = {"temperature": "omitted", "top_p": "omitted", "max_output_toke
 
 def synthetic_output_control(product, experiment, opi_turn_budget=None):
     """Structural fixture only; real clients run in the ignored Rust matrix."""
+    limit = experiment["model_controls"].get("max_output_tokens", 16384)
     if product == "opi":
-        config = '''[defaults]
-max_output_tokens = 16384
+        config = f'''[defaults]
+max_output_tokens = {limit}
 [providers.custom.zhipu]
 name = "opi-eval zhipu"
 base_url = "http://127.0.0.1:48127"
@@ -52,14 +53,14 @@ auth_scheme = "api-key"
 [[providers.custom.zhipu.models]]
 id = "glm-5.3-flash"
 display_name = "opi-eval zhipu"
-max_output_tokens = 16384
+max_output_tokens = {limit}
 context_window = 1000000
 '''
     else:
-        config = json.dumps({"providers": {"zhipu": {"baseUrl": PROBE_BASE_URL, "api": CONNECTION["api"], "apiKey": "dummy-scripted-credential", "models": [{"id": "glm-5.3-flash", "maxTokens": 16384, "contextWindow": 1000000}]}}})
+        config = json.dumps({"providers": {"zhipu": {"baseUrl": PROBE_BASE_URL, "api": CONNECTION["api"], "apiKey": "dummy-scripted-credential", "models": [{"id": "glm-5.3-flash", "maxTokens": limit, "contextWindow": 1000000}]}}})
     if product == "opi" and opi_turn_budget is not None:
         config = config.replace("[defaults]\n", f"[defaults]\nmax_iterations = {opi_turn_budget}\n")
-    requests = "".join(json.dumps({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": "/v1/messages", "model": "glm-5.3-flash", "output_limits": {"max_tokens": 16384}, "request_sha256": "d" * 64}) + "\n" for seq in (1, 2))
+    requests = "".join(json.dumps({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": "/v1/messages", "model": "glm-5.3-flash", "output_limits": {"max_tokens": limit}, "request_sha256": "d" * 64}) + "\n" for seq in (1, 2))
     proof = {"schema": "opi-eval-output-control/1", "product": product, "executable_sha256": "e" * 64, "runtime_package_manifest_sha256": None, "connection": {key: CONNECTION[key] for key in ("provider", "api", "model")}, "model_controls": experiment["model_controls"], "probe_base_url": PROBE_BASE_URL, "exit_code": 0, "config": {"path": "synthetic-config", "sha256": sha256(config.encode())}, "requests": {"path": "synthetic-requests", "sha256": sha256(requests.encode())}}
     evidence = json.dumps(proof)
     return {"evidence": evidence, "evidence_sha256": sha256(evidence.encode()), "config": config, "requests": requests}
@@ -322,6 +323,27 @@ class EvidenceRoot:
             },
         )
 
+    def rewrite_sealed_family_controls(self, family: str, max_output_tokens: int) -> None:
+        """Rebind one family's sealed experiment, wire snapshots and digests."""
+        run = self.runs[family]["run"]
+        path = run / "trials" / self.runs[family]["pi"] / "bundle/artifacts/control/experiment.json"
+        experiment = json.loads(path.read_text())
+        experiment["model_controls"] = dict(experiment["model_controls"])
+        experiment["model_controls"]["max_output_tokens"] = max_output_tokens
+        for product in ("pi", "opi"):
+            trial = self.runs[family][product]
+            bundle = run / "trials" / trial / "bundle"
+            wire = bundle / "artifacts/control/output-control.json"
+            snapshot = synthetic_output_control(product, experiment)
+            write_json(wire, snapshot)
+            sealed = json.loads((bundle / "manifest.json").read_text())
+            sealed["entries"]["control/output-control.json"]["digest"] = sha256(wire.read_bytes())
+            write_json(bundle / "manifest.json", sealed)
+            material = json.loads((run / "material.json").read_text())
+            material["agents"][product]["output_control_evidence"]["sha256"] = snapshot["evidence_sha256"]
+            write_json(run / "material.json", material)
+        self.rewrite_sealed_experiment(family, experiment)
+
     def rewrite_sealed_experiment(self, family: str, experiment: dict) -> None:
         """Bind a changed synthetic contract so semantic checks see intact digests."""
         run = self.runs[family]["run"]
@@ -462,7 +484,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
         return report
 
     def reject(self, fragment: str) -> dict:
-        result = self.evidence.verify()
+        result = self.evidence.verify(label=fragment.replace(" ", "-")[:40])
         self.assertEqual(
             result.returncode,
             2,
@@ -485,7 +507,9 @@ class AcceptanceVerifierTest(unittest.TestCase):
 
     def test_valid_native_task_failures_count_as_graded_trials(self) -> None:
         # P19-AUD-007: a sealed graded settlement admits benchmark-valid
-        # Agent non-zero exits and task timeouts - including a timeout
+        # Agent non-zero exits, task timeouts and clean agent-side
+        # non-success terminals (for example a pi `max_tokens` stop the
+        # Companion itself grades natively) - including a timeout
         # tail without a final AgentEnd after the completed provider/tool
         # loop and the matching native task exception - as eligible
         # execution trials. Invalid provider/preflight shapes stay
@@ -494,6 +518,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
             ("graded-nonzero", "NonZeroAgentExitCodeError"),
             ("graded-timeout", "AgentTimeoutError"),
             ("graded-partial-timeout", "AgentTimeoutError"),
+            ("graded-outcome-not-success", None),
         ):
             with self.subTest(case=case):
                 self.evidence = EvidenceRoot(self.base / f"accepted-{case}")
@@ -506,6 +531,10 @@ class AcceptanceVerifierTest(unittest.TestCase):
                     if case == "graded-nonzero":
                         terminal.update(
                             {"exit_code": 1, "failure_kind": "agent-non-zero-exit"}
+                        )
+                    elif case == "graded-outcome-not-success":
+                        terminal.update(
+                            {"exit_code": 0, "failure_kind": "agent-outcome-not-success"}
                         )
                     else:
                         terminal.update(
@@ -530,7 +559,9 @@ class AcceptanceVerifierTest(unittest.TestCase):
                     write_json(terminal_path, terminal)
                     result_path = native / "trial-result.json"
                     result = json.loads(result_path.read_text())
-                    result["exception_info"] = {"exception_type": exception}
+                    result["exception_info"] = (
+                        {"exception_type": exception} if exception else None
+                    )
                     write_json(result_path, result)
                     settlement_path = bundle / "artifacts/control/settlement.json"
                     write_json(
@@ -1065,6 +1096,40 @@ class AcceptanceVerifierTest(unittest.TestCase):
         manifest["controls"]["connection_controls"]["model_controls"]["max_output_tokens"] = 8192
         self.evidence.save_manifest(manifest)
         self.reject("output-control")
+
+    def test_per_family_control_blocks_accept_and_reject(self) -> None:
+        # Primary sources may prescribe one protocol per benchmark family;
+        # the per-family declaration must cover exactly the accepted
+        # families and match each family's sealed experiment.
+        family = FAMILIES[0]
+        self.evidence.rewrite_sealed_family_controls(family, 8192)
+        manifest = self.evidence.load_manifest()
+        shared = manifest["controls"]["connection_controls"]
+        block = {
+            "execution_concurrency": manifest["controls"]["execution_concurrency"],
+            "connection_controls": {
+                "connection": dict(shared["connection"]),
+                "model_controls": {**shared["model_controls"], "max_output_tokens": 8192},
+            },
+        }
+        manifest["controls"] = {
+            "families": {name: {"execution_concurrency": block["execution_concurrency"],
+                                "connection_controls": {
+                                    "connection": dict(shared["connection"]),
+                                    "model_controls": dict(shared["model_controls"]),
+                                }} for name in FAMILIES}
+        }
+        manifest["controls"]["families"][family] = block
+        self.evidence.save_manifest(manifest)
+        self.accept()
+        drifted = self.evidence.load_manifest()
+        drifted["controls"]["families"][family]["connection_controls"]["model_controls"]["max_output_tokens"] = 4096
+        self.evidence.save_manifest(drifted)
+        self.reject("output-control")
+        uncovered = self.evidence.load_manifest()
+        del uncovered["controls"]["families"][family]
+        self.evidence.save_manifest(uncovered)
+        self.reject("per-family controls must cover exactly the accepted families")
 
     def test_sealed_turn_budget_accepts_historical_and_current_projections(self) -> None:
         for index, budget in enumerate((

@@ -315,6 +315,22 @@ pub(crate) fn detect_stream_kind(header: &str) -> Result<StreamKind, CaptureRefu
             fields.exact(&["type", "event"], &[])?;
             Ok(StreamKind::OpiAgent)
         }
+        // The product's non-interactive NDJSON stream opens with its
+        // schema-versioned header before any `Agent` envelope; admit
+        // exactly the current schema version, fail-closed like pi's.
+        "session_header" => {
+            fields.exact(&["type", "schema_version"], &[])?;
+            match fields
+                .fields
+                .get("schema_version")
+                .and_then(|value| value.as_u64())
+            {
+                Some(2) => Ok(StreamKind::OpiAgent),
+                other => Err(CaptureRefusal::new(format!(
+                    "opi session header schema_version {other:?} is not admitted"
+                ))),
+            }
+        }
         "session" => {
             fields.exact(&["type", "version", "id", "timestamp", "cwd"], &[])?;
             match fields
@@ -362,6 +378,19 @@ fn serialize(fields: &serde_json::Map<String, serde_json::Value>) -> String {
 fn opi_record<'a>(original: &'a str, fields: Fields<'_>) -> Result<Cow<'a, str>, CaptureRefusal> {
     let record = fields.type_of()?;
     match record {
+        "session_header" => {
+            fields.exact(&["type", "schema_version"], &[])?;
+            match fields
+                .fields
+                .get("schema_version")
+                .and_then(|value| value.as_u64())
+            {
+                Some(2) => Ok(Cow::Borrowed(original)),
+                other => Err(CaptureRefusal::new(format!(
+                    "opi session header schema_version {other:?} is not admitted"
+                ))),
+            }
+        }
         "Agent" => {
             fields.exact(&["type", "event"], &[])?;
             let event = fields.object_of("event")?;
@@ -387,6 +416,30 @@ fn opi_record<'a>(original: &'a str, fields: Fields<'_>) -> Result<Cow<'a, str>,
                     }
                 }
             }
+            Ok(Cow::Borrowed(original))
+        }
+        "AutoRetryStart" => {
+            fields.exact(
+                &[
+                    "type",
+                    "attempt",
+                    "max_attempts",
+                    "delay_ms",
+                    "error_message",
+                ],
+                &[],
+            )?;
+            fields.u64_of("attempt")?;
+            fields.u64_of("max_attempts")?;
+            fields.u64_of("delay_ms")?;
+            fields.str_of("error_message")?;
+            Ok(Cow::Borrowed(original))
+        }
+        "AutoRetryEnd" => {
+            fields.exact(&["type", "success", "attempt", "final_error"], &[])?;
+            fields.bool_of("success")?;
+            fields.u64_of("attempt")?;
+            fields.optional_str("final_error")?;
             Ok(Cow::Borrowed(original))
         }
         "CompactionStart" => {
@@ -624,6 +677,18 @@ fn opi_event(
             event.bool_of("success")?;
             event.u64_of("attempt")?;
             event.optional_str("final_error")?;
+        }
+        "QueueUpdate" => {
+            event.exact(&["type", "steering", "follow_up"], &[])?;
+            for key in ["steering", "follow_up"] {
+                for entry in event.array_of(key)? {
+                    if !entry.is_string() {
+                        return Err(CaptureRefusal::new(format!(
+                            "QueueUpdate {key:?} entry is not a string"
+                        )));
+                    }
+                }
+            }
         }
         "CompactionStart" => {
             event.exact(&["type", "reason"], &[])?;
@@ -904,11 +969,16 @@ fn filter_opi_assistant_event(
     let partial = |out: &mut serde_json::Map<String, serde_json::Value>,
                    changed: &mut bool|
      -> Result<(), CaptureRefusal> {
-        if let Some(snapshot) = filter_opi_snapshot(
-            out.get("partial")
-                .and_then(|v| v.as_object())
-                .ok_or_else(|| CaptureRefusal::new("partial is not an object"))?,
-        )? {
+        // `--json-compact` projections legitimately drop the cumulative
+        // `partial` snapshot from delta events; filter it only when the
+        // full stream shape carries it.
+        let Some(raw) = out.get("partial") else {
+            return Ok(());
+        };
+        let Some(object) = raw.as_object() else {
+            return Err(CaptureRefusal::new("partial is not an object"));
+        };
+        if let Some(snapshot) = filter_opi_snapshot(object)? {
             out.insert("partial".to_owned(), serde_json::Value::Object(snapshot));
             *changed = true;
         }
@@ -925,7 +995,7 @@ fn filter_opi_assistant_event(
             partial(&mut out, &mut changed)?;
         }
         "text_delta" | "tool_call_delta" => {
-            fields.exact(&["type", "content_index", "delta", "partial"], &[])?;
+            fields.exact(&["type", "content_index", "delta"], &["partial"])?;
             fields.u64_of("content_index")?;
             fields.str_of("delta")?;
             partial(&mut out, &mut changed)?;
@@ -937,7 +1007,7 @@ fn filter_opi_assistant_event(
             partial(&mut out, &mut changed)?;
         }
         "thinking_delta" => {
-            fields.exact(&["type", "content_index", "delta", "partial"], &[])?;
+            fields.exact(&["type", "content_index", "delta"], &["partial"])?;
             fields.u64_of("content_index")?;
             partial(&mut out, &mut changed)?;
             if out
@@ -1707,6 +1777,16 @@ mod tests {
             detect_stream_kind(r#"{"type":"Agent","event":{"type":"AgentStart"}}"#).unwrap(),
             StreamKind::OpiAgent
         );
+        assert_eq!(
+            detect_stream_kind(r#"{"type":"session_header","schema_version":2}"#).unwrap(),
+            StreamKind::OpiAgent
+        );
+        assert!(detect_stream_kind(r#"{"type":"session_header","schema_version":3}"#).is_err());
+        assert!(detect_stream_kind(r#"{"type":"session_header"}"#).is_err());
+        assert!(
+            detect_stream_kind(r#"{"type":"session_header","schema_version":2,"extra":1}"#)
+                .is_err()
+        );
         assert!(
             detect_stream_kind(
                 r#"{"type":"session","version":1,"id":"i","timestamp":"t","cwd":"/w"}"#
@@ -1720,5 +1800,76 @@ mod tests {
             .is_err()
         );
         assert!(detect_stream_kind("not json").is_err());
+    }
+
+    #[test]
+    fn opi_session_header_and_retry_records_admit_current_stream() {
+        // The first 45 bytes observed from a real dispatch that the old
+        // grammar refused: the header must pass through unchanged.
+        let header = r#"{"type":"session_header","schema_version":2}"#;
+        assert_eq!(filter_record(header, StreamKind::OpiAgent).unwrap(), header);
+        assert!(
+            filter_record(
+                r#"{"type":"session_header","schema_version":1}"#,
+                StreamKind::OpiAgent
+            )
+            .is_err()
+        );
+        for line in [
+            r#"{"type":"AutoRetryStart","attempt":1,"max_attempts":3,"delay_ms":250,"error_message":"provider 429"}"#,
+            r#"{"type":"AutoRetryEnd","success":true,"attempt":1,"final_error":null}"#,
+            r#"{"type":"AutoRetryEnd","success":false,"attempt":3,"final_error":"gave up"}"#,
+        ] {
+            assert_eq!(filter_record(line, StreamKind::OpiAgent).unwrap(), line);
+        }
+        assert!(
+            filter_record(
+                r#"{"type":"AutoRetryStart","attempt":1,"max_attempts":3,"delay_ms":250}"#,
+                StreamKind::OpiAgent
+            )
+            .is_err()
+        );
+        assert!(
+            filter_record(
+                r#"{"type":"AutoRetryEnd","success":true,"attempt":1}"#,
+                StreamKind::OpiAgent
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn opi_agent_envelope_queue_update_admits_inner_event() {
+        let line =
+            r#"{"type":"Agent","event":{"type":"QueueUpdate","steering":["a"],"follow_up":[]}}"#;
+        assert_eq!(filter_record(line, StreamKind::OpiAgent).unwrap(), line);
+        let bad =
+            r#"{"type":"Agent","event":{"type":"QueueUpdate","steering":[1],"follow_up":[]}}"#;
+        assert!(filter_record(bad, StreamKind::OpiAgent).is_err());
+    }
+
+    #[test]
+    fn opi_compact_delta_events_admit_without_partial() {
+        // `--json-compact` drops the cumulative `partial` snapshot from
+        // delta events; thinking deltas must still be emptied.
+        let message = r#"{"api":"Anthropic","content":[],"error_message":null,"model":"m","provider":"p","response_id":null,"response_model":null,"role":"assistant","stop_reason":"stop","timestamp_ms":1,"type":"Llm","usage":{"input_tokens":0,"output_tokens":0,"cache_read_tokens":0,"cache_write_tokens":0,"cache_write_1h_tokens":null,"reasoning_tokens":null,"reported":false}}"#;
+        let text_delta = format!(
+            r#"{{"type":"Agent","event":{{"type":"MessageUpdate","message":{message},"assistant_event":{{"type":"text_delta","content_index":0,"delta":"hello"}}}}}}"#
+        );
+        assert_eq!(
+            filter_record(&text_delta, StreamKind::OpiAgent).unwrap(),
+            text_delta
+        );
+        let thinking_delta = format!(
+            r#"{{"type":"Agent","event":{{"type":"MessageUpdate","message":{message},"assistant_event":{{"type":"thinking_delta","content_index":0,"delta":"SECRET"}}}}}}"#
+        );
+        let filtered = filter_record(&thinking_delta, StreamKind::OpiAgent).unwrap();
+        assert!(!filtered.contains("SECRET"));
+        assert!(filtered.contains("\"delta\":\"\""));
+        // A delta event with an unexpected extra field still refuses.
+        let bad = format!(
+            r#"{{"type":"Agent","event":{{"type":"MessageUpdate","message":{message},"assistant_event":{{"type":"text_delta","content_index":0,"delta":"x","extra":1}}}}}}"#
+        );
+        assert!(filter_record(&bad, StreamKind::OpiAgent).is_err());
     }
 }

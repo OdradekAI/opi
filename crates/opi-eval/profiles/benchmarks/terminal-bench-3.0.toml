@@ -19,8 +19,8 @@ upstream = "https://github.com/harbor-framework/terminal-bench"
 tag = "v3.0.0"
 source_commit = "2b0442c3c583b710ca8da14c8e601b99f2f1f244"
 tasks_tree = "a10dbfde7cd4d1c3ceaf22ed39b52a98dc775d54"
-task_id = "batched-eval-parity"
-task_tree = "729916599199dd1de6be0e0c543da9788d6129b5"
+task_id = "foodstuff-beta-activity"
+task_tree = "7ed5eb80cfd496444f1effd6c7050cae990a6c86"
 package_pin = "byte-table"
 package_manifest_sha256 = "65dec27842eaad93f4737e53d349cb6ccb1ff720bb0fc9041b81ad989b70d730"
 adapter = "opi-eval-terminal-bench-30-adapter/1"
@@ -47,9 +47,18 @@ cpus = 1
 memory_gib = 4
 
 [limits]
-# Whole Harbor job: 14400s agent + 900s verifier + two 600s environment
-# builds + 1500s for remaining setup, artifact collection and cleanup.
-timeout_secs = 18000
+# Whole Harbor job for the selected task foodstuff-beta-activity
+# (agent contract 9000s, single text deliverable): agent 9000s +
+# separate verifier 120s + environment build 600s + verifier image
+# build 600s + slack. Zhipu's Terminal-Bench 3.0 protocol (research 162:
+# reasoning effort=max, 400K context, 128K max output, avg@3, 600 agent
+# turns, 10h per rollout, Tool Search disabled) uses the same Claude Code
+# 2.1.207 harness; the pinned task's own agent timeout (9000s) binds
+# first and fails closed. Earlier selections are retained as run
+# evidence: html-js-filter (3600s cap killed the baseline mid-work under
+# reasoning=max) and photonic-waveguide-routing (baseline finished but
+# emitted no declared artifact).
+timeout_secs = 10800
 stdout_cap_bytes = 1048576
 stderr_cap_bytes = 1048576
 

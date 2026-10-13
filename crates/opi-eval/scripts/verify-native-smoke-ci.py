@@ -229,9 +229,9 @@ def verify_builder(text: str, f: Findings) -> None:
     f.require("locked", text, "$(cargo build --locked --release",
               "the opi build invocation must be --locked --release")
     f.require("locked", text,
-              "printf 'cargo build --locked --release -p opi-coding-agent "
-              "--bin opi '",
-              "the recorded build command must stay locked")
+              "printf 'cargo build --locked --release --target %s "
+              "-p opi-coding-agent --bin opi '",
+              "the recorded build command must stay locked (musl target)")
     f.require("compiler-artifact", text,
               '"compiler-artifact"',
               "the executable must be selected from a compiler-artifact")

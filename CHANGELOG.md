@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `opi-eval`: four execution-blocker repairs from the 2026-10-12 six-trial
+  acceptance re-run (audit gap P19-AUD-001). (1) `build-agent-artifacts.sh`
+  now builds the Opi agent for the host-arch musl target (statically linked,
+  fail-closed check) so it loads inside pinned task environments whose glibc
+  predates the build host's; the identity records the actual target triple
+  and the static-lock producer digest was refreshed accordingly.
+  (2) The binary-local native capture grammar now admits the current
+  product stream: the `session_header` opener (schema_version 2),
+  session-level `AutoRetryStart`/`AutoRetryEnd`, the inner `QueueUpdate`
+  envelope, and `--json-compact` delta events that legitimately omit the
+  cumulative `partial` snapshot; private thinking deltas are still emptied.
+  (3) `verify-local-acceptance.py` admits a graded
+  `agent-outcome-not-success` terminal (clean agent-side stop such as a
+  `max_tokens` end) exactly as the Companion's own settlement vocabulary
+  does, instead of rejecting a shape the settlement already grades.
+  (4) The Harbor/Pier integrations copy the capture receipt out through the
+  daemon in the mounted case: the live bind mount leaves the helper's files
+  owned by the container user with mode 0600, unreadable to the host
+  terminal observation until the runner's post-stop chown, so the summary
+  was systematically `unreadable`; a dead helper still settles honestly.
+  The locked native-smoke CI contract and the integration test mounts were
+  updated in lockstep. Two further changes from the 2026-10-13 Zhipu-protocol
+  re-run of the same acceptance: the pinned benchmark task selections moved
+  to feasible tasks (Terminal-Bench 3.0 → `foodstuff-beta-activity` after the
+  earlier selections failed as invalid executions under `reasoning=max`;
+  DeepSWE → `opa-template-string-reconstruction`) with the static-lock task
+  identities, task-image pins and the profile whole-job bounds re-derived
+  from the selected tasks' own contracts, and `verify-local-acceptance.py`
+  accepts per-family control blocks so acceptance runs whose primary sources
+  prescribe different sampling/output protocols per benchmark stay verifiable
+  (the legacy single shared control block remains valid).
+
 ### Added
 
 - `opi-eval`: `evaluate.py baseline --bench <id> --tasks <list|@file>` prepares a

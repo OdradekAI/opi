@@ -836,6 +836,26 @@ class _OpiEvalAgent(BaseAgent):
 
     async def _capture_logs(self, environment: BaseEnvironment, stage: PurePosixPath) -> None:
         if self._capture_mounted:
+            # The live bind mount exposes the helper's capture files in the
+            # trial logs directory in real time, but they stay owned by the
+            # container user with mode 0600: this host process cannot read
+            # them until the runner's post-stop chown, long after the
+            # terminal observation. Copy just the receipt through the
+            # daemon (readable, owned by this user) so the observation
+            # reads actual capture bytes; streams and the trace directory
+            # stay runner-owned, because a pre-populated trace destination
+            # breaks the runner's later compose collection.
+            self.logs_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                await environment.download_file(
+                    f"{self._capture_root}/capture-receipt.json",
+                    self.logs_dir / "capture-receipt.json",
+                )
+            except Exception:  # noqa: BLE001 - a dead helper leaves no receipt
+                # A cancelled or killed helper may not have written its
+                # receipt; the terminal observation then honestly records
+                # an unreadable capture instead of failing settlement.
+                self.logger.warning("capture receipt copy failed", exc_info=True)
             return
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         for name in ("stdout.log", "stderr.log", "capture-receipt.json"):

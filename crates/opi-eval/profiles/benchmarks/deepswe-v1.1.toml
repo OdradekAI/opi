@@ -11,8 +11,8 @@ upstream = "https://github.com/datacurve-ai/deep-swe"
 version_anchor = "8cae5984d5dd0ee37445beff0e928dc10c331116"
 source_commit = "435ee89ec2f2e2289f33b0da4f992f0b7b7266b9"
 tasks_tree = "66df25a1b382017d0ae014d94cadb2698baaed48"
-task_id = "abs-module-cache-flags"
-task_tree = "8ee76a3e4a876a9bd24f34edabcdde4e47257db4"
+task_id = "opa-template-string-reconstruction"
+task_tree = "dfbaf7af531adc463503770ac0cc0431a72bcd04"
 # The static external lock pins DeepSWE v1.1 by task-tree identity with an
 # empty files table. No byte-level task-package table is committed, so the
 # production pin is tree-identity only and admission fails closed until
@@ -50,7 +50,13 @@ cpus = 2
 memory_gib = 8
 
 [limits]
-timeout_secs = 1800
+# Whole Pier job. Decomposition from the selected task's own contract
+# (task.toml): environment build 1800s + agent 5400s + patch collection 300s
+# + verifier environment build 1800s + pristine verifier 1800s = 11100s,
+# plus 900s slack. Zhipu's DeepSWE v1.1 harness budget (6h per task,
+# research 163) remains an upper bound this pin never needs: the task's
+# own agent timeout (5400s) binds first and fails closed.
+timeout_secs = 12000
 stdout_cap_bytes = 1048576
 stderr_cap_bytes = 1048576
 

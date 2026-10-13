@@ -4,10 +4,13 @@
 # Builds and locates the explicitly selected evaluated agents with full executable identity,
 # before any agent process starts:
 #
-# - Opi: `cargo build --locked --release -p opi-coding-agent --bin opi
+# - Opi: `cargo build --locked --release --target <host-arch musl triple>
+#   -p opi-coding-agent --bin opi
 #   --message-format=json-render-diagnostics`; the executable is selected
 #   from the compiler-artifact whose target name is `opi` with a non-null
-#   `executable` field, never an assumed target/release path. The identity
+#   `executable` field, never an assumed target/release path. The musl
+#   target keeps the agent loadable inside pinned task environments whose
+#   glibc is older than the build host's. The identity
 #   records readlink -f, SHA-256, file(1), ldd, rustc -Vv, cargo -V, the
 #   checkout commit and dirty state, target triple, profile, feature set,
 #   and the Cargo.lock SHA-256 recomputed from the checkout.
@@ -83,13 +86,23 @@ tree_digest() {
 
 # --- Opi -----------------------------------------------------------------
 if [ -n "$OPI_SOURCE" ]; then
-echo "opi-eval-build-agent-artifacts: building opi (locked release)" >&2
+echo "opi-eval-build-agent-artifacts: building opi (locked release, musl static)" >&2
+# The agent runs inside pinned task environments whose glibc is older
+# than the build host's (bookworm images ship 2.36). A host-glibc build
+# fails the integration's in-container runtime preflight, so the agent
+# artifact is built for the host-arch musl target and must not depend on
+# a dynamic loader, mirroring the capture-helper target policy.
+case "$(uname -m)" in
+  x86_64) OPI_TARGET=x86_64-unknown-linux-musl ;;
+  aarch64) OPI_TARGET=aarch64-unknown-linux-musl ;;
+  *) echo "no admitted musl agent target for $(uname -m)" >&2; exit 2 ;;
+esac
 if [ -d "$OPI_SOURCE/.git" ]; then
   [ "$(git -C "$OPI_SOURCE" rev-parse HEAD)" = "$OPI_COMMIT" ] || { echo "Opi source commit drift" >&2; exit 2; }
 fi
 (
 cd "$OPI_SOURCE"
-build_json=$(cargo build --locked --release \
+build_json=$(cargo build --locked --release --target "$OPI_TARGET" \
   -p opi-coding-agent --bin opi --message-format=json-render-diagnostics)
 OPI_EXECUTABLE=$(printf '%s\n' "$build_json" | python3 -c '
 import json, sys
@@ -110,6 +123,11 @@ else:
     sys.exit("no opi compiler-artifact executable was reported")
 ')
 OPI_EXECUTABLE=$(readlink -f "$OPI_EXECUTABLE")
+# Fail closed: a musl agent that still depends on a dynamic loader would
+# fail the in-container runtime preflight exactly like a host-glibc build.
+# file(1) words static builds as "statically linked" or "static-pie linked".
+file -b "$OPI_EXECUTABLE" | grep -q 'dynamically linked' \
+  && { echo "opi agent artifact is not statically linked: $OPI_EXECUTABLE" >&2; exit 2; }
 if [ -d "$OPI_SOURCE/.git" ]; then
   read -r observed_commit OPI_DIRTY OPI_DIRTY_FILES <<EOF
 $(git_identity "$OPI_SOURCE")
@@ -122,14 +140,14 @@ else
 fi
 CARGO_LOCK_SHA=$(sha256sum "$OPI_SOURCE/Cargo.lock" | cut -d' ' -f1)
 {
-  printf 'cargo build --locked --release -p opi-coding-agent --bin opi '
+  printf 'cargo build --locked --release --target %s -p opi-coding-agent --bin opi ' "$OPI_TARGET"
   printf -- '--message-format=json-render-diagnostics\n'
 } > "$OUT/opi-build-command.txt"
 python3 - "$OPI_EXECUTABLE" "$OPI_COMMIT" "$OPI_DIRTY" "$OPI_DIRTY_FILES" \
-  "$CARGO_LOCK_SHA" "$OPI_SOURCE" "$OUT" <<'PYEOF'
+  "$CARGO_LOCK_SHA" "$OPI_SOURCE" "$OUT" "$OPI_TARGET" <<'PYEOF'
 import hashlib, json, subprocess, sys
 
-executable, commit, dirty, dirty_files, lock_sha, source, out = sys.argv[1:8]
+executable, commit, dirty, dirty_files, lock_sha, source, out, target = sys.argv[1:9]
 def sha(path):
     return hashlib.sha256(open(path, "rb").read()).hexdigest()
 def run(cmd):
@@ -150,9 +168,7 @@ identity = {
     "checkout_dirty": dirty == "true",
     "checkout_dirty_files": int(dirty_files),
     "cargo_lock_sha256": lock_sha,
-    "target": next(
-        (line.split(": ", 1)[1].strip() for line in rustc_vv.splitlines()
-         if line.startswith("host: ")), ""),
+    "target": target,
     "profile": "release",
     "features": "workspace-default-features",
 }
