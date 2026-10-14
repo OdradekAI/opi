@@ -3860,6 +3860,30 @@ fn native_tb3_artifact_witness() {
     let material = std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL")
         .expect("OPI_EVAL_NATIVE_WITNESS_MATERIAL points at the resolved material manifest");
     let material = PathBuf::from(material);
+    let declared: serde_json::Value =
+        serde_json::from_slice(&fs::read(&material).unwrap()).unwrap();
+    let tasks = declared["benchmarks"]["terminal-bench-3.0"]["tasks"]
+        .as_object()
+        .unwrap();
+    assert_eq!(
+        tasks.len(),
+        1,
+        "the official witness selects one pinned task"
+    );
+    let (task_id, task) = tasks.iter().next().unwrap();
+    assert_eq!(task_id, "foodstuff-beta-activity");
+    let metadata: toml::Value =
+        fs::read_to_string(Path::new(task["task_package"].as_str().unwrap()).join("task.toml"))
+            .unwrap()
+            .parse()
+            .unwrap();
+    let artifacts = metadata["artifacts"].as_array().unwrap();
+    assert_eq!(artifacts.len(), 1);
+    let source = artifacts[0].as_str().unwrap();
+    assert_eq!(
+        source, "/app/results.txt",
+        "the pinned task's sole declared source"
+    );
     let mut collected_digests = Vec::new();
     for (case, agent, reward) in [("oracle-witness", "oracle", 1), ("nop-witness", "nop", 0)] {
         let report =
@@ -3876,7 +3900,7 @@ fn native_tb3_artifact_witness() {
             .collect();
         assert_eq!(collected.len(), 1, "{case}: {collected:?}");
         assert!(
-            collected[0].starts_with("native-collected: /app/evalbench/ "),
+            collected[0].starts_with(&format!("native-collected: {source} ")),
             "{case}: {collected:?}"
         );
         assert!(!collected[0].contains("canary"), "{case}: {collected:?}");
@@ -11844,6 +11868,767 @@ fn native_offline_regrade() {
 #[ignore = "requires verified three-family material/7 for Git/Python diagnostics and Docker"]
 fn native_offline_regrade_all_families() {
     native_offline_regrade_selected(native_witness_material::ALL_FAMILIES);
+}
+
+/// Actual admitted clients produce the saved artifacts; fresh cache-only
+/// grading consumes those bytes in both Harbor lifecycle families.
+#[test]
+#[ignore = "requires exact client material, verified selected-family native material and Docker"]
+fn native_real_client_offline_regrade() {
+    let client_path = PathBuf::from(std::env::var("OPI_EVAL_NATIVE_CLIENT_MATERIAL").unwrap());
+    let source_path = PathBuf::from(std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL").unwrap());
+    let client_bytes = fs::read(&client_path).unwrap();
+    let source_bytes = fs::read(&source_path).unwrap();
+    let clients: serde_json::Value = serde_json::from_slice(&client_bytes).unwrap();
+    let original: serde_json::Value = serde_json::from_slice(&source_bytes).unwrap();
+    let admitted = native_witness_material::admit_clients(&clients)
+        .expect("independently admitted current clients");
+    for product in ["opi", "pi"] {
+        assert_eq!(
+            original["agents"][product]["executable"]["path"],
+            clients[product]
+        );
+        assert_eq!(
+            original["agents"][product]["executable"]["sha256"],
+            sha256_hex(&fs::read(clients[product].as_str().unwrap()).unwrap())
+        );
+        assert_eq!(
+            original["agents"][product]["runtime_package"]["path"],
+            clients[format!("{product}_package")]
+        );
+        assert_eq!(
+            original["agents"][product]["runtime_package"]["manifest_sha256"],
+            clients[format!("{product}_package_manifest_sha256")]
+        );
+    }
+    let mut immutable_tasks = Vec::new();
+    for &family in native_witness_material::PHASE_FAMILIES {
+        for task in original["benchmarks"][family]["tasks"]
+            .as_object()
+            .unwrap()
+            .values()
+        {
+            let profile = PathBuf::from(task["profile"]["path"].as_str().unwrap());
+            let package = PathBuf::from(task["task_package"].as_str().unwrap());
+            immutable_tasks.push((
+                profile.clone(),
+                fs::read(profile).unwrap(),
+                package.clone(),
+                directory_manifest_digest(&package),
+            ));
+        }
+    }
+    let material_path = native_witness_material::real_client_regrade_material(&source_path);
+    let frozen = fs::read(&material_path).unwrap();
+    let material: serde_json::Value = serde_json::from_slice(&frozen).unwrap();
+    let evidence = material_path.parent().unwrap().join("real-client-regrade");
+    fs::create_dir_all(&evidence).unwrap();
+    admitted.retain(&evidence, &clients);
+    fs::write(evidence.join("source-clients.json"), &client_bytes).unwrap();
+    let fixture_identities = read_cleanup_json(
+        &material_path
+            .parent()
+            .unwrap()
+            .join("real-client-fixture-identities.json"),
+    );
+    let observer_sha = fixture_identities["observer_sha256"].as_str().unwrap();
+    let provider_log = PathBuf::from(material["provider"]["request_log"].as_str().unwrap());
+    let provider_before = fs::read(&provider_log).ok();
+    let neighbor = native_witness_material::Neighbor::start(&evidence);
+    let mut sources = 0;
+    let mut grading_requests = 0;
+    let mut setup_requests = 0;
+    let mut fresh_grades = 0;
+    let mut fresh_ids = std::collections::BTreeSet::new();
+    let mut receipts = Vec::new();
+    for (family, case, answer, reward, declared_source) in [
+        ("terminal-bench-2.1", "positive", "correct\n", 1, "/work/"),
+        (
+            "terminal-bench-3.0",
+            "negative",
+            "incorrect\n",
+            0,
+            "/app/evalbench/",
+        ),
+    ] {
+        let root = evidence.join(family);
+        fs::create_dir_all(&root).unwrap();
+        let staged = Staged {
+            _guard: tempfile::tempdir().unwrap(),
+            root: root.clone(),
+            material: material_path.clone(),
+        };
+        let model = format!("real-client-regrade-{case}");
+        let mut config = experiment_text(&staged, "pending")
+            .replace(
+                "version = \"0.84.3\"",
+                &format!("version = {:?}", clients["pi_version"].as_str().unwrap()),
+            )
+            .replace(
+                "version = \"0.1.0\"",
+                &format!("version = {:?}", clients["opi_version"].as_str().unwrap()),
+            )
+            .replace("fixture-task", case)
+            .replace("model = \"eval\"", &format!("model = {model:?}"))
+            .replace("http://127.0.0.1:48127/v1", "http://127.0.0.1:48127")
+            .replace("max_output_tokens = 4096", "max_output_tokens = 512");
+        if family == "terminal-bench-3.0" {
+            config = config.replace("revision = \"2.1\"", "revision = \"3.0\"");
+        }
+        let config_path = root.join("experiment.toml");
+        fs::write(&config_path, &config).unwrap();
+        let validation = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["validate", "--config"])
+                .arg(&config_path)
+                .arg("--native-material")
+                .arg(&material_path)
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env("HOME", &root)
+                .current_dir(&root),
+            &root,
+            "validate",
+        );
+        assert!(
+            validation.status.success(),
+            "{}",
+            String::from_utf8_lossy(&validation.stderr)
+        );
+        let validation_text = String::from_utf8(validation.stdout).unwrap();
+        let digest = validation_text
+            .split_whitespace()
+            .find_map(|word| word.strip_prefix("native_integrity="))
+            .unwrap();
+        fs::write(&config_path, config.replace("pending", digest)).unwrap();
+        let run = root.join("run");
+        let source = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["run", "--config"])
+                .arg(&config_path)
+                .arg("--root")
+                .arg(&run)
+                .arg("--native-material")
+                .arg(&material_path)
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env("HOME", &root)
+                .env("OPI_EVAL_SCRIPTED_KEY", "dummy-scripted-credential")
+                .current_dir(&root),
+            &root,
+            "source-run",
+        );
+        // The optional custom-model output control is unsupported, as in the
+        // provider/report witness; both native grades remain valid evidence.
+        assert_eq!(
+            source.status.code(),
+            Some(1),
+            "{family}: {} {}",
+            String::from_utf8_lossy(&source.stdout),
+            String::from_utf8_lossy(&source.stderr)
+        );
+        let source_report: serde_json::Value = serde_json::from_slice(&source.stdout).unwrap();
+        let publication = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["report", "--root"])
+                .arg(&run)
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env("HOME", &root)
+                .current_dir(&root),
+            &root,
+            "report-before",
+        );
+        assert!(publication.status.success());
+        let published: serde_json::Value = serde_json::from_slice(&publication.stdout).unwrap();
+        assert_eq!(published["coverage_counts"]["attempted"], 2);
+        assert_eq!(published["coverage_counts"]["valid"], 2);
+        assert_eq!(published["coverage_counts"]["invalid"], 0);
+        assert_eq!(published["coverage_counts"]["unexecuted"], 0);
+        assert_eq!(
+            published["coverage_counts"]["agent_failure"],
+            if reward == 0 { 2 } else { 0 }
+        );
+        let trials = source_report["trials"].as_array().unwrap();
+        assert_eq!(trials.len(), 2);
+        let expected_products = std::collections::BTreeMap::from([
+            ("trial-opi-native", "opi"),
+            ("trial-pi-native", "pi"),
+        ]);
+        let mut source_products = std::collections::BTreeMap::new();
+        for trial in trials {
+            assert!(
+                source_products
+                    .insert(
+                        trial["id"].as_str().unwrap(),
+                        trial["agent"]["product"].as_str().unwrap(),
+                    )
+                    .is_none(),
+                "duplicate source trial"
+            );
+        }
+        assert_eq!(
+            source_products, expected_products,
+            "exact source client/trial set for {family}"
+        );
+        let fixture = fixture_identities["fixtures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|fixture| fixture["family"] == family)
+            .unwrap();
+        assert_eq!(fixture["expected_answer"], answer);
+        assert_ne!(fixture["source_environment_baseline"], answer);
+        assert_ne!(
+            fixture["verifier_baseline"], answer,
+            "missing restoration must change the grader observation"
+        );
+        let mut source_logs = Vec::new();
+        for trial in trials {
+            sources += 1;
+            let id = trial["id"].as_str().unwrap();
+            let product = trial["agent"]["product"].as_str().unwrap();
+            assert_eq!(trial["status"], "sealed");
+            assert_eq!(trial["classification"]["class"], "graded-native");
+            assert_eq!(trial["classification"]["reward"], reward);
+            let collected = trial["agent"]["collected"].as_array().unwrap();
+            assert_eq!(collected.len(), 1);
+            assert_eq!(collected[0]["source"], declared_source);
+            let trial_root = run.join("trials").join(id);
+            let native = trial_root.join("bundle/artifacts/native");
+            let terminal = read_cleanup_json(&native.join("agent-terminal.json"));
+            assert_eq!(terminal["schema"], "opi-eval-native-agent-terminal/3");
+            assert_eq!(terminal["trial"], id);
+            assert_eq!(terminal["product"], product);
+            assert_eq!(
+                terminal["agent_executable_sha256"],
+                original["agents"][product]["executable"]["sha256"]
+            );
+            assert_eq!(terminal["runtime_preflight"]["status"], "passed");
+            assert_eq!(
+                terminal["runtime_preflight"]["runtime_package_manifest_sha256"],
+                material["agents"][product]["runtime_package"]["manifest_sha256"]
+            );
+            assert_eq!(
+                terminal["runtime_preflight"]["runtime_package_entrypoint"],
+                product
+            );
+            assert_eq!(
+                terminal["capture_helper_sha256"],
+                material["capture_helper"]["executable"]["sha256"]
+            );
+            assert_eq!(terminal["helper_preflight"]["status"], "passed");
+            assert_eq!(terminal["helper_preflight"]["exit_code"], 0);
+            assert_eq!(terminal["capture"]["status"], "sanitized");
+            assert_eq!(terminal["task_dispatched"], true);
+            assert_eq!(terminal["exit_code"], 0);
+            assert_eq!(terminal["timed_out"], false);
+            assert!(terminal["failure_kind"].is_null());
+            let events = fs::read_to_string(native.join("agent-stdout.log"))
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                .collect::<Vec<_>>();
+            let tool_events = events
+                .iter()
+                .filter_map(|event| {
+                    if product == "opi" {
+                        (event["event"]["type"] == "ToolExecutionStart").then_some(&event["event"])
+                    } else {
+                        (event["type"] == "tool_execution_start").then_some(event)
+                    }
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(tool_events.len(), 1, "one actual-client bash action");
+            assert_eq!(
+                tool_events[0]["args"]["command"],
+                format!(
+                    "printf '{}\\n' > {}/answer.txt; printf 'actual-client\\n' > /tmp/real-client-uncollected-marker",
+                    answer.trim_end(),
+                    declared_source.trim_end_matches('/')
+                )
+            );
+            let answers = walk_files_matching(&trial_root.join("verifier-trace"), "answer.txt")
+                .into_iter()
+                .filter(|path| path.to_string_lossy().contains("/artifacts/"))
+                .collect::<Vec<_>>();
+            assert_eq!(answers.len(), 1);
+            assert_eq!(fs::read(&answers[0]).unwrap(), answer.as_bytes());
+            let grader = walk_files_matching(&trial_root, "real-client-grader.json");
+            assert_eq!(grader.len(), 1);
+            let proof = read_cleanup_json(&grader[0]);
+            assert_eq!(proof["answer_sha256"], sha256_hex(answer.as_bytes()));
+            assert_eq!(proof["credential_absent"], true);
+            assert_eq!(proof["agent_stage_absent"], true);
+            if family == "terminal-bench-3.0" {
+                assert_eq!(proof["undeclared_absent"], true);
+                assert_eq!(
+                    proof["provider_connection_result"],
+                    proof["provider_connection_refused"]
+                );
+            } else {
+                assert_eq!(
+                    proof["undeclared_absent"], false,
+                    "the Agent wrote the unrelated marker"
+                );
+                assert_eq!(proof["provider_start_absent"], false);
+                assert_eq!(proof["provider_listener_absent"], false);
+                assert_eq!(proof["provider_connection_result"], 0);
+            }
+            let captures = walk_files_matching(&trial_root, "provider-requests.jsonl");
+            assert_eq!(captures.len(), 1);
+            let raw = fs::read(&captures[0]).unwrap();
+            let rows = std::str::from_utf8(&raw)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                .collect::<Vec<_>>();
+            assert!(raw.ends_with(b"\n") && rows.len() <= 64);
+            for (index, row) in rows.iter().enumerate() {
+                assert_eq!(row["seq"], index + 1);
+            }
+            let selected = rows
+                .iter()
+                .filter(|row| {
+                    row["model"] == model
+                        && matches!(
+                            row["path"].as_str(),
+                            Some("/chat/completions" | "/v1/chat/completions")
+                        )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(selected.len(), 2, "{family}/{product}: {rows:?}");
+            assert_eq!(selected[0]["tool_continuation"], false);
+            assert_eq!(selected[1]["tool_continuation"], true);
+            grading_requests += selected.len();
+            setup_requests += rows.len() - selected.len();
+            for row in &selected {
+                assert_eq!(row["schema"], "opi-eval-scripted-provider-log/1");
+                assert_eq!(row["method"], "POST");
+                assert_eq!(row["auth"], "bearer");
+                assert_eq!(row["status"], 200);
+                assert_eq!(row["response_script"], "scripted-turn-plan/1");
+                assert_eq!(row["request_sha256"].as_str().unwrap().len(), 64);
+                assert_wire_output_limit(row, "openai-completions", 512);
+            }
+            let sealed = fs::read(native.join("job-stdout.log")).unwrap();
+            let begin = format!("OPI-EVAL-REAL-REGRADE-PROVIDER-BEGIN {observer_sha}\n");
+            let end = format!("OPI-EVAL-REAL-REGRADE-PROVIDER-END {observer_sha}\n");
+            let starts = sealed
+                .windows(begin.len())
+                .enumerate()
+                .filter_map(|(offset, bytes)| (bytes == begin.as_bytes()).then_some(offset))
+                .collect::<Vec<_>>();
+            assert_eq!(starts.len(), 1);
+            let body = &sealed[starts[0] + begin.len()..];
+            let split = body.iter().position(|byte| *byte == b'\n').unwrap();
+            let provenance: serde_json::Value = serde_json::from_slice(&body[..split]).unwrap();
+            assert_eq!(
+                provenance["schema"],
+                "opi-eval-real-regrade-provider-capture/1"
+            );
+            assert_eq!(provenance["observer_sha256"], observer_sha);
+            assert_eq!(
+                provenance["provider_sha256"],
+                fixture_identities["provider_sha256"]
+            );
+            assert_eq!(provenance["trial"], id);
+            assert_eq!(provenance["product"], product);
+            assert_eq!(provenance["job"], trial["verifier"]["binding"]["job"]);
+            assert_eq!(
+                provenance["native_trial"],
+                trial["verifier"]["binding"]["trial"]
+            );
+            assert_eq!(provenance["sha256"], sha256_hex(&raw));
+            assert_eq!(provenance["bytes"], raw.len());
+            assert_eq!(provenance["rows"], rows.len());
+            assert_eq!(provenance["bootstrap"]["product"], product);
+            assert_eq!(
+                provenance["bootstrap"]["agent_executable_sha256"],
+                terminal["agent_executable_sha256"]
+            );
+            assert_eq!(
+                provenance["bootstrap"]["signal"],
+                format!("/opi-eval-agent/{product}/runtime/{product}")
+            );
+            assert!(body[split + 1..].starts_with(&raw));
+            assert!(body[split + 1 + raw.len()..].starts_with(end.as_bytes()));
+            let owned = read_cleanup_json(&trial_root.join("integration/owned-resources.json"));
+            assert_eq!(owned["schema"], "opi-eval-owned-resources/2");
+            assert_eq!(owned["trial"], id);
+            assert!(owned["error"].is_null());
+            assert!(
+                owned["containers"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|container| container["status"] == "removed")
+            );
+            assert!(
+                owned["capture_helpers"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|helper| helper["removed"] == true)
+            );
+            let directories = owned["compose_working_directories"].as_array().unwrap();
+            assert_eq!(directories.len(), 2);
+            for (index, directory) in directories.iter().enumerate() {
+                let remaining = native_witness_material::run_cli(
+                    Command::new("/usr/bin/docker")
+                        .args(["ps", "--all", "--quiet", "--filter"])
+                        .arg(format!(
+                            "label=com.docker.compose.project.working_dir={}",
+                            directory.as_str().unwrap()
+                        )),
+                    &root,
+                    &format!("source-docker-{product}-{index}"),
+                );
+                assert!(remaining.status.success() && remaining.stdout.is_empty());
+            }
+            source_logs.push((captures[0].clone(), raw));
+        }
+        let before = directory_manifest_digest(&run);
+        let out = root.join("regrade");
+        let fresh = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["regrade", "--root"])
+                .arg(&run)
+                .arg("--native-material")
+                .arg(&material_path)
+                .arg("--out")
+                .arg(&out)
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env("OPENAI_API_KEY", "synthetic-real-regrade-canary")
+                .env("ANTHROPIC_API_KEY", "synthetic-real-regrade-canary")
+                .env("ACCESS_TOKEN", "synthetic-real-regrade-canary")
+                .env("SERVICE_SECRET", "synthetic-real-regrade-canary")
+                .current_dir(&root),
+            &root,
+            "regrade",
+        );
+        assert_eq!(
+            fresh.status.code(),
+            Some(0),
+            "{family}: {} {}",
+            String::from_utf8_lossy(&fresh.stdout),
+            String::from_utf8_lossy(&fresh.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&fresh.stdout).unwrap();
+        assert_eq!(report["schema"], "opi-eval-native-regrade/2");
+        assert_eq!(report["outcome"], "regraded");
+        assert!(report["rejections"].as_array().unwrap().is_empty());
+        let derived = report["trials"].as_array().unwrap();
+        assert_eq!(derived.len(), 2);
+        let mut derived_trials = std::collections::BTreeSet::new();
+        for trial in derived {
+            assert!(
+                derived_trials.insert(trial["trial"].as_str().unwrap()),
+                "duplicate fresh source trial"
+            );
+        }
+        assert_eq!(
+            derived_trials,
+            source_products
+                .keys()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>(),
+            "fresh grades cover each source exactly once for {family}"
+        );
+        for trial in derived {
+            fresh_grades += 1;
+            assert_eq!(trial["reward"], reward);
+            let id = trial["trial"].as_str().unwrap();
+            let source_trial = trials.iter().find(|source| source["id"] == id).unwrap();
+            let verifier_id = trial["verifier_id"].as_str().unwrap();
+            assert!(fresh_ids.insert(verifier_id.to_owned()));
+            assert_ne!(
+                verifier_id,
+                source_trial["verifier"]["binding"]["job"].as_str().unwrap()
+            );
+            assert_ne!(
+                verifier_id,
+                source_trial["verifier"]["binding"]["trial"]
+                    .as_str()
+                    .unwrap()
+            );
+            let record = read_cleanup_json(&out.join(trial["record"].as_str().unwrap()));
+            let request_path = out.join(id).join("request.json");
+            let request_bytes = fs::read(&request_path).unwrap();
+            let request: serde_json::Value = serde_json::from_slice(&request_bytes).unwrap();
+            assert_eq!(request["schema"], "opi-eval-verifier-request/1");
+            assert_eq!(request["verifier_id"], verifier_id);
+            assert_eq!(request["runner"], "harbor");
+            assert_eq!(request["family"], family);
+            assert_eq!(request["source"]["trial"], id);
+            assert_eq!(request["source"]["product"], expected_products[id]);
+            assert_eq!(record["schema"], "opi-eval-regrade-record/2");
+            assert_eq!(record["source"]["trial"], id);
+            assert_eq!(
+                record["source"]["bundle_identity"],
+                trial["bundle_identity"]
+            );
+            assert_eq!(
+                record["source"]["original_result_sha256"],
+                sha256_hex(
+                    &fs::read(
+                        run.join("trials")
+                            .join(id)
+                            .join("bundle/artifacts/native/trial-result.json")
+                    )
+                    .unwrap()
+                )
+            );
+            assert_eq!(record["fresh"]["verifier_id"], verifier_id);
+            assert_eq!(record["fresh"]["reward"], reward);
+            assert_eq!(record["request_sha256"], sha256_hex(&request_bytes));
+            assert_eq!(
+                request["source"]["bundle_identity"],
+                record["source"]["bundle_identity"]
+            );
+            assert_eq!(
+                request["source"]["original_result_sha256"],
+                record["source"]["original_result_sha256"]
+            );
+            assert_eq!(request["restored"], record["source"]["collected"]);
+            assert_eq!(
+                request["environment_mode"],
+                if family == "terminal-bench-3.0" {
+                    "separate"
+                } else {
+                    "shared"
+                }
+            );
+            assert_eq!(
+                record["fresh"]["verifier_executable_sha256"],
+                material["benchmarks"][family]["verifier_executable"]["sha256"]
+            );
+            for field in ["source", "sha256"] {
+                assert_eq!(
+                    record["source"]["collected"][0][field],
+                    source_trial["agent"]["collected"][0][field]
+                );
+            }
+            let trace = out.join(id).join("verifier-trace");
+            assert_eq!(request["trace_root"], trace.to_string_lossy().as_ref());
+            let observation = read_cleanup_json(&trace.join("observation.json"));
+            assert_eq!(observation["schema"], "opi-eval-verifier-observation/1");
+            assert_eq!(observation["verifier_id"], verifier_id);
+            assert_eq!(observation["request_sha256"], sha256_hex(&request_bytes));
+            assert_eq!(observation["restored"], request["restored"]);
+            assert_eq!(
+                observation["build_context_sha256"],
+                request["build_context_sha256"]
+            );
+            assert_eq!(observation["cleanup_confirmed"], true);
+            assert!(observation["failure"].is_null());
+            assert_eq!(record["fresh"]["observation"], observation);
+            assert_eq!(observation["raw_result"]["path"], "native-result.json");
+            let native_bytes = fs::read(trace.join("native-result.json")).unwrap();
+            assert_eq!(
+                observation["raw_result"]["sha256"],
+                sha256_hex(&native_bytes)
+            );
+            let native_result: serde_json::Value = serde_json::from_slice(&native_bytes).unwrap();
+            assert_eq!(record["fresh"]["native_result"], native_result);
+            assert_eq!(
+                native_result["rewards"]["reward"].as_f64(),
+                Some(f64::from(reward))
+            );
+            let environment = read_cleanup_json(&out.join(id).join("env.json"));
+            assert_eq!(environment["schema"], "opi-eval-native-regrade-env/2");
+            assert_eq!(environment["credential_free"], true);
+            assert_eq!(environment["projected"]["UV_OFFLINE"], "1");
+            assert_eq!(environment["projected"]["OPI_EVAL_REGRADE"], "1");
+            let argv = environment["argv"].as_array().unwrap();
+            assert_eq!(argv.len(), 8);
+            assert_eq!(
+                &argv[1..6],
+                &[
+                    serde_json::json!("run"),
+                    serde_json::json!("--locked"),
+                    serde_json::json!("--offline"),
+                    serde_json::json!("python"),
+                    serde_json::json!("-m")
+                ]
+            );
+            assert_eq!(
+                argv[0],
+                material["benchmarks"][family]["verifier_executable"]["path"]
+            );
+            assert_eq!(argv[6], "opi_eval_harbor");
+            assert_eq!(argv[7], request_path.to_string_lossy().as_ref());
+            assert!(
+                environment["projected"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .all(|key| !["KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"]
+                        .iter()
+                        .any(|part| key.to_ascii_uppercase().contains(part)))
+            );
+            assert!(walk_files(&trace.join("agent")).is_empty());
+            assert!(trace.join("verifier/verifier-start").is_file());
+            assert!(trace.join("verifier/verifier-complete").is_file());
+            let proofs = walk_files_matching(&trace, "real-client-grader.json");
+            assert_eq!(proofs.len(), 1);
+            let proof = read_cleanup_json(&proofs[0]);
+            assert_eq!(proof["answer_sha256"], sha256_hex(answer.as_bytes()));
+            assert_ne!(
+                proof["answer_sha256"],
+                sha256_hex(fixture["verifier_baseline"].as_str().unwrap().as_bytes())
+            );
+            assert_eq!(
+                proof["provider_connection_result"],
+                proof["provider_connection_refused"]
+            );
+            for predicate in [
+                "undeclared_absent",
+                "agent_stage_absent",
+                "provider_start_absent",
+                "provider_listener_absent",
+                "credential_absent",
+            ] {
+                assert_eq!(proof[predicate], true, "{family}/{id}: {proof}");
+            }
+            for name in [
+                "provider-start.json",
+                "provider-requests.jsonl",
+                "agent-terminal.json",
+                "opi-eval-terminal.json",
+                "handoff.json",
+                "trajectory.json",
+            ] {
+                assert!(
+                    walk_files_matching(&out.join(id), name).is_empty(),
+                    "unexpected Agent/provider evidence: {name}"
+                );
+            }
+            let commands = fs::read_to_string(trace.join("opi-eval-commands.jsonl")).unwrap();
+            assert!(!commands.is_empty());
+            assert!(
+                !commands.contains("/opi-eval-agent")
+                    && !commands.contains("__native-capture")
+                    && !commands.contains("provider-wrapper.py")
+            );
+            let settlement = read_cleanup_json(&out.join(id).join("settlement.json"));
+            assert_eq!(settlement["containers_removed"], true);
+            assert_eq!(settlement["verifier_id"], verifier_id);
+            assert_eq!(settlement["exit"], "Exited { code: 0 }");
+            let remaining = native_witness_material::run_cli(
+                Command::new("/usr/bin/docker")
+                    .args(["ps", "--all", "--quiet", "--filter"])
+                    .arg(format!(
+                        "label=com.docker.compose.project.working_dir={}",
+                        settlement["compose_working_directory"].as_str().unwrap()
+                    )),
+                &root,
+                &format!("fresh-docker-{id}"),
+            );
+            assert!(remaining.status.success() && remaining.stdout.is_empty());
+        }
+        assert!(!walk_text(&out).contains("synthetic-real-regrade-canary"));
+        let after_report = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["report", "--root"])
+                .arg(&run)
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env("HOME", &root)
+                .current_dir(&root),
+            &root,
+            "report-after",
+        );
+        assert!(after_report.status.success());
+        assert_eq!(
+            after_report.stdout, publication.stdout,
+            "source score/report changed"
+        );
+        let verify = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["verify", "--root"])
+                .arg(&run)
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .current_dir(&root),
+            &root,
+            "verify-after",
+        );
+        assert!(verify.status.success());
+        assert_eq!(directory_manifest_digest(&run), before);
+        for (log, bytes) in source_logs {
+            assert_eq!(fs::read(log).unwrap(), bytes, "source provider log changed");
+        }
+        let contained = run.join("missing-parent/regrade");
+        let refused = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["regrade", "--root"])
+                .arg(&run)
+                .arg("--native-material")
+                .arg(&material_path)
+                .arg("--out")
+                .arg(&contained),
+            &root,
+            "source-contained-refusal",
+        );
+        assert_eq!(refused.status.code(), Some(2));
+        assert!(!contained.exists());
+        let mut missing_cache = material.clone();
+        missing_cache["benchmarks"][family]["verifier_executable"]["path"] = root
+            .join("absent-cached-runner")
+            .to_string_lossy()
+            .into_owned()
+            .into();
+        let missing_path = root.join("missing-cache-material.json");
+        fs::write(
+            &missing_path,
+            serde_json::to_vec_pretty(&missing_cache).unwrap(),
+        )
+        .unwrap();
+        let missing_out = root.join("missing-cache-out");
+        let refused = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["regrade", "--root"])
+                .arg(&run)
+                .arg("--native-material")
+                .arg(&missing_path)
+                .arg("--out")
+                .arg(&missing_out),
+            &root,
+            "missing-cache-refusal",
+        );
+        assert_eq!(refused.status.code(), Some(2));
+        assert!(!missing_out.exists());
+        assert_eq!(directory_manifest_digest(&run), before);
+        assert_eq!(fs::read(&material_path).unwrap(), frozen);
+        neighbor.assert_survives(&root);
+        receipts.push(serde_json::json!({"family": family, "source_directory_sha256": before, "source_trials": source_products, "fresh_trials": derived_trials, "verifier_baseline": fixture["verifier_baseline"], "restored_answer_sha256": sha256_hex(answer.as_bytes()), "reward": reward, "fresh": report}));
+    }
+    assert_eq!(sources, 4);
+    assert_eq!(grading_requests, 8);
+    assert_eq!(fresh_grades, 4);
+    assert_eq!(fresh_ids.len(), 4);
+    assert_eq!(fs::read(&provider_log).ok(), provider_before);
+    assert_eq!(fs::read(&source_path).unwrap(), source_bytes);
+    assert_eq!(fs::read(&client_path).unwrap(), client_bytes);
+    assert_eq!(fs::read(&material_path).unwrap(), frozen);
+    for (profile, bytes, package, digest) in immutable_tasks {
+        assert_eq!(fs::read(profile).unwrap(), bytes);
+        assert_eq!(directory_manifest_digest(&package), digest);
+    }
+    admitted.recheck(&clients);
+    neighbor.assert_survives(&evidence);
+    fs::write(evidence.join("counts.json"), serde_json::to_vec_pretty(&serde_json::json!({
+        "diagnostic": true, "source_trials": sources, "source_grading_loop_requests": grading_requests,
+        "source_setup_probe_requests": setup_requests, "fresh_graded_trials": fresh_grades,
+        "client_material_sha256": sha256_hex(&client_bytes), "source_material_sha256": sha256_hex(&source_bytes),
+        "material_sha256": sha256_hex(&frozen), "families": receipts,
+    })).unwrap()).unwrap();
+    eprintln!(
+        "actual-client offline regrade: 4 sources, 8 grading-loop requests, {setup_requests} setup/probe requests, 4 fresh grades; evidence {}",
+        evidence.display()
+    );
 }
 
 fn native_offline_regrade_selected(families: &[&'static str]) {

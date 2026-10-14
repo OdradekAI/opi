@@ -389,6 +389,281 @@ pub(super) fn controlled_material_selected(
     path
 }
 
+/// Private artifact fixtures retain the supplied actual clients and runners.
+/// The listener starts only after Harbor stages an admitted Agent executable;
+/// verifier-only startup therefore creates neither a listener nor Agent logs.
+pub(super) fn real_client_regrade_material(input: &Path) -> PathBuf {
+    let original_bytes = fs::read(input).unwrap();
+    let original: serde_json::Value = serde_json::from_slice(&original_bytes).unwrap();
+    let path = controlled_material_selected(input, false, PHASE_FAMILIES);
+    let root = path.parent().unwrap();
+    let mut material: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    material["agents"] = original["agents"].clone();
+    for product in ["opi", "pi"] {
+        material["agents"][product]
+            .as_object_mut()
+            .unwrap()
+            .remove("output_control_evidence");
+    }
+    assert_eq!(material["capture_helper"], original["capture_helper"]);
+    let provider = Path::new(material["provider"]["script"]["path"].as_str().unwrap());
+    let provider_bytes = fs::read(provider).unwrap();
+    assert_eq!(
+        material["provider"]["script"]["sha256"],
+        sha256_hex(&provider_bytes)
+    );
+    assert_eq!(
+        provider_bytes,
+        fs::read(manifest_dir().join("scripts/scripted-provider.py")).unwrap()
+    );
+    let provider_sha = sha256_hex(&provider_bytes);
+    let bootstrap = r#"import hashlib, json, subprocess, sys, time
+from pathlib import Path
+command = subprocess.Popen(sys.argv[1:] or ['sleep', 'infinity'])
+provider = None
+deadline = time.monotonic() + 150
+try:
+    while command.poll() is None and time.monotonic() < deadline:
+        if provider is None:
+            for product in ('opi', 'pi'):
+                executable = Path('/opi-eval-agent')/product/'runtime'/product
+                if executable.is_file() and (executable.parent.parent/'capture-helper').is_file():
+                    logs = Path('/logs/agent')
+                    logs.mkdir(parents=True, exist_ok=True)
+                    (logs/'provider-start.json').write_text(json.dumps({
+                        'schema': 'opi-eval-real-regrade-provider-start/1',
+                        'product': product, 'agent_executable_sha256': hashlib.sha256(executable.read_bytes()).hexdigest(),
+                        'signal': str(executable)}))
+                    with (logs/'provider-listener.log').open('wb') as output:
+                        provider = subprocess.Popen([sys.executable,
+                            '/opi-eval-fixture/provider-wrapper.py', '/opi-eval-fixture/scripted-provider.py',
+                            '--listen', '127.0.0.1:48127', '--request-log', str(logs/'provider-requests.jsonl')],
+                            stdout=output, stderr=subprocess.STDOUT)
+                    break
+        elif provider.poll() is not None:
+            raise RuntimeError('private provider stopped before task settlement')
+        time.sleep(0.01)
+finally:
+    for child in (provider, command):
+        if child is None:
+            continue
+        if child.poll() is None:
+            child.terminate()
+        try:
+            child.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=2)
+"#;
+    let observer_body = r#"import atexit, hashlib, json, os, stat, sys
+from pathlib import Path
+def _read(path, cap, root):
+    if not path.is_relative_to(root):
+        raise ValueError('outside owned job')
+    for parent in (path.parent, *path.parent.parents):
+        entry = parent.lstat()
+        if not stat.S_ISDIR(entry.st_mode) or stat.S_ISLNK(entry.st_mode):
+            raise ValueError('unsafe parent')
+        if parent == root:
+            break
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        entry = os.fstat(descriptor)
+        if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1 or entry.st_size > cap:
+            raise ValueError('unsafe capture')
+        chunks = []
+        size = 0
+        while size <= cap:
+            part = os.read(descriptor, min(8192, cap + 1 - size))
+            if not part:
+                break
+            chunks.append(part)
+            size += len(part)
+        if size > cap:
+            raise ValueError('capture overflow')
+        return b''.join(chunks)
+    finally:
+        os.close(descriptor)
+def _retain():
+    try:
+        root = Path.cwd()
+        paths = list(root.glob('jobs/*/*/agent/provider-requests.jsonl'))
+        if len(paths) != 1:
+            return
+        path = paths[0]
+        raw = _read(path, 128 * 1024, root)
+        rows = raw.decode('utf-8').splitlines()
+        if not 1 <= len(rows) <= 64 or not raw.endswith(b'\n'):
+            return
+        if any(json.loads(row).get('schema') != 'opi-eval-scripted-provider-log/1' for row in rows):
+            return
+        terminal = json.loads(_read(path.with_name('opi-eval-terminal.json'), 64 * 1024, root))
+        relative = path.relative_to(root).parts
+        observer_sha = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        metadata = {'schema': 'opi-eval-real-regrade-provider-capture/1',
+            'observer_sha256': observer_sha, 'provider_sha256': '$PROVIDER_SHA',
+            'job': relative[1], 'native_trial': relative[2],
+            'trial': terminal['trial'], 'product': terminal['product'],
+            'bootstrap': json.loads(_read(path.with_name('provider-start.json'), 64 * 1024, root)),
+            'bytes': len(raw), 'rows': len(rows), 'sha256': hashlib.sha256(raw).hexdigest()}
+        output = sys.stdout.buffer
+        output.write(('\nOPI-EVAL-REAL-REGRADE-PROVIDER-BEGIN ' + observer_sha + '\n').encode())
+        output.write((json.dumps(metadata, sort_keys=True, separators=(',', ':')) + '\n').encode())
+        output.write(raw)
+        output.write(('OPI-EVAL-REAL-REGRADE-PROVIDER-END ' + observer_sha + '\n').encode())
+        output.flush()
+    except Exception:
+        return
+atexit.register(_retain)
+"#
+    .replace("$PROVIDER_SHA", &provider_sha);
+    let observer = root.join("observer/sitecustomize.py");
+    fs::create_dir_all(observer.parent().unwrap()).unwrap();
+    fs::write(&observer, &observer_body).unwrap();
+    let mut lock: serde_json::Value = serde_json::from_slice(
+        &fs::read(material["static_lock"]["path"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    let mut fixture_identities = Vec::new();
+    for (family, case, answer, work) in [
+        ("terminal-bench-2.1", "positive", "correct", "/work"),
+        (
+            "terminal-bench-3.0",
+            "negative",
+            "incorrect",
+            "/app/evalbench",
+        ),
+    ] {
+        for field in ["verifier_executable", "runner_project", "verifier_env"] {
+            assert_eq!(
+                material["benchmarks"][family][field],
+                original["benchmarks"][family][field]
+            );
+        }
+        let project = root.join("corpora").join(family);
+        let task = project.join("tasks").join(case);
+        fs::write(
+            task.join("instruction.md"),
+            "Use bash to write the requested answer.txt artifact, then finish.\n",
+        )
+        .unwrap();
+        let context = task.join("environment");
+        let wrapper = format!(
+            r#"import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location('scripted', sys.argv[1])
+provider = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(provider)
+provider.TOOL_ARGUMENTS = json.dumps({{'command': "printf '{answer}\\n' > {work}/answer.txt; printf 'actual-client\\n' > /tmp/real-client-uncollected-marker"}})
+sys.argv = [sys.argv[1], *sys.argv[2:]]
+sys.exit(provider.main())
+"#
+        );
+        fs::write(context.join("scripted-provider.py"), &provider_bytes).unwrap();
+        fs::write(context.join("provider-wrapper.py"), &wrapper).unwrap();
+        fs::write(context.join("provider-bootstrap.py"), bootstrap).unwrap();
+        let dockerfile = format!(
+            "FROM {IMAGE}\nWORKDIR {work}\nRUN printf 'initial\\n' > answer.txt\nCOPY scripted-provider.py provider-wrapper.py provider-bootstrap.py /opi-eval-fixture/\nENTRYPOINT [\"python3\", \"/opi-eval-fixture/provider-bootstrap.py\"]\nHEALTHCHECK --interval=1s --timeout=2s --start-period=1s --retries=30 CMD [\"python3\", \"-c\", \"pass\"]\n"
+        );
+        fs::write(context.join("Dockerfile"), &dockerfile).unwrap();
+        let verifier_dockerfile_path = task.join("tests/Dockerfile");
+        let verifier_dockerfile = fs::read_to_string(&verifier_dockerfile_path).unwrap();
+        let verifier_baseline = if family == "terminal-bench-3.0" {
+            let old = "RUN printf 'incorrect\\n' > answer.txt\n";
+            assert_eq!(verifier_dockerfile.matches(old).count(), 1);
+            fs::write(
+                &verifier_dockerfile_path,
+                verifier_dockerfile.replace(old, "RUN printf 'correct\\n' > answer.txt\n"),
+            )
+            .unwrap();
+            "correct\n"
+        } else {
+            "initial\n"
+        };
+        let verifier = task.join("tests/test.sh");
+        let original_verifier = fs::read_to_string(&verifier).unwrap();
+        let canary_sha = sha256_hex(b"synthetic-real-regrade-canary");
+        let dummy_sha = sha256_hex(b"dummy-scripted-credential");
+        let proof = format!(
+            r#"
+import errno, hashlib, os, socket
+connection = socket.socket()
+connection.settimeout(1)
+try:
+    connection_result = connection.connect_ex(('127.0.0.1', 48127))
+finally:
+    connection.close()
+assert connection_result in (0, errno.ECONNREFUSED), connection_result
+proof = {{'schema': 'opi-eval-real-regrade-grader/1',
+    'answer_sha256': hashlib.sha256(answer.read_bytes()).hexdigest(),
+    'undeclared_absent': not Path('/tmp/real-client-uncollected-marker').exists(),
+    'agent_stage_absent': not Path('/opi-eval-agent').exists() or not any(Path('/opi-eval-agent').iterdir()),
+    'provider_start_absent': not Path('/logs/agent/provider-start.json').exists(),
+    'provider_connection_result': connection_result,
+    'provider_connection_refused': errno.ECONNREFUSED,
+    'provider_listener_absent': connection_result == errno.ECONNREFUSED,
+    'credential_absent': all(hashlib.sha256(value.encode()).hexdigest() not in ['{canary_sha}', '{dummy_sha}'] for value in os.environ.values())}}
+(logs/'real-client-grader.json').write_text(json.dumps(proof))
+assert proof['credential_absent'] and proof['agent_stage_absent'], proof
+{separate_assert}
+"#,
+            separate_assert = if family == "terminal-bench-3.0" {
+                "assert proof['undeclared_absent'] and proof['provider_start_absent'] and proof['provider_listener_absent'], proof"
+            } else {
+                ""
+            }
+        );
+        fs::write(&verifier, format!("{original_verifier}{proof}")).unwrap();
+        let (corpus, pin) = fixture_corpus_pin(&project, family);
+        material["benchmarks"][family]["corpus"] = corpus;
+        let subject = lock["subjects"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|subject| subject["id"] == family)
+            .unwrap();
+        for field in ["commit", "tasks_tree"] {
+            subject[field] = pin[field].clone();
+        }
+        if family == "terminal-bench-3.0" {
+            fixture_git(&project, &["tag", "v0-real-client-regrade"]);
+            subject["tag"] = "v0-real-client-regrade".into();
+        }
+        let existing = &material["benchmarks"][family]["tasks"][case];
+        let profile = PathBuf::from(existing["profile"]["path"].as_str().unwrap());
+        let package = PathBuf::from(existing["task_package"].as_str().unwrap());
+        copy_dir(&task, &package);
+        if family == "terminal-bench-3.0" {
+            let mut doc: toml::Value = fs::read_to_string(&profile).unwrap().parse().unwrap();
+            doc["identity"]["tag"] = "v0-real-client-regrade".into();
+            fs::write(&profile, toml::to_string(&doc).unwrap()).unwrap();
+        }
+        let binding = fixture_task_binding(&project, case, &package, &profile);
+        material["benchmarks"][family]["tasks"] = serde_json::json!({case: binding});
+        let inherited = original["benchmarks"][family]["verifier_env"]["PYTHONPATH"]
+            .as_str()
+            .filter(|path| !path.is_empty());
+        let pythonpath = inherited.map_or_else(
+            || observer.parent().unwrap().display().to_string(),
+            |path| format!("{}:{path}", observer.parent().unwrap().display()),
+        );
+        material["benchmarks"][family]["verifier_env"]["PYTHONPATH"] = pythonpath.into();
+        fixture_identities.push(serde_json::json!({"family": family, "task": case, "expected_answer": format!("{answer}\n"), "source_environment_baseline": "initial\n", "verifier_baseline": verifier_baseline, "verifier_dockerfile_sha256": sha256_hex(&fs::read(&verifier_dockerfile_path).unwrap()), "wrapper_sha256": sha256_hex(wrapper.as_bytes()), "environment_sha256": sha256_hex(dockerfile.as_bytes()), "binding": material["benchmarks"][family]["tasks"][case]}));
+    }
+    let lock_path = PathBuf::from(material["static_lock"]["path"].as_str().unwrap());
+    fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    material["static_lock"]["sha256"] = sha256_hex(&fs::read(&lock_path).unwrap()).into();
+    fs::write(&path, serde_json::to_vec_pretty(&material).unwrap()).unwrap();
+    fs::write(root.join("real-client-fixture-identities.json"), serde_json::to_vec_pretty(&serde_json::json!({
+        "diagnostic": true, "source_material_sha256": sha256_hex(&original_bytes),
+        "material_sha256": sha256_hex(&fs::read(&path).unwrap()), "provider_sha256": provider_sha,
+        "bootstrap_sha256": sha256_hex(bootstrap.as_bytes()), "observer_sha256": sha256_hex(observer_body.as_bytes()),
+        "image": IMAGE, "actual_agents": material["agents"], "fixtures": fixture_identities,
+    })).unwrap()).unwrap();
+    assert_eq!(fs::read(input).unwrap(), original_bytes);
+    path
+}
+
 pub(super) fn diagnostic_client_script(product: &str) -> String {
     r#"#!/usr/bin/env python3
 import json, subprocess, sys, time

@@ -2,6 +2,78 @@
 
 [English](phase19-local-native-acceptance.md)
 
+## 当前提供证据与 apply 结果（2026-10-14）
+
+**操作员证据：已验证。原生闭合批次 B1：Not closed。** 当前注册准则要求
+TB2.1/TB3 共四条真实试跑；DeepSWE AC-005/D04 为 deferred/reserved。
+当前原始证据根为 `/home/luiz/phase19-acceptance-r2`，保留的四试跑视图位于
+`/mnt/c/Users/Luiz/AppData/Local/Temp/opi-phase19-evidence-continuation-lcprjvy7/operator-f2-evidence`，
+manifest SHA-256 为
+`936e722ae9d2c54a5940a9d83c48a5db10eeceab7bccf1a913d4f01ace787e14`。
+下方六试跑历史记录仍归属于原日期与合同，不决定当前范围或原生闭合。
+
+本次源码绑定 Companion 对应已提交源码
+`9ef3768968a559e0bc0366c1f3c66752d499595a`（test-only apply 未改变生产字节），
+SHA-256 为
+`1406e98d638354899fab559d24a75dc313f1bf47448f08b48dd9806253f258e2`。
+locked/offline musl 构建、公开验收校验器、两个家族的 verify、每家族两次 report
+重建，以及对两份 Opi 捕获穷尽的制品审计，全部 exit 0；重复报告字节相同。
+真实 pi/Opi reward 分别为 TB2.1 1/1、TB3 1/0，完成工具对数分别为 13/7、61/75；
+两个配对均 comparable。本次 apply 未授权或执行新的真实 provider 试跑。
+
+新命令、原始退出码与原始哈希保留于 `/home/luiz/opi-phase19-apply-c368e42d5144468ea33b93d233c25c6d/operator-verification`，
+`receipts.json` 绑定各次调用。已重新核对视图声明的 117 个保留哈希。
+原始尝试单独保留：28 条已封存试跑、24 条非主试跑、六条范围外 DeepSWE
+试跑；源 bundle 与原始分数均是保留对象。
+
+## 当前原生执行与具体阻塞
+
+批准计划摘要为
+`571c76317637ab7acca5661f3c381dd8e7482648a9b8a8008d40c42e2a90e237`，
+绑定 live audit index
+`23b39dcdc52f71dc1b17b4f87678f39aa3d86289c3753eb0b5f55373ad82873e`。
+独立目录的公开 doctor/prepare、确切 Opi 0.8.2/pi 1.0.4 运行包与构建回执、
+Harbor 0.22.0/uv 0.9.7、当前 capture helper 和钉定 TB2.1/TB3 输入保留于
+`/home/luiz/opi-phase19-apply-c368e42d5144468ea33b93d233c25c6d`。最终所选家族 material/7 合并输入摘要为 `c29d45781e10a271df1399edc964b5baf4bb6b212c1634b6a9fc07cb3a66274a`。
+任务、基础镜像、构建上下文、模式、argv 和输出镜像身份保留于
+`image-preparation` 与 `image-preparation-sidecar`。
+
+完整清单含 138 个测试、14 个 ignored 原生测试；选中了十二个 exact 原生过滤器。
+串行派发在第二项失败后停止。当前所选执行为：
+
+| 确切过滤器 | Cargo exit | 完整 transcript SHA-256 |
+|---|---:|---|
+| `native_tb21_artifact_witness` | 0 | `87cefd490d1ec5617b560113e1798a75421603f09bb6d5d235e5f13b813e2ee5` |
+| `native_tb3_artifact_witness` | 101 | `52026101f4423d2d99fc4838676e5a642dbd2ff573a05867906862e5329cf829` |
+
+TB2.1 实际执行一个 libtest case，以及官方 oracle/nop 两个作业，原生 reward
+为 1/0。防空跑校验器确认一项 passed、零 failed、零 ignored、137 项 filtered。
+每次调用保存完整独立 stdout/stderr 及其哈希；完整 transcript 逐字节拼接两条
+流，不裁剪输出。更早的合并流成功运行与计数器拒绝记录也单独保留。
+
+TB3 实际执行一个 libtest case 和两个官方作业。Oracle 评分 1，并收集任务唯一
+声明的 `/app/results.txt`；测试现绑定这一确切规范声明。Nop 在上游评分 0，
+但未提交声明文件，生产 reader 因而以
+`native-binding-declared-artifact-missing` 拒绝该结果，case exit 101。
+要求的有效错误制品观察与不同 collected digest 仍缺失。原始基线回执还保留了
+更早的 runner 缓存准备拒绝，以及实际复现的旧 `/app/evalbench/` 断言失败。
+
+当前原生 conformance 仅接受 oracle-witness/nop-witness。把缺失文件当作有效
+制品会违背 AC-002 的缺失/替换制品拒绝准则。可提交确切错误制品的见证需在
+批准的四路径测试/文档范围之外重新规划；生产代码、公开 schema、任务脚本、
+账本、lockfile 与客户端运行包均未编辑。停止后未执行其余十个原生过滤器，
+包括新加入的 native_real_client_offline_regrade；其四来源、八请求、四次 fresh
+评分谓词没有绿色结论。
+
+`docs/snapshots/phase19/assurance/` 的 result 文件对记录源 key 的确切覆盖、
+最终离线 workspace 检查及落地边界。B1 仍为 Not closed；本文不授予 Phase
+符合性。测试影响：add 一个 ignored 真实客户端 regrade case；update TB3
+来源断言；retain 既有普通/原生/兼容测试；delete 无。
+
+## 保留的六试跑历史记录（2026-09-15）
+
+以下文本保留较早验收、尝试与局限的原始身份；其中 verdict 和旧门禁声明均为历史记录。
+
 **结论：已接受。** 六条真实本地操作员试跑——terminal-bench-2.1、
 terminal-bench-3.0 与 deepswe-v1.1 各一条 Opi、一条 pi——经 Zhipu
 `glm-5.3-flash` 的 Anthropic-messages 连接执行，获得可归因的原生评分、
@@ -13,7 +85,7 @@ Opi 专属的限定制品审计非空、穷尽且逐字节绑定，通过。全�
 本审计只记录脱敏事实。此处与暂存证据根中均不含任何凭据值、真实线上
 报文或私钥。
 
-## 最终证据与确切身份
+### 最终证据与确切身份
 
 - 脱敏证据根 `E`：
   `/mnt/d/Luiz/Odradek/phase19-operator/evidence-root`（与本仓库检出同级的
@@ -52,7 +124,7 @@ Opi 专属的限定制品审计非空、穷尽且逐字节绑定，通过。全�
   deepswe-v1.1
   `674b198cb77ba7c01c723c719f4cc66cec2210f97c4ee1e7d34066ad0d08e5d2`。
 
-## 冻结范围
+### 冻结范围
 
 | 项目 | 值 |
 |---|---|
@@ -65,7 +137,7 @@ Opi 专属的限定制品审计非空、穷尽且逐字节绑定，通过。全�
 凭据仅由操作员在自己的 shell 中导出。任何 harness 运行都没有读取
 `.env` 文件；暂存的任何文件都不含凭据值。
 
-## 原生结果
+### 原生结果
 
 指标为 benchmark 定义的原生评分器 reward。原生零分与 benchmark 有效
 的 agent 失败都保留在分母中。
@@ -82,7 +154,7 @@ Opi 专属的限定制品审计非空、穷尽且逐字节绑定，通过。全�
 摘要与交付/收集的制品摘要；tb30 使用声明的独立 verifier 与声明式收集；
 deepswe 在纯净 verifier 中将提交补丁摘要绑定到声明基线。
 
-## 保留的失败尝试与替换
+### 保留的失败尝试与替换
 
 所有失败尝试在运行根目录下保持持久；替换通过 `--replacement-for`
 在新身份下执行。
@@ -112,7 +184,7 @@ trial 目录；对每个 staging 副本运行 `verify` 与 `report`，输出写�
 所有被取代的尝试保留在原始 root 中，原始 `run-control.json` / `run-report.json`
 字节不变。
 
-## 操作员启动修复（试跑前，无模型调用）
+### 操作员启动修复（试跑前，无模型调用）
 
 记录于 `phase19-operator/setup-repair/`：DrvFs 小文件上传超出 Harbor
 360 秒 setup 上限（pi 运行包移至 WSL 原生 ext4；setup 降至 2.3 秒）；
@@ -124,7 +196,7 @@ Docker Compose 从已删除 cwd 启动（稳定 cwd 启动器 + 脱敏诊断）�
 （零凭据）证明两个钉定客户端在初始与工具延续请求上都遵守
 `max_output_tokens`，该控制之后才被接受为可比性证据。
 
-## 执行过的验证
+### 执行过的验证
 
 - `python crates/opi-eval/scripts/verify-local-acceptance.py --root <E>
   --out <out> --companion phase19-operator/bin/opi-eval` →
@@ -142,7 +214,7 @@ Docker Compose 从已删除 cwd 启动（稳定 cwd 启动器 + 脱敏诊断）�
 - 操作员平台为 WSL2 Ubuntu，Docker engine 位于
   `unix:///var/run/docker.sock`，镜像按钉定 manifest 摘要拉取。
 
-## 局限
+### 局限
 
 每家族一任务、一次重复、共六条试跑；原生零分是有效的已评分结果并计入
 分母。`glm-5.3-flash` 选择器背后的真实后端模型仍未知；未捕获真实线上

@@ -2,6 +2,93 @@
 
 [简体中文](phase19-local-native-acceptance.zh.md)
 
+## Current supplied evidence and apply outcome (2026-10-14)
+
+**Operator evidence: verified. Native closure batch B1: Not closed.** The
+current registered criterion requires four real trials across TB2.1/TB3;
+DeepSWE AC-005/D04 is deferred/reserved. The current original evidence root is
+`/home/luiz/phase19-acceptance-r2`, with the preserved four-trial view at
+`/mnt/c/Users/Luiz/AppData/Local/Temp/opi-phase19-evidence-continuation-lcprjvy7/operator-f2-evidence`.
+Its manifest SHA-256 is
+`936e722ae9d2c54a5940a9d83c48a5db10eeceab7bccf1a913d4f01ace787e14`.
+The historical six-trial record below remains attributed to its original date
+and contracts; it does not determine the current scope or native closure.
+
+A fresh source-bound Companion at committed source
+`9ef3768968a559e0bc0366c1f3c66752d499595a` (production bytes unchanged by this
+test-only apply) has SHA-256
+`1406e98d638354899fab559d24a75dc313f1bf47448f08b48dd9806253f258e2`.
+The locked/offline musl build, public acceptance verifier, two family verifies,
+two report reconstructions per family, and exhaustive two-Opi artifact audit
+all exited 0. Repeated report bytes match. Actual pi/Opi rewards are TB2.1
+1/1 and TB3 1/0, with completed tool pairs 13/7 and 61/75 respectively; both
+pairs are comparable. These are four attributable operator trials, with no new
+real-provider execution authorized or performed by this apply.
+
+All fresh commands, original exits and raw hashes are retained at
+`/home/luiz/opi-phase19-apply-c368e42d5144468ea33b93d233c25c6d/operator-verification`; `receipts.json` binds each invocation. The
+117 declared preserved view hashes were rechecked. Original attempts remain
+separate: 28 sealed trials, 24 nonprimary trials and six scoped-out DeepSWE
+trials; source bundles and original scores are retention targets.
+
+## Current native execution and concrete blocker
+
+The approved plan digest is
+`571c76317637ab7acca5661f3c381dd8e7482648a9b8a8008d40c42e2a90e237`, bound to
+live audit index
+`23b39dcdc52f71dc1b17b4f87678f39aa3d86289c3753eb0b5f55373ad82873e`.
+Independent public `doctor`/`prepare`, copied exact Opi 0.8.2/pi 1.0.4 packages
+and build receipts, Harbor 0.22.0/uv 0.9.7, current capture helper and pinned
+TB2.1/TB3 inputs are retained under `/home/luiz/opi-phase19-apply-c368e42d5144468ea33b93d233c25c6d`.
+The final selected-family material/7 composite SHA-256 is `c29d45781e10a271df1399edc964b5baf4bb6b212c1634b6a9fc07cb3a66274a`.
+Task/base/build-context/mode/argv/output image identities are retained under
+`image-preparation` and `image-preparation-sidecar`.
+
+The complete inventories contain 138 tests and 14 ignored native tests;
+twelve exact native filters were selected. Serial dispatch stopped after the
+second filter failed. Current selected executions are:
+
+| Exact filter | Cargo exit | Complete transcript SHA-256 |
+|---|---:|---|
+| `native_tb21_artifact_witness` | 0 | `87cefd490d1ec5617b560113e1798a75421603f09bb6d5d235e5f13b813e2ee5` |
+| `native_tb3_artifact_witness` | 101 | `52026101f4423d2d99fc4838676e5a642dbd2ff573a05867906862e5329cf829` |
+
+TB2.1 executes one libtest case and both official oracle/nop jobs, with native
+rewards 1/0. The anti-vacuity checker reports one passed, zero failed, zero
+ignored, 137 filtered. Each invocation preserves complete independent stdout
+and stderr and their hashes; the complete transcript concatenates both byte
+streams without trimming. The earlier merged-stream run and checker refusal
+remain retained separately.
+
+TB3 executes one libtest case and both official jobs. Oracle grades 1 and
+collects the task's sole `/app/results.txt`; the test now binds that exact
+canonical declaration. Nop grades 0 upstream but submits no declared file, so
+the production reader refuses it with
+`native-binding-declared-artifact-missing`. The case exits 101. The required
+valid incorrect-artifact observation and distinct collected digest therefore
+remain absent. Original baseline receipts also retain the earlier runner-cache
+setup refusal and the reproduced obsolete `/app/evalbench/` assertion failure.
+
+Current native conformance admits only `oracle-witness` and `nop-witness`.
+Treating the missing file as a valid artifact would contradict AC-002's
+missing/substituted-artifact rejection. A correctly submitted negative witness
+needs a new plan outside the approved four-path test/documentation scope;
+production, public schemas, task scripts, ledgers, lockfile and client packages
+were not edited. The remaining ten native filters, including the newly added
+`native_real_client_offline_regrade`, were not executed after this stop. Its
+four-source/eight-request/four-fresh-grade predicate has no green claim.
+
+The result pair in `docs/snapshots/phase19/assurance/` records exact source-key
+coverage, final offline workspace checks and the materialization boundary.
+B1 remains Not closed; this document does not grant Phase conformance. Test
+impact: add one ignored actual-client regrade case; update the TB3 source
+assertion; retain existing ordinary/native/compatibility cases; delete none.
+
+## Preserved historical six-trial record (2026-09-15)
+
+The following text retains the earlier acceptance, attempts and limitations
+under their original identities. Its verdict and old gate claims are historical.
+
 **Verdict: accepted.** Six real local-operator trials — one Opi and one pi per
 family across terminal-bench-2.1, terminal-bench-3.0 and deepswe-v1.1 — ran
 through the Zhipu `glm-5.3-flash` Anthropic-messages connection, received
@@ -15,7 +102,7 @@ repetition; they are not corpus-level or statistical comparisons.
 This audit records redacted findings only. No credential value, live wire
 payload or private key appears here or in the staged evidence root.
 
-## Final evidence and exact identity
+### Final evidence and exact identity
 
 - Redacted evidence root `E`:
   `/mnt/d/Luiz/Odradek/phase19-operator/evidence-root` (the
@@ -56,7 +143,7 @@ payload or private key appears here or in the staged evidence root.
   deepswe-v1.1
   `674b198cb77ba7c01c723c719f4cc66cec2210f97c4ee1e7d34066ad0d08e5d2`.
 
-## Frozen scope
+### Frozen scope
 
 | Item | Value |
 |---|---|
@@ -70,7 +157,7 @@ The credential was exported by the operator in their own shell only. No
 harness run read the `.env` file, and no staged file contains a credential
 value.
 
-## Native outcomes
+### Native outcomes
 
 The metric is the benchmark-defined native grader reward. Native zero and
 benchmark-valid agent failures stay in the denominator.
@@ -89,7 +176,7 @@ delivered/collected artifact digests; TB3.0 used the declared separate
 verifier with declared collection; deepswe bound the committed patch digest
 against the declared base in a pristine verifier.
 
-## Retained failed attempts and replacements
+### Retained failed attempts and replacements
 
 Every failed attempt stays durable in the run roots; replacements used
 `--replacement-for` under fresh identities.
@@ -124,7 +211,7 @@ mixed run roots remain fail-closed (`report` exits 1 on them), every
 superseded attempt stays retained in the original roots, and the original
 `run-control.json` / `run-report.json` bytes are unchanged.
 
-## Operator setup repairs (pre-trial, no model calls)
+### Operator setup repairs (pre-trial, no model calls)
 
 Recorded in `phase19-operator/setup-repair/`: DrvFs small-file upload
 exceeded Harbor's 360 s setup cap (pi package moved to WSL-native ext4;
@@ -138,7 +225,7 @@ and the local loopback output-control probe (zero credentials) proved both
 pinned clients honor `max_output_tokens` on initial and tool-continuation
 requests before that control was accepted as comparable evidence.
 
-## Verification performed
+### Verification performed
 
 - `python crates/opi-eval/scripts/verify-local-acceptance.py --root <E>
   --out <out> --companion phase19-operator/bin/opi-eval` → `accepted: true`,
@@ -158,7 +245,7 @@ requests before that control was accepted as comparable evidence.
 - WSL2 Ubuntu operator platform, Docker engine at `unix:///var/run/docker.sock`,
   images pulled by pinned manifest digest.
 
-## Limits
+### Limits
 
 One task per family, one repetition, six trials total; native zeros are
 valid graded outcomes and count in the denominator. The actual backend
