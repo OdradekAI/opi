@@ -1,14 +1,14 @@
 {
   "schema_version": 3,
-  "audit_run_id": "phase19-codex-gpt61-2ec1ccb-20261004t023807z",
-  "audit_head": "2ec1ccb14a3d13af173fa0692dbf8f1cd8cb7618",
+  "audit_run_id": "phase19-codex-gpt61-ae6dff6-20261014t044949z",
+  "phase": 19,
+  "audit_head": "ae6dff638db1247203a01483f26a0f81048cb52a",
   "reviewer_id": "codex",
-  "model_id": "gpt61",
   "reviewer_identity": "Codex",
+  "model_id": "gpt61",
   "reviewer_model_id": "gpt61",
   "model_identity_source": "operator-declared",
   "independence": "fresh-context-same-family",
-  "phase": 19,
   "baseline_policy": "latest-committed-spec",
   "baseline_sources": [
     {
@@ -25,14 +25,14 @@
     },
     {
       "path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md",
-      "sha256": "5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a"
+      "sha256": "f507f29d91ddfc919ead6fa84df8d5f912b04af1d84ed5e68777e20c80c135c5"
     },
     {
       "path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md",
-      "sha256": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
+      "sha256": "7d97f00f3a06723765e8cb2c8ea7ed13933defc8d7c230bdc0d165ad1284e7dc"
     }
   ],
-  "requirements_sha256": "aadfa9bb5e6d796876619a80cf60cbe40e983ccb66b051b5c8ca7c33f1f8b0d5",
-  "findings_sha256": "bd454f15884f80e537772452aabc05593d73763e5f4500326edbf13e8d018bc4",
+  "requirements_sha256": "7552524d838c8443f4219931507108125b4bc346501217b4f035ed0c77834cda",
+  "findings_sha256": "85c2bbf73b8b452603fea1969b777219b6f84e05af161230ab8f23c5905f5ad2",
   "verdict": "FAIL"
 }
