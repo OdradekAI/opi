@@ -1,10 +1,10 @@
 {
   "schema_version": 3,
-  "audit_run_id": "phase19-pi-glm53-9d805b4-20261004t094337z",
+  "audit_run_id": "phase19-pi-glm53-7a0fe85-20261014t073512z",
   "phase": 19,
-  "audit_head": "9d805b498a56a276b141cc0c0728ce8201dbe6f3",
+  "audit_head": "7a0fe85ab00156bef687a69f5e413bf7e364573b",
   "reviewer_id": "pi",
-  "reviewer_identity": "Pi (pi coding agent harness)",
+  "reviewer_identity": "pi coding agent harness",
   "model_id": "glm53",
   "reviewer_model_id": "glm53",
   "model_identity_source": "operator-declared",
@@ -25,14 +25,14 @@
     },
     {
       "path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md",
-      "sha256": "5be1b609145556c90c33487a30025cb2d93829123243d5e8cbf5586bd151e91a"
+      "sha256": "f507f29d91ddfc919ead6fa84df8d5f912b04af1d84ed5e68777e20c80c135c5"
     },
     {
       "path": "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md",
-      "sha256": "d41c826412b0d71802327d60f953708f6cb2083436a2a2b0d99a2e52d851f194"
+      "sha256": "7d97f00f3a06723765e8cb2c8ea7ed13933defc8d7c230bdc0d165ad1284e7dc"
     }
   ],
-  "requirements_sha256": "94a60de1e21ca28f1e2e13f86af2217ceb34f273aeaeef6652b6004769eef2d9",
-  "findings_sha256": "377d730be9a09201c6056b3513739fa2f524ec684019ae516ef04182da56eeaf",
+  "requirements_sha256": "9b97b0d6e69f8ded9892dd0c20d6f66af61ff79852a7178d921917690ee7de4e",
+  "findings_sha256": "b37a36c99d81ea6dce462f067147abfeef0eb9d1519436bcf2052c5ffac75356",
   "verdict": "FAIL"
 }
