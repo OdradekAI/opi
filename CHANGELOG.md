@@ -1,988 +1,520 @@
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ## [Unreleased]
-
-### Fixed
-
-- `opi-eval`: the Harbor integration's Agent deadline termination now stops
-  only the owned Agent launch. An integration-private Bash wait wrapper
-  launches the exact selected Agent in its own job process group and
-  records its PID with its kernel start identity; on deadline the stop
-  command authenticates that PID (start identity plus the trial's private
-  stage in the command line), collects the owned descendant set while the
-  launch tree is still intact - a separately created child group
-  survives the group kill only if collected first - and kills every owned
-  group with a bounded, fork-free `/proc` sweep. The first-sink capture
-  helper survives in its own group, drains its pipes to EOF, and
-  finalizes a genuine sanitized receipt, so a benchmark-defined Agent
-  timeout keeps its native reward and graded outcome instead of settling
-  as an invalid missing-receipt capture. The wrapper suppresses only its
-  own job-notification stderr; Agent streams still flow to the first
-  sink unchanged.
-- `opi-eval`: offline report usage facts are now derived from actual known
-  token measurements in the sealed trajectory instead of sealed-artifact
-  presence. A measured usage marker cites the sealed trace manifest bytes
-  that contain the measurement fields (Provider/Diagnostic-only record
-  streams are no longer usage provenance); a manifest whose measurements
-  are both unknown reconstructs an honest `usage-not-measured` unknown
-  with its typed reasons kept visible, and pi's not-native unknowns are
-  unchanged.
-- `opi-eval`: `run` completion and offline `report` reconstruction now require
-  every planned trial to have a valid graded outcome, not just durable
-  settlement and comparable declared edges. A single-subject run whose only
-  trials are invalid executions exits 1 and reconstructs incomplete (the
-  empty comparison-edge set can no longer establish validity), while valid
-  native zero scores, benchmark-defined Agent timeouts and no-edge
-  single-subject success stay completed. Repetition control pairs treat
-  repeated absent or invalid headlines as incomplete repetition state
-  instead of comparing them equal as nulls.
-- `opi-eval`: the native result binding now applies a reverse consumer
-  cross-check to every ordinary file in a nonempty declared collection:
-  its normalized source and digest must be covered by the integration's
-  terminal delivered observations. Substituted collected bytes can no
-  longer be admitted through an empty, partial or unrelated-only
-  observation set; the pinned Harbor convention publish tree (owned by
-  the task's collect hook) and valid observed inputs are unchanged.
-- `opi-eval`: offline native comparisons validate sealed exact-client reasoning
-  evidence for the first request and tool continuation. Proven supported levels
-  remain comparable; missing, substituted or downgraded proof stays rejected.
-- `opi-eval`: the Terminal-Bench 3.0 and DeepSWE production profiles now bind
-  their selected tasks' actual package bytes and lifecycle metadata, matching
-  the pinned `foodstuff-beta-activity` and `opa-template-string-reconstruction`
-  source identities.
-- `opi-eval`: non-live connection admission parses the actual HTTP(S) URL
-  host before applying the existing loopback allowlist. Remote fragments,
-  backslashes and malformed ports can no longer bypass the route guard.
-- `opi-eval`: selection expansion checks trial cardinality, vector storage
-  bounds and the declared `max_trials` before allocating trial records.
-  Oversized repetitions now return a typed rejection instead of an allocation
-  abort, while preserving complete preflight contradictions.
-- `opi-eval`: offline local acceptance checks the current Opi boolean
-  thinking-level map and thinking block, including disabled thinking, and
-  Pi's omitted level map when reasoning is off. Resealed configuration
-  substitutions still reject against the exact native control projection.
-
-- `opi-eval`: four execution-blocker repairs from the 2026-10-12 six-trial
-  acceptance re-run (audit gap P19-AUD-001). (1) `build-agent-artifacts.sh`
-  now builds the Opi agent for the host-arch musl target (statically linked,
-  fail-closed check) so it loads inside pinned task environments whose glibc
-  predates the build host's; the identity records the actual target triple
-  and the static-lock producer digest was refreshed accordingly.
-  (2) The binary-local native capture grammar now admits the current
-  product stream: the `session_header` opener (schema_version 2),
-  session-level `AutoRetryStart`/`AutoRetryEnd`, the inner `QueueUpdate`
-  envelope, and `--json-compact` delta events that legitimately omit the
-  cumulative `partial` snapshot; private thinking deltas are still emptied.
-  (3) `verify-local-acceptance.py` admits a graded
-  `agent-outcome-not-success` terminal (clean agent-side stop such as a
-  `max_tokens` end) exactly as the Companion's own settlement vocabulary
-  does, instead of rejecting a shape the settlement already grades.
-  (4) The Harbor/Pier integrations copy the capture receipt out through the
-  daemon in the mounted case: the live bind mount leaves the helper's files
-  owned by the container user with mode 0600, unreadable to the host
-  terminal observation until the runner's post-stop chown, so the summary
-  was systematically `unreadable`; a dead helper still settles honestly.
-  The locked native-smoke CI contract and the integration test mounts were
-  updated in lockstep. Two further changes from the 2026-10-13 Zhipu-protocol
-  re-run of the same acceptance: the pinned benchmark task selections moved
-  to feasible tasks (Terminal-Bench 3.0 → `foodstuff-beta-activity` after the
-  earlier selections failed as invalid executions under `reasoning=max`;
-  DeepSWE → `opa-template-string-reconstruction`) with the static-lock task
-  identities, task-image pins and the profile whole-job bounds re-derived
-  from the selected tasks' own contracts, and `verify-local-acceptance.py`
-  accepts per-family control blocks so acceptance runs whose primary sources
-  prescribe different sampling/output protocols per benchmark stay verifiable
-  (the legacy single shared control block remains valid).
-
-### Added
-
-- `opi-eval`: `evaluate.py baseline --bench <id> --tasks <list|@file>` prepares a
-  task-subset evaluation: the frozen plan expands only the named tasks, records
-  the subset selection and its reason, and the native report carries
-  `selection_scope: "subset"` with the excluded corpus remainder. Precision
-  re-runs (for example provider-failure victims) no longer require a full
-  corpus re-execution.
-
-- `opi-eval`: every finished configured execution automatically exports a
-  full bilingual benchmark report to the project's `docs/eval/` — locked
-  identity block (provider:model, thinking/output-token controls, corpus
-  commit, runner/Companion digests), coverage, the native metric, per-task
-  outcome and reward tables, and for Opi candidates the paired comparison
-  against the selected pi baseline — and, when the new optional
-  `storage.exports` root is configured (for example a `/mnt/<drive>/…`
-  path), copies the compact machine-evidence set (result handoff, generated
-  reports, snapshots, comparisons, native machine reports) to
-  `<exports>/<evaluation-id>/` for Windows-side consumers. The export is
-  best-effort: failures record a typed gap in `export-handoff.json` and never
-  change execution results.
-
-### Removed
-
-- `opi-eval`: the legacy `docs/eval/evidence-roots.jsonl` index; its 2026-09
-  era records stay in Git history and are referenced as prose by the historical
-  audit documents. `docs/eval/README.md` now documents the automatic report
-  export workflow (full bilingual benchmark reports, merged subset views,
-  authoritative evidence locations) instead of the registry.
 
 ### Breaking Changes
 
-- `opi-eval`: the offline local-acceptance verifier now requires the
-  `/3` manifest contract (`opi-eval-local-acceptance/3`) with an
-  explicitly selected independent expected-identity file
-  (`--expected-identities`, schema
-  `opi-eval-acceptance-expected-identities/1`). The verifier validates
-  inline execution-provenance and freeze records, original command
-  captures (prepare plus plan-or-validate plus run/verify/report per
-  family, both streams and argv bound), reciprocal attempt coverage, and
-  byte-bound build receipts/executables before Companion invocation; a
-  missing, malformed or mismatched source/build/command/freeze fact
-  rejects without claiming authentic provenance from mutual agreement
-  alone. Legacy `/2` manifests and the weak `command_exits` tuple table
-  are no longer accepted, and the verification report gains the
-  selected expected-file digest, approved freeze digest and an explicit
-  build-causality limit.
-- `opi-eval`: standalone local-acceptance evidence and verification move to
-  `opi-eval-local-acceptance/2` and `opi-eval-local-acceptance-verification/2`.
-  Primary evidence requires at least four fully paired Terminal-Bench 2.1/3.0
-  Opi/pi trials and complete frozen task/repetition coverage. Legacy `/1` and
-  excluded-family primary rows reject. Existing DeepSWE/Pier capability and
-  original evidence remain; DeepSWE is explicitly outside this acceptance
-  scope, and unused Pier identity is no prerequisite for the selected families.
-
-- `opi-eval`: the Python operator modules and sole configuration template move
-  from the skill into `crates/opi-eval/operator/`; the development entrypoint is
-  `python3 crates/opi-eval/operator/evaluate.py`. The portable skill consumes a
-  supplied operator entrypoint and explicit private profile. Full independent
-  runtime distribution remains provisional; existing `/1` profiles and family
-  evidence contracts remain readable without private-file rewrites.
-
-- `opi-eval`: the manually dispatched external-lock materialization now
-  delegates its diagnostic preparation and the explicit oracle-witness
-  conformance to the shared local CLI and publishes
-  `opi-eval-materialization-receipt/2` / `opi-eval-external-lock/resolved/2`
-  only after both succeed (D4). The receipt binds the built Companion, the
-  diagnostic config, the prepare command/report/material (material/7) and
-  the conformance command/report (`met: true`, native reward origin,
-  `agent_score: false`) as contained, SHA-bound artifact members, plus the
-  uniquely bound raw oracle result/CTRF bytes; the network claim records
-  the task-declared mode with basis `pinned-task-policy`. A shared
-  prepare/conformance refusal publishes no receipt; legacy /1 receipts and
-  resolved locks are rejected as read-only history.
-
-- `opi-eval`: private thinking never reaches a first capture sink (D1).
-  Fresh native dispatch requires material/7 with a pinned musl capture
-  helper (the Companion's hidden `__native-capture` mode) that spawns the
-  selected Agent through bounded pipes and persists only validated,
-  privacy-projected bytes under both capture policies; handoff/4 stages
-  the helper before credentials, terminal/3 binds its task-side self-check
-  and the new `opi-eval-native-capture/1` receipt, and partial-capture/2
-  records truthful sanitized-prefix status. Thinking text, declared
-  private signatures and `redacted_thinking` data are removed wherever
-  assistant messages repeat, private deltas are emptied preserving
-  placeholders/indices, and non-private tool/native bindings stay truthful;
-  unknown grammar, duplicate keys, invalid JSON, incomplete records or
-  streams beyond the existing 64 MiB ceiling refuse without a native
-  score, and opaque agent stderr retains only static metadata. The host
-  re-verifies retained digests before completion, sealing and partial
-  copies; untrusted captures never cross into sealed evidence. Legacy
-  material/6 and terminal/2 bytes remain loadable read-only for sealed
-  offline verification, reports and verifier-only regrade; fresh dispatch
-  never uses them.
-
-- `opi-eval`: every run now freezes its complete report identity under
-  `opi-eval-run-control/2` before the first intent: the resolved
-  experiment contract and the admitted integrity record join the
-  identity, selection, corpus and planned-trial bindings. With zero
-  sealed trials, the offline report restores the declared
-  edge/control pairs, native benchmark identity, exclusions and a zero
-  valid denominator instead of an empty coverage and an unknown
-  benchmark; sealed control bytes are cross-checked against the frozen
-  contract and integrity record, and drift refuses publication. Legacy
-  `/1` run-control roots keep their read-only meaning without frozen
-  topology.
-- `opi-eval`: the native host credential stage is now private before the
-  first secret byte. The per-trial integration directory is created
-  exclusively with mode 0700 and the staged config/handoff files with mode
-  0600, independent of the caller's root permissions and umask; a
-  preexisting directory, file, or link target refuses fail-closed instead
-  of being reused. Settlement cleanup is unchanged.
-
-- `opi-eval`: explicit native `reasoning` supports `off`, `minimal`, `low`,
-  `medium`, `high`, `xhigh` and `max` through both client projections. Extended
-  levels retain their logical/effort names and use the high numeric budget on
-  budget-based wires. Required settings need
-  exact executable/package proof of the first request and tool continuation
-  before dispatch; enabled levels also require output room for the shared
-  thinking budget plus 1024 answer tokens. Unsupported levels retain the
-  request and reject when required. Pi launch no longer fixes every request
-  to `off`; private thinking remains excluded from retained captures.
-- `opi-eval`: an explicit positive `[execution].max_output_bytes` now rejects
-  at resolution with the existing unenforceable-bound error. Captured output
-  stays under the fixed runtime limit and a requested byte cap has no
-  enforcement route in this build; omitting the bound keeps the fixed capture
-  protection. The field and its serialized shape are unchanged.
-
-- `opi-ai`: `ProviderCollection::prepare_call` now resolves an omitted response
-  output limit from the selected model's capacity before authentication and
-  rejects default thinking budgets that cannot fit. Both implicit and explicit
-  ceilings are clamped to estimated remaining context with 4096 safety tokens;
-  thinking is fitted inside a reduced ceiling. Direct adapters retain their
-  behavior. The shared `context` estimator counts system/tools, images and
-  applicable same-model usage plus new messages rather than lifetime usage.
-- `opi-coding-agent`: omitted response limits now follow model capacity instead
-  of provider fallbacks or thinking-budget-plus-one. Default medium/high
-  thinking budgets are 8192/16384 tokens; oversized startup thinking budgets
-  leave answer room. Explicit output controls remain binding across model
-  changes and tool continuation.
-- `opi-coding-agent`: local bash execution has no default deadline, matching
-  Pi. `DefaultsConfig::tool_timeout_ms` and `BashRequest::timeout` are optional;
-  an explicit default or per-call timeout still applies, and cancellation
-  retains process-tree cleanup. External adapters require an explicit finite
-  timeout before activation because their protocol requires a deadline.
-- `opi-coding-agent`: automatic compaction now runs before model requests,
-  using current context occupancy, a default 16384-token reserve, roughly
-  20000 retained tokens and a real model summary. `threshold_tokens` is optional
-  and explicit thresholds remain binding. Summary generation and atomic
-  message/marker/Leaf commits preserve the current run, cancellation and turn
-  budget. Summaries inherit thinking and retry settings, omit image bytes and
-  bound individual tool-result text. Manual compaction methods are asynchronous
-  and RPC compaction remains cancellable. Session compaction
-  markers add optional provider/model/usage metadata for summary accounting;
-  older records remain readable with unrecorded usage treated as unknown.
-- `opi-agent`: validated preparation supports an acknowledged external commit
-  before installing context, with run-scoped summary evidence and a
-  preparation-only operation. A durable acknowledgement remains the rollback
-  boundary when cancellation or a later request fails. Hook wrappers forward
-  the transaction methods and their single-committer declaration.
-
-- `opi-eval`: fresh native imports and local acceptance require the private
-  `opi-eval-native-agent-terminal/2` runtime-preflight proof. Both integrations
-  run the exact staged runtime with `--version` before configuration or
-  credential projection; failed or unknown preflight prevents task dispatch
-  and remains attempted, invalid and unscored. Preflight and task exits are
-  distinct. Existing sealed bundles retain their offline meaning.
-
-- `opi-eval`: `PrepareArgs` adds paired optional `opi_source` and `opi_commit`
-  fields, exposed as `prepare --opi-source` and `--opi-commit`. A selected
-  cold Opi build requires an explicit local repository and exact commit;
-  verified warm packages and pi-only preparation need neither. Public prepare
-  now acquires selected clients, complete pinned corpora and locked runners.
-
-- `opi-eval`: normalized reports and reporter identity move to
-  `opi-eval-normalized-report/2` and `opi-eval-reporter/2`. Binary native task
-  outcomes retain their benchmark-specific meanings. Native test-case
-  `passed / total` is a separate per-trial observation with raw provenance,
-  explicit unknown reasons and observation coverage; opaque native reward
-  fields keep their original names. Existing sealed bundles are read without
-  mutation, and missing observations are not inferred from task scores.
-
-- `opi-eval`: native regrading emits `opi-eval-native-regrade/2` and
-  `opi-eval-regrade-record/2`. Its explicit offline entry runs the pinned
-  native verifier directly, binds restored inputs and fresh grading evidence,
-  and never constructs an Agent job. It requires cached images and sufficient
-  declared preserved inputs; uncertain cleanup blocks further dispatch.
-  Original bundles and scores remain unchanged.
-
-- `opi-eval`: native material moves to `opi-eval-native-material/6`, and
-  frozen plans/previews to `opi-eval-run-plan/2` / `opi-eval-plan-preview/2`.
-  Complete pinned corpora are independent of the per-task material map;
-  each selected task binds its own native name, profile, package and immutable
-  images. Prepare caches per-task profiles and packages, and both run entry
-  paths dispatch exactly the selected tasks. A local `runner_project` now
-  pins and re-verifies the installed `.venv/bin/python` interpreter and
-  `.venv/bin/<runner>` console entrypoint byte identities; missing or
-  changed installed bytes reject material loading before any validate, plan
-  or run effect and before accepting frozen plans. Material/4, material/5
-  and plan/1 require regeneration; existing sealed bundles are preserved.
-
-- `opi-eval`: executing into a previously claimed run root now rejects before
-  replacing control or trial evidence. Replacement executions require a fresh
-  output root; `--recover` continues to inspect the original root. Concurrent
-  requests for one root admit only one execution.
-
-- `opi-eval`: `RunArgs.fixtures` is now optional. Native `run --plan` reuses
-  its frozen material without fixtures; an explicit material must match the
-  recorded digest. Exactly one of `--config` and `--plan` is required, and
-  missing inputs reject with exit 2 instead of panicking. Hermetic runs still
-  require `--fixtures`.
-
 - `opi-agent`: `AgentLoopConfig.max_turns` is removed. The generic loop has
-  no intrinsic turn ceiling; embedders provide explicit budgets through hooks
-  or cancellation. `PrepareNextTurnContext.turn` is now `u64`. Stop hooks
-  observe the completed turn before queues or preparation; preparation runs
-  only for an already-required continuation and cannot itself request one.
-  Initial steering precedes the first request, and terminating tool batches
-  suppress automatic continuation without suppressing queued input. Complete
-  candidate validation and atomic replacement remain enforced.
+  no intrinsic turn ceiling; embedders provide explicit budgets through
+  hooks or cancellation, and `PrepareNextTurnContext.turn` is now `u64`.
+  Stop hooks observe the completed turn before queues or preparation;
+  preparation runs only for an already-required continuation and cannot
+  itself request one. Initial steering precedes the first request, and
+  terminating tool batches suppress automatic continuation without
+  suppressing queued input. Complete candidate validation and atomic
+  replacement remain enforced.
 - `opi-coding-agent`: `DefaultsConfig.max_iterations` is now `Option<u32>`,
   defaulting to no turn-count ceiling. Explicit budgets remain product-owned
   and fail before a required extra turn; zero fails before provider dispatch
-  instead of reporting an empty success. Natural completion at the configured
-  limit still succeeds. Evidence distinguishes no applicable turn quota with
-  the new `UnknownReason::NotApplicable` variant from a numeric quota.
-
-- `opi-eval`: native required output limits and execution output-token bounds
-  now require `agents.<product>.output_control_evidence` in new material.
-  Admission binds the exact executable, runtime package, projected config and
-  two independently observed loopback requests before native effects. Optional
-  limits without proof remain unsupported comparison controls. Each admitted
-  trial seals its proof for offline acceptance, which checks the full projected
-  controls and rejects missing or substituted evidence. Existing evidence is
-  not retroactively qualified by a version string or a repaired executable.
-
+  instead of reporting an empty success. Natural completion at the
+  configured limit still succeeds. Evidence distinguishes no applicable
+  turn quota with the new `UnknownReason::NotApplicable` variant from a
+  numeric quota.
 - `opi-coding-agent`: `DefaultsConfig` adds the optional `max_output_tokens`
-  field and `ConfigError` adds `InvalidMaxOutputTokens`.
-  `CodingHarness::set_model` now returns `Result<(), String>` and
-  rejects incompatible model/request settings before changing the active model.
-  Embedders must initialize the new field (or use `Default`), handle the setter
-  result, and update exhaustive error matches.
-
-- `opi-ai`: `AssistantContent::Thinking` now carries an optional `signature`,
-  and `RedactedThinking { data }` preserves encrypted continuation blocks.
-  Rust constructors must supply the signature field; old unsigned serialized
-  messages still deserialize. Anthropic streams retain both kinds of blocks
-  through sessions and same-provider/model tool continuation. Model aliases
-  retain the requested identity separately from the reported response model.
-  Missing reported model names remain unknown in actual-route evidence.
-  Exports omit opaque metadata; foreign routes receive only readable text.
-
-- `opi-eval`: owned-resource evidence moves to `opi-eval-owned-resources/2`.
-  Cleanup binds Docker containers to the exact private Compose working
-  directories and verifies removal after every dispatched job, including
-  upstream exit-zero failures. Unconfirmed cleanup blocks successful sealing.
-  Temporary `handoff.json`, `config.toml`, and `models.json` are removed on
-  settlement; `handoff-identity.json` preserves non-secret launch identity.
-
-- `opi-eval`: native materials move to `opi-eval-native-material/4` and
-  handoffs to `opi-eval-native-handoff/3`. Optional runtime packages bind the
-  complete resource tree and executable entrypoint; Harbor and Pier verify
-  and transfer the full package, preserve Agent output before cleanup, and
-  launch the selected connection's provider/model. Local preparation accepts
-  package directories under `agents/<product>` and rejects resource drift.
-  Local material also pins the runner project source and uv environment,
-  rechecks source identity on load, selects the prepared Python interpreter,
-  and uses uv directly for oracle witnesses.
-  Pier applies its existing filtered inference route only to the Agent process.
-  Benchmark profile inventory keys include the revision so the three families
-  can share one cache without reporting false profile drift.
-  Native selection binds a profile's task ID to its exact admitted upstream
-  task name, keeping generated trial IDs canonical. Headless Opi task processes
-  isolate the session keyring so the pinned client's environment-credential
-  fallback can use the projected connection.
-
-- `opi-eval`: native mode now binds scores to the selected Agent's same-trial
-  work. `run --native-material` dispatches one explicitly selected upstream
-  job per trial that runs the Opi/pi integration inside the graded task
-  environment and grades that same trial; the imported result must bind to the
-  selected Agent, task, and job identity (schema
-  `opi-eval-native-material/2` carries the pinned integration module). The
-  former host-agent then independent default/oracle-job score path, the
+  field, and optional `[defaults] max_output_tokens` sets the output limit
+  on each provider request independently of model capability metadata. It
+  must be positive, fit the selected model's output capability and exceed
+  any enabled thinking budget; zero, over-ceiling values and incompatible
+  thinking budgets fail before provider dispatch. The limit survives
+  retries, tool continuation and compatible model/thinking changes;
+  incompatible runtime changes reject without persisting. `ConfigError`
+  adds `InvalidMaxOutputTokens`, and `CodingHarness::set_model` now returns
+  `Result<(), String>`, rejecting incompatible model/request settings
+  before changing the active model.
+- `opi-coding-agent`: local bash execution has no default deadline, matching
+  Pi. `DefaultsConfig::tool_timeout_ms` and `BashRequest::timeout` are
+  optional; an explicit default or per-call timeout still applies, and
+  cancellation retains process-tree cleanup. External adapters require an
+  explicit finite timeout before activation because their protocol requires
+  a deadline.
+- `opi-coding-agent`: automatic compaction now runs before model requests,
+  using current context occupancy, a default 16384-token reserve, roughly
+  20000 retained tokens and a real model summary. `threshold_tokens` is
+  optional and explicit thresholds remain binding. Summary generation and
+  atomic message/marker/Leaf commits preserve the current run, cancellation
+  and turn budget; summaries inherit thinking and retry settings, omit
+  image bytes and bound individual tool-result text. Manual compaction
+  methods are asynchronous and RPC compaction remains cancellable. Session
+  compaction markers add optional provider/model/usage metadata for summary
+  accounting; older records remain readable with unrecorded usage treated
+  as unknown.
+- `opi-ai`: `ProviderCollection::prepare_call` now resolves an omitted
+  response output limit from the selected model's capacity before
+  authentication and rejects default thinking budgets that cannot fit. Both
+  implicit and explicit ceilings are clamped to estimated remaining context
+  with 4096 safety tokens; thinking is fitted inside a reduced ceiling,
+  leaving 1024 answer tokens where possible. The shared `context` estimator
+  counts system/tools, images and applicable same-model usage plus new
+  messages rather than lifetime usage. Direct adapters retain their
+  behavior.
+- `opi-coding-agent`: omitted response limits now follow model capacity
+  instead of provider fallbacks or thinking-budget-plus-one. Default
+  medium/high thinking budgets are 8192/16384 tokens; oversized startup
+  thinking budgets leave answer room. Explicit output controls remain
+  binding across model changes and tool continuation.
+- `opi-ai`: `AssistantContent::Thinking` now carries an optional
+  `signature`, and `RedactedThinking { data }` preserves encrypted
+  continuation blocks. Rust constructors must supply the signature field;
+  old unsigned serialized messages still deserialize. Anthropic streams
+  retain both kinds of blocks through sessions and same-provider/model tool
+  continuation. Model aliases retain the requested identity separately from
+  the reported response model. Missing reported model names remain unknown
+  in actual-route evidence. Exports omit opaque metadata; foreign routes
+  receive only readable text.
+- `opi-agent`: validated preparation supports an acknowledged external
+  commit before installing context, with run-scoped summary evidence and a
+  preparation-only operation. A durable acknowledgement remains the rollback
+  boundary when cancellation or a later request fails. Hook wrappers forward
+  the transaction methods and their single-committer declaration.
+- `opi-eval`: native mode now binds every score to the selected Agent's
+  same-trial work, and the native contracts move to
+  `opi-eval-native-material/7`, `opi-eval-native-handoff/4`,
+  `opi-eval-run-plan/2` / `opi-eval-plan-preview/2`,
+  `opi-eval-native-agent-terminal/3` and `opi-eval-owned-resources/2`.
+  One explicitly selected upstream job per trial runs the selected Agent
+  inside the graded task environment and grades that same trial; the
+  imported result must bind to the selected Agent, task and job identity.
+  The former host-agent then independent default/oracle-job score path, the
   unchecked newest-job result admission, the appended `answer.txt` prompt
-  glue, and `run --preflight-only` are removed. Terminal-Bench 3.0 and
-  DeepSWE native scoring is explicitly unavailable until their declared
-  handoffs land; their hermetic fixture conformance is unchanged.
+  glue and `run --preflight-only` are removed. Complete pinned corpora are
+  independent of the per-task material map; each selected task binds its
+  own native name, profile, package and immutable images, and a profile's
+  task ID binds to its exact admitted upstream task name so generated trial
+  IDs stay canonical. Prepare caches per-task profiles and packages, and
+  both run entry paths dispatch exactly the selected tasks. Optional
+  runtime packages bind the complete resource tree and executable
+  entrypoint; Harbor and Pier verify and transfer the full package,
+  preserve Agent output before cleanup and launch the selected connection's
+  provider/model, while local preparation accepts package directories under
+  `agents/<product>` and rejects resource drift. A local `runner_project`
+  pins and re-verifies the installed `.venv/bin/python` interpreter and
+  `.venv/bin/<runner>` console entrypoint bytes; missing or changed
+  installed bytes reject material loading before any validate, plan or run
+  effect and before accepting frozen plans, and preparation also pins the
+  runner project source and uv environment, rechecks source identity on
+  load and uses uv directly for oracle witnesses. Benchmark profile
+  inventory keys include the revision so the three families share one cache
+  without reporting false profile drift. Headless Opi task processes
+  isolate the session keyring so the pinned client's environment-credential
+  fallback can use the projected connection; Pier applies its existing
+  filtered inference route only to the Agent process. Owned-environment
+  evidence binds Docker containers to the exact private Compose working
+  directories and verifies removal after every dispatched job, including
+  upstream exit-zero failures; unconfirmed cleanup blocks successful
+  sealing, and temporary `handoff.json`/`config.toml`/`models.json` are
+  removed on settlement while `handoff-identity.json` preserves non-secret
+  launch identity. Fresh dispatch requires the `--version` runtime
+  preflight before configuration or credential projection; failed or
+  unknown preflight prevents task dispatch and remains attempted, invalid
+  and unscored, and preflight and task exits are distinct. material/6 and
+  older manifests, terminal/2 and earlier records, and run-plan/1 plans
+  require regeneration for fresh dispatch; existing sealed bundles are
+  preserved read-only for offline verification, reports and verifier-only
+  regrade.
+- `opi-eval`: private thinking never reaches a first capture sink. A pinned
+  musl capture helper (the Companion's hidden `__native-capture` mode,
+  staged in handoff/4 before credentials) spawns the selected Agent through
+  bounded pipes and persists only validated, privacy-projected bytes under
+  both capture policies. Thinking text, declared private signatures and
+  `redacted_thinking` data are removed wherever assistant messages repeat,
+  private deltas are emptied preserving placeholders/indices, and
+  non-private tool/native bindings stay truthful; unknown grammar,
+  duplicate keys, invalid JSON, incomplete records or streams beyond the
+  existing 64 MiB ceiling refuse without a native score, and opaque agent
+  stderr retains only static metadata. The `opi-eval-native-capture/1`
+  receipt binds the retained digests, the host re-verifies those bytes
+  before any terminal completion, client message, seal or bounded partial
+  copy (`opi-eval-partial-capture/2`), and untrusted captures never cross
+  into sealed exportable evidence.
+- `opi-eval`: the native host credential stage is private before the first
+  secret byte: the per-trial integration directory is created exclusively
+  with mode 0700 and the staged config/handoff files with mode 0600,
+  independent of the caller's root permissions and umask; a preexisting
+  directory, file or link target refuses fail-closed instead of being
+  reused.
+- `opi-eval`: every run freezes its complete report identity under
+  `opi-eval-run-control/2` before its first effect - the resolved experiment
+  contract and admitted integrity record join the identity, selection,
+  corpus and planned-trial bindings - so offline recomputation preserves
+  unstarted trials even when no trial sealed, and drifted control bytes
+  refuse publication. Trials seal a `control/settlement.json` record of the
+  runner's final classification; the offline report consumes it for outcome
+  classes instead of re-deriving from stderr tokens or process exits.
+  Graded trials (including valid native zero and benchmark-defined Agent
+  timeouts) form the per-benchmark metric denominator with its own
+  definition and no cross-benchmark average, while
+  provider/access/identity/infrastructure/invalid-grading failures stay
+  attempted-but-invalid. Published reports gain coverage counts (`corpus`,
+  `selected`, `planned`, `attempted`, `valid`, `agent_failure`, `invalid`,
+  `unexecuted`), the `full|subset` scope label, repetition control pairs
+  (`consistent|divergent|incomplete`) and a protocol-group guard (an edge
+  pairing two subjects of one product never carries a paired claim;
+  single-subject reports need no artificial comparison edge). Repeated
+  reconstruction over identical sealed inputs is byte-identical.
+  Normalized reports and reporter identity move to
+  `opi-eval-normalized-report/2` / `opi-eval-reporter/2`; binary native task
+  outcomes keep their benchmark-specific meanings, and native test-case
+  `passed / total` is a separate per-trial observation with raw provenance
+  and explicit unknown reasons. Native regrading emits
+  `opi-eval-native-regrade/2` / `opi-eval-regrade-record/2`: the offline
+  `regrade --root --native-material --out` entry verifies every source
+  bundle, requires preserved Agent artifacts to still digest to the sealed
+  verifier-input identity, re-grades them with the pinned verifier in fresh
+  trial-owned environments without spawning an Agent, resolving a
+  credential or contacting a provider (network-requiring verifiers without
+  an offline equivalent, tampered bundles, altered artifacts, a drifted
+  patch base or drifted task material reject fail-closed), and exits 0 when
+  every sealed native trial regraded, 1 for typed per-trial rejections and
+  2 for a rejected request (including an existing output root, which a
+  regrade never overwrites).
+- `opi-eval`: experiment documents move to schema `opi-eval-experiment/2`,
+  and admission is fail-closed on enforceable controls. A top-level
+  `connection` selects one named `[[connections]]` entry (provider, `api`,
+  base URL, exact model, exactly one credential reference); remote routes
+  need the explicit `[execution].mode = "live"`, requested monetary/usage
+  caps reject as unenforceable, and an explicit positive
+  `[execution].max_output_bytes` rejects at resolution because captured
+  output stays under the fixed runtime limit. Explicit native `reasoning`
+  supports `off`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`
+  through both client projections; required settings need exact-client
+  proof of the first request and tool continuation before dispatch, and
+  required-but-unsupported controls (reasoning levels, sampling values no
+  selected client can express) reject before any model effect while
+  optional unsupported settings remain explicitly non-comparable. The
+  native-material manifest loses the agents' fixed scripted config and
+  inline credential fields: request identity is projected from the selected
+  connection into each pinned client's exact configuration bytes, and new
+  material requires `agents.<product>.output_control_evidence` - two
+  independently observed loopback requests - whenever output limits are
+  required; each admitted trial seals that proof for offline acceptance.
+  File-backed Opi credentials reach the environment variable selected by
+  the isolated client configuration; secrets remain private launch material
+  and are removed before verifier execution and evidence export.
+  `PrepareArgs` adds paired optional `--opi-source` and `--opi-commit`
+  (a cold Opi build requires an explicit local repository and exact
+  commit; verified warm packages and pi-only preparation need neither).
+  Native `run --plan` reuses its frozen material without `--fixtures`,
+  exactly one of `--config` and `--plan` is required with typed exit-2
+  rejections for missing inputs, and executing into a previously claimed
+  run root rejects before replacing control or trial evidence
+  (`--recover` keeps its read-only meaning).
+- `opi-eval`: the Python operator modules and sole configuration template
+  move from the skill into `crates/opi-eval/operator/`; the development
+  entrypoint is `python3 crates/opi-eval/operator/evaluate.py`, and the
+  portable skill consumes a supplied `EVAL_OPERATOR` entrypoint and explicit
+  private profile. New profiles use `opi-eval-operator/2` while `/1`
+  profiles remain readable with unchanged model defaults. The manually
+  dispatched external-lock materialization now delegates its diagnostic
+  preparation and the explicit oracle-witness conformance to the shared
+  local CLI and publishes `opi-eval-materialization-receipt/2` /
+  `opi-eval-external-lock/resolved/2` only after both succeed, binding the
+  built Companion, diagnostic config, prepare and conformance commands,
+  reports and material as contained SHA-bound artifacts; a shared refusal
+  publishes no receipt, and legacy `/1` receipts are rejected as read-only
+  history.
+- `opi-eval`: the offline local-acceptance verifier
+  (`crates/opi-eval/scripts/verify-local-acceptance.py`) now requires the
+  `/3` manifest contract (`opi-eval-local-acceptance/3`) with an explicitly
+  selected independent expected-identity file (`--expected-identities`,
+  schema `opi-eval-acceptance-expected-identities/1`). Primary evidence
+  needs at least four attributable Terminal-Bench 2.1/3.0 Opi/pi trials -
+  one pair per frozen task/group - with complete frozen task/repetition
+  coverage; DeepSWE and unknown primary families are rejected (existing
+  DeepSWE/Pier capability evidence remains, and unused Pier identity is no
+  prerequisite). The verifier validates inline execution-provenance and
+  freeze records, original command captures (both streams and argv bound),
+  reciprocal attempt coverage and byte-bound build receipts/executables
+  before Companion invocation; it rejects substituted, oracle, missing or
+  fixture-only evidence, refuses an empty generic-audit success, never
+  launches an Agent, reads credentials or contacts a provider, and a
+  missing, malformed or mismatched source/build/command/freeze fact
+  rejects without claiming authentic provenance from mutual agreement
+  alone. Legacy `/1` and `/2` manifests and the weak `command_exits` tuple
+  table are no longer accepted; the verification report gains the selected
+  expected-file digest, approved freeze digest and an explicit
+  build-causality limit. pi-only runtime plus packaging independence (no
+  Opi crate dependency, no bundled corpora/graders/images) stays pinned at
+  the spawned-CLI seam, and a populated dummy credential environment keeps
+  the deterministic hermetic contract unchanged.
+
+### Added
+
+- `opi-eval`: `evaluate.py baseline --bench <id> --tasks <list|@file>`
+  prepares a task-subset evaluation: the frozen plan expands only the named
+  tasks, records the subset selection and its reason, and the native report
+  carries `selection_scope: "subset"` with the excluded corpus remainder.
+  Precision re-runs (for example provider-failure victims) no longer
+  require a full corpus re-execution.
+- `opi-eval`: every finished configured execution automatically exports a
+  full bilingual benchmark report to the project's `docs/eval/` - locked
+  identity block (provider:model, thinking/output-token controls, corpus
+  commit, runner/Companion digests), coverage, the native metric, per-task
+  outcome and reward tables, and for Opi candidates the paired comparison
+  against the selected pi baseline - and, when the new optional
+  `storage.exports` root is configured, copies the compact
+  machine-evidence set to `<exports>/<evaluation-id>/` for Windows-side
+  consumers. The export is best-effort: failures record a typed gap in
+  `export-handoff.json` and never change execution results.
 
 ### Changed
 
+- `opi-coding-agent`: JSON mode now writes and flushes events during the
+  run, including image input, instead of buffering stdout until prompt
+  completion. A dedicated writer acknowledges each line to apply bounded
+  backpressure; output failures cancel the run with exit 1, and Ctrl-C
+  remains observable while waiting for a slow writer. Forced termination
+  retains emitted bytes without fabricating terminal events. New streaming
+  runner methods leave existing explicit in-memory capture APIs and NDJSON
+  schema 2 intact. The CLI allocates its one-shot future on the heap to
+  avoid Windows debug-build main-thread stack overflow before provider
+  dispatch.
+- `opi-coding-agent`: `--json-compact` now strips redundant cumulative
+  thinking, opaque blocks and tool arguments from text/thinking/tool-call
+  delta updates, including signatures attached to omitted thinking
+  snapshots. Full block-end and terminal messages, ordinary JSON and
+  durable/model-facing thinking remain unchanged.
+- `opi-coding-agent`: JSON session summaries now include observed token
+  usage from failed prompts and estimate known costs from those same
+  totals. Both text and content inputs count completed responses once,
+  including across repeated runs and resumed history. Unknown usage still
+  leaves cost unknown.
+- `opi-coding-agent`: non-interactive provider stream failures append a
+  summary-redacted `DiagnosticPayload` JSON line to stderr after the human
+  message. Captures retain safe transport/protocol causes without exposing
+  raw upstream errors; NDJSON framing, exit codes and retry behavior are
+  unchanged.
+- `opi-coding-agent`: startup resolves the default thinking level against
+  the selected model's supported levels before dispatch, using the same
+  numeric budget policy as runtime selection. Models exposing only
+  low/high/max now start at high instead of rejecting medium. Explicit
+  unsupported enabled-level selections remain errors.
+- `opi-ai`: Anthropic HTTP streaming buffers complete SSE frames before
+  decoding, preserving signed reasoning across UTF-8 and CRLF chunk
+  boundaries.
 - `opi-eval`: the static external lock now pins the pi coding-agent to the
   upstream `v1.0.4` tag (commit `7c10bd4337495ee613f2224843ecdf349b80d1df`)
   with its verified `package-lock.json`/`package.json` blobs and the
-  `@earendil-works/pi-ai` 1.0.4 model-data archive. Upstream removed the
-  published `npm-shrinkwrap.json` in 1.0.1, so the lock drops that blob,
-  the agent builder records `shrinkwrap_sha256: null` when the pinned
-  source publishes none, and warm-cache admission compares the digest only
-  when the lock pins it. The pinned CLI surface is protocol-identical for
-  the adapter (same json print mode, v3 session header,
-  `AgentSessionEvent` vocabulary, wire shapes and truncation messages;
-  additive `--no-mcp`/tool-pattern flags only), so the adapter, profile,
-  operator template and smoke templates only retarget their pinned-version
-  references; `pi:latest` still resolves to this pin at preparation. The
-  lock's tb21 image set now binds every corpus task image (89 tasks) to
-  its verified immutable manifest with config and layer digests, so a
-  full-scope `terminal-bench-2.1` selection passes image preflight;
-  previously only the `openssl-selfsigned-cert` task image was pinned.
-
-- Development tooling: implementation smoke wrappers now live in
-  `.agents/skills/opi-implement/scripts/` with their tests. Audit tests move
-  beside their owning skill helpers, shared assurance tests move to
-  `.agents/skills/_shared/scripts/`, and Eval operator tests move to
-  `crates/opi-eval/operator/tests/`. Repository-wide documentation, Cargo cache
-  and release artifact-audit tools retain their root `scripts/` entrypoints.
-
-- Repository: removed the top-level `examples/` package skeletons, their
-  manifest smoke tests and the accompanying `docs/extension-examples/`
-  documentation. Extension behavior tests remain self-contained under
-  `crates/opi-coding-agent/tests/`.
-
-- `opi-eval`: external `evaluations/YYYY/MM/<eval-id>/record.json` groups frozen
-  family operations, bilingual/machine reports and native attempt evidence.
-  Discovery reads JSON records, explicit read-only legacy imports and lifecycle
-  receipts directly, without SQLite or a persistent query cache. Existing
-  `catalog.sqlite` files are ignored and left untouched. Queries, pinning,
-  retirement, inventory-bound archive/GC previews, explicit plan application and
-  canonical-path archive restore keep original seals and scores unchanged.
-  Finished native evaluations and standalone comparisons apply latest-three
-  rolling retention by Agent, benchmark combination, model/API/parameters/thinking
-  and task scope. Pi releases retain independent buckets; Opi commits/versions
-  and Companion builds do not reset counts. Pins, references, active work and
-  unknown cleanup/dependencies are protected, with extra retained entries reported.
-  Only owned evaluation trees are maintained; standalone output and shared caches
-  remain caller-owned. `/2` retention has only `keep_latest_per_group = 3`; `/1`
-  inherits that template default without rewriting the private file or model
-  controls. Current-worktree candidates reuse verified eligible pi
-  snapshots without rerunning pi. `--bench all` uses one evaluation and one
-  first-dispatch deadline across families, graders and precise logical retries.
-  Historical validity, freshness, selection and storage availability stay separate.
-
-- `opi-eval`: the static external lock now pins the pi coding-agent to the
-  upstream `v1.0.0` tag (commit `a13d35a742c6ef8462812a28fbe1d8c8b7431c32`)
-  with its verified `package-lock.json`/`npm-shrinkwrap.json`/
-  `package.json` blobs and the `@earendil-works/pi-ai` 1.0.0 model-data
-  archive. The pinned CLI surface is protocol-identical for the adapter
-  (v3 session header, same `AgentSessionEvent` vocabulary, same wire
-  shapes and truncation messages), so the adapter, profile, and smoke
-  templates only retarget their pinned-version references; `pi:latest`
-  still resolves to this pin at preparation.
-
-- `opi-eval` skill: native reports, sealed evidence, catalogue and verification
-  output stay external by default; `docs/eval/` receives a bilingual conclusion
-  pair only on an explicit caller request, and its evidence registry is a legacy
-  import source rather than a runtime requirement. Fidelity history is maintained
-  by its caller in a selected external directory. `version=pi:latest` resolves
-  at preparation to the static-lock pi pin and records the resolved package version (never a frozen
-  `latest` identity); and Opi-only benchmark runs may reuse a registered
-  sealed pi baseline under the new identity-tuple checks in
-  `.agents/skills/opi-eval/references/sealed-baseline.md`, with cross-run
-  pairing disclosed in the conclusion report. The detailed `docs/eval/`
-  operator reports from 2026-09-10 to 2026-09-29 were removed from the
-  checkout; they remain in Git history and their evidence roots stay
-  registered in `docs/eval/evidence-roots.jsonl`.
-
+  `@earendil-works/pi-ai` 1.0.4 model-data archive, and the lock's tb21
+  image set now binds every corpus task image (89 tasks) to its verified
+  immutable manifest so a full-scope `terminal-bench-2.1` selection passes
+  image preflight. Upstream removed the published `npm-shrinkwrap.json` in
+  1.0.1, so the lock drops that blob and the agent builder records
+  `shrinkwrap_sha256: null` when the pinned source publishes none. The
+  pinned CLI surface is protocol-identical for the adapter, so the adapter,
+  profile, operator template and smoke templates only retarget their
+  pinned-version references; `pi:latest` still resolves to this pin at
+  preparation.
+- `opi-eval`: external `evaluations/YYYY/MM/<eval-id>/record.json` groups
+  frozen family operations, bilingual/machine reports and native attempt
+  evidence. Discovery reads JSON records, explicit read-only legacy imports
+  and lifecycle receipts directly, without SQLite or a persistent query
+  cache; existing `catalog.sqlite` files are ignored and left untouched.
+  Queries, pinning, retirement, inventory-bound archive/GC previews,
+  explicit plan application and canonical-path archive restore keep original
+  seals and scores unchanged. Finished native evaluations and standalone
+  comparisons apply latest-three rolling retention by Agent, benchmark
+  combination, model/API/parameters/thinking and task scope; pi releases
+  retain independent buckets, while Opi commits/versions and Companion
+  builds do not reset counts. Pins, references, active work and unknown
+  cleanup/dependencies are protected, with extra retained entries reported.
+  Only owned evaluation trees are maintained; standalone output and shared
+  caches remain caller-owned. Current-worktree candidates reuse verified
+  eligible pi snapshots without rerunning pi, and `--bench all` uses one
+  evaluation and one first-dispatch deadline across families.
+- `opi-eval` skill: native reports, sealed evidence, catalogue and
+  verification output stay external by default; `docs/eval/` receives a
+  bilingual conclusion pair only on an explicit caller request. Native
+  benchmark and six-trial operator acceptance modes select software and
+  version, benchmarks and model, drive the Rust Companion through frozen
+  plans, and stage privacy-reviewed evidence with bilingual reports and
+  offline verification. `version=pi:latest` resolves at preparation to the
+  static-lock pi pin, Opi-only benchmark runs may reuse a registered sealed
+  pi baseline under identity-tuple checks with cross-run pairing disclosed,
+  and omitted Opi versions select a build of the current local working tree
+  with recorded commit, dirty-source and binary identities. GLM-5.3-Flash
+  defaults to a 1000000-token context window and 131072-token per-response
+  output limit, with exact-client control proof required before native
+  planning.
 - Assurance tooling: `opi-audit` accepts optional redacted `evidence_root`
-  proof and checks source/client/material applicability and actual execution
-  after sealing requirements. Boundary review compares validation with the
-  production consumer and checks limits before costly work with bounded
-  isolated probes. Its read-only Rust libtest log checker rejects stale or
-  ignored-selection filters, zero execution, and inconsistent identities or
-  counts; fixture/readiness evidence cannot substitute for native acceptance.
-
-- Assurance tooling: `opi-audit` now installs its independent core before
-  compiling a bounded historical reference. The locked `append-history`
-  operation preserves core bytes and sidecars, validates the advisory suffix,
-  and recovers interrupted report/index updates. `opi-remediate` may use this
-  reference to locate evidence and design current checks; current findings
-  retain scope authority and report updates invalidate prior plan approval.
-
-- Assurance tooling: `opi-audit` invocation now requires only `phase`,
-  `reviewer`, and `model`. `reviewer_model_id`, `model_identity_source`, and
-  `member` are optional overrides; unsupplied values default to a fresh
-  private member directory, the `model` slug recorded verbatim as
-  `reviewer_model_id`, and `model_identity_source=operator-declared`,
-  without inferring an exact model identity.
-
-- `opi-coding-agent`: JSON mode now writes and flushes events during the run,
-  including image input, instead of buffering stdout until prompt completion.
-  A dedicated writer acknowledges each line to apply bounded backpressure;
-  output failures cancel the run with exit 1, and Ctrl-C remains observable
-  while waiting for a slow writer. Forced termination retains emitted bytes
-  without fabricating terminal events. New streaming runner methods leave
-  existing explicit in-memory capture APIs and NDJSON schema 2 intact. The CLI
-  allocates its one-shot future on the heap to avoid Windows debug-build
-  main-thread stack overflow before provider dispatch.
-
-- `opi-coding-agent`: startup resolves the default thinking level against the
-  selected model's supported levels before dispatch, using the same numeric
-  budget policy as runtime selection. Models exposing only low/high/max now
-  start at high instead of rejecting medium. Explicit unsupported enabled-level
-  selections remain errors.
-
-- `opi-eval`: native oracle/nop conformance witnesses verify exact owned
-  container cleanup before reporting, including setup failures and timeouts.
-  Cleanup uncertainty remains non-success; neighboring containers and shared
-  resources are preserved.
-
-- `opi-eval`: Pi retry streams retain explicit retry boundaries and accept
-  final correlated success after a transient provider error. Incomplete or
-  contradictory retry evidence remains invalid.
-
-- `opi-eval`: complete native client streams now retain their full bytes up
-  to the existing 64 MiB artifact limit. Overflow is invalid and unscored,
-  with private raw diagnostics retained and no prefix sealed as full evidence.
-
-- `opi-eval`: offline local acceptance interprets Opi's native `Anthropic`
-  API value and pi's `anthropic-messages` value for the first connection,
-  retaining exact provider/model and settled tool evidence requirements.
-
-- `opi-eval`: full-selection reports use the frozen corpus task count for
-  selected coverage, independently of subjects, repetitions or surviving
-  bundles. Subset and planned/attempted trial counts retain their meanings.
-
-- `opi-eval`: offline regrade loads the products bound by verified source
-  trial identities, allowing pi-only and Opi-only material. Tampered source
-  trials remain explicit rejections and never launch a verifier.
-
-- `opi-eval`: offline verification and regrade reject linked trial entries,
-  including Windows junctions, instead of silently omitting them from the
-  verified inventory. Source evidence remains unchanged.
-
-- `opi-eval`: native cleanup uncertainty and rejected execution identity now
-  cancel further dispatch. The failed attempt and planned missing coverage stay
-  visible; valid Agent failures retain their native grading and continuation.
-
-- `opi-eval`: file-backed Opi credentials now reach the environment variable
-  selected by the isolated client configuration. Secrets remain private launch
-  material and are removed before verifier execution and evidence export.
-
-- Assurance tooling: remediation apply now checks the exact approved plan and
-  live audit digests against its committed source baseline. Commits touching
-  only the current Phase's fixed plan pair no longer force a HEAD reseal;
-  other committed changes, including changed-then-restored source, still reject.
-
-- `opi-eval`: offline regrading orders task-package manifest entries by their
-  relative path strings, matching the sealed digest and preventing false drift
-  rejection when a filename sorts before a sibling directory's contents.
-
-- `opi-eval`: local pi preparation includes the locked external runtime
-  dependencies and Linux x64 esbuild binary. Package identity, link containment,
-  standalone startup and runtime import checks reject incomplete packages
-  before cache installation; dependency versions and disabled install hooks
-  remain unchanged.
-
-- `opi-eval`: oracle/nop conformance diagnostics select the pinned native
-  runner's registered Agent name and bind results to that explicit selection.
-  Missing, substituted or dual diagnostic selectors are rejected; integration
-  Agent import selection is unchanged.
-
-- `opi-eval`: corpus preparation admits pinned inert metadata links directly
-  beneath `tasks/` only when their relative targets are regular tracked files
-  in the same commit. It hashes link text, verifies target bytes and modes,
-  and rejects unsafe links before inventory publication. Task and runtime
-  packages still reject links; link-free corpus digests remain unchanged.
-
-- `opi-eval`: preparation acquires missing selected task and Dockerfile images
-  by admitted immutable digest, verifies the selected engine before and after,
-  and retains separate supervised image-acquisition logs. Source and image
-  acquisition share one deadline; invalid pins, failed pulls and digest drift
-  prevent publication. Preview remains read-only and warm preparation reuses
-  verified images. The TB2.1 Python 3.13 base image now has an exact static pin.
-  Relative experiment paths now resolve the cache to an absolute path before
-  runtime-package verification and material publication.
-
-- `opi-eval`: selected local Docker Desktop storage can now be observed on WSL
-  through a bounded read-only probe of the already running engine namespace.
-  Engine, process, mount and endpoint identity must agree; unavailable, remote,
-  ambiguous or failed observations remain unknown without starting containers.
-
-- `opi-eval`: pi preparation now verifies model data against an explicit
-  static archive URL and SHA-256 matched to its source version. Cold builds
-  no longer require missing upstream shrinkwrap integrity; invalid pins and
-  changed archive bytes reject before extraction, offline build or publication.
-
-- `opi-eval`: the local preparation workspace-input pin now matches the
-  committed Cargo.lock, allowing cold Opi builds to pass source admission.
-  Mismatched source locks still reject before building or publishing material.
-
-- `opi-eval`: material acquisition now settles under a whole-invocation
-  deadline and signal cancellation, bounds diagnostic output, records owned
-  cleanup, and prevents material publication after unsuccessful settlement.
-
-- `opi-eval`: local acceptance requires sealed live first-connection evidence
-  and matching native client observations; internally consistent fixture
-  trials and loopback control probes cannot establish real acceptance.
-
-- `opi-eval`: replacement runs verify and expand the original frozen plan
-  before deriving fresh experiment, group and trial identities for each
-  attempt, preserving selected scope and unrelated groups.
-
-- `opi-eval`: recovery prints a read-only view of every frozen planned trial,
-  including unstarted entries. It preserves original reports and bundles and
-  rejects inconsistent run-control or durable trial identities.
-
-- `opi-eval`: offline native comparisons retain unsupported sampling and
-  require sealed, bound output-control evidence for requested output limits.
-  Missing proof in older bundles cannot become a comparable control.
-
-- `opi-eval`: native validation, planning and execution reject required
-  sampling values unsupported by any selected client. Optional unsupported
-  sampling remains explicit in paired comparisons.
-
-- `opi-eval`: native canary detection cancels the run before another trial
-  starts. Failed sealing retains private evidence and planned missing coverage.
-
-- `opi-eval`: native sealing now also guards the resolved selected
-  connection credential itself. Without `--canaries`, an exact echo of the
-  selected credential in any staged native export blocks sealing, cancels
-  the run before another trial starts, and keeps diagnostics private; the
-  secret is never serialized into a guard list or artifact.
-
-- `opi-eval`: replacement now gives every trial it actually re-executes a
-  fresh trial ID, including retained unrelated groups; only the targeted
-  comparison group carries the attempt suffix, and the declared replacement
-  scope, controls and original source/run bytes stay unchanged.
-
-- `opi-eval`: native result admission compares the observed task reference
-  to the exact absolute dispatched task package. A substituted package can
-  no longer be admitted as the selected dispatch or sealed, even when the
-  recorded task name and lifecycle fields still match; the rejection lands
-  on both the completed and setup-refusal paths.
-
-- `opi-eval`: offline local acceptance binds provenance to the admitted
-  material. The preserved inventory is mandatory and path-unique with
-  exactly one material entry per trial family; the admitted static-lock
-  bytes are located by each preserved material's `static_lock` pin and
-  must agree with every family's sealed control/integrity upstream
-  identity; pi/Harbor/Pier source identities derive from the admitted
-  lock bytes, with the operator identity cache demoted to corroborating
-  evidence. Coordinated substitutions, duplicates, cross-family bindings
-  and missing or tampered inventories reject before acceptance.
-
-- `opi-eval`: native validation, planning and execution now reject a
-  required `reasoning` value for every selection shape and protocol
-  before any Agent or verifier dispatch, because current native
-  execution cannot prove that control effective. Optional unsupported
-  reasoning remains explicitly non-comparable.
-
-- `opi-eval`: plan creation canonicalizes the accepted native-material
-  path before loading, hashing and recording it. A plan created from a
-  relative material path with a nested output loads that same unchanged
-  material by default from both the creation directory and an unrelated
-  working directory; drift and substitution checks are unchanged.
-
-- `opi-eval`: the native-smoke CI delegates materialization to the shared
-  local preparation path. The workflow transports the fetched external
-  checkouts, built agents and repository pins into the admitted pinned
-  cache, runs one `prepare` per benchmark family, and routes every CI
-  consumer through the published per-family prepared-material map. The
-  duplicate CI task/profile/verifier-wrapper machinery is removed, a
-  shared prepare rejection stops material publication, and the artifact
-  reader validates the exact per-family prepared-manifest references.
-
-- `opi-eval`: pinned Harbor/Pier jobs select an owned Docker execution
-  environment for both Agent and verifier stages. Cancellation waits for the
-  container command's observed exit; uncertain termination stops further
-  dispatch and blocks sealing. Trial configuration binds the selected
-  environment. Teardown preserves shared images and removes only trial-owned
-  resources; refreshed integration bytes require new material identities.
-
-- `opi-eval`: native preparation, planning and dispatch retain effective
-  Agent/verifier resource, network, lifecycle and deadline requirements with
-  pinned default origins. Required unobserved or insufficient engine resources,
-  cache/output/engine storage, GPU devices/types and immutable image material
-  reject before jobs start. Preview keeps the full pinned task inventory and
-  explicit exclusion reasons without starting or pulling images.
-
-- `opi-eval`: sealed native Agent timing now records an explicit unknown
-  reason when Agent-only duration was not observed. Host-supervised Agent
-  measurements retain their wall-clock origin, including measured zero.
-
-- `opi-eval`: native jobs carry accepted Agent and verifier deadlines in a
-  single pinned runner configuration. Agent bounds narrow each other and
-  retain stricter task limits, including tasks without a default deadline.
-  Trial configuration drift rejects scoring; whole-job supervision remains
-  independent of the stage caps. Stage cancellation stops the integration's
-  Agent process group and preserves its observed exit; the runner's typed
-  timeout keeps an interrupted client stream eligible for native grading.
-
-- `opi-eval`: native scoring now uses Opi's provider exit diagnostics and pi's
-  validated terminal JSON, including errors reported at exit zero. Terminal
-  provider failures are excluded from graded denominators; recovered retries,
-  ordinary task failures and timeouts retain their eligibility. Both capture
-  policies seal the client terminal cause and its supporting evidence.
-
-- `opi-eval`: native grading now rejects missing or substituted terminal
-  product, executable digest and model identities before admitting a score.
-  The model comparison follows the pinned Harbor/Pier provider/name split;
-  diagnostic oracle results remain separate from Agent results.
-
-- `opi-eval`: offline regrade verifier processes now start with only their
-  validated material environment. Ambient provider credentials, including
-  arbitrary selected credential names, no longer reach the verifier; explicit
-  credential-shaped verifier variables remain rejected.
-
-- `opi-eval`: native Opi configuration omits `max_iterations`, using the
-  client's default loop without a fixed turn ceiling. Native deadlines and
-  cancellation remain in force. New projections require fresh exact-client
-  control evidence, native material and plans; offline acceptance preserves
-  both historical absent-field projections and the former exact finite
-  ceiling without reinterpreting old executable defaults or sealed results.
-
-- `opi-eval`: the pinned Terminal-Bench 3.0 whole-job deadline is now 18,000
-  seconds, covering the task's four-hour Agent allowance, grading and lifecycle
-  overhead. Native job watchdog failures are `native-job-timeout` at the
-  infrastructure boundary; invalid timeout classifications, settlements and
-  receipts retain `timed_out: true`. Native Agent and verifier timeouts remain
-  distinct, and historical frozen plans/materials are unchanged.
-- `opi-coding-agent`: non-interactive provider stream failures append a
-  summary-redacted `DiagnosticPayload` JSON line to stderr after the human
-  message. Captures retain safe transport/protocol causes without exposing raw
-  upstream errors; NDJSON framing, exit codes and retry behavior are unchanged.
-
-- `opi-eval` skill: omitted Opi versions now select a build of the current
-  local working tree with recorded commit, dirty-source and binary identities.
-  Explicit pins still take precedence. GLM-5.3-Flash defaults to a 1000000-token
-  context window and 131072-token per-response output limit, with exact-client
-  control proof required before native planning; prior frozen evidence is unchanged.
-
-- `opi-eval`: mounted Harbor/Pier jobs write Agent output and Opi traces to
-  their trial log mount before completion. Outer timeout/cancellation retains
-  a bounded private diagnostic copy after owned writers are removed, including
-  root-owned private trace files, without fabricating terminal events, grades,
-  or seals. Capture and cleanup failures remain explicit.
-
-- `opi-eval`: offline reports retain bound unsealed failures in attempted and
-  invalid coverage without assigning scores or verified status. Native
-  completion diagnostics recognize verified native grades, and reward
-  provenance names the exact sealed trial result. Conflicting lifecycle or
-  control records block publication.
-
-- `opi-coding-agent`: JSON session summaries now include observed token usage
-  from failed prompts and estimate known costs from those same totals. Both
-  text and content inputs count completed responses once, including across
-  repeated runs and resumed history. Accepted-turn counts and failed-prompt
-  session durability remain unchanged; unknown usage still leaves cost unknown.
-
-- `opi-coding-agent`: `--json-compact` now strips redundant cumulative
-  thinking, opaque blocks and tool arguments from text/thinking/tool-call
-  delta updates, including signatures attached to omitted thinking snapshots.
-  Full block-end and terminal messages, ordinary JSON and durable/model-facing
-  thinking remain unchanged.
-
-- `opi-coding-agent`: optional `[defaults] max_output_tokens` sets the output
-  limit on each provider request independently of model capability metadata.
-  It survives retries, tool continuation, and compatible model/thinking changes.
-  Zero, values above the model ceiling, and incompatible thinking budgets fail
-  before provider dispatch; omission preserves existing defaults.
-
-- `opi-ai`: Anthropic HTTP streaming buffers complete SSE frames before
-  decoding, preserving signed reasoning across UTF-8 and CRLF chunk boundaries.
-
-- `opi-eval`: local acceptance verification resolves each subject's product
-  from its sealed experiment instead of requiring fixed subject names. Fresh
-  replacement names are accepted only when experiment, trial, and bundle
-  identities match; swapped or ambiguous product assignments still reject.
-
-- `opi-eval`: native result binding reads the pinned Harbor/Pier layout,
-  `jobs/<job>/<trial>/result.json`, and retains the single-trial, selected
-  Agent, task, artifact, and reward identity checks. A valid zero reward no
-  longer fails because the reader searched a nonexistent `trials/` directory.
-  Collection binding resolves the native task reference, checks Harbor's
-  recorded verifier mode, and reads manifest destinations relative to the
-  trial directory. Regrading locates preserved artifacts in that same layout.
-  Aggregate binding selects the configured primary reward by name, allowing
-  Pier's auxiliary test metrics while retaining strict trial and score checks.
-
-- `opi-eval`: pi source admission now pins v0.85.1 and its verified lockfiles.
-  The offline provider accepts the pinned Anthropic SDK's exact beta Messages
-  request path; all three protocol tool/error-loop checks pass with pi 0.85.1
-  and Opi 0.8.2.
-
-- `opi-eval` skill: native benchmark and six-trial operator acceptance modes
-  now select software/version, benchmarks and model, drive the Rust Companion
-  through frozen plans, and stage privacy-reviewed evidence with bilingual
-  reports and offline verification. Explicit fidelity cases remain available
-  separately; producing evidence does not complete implementation task 19.11.
-- `opi-eval`: the upstream oracle is now an explicitly selected conformance
-  diagnostic (`conformance --case oracle-witness`, the incorrect
-  `nop-witness` grades zero), never a prerequisite silently run by `run`.
-- `opi-eval`: experiment documents move to schema
-  `opi-eval-experiment/2`: a top-level `connection` selects one named
-  `[[connections]]` entry (provider, `api`, base URL, exact model, one
-  credential reference), `[model_controls]` drops provider/model/endpoint
-  fields and adds `top_p`, `context_window`, and the `required` list, and
-  `[execution]`/`[storage]` carry the execution mode, enforceable bounds,
-  and capture policy. Remote routes need the explicit `live` mode,
-  requested monetary/usage caps are rejected as unenforceable, and
-  required-but-unsupported controls reject before any model effect. The
-  native-material manifest loses the agents' fixed scripted config and
-  inline credential fields: request identity is projected from the
-  selected connection (`project_connection`) into each pinned client's
-  exact configuration bytes.
-- `opi-eval`: new offline verifier
-  `crates/opi-eval/scripts/verify-local-acceptance.py --root E --out O
-  --companion C` validates a supplied redacted local-acceptance evidence
-  root: six attributable trials across the three benchmark families,
-  frozen controls cross-checked against each run-control, source/build/
-  material/bundle digests, preserved command exits and artifacts, the
-  Opi-only `opi-artifact-audit` scoped capture view byte-bound to and
-  exhaustive for the three original Opi native captures, and pi/Harbor/
-  Pier upstream identities validated only against the supplied cached
-  inventory. It rejects substituted, oracle, missing, or fixture-only
-  evidence, refuses an empty generic-audit success, never launches an
-  Agent, reads credentials, or contacts a provider, and invokes the
-  built Companion verify/report only against the supplied family roots.
-  A populated dummy credential environment is now pinned to leave the
-  deterministic hermetic contract and every durable artifact unchanged,
-  and pi-only runtime plus packaging independence (no Opi crate
-  dependency, no bundled corpora/graders/images) is pinned at the
-  spawned-CLI seam.
-- `opi-eval`: one run-level cancellation token now bounds every dispatch.
-  SIGINT/SIGTERM at the CLI stops new affected dispatch, cancels only the
-  owned process trees, removes the job containers bound to each trial's
-  private Compose working directories plus the temporary
-  credential material, and still settles and renders the interrupted
-  report: cancelled and never-dispatched trials stay explicit missing
-  coverage with no fabricated score. The durable
-  `integration/owned-resources.json` evidence and the receipt cleanup
-  token name exactly what was cleaned, so a successful cancellation never
-  leaves orphan execution behind. The recovery and replacement flows
-  consume the sealed interpretation and the durable lifecycle journal
-  only; they never reclassify settled scores from logs or exit codes, and
-  a replacement never rewrites the prior attempt's classification or
-  evidence.
-- `opi-eval`: `regrade --root --native-material --out` is now actual
-  native regrading, not a byte check. It verifies every source bundle
-  first, requires the saved Agent artifacts under each trial's
-  preserved job tree to still digest to the sealed verifier-input
-  identity, then re-grades those preserved artifacts with the pinned
-  native verifier in fresh trial-owned environments under the output
-  root - reusing the same binding readers as initial execution - and
-  persists one derived `opi-eval-regrade-record/1` grading record per
-  trial referencing the source bundle, original artifact identities,
-  and fresh verifier identity, without rewriting any original score.
-  No Agent executable is spawned, no credential is resolved, and no
-  provider is contacted; a verifier whose task declares a network
-  requirement without a permitted offline equivalent rejects
-  fail-closed, as do tampered bundles, missing or altered Agent
-  artifacts, a drifted patch base, and drifted task material identity.
-  Exit 0 means every sealed native trial regraded; 1 names typed
-  per-trial rejections; 2 rejects the request (a root with no native
-  trial, an unreadable material, or an existing output root, which a
-  regrade never overwrites).
-- `opi-eval`: offline evidence operations are distinct and native
-  outcome reporting is honest. New `verify --root R` owns the original
-  byte/seal check over every sealed trial bundle (no repair, no
-  rewrite); `regrade` now fails closed with an explicit
-  `unavailable-operation` diagnostic until actual native regrading
-  lands, never running byte verification under that name. Every run
-  writes a run-level `run-control.json` before its first effect
-  (experiment identity, manifest digest, selection, corpus size, exact
-  planned trials), so offline recomputation preserves unstarted trials
-  even when no trial sealed, and a drifted run-control identity blocks
-  publication. Trials seal a `control/settlement.json` record of the
-  runner's final classification; the offline report consumes it for
-  outcome classes instead of re-deriving from stderr tokens or process
-  exits: graded trials (including valid native zero and
-  benchmark-defined Agent timeouts) form the per-benchmark metric
-  denominator with its definition and no cross-benchmark average, while
-  provider/access/identity/infrastructure/invalid-grading failures stay
-  attempted-but-invalid. Published reports gain coverage counts
-  (`corpus`, `selected`, `planned`, `attempted`, `valid`,
-  `agent_failure`, `invalid`, `unexecuted`), the `full|subset` scope
-  label, repetition control pairs (`consistent|divergent|incomplete`
-  with missing groups), and a protocol-group guard: an edge pairing two
-  subjects of one product never carries a paired claim, and
-  single-subject reports need no artificial comparison edge. Repeated
-  reconstruction over identical sealed inputs stays byte-identical;
-  tampered or unsealed evidence blocks publication instead of upgrading.
-- `opi-eval`: experiments select full/subset task plans and freeze them
-  into digest-bound run plans. New `plan --config C [--native-material
-  M] --out P` enumerates the pinned corpus inventory from `task.toml`
-  metadata without pulling or starting images, expands the document's
-  `[selection]` (`scope=full|subset`, explicit `task_ids`, recorded
-  `reason`, `repetitions`, optional per-task `seeds`; mutually
-  exclusive with explicit `[[trials]]`) into exact trials, and checks
-  every selected task's declared requirements against the locally
-  observed resources: unmet or unobservable requirements reject the
-  whole request - full scope included, never a silent shrink - while
-  the preview keeps per-task statuses for the whole inventory. The
-  frozen `opi-eval-run-plan/1` file binds the embedded experiment
-  source, material identity, corpus entries, and exact trials under one
-  digest; new `[execution]` bounds are explicit (`concurrency` enforced
-  as an upper bound with parallel hermetic waves, `max_trials`
-  rejecting smaller expansions, agent/verifier timeouts combining by
-  narrowing, `max_output_tokens` enforceable only via the equal pinned
-  model control; `max_total_tokens`/`max_cost` reject naming their
-  missing enforcement route). `run --plan P --root R` re-verifies the
-  digest, material bytes, experiment identity, and corpus expansion,
-  then executes exactly the frozen trials with stage/settlement
-  progress on stderr and a saved structured result carrying the plan
-  identity; tampering with the plan rejects before any trial runs.
-  `run --config C` stays the same resolve/freeze path. Task packages
-  generalize to corpus directories of task subdirectories (single-task
-  layout unchanged) with per-task pinned profiles; hermetic corpus
-  fixtures cover multi-task selection. A single-subject experiment
-  (pi-only or opi-only) no longer requires an artificial comparison
-  edge.
+  proof, checks source/client/material applicability and actual execution
+  after sealing requirements, installs its independent core before
+  compiling a bounded historical reference, and requires only `phase`,
+  `reviewer` and `model` (remaining inputs are optional overrides).
+  Remediation apply checks the exact approved plan and live audit digests
+  against its committed source baseline; commits touching only the current
+  Phase's fixed plan pair no longer force a HEAD reseal.
+- Development tooling: implementation smoke wrappers now live in
+  `.agents/skills/opi-implement/scripts/` with their tests; audit tests
+  move beside their owning skill helpers, shared assurance tests move to
+  `.agents/skills/_shared/scripts/`, and Eval operator tests move to
+  `crates/opi-eval/operator/tests/`. Repository-wide documentation, Cargo
+  cache and release artifact-audit tools retain their root `scripts/`
+  entrypoints.
 - `opi-eval`: local material preparation works from an independent
-  directory. New `doctor --config C` reports Linux-engine reachability,
-  architecture, WSL/Docker-observed CPU/memory/GPU/disk, and missing
-  materials, with reasons on every unknown observation and no model
-  started. New `prepare --config C --out M` verifies the seeded local
-  cache (`[storage].cache`, resolved against the document directory)
-  against the pinned static lock (producer scripts over LF-normalized
-  bytes), freezes the selected benchmark, subject executables, and
-  every requested image identity, checks the frozen task's declared
-  resource requirements against the local observations, and emits a
-  local-origin native-material manifest (`origin: local`) consumable by
-  `validate` and `run`. A pi-only experiment prepares and validates
-  without any Opi material (`NativeMaterial::load_for` selects exactly
-  the document's subject products). Verified identities freeze into a
-  reusable cache inventory; drift rejects without re-fetching, and a
-  cache miss invokes the pinned materializer under supervision (plan
-  in, captured log, byte re-verification) or fails with an actionable
-  message naming the missing identity. The materializer's new
-  `prepare --cache ... --plan ...` mode acquires pinned public tool
-  archives and fails closed with guidance for unwired identities; its
-  producer hash record in the static lock is refreshed (upstream
-  revisions unchanged). Local origin never manufactures GitHub
-  provenance: the upload receipt remains a CI transport claim.
-- `opi-eval`: DeepSWE v1.1 native scoring runs through its declared
-  committed-patch handoff. The task package's Pier `task.toml` lifecycle
-  is parsed under the Pier family policy (collect hooks are the patch
-  handoff and are honored; the base revision, environment image, and
-  verifier network policy bind into the selection, and a task
-  contradicting the pinned pristine collected-patch profile rejects as
-  drift). The pinned native output is Pier's `jobs/<job>/result.json`
-  aggregate; the shared binding requires the bound job to record the
-  declared lifecycle with the same base revision and image, and the
-  sealed bundle records the full verifier-input identity
-  (`native/verifier-input.json`). A new pinned Pier integration module
-  (`integrations/pier/opi_eval_pier.py`) runs the selected Agent inside
-  the task environment on Pier's agent surface. The native material
-  manifest moves to schema `/3`: each agent product pins one integration
-  per runner family (Harbor and Pier modules are not
-  module-compatible). The incorrect witness grades honestly: an agent
-  that committed nothing still yields a collected empty patch (status
-  ok) and a bound reward zero, while undeclared collection or a rebased
-  base revision rejects. The ignored `native_deepswe_patch_witness`
-  drives both real witnesses against pinned external material, and the
-  CI smoke reruns the DeepSWE witnesses (artifact verifier expects ten
-  conformance cases). The benchmark conformance `nop-witness`
-  registration now covers all three families (the 3.0 arm had been
-  left gated to 2.1).
-- `opi-eval`: Terminal-Bench 3.0 native scoring runs through its declared
-  separate-verifier handoff. The task package's `task.toml` lifecycle is
-  parsed and bound into every native dispatch (unsupported shapes -
-  multi-step tasks, disabled verifiers, verifier collect hooks,
-  non-Linux tasks, richer artifact entries - reject before any verifier
-  spawn, and a task contradicting the pinned separate-container profile
-  rejects as drift). The pinned native output is Harbor's
-  `jobs/<job>/result.json` aggregate; the shared binding now enforces
-  declared collection semantics: an undeclared collected file rejects
-  (`native-binding-undeclared-artifact`), a missing or uncollected
-  declared artifact rejects, substituted declared bytes reject, and the
-  sealed bundle records the verifier-input identity
-  (`native/verifier-input.json`) with the digests of exactly the
-  collected bytes. Explicitly selected diagnostic witnesses (oracle/nop)
-  bind through the same production handoff without an integration
-  terminal observation and never become Agent scores; the ignored
-  `native_tb3_artifact_witness` drives both real witnesses against
-  pinned external material.
+  directory and is fail-closed about what it freezes. `doctor --config C`
+  reports Linux-engine reachability, architecture, WSL/Docker-observed
+  CPU/memory/GPU/disk and every selected preparation input `prepare`
+  verifies - each with its expected cache location and a present/missing/
+  unknown state - with reasons on every unknown observation and no model
+  started. `prepare --config C --out M` verifies the seeded local cache
+  against the pinned static lock, freezes the selected benchmark, subject
+  executables and every requested image identity, checks the frozen task's
+  declared resource requirements against local observations (an unmet or
+  unobservable requirement rejects the whole request, full scope included),
+  and emits a local-origin manifest consumable by `validate` and `run`;
+  local origin never manufactures GitHub provenance. Preparation acquires
+  missing selected task and Dockerfile images by admitted immutable digest
+  and verifies them in the selected engine; corpus preparation admits
+  pinned inert metadata links directly beneath `tasks/` only when their
+  relative targets are regular tracked files in the same commit; pi
+  preparation verifies the model-data archive against an explicit URL and
+  SHA-256 and includes the locked external runtime dependencies and Linux
+  x64 esbuild binary; and the workspace-input pin matches the committed
+  Cargo.lock. Material acquisition settles under a whole-invocation
+  deadline with signal cancellation, bounded diagnostic output, recorded
+  owned cleanup and no publication after unsuccessful settlement; every
+  selected observer (engine, version, disk, GPU, context probes across
+  `doctor`, `prepare`, `plan` and `run`) runs under the process supervisor
+  with a finite per-probe bound, the 16 KiB capture ceiling and verified
+  owned-tree cleanup, so a stalled or overflowing observer becomes a
+  truthful bounded refusal instead of an unbounded wait. Selected local
+  Docker Desktop storage can be observed on WSL through a bounded read-only
+  probe of the already running engine namespace when engine, process,
+  mount and endpoint identity agree; unavailable, remote, ambiguous or
+  failed observations stay unknown, and the Linux Desktop storage gate
+  admits exactly the two known exact Docker Desktop engine
+  operating-system identities so the containerized backend reaches that
+  observer while near-match and unknown identities stay unknown. Plan creation canonicalizes the
+  accepted native-material path so a nested-output relative path loads the
+  same unchanged material from any working directory. The native-smoke CI
+  delegates materialization to this same shared preparation path and routes
+  every CI consumer through the published per-family prepared-material map,
+  keeping no independent transform or admission rule.
+- `opi-eval`: selection and execution semantics are frozen and bounded
+  before dispatch. `plan --config C [--native-material M] --out P`
+  enumerates the pinned corpus inventory from `task.toml` metadata without
+  pulling or starting images, expands `[selection]` (`scope=full|subset`,
+  explicit `task_ids`, recorded `reason`, `repetitions`, optional per-task
+  `seeds`; mutually exclusive with explicit `[[trials]]`) into exact
+  trials, and rejects the whole request on any unmet requirement while the
+  preview keeps per-task statuses for the whole inventory. The frozen
+  `opi-eval-run-plan/2` file binds the embedded experiment source, material
+  identity, corpus entries and exact trials under one digest; `run --plan`
+  re-verifies the digest, material bytes, experiment identity and corpus
+  expansion before executing exactly the frozen trials. `[execution]`
+  bounds are explicit: `concurrency` is an enforced upper bound, the
+  declared `max_trials` caps every resolved trial list (explicit trials,
+  selection expansion and replacement) before native acquisition, root
+  reservation or dispatch, and the seven integer execution bounds reject
+  present non-integer values with the existing typed control error.
+  Replacement runs verify and expand the original frozen plan before
+  deriving fresh identities, give every actually re-executed trial a fresh
+  trial ID (only the targeted comparison group carries the attempt
+  suffix), and use a fresh output root; `run --recover` prints a read-only
+  classification of every frozen planned trial, including unstarted
+  entries. One run-level cancellation token bounds every dispatch:
+  SIGINT/SIGTERM stops new affected dispatch, cancels only owned process
+  trees, removes the job containers bound to each trial's private Compose
+  directories plus temporary credential material, and still settles and
+  renders the interrupted report with cancelled and never-dispatched
+  trials as explicit missing coverage. Native jobs carry accepted Agent
+  and verifier deadlines in one pinned runner configuration (bounds narrow
+  each other; the Terminal-Bench 3.0 profile's whole-job deadline is
+  18,000 seconds and terminal-bench-2.1's is 15,000s, covering the task's
+  Agent window plus grading and lifecycle overhead; watchdog failures are
+  ungraded `native-job-timeout` at the infrastructure boundary while
+  benchmark-valid Agent timeouts retain their native grade). Pinned
+  Harbor/Pier jobs select an owned Docker execution environment for both
+  Agent and verifier stages; uncertain termination stops further dispatch
+  and blocks sealing, teardown preserves shared images and neighboring
+  resources, and mounted jobs write Agent output and Opi traces to the
+  trial log mount before completion, retaining a bounded private diagnostic
+  copy after outer timeout/cancellation without fabricating terminal
+  events, grades or seals. Native Opi configuration omits
+  `[defaults].max_iterations`, using the client's default loop without a
+  fixed turn ceiling while native deadlines and cancellation remain in
+  force. Native cleanup uncertainty and rejected execution identity cancel
+  further dispatch while the failed attempt and planned missing coverage
+  stay visible and valid Agent failures retain their native grading and
+  continuation. Native canary detection and credential guarding cancel the
+  run before another trial starts: without `--canaries`, an exact echo of the
+  selected credential in any staged native export blocks sealing and never
+  serializes the secret into a guard list or artifact.
+- `opi-eval`: native scoring and result admission are evidence-bound.
+  Scoring uses Opi's provider exit diagnostics and pi's validated terminal
+  JSON, including errors reported at exit zero; terminal provider failures
+  are excluded from graded denominators while recovered retries, ordinary
+  task failures and timeouts retain eligibility. Grading rejects missing
+  or substituted terminal product, executable digest and model identities
+  before admitting a score, and result admission compares the observed
+  task reference to the exact absolute dispatched task package, so a
+  substituted package cannot be admitted even when recorded names match;
+  a reverse consumer cross-check requires every ordinary file in a
+  declared collection to be covered by the integration's terminal
+  delivered observations. Result binding reads the pinned Harbor/Pier
+  `jobs/<job>/<trial>/result.json` layout (a valid zero reward no longer
+  fails because of a nonexistent `trials/` directory), checks Harbor's
+  recorded verifier mode, resolves manifest destinations relative to the
+  trial directory, and selects the configured primary reward by name so
+  Pier's auxiliary test metrics stay separate from trial scores. Sealed
+  native Agent timing records an explicit unknown reason when Agent-only
+  duration was not observed; offline reports retain bound unsealed
+  failures in attempted and invalid coverage without scores or verified
+  status, and reward provenance names the exact sealed trial result.
+  Offline regrade loads only the products bound by verified source trial
+  identities (pi-only and Opi-only material allowed), orders task-package
+  manifest entries by relative path to match sealed digests, rejects
+  linked trial entries including Windows junctions, and starts verifier
+  processes with only their validated material environment so ambient
+  provider credentials never reach them. Full-selection reports use the
+  frozen corpus task count for selected coverage, and offline native
+  comparisons retain unsupported sampling as non-comparable while
+  requiring sealed, bound output-control evidence for requested output
+  limits. Local acceptance resolves each subject's product from its sealed
+  experiment instead of fixed subject names and binds provenance to the
+  admitted material: the preserved inventory is mandatory and path-unique
+  with exactly one material entry per trial family, family identities
+  derive from the admitted lock bytes with the operator identity cache as
+  corroborating evidence, and coordinated substitutions, duplicates,
+  cross-family bindings and missing or tampered inventories reject.
+- `opi-eval`: Terminal-Bench 3.0 and DeepSWE v1.1 native scoring run
+  through their declared task handoffs. TB3 uses the separate-verifier
+  handoff: the task's `task.toml` lifecycle is parsed and bound into every
+  native dispatch (multi-step tasks, disabled verifiers, verifier collect
+  hooks on the Harbor route and non-Linux tasks reject before any verifier
+  spawn), and only declared artifacts cross into the fresh verifier -
+  undeclared, missing, uncollected or substituted collections reject.
+  DeepSWE uses the committed-patch handoff: the Pier task's collect hook
+  extracts the committed patch beyond the task's base revision and the
+  pristine no-network verifier grades exactly that patch (an empty nop
+  patch still collects and grades zero); the bound job must record the
+  declared lifecycle with the same base revision and image. The sealed
+  bundle records the verifier-input identity (`native/verifier-input.json`)
+  with the digests of exactly the collected bytes.
 - `opi-eval`: the scripted provider serves all three admitted protocols
   (Anthropic Messages, OpenAI Completions, OpenAI Responses) with the same
   deterministic tool loop, model-keyed terminal failure scripts
-  (`auth-fail`, `rate-limit`, `retry`, `protocol-error`), and
-  authentication evidence in its request log. Agent adapters classify
-  typed terminal provider causes from each client's own evidence
-  (including a JSON error at exit zero for pi) without speculative
-  parsing; the ignored `native_protocol_client_matrix` drives both actual
-  pinned clients through every protocol and script against the loopback
-  provider.
+  (`auth-fail`, `rate-limit`, `retry`, `protocol-error`) and authentication
+  evidence in its request log. Agent adapters classify typed terminal
+  provider causes from each client's own evidence (including a JSON error
+  at exit zero for pi) without speculative parsing, and the pi native
+  terminal importer classifies all three exact pinned protocol-truncation
+  messages as `provider-protocol-error` with failed outcomes at client
+  exit zero. The upstream oracle is an explicitly selected conformance
+  diagnostic (`conformance --case oracle-witness`; the incorrect
+  `nop-witness` grades zero), never a prerequisite silently run by `run`;
+  oracle/nop diagnostics select the pinned native runner's registered
+  Agent name, and native oracle/nop conformance witnesses verify exact
+  owned container cleanup before reporting, including setup failures and
+  timeouts.
 - `opi-eval`: native trials seal one interpretation per trial: valid native
   grades (including zero scores and benchmark-valid timeouts) keep their
   native metric, terminal provider/access/adapter/identity/infrastructure
@@ -990,227 +522,144 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   result admission keeps truthful private diagnostics while refusing
   scoring and export.
 
+### Removed
+
+- `opi-eval`: the legacy `docs/eval/evidence-roots.jsonl` index; its 2026-09
+  era records stay in Git history and are referenced as prose by the
+  historical audit documents. `docs/eval/README.md` now documents the
+  automatic report export workflow instead of the registry.
+- Repository: removed the top-level `examples/` package skeletons, their
+  manifest smoke tests and the accompanying `docs/extension-examples/`
+  documentation. Extension behavior tests remain self-contained under
+  `crates/opi-coding-agent/tests/`.
+
 ### Fixed
 
-- `opi-eval`: the pi 1.0.4 stream importer now binds real retry shapes
-  honestly instead of rejecting them as `import-unsupported-schema`: the
-  opaque `entry_appended` context prune between `auto_retry_start` and the
-  retried `agent_start` is tolerated, a recovered chain may be followed by a
-  new retry chain whose attempt counter restarts from 1, and an exhausted
-  chain settles as `agent-provider-failure:connection` (AgentProcess
-  boundary, retry-eligible) instead of an adapter refusal. Verified against
-  the six real affected streams from the tb21 pi-1.0.4 baseline: four bind
-  their completed outcome and two bind the typed provider failure.
-
-- `opi-eval`: the Harbor and Pier agent integrations now record an
-  honest `unreadable` capture summary when the first-sink receipt is
-  absent or unparseable instead of `null`. The Agent-timeout kill takes
-  down the capture helper with it (whole-group SIGKILL), and a `null`
-  capture summary violates the terminal/3 binding contract
-  (`native-binding-trial-invalid`), aborting the whole run at the
-  integrity boundary; `unreadable` keeps the same trial a settled
-  evidence-boundary invalid while the run continues.
-
-- `opi-eval`: the owned-environment teardown settle bound rises from
-  15s to 120s in both Harbor and Pier integrations. A CPU-saturated
-  task container (observed on `crack-7z-hash`) legitimately needs tens
-  of seconds for a compose teardown; the previous bound marked cleanup
-  as effect-unknown and aborted the whole run as
-  `native-command-termination-unconfirmed` after 16 of 89 trials.
-
-- `opi-eval`: the terminal-bench-2.1 benchmark profile's whole-job
-  deadline rises from 900s to 15000s. The outer Harbor-job timeout equals
-  the profile limit, and 900s also matched the effective agent cap, so any
-  trial whose agent used its full window was killed as
-  `native-job-timeout` before the task-declared verifier (up to 12000s)
-  could grade it. The new budget follows the tb30 convention: agent window
-  plus verifier, build and collection margin.
-
-- `opi-eval`: manual maintenance plans bind selections by inventory
-  digest instead of embedding per-file inventories. Real material-bearing
-  evaluation trees carry tens of thousands of staged files each, which
-  made a three-entry purge plan exceed 100 MB. The plan, inventory listing
-  and application now carry and compare digest-bound shapes (plans shrink
-  to kilobytes; the reviewed-plan read bound rises to a still-finite
-  64 MB), and the reference scan skips staged upstream subtrees (`families/*/cache`,
-  `builds`, `material/packages`) so oversized runner registries,
-  deliberately corrupt repository test fixtures, uv-installed hardlinks
-  and container-internal `/app` paths no longer mark every real
-  evaluation permanently unreadable, unverifiable or unportable. Purge
-  tolerates staged hardlinks and symlinks (archive still refuses them).
-
-- `opi-eval`: the agent/verifier-timeout `Unknown` reward binding only
-  applies when the verifier produced no result; an agent timeout whose
-  verifier still ran and scored keeps binding through the normal reward
-  path (the common graded shape whose capture refusal settles the trial
-  downstream).
-
-- `opi-eval`: an agent-timeout job whose pinned-runner stats carry an
-  empty-reward eval entry attributed to the exception (the second
-  observed no-score shape; tb21 `model-extraction-relu-logits`) binds
-  the same honest `Unknown` (`agent-timeout`) as the empty-evals shape,
-  with the identical strict attribution checks already applied to
-  verifier timeouts.
-
-- `opi-eval`: a binding `task-not-observed` failure (an honest setup
-  refusal with a bound identity: the terminal observation exists but the
-  task never dispatched, e.g. a runtime-preflight transport failure after
-  all retries) now settles at the Infrastructure boundary, invalidating
-  one trial while the run continues. Every other binding token still
-  means identity or provenance corruption and stays integrity-fatal.
-  Observed on tb21 `mcmc-sampling-stan`, where a docker-exec attach
-  window returned exit 0 with empty output three probes in a row and the
-  whole run stopped at 47/89; the probes also gained a third attempt
-  with a 3s spacing to ride out multi-second attach degradation.
-
-- `opi-eval`: a native job whose agent or verifier timed out while the
-  pinned runner wrote no eval stats (observed on tb21
-  `torch-pipeline-parallelism`, where the verifier is killed on the
-  half-built repository after the agent timeout) now binds an honest
-  `Unknown` reward (`agent-timeout`/`verifier-timeout`) after the full
-  per-trial identity checks, instead of failing the whole run at the
-  aggregate boundary. Any other missing or multi-eval aggregate remains an
-  integrity failure.
-
-- `opi-eval`: agent-phase settlement is shielded and always publishes the
-  terminal observation. Harbor enforces task agent timeouts by cancelling
-  the agent task; on a CPU-saturated container (observed three times on
-  `extract-moves-from-video`) the cancellation also cut down the 5s
-  bounded stop path and then the unshielded capture/cleanup awaits, so no
-  terminal observation was ever written and the native binding aborted the
-  whole run (`native-binding-trial-invalid`). The stop-path bound rises to
-  60s, capture/cleanup/terminal run to completion inside a shielded
-  settle, and cancellation now yields an honest terminal with an unobserved
-  exit that settles one evidence-invalid trial instead of stopping the run.
-  A genuinely failed cleanup still prevents settlement.
-
-- `opi-eval`: the Harbor and Pier runtime-preflight and capture-helper
-  probes retry once when the docker-exec transport returns an empty marker
-  frame (exit 0, no output; observed once after a heavy container
-  teardown). The probes are idempotent and side-effect free; without the
-  retry a single transient flake failed the whole run at the integrity
-  boundary (`native-binding-trial-invalid`, 8 of 89 trials).
-
-- `opi-eval`: a confirmed owned-environment teardown now resolves its own
-  earlier uncertainty marker. Harbor retries `stop()`; the first attempt
-  could fail its residue check under teardown load (observed twice on
-  `extract-moves-from-video`), and the sticky marker then failed every
-  later attempt as `native-command-termination-unconfirmed` even after the
-  environment was gone, aborting runs at 16 and 23 of 89 trials. The
-  post-teardown residue check is now the cleanup authority: when it
-  confirms no resources remain, a marker recording a cleanup failure is
-  removed; uncertainty markers from other phases keep their meaning.
-
-- `opi-eval`: owned-environment cleanup uncertainty now reflects the
-  observed final state instead of the first transient compose failure.
-  Upstream Harbor teardown logs and retries some compose failures
-  without raising them, but the wrapper marked the first failure
-  effect-unknown permanently (observed aborting the run at
-  `extract-moves-from-video` after 23 of 89 trials even though the
-  environment was ultimately removed). A transient teardown failure is
-  now tolerated when the post-teardown residue check confirms the
-  environment is gone; only observed residue, a pre-existing marker or
-  a failed settle still marks cleanup uncertain.
-
-- `opi-eval`: the native capture helper now admits the pinned pi 1.0.4
-  session-stream shapes. The 1.0.0-era key sets rejected the real stream
-  fail-closed (`native-capture-refused`, agent exit 125): the leading system
-  message carries built-in-MCP prompt `sections` and tool-change lists,
-  assistant messages carry `responseModel`/`providerThinkingLevel`/
-  `thinkingLevel`/`rawStopReason`/`endTurn`/`diagnostics`/`deferred`, text
-  blocks carry `textSignature`, thinking blocks carry `redacted`, tool
-  results are `role: "toolResult"` messages with `toolCallId`/`toolName`/
-  `isError`/`details`/`usage`/`nestedCalls`, and tool-call blocks serialize
-  as the declared `toolCall` shape. All are non-private agent/prompt
-  payloads passed through under structural checks; private thinking text
-  and signatures still redact and anything undeclared still refuses.
-  Verified against a real pi 1.0.4 session through the scripted loopback
-  provider (full tool loop, `status: sanitized`).
-
-- `opi-eval`: the operator, native projections and Harbor/Pier launches accept
-  the complete pi 1.0.4 thinking-level enum, including `max`. Exact-client
-  evidence rejects a lowered OpenAI effort. Integer sampling inputs normalize
-  to the Companion's float contract, concurrency uses its u32 bound, and
-  malformed enum values reject through the operator's typed error path.
-
-- `opi-eval`: the pi native terminal importer classifies all three
-  exact pinned protocol-truncation messages — the Completions
-  `Stream ended without finish_reason`, the Anthropic
-  `Anthropic stream ended without a stop reason`, and the Responses
-  `OpenAI Responses stream ended before a terminal response event` —
-  as `provider-protocol-error` with failed outcomes at client exit
-  zero. Near matches and unknown messages keep the generic
-  `provider-failure` fallback; auth, rate-limit and success
-  classifications are unchanged.
-- `opi-eval`: `doctor` now reports every selected preparation input
-  that `prepare` verifies, each with its expected cache location and a
-  present/missing/unknown state: the selected benchmark profile and
-  corpus, the uv tool pin, the runner project/lock/interpreter/
-  entrypoint, the applicable integrations, the scripted provider and
-  the capture helper. Only selected products are required (a pi-only
-  selection reports no opi input), and no download, model, credential
-  or Agent effect happens during diagnosis.
-- `opi-eval`: the Linux Desktop storage gate admits exactly the two
-  known exact Docker Desktop engine operating-system identities
-  (`Docker Desktop` and `Docker Desktop (containerized)`) so the
-  current containerized Desktop backend reaches the existing bound WSL
-  namespace observer with its engine/root/process/mount identity
-  checks and before/after rechecks. Near-match, unknown, nonlocal and
-  drifted identities stay unknown; no substring matching, fallback
-  capacity or Docker runtime change is involved.
-- `opi-eval`: `verify-local-acceptance` follows the sealed settlement's
-  graded classification. A benchmark-valid Agent non-zero exit or task
-  timeout - including a timeout tail without a final AgentEnd after an
-  already completed provider/tool loop, with its matching native task
-  exception - now counts among the six required execution trials;
-  provider, authentication, infrastructure, preflight, undispatched,
-  and invalidly graded terminals remain ineligible. Preflight,
-  Agent/task/artifact binding, selected first-connection, actual
-  model/response and completed tool-loop requirements are unchanged.
-- `opi-eval`: `regrade` resolves its requested fresh output through
-  the canonical nearest existing ancestor and validated missing tail
-  components before any mkdir, copy, or verifier effect, and rejects an
-  output contained in the canonical run root - including nested
-  outputs under existing source parents, outputs behind missing parent
-  chains, and symlink aliases of the source. The source directory
-  digest and offline verify stay unchanged on refusal, while fresh
-  external output keeps regrading.
-- `opi-eval`: every selected observer now runs under the process
-  supervisor with a finite per-probe bound, the 16 KiB capture ceiling
-  and verified owned-tree cleanup. The `doctor` engine/version/disk/GPU
-  probes share one finite observation deadline, `plan`'s GPU-runtime
-  probe is supervised, and asynchronous `prepare` awaits its verifier
-  identity and Docker-context probes with the preparation cancellation
-  token instead of blocking the current-thread executor on raw child
-  processes. A stalled or overflowing observer yields a truthful
-  bounded refusal reason and unknown observations instead of an
-  unbounded wait; `observe_resources` callers share one 12-second
-  operation deadline.
-- `opi-eval`: the declared `max_trials` now caps every resolved trial
-  list on the shared run path — explicitly declared `[trials]`, selection
-  expansion, and replacement runs — before native acquisition, root
-  reservation, or dispatch. Selection expansion and replacement now
-  resolve before native material acquisition, so an over-cap request
-  causes no run effect; a cap equal to the resolved count still executes
-  exactly the declared plan.
-- `opi-eval`: the seven integer execution bounds (`max_trials`,
-  `max_total_tokens`, `max_output_bytes`, `time_limit_seconds`,
-  `agent_timeout_seconds`, `verifier_timeout_seconds`,
-  `max_output_tokens`) now reject present non-integer values with the
-  existing typed control error. Quoted numbers and empty strings no
-  longer silently erase the bound; absent fields keep their omitted
-  meaning and numeric values keep their existing semantics.
-- `opi-eval`: native capture stderr admission is whole-record instead of
-  substring-based. An agent stderr record is retained only when it is
-  exactly one validated plain provider summary, or the pinned structured
-  Opi stream diagnostic parsed through its closed field set with
-  duplicate-key rejection, static message identity, and a proven-safe
-  cause grammar (the redacted placeholder, HTTP status summaries,
-  crate-attested static summaries, and the bounded numeric/SSE-event
-  formats). Substring matches, prefixed/suffixed text, unknown fields and
-  unknown structured payloads keep the whole stream opaque with zero
-  retained bytes under both capture policies; empty stderr and admitted
-  records still retain their original bytes and receipt digests.
+- `opi-eval`: the pinned pi 1.0.4 client is admitted end to end. The pi
+  stream importer binds real retry shapes honestly instead of rejecting
+  them as `import-unsupported-schema` (the opaque `entry_appended` context
+  prune between `auto_retry_start` and the retried `agent_start` is
+  tolerated, a recovered chain may be followed by a new retry chain whose
+  attempt counter restarts, and an exhausted chain settles as
+  `agent-provider-failure:connection`), the native capture helper admits
+  the pinned 1.0.4 session-stream shapes (built-in-MCP prompt `sections`,
+  tool-change lists, `responseModel`/thinking-level/`rawStopReason`/
+  diagnostics fields, `textSignature`, redacted thinking, `role:
+  "toolResult"` messages and the declared `toolCall` shape; private
+  thinking text and signatures still redact and anything undeclared still
+  refuses), and the operator, native projections and Harbor/Pier launches
+  accept the complete 1.0.4 thinking-level enum including `max` (integer
+  sampling inputs normalize to the Companion's float contract, and a
+  lowered OpenAI effort rejects exact-client evidence). Native capture
+  stderr admission is whole-record instead of substring-based: an agent
+  stderr record is retained only when it is exactly one validated plain
+  provider summary or the pinned structured Opi stream diagnostic parsed
+  through its closed field set, and everything else keeps the whole stream
+  opaque with zero retained bytes.
+- `opi-eval`: Harbor/Pier deadline, teardown and settlement paths stay
+  bounded and honest. The Agent deadline termination stops only the owned
+  Agent launch: an integration-private wrapper launches the selected Agent
+  in its own job process group, records its PID with kernel start
+  identity, authenticates it on deadline, collects the owned descendant
+  set and kills every owned group, while the first-sink capture helper
+  survives in its own group and finalizes a genuine sanitized receipt so a
+  benchmark-defined Agent timeout keeps its native reward. The
+  owned-environment teardown settle bound rises from 15s to 120s, the
+  terminal-bench-2.1 whole-job deadline rises from 900s to 15,000s (the
+  old outer timeout killed full-window agents before the task-declared
+  verifier could grade them), and agent-phase settlement is shielded and
+  always publishes the terminal observation (the stop-path bound rises to
+  60s, and cancellation yields an honest terminal with an unobserved exit
+  that settles one evidence-invalid trial instead of stopping the run).
+  Runtime-preflight and capture-helper probes retry once when the
+  docker-exec transport returns an empty marker frame, and owned-environment
+  cleanup uncertainty reflects the observed final state: the
+  post-teardown residue check is the cleanup authority, a transient
+  teardown failure is tolerated and its earlier marker removed when it
+  confirms no resources remain, while observed residue, a pre-existing
+  marker from another phase or a failed settle still marks cleanup
+  uncertain. The integrations record an honest `unreadable` capture
+  summary when the first-sink receipt is absent or unparseable instead of
+  `null`, keeping the trial a settled evidence-boundary invalid while the
+  run continues.
+- `opi-eval`: honest no-score native shapes bind instead of aborting runs.
+  The agent/verifier-timeout `Unknown` reward binding applies only when
+  the verifier produced no result; an agent timeout whose verifier still
+  ran and scored keeps the normal reward path. An agent-timeout job whose
+  pinned-runner stats carry an empty-reward eval entry attributed to the
+  exception, and a job whose agent or verifier timed out while the runner
+  wrote no eval stats, bind the same honest `Unknown`
+  (`agent-timeout`/`verifier-timeout`) after the full identity checks.
+  A binding `task-not-observed` failure (an honest setup refusal with a
+  bound identity, such as a runtime-preflight transport failure after all
+  retries) settles at the Infrastructure boundary, invalidating one trial
+  while the run continues; every other binding token still means identity
+  or provenance corruption and stays integrity-fatal.
+- `opi-eval`: offline reports and plans derive facts from sealed evidence
+  and typed rejection instead of miscounting or crashing. Offline report
+  usage facts derive from actual known token measurements in the sealed
+  trajectory instead of sealed-artifact presence (a manifest whose
+  measurements are both unknown reconstructs an honest
+  `usage-not-measured`), `run` completion and offline `report`
+  reconstruction require every planned trial to have a valid graded
+  outcome (a single-subject run whose only trials are invalid executions
+  exits 1 and reconstructs incomplete, while valid native zero scores,
+  benchmark-defined Agent timeouts and no-edge single-subject success stay
+  completed), offline native comparisons validate sealed exact-client
+  reasoning evidence for the first request and tool continuation, the
+  Terminal-Bench 3.0 and DeepSWE production profiles bind their selected
+  tasks' actual package bytes and lifecycle metadata, non-live connection
+  admission parses the actual HTTP(S) URL host before applying the
+  loopback allowlist, selection expansion checks trial cardinality,
+  vector storage bounds and the declared `max_trials` before allocating
+  trial records (oversized repetitions return a typed rejection instead of
+  an allocation abort), and `regrade` resolves its requested fresh output
+  through the canonical nearest existing ancestor before any effect and
+  rejects outputs contained in the canonical run root, including through
+  missing parent chains and symlink aliases.
+- `opi-eval`: retained-evidence maintenance stays reviewable. Manual
+  maintenance plans bind selections by inventory digest instead of
+  embedding per-file inventories (plans shrink from 100+ MB to kilobytes),
+  the reference scan skips staged upstream subtrees (`families/*/cache`,
+  `builds`, `material/packages`) so oversized runner registries and
+  uv-installed hardlinks no longer mark real evaluations permanently
+  unreadable, and purge tolerates staged hardlinks and symlinks (archive
+  still refuses them).
+- `opi-eval`: the offline acceptance verifier follows sealed settlement
+  truth. A benchmark-valid Agent non-zero exit or task timeout - including
+  a timeout tail without a final AgentEnd after a completed provider/tool
+  loop with its matching native task exception - counts among the required
+  execution trials, while provider, authentication, infrastructure,
+  preflight, undispatched and invalidly graded terminals remain ineligible.
+  Real acceptance requires sealed live first-connection evidence and
+  matching native client observations; internally consistent fixture
+  trials and loopback control probes cannot establish it. Offline local
+  acceptance checks the current Opi boolean thinking-level map and
+  thinking block (including disabled thinking, and pi's omitted
+  level map when reasoning is off) and interprets Opi's native
+  `Anthropic` API value and pi's `anthropic-messages` value for the first
+  connection, retaining exact provider/model and settled tool evidence
+  requirements.
+- `opi-eval`: execution-blocker repairs from the six-trial acceptance
+  re-run (audit gap P19-AUD-001). (1) `build-agent-artifacts.sh` now builds
+  the Opi agent for the host-arch musl target (statically linked,
+  fail-closed check) so it loads inside pinned task environments whose
+  glibc predates the build host's. (2) The binary-local native capture
+  grammar admits the current product stream: the `session_header` opener
+  (schema_version 2), session-level `AutoRetryStart`/`AutoRetryEnd`, the
+  inner `QueueUpdate` envelope, and `--json-compact` delta events that
+  legitimately omit the cumulative `partial` snapshot; private thinking
+  deltas are still emptied. (3) `verify-local-acceptance.py` admits a
+  graded `agent-outcome-not-success` terminal (clean agent-side stop such
+  as a `max_tokens` end) exactly as the Companion's own settlement
+  vocabulary does, and accepts per-family control blocks so acceptance
+  runs whose primary sources prescribe different sampling/output protocols
+  per benchmark stay verifiable. (4) The Harbor/Pier integrations copy the
+  capture receipt out through the daemon in the mounted case: the live
+  bind mount leaves the helper's files owned by the container user with
+  mode 0600, unreadable to the host terminal observation until the
+  runner's post-stop chown. The locked native-smoke CI contract and the
+  integration test mounts were updated in lockstep.
 
 ## [0.8.2] - 2026-09-05
 
