@@ -2425,9 +2425,14 @@ impl Provider for SecondTurnGatedDeltaProvider {
 fn shared_sessions_dir() -> std::path::PathBuf {
     static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
     DIR.get_or_init(|| {
-        let leaked = tempfile::tempdir_in("/dev/shm")
-            .expect("sessions tempdir")
-            .keep();
+        // Prefer the Linux tmpfs mount; Windows and macOS have no /dev/shm,
+        // so fall back to the platform temp root instead of failing setup.
+        let root = if std::path::Path::new("/dev/shm").is_dir() {
+            std::path::PathBuf::from("/dev/shm")
+        } else {
+            std::env::temp_dir()
+        };
+        let leaked = tempfile::tempdir_in(root).expect("sessions tempdir").keep();
         // SAFETY: process-global env mutation happens exactly once, before
         // any runner construction in this binary, and the variable is never
         // removed afterwards.

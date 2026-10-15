@@ -270,6 +270,11 @@ fn map_keyring_error_for_platform(target_os: &str, error: keyring_core::Error) -
         {
             BackendError::BackendUnavailable(reason.to_string())
         }
+        keyring_core::Error::PlatformFailure(reason)
+            if target_os == "macos" && macos_keychain_is_unavailable(&reason.to_string()) =>
+        {
+            BackendError::BackendUnavailable(reason.to_string())
+        }
         other => BackendError::Other(other.to_string()),
     }
 }
@@ -282,19 +287,21 @@ pub(crate) fn secret_service_is_unavailable(reason: &str) -> bool {
 }
 
 /// macOS hosts without a login keychain (headless CI runners, SSH sessions
-/// without an unlocked keychain) report `errSecNotAvailable` (-25291) or
-/// `errSecNoSuchKeychain` (-25294) from Security.framework. Those mean "no
-/// keychain exists in this context", the macOS counterpart of a missing
-/// Secret Service, so API-key environment fallback stays permitted. Read-only,
-/// permission, and corrupt-keychain failures remain hard errors. The numeric
-/// forms match security-framework's Display fallback when the system does not
-/// supply a localized message.
+/// without an unlocked keychain) report `errSecNotAvailable` (-25291),
+/// `errSecNoSuchKeychain` (-25294), or `errSecNoDefaultKeychain` (-25307)
+/// from Security.framework. Those mean "no keychain exists in this context",
+/// the macOS counterpart of a missing Secret Service, so API-key environment
+/// fallback stays permitted. Read-only, permission, and corrupt-keychain
+/// failures remain hard errors. The numeric forms match security-framework's
+/// Display fallback when the system does not supply a localized message.
 pub(crate) fn macos_keychain_is_unavailable(reason: &str) -> bool {
     let reason = reason.to_ascii_lowercase();
     reason.contains("no keychain is available")
         || reason.contains("keychain could not be found")
+        || reason.contains("default keychain could not be found")
         || reason.contains("error code -25291")
         || reason.contains("error code -25294")
+        || reason.contains("error code -25307")
 }
 
 /// In-memory keychain backend for tests. Never touches the OS keychain.
@@ -1705,6 +1712,13 @@ mod tests {
                 true,
             ),
             ("macos", true, "error code -25294", true),
+            (
+                "macos",
+                false,
+                "A default keychain could not be found.",
+                true,
+            ),
+            ("macos", false, "error code -25307", true),
             ("macos", true, "this keychain cannot be modified", false),
             (
                 "macos",
