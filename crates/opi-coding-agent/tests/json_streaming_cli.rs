@@ -358,7 +358,12 @@ fn json_stdout_broken_pipe_exits_with_failure_without_panicking() {
     let provider_started = sent_rx.recv_timeout(Duration::from_secs(15));
     drop(stdout);
     let _ = release_tx.send(());
-    let deadline = Instant::now() + Duration::from_secs(15);
+    // Generous bound: the child must tear down its provider stream, writer
+    // thread, and process tree after the pipe breaks, and shared macOS CI
+    // runners run this binary's three tests concurrently. A settle observed
+    // in fractions of a second on an idle host can still take tens of
+    // seconds under full-suite load.
+    let deadline = Instant::now() + Duration::from_secs(45);
     let mut settled = None;
     while Instant::now() < deadline {
         if let Some(status) = child.0.try_wait().unwrap() {
