@@ -259,6 +259,11 @@ fn map_keyring_error_for_platform(target_os: &str, error: keyring_core::Error) -
         {
             BackendError::BackendUnavailable(reason.to_string())
         }
+        keyring_core::Error::NoStorageAccess(reason)
+            if target_os == "macos" && macos_keychain_is_unavailable(&reason.to_string()) =>
+        {
+            BackendError::BackendUnavailable(reason.to_string())
+        }
         keyring_core::Error::NoStorageAccess(reason) => BackendError::Other(reason.to_string()),
         keyring_core::Error::PlatformFailure(reason)
             if target_os == "linux" && secret_service_is_unavailable(&reason.to_string()) =>
@@ -274,6 +279,22 @@ pub(crate) fn secret_service_is_unavailable(reason: &str) -> bool {
     reason.contains("serviceunknown")
         || reason.contains("namehasnoowner")
         || reason.contains("connection refused")
+}
+
+/// macOS hosts without a login keychain (headless CI runners, SSH sessions
+/// without an unlocked keychain) report `errSecNotAvailable` (-25291) or
+/// `errSecNoSuchKeychain` (-25294) from Security.framework. Those mean "no
+/// keychain exists in this context", the macOS counterpart of a missing
+/// Secret Service, so API-key environment fallback stays permitted. Read-only,
+/// permission, and corrupt-keychain failures remain hard errors. The numeric
+/// forms match security-framework's Display fallback when the system does not
+/// supply a localized message.
+pub(crate) fn macos_keychain_is_unavailable(reason: &str) -> bool {
+    let reason = reason.to_ascii_lowercase();
+    reason.contains("no keychain is available")
+        || reason.contains("keychain could not be found")
+        || reason.contains("error code -25291")
+        || reason.contains("error code -25294")
 }
 
 /// In-memory keychain backend for tests. Never touches the OS keychain.
@@ -1650,7 +1671,7 @@ mod tests {
     }
 
     #[test]
-    fn keyring_error_mapping_only_allows_narrow_linux_daemon_absence() {
+    fn keyring_error_mapping_only_allows_narrow_backend_absence() {
         use keyring_core::Error::{NoStorageAccess, PlatformFailure};
 
         for (target_os, storage_access, reason, unavailable) in [
@@ -1670,6 +1691,21 @@ mod tests {
                 false,
             ),
             ("windows", false, "connection refused", false),
+            (
+                "macos",
+                true,
+                "No keychain is available. You may need to restart your computer.",
+                true,
+            ),
+            ("macos", true, "error code -25291", true),
+            (
+                "macos",
+                true,
+                "The specified keychain could not be found.",
+                true,
+            ),
+            ("macos", true, "error code -25294", true),
+            ("macos", true, "this keychain cannot be modified", false),
             (
                 "macos",
                 true,

@@ -377,9 +377,26 @@ fn json_stdout_broken_pipe_exits_with_failure_without_panicking() {
         provider_started.is_ok(),
         "no local provider delta before stdout disconnect: {provider_started:?}; stderr={stderr}"
     );
+    // The CLI deliberately cancels the provider request once JSON stdout
+    // breaks (json_output fail-fast). Whether the fixture server still sees
+    // its final write through depends on the platform's socket close
+    // semantics: Linux closes gracefully (FIN) so the write succeeds, while
+    // Windows aborts (RST) and the write fails with a peer-abort error. Both
+    // prove the CLI settled the run without panicking; any other fixture
+    // failure is a real regression.
+    let server_settled_or_cancel_aborted = match &server_result {
+        Ok(()) => true,
+        Err(reason) => {
+            let reason = reason.to_ascii_lowercase();
+            reason.contains("aborted")
+                || reason.contains("connection reset")
+                || reason.contains("broken pipe")
+                || reason.contains("os error 10053")
+        }
+    };
     assert!(
-        server_result.is_ok(),
-        "local provider did not complete its valid response: {server_result:?}; stderr={stderr}"
+        server_settled_or_cancel_aborted,
+        "local provider neither completed nor was aborted by the CLI's broken-stdout cancellation: {server_result:?}; stderr={stderr}"
     );
     let status = settled.expect("CLI did not settle after stdout broke");
     assert_eq!(

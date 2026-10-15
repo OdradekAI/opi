@@ -94,7 +94,12 @@ pub(crate) fn install_store(
 }
 
 fn classify_platform_store_error(target_os: &str, reason: String) -> BackendError {
-    if target_os == "linux" && crate::credential_store::secret_service_is_unavailable(&reason) {
+    let unavailable = match target_os {
+        "linux" => crate::credential_store::secret_service_is_unavailable(&reason),
+        "macos" => crate::credential_store::macos_keychain_is_unavailable(&reason),
+        _ => false,
+    };
+    if unavailable {
         BackendError::BackendUnavailable(reason)
     } else {
         BackendError::Other(reason)
