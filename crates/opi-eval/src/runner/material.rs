@@ -745,7 +745,11 @@ impl CorpusMaterial {
                             .expect("corpus entry")
                             .to_str()
                             .expect("checked UTF-8")
-                            .to_owned(),
+                            // Git trees always key paths with '/'; a Windows
+                            // walk yields MAIN_SEPARATOR-joined relatives, so
+                            // normalize the key (no-op where they already
+                            // match).
+                            .replace(std::path::MAIN_SEPARATOR, "/"),
                         path,
                     );
                 } else {

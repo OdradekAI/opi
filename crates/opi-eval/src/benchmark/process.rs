@@ -2693,7 +2693,9 @@ fn native_verifier_timeout_binds_without_inventing_reward() {
 
 // An agent timeout whose verifier still ran and scored binds the graded
 // reward normally (the common shape: capture refused downstream settles
-// the trial, the run continues).
+// the trial, the run continues). Native proof captures are admitted only
+// under the Unix/WSL single-link boundary.
+#[cfg(unix)]
 #[test]
 fn native_agent_timeout_with_graded_verifier_binds_reward() {
     let dir = tempfile::tempdir().unwrap();
@@ -2736,6 +2738,9 @@ fn native_agent_timeout_with_graded_verifier_binds_reward() {
 // An agent-timeout job whose stats carry an empty-reward eval entry
 // attributed to the exception (the other pinned-runner shape; observed on
 // tb21 `model-extraction-relu-logits`) also binds an honest Unknown.
+// Native proof captures are admitted only under the Unix/WSL single-link
+// boundary.
+#[cfg(unix)]
 #[test]
 fn native_agent_timeout_with_empty_reward_stats_binds_unknown() {
     let dir = tempfile::tempdir().unwrap();
@@ -2800,6 +2805,9 @@ fn native_binding_failure_boundaries_separate_setup_refusal_from_corruption() {
 // eval stats (the pinned runner writes none when the verifier is killed on
 // the half-built repository) binds an honest Unknown instead of failing
 // the aggregate boundary. Observed on tb21 `torch-pipeline-parallelism`.
+// Native proof captures are admitted only under the Unix/WSL single-link
+// boundary.
+#[cfg(unix)]
 #[test]
 fn native_agent_timeout_without_evals_binds_unknown() {
     for mutation in ["none", "with-verifier-result", "wrong-exception"] {
