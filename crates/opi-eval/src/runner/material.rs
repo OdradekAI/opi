@@ -364,8 +364,17 @@ impl NativeMaterial {
                 "unknown native-material schema; regenerate material as {MATERIAL_SCHEMA}"
             )));
         }
-        let material: NativeMaterial = serde_json::from_str(&text)
+        let mut material: NativeMaterial = serde_json::from_str(&text)
             .map_err(|error| MaterialError::Rejected(format!("manifest parse failed: {error}")))?;
+        // Admission resolves each corpus root once: host layouts whose temp
+        // directories traverse links (macOS `/var` -> `/private/var`) must
+        // still verify the symlink-free resolved path downstream, while the
+        // resolved root keeps every later git and digest check on one path.
+        for entry in material.benchmarks.values_mut() {
+            if let Ok(resolved) = std::fs::canonicalize(&entry.corpus.root) {
+                entry.corpus.root = resolved;
+            }
+        }
         let mut selected: Vec<&str> = products.to_vec();
         selected.sort_unstable();
         selected.dedup();
@@ -1339,6 +1348,10 @@ impl RuntimePackage {
 
 /// Runtime packages reject links, special files and ambiguous manifest paths.
 pub(crate) fn runtime_package_manifest_digest(root: &Path) -> Result<String, MaterialError> {
+    // Same admission rule as corpus roots: verify the resolved path so a
+    // host temp layout that traverses links (macOS `/var`) is not misread
+    // as package aliasing.
+    let root = root.canonicalize()?;
     fn check(path: &Path) -> Result<(), MaterialError> {
         let kind = std::fs::symlink_metadata(path)?.file_type();
         if kind.is_symlink() || !(kind.is_file() || kind.is_dir()) {
@@ -1371,8 +1384,8 @@ pub(crate) fn runtime_package_manifest_digest(root: &Path) -> Result<String, Mat
             ));
         }
     }
-    check(root)?;
-    directory_manifest_digest(root)
+    check(&root)?;
+    directory_manifest_digest(&root)
 }
 
 /// Verifies the selected checkout against the static source and lock pins.

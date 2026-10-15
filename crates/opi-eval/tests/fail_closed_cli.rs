@@ -208,12 +208,26 @@ fn doctor_reports_observations_without_a_model() {
         !by_id("linux-engine")["reason"].as_str().unwrap().is_empty(),
         "an unreachable engine must carry a reason: {stdout}"
     );
-    assert_eq!(by_id("architecture")["status"], "ok");
-    assert_eq!(by_id("architecture")["detail"], "x86_64");
-    assert_eq!(by_id("cpu")["status"], "ok");
-    assert!(by_id("cpu")["count"].as_u64().unwrap() >= 1);
-    assert_eq!(by_id("memory")["status"], "ok");
-    assert!(by_id("memory")["total_bytes"].as_u64().unwrap() > 0);
+    assert_eq!(
+        by_id("architecture")["status"],
+        if cfg!(target_arch = "x86_64") {
+            "ok"
+        } else {
+            "unsupported"
+        }
+    );
+    assert_eq!(by_id("architecture")["detail"], std::env::consts::ARCH);
+    if cfg!(target_os = "linux") {
+        assert_eq!(by_id("cpu")["status"], "ok");
+        assert!(by_id("cpu")["count"].as_u64().unwrap() >= 1);
+        assert_eq!(by_id("memory")["status"], "ok");
+        assert!(by_id("memory")["total_bytes"].as_u64().unwrap() > 0);
+    } else {
+        // The /proc-backed observers are honestly unknown off Linux; the
+        // fail-closed report shape below must still hold everywhere.
+        assert_eq!(by_id("cpu")["status"], "unknown");
+        assert_eq!(by_id("memory")["status"], "unknown");
+    }
     // Without a reachable engine the GPU observation is unknown with a
     // reason, never silently absent.
     assert_eq!(by_id("gpu")["status"], "unknown");
@@ -233,6 +247,10 @@ fn doctor_reports_observations_without_a_model() {
     assert!(report.get("provider").is_none());
 }
 
+// The staged peer is a shell script on PATH, so the interception is a
+// Unix contract; on Windows the probe honestly reports the named-pipe
+// engine as unreachable instead.
+#[cfg(unix)]
 #[test]
 fn doctor_bounds_stalled_and_overflowing_observers() {
     // P19-AUD-003: every selected observer is supervised with a finite
