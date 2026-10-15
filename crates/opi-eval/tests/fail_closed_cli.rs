@@ -223,10 +223,21 @@ fn doctor_reports_observations_without_a_model() {
         assert_eq!(by_id("memory")["status"], "ok");
         assert!(by_id("memory")["total_bytes"].as_u64().unwrap() > 0);
     } else {
-        // The /proc-backed observers are honestly unknown off Linux; the
-        // fail-closed report shape below must still hold everywhere.
+        // The /proc-backed observers are honestly unknown off Linux.
         assert_eq!(by_id("cpu")["status"], "unknown");
         assert_eq!(by_id("memory")["status"], "unknown");
+    }
+    // The disk observer shells out to GNU `df -B1 -P`: Linux ships it
+    // natively and Windows CI hosts expose Git's GNU coreutils `df`, while
+    // BSD df (macOS) has no `-B` and honestly reports unknown.
+    let expected_disk = if cfg!(any(target_os = "linux", target_os = "windows")) {
+        "ok"
+    } else {
+        "unknown"
+    };
+    assert_eq!(by_id("disk")["status"], expected_disk);
+    if cfg!(any(target_os = "linux", target_os = "windows")) {
+        assert!(by_id("disk")["available_bytes"].as_u64().is_some());
     }
     // Without a reachable engine the GPU observation is unknown with a
     // reason, never silently absent.
@@ -235,8 +246,6 @@ fn doctor_reports_observations_without_a_model() {
         by_id("gpu")["reason"].as_str().unwrap().contains("engine"),
         "gpu unknown reason must name the engine: {stdout}"
     );
-    assert_eq!(by_id("disk")["status"], "ok");
-    assert!(by_id("disk")["available_bytes"].as_u64().is_some());
     // The empty cache is reported as missing material, not a guess.
     let static_lock = by_id("material:static-lock");
     assert_eq!(static_lock["status"], "missing");

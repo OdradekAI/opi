@@ -366,14 +366,12 @@ impl NativeMaterial {
         }
         let mut material: NativeMaterial = serde_json::from_str(&text)
             .map_err(|error| MaterialError::Rejected(format!("manifest parse failed: {error}")))?;
-        // Admission resolves each corpus root once: host layouts whose temp
-        // directories traverse links (macOS `/var` -> `/private/var`) must
-        // still verify the symlink-free resolved path downstream, while the
-        // resolved root keeps every later git and digest check on one path.
+        // Admission resolves each corpus root once (macOS-only: host layouts
+        // whose temp directories traverse links, `/var` -> `/private/var`)
+        // so downstream verification sees the symlink-free resolved path;
+        // other hosts keep the manifest path exactly as written.
         for entry in material.benchmarks.values_mut() {
-            if let Ok(resolved) = std::fs::canonicalize(&entry.corpus.root) {
-                entry.corpus.root = resolved;
-            }
+            entry.corpus.root = resolved_root(&entry.corpus.root);
         }
         let mut selected: Vec<&str> = products.to_vec();
         selected.sort_unstable();
@@ -644,16 +642,25 @@ pub(crate) fn git_text(root: &Path, args: &[&str]) -> Result<String, MaterialErr
 }
 
 fn git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, MaterialError> {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_NO_LAZY_FETCH", "1")
-        .output()?;
+    let mut command = std::process::Command::new("git");
+    command.arg("-C").arg(root).args(args).env_clear();
+    #[cfg(not(windows))]
+    {
+        command
+            .env("PATH", "/usr/bin:/bin")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1");
+    }
+    #[cfg(windows)]
+    {
+        // Windows has no /usr/bin and needs SystemRoot for the spawned git;
+        // inherit the resolver-visible PATH.
+        command.env("PATH", std::env::var_os("PATH").unwrap_or_default());
+        if let Some(system_root) = std::env::var_os("SystemRoot") {
+            command.env("SystemRoot", system_root);
+        }
+    }
+    let output = command.env("GIT_NO_LAZY_FETCH", "1").output()?;
     if !output.status.success() {
         return Err(MaterialError::Rejected(format!(
             "pinned corpus Git inspection failed at {}",
@@ -679,6 +686,11 @@ impl CorpusMaterial {
         adapter: &str,
         lock: &serde_json::Value,
     ) -> Result<String, MaterialError> {
+        // Admission resolves the root once (macOS-only: `/var` -> `/private/var`
+        // temp layouts) so every git and digest check below runs on one
+        // symlink-free path regardless of which constructor built this
+        // corpus. Other hosts keep the path exactly as constructed.
+        let root = resolved_root(&self.root);
         let pin = lock["subjects"]
             .as_array()
             .and_then(|subjects| subjects.iter().find(|subject| subject["id"] == adapter))
@@ -692,17 +704,17 @@ impl CorpusMaterial {
                 "{adapter} corpus identity differs from static lock"
             )));
         }
-        for path in self.root.ancestors() {
+        for path in root.ancestors() {
             if !std::fs::symlink_metadata(path)?.file_type().is_dir() {
                 return Err(MaterialError::Rejected(
                     "corpus root traverses a link or non-directory".to_owned(),
                 ));
             }
         }
-        let project = PathBuf::from(git_text(&self.root, &["rev-parse", "--show-toplevel"])?);
-        if project.join("tasks").canonicalize()? != self.root.canonicalize()?
-            || git_text(&self.root, &["rev-parse", "HEAD"])? != self.source_commit
-            || git_text(&self.root, &["rev-parse", "HEAD:tasks"])? != self.tasks_tree
+        let project = PathBuf::from(git_text(&root, &["rev-parse", "--show-toplevel"])?);
+        if project.join("tasks").canonicalize()? != root.canonicalize()?
+            || git_text(&root, &["rev-parse", "HEAD"])? != self.source_commit
+            || git_text(&root, &["rev-parse", "HEAD:tasks"])? != self.tasks_tree
         {
             return Err(MaterialError::Rejected(format!(
                 "{adapter} corpus root/commit/tree drift"
@@ -768,7 +780,7 @@ impl CorpusMaterial {
             Ok(())
         }
         let mut files = BTreeMap::new();
-        entries(&self.root, &self.root, &mut files)?;
+        entries(&root, &root, &mut files)?;
         let tree = git_text(&project, &["ls-tree", "-r", "-z", &self.tasks_tree])?;
         let mut expected = Vec::new();
         let mut paths = Vec::new();
@@ -895,16 +907,30 @@ impl CorpusMaterial {
         }
         let mut observed = Vec::new();
         for batch in paths.chunks(128) {
-            let output = std::process::Command::new("git")
+            let mut command = std::process::Command::new("git");
+            command
                 .arg("-C")
-                .arg(&self.root)
+                .arg(&root)
                 .args(["hash-object", "--no-filters", "--"])
                 .args(batch)
-                .env_clear()
-                .env("PATH", "/usr/bin:/bin")
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_NOSYSTEM", "1")
-                .output()?;
+                .env_clear();
+            #[cfg(not(windows))]
+            {
+                command
+                    .env("PATH", "/usr/bin:/bin")
+                    .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                    .env("GIT_CONFIG_NOSYSTEM", "1");
+            }
+            #[cfg(windows)]
+            {
+                // Windows has no /usr/bin and needs SystemRoot for the
+                // spawned git; inherit the resolver-visible PATH.
+                command.env("PATH", std::env::var_os("PATH").unwrap_or_default());
+                if let Some(system_root) = std::env::var_os("SystemRoot") {
+                    command.env("SystemRoot", system_root);
+                }
+            }
+            let output = command.output()?;
             if !output.status.success() {
                 return Err(MaterialError::Rejected(
                     "cannot hash pinned corpus working bytes".to_owned(),
@@ -1347,11 +1373,24 @@ impl RuntimePackage {
 }
 
 /// Runtime packages reject links, special files and ambiguous manifest paths.
+/// Resolve a material root to its symlink-free form on macOS, whose default
+/// temp layout lives under `/var` (a symlink to `/private/var`); keep the
+/// path untouched elsewhere so Windows verbatim prefixes never reach git and
+/// pinned absolute paths keep their exact construction.
+fn resolved_root(root: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        root.to_path_buf()
+    }
+}
+
 pub(crate) fn runtime_package_manifest_digest(root: &Path) -> Result<String, MaterialError> {
-    // Same admission rule as corpus roots: verify the resolved path so a
-    // host temp layout that traverses links (macOS `/var`) is not misread
-    // as package aliasing.
-    let root = root.canonicalize()?;
+    // Same admission rule as corpus roots (macOS-only resolution).
+    let root = resolved_root(root);
     fn check(path: &Path) -> Result<(), MaterialError> {
         let kind = std::fs::symlink_metadata(path)?.file_type();
         if kind.is_symlink() || !(kind.is_file() || kind.is_dir()) {

@@ -16,7 +16,7 @@
 //! paid provider, credential, network listener, or user-global resource
 //! is touched.
 
-#![cfg(unix)]
+#![cfg(target_os = "linux")]
 
 use std::fs;
 use std::path::{Path, PathBuf};
