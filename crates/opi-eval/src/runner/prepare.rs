@@ -2884,8 +2884,10 @@ fn desktop_is_running(bytes: &[u8]) -> bool {
             return false;
         }
         let units: Vec<_> = bytes
-            .chunks_exact(2)
-            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| u16::from_le_bytes(*b))
             .collect();
         String::from_utf16(&units).ok()
     } else {

@@ -1505,8 +1505,8 @@ fn coverage(normalized: &NormalizedReport) -> Vec<serde_json::Value> {
         // Protocol-safe pairing (P19-AC-008): an edge pairing two protocol
         // groups of one product never carries a paired claim.
         let protocol_mismatch = match (
-            edge["baseline"].as_str().and_then(&subject_product),
-            edge["candidate"].as_str().and_then(&subject_product),
+            edge["baseline"].as_str().and_then(subject_product),
+            edge["candidate"].as_str().and_then(subject_product),
         ) {
             (Some(baseline), Some(candidate)) => baseline == candidate,
             _ => false,

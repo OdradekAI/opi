@@ -1327,14 +1327,12 @@ fn filter_pi_message(
             "pi assistant message endTurn is not a boolean".to_owned(),
         ));
     }
-    for key in ["diagnostics"] {
-        if let Some(value) = message.get(key)
-            && !value.is_array()
-        {
-            return Err(CaptureRefusal::new(format!(
-                "pi assistant message {key} is not an array"
-            )));
-        }
+    if let Some(value) = message.get("diagnostics")
+        && !value.is_array()
+    {
+        return Err(CaptureRefusal::new(
+            "pi assistant message diagnostics is not an array".to_owned(),
+        ));
     }
     if let Some(value) = message.get("deferred")
         && !value.is_object()
