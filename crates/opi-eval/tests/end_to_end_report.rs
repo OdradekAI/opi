@@ -264,11 +264,12 @@ fn exclusions_stay_visible_in_the_coverage_denominator() {
     );
 }
 
-/// `P19-AC-009` (regrade fail-closed on non-native evidence): a hermetic
+/// P19-AC-009 (regrade fail-closed on non-native evidence): a hermetic
 /// fixture run root holds no native trial, so actual native regrading
 /// rejects the request without reading a material, without touching the
 /// sealed evidence, and without re-running byte checks under the regrade
 /// name.
+#[cfg(unix)]
 #[test]
 fn offline_regrade() {
     let root = tempfile::tempdir().unwrap();

@@ -566,9 +566,7 @@ fn capture_agent(args: &HiddenModeArgs) -> Result<i32, CaptureRefusal> {
         #[cfg(unix)]
         {
             if CANCELLED.load(std::sync::atomic::Ordering::SeqCst) {
-                unsafe {
-                    libc::kill(child.id() as i32, libc::SIGKILL);
-                }
+                let _ = child.kill();
             }
         }
         let mut chunk = [0u8; 64 * 1024];
@@ -583,10 +581,7 @@ fn capture_agent(args: &HiddenModeArgs) -> Result<i32, CaptureRefusal> {
             Ok(count) => {
                 stream.feed(&chunk[..count], &mut buffered);
                 if stream.refusal.is_some() {
-                    // SAFETY: kill() addresses only our child process group.
-                    unsafe {
-                        libc::kill(child.id() as i32, libc::SIGKILL);
-                    }
+                    let _ = child.kill();
                     // Drain so the child is reaped below; the concurrent
                     // stderr drain keeps collecting until pipe EOF.
                     let mut sink = Vec::new();
@@ -602,10 +597,7 @@ fn capture_agent(args: &HiddenModeArgs) -> Result<i32, CaptureRefusal> {
                 stream.refusal.get_or_insert(CaptureRefusal::new(format!(
                     "agent stdout read failed: {error}"
                 )));
-                // SAFETY: kill() addresses only our child process group.
-                unsafe {
-                    libc::kill(child.id() as i32, libc::SIGKILL);
-                }
+                let _ = child.kill();
                 stream.finish(b"");
                 cancelled = false;
                 refusal = stream.refusal.clone();

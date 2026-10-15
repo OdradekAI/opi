@@ -547,7 +547,7 @@ fn nearest_existing_ancestor(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     use std::process::Command;
 
     #[cfg(unix)]

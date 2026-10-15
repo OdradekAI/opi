@@ -1692,15 +1692,17 @@ fn stage_native_handoff(
 /// is exactly 0700 regardless of the caller's umask; other platforms keep
 /// creation exclusive without expanding platform ACLs.
 fn create_private_stage(path: &Path) -> Result<(), RunError> {
-    let mut builder = std::fs::DirBuilder::new();
+    let refuse = |error: std::io::Error| {
+        RunError::Native(format!("private credential stage refused: {error}"))
+    };
     #[cfg(unix)]
-    {
+    let result = {
         use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder
-        .create(path)
-        .map_err(|error| RunError::Native(format!("private credential stage refused: {error}")))
+        std::fs::DirBuilder::new().mode(0o700).create(path)
+    };
+    #[cfg(not(unix))]
+    let result = std::fs::DirBuilder::new().create(path);
+    result.map_err(refuse)
 }
 
 /// Writes one stage file with exclusive owner-only creation. A preexisting
