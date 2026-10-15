@@ -343,7 +343,8 @@ unexecuted。覆盖计数（`corpus`、`selected`、`planned`、`attempted`、
 `valid`、`agent_failure`、`invalid`、`unexecuted`）、紧随
 completed/incomplete 的 `full|subset` scope 标签、带缺失侧与排除
 原因的同任务/同重复 comparison pair、重复控制对
-（`consistent|divergent|incomplete` 并给出缺失组）以及未知遥测原因
+（`consistent|divergent|incomplete` 并给出缺失或无法确立的组；重复的缺失或
+无效结局保持 incomplete 而非视为相等）以及未知遥测原因
 全部保持可见：协议组边缘（同一产品的两个主体）绝不配对，单主体
 报告无需人工 comparison edge。相同输入重复重建得到相同字节。被篡改的
 sealed 证据和相互矛盾的控制记录阻断发布；未封存尝试保持未经验证，且不进入
@@ -371,7 +372,9 @@ cargo run -p opi-eval -- run \
 `run` 会组装两次已声明的 trial，在进程产生副作用前记录 durable intent，然后依次
 完成 trial settlement 并 seal 证据。stdout 只输出一个
 `opi-eval-run-report/1` JSON 对象。退出码为 0 且包含
-`"outcome":"completed"`，表示所有已声明 pair 均以可比较状态落定。
+`"outcome":"completed"`，表示所有已声明 trial 均以可比较状态落定且拥有
+有效的 graded 结局（含有效的原生零分与 benchmark 定义的 Agent 超时）；
+仅含无效 trial 的 run 即使没有可失败的 comparison edge 也保持 incomplete。
 
 run root 必须是全新的：请使用不存在或为空、且不含以往 durable run 的路径。命令
 会写入 `run-report.json`，并在 `trials/<trial-id>/` 下为每次 trial 写入 receipt
@@ -755,7 +758,7 @@ trial 所在的整个对比组创建新身份。替换前会校验原计划并�
 方式是禁用受影响的本地执行路径或恢复先前已校验的 Companion
 构建——绝不重新标注旧证据。
 
-Phase 19 验收使用 `opi-eval-local-acceptance/2`：至少四个可归属的主 trial，
+Phase 19 验收使用 `opi-eval-local-acceptance/3`（P19-AUD-003）：至少四个可归属的主 trial，
 覆盖 Terminal-Bench 2.1 与 3.0，每个冻结 task/group（含每次重复）必须恰好
 有一个 Opi/Pi 配对。额外选定的任务和重复仍须完整校验，不得省略任何冻结
 planned trial。DeepSWE 与未知的主家族均被拒绝。`/1` 验收 manifest 与修订
@@ -778,8 +781,21 @@ Opi native 捕获逐字节绑定且恰好穷尽它们），以及所选 pi/Harbo
 python3 crates/opi-eval/scripts/verify-local-acceptance.py \
   --root <redacted-evidence-root> \
   --out <verification-report.json> \
-  --companion <built opi-eval executable>
+  --companion <built opi-eval executable> \
+  --expected-identities <独立审阅的期望身份文件>
 ```
+
+`/3` 契约新增内联的执行来源：操作员在证据根之外选定一个
+`opi-eval-acceptance-expected-identities/1` 文件，绑定 Companion 的
+执行/校验摘要、freeze 摘要以及每个 Agent 的 source/commit/receipt/
+executable/package 身份。manifest 携带 `expected_identities_sha256`、
+内联 `freeze` 记录（scope、平台、凭据引用、按家族的 config/plan 与
+bounds、time/usage/spend 预算）、内联 `commands` 清单（每个家族的
+原始 prepare、plan 或 validate、run、verify、report 捕获，含精确
+argv、带诚实脱敏标签的双流引用、退出码、时间戳与 freeze 绑定），
+以及带互逆 accepted-trial 覆盖的内联 `attempts` 记录。build 行绑定
+其原始 receipt 与 executable 字节。旧 `/2` manifest 与弱的
+`command_exits` 元组表不再被接受，准入变更在 schema 关口可见。
 
 校验器绝不启动 Agent、读取凭据或联系 provider。它拒绝被替换、
 oracle、缺失或仅 fixture 的证据，拒绝把空的一般审计成功当作验收，
@@ -787,9 +803,11 @@ oracle、缺失或仅 fixture 的证据，拒绝把空的一般审计成功当�
 已准入 lock 摘要，并依据从已准入 lock 字节推导出的身份校验上游
 提交（与随证据提供的缓存清单交叉核对，绝不在本 checkout 中
 解析提交），且只针对随证据提供的家族 run 根调用构建出的
-Companion `verify` 与 `report`。`opi-eval-local-acceptance-verification/2`
-结果明确记录 DeepSWE 已排除。退出码 0 表示接受证据；退出码 2
-输出一个类型化的拒绝原因。
+Companion `verify` 与 `report`。`opi-eval-local-acceptance-verification/3`
+结果明确记录 DeepSWE 已排除，并携带所选期望文件的摘要、已批准的
+freeze 摘要与明确限制：操作员批准的身份/字节一致性并不能在密码学上
+证明构建因果性或超出所声明调用范围的完整性。退出码 0 表示接受证据；
+退出码 2 输出一个类型化的拒绝原因。
 
 验收校验器要求 Python 3.11 或更高版本。manifest 的
 `controls.connection_controls` 包含 `connection`（选定的 `provider`、

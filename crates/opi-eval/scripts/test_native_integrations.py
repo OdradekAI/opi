@@ -440,8 +440,21 @@ class FakeEnvironment:
     async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None):
         self.exec_envs.append((command, env))
         args = shlex.split(command)
-        if args[:2] == ["bash", "-c"] and args[2].startswith("set -m\n"):
-            args = shlex.split(args[2].splitlines()[1].removesuffix(" &"))
+        if args[:2] == ["bash", "-c"]:
+            if args[2].startswith("set -m\n"):
+                args = shlex.split(args[2].splitlines()[1].removesuffix(" &"))
+            else:
+                args = shlex.split(args[2])
+        if len(args) >= 2 and args[1] == "__native-capture" and "--" in args:
+            # The first-sink helper launches the Agent through the
+            # integration's Bash wait wrapper (P19-AUD-105): unwrap it to
+            # the exact selected Agent argv for the launch assertions.
+            separator = args.index("--")
+            if args[separator + 1:separator + 3] == ["bash", "-c"]:
+                wrapper = args[separator + 3]
+                if wrapper.startswith("set -m\n"):
+                    args = args[:separator + 1] + shlex.split(
+                        wrapper.splitlines()[1].removesuffix(" &"))
         result = types.SimpleNamespace(return_code=0, stdout="", stderr="")
         if args[-1] == "--version":
             self.preflight_calls.append((command, env, timeout_sec, user))
@@ -779,7 +792,7 @@ class NativeIntegrationTest(unittest.IsolatedAsyncioTestCase):
                         # test's private environment.
                         pid_file = root / "environment/stage" / product / "agent.pid"
                         if not container and pid_file.is_file():
-                            child_pid = int(pid_file.read_text())
+                            child_pid = int(pid_file.read_text().split()[0])
                             try:
                                 os.killpg(child_pid, signal.SIGKILL)
                             except ProcessLookupError:

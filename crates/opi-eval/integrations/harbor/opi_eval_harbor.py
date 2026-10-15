@@ -732,25 +732,37 @@ class _OpiEvalAgent(BaseAgent):
         exit_code = None
         cancelled = False
         launch_error = None
-        # The pinned Docker exec uses Bash. Job control gives this launch its
-        # own process group; the private pid file lives only until cleanup.
         # First-sink privacy boundary (P19-AUD-003): the capture helper
         # spawns the Agent through bounded pipes and owns stdout.log,
         # stderr.log and the capture receipt; raw shell redirects are
-        # gone. The helper leads the job's process group, so the owned
-        # cancellation and the observed exit keep their meaning.
+        # gone. Under the helper, an integration-private Bash wait wrapper
+        # (P19-AUD-105) launches the exact selected Agent as its own job
+        # process group and records that group's PID plus its kernel start
+        # identity in the private stage pid file. On deadline only that
+        # Agent group dies; the helper keeps its pipes and finalizes the
+        # sanitized receipt. The wrapper suppresses only its own
+        # job-notification stderr - the Agent's streams still flow to the
+        # first sink untouched.
         helper = f"{shlex.quote(str(stage))}/capture-helper"
-        command = (
+        agent_command = self._agent_command(instruction, stage)
+        pid_file = shlex.quote(f"{stage}/agent.pid")
+        wrapper = (
             "set -m\n"
+            f"{agent_command} &\n"
+            "opi_eval_agent=$!\n"
+            "opi_eval_start=$(sed 's/.*) //' /proc/$opi_eval_agent/stat 2>/dev/null"
+            " | cut -d' ' -f20)\n"
+            f"printf '%s %s\\n' \"$opi_eval_agent\" \"$opi_eval_start\" > {pid_file}\n"
+            "wait \"$opi_eval_agent\" 2>/dev/null\n"
+            "exit $?\n"
+        )
+        command = (
             f"{helper} __native-capture"
             f" --policy {self._capture_policy}"
             f" --stdout {shlex.quote(f'{self._capture_root}/stdout.log')}"
             f" --stderr {shlex.quote(f'{self._capture_root}/stderr.log')}"
             f" --receipt {shlex.quote(f'{self._capture_root}/capture-receipt.json')}"
-            f" -- {self._agent_command(instruction, stage)} &\n"
-            "opi_eval_pid=$!\n"
-            f"printf '%s\\n' \"$opi_eval_pid\" > {shlex.quote(f'{stage}/agent.pid')}\n"
-            "wait \"$opi_eval_pid\""
+            f" -- bash -c {shlex.quote(wrapper)}"
         )
         if self._runtime_preflight is None or self._runtime_preflight["status"] != "passed":
             await self._cleanup(environment, stage)
@@ -775,12 +787,70 @@ class _OpiEvalAgent(BaseAgent):
                 # the pid-file read and group kill; the bound stays finite.
                 async with asyncio.timeout(60):
                     if not launch.done():
-                        pid_file = shlex.quote(f"{stage}/agent.pid")
+                        # Terminate only the owned Agent group (P19-AUD-105).
+                        # The recorded PID is authenticated against its
+                        # kernel start identity (no PID reuse retargeting)
+                        # and this trial's private stage in its command line
+                        # (owned launch ancestry). The owned descendant set
+                        # is collected while the launch tree is still intact
+                        # - the group kill reparents any separately created
+                        # child-group survivor to init, so collection must
+                        # precede the kills - and then every owned group dies
+                        # promptly, while the first-sink helper - a different
+                        # group - keeps its pipes and finalizes the sanitized
+                        # receipt.
                         stop = (
-                            f"for i in {{1..100}}; do test -f {pid_file} && break; sleep 0.01; done; "
-                            f"read -r pid < {pid_file}; "
-                            "[[ $pid =~ ^[1-9][0-9]*$ ]] && "
-                            "kill -KILL -- -\"$pid\""
+                            f"for i in {{1..100}}; do test -s {pid_file} && break; sleep 0.01; done\n"
+                            f"read -r pid start < {pid_file}\n"
+                            "[[ $pid =~ ^[1-9][0-9]*$ ]] || exit 9\n"
+                            "observed=$(sed 's/.*) //' /proc/$pid/stat 2>/dev/null | cut -d' ' -f20)\n"
+                            "[[ -n $observed && $observed == $start ]] || exit 10\n"
+                            "case \"$(tr '\\0' ' ' </proc/$pid/cmdline 2>/dev/null)\" in "
+                            f"*{stage}*) ;; *) exit 11;; esac\n"
+                            "frontier=$pid\n"
+                            "owned=$pid\n"
+                            # Bounded rounds: a live owned job can keep
+                            # spawning transient children, so the sweep must
+                            # not depend on the frontier draining.
+                            "for round in 1 2 3 4 5 6 7 8\n"
+                            "do\n"
+                            "  next=\n"
+                            "  for entry in /proc/[0-9]*/stat\n"
+                            "  do\n"
+                            # Fork-free parse: the read builtin and
+                            # parameter expansion stay bash builtins, so
+                            # each round scans the whole pid table in
+                            # milliseconds even on a large host. read is
+                            # required over the $(<file) shortcut because
+                            # procfs reports size zero and the shortcut
+                            # yields empty text inside the container.
+                            "    read -r line < \"$entry\" 2>/dev/null || continue\n"
+                            "    rest=${line##*) }\n"
+                            "    set -- $rest\n"
+                            "    ppid=$2\n"
+                            "    case \" $frontier \" in\n"
+                            "      *\" $ppid \"*)\n"
+                            "        child=${entry#/proc/}\n"
+                            "        child=${child%/stat}\n"
+                            "        case \" $owned \" in\n"
+                            "          *\" $child \"*) ;;\n"
+                            "          *)\n"
+                            "            owned=\"$owned $child\"\n"
+                            "            next=\"$next $child\"\n"
+                            "            ;;\n"
+                            "        esac\n"
+                            "        ;;\n"
+                            "    esac\n"
+                            "  done\n"
+                            "  [ -n \"$next\" ] || break\n"
+                            "  frontier=$next\n"
+                            "done\n"
+                            "kill -KILL -- -$pid 2>/dev/null\n"
+                            "for victim in $owned\n"
+                            "do\n"
+                            "  kill -KILL -- -$victim 2>/dev/null || kill -KILL \"$victim\" 2>/dev/null\n"
+                            "done\n"
+                            "exit 0"
                         )
                         stopped = await environment.exec(
                             command=f"bash -c {shlex.quote(stop)}", user="root",

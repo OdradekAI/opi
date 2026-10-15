@@ -896,7 +896,7 @@ tb30_profile=""
 pier_profile=""
 case "$OPI_EVAL_STANDIN_MODE" in
   ok) ;;
-  tb30-ok|tb30-undeclared|tb30-substituted-declared) tb30_profile=1 ;;
+  tb30-ok|tb30-undeclared|tb30-substituted-declared|tb30-observation-empty|tb30-observation-unrelated) tb30_profile=1 ;;
   deepswe-ok|deepswe-nop|deepswe-undeclared|deepswe-base-drift) pier_profile=1 ;;
   zero) reward=0.0 ;;
   agent-nonzero) reward=0.0; exception='{"exception_type": "NonZeroAgentExitCodeError"}';;
@@ -1016,8 +1016,13 @@ if [ -n "$tb30_profile" ]; then
   schema="schema.py bytes"
   schema_sha=$(printf '%s' "$schema" | sha256sum | cut -d' ' -f1)
   canary_sha=$(printf 'canary\n' | sha256sum | cut -d' ' -f1)
-  printf '{"schema": "opi-eval-native-agent-terminal/1", "product": "%s", "agent_executable_sha256": "%s", "exit_code": 0, "timed_out": false, "delivered": [{"source": "/app/evalbench/schema.py", "sha256": "%s"}, {"source": "/app/unrelated-canary.txt", "sha256": "%s"}]}\n' \
-    "$product" "$(sed -n 's/.*"agent_executable_sha256":"\([^"]*\)".*/\1/p' "$OPI_EVAL_NATIVE_HANDOFF")" "$schema_sha" "$canary_sha" \
+  delivered="[{\"source\": \"/app/evalbench/schema.py\", \"sha256\": \"$schema_sha\"}, {\"source\": \"/app/unrelated-canary.txt\", \"sha256\": \"$canary_sha\"}]"
+  case "$OPI_EVAL_STANDIN_MODE" in
+    tb30-observation-empty) delivered="[]" ;;
+    tb30-observation-unrelated) delivered="[{\"source\": \"/app/unrelated-canary.txt\", \"sha256\": \"$canary_sha\"}]" ;;
+  esac
+  printf '{"schema": "opi-eval-native-agent-terminal/1", "product": "%s", "agent_executable_sha256": "%s", "exit_code": 0, "timed_out": false, "delivered": %s}\n' \
+    "$product" "$(sed -n 's/.*"agent_executable_sha256":"\([^"]*\)".*/\1/p' "$OPI_EVAL_NATIVE_HANDOFF")" "$delivered" \
     > "$job/$trial/agent/opi-eval-terminal.json"
   write_runtime_preflight "$job/$trial/agent/opi-eval-terminal.json"
   mkdir -p "$job/$trial/artifacts/app/evalbench"
@@ -1032,6 +1037,12 @@ if [ -n "$tb30_profile" ]; then
     tb30-substituted-declared)
       # The collected declared artifact no longer carries the delivered
       # bytes.
+      printf 'substituted schema bytes' > "$job/$trial/artifacts/app/evalbench/schema.py"
+      ;;
+    tb30-observation-empty|tb30-observation-unrelated)
+      # The substituted collected bytes were never observed as delivered:
+      # the empty or unrelated-only observation omission is the attack
+      # surface (P19-AUD-001).
       printf 'substituted schema bytes' > "$job/$trial/artifacts/app/evalbench/schema.py"
       ;;
   esac
@@ -2730,6 +2741,44 @@ fn native_tb30_rejects_undeclared_and_substituted_collection() {
     }
 }
 
+/// P19-AUD-001: observation omission cannot admit substituted collected
+/// bytes. An empty or unrelated-only delivered observation leaves every
+/// file of the nonempty declared collection unprovable, so the same
+/// substituted declared input is unscored and unsealed; the
+/// observed-delivered control stays with the graded collection test
+/// above, and unrelated delivered files stay outside the verifier.
+#[test]
+fn p19_plan_probe_observation_omission_rejects_substitution() {
+    for mode in ["tb30-observation-empty", "tb30-observation-unrelated"] {
+        let staged = stage("ok");
+        set_tb30_mode(&staged, mode);
+        let config = write_tb30_config(&staged);
+        let run_root = staged.root.join("run-tb30");
+        let (code, stdout, stderr) = run_native(&staged, &config, &run_root);
+        assert_ne!(code, 0, "{mode}: stderr: {stderr}");
+        let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(report["outcome"], "incomplete", "{mode}");
+        let receipt = report["trials"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|trial| trial["id"] == "trial-opi-native")
+            .cloned()
+            .unwrap();
+        assert_eq!(receipt["status"], "failed", "{mode}");
+        assert_eq!(
+            receipt["verifier"]["failure_kind"], "native-binding-delivered-artifact-substituted",
+            "{mode}"
+        );
+        assert!(
+            !run_root
+                .join("trials/trial-opi-native/bundle/manifest.json")
+                .is_file(),
+            "{mode}: unobserved collected bytes must not seal"
+        );
+    }
+}
+
 /// The DeepSWE experiment over the staged pier material with its
 /// fixture task.
 fn deepswe_experiment_text(staged: &Staged, integrity_digest: &str) -> String {
@@ -3857,11 +3906,11 @@ fn native_tb21_artifact_witness() {
 #[test]
 #[ignore = "requires pinned external material and a local Docker Linux engine; see OPI_EVAL_NATIVE_WITNESS_MATERIAL"]
 fn native_tb3_artifact_witness() {
-    let material = std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL")
+    let source_material = std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL")
         .expect("OPI_EVAL_NATIVE_WITNESS_MATERIAL points at the resolved material manifest");
-    let material = PathBuf::from(material);
+    let source_material = PathBuf::from(source_material);
     let declared: serde_json::Value =
-        serde_json::from_slice(&fs::read(&material).unwrap()).unwrap();
+        serde_json::from_slice(&fs::read(&source_material).unwrap()).unwrap();
     let tasks = declared["benchmarks"]["terminal-bench-3.0"]["tasks"]
         .as_object()
         .unwrap();
@@ -3884,6 +3933,13 @@ fn native_tb3_artifact_witness() {
         source, "/app/results.txt",
         "the pinned task's sole declared source"
     );
+    // The private witness material (P19-AUD-103): the copied agent
+    // environment seeds an incorrect but PRESENT declared artifact plus
+    // an unrelated canary, so the nop witness keeps a collectable
+    // declared artifact (present-incorrect) instead of failing as a
+    // missing artifact, and the oracle witness replaces it with the
+    // reference solution. The original material stays byte-identical.
+    let material = native_witness_material::tb3_artifact_witness_material(&source_material);
     let mut collected_digests = Vec::new();
     for (case, agent, reward) in [("oracle-witness", "oracle", 1), ("nop-witness", "nop", 0)] {
         let report =
@@ -3908,8 +3964,15 @@ fn native_tb3_artifact_witness() {
     }
     // The correct witness changed the declared artifact and the grader
     // responded: same declared source, different collected bytes, reward
-    // one versus zero.
+    // one versus zero. The incorrect witness's collected bytes are the
+    // seeded present-incorrect bytes (never an absent artifact).
     assert_ne!(collected_digests[0].2, collected_digests[1].2);
+    let seeded = sha256_hex(b"incorrect-witness-baseline\n");
+    assert!(
+        collected_digests[1].2.ends_with(&seeded),
+        "nop witness must collect the seeded present-incorrect bytes: {:?}",
+        collected_digests[1].2
+    );
 }
 
 /// The real DeepSWE committed-patch witnesses through the pinned
@@ -8072,7 +8135,18 @@ with (logs/'provider-listener.log').open('wb') as output:
                 assert!(
                     reason == expected
                         || reason == "provider-failure"
-                        || (product == "pi" && reason == "import-unsupported-schema"),
+                        || (product == "pi" && reason == "import-unsupported-schema")
+                        // pi's live client settles proven retry
+                        // exhaustion as its typed transient-transport
+                        // failure: the exact intentional reason plus the
+                        // agent-process boundary, never a wildcard reason
+                        // acceptance (P19-AUD-104). The exhaustion path is
+                        // shared across the scripted transport failures
+                        // (rate-limit, protocol-error); an immediate
+                        // auth refusal never retries and stays typed.
+                        || (product == "pi"
+                            && reason == "agent-provider-failure:connection"
+                            && trial["classification"]["boundary"] == "agent-process"),
                     "{case}/{product}: {trial}"
                 );
             }
@@ -11082,6 +11156,31 @@ fn p19_plan_acceptance_rejects_fixture_evidence() {
     )
     .unwrap();
 
+    // /3 (P19-AUD-003): the acceptance contract is visible - a fixture
+    // root without the independently selected expected-identity input and
+    // inline provenance rejects before any Companion invocation; a legacy
+    // /2 manifest can never satisfy the /3 admission either.
+    let expected = evidence.path().join("expected-identities.json");
+    fs::write(
+        &expected,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema": "opi-eval-acceptance-expected-identities/1",
+            "scope_id": "synthetic-fixture",
+            "static_lock_sha256": "0".repeat(64),
+            "freeze_sha256": "0".repeat(64),
+            "companion": {
+                "execution_executable_sha256": sha256_hex(
+                    &fs::read(env!("CARGO_BIN_EXE_opi-eval")).unwrap()
+                ),
+                "verification_executable_sha256": sha256_hex(
+                    &fs::read(env!("CARGO_BIN_EXE_opi-eval")).unwrap()
+                ),
+            },
+            "agents": [],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
     let out = evidence.path().join("acceptance-report.json");
     let output = Command::new("python3")
         .arg(manifest_dir().join("scripts/verify-local-acceptance.py"))
@@ -11091,6 +11190,8 @@ fn p19_plan_acceptance_rejects_fixture_evidence() {
         .arg(&out)
         .arg("--companion")
         .arg(env!("CARGO_BIN_EXE_opi-eval"))
+        .arg("--expected-identities")
+        .arg(&expected)
         .output()
         .expect("spawn the offline acceptance verifier");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -11100,16 +11201,21 @@ fn p19_plan_acceptance_rejects_fixture_evidence() {
         Some(2),
         "stderr: {stderr} stdout: {stdout}"
     );
-    let report: serde_json::Value =
-        serde_json::from_str(stdout.trim().lines().last().unwrap()).unwrap();
-    assert_eq!(report["schema"], "opi-eval-local-acceptance-verification/2");
+    let summary = stdout.trim().lines().last().unwrap_or_default();
+    let report: serde_json::Value = serde_json::from_str(summary)
+        .unwrap_or_else(|error| panic!("verifier summary is not JSON ({error}): {summary:?}"));
+    assert_eq!(report["schema"], "opi-eval-local-acceptance-verification/3");
     assert_eq!(report["accepted"], false);
-    // The hardened admission order gates on admitted-material provenance
-    // before connection identity: a synthetic fixture root without the
-    // preserved admitted static-lock binding rejects there, never at the
-    // fixture-only connection claim.
-    assert!(stderr.contains("admitted static lock"), "{stderr}");
+    // A legacy /2 fixture manifest is rejected at the visible schema seam
+    // before provenance or Companion work.
+    assert!(stderr.contains("manifest schema"), "{stderr}");
     assert!(out.is_file(), "the durable verification report is written");
+    let durable: serde_json::Value = serde_json::from_slice(&fs::read(&out).unwrap()).unwrap();
+    assert_eq!(
+        durable["schema"],
+        "opi-eval-local-acceptance-verification/3"
+    );
+    assert_eq!(durable["accepted"], false);
 }
 
 /// P19-AC-013: a pi-only experiment runs and reports end to end without any
@@ -11694,6 +11800,252 @@ fn remediation_native_stage_deadlines() {
             assert!(alive.status.success());
             assert_eq!(String::from_utf8(alive.stdout).unwrap().trim(), "true");
         }
+    }
+}
+
+/// P19-AUD-105 deadline-settlement probe: the TB3 diagnostic family with
+/// owned Agent descendants (same-group and setsid), an unrelated task
+/// baseline process, and a slower time-cap verifier. The positive control
+/// must stay graded; the whole-job deadline must terminate only the owned
+/// Agent group while the first-sink helper finalizes a genuine sanitized
+/// receipt, the native timeout reward is preserved, and no owned
+/// descendant survives the kill window. This is not benchmark acceptance
+/// evidence.
+#[test]
+#[ignore = "requires verified TB3 material/7 and the real Docker engine; see OPI_EVAL_NATIVE_WITNESS_MATERIAL"]
+fn p19_plan_probe_tb3_timecap_capture_settlement() {
+    let source_material = PathBuf::from(
+        std::env::var("OPI_EVAL_NATIVE_WITNESS_MATERIAL")
+            .expect("OPI_EVAL_NATIVE_WITNESS_MATERIAL is required"),
+    );
+    let material = native_witness_material::timecap_settlement_material(&source_material);
+    let input = fs::read(&material).unwrap();
+    let guard = tempfile::tempdir().unwrap();
+    let evidence = guard.keep();
+    eprintln!("native timecap settlement evidence: {}", evidence.display());
+    for (case, bounds, timed_out) in [
+        (
+            "positive",
+            "agent_timeout_seconds = 3\nverifier_timeout_seconds = 3",
+            false,
+        ),
+        ("time-cap", "time_limit_seconds = 1", true),
+    ] {
+        let root = evidence.join(case);
+        fs::create_dir_all(&root).unwrap();
+        let staged = Staged {
+            _guard: tempfile::tempdir().unwrap(),
+            root: root.clone(),
+            material: material.clone(),
+        };
+        let config = experiment_text(&staged, "pending")
+            .replace("fixture-task", case)
+            .replace(
+                "max_output_tokens = 4096",
+                "max_output_tokens = \"omitted\"",
+            )
+            .replace("context_window = 8192", "context_window = \"omitted\"")
+            .replace("revision = \"2.1\"", "revision = \"3.0\"")
+            .replace("[execution]", &format!("[execution]\n{bounds}"));
+        let path = root.join("experiment.toml");
+        fs::write(&path, &config).unwrap();
+        let validation = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["validate", "--config"])
+                .arg(&path)
+                .arg("--native-material")
+                .arg(&material)
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .current_dir(&root),
+            &root,
+            "validate",
+        );
+        assert!(
+            validation.status.success(),
+            "{case}: {}",
+            String::from_utf8_lossy(&validation.stderr)
+        );
+        let digest = String::from_utf8(validation.stdout)
+            .unwrap()
+            .split_whitespace()
+            .find_map(|word| word.strip_prefix("native_integrity="))
+            .unwrap()
+            .to_owned();
+        fs::write(&path, config.replace("pending", &digest)).unwrap();
+        let run = root.join("run");
+        let pre = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        let output = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["run", "--config"])
+                .arg(&path)
+                .arg("--root")
+                .arg(&run)
+                .arg("--native-material")
+                .arg(&material)
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env("HOME", &root)
+                .env("OPI_EVAL_SCRIPTED_KEY", "no-model-witness")
+                .current_dir(&root),
+            &root,
+            "source-run",
+        );
+        eprintln!(
+            "{case}: exit {:?}, elapsed {:?}",
+            output.status.code(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64()
+                - pre
+        );
+        let publication = native_witness_material::run_cli(
+            Command::new(env!("CARGO_BIN_EXE_opi-eval"))
+                .args(["report", "--root"])
+                .arg(&run)
+                .current_dir(&root),
+            &root,
+            "report",
+        );
+        assert!(
+            publication.status.success(),
+            "{case}: {} {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&publication.stderr)
+        );
+        let post = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        let report: serde_json::Value = serde_json::from_slice(&publication.stdout).unwrap();
+        assert_eq!(report["coverage_counts"]["valid"], 2, "{case}: {report}");
+        assert_eq!(report["coverage_counts"]["invalid"], 0, "{case}: {report}");
+        let results = walk_files_matching(&run, "result.json")
+            .into_iter()
+            .filter(|path| path.parent().unwrap().join("agent").is_dir())
+            .collect::<Vec<_>>();
+        assert_eq!(results.len(), 2, "{case}: {results:?}");
+        let mut last_descendant = 0.0_f64;
+        let mut last_baseline = 0.0_f64;
+        let mut descendant_lines = 0_usize;
+        let mut baseline_lines = 0_usize;
+        for result in &results {
+            let native: serde_json::Value =
+                serde_json::from_slice(&fs::read(result).unwrap()).unwrap();
+            if timed_out {
+                assert_eq!(
+                    native["exception_info"]["exception_type"], "AgentTimeoutError",
+                    "{case}: {native}"
+                );
+                assert_eq!(native["verifier_result"]["rewards"]["reward"], 0.0);
+            } else {
+                assert!(native["exception_info"].is_null(), "{case}: {native}");
+                assert_eq!(native["verifier_result"]["rewards"]["reward"], 1.0);
+            }
+            let directory = result.parent().unwrap();
+            let stdout = fs::read_to_string(directory.join("agent/stdout.log")).unwrap();
+            let events = stdout
+                .lines()
+                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                .collect::<Vec<_>>();
+            let product = if events
+                .first()
+                .is_some_and(|event| event["type"] == "session")
+            {
+                "pi"
+            } else {
+                "opi"
+            };
+            assert_diagnostic_start(product, &events);
+            assert!(
+                fs::read(directory.join("agent/stderr.log"))
+                    .unwrap()
+                    .is_empty(),
+                "{case}: leaked stderr record"
+            );
+            // Genuine sanitized receipt: present, digest-bound to the exact
+            // retained bytes, and cited by the terminal observation.
+            let receipt_bytes = fs::read(directory.join("agent/capture-receipt.json")).unwrap();
+            let receipt: serde_json::Value = serde_json::from_slice(&receipt_bytes).unwrap();
+            assert_eq!(receipt["status"], "sanitized", "{case}: {receipt}");
+            let terminal: serde_json::Value = serde_json::from_slice(
+                &fs::read(directory.join("agent/opi-eval-terminal.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                terminal["capture"]["status"], "sanitized",
+                "{case}: {terminal}"
+            );
+            assert_eq!(
+                terminal["capture"]["receipt_sha256"],
+                serde_json::json!(sha256_hex(&receipt_bytes)),
+                "{case}: {terminal}"
+            );
+            assert_eq!(
+                receipt.pointer("/stdout/sha256").and_then(|v| v.as_str()),
+                Some(sha256_hex(stdout.as_bytes()).as_str()),
+                "{case}: receipt stdout digest must bind the retained bytes"
+            );
+            let heartbeat = |name: &str| -> (usize, f64) {
+                let text = fs::read_to_string(directory.join(format!("agent/{name}"))).unwrap();
+                let mut lines = 0;
+                let mut last = 0.0_f64;
+                for line in text.lines() {
+                    if let Ok(stamp) = line.trim().parse::<f64>() {
+                        lines += 1;
+                        last = last.max(stamp);
+                    }
+                }
+                (lines, last)
+            };
+            let (a_lines, a_last) = heartbeat("descendant-a-heartbeat.txt");
+            let (b_lines, b_last) = heartbeat("descendant-b-heartbeat.txt");
+            let (base_lines, base_last) = heartbeat("baseline-heartbeat.txt");
+            last_descendant = last_descendant.max(a_last).max(b_last);
+            last_baseline = last_baseline.max(base_last);
+            descendant_lines = descendant_lines.max(a_lines).max(b_lines);
+            baseline_lines = baseline_lines.max(base_lines);
+        }
+        for trial in report["trials"].as_array().unwrap() {
+            assert_eq!(trial["outcome"]["class"], "graded", "{case}: {trial}");
+            assert_eq!(
+                trial["outcome"]["agent_failed"], timed_out,
+                "{case}: {trial}"
+            );
+            if timed_out {
+                assert_eq!(trial["outcome"]["timed_out"], true, "{case}: {trial}");
+            }
+        }
+        // The unrelated task baseline outlives the deadline kill; the owned
+        // descendants die inside the kill window: at the 0.2s heartbeat
+        // cadence a descendant killed at the one-second deadline records a
+        // handful of lines, while one leaking until container teardown
+        // records a baseline-comparable count.
+        assert!(baseline_lines > 0, "{case}: baseline heartbeat missing");
+        if timed_out {
+            assert!(
+                descendant_lines < 50,
+                "{case}: owned descendant leaked past the kill window ({descendant_lines} heartbeat lines)"
+            );
+            assert!(
+                baseline_lines >= descendant_lines * 3,
+                "{case}: baseline did not clearly outlive the kill ({baseline_lines} vs {descendant_lines} lines)"
+            );
+            assert!(
+                last_baseline > last_descendant + 3.0,
+                "{case}: baseline did not clearly outlive the kill ({last_baseline} vs {last_descendant})"
+            );
+        }
+        let _ = post;
+        assert_eq!(
+            fs::read(&material).unwrap(),
+            input,
+            "{case}: material mutated"
+        );
     }
 }
 

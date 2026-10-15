@@ -280,7 +280,7 @@ fn agent_helper_script(product: &str) -> String {
 {argv_guard}\n\
 echo answer > answer.txt\n\
 case \"$OPI_EVAL_RUN_BEHAVIOR\" in\n\
-  happy|prompt-only-package|verifier-failure|seal-failure|agent-unknown-schema|agent-malformed-stream|agent-missing-terminal)\n\
+  happy|prompt-only-package|verifier-failure|seal-failure|agent-unknown-schema|agent-malformed-stream|agent-missing-terminal|agent-unknown-usage)\n\
 {trace_copy} ;;\n\
   canary-leak)\n\
   printf '%s\n' \"$OPI_EVAL_CANARY_SECRET\" > answer.txt\n\
@@ -324,6 +324,7 @@ if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"seal-failure\" goto success\r\n\
 if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-unknown-schema\" goto success\r\n\
 if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-malformed-stream\" goto success\r\n\
 if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-missing-terminal\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-unknown-usage\" goto success\r\n\
 if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"canary-leak\" goto canary\r\n\
 if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-excess-output\" goto excess\r\n\
 if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-crash\" goto crash\r\n\
@@ -357,7 +358,7 @@ fn verifier_helper_script(report_name: &str, _native_source: &Path) -> Result<St
         "#!/bin/sh\n\
 # assembled-run fixture helper standing in for the native verifier (never the real grader)\n\
 case \"$OPI_EVAL_RUN_BEHAVIOR\" in\n\
-  happy|canary-leak|agent-crash|agent-timeout)\n\
+  happy|canary-leak|agent-crash|agent-timeout|agent-unknown-usage)\n\
     cp \"$OPI_EVAL_NATIVE_SOURCE\" ./{report_name} ;;\n\
   verifier-failure)\n\
     cp \"$OPI_EVAL_NATIVE_SOURCE\" ./{report_name}\n\
@@ -378,6 +379,7 @@ if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"happy\" goto success\r\n\
 if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"canary-leak\" goto success\r\n\
 if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-crash\" goto success\r\n\
 if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-timeout\" goto success\r\n\
+if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"agent-unknown-usage\" goto success\r\n\
 if /I \"%OPI_EVAL_RUN_BEHAVIOR%\"==\"verifier-failure\" goto failure\r\n\
 echo unknown behavior 1>&2\r\n\
 exit /b 9\r\n\
@@ -915,7 +917,20 @@ pub(crate) async fn run_experiment(
                     .pairs()
                     .iter()
                     .all(|pair| pair.comparability().is_comparable());
-                let outcome = if all_comparable && all_sealed {
+                // P19-AUD-002: completed also requires every planned
+                // trial to have settled as a valid graded outcome. A
+                // single-subject run whose only trials are invalid
+                // cannot complete just because no comparison edge
+                // exists to fail; the empty pair set's vacuous `all`
+                // never establishes validity.
+                let all_valid = facts.iter().all(|fact| {
+                    matches!(
+                        fact.outcome,
+                        crate::comparison::TrialOutcome::ValidAgentOutcome
+                            | crate::comparison::TrialOutcome::AgentFailure
+                    )
+                });
+                let outcome = if all_comparable && all_sealed && all_valid {
                     "completed"
                 } else {
                     "incomplete"
@@ -3792,6 +3807,7 @@ fn agent_env(
         "agent-unknown-schema" => "trace-unknown-schema",
         "agent-malformed-stream" => "trace-corrupt",
         "agent-missing-terminal" => "trace-missing-evidence",
+        "agent-unknown-usage" => "trace-unknown-usage",
         _ => "trace-complete",
     };
     let stream_source = match behavior {

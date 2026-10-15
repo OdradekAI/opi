@@ -29,9 +29,20 @@ import tomllib
 import urllib.parse
 from pathlib import Path
 
-ACCEPTANCE_SCHEMA = "opi-eval-local-acceptance/2"
+ACCEPTANCE_SCHEMA = "opi-eval-local-acceptance/3"
+EXPECTED_SCHEMA = "opi-eval-acceptance-expected-identities/1"
 IDENTITY_CACHE_SCHEMA = "opi-eval-upstream-identity-cache/1"
-VERIFICATION_SCHEMA = "opi-eval-local-acceptance-verification/2"
+VERIFICATION_SCHEMA = "opi-eval-local-acceptance-verification/3"
+# Registered acceptance platform (Section 7): other combinations stay
+# visible as non-Phase platforms, never silently qualified.
+ACCEPTED_PLATFORM = {"host": "windows-x86_64", "execution": "wsl2-linux"}
+COMMAND_PHASES = (
+    "doctor", "build", "prepare", "validate", "plan", "run", "verify", "report",
+)
+RFC3339 = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$"
+)
+ID_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 FAMILIES = ("terminal-bench-2.1", "terminal-bench-3.0")
 EXCLUDED_FAMILIES = ("deepswe-v1.1",)
 MINIMUM_TRIALS = 4
@@ -119,10 +130,14 @@ def admit_trial_id(value: object) -> str:
 class Acceptance:
     """One verification pass over a supplied evidence root."""
 
-    def __init__(self, root: Path, out: Path, companion: Path) -> None:
+    def __init__(self, root: Path, out: Path, companion: Path, expected_path: Path) -> None:
         self.root = root
         self.out = out
         self.companion = companion
+        self.expected_path = expected_path
+        self.expected: dict = {}
+        self.expected_sha256 = ""
+        self.freeze_sha256 = ""
         self.checks: list[dict] = []
         self.failures: list[str] = []
         self.family_roots: dict[str, Path] = {}
@@ -137,7 +152,9 @@ class Acceptance:
     # -- manifest and structure --------------------------------------------
 
     def load_manifest(self) -> dict:
-        manifest = load_json(self.root / "manifest.json", "manifest schema")
+        manifest = self.load_strict_json(self.root / "manifest.json", "manifest schema")
+        if not isinstance(manifest, dict):
+            raise Rejection("manifest schema: manifest is not a JSON object")
         if manifest.get("schema") != ACCEPTANCE_SCHEMA:
             raise Rejection(
                 f"manifest schema: expected {ACCEPTANCE_SCHEMA}, "
@@ -160,6 +177,11 @@ class Acceptance:
                 raise Rejection(
                     f"paired attributable trials: {trial.get('id')!r} has agent "
                     f"{trial.get('agent')!r}"
+                )
+            if not isinstance(trial.get("attempt_id"), str) or not trial["attempt_id"]:
+                raise Rejection(
+                    f"paired attributable trials: {trial.get('id')!r} carries no "
+                    f"attempt id"
                 )
         ids = [trial.get("id") for trial in trials]
         if len(set(ids)) != len(trials):
@@ -255,8 +277,16 @@ class Acceptance:
 
     def check_builds(self, manifest: dict, trials: list[dict]) -> None:
         builds = manifest.get("builds", [])
-        known = {entry.get("agent"): entry.get("executable_sha256") for entry in builds}
-        if set(known) != {"opi", "pi"}:
+        known = {
+            entry.get("agent"): (
+                entry.get("executable_sha256")
+                or (entry.get("executable") or {}).get("sha256")
+            )
+            for entry in builds
+        }
+        if set(known) != {"opi", "pi"} or any(
+            not isinstance(value, str) for value in known.values()
+        ):
             raise Rejection(f"build: manifest builds {sorted(known)} lack an agent")
         for trial in trials:
             expected = known[trial["agent"]]
@@ -396,6 +426,11 @@ class Acceptance:
         return identities
 
     def check_command_exits(self, manifest: dict) -> None:
+        if "command_exits" in manifest:
+            raise Rejection(
+                "command exits: the weak /2 tuple table is replaced by the "
+                "inline commands inventory"
+            )
         exits = manifest.get("command_exits", [])
         observed = {
             (entry.get("family"), entry.get("command")): entry.get("exit")
@@ -445,10 +480,11 @@ class Acceptance:
                     f"verification for {trial.get('id')!r}"
                 )
 
-    def check_preserved(self, manifest: dict) -> None:
+    def check_preserved(self, manifest: dict, counts: dict[str, int] | None = None) -> None:
         """The preserved inventory is mandatory, path-unique, and covers the
         required material, admitted-lock and evidence references for every
-        family; every declared digest is recomputed."""
+        family; every declared digest is recomputed. Contained /3 references
+        must occur exactly once in the inventory."""
         entries = manifest.get("preserved", [])
         if not isinstance(entries, list) or not entries:
             raise Rejection("preserved artifact: no preserved inventory")
@@ -489,6 +525,13 @@ class Acceptance:
             raise Rejection(
                 f"preserved artifact: required references missing {missing}"
             )
+        if counts is not None:
+            for path in sorted(counts):
+                if path not in seen:
+                    raise Rejection(
+                        f"preserved artifact: {path!r} is referenced but not "
+                        f"inventoried"
+                    )
 
     @staticmethod
     def control_block(controls: dict, family: str) -> dict:
@@ -1111,6 +1154,593 @@ class Acceptance:
                     f"upstream identity: commit {commit} does not belong to {url!r}"
                 )
 
+    # -- /3 provenance: expected identities, freeze, commands, attempts ------
+
+    @staticmethod
+    def canonical_digest(value: object) -> str:
+        """Inline-record identity: UTF-8 canonical JSON, sort_keys, no
+        Unicode normalization, array order retained."""
+        return sha256(
+            json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        )
+
+    @classmethod
+    def exact_fields(cls, record: object, fields: tuple[str, ...], fragment: str) -> dict:
+        """Strict inline objects: unknown fields and duplicate keys reject.
+        Duplicate keys are detected at the raw-text layer, so inline
+        records are parsed through a rejecting loader."""
+        if not isinstance(record, dict):
+            raise Rejection(f"{fragment}: not a JSON object")
+        missing = [field for field in fields if field not in record]
+        if missing:
+            raise Rejection(f"{fragment}: missing fields {missing}")
+        extra = sorted(set(record) - set(fields))
+        if extra:
+            raise Rejection(f"{fragment}: unknown fields {extra}")
+        return record
+
+    def load_strict_json(self, path: Path, fragment: str) -> object:
+        def reject_duplicates(pairs: list) -> dict:
+            seen: set[str] = set()
+            for key, _ in pairs:
+                if key in seen:
+                    raise Rejection(f"{fragment}: duplicate key {key!r}")
+                seen.add(key)
+            return dict(pairs)
+
+        try:
+            return json.loads(
+                path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicates
+            )
+        except Rejection:
+            raise
+        except (OSError, ValueError) as error:
+            raise Rejection(f"{fragment}: unreadable {path.name}: {error}") from error
+
+    def admit_contained_path(
+        self, relative: object, fragment: str, *, directory: bool = False
+    ) -> Path:
+        if not isinstance(relative, str) or not relative:
+            raise Rejection(f"{fragment}: path is not a nonempty string")
+        candidate = (self.root / relative).resolve()
+        try:
+            candidate.relative_to(self.root.resolve())
+        except ValueError as error:
+            raise Rejection(f"{fragment}: {relative!r} escapes the evidence root") from error
+        metadata = candidate.lstat()
+        if stat.S_ISLNK(metadata.st_mode):
+            raise Rejection(f"{fragment}: {relative!r} is a link")
+        if directory:
+            if not stat.S_ISDIR(metadata.st_mode):
+                raise Rejection(f"{fragment}: {relative!r} is not a directory")
+            return candidate
+        if not stat.S_ISREG(metadata.st_mode):
+            raise Rejection(f"{fragment}: {relative!r} is a special file")
+        if metadata.st_size > MAX_ARTIFACT_BYTES:
+            raise Rejection(f"{fragment}: {relative!r} exceeds the artifact ceiling")
+        return candidate
+
+    def check_artifact_ref(self, ref: object, fragment: str, roles: set[str]) -> dict:
+        """One contained {path, sha256} reference that must also occur
+        exactly once in the preserved inventory."""
+        record = self.exact_fields(ref, ("path", "sha256"), fragment)
+        if not isinstance(record.get("sha256"), str) or not HEX64.match(record["sha256"]):
+            raise Rejection(f"{fragment}: digest is not lowercase SHA-256")
+        candidate = self.admit_contained_path(record.get("path"), fragment)
+        observed = sha256(candidate.read_bytes())
+        if observed != record["sha256"]:
+            raise Rejection(
+                f"{fragment}: {record.get('path')!r} declares {record['sha256']} "
+                f"but the bytes hash to {observed}"
+            )
+        self.preserved_counts[record["path"]] = 0
+        self.preserved_roles.setdefault(record["path"], set()).update(roles)
+        return record
+
+    def check_stream_ref(self, ref: object, fragment: str, roles: set[str]) -> dict:
+        """Artifact reference plus an honest redaction label. Redacted
+        derivatives are labelled; none claims reconstruction of unavailable
+        secret-bearing originals. Empty captures are preserved and hashed."""
+        record = self.exact_fields(ref, ("path", "sha256", "redaction"), fragment)
+        redaction = record.get("redaction")
+        if not isinstance(redaction, dict):
+            raise Rejection(f"{fragment}: redaction is not an object")
+        kind = redaction.get("kind")
+        if kind == "none":
+            extra = sorted(set(redaction) - {"kind"})
+            if extra:
+                raise Rejection(f"{fragment}: redaction kind none carries {extra}")
+        elif kind == "redacted":
+            for field in ("policy", "reason"):
+                value = redaction.get(field)
+                if not isinstance(value, str) or not value:
+                    raise Rejection(f"{fragment}: redacted stream needs a {field}")
+        else:
+            raise Rejection(f"{fragment}: redaction kind {kind!r} is unknown")
+        self.check_artifact_ref(
+            {key: record[key] for key in ("path", "sha256")}, fragment, roles
+        )
+        return record
+
+    def check_timestamp(self, value: object, fragment: str) -> str:
+        if not isinstance(value, str) or not RFC3339.match(value):
+            raise Rejection(f"{fragment}: timestamp {value!r} is not UTC RFC3339")
+        return value
+
+    def check_id(self, value: object, fragment: str) -> str:
+        if not isinstance(value, str) or not ID_COMPONENT.match(value):
+            raise Rejection(f"{fragment}: {value!r} is not one contained id component")
+        return value
+
+    def check_load_expected(self, manifest: dict) -> None:
+        """Validation order step 2: load the selected independent file once,
+        record its digest, compare it with the manifest declaration, and
+        hash the current Companion before any spawn."""
+        try:
+            raw = self.expected_path.read_bytes()
+        except OSError as error:
+            raise Rejection(f"expected identities: unreadable: {error}") from error
+        self.expected_sha256 = sha256(raw)
+        try:
+            self.expected = json.loads(raw.decode("utf-8"))
+        except (UnicodeError, ValueError) as error:
+            raise Rejection(f"expected identities: malformed: {error}") from error
+        if not isinstance(self.expected, dict) or self.expected.get("schema") != EXPECTED_SCHEMA:
+            raise Rejection(
+                f"expected identities: schema is not {EXPECTED_SCHEMA!r}"
+            )
+        declared = manifest.get("expected_identities_sha256")
+        if declared != self.expected_sha256:
+            raise Rejection(
+                f"expected identities: manifest declares {declared!r} but the "
+                f"selected file hashes to {self.expected_sha256}"
+            )
+        if not self.companion.is_file():
+            raise Rejection("expected identities: companion executable is missing")
+        companion_sha = sha256(self.companion.read_bytes())
+        companion_record = self.expected.get("companion")
+        if not isinstance(companion_record, dict):
+            raise Rejection("expected identities: no companion block")
+        if companion_record.get("execution_executable_sha256") != companion_sha:
+            raise Rejection(
+                "expected identities: current Companion bytes differ from the "
+                "independently reviewed execution identity"
+            )
+
+    def check_freeze(self, manifest: dict, trials: list[dict]) -> None:
+        """Inline freeze identity and honesty. The digest binds the exact
+        record; assembling a final manifest cannot retroactively create the
+        original pre-run freeze."""
+        freeze = manifest.get("freeze")
+        if not isinstance(freeze, dict):
+            raise Rejection("freeze: no inline freeze record")
+        self.exact_fields(
+            freeze,
+            (
+                "scope_id", "frozen_at_utc", "operator_label", "platform",
+                "credential_references", "families", "budgets",
+            ),
+            "freeze",
+        )
+        self.check_id(freeze.get("scope_id"), "freeze scope_id")
+        self.check_timestamp(freeze.get("frozen_at_utc"), "freeze frozen_at_utc")
+        if not isinstance(freeze.get("operator_label"), str) or not freeze["operator_label"]:
+            raise Rejection("freeze: operator label is empty")
+        platform = freeze.get("platform")
+        self.exact_fields(
+            platform, ("host", "execution", "distribution", "engine_id", "evidence"),
+            "freeze platform",
+        )
+        for field in ("host", "execution", "distribution", "engine_id"):
+            if not isinstance(platform.get(field), str) or not platform[field]:
+                raise Rejection(f"freeze platform: {field} is empty")
+        if (platform["host"], platform["execution"]) != (
+            ACCEPTED_PLATFORM["host"], ACCEPTED_PLATFORM["execution"]
+        ):
+            raise Rejection(
+                f"freeze platform: {platform['host']}/{platform['execution']} is not "
+                f"the registered acceptance platform; other values are not silently "
+                f"qualified"
+            )
+        self.check_artifact_ref(platform.get("evidence"), "freeze platform evidence", {"freeze"})
+        references = freeze.get("credential_references")
+        if not isinstance(references, list) or not references:
+            raise Rejection("freeze: no credential references")
+        for row in references:
+            record = self.exact_fields(row, ("connection_id", "kind", "label"), "credential")
+            if record.get("kind") not in ("environment", "private-file"):
+                raise Rejection(f"credential: kind {record.get('kind')!r} is unknown")
+            self.check_id(record.get("connection_id"), "credential connection_id")
+            if not isinstance(record.get("label"), str) or not record["label"]:
+                raise Rejection("credential: label is redacted-empty")
+        families = freeze.get("families")
+        if not isinstance(families, list) or len(families) != len(FAMILIES):
+            raise Rejection(f"freeze: families must be exactly {list(FAMILIES)}")
+        declared_family_ids = set()
+        for row in families:
+            record = self.exact_fields(
+                row,
+                ("family", "run_root", "config", "plan", "material_sha256", "trial_ids", "bounds"),
+                "freeze family",
+            )
+            family = record.get("family")
+            if family not in FAMILIES:
+                raise Rejection(f"freeze family: {family!r} is not admitted")
+            declared_family_ids.add(family)
+            run_root = self.admit_contained_path(
+                record.get("run_root"), "freeze run_root", directory=True
+            )
+            if run_root != self.family_roots[family]:
+                raise Rejection(
+                    f"freeze family: {family!r} run root differs from the admitted root"
+                )
+            del run_root
+            if record.get("plan") is not None:
+                self.check_artifact_ref(record.get("plan"), f"freeze {family} plan", {"freeze"})
+            self.check_artifact_ref(record.get("config"), f"freeze {family} config", {"freeze"})
+            if not isinstance(record.get("material_sha256"), str) or not HEX64.match(
+                record["material_sha256"]
+            ):
+                raise Rejection(f"freeze family: {family!r} material digest is malformed")
+            if not isinstance(record.get("trial_ids"), list) or not record["trial_ids"]:
+                raise Rejection(f"freeze family: {family!r} declares no trial ids")
+            accepted = {trial["id"] for trial in trials if trial["family"] == family}
+            if set(record["trial_ids"]) != accepted:
+                raise Rejection(
+                    f"freeze family: {family!r} trial ids differ from the accepted set"
+                )
+            if not isinstance(record.get("bounds"), dict):
+                raise Rejection(f"freeze family: {family!r} bounds object is malformed")
+        if declared_family_ids != set(FAMILIES):
+            raise Rejection("freeze: families are not exactly the accepted pair")
+        budgets = freeze.get("budgets")
+        if not isinstance(budgets, dict) or set(budgets) != {"time", "usage", "spend"}:
+            raise Rejection("freeze: budgets must cover time, usage and spend")
+        for name, budget in budgets.items():
+            record = self.exact_fields(
+                budget, ("requested", "effective", "state", "evidence", "revision"),
+                f"budget {name}",
+            )
+            for field in ("requested", "effective"):
+                value = record.get(field)
+                if value is None:
+                    continue
+                if not isinstance(value, dict) or set(value) != {"value", "unit", "hard"} and field == "requested":
+                    if not isinstance(value, dict) or set(value) != {"value", "unit"}:
+                        raise Rejection(f"budget {name}: {field} is malformed")
+            state = record.get("state")
+            if state not in ("not-requested", "enforced", "unsupported", "revised"):
+                raise Rejection(f"budget {name}: state {state!r} is unknown")
+            if record.get("evidence") is not None:
+                self.check_artifact_ref(
+                    record.get("evidence"), f"budget {name} evidence", {"freeze"}
+                )
+            revision = record.get("revision")
+            if revision is not None:
+                self.exact_fields(
+                    revision,
+                    ("approved_by", "approved_at_utc", "reason", "revised_requested"),
+                    f"budget {name} revision",
+                )
+                self.check_timestamp(revision.get("approved_at_utc"), f"budget {name} revision")
+                for field in ("approved_by", "reason"):
+                    if not isinstance(revision.get(field), str) or not revision[field]:
+                        raise Rejection(f"budget {name} revision: {field} is empty")
+            if state == "not-requested" and record.get("revision") is not None:
+                raise Rejection(
+                    f"budget {name}: not-requested state carries a revision"
+                )
+        self.freeze_sha256 = self.canonical_digest(freeze)
+        expected_freeze = self.expected.get("freeze_sha256")
+        if expected_freeze != self.freeze_sha256:
+            raise Rejection(
+                f"freeze: canonical digest {self.freeze_sha256} differs from the "
+                f"independently reviewed {expected_freeze!r}"
+            )
+
+    def check_builds_v3(self, manifest: dict) -> None:
+        """Expanded build rows: identity/byte binding, not build causality."""
+        builds = manifest.get("builds")
+        if not isinstance(builds, list) or len(builds) != 2:
+            raise Rejection("builds: exactly one Opi row and one pi row required")
+        seen: set[str] = set()
+        command_ids = set(self.commands_by_id)
+        for row in builds:
+            record = self.exact_fields(
+                row,
+                (
+                    "agent", "receipt", "executable", "runtime_package",
+                    "build_command_ids",
+                ),
+                "builds",
+            )
+            agent = record.get("agent")
+            if agent not in ("opi", "pi") or agent in seen:
+                raise Rejection(f"builds: agent {agent!r} is missing or duplicated")
+            seen.add(agent)
+            self.check_artifact_ref(record.get("receipt"), f"builds {agent} receipt", {"build"})
+            executable = self.check_artifact_ref(
+                record.get("executable"), f"builds {agent} executable", {"build"}
+            )
+            package = record.get("runtime_package")
+            if package is not None:
+                package_record = self.exact_fields(
+                    package, ("path", "manifest_sha256"), f"builds {agent} package"
+                )
+                if not HEX64.match(package_record.get("manifest_sha256", "")):
+                    raise Rejection(f"builds {agent}: package digest is malformed")
+                self.admit_contained_path(
+                    package_record.get("path"), f"builds {agent} package"
+                )
+            ids = record.get("build_command_ids")
+            if not isinstance(ids, list) or not ids:
+                raise Rejection(f"builds {agent}: no original build commands")
+            for command_id in ids:
+                if command_id not in command_ids:
+                    raise Rejection(
+                        f"builds {agent}: command {command_id!r} has no original record"
+                    )
+            expected_row = self.expected_agent(agent)
+            if expected_row.get("executable_sha256") != executable["sha256"]:
+                raise Rejection(
+                    f"builds {agent}: executable differs from the independently "
+                    f"reviewed identity"
+                )
+            if expected_row.get("receipt_sha256") != record["receipt"]["sha256"]:
+                raise Rejection(
+                    f"builds {agent}: receipt differs from the independently "
+                    f"reviewed identity"
+                )
+        if seen != {"opi", "pi"}:
+            raise Rejection("builds: one Opi row and one pi row are required")
+
+    def expected_agent(self, agent: str) -> dict:
+        rows = self.expected.get("agents")
+        if not isinstance(rows, list):
+            raise Rejection("expected identities: no agent rows")
+        matches = [row for row in rows if isinstance(row, dict) and row.get("agent") == agent]
+        if len(matches) != 1:
+            raise Rejection(f"expected identities: no unique row for {agent!r}")
+        return matches[0]
+
+    def check_commands(self, manifest: dict, trials: list[dict]) -> None:
+        """Original command captures: exact argv order, both streams, exit,
+        timestamps, freeze binding and required phase coverage. The fresh
+        verifier's own subprocess successes never replace original records."""
+        commands = manifest.get("commands")
+        if not isinstance(commands, list) or not commands:
+            raise Rejection("commands: no original command inventory")
+        self.commands_by_id: dict[str, dict] = {}
+        for row in commands:
+            record = self.exact_fields(
+                row,
+                (
+                    "id", "phase", "family", "attempt_id", "argv", "cwd_label",
+                    "executable_sha256", "started_at_utc", "ended_at_utc",
+                    "exit_code", "stdout", "stderr", "freeze_sha256",
+                    "inputs", "outputs",
+                ),
+                "commands",
+            )
+            command_id = self.check_id(record.get("id"), "command id")
+            if command_id in self.commands_by_id:
+                raise Rejection(f"commands: duplicate id {command_id!r}")
+            if record.get("phase") not in COMMAND_PHASES:
+                raise Rejection(f"commands: {command_id!r} phase is unknown")
+            family = record.get("family")
+            if family is not None and family not in FAMILIES + EXCLUDED_FAMILIES:
+                raise Rejection(f"commands: {command_id!r} family {family!r} is unknown")
+            if record.get("phase") == "run":
+                if not isinstance(record.get("attempt_id"), str) or not record["attempt_id"]:
+                    raise Rejection(f"commands: {command_id!r} run needs an attempt id")
+            elif record.get("attempt_id") is not None:
+                raise Rejection(
+                    f"commands: {command_id!r} attempt id is reserved for run"
+                )
+            argv = record.get("argv")
+            if not isinstance(argv, list) or not argv or any(
+                not isinstance(part, str) for part in argv
+            ):
+                raise Rejection(f"commands: {command_id!r} argv is not a string list")
+            if not isinstance(record.get("cwd_label"), str) or not record["cwd_label"]:
+                raise Rejection(f"commands: {command_id!r} cwd label is empty")
+            if not HEX64.match(record.get("executable_sha256", "")):
+                raise Rejection(f"commands: {command_id!r} executable digest is malformed")
+            self.check_timestamp(record.get("started_at_utc"), f"commands {command_id!r}")
+            self.check_timestamp(record.get("ended_at_utc"), f"commands {command_id!r}")
+            if type(record.get("exit_code")) is not int or isinstance(
+                record.get("exit_code"), bool
+            ):
+                raise Rejection(f"commands: {command_id!r} exit is not an integer")
+            self.check_stream_ref(record.get("stdout"), f"commands {command_id!r} stdout", {"command"})
+            self.check_stream_ref(record.get("stderr"), f"commands {command_id!r} stderr", {"command"})
+            if record.get("freeze_sha256") not in (None, self.freeze_sha256):
+                raise Rejection(
+                    f"commands: {command_id!r} freeze digest differs from the "
+                    f"manifest freeze"
+                )
+            for field in ("inputs", "outputs"):
+                items = record.get(field)
+                if not isinstance(items, list):
+                    raise Rejection(f"commands: {command_id!r} {field} is malformed")
+                for item in items:
+                    entry = self.exact_fields(
+                        item, ("role", "artifact"), f"commands {command_id!r} {field}"
+                    )
+                    if not isinstance(entry.get("role"), str) or not entry["role"]:
+                        raise Rejection(
+                            f"commands: {command_id!r} {field} role is empty"
+                        )
+                    self.check_artifact_ref(
+                        entry.get("artifact"),
+                        f"commands {command_id!r} {field}",
+                        {"command"},
+                    )
+            self.commands_by_id[command_id] = record
+        # Required original phase coverage per accepted family.
+        accepted = {trial["family"] for trial in trials}
+        for family in sorted(accepted):
+            phases = {
+                row.get("phase")
+                for row in self.commands_by_id.values()
+                if row.get("family") == family
+            }
+            shared = {"build", "doctor"}
+            for phase in ("prepare", "run", "verify", "report"):
+                if phase not in phases:
+                    raise Rejection(
+                        f"commands: family {family!r} preserves no original {phase} "
+                        f"record"
+                    )
+            if "plan" not in phases and "validate" not in phases:
+                raise Rejection(
+                    f"commands: family {family!r} preserves neither an original plan "
+                    f"nor a validate record"
+                )
+            missing_shared = sorted(shared - phases - {""})
+            del missing_shared
+        # Build rows must resolve (checked again in check_builds_v3).
+        # Exits: verify/report/prepare/plan/validate are zero; run keeps the
+        # valid nonzero-comparability rule; failed predecessors keep theirs.
+        for command_id, record in sorted(self.commands_by_id.items()):
+            phase = record["phase"]
+            exit_code = record["exit_code"]
+            if phase in ("verify", "report", "prepare", "validate", "plan", "doctor"):
+                if exit_code != 0:
+                    raise Rejection(
+                        f"commands: {command_id!r} {phase} exited {exit_code}"
+                    )
+            if phase == "run" and exit_code not in (0, 1):
+                raise Rejection(
+                    f"commands: {command_id!r} run exited {exit_code}"
+                )
+            if phase == "run":
+                # A paired run may settle non-zero through its
+                # comparability marker while every planned trial stays
+                # sealed and natively verified; the weak /2 exit table
+                # encoded the same rule, now bound to the original run
+                # capture (P19-AUD-003).
+                self.check_run_exit(record["family"], exit_code)
+
+    def check_attempts(self, manifest: dict, trials: list[dict]) -> None:
+        """Reciprocal accepted-trial/attempt coverage with retained
+        predecessor chains and a bounded completeness attestation."""
+        attempts = manifest.get("attempts")
+        if not isinstance(attempts, dict):
+            raise Rejection("attempts: no inline attempt record")
+        self.exact_fields(
+            attempts,
+            ("scope_id", "declared_by", "declared_at_utc", "scope_description",
+             "complete_within_scope", "records"),
+            "attempts",
+        )
+        self.check_id(attempts.get("scope_id"), "attempts scope_id")
+        for field in ("declared_by", "scope_description"):
+            if not isinstance(attempts.get(field), str) or not attempts[field]:
+                raise Rejection(f"attempts: {field} is empty")
+        self.check_timestamp(attempts.get("declared_at_utc"), "attempts declared_at_utc")
+        if type(attempts.get("complete_within_scope")) is not bool:
+            raise Rejection("attempts: completeness attestation is not boolean")
+        rows = attempts.get("records")
+        if not isinstance(rows, list):
+            raise Rejection("attempts: records is not a list")
+        seen_ids: set[str] = set()
+        accepted_by_attempt: dict[str, set[str]] = {}
+        run_ids: set[str] = set()
+        for row in rows:
+            record = self.exact_fields(
+                row,
+                ("id", "family", "run_id", "trial_ids", "disposition",
+                 "replacement_of", "command_ids", "artifacts", "missing_evidence_reason"),
+                "attempt record",
+            )
+            attempt_id = self.check_id(record.get("id"), "attempt id")
+            if attempt_id in seen_ids:
+                raise Rejection(f"attempts: duplicate id {attempt_id!r}")
+            seen_ids.add(attempt_id)
+            family = record.get("family")
+            if family not in FAMILIES + EXCLUDED_FAMILIES:
+                raise Rejection(f"attempts: {attempt_id!r} family {family!r} is unknown")
+            if not isinstance(record.get("run_id"), str):
+                raise Rejection(f"attempts: {attempt_id!r} run id is not a string")
+            for field in ("trial_ids", "command_ids", "artifacts"):
+                if not isinstance(record.get(field), list):
+                    raise Rejection(
+                        f"attempts: {attempt_id!r} {field} is not a list"
+                    )
+            disposition = record.get("disposition")
+            if disposition not in (
+                "accepted", "failed", "cancelled", "effect-unknown", "unstarted", "scoped-out"
+            ):
+                raise Rejection(f"attempts: {attempt_id!r} disposition {disposition!r}")
+            predecessor = record.get("replacement_of")
+            if predecessor is not None:
+                self.check_id(predecessor, f"attempts {attempt_id!r} predecessor")
+            empty_allowed = disposition in ("unstarted",)
+            for field in ("run_id", "trial_ids", "command_ids"):
+                values = record.get(field) if isinstance(record.get(field), list) else [record.get(field)]
+                if not empty_allowed and any(
+                    value in (None, "") for value in values
+                ):
+                    raise Rejection(
+                        f"attempts: {attempt_id!r} empty {field} outside unstarted work"
+                    )
+            if not isinstance(record.get("missing_evidence_reason"), str):
+                raise Rejection(f"attempts: {attempt_id!r} missing-reason is not a string")
+            for command_id in record.get("command_ids"):
+                if command_id not in self.commands_by_id:
+                    raise Rejection(
+                        f"attempts: {attempt_id!r} references unknown command "
+                        f"{command_id!r}"
+                    )
+            for artifact in record.get("artifacts"):
+                self.check_artifact_ref(
+                    artifact, f"attempts {attempt_id!r} artifact", {"attempt"}
+                )
+            if disposition == "accepted":
+                accepted_by_attempt[attempt_id] = set(record.get("trial_ids"))
+            for command_id in record.get("command_ids"):
+                command = self.commands_by_id.get(command_id)
+                if command and command.get("phase") == "run":
+                    run_ids.add(command_id)
+        # Every accepted trial maps reciprocally to an accepted attempt and
+        # an original run record; the trial row's own attempt_id must be the
+        # accepted attempt that lists it.
+        accepted_trials = {trial["id"] for trial in trials}
+        mapped: set[str] = set()
+        for attempt_id, trial_ids in accepted_by_attempt.items():
+            overlap = trial_ids & accepted_trials
+            mapped |= overlap
+            if overlap and overlap != trial_ids & accepted_trials:
+                raise Rejection(f"attempts: {attempt_id!r} binds foreign trials")
+        if mapped != accepted_trials:
+            missing = sorted(accepted_trials - mapped)
+            raise Rejection(
+                f"attempts: accepted trials {missing} map to no accepted attempt"
+            )
+        for trial in trials:
+            declared = trial.get("attempt_id")
+            if declared not in accepted_by_attempt:
+                raise Rejection(
+                    f"attempts: trial {trial['id']!r} declares attempt {declared!r} "
+                    f"which is not an accepted attempt"
+                )
+            if trial["id"] not in accepted_by_attempt[declared]:
+                raise Rejection(
+                    f"attempts: accepted attempt {declared!r} does not list trial "
+                    f"{trial['id']!r}"
+                )
+        for trial in trials:
+            run_commands = [
+                record for record in self.commands_by_id.values()
+                if record.get("phase") == "run"
+                and record.get("family") == trial["family"]
+            ]
+            if not run_commands:
+                raise Rejection(
+                    f"attempts: trial {trial['id']!r} has no original run record"
+                )
+
     # -- Companion invocation ---------------------------------------------------
 
     def companion_env(self) -> dict:
@@ -1163,20 +1793,29 @@ class Acceptance:
         trials = self.check_trials(manifest)
         self.admit_family_roots(trials)
         self.check_oracle(trials)
-        self.check_native_evidence(trials)
-        self.check_bundle_digests(trials)
+        # /3 provenance layer (validation order steps 2-8).
+        self.preserved_counts: dict[str, int] = {}
+        self.preserved_roles: dict[str, set] = {}
+        self.commands_by_id: dict[str, dict] = {}
+        self.check_load_expected(manifest)
+        self.check_freeze(manifest, trials)
+        self.check_commands(manifest, trials)
+        self.check_attempts(manifest, trials)
+        self.check_builds_v3(manifest)
         self.check_builds(manifest, trials)
         self.check_material(manifest, trials)
-        self.check_command_exits(manifest)
-        self.check_preserved(manifest)
+        self.check_native_evidence(trials)
+        self.check_bundle_digests(trials)
+        self.check_preserved(manifest, self.preserved_counts)
         self.check_controls(manifest, trials)
         self.check_scoped_view(manifest, trials)
         self.check_upstream_identities(manifest)
         self.record(
             "evidence-structure",
             True,
-            "paired native trials, complete frozen coverage, digests, controls, exits and "
-            "preserved artifacts verified offline",
+            "paired native trials, complete frozen coverage, digests, controls, "
+            "original commands, freeze, attempts and preserved artifacts verified "
+            "offline",
         )
         self.check_companion(trials)
         self.record(
@@ -1189,13 +1828,27 @@ class Acceptance:
             "trials": [trial["id"] for trial in trials],
             "families": sorted({trial["family"] for trial in trials}),
             "excluded_families": list(EXCLUDED_FAMILIES),
+            "expected_identities_sha256": self.expected_sha256,
+            "freeze_sha256": self.freeze_sha256,
+            "limit": (
+                "operator-approved identity/byte consistency does not "
+                "cryptographically establish build causality or completeness "
+                "beyond the declared invocation scope"
+            ),
             "checks": self.checks,
         }
 
 
-def verify(root: Path, out: Path, companion: Path) -> int:
+def verify(root: Path, out: Path, companion: Path, expected_path: Path) -> int:
     if not root.is_dir():
         print(f"error: evidence root does not exist: {root}", file=sys.stderr)
+        return 2
+    if expected_path.resolve() == (root.resolve() / expected_path.name):
+        print(
+            "error: expected-identities file must be selected outside the "
+            "evidence root",
+            file=sys.stderr,
+        )
         return 2
     if out.exists():
         print(f"error: output path already exists: {out}", file=sys.stderr)
@@ -1208,7 +1861,7 @@ def verify(root: Path, out: Path, companion: Path) -> int:
         return 2
     except ValueError:
         pass
-    acceptance = Acceptance(root, out, companion)
+    acceptance = Acceptance(root, out, companion, expected_path)
     try:
         report = acceptance.run()
     except Rejection as rejection:
@@ -1246,8 +1899,20 @@ def main() -> int:
     parser.add_argument(
         "--companion", required=True, type=Path, help="built opi-eval executable"
     )
+    parser.add_argument(
+        "--expected-identities",
+        required=True,
+        type=Path,
+        help="independently reviewed expected-identity file "
+        "(opi-eval-acceptance-expected-identities/1)",
+    )
     arguments = parser.parse_args()
-    return verify(arguments.root, arguments.out, arguments.companion)
+    return verify(
+        arguments.root,
+        arguments.out,
+        arguments.companion,
+        arguments.expected_identities,
+    )
 
 
 if __name__ == "__main__":

@@ -14,6 +14,28 @@ Follow the existing [Model controls](../../../../.agents/skills/opi-eval/referen
 rules. Changed controls require fresh exact-client proof, material and plan
 identities; preserve existing sealed runs unchanged.
 
+## 0. Install the evaluated executable and offline verifier
+
+This repository keeps build artifacts in an external Cargo target cache
+(`CARGO_TARGET_DIR`), so resolve the actual artifact path instead of
+assuming `./target/release`. Before leaving the source checkout, install
+both tools into the evaluation directory's `bin` and put it on `PATH` for
+every later step:
+
+```sh
+evaldir=/independent/evaluation
+mkdir -p "$evaldir/bin"
+target=$(cargo metadata --format-version 1 --no-deps | python3 -c \
+  'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+cp "$target/release/opi-eval" "$evaldir/bin/opi-eval"
+cp crates/opi-eval/scripts/verify-local-acceptance.py "$evaldir/bin/"
+export PATH="$evaldir/bin:$PATH"
+```
+
+Every later command uses these installed paths (or plain `opi-eval` with
+that `bin` on `PATH`), never ad-hoc `scripts/` or `target/release` paths
+inside the checkout.
+
 ## 1. Seed the local cache once
 
 From a repository checkout, copy the pin set into the cache directory
@@ -207,15 +229,25 @@ runtime consumes lives inside the cache or the output tree.
 
 ## 7. Hand the operator evidence to the offline verifier
 
-After the real operator run, redact and stage the evidence root (manifest
-with the six attributable trials, preserved artifacts, the
-`opi-artifact-audit` scoped view, the cached upstream identities) and
-verify it offline - the verifier launches no Agent, reads no credentials,
-and contacts no provider:
+After the real operator run, redact and stage the evidence root (a
+`opi-eval-local-acceptance/3` manifest with at least four attributable
+TB2.1/TB3 Opi/pi trials, inline freeze/commands/attempts provenance,
+preserved artifacts, the `opi-artifact-audit` scoped view, the cached
+upstream identities) and verify it offline. The verifier is invoked with
+the independently selected expected-identity file - a separately reviewed
+path outside the evidence root - and the same installed executable from
+step 0. It launches no Agent, reads no credentials, and contacts no
+provider:
 
 ```sh
-python3 scripts/verify-local-acceptance.py --root /redacted/evidence-root   --out /tmp/verification-report.json --companion ./target/release/opi-eval
+python3 "$evaldir/bin/verify-local-acceptance.py" \
+  --root /redacted/evidence-root \
+  --out /tmp/verification-report.json \
+  --companion "$evaldir/bin/opi-eval" \
+  --expected-identities /independently/reviewed/expected-identities.json
 ```
 
-See the crate README section "Local operator acceptance and its offline
-verifier" for the full contract.
+The minimum primary coverage is four TB2.1/TB3 Opi/Pi trials (one pair per
+frozen task/group); DeepSWE evidence stays separately scoped out and never
+substitutes for a primary trial. See the crate README section "Local
+operator acceptance and its offline verifier" for the full `/3` contract.

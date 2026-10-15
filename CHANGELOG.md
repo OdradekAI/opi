@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `opi-eval`: the Harbor integration's Agent deadline termination now stops
+  only the owned Agent launch. An integration-private Bash wait wrapper
+  launches the exact selected Agent in its own job process group and
+  records its PID with its kernel start identity; on deadline the stop
+  command authenticates that PID (start identity plus the trial's private
+  stage in the command line), collects the owned descendant set while the
+  launch tree is still intact - a separately created child group
+  survives the group kill only if collected first - and kills every owned
+  group with a bounded, fork-free `/proc` sweep. The first-sink capture
+  helper survives in its own group, drains its pipes to EOF, and
+  finalizes a genuine sanitized receipt, so a benchmark-defined Agent
+  timeout keeps its native reward and graded outcome instead of settling
+  as an invalid missing-receipt capture. The wrapper suppresses only its
+  own job-notification stderr; Agent streams still flow to the first
+  sink unchanged.
+- `opi-eval`: offline report usage facts are now derived from actual known
+  token measurements in the sealed trajectory instead of sealed-artifact
+  presence. A measured usage marker cites the sealed trace manifest bytes
+  that contain the measurement fields (Provider/Diagnostic-only record
+  streams are no longer usage provenance); a manifest whose measurements
+  are both unknown reconstructs an honest `usage-not-measured` unknown
+  with its typed reasons kept visible, and pi's not-native unknowns are
+  unchanged.
+- `opi-eval`: `run` completion and offline `report` reconstruction now require
+  every planned trial to have a valid graded outcome, not just durable
+  settlement and comparable declared edges. A single-subject run whose only
+  trials are invalid executions exits 1 and reconstructs incomplete (the
+  empty comparison-edge set can no longer establish validity), while valid
+  native zero scores, benchmark-defined Agent timeouts and no-edge
+  single-subject success stay completed. Repetition control pairs treat
+  repeated absent or invalid headlines as incomplete repetition state
+  instead of comparing them equal as nulls.
+- `opi-eval`: the native result binding now applies a reverse consumer
+  cross-check to every ordinary file in a nonempty declared collection:
+  its normalized source and digest must be covered by the integration's
+  terminal delivered observations. Substituted collected bytes can no
+  longer be admitted through an empty, partial or unrelated-only
+  observation set; the pinned Harbor convention publish tree (owned by
+  the task's collect hook) and valid observed inputs are unchanged.
 - `opi-eval`: offline native comparisons validate sealed exact-client reasoning
   evidence for the first request and tool continuation. Proven supported levels
   remain comparable; missing, substituted or downgraded proof stays rejected.
@@ -92,6 +131,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+- `opi-eval`: the offline local-acceptance verifier now requires the
+  `/3` manifest contract (`opi-eval-local-acceptance/3`) with an
+  explicitly selected independent expected-identity file
+  (`--expected-identities`, schema
+  `opi-eval-acceptance-expected-identities/1`). The verifier validates
+  inline execution-provenance and freeze records, original command
+  captures (prepare plus plan-or-validate plus run/verify/report per
+  family, both streams and argv bound), reciprocal attempt coverage, and
+  byte-bound build receipts/executables before Companion invocation; a
+  missing, malformed or mismatched source/build/command/freeze fact
+  rejects without claiming authentic provenance from mutual agreement
+  alone. Legacy `/2` manifests and the weak `command_exits` tuple table
+  are no longer accepted, and the verification report gains the
+  selected expected-file digest, approved freeze digest and an explicit
+  build-causality limit.
 - `opi-eval`: standalone local-acceptance evidence and verification move to
   `opi-eval-local-acceptance/2` and `opi-eval-local-acceptance-verification/2`.
   Primary evidence requires at least four fully paired Terminal-Bench 2.1/3.0

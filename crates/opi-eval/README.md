@@ -413,7 +413,9 @@ Coverage counts (`corpus`, `selected`, `planned`, `attempted`,
 `full|subset` scope label beside the completed/incomplete outcome,
 same-task/repetition comparison pairs with missing sides and
 exclusions, repetition control pairs (`consistent|divergent|incomplete`
-with missing groups), and unknown telemetry reasons all stay visible: a
+with missing or unestablished groups; repeated absent or invalid outcomes
+stay incomplete instead of comparing equal), and unknown telemetry reasons
+all stay visible: a
 protocol-group edge (two subjects of one product) never pairs, and a
 single-subject report needs no artificial comparison edge. Repeated
 reconstruction over identical inputs yields identical bytes. Tampered sealed
@@ -444,7 +446,9 @@ cargo run -p opi-eval -- run \
 `run` assembles both declared trials, records durable intent before process
 effects, settles each trial, and seals its evidence. It prints one
 `opi-eval-run-report/1` JSON object. Exit 0 and `"outcome":"completed"` mean
-every declared pair settled comparably.
+every declared trial settled comparably with a valid graded outcome (valid
+native zero and benchmark-defined Agent timeouts included); a run whose only
+trials are invalid stays incomplete even with no comparison edge to fail.
 
 The run root must be fresh: use an absent or empty path that does not contain
 an earlier durable run. The command writes `run-report.json` plus one receipt
@@ -908,7 +912,7 @@ execution, and roll back by disabling the affected local execution path
 or restoring a previously verified Companion build - never by relabeling
 old evidence.
 
-Phase 19 acceptance uses `opi-eval-local-acceptance/2`: at least four
+Phase 19 acceptance uses `opi-eval-local-acceptance/3` (P19-AUD-003): at least four
 attributable primary trials across Terminal-Bench 2.1 and 3.0, with exactly
 one Opi/Pi pair for each frozen task/group (including each repetition).
 Additional selected tasks and repetitions remain fully checked; no frozen
@@ -937,8 +941,24 @@ that evidence offline:
 python3 crates/opi-eval/scripts/verify-local-acceptance.py \
   --root <redacted-evidence-root> \
   --out <verification-report.json> \
-  --companion <built opi-eval executable>
+  --companion <built opi-eval executable> \
+  --expected-identities <independently reviewed expected-identity file>
 ```
+
+The `/3` contract adds inline execution-provenance: the operator selects one
+`opi-eval-acceptance-expected-identities/1` file outside the evidence root,
+binding the Companion execution/verification digests, the freeze digest and
+each Agent's source/commit/receipt/executable/package identity. The manifest
+carries `expected_identities_sha256`, an inline `freeze` record (scope,
+platform, credential references, per-family config/plan and bounds, time/
+usage/spend budgets), an inline `commands` inventory of the original
+prepare, plan-or-validate, run, verify and report captures per family
+(exact argv, both stream references with honest redaction labels, exits,
+timestamps and freeze binding), and an inline `attempts` record with
+reciprocal accepted-trial coverage. Build rows pin their original receipt
+and executable bytes. Legacy `/2` manifests and the weak `command_exits`
+tuple table are no longer accepted; changed admission is visible at the
+schema seam.
 
 The verifier never launches an Agent, reads credentials, or contacts a
 provider. It rejects substituted, oracle, missing, or fixture-only
@@ -948,9 +968,12 @@ digest, validates upstream commits against the identities derived from
 the admitted lock bytes (cross-checked with the supplied cached
 inventories, never by resolving commits in this checkout), and invokes
 the built Companion `verify` and `report` only against the supplied
-family run roots. The `opi-eval-local-acceptance-verification/2` result explicitly
-records DeepSWE as excluded. Exit 0 accepts the evidence; exit 2 prints one typed
-rejection.
+family run roots. The `opi-eval-local-acceptance-verification/3` result
+explicitly records DeepSWE as excluded and carries the selected
+expected-file digest, the approved freeze digest and an explicit limit:
+operator-approved identity/byte consistency does not cryptographically
+establish build causality or completeness beyond the declared invocation
+scope. Exit 0 accepts the evidence; exit 2 prints one typed rejection.
 
 Acceptance requires Python 3.11 or later. Its manifest's
 `controls.connection_controls` contains `connection` (the selected `provider`,

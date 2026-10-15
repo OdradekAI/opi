@@ -75,6 +75,122 @@ pub(super) fn controlled_material_selected(
     deadlines: bool,
     families: &[&'static str],
 ) -> PathBuf {
+    build_controlled_material(input, deadlines, families, false)
+}
+
+/// The P19-AUD-105 deadline-settlement probe material: the TB3 diagnostic
+/// family with an Agent that also owns same-group and setsid descendants,
+/// an unrelated task baseline process in the environment entrypoint, and a
+/// slower time-cap verifier so owned termination stays discriminating.
+pub(super) fn timecap_settlement_material(input: &Path) -> PathBuf {
+    build_controlled_material(input, true, &["terminal-bench-3.0"], true)
+}
+
+/// The P19-AUD-103 TB3 artifact-witness material: a private copy of the
+/// official foodstuff task whose agent environment ships a known incorrect
+/// but PRESENT /app/results.txt plus an unrelated canary, with the corpus,
+/// profile, task-package and static-lock identities rebound through the
+/// existing fixture helpers. The nop witness therefore keeps a collectable
+/// declared artifact (present-incorrect, reward zero) instead of failing
+/// as a missing artifact, and the oracle witness replaces it with the
+/// reference solution (reward one). The pinned native runner, task.toml
+/// collection contract, separate verifier, tests grader and solution bytes
+/// stay unchanged, and the supplied material and its immutable cache bytes
+/// are never modified.
+pub(super) fn tb3_artifact_witness_material(input: &Path) -> PathBuf {
+    let original = fs::read(input).unwrap();
+    let mut material: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    material["benchmarks"]
+        .as_object_mut()
+        .unwrap()
+        .retain(|family, _| family == "terminal-bench-3.0");
+    let root = tempfile::Builder::new()
+        .prefix("opi-eval-tb3-witness-")
+        .tempdir()
+        .unwrap()
+        .keep();
+    fs::write(root.join("source-material.json"), &original).unwrap();
+    let mut lock: serde_json::Value = serde_json::from_slice(
+        &fs::read(material["static_lock"]["path"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    let family = "terminal-bench-3.0";
+    let tasks = material["benchmarks"][family]["tasks"]
+        .as_object()
+        .unwrap()
+        .clone();
+    assert_eq!(tasks.len(), 1, "the official TB3 witness selects one task");
+    let (task_id, task) = tasks.iter().next().unwrap();
+    let project = root.join("corpora").join(family);
+    let package = root.join("packages").join(family).join(task_id);
+    copy_dir(
+        &PathBuf::from(task["task_package"].as_str().unwrap()),
+        &package,
+    );
+    // The incorrect-but-present declared artifact and the unrelated
+    // canary live only in the copied agent environment (WORKDIR /app):
+    // the nop witness never writes the declared file, so its collected
+    // bytes stay these seeded bytes.
+    let dockerfile_path = package.join("environment/Dockerfile");
+    let mut dockerfile = fs::read_to_string(&dockerfile_path).unwrap();
+    dockerfile.push_str(concat!(
+        "RUN printf 'incorrect-witness-baseline\\n' > /app/results.txt \\\n",
+        " && printf 'canary\\n' > /app/unrelated-canary.txt\n",
+    ));
+    fs::write(&dockerfile_path, dockerfile).unwrap();
+    let corpus_source = project.join("tasks").join(task_id);
+    copy_dir(&package, &corpus_source);
+    let profile = root
+        .join("profiles")
+        .join(family)
+        .join(format!("{task_id}.toml"));
+    fs::create_dir_all(profile.parent().unwrap()).unwrap();
+    fs::copy(
+        PathBuf::from(task["profile"]["path"].as_str().unwrap()),
+        &profile,
+    )
+    .unwrap();
+    {
+        let mut doc: toml::Value = fs::read_to_string(&profile).unwrap().parse().unwrap();
+        doc["identity"]["upstream"] = project.to_string_lossy().into_owned().into();
+        doc["identity"]["tag"] = "v0-diagnostic".into();
+        fs::write(&profile, toml::to_string(&doc).unwrap()).unwrap();
+    }
+    let (corpus, mut pin) = fixture_corpus_pin(&project, family);
+    pin["repository_url"] = project.to_string_lossy().into_owned().into();
+    pin["kind"] = "benchmark-source".into();
+    fixture_git(&project, &["tag", "v0-diagnostic"]);
+    pin["tag"] = "v0-diagnostic".into();
+    let subject = lock["subjects"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|subject| subject["id"] == family)
+        .unwrap();
+    *subject = pin;
+    material["benchmarks"][family]["corpus"] = corpus;
+    material["benchmarks"][family]["tasks"] = serde_json::json!({
+        task_id.clone(): fixture_task_binding(&project, task_id, &package, &profile),
+    });
+    let lock_path = root.join("static-lock.json");
+    fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    material["static_lock"] = serde_json::json!({
+        "path": lock_path,
+        "sha256": sha256_hex(&fs::read(&lock_path).unwrap()),
+    });
+    let path = root.join("material.json");
+    fs::write(&path, serde_json::to_vec_pretty(&material).unwrap()).unwrap();
+    assert_eq!(fs::read(input).unwrap(), original);
+    eprintln!("native TB3 artifact-witness material: {}", path.display());
+    path
+}
+
+fn build_controlled_material(
+    input: &Path,
+    deadlines: bool,
+    families: &[&'static str],
+    timecap_probe: bool,
+) -> PathBuf {
     let original = fs::read(input).unwrap();
     let mut material: serde_json::Value = serde_json::from_slice(&original).unwrap();
     let profiles = witness_material_profiles_selected(&material, families)
@@ -188,6 +304,10 @@ pub(super) fn controlled_material_selected(
             };
             let verifier_delay = if matches!(*case, "verifier-cap" | "both-verifier" | "timeout") {
                 if pier { 60.0 } else { 6.0 }
+            } else if timecap_probe && *case == "time-cap" {
+                // Keep the container alive well past the Agent deadline so a
+                // leaked descendant stays distinguishable from a killed one.
+                6.0
             } else {
                 0.05
             };
@@ -255,6 +375,20 @@ pub(super) fn controlled_material_selected(
                     "/work"
                 }
             );
+            if timecap_probe {
+                // The unrelated task baseline process: started by the
+                // environment entrypoint, never owned by the Agent launch.
+                // It heartbeats into the capture mount so an over-broad
+                // deadline kill becomes observable on the host.
+                dockerfile.push_str(concat!(
+                    r#"ENTRYPOINT ["/bin/sh", "-c", ""#,
+                    "mkdir -p /logs/agent 2>/dev/null; ",
+                    r#"while :; do printf '%s\\n' \"$(date +%s.%N)\" "#,
+                    r#">> /logs/agent/baseline-heartbeat.txt; sleep 0.2; done & "#,
+                    r#"exec \"$@\"", "--"]"#,
+                    "\n",
+                ));
+            }
             if !pier {
                 // A timed-out diagnostic leaves an incorrect, verifiable artifact.
                 dockerfile.push_str("RUN printf 'incorrect\\n' > answer.txt\n");
@@ -366,13 +500,39 @@ pub(super) fn controlled_material_selected(
     for product in ["opi", "pi"] {
         let package = root.join("agents").join(product);
         let executable = package.join(product);
-        write_exec(&executable, &diagnostic_client_script(product));
+        let script = if timecap_probe {
+            timecap_probe_client_script(product)
+        } else {
+            diagnostic_client_script(product)
+        };
+        write_exec(&executable, &script);
         material["agents"][product]["executable"] = serde_json::json!({"path": executable, "sha256": sha256_hex(&fs::read(&executable).unwrap())});
         material["agents"][product]["runtime_package"] = serde_json::json!({"path": package, "entrypoint": product, "manifest_sha256": directory_manifest_digest(&package)});
         material["agents"][product]
             .as_object_mut()
             .unwrap()
             .remove("output_control_evidence");
+    }
+    // Green-check module derivation (P19-AUD-105): the private material
+    // binds the Harbor integration module snapshot from the current
+    // changed source with a recomputed manifest digest. The original
+    // source material and its immutable cache bytes stay untouched.
+    let harbor_module = root.join("modules").join("harbor");
+    fs::create_dir_all(&harbor_module).unwrap();
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("integrations/harbor/opi_eval_harbor.py"),
+        harbor_module.join("opi_eval_harbor.py"),
+    )
+    .unwrap();
+    let harbor_manifest = directory_manifest_digest(&harbor_module);
+    for product in ["opi", "pi"] {
+        let integration = &mut material["agents"][product]["integrations"]["harbor"];
+        *integration = serde_json::json!({
+            "agent_name": integration["agent_name"].clone(),
+            "import_path": integration["import_path"].clone(),
+            "module_dir": harbor_module.to_string_lossy().into_owned(),
+            "module_manifest_sha256": harbor_manifest,
+        });
     }
     let lock_path = root.join("static-lock.json");
     fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
@@ -701,6 +861,28 @@ else:
     # stream.
     print('{"type":"Agent","event":{"type":"AgentEnd","messages":[]}}')
 "#.replace("$PRODUCT", product)
+}
+
+/// The P19-AUD-105 probe client: the diagnostic client plus two owned
+/// descendants - one plain child inside the Agent's own process group and
+/// one setsid child in a separate session. Both redirect their streams
+/// away from the helper's pipes (the first sink must still see EOF when
+/// the Agent exits) and heartbeat into the mounted capture root so owned
+/// termination and any leak stay observable on the host.
+pub(super) fn timecap_probe_client_script(product: &str) -> String {
+    let descendants = r#"# Owned descendants (P19-AUD-105): their streams leave the helper's
+# pipes; heartbeats land in the mounted capture root.
+for _separate in (False, True):
+    _name = 'descendant-b' if _separate else 'descendant-a'
+    subprocess.Popen(['sh', '-c',
+        'exec >>/logs/agent/' + _name + '-heartbeat.txt 2>&1; '
+        'while :; do printf "%s\\n" "$(date +%s.%N)"; sleep 0.2; done'],
+        start_new_session=_separate)
+"#;
+    diagnostic_client_script(product).replace(
+        "time.sleep(case['delay'])",
+        &format!("{descendants}time.sleep(case['delay'])"),
+    )
 }
 
 pub(super) fn retain_clients(root: &Path, clients: &serde_json::Value) {

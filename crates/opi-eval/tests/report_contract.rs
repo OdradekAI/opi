@@ -178,11 +178,30 @@ fn asymmetric_native_facts() {
         .expect("pi trial present");
 
     // Opi's usage is a measured native fact: cited by bundle artifact and
-    // digest, never a bare number detached from its evidence.
+    // digest, never a bare number detached from its evidence. The cited
+    // bytes must contain the measurement fields themselves - the sealed
+    // trace manifest - not the Provider/Diagnostic-only record stream
+    // (P19-AUD-004).
     let usage = &opi["native_facts"]["usage"];
     assert_eq!(usage["state"], "measured", "{opi}");
-    assert_eq!(usage["artifact"], "native/evidence/records", "{usage}");
+    assert_eq!(usage["artifact"], "native/evidence/manifest", "{usage}");
     assert_eq!(usage["digest"].as_str().unwrap().len(), 64, "{usage}");
+    // The sealed manifest actually carries the usage projection: the
+    // mixed known/unknown coverage stays explicit in the cited bytes and
+    // the diagnostics, never balanced by fabrication.
+    let manifest_bytes = std::fs::read(
+        root.path()
+            .join("trials")
+            .join(opi["id"].as_str().unwrap())
+            .join("bundle/artifacts/native/evidence/manifest"),
+    )
+    .unwrap();
+    let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes).unwrap();
+    assert!(
+        manifest["usage"]["input_tokens"].get("Known").is_some()
+            && manifest["usage"]["output_tokens"].get("Unknown").is_some(),
+        "the cited manifest must carry the mixed measurements: {manifest}"
+    );
 
     // Facts no hermetic product exposes natively stay typed unknowns for
     // both sides - never zero, never copied across subjects.
@@ -231,6 +250,56 @@ fn asymmetric_native_facts() {
         assert_eq!(timing["origin"], "supervisor-wall-clock");
         assert!(timing["value"].as_u64().is_some());
     }
+
+    // All-unknown usage (P19-AUD-004): an Opi manifest whose token
+    // measurements are both Unknown(not_reported) reconstructs honest
+    // unknown usage - no measured marker, no citation - while the typed
+    // reasons stay visible in diagnostics and the run stays graded.
+    let unknown = tempfile::tempdir().unwrap();
+    let (code, report, stderr) =
+        run_experiment("local-paired.toml", "agent-unknown-usage", unknown.path());
+    assert_eq!(
+        code, 0,
+        "unknown usage must not break grading: {stderr} {report}"
+    );
+    let root_arg = unknown.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "report must publish: {stderr} {stdout}");
+    let published: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    let opi = published["trials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["subject"] == "candidate-opi")
+        .expect("opi trial present");
+    let unknown_usage = &opi["native_facts"]["usage"];
+    assert_eq!(
+        unknown_usage["state"], "unknown:opi-usage-not-measured",
+        "{unknown_usage}"
+    );
+    assert!(unknown_usage.get("digest").is_none(), "{unknown_usage}");
+    assert!(unknown_usage.get("value").is_none(), "{unknown_usage}");
+    let diagnostics = &opi["diagnostics"]["agent"];
+    assert_eq!(
+        diagnostics["input_tokens"], "unknown:not_reported",
+        "the typed reason stays visible: {diagnostics}"
+    );
+    assert_eq!(
+        diagnostics["output_tokens"], "unknown:not_reported",
+        "the typed reason stays visible: {diagnostics}"
+    );
+    // The pi side keeps its own not-native unknown untouched.
+    let pi = published["trials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["subject"] == "baseline-pi")
+        .expect("pi trial present");
+    assert_eq!(
+        pi["native_facts"]["usage"]["state"], "unknown:pi-usage-not-native",
+        "{pi}"
+    );
 }
 
 /// `P19-AC-008`: the published report keeps native metric meanings,
@@ -350,6 +419,84 @@ fn native_outcome_counts_keep_denominators_and_failure_classes() {
         "{pi}"
     );
     assert_eq!(published["run_outcome"], "incomplete", "{published}");
+}
+
+/// `P19-AUD-002`: a single-subject run whose only trials are invalid
+/// executions cannot complete. With no comparison edge to fail, the
+/// vacuous pair `all()` never establishes validity: malformed Agent
+/// streams and invalid verifier outcomes keep the run exit 1/incomplete,
+/// the offline reconstruction stays incomplete, and repeated
+/// absent/invalid headlines remain incomplete repetition state instead
+/// of comparing equal as nulls. Graded Agent timeouts on the same
+/// no-edge surface stay completed.
+#[test]
+fn invalid_single_subject_outcomes_cannot_complete() {
+    for behavior in ["agent-malformed-stream", "verifier-failure"] {
+        let root = tempfile::tempdir().unwrap();
+        let (code, report, stderr) = run_experiment("pi-repetitions.toml", behavior, root.path());
+        assert_eq!(
+            code, 1,
+            "{behavior}: invalid-only single-subject run must exit 1: {stderr} {report}"
+        );
+        assert_eq!(report["outcome"], "incomplete", "{behavior}: {report}");
+        for trial in report["trials"].as_array().unwrap() {
+            assert_eq!(trial["status"], "sealed", "{behavior}: {trial}");
+        }
+        let root_arg = root.path().canonicalize().unwrap();
+        let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+        assert_eq!(
+            code, 0,
+            "{behavior}: report must publish: {stderr} {stdout}"
+        );
+        let published: serde_json::Value = serde_json::from_str(&stdout)
+            .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+        assert_eq!(
+            published["run_outcome"], "incomplete",
+            "{behavior}: offline parity: {published}"
+        );
+        let counts = &published["coverage_counts"];
+        assert_eq!(counts["planned"], 2, "{behavior}: {published}");
+        assert_eq!(counts["attempted"], 2, "{behavior}: {published}");
+        assert_eq!(counts["valid"], 0, "{behavior}: {published}");
+        assert_eq!(counts["invalid"], 2, "{behavior}: {published}");
+        assert_eq!(counts["unexecuted"], 0, "{behavior}: {published}");
+        let control = published["control_pairs"].as_array().unwrap();
+        assert_eq!(control.len(), 1, "{behavior}: {published}");
+        assert_eq!(
+            control[0]["state"], "incomplete",
+            "{behavior}: repeated absent headlines are not consistent: {published}"
+        );
+        assert_eq!(
+            control[0]["missing_groups"].as_array().unwrap().len(),
+            2,
+            "{behavior}: both repetition slots stay unestablished: {published}"
+        );
+    }
+
+    // Control: benchmark-defined Agent timeouts remain valid graded
+    // outcomes on the same no-edge single-subject surface.
+    let timeout = tempfile::tempdir().unwrap();
+    let (code, report, stderr) =
+        run_experiment("pi-repetitions.toml", "agent-timeout", timeout.path());
+    assert_eq!(
+        code, 0,
+        "graded single-subject timeouts must stay completed: {stderr} {report}"
+    );
+    assert_eq!(report["outcome"], "completed", "{report}");
+    let root_arg = timeout.path().canonicalize().unwrap();
+    let (code, stdout, stderr) = invoke("report", &[("--root", root_arg.as_os_str())]);
+    assert_eq!(code, 0, "report must publish: {stderr} {stdout}");
+    let published: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_error| panic!("report stdout is not one JSON report: {stdout:?}"));
+    assert_eq!(
+        published["run_outcome"], "completed",
+        "graded timeouts stay completed offline: {published}"
+    );
+    let counts = &published["coverage_counts"];
+    assert_eq!(counts["valid"], 2, "{published}");
+    assert_eq!(counts["invalid"], 0, "{published}");
+    let control = published["control_pairs"].as_array().unwrap();
+    assert_eq!(control[0]["state"], "consistent", "{published}");
 }
 
 /// `P19-AC-009` (verify split): byte verification and actual native

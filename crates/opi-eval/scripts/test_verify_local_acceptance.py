@@ -39,6 +39,15 @@ MODEL_CONTROLS = {"temperature": "omitted", "top_p": "omitted", "max_output_toke
 THINKING_BUDGETS = {"off": 0, "minimal": 1024, "low": 2048, "medium": 8192, "high": 16384, "xhigh": 16384, "max": 16384}
 
 
+def canonical_digest(value) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    ).hexdigest()
+
+
+BUILD_DIGEST: dict[str, str] = {}
+
+
 def synthetic_output_control(product, experiment, opi_turn_budget=None):
     """Structural fixture only; real clients run in the ignored Rust matrix."""
     limit = experiment["model_controls"].get("max_output_tokens", 16384)
@@ -82,7 +91,7 @@ context_window = 1000000
                 model["thinkingLevelMap"] = {reasoning: reasoning}
             config = json.dumps(value)
     requests = "".join(json.dumps({"schema": "opi-eval-scripted-provider-log/1", "seq": seq, "status": 200, "method": "POST", "path": "/v1/messages", "model": "glm-5.3-flash", "output_limits": {"max_tokens": limit}, "request_sha256": "d" * 64}) + "\n" for seq in (1, 2))
-    proof = {"schema": "opi-eval-output-control/1", "product": product, "executable_sha256": "e" * 64, "runtime_package_manifest_sha256": None, "connection": {key: CONNECTION[key] for key in ("provider", "api", "model")}, "model_controls": experiment["model_controls"], "probe_base_url": PROBE_BASE_URL, "exit_code": 0, "config": {"path": "synthetic-config", "sha256": sha256(config.encode())}, "requests": {"path": "synthetic-requests", "sha256": sha256(requests.encode())}}
+    proof = {"schema": "opi-eval-output-control/1", "product": product, "executable_sha256": BUILD_DIGEST[product], "runtime_package_manifest_sha256": None, "connection": {key: CONNECTION[key] for key in ("provider", "api", "model")}, "model_controls": experiment["model_controls"], "probe_base_url": PROBE_BASE_URL, "exit_code": 0, "config": {"path": "synthetic-config", "sha256": sha256(config.encode())}, "requests": {"path": "synthetic-requests", "sha256": sha256(requests.encode())}}
     evidence = json.dumps(proof)
     return {"evidence": evidence, "evidence_sha256": sha256(evidence.encode()), "config": config, "requests": requests}
 
@@ -150,6 +159,19 @@ class EvidenceRoot:
         self.stub_record = base / "companion-invocations.txt"
         self.companion = base / "companion-stub.sh"
         write_exec(self.companion, companion_stub(self.stub_record))
+        self.companion_sha256 = sha256(self.companion.read_bytes())
+        self.expected_path = base / "expected-identities.json"
+        self.build_digests: dict[str, str] = {}
+        self.build_receipts: dict[str, str] = {}
+        for agent in ("opi", "pi"):
+            receipt = self.root / f"builds/{agent}-receipt.json"
+            executable = self.root / f"builds/{agent}-executable"
+            receipt.parent.mkdir(parents=True, exist_ok=True)
+            write_json(receipt, {"agent": agent, "kind": "fixture"})
+            executable.write_bytes(f"fixture-{agent}-bytes\n".encode())
+            self.build_digests[agent] = sha256(executable.read_bytes())
+            self.build_receipts[agent] = sha256(receipt.read_bytes())
+            BUILD_DIGEST[agent] = self.build_digests[agent]
         self.trials = []
         self.runs = {}
         self.subject_ids = subject_ids
@@ -180,6 +202,7 @@ class EvidenceRoot:
         write_json(self.root / "upstream-identity-cache.json", self.identity_cache)
         self._stage_scoped_view()
         self._write_manifest()
+        self._write_expected()
 
     def _stage_family(self, run: Path, family: str, opi_id: str, pi_id: str) -> None:
         lock = {
@@ -258,10 +281,10 @@ class EvidenceRoot:
             (native / "runtime-preflight-stderr.log").write_bytes(b"")
             write_json(native / "agent-terminal.json", {
                 "schema": "opi-eval-native-agent-terminal/2", "trial": trial,
-                "product": product, "agent_executable_sha256": "e" * 64,
+                "product": product, "agent_executable_sha256": BUILD_DIGEST[product],
                 "runtime_preflight": {
                     "kind": "version", "status": "passed", "exit_code": 0,
-                    "agent_executable_sha256": "e" * 64,
+                    "agent_executable_sha256": BUILD_DIGEST[product],
                     "runtime_package_manifest_sha256": None,
                     "runtime_package_entrypoint": None,
                     "command_sha256": sha256((shlex.quote(f"/opi-eval-agent/{product}/agent") + " --version").encode()),
@@ -289,7 +312,7 @@ class EvidenceRoot:
             snapshot = synthetic_output_control(product, experiment, self.opi_turn_budget)
             wire_path = bundle / "artifacts/control/output-control.json"
             write_json(wire_path, snapshot)
-            material["agents"][product] = {"executable": {"sha256": "e" * 64}, "output_control_evidence": {"sha256": snapshot["evidence_sha256"]}}
+            material["agents"][product] = {"executable": {"sha256": BUILD_DIGEST[product]}, "output_control_evidence": {"sha256": snapshot["evidence_sha256"]}}
             write_json(
                 bundle / "artifacts/control/settlement.json",
                 {
@@ -479,6 +502,7 @@ class EvidenceRoot:
                     (target / path.name).write_bytes(path.read_bytes())
 
     def _write_manifest(self) -> None:
+        build_digests = self.build_digests
         trials = []
         for family, entry in self.runs.items():
             for trial, agent in (
@@ -495,11 +519,12 @@ class EvidenceRoot:
                         "family": family,
                         "run_root": f"runs/{family}",
                         "bundle_digest": sha256(bundle_manifest.read_bytes()),
-                        "attribution": {"agent_executable_sha256": "e" * 64},
+                        "attribution": {"agent_executable_sha256": build_digests[agent]},
+                        "attempt_id": f"attempt-{family}",
                     }
                 )
         manifest = {
-            "schema": "opi-eval-local-acceptance/2",
+            "schema": "opi-eval-local-acceptance/3",
             "operator": {"redacted": True, "label": "local-acceptance-operator"},
             "opi_repository": {"url": "https://github.com/OdradekAI/opi", "commit": "9" * 40},
             "controls": {
@@ -512,19 +537,182 @@ class EvidenceRoot:
                 "harbor": {"repository_url": HARBOR_REPO, "commit": HARBOR_COMMIT},
                 "pier": {"repository_url": PIER_REPO, "commit": PIER_COMMIT},
             },
-            "builds": [
-                {"agent": "opi", "executable_sha256": "e" * 64},
-                {"agent": "pi", "executable_sha256": "e" * 64},
-            ],
+            "builds": [],
             "material": [],
-            "command_exits": [],
             "preserved": [],
         }
+        # Every contained /3 reference occurs exactly once in the
+        # inventory; this helper enforces the single-entry invariant.
+        inventory: dict[str, str] = {}
+
+        def preserve(path: Path) -> dict:
+            relative = path.resolve().relative_to(self.root.resolve()).as_posix()
+            digest = sha256(path.read_bytes())
+            if relative in inventory and inventory[relative] != digest:
+                raise AssertionError(f"fixture conflict at {relative}")
+            inventory[relative] = digest
+            return {"path": relative, "sha256": digest}
+
+        # -- inline freeze -------------------------------------------------
+        platform_evidence = self.root / "platform-evidence.txt"
+        platform_evidence.write_text("doctor/preflight observations\n", encoding="utf-8")
+        freeze = {
+            "scope_id": "scope-fixture",
+            "frozen_at_utc": "2026-10-15T00:00:00Z",
+            "operator_label": "local-acceptance-operator",
+            "platform": {
+                "host": "windows-x86_64",
+                "execution": "wsl2-linux",
+                "distribution": "Ubuntu 24.04",
+                "engine_id": "docker-27.7.2",
+                "evidence": preserve(platform_evidence),
+            },
+            "credential_references": [
+                {"connection_id": "primary", "kind": "environment", "label": "redacted"}
+            ],
+            "families": [],
+            "budgets": {
+                "time": {"requested": None, "effective": None, "state": "not-requested",
+                          "evidence": None, "revision": None},
+                "usage": {"requested": None, "effective": None, "state": "not-requested",
+                            "evidence": None, "revision": None},
+                "spend": {"requested": None, "effective": None, "state": "not-requested",
+                            "evidence": None, "revision": None},
+            },
+        }
+        commands = []
+        command_index = 0
         for family, entry in self.runs.items():
-            for command in ("run", "verify", "report"):
-                manifest["command_exits"].append(
-                    {"family": family, "command": command, "exit": 0}
+            config_path = entry["run"] / "config.toml"
+            config_path.write_text("# frozen selection config\n", encoding="utf-8")
+            freeze["families"].append(
+                {
+                    "family": family,
+                    "run_root": f"runs/{family}",
+                    "config": preserve(config_path),
+                    "plan": None,
+                    "material_sha256": sha256((entry["run"] / "material.json").read_bytes()),
+                    "trial_ids": sorted(
+                        trial_id for pair in entry["pairs"] for trial_id in pair
+                    ),
+                    "bounds": {
+                        "concurrency": 2,
+                        "max_trials": 8,
+                        "agent_timeout_seconds": 120,
+                        "verifier_timeout_seconds": 60,
+                        "response_output_cap": 16384,
+                        "byte_cap": None,
+                    },
+                }
+            )
+            for phase in ("prepare", "validate", "run", "verify", "report"):
+                command_index += 1
+                command_id = f"cmd-{family}-{phase}"
+                stdout_path = self.root / f"commands/{command_id}.stdout"
+                stderr_path = self.root / f"commands/{command_id}.stderr"
+                stdout_path.parent.mkdir(parents=True, exist_ok=True)
+                stdout_path.write_text(f"{command_id} stdout\n", encoding="utf-8")
+                stderr_path.write_text(f"{command_id} stderr\n", encoding="utf-8")
+                commands.append(
+                    {
+                        "id": command_id,
+                        "phase": phase,
+                        "family": family,
+                        "attempt_id": f"attempt-{family}" if phase == "run" else None,
+                        "argv": ["opi-eval", phase, "--config", f"runs/{family}/config.toml"],
+                        "cwd_label": "operator-home",
+                        "executable_sha256": self.companion_sha256,
+                        "started_at_utc": "2026-10-15T00:01:00Z",
+                        "ended_at_utc": "2026-10-15T00:02:00Z",
+                        "exit_code": 0,
+                        "stdout": {
+                            **preserve(stdout_path),
+                            "redaction": {"kind": "none"},
+                        },
+                        "stderr": {
+                            **preserve(stderr_path),
+                            "redaction": {"kind": "none"},
+                        },
+                        "freeze_sha256": None,
+                        "inputs": [{"role": "config", "artifact": preserve(config_path)}],
+                        "outputs": [],
+                    }
                 )
+        for agent in ("opi", "pi"):
+            command_index += 1
+            build_id = f"cmd-build-{agent}"
+            stdout_path = self.root / f"commands/{build_id}.stdout"
+            stderr_path = self.root / f"commands/{build_id}.stderr"
+            stdout_path.parent.mkdir(parents=True, exist_ok=True)
+            stdout_path.write_text(f"{build_id} stdout\n", encoding="utf-8")
+            stderr_path.write_text(f"{build_id} stderr\n", encoding="utf-8")
+            commands.append(
+                {
+                    "id": build_id,
+                    "phase": "build",
+                    "family": None,
+                    "attempt_id": None,
+                    "argv": ["bash", "build-agent-artifacts.sh", agent],
+                    "cwd_label": "operator-home",
+                    "executable_sha256": self.companion_sha256,
+                    "started_at_utc": "2026-10-15T00:00:10Z",
+                    "ended_at_utc": "2026-10-15T00:00:50Z",
+                    "exit_code": 0,
+                    "stdout": {
+                        **preserve(stdout_path),
+                        "redaction": {"kind": "none"},
+                    },
+                    "stderr": {
+                        **preserve(stderr_path),
+                        "redaction": {"kind": "none"},
+                    },
+                    "freeze_sha256": None,
+                    "inputs": [],
+                    "outputs": [],
+                }
+            )
+        manifest["freeze"] = freeze
+        manifest["commands"] = commands
+        attempts = {
+            "scope_id": "scope-fixture",
+            "declared_by": "local-acceptance-operator",
+            "declared_at_utc": "2026-10-15T00:00:00Z",
+            "scope_description": "operator-fixture scope",
+            "complete_within_scope": True,
+            "records": [],
+        }
+        for family, entry in self.runs.items():
+            attempts["records"].append(
+                {
+                    "id": f"attempt-{family}",
+                    "family": family,
+                    "run_id": f"operator-run-{family}",
+                    "trial_ids": sorted(
+                        trial_id for pair in entry["pairs"] for trial_id in pair
+                    ),
+                    "disposition": "accepted",
+                    "replacement_of": None,
+                    "command_ids": [
+                        row["id"] for row in commands if row.get("family") == family
+                    ],
+                    "artifacts": [],
+                    "missing_evidence_reason": "",
+                }
+            )
+        manifest["attempts"] = attempts
+        for agent in ("opi", "pi"):
+            receipt = self.root / f"builds/{agent}-receipt.json"
+            executable = self.root / f"builds/{agent}-executable"
+            manifest["builds"].append(
+                {
+                    "agent": agent,
+                    "receipt": preserve(receipt),
+                    "executable": preserve(executable),
+                    "runtime_package": None,
+                    "build_command_ids": [f"cmd-build-{agent}"],
+                }
+            )
+        for family, entry in self.runs.items():
             manifest["preserved"].append(
                 {
                     "role": "material",
@@ -547,8 +735,73 @@ class EvidenceRoot:
                     ),
                 }
             )
+        manifest["preserved"].extend(
+            {"role": "contained", "path": path, "sha256": digest}
+            for path, digest in sorted(inventory.items())
+        )
+        self._freeze_sha256 = canonical_digest(freeze)
+        manifest["expected_identities_sha256"] = "pending"
+        expected = getattr(self, "expected_path", None)
+        if expected is not None and expected.is_file():
+            self.expected["freeze_sha256"] = self._freeze_sha256
+            write_json(expected, self.expected)
+            manifest["expected_identities_sha256"] = sha256(expected.read_bytes())
         write_json(self.root / "manifest.json", manifest)
         self.manifest_path = self.root / "manifest.json"
+
+    def _write_expected(self) -> None:
+        """The independently selected expectation file, outside the root."""
+        self.expected = {
+            "schema": "opi-eval-acceptance-expected-identities/1",
+            "scope_id": "scope-fixture",
+            "static_lock_sha256": "f" * 64,
+            "freeze_sha256": self._freeze_sha256,
+            "companion": {
+                "execution_executable_sha256": self.companion_sha256,
+                "verification_executable_sha256": self.companion_sha256,
+            },
+            "agents": [
+                {
+                    "agent": "opi",
+                    "repository_url": "https://github.com/OdradekAI/opi",
+                    "source_commit": "9" * 40,
+                    "receipt_sha256": sha256(
+                        (self.root / "builds/opi-receipt.json").read_bytes()
+                    ),
+                    "executable_sha256": sha256(
+                        (self.root / "builds/opi-executable").read_bytes()
+                    ),
+                    "runtime_package_manifest_sha256": None,
+                },
+                {
+                    "agent": "pi",
+                    "repository_url": PI_REPO,
+                    "source_commit": PI_COMMIT,
+                    "receipt_sha256": sha256(
+                        (self.root / "builds/pi-receipt.json").read_bytes()
+                    ),
+                    "executable_sha256": sha256(
+                        (self.root / "builds/pi-executable").read_bytes()
+                    ),
+                    "runtime_package_manifest_sha256": None,
+                    "node_sha256": "0" * 64,
+                    "bundle_sha256": "0" * 64,
+                },
+            ],
+        }
+        write_json(self.expected_path, self.expected)
+        manifest = self.load_manifest()
+        manifest["expected_identities_sha256"] = sha256(self.expected_path.read_bytes())
+        self.save_manifest(manifest)
+
+    def rebind_freeze(self) -> None:
+        """Follow a manifest-level freeze edit with fresh bindings (tests
+        that legitimately relocate roots keep the expectation honest)."""
+        manifest = self.load_manifest()
+        self.expected["freeze_sha256"] = canonical_digest(manifest["freeze"])
+        write_json(self.expected_path, self.expected)
+        manifest["expected_identities_sha256"] = sha256(self.expected_path.read_bytes())
+        self.save_manifest(manifest)
 
     def verify(self, label: str | None = None) -> subprocess.CompletedProcess:
         suffix = f"-{label}" if label is not None else ""
@@ -563,6 +816,8 @@ class EvidenceRoot:
                 str(out),
                 "--companion",
                 str(self.companion),
+                "--expected-identities",
+                str(self.expected_path),
             ],
             capture_output=True,
             text=True,
@@ -612,7 +867,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
 
     def test_synthetic_structured_root_is_accepted(self) -> None:
         report = self.accept()
-        self.assertEqual(report["schema"], "opi-eval-local-acceptance-verification/2")
+        self.assertEqual(report["schema"], "opi-eval-local-acceptance-verification/3")
         self.assertEqual(len(report["trials"]), 4)
         self.assertEqual(report["families"], sorted(FAMILIES))
         self.assertEqual(report["excluded_families"], ["deepswe-v1.1"])
@@ -633,7 +888,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
         manifest["schema"] = "opi-eval-local-acceptance/1"
         self.evidence.save_manifest(manifest)
         report = self.reject("manifest schema")
-        self.assertEqual(report["schema"], "opi-eval-local-acceptance-verification/2")
+        self.assertEqual(report["schema"], "opi-eval-local-acceptance-verification/3")
         self.assertEqual(report["excluded_families"], ["deepswe-v1.1"])
 
     def test_excluded_and_unknown_primary_families_are_rejected(self) -> None:
@@ -642,7 +897,12 @@ class AcceptanceVerifierTest(unittest.TestCase):
                 self.evidence = EvidenceRoot(self.base / family)
                 manifest = self.evidence.load_manifest()
                 manifest["trials"].extend(
-                    {"id": f"extra-{agent}", "agent": agent, "family": family}
+                    {
+                        "id": f"extra-{agent}",
+                        "agent": agent,
+                        "family": family,
+                        "attempt_id": f"attempt-{family}",
+                    }
                     for agent in ("opi", "pi")
                 )
                 self.evidence.save_manifest(manifest)
@@ -659,7 +919,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
         manifest = self.evidence.load_manifest()
         manifest["trials"] = [row for row in manifest["trials"] if not row["id"].endswith("-r2")]
         self.evidence.save_manifest(manifest)
-        self.reject("planned trial coverage")
+        self.reject("trial ids differ from the accepted set")
 
     def test_resealed_mismatched_task_and_repetition_pairs_are_rejected(self) -> None:
         for field in ("task", "group"):
@@ -1096,6 +1356,8 @@ class AcceptanceVerifierTest(unittest.TestCase):
                 str(out),
                 "--companion",
                 str(self.evidence.companion),
+                "--expected-identities",
+                str(self.evidence.expected_path),
             ],
             capture_output=True,
             text=True,
@@ -1103,6 +1365,58 @@ class AcceptanceVerifierTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("lies inside the evidence root", result.stderr)
+
+    def test_expected_identities_inside_root_is_rejected(self) -> None:
+        inside = self.evidence.root / "expected-identities.json"
+        inside.write_bytes(self.evidence.expected_path.read_bytes())
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(VERIFIER),
+                "--root",
+                str(self.evidence.root),
+                "--out",
+                str(self.evidence.outside / "report-inside.json"),
+                "--companion",
+                str(self.evidence.companion),
+                "--expected-identities",
+                str(inside),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("outside the evidence root", result.stderr)
+
+    def test_expected_identities_digest_mismatch_is_rejected(self) -> None:
+        manifest = self.evidence.load_manifest()
+        manifest["expected_identities_sha256"] = "0" * 64
+        self.evidence.save_manifest(manifest)
+        self.reject("expected identities: manifest declares")
+
+    def test_substituted_companion_is_rejected(self) -> None:
+        other = self.base / "other-companion.sh"
+        write_exec(other, "#!/bin/sh\nexit 0\n")
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(VERIFIER),
+                "--root",
+                str(self.evidence.root),
+                "--out",
+                str(self.evidence.outside / "report-other.json"),
+                "--companion",
+                str(other),
+                "--expected-identities",
+                str(self.evidence.expected_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("current Companion bytes differ", result.stderr)
 
     # -- manifest rejections -------------------------------------------------
 
@@ -1172,7 +1486,27 @@ class AcceptanceVerifierTest(unittest.TestCase):
             entry["path"] = entry["path"].replace(
                 f"runs/{family}/", f"custom-evidence/{family}/"
             )
+        for row in manifest["freeze"]["families"]:
+            if row["family"] == family:
+                row["run_root"] = f"custom-evidence/{family}"
+                row["config"] = {
+                    **row["config"],
+                    "path": row["config"]["path"].replace(
+                        f"runs/{family}/", f"custom-evidence/{family}/"
+                    ),
+                }
+        for command in manifest["commands"]:
+            for field in ("inputs", "outputs"):
+                for item in command.get(field) or []:
+                    artifact = item.get("artifact")
+                    if isinstance(artifact, dict) and str(artifact.get("path", "")).startswith(
+                        f"runs/{family}/"
+                    ):
+                        artifact["path"] = artifact["path"].replace(
+                            f"runs/{family}/", f"custom-evidence/{family}/"
+                        )
         self.evidence.save_manifest(manifest)
+        self.evidence.rebind_freeze()
         self.accept()
         invocations = self.evidence.stub_record.read_text(encoding="utf-8").splitlines()
         self.assertIn(f"verify --root {alternate}", invocations)
@@ -1210,50 +1544,78 @@ class AcceptanceVerifierTest(unittest.TestCase):
         self.evidence.save_manifest(manifest)
         self.reject("bundle digest")
 
+    def test_each_omitted_required_phase_is_rejected(self) -> None:
+        # /3: every accepted family preserves original prepare, plan or
+        # validate, run, verify and report captures; dropping any one
+        # rejects before Companion invocation.
+        for phase in ("prepare", "validate", "run", "verify", "report"):
+            with self.subTest(phase=phase):
+                self.evidence = EvidenceRoot(self.base / f"omit-{phase}")
+                manifest = self.evidence.load_manifest()
+                manifest["commands"] = [
+                    row for row in manifest["commands"]
+                    if not (row.get("family") == FAMILIES[0] and row["phase"] == phase)
+                ]
+                self.evidence.save_manifest(manifest)
+                self.reject(
+                    "preserves neither an original plan nor a validate record"
+                    if phase == "validate"
+                    else f"preserves no original {phase}"
+                )
+
     def test_missing_command_exit_is_rejected(self) -> None:
         manifest = self.evidence.load_manifest()
-        manifest["command_exits"] = manifest["command_exits"][:-1]
+        manifest["commands"] = manifest["commands"][:-1]
+        manifest["freeze"]["families"][0]["trial_ids"] = manifest["freeze"]["families"][0][
+            "trial_ids"
+        ][:1]
+        self.evidence.rebind_freeze()
+        manifest = self.evidence.load_manifest()
+        del manifest["commands"][0]
         self.evidence.save_manifest(manifest)
-        self.reject("command exits")
+        self.reject("commands")
 
     def test_nonzero_command_exit_is_rejected(self) -> None:
         manifest = self.evidence.load_manifest()
-        manifest["command_exits"][0]["exit"] = 2
+        for command in manifest["commands"]:
+            if command.get("phase") == "verify":
+                command["exit_code"] = 2
+                break
         self.evidence.save_manifest(manifest)
-        self.reject("command exits")
+        self.reject("verify exited 2")
 
     def test_run_exit_one_with_all_trials_sealed_is_accepted(self) -> None:
         # A paired run whose every trial is sealed and verified natively can
         # settle non-zero through its comparability marker; that is genuine
         # operator evidence, not a command failure.
         manifest = self.evidence.load_manifest()
-        for entry in manifest["command_exits"]:
-            if entry["command"] == "run":
-                entry["exit"] = 1
+        for command in manifest["commands"]:
+            if command.get("phase") == "run":
+                command["exit_code"] = 1
         self.evidence.save_manifest(manifest)
         self.accept()
 
     def test_run_exit_one_with_unsealed_trial_is_rejected(self) -> None:
         manifest = self.evidence.load_manifest()
-        for entry in manifest["command_exits"]:
-            if entry["command"] == "run":
-                entry["exit"] = 1
+        for command in manifest["commands"]:
+            if command.get("phase") == "run":
+                command["exit_code"] = 1
         self.evidence.save_manifest(manifest)
         family = FAMILIES[0]
         path = self.evidence.runs[family]["run"] / "run-report.json"
         report = json.loads(path.read_text())
         report["trials"][0]["status"] = "failed"
         write_json(path, report)
-        self.reject("command exits")
+        self.reject("with unsealed")
 
     def test_run_exit_one_without_run_report_is_rejected(self) -> None:
         manifest = self.evidence.load_manifest()
-        for entry in manifest["command_exits"]:
-            if entry["command"] == "run":
-                entry["exit"] = 1
+        for command in manifest["commands"]:
+            if command.get("family") == FAMILIES[0] and command.get("phase") == "run":
+                command["exit_code"] = 1
         self.evidence.save_manifest(manifest)
         (self.evidence.runs[FAMILIES[0]]["run"] / "run-report.json").unlink()
-        self.reject("command exits")
+        self.reject("run-report.json")
 
     def test_substituted_preserved_artifact_is_rejected(self) -> None:
         manifest = self.evidence.load_manifest()
@@ -1490,7 +1852,7 @@ class AcceptanceVerifierTest(unittest.TestCase):
         manifest = self.evidence.load_manifest()
         manifest["trials"][0]["agent"], manifest["trials"][1]["agent"] = "pi", "opi"
         self.evidence.save_manifest(manifest)
-        self.reject("run-control")
+        self.reject("build:")
 
     def test_ambiguous_or_wrong_sealed_subject_bindings_are_rejected(self) -> None:
         for case in (

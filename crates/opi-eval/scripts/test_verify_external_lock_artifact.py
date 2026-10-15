@@ -47,6 +47,13 @@ def lf_sha256(data: bytes) -> str:
     return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
 
 
+def artifact_sha256(data: bytes) -> str:
+    # Downloaded artifact zips hash over their exact bytes: the payload is
+    # binary and LF normalization would corrupt the digest (matching the
+    # verifier's own open_artifact contract).
+    return hashlib.sha256(data).hexdigest()
+
+
 def producer_identity(pins: list[dict]) -> str:
     lines = "".join(f"{p['path']}\t{p['sha256']}\n" for p in sorted(pins, key=lambda p: p["path"]))
     return lf_sha256(lines.encode("utf-8"))
@@ -386,7 +393,7 @@ class Workspace:
             paths = self.install()
             receipt_path = receipt_path or paths["receipt"]
             artifact_path = artifact_path or paths["artifact"]
-        digest = artifact_digest or f"sha256:{lf_sha256(artifact_path.read_bytes())}"
+        digest = artifact_digest or f"sha256:{artifact_sha256(artifact_path.read_bytes())}"
         mode, lock_path = lock_mode or ("--write-lock", self.root / RESOLVED_LOCK)
         return subprocess.run(
             [
@@ -469,7 +476,7 @@ class RejectsMissingContext(unittest.TestCase):
             "--artifact-url",
             ARTIFACT_URL,
             "--artifact-digest",
-            f"sha256:{lf_sha256(paths['artifact'].read_bytes())}",
+            f"sha256:{artifact_sha256(paths['artifact'].read_bytes())}",
         ]
 
     def test_missing_required_argument_rejects(self) -> None:
@@ -675,7 +682,7 @@ class RejectsArtifactBinding(unittest.TestCase):
     def test_http_url_rejects(self) -> None:
         ws = Workspace()
         paths = ws.install()
-        digest = f"sha256:{lf_sha256(paths['artifact'].read_bytes())}"
+        digest = f"sha256:{artifact_sha256(paths['artifact'].read_bytes())}"
         result = subprocess.run(
             [
                 sys.executable,
@@ -709,7 +716,7 @@ class RejectsArtifactBinding(unittest.TestCase):
     def test_zero_artifact_id_rejects(self) -> None:
         ws = Workspace()
         paths = ws.install()
-        digest = f"sha256:{lf_sha256(paths['artifact'].read_bytes())}"
+        digest = f"sha256:{artifact_sha256(paths['artifact'].read_bytes())}"
         result = subprocess.run(
             [
                 sys.executable,
@@ -1125,7 +1132,7 @@ class AcceptsAndWritesLock(unittest.TestCase):
             {
                 "name": ARTIFACT_NAME,
                 "id": ARTIFACT_ID,
-                "digest": f"sha256:{lf_sha256((ws.root / 'downloaded-artifact.zip').read_bytes())}",
+                "digest": f"sha256:{artifact_sha256((ws.root / 'downloaded-artifact.zip').read_bytes())}",
                 "url": ARTIFACT_URL,
                 "expires_at": EXPIRES_AT,
             },
@@ -1209,7 +1216,7 @@ class AcceptsRealRepositoryPins(unittest.TestCase):
         # The hermetic workspace already copied the real pins; run against the
         # real repository root instead, keeping only the synthetic download.
         paths = ws.install()
-        digest = f"sha256:{lf_sha256(paths['artifact'].read_bytes())}"
+        digest = f"sha256:{artifact_sha256(paths['artifact'].read_bytes())}"
         result = subprocess.run(
             [
                 sys.executable,

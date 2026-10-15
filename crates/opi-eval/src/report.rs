@@ -62,7 +62,7 @@ const NATIVE_FACT_FAMILIES: [&str; 4] = ["usage", "cost", "retry", "compaction"]
 /// Which sealed native artifact carries one fact family for one product.
 /// Products absent from this table expose none of the families natively in
 /// the pinned hermetic profiles.
-const NATIVE_FACT_SOURCES: &[(&str, &str)] = &[("opi", "native/evidence/records")];
+const NATIVE_FACT_SOURCES: &[(&str, &str)] = &[("opi", "native/evidence/manifest")];
 
 /// Sealed control-evidence and execution keys shared with the runner.
 const CONTROL_EXPERIMENT_KEY: &str = "control/experiment.json";
@@ -788,6 +788,11 @@ impl ReportBuilder {
             .count();
         let invalid = normalized.trials.len().saturating_sub(valid) + normalized.unsealed.len();
         let all_sealed = planned_count > 0 && planned_count == normalized.trials.len();
+        // P19-AUD-002: completed also requires every planned trial to
+        // have settled as a valid graded outcome. A single-subject run
+        // whose only trials are invalid cannot reconstruct as completed
+        // just because no comparison edge exists to fail.
+        let all_valid = invalid == 0 && normalized.unsealed.is_empty();
         let all_comparable = coverage
             .iter()
             .all(|pair| pair["comparability"] == "comparable");
@@ -873,7 +878,11 @@ impl ReportBuilder {
             "integrity_digest": normalized.integrity_digest,
             // The run's own outcome stays machine-visible: incomplete
             // coverage publishes with its exact reason, never silently.
-            "run_outcome": if all_sealed && all_comparable { "completed" } else { "incomplete" },
+            "run_outcome": if all_sealed && all_comparable && all_valid {
+                "completed"
+            } else {
+                "incomplete"
+            },
             "planned_binding": {
                 "source": if normalized.run_control.is_some() { "run-control" } else { "sealed-contract" },
                 "trials": planned_count,
@@ -1043,7 +1052,7 @@ impl ReportBuilder {
                     .and_then(|entry| entry["digest"].as_str()),
                 outcome_buckets(trial).0,
             ),
-            native_facts: native_facts(&product, &trial.entries),
+            native_facts: native_facts(&product, &trial.entries, &trial.trajectory),
             diagnostics: diagnostics(trial, &product),
         }
     }
@@ -1269,13 +1278,20 @@ fn headline(trial: &SealedTrial) -> Option<HeadlineView> {
 }
 
 /// The asymmetric native facts of one product over one sealed bundle: a
-/// family is measured only when the product's own native artifact carries
-/// it; otherwise it stays the typed unknown `<product>-<family>-not-native`
-/// (`EVAL-A16`). Measured facts cite the sealed artifact digest; unknown
-/// facts carry no value and no digest.
+/// family is measured only when the product's own native artifact
+/// carries it; otherwise it stays the typed unknown
+/// `<product>-<family>-not-native` (`EVAL-A16`). Measured facts cite the
+/// sealed artifact digest; unknown facts carry no value and no digest.
+/// Measured usage derives from actual known token measurements in the
+/// sealed trajectory and cites the sealed trace manifest that contains
+/// those measurement fields; Provider/Diagnostic-only record streams are
+/// not usage provenance, and a manifest whose measurements are both
+/// unknown stays an honest `usage-not-measured` unknown with its typed
+/// reasons retained in the trial diagnostics (P19-AUD-004).
 fn native_facts(
     product: &str,
     entries: &BTreeMap<String, serde_json::Value>,
+    trajectory: &serde_json::Value,
 ) -> BTreeMap<String, serde_json::Value> {
     let source = NATIVE_FACT_SOURCES
         .iter()
@@ -1286,11 +1302,24 @@ fn native_facts(
         .map(|family| {
             let value = match source {
                 Some(key) if *family == "usage" && entries.contains_key(key) => {
-                    serde_json::json!({
-                        "state": "measured",
-                        "artifact": key,
-                        "digest": entries[key]["digest"],
-                    })
+                    let usage =
+                        trajectory_node(trajectory, "agent-execution").map(|node| &node["facts"]);
+                    let measured = usage.is_some_and(|facts| {
+                        ["input_tokens", "output_tokens"]
+                            .iter()
+                            .any(|token| facts[*token].get("Known").is_some())
+                    });
+                    if measured {
+                        serde_json::json!({
+                            "state": "measured",
+                            "artifact": key,
+                            "digest": entries[key]["digest"],
+                        })
+                    } else {
+                        serde_json::json!({
+                            "state": format!("unknown:{product}-usage-not-measured"),
+                        })
+                    }
                 }
                 _ => serde_json::json!({
                     "state": format!("unknown:{product}-{family}-not-native"),
@@ -1373,9 +1402,11 @@ fn diagnostics(trial: &SealedTrial, product: &str) -> serde_json::Value {
 /// Control pairs (P19-AC-008): every (subject, task) repetition set of
 /// the frozen contract with more than one group surfaces as one control
 /// pair with its exact state - consistent (all repetition outcomes
-/// equal), divergent, or incomplete with its missing groups. Single
-/// subject reports carry these instead of any artificial comparison
-/// edge; nothing is inferred for groups that never ran.
+/// equal), divergent, or incomplete with its missing or unestablished
+/// groups (never ran, or settled without a comparable headline; absent
+/// or invalid headlines never compare equal as nulls, P19-AUD-002).
+/// Single subject reports carry these instead of any artificial
+/// comparison edge; nothing is inferred for groups that never ran.
 fn control_pairs(normalized: &NormalizedReport) -> Vec<serde_json::Value> {
     // The declared repetition slots come from the sealed contract, or -
     // when no trial sealed - from the pre-effect run-control binding.
@@ -1418,11 +1449,15 @@ fn control_pairs(normalized: &NormalizedReport) -> Vec<serde_json::Value> {
         for (group, id) in &groups {
             match normalized.trials.iter().find(|trial| &trial.id == id) {
                 None => missing.push(serde_json::json!(group)),
-                Some(sealed) => rewards.push(
-                    headline(sealed)
-                        .map(|headline| headline.reward)
-                        .unwrap_or(serde_json::Value::Null),
-                ),
+                Some(sealed) => match headline(sealed) {
+                    Some(headline) => rewards.push(headline.reward),
+                    // A settled trial without a comparable headline leaves
+                    // the repetition slot unestablished; repeated
+                    // absent/invalid outcomes stay incomplete repetition
+                    // state instead of comparing equal as nulls
+                    // (P19-AUD-002).
+                    None => missing.push(serde_json::json!(group)),
+                },
             }
         }
         let state = if !missing.is_empty() {
@@ -1724,21 +1759,64 @@ mod tests {
 
     #[test]
     fn native_facts_are_measured_or_typed_unknown_never_fabricated() {
+        let measured_trajectory = serde_json::json!({
+            "nodes": [
+                {
+                    "kind": "agent-execution",
+                    "facts": {
+                        "input_tokens": {"Known": {"value": 1234, "origin": "provider_reported"}},
+                        "output_tokens": {"Unknown": {"reason": "not_reported"}},
+                    },
+                },
+            ],
+        });
+        let unknown_trajectory = serde_json::json!({
+            "nodes": [
+                {
+                    "kind": "agent-execution",
+                    "facts": {
+                        "input_tokens": {"Unknown": {"reason": "not_reported"}},
+                        "output_tokens": {"Unknown": {"reason": "not_reported"}},
+                    },
+                },
+            ],
+        });
         let mut entries = BTreeMap::new();
         entries.insert(
-            "native/evidence/records".to_owned(),
+            "native/evidence/manifest".to_owned(),
             serde_json::json!({"digest": "a".repeat(64), "classification": "Exportable"}),
         );
-        let opi = native_facts("opi", &entries);
+        // Records-only presence proves nothing: the Provider/Diagnostic
+        // record stream is not usage provenance (P19-AUD-004).
+        entries.insert(
+            "native/evidence/records".to_owned(),
+            serde_json::json!({"digest": "b".repeat(64), "classification": "Exportable"}),
+        );
+        let opi = native_facts("opi", &entries, &measured_trajectory);
         assert_eq!(opi["usage"]["state"], "measured");
+        assert_eq!(opi["usage"]["artifact"], "native/evidence/manifest");
+        assert_eq!(opi["usage"]["digest"], "a".repeat(64));
         assert_eq!(opi["cost"]["state"], "unknown:opi-cost-not-native");
-        let pi = native_facts("pi", &entries);
+        let pi = native_facts("pi", &entries, &measured_trajectory);
         assert_eq!(pi["usage"]["state"], "unknown:pi-usage-not-native");
         assert!(pi["usage"].get("digest").is_none());
         // A product that never staged its own evidence never measures it,
         // even when another product's artifact is present in scope.
-        let empty = native_facts("opi", &BTreeMap::new());
+        let empty = native_facts("opi", &BTreeMap::new(), &measured_trajectory);
         assert_eq!(empty["usage"]["state"], "unknown:opi-usage-not-native");
+        // Both token measurements unknown: no measured marker, and the
+        // typed reasons stay in diagnostics rather than a fabricated
+        // measurement over record-stream presence.
+        let unmeasured = native_facts("opi", &entries, &unknown_trajectory);
+        assert_eq!(
+            unmeasured["usage"]["state"],
+            "unknown:opi-usage-not-measured"
+        );
+        assert!(unmeasured["usage"].get("digest").is_none());
+        assert!(unmeasured["usage"].get("value").is_none());
+        // No agent-execution usage facts at all: still not measured.
+        let bare = native_facts("opi", &entries, &serde_json::json!({"nodes": []}));
+        assert_eq!(bare["usage"]["state"], "unknown:opi-usage-not-measured");
     }
 
     #[test]

@@ -1001,6 +1001,50 @@ pub(crate) fn import_bound_native_job(
             }
         }
     }
+    // The reverse consumer cross-check (P19-AUD-001): every ordinary
+    // file in a nonempty declared collection - except the pinned Harbor
+    // convention publish tree the task's collect hook owns - must be
+    // covered by a delivered observation of the same normalized source
+    // and digest. An empty, partial or unrelated-only observation set
+    // cannot admit collected bytes the integration never observed as
+    // delivered; a collection that is genuinely empty proves nothing.
+    if let Some(terminal) = &terminal {
+        for artifact in &collected {
+            if covers(HARBOR_CONVENTION_SOURCE, &artifact.source) {
+                continue;
+            }
+            let declared_root = artifact.source.trim_end_matches('/');
+            let host_root = artifact_root.join(&artifact.destination);
+            let mut pending = vec![(host_root, String::new())];
+            while let Some((path, prefix)) = pending.pop() {
+                if !path.is_dir() {
+                    require_delivered_observation(&path, declared_root, terminal)?;
+                    continue;
+                }
+                let unreadable = || NativeBindingError::DeliveredArtifactSubstituted {
+                    source: artifact.source.clone(),
+                };
+                let mut children: Vec<std::path::PathBuf> = std::fs::read_dir(&path)
+                    .map_err(|_| unreadable())?
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .collect();
+                children.sort();
+                for child in children {
+                    let name = child
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    if child.is_dir() {
+                        pending.push((child, format!("{prefix}{name}/")));
+                    } else {
+                        let source = format!("{declared_root}/{prefix}{name}");
+                        require_delivered_observation(&child, &source, terminal)?;
+                    }
+                }
+            }
+        }
+    }
 
     Ok(NativeTrialBinding {
         job_name,
@@ -1091,6 +1135,30 @@ fn covering_entry<'a>(
             .trim_start_matches('/');
         (entry, relative.to_owned())
     })
+}
+
+/// Require one collected ordinary file to be covered by a delivered
+/// observation of the same source and digest: bytes the integration
+/// never observed as delivered cannot enter the verifier (P19-AUD-001).
+fn require_delivered_observation(
+    host: &std::path::Path,
+    source: &str,
+    terminal: &NativeTerminalObservation,
+) -> Result<(), NativeBindingError> {
+    let substituted = || NativeBindingError::DeliveredArtifactSubstituted {
+        source: source.to_owned(),
+    };
+    let bytes = std::fs::read(host).map_err(|_| substituted())?;
+    let digest = crate::runner::material::sha256_hex(&bytes);
+    if terminal
+        .delivered
+        .iter()
+        .any(|delivered| delivered.source == source && delivered.sha256 == digest)
+    {
+        Ok(())
+    } else {
+        Err(substituted())
+    }
 }
 
 /// The digest of exactly the collected bytes: a file digest, or for a
