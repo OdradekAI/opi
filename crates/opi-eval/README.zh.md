@@ -599,4 +599,4 @@ workspace 成员。其 CLI、schema、磁盘格式与库入口可能刻意变更
 路径，普通 Opi 启动不读取或迁移评测存储。评测命令只消费显式提供的
 profile、操作或证据；既有私有 profile 与密封原始证据不被重写。
 
-当前 crate 版本：`0.8.2`，继承自 workspace package 版本。
+当前 crate 版本：`0.8.3`，继承自 workspace package 版本。

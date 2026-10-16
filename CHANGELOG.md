@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-15
+
 ### Breaking Changes
 
 - `opi-agent`: `AgentLoopConfig.max_turns` is removed. The generic loop has
@@ -660,6 +662,23 @@
   mode 0600, unreadable to the host terminal observation until the
   runner's post-stop chown. The locked native-smoke CI contract and the
   integration test mounts were updated in lockstep.
+- `opi-coding-agent`: API-key resolution on macOS hosts without a default
+  keychain (headless CI runners, SSH sessions without an unlocked login
+  keychain) classifies Security.framework `errSecNotAvailable`,
+  `errSecNoSuchKeychain`, and `errSecNoDefaultKeychain` failures as a
+  backend-unavailable condition and falls back to the configured
+  `api_key_env` variable instead of failing with `invalid provider
+  configuration`. Read-only, permission, and corrupt-keychain failures
+  remain hard errors.
+- `opi-eval`: the Companion compiles and its test suites run on Windows
+  and macOS CI again. Windows and macOS clippy and test compilation was
+  restored (platform-gated imports, safe process kill paths, a portable
+  sessions temp root instead of `/dev/shm`), native-material admission
+  resolves macOS `/var`-rooted temp layouts to their symlink-free form,
+  pinned-corpus path keys normalize to Git separators on Windows, and the
+  native-driver integration suite (which requires a Linux Docker engine,
+  `/proc`, and the Unix single-link capture contract) is gated to Linux
+  alongside platform-honest doctor observations.
 
 ## [0.8.2] - 2026-09-05
 
