@@ -1,14 +1,10 @@
 {
   "schema_version": 2,
   "spec_files": [
-    "docs/opi-spec.md",
-    "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md",
-    "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md"
+    "docs/opi-spec.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "d53f2fea1597371cfb51355e592fe4e52ca935685fb9df707d6aaf48093ce639",
-    "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md": "d3ab708a76ec6fe41fcc40c20c1397378f04bc59c6e656295cad11ef1f3b7b6f",
-    "docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md": "3c22f724b2be13a5fff36cfca1f0c64f214697b5e840b000578faf93a4879cba"
+    "docs/opi-spec.md": "d53f2fea1597371cfb51355e592fe4e52ca935685fb9df707d6aaf48093ce639"
   },
   "task_graph_confirmed_at": "2026-09-05T10:01:23.922768+00:00",
   "current_phase": 19,

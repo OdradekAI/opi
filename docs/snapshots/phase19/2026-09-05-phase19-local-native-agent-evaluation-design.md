@@ -1,12 +1,11 @@
 # Phase 19: Local Native Agent Evaluation
 
-[简体中文](2026-09-05-phase19-local-native-agent-evaluation-design.zh.md)
-
 ## 1. Authority and outcome
 
 This delivery specification materializes the human-reviewed local evaluation
-direction. The English document owns Phase meaning; its Chinese counterpart
-preserves the same identifiers and requirements. Source registration is owned
+direction. The English document owns Phase meaning; its Chinese counterpart,
+removed when this specification was archived, preserved the same identifiers
+and requirements. Source registration is owned
 by the reviewed registry in
 [`opi-implement`](../../../.agents/skills/opi-implement/SKILL.md). Registration
 does not admit a task graph, start implementation, authorize provider calls, or

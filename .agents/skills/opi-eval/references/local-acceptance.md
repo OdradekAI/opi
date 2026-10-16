@@ -1,8 +1,8 @@
 # Six-trial local acceptance
 
 Read for task 19.11 / `mode=acceptance`, and when verifying an existing
-`opi-eval-local-acceptance/1` root. The registered
-[delivery specification, sections 7–8](../../../../docs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md)
+`opi-eval-local-acceptance/1` root. The archived
+[delivery specification, sections 7–8](../../../../docs/snapshots/phase19/2026-09-05-phase19-local-native-agent-evaluation-design.md)
 owns acceptance meaning; task 19.11 in `.opi-impl-state.json` owns the current
 handoff requirement. This reference produces evidence, not task completion.
 
