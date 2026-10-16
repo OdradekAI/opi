@@ -1,0 +1,3338 @@
+{
+  "source_tree_sha256": "a2c03e7c77aa5e6837ed69055a29d724eff9e65a18c1534221ef58e299cc0c10",
+  "documents": [
+    {
+      "path": ".pi/prompts/cl.md",
+      "sha256": "e86103ed3476ac5760526496f9d4a5a63ae6e3a8a9597db103cfd023ddbf9684",
+      "lines": 54,
+      "kind": "开发工作流 prompt；研究对象，不是本次执行指令",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          54
+        ]
+      ]
+    },
+    {
+      "path": ".pi/prompts/deslop.md",
+      "sha256": "a52acc375c4b8c949ddb0469f802c5a352a98fe26d47fb12fbcf5c555aeb4551",
+      "lines": 67,
+      "kind": "开发工作流 prompt；研究对象，不是本次执行指令",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          67
+        ]
+      ]
+    },
+    {
+      "path": ".pi/prompts/dup.md",
+      "sha256": "82dd6c44ac65fbee6a2f1f3ba899da4f03cf4cd87439abb257083b3d5296fc30",
+      "lines": 18,
+      "kind": "开发工作流 prompt；研究对象，不是本次执行指令",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          18
+        ]
+      ]
+    },
+    {
+      "path": ".pi/prompts/is.md",
+      "sha256": "9bc500efde0bcd1285e1103492077d732c24242719d230a109b13c7bcad7b7d4",
+      "lines": 28,
+      "kind": "开发工作流 prompt；研究对象，不是本次执行指令",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          28
+        ]
+      ]
+    },
+    {
+      "path": ".pi/prompts/pr.md",
+      "sha256": "1ba8e6cba91354e27bc4976d237c291691e9a064cee2132cef7656e3ceb46e20",
+      "lines": 37,
+      "kind": "开发工作流 prompt；研究对象，不是本次执行指令",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          37
+        ]
+      ]
+    },
+    {
+      "path": ".pi/prompts/sa.md",
+      "sha256": "7b590798a5526e6620c6052cb688afd1d7ff2c2ca9426f8a28b5110a94ddbd7a",
+      "lines": 163,
+      "kind": "开发工作流 prompt；研究对象，不是本次执行指令",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          163
+        ]
+      ]
+    },
+    {
+      "path": ".pi/prompts/wr.md",
+      "sha256": "86c6bd7b244b6d4d1792804ce170a2d0b67f735dcf79d539c88163c0c73dba1b",
+      "lines": 41,
+      "kind": "开发工作流 prompt；研究对象，不是本次执行指令",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          41
+        ]
+      ]
+    },
+    {
+      "path": ".pi/skills/add-llm-provider.md",
+      "sha256": "684ffea93aee90c2f13a21c5c696a4a303264d412ea8f9f789b6c9065718132d",
+      "lines": 57,
+      "kind": "开发/发布检查清单与设计约束",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          57
+        ]
+      ]
+    },
+    {
+      "path": ".pi/skills/interactive-testing.md",
+      "sha256": "65264173c8d5352b9ad643dd524238da0537572aeed9c1d754017ca8907c9673",
+      "lines": 19,
+      "kind": "开发/发布检查清单与设计约束",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          19
+        ]
+      ]
+    },
+    {
+      "path": ".pi/skills/release.md",
+      "sha256": "1591b63d0e93e9d79db5954505c2aaaa9760e6cc8cd87204e7250e1dfa6997e5",
+      "lines": 52,
+      "kind": "开发/发布检查清单与设计约束",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          52
+        ]
+      ]
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "316c0f9f1e053d5dfc9ccb31915b18725d51d792f06783bf908f4bd8861a6dda",
+      "lines": 125,
+      "kind": "开发治理、贡献原则与工作流约束",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          125
+        ]
+      ]
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "ce0c1456c55404c729c632221f9159ea3b463e6b3974a1c22446e9315388490c",
+      "lines": 102,
+      "kind": "开发治理、贡献原则与工作流约束",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          102
+        ]
+      ]
+    },
+    {
+      "path": "README.md",
+      "sha256": "69cb1e626257bd68d041f05513815e426717a843ddc0e7706802865ec7fd898c",
+      "lines": 206,
+      "kind": "仓库概览、包边界、安装/构建与外部 RFC 导航",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          206
+        ]
+      ]
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "2d8b299904ce69d14b9378b643964d86f79fb619578cdc2ee390f843dab1b6cb",
+      "lines": 87,
+      "kind": "本地用户信任边界与非目标",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          87
+        ]
+      ]
+    },
+    {
+      "path": "packages/agent/CHANGELOG.md",
+      "sha256": "2336c7e4cc0bf65ed14ba83aa6d04f3435bdb504326b2e7e89a228302b0ca1d3",
+      "lines": 780,
+      "kind": "发行历史、已兑现/被替代的接口方向",
+      "reading_scope": "全文语义阅读；逐项核对当前与本次升级的重要主张，早期历史条目按后续替代关系判断，未将全部历史修复逐项运行验证",
+      "ranges": [
+        [
+          1,
+          780
+        ]
+      ]
+    },
+    {
+      "path": "packages/agent/README.md",
+      "sha256": "37da6831566eb0385a59da2ee055e7a7efe3e8e7a4b50aab8745ce43559197fe",
+      "lines": 564,
+      "kind": "现行循环/工具协议、生命周期与使用示例",
+      "reading_scope": "全文阅读；Agent/agent-loop/proxy/types 与主要测试行为交叉核查",
+      "ranges": [
+        [
+          1,
+          564
+        ]
+      ]
+    },
+    {
+      "path": "packages/ai/CHANGELOG.md",
+      "sha256": "b90ac37901bc879a13779ce93571dccbdfea4c4f266bf330be24080038854c56",
+      "lines": 2310,
+      "kind": "发行历史、已兑现/被替代的接口方向",
+      "reading_scope": "全文语义阅读；逐项核对当前与本次升级的重要主张，早期历史条目按后续替代关系判断，未将全部历史修复逐项运行验证；部分长历史段显示时剥离重复 Markdown 链接目标，保留完整条目文本",
+      "ranges": [
+        [
+          1,
+          2310
+        ]
+      ]
+    },
+    {
+      "path": "packages/ai/README.md",
+      "sha256": "0db3e0b0e5de96ffacd3453dbecf4f9d8298267d976003fc8671705a73761a5d",
+      "lines": 1949,
+      "kind": "现行包说明、API/配置、边界与迁移指导",
+      "reading_scope": "全文语义阅读；核心 Models/auth/transcript/streams/升级 adapter 与调用方交叉核查；目录值缺失与文档过时条目独立说明",
+      "ranges": [
+        [
+          1,
+          1949
+        ]
+      ]
+    },
+    {
+      "path": "packages/chord/CHANGELOG.md",
+      "sha256": "2e8f1ccc1add2ae2f250701fcf059b0dfa1d1f0e73310c1c58efa2d4472345fb",
+      "lines": 20,
+      "kind": "运行时替换及旧包移除的发行记录",
+      "reading_scope": "全文新读；旧service/facet/bundler移除、typed host接替和依赖变化对照manifest/exports",
+      "ranges": [
+        [
+          1,
+          20
+        ]
+      ]
+    },
+    {
+      "path": "packages/chord/README.md",
+      "sha256": "709273291535b02e73047fb5a1f2f58b224d43b2ccb04cc489d2995bd9dce796",
+      "lines": 147,
+      "kind": "新Host运行时与state/delta说明",
+      "reading_scope": "全文新读；公开入口、可信不可变与异步订阅边界对照当前导出/state实现",
+      "ranges": [
+        [
+          1,
+          147
+        ]
+      ]
+    },
+    {
+      "path": "packages/chord/docs/guide.md",
+      "sha256": "e53eba8dfd550f765b467f411564c59321251f6b077ea0a925e356e59f0d96b0",
+      "lines": 750,
+      "kind": "现行Host完整使用与装配指南",
+      "reading_scope": "全文新读750行；activation/两阶段readiness/授权/版本/reload/Durable示例等关键主张与实现对照；未逐行审计每段示例实现",
+      "ranges": [
+        [
+          1,
+          750
+        ]
+      ]
+    },
+    {
+      "path": "packages/chord/docs/spec.md",
+      "sha256": "d371ee3bb6c286d459f38cb76f47f9bb4034efa02c41086bd1281f7909e45d48",
+      "lines": 261,
+      "kind": "规范性Host设计、限制与已否决方案",
+      "reading_scope": "全文新读261行；契约/生命周期/readiness/reload/cluster及末节12项限制逐项追踪当前实现；one-state方案明确已否决",
+      "ranges": [
+        [
+          1,
+          261
+        ]
+      ]
+    },
+    {
+      "path": "packages/chord/docs/tutorial.md",
+      "sha256": "59f2715f4b822d81a4531e3d2b265774b0a75aea8bd5e44f49dea06cbd38fdb4",
+      "lines": 909,
+      "kind": "完整分步教学与可执行示例契约",
+      "reading_scope": "全文新读909行；动机、状态/资源/授权/远端/readiness/reload及末段持久化否定均复核；代表示例测试仅静态阅读，未执行",
+      "ranges": [
+        [
+          1,
+          909
+        ]
+      ]
+    },
+    {
+      "path": "packages/chord/src/delta/README.md",
+      "sha256": "469cae51e43f3083c00ee565cb1c8adbe6b0772b59e7924659d8384b833e078f",
+      "lines": 193,
+      "kind": "现行Delta所有权、重放及限制",
+      "reading_scope": "全文新读；严格JSON、root transfer、draft placement、adopt、apply/codec寿命与当前调用方对照；历史性能不复测",
+      "ranges": [
+        [
+          1,
+          193
+        ]
+      ]
+    },
+    {
+      "path": "packages/codemode/CHANGELOG.md",
+      "sha256": "b7772ccfaab2fc76a98bb6033f49cb293572033c61129d52442edb093b0a6a65",
+      "lines": 79,
+      "kind": "发行历史、portable/deterministic及破坏性变化",
+      "reading_scope": "全文新读；1.1/1.2主张及MCP专用声明删除、options/interrupt/watch修复对照当前实现",
+      "ranges": [
+        [
+          1,
+          79
+        ]
+      ]
+    },
+    {
+      "path": "packages/codemode/README.md",
+      "sha256": "5c18eb54dda578a32634af9eafe601682b0f2452226c34ba27d0a8e1da448a6c",
+      "lines": 356,
+      "kind": "现行三类VM运行时、确定性与部署说明",
+      "reading_scope": "全文新读356行；Node/Inline/Remote/Cloudflare、start与execute差异、limits/store/失败边界对照实现",
+      "ranges": [
+        [
+          1,
+          356
+        ]
+      ]
+    },
+    {
+      "path": "packages/codemode/examples/cloudflare/README.md",
+      "sha256": "78115246eec33fe1ff2e420446389154aaf6dc5c031f525dc6e8abb4b41f73ff",
+      "lines": 31,
+      "kind": "双Worker示例操作说明",
+      "reading_scope": "全文新读；与remote/cloudflare实现及两个wrangler绑定静态对照，未安装或部署",
+      "ranges": [
+        [
+          1,
+          31
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "sha256": "aa489441e4fc3bd2cd3db1c2200549f79eb6a889a7148e4fb8d12bec0c1dbd1e",
+      "lines": 6263,
+      "kind": "版本历史",
+      "reading_scope": "本次重点阅读1.2.0/1.1.0及临近旧版发布段；未通读全部历史",
+      "ranges": [
+        [
+          1,
+          120
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/README.md",
+      "sha256": "fbc7abec7d0829ac8bc4b217e950794e1ba4d8d1b3e0850f970da318ad72e863",
+      "lines": 95,
+      "kind": "包说明、API与原生构建边界",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          95
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/cli-integration.md",
+      "sha256": "edf8e723a70b4c3c40275db0391219e55d30597936212a9cfdef33963dd37f93",
+      "lines": 106,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          106
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/cli.md",
+      "sha256": "f722b2bc9931db5c22d645ea161fd9a37c30b16e662bba51ce4ca75ea6cbdd51",
+      "lines": 333,
+      "kind": "现行配置、CLI或模型参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及默认值/信任/鉴权/重试等契约段；未逐行通读全部示例",
+      "ranges": [
+        [
+          1,
+          32
+        ],
+        [
+          55,
+          55
+        ],
+        [
+          78,
+          78
+        ],
+        [
+          105,
+          105
+        ],
+        [
+          111,
+          111
+        ],
+        [
+          117,
+          117
+        ],
+        [
+          120,
+          120
+        ],
+        [
+          124,
+          124
+        ],
+        [
+          128,
+          128
+        ],
+        [
+          151,
+          151
+        ],
+        [
+          158,
+          158
+        ],
+        [
+          160,
+          160
+        ],
+        [
+          164,
+          164
+        ],
+        [
+          176,
+          176
+        ],
+        [
+          180,
+          180
+        ],
+        [
+          182,
+          182
+        ],
+        [
+          186,
+          186
+        ],
+        [
+          192,
+          192
+        ],
+        [
+          221,
+          221
+        ],
+        [
+          227,
+          227
+        ],
+        [
+          230,
+          230
+        ],
+        [
+          234,
+          234
+        ],
+        [
+          238,
+          238
+        ],
+        [
+          240,
+          240
+        ],
+        [
+          250,
+          250
+        ],
+        [
+          258,
+          258
+        ],
+        [
+          269,
+          269
+        ],
+        [
+          285,
+          285
+        ],
+        [
+          290,
+          290
+        ],
+        [
+          293,
+          293
+        ],
+        [
+          305,
+          305
+        ],
+        [
+          313,
+          313
+        ],
+        [
+          315,
+          333
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/codemode.md",
+      "sha256": "5cde8b0d8ff04b76a32656d6a336ef61259c2480294d6257657acedc9836059e",
+      "lines": 228,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          228
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/compaction.md",
+      "sha256": "163e80b4ec1580c6e967507492715a0acd878db8d4e4586dfd8a6001d8ec7822",
+      "lines": 463,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          463
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/configuration.md",
+      "sha256": "fc48d1ce7d885c5253222415fb7a4b46d75f80e6431eb924174657ff775099eb",
+      "lines": 47,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          47
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/containerization.md",
+      "sha256": "e309fcb9a0a7592c0dba000ef8ee90f2d7ef1e01e6a1ac2f0cd9760dd63dee0c",
+      "lines": 183,
+      "kind": "协议、平台或用户操作参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及生命周期/默认值/失败/协议边界段；未逐行通读全部命令示例",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          30,
+          30
+        ],
+        [
+          34,
+          34
+        ],
+        [
+          53,
+          53
+        ],
+        [
+          56,
+          56
+        ],
+        [
+          65,
+          65
+        ],
+        [
+          72,
+          72
+        ],
+        [
+          82,
+          82
+        ],
+        [
+          84,
+          84
+        ],
+        [
+          86,
+          86
+        ],
+        [
+          88,
+          88
+        ],
+        [
+          101,
+          101
+        ],
+        [
+          105,
+          105
+        ],
+        [
+          113,
+          113
+        ],
+        [
+          116,
+          116
+        ],
+        [
+          121,
+          121
+        ],
+        [
+          123,
+          123
+        ],
+        [
+          125,
+          125
+        ],
+        [
+          127,
+          127
+        ],
+        [
+          134,
+          134
+        ],
+        [
+          137,
+          137
+        ],
+        [
+          142,
+          142
+        ],
+        [
+          144,
+          144
+        ],
+        [
+          147,
+          148
+        ],
+        [
+          151,
+          151
+        ],
+        [
+          153,
+          153
+        ],
+        [
+          161,
+          161
+        ],
+        [
+          168,
+          183
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/custom-provider.md",
+      "sha256": "5345ac346429a3862b46533ee810944b2c756079dcf5d3aad272ab579c58c129",
+      "lines": 173,
+      "kind": "现行配置、CLI或模型参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及默认值/信任/鉴权/重试等契约段；未逐行通读全部示例",
+      "ranges": [
+        [
+          1,
+          32
+        ],
+        [
+          74,
+          74
+        ],
+        [
+          85,
+          85
+        ],
+        [
+          87,
+          87
+        ],
+        [
+          91,
+          91
+        ],
+        [
+          101,
+          101
+        ],
+        [
+          110,
+          110
+        ],
+        [
+          120,
+          120
+        ],
+        [
+          126,
+          126
+        ],
+        [
+          137,
+          137
+        ],
+        [
+          139,
+          139
+        ],
+        [
+          148,
+          148
+        ],
+        [
+          152,
+          152
+        ],
+        [
+          154,
+          173
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/environment-variables.md",
+      "sha256": "187cc118f46a9f63879727dbbd7195fad7548b2667535324afcabb1a7d270d97",
+      "lines": 100,
+      "kind": "现行配置、CLI或模型参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及默认值/信任/鉴权/重试等契约段；未逐行通读全部示例",
+      "ranges": [
+        [
+          1,
+          32
+        ],
+        [
+          51,
+          51
+        ],
+        [
+          53,
+          53
+        ],
+        [
+          75,
+          75
+        ],
+        [
+          81,
+          100
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/extensions.md",
+      "sha256": "a2b5ff0f95e7e470ed0846d7c4fbfc5781fe7e694b8e7f51ea08859f3ad7325d",
+      "lines": 277,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          277
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/how-pi-works.md",
+      "sha256": "7d43ab8e2b886cd1047dcee503588a1c828b92333dd4f177526b89e6db8aaa8b",
+      "lines": 49,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          49
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/index.md",
+      "sha256": "c107426e88eac570e9ecbea325cb45c2a6b778a324fd6e424bd032380a65614d",
+      "lines": 39,
+      "kind": "终端平台、主题或用户导航参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及终端/默认值/兼容边界段；平台操作示例未全部逐行阅读",
+      "ranges": [
+        [
+          1,
+          39
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/json.md",
+      "sha256": "f103191816fdcf3627dfc98b89acad8a28eee737697130ddaeb2581131213543",
+      "lines": 226,
+      "kind": "协议、平台或用户操作参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及生命周期/默认值/失败/协议边界段；未逐行通读全部命令示例",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          31,
+          31
+        ],
+        [
+          45,
+          45
+        ],
+        [
+          48,
+          48
+        ],
+        [
+          50,
+          50
+        ],
+        [
+          56,
+          56
+        ],
+        [
+          62,
+          62
+        ],
+        [
+          70,
+          70
+        ],
+        [
+          101,
+          101
+        ],
+        [
+          117,
+          117
+        ],
+        [
+          128,
+          128
+        ],
+        [
+          161,
+          161
+        ],
+        [
+          182,
+          182
+        ],
+        [
+          198,
+          198
+        ],
+        [
+          211,
+          226
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/keybindings.md",
+      "sha256": "413aa1c5e95a934d216aa5aba20052fa2cf35940ba5f02d1f4b22ff53c6ec678",
+      "lines": 195,
+      "kind": "协议、平台或用户操作参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及生命周期/默认值/失败/协议边界段；未逐行通读全部命令示例",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          31,
+          31
+        ],
+        [
+          45,
+          45
+        ],
+        [
+          47,
+          47
+        ],
+        [
+          49,
+          49
+        ],
+        [
+          51,
+          51
+        ],
+        [
+          70,
+          70
+        ],
+        [
+          72,
+          72
+        ],
+        [
+          84,
+          84
+        ],
+        [
+          86,
+          86
+        ],
+        [
+          99,
+          99
+        ],
+        [
+          103,
+          103
+        ],
+        [
+          120,
+          120
+        ],
+        [
+          122,
+          122
+        ],
+        [
+          131,
+          131
+        ],
+        [
+          133,
+          133
+        ],
+        [
+          135,
+          135
+        ],
+        [
+          148,
+          148
+        ],
+        [
+          150,
+          150
+        ],
+        [
+          155,
+          155
+        ],
+        [
+          160,
+          160
+        ],
+        [
+          162,
+          162
+        ],
+        [
+          169,
+          169
+        ],
+        [
+          171,
+          171
+        ],
+        [
+          177,
+          177
+        ],
+        [
+          180,
+          195
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/llama-cpp.md",
+      "sha256": "c2cfeb640f2e40e10863be1a2eb10b888327134bfeb9f50987c4b4de12bfc0d4",
+      "lines": 121,
+      "kind": "协议、平台或用户操作参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及生命周期/默认值/失败/协议边界段；未逐行通读全部命令示例",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          46,
+          46
+        ],
+        [
+          54,
+          54
+        ],
+        [
+          68,
+          68
+        ],
+        [
+          81,
+          81
+        ],
+        [
+          89,
+          89
+        ],
+        [
+          98,
+          98
+        ],
+        [
+          106,
+          121
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/mcp.md",
+      "sha256": "23b9cca35d1340e8adce6bed8b495da0ebb58931179a937db87d610a1b40b9bf",
+      "lines": 272,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          272
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/message-types.md",
+      "sha256": "b832893fb762f87fdbbfd694241d484592942823791f3e81a6c4d915421ff5db",
+      "lines": 279,
+      "kind": "协议、平台或用户操作参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及生命周期/默认值/失败/协议边界段；未逐行通读全部命令示例",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          27,
+          27
+        ],
+        [
+          39,
+          39
+        ],
+        [
+          52,
+          52
+        ],
+        [
+          67,
+          67
+        ],
+        [
+          92,
+          92
+        ],
+        [
+          94,
+          94
+        ],
+        [
+          109,
+          109
+        ],
+        [
+          119,
+          119
+        ],
+        [
+          161,
+          161
+        ],
+        [
+          196,
+          196
+        ],
+        [
+          200,
+          200
+        ],
+        [
+          220,
+          220
+        ],
+        [
+          237,
+          237
+        ],
+        [
+          250,
+          250
+        ],
+        [
+          263,
+          279
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/models.md",
+      "sha256": "d5bd0d886f0e1541648081ae01da91e1a218cd454713336d5100fc820f6c1527",
+      "lines": 209,
+      "kind": "现行配置、CLI或模型参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及默认值/信任/鉴权/重试等契约段；未逐行通读全部示例",
+      "ranges": [
+        [
+          1,
+          32
+        ],
+        [
+          35,
+          35
+        ],
+        [
+          37,
+          37
+        ],
+        [
+          45,
+          45
+        ],
+        [
+          51,
+          51
+        ],
+        [
+          65,
+          65
+        ],
+        [
+          69,
+          69
+        ],
+        [
+          90,
+          90
+        ],
+        [
+          102,
+          102
+        ],
+        [
+          104,
+          104
+        ],
+        [
+          126,
+          126
+        ],
+        [
+          130,
+          130
+        ],
+        [
+          145,
+          145
+        ],
+        [
+          147,
+          147
+        ],
+        [
+          170,
+          170
+        ],
+        [
+          174,
+          174
+        ],
+        [
+          182,
+          182
+        ],
+        [
+          185,
+          185
+        ],
+        [
+          189,
+          189
+        ],
+        [
+          191,
+          209
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/packages.md",
+      "sha256": "5fe4a3009d7260fe1e2f54b64086fc3c8b4d678232bfa2dbc7e91fe588fc9ea5",
+      "lines": 129,
+      "kind": "现行配置、CLI或模型参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及默认值/信任/鉴权/重试等契约段；未逐行通读全部示例",
+      "ranges": [
+        [
+          1,
+          32
+        ],
+        [
+          42,
+          42
+        ],
+        [
+          76,
+          76
+        ],
+        [
+          90,
+          90
+        ],
+        [
+          94,
+          94
+        ],
+        [
+          111,
+          129
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/prompt-templates.md",
+      "sha256": "ad5113cce0d05ef0ac77b3c71f9ebe41ea68c072275f9273b9616e4924feda42",
+      "lines": 59,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          59
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/providers.md",
+      "sha256": "bc8798e4cc3209e455e3dc50c6652ae73c057d40122a4a741d8b5b65a041c2f1",
+      "lines": 247,
+      "kind": "现行配置、CLI或模型参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及默认值/信任/鉴权/重试等契约段；未逐行通读全部示例",
+      "ranges": [
+        [
+          1,
+          32
+        ],
+        [
+          67,
+          67
+        ],
+        [
+          71,
+          71
+        ],
+        [
+          84,
+          84
+        ],
+        [
+          86,
+          86
+        ],
+        [
+          104,
+          104
+        ],
+        [
+          116,
+          116
+        ],
+        [
+          136,
+          136
+        ],
+        [
+          147,
+          147
+        ],
+        [
+          159,
+          159
+        ],
+        [
+          176,
+          176
+        ],
+        [
+          181,
+          181
+        ],
+        [
+          184,
+          184
+        ],
+        [
+          187,
+          187
+        ],
+        [
+          190,
+          190
+        ],
+        [
+          193,
+          193
+        ],
+        [
+          195,
+          195
+        ],
+        [
+          200,
+          200
+        ],
+        [
+          214,
+          214
+        ],
+        [
+          225,
+          225
+        ],
+        [
+          229,
+          247
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/quickstart.md",
+      "sha256": "10c69b394304f6e7d6409b6bde02b0165f5723ff4acfd49cfa8f7414f977266a",
+      "lines": 136,
+      "kind": "现行配置、CLI或模型参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及默认值/信任/鉴权/重试等契约段；未逐行通读全部示例",
+      "ranges": [
+        [
+          1,
+          32
+        ],
+        [
+          37,
+          37
+        ],
+        [
+          52,
+          52
+        ],
+        [
+          66,
+          66
+        ],
+        [
+          84,
+          84
+        ],
+        [
+          86,
+          86
+        ],
+        [
+          96,
+          96
+        ],
+        [
+          102,
+          102
+        ],
+        [
+          116,
+          116
+        ],
+        [
+          118,
+          136
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc-commands.md",
+      "sha256": "4deeee367852f4633ef594bc079f9e9fb14640a4e3ba8a69b7c89b6f54740838",
+      "lines": 860,
+      "kind": "协议、平台或用户操作参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及生命周期/默认值/失败/协议边界段；未逐行通读全部命令示例",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          46,
+          46
+        ],
+        [
+          70,
+          70
+        ],
+        [
+          94,
+          94
+        ],
+        [
+          107,
+          107
+        ],
+        [
+          130,
+          130
+        ],
+        [
+          153,
+          153
+        ],
+        [
+          155,
+          155
+        ],
+        [
+          188,
+          188
+        ],
+        [
+          208,
+          208
+        ],
+        [
+          210,
+          210
+        ],
+        [
+          228,
+          228
+        ],
+        [
+          252,
+          252
+        ],
+        [
+          272,
+          272
+        ],
+        [
+          274,
+          274
+        ],
+        [
+          291,
+          291
+        ],
+        [
+          309,
+          309
+        ],
+        [
+          329,
+          329
+        ],
+        [
+          331,
+          331
+        ],
+        [
+          341,
+          341
+        ],
+        [
+          348,
+          348
+        ],
+        [
+          358,
+          358
+        ],
+        [
+          365,
+          365
+        ],
+        [
+          367,
+          367
+        ],
+        [
+          406,
+          406
+        ],
+        [
+          419,
+          419
+        ],
+        [
+          421,
+          421
+        ],
+        [
+          434,
+          434
+        ],
+        [
+          447,
+          447
+        ],
+        [
+          449,
+          449
+        ],
+        [
+          511,
+          511
+        ],
+        [
+          524,
+          524
+        ],
+        [
+          526,
+          526
+        ],
+        [
+          569,
+          569
+        ],
+        [
+          592,
+          592
+        ],
+        [
+          610,
+          610
+        ],
+        [
+          638,
+          638
+        ],
+        [
+          666,
+          666
+        ],
+        [
+          689,
+          689
+        ],
+        [
+          719,
+          719
+        ],
+        [
+          747,
+          747
+        ],
+        [
+          767,
+          767
+        ],
+        [
+          786,
+          786
+        ],
+        [
+          788,
+          788
+        ],
+        [
+          836,
+          836
+        ],
+        [
+          845,
+          860
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc-extension-ui.md",
+      "sha256": "3c6f2c6edfc8b1ace6642343727aef97a7e9234c85509850921b52d6ff09a48e",
+      "lines": 200,
+      "kind": "协议、平台或用户操作参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及生命周期/默认值/失败/协议边界段；未逐行通读全部命令示例",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          27,
+          27
+        ],
+        [
+          31,
+          31
+        ],
+        [
+          33,
+          33
+        ],
+        [
+          42,
+          42
+        ],
+        [
+          48,
+          48
+        ],
+        [
+          59,
+          59
+        ],
+        [
+          65,
+          65
+        ],
+        [
+          81,
+          81
+        ],
+        [
+          97,
+          97
+        ],
+        [
+          111,
+          111
+        ],
+        [
+          113,
+          113
+        ],
+        [
+          129,
+          129
+        ],
+        [
+          144,
+          144
+        ],
+        [
+          146,
+          146
+        ],
+        [
+          159,
+          159
+        ],
+        [
+          172,
+          172
+        ],
+        [
+          174,
+          174
+        ],
+        [
+          176,
+          176
+        ],
+        [
+          182,
+          182
+        ],
+        [
+          185,
+          200
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/rpc.md",
+      "sha256": "37a03d180115460a0a275022f4aeabef1e5345458df6a9b6e8a6de18474de720",
+      "lines": 193,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          193
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/sdk.md",
+      "sha256": "d9034ccbf2219a58712d8dd4fcdf47e687d77131e71dd5d119d8a71e9bd2a2e8",
+      "lines": 147,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          147
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/security.md",
+      "sha256": "3b1e40a8d28b17c9eb7e496a7ba88fbe04665e3e6ae02873a58b943e325ad504",
+      "lines": 99,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          99
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/session-format.md",
+      "sha256": "4f8fc42179b332bcf71fe4c85cc95d914853ff7486d68742954a45316b512a4a",
+      "lines": 293,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          293
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/sessions.md",
+      "sha256": "5ad5bda19caaa0794bb44f86c85c8e66be6f493c52bb5e6a4d127b58cd8c2c1e",
+      "lines": 66,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          66
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/settings.md",
+      "sha256": "dac1f280241a466121028bbf1bec305055357854a6a5704740a211dcfce9df22",
+      "lines": 171,
+      "kind": "现行配置、CLI或模型参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及默认值/信任/鉴权/重试等契约段；未逐行通读全部示例",
+      "ranges": [
+        [
+          1,
+          33
+        ],
+        [
+          35,
+          36
+        ],
+        [
+          38,
+          38
+        ],
+        [
+          40,
+          40
+        ],
+        [
+          42,
+          42
+        ],
+        [
+          46,
+          46
+        ],
+        [
+          48,
+          48
+        ],
+        [
+          52,
+          52
+        ],
+        [
+          58,
+          58
+        ],
+        [
+          60,
+          60
+        ],
+        [
+          62,
+          62
+        ],
+        [
+          64,
+          64
+        ],
+        [
+          68,
+          68
+        ],
+        [
+          70,
+          70
+        ],
+        [
+          79,
+          79
+        ],
+        [
+          83,
+          83
+        ],
+        [
+          85,
+          85
+        ],
+        [
+          88,
+          88
+        ],
+        [
+          90,
+          90
+        ],
+        [
+          92,
+          92
+        ],
+        [
+          102,
+          102
+        ],
+        [
+          113,
+          114
+        ],
+        [
+          119,
+          119
+        ],
+        [
+          121,
+          121
+        ],
+        [
+          123,
+          123
+        ],
+        [
+          125,
+          133
+        ],
+        [
+          135,
+          135
+        ],
+        [
+          137,
+          137
+        ],
+        [
+          139,
+          139
+        ],
+        [
+          141,
+          141
+        ],
+        [
+          147,
+          147
+        ],
+        [
+          151,
+          151
+        ],
+        [
+          153,
+          171
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/shell-aliases.md",
+      "sha256": "ebb55456870455b4da91cfd054ae2ac9b3a417e6ff48a009587c33e68ecd7807",
+      "lines": 93,
+      "kind": "协议、平台或用户操作参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及生命周期/默认值/失败/协议边界段；未逐行通读全部命令示例",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          36,
+          36
+        ],
+        [
+          38,
+          38
+        ],
+        [
+          50,
+          50
+        ],
+        [
+          77,
+          93
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/skills.md",
+      "sha256": "5b9805525b194474ef1fe5455a0917ef15ed7f710aa9bec2eee11879556469e5",
+      "lines": 93,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          93
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/slash-commands.md",
+      "sha256": "d7e1db36e9186ff146a6c27de31fe169671f52cb6f7b93e1bf8d7fe76209a79c",
+      "lines": 60,
+      "kind": "协议、平台或用户操作参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及生命周期/默认值/失败/协议边界段；未逐行通读全部命令示例",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          33,
+          33
+        ],
+        [
+          44,
+          60
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/terminal-setup.md",
+      "sha256": "583381fb9dc466135a865ca406a3be299a7a8da2c9d810c5b73f401912a0a357",
+      "lines": 233,
+      "kind": "终端平台、主题或用户导航参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及终端/默认值/兼容边界段；平台操作示例未全部逐行阅读",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          29,
+          29
+        ],
+        [
+          31,
+          31
+        ],
+        [
+          41,
+          41
+        ],
+        [
+          45,
+          45
+        ],
+        [
+          47,
+          47
+        ],
+        [
+          63,
+          63
+        ],
+        [
+          65,
+          65
+        ],
+        [
+          67,
+          67
+        ],
+        [
+          69,
+          69
+        ],
+        [
+          80,
+          80
+        ],
+        [
+          82,
+          82
+        ],
+        [
+          107,
+          107
+        ],
+        [
+          109,
+          109
+        ],
+        [
+          112,
+          112
+        ],
+        [
+          116,
+          116
+        ],
+        [
+          118,
+          118
+        ],
+        [
+          131,
+          131
+        ],
+        [
+          133,
+          133
+        ],
+        [
+          152,
+          152
+        ],
+        [
+          167,
+          167
+        ],
+        [
+          169,
+          169
+        ],
+        [
+          171,
+          171
+        ],
+        [
+          184,
+          184
+        ],
+        [
+          186,
+          186
+        ],
+        [
+          190,
+          190
+        ],
+        [
+          192,
+          192
+        ],
+        [
+          196,
+          196
+        ],
+        [
+          198,
+          198
+        ],
+        [
+          200,
+          200
+        ],
+        [
+          203,
+          203
+        ],
+        [
+          207,
+          207
+        ],
+        [
+          218,
+          233
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/termux.md",
+      "sha256": "1b0687157f2384385d07800ec23e6c225ef28fbf6648f55453cc7ce62f4c64ea",
+      "lines": 117,
+      "kind": "终端平台、主题或用户导航参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及终端/默认值/兼容边界段；平台操作示例未全部逐行阅读",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          46,
+          46
+        ],
+        [
+          48,
+          48
+        ],
+        [
+          58,
+          58
+        ],
+        [
+          75,
+          75
+        ],
+        [
+          77,
+          77
+        ],
+        [
+          79,
+          79
+        ],
+        [
+          82,
+          82
+        ],
+        [
+          93,
+          93
+        ],
+        [
+          95,
+          95
+        ],
+        [
+          102,
+          117
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/themes.md",
+      "sha256": "6f11eb43ca6dad4c71bcfa2fc72ac13c013e3cb9383688b88923e0139b2d097c",
+      "lines": 138,
+      "kind": "终端平台、主题或用户导航参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及终端/默认值/兼容边界段；平台操作示例未全部逐行阅读",
+      "ranges": [
+        [
+          1,
+          26
+        ],
+        [
+          48,
+          48
+        ],
+        [
+          59,
+          59
+        ],
+        [
+          61,
+          61
+        ],
+        [
+          63,
+          63
+        ],
+        [
+          70,
+          70
+        ],
+        [
+          74,
+          75
+        ],
+        [
+          78,
+          78
+        ],
+        [
+          92,
+          92
+        ],
+        [
+          94,
+          94
+        ],
+        [
+          98,
+          98
+        ],
+        [
+          102,
+          102
+        ],
+        [
+          104,
+          104
+        ],
+        [
+          109,
+          109
+        ],
+        [
+          118,
+          118
+        ],
+        [
+          123,
+          138
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/tmux.md",
+      "sha256": "9ec0abdbf74c57d51d4a93f308fb4aec4d8a3574a24cbfd9ba481d2e39f1273c",
+      "lines": 55,
+      "kind": "终端平台、主题或用户导航参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及终端/默认值/兼容边界段；平台操作示例未全部逐行阅读",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          35,
+          35
+        ],
+        [
+          40,
+          55
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/tui.md",
+      "sha256": "0263c7a102a6d972038645448d568abf01108ad839b12a374dad7150811ae8a3",
+      "lines": 125,
+      "kind": "现行接口、行为与边界说明",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          125
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/usage.md",
+      "sha256": "88f22eb38ff9cf980d4d5c6af2376d08d683db20073c57fa8b10e752fee322d6",
+      "lines": 94,
+      "kind": "终端平台、主题或用户导航参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及终端/默认值/兼容边界段；平台操作示例未全部逐行阅读",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          29,
+          29
+        ],
+        [
+          44,
+          44
+        ],
+        [
+          55,
+          55
+        ],
+        [
+          68,
+          68
+        ],
+        [
+          78,
+          94
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/virtual-models.md",
+      "sha256": "5ab04dee3b3712b317522bb0784e28a3fef2e6b7fe1aeb1c1ca27778685a38f7",
+      "lines": 114,
+      "kind": "现行配置、CLI或模型参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及默认值/信任/鉴权/重试等契约段；未逐行通读全部示例",
+      "ranges": [
+        [
+          1,
+          32
+        ],
+        [
+          36,
+          36
+        ],
+        [
+          56,
+          57
+        ],
+        [
+          59,
+          59
+        ],
+        [
+          63,
+          63
+        ],
+        [
+          72,
+          72
+        ],
+        [
+          81,
+          81
+        ],
+        [
+          84,
+          84
+        ],
+        [
+          88,
+          88
+        ],
+        [
+          96,
+          114
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/docs/windows.md",
+      "sha256": "6e05d30d8d4ade81f6c453b98538d98188cecbc1d4aa81750c6d690c486eeea1",
+      "lines": 67,
+      "kind": "终端平台、主题或用户导航参考",
+      "reading_scope": "本次阅读开头、结尾、全部标题及终端/默认值/兼容边界段；平台操作示例未全部逐行阅读",
+      "ranges": [
+        [
+          1,
+          25
+        ],
+        [
+          31,
+          31
+        ],
+        [
+          33,
+          33
+        ],
+        [
+          41,
+          41
+        ],
+        [
+          45,
+          45
+        ],
+        [
+          51,
+          67
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/README.md",
+      "sha256": "294836cfa47cd2cff1cab628533aefc5fe2d888621e43fe9f4101c09c2917a98",
+      "lines": 36,
+      "kind": "可选扩展示例索引或示例提示词",
+      "reading_scope": "本次全文阅读；示例提示词只按示例资源解释，未执行",
+      "ranges": [
+        [
+          1,
+          36
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/README.md",
+      "sha256": "b51e1095d338ed8bc6cb0a40dca12da66ffd12d6f4ec7bfd57815fac84d87662",
+      "lines": 214,
+      "kind": "可选扩展示例索引或示例提示词",
+      "reading_scope": "本次结构筛查、开头/结尾与全部章节标题阅读；示例索引未逐项通读",
+      "ranges": [
+        [
+          1,
+          24
+        ],
+        [
+          29,
+          29
+        ],
+        [
+          46,
+          46
+        ],
+        [
+          82,
+          82
+        ],
+        [
+          89,
+          89
+        ],
+        [
+          98,
+          98
+        ],
+        [
+          104,
+          104
+        ],
+        [
+          110,
+          110
+        ],
+        [
+          119,
+          119
+        ],
+        [
+          126,
+          126
+        ],
+        [
+          134,
+          134
+        ],
+        [
+          141,
+          141
+        ],
+        [
+          184,
+          184
+        ],
+        [
+          194,
+          214
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/doom-overlay/README.md",
+      "sha256": "e17bc73b76c7977ffeef99120c7896ff992cf5938a60c4d7427a7b19fc180d97",
+      "lines": 46,
+      "kind": "可选示例说明与示例资源（非默认产品计划）",
+      "reading_scope": "本次全文阅读；按示例的显式加载、资源及权限边界核对",
+      "ranges": [
+        [
+          1,
+          46
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/dynamic-resources/SKILL.md",
+      "sha256": "f8f34b0d81aa791a2d56501756fe0ace21fb78ca2754025d093f41d3b0ccaf69",
+      "lines": 8,
+      "kind": "可选示例说明与示例资源（非默认产品计划）",
+      "reading_scope": "本次全文阅读；按示例的显式加载、资源及权限边界核对",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/dynamic-resources/dynamic.md",
+      "sha256": "e61e2c971d02d628a58f7c36b9b37bd3e636e4ad60618a7f65e2b41410c38f35",
+      "lines": 5,
+      "kind": "可选示例说明与示例资源（非默认产品计划）",
+      "reading_scope": "本次全文阅读；按示例的显式加载、资源及权限边界核对",
+      "ranges": [
+        [
+          1,
+          5
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/plan-mode/README.md",
+      "sha256": "1ff8d611b8fbafef4ca1e3dbc72136fbcc166461b69f859b5e961b15147bff39",
+      "lines": 66,
+      "kind": "可选示例说明与示例资源（非默认产品计划）",
+      "reading_scope": "本次全文阅读；按示例的显式加载、资源及权限边界核对",
+      "ranges": [
+        [
+          1,
+          66
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/README.md",
+      "sha256": "6a888330bf974657751e09f5d375a9039872d59d6606fc217c5105c7eca51b1a",
+      "lines": 177,
+      "kind": "可选示例说明与示例资源（非默认产品计划）",
+      "reading_scope": "本次全文阅读；按示例的显式加载、资源及权限边界核对",
+      "ranges": [
+        [
+          1,
+          177
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/planner.md",
+      "sha256": "452f21f65957753cec3b0772004209c108071be168e627fffd7191234c0ce64e",
+      "lines": 37,
+      "kind": "可选扩展示例索引或示例提示词",
+      "reading_scope": "本次全文阅读；示例提示词只按示例资源解释，未执行",
+      "ranges": [
+        [
+          1,
+          37
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/reviewer.md",
+      "sha256": "b5c3f13b67207e8e32de631f8cd52a373d9b956028e2f8c1fd8b737b5f239265",
+      "lines": 35,
+      "kind": "可选扩展示例索引或示例提示词",
+      "reading_scope": "本次全文阅读；示例提示词只按示例资源解释，未执行",
+      "ranges": [
+        [
+          1,
+          35
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/scout.md",
+      "sha256": "3b84e8e01c6e05c8dfbff1c845c0c6371f4f16350735d4d1dbd02bfa98b1d4e6",
+      "lines": 50,
+      "kind": "可选扩展示例索引或示例提示词",
+      "reading_scope": "本次全文阅读；示例提示词只按示例资源解释，未执行",
+      "ranges": [
+        [
+          1,
+          50
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/agents/worker.md",
+      "sha256": "ca2b2298fcbd8bfafcfe61977dc8075001a64b9c4d8c289c3b5eaa896efe6238",
+      "lines": 24,
+      "kind": "可选扩展示例索引或示例提示词",
+      "reading_scope": "本次全文阅读；示例提示词只按示例资源解释，未执行",
+      "ranges": [
+        [
+          1,
+          24
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/implement-and-review.md",
+      "sha256": "019ba4bf42d596ea03fc4564be5b2cc55a06227c95db19a4d5a5bb96697a75f9",
+      "lines": 10,
+      "kind": "可选扩展示例索引或示例提示词",
+      "reading_scope": "本次全文阅读；示例提示词只按示例资源解释，未执行",
+      "ranges": [
+        [
+          1,
+          10
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/implement.md",
+      "sha256": "65462de33c97ac1372cfed270dad9af164605b05028c069dd4c013ff9792675b",
+      "lines": 10,
+      "kind": "可选扩展示例索引或示例提示词",
+      "reading_scope": "本次全文阅读；示例提示词只按示例资源解释，未执行",
+      "ranges": [
+        [
+          1,
+          10
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/subagent/prompts/scout-and-plan.md",
+      "sha256": "9506399391e0d2c71826c45f26cc332175dd964465f99a8bb880e109f8ed89f4",
+      "lines": 9,
+      "kind": "可选扩展示例索引或示例提示词",
+      "reading_scope": "本次全文阅读；示例提示词只按示例资源解释，未执行",
+      "ranges": [
+        [
+          1,
+          9
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/examples/sdk/README.md",
+      "sha256": "c1f9d8f58c300195d03a420222d2d5370d2884a18a4190a1d8c8ea9371c016ff",
+      "lines": 141,
+      "kind": "可选扩展示例索引或示例提示词",
+      "reading_scope": "本次结构筛查、开头/结尾与全部章节标题阅读；示例索引未逐项通读",
+      "ranges": [
+        [
+          1,
+          24
+        ],
+        [
+          26,
+          26
+        ],
+        [
+          33,
+          33
+        ],
+        [
+          105,
+          105
+        ],
+        [
+          120,
+          141
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills-collision/first/calendar/SKILL.md",
+      "sha256": "422f8cbd0bd678fd2b0f10ecbb6df78a470316ee0dc524ea5addb0f56c8a8905",
+      "lines": 8,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills-collision/second/calendar/SKILL.md",
+      "sha256": "adceefcc79f6e7a79bf75cdae7d5bd0364b2c525296e4f0ec4c5240f9a11a44d",
+      "lines": 8,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/consecutive-hyphens/SKILL.md",
+      "sha256": "52e4b2685c63c0037c8107334b49cfa146341b668db703cb3594c0c6cf629684",
+      "lines": 8,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/disable-model-invocation/SKILL.md",
+      "sha256": "da0457eefec51f8aba12e1c7090ece7983043688704ed6b74c881df1aed09a58",
+      "lines": 9,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          9
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/invalid-name-chars/SKILL.md",
+      "sha256": "bd0121b407fe21640002b61ecb2d559c43fba74dbe3eeac82ba442112fea580f",
+      "lines": 8,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/invalid-yaml/SKILL.md",
+      "sha256": "ef6bba8e89e5a697f5f87e5b0de2785b170e02d1f344c3d0c1e40114ffde2a11",
+      "lines": 8,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/long-name/SKILL.md",
+      "sha256": "dfe930f367e25c4b0703cd7c8906070f87b345f867dea6fef34f9074c3cb052f",
+      "lines": 8,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/missing-description/SKILL.md",
+      "sha256": "ac54cca8108cc426fab7fd46a5cc9379afedbd7bafeca43ce6e3413da2503713",
+      "lines": 7,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          7
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/multiline-description/SKILL.md",
+      "sha256": "30a57026f007961b421e8556e8c4d277208a6b61504ebcd8ee20e7102baa0022",
+      "lines": 11,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          11
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/name-mismatch/SKILL.md",
+      "sha256": "53686d98a0e1b92d1f90d5f192cefbe011121507debb5a407653b1ae80b9694c",
+      "lines": 8,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/nested/child-skill/SKILL.md",
+      "sha256": "0050995f18550fc4554a1dc3723026474c080d2e2772da1ce5c7f14b0b462ce7",
+      "lines": 8,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/no-frontmatter/SKILL.md",
+      "sha256": "e5ca5b4ffb7aaada8b4decc54fc4af732de355786ef54d38db97bb9f75d25672",
+      "lines": 3,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/root-skill-preferred/SKILL.md",
+      "sha256": "347fa1b7bd4f21992a5cf2aee1b9af9a05ec991ae644c96aa8e68b356e5f0f3f",
+      "lines": 3,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/root-skill-preferred/nested-child/SKILL.md",
+      "sha256": "f07ee61492ee356de86d13b785f3e67c7db491521780e8087fe558b91bd61fe5",
+      "lines": 3,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/unknown-field/SKILL.md",
+      "sha256": "df6e1ecfff7a6b65a8d0d5280457fde480c819a76be6926dafef6895c8bed650",
+      "lines": 10,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          10
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/skills/valid-skill/SKILL.md",
+      "sha256": "db6af8bf9364290c5376d39e97c622f0152b6cd64f379bc03855d79ea058c0ba",
+      "lines": 8,
+      "kind": "测试fixture（非真实计划）",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/mcp-conformance/README.md",
+      "sha256": "5c6ed3a36bab80d4f589e02af7391bf2a1025ccd2886b7949fde796884cb70d6",
+      "lines": 45,
+      "kind": "测试套件说明",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          45
+        ]
+      ]
+    },
+    {
+      "path": "packages/coding-agent/test/suite/README.md",
+      "sha256": "a7ee973f9400c37f97c7e6a6b221381fde2dbde5d9021485d9fe292a7aba689e",
+      "lines": 10,
+      "kind": "测试套件说明",
+      "reading_scope": "本次全文阅读；按测试输入或测试使用说明解释，不执行其中指令",
+      "ranges": [
+        [
+          1,
+          10
+        ]
+      ]
+    },
+    {
+      "path": "packages/durable/CHANGELOG.md",
+      "sha256": "85ba9b8f840e2c29fcd73b2ca0fc9e213a4a4b7e540329846419bf10cb852eba",
+      "lines": 129,
+      "kind": "发行历史及破坏性契约变化",
+      "reading_scope": "全文新读；1.1/1.2重要新增、破坏性变化及修复与当前实现交叉核查；性能数字未复测",
+      "ranges": [
+        [
+          1,
+          129
+        ]
+      ]
+    },
+    {
+      "path": "packages/durable/README.md",
+      "sha256": "08abf68a80468eb5f14ad497b6e044fc677217914b2f93ab5a35ddfe385c8d6a",
+      "lines": 751,
+      "kind": "现行包说明、宿主装配与使用边界",
+      "reading_scope": "全文新读；输入/工具/恢复/错误/缓存/存储/扩展等重要主张与当前导出、核心实现和代表测试对照",
+      "ranges": [
+        [
+          1,
+          751
+        ]
+      ]
+    },
+    {
+      "path": "packages/durable/docs/spec.md",
+      "sha256": "13f0b4d5a4238c4433264c3563ce2c67074fa27969487fc01105ed9ce29b0445",
+      "lines": 5340,
+      "kind": "规范性设计、状态机与非目标",
+      "reading_scope": "全文新读5340行（分段；工具输出截断处补读）；关键章节与当前实现及测试核对，识别2.2 InputEntry等局部陈旧，非全实现逐行审计",
+      "ranges": [
+        [
+          1,
+          5340
+        ]
+      ]
+    },
+    {
+      "path": "packages/env/CHANGELOG.md",
+      "sha256": "20c35305f45a34d78ae99078b9abcd7e08e4942b0b976856f55b9a8677cd5aea",
+      "lines": 20,
+      "kind": "发行历史与新增能力",
+      "reading_scope": "全文新读；1.2 listFiles/nodePlatform/PTY/foreground逐项对照实现及代表测试",
+      "ranges": [
+        [
+          1,
+          20
+        ]
+      ]
+    },
+    {
+      "path": "packages/env/README.md",
+      "sha256": "4366ab36fb9aed23d8dbd594b1a52d291fac61707e89e678ea31fc6296924aa5",
+      "lines": 66,
+      "kind": "现行包说明、平台与部署边界",
+      "reading_scope": "全文新读；SSH/Connection/LocalExecutionEnv/listFiles/terminal及测试前置与实现对照",
+      "ranges": [
+        [
+          1,
+          66
+        ]
+      ]
+    },
+    {
+      "path": "packages/env/docs/protocol.md",
+      "sha256": "727e188c23032e0b0a1e8f09bc1b90e5f7f0f678b98331643bcb7be463f18d74",
+      "lines": 151,
+      "kind": "现行二进制协议与调度契约",
+      "reading_scope": "全文新读；帧、取消、资源上限、output窗口、features/listFiles/PTY与TS/Rust实现对照",
+      "ranges": [
+        [
+          1,
+          151
+        ]
+      ]
+    },
+    {
+      "path": "packages/env/docs/semantics.md",
+      "sha256": "0558bb45151eb9aa85039819260cc37ba8b38c5fc5958d75370a2ece01364cf4",
+      "lines": 68,
+      "kind": "跨平台Node语义对照契约",
+      "reading_scope": "全文新读；文件/exec/watch/listFiles职责与实现交叉核查；未逐行审计全部sys平台调用",
+      "ranges": [
+        [
+          1,
+          68
+        ]
+      ]
+    },
+    {
+      "path": "packages/evals/README.md",
+      "sha256": "544041208460422e2d1d4498b1b23c15650c414a22df9c54f899efd6c743f500",
+      "lines": 129,
+      "kind": "现行评测方法、隔离与结果解释契约",
+      "reading_scope": "全文新读；完整cohort/paired lift/缺失数据/隔离/网络限制/作者边界与runner、Docker、harness、report核查",
+      "ranges": [
+        [
+          1,
+          129
+        ]
+      ]
+    },
+    {
+      "path": "packages/mcp/CHANGELOG.md",
+      "sha256": "5d06a0b7c6d042dbc14a22ef952559b4c35f620a183a0efce617616a2b3d309b",
+      "lines": 73,
+      "kind": "发行历史、已兑现/被替代的接口方向",
+      "reading_scope": "全文语义阅读；逐项核对当前与本次升级的重要主张，早期历史条目按后续替代关系判断，未将全部历史修复逐项运行验证",
+      "ranges": [
+        [
+          1,
+          73
+        ]
+      ]
+    },
+    {
+      "path": "packages/mcp/LICENSES/modelcontextprotocol-typescript-sdk.txt",
+      "sha256": "5e13dbbc1d120fc2a03cecde7c91424ae2d7de11b63d58ded2f4431e261ee50d",
+      "lines": 21,
+      "kind": "第三方 MIT 许可证",
+      "reading_scope": "全文阅读；与 OAuth 文件中 SDK v1.29.0 改编声明、manifest 无 SDK 运行依赖交叉核对",
+      "ranges": [
+        [
+          1,
+          21
+        ]
+      ]
+    },
+    {
+      "path": "packages/mcp/README.md",
+      "sha256": "1ef949d454c0948706133bc1732a5f66617df6bfd237ec4138051eeba8c37f13",
+      "lines": 136,
+      "kind": "独立客户端当前契约与非目标",
+      "reading_scope": "全文阅读；client/transport/OAuth/content 主链交叉核查",
+      "ranges": [
+        [
+          1,
+          136
+        ]
+      ]
+    },
+    {
+      "path": "packages/telemetry/CHANGELOG.md",
+      "sha256": "11b4e0bfa35143d0b8237fb03504e63698dcd1abfd083b11ae6e70a60f0d4117",
+      "lines": 47,
+      "kind": "发行历史、已兑现/被替代的接口方向",
+      "reading_scope": "全文语义阅读；逐项核对当前与本次升级的重要主张，早期历史条目按后续替代关系判断，未将全部历史修复逐项运行验证",
+      "ranges": [
+        [
+          1,
+          47
+        ]
+      ]
+    },
+    {
+      "path": "packages/telemetry/README.md",
+      "sha256": "d68b25b6d319c7a02b509c9ccf1bafea2cc1efa7f15af756fb59fa451b2fb4d7",
+      "lines": 464,
+      "kind": "通用 telemetry 契约、schema/adapter 设计与集成说明",
+      "reading_scope": "全文阅读；NOOP/memory/schema/conformance 与当前 agent exports 交叉核查",
+      "ranges": [
+        [
+          1,
+          464
+        ]
+      ]
+    },
+    {
+      "path": "packages/tui/CHANGELOG.md",
+      "sha256": "4452263da8612b9d05602038925811fff5b5e2dc97af4172775f1f53fa0d245e",
+      "lines": 1285,
+      "kind": "版本历史",
+      "reading_scope": "本次重点阅读1.2.0/1.1.0及临近旧版发布段；未通读全部历史",
+      "ranges": [
+        [
+          1,
+          155
+        ]
+      ]
+    },
+    {
+      "path": "packages/tui/README.md",
+      "sha256": "13e8b964f1fd06010ec13b71fdfc3069f4fa36b42567262762ef68f76e56e4e0",
+      "lines": 949,
+      "kind": "包说明、API与原生构建边界",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          949
+        ]
+      ]
+    },
+    {
+      "path": "packages/tui/native/darwin/README.md",
+      "sha256": "de34e2dfb2b600fe67df5aae2fa58eef26ac84644a0f0d44cf0a09d46f3d2730",
+      "lines": 22,
+      "kind": "包说明、API与原生构建边界",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          22
+        ]
+      ]
+    },
+    {
+      "path": "packages/tui/native/linux/README.md",
+      "sha256": "a06e3ff9ed53919f7d6147f2d016e837cbe780e01615053d01002754d83a522d",
+      "lines": 23,
+      "kind": "包说明、API与原生构建边界",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          23
+        ]
+      ]
+    },
+    {
+      "path": "packages/tui/native/win32/README.md",
+      "sha256": "5b00a5533ea3b8bea1667d0fe2f34345d97a7164bec3652bcbf03b4eee53d991",
+      "lines": 31,
+      "kind": "包说明、API与原生构建边界",
+      "reading_scope": "本次全文阅读；关键契约与当前实现交叉核查（非运行验证）",
+      "ranges": [
+        [
+          1,
+          31
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/README.md",
+      "sha256": "ff47bc2b054114574260ffd061a3a70dca5f81ff2ae87a24fd4f7c1cc494dc85",
+      "lines": 59,
+      "kind": "包外工具说明与 Durable 调用示例",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          59
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/agent-loop.md",
+      "sha256": "dca3f6e7b658c579be78d43d4c680b1d8cf415ba3c61cad6b0852a3723874a1e",
+      "lines": 21,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          21
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/cli.md",
+      "sha256": "9d10c2d0e866910d39b333789333266dfde0c3398b1a19e282109395904eee01",
+      "lines": 18,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          18
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/codemode.md",
+      "sha256": "8559646f97cace47e6f36ad1b994d6dfe8f916b4460c9284093c172b7d567783",
+      "lines": 10,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          10
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/compaction.md",
+      "sha256": "2ce54730d2fac5f4fe7916698725a9f8254a6e5b658e82f35ee13a50ee5cb5b8",
+      "lines": 17,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          17
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/durable.md",
+      "sha256": "f2fb7be75a02e2f44d3888715b878c999467b244d45c46af5d02b95636813a4e",
+      "lines": 10,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          10
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/extensions.md",
+      "sha256": "fe137e941f0ac1f13061d2e7e51f56eab967d6c7e2885c230232dee1ed0f4a46",
+      "lines": 21,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          21
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/mcp.md",
+      "sha256": "58ddeeaeff452174dc8d0c0278abb220e8bcce5020e251501ad6b5c61db810f0",
+      "lines": 10,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          10
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/models.md",
+      "sha256": "55f508c927d649f136889a98ef863d141a57216e0d3eeecc7218500e72cec120",
+      "lines": 21,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          21
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/other.md",
+      "sha256": "f97e15eb6b7d6d4e33f97bec791fdaefeb910bad1516a2a7df2e0dece5c6792a",
+      "lines": 10,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          10
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/prompt.md",
+      "sha256": "11b5203049ea54a946c8e0c70a1af59c0e220c24b7427c105d140f83bf7be550",
+      "lines": 16,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          16
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/providers.md",
+      "sha256": "2eff1cf50022d3e748839cfbd46c96bb73770d4083446c389c2c110c1ff1f4f1",
+      "lines": 23,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          23
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/sdk.md",
+      "sha256": "c9d3d13f58dea33fe78154d71f4cce3522458ba9a8c887e6aba664d50cc7309f",
+      "lines": 16,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          16
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/sessions.md",
+      "sha256": "396f2b42f5a42266b6a25d83b836fece40a32daac5653ae50c1fac2e65330c38",
+      "lines": 15,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          15
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/tools.md",
+      "sha256": "5ef2ecc8df5eb71ee6cc4fb8d9a03640ab3ccd2937dd53c22c2ed324b71d11da",
+      "lines": 21,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          21
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/categories/tui.md",
+      "sha256": "f60839b12a62b98f850e983417ff0b03eb4591d4e3a53e71f710db4a83fdfbf5",
+      "lines": 19,
+      "kind": "issue triage 分类提示资源；非路线图",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          19
+        ]
+      ]
+    },
+    {
+      "path": "scripts/issues/prompt.md",
+      "sha256": "3df103c24c1abbc486b2a64eedd47dcfca7c5b512d6494ceedb773fac9a00e4c",
+      "lines": 31,
+      "kind": "issue triage 提示策略与优先级口径；非已采纳产品计划",
+      "reading_scope": "本次全文阅读；按资料性质核对 manifest、构建/发行/triage 调用方；外部链接未抓取",
+      "ranges": [
+        [
+          1,
+          31
+        ]
+      ]
+    }
+  ]
+}

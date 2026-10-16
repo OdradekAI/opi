@@ -1,10 +1,12 @@
 # pi-ai 与 telemetry 独立报告交叉核验
 
+> **2026-10-16 历史材料定位：** 本页保留 Pi 1.0.0 时的事实、方案、D/Q、行号和执行记录；其中“当前目标”“已通过”、能力子集或产品接线不构成 Pi 1.2.0 候选要求。当前要求以[双语正文](spec-draft.zh.md)（[English](spec-draft.md)）、[1.2.0 SDK 附件](pi-1.2.0-sdk-contracts.md)和[Rust 差异](pi-1.2.0-rust-differences.md)为准，[验收矩阵](acceptance-matrix.md)为唯一证明索引。历史中有效细则仅在当前正文明确采纳且无冲突时沿用；不把旧源码链接机械改成新快照行号。宿主执行／会话／产品策略只作下游影响，本页不授权实施。
+
 > **非规范性研究，2026-10-04。** 本次只判断固定本地快照及当前已确认候选目标，不联网、不执行模型、构建或测试、不修改原独立研究/代码/测试。两项有边界的独立复核分别回查 ai 与 telemetry；主 Agent 顺序综合。本文不是实施准入，也不把测试源码视为执行通过。新中文复核没有既有英文 counterpart；spec 的证据导航同步更新英中版本，未改变规范性行为。
 
 ## 结论与使用方法
 
-完整阅读原 [ai.md（历史恢复）](../pi-1.0.4/evidence/pi-1.0.0/README.md#early-reports) 411 行和 [telemetry.md（历史恢复）](../pi-1.0.4/evidence/pi-1.0.0/README.md#early-reports) 167 行，对照当前 [spec-draft.md](spec-draft.md) 及 [decisions.md](decisions.md) 的 D-19–37（含前置 D-18/历史解释），并回到关键一手源码核验。**可以用这两份报告核查决策；本轮相关主张中没有发现必须重开已确认目标的新实质证据。** 它们不能单独证明全部56条目标正确或已实现：相同快照上的两份静态报告不是两次独立运行实验。
+完整阅读原 [ai.md（历史恢复）](../pi-1.2.0/evidence/pi-1.0.0/README.md#early-reports) 411 行和 [telemetry.md（历史恢复）](../pi-1.2.0/evidence/pi-1.0.0/README.md#early-reports) 167 行，对照当前 [spec-draft.md](spec-draft.md) 及 [decisions.md](decisions.md) 的 D-19–37（含前置 D-18/历史解释），并回到关键一手源码核验。**可以用这两份报告核查决策；本轮相关主张中没有发现必须重开已确认目标的新实质证据。** 它们不能单独证明全部56条目标正确或已实现：相同快照上的两份静态报告不是两次独立运行实验。
 
 两项 ai 事实表述需要限定或纠正：实际产品 session 的 Models 路径不能由残留 compat fallback 推断；header transform 属请求选项，不属于 auth。第一项已被本目录 P02/M02/设计演进纠正，不是新发现，更不是 D-30/35 错误。telemetry 报告对通用契约、NOOP、schema 与 README 冲突的判断得到回源支持；Rust tracing 不被宣称等价于整个通用 pi-telemetry API。
 

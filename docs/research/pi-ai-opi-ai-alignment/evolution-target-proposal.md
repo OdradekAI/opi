@@ -1,5 +1,7 @@
 # 已落地演进能力的目标契约提案
 
+> **2026-10-16 历史材料定位：** 本页保留 Pi 1.0.0 时的事实、方案、D/Q、行号和执行记录；其中“当前目标”“已通过”、能力子集或产品接线不构成 Pi 1.2.0 候选要求。当前要求以[双语正文](spec-draft.zh.md)（[English](spec-draft.md)）、[1.2.0 SDK 附件](pi-1.2.0-sdk-contracts.md)和[Rust 差异](pi-1.2.0-rust-differences.md)为准，[验收矩阵](acceptance-matrix.md)为唯一证明索引。历史中有效细则仅在当前正文明确采纳且无冲突时沿用；不把旧源码链接机械改成新快照行号。宿主执行／会话／产品策略只作下游影响，本页不授权实施。
+
 > 非规范性候选提案，2026-10-03；不是实施准入、正式规范或 ready-for-agent。依据 [D-18及第二轮决策](decisions.md#第二轮目标决策d-18之后)：本轮以 pi 的设计意图、已落地行为与可靠演进为目标依据，opi-spec 仅作可能过时的参考。**Q26/Q27已明确确认本提案的覆盖、pi产品默认、恢复身份和分期（D-23/24）；Q22–31及修订Q31均已回答。** D-18本身不构成批准，具体确认来自这些后续回答。本文的EP保留设计推理与证据，候选要求以双语spec为准，唯一综合验收映射见[acceptance-matrix](acceptance-matrix.md)。
 
 本文沿用 `docs/CONTEXT.md` 的 Agent Core、Reference Product、Extension Ecosystem 术语，不建立新权威或进度账本。中文研究提案没有既有英文 counterpart；双语目标契约最终由主候选同步，本文件无需复制英文研究副本。

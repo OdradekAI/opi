@@ -1,0 +1,291 @@
+{
+  "kind": "document-revision-verification-evidence",
+  "date": "2026-10-16",
+  "mode": "worktree-only",
+  "status": "PASS",
+  "head": "e6c2eb80b99a69f80aefc7aafee3b61140a0a6c8",
+  "committed": "none-for-this-task",
+  "staged": "",
+  "scope": "Documentation only; no product implementation/admission/ledger change.",
+  "commands": [
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exit_code": 0,
+      "stdout": "e6c2eb80b99a69f80aefc7aafee3b61140a0a6c8",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--cached",
+        "--name-status"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--name-status"
+      ],
+      "exit_code": 0,
+      "stdout": "D\tdocs/research/pi-1.0.4/README.md\nD\tdocs/research/pi-1.0.4/documentation-audit.md\nD\tdocs/research/pi-1.0.4/documentation-index.md\nD\tdocs/research/pi-1.0.4/documentation-reading.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.0/README.md\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.0/documentation-reading.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.0/source-manifest.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/README-before-retirement.txt\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/README.md\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/documentation-reading.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/historical-planning.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/report-recovery.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/retirement.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/source-manifest.json\nD\tdocs/research/pi-1.0.4/packages/agent.md\nD\tdocs/research/pi-1.0.4/packages/ai.md\nD\tdocs/research/pi-1.0.4/packages/chord.md\nD\tdocs/research/pi-1.0.4/packages/client.md\nD\tdocs/research/pi-1.0.4/packages/codemode.md\nD\tdocs/research/pi-1.0.4/packages/coding-agent.md\nD\tdocs/research/pi-1.0.4/packages/durable.md\nD\tdocs/research/pi-1.0.4/packages/env.md\nD\tdocs/research/pi-1.0.4/packages/evals.md\nD\tdocs/research/pi-1.0.4/packages/mcp.md\nD\tdocs/research/pi-1.0.4/packages/protocol.md\nD\tdocs/research/pi-1.0.4/packages/server.md\nD\tdocs/research/pi-1.0.4/packages/telemetry.md\nD\tdocs/research/pi-1.0.4/packages/tui.md\nD\tdocs/research/pi-1.0.4/source-index.md\nD\tdocs/research/pi-1.0.4/source-manifest.json\nD\tdocs/research/pi-1.0.4/verification.md\nD\tdocs/research/pi-1.0.4/version-changes.md\nM\tdocs/research/pi-ai-opi-ai-alignment/README.md\nM\tdocs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md\nM\tdocs/research/pi-ai-opi-ai-alignment/ai-telemetry-report-crosscheck.md\nM\tdocs/research/pi-ai-opi-ai-alignment/decisions.md\nM\tdocs/research/pi-ai-opi-ai-alignment/design-audit.md\nM\tdocs/research/pi-ai-opi-ai-alignment/evidence-matrix.md\nM\tdocs/research/pi-ai-opi-ai-alignment/evolution-target-proposal.md\nM\tdocs/research/pi-ai-opi-ai-alignment/sdk-auth-provider-migration.md\nM\tdocs/research/pi-ai-opi-ai-alignment/sdk-consumer-contract.md\nM\tdocs/research/pi-ai-opi-ai-alignment/sdk-spec-review.md\nM\tdocs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md\nM\tdocs/research/pi-ai-opi-ai-alignment/telemetry-design.md\nM\tdocs/research/pi-ai-opi-ai-alignment/telemetry-spec-review.md\nM\tdocs/research/pi-ai-opi-ai-alignment/transcript-migration.md\nM\tdocs/research/pi-ai-opi-ai-alignment/transcript-target-proposal.md",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "ls-files",
+        "--others",
+        "--exclude-standard"
+      ],
+      "exit_code": 0,
+      "stdout": "docs/research/pi-1.2.0/README.md\ndocs/research/pi-1.2.0/documentation-audit.md\ndocs/research/pi-1.2.0/documentation-index.md\ndocs/research/pi-1.2.0/documentation-reading.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.0/README.md\ndocs/research/pi-1.2.0/evidence/pi-1.0.0/documentation-reading.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.0/source-manifest.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/README-before-retirement.txt\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/README.md\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/documentation-reading.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/historical-planning.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/report-recovery.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/retirement.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/source-manifest.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/README.md\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/documentation-reading.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/predecessor-recovery-verification.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/report-recovery.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/retirement.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/source-manifest.json\ndocs/research/pi-1.2.0/packages/agent.md\ndocs/research/pi-1.2.0/packages/ai.md\ndocs/research/pi-1.2.0/packages/chord.md\ndocs/research/pi-1.2.0/packages/codemode.md\ndocs/research/pi-1.2.0/packages/coding-agent.md\ndocs/research/pi-1.2.0/packages/durable.md\ndocs/research/pi-1.2.0/packages/env.md\ndocs/research/pi-1.2.0/packages/evals.md\ndocs/research/pi-1.2.0/packages/mcp.md\ndocs/research/pi-1.2.0/packages/telemetry.md\ndocs/research/pi-1.2.0/packages/tui.md\ndocs/research/pi-1.2.0/source-index.md\ndocs/research/pi-1.2.0/source-manifest.json\ndocs/research/pi-1.2.0/verification.md\ndocs/research/pi-1.2.0/version-changes.md\ndocs/research/pi-1.2.0/version-delta.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-followup-evidence.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-followup.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-review-baseline.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-review.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-baseline.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-review.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-verification.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-differences.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-sdk-contracts.md\ndocs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "python",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit_code": 0,
+      "stdout": "opi documentation contracts: PASS",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "static_checks": {
+    "errors": [],
+    "requirements_each_language": 67,
+    "sdk_requirements": 58,
+    "host_only_requirements": [
+      "AIR-009",
+      "AIR-015",
+      "AIR-016",
+      "AIR-017",
+      "AIR-018",
+      "AIR-019",
+      "AIR-037",
+      "AIR-039",
+      "AIR-041"
+    ],
+    "verification_groups": 59,
+    "sdk_verification_groups": 55,
+    "host_only_verification_groups": [
+      "V-17",
+      "V-18",
+      "V-19",
+      "V-33"
+    ],
+    "bilingual_lines_each": 423,
+    "bilingual_review": "Independent semantic/numeric/formula review plus line-aligned AIR/V, code-token and table shape checks.",
+    "factories": 42,
+    "integration_test_files": 41,
+    "integration_inventory": [
+      "anthropic_fixtures.rs",
+      "anthropic_thinking_roundtrip.rs",
+      "api_mapped_provider.rs",
+      "auth_contracts.rs",
+      "azure_openai_fixtures.rs",
+      "bedrock_fixtures.rs",
+      "connection_pooling.rs",
+      "context_budget.rs",
+      "custom_provider_registration.rs",
+      "gemini_fixtures.rs",
+      "gemini_lifecycle.rs",
+      "image_input.rs",
+      "image_provider_serialization.rs",
+      "mistral_fixtures.rs",
+      "model_capabilities_migration.rs",
+      "model_wire_metadata.rs",
+      "oauth_wire_shape.rs",
+      "openai_chat_fixtures.rs",
+      "openai_codex_responses.rs",
+      "openai_compat_lifecycle.rs",
+      "openai_responses_fixtures.rs",
+      "openai_responses_lifecycle.rs",
+      "openrouter_fixtures.rs",
+      "output_content_image.rs",
+      "per_request_auth.rs",
+      "phase14_remediation.rs",
+      "provider_collection.rs",
+      "provider_diagnostics.rs",
+      "provider_error_classes.rs",
+      "provider_lifecycle.rs",
+      "provider_trait.rs",
+      "proxy_support.rs",
+      "registry.rs",
+      "request_enrichment.rs",
+      "retry_backoff.rs",
+      "stream_events.rs",
+      "test_support_tests.rs",
+      "tool_result_no_leak.rs",
+      "tool_result_wire.rs",
+      "usage_cost.rs",
+      "vertex_fixtures.rs"
+    ],
+    "cfg_test_source_files": [
+      "crates/opi-ai/src/anthropic.rs",
+      "crates/opi-ai/src/bedrock/credentials.rs",
+      "crates/opi-ai/src/bedrock/event_stream.rs",
+      "crates/opi-ai/src/bedrock/sigv4.rs",
+      "crates/opi-ai/src/endpoint.rs",
+      "crates/opi-ai/src/openai_responses_shared.rs",
+      "crates/opi-ai/src/stream.rs"
+    ],
+    "checked_current_local_links": 492,
+    "checked_source_line_anchors": 307,
+    "heading_anchors": "Independently reviewed; historical missing snapshots are retained as history, not rebound to new source.",
+    "cfg_test_source_labels": [
+      "anthropic.rs",
+      "bedrock/credentials.rs",
+      "bedrock/event_stream.rs",
+      "bedrock/sigv4.rs",
+      "endpoint.rs",
+      "openai_responses_shared.rs",
+      "stream.rs"
+    ],
+    "source_inventory_method": "Exact relative source paths from real cfg(test) files compared to all seven source disposition rows; labels allow either cfg(test):line or :line."
+  },
+  "independent_review": {
+    "unique_p2_closed": 6,
+    "p3_closed": 2,
+    "remaining_findings": [],
+    "review_report": "pi-1.2.0-revision-review.md"
+  },
+  "test_impact": "none",
+  "not_run": [
+    "Cargo/Node runtime tests",
+    "builds",
+    "paired differential runner",
+    "live/OAuth/provider calls",
+    "dependency installation",
+    "generated-data hydration"
+  ],
+  "change_inventory": {
+    "baseline_document_count": 47,
+    "carried_in_and_touched": [
+      "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md",
+      "docs/research/pi-ai-opi-ai-alignment/ai-telemetry-report-crosscheck.md",
+      "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-followup.md",
+      "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-review.md",
+      "docs/research/pi-ai-opi-ai-alignment/README.md",
+      "docs/research/pi-ai-opi-ai-alignment/spec-draft.md",
+      "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md",
+      "docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md"
+    ],
+    "task_changed_previously_clean": [
+      "docs/research/pi-ai-opi-ai-alignment/decisions.md",
+      "docs/research/pi-ai-opi-ai-alignment/design-audit.md",
+      "docs/research/pi-ai-opi-ai-alignment/evidence-matrix.md",
+      "docs/research/pi-ai-opi-ai-alignment/evolution-target-proposal.md",
+      "docs/research/pi-ai-opi-ai-alignment/sdk-auth-provider-migration.md",
+      "docs/research/pi-ai-opi-ai-alignment/sdk-consumer-contract.md",
+      "docs/research/pi-ai-opi-ai-alignment/sdk-spec-review.md",
+      "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md",
+      "docs/research/pi-ai-opi-ai-alignment/telemetry-design.md",
+      "docs/research/pi-ai-opi-ai-alignment/telemetry-spec-review.md",
+      "docs/research/pi-ai-opi-ai-alignment/transcript-migration.md",
+      "docs/research/pi-ai-opi-ai-alignment/transcript-target-proposal.md"
+    ],
+    "new_document_evidence": [
+      "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-baseline.json",
+      "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-review.md",
+      "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-verification.json",
+      "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-differences.md",
+      "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-sdk-contracts.md"
+    ],
+    "preserved": "Existing Pi1.0.4 retirement and Pi1.2.0 report are carried-in; original audit inputs/DQ/probe execution retained.",
+    "unstaged": "D\tdocs/research/pi-1.0.4/README.md\nD\tdocs/research/pi-1.0.4/documentation-audit.md\nD\tdocs/research/pi-1.0.4/documentation-index.md\nD\tdocs/research/pi-1.0.4/documentation-reading.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.0/README.md\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.0/documentation-reading.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.0/source-manifest.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/README-before-retirement.txt\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/README.md\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/documentation-reading.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/historical-planning.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/report-recovery.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/retirement.json\nD\tdocs/research/pi-1.0.4/evidence/pi-1.0.2/source-manifest.json\nD\tdocs/research/pi-1.0.4/packages/agent.md\nD\tdocs/research/pi-1.0.4/packages/ai.md\nD\tdocs/research/pi-1.0.4/packages/chord.md\nD\tdocs/research/pi-1.0.4/packages/client.md\nD\tdocs/research/pi-1.0.4/packages/codemode.md\nD\tdocs/research/pi-1.0.4/packages/coding-agent.md\nD\tdocs/research/pi-1.0.4/packages/durable.md\nD\tdocs/research/pi-1.0.4/packages/env.md\nD\tdocs/research/pi-1.0.4/packages/evals.md\nD\tdocs/research/pi-1.0.4/packages/mcp.md\nD\tdocs/research/pi-1.0.4/packages/protocol.md\nD\tdocs/research/pi-1.0.4/packages/server.md\nD\tdocs/research/pi-1.0.4/packages/telemetry.md\nD\tdocs/research/pi-1.0.4/packages/tui.md\nD\tdocs/research/pi-1.0.4/source-index.md\nD\tdocs/research/pi-1.0.4/source-manifest.json\nD\tdocs/research/pi-1.0.4/verification.md\nD\tdocs/research/pi-1.0.4/version-changes.md\nM\tdocs/research/pi-ai-opi-ai-alignment/README.md\nM\tdocs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md\nM\tdocs/research/pi-ai-opi-ai-alignment/ai-telemetry-report-crosscheck.md\nM\tdocs/research/pi-ai-opi-ai-alignment/decisions.md\nM\tdocs/research/pi-ai-opi-ai-alignment/design-audit.md\nM\tdocs/research/pi-ai-opi-ai-alignment/evidence-matrix.md\nM\tdocs/research/pi-ai-opi-ai-alignment/evolution-target-proposal.md\nM\tdocs/research/pi-ai-opi-ai-alignment/sdk-auth-provider-migration.md\nM\tdocs/research/pi-ai-opi-ai-alignment/sdk-consumer-contract.md\nM\tdocs/research/pi-ai-opi-ai-alignment/sdk-spec-review.md\nM\tdocs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md\nM\tdocs/research/pi-ai-opi-ai-alignment/telemetry-design.md\nM\tdocs/research/pi-ai-opi-ai-alignment/telemetry-spec-review.md\nM\tdocs/research/pi-ai-opi-ai-alignment/transcript-migration.md\nM\tdocs/research/pi-ai-opi-ai-alignment/transcript-target-proposal.md",
+    "untracked": "docs/research/pi-1.2.0/README.md\ndocs/research/pi-1.2.0/documentation-audit.md\ndocs/research/pi-1.2.0/documentation-index.md\ndocs/research/pi-1.2.0/documentation-reading.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.0/README.md\ndocs/research/pi-1.2.0/evidence/pi-1.0.0/documentation-reading.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.0/source-manifest.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/README-before-retirement.txt\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/README.md\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/documentation-reading.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/historical-planning.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/report-recovery.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/retirement.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.2/source-manifest.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/README.md\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/documentation-reading.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/predecessor-recovery-verification.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/report-recovery.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/retirement.json\ndocs/research/pi-1.2.0/evidence/pi-1.0.4/source-manifest.json\ndocs/research/pi-1.2.0/packages/agent.md\ndocs/research/pi-1.2.0/packages/ai.md\ndocs/research/pi-1.2.0/packages/chord.md\ndocs/research/pi-1.2.0/packages/codemode.md\ndocs/research/pi-1.2.0/packages/coding-agent.md\ndocs/research/pi-1.2.0/packages/durable.md\ndocs/research/pi-1.2.0/packages/env.md\ndocs/research/pi-1.2.0/packages/evals.md\ndocs/research/pi-1.2.0/packages/mcp.md\ndocs/research/pi-1.2.0/packages/telemetry.md\ndocs/research/pi-1.2.0/packages/tui.md\ndocs/research/pi-1.2.0/source-index.md\ndocs/research/pi-1.2.0/source-manifest.json\ndocs/research/pi-1.2.0/verification.md\ndocs/research/pi-1.2.0/version-changes.md\ndocs/research/pi-1.2.0/version-delta.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-followup-evidence.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-followup.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-review-baseline.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-review.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-baseline.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-review.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-verification.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-differences.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-sdk-contracts.md\ndocs/research/pi-ai-opi-ai-alignment/upstream-tracking.md"
+  },
+  "final_input_sha256": {
+    "acceptance-matrix.md": "88057b23d6366143050db72dc4603629b3d9b9d7d7cd7269ccc10a0bd6980fe8",
+    "ai-telemetry-report-crosscheck.md": "792c41a27f29711d1b4001b74734255e7da72f9b6df1869a18718ccb54233e69",
+    "baseline.json": "f6db4d01bedbe5c0eebca675dce95f4fe18993c89aff63396aa8861a12b81a61",
+    "decision-reassessment.md": "7df787e770f9b17f2fc51dfe1b90fe9782d44fc4c8545e84a03cc7003b3d4d78",
+    "decisions.md": "5fd2ec42e4730781e13ac517f124e295811890d6c83ea3748f53efa3a775680a",
+    "design-audit.md": "dfd0be6ad05a3712578428a0c8cd8521e660911d4f2347c14ea3b7b5902b55ae",
+    "design-evolution.md": "9f7a3b8ea69432063eca22059faa81e2e92ffdd4043a446b1ac2bbe73c0fc0ed",
+    "evidence-matrix.md": "d9fb034b588fd9883c18468d1247d9f3b0712eb37a23e2d5b3a1c6943d8e0cb0",
+    "evolution-target-proposal.md": "4d3092138a8a97546ee1198cdb6e61dad4f9793df86c2746ef3eb940295f8a98",
+    "offline-probe-result.json": "38b3d01dc85c58e8eafa1a68cc48abf210cc9eaa5b5e9454937ebfea790c8599",
+    "offline-probes.md": "5b386f4892f5d925ade21c782787e8d6238d9cc0dc151cf7d3e40f2117c2bf7d",
+    "operations-design.md": "9fa815d65f1885db2f488e7ff9297e3c0669c050bb50b942b3cea882be09a8f0",
+    "opi-audit-notes.md": "972dcbc8cb2e7bd30e8f0abc2d38bd7c1a9e67bc90ff3fb13b5c5629ed878a3a",
+    "pi-1.2.0-followup-evidence.json": "e675c68609b54cf5b42498db4d0453e8beceaab8b6b375098eec6c60596c8d5a",
+    "pi-1.2.0-followup.md": "a9aef181c6c1e1b09c80c0ee5758fab0a90ab88322acd7e73a10b439c426dd05",
+    "pi-1.2.0-review-baseline.json": "255c2080f1450180b89d4d0c89522a4273cd0ec70bd262eeb055ab1e365dfc7f",
+    "pi-1.2.0-review.md": "bef13d28a13693a3b5ad32455bd5598209cf2f8010645597fd58a9233ab67aeb",
+    "pi-1.2.0-revision-baseline.json": "56639f4de9515ec9e2ab97b92080136d3eb2f8ecbff947db5d13fef6d81800c8",
+    "pi-1.2.0-revision-review.md": "0f81bdf63f8c416d188488f5a81a42f61afbf8cd13aba9d5d1340d8790ec0985",
+    "pi-1.2.0-rust-differences.md": "5c06372f4ad92f2f6bbf8bf49b1987a4aa33fa77b15cbf356169431732904eeb",
+    "pi-1.2.0-sdk-contracts.md": "8a93ea4b495dec0d64ed7363a04c9c2e81ed0301b70eb2b58037783c7f3253b9",
+    "pi-contracts-notes.md": "d1c91f15216c852ec30604334d67960a6c83e8006099c07b2bde82b82bfd5767",
+    "placement-options.md": "bf354fdcaf4202afb04fbda32f3cc23d2ddc836bccd127ac7fc69bfd6ed418d3",
+    "provider-contract-addendum.md": "7bbe406b41d94d9c5fa648c0e0d2996cdc8d6225c0165791a8c21f134f78f4c3",
+    "README.md": "a18bf715160062b68b2d5f65acf9549627b052c628b4dc39cc636e21454f0375",
+    "reassessment-evolution-notes.md": "be8da757e5cb4c748cceb6ecc8dc2b8773791ab3ae36fde7e81c57aa4fb80864",
+    "reassessment-sdk-notes.md": "d3b3006e9a3629abfeb571c60c87844caa7ef8d0626fc3f740464969f0d8a819",
+    "reassessment-transcript-notes.md": "15143d4c1cf94fb097afefdfa97ec8aa2de153a2e68361996d9ad0728243e121",
+    "replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
+    "review-notes.md": "994fcbfd1417dec930d0c973acb37873d2713d0ba5d077e7307cfc260e5c5921",
+    "route-probe-result.json": "2433d1a5b8210246b43d9fdb34416d30a66390d01eb3aee48ce19598a26e5d03",
+    "route-probe.md": "e203397c6cd4be556fea8f324ef058b82f84ac1f1b259effaac0c688e872479d",
+    "sdk-auth-provider-migration.md": "06811904ceb6d8029317dfc47df34b3a2108d5e549a4b094b189ba23d563f818",
+    "sdk-consumer-contract.md": "31de654cfd0f2aec9b61b4e11a1bbde0caedd8f3dadb0bca74494ed1bfd0bb74",
+    "sdk-opi-caller-review.md": "1b10011870d32a7d7d4f296bd1cad97286ddc9dcfce9e3d9f981da9d719cf91a",
+    "sdk-pi-caller-review.md": "cb0b218dc64dbd4577c5c23b7e1cc7a6877c69ea0dba8557319cff8c09d5ac6e",
+    "sdk-spec-review.md": "31e45a1b18ef36d9eccf72d9517338e69d3ccea0bb38df4165d49f942760ff37",
+    "sdk-target-proposal.md": "6a7e5973ba8c6240dd6cdeb0e518f5e43f76df5a870029bfc202898307deedfd",
+    "spec-draft.md": "499120e45437f590f44af57ac98b6278295e1a4cf0f20e1188bb5e218f5ddd5c",
+    "spec-draft.zh.md": "ea9fd69c3098e999abda9580727aa9a79f34a47e1273b192699a72828e73964f",
+    "spec-evidence-review.md": "941cb117236c9bda631a74559aff7c0b75acc01e2c087c4e8b14658b71ec52d7",
+    "spec-review-round-2.md": "e2e18c29fa2358671b246debac2bb49afbc6072c20c870b516d45e8d494b9cb0",
+    "spec-review.md": "b7d658b7ba55fdbb789a98e5a84e173c316882d14a1d013cbdbf950743fc3692",
+    "telemetry-design.md": "dacb74435e6cf3c731372ee562f4cc88372497bbe5d037cb85154151d8e23a71",
+    "telemetry-evolution.md": "4c7805d8c269d6fd23c7faa3174ff945c8a0a6589b5a42a7e67557f1eb124073",
+    "telemetry-opi-audit.md": "c6d11e255b305d71a62d192c206fec96c940b656d67e1462ad238e11fc369202",
+    "telemetry-pi-contracts.md": "bc49f5cfd10b0ff7620e399d62e7169ac7ffe40afc15fdf887d81fc36b685388",
+    "telemetry-spec-review.md": "2e2f6234e8d397c45fd17c441c81c3203823f0f9cf098843edd824b382f6ce4f",
+    "transcript-migration.md": "c4a99752434e73d2472450bcbc3241058d40dc069212f42d6ab37ac41932b9ec",
+    "transcript-target-proposal.md": "25a4234507ab1c4c12d483c56bb4083172bf4d5c35dfec1dc92bc98c77a5d94e",
+    "upstream-tracking.md": "b98fad51db481f2fbd1696ec9af76464585e57a105b810a32fb178214746b840"
+  },
+  "self_hash_excluded": true,
+  "commit_preparation": {
+    "authorization": "User requested direct commit after the completed document revision.",
+    "normalization": [
+      {
+        "path": "docs/research/pi-1.2.0/version-changes.md",
+        "before_sha256": "ef52d036fed9a63f6b5a6ec3a78a656866d9d905e08d83c80e546ea242711d41",
+        "after_sha256": "d2f6553d4f0a4d10e249c3c9039898acfbf1ae4a7d12c1a55fd200ed8e1fec3f",
+        "effect": "Formatting only: LF and one terminal newline; parsed JSON/Markdown content unchanged."
+      },
+      {
+        "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-review-baseline.json",
+        "before_sha256": "0e4223cb6cd8ff7a410c973cea4f014d7ca58f522dab96a82a1956e1f6b42336",
+        "after_sha256": "255c2080f1450180b89d4d0c89522a4273cd0ec70bd262eeb055ab1e365dfc7f",
+        "effect": "Formatting only: LF and one terminal newline; parsed JSON/Markdown content unchanged."
+      }
+    ],
+    "historical_inputs": "Earlier baseline hashes retain their original pre-normalization meaning; only final-input hash is refreshed.",
+    "runtime_and_test_impact": "none"
+  }
+}

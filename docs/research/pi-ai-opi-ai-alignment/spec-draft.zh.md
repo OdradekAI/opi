@@ -1,7 +1,8 @@
 # pi-ai / opi-ai 对齐候选 spec
 
-> **DRAFT — 非规范性。** 研究日期：2026-10-03；SDK 使用方复审：2026-10-04。这是供评审的本地候选文档，不是 `opi-spec`，不构成实施准入或 ready-for-agent 批准。本次工作不授权任何运行时实施。
-> **修订后的目标：** 本次研究将 opi 定位为 pi 的 Rust 实现（D-18）。Q22–Q31（包括修订 Q31）明确取代第一轮受影响的选择；Q32–37 固定已选 SDK 范围，包括 Rust Result 和显式 telemetry 传播。当前决策为 D-19–D-37；D-01–D-17 保留早期历史。同步英文版见 [spec-draft.md](spec-draft.md)。
+> **修订草案 — 非规范性，2026-10-16。** 目标：在 `opi-ai` 中采用 Rust 惯用设计，实现固定 Pi AI 1.2.0 快照的公开能力与可观察运行时语义。这是供独立评审的文档候选，不是实施准入、ready-for-agent 批准，也不证明任何目标行为已经存在。对应英文版为 [spec-draft.md](spec-draft.md)。
+>
+> 本修订仅在本候选范围内取代早先的 Pi 1.0.0 子集和整项目表述。历史 D/Q 回答与执行证据继续作为历史保留。本修订不改变 Opi 的全局使命、正式规范、运行时、依赖、测试、CI 或可写会话格式。输入与评审来源记录于[revision baseline](pi-1.2.0-revision-baseline.json)；两次调查分别为[版本审查](pi-1.2.0-review.md)和[五问补核](pi-1.2.0-followup.md)。
 
 ## 阅读与解释
 
@@ -9,60 +10,63 @@
 
 MUST 表示未来获得准入、实施本候选目标时必须履行的义务。SHOULD 允许有文档记录的例外，但必须保持所述行为和验证。MAY 表示范围内的可选行为。明确列出的证据阻碍不允许实施者猜测契约。人类确认选择的是目标，不证明实现已经完成，也不授予实施准入。
 
-旧 `opi-spec` 关于能力归属和准入的理由在本轮属于可能过时的参考，不用于否决 pi 已确立的语义。正式规范协调必须记录 Rust 实现方向、多操作 SDK、动态可信修订和每次调用实际输入的来源。CONTEXT 中 User Policy、Package Trust 和 Capability Permission 的既有含义保持不变：模型内容不能授予权限。Runtime Input Binding 原先覆盖整个 run 的描述，需要与“不可变的初始来源记录，加上每次调用不可变的修订”协调；普通可信更新不要求创建子会话。本候选文档不修改任何正式文档。
+正式 `opi-spec`、AGENTS 和 CONTEXT 继续保有权威。package 级语义对齐不构成整项目移植／兼容要求，也不豁免真实消费者、状态机、依赖向内或 fail-closed 门槛。本研究不默许任何抵触规范条款的行为。User Policy、Package Trust、Capability Permission 和 Runtime Input Binding 保持当前含义；本候选不修订整个 run／会话的权威。
+
+当前契约由本双语正文及明确引用的 [Pi 1.2.0 SDK contracts](pi-1.2.0-sdk-contracts.md)和 [Rust differences](pi-1.2.0-rust-differences.md)组成；唯一验收矩阵为 [acceptance-matrix.md](acceptance-matrix.md)。历史 TP/SP/EP/OA/D/Q 材料只在采纳且不存在冲突时提供保留的证据与详细算法。当前文本优先于旧选定子集、过时默认值，或旧稿关于全部目标决策均已闭合的说法。
+
+共保留 67 个稳定 AIR 追踪 ID：58 项 SDK 要求和 9 项**仅宿主影响**（AIR-009、AIR-015–019、AIR-037、AIR-039、AIR-041）。后者不是 SDK 交付义务，也不选择新的宿主／会话行为。共保留 59 组 V 追踪项：55 组有效 SDK 验收和 4 组仅宿主项（V-17–19、V-33）。混合组在此只验证 SDK 机制与必要的 API 消费者迁移。本次文档工作没有执行任何一组验收。
 
 ## 问题、目标与范围
 
-当前 opi 的聊天模型选择可能与实际分发不一致。合法的网络分块可能破坏 UTF-8；prepared stream 可能在终止后继续暴露事件；生产任务的清理行为因 adapter 而异。请求快照丢失 system/工具变更的时间顺序。工具图片被转成占位符。部分 compat 设置在 pi 中有实际语义，在 opi 中却尚未接通。完整 thinking 延续、SDK 操作和已发布产品路径需要一致的责任归属及离线验收。
+历史探针已证明当前 `opi-ai` 存在路由选择、分帧、终态和 producer 清理缺陷。其日常调用组合、时间顺序、操作覆盖、SDK 可达鉴权和公开定制能力也与 Pi AI 1.2.0 不同。重命名符号或复用少量 wire fixture 不能证明调用方行为等价。
 
-通过 Rust 所有权、类型化状态和错误、有界队列及显式生命周期，实现 pi 已确立的可观测语义。保留 opi 有价值的保证：已知/未知 usage、保护秘密的错误、低层冻结鉴权、强制执行最终工具授权，以及保留源数据的旧会话迁移。修正已证明的缺陷，不把 pi 的实现偶然当作正确性判据。不承诺 TypeScript 符号/文件兼容、相同模型输出、缓存收益、性能或账单准确性。
+目标是一个可独立使用的 Rust SDK：调用方能够执行相同的选取／构造模型、提供 context、stream/complete、检查失败、追加工具结果、切换模型、管理 auth/catalog 和释放资源等动作，并明确语言表达与正确性差异。保留 known/unknown usage、保护秘密的 typed 错误、owned 调用状态，以及不隐式回退账户。不保证相同模型输出、JSON 字节、缓存收益、性能或账单费用。
 
-已选范围：
+范围包括：
 
-- 现有聊天绑定、分帧、终止、取消和资源释放的正确性。
-- 有序 transcript、命名 section、工具添加/移除/重新定义、默认 native-or-collapse 投影、调用间可信更新、失败/结果恢复及会话迁移。
-- 有效 compat、thinking effort 选择、strict/grammar 采样，以及跨现有 adapter 家族的不透明延续数据。
-- 共享的类型化图片/分类 SDK 操作：OpenRouter Chat-wire 图片；TypeSafe/OpenRouter System One 的 choice/bool/有序 score。优先服务 SDK/嵌入式调用方；不默认添加终端操作工具。
-- 产品远程目录/缓存/刷新、Codex 自动 WS/延续/SSE 回退、可选 tool_search 接线及显式高层恢复。
-- 公开 deferred submit/fetch/cancel 生命周期，以及可重新打开的离线消费者 fixture。这不代表已验证内置远程 adapter。
-- 已选 SDK 操作间的显式可选 telemetry context，由宿主拥有 backend 与领域 instrumentation；不新增自动 SDK call/attempt schema 或 exporter。
+- 固定能力清单中全部 10 个已发布内置 chat API、1 个 image API、4 个 classifier API、42 个内置 Provider 工厂／profile 和 9 类 OAuth flow，以及注册的自定义 Provider/API。复用 wire 不会抹去 Provider 特有的鉴权、默认值和过滤行为。
+- Models/Provider 管理、按操作限定的模型选择、自定义完整记录、native/simple 四个 chat 入口、direct adapter、高级 prepare、最终结果、计时、诊断和显式清理。
+- 模型输入 Context/TranscriptContext、时间顺序／section／工具变更、规范化、重放／opaque metadata、strict/grammar 投影和公开验证工具。工具仍是声明，由调用方显式执行。
+- typed 图片／分类、实际支持的 classifier 图像输入、pending/deferred fetch/cancel、显式 retry helper、compact progress frames、公开 header/payload/response/raw-event 定制，以及模型 metadata／估计／价格／输入限制。
+- SDK 可达的 API-key、OAuth 和 AWS/default-source 机制；可注入 auth/store/presenter/clock/transport；catalog stores/refresh 和显式 personalization。构造不执行来源发现或外部 I/O。
+- 显式 telemetry-context 传播，领域 instrumentation/backend 由宿主拥有；当前附件记录平台／package／CLI-helper 替代以及每项可观察 Rust 差异。
+- 本 SDK 有界破坏性变更所必需的既有 Rust 调用方适配、独立 consumer/package 验收，以及版本跟进证据。
 
-本候选不包含：完整 MCP/codemode 产品移植、其余已发布图片/分类 adapter、独立 OpenRouter Image API、图片流式处理、缺少协议证据的真实远程 deferred adapter、实验性虚拟分类路由、尚未完整采用的 Responses Lite、通用 operation/plugin/transport 框架，以及计费策略重设计。它们属于已识别的覆盖缺口或实验，不是因为 opi 缺少消费者而被否决。重新评估条件见末节。
+本 package 候选范围之外：Agent 执行／授权／hook 政策、持久会话 v3／子会话迁移／compaction、产品 tool_search/UI/启动默认值、完整 MCP/codemode 或虚拟路由产品、exporter／自动领域 span schema、尚未采用的 Responses Lite、未经验证的真实 remote-deferred 协议，以及推测性的通用 context/operation/plugin/transport 框架。宿主影响保持可追踪，但不成为 SDK 完成门禁。专用 OpenRouter Image API／图片流式处理不是 Pi 1.2.0 已交付 adapter，不凭空添加为等价要求。Native Rust 支持和 TS/Bun/browser/CLI 替代均明确限定，不静默漏掉能力。
 
 ## 角色与场景
 
-1. 嵌入方选择模型，在 preflight 和实际分发中观察到同一个可执行绑定。
-2. 流消费者观察到唯一的终止结果，并释放被放弃的 attempt。
-3. 可信宿主在调用之间修改指令或工具定义，不改变待完成调用的修订。
-4. 会话用户执行迁移、恢复、分叉和压缩，不虚构历史，也不混入兄弟分支内容。
-5. 工具宿主能够看到原始、规范化和实际执行的参数，并对实际执行授权。
-6. SDK 调用方在绑定约束内定制请求，获得具有所有权的类型化媒体/答案及如实记录的用量。
-7. 产品用户从缓存模型启动，在启动后更新目录，并能选择离线或 SSE 操作。
-8. 持续调用 Codex 的调用方仅在存在语义等价的完整输入时使用缓存上下文。
-9. 调用方能够区分恢复调用，或恢复 deferred 检查而不重新提交工作。
-10. 嵌入方将已有 tracing parent 传过所有 SDK 调用模式，不替换其 subscriber，也不序列化 backend 对象。
+1. 独立 SDK 调用方构造 Models 实例，注册内置或自定义 Provider，并选择或提供完整模型记录。
+2. 调用方使用 native/simple stream/complete 或高级 preparation，观察到同一选定路由和最终消息／失败。
+3. 调用方按时间顺序追加指令、声明和实际工具结果，序列化模型输入并切换 Provider，不虚构权威或缺失历史。
+4. 流消费者获得稳定的事件时点数据、compact progress frames 和唯一最终结果，放弃工作时不泄漏库拥有的任务。
+5. 调用方执行所有已发布 image/classifier 操作，包括按模型限定的图像输入，得到 typed 输出、已知计量和协议特定失败。
+6. 嵌入方提供或管理鉴权，观察原子 token rotation 和 Provider 特定 availability，显式刷新 catalog，而无隐藏启动政策。
+7. 持续调用 Codex 的调用方选择 transport/cache 行为，保留有效 continuation，并等待实例拥有的资源清理。
+8. 调用方显式选择 whole-call recovery 或恢复 deferred handle，不自动轮询、执行工具或切换账户。
+9. 宿主将自己的 tracing parent 传过 SDK 操作，不替换 subscriber、不导出数据，也不序列化 backend 对象。
+10. 维护者依据固定源码身份跟进上游能力、规划和测试变化，并区分静态评审与已执行验收。
 
 ## 职责与状态所有权
 
 | 责任方 | 职责 | 边界 |
 |---|---|---|
-| opi-ai catalog/collection | 按操作区分的记录、原子修订、唯一 preparation、冻结调用和 attempt 租约 | 能列出不等于能执行；不隐式回退 Provider/账户 |
-| opi-ai adapters/runtime | 有效 compat、wire 编译/解析、拥有 transport/cache、延续 | 不二次选择模型，不执行本地工具 |
-| opi-ai transcript/validation | 时间顺序、规范化、投影、schema 转换 | 请求视图不改写规范事实，不授予工具权限 |
-| SDK auth/resolver | 可注入的 API/OAuth/AWS 来源、秘密值、来源失败和过期 | 产品配置/权限决定是否使用；不在导入时发现来源 |
-| opi-agent | 不可变的调用/批次执行修订、可信更新、hook、最终授权 | 已注册、active-callable、wire-visible 和已授权是不同状态 |
-| 会话/产品事务所有者 | 单个分支、输入接受、checkpoint、迁移和持久化确认 | 不存在并行的上下文写入者；不虚构旧材料 |
-| Reference Product 模型/会话所有者 | 远程来源/缓存、刷新协调、transport/恢复默认值、tool_search 激活 | 仅构造基础 SDK 不会访问 pi.dev |
-| SDK operation/调用方 | 类型化 image/classifier/deferred 方法；调用方负责保存、阈值和轮询计划 | 不授予工具权限，不自动写文件，不隐藏轮询框架 |
-| opi-ai telemetry module / Agent 或 SDK 宿主 / 宿主 backend | 显式 context 机制 / 领域 vocabulary 和 status / subscriber、export、sampling 和 flush | 无自动 SDK spans、全局初始化、durable state 替代或隐式上传 |
+| opi-ai Models/catalog | Provider 与按操作限定的记录、原子修订、唯一 preparation，以及冻结的 call/variant/attempt 状态 | 列表／配置不承诺远端可执行；不二次选模或回退账户 |
+| opi-ai adapters/runtime | 协议编译／解析、有效 compat/options、typed 操作、计时和 owned transport/continuation 资源 | 不执行本地工具，也不担任宿主会话 writer |
+| opi-ai model context/validation | Context 简写、canonical TranscriptContext、投影、schema 转换和公开验证 | 模型输入可序列化；请求视图保留 canonical 事实且不授予权威 |
+| SDK auth sources/store | 可注入 AuthContext、API/OAuth/AWS 机制、按来源状态、串行 credential/metadata 事务 | AuthContext 不是模型／trace context；不在构造时发现来源、不隐式登录、不依赖具体 keychain |
+| opi-ai telemetry module / 宿主 | 显式进程内 parent 加来源 Dispatch / 领域语义、subscriber、sampling、export 和 flush | 无自动 SDK 领域 spans、durable IDs、全局 backend 或上传 |
+| SDK 调用方 | 追加消息／结果、选择 operation/retry/polling、保存输出并调用 cleanup | 无隐式文件、工具权威、隐藏轮询或产品 recovery |
+| 既有 Agent/产品消费者 | 适配有界 SDK API 变更；保留自身正式执行／会话／权限契约 | 仅宿主 AIR 影响既不授权，也不要求新的产品／会话政策 |
+| 研究／文档所有者 | 固定能力清单、差异、唯一验收映射和上游证据索引 | 无并行实施账本或自动采纳上游 |
 
-一个 logical call 拥有一个最终请求/模型/鉴权绑定；attempt 执行该绑定。每个 logical call 最多有一个可执行 attempt 处于活动状态。高层 recovery group 关联同一 run/turn 和意图下的新 logical call；它不修改旧调用的凭据，也不把新输出拼进旧流。已关闭任务可以在下一个 attempt 开始后完成不可执行的清理；清理最终必须释放本地资源。
+一个 logical call 拥有捕获的 Provider/model/input 修订和一个选定 auth/source binding；普通 wire retry 复用它们。同时只有一个可执行 acquisition attempt 处于活动状态。可信 adapter 适配最多创建文档规定的有界 payload variants，每个 variant 保留不可变来源。它不切换 account/model/Provider、不把新输出拼进已交付流，也不重置 variant/send 预算。
 
-Preparation 在鉴权前选择不可变的模型身份/修订和显式输入数据。鉴权可以合法提供 endpoint/header 材料。依赖 endpoint 的 compat 默认值使用最终 endpoint 解析，然后在 transport 开始前验证并冻结唯一最终绑定。此完成步骤绝不重新选择模型。SDK transform 在 payload 冻结前只运行一次。变更体现在有效投影/来源记录中；执行权限仍来自可信调用修订。
+创建 handle/Future 时无 I/O 地捕获 owned 输入。首次 poll 在等待 auth 前登记资源 generation。已知结构在 auth 前验证；合法 auth endpoint/header 材料随后决定依赖 endpoint 的 compat、最终验证和 payload 投影。每个 payload variant 执行一次 onPayload，并冻结变换后 payload，供该 variant 的普通 retry 使用。Anthropic 特定 strict-prefer 降级是有界新 variant，不是任意 invalid-input retry。功能 callback 与被动 telemetry 遵守不同失败契约。
 
-可信 context/loadout 更新先在独立位置完成组装和验证，由现有唯一事务所有者提交，再在调用边界原子安装。模型响应及其工具批次保留该调用的执行修订。当前 User Policy 仍可撤销权限。持久化的输入确认在后续鉴权/网络失败或取消后仍成立；确认前失败则保留旧状态和排队输入。仅对显式接入持久会话的调用方：最终绑定和 payload 冻结后，同一事务所有者 MUST 在首次 transport 分发前持久化确认已接受前缀、可信修订和实际投影。复用合适的现有事件/记录；不要求每次调用固定增加一对追加。此确认前失败或取消禁止分发，同时保留此前已经接受的输入。提交/取消竞态遵守既有确认规则：已确认事实保持持久化，已观察到的取消仍阻止后续分发。不持久化秘密；未观察到或因崩溃中断的分发不能记录为成功。
+SDK 无会话前提。它不要求 Agent authorizer、durable 事务、子会话、Promotion、宿主 v3 writer 或分发前 durable acknowledgement。durable 宿主可以按自身已准入事务契约消费冻结的 route/projection 事实；本候选既不改变该契约，也不安装第二个 writer。调用方的生成操作绝不修改 Context、执行工具或启动产品 refresh/recovery。
 
-无会话的 SDK 调用方使用自有内存和相同的 model/message/wire 验证，不虚构会话文件、子会话或 Promotion 引用。无需事务 owner、Agent authorizer、产品配置或存储确认；AIR-015–019 仅约束持久会话集成。生成不追加 caller Context、不执行工具、不启动产品高层恢复或后台目录刷新。AIR-024/041 的执行授权仅约束执行工具的宿主/Agent，不是库聊天前提。
+三种 context 责任保持独立：模型 Context/TranscriptContext（可序列化输入与规范化）、AuthContext（可注入来源访问）和 TelemetryContext（进程内观测）。构造／静态读取执行零 env/store/auth/network 工作。credential/telemetry/runtime 资源不进入模型序列化。参见 AIR-066 和当前附件。
 
 ## 要求：绑定、流与鉴权
 
@@ -74,31 +78,31 @@ Preparation 在鉴权前选择不可变的模型身份/修订和显式输入数�
 | AIR-002 | Catalog/collection；覆盖、替换或刷新 | MUST 原子发布完整的最近已知有效修订；已准备调用保留旧绑定。刷新失败保留先前有效数据。列表不承诺存在分发路由。并发/后台发布及缓存一致性遵守 AIR-033/034，不新增第二个权威来源。 | O-001/005, EP-01; D-03/23; V-01 |
 | AIR-003 | Prepared/公共流；poll/EOF | 首个已交付终态 MUST 吸收、关闭内部 attempt 并永久 EOF。公共 ChatStream Done/Err(CallFailure) 是 logical-call 最终；高级 AttemptHandle 终态只属于 attempt，可重试 acquisition outcome 独立，不能转发成公共最终 error。异常 EOF 只产生一次 typed protocol failure 后 EOF。保留终态/partial message及已知 usage；旧 provider Error/transport Err 按 AIR-047 收敛，不转成功或丢消息。 | A-04/P03/06, UX-03/16; D-04/31/36; V-03/05/40 |
 | AIR-004 | Stream/producer；取消竞态 | 在终止交付前观察到的取消 MUST 优先于缓冲输出，并交付唯一取消结果；已经交付的终止保持最终有效。共享调用取消阻止后续 attempt；receiver drop 结束其 attempt。验证同步后的可观测竞态，不猜测全局线程顺序。 | A-03/04; D-04 Q9; V-04/05 |
-| AIR-005 | 每个 transport/producer；连接/发送/读取/背压/drop | MUST 保持现有队列容量 64；生产任务的每次等待都响应取消和 receiver 关闭。Drop 释放空闲本地任务/HTTP 等待。每个调用同时至多一个可执行 attempt；该 attempt 终止/drop 后禁止其继续调度或输出。任务/socket 清理与租约释放分别证明；不承诺远程取消或退款。 | A-03/P07; D-04; V-04/05 |
+| AIR-005 | 每个生成 transport/producer；connect/send/read/backpressure/drop | MUST 保持队列上限 64，生成等待须响应取消／receiver 关闭。Drop 结束空闲本地任务／HTTP 等待；terminal/drop 封存 attempt，禁止迟到输出／调度。任务／socket 退出与 lease 释放分别证明。已开始 credential rotation 是 AIR-063 中有界、store-owned 的完整性例外，不是被放弃的生成任务。不保证远端停止／退款。 | A-03/P07; retained D-04; V-04/05/55 |
 | AIR-006 | SSE 分帧；任意合法分块 | MUST 保留原始字节，直到完整帧可被严格解码。所有 UTF-8/CRLF 分块均保持内容、顺序和终止。相关畸形 UTF-8/JSON 产生类型化脱敏错误；有效 keepalive/非内容帧仍合法。不逐块有损解码，不虚构成功。 | A-02/P06; D-04; V-02 |
-| AIR-007 | Collection/retry 所有者；解析/鉴权/attempt | 低层鉴权 MUST 每个 logical call 只解析一次并保持冻结。遵守 retry 附录：adapter 默认与唯一 owner 落实显式 override，Agent 不叠加低层重试。Cancel/终止性 auth 阻止更多 attempt；只重试请求获取，不在内容交付后重播，不隐式回退 provider/model/account。保留聊天 attempt timeout 和调用方可选整体 deadline。高层恢复按 AIR-039，不因 Start 一概禁止。 | O-006, EP-11/12, UX-16; D-09/24/36; V-05/12/33/39 |
+| AIR-007 | SDK retry 所有者；auth/acquisition/variant transition | MUST 每个 logical call 只解析／冻结一次 auth，并使用唯一低层 acquisition 所有者。遵守协议默认值和显式覆盖；不叠加 transport/Agent retry。HTTP retry 复用冻结 variant，特定 strict 降级则有自己的有界 variant transition。send/wait 前观察 cancel/deadline；不在 handoff 后重放，也不回退 Provider/model/account。显式 whole-call retry 为 AIR-065，创建新的 calls。 | EP-11/12, UX-16, current SDK annex; V-05/12/33/39/57 |
 
 ## 要求：transcript、执行与重放
 
 | ID | 责任方 / 触发条件 | 目标契约与失败行为 | 证据 / 决策 / 验证 |
 |---|---|---|---|
-| AIR-008 | Transcript；初始/变更指令或声明 | MUST 保留有序内容追加、命名 section 插入/替换/删除，以及工具添加/移除/重新定义。同名 section 替换保持位置；删除后重加则追加到末尾。Body 与 section 保持可区分。工具定义变更表示为移除+添加；执行实现变更更新可信修订，不虚构声明变更。无效/歧义名称或 schema 在安装前失败。等价状态不追加冗余变更。 | TP-01–03/P04; D-19; V-06/16 |
-| AIR-009 | Agent；可信更新/下一调用/工具批次 | MUST 在调用之间原子安装完整可信修订。每个请求及其响应工具批次保留唯一的实现/schema/来源修订。普通可信变更无需子会话。从 active-callable 上下文解析，不仅依据 wire 可见性；实际移除导致拒绝，隐藏/deferred/codemode 暴露本身不撤销合法可调用路由。历史/模型声明不能注册或授予权限。仍须执行当前授权，且当前授权可撤销权限。 | TP-06–08; D-19/22; V-06/15/16 |
+| AIR-008 | Transcript；初始/变更指令或声明 | MUST 保留有序内容追加、命名 section 插入/替换/删除，以及工具添加/移除/重新定义。同名 section 替换保持位置；删除后重加则追加到末尾。Body 与 section 保持可区分。工具定义变更表示为移除+添加；执行实现 revision 归 AIR-009 宿主所有，不增加 SDK execution registry。无效/歧义名称或 schema 在安装前失败。等价状态不追加冗余变更。 | TP-01–03/P04; D-19; V-06/16 |
+| AIR-009 | 仅宿主影响；Agent 执行修订 | 不属于 SDK 完成条件。SDK 按 AIR-045/049 冻结 owned 模型输入；execution registry/loadout 修订、当前政策撤销和工具批次授权仍归既有 Agent/宿主权威。本候选不选择新的 run/会话政策。 | Historical D-19/22; V-06/15/16 host portions only |
 | AIR-010 | Producers/history/replay；路由相同或改变 | MUST 分别保留 Provider、精确 wire、请求模型和报告模型，保留历史 ApiKind，并将不透明数据/签名绑定到所属内容块。已知兼容来源和 adapter 规则决定重放；跨来源/未知/不适用的不透明数据被省略，可读 thinking 可以转为文本并记录投影事实。规范原件保持不变；AIR-038 补齐各家族覆盖。 | R01/TP-11, EP-09/10; D-19/23; V-07 |
 | AIR-011 | Transcript 编译器；adapter 能力 | 默认 MUST 采用 native-or-collapse：对支持的变更类别保持时间位置，否则将当前有效 system/tools 放在请求消息序列首部。记录投影模式/受影响范围/来源前缀；不能将 collapse 称为无损，也不能改写规范历史。显式 Strict 在鉴权/网络前拒绝不支持的所请求时间保真度。单个未变更初始状态是无损的。不能用统一 native-transcript 布尔值代替 adapter fixture。 | TP-05, PR9548; D-19 Q22; V-07/16 |
 | AIR-012 | Replay/Agent 恢复；工具关联 | MUST 用批次位置+来源 ID 建立关联；已关闭批次可以复用 ID。歧义重复/orphan/重复结果导致失败。可无歧义确定的缺失结果得到请求局部错误 ResultUnavailable 和 UnknownEffect，绝不是 NotExecuted、回滚或自动重新执行。由事实支持的畸形配对保留原件；wire 无法表达时使用显式失败上下文，不虚构 {} 或 null。只有 Agent 记录已知未执行的补偿。 | TP-09–11/R02–08; D-20; V-07/15 |
-| AIR-013 | Replay/Agent；失败/截断 assistant | MUST 保留规范 Error/Aborted，但从 wire 省略它们及关联的未执行结果。Length 中的提议绝不执行；完整有效提议及显式未执行结果在可表达时保持结构化。坏的/不可表达的提议采用局部失败投影。产品恢复可以省略整个失败 attempt 视图，同时记录事实。与已执行效果历史矛盾时失败，不能令该历史消失。 | TP-09/EP-12; D-20/24; V-07/15 |
+| AIR-013 | SDK 重放投影；失败／截断 assistant | MUST 保留 canonical Error/Aborted，同时从 wire 省略其失败请求视图和由事实支持、与之关联的未执行结果。Length 绝不授予执行许可。完整有效配对在可表达时保留；畸形／不可表达提议使用显式局部失败投影。已执行效果事实若矛盾则失败，不能令其消失。宿主 retry/执行政策不属于本要求。 | TP-09/EP-12; V-07/15 |
 | AIR-014 | 图片 preflight/serializer；工具结果 | MUST 通过受支持的原生位置或已验证的替代消息位置发送真实图片，保持关联/顺序/错误；否则在分发前拒绝。MIME 占位符不算支持。共同验证媒体与模型+wire；保留现有用户图片，将私有工具细节排除在 wire 外。 | O-009/P14; D-06 Q7; V-08 |
 
-## 要求：持久化事实与迁移
+## 宿主影响：持久化事实与迁移
 
 | ID | 责任方 / 触发条件 | 目标契约与失败行为 | 证据 / 决策 / 验证 |
 |---|---|---|---|
-| AIR-015 | 会话；写入/读取新时间序列 | 新可写会话 MUST 使用 v3，按 required 分类的因果条目记录上下文变更、已知性、checkpoint、可信调用修订和投影身份。变更推进内容链。未知 required 版本/条目采用 fail-closed；中断尾部与损坏不同。旧历史缺失绝不等于已知为空。 | TM-06/08/09; D-14/19/28; V-17 |
-| AIR-016 | 产品；继续 v1/v2 | 显式迁移 MUST 创建子会话，保留源字节/父引用/分支/tip，复制已验证的活动历史，将旧材料标为 legacy-unknown，只在继续时追加当前状态。触及 unknown 的精确重放失败；普通继续操作显式接受缺口。保留旧格式读取/迁移支持，不保留旧格式可写执行。这项旧格式策略不适用于普通可信更新。 | TM-07/11/12/TP-17; Q11, D-19; V-17 |
-| AIR-017 | 唯一事务所有者；接受输入/状态 | MUST 验证并原子提交 context/checkpoint/leaf 和已接受前缀身份。持久化确认安装状态；后续鉴权/网络失败/取消保留已接受输入，不代表分发成功。提交前失败保留旧状态/排队后缀。最终冻结后，同一所有者 MUST 在首次分发前确认实际前缀/修订/投影；确认失败禁止 transport，同时保留此前已经接受的输入。保留提交确认和部分效果诊断；不引入竞争的上下文写入者。 | TM-03/13/TP-17; D-17 Q19; V-18 |
-| AIR-018 | Compaction；压缩活动上下文 | MUST 在压缩提交时为完整有效上下文创建 checkpoint，再以 checkpoint+summary+保留的非 system 历史+后续变更重建。已经计入 checkpoint 的 delta 不再次应用。保留分支/已知性及原始审计记录。压缩有损：不能声称每个保留的旧调用都保留原始时间位置对应的 system 状态。部分提交原子失败。 | TP-04/pi checkpoint; D-28; V-19 |
-| AIR-019 | 会话/产品；恢复/分叉/导出/证据 | MUST 重建唯一选定因果分支，在旧 tip 分叉时排除兄弟/后续变更。初始绑定保持不可变；即使 capture 关闭，每次调用的可信修订/前缀/投影仍通过 AIR-017 分发前确认屏障标识后续实际输入。呈现需脱敏，并显示未知/损失；完整树不是单个可重放分支。不新增原始 wire 归档或无损导出协议。 | TM-04/11/12/TP-17; D-19/28; V-17/19 |
+| AIR-015 | 仅宿主影响；durable 格式 | 不属于 SDK 完成条件。采用时间顺序模型输入的宿主须另行规定格式／版本／未知条目处理。本候选不选择 session v3，也不改变当前可写格式。SDK Serde 和验证仍为 AIR-049/066。 | Historical TM/D-19; V-17 host impact |
+| AIR-016 | 仅宿主影响；legacy 会话迁移 | 不属于 SDK 完成条件。保留历史迁移证据；创建子会话、退出旧格式写入和用户接受 legacy 缺口须遵守所属会话契约，不是 opi-ai 前提。SDK 在消费者适配时不得改写历史 Provider/wire 事实。 | Historical TM/D-19; V-17/20 |
+| AIR-017 | 仅宿主影响；durable acknowledgement | 不属于 SDK 完成条件。宿主 input/commit/cancel/projection acknowledgement 仍归既有唯一事务所有者。该所有者可消费 prepared SDK 事实；失败／取消不能使裸 SDK 要求 writer，或声称已经发生 durable dispatch。 | Historical TM-03/13; V-18 host impact |
+| AIR-018 | 仅宿主影响；compaction | 不属于 SDK 完成条件。宿主 checkpoint/summary/branch/commit 政策保留正式所有者。本候选提供 canonical input/projection helpers，但不选择新 compaction 格式，也不保证压缩历史在时间上无损。 | Historical TP/D-28; V-19 host impact |
+| AIR-019 | 仅宿主影响；resume/fork/export/evidence | 不属于 SDK 完成条件。Runtime Input Binding、分支重建、unknown/loss 呈现和 evidence acknowledgement 仍遵守既有宿主契约。SDK 类型保留 source/opaque/knownness；不引入新 export 协议、raw-wire 归档或子会话政策。 | Historical TM/TP; V-17/19 host impacts |
 | AIR-020 | 公共 builders/adapters/调用方；输入规范化 | MUST 将初始 system/tools 简写规范化为唯一首部 transcript 状态；adapter 只消费规范化后的规范输入。便利构造可以保留，但下游独立运行时字段/读取者在同一次范围明确的破坏性变更中退出。迁移直接 adapter、mock、hook、compaction 和示例；旧会话读取者不能分发旧请求路径。 | TP-01/RT08; D-19; V-06/20 |
 
 ## 要求：compat、保留的安全保证与类型化操作
@@ -107,31 +111,31 @@ Preparation 在鉴权前选择不可变的模型身份/修订和显式输入数�
 |---|---|---|---|
 | AIR-021 | SDK/调用方；范围明确的 0.x 迁移 | MUST 以可执行模型/鉴权/错误契约替代并淘汰 Config/ProviderConfig/config::Error/Result 和 Model/ProviderKind 外壳；SDK 构造不得依赖产品配置。保留 ApiKind/持久化消费者。迁移导出/文档/示例；删除仅测试构造器的测试，保留行为。不默认提供永久 shim。 | O-003/SP-16; D-02/08/21; V-10/20 |
 | AIR-022 | Compat normalizer/config/parser；准备/迁移 | MUST 实现实际 Chat store 省略/false、依赖 reasoning 的 developer role、effort 格式/门控/off，以及 tool→user assistant bridge。使用最终 endpoint 推断，以唯一字段优先级解析，显式 false 与未设置不同。仅淘汰重复的静态 reasoning_effort；supports/bridge 名称只有在等价替代行为和调用方迁移完成后才能退出。已淘汰键在鉴权/HTTP 前报错，不能被 serde 忽略。 | SP-01–04/17/18; D-21/26; V-11/20 |
-| AIR-023 | SDK Bedrock resolver/adapter/产品；解析来源 | MUST 提供无需 coding-agent 即可复用的类型化 SigV4/Bearer/profile/default-chain 来源；产品负责配置/注入。区分配置发现与选定凭据。保留显式/作用域内 profile 相对环境 profile 的优先级、完整来源的失败关闭、秘密保护、取消、process 的 10s/64KiB 默认值/清理及非秘密来源记录。完整依赖链遵守已验证的来源/过期 fixture；仅本地来源不等于完整支持。不强制迁往产品独占层。 | SP-05–08, AWS annex; D-21/28; V-09/20 |
-| AIR-024 | 执行工具的宿主/Agent 与 errors/usage producers；相关操作 | 模型参数 MUST 针对可信 schema 规范化/验证；可信的验证后修改遵守 AIR-041，最终授权绑定实际执行值。Strict wire 不等于本地验证或权限。保留类型化脱敏错误和已知/未知/零 usage；父项/子集用量只计一次。缺失成本/重试 usage 不是零，也不是完整账单。 | TP-12–16/O-011/P17; D-10/20/22; V-12–15 |
+| AIR-023 | SDK Bedrock/source resolvers；选择 auth | MUST 独立于 coding-agent 提供可复用 SigV4/Bearer/profile/default-chain 和显式 custom-endpoint proxy-placeholder sources，并注入 source/HTTP/process/clock。保留 explicit/scoped 与 ambient 优先级、完整来源失败关闭、秘密安全，以及有界 process 默认值 10s/64KiB 和清理。实现固定 full-chain/expiry fixtures；选定服务返回 401/403 后绝不重新发现身份。TUI/keychain 保持为注入的宿主 adapter。 | SP-05–08 and verified AWS annex; V-09/20/55 |
+| AIR-024 | SDK 参数 validator/error/usage producers；规范化或报告 | MUST 在 clone 上依据可信 schema 公开 normalization/validation，保留 raw 输入和 typed 脱敏失败。Strict wire 不是本地验证或权威。只返回数据，绝不安装宿主 hooks 或执行工具。保留 known/unknown/zero usage，parent/subset 只计一次；缺失价格／attempt usage 不是完整账单。宿主 mutation/authorization 仅为 AIR-041 影响。 | TP-12–16/O-011/P17; V-12–15/35 |
 | AIR-025 | Catalog/collection；操作查找 | 身份 MUST 使用封闭的 Chat/Image/Classifier 加 Provider+模型，并具有类型化操作元数据。Chat 查找只返回 chat；image/classifier 不虚构 chat 限制。共享现有 catalog/auth/preparation，不另建平行 ImagesModels/单例/通用 JSON 执行。显式 SDK 注册、内置记录和经验证的动态记录都是合法来源。错误类型/路由在鉴权/HTTP 前失败。 | SP-09/EVO-009; D-13/23; V-21 |
-| AIR-026 | Operation runtime；生成/分类 | MUST 提供类型化非流式方法，并冻结请求/模型/鉴权/payload/预算。图片默认额外 HTTP 重试 0 次，System One 为 2 次；调用方可以覆盖。每 attempt timeout 覆盖 transport/body；整体 deadline 可选，从入口开始使用单调时钟，绝不重置。只重试已验证的状态/header 类别，采用响应取消且有上限的延迟；绝不重试成功响应中的无效答案/媒体。未交付结果前，取消优先于过期，过期再优先于结果；已交付结果保持最终有效；drop 释放本地工作。不回退。 | SP-13/EP-11; D-24; V-22 |
+| AIR-026 | Typed operation runtime；generate/classify | MUST 冻结 request/model/auth、按协议限定的 payload 和资源预算。Image 默认额外 HTTP retry 为 0；共享 classifier HTTP helper 默认为 2，同时保留每个协议特定的排除／算法。成功响应中的媒体／答案无效或 callback 失败不重试。Cancellation/deadline/drop 保留唯一结果和已知计量。Timeout 范围遵循选定协议；只有 headers 受限时，不静默施加整个 generation deadline。 | Current SDK contracts; V-22/50/51 |
 | AIR-027 | OpenRouter image adapter；生成 | MUST 使用选定的非流式 Chat-wire，保留有序文本/图片输入（包括仅图片输入），并消费第一个响应 choice。返回按序、具有所有权的字节+MIME 及可选文本；成功必须包含有效图片。没有 choice、所消费媒体无效、仅文本/空/仅 URL 都是失败；额外 choice 不使有效的第一个 choice 失效。不得静默跳过坏图片、下载、写文件或切换独立 API。 | SP-10/SE-08; D-13/25; V-23 |
-| AIR-028 | System One；分类 | MUST 支持选定的 TypeSafe/OpenRouter 公共协议、bool→noul、object state、string instructions，以及有序且唯一的 choice/score/bool criteria。返回全部请求答案的类型化结果，否则失败；忽略额外 question ID。缺少请求答案、类型/label/必需 probability 畸形或非有限值均失败。不设业务阈值，不授予工具权限。 | SP-11/SE-09; D-13/25; V-24 |
+| AIR-028 | Classifier dispatch/validation；classify | MUST 通过 typed choice/bool/ordered-score 输入／结果支持全部 4 个已发布 classifier API：typesafe-system-one、cloudflare-workers-ai-system-one、llama-cpp-classify 和 openai-decisions。保留协议特定 envelope、label/score 限制、tokenizer/template/probability 算法、images、auth availability 和 failure/retry 规则。System One bool→noul 与 Decisions bool→predicate 不可互换。 | Current SDK contracts; V-24/50/55 |
 | AIR-029 | 答案验证；概率/分数 | MUST 保留 Provider confidence，确保有限 probability/confidence 位于 [0,1]、choice 属于请求 label、score 位于 [0,levels−1]。必需的 choice probabilities 与请求 label 对应。默认不增加 sum/argmax 拒绝或重新归一化。Score 要求 score+confidence，不虚构分布或均值。缺失 probability 是 unknown/error，不是零；不声称经过校准。 | SP-11/U-2; D-25 Q28; V-24 |
 | AIR-030 | 操作结果；失败/成功 | MUST 区分 input/unsupported/auth/timeout/cancel/transport/http/invalid-result/resource-limit，并在业务验证失败后保留已知 usage/非秘密响应元数据。缺失/无效用量不同于 0；未报告的早期重试不是总账单。未知价格保持未知；普通诊断排除媒体/原始 body/秘密。 | SP-12/O-011; D-10/13/25; V-13/25 |
 | AIR-031 | Budget/reader；编码/读取/解码前 | MUST 使用有限正数的自有预算；调用覆盖实例默认值，无 unlimited 哨兵，拒绝溢出。在过大分配/解码前执行字节/body/深度/数量限制；取消/超限中止读取，不部分成功。附录默认值是调用方可覆盖预算，不是 Provider 限制；覆盖不能启用未知 MIME/协议。不做像素解码或 URL 抓取。 | SP-15; D-25 Q28; V-23–25 |
-| AIR-032 | SDK 所有者；支持声明/迁移 | MUST 经公开入口→伪鉴权→伪 transport 证明选定实际操作 adapter。两个 System One 绑定是同一协议；一个 image adapter 不证明多厂商支持。不默认添加终端工具/启动操作请求/文件输出/权限扩张。未来实施中的依赖变更需要精确锁定版本/平台评审。 | SP-09/OP02/08; D-13/25; V-21/22/26 |
+| AIR-032 | SDK 公开能力所有者；支持声明 | MUST 通过公共调用方路径、真实 adapter 加受控本地 transport，以及协议 fixtures，证明每项映射 operation/adapter/profile。无默认终端工具、启动请求、隐藏文件输出或权威扩张。factory/type 名称本身不是交付；共享 wire 仍需 profile-default/auth/filter 证据，单一 image wire 不是多 wire 证明。 | Capability inventory; V-21/22/26/49/50 |
 
 ## 要求：已发布路径与请求定制
 
 | ID | 责任方 / 触发条件 | 目标契约与失败行为 | 证据 / 决策 / 验证 |
 |---|---|---|---|
 | AIR-033 | Catalog publisher/store；并发替换/刷新 | MUST 由同一个修订提交所有者负责内存和当前持久化快照。已被取代/取消的工作不能迟到发布内存或陈旧的下次启动数据；某 Provider 失败保留其先前数据，不清除其他 Provider。网络前恢复缓存，读取不被刷新阻塞。在 fetch/write/commit 屏障验证，包括不配合取消的迟到结果；只有 generation 检查不构成证明。 | EP-01/EPT-01; D-23; V-27 |
-| AIR-034 | 产品 model/cache/refresh 所有者；启动/force/login/logout/关闭 | MUST 在 nonoffline 模式下于 UI/RPC 就绪后接入已验证的远端 overlay/ETag/freshness。SDK 构造始终零 store/env/外部 I/O；显式 refresh(allow_network=false) 恢复本地缓存，产品通过管理阶段调度恢复/联网刷新。保留 operation 身份、用户覆盖和更新的内置 generation。产品 waiter 共享：取消一个不取消他人，全部离开则释放。Logout/supersede/关闭阻止过期可用性/发布。304 需要缓存 body；404/501 清 validators，当次保留已恢复 overlay，下次 restore 排除失效缓存；临时失败保留可用缓存。Offline 优先于 force。 | EP-02/03/EPT-02/03, UX-13; D-23/35; V-28/39 |
+| AIR-034 | SDK catalog/store/source；显式 refresh | MUST 支持 cached restore 和显式 allow_network/force/provider 选择，构造时无 I/O。原子发布经验证、按操作限定的记录，保留用户覆盖及 Provider 特定 replacement/overlay 规则，拒绝陈旧 publication 并分别报告失败。Configured endpoint 和 OpenRouter personalization 为 AIR-064。产品 pi.dev source、启动调度／4h freshness 和 UI readiness 是宿主政策，不是 SDK 完成条件。 | Current catalog contracts; V-28/39/56 |
 | AIR-035 | SDK Models/session 资源所有者；缓存/临时 WS/cleanup/drop | MUST 提供可 await 的 cleanup_session_resources(Some(id)/None)，按公共附录选择实例内精确 session/全部含 sessionless 资源。取消旧 generation 的 connecting/active/busy overflow，释放 sockets/tasks/timers/continuation/fallback/diagnostics，禁止迟到发布/retry/SSE；已交付终态保持最终。独立 Models 隔离；注入共享不转移外部所有权。Owned call guards 在 Models drop/replace 后继续持有冻结修订；最后公共 owner/guard drop 发起清理，不能把 Drop 称为已 await 完成。成功 result 可保留复用 pool；idle/max-age 遵守附录的单调时钟语义。 | EP-04/EPT-04, UX-15; D-23/30/35; V-29/42 |
 | AIR-036 | Codex adapter；SDK/产品 auto transport/delta/恢复 | MUST 支持省略 SDK/产品 transport 默认 Auto 及显式 Sse/Websocket/WebsocketCached/Auto；sessionless/Disabled cache 仍可用临时 WS。先解析 effective transport：省略与显式 Auto 使用相同 delta 规则，修正 pi 局部未统一默认值的问题。Delta 要求非 input 字段相等，前一完整 input+实际 response items 是新 input 精确前缀，否则发送完整 input。只有成功终态+responseID 才发布 continuation。在公开输出前允许一次 missing-previous-response 完整重试；generation 开始前的 connection-limit 允许一次重连，两者是独立有界分支。普通 WS→SSE 只允许在首个有效 provider 事件前；abort/API/auth/protocol 失败绝不伪装成 transport 丢失。已交付输出后的错误结束该流；高层恢复独立；EOF 不是成功。 | EP-05/06/EPT-05, UX-14; D-23/24/35; V-30/39/42 |
-| AIR-037 | Transcript adapters + 产品 tool_search/loadout；添加/移除/重新定义/搜索/恢复 | MUST 将已验证的渐进声明接通到实际下一请求。产品注册 tool_search 时保持非活动；显式激活只将已注册且可搜索的工具加载到 active loadout，不新增权限。有效 deferred exposure 激活该路径。恢复/重载时保留尚未解析的注册名称，直到重连/下个 run 边界，再丢弃始终未解析的名称；显式缩减 loadout 清除过时 pending 名称。会话关闭后的迟到注册不产生影响。完整 MCP/codemode 移植不在范围内；用真实可信产品 registrar 证明接线。 | EP-07/08/TP-07; D-19/23; V-31 |
+| AIR-037 | 仅宿主影响；tool_search/loadout | 不属于 SDK 完成条件。SDK chronology/declaration/replay 机制仍为要求；产品 registrars、search 激活、pending reconnect names、runtime tool authority 和完整 MCP/codemode loading 保留各自范围。不得要求实现产品 tool_search 功能才能通过库 chronology 验收。 | Historical EP/TP; V-31 SDK declaration portion only |
 | AIR-038 | Adapters/history/persistence；输出/延续 thinking | MUST 捕获并往返保存 Anthropic signed/redacted、Responses/Codex/Azure encrypted reasoning+item metadata、Google/Vertex text/thinking/tool thoughtSignature、Chat reasoning_details 及 Bedrock signatures/redacted bytes。保留 signed-empty、仅终止时出现的元数据、顺序和精确来源。同路由重放遵守实际能力；变更/未知来源或已过时的 disabled-thinking 规则以安全投影处理并记录事实。绝不将加密字节暴露为可读文本，也不虚构已丢失的旧元数据。 | EP-09/10/EPT-08/09; D-23; V-32 |
-| AIR-039 | 产品/Agent 恢复所有者；已终止且可重试的失败 turn | MUST 默认启用高层恢复，额外调用 3 次、基础退避 2s、上限 60s；允许禁用/覆盖。持久化原始失败 assistant，从请求视图省略整个失败 attempt，并发出 start/end/exhausted/aborted 恢复事件。新 prepared call 保持目标/意图及 run/turn 关联，重新解析同一来源的鉴权；实质账户变更/auth-needed/revoked 终止恢复。不重复工具批次，不隐形拼接输出。取消/总预算停止等待；只有真正成功终止才算成功，不是仅仅非 Error。低层 attempt 保持冻结。 | EP-11/12/EPT-10/11; D-24; V-33 |
-| AIR-040 | Schema/adapter 采样；prefer/require JSON strict 或 grammar | MUST 保留每工具采样意图，只转换私有 wire schema，绝不转换可信执行 schema。支持经过测试的 nullable 转换/子集；prefer 在不支持时可回退，require 在分发前失败。Grammar 是不同的受约束工具契约；function/custom-call ID/结果保持关联及实际解析器行为。不支持 grammar 时回退到普通 JSON 工具，并记录投影事实；支持 grammar 的目标遇到无效 variants/schema 时在分发前失败。本地规范化/授权仍然适用。 | TP-14, EPT-05/06, P16; D-20/23/29; V-34 |
-| AIR-041 | Agent args/hooks/authorizer；工具完成 | MUST 保留 raw，以 plain-JSON 规则在副本上规范化，完整验证后再运行可信修改/阻止 hook。Hook 可以变更执行值，而不重新按模型 schema 验证（Q25）。最终 authorizer 绑定实际值/注册/修订；之后的修改使授权失效。模型不能选择/伪造 hook 或授予权限。为旧 deny-only 观察者保留可区分的、针对被拒绝原始提议的只读观察；移动可变 hook 阶段时不能静默丢弃它。拒绝/取消意味着零执行，并使用有事实支持的结果。 | TP-08/12–16; D-20/22/28; V-35 |
-| AIR-042 | SDK prepare/options/observer；可信定制 | MUST 将可选 payload transform 运行一次，然后验证 JSON/wire/预算，并为所有重试冻结实际 payload。身份/model/provider/endpoint/auth 变更或覆盖受保护 auth-header 均失败，并要求显式重新 prepare。非身份材料变更属于实际投影/来源记录，不改写规范数据、不授予工具权限；最终权限使用可信修订。持久化调用方通过 AIR-017 在首次分发前确认最终投影。通过保护秘密的边界观察响应；callback 失败类型化呈现，不吞掉，也不任意回退。 | SP-14/U-3; D-27 Q30; V-36 |
+| AIR-039 | 仅宿主影响；产品／Agent recovery | 不属于 SDK 完成条件。宿主 retry 默认值、durable omission/recovery events、compaction 和 tool-batch replay 政策仍归宿主。Models 不自动执行 whole-call recovery。可独立使用的显式 SDK helper 为 AIR-065；其存在不要求 Agent 或会话。 | Historical D-24; V-33 host impact; V-57 SDK helper |
+| AIR-040 | Schema/adapter constrained sampling；strict/grammar | MUST 在转换私有 wire schema 时保留可信 schema 和 per-tool intent。本地不支持的 prefer 可投影为 non-strict；require 不支持则在 dispatch 前失败。Anthropic 仅允许文档规定的 pre-response strict-limit 降级，保留 require 工具并记录 variant。Grammar function/custom IDs、wrapping/parsing 和不支持目标的投影仍按协议限定。不在 Start 后降级，strict wire 不授予权威。 | TP-14 plus 1.2.0 SDK contracts; V-34/05/36 |
+| AIR-041 | 仅宿主影响；hooks/执行授权 | 不属于 SDK 完成条件。库的 raw/normalized 参数验证仍为 AIR-024/049；可信 validation 后 mutation、被拒提议的观察、最终实际值授权和零效果拒绝仍归执行工具的宿主权威。SDK 绝不安装 hooks 或执行模型工具提议。 | Historical D-20/22/28; V-35 SDK validation portion only |
+| AIR-042 | SDK options/adapters；请求定制 | MUST 每个 payload variant 执行一次 onPayload，验证 JSON/wire/budget 和受保护身份，再冻结供普通 retry 使用。有界 strict-prefer 降级重建第二个 variant，并再次执行一次 callback，不重新解析 auth/source/model。Header 和 raw-event hooks 遵循 AIR-059。功能 callback 失败为 typed/terminal；被动 telemetry 规则不得吞掉它。保留实际投影诊断，不修改 canonical 历史或授予工具权限。裸 SDK 无 durable ACK。 | Current callback/variant contracts; V-36/05/34/51 |
 | AIR-043 | SDK deferred dispatcher；submit/fetch/cancel | MUST 区分 Pending(handle) 与最终 assistant/error；handle 包含 provider/model/wire/token，以及适用的可选 expiry/poll hint，不包含凭据。默认 wait0 只检查一次，绝不隐式轮询。验证路由，对 unsupported/invalid/expired handle 报错；fetch 可以继续 pending。鉴权使用选定 adapter/来源；本地 fetch 取消不取消远程 job。远程取消尽力而为，不保证成功或退款。 | EP-13/EPT-12; D-23; V-37 |
 | AIR-044 | Deferred 调用方 fixture；重开/检查/轮询/取消 | MUST 提供可重新打开的离线消费者：保存 handle/model/next-poll，重新打开后 fetch 而不 resubmit，pending 推进时间，只有 ready 才提交 assistant。Stop 释放本地调度器；显式尽力取消具有独立可用的取消预算，并报告失败。不新增持久化产品/crate。真实远程完成仍缺协议/账户/过期/幂等 fixture；伪实现证明不能声称支持远程 adapter。 | EP-14/EPT-13; D-23; V-38 |
 
@@ -146,10 +150,10 @@ Preparation 在鉴权前选择不可变的模型身份/修订和显式输入数�
 | AIR-047 | ChatStream/终态 collector；complete/result/error | MUST 让 complete 与 result(self) 共用 Result<AssistantMessage,CallFailure>：Stop/Length/ToolUse/Deferred 为 Ok，Error/Aborted 为 Err。CallFailure 总含完整 canonical partial/terminal AssistantMessage 与 typed 脱敏 cause；setup 无生成内容且 usage unknown。stream 失败只交付一个 Err(CallFailure)；旧 Ok(Error) 退出。result 主动驱动剩余有界流并复用已交付 terminal 缓存，不重发/自取消。未迭代/部分迭代/至 EOF 均得到相同终态；无 terminal 按 AIR-003，无无限事件归档或被动 final future 死锁。 | UX-03, SC-04/05; D-31 Q32; V-40/03/05 |
 | AIR-048 | 公共事件；生成/重建 | MUST 在可交错的 block start/delta/end 和 Done 前输出成功 Start；setup 可直接 Err，started failure 最后 Err。block index/顺序稳定，end 含权威完整内容/参数/附属元数据。partial 是 owned 不可变事件时点视图，不是 JS 共享可变 alias；先前事件不随未来输出变化。完整 text/thinking/tool、partial JSON、仅 terminal 的签名/opaque、provenance/usage/stop/deferred 在终态保留，不只保留最终文本。 | UX-04, SC-06; D-30/31; V-41/07/32 |
 | AIR-049 | SDK Context/options/validation；手动循环/换模型 | MUST 接受初始 shorthand 和 canonical transcript，公开同一 normalize/resolve/工具参数验证机制。serde 往返保留顺序/raw/opaque/来源/knownness，不保证 pi JSON 字节兼容。工具只声明；caller 追加 assistant/result 再调用，验证不安装 hook/权限。simple 支持中立 effort/tool_choice(auto/none)/公共选项；native 支持已选 wire 的 typed exact 选项，wire 不匹配提前 typed 失败。两路径都接入既定 transform/observer/cancel/timeout 和相同终态/失败契约；只有 effective 输入/映射选项相同的 fixture 才比较结果。Length 不执行；Deferred 保持 pending。 | UX-05/08, SC-07–09; D-19/20/26/27/30; V-39/41/07/35/36 |
-| AIR-050 | SDK 文档/发布 owner；支持/旧路径退出 | MUST 通过 workspace 外隔离 consumer 验证以 opi-ai 为唯一 Opi runtime 依赖的公共调用、真实 adapter/假传输、双实例隔离、context/tool 循环和离线 package 导出/资源。说明常规 Rust runtime/Stream/serde 依赖。构造/静态读取无需 executor；异步工作使用宿主 Tokio，不承诺任意 executor/WASM。区分注册/可执行/adapter/产品接线；未覆盖项不宣称完整 pi 兼容。同步迁移旧 collection/complete/Error 消费者和双语 docs，不永久保留并列入口。 | UX-01–09, SDK-01–08; D-30/31; V-39–42/20/26 |
-| AIR-051 | SDK OAuth/provider/store；login/resolve/refresh | MUST 让 Anthropic/Codex legacy/Copilot 完整 flow 通过注入 presenter/store 的 SDK 可达，采用 pi 协议和 provider metadata。遵守固定 OAuth 附录：JSON/state/copy-code、注册回调/手贴降级、严格 Codex refresh、Copilot enterprise/endpoint/models/policy。保存真实 expiry，只一次 5min 安全窗口；默认 refresh15s、网络可取消，commit ack 仍是权威。同源单刷新原子提交，失败不换账号来源。TUI/keychain 政策留产品；其他 OAuth 明示 gap。 | UX-06/09, OA-01–06; D-32 Q33; V-43/12/39 |
-| AIR-052 | Builtin factories/catalog/config/store；选择/迁移 | MUST 使用已选 pi canonical ID/default wire：google/google-vertex/amazon-bedrock；单一 openai 默认 Responses，Chat 显式选择；内置 azure-openai-responses 必须有真实 Responses adapter，旧 Azure Chat 为显式 profile。不能只改名冒充 wire。显式迁移 config/catalog/credential 引用，不合并/覆盖账号、不永久保留默认 aliases。历史 provider/wire 事实保留；只用核验后的 request-view bridge 解释 legacy 来源。copy/ack/reference/finalization 可重入，source 保留至确认，由既有 owner 负责，不另建 ledger。 | UX-10, BP-01–04; D-33 Q34; V-44/01/20/42 |
-| AIR-053 | SDK estimator/options/preparation；simple/native call | MUST 采用 pi canonical-context heuristic/simple budget：最后适用的成功正 usage anchor 加后继估计，已知正 reported total 优先，否则用完整已知 parent buckets 的正和；以 prefix 时间戳判失效，不限同模型、不取全文最大值，无 anchor 逐 message 估计。保持 unknown 与独立总数/分桶，不双加、不影响账单。simple 使用附录的精确 base/adapter 公式和 4096/min1；common-budget 家族使用可满足的 answer-room clamp，numeric Claude 为零时提前 typed 失败，不回填。native 保留各 wire 省略/默认/gating，不重复全局 simple clamp。调用方复用同一 estimator/mapping，无并列旧预算引擎。 | UX-10, simple-options/estimate; D-34 Q35; V-45/39/01 |
+| AIR-050 | SDK package/调用方；独立使用与迁移 | MUST 验证 workspace 外 consumer，仅以 opi-ai 为 Opi runtime 依赖，覆盖公开调用、真实 adapters/本地 fake transport、双实例隔离、工具循环和离线 package 资源。说明 Tokio/Stream/Serde 要求与 native 平台限制。在有界破坏性变更中迁移旧 collection/error/当前消费者；不永久保留并行入口。TS/Bun/browser/CLI utilities 须有明确语义替代或平台差异，不照搬符号。 | SDK/Rust annexes; V-39–42/20/26/58 |
+| AIR-051 | SDK OAuth/store；login/resolve/refresh | MUST 通过注入 presenter/store/source，使全部 9 类已发布 OAuth flow 可由 SDK 使用，并遵循各 flow 精确协议、callback/device 行为、metadata 和 availability。caller 可取消等锁或停止等待 refresh；宿主 runtime 存活时，已开始 token rotation 按独立默认 15s 预算运行，成功释放前须确认原子持久化。保留真实 service expiry 加一次 Rust 5min 窗口作为明确差异，来源内串行，失败 refresh 不回退账户。 | AIR-063 and current OAuth inventory; V-43/12/39/55 |
+| AIR-052 | Built-ins/catalog/store/config 调用方；选择／迁移 | MUST 映射 canonical IDs google/google-vertex/amazon-bedrock/openai/azure 和其余所有固定 factory identity。OpenAI 默认 Responses，Chat 为显式替代；azure 拥有 azure-openai-responses 与 openai-completions，采用真实 deployment/endpoint 映射。保留历史 wire/source 事实和已经正确的 azure identity。显式可重入 config/credential-reference 迁移在 copy/ack/switch 前检测冲突；绝不合并账户、覆盖另一身份或永久保留 builtin aliases。 | Current profile/OAuth contracts; V-44/01/20/42/49 |
+| AIR-053 | SDK estimator/native/simple preparation；预算 | MUST 使用最后适用的成功正 usage anchor，加后继 canonical 估计；遵循保留的 unknown/total 规则、prefix timestamp 失效，以及不限同模型／全文下界。以 UTF-16 units 和每图 4800 等效 chars，按 message 粒度使用 ceil(chars/3.5)。Simple 使用附件 4096/min1 和 adapter 公式；numeric-Claude 零预算提前 typed 失败，不回填。Native 保留精确 wire 的省略／默认／gating，不再做第二次全局 clamp。 | 1.2.0 estimator plus retained formulas; V-45/39/01/54 |
 
 ## 要求：显式 telemetry 集成
 
@@ -161,29 +165,47 @@ Preparation 在鉴权前选择不可变的模型身份/修订和显式输入数�
 | AIR-055 | opi-ai telemetry module/async handoff；显式 host context | MUST 通过 from_span 捕获匹配 parent Span 与来源 Dispatch，disabled/无来源成为 no-op；异步执行前冻结两者，不采用 poll 时 ambient，不初始化 global subscriber。在 producer tasks 及同步 Future/Stream poll/drop 范围传播该 Dispatch，不持 enter guard 跨 await。领域 owner 控制语义 status/settlement；返回 handle 或保留 Span clone 不代表业务完成。native tracing API 不宣称等同 pi 通用 callback/schema DSL。 | TC-02–06/11, TO-10–12/17–20, tracing0.1.44; D-37; V-47/42 |
 | AIR-056 | Domain producers/host backend/evidence owner；观测开启/禁用/失败 | MUST 由 Agent/SDK 宿主拥有领域名字、typed/redacted fields 与终态解释，宿主拥有 backend/export/sampling/flush，既有 owner 拥有 durable evidence/diagnostics。默认观测排除原始 prompts/completions/tool data/payload/headers/credentials/自由错误文本。符合契约的 trusted backend 抑制 recording/export failure，不阻塞/重跑业务；不承诺隔离任意 subscriber panic/block 或 abort/OOM。telemetry 丢失不能供给权限、改变 Result/retry/usage 或隐去 evidence incomplete。 | TC-02/05/10, TO-04–07/12–15/19/20, CTRL-001/003; D-37; V-48/13/18 |
 
+## 要求：完整 Pi 1.2.0 公开能力覆盖
+
+当前 SDK 附件固定了按来源限定的能力清单；RDF 条目识别差异，绝不关闭尚未实现的能力。这些要求补充、而非替换保留的 binding/transcript/stream 规则。
+
+| ID | 责任方 / 触发条件 | 目标契约与失败行为 | 证据 / 验证 |
+|---|---|---|---|
+| AIR-057 | SDK public/factory/adapter 所有者；映射和调用能力 | MUST 通过明确 Rust 对应能力覆盖全部已发布 core/subpath 能力、10 个 chat API、42 个 factory profile、自定义 model/Provider/API 注册、selectors 和管理。即使共用 wire，也保留 Provider 特定 route/auth/default/filter 语义；unknown/unregistered wire 失败且不回退。每个原 export family 均有对应能力、有意差异或平台替代，不能静默留缺口。 | Current SDK inventory; V-49/58 |
+| AIR-058 | Classifier/image adapters；typed 调用 | MUST 实现全部 4 个 classifier 协议、各自实际 image 支持／拒绝和 typed result/usage/failure，以及唯一已交付 image API。验证 bool 映射、llama tokenization/template/logprobs、Cloudflare envelope 和 Decisions API-key availability/504 排除。已知不支持的 operation/modality 在 dispatch 前 typed 失败。不虚构专用 image API，也不声称 live 成功。 | Current SDK operation contracts; V-50/21–26 |
+| AIR-059 | SDK request hooks；定制／观察 | MUST 在适用公共路径提供支持 async 的 assembled-header transform、onPayload/onResponse 和已解析 raw-provider-event observation。固定合并顺序、per-call/variant/event 执行次数和 normalization 前观察。受保护 identity/header 修改须 typed 失败；callbacks 属功能行为，保留有界顺序／背压，绝不能作为被动 telemetry 吞掉。 | Current SDK callback contracts/RDF; V-51/36/05 |
+| AIR-060 | SDK frame utilities；传输 compact progress | MUST 提供 typed compact progress encode/reduce，保留有序 content indices 和权威 end blocks。保留 partial JSON、terminal-only opaque metadata 和精确 failure/association 语义；progress 绝不结算 call。另存 final result，验证畸形／截断 frames 并约束解码；Rust 不可变 snapshots 不会取消可移植 compact-progress 能力。 | Current SDK frame contracts; V-52/41 |
+| AIR-061 | Chat response-stream 所有者；activate/finalize | MUST 提供可选 duration_ms，以单调时钟测量从 adapter response-stream activation/首次 poll 到其 terminal，包含 direct adapters。Models auth/loading 和未 poll 时间不在该 Rust 区间内。保留已有值和较早 deferred results；adapter 激活前的 setup 保持无计时。Tool duration 是可选宿主提供 metadata。序列化和转发保留已知值，不重新计算。 | Current timing/RDF contracts; V-53/40/41 |
+| AIR-062 | Model/options/cost 所有者；选择 effort/载入 metadata | MUST 映射按有效 thinking-level 的 sampling，优先级为 model base < effective level < request，以及 operation input limits、compat 和 request-wide pricing tiers。对 calculateCost/helper 消费 adapter，使用 input+cache-read+cache-write 严格超过的最高阈值，应用于整次请求；OpenRouter image parseUsage 则保留 model.cost 基价、不取 tiers，这是明确源码例外；保留 1h subsets，不重复计算。保留 SDK 附件中由 response 决定的 service-tier 倍率，以及 Responses/Codex 对 default/fast 的不同处理；Azure 无此倍率。验证 finite limits/rates，区分 unknown 与 zero；catalog placeholder-price 处理是明确 RDF 差异。 | Current metadata contracts; V-54/11/13/45 |
+| AIR-063 | SDK credentials/store/OAuth 所有者；并发 auth mutation | MUST 提供对象安全、store-owned、per-provider 串行 update/ack，足以支持 rotation、metadata、login/logout/replacement 和 multi-Models/shared-store consumers。等待可取消；已开始 rotation 独立有界，宿主 runtime 存活时即使 caller 离开也须持久化；shutdown/abort 和 remote/store 失败不在持久化保证内。同一事务内复核 current credential；失败绝不冒充成功或静默切换账户。Memory 和注入 persistent adapters 共用 conformance；SDK 既不依赖 keychain，也不依赖通用事务框架。 | Current OAuth/store contracts/RDF; V-55/43/12 |
+| AIR-064 | SDK catalog/store；refresh/personalize/restore | MUST 传递实际配置的 base URL，并提供显式 OpenRouter 按 key 限定的 chat filtering/limits/prices，不静默装入裸 factory。保留 nonchat 条目和文档规定的 no-key/401/403/404 行为。规定 Provider 特定 overlay/replacement/empty-list 行为和 stale-publication/account/cache 边界。Distribution schema v1 与 hydration data v6 不同；不声称已验证 pi.dev 部署，也不把 Rust crate 版本用作 Pi compatibility identity。 | Current catalog contracts/observations; V-56/27/28 |
+| AIR-065 | SDK caller；显式 whole-call retry helper | MUST 通过新 logical calls 提供独立 retry classification/orchestration 和 callbacks，省略／禁用表示无额外 calls。绝不自动启用 Models/产品 recovery、重复已完成工具效果、合并 streamed output 或重置 prepared-call budget。保留 final partial/usage、cancellation、source/account 限制和协议特定 nonretry cases；不要求会话。 | Current explicit retry contracts; V-57/05 |
+| AIR-066 | SDK public types/package；normalize/embed/extend | MUST 区分可序列化模型 Context/TranscriptContext、可注入来源 AuthContext 和进程内 TelemetryContext；通过连贯 Rust modules 提供实际 transcript/validation/JSON/diagnostic/model utilities。保留安全 custom Provider/API seams、轻量 construction/import 意图和独立 native-runtime 消费。记录 TypeBox/Bun/browser/npm/CLI 替代，不假装存在 TS 符号或不支持的 runtime。 | Current SDK/RDF inventory; V-58/42/46–48 |
+| AIR-067 | 文档／测试证据所有者；上游修订 | MUST 在既有 tracking/evidence 位置记录固定 Pi/Opi identities、变更的公开行为／规划状态、Rust 差异和 add/update/delete/retain 测试映射。仅在替代证据齐备后退出陈旧或 phase-freeze 断言；executed counts/commands/skip/gaps 与未来 V 设计保持区分。上游变更绝不自动授权 implementation、live、install 或竞争性进度账本。 | upstream-tracking and acceptance matrix; V-59/20/49–58 |
+
 ## 公共 SDK 契约（目标，尚未实施）
 
 此处固定开发者使用的动作/名字，不固定文件位置。Models 收敛现有 collection 职责；prepare 保持高级机制。ModelInfo 是聊天记录，不是旧 Model 壳。目标 ModelInfo 明确添加 provider_id，id 保持 bare model id；catalog 记录与 custom 构造都必须给唯一 provider。注册时验证 provider_id 匹配拥有它的 provider，不按 id 反查或拼接推断；来源/响应模型字段保持区分。操作选择使用 AIR-025 闭合 enum/typed records，不建通用插件 trait。provider factories 可独立选择，显式 builtin 装配只列实际支持集合。
 
 | pi 使用动作 | Rust 目标动作 | 输入/返回与责任 |
 |---|---|---|
-| createModels / setProvider | Models::new / set_provider | 默认内存实例，可注入 provider/auth/store/source；replace/remove 影响下一 call，不改旧 call |
+| createModels / Provider 管理 | Models::new / get_providers / get_provider / set_provider / delete_provider / clear_providers | 空内存实例，可注入 provider/auth/store/source；list/read/replace/remove/clear 由同一实例所有者负责；已捕获的旧 calls 保留其修订 |
 | getModel / getModels | get_model / get_models | provider ID + model ID；同步 last-known 聊天记录，owned ModelInfo，未知 Option::None，零凭据探测 |
 | *OfType / getAllModels | get_model_of_type / get_models_of_type / get_all_models | AIR-025 闭合操作选择；方法验证实际操作/wire |
 | stream / complete | stream / complete | model record + Context + native CallOptions；stream 立即返回 owned ChatStream，complete 返回驱动它的 owned Future |
 | streamSimple / completeSimple | stream_simple / complete_simple | 相同输入 + SimpleOptions 表达中立 effort/tool_choice；exact native 选项走原生路径，不静默 clamp |
 | stream.result | ChatStream::result(self) | 消费 handle，主动 drain 至 Q32 Result；迭代为 Stream<Item=Result<AssistantStreamEvent,CallFailure>> |
 | auth/refresh/login 管理 | check_auth / get_available / get_available_of_type / get_all_available / get_auth / refresh / login / logout | 显式异步；按下表区分配置检查、来源解析、目录刷新、登录/本地删除；不是生成前提 |
-| 图片/分类/deferred | generate_images / classify / stream_deferred / fetch_deferred / cancel_deferred | 同实例 typed AIR-025–044 入口；统一命名不扩大 adapter 覆盖 |
+| 图片／classifier／deferred | generate_images / classify / stream_deferred / fetch_deferred / cancel_deferred | 同一实例的 typed 操作。Deferred submission 是返回 Deferred(handle) 的普通 generation，不虚构 submitDeferred API；stream_deferred/fetch_deferred 操作 handle。全部已发布 adapters 遵循 SDK 附件 |
 | cleanupSessionResources | Models::cleanup_session_resources(Some(id)/None) | Owned 可 await 的实例资源清理；scope/取消/复用见下文；不删除 credential/catalog |
 | 高级 preflight/attempt | prepare_call / PreparedCall::start_attempt | Owned AttemptHandle 至多一次 acquisition；共享下述累计 call budget/state，不套隐藏 retry loop；检查同一冻结 binding |
 | request telemetryContext | options.telemetry_context | 从宿主 tracing parent 建立显式可选 TelemetryContext；所有已选请求路径同一 frozen context，无自动 exporter 或 SDK domain spans |
 
 在创建 handle/Future 时捕获 owned 输入，不借用调用方 Context 或 mutable collection。鉴权/网络从首次 poll/await 开始：这是明确的 Rust 惰性异步时间差异，不可推迟输入冻结。使用宿主 Tokio，不建全局后台 executor。result 驱动 producer；不消费 result 而 drop 时按 AIR-004/005 结束 attempt。首次 poll 前 drop 零来源/网络工作。provider/store/资源共享必须显式；两个相同 provider ID、独立依赖的 Models 不污染全局状态。ChatStream 与 owned completion Future 为 Send + 'static，可进入宿主 Tokio task；Stream 不要求 Sync。
 
-CallFailure.message 保留生成的 text/thinking/tool、来源、stop reason、诊断及已知 usage；cause 给 typed 分类，不额外交付第二 terminal。Done.reason 等于 message.stop_reason。Err.message 为 Error/Aborted；Cancelled 对应 Aborted，其余 setup/协议失败为 Error。收集不自动恢复、执行工具或将 Length 视为执行许可；仅产品 owner 启用高层恢复。必要时保留版本化旧 serialized Error-event reader；当前 producer/dispatcher 退出双格式写入。
+CallFailure.message 保留生成的 text/thinking/tool、来源、stop reason、诊断及已知 usage；cause 给出 typed 分类，不另交第二 terminal。Done.reason 等于 message.stop_reason。Err.message 为 Error/Aborted；Cancelled 映射到 Aborted，其余 setup/协议失败映射到 Error。收集不自动 recovery、执行工具或将 Length 视为执行许可；只有 caller 选择启用 AIR-065 whole-call retry，产品 recovery 政策另属一层。必要时保留版本化旧 serialized Error-event readers；当前 producers/dispatchers 退出双格式写入。
 
-一次调用为：捕获 → normalize/known preflight → 一次鉴权 → 最终 binding/compat/transform/projection 冻结 → durable 宿主确认或普通 SDK 内存安装 → adapter/events → 统一 collector。显式 key 在鉴权前选择并记来源，不能通过 payload transform 改身份。宿主自行追加最终消息/tool results 或换模型；SDK 不改调用方历史。
+一次 call 的流程：捕获 → normalize/known preflight → 一次 auth resolution → 最终 binding/compat → 有界 per-variant transform/validation/projection 冻结 → adapter/events → 统一 collector。显式 key 在 auth 前选择并记录来源，绝不通过 payload transform 改变身份。宿主显式追加最终消息／工具结果或切换模型；SDK 不修改调用方历史。
 
 ## 工程附录：已固定的语义选择
 
@@ -204,6 +226,8 @@ Models::new 是空 providers、默认内存 stores 及惰性默认来源；set_p
 
 cleanup_session_resources 返回 owned Future<Result<(),ManagementFailure>>；有效但未匹配的 ID 成功无操作。首次 poll 确立资源 generation 截止点。Some(nonempty id) 选择此 Models namespace 中完整原始 SDK session ID；None 选择全部含 sessionless，Some(empty) typed 失败，不能按 truthiness 解释为全部。首次 poll 在任何 auth/transform/network await 前原子登记 call generation；cleanup 取消匹配的已 poll Codex auto/WS calls，含准备阶段及同一 call 正在进行的 SSE fallback，禁止迟到接入新 generation；没有这些资源的显式 SSE/其他操作及外部 stores/providers/clients 不受影响。匹配旧 calls 观察内部 logical-call cancellation，尚未交付终态时返回 Err/Aborted；caller token 取消只向内联动，cleanup 绝不取消 caller 的 parent token、另一 namespace 或后续 calls；释放 cached/temporary/connecting/busy-overflow 资源，并等待库拥有的本地 producer/connection 退出。成功完成只证明本地静止，不证明远端撤销/退款。本地清理步骤失败时仍尝试其余选定资源清理，返回 typed 脱敏失败及已知效果/未确认释放；不能把不完整清理报成功或恢复已取消 generation。
 
+已开始 credential rotation 属于有界 credential-store 事务，不属于 Codex connection generation；连接清理不能中断它，也不能声称撤销其 credential。成功 connection cleanup 只证明选定 connection/producer 已静止。
+
 清理可重入；截止点后的 call 和此前未 poll 的 logical-call handle 使用新资源 generation；已登记 PreparedCall 的未 poll AttemptHandle 仍属于原 generation。Drop cleanup Future 不撤销已提交的 close 标记；再次清理可等待未完成工作。已交付 terminal 保持最终；成功 result 不销毁 idle cache。Models drop/replace/remove 不取消 owned call：guard 保留冻结修订，最后公共 owner/call-guard drop 才发出资源释放信号。背景任务不能作为独立公共 owner 无限延长生命周期；Drop 发起关闭，完成屏障须 await cleanup。独立 Models 的相同 session ID 隔离；注入共享只释放本 namespace 的 lease，不关闭其他实例/外部 owner。不要求通用 cleanup registry/trait 或新的永久 shutdown 入口。
 
 ### 显式 telemetry context（Q37）
@@ -220,13 +244,17 @@ tracing0.1.44 的 Future instrument/with_subscriber 不能单独覆盖 Stream �
 
 既有 Agent correlation IDs 由其 owner 解释，可作为已分类字段；backend span IDs 不是 durable identity。DiagnosticSink/AgentEvents/EvidenceSink 和 Session ack 保持独立。payload/response callback failure 仍遵守 AIR-042，passive telemetry 不吞掉它们。exporter setup、queue policy、flush/shutdown 是宿主职责，永不成为 Models 前提。conformance 针对可信非阻塞/nonpanic subscribers，不针对任意恶意 host code。
 
-### 低层聊天重试（Q36）
+### 低层 chat retry 与有界请求适配
 
-AIR-007 在 opi-ai 使用唯一 request-acquisition retry owner，由公共 native/simple/prepared 路径共享。max_retries 计额外请求：显式0禁用，N最多1+N；每 call override 优先于显式 provider-profile 默认，再用选定 adapter 默认。Helper/Codex 族默认0；Bedrock standard 默认2，仍受 quota/分类约束，不是无条件3请求。关闭嵌套 transport SDK retry，淘汰 Agent 低层 request retry；AIR-039 另行创建最多3个新 logical calls。Codex 有界 WS reconnect/continuation 恢复按 AIR-036，不是通用 HTTP retry。图片/System One/远端目录次数仍按各自已选契约。
+AIR-007 使用唯一 request-acquisition 所有者。`max_retries=N` 按每个 payload-variant acquisition episode 计算额外 sends：普通 HTTP acquisition 最多 1+N 次 sends。覆盖顺序为 per-call、显式 Provider profile，最后为协议默认值。Helper/Codex 默认 0；Bedrock standard 默认 2，受分类／quota 约束。Classifier/image 和原生协议遵循各自明确的附件默认值。关闭嵌套 retry；既有消费者的低层 loop 不得与此所有者叠加。本候选不选择产品高层默认值／配置。
 
-策略与同一 call binding/auth/payload 一起解析冻结；不二次解析来源或 transform。SigV4 每次 send 可从同一冻结凭据生成新 timestamp/signature，不复用过期 header bytes。Retry 只限成功 streaming-response handoff 前的请求获取；handoff 后的 body/EOF/parser/callback 失败即使尚无公开内容事件，也不重进此循环。Typed cancel/auth/permission/billing/quota/invalid-input 或无效成功响应为终止，generic catch 不能转成 network failure。每次 send/sleep 前检查 shared cancel/deadline；drop active attempt 释放等待，后续 attempt 必须符合下述显式状态转换，不能只因 active lease 已释放就重启。
+Anthropic 特定 1.2.0 strict-prefer 拒绝可在成功 response handoff 前产生恰好一个 non-strict-preferred variant：最多 2 个 variants 和 2*(1+N) 次 acquisition sends。即使 N=0，也允许该语义降级。只有固定的 400 invalid_request_error grammar-size/tool-count/union predicates 允许降级；abort、callback failure、第二次拒绝或已开始 body 均不允许。Require 工具保持 strict，auth/model/source 保持冻结，onPayload 每个 variant 执行一次，onResponse 对接受的 response 执行一次。每个 variant 的普通 transport retry 复用其冻结 payload，不重复 callbacks。降级有独立有限 counter 和 diagnostic；它不是通用 HTTP400 retry。
 
-高级 start_attempt 无 I/O 地占用唯一 active lease，返回 owned AttemptHandle；首次 dispatch 才消耗共享1+N预算中的一次 send。其 result 是带标签的 AttemptOutcome：RetryableAcquisitionFailure(cause,retry_ready_at)，或 Final(Result<AssistantMessage,CallFailure>)；类型名为目标，语义封闭。RetryableAcquisitionFailure 对该 attempt 是最终结果，不是 logical ChatStream 终态。普通 SDK driver 消费它、可取消地等待，再启动获准的下一个 attempt；高级 caller 显式推进同一状态，不能重置 counters/index/quota 或绕过等待。过早/并发/已封存/取消/耗尽的 start 返回 typed RetryNotReady/AlreadyActive/CallSealed/Cancelled/BudgetExhausted，零 dispatch。成功 handoff 永久关闭 acquisition retry；随后完成或失败为 Final 并封存 call。Nonretryable/exhausted acquisition failure 同样成为 Final。Drop 尚未 poll/dispatch 的 attempt 释放 lease，不消耗 send；已 dispatch 却未观察到可重试 acquisition failure 时 drop，保留 UnknownEffect 并封存后续调度。它不取消共享 logical-call/caller token。只有已观察、已分类的可重试 acquisition failure 且还有预算才进入 retry-ready。新 logical call 显式重新 prepare；旧错误不获得新预算。高级 iteration/errors 作用于 attempt；只有普通 ChatStream 发出唯一最终 Err(CallFailure)。
+每次 send/wait/variant transition 前检查共享 cancellation/deadline。SigV4 可从同一冻结 credential 更新 timestamp/signature，不能解析另一来源。成功 streaming-response handoff 封存 acquisition retry，即使尚无首个公开 content event；EOF/body/parser/callback failure 不重新进入该循环。Codex reconnect/full-input/fallback 分支仍为独立有界 AIR-036 transitions。任何低层分支都不自动重放已交付输出。
+
+高级 start_attempt 无 I/O 地保留唯一 active lease。目标封闭 outcome 为 RetryableAcquisitionFailure(cause,retry_ready_at)、RequestAdaptationReady(variant_index,kind) 或 Final(Result<AssistantMessage,CallFailure>)。这些是目标名称，不是已编译接口。只有经分类且已观察到的 failure／允许的 adaptation 才准入另一个 attempt；caller 不能重置 counters/quota、跳过 backoff、创建第三个 variant 或复用封存 call。Attempt-scoped 中间 outcomes 不是公共 ChatStream terminals。普通 driver 在内部推进这些 outcomes，只输出唯一最终 Result。
+
+提前／并发／封存／取消／耗尽后的 start 返回 typed 失败，零 dispatch。send 前 drop 释放 lease，不消耗 send。send 后 drop 且未观察到 retry/adaptation outcome 时，记录 UnknownEffect 并封存后续调度；不取消 caller 的 parent token。新 logical call 须显式重新 prepare；只有 AIR-065 显式 helper 可在无会话前提下编排新 calls。
 
 | 族 | 显式启用重试时的准入与退避 |
 |---|---|
@@ -238,19 +266,24 @@ max_retry_delay_ms 保留 pi 的 server-delay 准入含义：默认60000ms；显
 
 首批 AWS retry 目标为 standard 加显式 typed overrides；不在选定策略背后读取 ambient AWS_MAX_ATTEMPTS/AWS_RETRY_MODE/SMITHY_NEW_RETRIES_2026 或 shared-file retry knobs。Pi 锁定 Node SDK 会读取，且与 options.env 分离：如实记录覆盖差异，不把 scoped auth env 称为 retry-mode parity。显式不支持的 adaptive/experimental retry 请求在 preflight typed 失败，不静默用 standard。重新评估须有真实 SDK 调用方需要这些模式，及经核验 Rust 算法/权能契约；本批不增加推测性 adaptive framework/flag。
 
-V-05 固定 default/override0/1/2、503序列、Bedrock501/408/403/nonretry及 transient/throttling/name/trait/cause、quota耗尽/归还、helper header decisions/jitter和 Codex1000/2000/4000。Bedrock U=0.5首次 transient 时 b=50ms，10s hint 准入后产生5050ms；hint90s超默认60s失败。覆盖 cap−1/cap/cap+1/0、双 AWS hints、malformed/date/past hints、每个等待点 cancel/drop/deadline及零后续 send。Auth/transform 次数保持1；冻结 payload/identity 和新 SigV4 timestamps 一致。三种公共消费路径保留 partial/unknown usage 及相同最终 Result；fixture 不承诺远端幂等或未知失败 attempt usage。
 
-### SDK OAuth 与内置迁移
+V-05 固定 per-variant override0/1/2 和总次数；strict max0 最多 2 次 sends/onPayload2，max1 最多 4 次，第三次 adaptation 为零 sends。保留固定 header/jitter/Bedrock quota 和 transient-name fixtures、retry-delay admission、冻结 auth/identity、新 SigV4 timestamps、cancellation/drop/deadline 及 handoff 后零 sends。V-34/36/51 分别验证 rebuild/callback 顺序和失败。任何 fixture 都不承诺服务端幂等或未知失败 attempt 的消费量。
 
-AIR-051 仅目标 Anthropic、openai-codex legacy 与 Copilot。Anthropic 使用 JSON grant/refresh、验证 state，浏览器 localhost:53692/callback，显式 copy-code redirect 为 platform.claude.com/oauth/code/callback。Codex 浏览器 localhost:1455/auth/callback，bind 失败保留手贴，refresh_token/expires_in 严格校验，originator 有意保留 opi。Copilot 支持 enterprise domain、token 推导 proxy endpoint、账号 available-model IDs，显式 login 按 pi 条件启用 unconfigured-model policy；refresh 发现 metadata，不授予无关权限。精确字段/predicate/假 HTTP 依 pinned OA 附录，不猜远端注册。device denied/expired 保持 terminal，即使 pi 将某 status 当 pending。
+### SDK OAuth、串行 credential rotation 与 builtin 迁移
 
-保存服务原始 expiry，只一次 5min 近过期检查（与 pi 双扣的有意差异）；同源 refresh 默认15s，传递 caller cancel，通过注入 store 的 atomic update/ack 一次提交 credential/metadata。SDK memory store 与 product store 遵守同一刷新规则；SDK 不依赖具体 keychain。commit 前网络失败/取消保留旧凭据，expiry 本身不是 revoked；已开始 commit 按既有 ack 语义，不捏造回滚。不自动交互登录、远端 logout 或身份探测。
+AIR-051/063 覆盖 Anthropic、OpenAI Codex legacy、OpenAI ChatGPT、GitHub Copilot、OpenRouter、Kimi Coding、Meta、xAI 和 Radius。当前 SDK 附件固定每个 flow 的 browser/device/manual 行为、callback/port 政策、grant/refresh 字段、scopes、endpoint/account/model metadata、expiry 和 errors。这些必须是真实 SDK 机制，不能是空 traits 或仅委托产品登录。TUI、OS keychain 和 installation identity 持久化仍是注入的宿主选择。
 
-Builtin ID 迁移 gemini→google、vertex→google-vertex、bedrock→amazon-bedrock；openai-responses 合并 openai、默认 Responses 并提供显式 Chat；azure 内置变为真实 Responses 支撑的 azure-openai-responses，旧 Chat 仅显式 adapter/profile。Azure 默认 POST https://{resource}.openai.azure.com/openai/v1/responses?api-version=v1，api-key，body.model=deployment；按 pinned BP 的显式 URL/version 选项验证，不插入 /deployments/{model}/responses，也不复用 Chat payload。已存在用户自定义 provider ID 仍由 caller 拥有，不是隐式 builtin alias。迁移先验证 destination 冲突，目标 ack/引用切换前保留旧历史/source keys；可安全重试且不覆盖不同身份，仅成功显式 finalization 后删除 obsolete builtin keys。当前 config/lookup/default aliases 退出，版本化历史事实/readers 保留。当前支持表明示 Mistral native Conversations、新 OpenAI ChatGPT OAuth 及其他未选 providers/flows gap。
+Anthropic 首选 localhost:53692/callback，bind 失败时尝试空闲 loopback port，再降级手贴；保留其显式 copy-code 路径。Codex legacy 保留固定 browser/device/manual 规则，包括 bind fallback；OpenAI ChatGPT 的固定 1455 端口 bind 失败为 terminal，不采用该 fallback。通过公开 LoginOptions 保留 agentName 和所需稳定 device identity。Copilot enterprise/proxy/model/policy 行为仍按协议限定。按保留的 Rust safety 契约，已知 denied/expired device outcomes 为 terminal。
+
+保存服务真实 expiry，采用一次 Rust 5min 近过期窗口；源码既有 per-flow 预扣加 resolver 窗口记录为有意差异，不宣称精确 Pi expiry 等价。等待 per-provider store 事务可由 caller 取消。实际 token rotation 一旦开始，store-owned 操作忽略该 caller 取消，使用独立默认 15s timeout，并在释放 ownership 前原子确认 credential+metadata。被取消 generation 可及时返回，且绝不 dispatch；不能丢弃唯一有效的 rotated token。Login/logout/replace/refresh 共用 store 边界，防止陈旧工作复活或覆盖较新的选定身份。Memory 和注入 persistent adapters 共用 conformance。宿主须保持 Tokio 运行，直到已开始 store 操作在预算内收束；runtime Handle 不是维持 runtime 存活的 lease。Runtime shutdown、进程 abort、timeout 或 remote/store 失败可能留下未确认的 rotation/persistence，绝不能报告为成功回滚或旧 credential 仍有效。不新增私有 runtime 或崩溃后存活保证。不依赖具体 keychain、不自动登录、不远端 logout，也不额外探测身份。
+
+Builtin 迁移保留实际 IDs 和 wires：gemini→google、vertex→google-vertex、bedrock→amazon-bedrock；单一 openai 默认 Responses，Chat 显式选择。Canonical azure 保持 azure，提供 azure-openai-responses 和 openai-completions；deployment name 不同于 catalog ID。Responses 使用实际 v1 responses endpoint/body，Chat 使用经验证的 deployment mapping，而非重命名 Chat serializer。不得把已经正确的 azure 条目重命名为 azure-openai-responses。历史 API 事实和用户自定义 IDs 保留。
+
+迁移先验证目标冲突，复制／确认显式选定的 credential/reference，以可重入方式切换当前消费者，并保留 source 直到 finalization 确认。不得合并账户、覆盖不同身份或增加永久 builtin aliases。未来迁移遇到冲突用户身份时需显式选择；本文不替用户选择账户。Mistral native、OpenAI ChatGPT OAuth 和其余固定的已发布 APIs/flows 均在范围内，不是延后缺口。
 
 ### 公共选项映射与当前 SDK 覆盖边界
 
-native 与 simple 共用终态契约，不保证相同原始 options 就生成相同 wire。令 M 为 explicit max（若缺则 model.max），E 为 canonical 估计，W 为 context window。已验证 M 为正有限整数；clamp(M) 在 W<=0 时为 max(1,M)，否则 min(M,max(1,W−E−4096))；base C=clamp(M)，不能另将 explicit M 限为 model.max。numeric Claude（Anthropic/Bedrock）取 common/custom B，F=clamp(min(C+B,model.max))，有效 B′=min(B,max(0,F−1024))；这是追加 thinking 后再次 context clamp。common Chat 的预算字段取 B′=min(B,max(0,实际响应 ceiling−1024))，不做 Claude 的追加；B′=0 时省略预算字段，template 的缺失值遵对应 fixture。默认 B 为 minimal1024/low2048/medium8192/high16384，xhigh/max 的 token budget 映射 high；Google/Vertex 不套此表或 answer-room clamp。native 不重复 collection-wide simple clamp：Anthropic 默认 model cap；Chat 未显式 max 则省略；普通 Responses 的显式 max 经 supportsMaxOutputTokens 与 ChatGPT Sign-in omission gating 后 floor16；Azure Responses 的显式 max 单独 floor16，无前述 gating；Codex legacy 不发送 max_output_tokens；Google 仅显式 max；Bedrock Claude 默认 cap，其他模型仅显式。Q34 的 Azure Responses 是候选，尚未实施。
+Native 与 simple 共用终态契约，不表示相同 raw options 产生相同 wire。令 M 为显式 max，缺省时为 model.max；E 为 canonical estimate；W 为 context window。M 须验证为有限正整数。W<=0 时 clamp(M)=max(1,M)，否则为 min(M,max(1,W−E−4096))；base C=clamp(M)，不再把显式 M 额外限制到 model.max。Numeric Claude（Anthropic/Bedrock）采用 common/custom B，F=clamp(min(C+B,model.max))，有效 B′=min(B,max(0,F−1024))：先加入 thinking，再做一次 context clamp。Common Chat budget fields 使用 B′=min(B,max(0,actual response ceiling−1024))，不做 Claude 的加法；B′=0 时省略 budget field，缺失 template values 按对应 fixture 处理。默认 B 为 minimal1024/low2048/medium8192/high16384；xhigh/max token budgets 映射为 high。Google/Vertex 不使用此表或 answer-room clamp。Native 不重复 collection-wide simple clamp：Anthropic 默认 model cap；Chat 未显式 max 时省略；普通 Responses 按 supportsMaxOutputTokens/ChatGPT Sign-in omission 对显式 max gating，再设下限 16；Azure Responses 独立将显式 max 下限设为 16，不套这些 gates；Codex legacy 不发送 max_output_tokens；Google 只发送显式 max；Bedrock Claude 默认 cap，其他模型只发送显式值。Pi Messages native/simple 仅转发 temperature/maxTokens/reasoning/cacheRetention/sessionId/toolChoice：simple 绕过通用 budget builder，省略 max 保持省略，显式 max 原值转发；不序列化 metadata/arbitrary sampling/thinkingBudgets/deferred。所有目标映射仍为候选，尚未实施；当前 Azure identity 为 azure，包含两个已发布 APIs。
 
 answer room 不是低 ceiling 下的无条件 1024 保证。numeric Claude 请求正 thinking 却得到 B′=0 时，在鉴权/dispatch 前返回 typed BudgetInsufficient，保存 requested/effective 预算，不自动关 thinking、不发 enabled/0，也不把 0 回填成1024。正 B′ 按上述已选 wire 映射；native exact 的已知非法值同样 typed 拒绝。pi Anthropic simple 传 0 后 wire 使用 `|| 1024` 的冲突是局部实现缺口，本候选不复制。验收固定 ceiling1/1024/1025/2048，并分别验证 zero 失败、正预算、Chat omission 与 Google 例外。
 
@@ -264,9 +297,11 @@ Google预算顺序为 minimal/low/medium/high；custom thinkingBudgets 优先，
 | Google/Vertex 其他 budget 模型 | -1 表达协议的 dynamic budget，不是资源无限哨兵 |
 
 
-保留已确认支持等级选择与 native exact 能力验证。估计 canonical transcript，以真实 reported anchor 为依据，不用于账单。Q35 确认撤回同模型/全文下界限制。计量 pi UTF-16 code units，每图4800等效 chars；除4向上取整的粒度为 message：user/toolResult 汇总全部 blocks 后一次取整，assistant 汇总所有 text/thinking/tool name+序列化 args 字符后一次取整。system 先渲染 body+sections 再一次取整，另分别累加 JSON toolsAdded 与 toolsRemoved 的取整估计；不得按每个短 block 独立取整。最后非 Error/Aborted、时间戳不早于其前缀的正 usage 提供 anchor：已知正 reported total 优先（即使不等于分桶和）；total 缺失/0 时，仅完整已知的 input/output/cacheRead/cacheWrite parent 之正和可替代，未知桶不补0、child 不重复加。须保留 adapter 的独立 reported total；这不改 parent/subset 计费。anchor 后逐 message 估计，无 anchor 则全估计；保持 Rust 数值表示差异。V-45 单列 total≠sum、total=0 fallback、partial unknown 与 prefix 时序，不以归一化隐藏。
+在支持的 native/simple wires 中，per-effective-thinking-level sampling 使用 model base < effective-level entry < request keys。Input limits 和 request-wide cost tiers 遵循 AIR-062 及精确 SDK 附件，包括 OpenRouter image 的基价例外；payload 定制不能替代这些字段。
 
-pi cache none 对应 Rust Disabled；省略的 SDK retention 使用 Short，受所选受控环境的 long override 影响。现 Rust None 的“provider 默认”含义不等于 pi none，不能默默映射为同义；原生高级默认保留时须明确区别。caller header 值支持 set/remove 非受保护默认项并在 auth 后合并；身份/受保护 headers 仍按 AIR-042 拒绝。当前候选提供静态 extra_headers 与 payload/response 扩展；pi transformHeaders 动态 callback、onProviderStreamEvent 原生事件 observer、compact assistant frames helper **明确延后**，不是已对齐能力。需外部 SDK consumer 的具体输入/输出与脱敏/frame终态 corpus 后重新评估；frames 的 progress 与 terminal 不能混淆，也不为它建通用事件框架。
+保留已确认的支持等级选择和 native exact 能力验证。以 reported anchors 估计 canonical transcript，不用于账单。Q35 撤回同模型／全文下界限制。计量 pi UTF-16 code units，每图 4800 等效 chars，以 message 粒度除以 3.5 并向上取整：user/toolResult 全部 blocks 汇总后一次取整；assistant 的全部 text/thinking/tool-name+serialized-argument chars 汇总后一次取整。System 先渲染 body+sections 再一次取整，另分别累加 JSON toolsAdded 和 toolsRemoved 的取整估计。不得对每个短 block 独立取整。最后一个非 Error/Aborted、timestamp 不早于其 prefix 的正 usage 提供 anchor：优先已知正 reported total，即使不同于 bucket sum；total 缺失/0 时，只在 input/output/cacheRead/cacheWrite parents 全部已知时使用其正和。绝不以 0 填 unknown buckets，也不重复加 children。保留 adapters 的独立 reported total；这不改变 parent/subset billing。估计 anchor 后的 messages；无 anchor 则估计全部 messages，保留 Rust 数值差异。V-45 分别覆盖 total≠sum、total=0 fallback、partial unknown 和 prefix timing，不以 normalization 隐藏。
+
+Pi cache none 对应 Rust Disabled；SDK retention 省略时，仅对具有该默认的 wire 使用 Short，受选定 scoped-environment long override 影响。Pi Messages 保留 retention 省略态，由 backend 默认决定，除非显式 long override 生效。当前 Rust None 表示 Provider 默认，不是 pi none；任何保留的高级 native 默认都须区分。Caller headers 支持设置／移除未受保护默认项，并在 auth 后合并；identity/protected headers 仍按 AIR-042 失败。AIR-059/060 包含动态 assembled-header transform、onPayload/onResponse、已解析 raw-provider-event observation 和 compact progress frames。SDK 附件固定它们的调用顺序、protected-field 差异、失败与 per-variant/event 次数。在选定 adapter 支持时，raw observation 发生在 normalization 前；不支持路径严格按映射失败／报告，不能虚称存在通用 raw transport event。Progress 不结算 terminal，无需通用事件框架。
 
 ### 上下文与恢复投影
 
@@ -306,27 +341,27 @@ AWS 选定来源表和精确依赖证据见 [SDK 附录 A–D](sdk-target-propos
 - Default-chain 发现遵循已验证的 Env（有 profile 则跳过）→ 显式 SSO → INI → process → web identity → ECS 或 IMDS。INI 覆盖 role/source-profile/static/web/process/SSO/login-session，包括 config/credentials 字段覆盖及 role/MFA 选项。只有类型化、允许继续的发现失败才推进；缺失可选来源不同于选定来源的终止性/鉴权失败。SSO 无效会话/MFA 缺失/web-token IO 错误按已记录规则停止；process 发现失败可以继续。选定凭据后的 HTTP401/403 绝不启动另一轮身份搜索。
 - Profile/metadata/token/process/clock 来源可注入，且独立于产品受到支持。有效且未过期的缓存凭据可以在接近五分钟过期窗口、一个同来源刷新进行时继续返回；已过期凭据要求重新解析。遵守来源报告的有效过期时间，并在来源提供时保留原始过期时间/stability 来源记录；中立 resolver 不虚构延期。所有本地等待和陈旧刷新发布都有边界及清理。文件刷新必须具有显式失效机制，不能依赖永不失效的模块 promise；不要仅因 Node 链可能如此就重复运行同一 process。
 - SSO/login 刷新及获准缓存写入是真实来源行为，不能声称只是只读文件。离线验收只以伪 transport 执行 STS/OIDC/ECS/IMDS。导入时绝不发现来源。SDK DefaultChain 必须能通过公开的伪组装调用到达，不能只存在于内部测试；不复制 pi 已配置列表遗漏 default-profile/IMDS 的行为。
-- 原始 SKIP_AUTH 环境模拟不在本轮类型化来源目标中。pi 的 dummy SigV4 和环境 bearer 覆盖是已记录的实现行为，不是 NoAuth。后续 proxy 模式需要显式实际签名契约及独立 resolver/header fixture；调用方现在已可提供显式选定的 SigV4 凭据/自定义 endpoint，但不能据此宣称无需鉴权。
+- 通过显式 typed `ProxyPlaceholderSigning` 保留 Pi 已发布的“不持有真实 AWS 凭据调用代理”动作：要求 caller 提供非标准 endpoint，并可显式选择 HTTP/1.1 transport。冻结的 mode/endpoint/region 使用固定非秘密 placeholder SigV4，不是无签名 `NoAuth`，也不代表已认证 AWS 账户。即使 ambient 存在真实凭据，也零读取 environment/store/profile/process/metadata/bearer 凭据；普通 AWS endpoint 拒绝此模式。这是相对原始 `AWS_BEDROCK_SKIP_AUTH`/ambient 覆盖的明确安全差异，不是延后能力。V-09/49/58 通过普通 SDK → 真实 adapter → 本地代理验证 HTTP/1.1、placeholder Authorization、secret canaries、固定身份及取消／重试；不新增通用 transport/auth 框架。
 
 恢复鉴权使用同一选定来源/目标。允许已确认属于同一账户的凭据刷新；已知 principal/来源切换停止。凭据实质改变，却无证据标识其仍属于同一选定账户时，以 identity-unverified 错误停止自动恢复；不能静默假定，也不能额外发起身份探测网络请求。Resolver 可以提供稳定且非秘密的账户绑定；仅附加方案相同不足以证明账户相同。无论刷新是否完成，旧调用鉴权保持冻结。
 
 对于目录 404/501，保留当前已恢复 overlay、同时使其来源失效，是观察到的 pi 行为。固定版本实现中，后续恢复是否撤下该 overlay 取决于内置 generation。AIR-034 将类型化失效 tombstone 设为权威，即使没有该 generation 也生效；这是显式一致性修正，不是对 pi 精确行为的断言。
 
-### 操作预算与产品默认值
+### 操作资源预算与参考默认值
 
-以下预算均为有限正数 SDK 默认值，可由可信调用方覆盖，并按调用冻结。它们不是实测最优值或 Provider 限制。加法/编码/分配溢出均失败；预算不能增加不支持的格式。
+下列配置资源上限为有限正值 SDK 默认预算，可由可信 caller 覆盖并按 call 冻结；可选 deadline 缺失不同于 unlimited 数值 sentinel。它们不是测量所得最优值或 Provider limits。加法／编码／分配溢出为失败；预算不能增加不支持的格式。
 
 | 项目 | 选定默认值/语义 |
 |---|---|
-| 每个方向的图片媒体 | 8 张图片；每张解码后 16 MiB，解码后总计 32 MiB；PNG/JPEG/GIF/WebP |
-| 图片内容/body | 有序非空输入块，允许仅图片；每个方向文本 UTF-8 总计 64 KiB；编码请求和 HTTP 解码后的成功 JSON 各 48 MiB |
+| 每方向 image-generation 媒体 |8 张图片；每图解码后 16 MiB、解码总计 32 MiB；PNG/JPEG/GIF/WebP |
+| Image-generation 内容／body | 有序非空输入 blocks，允许仅图片；每方向文本 UTF-8 总计 64 KiB；编码请求与 HTTP 解码后的成功 JSON 各 48 MiB |
 | 图片验证/输出 | 严格 base64、非空字节、MIME/容器签名匹配；不解码像素。只消费第一个 choice，先文本，再按其报告顺序输出图片；至少 1 张有效图片，不跳过坏的已消费条目 |
-| 分类输入 | 默认 1–64 个唯一问题；choice 默认 2–255 个 label；score≥2 个有序级别，不套用 llama 的 10 上限；默认 request≤1 MiB、嵌套≤32 |
+| Classifier 输入 | 共享 SDK 默认 1–64 个问题、request≤1 MiB/depth≤32；实际 label/score/image limits 仍在 SDK 附件按协议限定（包括 llama limits），不强套 System One2–255。正值 override 不能启用不支持的 protocol/modality |
 | 分类响应 | HTTP 解码后的成功 JSON 默认≤2 MiB；有限性/类型/domain/label 检查，忽略额外 question ID；默认不做 sum/argmax 检查，不要求 score 分布 |
-| Timeout/retry | 图片 attempt 默认 600000ms，覆盖完整 HTTP body（修正 Node 仅计 header 的 timer）；System One 默认没有 attempt deadline；显式正数 attempt 预算覆盖。整体 deadline 可选。额外 HTTP 重试为 image0/SystemOne2；延迟上限 60000ms；状态/header 判定见 SP-13，不重试业务无效结果 |
-| 远程目录 | 产品来源 pi.dev，新鲜度 4h 门槛（不是 timer）；管理 attempt 为 4s/额外重试 2 次；UI/RPC 就绪后启动刷新预算 15s。请求 operation types；只有存在缓存 body 才用 ETag 条件 GET；用户覆盖最高 |
+| Timeouts/retry | Image 默认 600000ms 覆盖 body，作为明确 Rust 差异；classifier deadlines/retries 按协议限定，共享 classifier helper 额外 2，image0。Native Mistral 默认 60000ms 只限制 headers；不全局套用 image 语义。Overall deadline 可选；server-delay admission 默认 60000ms。参见当前 SDK 默认值 |
+| Catalog refresh | 显式 SDK restore/refresh/Provider publication 和配置来源；personalization/Radius/generic 规则保持区分。产品 pi.dev/4h/UI/startup 默认值为历史参考，不是本 SDK 完成契约 |
 | Codex WS | SDK/产品默认 Auto；idle5min/max-age55min 在下次 idle acquire 检查，不用 timer 中止 active generation；connect15s；显式 SSE/no-cache；HTTP 默认额外重试0次 |
-| 产品恢复 | 启用；额外 logical call 3 次，指数退避基数 2s、上限 60s；显式禁用/覆盖。Auth/billing/quota/invalid-input/cancel 不属于通用暂时错误重试；overflow 由 compaction 恢复处理 |
+| 显式 SDK whole-call retry | 省略／禁用表示无额外 call。启用 config 时采用固定 helper classification/count/backoff；无自动 Models/产品 recovery 或 compaction。产品 enabled/3/2s/60s 仍为宿主政策 |
 | Deferred 检查 | wait0 一次；调用方负责轮询。可重新打开的 fixture 在没有 hint 时使用 5s，重复 pending 严格推进时间；这不创建 SDK 轮询默认值 |
 
 ## 替换与退出要求
@@ -337,53 +372,52 @@ AWS 选定来源表和精确依赖证据见 [SDK 附录 A–D](sdk-target-propos
 |---|---|---|---|
 | 第二次模型查找；mapped/direct adapter、factory | 替换为 AIR-001 最终绑定 | 保留 model/wire/auth 语义；有效覆盖现在实际执行。影响 prepared adapter 契约、picker、compaction 和外部 SDK Provider | 一次范围明确的破坏性变更；无平行 router。新增捕获路由测试，更新 prepared conformance；静态证明不存在第二次独立查找，并保留回滚 |
 | 独立请求 system/tools 读取者；builders/hooks/adapters/mocks | 合并为 AIR-008/020 规范化/时间序列 | 保留便利初始输入；下游唯一 transcript 加入命名变更。迁移公开 Request/message、hooks/session/compaction/示例 | Builder 仅作为规范化入口保留；所有消费者编译。新增时间线测试，更新 fixture，删除重复权威断言；证明不存在旧 adapter 路径 |
-| Run 内固定 registry 及按可见性执行；Agent/产品 | 替换为 AIR-009 不可变的每调用修订 | 保留可信来源/授权；可信更新无需子会话，隐藏的活动工具仍可调用。变更 registration/loadout/binding 证据和 hook | 无 run-fixed 回退开关。新增新旧修订及撤销测试，更新来源/证据，保留权限拒绝。证明当前批次稳定，非活动工具零执行 |
-| Deny-only before hook/严格参数路径；hook 实现者 | 以 AIR-041 分阶段规范化/修改扩展 | 保持无效 raw 观察可区分；增加已验证值的可变阶段及最终实际值授权。变更 hook 公共 API、工具 fixture/证据/文档 | 迁移全部实现者；不无限期保留第二执行器。新增规范化/修改 fixture；更新 hook 顺序测试，保留已拒绝效果验证。执行值与授权值相同 |
+| Run 内固定 registry/loadout／按可见性执行；Agent/宿主 | 仅宿主 AIR-009 影响 | 保留当前正式执行／权威契约；SDK 接受并冻结 owned context、报告 projection | 不选择新的 run/会话政策。只适配被破坏的 SDK caller 签名；宿主 revision 变更须有自身已准入范围 |
+| Deny-only hooks 和最终执行授权；宿主 | 仅宿主 AIR-041 影响；SDK 提供 AIR-024/049 normalization/validation | Raw/normalized 数据与可信 schema 无需安装 hooks 或执行工具即可获得 | 保留宿主 permission/denial 测试；声明 SDK 完成无需重设计 hook-order/authorizer |
 | Config/Model/ProviderKind/error 外壳；公开导出/示例 | 通过 AIR-021 已确立的 SDK 契约删除 | 保留实际 route/auth、ApiKind 和持久化消费者。外部 0.x import 有意破坏；不依赖产品配置 | 无默认 shim。删除仅构造器测试，保留行为；编译仓库消费者，扫描当前旧导出/文档至零 |
 | 静态 reasoning_effort 和重叠 compat 名称；config/parser/factory | 删除重复值；只有 AIR-022 替代完成后才合并真实行为 | 保留 store/role/gating/bridge。已淘汰键报错；迁移有效 profile/model 合并及当前 schema/README，不隐含移除会话格式 | 删除前先有新 wire 证明；同一 release 退出旧读取者。新增旧键负例 fixture，更新 wire/schema；只删除无效果测试；唯一 compat 所有者 |
 | AWS 当前本地链/文档；库/产品消费者 | 修正/扩展可复用 AIR-023 resolver，保留签名 | 保留安全性；env/profile 优先级改为已选规则，添加类型化来源/完整 default-chain 覆盖。不迁为产品独占；修正有误导性的旧“无 I/O”文档 | 未明确改变时保留来源格式；新增来源/过期/伪 HTTP 测试，保留 process/SigV4；不能将仅本地能力称为完整链。不破坏性转移 SDK 功能 |
-| 可写 v1/v2；会话 CLI/harness | 替换为 v3，保留读取者/显式子会话迁移 | 保留旧字节/分支事实；未知保持未知。更新版本/条目/fork/export/help | 无旧追加路径。新增迁移/checkpoint 测试，更新回滚，保留损坏/中断尾部测试；证明源字节和因果分支 |
+| 可写会话格式／子会话迁移；会话宿主 | 仅宿主 AIR-015–019 影响 | SDK message/opaque/knownness 变更可能需要 consumer/read compatibility；本候选不选择 v3 writer、旧格式 append 退出或子会话迁移 | 保留旧字节／readers 和当前正式宿主行为。新 durable migration 另属范围；库 Serde/consumer 测试仍适用 |
 | 有损/所有权游离的流路径；SDK/Agent | 修正为 AIR-003–006 自有生命周期 | 保留有效事件/内容；改变已证明的损坏/EOF/drop 结果 | 无旧行为开关。新增对抗 fixture，保留正常语义；证明 inner/producer 释放及永久 EOF |
-| Start 输出后一概禁止恢复；Agent/harness 测试 | 在高层替换为 AIR-039 | 保留低层流终止及无隐式输出重放；原始失败历史、持久化省略及新调用均可见 | 无双重高层重试策略。更新部分重试测试，新增重启/事件测试，保留账户拒绝；已完成工具只执行一次 |
-| AgentLoopConfig.retry/OpiConfig.retry/summary loops 及每次 start 重置预算；Agent/harness/compaction/config/SDK | 低层调度替换为 AIR-007 唯一 call owner；summary 高层恢复用 AIR-039 同一公开机制 | 保留 typed failure、取消、低层冻结鉴权与 attempt usage 未知。公开 CallOptions max_retries/max_retry_delay_ms、产品 [model_call] 可选同名覆盖及 [recovery] enabled/max_retries/base_delay_ms/max_delay_ms 区分层级。Legacy [retry] 键显式迁移报错，不静默将 capped delay/次数解释为高层恢复 | V-05/33 分层计数/events/auth及 summary fixtures 先通过，再退出旧 Agent 低层 loop/summary 私有恢复策略/当前 retry config 路径；V-20 静态扫描当前 readers 归零。更新 schemas/help/双语 docs/config/default-source metadata。保留仍有真实消费者的纯 helpers，无永久并列策略或自动旧键 alias |
+| 产品 recovery 默认值和 durable omission 政策；Agent/宿主 | 仅宿主 AIR-039 影响；显式 SDK helper AIR-065 | 保留宿主语义，同时公开可选 SDK new-call orchestration，不拼接输出或执行工具 | 不选择新产品 defaults/events/compaction workflow。既有 SDK-consumer 变更不得叠加低层 retry 所有者 |
+| 既有 SDK 调用方拥有 acquisition retry；Agent/summary/SDK | 唯一 AIR-007 acquisition 所有者与显式 AIR-065 helper | 保留 cancellation、typed failure、冻结 auth 和如实 attempt usage；有界 caller 适配仅移除重复 acquisition scheduling | V-05/20/57 证明无叠加 sends，并验证必要 consumer 编译。本 package 候选不重设计产品 config names/defaults、whole-turn/summary recovery 或 durable policy |
 | ProviderCollection 日常组装/调用；Agent/产品/SDK | 收敛为唯一 AIR-045 Models | 保留 registry/auth/catalog/prepared 状态；日常方法隐藏组合，高级 prepare 复用机制。迁移调用方/根导出/crate 双语 README/examples；改名本身不改变持久格式 | 同次 scoped 0.x break；V-39/42/20 验证消费者编译/公共路径；旧并列 collection/re-export/router 退出，无永久薄 facade |
 | CompletedRequest、AssistantStreamEvent::Error 及 provider/transport 双错误；adapters/Agent/summary/mock/evidence | 替换为 AIR-047 Result/CallFailure | 保留完整失败 partial/usage/来源/typed cause；当前事件只 Err。同步 producer/drain/terminal 匹配/脱敏转发/fixtures/docs。版本化历史事件转换保留原事实 | 先 V-40/41/03/20 覆盖所有终态和 >64 收集；再迁移所有 consumers，旧 wrapper/当前 Error variant/双写路径归零。保留历史只读兼容；当前 calls/writes 全用新契约 |
-| 产品独占三 OAuth flow/刷新和旧协议；SDK/产品登录 | AIR-051 可注入完整 SDK flow/refresh | 保留 keychain/TUI 和 ack，修正 JSON/callback/Copilot metadata/expiry/deadline/cancel。具体 endpoints/PKCE/state/fixtures/锁与 store消费者迁移；新OpenAI OAuth不自动加入 | V-43 公共login→fake HTTP→store→chat/refresh全链及canary；同源并发/取消/提交故障覆盖后旧产品具体flow/重复resolver退出，产品只组装可复用机制 |
+| 当前产品 OAuth flows/refresh；SDK/产品消费者 | SDK 可达的 AIR-051/063 九类 flow 契约，注入宿主 adapters | 保留 keychain/TUI 所有权和 atomic ack，修正当前 rotation/expiry/callback/metadata 行为；增加其余已发布 flows | V-43/55 公共 login→fake HTTP→store→request 和 same-store concurrency/rotation faults 通过后，重复 SDK resolver/flow code 才退出 |
 | 内置旧 provider ID/default wire、全局simple预算；config/store/catalog/SDK/产品 | AIR-052/053 canonical ID/真实默认adapter/统一mode estimator | 保留明确Chat adapter/profile、历史来源和unknown；迁移config/key冲突、defaultResponses、ModelInfo.provider_id、输出预算/估计helpers及docs | V-44/45先证明defaults/wire/迁移重入及预算；当前旧默认aliases/独立estimator/双clamp退出，历史只读与custom IDs保留；无静默账号覆盖 |
+| 旧选定能力缺口、固定 wire/profile 清单和 phase 范围 guard | AIR-057–067 完整源码映射覆盖 | 以 Rust 对应能力保留有价值的公开 utility/state-machine 语义；不通过符号改名或收窄已发布 adapters 虚假宣称支持 | V-49–59 和 41+7 测试处置清单建立替代后，过时 presence/count/module-freeze 断言才退出；不按名称整文件删除 |
 
 ## 验收依赖与完成条件
 
-1. 正式规范协调 → 验证：目标方向及受影响的正式条款经过正常权威流程评审；本文本身保持非规范性。
-2. 绑定/流 → 验证：V-01–05 捕获路由身份、分帧及基于同步的清理。
-3. Transcript/args/replay → 验证：V-06/07/15/16/34–36，单快照回归及唯一规范化/授权路径。
-4. 会话迁移/压缩 → 验证：V-17–20 源保留、已接受输入的失败状态、修订、分支及有意压缩损失。
-5. Compat/AWS/淘汰 → 验证：V-09–15/20 正确来源与 wire 矩阵、消费者编译及显式旧键错误。
-6. SDK 操作 → 验证：V-21–26 公开入口后的真实 adapter、资源/timeout/retry/未知用量结果。
-7. 已发布产品/deferred 路径 → 验证：V-27–33/37/38 实际所有者接通、cache/transport/恢复清理及重启 fixture。不据此推定完整 MCP/codemode 或未知远程 adapter。
-8. 独立 SDK → 验证：V-39–45 的公共调用/结果对应、外部 consumer/package smoke、完整 OAuth、canonical 身份及 native/simple mapping。
-9. 显式 telemetry → 验证：V-46–48 全部已选 options 保留 context，独立 Dispatch/异步生命周期隔离，no-op/捕获失败不改变业务或 durable evidence。
-10. 独立交付评审 → 验证：每条 AIR 均有映射，每项退出都有替代和测试，英中语义一致，并通过选定仓库文档检查。不执行未获批准的实施/live 调用。
+1. 固定范围／来源清单 → 验证：固定 Pi 1.2.0 identity、全部 capability/profile/flow 行、正式权威、58 项 SDK 与 9 项仅宿主 AIR 处置，以及明确差异；无隐藏排除的已发布能力。
+2. Binding/streams/typed outcome → 验证：V-01–05/39–42 的 route identity、framing、cancellation、variant budgets、>64 收集，以及独立 task/socket 释放。
+3. Context/validation/replay → 验证：V-06/07/15/16/31/32/34–36 的 SDK 部分和 V-58；无需 tool executor 或 durable writer 即可验证 chronology、schema/grammar、signatures 和 projection。
+4. Auth/catalog/options/resources → 验证：V-09/11–14/27–30/43–45/54–56、精确协议默认值、shared-store rotation、当前 canonical identities、pricing/sampling 和显式 cleanup。
+5. 公开 operation/customization 能力面 → 验证：V-21–26/37/38/49–53/57，通过真实 adapters／本地受控 transport 验证全部 APIs/profiles/flows、images/classifiers/deferred/frames/callbacks/timing 和显式 retry orchestration。
+6. Telemetry/package/native 集成 → 验证：V-46–48/58 和 workspace 外 consumer/package 证明；实际 operations 中 parent+Dispatch 匹配，无隐藏全局 I/O 或 exporter，runtime/platform 替代明确声明。
+7. 迁移和上游证据 → 验证：V-20/59，每项退出 assertion/symbol 均有替代证明，实际受影响 Rust consumers 编译通过，当前支持文档与 tracking 记录准确。不暗含产品／会话重设计。
+8. 独立文档评审 → 验证：双语 requirements、当前附件、唯一 acceptance matrix、历史替代和全部 source/ID references 一致。文档检查通过；未决重大选择明确列出。Runtime/test 实现与正式准入仍独立。
 
-这些是依赖和完成条件，不是工单或进度账本。全部 56 条 AIR 必须映射到 V 和证据/决策；本次文档工作尚未执行运行时验收。
+全部 67 个 AIR IDs 和 59 组 V 保持可追踪，但只有 58 项 SDK 要求和 55 组 SDK 验收定义本 package 的未来交付。AIR-009/015–019/037/039/041 与 V-17–19/33 只保留宿主影响／历史；混合组只要求其 SDK 部分和必要 API-consumer 适配。仅宿主缺口不能被静默计为 SDK 失败或完成。
 
-差分输入使用固定的人工 fixture。只归一化无关 clock/request ID 和双射工具 ID 重命名。保留 raw/effective 类型转换差异、已声明的 Rust 整数精度差异、内容字节、事件顺序、终止/取消/错误、usage 缺失/零值、关联、section 位置、投影事实和恢复 attempt。在事件发生时捕获 JS partial snapshot。不能通过归一化把 pi 缺陷变成成功，也不以模型输出作为确定性判据。离线测试不证明 Provider 服务接受、模型遵从、媒体准确性、缓存/性能收益、实际账户身份、账单准确性或外部嵌入方兼容。Live 测试需要独立授权，不属于默认完成条件。
+差分输入为固定人工 fixtures，记录两方 source versions、实际 test entry/filters 及 executed/skip/missing counts。只归一化无关 clock/request IDs 和保留引用的双射 ID 重命名。保留字节、顺序、事件时点 partials、terminal/cancel/error、accounting knownness、callback/variant/send 次数、关联、签名和投影事实。明确 RDF cases 是差异，不是被归一化消失的失败。离线 fixtures 不证明确定性模型输出、真实服务接受、性能、账单或远端停止／退款。
+
+本次文档工作不实现测试，也不运行 runtime suite。旧 70 个 Rust tests/probes 保留历史基线；它们不使新验收组通过。未来执行遵循实际 change-scope verification union 和唯一 matrix，包括经审查的 Pi mock-only 选择、隔离 HOME/env、禁止 credentials 触发 live，以及不静默安装／hydrate。
 
 ## 证据导航与剩余边界
 
 | 契约 | 修改时阅读 |
 |---|---|
-| 基线/内容身份/实际测试 | [README](README.md)、[基线](baseline.json)、[流探针](offline-probes.md)、[路由探针](route-probe.md) |
-| 当前实现及 15 个主题比较 | [证据矩阵](evidence-matrix.md)、[审计](design-audit.md)、[O 笔记](opi-audit-notes.md)、[P 笔记](pi-contracts-notes.md) |
-| 当前目标决策/历史 | [决策](decisions.md)、[Q1–21 重新评估](decision-reassessment.md)；D-19–34 取代受影响的历史回答 |
-| Transcript/规范化/strict/grammar | [TP](transcript-target-proposal.md)、[TM 迁移](transcript-migration.md)、[R 重放](replay-contracts.md)；TP-13/14 精确语料/关键词细节 |
-| Compat/AWS/操作 | [SP/SE 与 SDK 附录 A–D](sdk-target-proposal.md)、[OP](operations-design.md)、[官方协议补充](provider-contract-addendum.md) |
-| Catalog/WS/延续/恢复/deferred | [EP/EPT](evolution-target-proposal.md)、[RE](reassessment-evolution-notes.md)、[设计演进](design-evolution.md)中固定的 tag/main 时间窗口 |
-| 独立 SDK 调用/执行/结果 | [SDK consumer](sdk-consumer-contract.md)、[pi caller](sdk-pi-caller-review.md)、[opi caller](sdk-opi-caller-review.md) |
-| SDK OAuth / builtin identities | [OAuth/provider migration](sdk-auth-provider-migration.md); OA-01–06, BP-01–04 |
-| Telemetry option/module/backend/domain 区别 | [Telemetry design](telemetry-design.md)、[TC contracts](telemetry-pi-contracts.md)、[TE evolution](telemetry-evolution.md)、[TO audit](telemetry-opi-audit.md) |
-| 独立 ai/telemetry 报告交叉核查 | [Report cross-check](ai-telemetry-report-crosscheck.md)：回源支持、表述纠正、已选差异及未执行验收；不是另一套目标权威 |
-| 机械验收 | [V-01–48](acceptance-matrix.md)；断言是未来验证设计，不是测试通过声明 |
+| 当前完整 capability/default/protocol/flow 映射 | [Pi 1.2.0 SDK contracts](pi-1.2.0-sdk-contracts.md)；有源码支持的精确公开行为与明确 utility/platform 替代 |
+| Rust 差异、caller 影响和证明 | [RDF-01–20](pi-1.2.0-rust-differences.md)；语言／资源／正确性／平台差异与真实覆盖缺口的区分 |
+| 唯一机械验收和测试迁移 | [V-01–59](acceptance-matrix.md)；55 组 SDK、4 组仅宿主影响，以及 41 integration+7 source-file 处置；均不是已执行验收结果 |
+| 当前输入／修订和独立评审 | [revision baseline](pi-1.2.0-revision-baseline.json)、[revision review](pi-1.2.0-revision-review.md)、[README](README.md) |
+| 审查发现与补核范围 | [版本审查](pi-1.2.0-review.md)、[五问补核](pi-1.2.0-followup.md)；发现仅适用于各自固定的修订前输入 |
+| 人类指示与历史选择 | [decisions](decisions.md)；当前 package 方向／范围在本候选中取代旧选定子集，不重写历史回答 |
+| 保留的详细 transcript/JSON/strict/AWS 算法 | [TP](transcript-target-proposal.md)、[R replay](replay-contracts.md)、[SDK annexes A–D](sdk-target-proposal.md)；仅在不抵触当前契约／RDF 时采纳 |
+| 历史跨 package／会话／产品提案 | [TM migration](transcript-migration.md)、[EP/EPT](evolution-target-proposal.md)、旧 SDK/OAuth/telemetry reviews；作为支持历史，不增加 SDK 交付范围 |
+| 规划与后续上游修订 | [upstream tracking](upstream-tracking.md)；固定版本证据，区分 accepted 与 discussion/experimental/shipped/unknown，记录测试处置和明确再评估触发条件 |
 
-独立评审已完成，候选仍保持 DRAFT：正式规范协调及实施准入尚未进行。Q22–Q31（包括修订 Q31）确认修订目标；Q32–37 确认 SDK 范围。没有目标行为选择留给实施 Agent 自行推断。源码/运行时性能/live 缺口如实列出，不猜测路线图。精确 npm 依赖证据固定 AWS 和图片默认值；未来 Rust 依赖的选择/conformance 属于实施验证，不授予改变目标来源策略的权限。
+文档评审后，候选仍为非规范性且尚未实施。源码映射、连贯契约和 reviewer findings 可以形成可评审提案；只有实际 runtime/consumer/conformance 证据才能证明交付。既有 D/Q 选择支持保留语义，但不能制造对每项新技术推导的批准。未来精确 Rust 依赖选择须保留本目标，并通过 locked-version/platform/supply-chain 审查。
 
-当 submit/fetch/cancel/expiry/account 协议和 fixture 齐备时，重新评估被排除的远程 deferred；当固定协议范围获得选择时，重新评估其余操作 adapter；当独立产品依赖和权限经过评审时，重新评估完整 MCP/codemode。只有采用情况已验证、语义稳定时才重审实验路由/Lite。真实独立非 LLM consumer 或已证 tracing 契约缺口触发 telemetry 独立 crate 重评；自动 SDK spans/exporters 需另选 schema/lifecycle/data policy。改变这些范围边界需要显式修订目标，不能在实施期间自动跟随上游。
+获得真实 submit/fetch/cancel/expiry/account 协议时重新评估 remote deferred；核实已接受／已发布契约变化时重评 Lite；存在真实消费者及选定 schema/lifecycle/data policy 时重评 telemetry 提取／instrumentation；已发布源码／adapters 支持时重评新 operations。不因此引入推测性框架或自动采纳上游。未来范围变更和实际规范冲突需要人类权威；普通、有源码支持的实施选择不重开已定 package 意图。

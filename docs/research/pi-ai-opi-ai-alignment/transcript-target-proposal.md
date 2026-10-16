@@ -1,5 +1,7 @@
 # Transcript、动态工具、replay 与参数规范化目标提案
 
+> **2026-10-16 历史材料定位：** 本页保留 Pi 1.0.0 时的事实、方案、D/Q、行号和执行记录；其中“当前目标”“已通过”、能力子集或产品接线不构成 Pi 1.2.0 候选要求。当前要求以[双语正文](spec-draft.zh.md)（[English](spec-draft.md)）、[1.2.0 SDK 附件](pi-1.2.0-sdk-contracts.md)和[Rust 差异](pi-1.2.0-rust-differences.md)为准，[验收矩阵](acceptance-matrix.md)为唯一证明索引。历史中有效细则仅在当前正文明确采纳且无冲突时沿用；不把旧源码链接机械改成新快照行号。宿主执行／会话／产品策略只作下游影响，本页不授权实施。
+
 > **非规范性目标细化，2026-10-03，已同步第二轮回答。** [D-19/Q22、D-20/Q23、D-22/Q25](decisions.md#第二轮目标决策d-18之后)已确认动态transcript、replay/normalization和可信hook方向；D-28记录主Agent依据这些方向收敛的pi式compaction与plain-JSON语义，不冒称新用户回答。本文保留提案推理与替代方案，当前选择以上述决定为准；不授权实施、不代表运行时已实现。
 
 读法：先看“目标条款”，发生差异时查对应精确规则与证据；最后看三项已收敛的实质取舍及其依据。已有源码/历史依据集中在 [RT01–RT08](reassessment-transcript-notes.md)，本文只补充形成可执行契约所需的局部证据。术语沿用 `docs/CONTEXT.md`；下文的 registered、active、wire-visible 是工具不同使用位置的说明，不建立新 GLOSSARY 或第二份状态账本。

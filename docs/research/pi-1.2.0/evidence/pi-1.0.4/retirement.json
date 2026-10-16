@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-16",
+  "retired_directory": "docs/research/pi-1.0.4",
+  "authorized_files": 32,
+  "all_file_bytes_match_fixed_git": true,
+  "transferred_evidence_bytes_match": true,
+  "repository_markdown_html_files_scanned": 198,
+  "resolved_live_dependencies_on_retired_directory": [],
+  "removed": true,
+  "removal_method": "PowerShell Remove-Item -LiteralPath, per verified file followed by empty directories; no recursive deletion",
+  "restoration_record": "report-recovery.json",
+  "source_snapshot_removed": false,
+  "known_external_consumers": "repository references checked; unknown consumers outside repository were not inventoried"
+}
