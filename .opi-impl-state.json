@@ -187,7 +187,7 @@
       "definition_of_done": "Cut over every current producer, collector and Agent/summary consumer together to Result<AssistantMessage,CallFailure>. Prove >64-event collection, immutable event-time partials, first-terminal absorption/permanent EOF, one protocol error on premature EOF, cancel-before-delivery, lazy unpolled drop and owned producer release. Preserve failure partial/known usage and versioned read-only historical Error events, stop current dual writes. Keep workspace compiling in this cutover. Local scope: current migrated chat producers/collectors and Agent callers; duration proof here excludes deferred fetch. Full AIR-061/V-53 is 20.57.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.1"
       ],
@@ -283,7 +283,7 @@
             "opi_agent::agent_loop",
             "opi_agent::PreparationEvidence::run_provider_call"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-13",
@@ -298,7 +298,7 @@
             "opi_agent::agent_loop",
             "opi_agent::PreparationEvidence::run_provider_call"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-40",
@@ -313,7 +313,7 @@
             "opi_agent::agent_loop",
             "opi_agent::PreparationEvidence::run_provider_call"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-003",
@@ -328,7 +328,7 @@
             "opi_agent::agent_loop",
             "opi_agent::PreparationEvidence::run_provider_call"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-047",
@@ -343,7 +343,7 @@
             "opi_agent::agent_loop",
             "opi_agent::PreparationEvidence::run_provider_call"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S02",
@@ -358,7 +358,7 @@
             "opi_agent::agent_loop",
             "opi_agent::PreparationEvidence::run_provider_call"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-ACTOR-04",
@@ -373,7 +373,7 @@
             "opi_agent::agent_loop",
             "opi_agent::PreparationEvidence::run_provider_call"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -385,7 +385,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "7b834481f336d47b4f4e5dabb8a35d65c04b4e8d",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -511,10 +511,94 @@
         "crates/opi-coding-agent/tests/rpc_jsonl.rs",
         "crates/opi-coding-agent/tests/session_runtime.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "b2ff2f398b8d2416f0284ac7a77731338cf0a436",
+      "evidence": {
+        "Opi-Task": "20.2",
+        "Opi-DoD-SHA256": "8bc7eb08ed7651ce9d223ff801ac1510dd2775f8f91b4383c794f6c709c57155",
+        "Opi-Verification": "workspace; smoke full PASSED (doc-check, fmt --all, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets + --doc, rustdoc -D warnings); scenario cargo test -p opi-ai --test provider_collection --test provider_lifecycle --test stream_events 92 passed (59+8+25); producer dual-write grep zero",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; Workflow runtime unavailable in environment, wf_ref=null (recorded in verify_runs)",
+        "Opi-Acceptance": "V-03, V-13, V-40, AIR-003, AIR-047, P20-S02, P20-ACTOR-04 met via SDK behavioral suites plus production consumers agent_loop/run_provider_call/drain_to_completion exercised; no runtime claim beyond tests and preserved behavior"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-17T04:46:45+08:00",
+          "attempt": 1,
+          "summary": "DEL-02 cutover delivered in commit b2ff2f398b8d2416f0284ac7a77731338cf0a436: public ChatStream/CallFailure seam in opi_ai::stream (Stream<Item=Result<AssistantStreamEvent,CallFailure>>, first-terminal absorption/permanent EOF, one typed protocol failure on premature EOF, active result(self) with terminal cache, lazy owned handles); drain_to_completion shares the seam and CompletedRequest is removed; all current producers (anthropic, openai_chat, openai_responses/codex, gemini, bedrock, azure/vertex pumps) stop the dual terminal format with bounded typed StreamError causes while the Error variant stays a versioned read-only legacy path converted at the seam; opi-agent agent_loop and PreparationEvidence::run_provider_call consume the seam with cause-based retry classification and failure-partial preservation; ProviderError now Clone+PartialEq; bilingual READMEs and CHANGELOG updated. Deferred fetch untouched (AIR-061/V-53 full scope remains 20.57).",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.sh full (opi-doc-check, cargo fmt --all --check, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps) on the final tree including the last test additions",
+            "d0_scenarios": "PASS: cargo test -p opi-ai --test provider_collection --test provider_lifecycle --test stream_events -> 59+8+25 passed",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7), no must-fix findings, none flagged; exec.workflow.js runtime unavailable in environment, wf_ref=null per Phase 19 precedent",
+            "d3_gap_checks": "PASS: dual-write grep zero for AssistantStreamEvent::Error construction in current producers (only seam conversion in stream.rs, documented legacy test_support fixture, historical redaction arm in opi-agent event.rs); CompletedRequest zero anywhere",
+            "test_disposition": [
+              {
+                "subject": "P20-FINAL",
+                "action": "add",
+                "test": "crates/opi-ai/tests/stream_events.rs chat_stream_* (11 tests: >64-event drain, iteration/result equivalence, absorption/permanent EOF, premature-EOF protocol error, cancel-before-delivery setup failure, mid-stream partial/usage preservation, legacy conversion, stop-reason classification, immutable partials, lazy unpolled drop) + legacy_error_event_still_deserializes",
+                "interface": "opi_ai::stream::{ChatStream, CallFailure}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-FINAL",
+                "action": "add",
+                "test": "crates/opi-ai/tests/provider_collection.rs dropping_chat_stream_without_draining_releases_the_attempt_slot",
+                "interface": "opi_ai::stream::ChatStream / PreparedProviderCall::start_attempt",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "V-03/AIR-047",
+                "action": "update",
+                "test": "crates/opi-ai/tests/provider_collection.rs drain tests (dispatches_with_redacted_auth drain arm, dispatch_complete_returns_terminal_error_event, dispatch_complete_propagates_mid_stream_provider_error, dispatch_complete_rejects_empty_stream, correctness_fixtures drain, azure cancel drain)",
+                "interface": "provider_collection::drain_to_completion",
+                "replacement": "equal-or-stronger Err(CallFailure) with partial/cause assertions replacing CompletedRequest matches",
+                "slim_candidate": null
+              },
+              {
+                "subject": "AIR-003",
+                "action": "update",
+                "test": "crates/opi-agent/tests/agent_loop_semantics.rs unterminated_provider_stream_is_a_protocol_failure -> typed stream-failure via seam",
+                "interface": "opi_agent::agent_loop ChatStream consumption",
+                "replacement": "AgentError::Provider(StreamError 'terminal') assertion replaces ProviderProtocol assertion",
+                "slim_candidate": null
+              },
+              {
+                "subject": "V-13",
+                "action": "update",
+                "test": "crates/opi-coding-agent/tests/provider_stream_diagnostics.rs stream_failures_preserve_safe_distinct_causes upstream arm",
+                "interface": "runner stderr diagnostics from agent_loop failure path",
+                "replacement": "bounded attested literal + canary-absence assertions replace blanket [REDACTED] equality",
+                "slim_candidate": null
+              },
+              {
+                "subject": "AIR-047",
+                "action": "update",
+                "test": "producer fixture suites: anthropic_fixtures (map_fixture_items + error test), openai_chat_fixtures (helpers + error test), azure_openai_fixtures (collect_items + error_from_fixture), bedrock_fixtures (exception frame), gemini_fixtures, mistral_fixtures, openai_responses_fixtures, openrouter_fixtures, vertex_fixtures (error routing), openai_codex_responses (dedicated codex error expectations)",
+                "interface": "provider mappers stream items",
+                "replacement": "typed StreamError cause + bounded-literal/canary assertions replace Error-event assertions",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.2",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/provider_lifecycle.rs (raw EventStream HTTP lifecycle incl. no-terminal, cancel drain, request contract), stream_events.rs legacy terminal/serde/stop-reason/message tests, test_support_tests.rs mock fixture shape, all agent/coding-agent retry, diagnostics, evidence, mock-e2e and non-interactive suites",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.2",
+                "action": "none",
+                "test": "none deleted",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.3",
@@ -12767,6 +12851,14 @@
       "ran_at": "2026-10-17T01:59:31+08:00",
       "task_id": null,
       "criterion_id": null
+    },
+    {
+      "timestamp": "2026-10-17T04:46:45+08:00",
+      "task": "20.2",
+      "stage": "exec",
+      "mode": "manual-7-lens (workflow runtime unavailable)",
+      "wf_ref": null,
+      "result": "no must-fix findings; lenses L-D1..L-D7 audited against commit b2ff2f398b8d2416f0284ac7a77731338cf0a436 (DoD clause-by-clause, non-vacuous tests, production call sites via agent_loop/run_provider_call/drain_to_completion, truthful evidence, non-goals excluded incl. no deferred-fetch scope, dependency rules unchanged, P20-FINAL locality with closure test and closed legacy producer writes)"
     }
   ]
 }
