@@ -28,7 +28,11 @@ fn map_fixture(input: &str) -> Vec<AssistantStreamEvent> {
         })
         .collect();
     let mut mapper = OpenAiChatMapper::new(opi_ai::ApiKind::OpenAi, "openai");
-    let mut stream_events: Vec<_> = events.into_iter().flat_map(|e| mapper.process(e)).collect();
+    let mut stream_events: Vec<_> = events
+        .into_iter()
+        .flat_map(|e| mapper.process(e))
+        .map(|item| item.expect("fixture maps to stream events"))
+        .collect();
     if let Some(done) = mapper.flush_pending_done() {
         stream_events.push(done);
     }
@@ -46,7 +50,11 @@ fn map_fixture_as(input: &str, api: opi_ai::ApiKind, provider: &str) -> Vec<Assi
         })
         .collect();
     let mut mapper = OpenAiChatMapper::new(api, provider);
-    let mut stream_events: Vec<_> = events.into_iter().flat_map(|e| mapper.process(e)).collect();
+    let mut stream_events: Vec<_> = events
+        .into_iter()
+        .flat_map(|e| mapper.process(e))
+        .map(|item| item.expect("fixture maps to stream events"))
+        .collect();
     if let Some(done) = mapper.flush_pending_done() {
         stream_events.push(done);
     }
@@ -640,25 +648,31 @@ fn error_fixture_parsed_as_error() {
 
 #[test]
 fn error_event_maps_to_stream_error() {
-    let stream_events = map_fixture(error_fixture());
+    let events: Vec<OpenAiChatEvent> = parse_sse_events(error_fixture())
+        .flat_map(|p| match p {
+            ParsedEvent::Valid(evts) => evts,
+            ParsedEvent::UsageError(_) => Vec::new(),
+            ParsedEvent::Malformed { .. } => Vec::new(),
+        })
+        .collect();
+    let mut mapper = OpenAiChatMapper::new(opi_ai::ApiKind::OpenAi, "openai");
+    let items: Vec<_> = events.into_iter().flat_map(|e| mapper.process(e)).collect();
 
-    assert_eq!(stream_events.len(), 1);
-    if let AssistantStreamEvent::Error {
-        reason, message, ..
-    } = &stream_events[0]
-    {
-        assert_eq!(*reason, StopReason::Error);
-        let err = message.error_message.as_ref().unwrap();
-        assert!(
-            err.contains("openai chat stream error"),
-            "error_message must be the neutral literal, got: {err}"
-        );
-        assert!(
-            !err.contains("Rate limit"),
-            "raw upstream error text must not leak into the public error_message: {err}"
-        );
-    } else {
-        panic!("expected Error stream event");
+    assert_eq!(items.len(), 1);
+    // Current producers stop the dual terminal format: the in-band error
+    // event is a stream failure with a bounded typed cause.
+    match &items[0] {
+        Err(ProviderError::StreamError(summary)) => {
+            assert!(
+                summary.contains("openai chat stream error"),
+                "cause must be the neutral literal, got: {summary}"
+            );
+            assert!(
+                !summary.contains("Rate limit"),
+                "raw upstream error text must not leak into the cause: {summary}"
+            );
+        }
+        other => panic!("expected stream error item, got {other:?}"),
     }
 }
 

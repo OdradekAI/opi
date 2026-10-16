@@ -6,7 +6,9 @@
 
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{CacheRetention, EventStream, Provider, Request, ThinkingConfig};
+use opi_ai::provider::{
+    CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
+};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::vertex::VertexProvider;
@@ -257,13 +259,23 @@ async fn vertex_error_event_routing() {
     let provider = vertex_provider();
     let sse = "data: {\"error\":{\"code\":404,\"message\":\"Model not found\",\"status\":\"NOT_FOUND\"}}\n\n";
 
-    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    let items: Vec<Result<AssistantStreamEvent, ProviderError>> = provider
+        .stream_from_sse(sse, CancellationToken::new())
+        .collect()
+        .await;
 
+    // Current producers stop the dual terminal format: the error event routes
+    // to a typed stream failure, not an Error event.
     assert!(
-        events
+        items
             .iter()
-            .any(|e| matches!(e, AssistantStreamEvent::Error { .. })),
-        "should have an Error event"
+            .any(|e| matches!(e, Err(ProviderError::StreamError(_)))),
+        "should have a typed stream failure"
+    );
+    assert!(
+        !items
+            .iter()
+            .any(|e| matches!(e, Ok(AssistantStreamEvent::Error { .. })))
     );
 }
 

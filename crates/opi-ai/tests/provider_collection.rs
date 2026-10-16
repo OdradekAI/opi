@@ -13,8 +13,8 @@ use opi_ai::auth::{
 use opi_ai::message::{AssistantContent, AssistantMessage};
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
 use opi_ai::provider_collection::{
-    AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, CompletedRequest,
-    ProviderCollection, SecretKey, drain_to_completion,
+    AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, ProviderCollection, SecretKey,
+    drain_to_completion,
 };
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::test_support::{MockProvider, text_response};
@@ -280,6 +280,51 @@ fn auth_descriptor_resolved_treats_empty_source_as_missing() {
 }
 
 // ---------------------------------------------------------------------------
+// Task 20.2: owned producer release through the ChatStream seam
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn dropping_chat_stream_without_draining_releases_the_attempt_slot() {
+    // An undrained ChatStream must release the prepared call's single active
+    // attempt slot (owned producer release): a sequential retry can start
+    // immediately after the handle is dropped.
+    let mut collection = ProviderCollection::new();
+    collection
+        .register_route(
+            text_mock_repeated("release", "ok", 2),
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                secret("configured"),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+            CompatMetadata::default(),
+        )
+        .unwrap();
+
+    let prepared = collection
+        .prepare_call("release:mock-model", minimal_request("release:mock-model"))
+        .await
+        .unwrap();
+    {
+        let attempt = prepared.start_attempt().expect("first attempt starts");
+        let _stream = opi_ai::stream::ChatStream::new(attempt);
+        // Dropped without polling or draining.
+    }
+    let second = prepared.start_attempt();
+    assert!(
+        second.is_ok(),
+        "dropping the ChatStream must release the attempt slot"
+    );
+
+    // Draining the second attempt through the same seam still completes.
+    let attempt = second.unwrap();
+    let message = drain_to_completion(attempt)
+        .await
+        .expect("second attempt completes");
+    assert_eq!(assistant_text(&message), "ok");
+}
+
+// ---------------------------------------------------------------------------
 // Acceptance scenario: provider_collection_dispatches_with_redacted_auth
 // ---------------------------------------------------------------------------
 
@@ -321,19 +366,16 @@ async fn provider_collection_dispatches_with_redacted_auth() {
         .expect("stream produced a Done event");
     assert_eq!(assistant_text(&done_message), "hello from mock");
 
-    // Complete-dispatch decision: drain a fresh attempt to a terminal.
+    // Complete-dispatch decision: drain a fresh attempt to the final Result.
     let prepared = collection
         .prepare_call("mock:mock-model", minimal_request("mock:mock-model"))
         .await
         .unwrap();
     let attempt = prepared.start_attempt().unwrap();
-    let completed = drain_to_completion(attempt).await.unwrap();
-    match completed {
-        CompletedRequest::Done { message, .. } => {
-            assert_eq!(assistant_text(&message), "hello from mock");
-        }
-        other => panic!("expected CompletedRequest::Done, got {other:?}"),
-    }
+    let message = drain_to_completion(attempt)
+        .await
+        .expect("Done terminal completes Ok");
+    assert_eq!(assistant_text(&message), "hello from mock");
 }
 
 #[tokio::test]
@@ -402,6 +444,8 @@ async fn provider_collection_dispatch_rejects_missing_auth_with_redacted_diagnos
 
 #[tokio::test]
 async fn dispatch_complete_returns_terminal_error_event() {
+    // A legacy in-band Error terminal (mock/historical producer shape) maps
+    // to Err(CallFailure) with the delivered partial preserved.
     let message = AssistantMessage {
         content: vec![AssistantContent::Text {
             text: "terminal failure".into(),
@@ -440,8 +484,18 @@ async fn dispatch_complete_returns_terminal_error_event() {
         .await
         .unwrap();
     let stream = prepared.start_attempt().unwrap();
-    let completed = drain_to_completion(stream).await.unwrap();
-    assert!(matches!(completed, CompletedRequest::Error { .. }));
+    let failure = drain_to_completion(stream)
+        .await
+        .expect_err("in-band error terminal drains to Err(CallFailure)");
+    assert_eq!(assistant_text(failure.message()), "terminal failure");
+    assert_eq!(
+        failure.message().stop_reason,
+        opi_ai::stream::StopReason::Error
+    );
+    assert!(matches!(
+        failure.cause(),
+        opi_ai::provider::ProviderError::StreamError(_)
+    ));
 }
 
 #[tokio::test]
@@ -469,9 +523,11 @@ async fn dispatch_complete_propagates_mid_stream_provider_error() {
         .await
         .unwrap();
     let stream = prepared.start_attempt().unwrap();
-    let err = drain_to_completion(stream).await.unwrap_err();
-    assert!(matches!(err, ProviderError::StreamError(_)));
-    assert_eq!(err.to_string(), "stream error: [REDACTED]");
+    let failure = drain_to_completion(stream)
+        .await
+        .expect_err("mid-stream provider error drains to Err(CallFailure)");
+    assert!(matches!(failure.cause(), ProviderError::StreamError(_)));
+    assert_eq!(failure.cause().to_string(), "stream error: [REDACTED]");
 }
 
 #[tokio::test]
@@ -494,9 +550,13 @@ async fn dispatch_complete_rejects_empty_stream() {
         .await
         .unwrap();
     let stream = prepared.start_attempt().unwrap();
-    let err = drain_to_completion(stream).await.unwrap_err();
+    let failure = drain_to_completion(stream)
+        .await
+        .expect_err("empty stream must fail with the typed protocol failure");
     assert!(
-        err.to_string()
+        failure
+            .cause()
+            .to_string()
             .contains("stream ended without a terminal event")
     );
 }
@@ -573,13 +633,10 @@ async fn collection_supports_provider_correctness_fixtures() {
 
     // Stream dispatch works without the CLI product harness.
     let stream = prepared.start_attempt().unwrap();
-    let completed = drain_to_completion(stream).await.unwrap();
-    match completed {
-        CompletedRequest::Done { message, .. } => {
-            assert_eq!(assistant_text(&message), "profile response");
-        }
-        other => panic!("expected CompletedRequest::Done, got {other:?}"),
-    }
+    let message = drain_to_completion(stream)
+        .await
+        .expect("Done terminal completes Ok");
+    assert_eq!(assistant_text(&message), "profile response");
 }
 
 // ---------------------------------------------------------------------------
@@ -2359,8 +2416,17 @@ mod phase17 {
         let error = tokio::time::timeout(Duration::from_secs(1), drain_to_completion(attempt))
             .await
             .expect("attempt drain must not wait for HTTP after cancellation")
-            .expect_err("cancelled attempt must retain the typed provider error");
-        assert!(matches!(error, ProviderError::Cancelled), "got {error:?}");
+            .expect_err("cancelled attempt must drain to Err(CallFailure)");
+        assert!(
+            matches!(error.cause(), ProviderError::Cancelled),
+            "got {:?}",
+            error
+        );
+        assert_eq!(
+            error.message().stop_reason,
+            opi_ai::stream::StopReason::Aborted,
+            "cancellation maps to Aborted"
+        );
         assert!(matches!(
             prepared.start_attempt(),
             Err(CollectionError::CallCancelled)

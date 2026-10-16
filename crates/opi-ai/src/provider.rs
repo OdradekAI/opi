@@ -475,7 +475,7 @@ impl PartialEq<&str> for ProviderErrorSummary {
 /// cancelled). `Timeout` is retained as a distinct variant but classifies as
 /// `Network`, since the spec defines the network class as "DNS, TLS, proxy,
 /// timeout".
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ProviderError {
     #[error("rate limited")]
     RateLimited { retry_after_ms: Option<u64> },

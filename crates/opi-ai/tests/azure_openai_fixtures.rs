@@ -6,7 +6,7 @@
 
 use futures_util::StreamExt;
 use opi_ai::azure_openai::AzureOpenAIProvider;
-use opi_ai::provider::{CacheRetention, Provider};
+use opi_ai::provider::{CacheRetention, Provider, ProviderError};
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, header, method, path, query_param};
@@ -141,24 +141,30 @@ fn error_sse_fixture() -> &'static str {
 }
 
 async fn collect_events(stream: opi_ai::provider::EventStream) -> Vec<AssistantStreamEvent> {
+    // Match the historical collector: failures terminate collection and are
+    // not surfaced as events (error-specific tests use `collect_items`).
+    collect_items(stream)
+        .await
+        .into_iter()
+        .filter_map(|item| item.ok())
+        .collect()
+}
+
+/// Collect raw stream items (events and typed failures) until the first
+/// terminal event or failure.
+async fn collect_items(
+    stream: opi_ai::provider::EventStream,
+) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
     let mut events = Vec::new();
     let mut stream = std::pin::pin!(stream);
-    while let Some(result) = stream.next().await {
-        match result {
-            Ok(event) => {
-                let is_terminal = matches!(
-                    event,
-                    AssistantStreamEvent::Done { .. } | AssistantStreamEvent::Error { .. }
-                );
-                events.push(event);
-                if is_terminal {
-                    break;
-                }
-            }
-            Err(e) => {
-                eprintln!("stream error: {e}");
-                break;
-            }
+    while let Some(item) = stream.next().await {
+        let is_terminal = match &item {
+            Ok(event) => event.is_terminal(),
+            Err(_) => true,
+        };
+        events.push(item);
+        if is_terminal {
+            break;
         }
     }
     events
@@ -415,23 +421,29 @@ async fn error_from_fixture() {
     let provider = make_provider();
     let request = text_request();
     let stream = provider.stream_from_sse(error_sse_fixture(), request.cancel);
-    let events = collect_events(stream).await;
+    let events: Vec<Result<AssistantStreamEvent, ProviderError>> = collect_items(stream).await;
 
-    let error_event = events
+    // Current producers stop the dual terminal format: the in-band error
+    // event is a stream failure with a bounded typed cause.
+    let failure = events
         .iter()
-        .find(|e| matches!(e, AssistantStreamEvent::Error { .. }));
-    assert!(error_event.is_some());
-    if let Some(AssistantStreamEvent::Error { message, .. }) = error_event {
-        let err = message.error_message.as_deref().unwrap_or("");
-        assert!(
-            err.contains("openai chat stream error"),
-            "error_message must be the neutral literal, got: {err}"
-        );
-        assert!(
-            !err.contains("Deployment not found"),
-            "raw upstream error text must not leak into the public error_message: {err}"
-        );
-    }
+        .find(|e| matches!(e, Err(ProviderError::StreamError(_))));
+    let Some(Err(ProviderError::StreamError(summary))) = failure else {
+        panic!("expected a typed stream failure, got {events:?}");
+    };
+    assert!(
+        summary.contains("openai chat stream error"),
+        "cause must be the neutral literal, got: {summary}"
+    );
+    assert!(
+        !summary.contains("Deployment not found"),
+        "raw upstream error text must not leak into the cause: {summary}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, Ok(AssistantStreamEvent::Error { .. })))
+    );
 }
 
 #[tokio::test]

@@ -8,7 +8,7 @@ use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFutureOwned};
 
-use crate::provider::ProviderError;
+use crate::provider::{ProviderError, ProviderErrorSummary};
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -384,6 +384,11 @@ pub enum AssistantStreamEvent {
         message: crate::message::AssistantMessage,
     },
     #[serde(rename = "error")]
+    /// Legacy in-band error terminal (v0 stream format).
+    ///
+    /// Read-only: retained so historical saved events keep deserializing.
+    /// Current producers never emit it; the public `ChatStream` seam
+    /// converts it to `Err(CallFailure)` retaining the original payload.
     Error {
         reason: StopReason,
         message: crate::message::AssistantMessage,
@@ -393,6 +398,273 @@ pub enum AssistantStreamEvent {
 impl AssistantStreamEvent {
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Done { .. } | Self::Error { .. })
+    }
+
+    /// The latest partial-message snapshot carried by this event, if any.
+    ///
+    /// Every streaming event clones the producer's partial message at event
+    /// time, so consumers observe immutable event-time snapshots regardless of
+    /// later stream progress. Terminal events carry their complete payload in
+    /// `message`.
+    fn latest_partial(&self) -> Option<&crate::message::AssistantMessage> {
+        match self {
+            Self::Start { partial }
+            | Self::TextStart { partial, .. }
+            | Self::TextDelta { partial, .. }
+            | Self::TextEnd { partial, .. }
+            | Self::ThinkingStart { partial, .. }
+            | Self::ThinkingDelta { partial, .. }
+            | Self::ThinkingEnd { partial, .. }
+            | Self::ToolCallStart { partial, .. }
+            | Self::ToolCallDelta { partial, .. }
+            | Self::ToolCallEnd { partial, .. } => Some(partial),
+            Self::Done { message, .. } | Self::Error { message, .. } => Some(message),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Call failure (task 20.2, AIR-047 / P20-FINAL)
+// ---------------------------------------------------------------------------
+
+/// The single final failure of one logical provider call.
+///
+/// `message` always contains the complete canonical partial or terminal
+/// [`AssistantMessage`](crate::message::AssistantMessage): generated content,
+/// provenance, stop reason (`Error`, or `Aborted` when the cause is a
+/// cancellation), diagnostics in `error_message` and known usage. A setup
+/// failure (nothing delivered before the failure) has no generated content and
+/// unknown usage. `cause` supplies the typed, redacted classification without
+/// a second terminal. Current streams deliver exactly one `Err(CallFailure)`;
+/// the in-band [`AssistantStreamEvent::Error`] terminal is a read-only legacy
+/// format converted at the [`ChatStream`] seam.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CallFailure {
+    message: crate::message::AssistantMessage,
+    cause: ProviderError,
+}
+
+impl CallFailure {
+    /// The canonical partial/terminal assistant message for the failed call.
+    pub fn message(&self) -> &crate::message::AssistantMessage {
+        &self.message
+    }
+
+    /// The typed, redacted cause classification.
+    pub fn cause(&self) -> &ProviderError {
+        &self.cause
+    }
+
+    /// Split into the canonical message and the typed cause.
+    pub fn into_parts(self) -> (crate::message::AssistantMessage, ProviderError) {
+        (self.message, self.cause)
+    }
+
+    /// Build a failure from the latest event-time partial (if any) and a typed
+    /// cause. Normalizes the stop reason per the delivery contract: a
+    /// cancellation cause maps to [`StopReason::Aborted`], every other cause to
+    /// [`StopReason::Error`]. Diagnostics from the cause are preserved on the
+    /// message when the producer did not supply one.
+    pub(crate) fn from_partial(
+        partial: Option<crate::message::AssistantMessage>,
+        cause: ProviderError,
+    ) -> Self {
+        let mut message = partial.unwrap_or_else(|| setup_failure_message(&cause));
+        message.stop_reason = if matches!(
+            cause,
+            ProviderError::Cancelled | ProviderError::LoginCancelled { .. }
+        ) {
+            StopReason::Aborted
+        } else {
+            StopReason::Error
+        };
+        if message.error_message.is_none() {
+            message.error_message = Some(cause.to_string());
+        }
+        Self { message, cause }
+    }
+
+    /// Convert a legacy in-band error terminal, retaining the original facts
+    /// of the delivered payload (content, provenance, diagnostics, usage).
+    pub(crate) fn from_legacy_error_event(mut message: crate::message::AssistantMessage) -> Self {
+        message.stop_reason = StopReason::Error;
+        Self {
+            message,
+            cause: ProviderError::StreamError(ProviderErrorSummary::redacted()),
+        }
+    }
+
+    /// Classify a delivered `Done` terminal whose stop reason is itself a
+    /// failure classification (`Error`/`Aborted`) instead of a completion.
+    pub(crate) fn from_error_stop_reason(
+        reason: StopReason,
+        message: crate::message::AssistantMessage,
+    ) -> Self {
+        match reason {
+            StopReason::Aborted => Self::from_partial(Some(message), ProviderError::Cancelled),
+            _ => Self::from_partial(
+                Some(message),
+                ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                    "provider terminal carried an error stop reason",
+                )),
+            ),
+        }
+    }
+}
+
+/// The empty canonical message for a setup failure: no generated content,
+/// unknown usage, and no provider classification to report (the failure
+/// preceded any delivered event).
+fn setup_failure_message(cause: &ProviderError) -> crate::message::AssistantMessage {
+    crate::message::AssistantMessage {
+        content: Vec::new(),
+        api: crate::ApiKind::Anthropic,
+        provider: String::new(),
+        model: String::new(),
+        response_model: None,
+        response_id: None,
+        usage: crate::stream::Usage::default(),
+        stop_reason: StopReason::Error,
+        error_message: Some(cause.to_string()),
+        timestamp_ms: crate::time::now_ms(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ChatStream (task 20.2, AIR-003/AIR-047 / P20-FINAL)
+// ---------------------------------------------------------------------------
+
+/// The public owner of one logical provider call's event stream.
+///
+/// Iteration is `Stream<Item = Result<AssistantStreamEvent, CallFailure>>`:
+/// events are delivered with their immutable event-time partials, and the
+/// first delivered terminal is absorbed — the inner attempt is released, tail
+/// events and repeated terminals are never delivered, and the stream stays at
+/// permanent EOF. Failures surface as exactly one `Err(CallFailure)` carrying
+/// the canonical partial and a typed, redacted cause; a stream that ends
+/// without a terminal yields one typed protocol failure. Cancellation before
+/// any delivery is a setup failure with an `Aborted` stop reason.
+///
+/// [`ChatStream::result`](ChatStream::result) consumes the handle and actively
+/// drives the remaining bounded stream to the same
+/// `Result<AssistantMessage, CallFailure>` outcome that complete dispatch
+/// produces (`Stop`/`Length`/`ToolUse` are `Ok`; `Error`/`Aborted` are `Err`),
+/// reusing a delivered terminal cache without resubmission or self-cancel.
+/// Dropping the handle without polling performs no inner work; dropping it
+/// mid-stream ends the attempt and releases the producer.
+pub struct ChatStream {
+    inner: Option<crate::provider::EventStream>,
+    partial: Option<crate::message::AssistantMessage>,
+    terminal: Option<Result<crate::message::AssistantMessage, CallFailure>>,
+}
+
+impl ChatStream {
+    /// Wrap one provider event stream (for example
+    /// [`PreparedProviderCall::start_attempt`](crate::provider_collection::PreparedProviderCall::start_attempt)).
+    ///
+    /// Construction is lazy: the inner stream is not polled until the first
+    /// `poll_next`/`next().await` or [`ChatStream::result`].
+    pub fn new(stream: crate::provider::EventStream) -> Self {
+        Self {
+            inner: Some(stream),
+            partial: None,
+            terminal: None,
+        }
+    }
+
+    /// Consume the handle and actively drive the remaining bounded stream to
+    /// the single final outcome.
+    ///
+    /// Equivalent to full iteration for the same event sequence: a terminal
+    /// already delivered to an iterator is reused from cache, partial
+    /// iteration does not change the outcome, and a stream that ends without
+    /// a terminal produces the one typed protocol failure (AIR-003).
+    pub async fn result(self) -> Result<crate::message::AssistantMessage, CallFailure> {
+        let mut stream = self;
+        while stream.terminal.is_none() {
+            use futures_util::StreamExt as _;
+            if stream.next().await.is_none() {
+                // poll_next synthesizes the premature-EOF protocol failure, so
+                // exhaustion always leaves a terminal set.
+                break;
+            }
+        }
+        stream
+            .terminal
+            .expect("chat stream exhaustion always records a terminal")
+    }
+}
+
+impl Stream for ChatStream {
+    type Item = Result<AssistantStreamEvent, CallFailure>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if this.terminal.is_some() {
+            // The first terminal was delivered; permanent EOF.
+            return Poll::Ready(None);
+        }
+        let Some(inner) = this.inner.as_mut() else {
+            // Absorbed without a recorded terminal: the protocol failure was
+            // delivered and EOF is permanent.
+            return Poll::Ready(None);
+        };
+        let item = inner.as_mut().poll_next(cx);
+        match item {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => {
+                // Premature EOF: one typed protocol failure, then permanent
+                // EOF. The failure preserves the latest event-time partial.
+                this.inner = None;
+                let partial = this.partial.clone();
+                let failure = CallFailure::from_partial(
+                    partial,
+                    ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                        "stream ended without a terminal event",
+                    )),
+                );
+                this.terminal = Some(Err(failure.clone()));
+                Poll::Ready(Some(Err(failure)))
+            }
+            Poll::Ready(Some(Ok(event))) => {
+                if let Some(partial) = event.latest_partial() {
+                    this.partial = Some(partial.clone());
+                }
+                match &event {
+                    AssistantStreamEvent::Done { reason, message } => {
+                        let outcome = match reason {
+                            StopReason::Stop | StopReason::Length | StopReason::ToolUse => {
+                                Ok(message.clone())
+                            }
+                            StopReason::Error | StopReason::Aborted => Err(
+                                CallFailure::from_error_stop_reason(*reason, message.clone()),
+                            ),
+                        };
+                        // Absorb: release the inner attempt; the terminal event
+                        // itself is delivered exactly once.
+                        this.inner = None;
+                        this.terminal = Some(outcome);
+                        Poll::Ready(Some(Ok(event)))
+                    }
+                    AssistantStreamEvent::Error { message, .. } => {
+                        // Legacy in-band error terminal (historical/mock
+                        // producers): convert, retain original facts, absorb.
+                        let failure = CallFailure::from_legacy_error_event(message.clone());
+                        this.inner = None;
+                        this.terminal = Some(Err(failure.clone()));
+                        Poll::Ready(Some(Err(failure)))
+                    }
+                    _ => Poll::Ready(Some(Ok(event))),
+                }
+            }
+            Poll::Ready(Some(Err(cause))) => {
+                let partial = this.partial.clone();
+                let failure = CallFailure::from_partial(partial, cause);
+                this.inner = None;
+                this.terminal = Some(Err(failure.clone()));
+                Poll::Ready(Some(Err(failure)))
+            }
+        }
     }
 }
 

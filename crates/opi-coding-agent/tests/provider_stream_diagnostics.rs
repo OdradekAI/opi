@@ -163,7 +163,14 @@ async fn stream_failures_preserve_safe_distinct_causes() {
             "eof" => assert!(cause.contains("without a terminal event"), "{cause}"),
             "malformed" => assert!(cause.contains("malformed Anthropic SSE event"), "{cause}"),
             "truncated" => assert_ne!(cause, "[REDACTED]"),
-            "upstream" => assert_eq!(cause, "[REDACTED]"),
+            // Task 20.2: the in-band upstream error frame now surfaces its
+            // bounded, crate-attested literal instead of a blanket redaction;
+            // the raw upstream text (carrying the synthetic credential) never
+            // reaches the diagnostic.
+            "upstream" => {
+                assert!(cause.contains("anthropic stream error"), "{cause}");
+                assert!(!cause.contains(SECRET), "{cause}");
+            }
             _ => unreachable!(),
         }
         causes.push(cause);

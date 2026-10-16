@@ -35,7 +35,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 
-use futures_util::{Stream, StreamExt};
+use futures_util::Stream;
 
 use crate::auth::{AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, ResolvedAuth};
 use crate::credential::CredentialSource;
@@ -44,7 +44,7 @@ use crate::provider::{
     EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
 };
 use crate::registry::{ModelCapabilities, ProviderRegistry, RegistrationError, RegistryError};
-use crate::stream::{AssistantStreamEvent, StopReason};
+use crate::stream::AssistantStreamEvent;
 
 // ---------------------------------------------------------------------------
 // SecretKey — redacted credential value
@@ -209,27 +209,6 @@ pub struct CompatMetadata {
     /// Free-form profile label (e.g. `"openrouter"`, `"mistral"`) for
     /// diagnostics.
     pub profile: Option<String>,
-}
-
-// ---------------------------------------------------------------------------
-// Completion result
-// ---------------------------------------------------------------------------
-
-/// Result of draining a provider stream to completion.
-///
-/// See the [module docs](self) for the complete-dispatch decision.
-#[derive(Debug, Clone)]
-pub enum CompletedRequest {
-    /// Stream terminated with [`AssistantStreamEvent::Done`].
-    Done {
-        reason: StopReason,
-        message: AssistantMessage,
-    },
-    /// Stream terminated with [`AssistantStreamEvent::Error`].
-    Error {
-        reason: StopReason,
-        message: AssistantMessage,
-    },
 }
 
 // ---------------------------------------------------------------------------
@@ -709,30 +688,21 @@ impl Default for ProviderCollection {
     }
 }
 
-/// Drain an event stream until it yields a terminal event or errors.
+/// Drain an event stream to the single final outcome of the logical call.
 ///
-/// A general stream-drain utility: drive any [`EventStream`] (for example the
-/// one returned by [`PreparedProviderCall::start_attempt`]) until it produces a
-/// terminal event. A stream that ends without a terminal event is treated as a
-/// stream error.
+/// A general stream-drain utility sharing the public seam with
+/// [`ChatStream::result`](crate::stream::ChatStream::result): drives any
+/// [`EventStream`] (for example the one returned by
+/// [`PreparedProviderCall::start_attempt`]) through the same terminal
+/// absorption, permanent-EOF and failure rules. `Done` terminals complete
+/// `Ok` with the canonical message; every failure (in-band error terminal,
+/// transport/protocol error, or a stream that ends without a terminal) drains
+/// to exactly one `Err(CallFailure)` carrying the preserved partial and a
+/// typed, redacted cause.
 pub async fn drain_to_completion(
-    mut stream: EventStream,
-) -> Result<CompletedRequest, ProviderError> {
-    while let Some(item) = stream.next().await {
-        match item {
-            Ok(AssistantStreamEvent::Done { reason, message }) => {
-                return Ok(CompletedRequest::Done { reason, message });
-            }
-            Ok(AssistantStreamEvent::Error { reason, message }) => {
-                return Ok(CompletedRequest::Error { reason, message });
-            }
-            Ok(_) => continue,
-            Err(error) => return Err(error),
-        }
-    }
-    Err(ProviderError::StreamError(
-        ProviderErrorSummary::attested_static("stream ended without a terminal event"),
-    ))
+    stream: EventStream,
+) -> Result<AssistantMessage, crate::stream::CallFailure> {
+    crate::stream::ChatStream::new(stream).result().await
 }
 
 // ---------------------------------------------------------------------------

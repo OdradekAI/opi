@@ -7,7 +7,9 @@
 use futures_util::StreamExt;
 use opi_ai::gemini::GeminiProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{CacheRetention, EventStream, Provider, Request, ThinkingConfig};
+use opi_ai::provider::{
+    CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
+};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
@@ -339,25 +341,37 @@ async fn gemini_error_event_routing() {
     let provider = gemini_provider();
     let sse = "data: {\"error\":{\"code\":404,\"message\":\"Model not found\",\"status\":\"NOT_FOUND\"}}\n\n";
 
-    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    let items: Vec<Result<AssistantStreamEvent, ProviderError>> = provider
+        .stream_from_sse(sse, CancellationToken::new())
+        .collect()
+        .await;
 
+    // Current producers stop the dual terminal format: the error event
+    // routes to a typed stream failure, not an Error event.
     assert!(
-        events
+        items
             .iter()
-            .any(|e| matches!(e, AssistantStreamEvent::Error { .. })),
-        "should have an Error event"
+            .any(|e| matches!(e, Err(ProviderError::StreamError(_)))),
+        "should have a typed stream failure"
+    );
+    assert!(
+        !items
+            .iter()
+            .any(|e| matches!(e, Ok(AssistantStreamEvent::Error { .. })))
     );
 
     let canary = "sk-provider-error-canary";
     let secret_sse = format!(
         "data: {{\"error\":{{\"code\":500,\"message\":\"{canary}\",\"status\":\"INTERNAL\"}}}}\n\n"
     );
-    let secret_events =
-        collect_stream(provider.stream_from_sse(&secret_sse, CancellationToken::new())).await;
-    let rendered = format!("{secret_events:?}");
+    let secret_items: Vec<Result<AssistantStreamEvent, ProviderError>> = provider
+        .stream_from_sse(&secret_sse, CancellationToken::new())
+        .collect()
+        .await;
+    let rendered = format!("{secret_items:?}");
     assert!(
         !rendered.contains(canary),
-        "raw upstream error text leaked into stream events: {rendered}"
+        "raw upstream error text leaked into stream items: {rendered}"
     );
 }
 

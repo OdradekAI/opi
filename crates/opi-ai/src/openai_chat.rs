@@ -455,12 +455,12 @@ impl OpenAiChatMapper {
         }
     }
 
-    fn ensure_start(&mut self, events: &mut Vec<AssistantStreamEvent>) {
+    fn ensure_start(&mut self, events: &mut Vec<Result<AssistantStreamEvent, ProviderError>>) {
         if !self.started {
             self.started = true;
-            events.push(AssistantStreamEvent::Start {
+            events.push(Ok(AssistantStreamEvent::Start {
                 partial: self.partial.clone(),
-            });
+            }));
         }
     }
 
@@ -474,7 +474,10 @@ impl OpenAiChatMapper {
     }
 
     /// Process one OpenAI event, returning zero or more stream events.
-    pub fn process(&mut self, event: OpenAiChatEvent) -> Vec<AssistantStreamEvent> {
+    pub fn process(
+        &mut self,
+        event: OpenAiChatEvent,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
         if self.saw_done {
             return Vec::new();
         }
@@ -504,19 +507,19 @@ impl OpenAiChatMapper {
                     self.partial.content.push(AssistantContent::Text {
                         text: String::new(),
                     });
-                    events.push(AssistantStreamEvent::TextStart {
+                    events.push(Ok(AssistantStreamEvent::TextStart {
                         content_index: 0,
                         partial: self.partial.clone(),
-                    });
+                    }));
                 }
                 if let Some(AssistantContent::Text { text }) = self.partial.content.last_mut() {
                     text.push_str(&content);
                 }
-                events.push(AssistantStreamEvent::TextDelta {
+                events.push(Ok(AssistantStreamEvent::TextDelta {
                     content_index: 0,
                     delta: content,
                     partial: self.partial.clone(),
-                });
+                }));
                 events
             }
             OpenAiChatEvent::ToolCallStart {
@@ -535,11 +538,11 @@ impl OpenAiChatMapper {
                     self.text_started = false;
                     if let Some(AssistantContent::Text { text }) = self.partial.content.last() {
                         let content = text.clone();
-                        events.push(AssistantStreamEvent::TextEnd {
+                        events.push(Ok(AssistantStreamEvent::TextEnd {
                             content_index: 0,
                             content,
                             partial: self.partial.clone(),
-                        });
+                        }));
                     }
                 }
 
@@ -566,10 +569,10 @@ impl OpenAiChatMapper {
                     },
                 });
 
-                events.push(AssistantStreamEvent::ToolCallStart {
+                events.push(Ok(AssistantStreamEvent::ToolCallStart {
                     content_index,
                     partial: self.partial.clone(),
-                });
+                }));
                 events
             }
             OpenAiChatEvent::ToolCallDelta {
@@ -605,11 +608,11 @@ impl OpenAiChatMapper {
                 {
                     tool_call.arguments.push_str(&arguments);
                 }
-                vec![AssistantStreamEvent::ToolCallDelta {
+                vec![Ok(AssistantStreamEvent::ToolCallDelta {
                     content_index: tool_content_index,
                     delta: arguments,
                     partial: self.partial.clone(),
-                }]
+                })]
             }
             OpenAiChatEvent::Finish {
                 finish_reason,
@@ -630,11 +633,11 @@ impl OpenAiChatMapper {
                     self.text_started = false;
                     if let Some(AssistantContent::Text { text }) = self.partial.content.last() {
                         let content = text.clone();
-                        events.push(AssistantStreamEvent::TextEnd {
+                        events.push(Ok(AssistantStreamEvent::TextEnd {
                             content_index: 0,
                             content,
                             partial: self.partial.clone(),
-                        });
+                        }));
                     }
                 }
 
@@ -671,42 +674,40 @@ impl OpenAiChatMapper {
                             name: tc_state.name.clone(),
                             arguments: tc_state.arguments.clone(),
                         };
-                        events.push(AssistantStreamEvent::ToolCallEnd {
+                        events.push(Ok(AssistantStreamEvent::ToolCallEnd {
                             content_index: tool_content_index,
                             tool_call,
                             partial: self.partial.clone(),
-                        });
+                        }));
                     }
                 }
 
                 if is_metadata_only {
                     if let Some(done) = self.flush_pending_done() {
-                        events.push(done);
+                        events.push(Ok(done));
                     } else {
-                        events.push(self.emit_done(map_stop_reason(&finish_reason)));
+                        events.push(Ok(self.emit_done(map_stop_reason(&finish_reason))));
                     }
                     return events;
                 }
 
                 let stop_reason = map_stop_reason(&finish_reason);
                 if has_usage {
-                    events.push(self.emit_done(stop_reason));
+                    events.push(Ok(self.emit_done(stop_reason)));
                 } else {
                     self.pending_stop_reason = Some(stop_reason);
                 }
                 events
             }
             OpenAiChatEvent::Error { message: _ } => {
+                // Current producers stop the dual terminal format: an in-band
+                // provider error event is a stream failure whose bounded
+                // diagnostic rides the typed cause; the accumulated partial is
+                // preserved by the public seam (ChatStream/CallFailure).
                 self.saw_done = true;
-                let mut err_msg = self.partial.clone();
-                // Substitute a bounded, provider-neutral message: the raw
-                // upstream `error.message` may echo credential material and is
-                // never persisted or exposed publicly.
-                err_msg.error_message = Some(OPENAI_CHAT_STREAM_ERROR.to_owned());
-                vec![AssistantStreamEvent::Error {
-                    reason: StopReason::Error,
-                    message: err_msg,
-                }]
+                vec![Err(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static(OPENAI_CHAT_STREAM_ERROR),
+                ))]
             }
         }
     }
@@ -1104,7 +1105,7 @@ impl OpenAiChatProvider {
             match parsed {
                 ParsedEvent::Valid(events) => {
                     for event in events {
-                        stream_events.extend(mapper.process(event).into_iter().map(Ok));
+                        stream_events.extend(mapper.process(event));
                     }
                 }
                 ParsedEvent::UsageError(error) => {
@@ -1222,8 +1223,8 @@ impl OpenAiChatProvider {
                 match parsed {
                     ParsedEvent::Valid(events) => {
                         for event in events {
-                            for stream_event in mapper.process(event) {
-                                if tx.send(Ok(stream_event)).await.is_err() {
+                            for item in mapper.process(event) {
+                                if tx.send(item).await.is_err() {
                                     return Ok(());
                                 }
                             }

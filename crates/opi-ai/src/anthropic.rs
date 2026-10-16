@@ -428,7 +428,10 @@ impl AnthropicMapper {
     }
 
     /// Process one Anthropic event, returning zero or more stream events.
-    pub fn process(&mut self, event: AnthropicEvent) -> Vec<AssistantStreamEvent> {
+    pub fn process(
+        &mut self,
+        event: AnthropicEvent,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
         if self.saw_done {
             return Vec::new();
         }
@@ -444,7 +447,7 @@ impl AnthropicMapper {
                 }
                 self.partial.usage = usage;
                 let start = self.partial.clone();
-                vec![AssistantStreamEvent::Start { partial: start }]
+                vec![Ok(AssistantStreamEvent::Start { partial: start })]
             }
             AnthropicEvent::ContentBlockStart {
                 index: _,
@@ -459,10 +462,10 @@ impl AnthropicMapper {
                         self.partial.content.push(AssistantContent::Text {
                             text: String::new(),
                         });
-                        vec![AssistantStreamEvent::TextStart {
+                        vec![Ok(AssistantStreamEvent::TextStart {
                             content_index,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     ContentBlockType::ToolUse { id, name } => {
                         self.blocks.push(BlockState::ToolUse {
@@ -477,10 +480,10 @@ impl AnthropicMapper {
                                 arguments: String::new(),
                             },
                         });
-                        vec![AssistantStreamEvent::ToolCallStart {
+                        vec![Ok(AssistantStreamEvent::ToolCallStart {
                             content_index,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     ContentBlockType::Thinking {
                         thinking,
@@ -493,10 +496,10 @@ impl AnthropicMapper {
                             thinking,
                             signature,
                         });
-                        vec![AssistantStreamEvent::ThinkingStart {
+                        vec![Ok(AssistantStreamEvent::ThinkingStart {
                             content_index,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     ContentBlockType::RedactedThinking { data } => {
                         self.blocks.push(BlockState::RedactedThinking);
@@ -527,11 +530,11 @@ impl AnthropicMapper {
                         {
                             acc.push_str(&text);
                         }
-                        vec![AssistantStreamEvent::TextDelta {
+                        vec![Ok(AssistantStreamEvent::TextDelta {
                             content_index,
                             delta: text,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     DeltaData::InputJson { partial_json } => {
                         if let Some(BlockState::ToolUse {
@@ -540,11 +543,11 @@ impl AnthropicMapper {
                         {
                             acc.push_str(&partial_json);
                         }
-                        vec![AssistantStreamEvent::ToolCallDelta {
+                        vec![Ok(AssistantStreamEvent::ToolCallDelta {
                             content_index,
                             delta: partial_json,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     DeltaData::Thinking { thinking } => {
                         if let Some(BlockState::Thinking { thinking: acc }) =
@@ -557,11 +560,11 @@ impl AnthropicMapper {
                         {
                             acc.push_str(&thinking);
                         }
-                        vec![AssistantStreamEvent::ThinkingDelta {
+                        vec![Ok(AssistantStreamEvent::ThinkingDelta {
                             content_index,
                             delta: thinking,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     DeltaData::Signature { signature } => {
                         if let Some(AssistantContent::Thinking { signature: acc, .. }) =
@@ -578,11 +581,11 @@ impl AnthropicMapper {
                 match self.blocks.get(index) {
                     Some(BlockState::Text { text }) => {
                         let content = text.clone();
-                        vec![AssistantStreamEvent::TextEnd {
+                        vec![Ok(AssistantStreamEvent::TextEnd {
                             content_index,
                             content,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     Some(BlockState::ToolUse {
                         id,
@@ -600,19 +603,19 @@ impl AnthropicMapper {
                         {
                             tc.arguments = partial_json.clone();
                         }
-                        vec![AssistantStreamEvent::ToolCallEnd {
+                        vec![Ok(AssistantStreamEvent::ToolCallEnd {
                             content_index,
                             tool_call,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     Some(BlockState::Thinking { thinking }) => {
                         let content = thinking.clone();
-                        vec![AssistantStreamEvent::ThinkingEnd {
+                        vec![Ok(AssistantStreamEvent::ThinkingEnd {
                             content_index,
                             content,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     Some(BlockState::RedactedThinking) | None => Vec::new(),
                 }
@@ -642,22 +645,20 @@ impl AnthropicMapper {
             }
             AnthropicEvent::MessageStop => {
                 self.saw_done = true;
-                vec![AssistantStreamEvent::Done {
+                vec![Ok(AssistantStreamEvent::Done {
                     reason: self.partial.stop_reason,
                     message: self.partial.clone(),
-                }]
+                })]
             }
             AnthropicEvent::Error { message: _ } => {
+                // Current producers stop the dual terminal format: an in-band
+                // provider error event is a stream failure whose bounded
+                // diagnostic rides the typed cause; the accumulated partial is
+                // preserved by the public seam (ChatStream/CallFailure).
                 self.saw_done = true;
-                let mut err_msg = self.partial.clone();
-                // Substitute a bounded, provider-neutral message: the raw
-                // upstream `error.message` may echo credential material and is
-                // never persisted or exposed publicly.
-                err_msg.error_message = Some(ANTHROPIC_STREAM_ERROR.to_owned());
-                vec![AssistantStreamEvent::Error {
-                    reason: StopReason::Error,
-                    message: err_msg,
-                }]
+                vec![Err(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static(ANTHROPIC_STREAM_ERROR),
+                ))]
             }
         }
     }
@@ -953,7 +954,7 @@ impl AnthropicProvider {
         for parsed in parse_sse_events(sse_body) {
             match parsed {
                 ParsedEvent::Valid(event) => {
-                    stream_events.extend(mapper.process(event).into_iter().map(Ok));
+                    stream_events.extend(mapper.process(event));
                 }
                 ParsedEvent::UsageError(error) => {
                     stream_events.push(Err(error));
@@ -1074,8 +1075,8 @@ impl AnthropicProvider {
             for parsed in drain_sse_events(&mut buffer, eof)? {
                 match parsed {
                     ParsedEvent::Valid(event) => {
-                        for stream_event in mapper.process(event) {
-                            if tx.send(Ok(stream_event)).await.is_err() {
+                        for item in mapper.process(event) {
+                            if tx.send(item).await.is_err() {
                                 return Ok(()); // receiver dropped
                             }
                         }

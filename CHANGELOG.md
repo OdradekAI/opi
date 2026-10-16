@@ -1,5 +1,35 @@
 ## Unreleased
 
+### Breaking Changes
+
+- `opi-ai`: one final `Result` per logical provider call. `CompletedRequest`
+  is removed; `drain_to_completion` returns
+  `Result<AssistantMessage, CallFailure>`, sharing the new
+  `ChatStream::result` seam (`Stream<Item = Result<AssistantStreamEvent,
+  CallFailure>>`). The first delivered terminal is absorbed into permanent
+  EOF, a stream that ends without a terminal yields exactly one typed
+  protocol failure, and every failure carries the preserved partial
+  message (content, provenance, diagnostics, known usage) plus a typed
+  redacted cause; cancellation maps to the `Aborted` stop reason and
+  setup failures have no generated content with unknown usage.
+- `opi-ai`: current providers stop the dual terminal format. In-band
+  provider error events (`anthropic`, `openai_chat`, `openai_responses`
+  family, `gemini`, `bedrock`) now terminate the stream with a bounded typed
+  `StreamError` cause instead of an `AssistantStreamEvent::Error` terminal;
+  the variant is retained read-only for deserializing historical saved
+  events and is converted at the `ChatStream` seam.
+- `opi-agent`: the agent loop and summary `run_provider_call` consume the
+  public `ChatStream` seam. Failures classify retries through the typed
+  cause as before, and failed calls now preserve the canonical partial in
+  the turn's events and Agent state (in-band terminals unchanged; mid-stream
+  failures previously lost the partial). Premature EOF surfaces as the
+  typed stream-failure error instead of `AgentError::ProviderProtocol`.
+
+### Added
+
+- `opi-ai`: `ChatStream` and `CallFailure` are exported at the crate root;
+  `ProviderError` is now `Clone` + `PartialEq`.
+
 ## 0.8.3 - 2026-10-15
 
 ### Breaking Changes

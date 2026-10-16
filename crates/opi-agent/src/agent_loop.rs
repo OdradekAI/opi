@@ -21,8 +21,7 @@ use crate::hooks::{
     ShouldStopAfterTurnContext,
 };
 use crate::loop_types::{
-    AgentError, AgentLoopConfig, AgentLoopContext, AgentProviderFailure, NextTurnState,
-    validate_next_turn_candidate,
+    AgentError, AgentLoopConfig, AgentLoopContext, NextTurnState, validate_next_turn_candidate,
 };
 use crate::message::AgentMessage;
 use crate::tool::{ExecutionMode, ToolDiagnostic, ToolResult};
@@ -563,8 +562,12 @@ async fn run_operation(
         let mut turn_terminate = false;
 
         'stream: loop {
+            // Task 20.2: the attempt is consumed through the public ChatStream
+            // seam — one final Result per logical call, first-terminal
+            // absorption, and failures as Err(CallFailure) with the preserved
+            // partial and typed cause.
             let mut stream = match prepared.start_attempt() {
-                Ok(stream) => stream,
+                Ok(attempt) => opi_ai::stream::ChatStream::new(attempt),
                 Err(CollectionError::CallCancelled) => {
                     observe(&diagnostic_sink, cancelled_diagnostic("during_prepare"));
                     fail_before_dispatch!(AgentError::Cancelled);
@@ -605,7 +608,6 @@ async fn run_operation(
                         // caller has observed output for this attempt.
                         stream_delivered_content = true;
                         let terminal = process_stream_event(&event, &events);
-                        let in_band_error_terminal = matches!(terminal, StreamTerminal::Error(_));
                         if let Some(msg) = terminal.into_message() {
                             // Use the provider's complete terminal payload, which can
                             // include thinking, rather than reassembling it from the
@@ -658,30 +660,6 @@ async fn run_operation(
                                         ),
                                     Err(_) => {}
                                 }
-                            }
-
-                            if in_band_error_terminal {
-                                // An in-band stream error is a provider failure, not a
-                                // completed turn: the partial message above stays visible
-                                // in the turn's events, but no tool call is launched and
-                                // the run fails with a typed, non-retryable error (the
-                                // raw error class was redacted at the adapter).
-                                emit_public_event(
-                                    &events,
-                                    AgentEvent::TurnEnd {
-                                        message: agent_msg.clone(),
-                                        tool_results: vec![],
-                                    },
-                                );
-                                let err = AgentError::Provider(AgentProviderFailure::new(
-                                    ProviderError::StreamError(
-                                        opi_ai::provider::ProviderErrorSummary::redacted(),
-                                    ),
-                                ));
-                                let diagnostic = Diagnostic::from(&err);
-                                observe_provider_failure(&diagnostic_sink, diagnostic);
-                                emit_agent_end(&events, &state.context);
-                                finish_with_error!(err);
                             }
 
                             let content = match &agent_msg {
@@ -1088,13 +1066,18 @@ async fn run_operation(
                             break 'stream;
                         }
                     }
-                    Err(e) => {
-                        if e.is_retryable()
+                    Err(failure) => {
+                        // Task 20.2: stream failures arrive as one Err(CallFailure)
+                        // carrying the canonical partial and a typed, redacted
+                        // cause. Retry classification uses the cause exactly as
+                        // the pre-cutover transport-error path did.
+                        let cause = failure.cause().clone();
+                        if cause.is_retryable()
                             && retry_attempt < max_attempts
                             && !stream_delivered_content
                             && let Some(ref rc) = config.retry
                         {
-                            let retry_after_ms = match &e {
+                            let retry_after_ms = match &cause {
                                 ProviderError::RateLimited { retry_after_ms } => *retry_after_ms,
                                 _ => None,
                             };
@@ -1107,7 +1090,7 @@ async fn run_operation(
                                     attempt: retry_attempt,
                                     max_attempts: rc.max_attempts,
                                     delay_ms,
-                                    error_message: e.to_string(),
+                                    error_message: cause.to_string(),
                                 },
                             );
                             observe(
@@ -1167,14 +1150,14 @@ async fn run_operation(
 
                         if retry_attempt > 0 {
                             let retry_suppressed_after_partial_output =
-                                e.is_retryable() && stream_delivered_content;
+                                cause.is_retryable() && stream_delivered_content;
 
                             emit_public_event(
                                 &events,
                                 AgentEvent::AutoRetryEnd {
                                     success: false,
                                     attempt: retry_attempt,
-                                    final_error: Some(e.to_string()),
+                                    final_error: Some(cause.to_string()),
                                 },
                             );
                             if retry_suppressed_after_partial_output {
@@ -1209,9 +1192,79 @@ async fn run_operation(
                             }
                         }
 
+                        // Failure partial preservation (AIR-047/P20-S02): when
+                        // the failed call generated observable content or
+                        // diagnostics, the canonical partial stays visible in
+                        // the turn's events and Agent state, exactly like the
+                        // pre-cutover in-band error terminal. A setup failure
+                        // (no generated content, unknown usage) emits no
+                        // message, matching contentless transport failures.
+                        let failure_message = failure.message().clone();
+                        let has_payload = !failure_message.content.is_empty()
+                            || failure_message.error_message.is_some();
+                        if has_payload {
+                            let agent_msg = AgentMessage::Llm(Message::Assistant(failure_message));
+
+                            emit_public_event(
+                                &events,
+                                AgentEvent::MessageEnd {
+                                    message: agent_msg.clone(),
+                                },
+                            );
+
+                            state.context.push(agent_msg.clone());
+
+                            if let (
+                                Some(provider_evidence),
+                                AgentMessage::Llm(Message::Assistant(assistant)),
+                            ) = (provider_evidence.take(), &agent_msg)
+                            {
+                                let actual_model = assistant
+                                    .response_model
+                                    .as_deref()
+                                    .unwrap_or(&assistant.model);
+                                let actual =
+                                    crate::evidence::ActualRoute::from_reported_provider_model(
+                                        assistant.provider.clone(),
+                                        actual_model.to_owned(),
+                                        crate::evidence::UnknownReason::NotReported,
+                                    );
+                                match actual {
+                                    Ok(actual) => {
+                                        emit_evidence(
+                                            &evidence_sink,
+                                            &mut identities,
+                                            &mut evidence_health,
+                                            run,
+                                            Some(turn),
+                                            provider_call,
+                                            None,
+                                            crate::evidence::CallKind::Provider,
+                                            crate::evidence::EvidencePayload::Provider(
+                                                provider_evidence.with_actual(actual),
+                                            ),
+                                        );
+                                    }
+                                    Err(_) if evidence_sink.is_some() => evidence_health
+                                        .advance_on_failure(
+                                            crate::evidence::EvidenceFailureCode::Emission,
+                                        ),
+                                    Err(_) => {}
+                                }
+                            }
+
+                            emit_public_event(
+                                &events,
+                                AgentEvent::TurnEnd {
+                                    message: agent_msg.clone(),
+                                    tool_results: vec![],
+                                },
+                            );
+                        }
+
                         // The underlying provider error is classified regardless of whether
                         // retries were attempted, so callers see what actually failed.
-                        let err = AgentError::from(e);
+                        let err = AgentError::from(cause);
                         let diagnostic = Diagnostic::from(&err);
                         observe_provider_failure(&diagnostic_sink, diagnostic);
                         emit_agent_end(&events, &state.context);
@@ -1612,23 +1665,29 @@ impl PreparationEvidence<'_> {
             crate::evidence::EvidencePayload::Provider(facts.clone()),
         )
         .map_err(|_| AgentError::Hook("summary start evidence could not be emitted".to_owned()))?;
-        let mut stream = prepared.start_attempt().map_err(AgentError::from)?;
+        let mut stream =
+            opi_ai::stream::ChatStream::new(prepared.start_attempt().map_err(AgentError::from)?);
         loop {
             let item = tokio::select! {
                 biased;
                 _ = cancel.cancelled() => return Err(AgentError::Cancelled),
                 item = stream.next() => item,
             };
-            let Some(event) = item else {
+            let Some(item) = item else {
+                // ChatStream synthesizes the typed protocol failure on
+                // premature EOF, so exhaustion always passes through the Err
+                // arm below; this arm is a defensive invariant guard.
                 return Err(AgentError::ProviderProtocol {
                     detail: opi_ai::provider::ProviderErrorSummary::redacted(),
                 });
             };
-            let event = event.map_err(AgentError::from)?;
-            let (message, failed) = match event {
-                opi_ai::stream::AssistantStreamEvent::Done { message, .. } => (message, false),
-                opi_ai::stream::AssistantStreamEvent::Error { message, .. } => (message, true),
-                _ => continue,
+            let (message, failure) = match item {
+                Ok(opi_ai::stream::AssistantStreamEvent::Done { message, .. }) => (message, None),
+                // Any failure — in-band terminal, transport/protocol error or
+                // premature EOF — arrives as one Err(CallFailure) whose
+                // message is the canonical partial.
+                Err(failure) => (failure.message().clone(), Some(failure)),
+                Ok(_) => continue,
             };
             let actual = crate::evidence::ActualRoute::from_reported_provider_model(
                 message.provider.clone(),
@@ -1653,10 +1712,9 @@ impl PreparationEvidence<'_> {
             .map_err(|_| {
                 AgentError::Hook("summary terminal evidence could not be emitted".to_owned())
             })?;
-            if failed {
-                return Err(AgentError::from(ProviderError::StreamError(
-                    opi_ai::provider::ProviderErrorSummary::redacted(),
-                )));
+            if let Some(failure) = failure {
+                let (_, cause) = failure.into_parts();
+                return Err(AgentError::from(cause));
             }
             return Ok(message);
         }
@@ -1698,18 +1756,14 @@ enum StreamTerminal {
     /// The event was informational; the stream has not reached a terminal.
     Pending,
     /// The provider delivered the completed assistant message normally.
-    Done(opi_ai::message::AssistantMessage),
-    /// The provider terminated the stream with an in-band error. The message
-    /// is the provider's complete terminal payload (partial content plus the
-    /// in-band error).
-    Error(opi_ai::message::AssistantMessage),
+    Done(Box<opi_ai::message::AssistantMessage>),
 }
 
 impl StreamTerminal {
     fn into_message(self) -> Option<opi_ai::message::AssistantMessage> {
         match self {
             StreamTerminal::Pending => None,
-            StreamTerminal::Done(message) | StreamTerminal::Error(message) => Some(message),
+            StreamTerminal::Done(message) => Some(*message),
         }
     }
 }
@@ -1751,8 +1805,11 @@ fn process_stream_event(
             );
             StreamTerminal::Pending
         }
-        Done { message, .. } => StreamTerminal::Done(message.clone()),
-        Error { message, .. } => StreamTerminal::Error(message.clone()),
+        Done { message, .. } => StreamTerminal::Done(Box::new(message.clone())),
+        // Legacy in-band Error terminals never reach current streams (the
+        // ChatStream seam converts them to Err(CallFailure)); retained only
+        // for the versioned historical reader path in `event.rs`.
+        Error { .. } => StreamTerminal::Pending,
         _ => StreamTerminal::Pending,
     }
 }

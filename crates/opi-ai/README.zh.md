@@ -58,7 +58,10 @@ OpenAI-compatible profile 加入。
 | `Message` | 面向 Provider 的 user、assistant 和 tool-result 消息。 |
 | `InputContent` / `OutputContent` | 文本与图片内容块。 |
 | `ToolResultMessage` | 面向 Provider 的工具结果消息：content、可选 details、`is_error`、`truncated` 和时间戳元数据。 |
-| `AssistantStreamEvent` | Provider 无关流式事件，覆盖 start、text、thinking、tool call、done 和 error。 |
+| `AssistantStreamEvent` | Provider 无关流式事件，覆盖 start、text、thinking、tool call 与 done。带内 `Error` 终结符是只读的历史格式，仅为反序列化历史保存事件而保留；当前 producer 不再产生它。 |
+| `ChatStream` | 一个 logical call 事件流的公开 owner：迭代为 `Stream<Item = Result<AssistantStreamEvent, CallFailure>>`，首个终结符被吸收为永久 EOF，`result(self)` 主动驱动到唯一最终结果。 |
+| `CallFailure` | 一个 logical call 的唯一最终失败：规范化 partial/terminal `AssistantMessage`（内容、出处、诊断、已知 usage；setup 失败没有生成内容）加一个已脱敏的 typed cause。 |
+| `drain_to_completion` | 复用 `ChatStream::result` seam 的收集器：done 终结符返回 `Ok(AssistantMessage)`，一切失败（含提前 EOF）恰好一次 `Err(CallFailure)`。 |
 | `WireApi` / `ModelInfo` / `ModelCapabilities` | 精确请求 wire identity，以及模型能力、thinking、compatibility 与 pricing 元数据。 |
 | `ApiMappedProvider` | 通过经校验的 `WireApi -> Provider` route map 派发一个公开 Provider identity/catalog。 |
 | `ProviderError` / `ProviderErrorCategory` | Provider 失败分类：auth、config、request、network、rate_limit、provider、stream、capability 和 cancelled（超时归为 network）。 |

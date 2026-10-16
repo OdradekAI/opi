@@ -62,7 +62,10 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `Message` | Provider-facing user, assistant, and tool-result messages. |
 | `InputContent` / `OutputContent` | Text and image content blocks. |
 | `ToolResultMessage` | Provider-facing tool-result message: content, optional details, `is_error`, `truncated`, and timestamp metadata. |
-| `AssistantStreamEvent` | Provider-neutral stream events for start, text, thinking, tool calls, done, and error. |
+| `AssistantStreamEvent` | Provider-neutral stream events for start, text, thinking, tool calls, and done. The in-band `Error` terminal is a read-only legacy format retained for deserializing historical saved events; current producers never emit it. |
+| `ChatStream` | The public owner of one logical call's event stream: iteration is `Stream<Item = Result<AssistantStreamEvent, CallFailure>>` with first-terminal absorption into permanent EOF, and `result(self)` actively drains to the single final outcome. |
+| `CallFailure` | The single final failure of one logical call: the canonical partial/terminal `AssistantMessage` (content, provenance, diagnostics, known usage; setup failures have none) plus a typed redacted cause. |
+| `drain_to_completion` | Collector sharing the `ChatStream::result` seam: `Ok(AssistantMessage)` for done terminals, one `Err(CallFailure)` for every failure, including premature EOF. |
 | `WireApi` / `ModelInfo` / `ModelCapabilities` | Exact request-wire identity plus model capability, thinking, compatibility, and pricing metadata. |
 | `ApiMappedProvider` | One public provider identity/catalog dispatched through a validated `WireApi -> Provider` route map. |
 | `ProviderError` / `ProviderErrorCategory` | Provider failure taxonomy: auth, config, request, network, rate_limit, provider, stream, capability, and cancelled (timeouts classify as network). |

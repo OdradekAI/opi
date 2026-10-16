@@ -278,12 +278,31 @@ async fn exception_frame_does_not_expose_upstream_message() {
     let events_data = build_bedrock_stream(&[("exception", &payload)]);
     let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
     let request = text_stream_request();
-    let events = collect_events(provider.stream_from_fixture(&events_data, request.cancel)).await;
-    let rendered = format!("{events:?}");
+    let stream = provider.stream_from_fixture(&events_data, request.cancel);
+    pin_mut!(stream);
+    let mut items: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
+    while let Some(item) = stream.next().await {
+        let is_terminal = match &item {
+            Ok(event) => event.is_terminal(),
+            Err(_) => true,
+        };
+        items.push(item);
+        if is_terminal {
+            break;
+        }
+    }
+    let rendered = format!("{items:?}");
+    // Current producers stop the dual terminal format: the exception frame is
+    // a typed stream failure and never yields an Error event.
     assert!(
-        events
+        items
             .iter()
-            .any(|event| matches!(event, AssistantStreamEvent::Error { .. }))
+            .any(|item| matches!(item, Err(ProviderError::StreamError(_))))
+    );
+    assert!(
+        !items
+            .iter()
+            .any(|item| matches!(item, Ok(AssistantStreamEvent::Error { .. })))
     );
     assert!(
         !rendered.contains(canary),

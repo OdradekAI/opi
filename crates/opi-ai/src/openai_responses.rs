@@ -316,7 +316,7 @@ impl OpenAiResponsesProvider {
         for frame in parse_sse_frames(sse_body) {
             match ResponsesEvent::try_from_frame(&frame) {
                 ParsedEvent::Valid(event) => {
-                    events.extend(mapper.process(event).into_iter().map(Ok));
+                    events.extend(mapper.process(event));
                 }
                 ParsedEvent::UsageError(error) => {
                     events.push(Err(ProviderError::StreamError(
@@ -437,8 +437,8 @@ impl OpenAiResponsesProvider {
             for frame in drain_sse_frames(&mut buffer) {
                 match ResponsesEvent::try_from_frame(&frame) {
                     ParsedEvent::Valid(event) => {
-                        for event in mapper.process(event) {
-                            if tx.send(Ok(event)).await.is_err() {
+                        for item in mapper.process(event) {
+                            if tx.send(item).await.is_err() {
                                 return Ok(());
                             }
                         }

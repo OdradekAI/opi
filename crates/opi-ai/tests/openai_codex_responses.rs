@@ -417,8 +417,11 @@ async fn dedicated_codex_valid_error_sse_never_surfaces_message() {
 
         let (captures, events, errors) = capture_stream(&provider, request(), auth).await;
 
-        assert_eq!(events, 1, "{label}");
-        assert_eq!(errors, 0, "{label}");
+        // Current producers stop the dual terminal format: the error frame
+        // terminates the attempt with a typed stream failure whose bounded
+        // cause text never echoes the upstream message.
+        assert_eq!(events, 0, "{label}");
+        assert_eq!(errors, 1, "{label}");
         let rendered = captures.join("\n");
         assert!(
             rendered.contains("openai responses stream error"),

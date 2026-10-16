@@ -139,6 +139,10 @@ pub(crate) enum GeminiEvent {
         usage: Option<Usage>,
     },
     Error {
+        #[expect(
+            dead_code,
+            reason = "bounded upstream error text rides the typed stream-failure cause"
+        )]
         message: String,
     },
 }
@@ -273,7 +277,10 @@ impl GeminiMapper {
         }
     }
 
-    pub(crate) fn process(&mut self, event: GeminiEvent) -> Vec<AssistantStreamEvent> {
+    pub(crate) fn process(
+        &mut self,
+        event: GeminiEvent,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
         if self.saw_done {
             return Vec::new();
         }
@@ -285,24 +292,24 @@ impl GeminiMapper {
                     self.partial.content.push(AssistantContent::Text {
                         text: String::new(),
                     });
-                    events.push(AssistantStreamEvent::Start {
+                    events.push(Ok(AssistantStreamEvent::Start {
                         partial: self.partial.clone(),
-                    });
-                    events.push(AssistantStreamEvent::TextStart {
+                    }));
+                    events.push(Ok(AssistantStreamEvent::TextStart {
                         content_index: 0,
                         partial: self.partial.clone(),
-                    });
+                    }));
                 }
                 if let Some(AssistantContent::Text { text: accumulated }) =
                     self.partial.content.last_mut()
                 {
                     accumulated.push_str(&text);
                 }
-                events.push(AssistantStreamEvent::TextDelta {
+                events.push(Ok(AssistantStreamEvent::TextDelta {
                     content_index: 0,
                     delta: text,
                     partial: self.partial.clone(),
-                });
+                }));
                 events
             }
             GeminiEvent::FunctionCall { name, args } => {
@@ -312,19 +319,19 @@ impl GeminiMapper {
                 if self.text_started {
                     self.text_started = false;
                     if let Some(AssistantContent::Text { text }) = self.partial.content.last() {
-                        events.push(AssistantStreamEvent::TextEnd {
+                        events.push(Ok(AssistantStreamEvent::TextEnd {
                             content_index: 0,
                             content: text.clone(),
                             partial: self.partial.clone(),
-                        });
+                        }));
                     }
                 }
 
                 // If this is the first content, emit Start
                 if self.partial.content.is_empty() {
-                    events.push(AssistantStreamEvent::Start {
+                    events.push(Ok(AssistantStreamEvent::Start {
                         partial: self.partial.clone(),
-                    });
+                    }));
                 }
 
                 let id = format!("fc_{}", self.tool_calls.len());
@@ -345,11 +352,11 @@ impl GeminiMapper {
                     arguments: args_str.clone(),
                 });
 
-                events.push(AssistantStreamEvent::ToolCallStart {
+                events.push(Ok(AssistantStreamEvent::ToolCallStart {
                     content_index,
                     partial: self.partial.clone(),
-                });
-                events.push(AssistantStreamEvent::ToolCallEnd {
+                }));
+                events.push(Ok(AssistantStreamEvent::ToolCallEnd {
                     content_index,
                     tool_call: ToolCall {
                         id,
@@ -357,7 +364,7 @@ impl GeminiMapper {
                         arguments: args_str,
                     },
                     partial: self.partial.clone(),
-                });
+                }));
                 events
             }
             GeminiEvent::Finish { reason, usage } => {
@@ -367,19 +374,19 @@ impl GeminiMapper {
                 if self.text_started {
                     self.text_started = false;
                     if let Some(AssistantContent::Text { text }) = self.partial.content.last() {
-                        events.push(AssistantStreamEvent::TextEnd {
+                        events.push(Ok(AssistantStreamEvent::TextEnd {
                             content_index: 0,
                             content: text.clone(),
                             partial: self.partial.clone(),
-                        });
+                        }));
                     }
                 }
 
                 // If no content at all, emit Start
                 if !self.saw_done && self.partial.content.is_empty() {
-                    events.push(AssistantStreamEvent::Start {
+                    events.push(Ok(AssistantStreamEvent::Start {
                         partial: self.partial.clone(),
-                    });
+                    }));
                 }
 
                 if let Some(u) = usage {
@@ -405,20 +412,21 @@ impl GeminiMapper {
                 };
                 self.saw_done = true;
 
-                events.push(AssistantStreamEvent::Done {
+                events.push(Ok(AssistantStreamEvent::Done {
                     reason: self.partial.stop_reason,
                     message: self.partial.clone(),
-                });
+                }));
                 events
             }
-            GeminiEvent::Error { message } => {
+            GeminiEvent::Error { message: _ } => {
+                // Current producers stop the dual terminal format: an in-band
+                // provider error event is a stream failure whose bounded
+                // diagnostic rides the typed cause; the accumulated partial is
+                // preserved by the public seam (ChatStream/CallFailure).
                 self.saw_done = true;
-                let mut err_msg = self.partial.clone();
-                err_msg.error_message = Some(message);
-                vec![AssistantStreamEvent::Error {
-                    reason: StopReason::Error,
-                    message: err_msg,
-                }]
+                vec![Err(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static(UPSTREAM_STREAM_ERROR),
+                ))]
             }
         }
     }
@@ -677,7 +685,7 @@ impl GeminiProvider {
             for parsed in ParsedEvent::from_data(&data) {
                 match parsed {
                     ParsedEvent::Valid(event) => {
-                        stream_events.extend(mapper.process(event).into_iter().map(Ok));
+                        stream_events.extend(mapper.process(event));
                     }
                     ParsedEvent::Malformed => {
                         stream_events.push(Err(ProviderError::StreamError(
@@ -773,8 +781,8 @@ impl GeminiProvider {
             for parsed in drain_sse_data(&mut buffer) {
                 match parsed {
                     ParsedEvent::Valid(event) => {
-                        for stream_event in mapper.process(event) {
-                            if !send_or_cancel(&cancel, tx, Ok(stream_event)).await? {
+                        for item in mapper.process(event) {
+                            if !send_or_cancel(&cancel, tx, item).await? {
                                 return Ok(());
                             }
                         }

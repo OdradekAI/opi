@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
 };
-use crate::provider::Request;
+use crate::provider::{ProviderError, ProviderErrorSummary, Request};
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
 /// Neutral public text substituted for the raw upstream Responses
@@ -409,7 +409,10 @@ impl ResponsesMapper {
         }
     }
 
-    pub(crate) fn process(&mut self, event: ResponsesEvent) -> Vec<AssistantStreamEvent> {
+    pub(crate) fn process(
+        &mut self,
+        event: ResponsesEvent,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
         if self.saw_done {
             return Vec::new();
         }
@@ -421,15 +424,16 @@ impl ResponsesMapper {
                 if let Some(id) = id {
                     self.partial.response_id = Some(id);
                 }
-                vec![AssistantStreamEvent::Start {
+                vec![Ok(AssistantStreamEvent::Start {
                     partial: self.partial.clone(),
-                }]
+                })]
             }
             ResponsesEvent::OutputItemAdded { output_index, item } => {
                 if item.item_type != "function_call" {
                     return Vec::new();
                 }
-                let mut events = self.end_text();
+                let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> =
+                    self.end_text().into_iter().map(Ok).collect();
                 let id = match (item.call_id, item.id) {
                     (Some(call_id), _) if !call_id.is_empty() => call_id,
                     (_, Some(id)) => id,
@@ -453,10 +457,10 @@ impl ResponsesMapper {
                     arguments,
                     ended: false,
                 });
-                events.push(AssistantStreamEvent::ToolCallStart {
+                events.push(Ok(AssistantStreamEvent::ToolCallStart {
                     content_index,
                     partial: self.partial.clone(),
-                });
+                }));
                 events
             }
             ResponsesEvent::ContentPartAdded
@@ -477,10 +481,10 @@ impl ResponsesMapper {
                         text: String::new(),
                     });
                     self.text_content_index = Some(index);
-                    events.push(AssistantStreamEvent::TextStart {
+                    events.push(Ok(AssistantStreamEvent::TextStart {
                         content_index: index,
                         partial: self.partial.clone(),
-                    });
+                    }));
                     index
                 };
                 if let Some(AssistantContent::Text { text }) =
@@ -488,11 +492,11 @@ impl ResponsesMapper {
                 {
                     text.push_str(&delta);
                 }
-                events.push(AssistantStreamEvent::TextDelta {
+                events.push(Ok(AssistantStreamEvent::TextDelta {
                     content_index,
                     delta,
                     partial: self.partial.clone(),
-                });
+                }));
                 events
             }
             ResponsesEvent::FunctionCallDelta {
@@ -516,30 +520,34 @@ impl ResponsesMapper {
                 {
                     tool_call.arguments.push_str(&delta);
                 }
-                vec![AssistantStreamEvent::ToolCallDelta {
+                vec![Ok(AssistantStreamEvent::ToolCallDelta {
                     content_index,
                     delta,
                     partial: self.partial.clone(),
-                }]
+                })]
             }
             ResponsesEvent::OutputItemDone { output_index, item } => {
                 if item.item_type != "function_call" {
                     return Vec::new();
                 }
                 self.update_tool_call(output_index, &item);
-                self.finish_tool_call(output_index).into_iter().collect()
+                self.finish_tool_call(output_index)
+                    .into_iter()
+                    .map(Ok)
+                    .collect()
             }
             ResponsesEvent::Incomplete { usage } => {
-                let mut events = self.end_text();
+                let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> =
+                    self.end_text().into_iter().map(Ok).collect();
                 if let Some(usage) = usage {
                     self.partial.usage = usage;
                 }
                 self.partial.stop_reason = StopReason::Length;
                 self.saw_done = true;
-                events.push(AssistantStreamEvent::Done {
+                events.push(Ok(AssistantStreamEvent::Done {
                     reason: StopReason::Length,
                     message: self.partial.clone(),
-                });
+                }));
                 events
             }
             ResponsesEvent::Completed {
@@ -548,7 +556,8 @@ impl ResponsesMapper {
                 id,
                 output,
             } => {
-                let mut events = self.end_text();
+                let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> =
+                    self.end_text().into_iter().map(Ok).collect();
                 for (output_index, item) in output.iter().enumerate() {
                     if item.item_type == "function_call" {
                         self.update_tool_call(output_index, item);
@@ -562,7 +571,7 @@ impl ResponsesMapper {
                     .collect();
                 for output_index in unfinished {
                     if let Some(event) = self.finish_tool_call(output_index) {
-                        events.push(event);
+                        events.push(Ok(event));
                     }
                 }
                 if let Some(model) = model {
@@ -585,23 +594,21 @@ impl ResponsesMapper {
                     StopReason::Stop
                 };
                 self.saw_done = true;
-                events.push(AssistantStreamEvent::Done {
+                events.push(Ok(AssistantStreamEvent::Done {
                     reason: self.partial.stop_reason,
                     message: self.partial.clone(),
-                });
+                }));
                 events
             }
             ResponsesEvent::Error { message: _ } => {
+                // Current producers stop the dual terminal format: an in-band
+                // provider error event is a stream failure whose bounded
+                // diagnostic rides the typed cause; the accumulated partial is
+                // preserved by the public seam (ChatStream/CallFailure).
                 self.saw_done = true;
-                let mut error_message = self.partial.clone();
-                // Substitute a bounded, provider-neutral message: the raw
-                // upstream `error.message` may echo credential material and is
-                // never persisted or exposed publicly.
-                error_message.error_message = Some(OPENAI_RESPONSES_STREAM_ERROR.to_owned());
-                vec![AssistantStreamEvent::Error {
-                    reason: StopReason::Error,
-                    message: error_message,
-                }]
+                vec![Err(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static(OPENAI_RESPONSES_STREAM_ERROR),
+                ))]
             }
         }
     }

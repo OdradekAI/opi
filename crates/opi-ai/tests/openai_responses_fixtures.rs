@@ -502,13 +502,23 @@ async fn responses_error_event_routing() {
     let sse = "event: error\n\
                data: {\"type\":\"error\",\"message\":\"Model not found\"}\n\n";
 
-    let events = collect_stream(provider.stream_from_sse(sse, CancellationToken::new())).await;
+    let items: Vec<Result<AssistantStreamEvent, ProviderError>> = provider
+        .stream_from_sse(sse, CancellationToken::new())
+        .collect()
+        .await;
 
+    // Current producers stop the dual terminal format: the error event
+    // routes to a typed stream failure, not an Error event.
     assert!(
-        events
+        items
             .iter()
-            .any(|e| matches!(e, AssistantStreamEvent::Error { .. })),
-        "should have an Error event"
+            .any(|e| matches!(e, Err(ProviderError::StreamError(_)))),
+        "should have a typed stream failure"
+    );
+    assert!(
+        !items
+            .iter()
+            .any(|e| matches!(e, Ok(AssistantStreamEvent::Error { .. })))
     );
 }
 

@@ -236,8 +236,8 @@ impl OpenAiCodexResponsesProvider {
                             },
                             event => event,
                         };
-                        for event in mapper.process(event) {
-                            if tx.send(Ok(event)).await.is_err() {
+                        for item in mapper.process(event) {
+                            if tx.send(item).await.is_err() {
                                 return Ok(());
                             }
                         }

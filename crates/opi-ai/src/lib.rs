@@ -52,13 +52,15 @@ pub use model_info::{
 };
 pub use provider::Provider;
 pub use provider_collection::{
-    AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, CompletedRequest,
-    PreparedProviderCall, PreparedRoute, ProviderCollection, SecretKey,
+    AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, PreparedProviderCall,
+    PreparedRoute, ProviderCollection, SecretKey,
 };
 pub use provider_headers::{ProviderHeaders, ProviderHeadersError};
 pub use registry::{ProviderRegistry, RegistrationError, RegistryError};
 pub use stream::AssistantStreamEvent;
-pub use stream::{CostBreakdown, CumulativeUsage, Pricing, calculate_cost};
+pub use stream::{
+    CallFailure, ChatStream, CostBreakdown, CumulativeUsage, Pricing, calculate_cost,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ApiKind {

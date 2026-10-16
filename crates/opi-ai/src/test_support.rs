@@ -269,6 +269,10 @@ pub fn tool_call_response(
 }
 
 /// Helper: build an error response (Start ->Error).
+///
+/// Emits the legacy in-band `Error` terminal on purpose: this fixture models
+/// historical/mock producers so downstream suites exercise the `ChatStream`
+/// conversion to `Err(CallFailure)` that real providers no longer produce.
 pub fn error_response(error_message: &str) -> Vec<AssistantStreamEvent> {
     let mut partial = base_assistant();
     partial.error_message = Some(error_message.into());

@@ -149,7 +149,7 @@ impl BedrockProvider {
             for event in parsed {
                 match event {
                     Ok(bedrock_event) => {
-                        stream_events.extend(mapper.process(bedrock_event).into_iter().map(Ok));
+                        stream_events.extend(mapper.process(bedrock_event));
                     }
                     Err(e) => {
                         stream_events.push(Err(e));
@@ -419,8 +419,8 @@ impl BedrockProvider {
                 for event in parse_bedrock_event(&frame.event_type, payload_str) {
                     match event {
                         Ok(bedrock_event) => {
-                            for stream_event in mapper.process(bedrock_event) {
-                                if !send_or_cancel(&cancel, tx, Ok(stream_event)).await? {
+                            for item in mapper.process(bedrock_event) {
+                                if !send_or_cancel(&cancel, tx, item).await? {
                                     return Ok(());
                                 }
                             }
@@ -764,7 +764,7 @@ impl BedrockMapper {
         self.pending_done.take()
     }
 
-    fn process(&mut self, event: BedrockEvent) -> Vec<AssistantStreamEvent> {
+    fn process(&mut self, event: BedrockEvent) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
         // Allow Metadata through even after saw_done
         if self.saw_done && !matches!(event, BedrockEvent::Metadata { .. }) {
             return Vec::new();
@@ -772,9 +772,9 @@ impl BedrockMapper {
 
         match event {
             BedrockEvent::MessageStart => {
-                vec![AssistantStreamEvent::Start {
+                vec![Ok(AssistantStreamEvent::Start {
                     partial: self.partial.clone(),
-                }]
+                })]
             }
             BedrockEvent::ContentBlockStart {
                 _index: _,
@@ -789,10 +789,10 @@ impl BedrockMapper {
                         self.partial.content.push(AssistantContent::Text {
                             text: String::new(),
                         });
-                        vec![AssistantStreamEvent::TextStart {
+                        vec![Ok(AssistantStreamEvent::TextStart {
                             content_index,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     BedrockBlockType::ToolUse { tool_use_id, name } => {
                         self.blocks.push(BlockState::ToolUse {
@@ -807,10 +807,10 @@ impl BedrockMapper {
                                 arguments: String::new(),
                             },
                         });
-                        vec![AssistantStreamEvent::ToolCallStart {
+                        vec![Ok(AssistantStreamEvent::ToolCallStart {
                             content_index,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                 }
             }
@@ -826,11 +826,11 @@ impl BedrockMapper {
                         {
                             acc.push_str(&text);
                         }
-                        vec![AssistantStreamEvent::TextDelta {
+                        vec![Ok(AssistantStreamEvent::TextDelta {
                             content_index,
                             delta: text,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     BedrockDelta::ToolUse { input } => {
                         if let Some(BlockState::ToolUse {
@@ -846,11 +846,11 @@ impl BedrockMapper {
                         {
                             tool_call.arguments = partial_input.clone();
                         }
-                        vec![AssistantStreamEvent::ToolCallDelta {
+                        vec![Ok(AssistantStreamEvent::ToolCallDelta {
                             content_index,
                             delta: input,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                 }
             }
@@ -858,11 +858,11 @@ impl BedrockMapper {
                 let content_index = self.blocks.len().saturating_sub(1);
                 match self.blocks.last() {
                     Some(BlockState::Text { text }) => {
-                        vec![AssistantStreamEvent::TextEnd {
+                        vec![Ok(AssistantStreamEvent::TextEnd {
                             content_index,
                             content: text.clone(),
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     Some(BlockState::ToolUse {
                         id,
@@ -879,11 +879,11 @@ impl BedrockMapper {
                         {
                             tc.arguments = partial_input.clone();
                         }
-                        vec![AssistantStreamEvent::ToolCallEnd {
+                        vec![Ok(AssistantStreamEvent::ToolCallEnd {
                             content_index,
                             tool_call,
                             partial: self.partial.clone(),
-                        }]
+                        })]
                     }
                     None => Vec::new(),
                 }
@@ -912,16 +912,17 @@ impl BedrockMapper {
                         None, // reasoning_tokens
                     );
                 }
-                self.pending_done.take().into_iter().collect()
+                self.pending_done.take().into_iter().map(Ok).collect()
             }
             BedrockEvent::Exception => {
+                // Current producers stop the dual terminal format: an in-band
+                // provider error event is a stream failure whose bounded
+                // diagnostic rides the typed cause; the accumulated partial is
+                // preserved by the public seam (ChatStream/CallFailure).
                 self.saw_done = true;
-                let mut err_msg = self.partial.clone();
-                err_msg.error_message = Some("Bedrock returned a streaming error".to_owned());
-                vec![AssistantStreamEvent::Error {
-                    reason: StopReason::Error,
-                    message: err_msg,
-                }]
+                vec![Err(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static("Bedrock returned a streaming error"),
+                ))]
             }
         }
     }

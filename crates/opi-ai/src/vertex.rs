@@ -127,7 +127,7 @@ impl VertexProvider {
             for parsed in ParsedEvent::from_data(&data) {
                 match parsed {
                     ParsedEvent::Valid(event) => {
-                        stream_events.extend(mapper.process(event).into_iter().map(Ok));
+                        stream_events.extend(mapper.process(event));
                     }
                     ParsedEvent::Malformed => {
                         stream_events.push(Err(ProviderError::StreamError(
@@ -288,12 +288,12 @@ async fn stream_vertex_http(
         for parsed in drain_sse_data(&mut buffer) {
             match parsed {
                 ParsedEvent::Valid(event) => {
-                    for stream_event in mapper.process(event) {
-                        let is_terminal = matches!(
-                            stream_event,
-                            AssistantStreamEvent::Done { .. } | AssistantStreamEvent::Error { .. }
-                        );
-                        if !send_or_cancel(&cancel, tx, Ok(stream_event)).await? {
+                    for item in mapper.process(event) {
+                        let is_terminal = match &item {
+                            Ok(terminal_event) => terminal_event.is_terminal(),
+                            Err(_) => true,
+                        };
+                        if !send_or_cancel(&cancel, tx, item).await? {
                             return Ok(());
                         }
                         if is_terminal {

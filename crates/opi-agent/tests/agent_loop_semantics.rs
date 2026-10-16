@@ -484,7 +484,18 @@ async fn unterminated_provider_stream_is_a_protocol_failure() {
     .into_execution_result()
     .expect_err("EOF without a terminal event must fail");
 
-    assert!(matches!(error, AgentError::ProviderProtocol { .. }));
+    // Task 20.2: the ChatStream seam converts premature EOF into one typed
+    // protocol failure (Err(CallFailure) with a StreamError cause) instead of
+    // the agent-level ProviderProtocol escape.
+    assert!(matches!(
+        &error,
+        AgentError::Provider(failure)
+            if matches!(
+                failure.provider_error(),
+                opi_ai::provider::ProviderError::StreamError(summary)
+                    if summary.contains("terminal")
+            )
+    ));
 }
 
 // ---------------------------------------------------------------------------

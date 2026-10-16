@@ -15,7 +15,16 @@ use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper: parse fixture, extract valid events, and map through a stateful mapper.
+/// Fixtures are valid streams, so every item must be an event.
 fn map_fixture(input: &str) -> Vec<AssistantStreamEvent> {
+    map_fixture_items(input)
+        .into_iter()
+        .map(|item| item.expect("fixture maps to stream events"))
+        .collect()
+}
+
+/// Helper: map a fixture to raw stream items (events and typed failures).
+fn map_fixture_items(input: &str) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
     let events: Vec<AnthropicEvent> = parse_sse_events(input)
         .filter_map(|p| match p {
             ParsedEvent::Valid(e) => Some(e),
@@ -555,25 +564,23 @@ fn error_fixture_parsed_as_error() {
 
 #[test]
 fn error_event_maps_to_stream_error() {
-    let stream_events = map_fixture(error_fixture());
+    let stream_events = map_fixture_items(error_fixture());
 
     assert_eq!(stream_events.len(), 1);
-    if let AssistantStreamEvent::Error {
-        reason, message, ..
-    } = &stream_events[0]
-    {
-        assert_eq!(*reason, StopReason::Error);
-        let err = message.error_message.as_ref().unwrap();
-        assert!(
-            err.contains("anthropic stream error"),
-            "error_message must be the neutral literal, got: {err}"
-        );
-        assert!(
-            !err.contains("Overloaded"),
-            "raw upstream error text must not leak into the public error_message: {err}"
-        );
-    } else {
-        panic!("expected Error stream event");
+    // Current producers stop the dual terminal format: the in-band error
+    // event is a stream failure with a bounded typed cause.
+    match &stream_events[0] {
+        Err(ProviderError::StreamError(summary)) => {
+            assert!(
+                summary.contains("anthropic stream error"),
+                "cause must be the neutral literal, got: {summary}"
+            );
+            assert!(
+                !summary.contains("Overloaded"),
+                "raw upstream error text must not leak into the cause: {summary}"
+            );
+        }
+        other => panic!("expected stream error item, got {other:?}"),
     }
 }
 

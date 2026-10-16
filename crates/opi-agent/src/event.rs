@@ -488,6 +488,9 @@ fn redact_assistant_stream_event(
             reason: *reason,
             message: redact_assistant_message(message),
         },
+        // Legacy in-band error terminal: only historical saved events can
+        // reach this arm (current producers emit typed failures); redaction
+        // preserves the read-only historical shape.
         AssistantStreamEvent::Error { reason, message } => AssistantStreamEvent::Error {
             reason: *reason,
             message: redact_assistant_message(message),
