@@ -1,6 +1,6 @@
-## [Unreleased]
+## Unreleased
 
-## [0.8.3] - 2026-10-15
+## 0.8.3 - 2026-10-15
 
 ### Breaking Changes
 
@@ -680,7 +680,7 @@
   `/proc`, and the Unix single-link capture contract) is gated to Linux
   alongside platform-honest doctor observations.
 
-## [0.8.2] - 2026-09-05
+## 0.8.2 - 2026-09-05
 
 ### Breaking Changes
 
@@ -791,7 +791,7 @@
   with create-new semantics outside the run root so neither sealed
   bytes nor a prior report can be replaced.
 
-## [0.8.1] - 2026-08-25
+## 0.8.1 - 2026-08-25
 
 ### Breaking Changes
 
@@ -973,7 +973,7 @@
   process group with a portable kill invocation, so descendants no longer
   survive resolver cancellation on Linux.
 
-## [0.8.0] - 2026-08-12
+## 0.8.0 - 2026-08-12
 
 No runtime behavior changes. This release consolidates the Opi specification
 and project documentation, refreshes alignment and research evidence, and
@@ -1001,7 +1001,7 @@ Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
 - Fresh pi 0.84.1 realignment reports (`docs/realign/2026-08-11-opi-vs-pi.*`,
   EN/ZH) and refreshed outward research evidence under `docs/research/`.
 
-## [0.7.3] - 2026-08-11
+## 0.7.3 - 2026-08-11
 
 > Note: on macOS, `opi-sandbox`'s seatbelt substrate does not propagate the
 > invocation `TMPDIR` to the sandboxed target in this release, so sandboxed
@@ -1109,7 +1109,7 @@ Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
   Windows AppContainer or restricted-token restriction; and no preserving of
   unreleased Phase 15 sandbox configuration aliases.
 
-## [0.7.2] - 2026-07-31
+## 0.7.2 - 2026-07-31
 
 ### Breaking Changes
 
@@ -1133,7 +1133,7 @@ Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
 - `opi-coding-agent`: retained Linux's independent seccomp socket gate below Landlock ABI 4, restricted seccomp engagement to verified x86_64/aarch64 targets, bound macOS launch to the probed absolute helper, and made sandbox diagnostic reasons closed and redaction-safe.
 - `opi-coding-agent` / `opi-tui`: omit Trust-parent at filesystem roots and reject forged root-level selections instead of returning an unpersisted trusted decision.
 
-## [0.7.1] - 2026-07-24
+## 0.7.1 - 2026-07-24
 
 ### Breaking Changes
 
@@ -1162,7 +1162,7 @@ Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
 - `opi-coding-agent`: reject ambiguous provider identities, preserve foreign process-default keyring ownership, strictly decode credential envelopes, serialize OAuth refresh against public writes, and exercise the production TUI event dispatcher in debug and release test profiles.
 - `opi-coding-agent`: the `ls` and `find` tools and the `write`/`edit` details now relativize inside-workspace paths to match `read`, so absolute workspace roots no longer leak into model-visible tool output or NDJSON `details` (macOS `/var`→`/private/var` symlink previously defeated the relativization). Also fixes the macOS and Freedesktop keychain backends failing to compile on Unix (the `apple-native-keyring-store` `keychain` and `zbus-secret-service-keyring-store` `rt-tokio-crypto-rust` features were not enabled), which had left the Phase 14 credential stores unbuildable on Linux/macOS.
 
-## [0.7.0] - 2026-07-09
+## 0.7.0 - 2026-07-09
 
 ### Added
 
@@ -1182,7 +1182,7 @@ Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
 - `opi-ai` / `opi-agent` / `opi-coding-agent`: populate runtime message timestamps instead of emitting `timestamp_ms: 0` for runtime-produced user, assistant, and tool result messages.
 - `opi-coding-agent`: avoid exposing resolved absolute workspace paths in successful `read` tool output text and structured `details` for inside-workspace reads.
 
-## [0.6.5] - 2026-07-06
+## 0.6.5 - 2026-07-06
 
 ### Added
 
@@ -1207,7 +1207,7 @@ Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
 - `opi-coding-agent`: persisted model and thinking changes before mutating runtime state, forwarded stored branch summaries to providers on resume, redacted branch summaries and custom export messages, and kept RPC/session diagnostics from duplicating or hiding recovery errors.
 - `opi-coding-agent`: handled empty `/name`, `/label`, and `/unlabel` commands locally instead of forwarding them to the model; `--format md` is now accepted as a documented export alias.
 
-## [0.6.4] - 2026-07-05
+## 0.6.4 - 2026-07-05
 
 ### Added
 
@@ -1230,7 +1230,7 @@ Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
 - `opi-agent`: provider-returned cancellations now surface as `AgentError::Cancelled`.
 - `opi-agent`: compaction and session-persistence public events redact secret-looking error text.
 
-## [0.6.3] - 2026-07-01
+## 0.6.3 - 2026-07-01
 
 ### Added
 
@@ -1253,7 +1253,7 @@ Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
 - `opi-agent`: the `MaxTurnsExceeded` classification (previously dead code) is now constructed and classified at runtime. Tool-failure diagnostics now surface the per-cause filesystem/error code from the 11.2 taxonomy rather than the single generic collapse.
 - `opi-coding-agent`: marked the `#[cfg(unix)]` `getuid()` permission-skip-guard `extern "C"` blocks in the find/ls/read-write-edit-bash tests as `unsafe extern` so they compile under the edition-2024 enforcement of newer Rust stable.
 
-## [0.6.2] - 2026-06-28
+## 0.6.2 - 2026-06-28
 
 ### Added
 
@@ -1273,7 +1273,7 @@ Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
 
 - Addressed Phase 10 audit findings across the centralized provider factory and surrounding documentation.
 
-## [0.6.1] - 2026-06-25
+## 0.6.1 - 2026-06-25
 
 ### Added
 
@@ -1285,7 +1285,7 @@ Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
 - Bumped the workspace version to `0.6.1` and refreshed the Phase 4 specification-hash ledger to match the current `docs/opi-spec.md`.
 - This release is published to GitHub only; crates.io publishing is intentionally skipped because it contains documentation and guard-test changes only.
 
-## [0.6.0] - 2026-06-24
+## 0.6.0 - 2026-06-24
 
 ### Changed
 
@@ -1293,310 +1293,41 @@ Published crate APIs and the `opi` CLI are unchanged from 0.7.3.
 - Updated the English and Chinese technical specification and pi alignment matrix to reflect the current roadmap and phase boundaries.
 - This release is published to GitHub only; crates.io publishing is intentionally skipped because it contains planning and documentation changes only.
 
-## [0.5.4] - 2026-06-24
-
-### Added
-
-- `opi-agent`: README (English and Chinese) classifies the public runtime, extension, event, session, SDK/RPC, and streaming-proxy surfaces as supported 0.x or unstable internal, with their stability mechanism (`#[non_exhaustive]`, module `# Unstable` prose, and the `SDK`/`NDJSON`/`TRACE` schema versions) and an explicit Phase 8 non-goal list; the pi alignment matrix records a Phase 8 runtime-stabilization row. Guard tests pin the classification against the crate-root re-exports and reject the Phase 8 non-goals.
-
-### Changed
-
-- `opi-coding-agent`: RPC JSONL synchronous rejection responses for runtime-contract failures now carry a stable machine-readable `error_code` — `agent_busy`, `harness_unavailable`, `compaction_failed`, `extension_command_not_handled` (alongside the existing `unsupported_trace_request`) — on the additive `SdkResponse::error_code` field. The SDK schema version is unchanged at `3`; idle `set_model` / `set_thinking_level` capability errors remain free-text.
-
-### Fixed
-
-- `opi-coding-agent`: resumed session-recovery diagnostics now reach the in-process diagnostic recording sink (and are counted by run summaries) instead of only `session_info` resource metadata, matching how compaction is already wired.
-- `opi-agent`: parallel tool-result handling now satisfies newer Clippy releases by removing a redundant iterator conversion.
-
-## [0.5.3] - 2026-06-22
-
-### Added
-
-- `opi-agent`: shared diagnostic vocabulary (`Diagnostic`, `DiagnosticPayload`, `Severity`, `RedactionMode`, `redact`/`redact_text`, `DiagnosticSink`, `RecordingSink`, `NullSink`) with deterministic, ordered serialization and Summary/Verbose redaction reusing `SecretRedactor`.
-- `opi-agent`: provider, retry, cancellation, tool, compaction, session-recovery, package/adapter, config, and RPC paths now record structured diagnostics instead of bare strings.
-- `opi-ai` / `opi-agent`: `ProviderErrorCategory` taxonomy (`Auth`, `RateLimit`, `Timeout`, `Request`, `Stream`) with `ProviderError::category()` and `retry_after_ms()` accessors, mapped into the shared diagnostic code/severity/source triple for consistent redacted reporting across stderr, JSON, and trace surfaces.
-- `opi-agent`: redaction core extended with GitHub PAT, credentialed-URL userinfo, and `Authorization` header patterns shared by all diagnostic surfaces, plus Phase 7 redaction/shared-shape/non-goal guard tests.
-- `opi-agent`: unstable local trace envelope substrate — `TRACE_SCHEMA_VERSION`, non_exhaustive `TraceKind`, Serialize-only `TraceRecord`, `TraceSink` trait with fail-closed `prepare` and fail-open `write`, `TraceCollector` with redaction, and a crash-resilient `FileTraceSink` exposed for embedders.
-- `opi-agent` / `opi-coding-agent`: trace envelope wired into the agent loop; run/turn/provider/tool records are emitted via `observe()`; opt-in `--trace <path>` writes a redacted envelope for non-interactive and JSON modes (interactive/RPC excluded).
-- `opi-agent`: RPC JSONL gains a `trace` command returning the versioned, redacted envelope; the RPC runner records a `RecordingTraceSink` by default; `SdkResponse` carries a new additive `error_code` field for machine-readable `unsupported_trace_request` errors.
-- `opi-agent`: NDJSON mode gains a `StartupDiagnostics` event emitted before `AgentStart` and an additive `diagnostics: SessionDiagnosticCounts { info, warning, error }` tally on `SessionSummary`, both omitted when absent.
-- `opi-coding-agent`: top-level `opi doctor` local health check, distinct from `opi package doctor`; network-free, reports shared `Diagnostic` values for `config`, `provider`, `package`, `session`, `tui`, and `rpc` scopes with `--json` NDJSON output and `--scope` filtering, redacting absolute paths at the boundary; exits `0` clean, `2` on any error-severity diagnostic, `1` on internal or argument failure.
-
-### Changed
-
-- `opi-agent` / `opi-coding-agent`: SDK/RPC schema version is now `3` and NDJSON schema version is now `2` to carry the new trace and diagnostic fields; both remain unstable 0.x contracts and existing consumers keep parsing via additive, `#[serde(default)]` fields.
-
-### Fixed
-
-- `opi-coding-agent`: non-interactive JSON mode provider-error stderr now routes through the shared diagnostic redactor instead of emitting raw error strings, keeping a static `provider error` class string.
-
-### Removed
-
-- `opi-web-ui`: removed the unpublished web-facing crate from the workspace; future web UI work should be planned as a separate RPC/SDK consumer surface.
-
-## [0.5.2] - 2026-06-17
-
-### Fixed
-
-- `opi-coding-agent`: RPC JSONL mode now surfaces provider and harness construction diagnostics at startup and documents the session JSONL format as an unstable 0.x contract instead of implying stability.
-- `opi-coding-agent`: `opi package` runtime degraded paths (adapter, lock, source, and resource failures) now report actionable diagnostics instead of failing silently.
-- `opi-coding-agent`: the process-JSONL adapter protocol (`opi-extension-jsonl-v1`) is documented honestly as an unstable 0.x protocol, and adapter startup diagnostics are enriched.
-- `opi-coding-agent`: Phase 6 documentation-truth and reliability audit gaps are closed; current-state docs, the spec hash ledger, and the English/Chinese counterparts now stay synchronized with the workspace version, guarded by Phase 6 alignment tests.
-
-## [0.5.1] - 2026-06-15
-
-### Added
-
-- `opi-coding-agent`: `--fork <session-id>` plus interactive `/tree`, `/fork`, and `/clone` session commands that copy the active branch into a new parented session without rewriting the source JSONL file.
-- `opi-agent` / `opi-coding-agent`: RPC/SDK `extension_command` support for dispatching correlated custom commands to registered extension registries.
-- `opi-coding-agent`: config-driven OpenAI-compatible provider profiles with model metadata, compatibility flags, runtime provider construction, and registry-backed `--list-models` output.
-- `opi-web-ui`: `ConversationState` now tracks resource metadata from `session_info` responses and the last successful compaction response payload.
-- `opi-coding-agent`: runtime session persistence now writes meaningful `parent_id` links and `leaf` pointers so continuing from a selected branch tip creates a same-file branch path.
-- `opi-coding-agent`: `opi package add/remove/list/doctor` now validates package manifests, writes lock entries, and reports installed package diagnostics.
-- `opi-coding-agent`: manifest V2 supports `[adapter]` process adapters with the `opi-extension-jsonl-v1` JSONL protocol.
-- `opi-coding-agent`: installed package declarations are loaded during runtime startup so adapter tools, commands, hooks, events, state, and cancellation bridge into the extension API.
-- `opi-coding-agent`: example adapter packages demonstrate todo state, permission-gate example hooks, and protected path hooks through a runnable process adapter.
-
-### Changed
-
-- `opi-agent`: moved the core loop implementation out of `lib.rs` into an internal `agent_loop` module while preserving the public `opi_agent::agent_loop` export.
-
-### Fixed
-
-- `opi-tui`: `SelectList` and `BranchPicker` now account for selected-row markers and CJK display width when aligning labels with metadata.
-- `opi-coding-agent`: `opi package doctor` now rejects invalid manifest V2 adapter declarations and reports lock/source/resource/adapter diagnostics.
-- `opi-coding-agent`: Adapter state snapshots are persisted in session JSONL and restored on resume.
-- `opi-coding-agent`: Adapter event drops are diagnostic-visible, shutdown allows a bounded graceful exit, local package identity is canonicalized, SSH git source parsing is URL-aware, and relative adapter commands cannot escape package roots.
-- `opi-coding-agent`: Linux build and test correctness — removed a dead Unix-only import that failed `clippy`/`test`/`doc` under `-D warnings`, and test-binary locators no longer match cargo `.d` dep-info siblings (which lack the execute bit and caused `EACCES` when spawning adapters).
-
-## [0.5.0] - 2026-06-07
-
-Phase 4: extension system, RPC JSONL protocol, SDK embedding surface,
-progressive resource discovery, session branching, streaming proxy,
-custom provider registration, and six extension examples.
-
-### Added
-
-- `opi-coding-agent`: RPC JSONL mode with correlated responses, async agent events, session/model/thinking/compaction commands, and tool-selection support.
-- `opi-agent`: shared unstable SDK command/response/event types for embedders.
-- `opi-agent`: extension API with lifecycle hooks, custom tools, custom commands, custom messages, and extension state.
-- `opi-ai`: custom provider/model registry APIs used by CLI model listing and runtime validation.
-- `opi-coding-agent`: config-driven discovery for extensions, packages, skills, prompt fragments, and themes, including package-composed resource layers.
-- `opi-coding-agent`: interactive `/branch` session branch selection.
-- `opi-agent`: streaming proxy primitives with framing, cancellation, backpressure, and secret redaction.
-- `opi-web-ui`: unpublished RPC/SDK event parser, conversation state, component models, and HTML rendering helpers.
-- `opi-agent`: session branching with tree reconstruction, branch picker, and branch-aware session writer.
-- `opi-tui`: branch picker widget with snapshot-tested rendering.
-- `opi-coding-agent`: extension examples for MCP adapter, todo, plan mode, sub-agent, protected paths, and permission gate patterns.
-- `opi-coding-agent`: progressive discovery for themes, prompt fragments, skills, and package resources.
-
-### Changed
-
-- `opi-coding-agent`: `--list-models`, interactive model picking, and runtime model validation now use provider registry metadata.
-- `opi-coding-agent`: example package manifests use the supported flat `package.toml` schema.
-- `opi-agent`: `StreamingProxy::run` is synchronous transport-agnostic I/O instead of an async wrapper around blocking reads.
-
-### Fixed
-
-- `opi-coding-agent`: Windows subprocess tests resolve `opi.exe` correctly.
-- `opi-web-ui`: RPC response `data` is preserved and updates session/model state.
-- `opi-coding-agent`: same-layer duplicate resource/package names now produce explicit errors.
-- `opi-coding-agent`: package resource containment checks no longer fall back to unresolved paths when canonicalization fails.
-- `opi-agent`: default secret redaction no longer redacts short benign `sk-` or `eyJ`-like strings.
-- `opi-agent`: `SdkResponse` now round-trips through JSON and serialization fallback events use `SdkSerializationError`.
-- `opi-web-ui`: `ThinkingBlock` is re-exported from the crate root with the other component models.
-- `opi-coding-agent`: phase 4 ledger hash check normalized for cross-platform consistency.
-
-### Removed
-
-- `opi-agent`: stale public `Transport` stub.
-
-## [0.4.0] - 2026-06-02
-
-Phase 3: cloud provider expansion (Vertex AI, Azure OpenAI, Bedrock), image
-support across the stack, new built-in tools (find, ls), fuzzy picker, terminal
-image rendering, shell completions, and proxy support.
-
-### Added
-
-- `opi-ai`: AWS Bedrock provider with SigV4 signing and credential resolution
-- `opi-ai`: Azure OpenAI provider with deployment URL and api-key auth
-- `opi-ai`: Google Vertex AI provider with OAuth Bearer auth
-- `opi-ai`: HTTP/HTTPS proxy support with env-var and per-provider config
-- `opi-ai`: image input support for multimodal prompts
-- `opi-ai`: shared HttpClient with connection pooling
-- `opi-agent`: image tool result support for visual tool output
-- `opi-agent`: `prompt_with_content` method for arbitrary content (text + images)
-- `opi-coding-agent`: `--list-models` flag to list available models (table or NDJSON)
-- `opi-coding-agent`: `--image` flag for non-interactive image attachment
-- `opi-coding-agent`: `/image` slash command for TUI image attachment
-- `opi-coding-agent`: `find` built-in tool for file search
-- `opi-coding-agent`: `ls` built-in tool for directory listing with metadata
-- `opi-coding-agent`: shell completion generation for bash, zsh, fish, powershell, elvish
-- `opi-coding-agent`: pi-style tool selection and safety hooks
-- `opi-coding-agent`: AGENTS.md / CLAUDE.md context file loading
-- `opi-coding-agent`: global context file discovery from user config directory
-- `opi-coding-agent`: proxy wiring to all provider factory paths
-- `opi-coding-agent`: enhanced tool management and path resolution
-- `opi-tui`: fuzzy model/session picker with SelectList widget
-- `opi-tui`: terminal image rendering with protocol detection (kitty, sixel, iTerm2)
-
-### Performance
-
-- `opi-ai`: shared HttpClient with connection pooling reduces TLS handshake overhead
-
-### Fixed
-
-- `opi-ai`: Bedrock error mapping now parses Retry-After header for 429 responses
-- `opi-ai`: Azure OpenAI endpoint validation -- missing endpoint returns config error
-- `opi-ai`: Bedrock URL-sourced images rejected with clear unsupported-error message
-- `opi-agent`: compaction summary includes image content placeholders
-- `opi-coding-agent`: ls tool truncation count now correctly reports omitted entries
-- `opi-coding-agent`: session picker sorted newest-first to avoid filesystem ordering flakes
-- `opi-coding-agent`: char-aware truncation in session picker to avoid non-ASCII panic
-- `opi-coding-agent`: `--list-models --json` uses serde_json for properly escaped output
-- `opi-coding-agent`: `--image` files passed through to interactive mode first prompt
-- `opi-coding-agent`: session files excluded from crate package
-- `opi-tui`: terminal image protocol hardening
-
-## [0.3.0] - 2026-05-25
-
-Phase 2 hardening: multi-provider support (6 LLM providers), session
-persistence, context compaction, configurable TUI, and cost tracking.
-
-### Added
-
-- `opi-ai`: OpenAI-compatible chat provider with SSE streaming
-- `opi-ai`: OpenAI Responses API provider with streaming
-- `opi-ai`: Google Gemini provider with HTTP streaming
-- `opi-ai`: Mistral provider profile
-- `opi-ai`: OpenRouter provider profile
-- `opi-ai`: retry/backoff/rate-limit support with configurable strategies
-- `opi-ai`: usage accumulation and cost tracking across turns
-- `opi-agent`: session v1 JSONL storage for conversation persistence
-- `opi-agent`: compaction engine with trigger and hook support
-- `opi-agent`: thinking config passed through to provider requests
-- `opi-agent`: enhanced event handling and message management
-- `opi-coding-agent`: session list/resume/delete CLI flags
-- `opi-coding-agent`: session persistence wired into harness runtime
-- `opi-coding-agent`: compaction wired into session coordinator
-- `opi-coding-agent`: `--json` NDJSON output mode for non-interactive use
-- `opi-coding-agent`: provider factory extended for all 6 providers
-- `opi-coding-agent`: usage accumulation wired to TUI status bar
-- `opi-coding-agent`: edit tool captures before/after content
-- `opi-coding-agent`: workspace path validation for all tools
-- `opi-tui`: configurable keybindings with TOML parsing
-- `opi-tui`: Theme struct with default and monokai palettes
-- `opi-tui`: DiffView widget for edit/patch visualization
-
-### Fixed
-
-- Session runtime tests serialized to avoid env var races
-
-## [0.2.0] - 2026-05-22
-
-Phase 1 MVP: functional Anthropic-based coding assistant with six tools,
-basic TUI, TOML config, and mock-provider integration tests.
-
-### Added
-
-- `opi-ai`: message and stream types with 12 `AssistantStreamEvent` variants
-- `opi-ai`: `Provider` trait with `stream(Request) -> EventStream`, `Request`,
-  `ThinkingConfig`, `ModelInfo`, `ProviderError`
-- `opi-ai`: Anthropic SSE provider with hand-written SSE parser and
-  `AnthropicMapper` for event translation
-- `opi-ai`: provider registry resolving `anthropic:model` specs with capability
-  queries
-- `opi-ai`: shared `MockProvider` test harness with builder helpers
-- `opi-agent`: `Tool` trait with JSON Schema validation via `jsonschema`
-- `opi-agent`: `agent_loop` with turn lifecycle, tool batching (parallel/sequential),
-  cancellation via `CancellationToken`, and queue polling
-- `opi-agent`: `Agent` wrapper with `prompt`, `continue_`, `abort`, `subscribe`
-- `opi-agent`: hooks (`AgentHooks`) with `after_tool_call`, `should_stop_after_turn`,
-  `prepare_next_turn`, steering and follow-up queues
-- `opi-coding-agent`: `ReadTool`, `WriteTool`, `EditTool`, `BashTool` with workspace
-  safety boundaries and confirmation policy
-- `opi-coding-agent`: `GlobTool`, `GrepTool` with gitignore-aware file search
-- `opi-coding-agent`: `SystemPromptBuilder` with layered prompt construction
-- `opi-coding-agent`: TOML config loading with CLI > env > project > user > defaults
-  precedence
-- `opi-coding-agent`: non-interactive mode with exit codes and high-risk tool safety
-  policy
-- `opi-coding-agent`: interactive TUI mode using ratatui/crossterm
-- `opi-tui`: TUI shell with `MessageList`, `InputEditor`, `StatusBar`, `ToolCallView`
-- `opi-tui`: `MarkdownView` and `CodeBlock` rendering widgets
-- 213 integration and unit tests across all crates
-
-### Fixed
-
-- SSE parser surfaces malformed events instead of silently dropping them
-- SSE parser handles CRLF line endings for cross-platform robustness
-- `BashTool` uses `cmd.exe` on Windows, `sh` on Unix
-- Agent loop emits `ToolExecutionStart` before parallel tool spawning
-- `AuthFailed` error variant maps to exit code 3
-- Config: explicit `--config` with non-existent file returns error
-- Config: `--config` model not overridden by `OPI_MODEL` env var
-- Agent loop uses `tokio::select!` for responsive stream cancellation
-- Tool call `input` serialized as JSON object, not string
-
-## [0.1.1] - 2026-05-20
-
-### Added
-
-- `opi-implement` skill for structured implementation workflows with
-  phased gates, verification tiers, and JSON ledger tracking.
-- CI workflows: `ci.yml` (fmt, clippy, test, doc) and `release.yml`
-  (cross-platform binary builds on tag push).
-- Opi technical specification document (`docs/opi-spec.md`).
-
-### Fixed
-
-- Release skill: keep SHA256SUMS local-only, use version-based artifact
-  directory.
-
-### Changed
-
-- `opi-web-ui` marked as `publish = false` (not ready for crates.io).
-
-## [0.1.0] - 2026-05-20
-
-Initial scaffolding release. Establishes the workspace layout and crate
-boundaries; functional implementations land in subsequent releases.
-
-### Added
-
-- Cargo workspace with five crates under lockstep versioning:
-  - `opi-ai` — unified multi-provider LLM API (module scaffolding for
-    `provider`, `stream`, `model`, `config`).
-  - `opi-tui` — terminal UI library (module scaffolding for `render`,
-    `editor`, `markdown`).
-  - `opi-agent` — agent runtime with tool calling and transport
-    abstraction (module scaffolding for `tool`, `transport`, `state`).
-  - `opi-web-ui` — reusable web chat components (module scaffolding for
-    `components`).
-  - `opi-coding-agent` — produces the `opi` binary; supports `--version`
-    and `--help`.
-- `opi-release` skill (`.claude/skills/opi-release/skill.md`) implementing
-  a seven-phase release workflow with explicit irreversibility gates.
-
-### Notes
-
-- All crate APIs are placeholders. Calling them will not do anything
-  useful yet.
-- This release is published as a GitHub Release only; crates.io publish
-  is deferred until the crates have real implementations.
-
-[0.7.0]: https://github.com/OdradekAI/opi/releases/tag/v0.7.0
-[0.6.5]: https://github.com/OdradekAI/opi/releases/tag/v0.6.5
-[0.6.1]: https://github.com/OdradekAI/opi/releases/tag/v0.6.1
-[0.6.0]: https://github.com/OdradekAI/opi/releases/tag/v0.6.0
-[0.5.4]: https://github.com/OdradekAI/opi/releases/tag/v0.5.4
-[0.5.3]: https://github.com/OdradekAI/opi/releases/tag/v0.5.3
-[0.5.2]: https://github.com/OdradekAI/opi/releases/tag/v0.5.2
-[0.5.1]: https://github.com/OdradekAI/opi/releases/tag/v0.5.1
-[0.5.0]: https://github.com/OdradekAI/opi/releases/tag/v0.5.0
-[0.4.0]: https://github.com/OdradekAI/opi/releases/tag/v0.4.0
-[0.3.0]: https://github.com/OdradekAI/opi/releases/tag/v0.3.0
-[0.2.0]: https://github.com/OdradekAI/opi/releases/tag/v0.2.0
-[0.1.1]: https://github.com/OdradekAI/opi/releases/tag/v0.1.1
-[0.1.0]: https://github.com/OdradekAI/opi/releases/tag/v0.1.0
+## 0.5.x (0.5.0 - 0.5.4, 2026-06-07 to 2026-06-24)
+
+Phase 4 and its hardening: the extension system (lifecycle hooks, custom
+tools, commands, messages, state), RPC JSONL mode with SDK embedding types,
+progressive resource discovery, session branching (`--fork`, `/tree`,
+`/fork`, `/clone`), streaming proxy, custom provider registration,
+OpenAI-compatible provider profiles, and package manifest V2 process
+adapters bridged into the extension API with example packages.
+Observability landed with a shared `Diagnostic` vocabulary and structured
+redacted diagnostics across provider, retry, tool, compaction,
+session-recovery, and RPC paths, the `ProviderErrorCategory` taxonomy, an
+unstable trace envelope (`--trace`, RPC `trace` command, NDJSON
+`StartupDiagnostics`), `opi doctor`, and machine-readable RPC `error_code`s.
+SDK schema 3, NDJSON schema 2; `opi-web-ui` was removed from the workspace.
+
+## 0.4.x (0.4.0, 2026-06-02)
+
+Phase 3: cloud provider expansion (AWS Bedrock, Azure OpenAI, Google Vertex
+AI), HTTP/HTTPS proxy support, image input across the stack, `find` and `ls`
+tools, fuzzy pickers, terminal image rendering, shell completions, and
+AGENTS.md/CLAUDE.md context loading.
+
+## 0.3.x (0.3.0, 2026-05-25)
+
+Phase 2 hardening: six LLM providers with retry/backoff and cost tracking,
+session v1 JSONL persistence, context compaction, configurable TUI
+(keybindings, themes, DiffView), and `--json` NDJSON output mode.
+
+## 0.2.x (0.2.0, 2026-05-22)
+
+Phase 1 MVP: Anthropic-based coding assistant with six tools, basic TUI,
+TOML config precedence, and mock-provider integration tests.
+
+## 0.1.x (0.1.0 - 0.1.1, 2026-05-20)
+
+Initial scaffolding: five-crate workspace under lockstep versioning with
+placeholder APIs, the `opi-release` and `opi-implement` skills, CI
+workflows, and the technical specification document.

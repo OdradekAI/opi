@@ -128,10 +128,20 @@ revert it; ask whether to fix forward or revert only the known files.
 
 ## Phase 3: changelog and release notes
 
-Promote the existing `## [Unreleased]` content into
-`## [<version>] - YYYY-MM-DD`. Never modify an already released section. Use
-commits since the previous tag only to detect omissions or category mistakes,
-not to overwrite curated changelog text.
+Promote the existing `## Unreleased` content into
+`## <version> - YYYY-MM-DD`. The changelog uses plain headings and carries
+no link reference definitions. Use commits since the previous tag only to
+detect omissions or category mistakes, not to overwrite curated changelog
+text.
+
+Detail retention window: full release detail is kept only for the three most
+recent released major series (for 0.x, the three most recent `0.N` series —
+while releasing 0.8.x: 0.8.x, 0.7.x, 0.6.x). When a release pushes a fourth
+series out of the window, compress that oldest series in the same release
+edit into a single per-series summary: one `## <series>.x` heading naming
+the covered versions and date span, followed by a few lines summarizing the
+series' scope. Retention compression is the only permitted modification of
+already released sections; never edit released detail otherwise.
 
 Keep the repository's allowed headings and Conventional Commit mapping. Create
 an untracked/transient release-notes file from the finalized version section.

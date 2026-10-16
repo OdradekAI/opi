@@ -42,8 +42,9 @@ worktree, the current branch diff, or the most recent implementation change.
 
 For `scope=full`, build the coverage matrix from `references/readme-audit.md`
 and read every included README in full. Otherwise read the affected source
-and current docs. Check Cargo metadata for version claims and `[Unreleased]`
-plus the latest release in `CHANGELOG.md` for release/currentness claims.
+and current docs. Check Cargo metadata for version claims and the `Unreleased`
+plus latest release sections in `CHANGELOG.md` for release/currentness
+claims.
 Classify candidate edits as:
 
 - **drift**: a current claim is false, stale, or unverifiable;
