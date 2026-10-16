@@ -729,7 +729,7 @@ inventories.
 | Completed delivery history | [`docs/snapshots/`](snapshots/) and the implementation ledger | Historical completion and acceptance evidence. |
 | pi alignment | [`.repo/pi-0.84.1`](../.repo/pi-0.84.1) primary source and [`docs/realign/`](realign/) indexes | Non-normative inward evidence. |
 | External capability research | [`docs/research/`](research/) | Non-normative outward evidence. |
-| Independent Eval direction | [Agent benchmark plan](research/2026-07-10-opi-agent-benchmark-plan.zh.md) and official benchmark/trajectory references | Evidence for Chapter 6 and strategic priority. |
+| Independent Eval direction | Official benchmark/trajectory references | Evidence for Chapter 6 and strategic priority. |
 | Continual Learning direction | `docs/research/opi-knowledge-sdk-learning-worker-spec.zh.md` and cited primary research | Directional evidence only. |
 | Hard-to-reverse trade-offs | Registered ADRs | Rationale for accepted deviations and placement movement. |
 | Documentation contracts | [`scripts/opi-doc-check.py`](../scripts/opi-doc-check.py) | Fast structural, synchronization, link, and stable safety checks. |

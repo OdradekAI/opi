@@ -479,7 +479,7 @@ Phase 是由本规范派生出的有限交付单元。它不是阶梯、路线�
 | 已完成的交付历史 | [`docs/snapshots/`](snapshots/) 和实现台账 | 历史完成情况与验收证据。 |
 | pi 对齐 | [`.repo/pi-0.84.1`](../.repo/pi-0.84.1) 一手资料和 [`docs/realign/`](realign/) 索引 | 非规范性内部证据。 |
 | 外部能力研究 | [`docs/research/`](research/) | 非规范性外部证据。 |
-| 独立 Eval 方向 | [Agent 基准测试计划](research/2026-07-10-opi-agent-benchmark-plan.zh.md) 和官方基准测试/轨迹参考资料 | 第 6 章和战略优先级的 Evidence。 |
+| 独立 Eval 方向 | 官方基准测试/轨迹参考资料 | 第 6 章和战略优先级的 Evidence。 |
 | 持续学习方向 | `docs/research/opi-knowledge-sdk-learning-worker-spec.zh.md` 和引用的一手研究资料 | 仅作为方向性证据。 |
 | 难以逆转的权衡 | 已登记的 ADR | 已接受偏差与归属移动的理由。 |
 | 文档契约 | [`scripts/opi-doc-check.py`](../scripts/opi-doc-check.py) | 快速的结构、同步、链接和稳定安全检查。 |

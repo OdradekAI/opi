@@ -49,9 +49,6 @@ experiments and convenience work.
 
 The following are **non-normative evidence**, not substitute authority:
 
-- [Phase18 execution-gap investigation](../../research/2026-09-05-opi-eval-phase18-execution-gap.zh.md): source-level dataflow and historical log evidence, without a new dynamic reproduction or full historical artifact audit.
-- [Windows feasibility investigation](../../research/2026-09-05-local-agent-benchmark-windows-feasibility.zh.md): pinned task semantics and observed host limitations; installation is not proof that the engine or tasks run.
-- [Zhipu endpoint investigation](../../research/2026-09-05-zhipu-eval-provider-endpoints.zh.md): endpoint documentation, with model access and tool-loop compatibility still requiring execution evidence.
 - [Frozen Phase18 specification](../../snapshots/phase18/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md): historical delivery scope, not an active source for this Phase.
 - [Current Companion README](../../../crates/opi-eval/README.md), [benchmark profiles](../../../crates/opi-eval/profiles/benchmarks/), and [external lock](../../../crates/opi-eval/external-locks/static/linux-x86_64.json): current implementation and material identities, not proof of the proposed behavior.
 

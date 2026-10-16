@@ -25,7 +25,6 @@ The relevant parent requirements are:
 The following are non-normative inputs:
 
 - `.claude/skills/opi-eval/SKILL.md` and its three existing local cases;
-- `docs/research/2026-07-10-opi-agent-benchmark-plan.zh.md`;
 - the approved follow-up boundary in
   `docs/superpowers/specs/2026-08-11-opi-skill-contract-consistency-design.md`;
   and

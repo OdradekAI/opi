@@ -42,9 +42,6 @@ Windows x86_64、WSL2 Linux 与本机 Docker Linux engine。
 
 以下材料均为**非规范证据**，不能替代权威来源：
 
-- [Phase18 执行缺口核查](../../research/2026-09-05-opi-eval-phase18-execution-gap.zh.md)：源码数据流和历史日志证据，没有新的动态复现或完整历史 artifact 审计。
-- [Windows 可行性核查](../../research/2026-09-05-local-agent-benchmark-windows-feasibility.zh.md)：固定任务语义与已观测宿主限制；已安装不等于 engine 或任务已经可运行。
-- [智谱端点核查](../../research/2026-09-05-zhipu-eval-provider-endpoints.zh.md)：端点文档证据；模型访问和工具循环兼容性仍需执行证据。
 - [冻结的 Phase18 规范](../../snapshots/phase18/2026-08-25-phase18-independent-cross-agent-eval-seam-validation-design.md)：历史交付范围，不是本 Phase 的活动来源。
 - [当前 Companion README](../../../crates/opi-eval/README.md)、[benchmark profiles](../../../crates/opi-eval/profiles/benchmarks/) 和 [external lock](../../../crates/opi-eval/external-locks/static/linux-x86_64.json)：当前实现和材料身份，不证明本文提出的行为已经实现。
 
